@@ -10,10 +10,10 @@ import {
 const ART = "https://static.prod-images.emergentagent.com/jobs/0441d610-5908-43db-b746-3ec05187ba11/images/45ea328e6111fa06c7b3530f0bd66291c809bf1519364c126f09302bc02b65f2.png";
 
 const SURFACES = [
-  { i: FileText, t: "Workspace", module: "M8", s: "Documents · Lens Room · Simulation" },
-  { i: Sparkles, t: "Highlights", module: "M7", s: "Verified signals · Briefings · Recommendations" },
-  { i: MessageSquareText, t: "Ask", module: "M7", s: "Persistent threads with source citations" },
-  { i: GraduationCap, t: "Learn", module: "M9", s: "Role-tuned curriculum · Curated intelligence" },
+  { i: FileText, t: "Workspace", module: "M3", s: "Upload · Extract · Ground every response", ready: true },
+  { i: Sparkles, t: "Highlights", module: "M7", s: "Verified signals · Briefings · Recommendations", ready: false },
+  { i: MessageSquareText, t: "Ask", module: "M7", s: "Persistent threads with source citations", ready: false },
+  { i: GraduationCap, t: "Learn", module: "M9", s: "Role-tuned curriculum · Curated intelligence", ready: false },
 ];
 
 const NED_PREVIEW = [
@@ -160,22 +160,29 @@ export default function AppHome() {
             </div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-[#E1E6ED] border border-[#E1E6ED]">
-            {SURFACES.map(({ i: I, t, module, s }) => (
-              <div
-                key={t}
-                className="bg-white p-6 hover:bg-slate-50/60 transition-colors cursor-not-allowed"
-                data-testid={`surface-card-${t.toLowerCase()}`}
-                title={`Unlocks at ${module}`}
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <I className="w-5 h-5 text-slate-400" strokeWidth={1.5} />
-                  <Lock className="w-3 h-3 text-slate-300" strokeWidth={1.8} />
-                </div>
-                <p className="text-[#0A1F44] font-medium text-sm">{t}</p>
-                <p className="text-xs text-slate-500 mt-1">{s}</p>
-                <span className="inline-block mt-4 text-[9px] uppercase tracking-[0.25em] text-slate-400">{module}</span>
-              </div>
-            ))}
+            {SURFACES.map(({ i: I, t, module, s, ready }) => {
+              const Wrap = ready ? Link : "div";
+              const linkProps = ready ? { to: "/app/" + t.toLowerCase() } : {};
+              return (
+                <Wrap
+                  key={t}
+                  {...linkProps}
+                  className={`bg-white p-6 transition-colors ${ready ? "hover:bg-slate-50 cursor-pointer" : "hover:bg-slate-50/60 cursor-not-allowed"}`}
+                  data-testid={`surface-card-${t.toLowerCase()}`}
+                  title={ready ? `Open ${t}` : `Unlocks at ${module}`}
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <I className={`w-5 h-5 ${ready ? "text-[#C9A961]" : "text-slate-400"}`} strokeWidth={1.5} />
+                    {ready
+                      ? <span className="text-[9px] uppercase tracking-[0.25em] text-emerald-600 font-semibold">Live</span>
+                      : <Lock className="w-3 h-3 text-slate-300" strokeWidth={1.8} />}
+                  </div>
+                  <p className="text-[#0A1F44] font-medium text-sm">{t}</p>
+                  <p className="text-xs text-slate-500 mt-1">{s}</p>
+                  <span className="inline-block mt-4 text-[9px] uppercase tracking-[0.25em] text-slate-400">{module}</span>
+                </Wrap>
+              );
+            })}
           </div>
         </div>
       </div>

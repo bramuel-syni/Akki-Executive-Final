@@ -36,9 +36,12 @@ from fastapi import (  # noqa: E402
     APIRouter,
     Depends,
     FastAPI,
+    File,
+    Form,
     HTTPException,
     Request,
     Response,
+    UploadFile,
 )
 from fastapi.responses import StreamingResponse  # noqa: E402
 from motor.motor_asyncio import AsyncIOMotorClient  # noqa: E402
@@ -46,6 +49,10 @@ from pydantic import BaseModel, EmailStr, Field  # noqa: E402
 from starlette.middleware.cors import CORSMiddleware  # noqa: E402
 
 from llm_service import call_llm as llm_call_llm  # noqa: E402
+from documents_service import (  # noqa: E402
+    ACCEPT_EXT, MAX_BYTES, virus_scan_stub, save_to_storage, read_from_storage,
+    delete_from_storage, extract_text, make_preview,
+)
 
 # -----------------------------------------------------------------------------
 # Config
@@ -1039,8 +1046,179 @@ async def export_context(ctx: Dict[str, Any] = Depends(require_context_membershi
 
 
 # -----------------------------------------------------------------------------
-# LLM proxy probe (mocked Synisense-shielded)
+# Documents (M3 — upload pipeline)
 # -----------------------------------------------------------------------------
+def sanitize_doc(d: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": d["id"],
+        "context_id": d["context_id"],
+        "name": d.get("name"),
+        "original_filename": d.get("original_filename"),
+        "mime_type": d.get("mime_type"),
+        "size_bytes": d.get("size_bytes", 0),
+        "status": d.get("status", "uploaded"),
+        "preview": d.get("preview", ""),
+        "extracted_chars": d.get("extracted_chars", 0),
+        "data_trust": d.get("data_trust", "mixed"),
+        "uploaded_by_email": d.get("uploaded_by_email"),
+        "error": d.get("error"),
+        "created_at": d.get("created_at"),
+    }
+
+
+class DocumentTrustUpdate(BaseModel):
+    data_trust: Literal["trusted", "mixed", "weak"]
+
+
+@api.post("/contexts/{context_id}/documents")
+async def upload_document(
+    context_id: str,
+    file: UploadFile = File(...),
+    display_name: Optional[str] = Form(None),
+    data_trust: Optional[str] = Form(None),
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    filename = file.filename or "unnamed"
+    ext = Path(filename).suffix.lower()
+    if ext not in ACCEPT_EXT:
+        raise HTTPException(status_code=415, detail=f"Unsupported file type {ext}. Accepted: {', '.join(sorted(ACCEPT_EXT))}")
+
+    data = await file.read()
+    if len(data) > MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"File too large. Max {MAX_BYTES // 1024 // 1024}MB.")
+
+    clean, reason = virus_scan_stub(data, filename)
+    if not clean:
+        raise HTTPException(status_code=400, detail=f"Rejected by virus scan: {reason}")
+
+    doc_id = str(uuid.uuid4())
+    storage_key = save_to_storage(context_id, doc_id, filename, data)
+    text, err = extract_text(data, filename, file.content_type or "")
+    preview = make_preview(text)
+
+    now = _iso(_now())
+    trust = data_trust if data_trust in ("trusted", "mixed", "weak") else "mixed"
+    doc = {
+        "id": doc_id,
+        "context_id": context_id,
+        "name": (display_name or Path(filename).stem).strip() or "Untitled",
+        "original_filename": filename,
+        "mime_type": file.content_type or "application/octet-stream",
+        "size_bytes": len(data),
+        "storage_key": storage_key,
+        "status": "extracted" if text and not err else ("failed" if err else "empty"),
+        "extracted_text": text,
+        "extracted_chars": len(text),
+        "preview": preview,
+        "data_trust": trust,
+        "uploaded_by": ctx["account"]["id"],
+        "uploaded_by_email": ctx["account"]["email"],
+        "error": err,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.documents.insert_one(doc)
+    doc.pop("_id", None)
+
+    await write_audit(
+        context_id, ctx["account"]["id"], "document.uploaded", "document", doc_id,
+        {"name": doc["name"], "size_bytes": doc["size_bytes"], "status": doc["status"]},
+    )
+    return sanitize_doc(doc)
+
+
+@api.get("/contexts/{context_id}/documents")
+async def list_documents(
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+    limit: int = 100,
+):
+    docs = await db.documents.find(
+        {"context_id": ctx["context"]["id"], "status": {"$ne": "archived"}},
+        {"_id": 0, "extracted_text": 0, "storage_key": 0},
+    ).sort("created_at", -1).to_list(min(limit, 500))
+    return [sanitize_doc(d) for d in docs]
+
+
+@api.get("/contexts/{context_id}/documents/{doc_id}")
+async def get_document_detail(
+    context_id: str, doc_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    d = await db.documents.find_one(
+        {"id": doc_id, "context_id": context_id}, {"_id": 0, "storage_key": 0}
+    )
+    if not d:
+        raise HTTPException(status_code=404, detail="Document not found")
+    out = sanitize_doc(d)
+    # include full extracted text on detail fetch
+    out["extracted_text"] = d.get("extracted_text", "")[:MAX_EXTRACT_CHARS_OUT]
+    return out
+
+
+MAX_EXTRACT_CHARS_OUT = 40000
+
+
+@api.patch("/contexts/{context_id}/documents/{doc_id}")
+async def update_document_trust(
+    context_id: str, doc_id: str,
+    body: DocumentTrustUpdate,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    res = await db.documents.update_one(
+        {"id": doc_id, "context_id": context_id},
+        {"$set": {"data_trust": body.data_trust, "updated_at": _iso(_now())}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Document not found")
+    await write_audit(context_id, ctx["account"]["id"], "document.trust_updated", "document", doc_id,
+                      {"data_trust": body.data_trust})
+    d = await db.documents.find_one({"id": doc_id}, {"_id": 0, "storage_key": 0, "extracted_text": 0})
+    return sanitize_doc(d)
+
+
+@api.delete("/contexts/{context_id}/documents/{doc_id}")
+async def archive_document(
+    context_id: str, doc_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    d = await db.documents.find_one({"id": doc_id, "context_id": context_id})
+    if not d:
+        raise HTTPException(status_code=404, detail="Document not found")
+    # Only uploader or admin can archive
+    if d.get("uploaded_by") != ctx["account"]["id"] and ctx["membership"].get("sub_role") != "admin":
+        raise HTTPException(status_code=403, detail="Only the uploader or a context admin can archive this document.")
+    await db.documents.update_one(
+        {"id": doc_id},
+        {"$set": {"status": "archived", "archived_at": _iso(_now())}},
+    )
+    try:
+        delete_from_storage(d.get("storage_key", ""))
+    except Exception as e:
+        logger.warning(f"delete_from_storage failed: {e}")
+    await write_audit(context_id, ctx["account"]["id"], "document.archived", "document", doc_id, {})
+    return {"ok": True}
+
+
+@api.get("/contexts/{context_id}/documents/{doc_id}/download")
+async def download_document(
+    context_id: str, doc_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    d = await db.documents.find_one({"id": doc_id, "context_id": context_id})
+    if not d or d.get("status") == "archived":
+        raise HTTPException(status_code=404, detail="Document not found")
+    try:
+        data = read_from_storage(d["storage_key"])
+    except FileNotFoundError:
+        raise HTTPException(status_code=410, detail="Underlying file is no longer available")
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type=d.get("mime_type", "application/octet-stream"),
+        headers={"Content-Disposition": f'attachment; filename="{d.get("original_filename", "download")}"'},
+    )
+
+
+
 @api.post("/contexts/{context_id}/llm/probe")
 async def llm_probe(
     context_id: str,
@@ -1093,7 +1271,7 @@ async def record_event(
 # -----------------------------------------------------------------------------
 @api.get("/")
 async def root():
-    return {"app": APP_NAME, "status": "ok", "module": "M2", "brd_version": "3.0"}
+    return {"app": APP_NAME, "status": "ok", "module": "M3", "brd_version": "3.0"}
 
 
 @api.get("/health")
@@ -1123,6 +1301,8 @@ async def on_startup():
     await db.login_attempts.create_index("identifier")
     await db.consent_decisions.create_index([("account_id", 1), ("context_id", 1)])
     await db.organisations.create_index("id", unique=True)
+    await db.documents.create_index([("context_id", 1), ("created_at", -1)])
+    await db.documents.create_index("id", unique=True)
 
     # Admin seed
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@akki.ai").lower()
