@@ -417,8 +417,9 @@ async def register(body: RegisterIn, response: Response):
 @api.post("/auth/login")
 async def login(body: LoginIn, request: Request, response: Response):
     email = body.email.lower().strip()
-    ip = request.client.host if request.client else "unknown"
-    ident = f"{ip}:{email}"
+    # Key rate-limit on email only. `request.client.host` is the ingress proxy in
+    # our deploy and is not stable enough to use as part of the identifier.
+    ident = email
 
     attempts_doc = await db.login_attempts.find_one({"identifier": ident}, {"_id": 0})
     if attempts_doc and attempts_doc.get("locked_until"):
