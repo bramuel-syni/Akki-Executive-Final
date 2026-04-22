@@ -48,7 +48,7 @@ from motor.motor_asyncio import AsyncIOMotorClient  # noqa: E402
 from pydantic import BaseModel, EmailStr, Field  # noqa: E402
 from starlette.middleware.cors import CORSMiddleware  # noqa: E402
 
-from llm_service import call_llm as llm_call_llm  # noqa: E402
+from llm_service import call_llm as llm_call_llm, parse_json_response  # noqa: E402
 from documents_service import (  # noqa: E402
     ACCEPT_EXT, MAX_BYTES, virus_scan_stub, save_to_storage, read_from_storage,
     delete_from_storage, extract_text, make_preview,
@@ -1218,6 +1218,231 @@ async def download_document(
     )
 
 
+# -----------------------------------------------------------------------------
+# Highlights (M5) — signal generation grounded in uploaded documents
+# Ask (M5) — simple grounded Q&A
+# -----------------------------------------------------------------------------
+MAX_DOC_CHARS_PER_PROMPT = 40_000
+MAX_DOCS_PER_PROMPT = 10
+
+
+async def _gather_context_object(context_id: str) -> Optional[Dict[str, Any]]:
+    return await db.context_objects.find_one(
+        {"context_id": context_id, "completed": True},
+        {"_id": 0}, sort=[("version", -1)],
+    )
+
+
+async def _gather_documents_for_grounding(context_id: str) -> List[Dict[str, Any]]:
+    docs = await db.documents.find(
+        {"context_id": context_id, "status": {"$in": ["extracted"]}},
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(MAX_DOCS_PER_PROMPT)
+    return docs
+
+
+def _docs_as_grounding_block(docs: List[Dict[str, Any]]) -> str:
+    budget = MAX_DOC_CHARS_PER_PROMPT
+    parts: List[str] = []
+    for d in docs:
+        if budget <= 500:
+            break
+        text = (d.get("extracted_text") or "")[: max(800, budget // max(1, len(docs)))]
+        trust = d.get("data_trust", "mixed")
+        parts.append(
+            f"----\n[doc:{d['id']}] name: {d.get('name')} · trust: {trust}\n{text}\n"
+        )
+        budget -= len(text) + 200
+    if not parts:
+        return "[No extracted documents in this context yet.]"
+    return "\n".join(parts)
+
+
+def _docs_overall_trust(docs: List[Dict[str, Any]]) -> str:
+    if not docs:
+        return "unrated"
+    buckets = [d.get("data_trust", "mixed") for d in docs]
+    if "weak" in buckets:
+        return "weak"
+    if all(b == "trusted" for b in buckets):
+        return "trusted"
+    return "mixed"
+
+
+class SignalGenerateIn(BaseModel):
+    focus: Optional[str] = None
+
+
+@api.post("/contexts/{context_id}/signals/generate")
+async def generate_signals(
+    body: SignalGenerateIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    context_id = ctx["context"]["id"]
+    ctx_obj = await _gather_context_object(context_id)
+    docs = await _gather_documents_for_grounding(context_id)
+    if not docs:
+        raise HTTPException(
+            status_code=400,
+            detail="Upload at least one document to this context before generating signals.",
+        )
+
+    grounding = _docs_as_grounding_block(docs)
+    focus_line = f"User focus: {body.focus}\n\n" if body.focus else ""
+    user_query = (
+        "Generate 3-6 signals (risks, opportunities, or gaps) that a board "
+        "member or executive should notice, grounded strictly in the documents below. "
+        "Every signal MUST cite the doc_ids it came from using [doc:<id>] format.\n\n"
+        f"{focus_line}"
+        f"=== DOCUMENTS ===\n{grounding}\n\n"
+        'Return JSON with shape: {"signals":[{"type":"risk|opportunity|gap",'
+        '"headline":"...","summary":"2-4 sentences","confidence":"high|medium|low",'
+        '"doc_ids":["..."]}]}'
+    )
+
+    llm_out = await llm_call_llm(
+        module="highlights",
+        user_query=user_query,
+        context_object=ctx_obj,
+        session_context={"session_id": f"signals-{context_id}"},
+        data_trust={"overall": _docs_overall_trust(docs)},
+        response_format="json",
+    )
+    parsed = parse_json_response(llm_out.get("response", ""))
+    signals_raw = (parsed or {}).get("signals") if isinstance(parsed, dict) else None
+    if not isinstance(signals_raw, list):
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM did not return a valid signals list. Mode={llm_out.get('mode')}. Raw: {llm_out.get('response', '')[:500]}",
+        )
+
+    doc_by_id = {d["id"]: d for d in docs}
+    now = _iso(_now())
+    stored: List[Dict[str, Any]] = []
+    for s in signals_raw[:8]:
+        sig_id = str(uuid.uuid4())
+        doc_ids = [x for x in (s.get("doc_ids") or []) if x in doc_by_id]
+        sources = [
+            {"doc_id": d_id, "doc_name": doc_by_id[d_id]["name"], "data_trust": doc_by_id[d_id].get("data_trust", "mixed")}
+            for d_id in doc_ids
+        ]
+        doc = {
+            "id": sig_id, "context_id": context_id,
+            "type": s.get("type") if s.get("type") in ("risk", "opportunity", "gap") else "risk",
+            "headline": (s.get("headline") or "Unnamed signal")[:240],
+            "summary": (s.get("summary") or "")[:2000],
+            "confidence": s.get("confidence") if s.get("confidence") in ("high", "medium", "low") else "medium",
+            "sources": sources,
+            "data_trust": _docs_overall_trust([doc_by_id[i] for i in doc_ids]) if doc_ids else "unrated",
+            "generated_by": ctx["account"]["id"],
+            "focus": body.focus,
+            "shielding_masked": llm_out.get("shielding", {}).get("identifiers_masked", 0),
+            "mode": llm_out.get("mode"),
+            "created_at": now, "status": "active",
+        }
+        await db.signals.insert_one(doc)
+        doc.pop("_id", None)
+        stored.append(doc)
+
+    await write_audit(
+        context_id, ctx["account"]["id"], "signals.generated", "signal", None,
+        {"count": len(stored), "mode": llm_out.get("mode")},
+    )
+    return {"signals": stored, "mode": llm_out.get("mode")}
+
+
+@api.get("/contexts/{context_id}/signals")
+async def list_signals(
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+    limit: int = 100,
+):
+    sigs = await db.signals.find(
+        {"context_id": ctx["context"]["id"], "status": "active"}, {"_id": 0}
+    ).sort("created_at", -1).to_list(min(limit, 500))
+    return sigs
+
+
+@api.delete("/contexts/{context_id}/signals/{signal_id}")
+async def dismiss_signal(
+    context_id: str, signal_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    await db.signals.update_one(
+        {"id": signal_id, "context_id": context_id},
+        {"$set": {"status": "dismissed", "dismissed_at": _iso(_now())}},
+    )
+    await write_audit(context_id, ctx["account"]["id"], "signal.dismissed", "signal", signal_id, {})
+    return {"ok": True}
+
+
+class AskIn(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+
+
+@api.post("/contexts/{context_id}/ask")
+async def ask(
+    body: AskIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    context_id = ctx["context"]["id"]
+    ctx_obj = await _gather_context_object(context_id)
+    docs = await _gather_documents_for_grounding(context_id)
+    grounding = _docs_as_grounding_block(docs)
+
+    user_query = (
+        f"Question: {body.question}\n\n"
+        "Answer grounded ONLY in the documents below. Cite sources inline as [doc:<id>]. "
+        "If the documents do not contain the answer, say so explicitly — do not fabricate.\n\n"
+        f"=== DOCUMENTS ===\n{grounding}"
+    )
+    llm_out = await llm_call_llm(
+        module="ask",
+        user_query=user_query,
+        context_object=ctx_obj,
+        session_context={"session_id": f"ask-{context_id}"},
+        data_trust={"overall": _docs_overall_trust(docs)},
+    )
+
+    import re as _re
+    cited_ids = list({m.group(1) for m in _re.finditer(r"\[doc:([a-f0-9-]+)\]", llm_out.get("response", ""))})
+    doc_by_id = {d["id"]: d for d in docs}
+    sources = [
+        {"doc_id": d_id, "doc_name": doc_by_id[d_id]["name"], "data_trust": doc_by_id[d_id].get("data_trust", "mixed")}
+        for d_id in cited_ids if d_id in doc_by_id
+    ]
+
+    record = {
+        "id": str(uuid.uuid4()),
+        "context_id": context_id,
+        "question": body.question,
+        "answer": llm_out.get("response", ""),
+        "sources": sources,
+        "mode": llm_out.get("mode"),
+        "shielding_masked": llm_out.get("shielding", {}).get("identifiers_masked", 0),
+        "asked_by": ctx["account"]["id"],
+        "asked_by_email": ctx["account"]["email"],
+        "created_at": _iso(_now()),
+    }
+    await db.ask_messages.insert_one(record)
+    record.pop("_id", None)
+    await write_audit(context_id, ctx["account"]["id"], "ask.asked", "ask", record["id"],
+                      {"q_chars": len(body.question), "a_chars": len(record["answer"])})
+    return record
+
+
+@api.get("/contexts/{context_id}/ask")
+async def list_ask_history(
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+    limit: int = 50,
+):
+    msgs = await db.ask_messages.find(
+        {"context_id": ctx["context"]["id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(min(limit, 200))
+    return msgs
+
+
+
+
 
 @api.post("/contexts/{context_id}/llm/probe")
 async def llm_probe(
@@ -1225,6 +1450,8 @@ async def llm_probe(
     body: LLMProbeIn,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
+    # Also put llm_call_llm back onto the insert below — the probe still works
+    # llm_call_llm imported above; place this comment to silence linter
     out = await llm_call_llm(
         module=body.module,
         user_query=body.query,
@@ -1271,7 +1498,7 @@ async def record_event(
 # -----------------------------------------------------------------------------
 @api.get("/")
 async def root():
-    return {"app": APP_NAME, "status": "ok", "module": "M3", "brd_version": "3.0"}
+    return {"app": APP_NAME, "status": "ok", "module": "M5", "brd_version": "3.0"}
 
 
 @api.get("/health")
@@ -1303,6 +1530,9 @@ async def on_startup():
     await db.organisations.create_index("id", unique=True)
     await db.documents.create_index([("context_id", 1), ("created_at", -1)])
     await db.documents.create_index("id", unique=True)
+    await db.signals.create_index([("context_id", 1), ("created_at", -1)])
+    await db.signals.create_index("id", unique=True)
+    await db.ask_messages.create_index([("context_id", 1), ("created_at", -1)])
 
     # Admin seed
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@akki.ai").lower()
