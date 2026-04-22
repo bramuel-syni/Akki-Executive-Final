@@ -1,89 +1,988 @@
-from fastapi import FastAPI, APIRouter
-from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
-import logging
-from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
-import uuid
-from datetime import datetime, timezone
+"""AKKI Sandbox — M0 Foundations backend (v3.0 BRD).
 
+Implements account + context (NED/Executive) model with:
+  - JWT auth (bcrypt) + MFA TOTP
+  - Context-primary isolation (not tenant-primary)
+  - Accounts with declared_role (ned / executive / dual / undeclared)
+  - Organisations (for sponsored seats)
+  - Memberships with role + data_ownership + provisioning
+  - Consent decisions (stub collection, immutable)
+  - Invitations (context-scoped)
+  - Audit log, telemetry events, data export
+  - LLM proxy scaffolding (mock, with Synisense shielding contract)
+"""
+from __future__ import annotations
+
+from dotenv import load_dotenv
+from pathlib import Path
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / ".env")
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+import io  # noqa: E402
+import json  # noqa: E402
+import logging  # noqa: E402
+import os  # noqa: E402
+import secrets  # noqa: E402
+import uuid  # noqa: E402
+from datetime import datetime, timedelta, timezone  # noqa: E402
+from typing import Any, Dict, List, Literal, Optional  # noqa: E402
 
-# Create the main app without a prefix
-app = FastAPI()
+import bcrypt  # noqa: E402
+import jwt  # noqa: E402
+import pyotp  # noqa: E402
+import qrcode  # noqa: E402
+from fastapi import (  # noqa: E402
+    APIRouter,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Request,
+    Response,
+)
+from fastapi.responses import StreamingResponse  # noqa: E402
+from motor.motor_asyncio import AsyncIOMotorClient  # noqa: E402
+from pydantic import BaseModel, EmailStr, Field  # noqa: E402
+from starlette.middleware.cors import CORSMiddleware  # noqa: E402
 
-# Create a router with the /api prefix
-api_router = APIRouter(prefix="/api")
+from llm_service import call_llm as llm_call_llm  # noqa: E402
+
+# -----------------------------------------------------------------------------
+# Config
+# -----------------------------------------------------------------------------
+MONGO_URL = os.environ["MONGO_URL"]
+DB_NAME = os.environ["DB_NAME"]
+JWT_SECRET = os.environ["JWT_SECRET"]
+JWT_ALGO = "HS256"
+ACCESS_TOKEN_TTL_MIN = 60 * 8  # 8h executive session
+REFRESH_TOKEN_TTL_DAYS = 7
+APP_NAME = os.environ.get("APP_NAME", "AKKI Sandbox")
+
+client = AsyncIOMotorClient(MONGO_URL)
+db = client[DB_NAME]
+
+logger = logging.getLogger("akki")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+# -----------------------------------------------------------------------------
+# Types
+# -----------------------------------------------------------------------------
+AccountRole = Literal["ned", "executive", "dual", "undeclared"]
+ContextType = Literal[
+    "ned_personal", "ned_sponsored", "executive_personal", "executive_enterprise"
+]
+MembershipRole = Literal["ned", "executive", "reportee"]
+DataOwnership = Literal["account", "organisation"]
+Provisioning = Literal["personal", "sponsored"]
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
 
-# Add your routes to the router instead of directly to app
-@api_router.get("/")
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _iso(d: datetime) -> str:
+    return d.isoformat()
+
+
+def hash_password(pw: str) -> str:
+    return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+
+
+def verify_password(pw: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(pw.encode(), hashed.encode())
+    except Exception:
+        return False
+
+
+def create_access_token(account_id: str, email: str) -> str:
+    payload = {
+        "sub": account_id,
+        "email": email,
+        "type": "access",
+        "exp": _now() + timedelta(minutes=ACCESS_TOKEN_TTL_MIN),
+        "iat": _now(),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
+
+
+def create_refresh_token(account_id: str) -> str:
+    payload = {
+        "sub": account_id,
+        "type": "refresh",
+        "exp": _now() + timedelta(days=REFRESH_TOKEN_TTL_DAYS),
+        "iat": _now(),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
+
+
+def set_auth_cookies(response: Response, access: str, refresh: str) -> None:
+    response.set_cookie(
+        "access_token", access, httponly=True, secure=True, samesite="none",
+        max_age=ACCESS_TOKEN_TTL_MIN * 60, path="/",
+    )
+    response.set_cookie(
+        "refresh_token", refresh, httponly=True, secure=True, samesite="none",
+        max_age=REFRESH_TOKEN_TTL_DAYS * 86400, path="/",
+    )
+
+
+def clear_auth_cookies(response: Response) -> None:
+    response.delete_cookie("access_token", path="/")
+    response.delete_cookie("refresh_token", path="/")
+
+
+def sanitize_account(a: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": a["id"],
+        "email": a["email"],
+        "name": a.get("name", ""),
+        "declared_role": a.get("declared_role", "undeclared"),
+        "mfa_enabled": bool(a.get("mfa_enabled", False)),
+        "default_context_id": a.get("default_context_id"),
+        "created_at": a.get("created_at"),
+    }
+
+
+def sanitize_context(c: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": c["id"],
+        "name": c["name"],
+        "type": c.get("type", "executive_personal"),
+        "industry": c.get("industry"),
+        "jurisdiction": c.get("jurisdiction"),
+        "sector": c.get("sector"),
+        "sponsoring_org_id": c.get("sponsoring_org_id"),
+        "owner_account_id": c.get("owner_account_id"),
+        "status": c.get("status", "active"),
+        "progress_state": c.get("progress_state", {"onboarding_step": 0}),
+        "created_at": c.get("created_at"),
+    }
+
+
+async def write_audit(
+    context_id: Optional[str],
+    account_id: Optional[str],
+    action: str,
+    resource_type: str,
+    resource_id: Optional[str],
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    await db.audit_log.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "context_id": context_id,
+            "account_id": account_id,
+            "action": action,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "metadata": metadata or {},
+            "created_at": _iso(_now()),
+        }
+    )
+
+
+# -----------------------------------------------------------------------------
+# Auth dependencies
+# -----------------------------------------------------------------------------
+async def get_current_account(request: Request) -> Dict[str, Any]:
+    token = request.cookies.get("access_token")
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+    account = await db.accounts.find_one({"id": payload["sub"]}, {"_id": 0})
+    if not account:
+        raise HTTPException(status_code=401, detail="Account not found")
+    return account
+
+
+def require_context_membership(owner_only: bool = False):
+    """Dependency: validates current account has active membership in context_id."""
+    async def _dep(
+        context_id: str,
+        current: Dict[str, Any] = Depends(get_current_account),
+    ) -> Dict[str, Any]:
+        ctx = await db.contexts.find_one({"id": context_id}, {"_id": 0})
+        if not ctx:
+            raise HTTPException(status_code=404, detail="Context not found")
+        membership = await db.memberships.find_one(
+            {"context_id": context_id, "account_id": current["id"], "status": "active"},
+            {"_id": 0},
+        )
+        if not membership:
+            raise HTTPException(status_code=403, detail="Not a member of this context")
+        # owner_only means: account is the context owner (for personal)
+        # or an 'admin' membership (for sponsored/enterprise — stubbed as role=executive sub_role=admin)
+        if owner_only:
+            is_owner = ctx.get("owner_account_id") == current["id"]
+            if not is_owner and membership.get("sub_role") != "admin":
+                raise HTTPException(status_code=403, detail="Owner privilege required")
+        return {"account": current, "context": ctx, "membership": membership}
+
+    return _dep
+
+
+# -----------------------------------------------------------------------------
+# Pydantic schemas
+# -----------------------------------------------------------------------------
+class RegisterIn(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    name: str = Field(min_length=1, max_length=120)
+    context_name: Optional[str] = Field(default=None, max_length=120)
+
+
+class LoginIn(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class ContextCreateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    type: ContextType = "executive_personal"
+    industry: Optional[str] = None
+    jurisdiction: Optional[str] = None
+    sector: Optional[str] = None
+
+
+class ContextRenameIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class DeclareRoleIn(BaseModel):
+    declared_role: AccountRole
+
+
+class InvitationIn(BaseModel):
+    email: EmailStr
+    role: MembershipRole = "executive"
+    sub_role: Optional[str] = None
+
+
+class MFAVerifyIn(BaseModel):
+    code: str = Field(min_length=6, max_length=6)
+
+
+class LLMProbeIn(BaseModel):
+    module: str
+    query: str
+
+
+class TelemetryEventIn(BaseModel):
+    event_name: str
+    event_version: str = "1.0"
+    context_id: Optional[str] = None
+    session_id: Optional[str] = None
+    surface: Optional[str] = None  # home / workspace / highlights / ask / learn / settings
+    properties: Dict[str, Any] = Field(default_factory=dict)
+
+
+# -----------------------------------------------------------------------------
+# App & router
+# -----------------------------------------------------------------------------
+app = FastAPI(title=APP_NAME)
+api = APIRouter(prefix="/api")
+
+
+# -----------------------------------------------------------------------------
+# Context provisioning
+# -----------------------------------------------------------------------------
+async def provision_default_context(account: Dict[str, Any], name: str) -> Dict[str, Any]:
+    """Create the account's first personal context (executive_personal by default)."""
+    ctx_id = str(uuid.uuid4())
+    now = _iso(_now())
+    ctx_type: ContextType = "executive_personal"  # refined at onboarding (M2)
+    ctx_doc = {
+        "id": ctx_id,
+        "name": name,
+        "type": ctx_type,
+        "industry": None,
+        "jurisdiction": None,
+        "sector": None,
+        "sponsoring_org_id": None,
+        "owner_account_id": account["id"],
+        "status": "active",
+        "progress_state": {"onboarding_step": 0},
+        "created_at": now,
+    }
+    await db.contexts.insert_one(ctx_doc)
+    await db.memberships.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "account_id": account["id"],
+            "context_id": ctx_id,
+            "role": "executive",  # refined at onboarding
+            "sub_role": "admin",
+            "provisioning": "personal",
+            "data_ownership": "account",
+            "status": "active",
+            "created_at": now,
+        }
+    )
+    await db.accounts.update_one(
+        {"id": account["id"]}, {"$set": {"default_context_id": ctx_id}}
+    )
+    await write_audit(ctx_id, account["id"], "context.created", "context", ctx_id, {"name": name})
+    return ctx_doc
+
+
+# -----------------------------------------------------------------------------
+# Auth endpoints
+# -----------------------------------------------------------------------------
+@api.post("/auth/register")
+async def register(body: RegisterIn, response: Response):
+    email = body.email.lower().strip()
+    existing = await db.accounts.find_one({"email": email}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    account_id = str(uuid.uuid4())
+    now = _iso(_now())
+    account_doc = {
+        "id": account_id,
+        "email": email,
+        "name": body.name.strip(),
+        "declared_role": "undeclared",
+        "password_hash": hash_password(body.password),
+        "mfa_enabled": False,
+        "mfa_secret": None,
+        "default_context_id": None,
+        "created_at": now,
+    }
+    await db.accounts.insert_one(account_doc)
+
+    context_name = (body.context_name or f"{body.name.split()[0]}'s Context").strip()
+    ctx = await provision_default_context(account_doc, context_name)
+
+    access = create_access_token(account_id, email)
+    refresh = create_refresh_token(account_id)
+    set_auth_cookies(response, access, refresh)
+
+    refreshed = await db.accounts.find_one({"id": account_id}, {"_id": 0})
+    return {
+        "account": sanitize_account(refreshed),
+        "contexts": [sanitize_context(ctx)],
+        "access_token": access,
+    }
+
+
+@api.post("/auth/login")
+async def login(body: LoginIn, request: Request, response: Response):
+    email = body.email.lower().strip()
+    ip = request.client.host if request.client else "unknown"
+    ident = f"{ip}:{email}"
+
+    attempts_doc = await db.login_attempts.find_one({"identifier": ident}, {"_id": 0})
+    if attempts_doc and attempts_doc.get("locked_until"):
+        locked_until = datetime.fromisoformat(attempts_doc["locked_until"])
+        if locked_until > _now():
+            raise HTTPException(status_code=429, detail="Too many failed attempts. Try again shortly.")
+
+    account = await db.accounts.find_one({"email": email}, {"_id": 0})
+    if not account or not verify_password(body.password, account["password_hash"]):
+        count = (attempts_doc or {}).get("count", 0) + 1
+        update: Dict[str, Any] = {"identifier": ident, "count": count, "last_at": _iso(_now())}
+        if count >= 5:
+            update["locked_until"] = _iso(_now() + timedelta(minutes=15))
+            update["count"] = 0
+        await db.login_attempts.update_one({"identifier": ident}, {"$set": update}, upsert=True)
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    await db.login_attempts.delete_one({"identifier": ident})
+
+    access = create_access_token(account["id"], email)
+    refresh = create_refresh_token(account["id"])
+    set_auth_cookies(response, access, refresh)
+
+    memberships = await db.memberships.find(
+        {"account_id": account["id"], "status": "active"}, {"_id": 0}
+    ).to_list(200)
+    context_ids = [m["context_id"] for m in memberships]
+    contexts = await db.contexts.find({"id": {"$in": context_ids}}, {"_id": 0}).to_list(200)
+
+    return {
+        "account": sanitize_account(account),
+        "contexts": [sanitize_context(c) for c in contexts],
+        "access_token": access,
+    }
+
+
+@api.post("/auth/logout")
+async def logout(response: Response, _: Dict[str, Any] = Depends(get_current_account)):
+    clear_auth_cookies(response)
+    return {"ok": True}
+
+
+@api.post("/auth/refresh")
+async def refresh_token(request: Request, response: Response):
+    token = request.cookies.get("refresh_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="No refresh token")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+    account = await db.accounts.find_one({"id": payload["sub"]}, {"_id": 0})
+    if not account:
+        raise HTTPException(status_code=401, detail="Account not found")
+    new_access = create_access_token(account["id"], account["email"])
+    new_refresh = create_refresh_token(account["id"])
+    set_auth_cookies(response, new_access, new_refresh)
+    return {"ok": True}
+
+
+@api.get("/auth/me")
+async def me(current: Dict[str, Any] = Depends(get_current_account)):
+    memberships = await db.memberships.find(
+        {"account_id": current["id"], "status": "active"}, {"_id": 0}
+    ).to_list(200)
+    context_ids = [m["context_id"] for m in memberships]
+    contexts = await db.contexts.find({"id": {"$in": context_ids}}, {"_id": 0}).to_list(200)
+    mem_by_ctx = {m["context_id"]: m for m in memberships}
+    decorated: List[Dict[str, Any]] = []
+    for c in contexts:
+        d = sanitize_context(c)
+        m = mem_by_ctx.get(c["id"], {})
+        d["my_role"] = m.get("role")
+        d["my_sub_role"] = m.get("sub_role")
+        d["provisioning"] = m.get("provisioning", "personal")
+        d["data_ownership"] = m.get("data_ownership", "account")
+        decorated.append(d)
+    return {"account": sanitize_account(current), "contexts": decorated}
+
+
+@api.post("/auth/declare-role")
+async def declare_role(
+    body: DeclareRoleIn, current: Dict[str, Any] = Depends(get_current_account)
+):
+    """Account-level role declaration (NED / Executive / Dual). Refined during M2 onboarding."""
+    await db.accounts.update_one(
+        {"id": current["id"]}, {"$set": {"declared_role": body.declared_role}}
+    )
+    await write_audit(None, current["id"], "account.role_declared", "account", current["id"],
+                      {"declared_role": body.declared_role})
+    refreshed = await db.accounts.find_one({"id": current["id"]}, {"_id": 0})
+    return {"account": sanitize_account(refreshed)}
+
+
+# -----------------------------------------------------------------------------
+# MFA (TOTP)
+# -----------------------------------------------------------------------------
+@api.post("/auth/mfa/setup")
+async def mfa_setup(current: Dict[str, Any] = Depends(get_current_account)):
+    secret = pyotp.random_base32()
+    otpauth = pyotp.totp.TOTP(secret).provisioning_uri(
+        name=current["email"], issuer_name=APP_NAME
+    )
+    await db.accounts.update_one(
+        {"id": current["id"]}, {"$set": {"mfa_secret_pending": secret}}
+    )
+    img = qrcode.make(otpauth)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    import base64
+    data_url = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    return {"otpauth_url": otpauth, "qr_data_url": data_url, "secret": secret}
+
+
+@api.post("/auth/mfa/verify")
+async def mfa_verify(body: MFAVerifyIn, current: Dict[str, Any] = Depends(get_current_account)):
+    pending = current.get("mfa_secret_pending")
+    if not pending:
+        raise HTTPException(status_code=400, detail="No MFA setup in progress")
+    totp = pyotp.TOTP(pending)
+    if not totp.verify(body.code, valid_window=1):
+        raise HTTPException(status_code=400, detail="Invalid code")
+    await db.accounts.update_one(
+        {"id": current["id"]},
+        {"$set": {"mfa_enabled": True, "mfa_secret": pending}, "$unset": {"mfa_secret_pending": ""}},
+    )
+    return {"ok": True, "mfa_enabled": True}
+
+
+@api.post("/auth/mfa/disable")
+async def mfa_disable(current: Dict[str, Any] = Depends(get_current_account)):
+    await db.accounts.update_one(
+        {"id": current["id"]},
+        {"$set": {"mfa_enabled": False}, "$unset": {"mfa_secret": "", "mfa_secret_pending": ""}},
+    )
+    return {"ok": True, "mfa_enabled": False}
+
+
+# -----------------------------------------------------------------------------
+# Contexts
+# -----------------------------------------------------------------------------
+@api.post("/contexts")
+async def create_context(body: ContextCreateIn, current: Dict[str, Any] = Depends(get_current_account)):
+    ctx_id = str(uuid.uuid4())
+    now = _iso(_now())
+    ctx_doc = {
+        "id": ctx_id,
+        "name": body.name.strip(),
+        "type": body.type,
+        "industry": body.industry,
+        "jurisdiction": body.jurisdiction,
+        "sector": body.sector,
+        "sponsoring_org_id": None,
+        "owner_account_id": current["id"],
+        "status": "active",
+        "progress_state": {"onboarding_step": 0},
+        "created_at": now,
+    }
+    await db.contexts.insert_one(ctx_doc)
+    # Derive membership role from context type
+    role: MembershipRole = "ned" if body.type.startswith("ned") else "executive"
+    await db.memberships.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "account_id": current["id"],
+            "context_id": ctx_id,
+            "role": role,
+            "sub_role": "admin",
+            "provisioning": "personal",
+            "data_ownership": "account",
+            "status": "active",
+            "created_at": now,
+        }
+    )
+    await write_audit(ctx_id, current["id"], "context.created", "context", ctx_id, {"name": body.name, "type": body.type})
+    return sanitize_context(ctx_doc)
+
+
+@api.get("/contexts/{context_id}")
+async def get_context(ctx: Dict[str, Any] = Depends(require_context_membership())):
+    out = sanitize_context(ctx["context"])
+    out["my_role"] = ctx["membership"].get("role")
+    out["my_sub_role"] = ctx["membership"].get("sub_role")
+    out["provisioning"] = ctx["membership"].get("provisioning")
+    out["data_ownership"] = ctx["membership"].get("data_ownership")
+    return out
+
+
+@api.patch("/contexts/{context_id}")
+async def rename_context(
+    context_id: str,
+    body: ContextRenameIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership(owner_only=True)),
+):
+    await db.contexts.update_one({"id": context_id}, {"$set": {"name": body.name.strip()}})
+    await write_audit(context_id, ctx["account"]["id"], "context.renamed", "context", context_id, {"to": body.name})
+    c = await db.contexts.find_one({"id": context_id}, {"_id": 0})
+    return sanitize_context(c)
+
+
+@api.delete("/contexts/{context_id}")
+async def archive_context(
+    context_id: str, ctx: Dict[str, Any] = Depends(require_context_membership(owner_only=True))
+):
+    await db.contexts.update_one({"id": context_id}, {"$set": {"status": "archived", "archived_at": _iso(_now())}})
+    await write_audit(context_id, ctx["account"]["id"], "context.archived", "context", context_id, {})
+    return {"ok": True, "status": "archived"}
+
+
+# -----------------------------------------------------------------------------
+# Members
+# -----------------------------------------------------------------------------
+@api.get("/contexts/{context_id}/members")
+async def list_members(ctx: Dict[str, Any] = Depends(require_context_membership())):
+    context_id = ctx["context"]["id"]
+    memberships = await db.memberships.find(
+        {"context_id": context_id, "status": "active"}, {"_id": 0}
+    ).to_list(500)
+    account_ids = [m["account_id"] for m in memberships]
+    accounts = await db.accounts.find({"id": {"$in": account_ids}}, {"_id": 0}).to_list(500)
+    by_id = {a["id"]: a for a in accounts}
+    out = []
+    for m in memberships:
+        a = by_id.get(m["account_id"])
+        if not a:
+            continue
+        out.append(
+            {
+                "account_id": a["id"],
+                "email": a["email"],
+                "name": a.get("name", ""),
+                "role": m["role"],
+                "sub_role": m.get("sub_role"),
+                "provisioning": m.get("provisioning", "personal"),
+                "joined_at": m.get("created_at"),
+            }
+        )
+    return out
+
+
+@api.delete("/contexts/{context_id}/members/{account_id}")
+async def remove_member(
+    context_id: str,
+    account_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership(owner_only=True)),
+):
+    if account_id == ctx["context"]["owner_account_id"]:
+        raise HTTPException(status_code=400, detail="Cannot remove the context owner")
+    res = await db.memberships.update_one(
+        {"context_id": context_id, "account_id": account_id, "status": "active"},
+        {"$set": {"status": "removed", "removed_at": _iso(_now())}},
+    )
+    if res.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Member not found")
+    await write_audit(context_id, ctx["account"]["id"], "member.removed", "account", account_id, {})
+    return {"ok": True}
+
+
+# -----------------------------------------------------------------------------
+# Invitations (context-scoped)
+# -----------------------------------------------------------------------------
+@api.post("/contexts/{context_id}/invitations")
+async def create_invitation(
+    context_id: str,
+    body: InvitationIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership(owner_only=True)),
+):
+    email = body.email.lower().strip()
+    existing_acc = await db.accounts.find_one({"email": email}, {"_id": 0})
+    if existing_acc:
+        existing_mem = await db.memberships.find_one(
+            {"context_id": context_id, "account_id": existing_acc["id"], "status": "active"}
+        )
+        if existing_mem:
+            raise HTTPException(status_code=409, detail="Account is already a member")
+    existing_inv = await db.invitations.find_one(
+        {"context_id": context_id, "email": email, "status": "pending"}
+    )
+    if existing_inv:
+        raise HTTPException(status_code=409, detail="Invitation already pending for this email")
+
+    token = secrets.token_urlsafe(32)
+    inv = {
+        "id": str(uuid.uuid4()),
+        "context_id": context_id,
+        "email": email,
+        "role": body.role,
+        "sub_role": body.sub_role,
+        "token": token,
+        "status": "pending",
+        "invited_by": ctx["account"]["id"],
+        "created_at": _iso(_now()),
+        "expires_at": _iso(_now() + timedelta(days=7)),
+    }
+    await db.invitations.insert_one(inv)
+
+    frontend_url = os.environ.get("FRONTEND_URL", "").rstrip("/")
+    accept_url = f"{frontend_url}/invite/{token}" if frontend_url else f"/invite/{token}"
+    logger.info(f"[invite-email-stub] to={email} context={ctx['context']['name']} link={accept_url}")
+
+    await write_audit(
+        context_id, ctx["account"]["id"], "member.invited", "invitation", inv["id"],
+        {"email": email, "role": body.role},
+    )
+    return {
+        "id": inv["id"],
+        "email": email,
+        "role": body.role,
+        "status": "pending",
+        "accept_url": accept_url,
+        "expires_at": inv["expires_at"],
+        "created_at": inv["created_at"],
+    }
+
+
+@api.get("/contexts/{context_id}/invitations")
+async def list_invitations(ctx: Dict[str, Any] = Depends(require_context_membership())):
+    invs = await db.invitations.find(
+        {"context_id": ctx["context"]["id"], "status": "pending"}, {"_id": 0, "token": 0}
+    ).to_list(200)
+    return invs
+
+
+@api.delete("/contexts/{context_id}/invitations/{invitation_id}")
+async def revoke_invitation(
+    context_id: str,
+    invitation_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership(owner_only=True)),
+):
+    res = await db.invitations.update_one(
+        {"id": invitation_id, "context_id": context_id, "status": "pending"},
+        {"$set": {"status": "revoked", "revoked_at": _iso(_now())}},
+    )
+    if res.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+    await write_audit(context_id, ctx["account"]["id"], "invitation.revoked", "invitation", invitation_id, {})
+    return {"ok": True}
+
+
+@api.get("/invitations/by-token/{token}")
+async def preview_invitation(token: str):
+    inv = await db.invitations.find_one({"token": token, "status": "pending"}, {"_id": 0})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invitation not found or no longer valid")
+    if inv.get("expires_at") and datetime.fromisoformat(inv["expires_at"]) < _now():
+        raise HTTPException(status_code=410, detail="Invitation expired")
+    ctx = await db.contexts.find_one({"id": inv["context_id"]}, {"_id": 0})
+    return {
+        "email": inv["email"],
+        "role": inv["role"],
+        "context_name": ctx["name"] if ctx else "Context",
+        "context_type": ctx.get("type") if ctx else None,
+    }
+
+
+@api.post("/invitations/{token}/accept")
+async def accept_invitation(
+    token: str, current: Dict[str, Any] = Depends(get_current_account)
+):
+    inv = await db.invitations.find_one({"token": token, "status": "pending"}, {"_id": 0})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invitation not valid")
+    if inv.get("expires_at") and datetime.fromisoformat(inv["expires_at"]) < _now():
+        raise HTTPException(status_code=410, detail="Invitation expired")
+    if current["email"].lower() != inv["email"].lower():
+        raise HTTPException(
+            status_code=403,
+            detail=f"This invitation was sent to {inv['email']}. Sign in with that email to accept.",
+        )
+    existing = await db.memberships.find_one(
+        {"context_id": inv["context_id"], "account_id": current["id"], "status": "active"}
+    )
+    if not existing:
+        await db.memberships.insert_one(
+            {
+                "id": str(uuid.uuid4()),
+                "account_id": current["id"],
+                "context_id": inv["context_id"],
+                "role": inv["role"],
+                "sub_role": inv.get("sub_role"),
+                "provisioning": "personal",  # sponsored flow handled in M4 with consent
+                "data_ownership": "account",
+                "status": "active",
+                "created_at": _iso(_now()),
+            }
+        )
+    await db.invitations.update_one(
+        {"id": inv["id"]}, {"$set": {"status": "accepted", "accepted_at": _iso(_now())}}
+    )
+    await write_audit(
+        inv["context_id"], current["id"], "member.joined", "account", current["id"],
+        {"role": inv["role"]},
+    )
+    ctx = await db.contexts.find_one({"id": inv["context_id"]}, {"_id": 0})
+    return {"ok": True, "context": sanitize_context(ctx)}
+
+
+# -----------------------------------------------------------------------------
+# Audit log & export
+# -----------------------------------------------------------------------------
+@api.get("/contexts/{context_id}/audit-log")
+async def get_audit_log(
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+    limit: int = 100,
+):
+    entries = await db.audit_log.find(
+        {"context_id": ctx["context"]["id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(min(limit, 500))
+    account_ids = list({e["account_id"] for e in entries if e.get("account_id")})
+    accounts = await db.accounts.find({"id": {"$in": account_ids}}, {"_id": 0}).to_list(500) if account_ids else []
+    by_id = {a["id"]: a for a in accounts}
+    for e in entries:
+        a = by_id.get(e.get("account_id") or "")
+        e["actor_email"] = a["email"] if a else None
+        e["actor_name"] = a.get("name") if a else None
+    return entries
+
+
+@api.post("/contexts/{context_id}/export")
+async def export_context(ctx: Dict[str, Any] = Depends(require_context_membership(owner_only=True))):
+    context_id = ctx["context"]["id"]
+    contexts = await db.contexts.find({"id": context_id}, {"_id": 0}).to_list(1)
+    memberships = await db.memberships.find({"context_id": context_id}, {"_id": 0}).to_list(1000)
+    account_ids = [m["account_id"] for m in memberships]
+    accounts = await db.accounts.find(
+        {"id": {"$in": account_ids}},
+        {"_id": 0, "password_hash": 0, "mfa_secret": 0, "mfa_secret_pending": 0},
+    ).to_list(1000)
+    invitations = await db.invitations.find({"context_id": context_id}, {"_id": 0}).to_list(1000)
+    audit = await db.audit_log.find({"context_id": context_id}, {"_id": 0}).to_list(5000)
+    telemetry = await db.telemetry_events.find({"context_id": context_id}, {"_id": 0}).to_list(5000)
+    consent = await db.consent_decisions.find({"context_id": context_id}, {"_id": 0}).to_list(1000)
+
+    payload = {
+        "export_version": "3.0",
+        "exported_at": _iso(_now()),
+        "context": contexts[0] if contexts else None,
+        "accounts": accounts,
+        "memberships": memberships,
+        "invitations": invitations,
+        "consent_decisions": consent,
+        "audit_log": audit,
+        "telemetry_events": telemetry,
+    }
+    await write_audit(context_id, ctx["account"]["id"], "context.exported", "context", context_id, {})
+
+    buf = io.BytesIO(json.dumps(payload, indent=2, default=str).encode())
+    filename = f"akki-export-{context_id[:8]}-{_now().strftime('%Y%m%d-%H%M%S')}.json"
+    return StreamingResponse(
+        buf, media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# -----------------------------------------------------------------------------
+# LLM proxy probe (mocked Synisense-shielded)
+# -----------------------------------------------------------------------------
+@api.post("/contexts/{context_id}/llm/probe")
+async def llm_probe(
+    context_id: str,
+    body: LLMProbeIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    out = await llm_call_llm(
+        module=body.module,
+        user_query=body.query,
+        context_object={"context_id": context_id, "context_type": ctx["context"].get("type")},
+        session_context={"probe": True, "account_id": ctx["account"]["id"]},
+        data_trust={"overall": "unrated"},
+    )
+    return out
+
+
+# -----------------------------------------------------------------------------
+# Telemetry
+# -----------------------------------------------------------------------------
+@api.post("/events")
+async def record_event(
+    body: TelemetryEventIn, current: Dict[str, Any] = Depends(get_current_account)
+):
+    if body.context_id:
+        mem = await db.memberships.find_one(
+            {"context_id": body.context_id, "account_id": current["id"], "status": "active"}
+        )
+        if not mem:
+            raise HTTPException(status_code=403, detail="Not a member of this context")
+    now = _iso(_now())
+    doc = {
+        "id": str(uuid.uuid4()),
+        "event_id": str(uuid.uuid4()),
+        "event_name": body.event_name,
+        "event_version": body.event_version,
+        "context_id": body.context_id,
+        "account_id": current["id"],
+        "session_id": body.session_id,
+        "surface": body.surface,
+        "properties": body.properties,
+        "occurred_at": now,
+        "received_at": now,
+    }
+    await db.telemetry_events.insert_one(doc)
+    return {"ok": True}
+
+
+# -----------------------------------------------------------------------------
+# Health & root
+# -----------------------------------------------------------------------------
+@api.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"app": APP_NAME, "status": "ok", "module": "M0", "brd_version": "3.0"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
+@api.get("/health")
+async def health():
+    try:
+        await db.command("ping")
+        return {"status": "ok", "db": "up"}
+    except Exception as e:  # pragma: no cover
+        return {"status": "degraded", "db": str(e)}
 
-# Include the router in the main app
-app.include_router(api_router)
+
+# -----------------------------------------------------------------------------
+# Startup / shutdown
+# -----------------------------------------------------------------------------
+@app.on_event("startup")
+async def on_startup():
+    await db.accounts.create_index("email", unique=True)
+    await db.accounts.create_index("id", unique=True)
+    await db.contexts.create_index("id", unique=True)
+    await db.contexts.create_index("owner_account_id")
+    await db.memberships.create_index([("context_id", 1), ("account_id", 1)])
+    await db.memberships.create_index("account_id")
+    await db.invitations.create_index("token", unique=True)
+    await db.invitations.create_index([("context_id", 1), ("email", 1)])
+    await db.audit_log.create_index([("context_id", 1), ("created_at", -1)])
+    await db.telemetry_events.create_index([("context_id", 1), ("occurred_at", -1)])
+    await db.login_attempts.create_index("identifier")
+    await db.consent_decisions.create_index([("account_id", 1), ("context_id", 1)])
+    await db.organisations.create_index("id", unique=True)
+
+    # Admin seed
+    admin_email = os.environ.get("ADMIN_EMAIL", "admin@akki.ai").lower()
+    admin_password = os.environ.get("ADMIN_PASSWORD", "AkkiAdmin2026!")
+    existing = await db.accounts.find_one({"email": admin_email}, {"_id": 0})
+    if not existing:
+        admin_id = str(uuid.uuid4())
+        now = _iso(_now())
+        admin_doc = {
+            "id": admin_id,
+            "email": admin_email,
+            "name": "AKKI Admin",
+            "declared_role": "dual",
+            "password_hash": hash_password(admin_password),
+            "mfa_enabled": False,
+            "mfa_secret": None,
+            "default_context_id": None,
+            "created_at": now,
+            "is_superadmin": True,
+        }
+        await db.accounts.insert_one(admin_doc)
+        await provision_default_context(admin_doc, "Syni.ai HQ")
+        logger.info(f"Seeded admin account {admin_email}")
+    elif not verify_password(admin_password, existing["password_hash"]):
+        await db.accounts.update_one(
+            {"email": admin_email},
+            {"$set": {"password_hash": hash_password(admin_password)}},
+        )
+        logger.info("Admin password rotated from .env")
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    client.close()
+
+
+# -----------------------------------------------------------------------------
+# Middleware
+# -----------------------------------------------------------------------------
+app.include_router(api)
+
+cors_origins_env = os.environ.get("CORS_ORIGINS", "*")
+frontend_url = os.environ.get("FRONTEND_URL", "").strip()
+if cors_origins_env.strip() == "*" and frontend_url:
+    allow_origins = [frontend_url, "http://localhost:3000"]
+else:
+    allow_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+    if frontend_url and frontend_url not in allow_origins:
+        allow_origins.append(frontend_url)
 
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=allow_origins or ["*"],
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
