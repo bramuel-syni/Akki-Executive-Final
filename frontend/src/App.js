@@ -11,6 +11,8 @@ import SignUp from "@/pages/SignUp";
 import Onboarding from "@/pages/Onboarding";
 import AppHome from "@/pages/AppHome";
 import Workspace from "@/pages/Workspace";
+import Highlights from "@/pages/Highlights";
+import Ask from "@/pages/Ask";
 import TenantSettings from "@/pages/TenantSettings";
 import AccountSecurity from "@/pages/AccountSecurity";
 import InviteAccept from "@/pages/InviteAccept";
@@ -37,6 +39,8 @@ function App() {
           <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
           <Route path="/app" element={<ProtectedRoute><AppHome /></ProtectedRoute>} />
           <Route path="/app/workspace" element={<ProtectedRoute><Workspace /></ProtectedRoute>} />
+          <Route path="/app/highlights" element={<ProtectedRoute><Highlights /></ProtectedRoute>} />
+          <Route path="/app/ask" element={<ProtectedRoute><Ask /></ProtectedRoute>} />
           <Route path="/app/contexts/new" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />
           <Route path="/app/new-workspace" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />
           <Route path="/app/settings" element={<ProtectedRoute><TenantSettings /></ProtectedRoute>} />

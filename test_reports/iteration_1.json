@@ -1,0 +1,42 @@
+{
+  "summary": "Comprehensive E2E test of AKKI Sandbox v3.0 (M0/M1/M2/M3/M5). Backend: 54/55 pytest passed (98%). Frontend: full signup→workspace→highlights→ask flow verified with real Claude LLM generating 3 signals and grounded answer with source citations. One real security bug found: brute-force lockout after 5 failed login attempts does NOT trigger (all 6+ attempts return 401 instead of 429).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/auth/login", "issue": "Brute-force lockout broken: after 5 failed attempts the 6th+ still returns 401 (not 429). Verified via direct curl loop — 6 identical failed attempts all returned 401. Playbook requires 429 after 5 failures. attempts_doc upsert/locked_until check appears not to be firing. Test: test_lockout_after_5_failed.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/auth/refresh", "issue": "Returns {ok: true} only; does not include access_token in body. Cookie is refreshed, but Bearer-only clients cannot rotate their Authorization header. Consider returning access_token like /register and /login do."},
+      {"endpoint": "POST /api/contexts/{id}/invitations", "issue": "Response embeds token inside accept_url but does not return a top-level `token` field. Tests and UI must parse accept_url. Minor API ergonomic issue."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_akki_v3.py",
+    "/app/test_reports/pytest/pytest_v3.xml"
+  ],
+  "action_items": [
+    "[HIGH] Fix brute-force lockout in /api/auth/login — after 5 failed attempts the locked_until check is not raising 429. Suspect timezone comparison in datetime.fromisoformat vs _now() (tz-aware) OR the upsert of locked_until is silently failing. Add a unit test and log the attempts_doc read before the check.",
+    "[MINOR] Consider returning access_token in /api/auth/refresh response body for bearer-only clients.",
+    "[MINOR] Add `token` field (or rename) in POST /invitations response for easier client consumption."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1592 lines — close to the 700-line recommended cap. Should be split into routers/ (auth, contexts, documents, signals, ask, audit) modules.",
+    "/api/auth/login lockout logic resets count to 0 when setting locked_until but does not also re-check attempts_doc.locked_until atomically — a small race, and combined with the bug above it silently fails open.",
+    "Refresh endpoint does not rotate the refresh token (only sets new access cookie). Consider refresh-token rotation for better security.",
+    "All GET endpoints correctly exclude _id via projection (verified in tests — check_no_mongo_id passed on every response)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_akki_v3.py (NEW: 55 pytest cases covering M0-M5)"
+  ],
+  "success_rate": {"backend": "98% (54/55)", "frontend": "100% on tested flows"},
+  "test_credentials": "Admin admin@akki.ai / AkkiAdmin2026! verified working. UI-created accounts wf.<uid>@akki.ai / TestExec2026! also work.",
+  "seed_data_creation": "Each pytest run creates 3 TEST_ accounts (owner/member/outsider) with unique uuid suffixes; UI test creates 1 additional wf.<uid>@akki.ai account. No cleanup implemented yet.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Use /app/backend/tests/test_akki_v3.py as regression. Only failing test is TestAuth::test_lockout_after_5_failed. Once main agent fixes lockout, re-run that single test. All document upload/extract/data-trust/download/archive, context-object versioning, signals generation (real Claude), Ask grounded Q&A with [doc:xxx] citations, invitations end-to-end (including wrong-email rejection), owner-vs-member role guards, and outsider 403 isolation have all been verified. Settings page renders. Onboarding wizard was not exercised UI-side (only the 'Begin audit' CTA on /app home is visible) — if deeper onboarding coverage is needed, exercise /app/onboarding flow next.",
+  "rca of the issue": "Brute-force lockout bug: code at server.py:423-436 reads attempts_doc, checks locked_until, otherwise falls through to bcrypt check, then upserts count. After 5 fails it sets locked_until and resets count to 0. Empirical test via curl (6 identical bad-credential POSTs for a random email) returned 401 on EVERY attempt, never 429. Hypothesis: either (a) tz-aware comparison of fromisoformat(locked_until iso string with +00:00) vs _now() silently fails, or (b) the upsert of locked_until is never persisted (e.g. a missing await, or a different collection name). Reproduction: `for i in 1..6; curl -s -o /dev/null -w %{http_code} -X POST $URL/api/auth/login -d '{\"email\":\"rnd@x.com\",\"password\":\"bad\"}'`. Mitigation: Add logging inside login() that prints attempts_doc after find_one and the computed count; also assert that update_one result.modified_count>=1 or upserted_id is set. Consider using a simple counter collection keyed only by email (not ip:email) for the public preview environment where client IP behind ingress is constant."
+}

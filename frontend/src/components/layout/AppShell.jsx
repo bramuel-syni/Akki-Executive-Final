@@ -21,8 +21,8 @@ import {
 const NAV = [
   { to: "/app", label: "Home", icon: Home, end: true, ready: true },
   { to: "/app/workspace", label: "Workspace", icon: FileText, module: "M3", ready: true },
-  { to: "/app/highlights", label: "Highlights", icon: Sparkles, module: "M7", ready: false },
-  { to: "/app/ask", label: "Ask", icon: MessageSquareText, module: "M7", ready: false },
+  { to: "/app/highlights", label: "Highlights", icon: Sparkles, module: "M5", ready: true },
+  { to: "/app/ask", label: "Ask", icon: MessageSquareText, module: "M5", ready: true },
   { to: "/app/learn", label: "Learn", icon: GraduationCap, module: "M9", ready: false },
 ];
 

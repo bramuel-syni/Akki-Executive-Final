@@ -11,8 +11,8 @@ const ART = "https://static.prod-images.emergentagent.com/jobs/0441d610-5908-43d
 
 const SURFACES = [
   { i: FileText, t: "Workspace", module: "M3", s: "Upload · Extract · Ground every response", ready: true },
-  { i: Sparkles, t: "Highlights", module: "M7", s: "Verified signals · Briefings · Recommendations", ready: false },
-  { i: MessageSquareText, t: "Ask", module: "M7", s: "Persistent threads with source citations", ready: false },
+  { i: Sparkles, t: "Highlights", module: "M5", s: "Verified signals · Risks · Opportunities · Gaps", ready: true },
+  { i: MessageSquareText, t: "Ask", module: "M5", s: "Grounded Q&A with source citations", ready: true },
   { i: GraduationCap, t: "Learn", module: "M9", s: "Role-tuned curriculum · Curated intelligence", ready: false },
 ];
 
