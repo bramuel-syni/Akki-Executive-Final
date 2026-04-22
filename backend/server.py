@@ -271,6 +271,19 @@ class DeclareRoleIn(BaseModel):
     declared_role: AccountRole
 
 
+class ContextObjectIn(BaseModel):
+    # Basics (set at start of onboarding)
+    industry: Optional[str] = None
+    sector: Optional[str] = None
+    jurisdiction: Optional[str] = None
+    role: Optional[MembershipRole] = None  # audit-role variant (ned or executive)
+    # Free-form answers (7 questions); schema differs by role
+    answers: Dict[str, Any] = Field(default_factory=dict)
+    # Progress
+    step: int = 0
+    completed: bool = False
+
+
 class AccountUpdateIn(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=120)
     declared_role: Optional[AccountRole] = None
@@ -560,6 +573,109 @@ async def list_consent_decisions(current: Dict[str, Any] = Depends(get_current_a
         {"account_id": current["id"]}, {"_id": 0}
     ).sort("decided_at", -1).to_list(200)
     return decisions
+
+
+# -----------------------------------------------------------------------------
+# Industry presets (hardcoded reference data for M2 onboarding)
+# -----------------------------------------------------------------------------
+INDUSTRY_PRESETS = [
+    {"id": "banking", "label": "Banking & Capital Markets", "sectors": ["Retail", "Corporate", "Investment", "Private"]},
+    {"id": "insurance", "label": "Insurance", "sectors": ["Life", "General", "Health", "Reinsurance"]},
+    {"id": "retail", "label": "Retail & Consumer", "sectors": ["Grocery", "Apparel", "Electronics", "Multi-category"]},
+    {"id": "fintech", "label": "Fintech", "sectors": ["Payments", "Lending", "Wealth", "Infra"]},
+    {"id": "telco", "label": "Telecommunications", "sectors": ["Mobile", "Broadband", "Enterprise"]},
+    {"id": "energy", "label": "Energy & Utilities", "sectors": ["Oil & Gas", "Power", "Renewables", "Water"]},
+    {"id": "healthcare", "label": "Healthcare & Pharma", "sectors": ["Provider", "Payor", "Pharma", "Devices"]},
+    {"id": "logistics", "label": "Logistics & Transport", "sectors": ["Freight", "Passenger", "Last-mile"]},
+    {"id": "mining", "label": "Mining & Resources", "sectors": ["Metals", "Commodities", "Services"]},
+    {"id": "agriculture", "label": "Agriculture & Agribusiness", "sectors": ["Primary", "Processing", "Distribution"]},
+    {"id": "manufacturing", "label": "Manufacturing", "sectors": ["FMCG", "Industrial", "Automotive"]},
+    {"id": "public_sector", "label": "Public Sector / NGO", "sectors": ["Government", "Non-profit", "Multilateral"]},
+]
+
+JURISDICTION_PRESETS = [
+    "Nigeria", "Kenya", "South Africa", "Ghana", "Egypt", "Morocco", "Ethiopia",
+    "Tanzania", "Uganda", "Rwanda", "Pan-African", "Global",
+]
+
+
+@api.get("/presets/industries")
+async def list_industries(_: Dict[str, Any] = Depends(get_current_account)):
+    return INDUSTRY_PRESETS
+
+
+@api.get("/presets/jurisdictions")
+async def list_jurisdictions(_: Dict[str, Any] = Depends(get_current_account)):
+    return JURISDICTION_PRESETS
+
+
+# -----------------------------------------------------------------------------
+# Context Object (versioned)
+# -----------------------------------------------------------------------------
+@api.get("/contexts/{context_id}/context-object")
+async def get_context_object(ctx: Dict[str, Any] = Depends(require_context_membership())):
+    latest = await db.context_objects.find_one(
+        {"context_id": ctx["context"]["id"]},
+        {"_id": 0},
+        sort=[("version", -1)],
+    )
+    return latest  # None if not yet created
+
+
+@api.post("/contexts/{context_id}/context-object")
+async def upsert_context_object(
+    body: ContextObjectIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership(owner_only=True)),
+):
+    context_id = ctx["context"]["id"]
+    account_id = ctx["account"]["id"]
+
+    latest = await db.context_objects.find_one(
+        {"context_id": context_id}, {"_id": 0}, sort=[("version", -1)]
+    )
+    new_version = (latest["version"] + 1) if latest else 1
+    now = _iso(_now())
+    doc = {
+        "id": str(uuid.uuid4()),
+        "context_id": context_id,
+        "version": new_version,
+        "industry": body.industry,
+        "sector": body.sector,
+        "jurisdiction": body.jurisdiction,
+        "role": body.role,
+        "answers": body.answers,
+        "step": body.step,
+        "completed": body.completed,
+        "created_by": account_id,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.context_objects.insert_one(doc)
+    doc.pop("_id", None)
+
+    # Mirror onto context for quick reads
+    ctx_updates = {
+        "progress_state": {
+            "onboarding_step": body.step,
+            "onboarding_completed": body.completed,
+            "context_object_version": new_version,
+        },
+    }
+    if body.industry:
+        ctx_updates["industry"] = body.industry
+    if body.jurisdiction:
+        ctx_updates["jurisdiction"] = body.jurisdiction
+    if body.sector:
+        ctx_updates["sector"] = body.sector
+    await db.contexts.update_one({"id": context_id}, {"$set": ctx_updates})
+
+    await write_audit(
+        context_id, account_id,
+        "context_object.saved" if body.completed else "context_object.progress",
+        "context_object", doc["id"],
+        {"version": new_version, "completed": body.completed, "step": body.step},
+    )
+    return doc
 
 
 # -----------------------------------------------------------------------------
@@ -977,7 +1093,7 @@ async def record_event(
 # -----------------------------------------------------------------------------
 @api.get("/")
 async def root():
-    return {"app": APP_NAME, "status": "ok", "module": "M1", "brd_version": "3.0"}
+    return {"app": APP_NAME, "status": "ok", "module": "M2", "brd_version": "3.0"}
 
 
 @api.get("/health")
