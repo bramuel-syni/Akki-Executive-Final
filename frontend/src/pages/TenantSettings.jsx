@@ -23,6 +23,8 @@ import { useNavigate } from "react-router-dom";
 import {
   UserPlus, Trash2, Download, AlertTriangle, X, Copy, History, Users,
   UserCog, ArchiveX, Mail, Clock, CreditCard, Plug, ShieldCheck, Lock,
+  UserCircle2, Layers, LogOut as LogOutIcon, Check, Star, Eye, Landmark,
+  Briefcase, Sparkles, Building2,
 } from "lucide-react";
 
 const AVATARS = [
@@ -53,8 +55,10 @@ const ACTION_LABELS = {
   "member.invited": "Member invited",
   "member.joined": "Member joined",
   "member.removed": "Member removed",
+  "member.left": "Member left",
   "invitation.revoked": "Invitation revoked",
   "account.role_declared": "Role declared",
+  "account.updated": "Account updated",
 };
 
 const CONTEXT_TYPE_LABEL = {
@@ -64,29 +68,53 @@ const CONTEXT_TYPE_LABEL = {
   executive_enterprise: "Executive · Enterprise",
 };
 
+function ContextTypeBadge({ type }) {
+  const isSponsored = type === "ned_sponsored" || type === "executive_enterprise";
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium uppercase tracking-wider ${isSponsored ? "bg-amber-50 text-[#C9A961] border border-[#C9A961]/30" : "bg-slate-100 text-slate-600 border border-slate-200"}`}>
+      {CONTEXT_TYPE_LABEL[type] || type}
+    </span>
+  );
+}
+
 export default function Settings() {
-  const { account, activeContext, refreshContexts } = useAuth();
+  const { account, activeContext, contexts, switchContext, refreshContexts, bootstrap } = useAuth();
   const navigate = useNavigate();
   const contextId = activeContext?.id;
   const isAdmin = activeContext?.my_sub_role === "admin";
 
+  // Account editing
+  const [accountName, setAccountName] = useState(account?.name || "");
+  const [accountRole, setAccountRole] = useState(account?.declared_role || "undeclared");
+  const [savingAccount, setSavingAccount] = useState(false);
+
+  // Context editing
   const [contextName, setContextName] = useState(activeContext?.name || "");
   const [renaming, setRenaming] = useState(false);
 
+  // Members / invites / audit
   const [members, setMembers] = useState([]);
   const [invites, setInvites] = useState([]);
   const [audit, setAudit] = useState([]);
+  const [consentLog, setConsentLog] = useState([]);
 
+  // Invite
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("executive");
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [lastInviteLink, setLastInviteLink] = useState("");
 
-  useEffect(() => { setContextName(activeContext?.name || ""); },
-    [activeContext?.id, activeContext?.name]);
+  useEffect(() => {
+    setContextName(activeContext?.name || "");
+  }, [activeContext?.id, activeContext?.name]);
 
-  const loadAll = useCallback(async () => {
+  useEffect(() => {
+    setAccountName(account?.name || "");
+    setAccountRole(account?.declared_role || "undeclared");
+  }, [account?.id, account?.name, account?.declared_role]);
+
+  const loadContextData = useCallback(async () => {
     if (!contextId) return;
     try {
       const [m, i, a] = await Promise.all([
@@ -95,10 +123,53 @@ export default function Settings() {
         api.get(`/contexts/${contextId}/audit-log`),
       ]);
       setMembers(m.data); setInvites(i.data); setAudit(a.data);
-    } catch (e) { toast.error(apiErrorMessage(e, "Failed to load settings")); }
+    } catch (e) { toast.error(apiErrorMessage(e, "Failed to load context data")); }
   }, [contextId]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  const loadConsent = useCallback(async () => {
+    try {
+      const { data } = await api.get("/accounts/me/consent-decisions");
+      setConsentLog(data);
+    } catch { /* silent — empty state is fine */ }
+  }, []);
+
+  useEffect(() => { loadContextData(); }, [loadContextData]);
+  useEffect(() => { loadConsent(); }, [loadConsent]);
+
+  // --- Handlers ---
+  const onSaveAccount = async (e) => {
+    e.preventDefault();
+    setSavingAccount(true);
+    try {
+      await api.patch("/accounts/me", {
+        name: accountName.trim(),
+        declared_role: accountRole,
+      });
+      await bootstrap();
+      toast.success("Account updated");
+    } catch (err) { toast.error(apiErrorMessage(err)); }
+    finally { setSavingAccount(false); }
+  };
+
+  const onSetDefault = async (cid) => {
+    try {
+      await api.post("/accounts/me/default-context", { context_id: cid });
+      await bootstrap();
+      toast.success("Default context updated");
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+
+  const onLeaveContext = async (cid) => {
+    try {
+      await api.post(`/contexts/${cid}/leave`);
+      await refreshContexts();
+      toast.success("You've left the context");
+      if (cid === activeContext?.id && contexts.length > 1) {
+        const next = contexts.find((c) => c.id !== cid);
+        if (next) switchContext(next.id);
+      }
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
 
   const onRename = async (e) => {
     e.preventDefault();
@@ -106,7 +177,7 @@ export default function Settings() {
     setRenaming(true);
     try {
       await api.patch(`/contexts/${contextId}`, { name: contextName.trim() });
-      await refreshContexts(); await loadAll();
+      await refreshContexts(); await loadContextData();
       toast.success("Context renamed");
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setRenaming(false); }
@@ -120,23 +191,23 @@ export default function Settings() {
         email: inviteEmail, role: inviteRole,
       });
       setLastInviteLink(data.accept_url); setInviteEmail(""); setInviteRole("executive");
-      await loadAll();
+      await loadContextData();
       toast.success(`Invitation sent to ${data.email}`);
     } catch (err) { toast.error(apiErrorMessage(err)); }
     finally { setInviteBusy(false); }
   };
 
-  const onRemoveMember = async (accountId) => {
+  const onRemoveMember = async (accountIdToRemove) => {
     try {
-      await api.delete(`/contexts/${contextId}/members/${accountId}`);
-      await loadAll(); toast.success("Member removed");
+      await api.delete(`/contexts/${contextId}/members/${accountIdToRemove}`);
+      await loadContextData(); toast.success("Member removed");
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
   const onRevokeInvite = async (inviteId) => {
     try {
       await api.delete(`/contexts/${contextId}/invitations/${inviteId}`);
-      await loadAll(); toast.success("Invitation revoked");
+      await loadContextData(); toast.success("Invitation revoked");
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
@@ -153,7 +224,7 @@ export default function Settings() {
       a.href = url;
       a.download = match ? match[1] : `akki-export-${contextId}.json`;
       a.click(); URL.revokeObjectURL(url);
-      await loadAll(); toast.success("Export downloaded");
+      await loadContextData(); toast.success("Export downloaded");
     } catch (e) { toast.error(e.message || "Export failed"); }
   };
 
@@ -165,34 +236,40 @@ export default function Settings() {
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
-  const orderedAudit = useMemo(() => audit.slice().sort((a, b) =>
-    (b.created_at || "").localeCompare(a.created_at || "")), [audit]);
+  const orderedAudit = useMemo(() =>
+    audit.slice().sort((a, b) => (b.created_at || "").localeCompare(a.created_at || "")),
+  [audit]);
 
   if (!activeContext) {
     return <AppShell><div className="p-12 text-center text-slate-500 text-sm">No context selected.</div></AppShell>;
   }
 
+  const roleIcon = accountRole === "ned" ? Landmark : accountRole === "dual" ? Layers : Briefcase;
+  const AccRoleIcon = roleIcon;
+
   return (
     <AppShell>
       <div className="p-8 max-w-6xl mx-auto">
         <div className="mb-8">
-          <p className="akki-overline mb-2">Administration · Module M0</p>
+          <p className="akki-overline mb-2">Administration · Module M1</p>
           <h1 className="text-3xl font-light tracking-tight text-[#0A1F44]">Settings</h1>
           <p className="text-sm text-slate-500 mt-2">
-            Manage your account, contexts, and audit trail. Billing, Integrations, and Enterprise Admin unlock in later modules.
+            Your account, your contexts, and how AKKI treats your data.
           </p>
         </div>
 
-        <Tabs defaultValue="context" className="w-full">
+        <Tabs defaultValue="account" className="w-full">
           <TabsList className="bg-transparent border-b border-[#E1E6ED] w-full justify-start h-auto p-0 rounded-none mb-8 overflow-x-auto">
             {[
-              ["context", "Context", UserCog],
+              ["account", "Account", UserCircle2],
+              ["contexts", "Contexts", Layers],
+              ["context", "This context", UserCog],
               ["members", "Members", Users],
               ["audit", "Audit log", History],
+              ["privacy", "Privacy", ShieldCheck],
               ["billing", "Billing", CreditCard, "M4"],
               ["integrations", "Integrations", Plug, "M6"],
-              ["privacy", "Privacy", ShieldCheck, "M9"],
-              ["danger", "Danger zone", AlertTriangle],
+              ["danger", "Danger", AlertTriangle],
             ].map(([v, l, I, lock]) => (
               <TabsTrigger
                 key={v} value={v}
@@ -207,23 +284,207 @@ export default function Settings() {
             ))}
           </TabsList>
 
-          {/* CONTEXT (was General) */}
+          {/* ACCOUNT */}
+          <TabsContent value="account" className="space-y-8">
+            <section className="bg-white border border-[#E1E6ED] rounded-sm">
+              <div className="px-6 py-4 border-b border-[#E1E6ED] flex items-center gap-4">
+                <img src={avatarFor(account?.email)} alt="" className="w-12 h-12 rounded-sm object-cover" />
+                <div>
+                  <p className="text-sm font-medium text-[#0A1F44]">{account?.name || "—"}</p>
+                  <p className="text-xs text-slate-500">{account?.email}</p>
+                </div>
+                <div className="ml-auto flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-[#C9A961]">
+                  <AccRoleIcon className="w-3 h-3" strokeWidth={2} />
+                  {account?.declared_role === "dual" ? "NED + Executive" : account?.declared_role}
+                </div>
+              </div>
+              <form onSubmit={onSaveAccount} className="p-6 space-y-5 max-w-lg" data-testid="account-form">
+                <div className="space-y-2">
+                  <Label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Name</Label>
+                  <Input
+                    value={accountName} onChange={(e) => setAccountName(e.target.value)}
+                    className="rounded-sm h-10"
+                    data-testid="account-name-input"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Email</Label>
+                  <Input value={account?.email || ""} disabled className="rounded-sm h-10 bg-slate-50" />
+                  <p className="text-[10px] text-slate-400">Email cannot be changed in this build.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Declared role</Label>
+                  <Select value={accountRole} onValueChange={setAccountRole}>
+                    <SelectTrigger className="rounded-sm h-10 max-w-sm" data-testid="account-role-select">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-sm">
+                      <SelectItem value="executive">Executive only</SelectItem>
+                      <SelectItem value="ned">Non-Executive Director only</SelectItem>
+                      <SelectItem value="dual">Both — NED + Executive</SelectItem>
+                      <SelectItem value="undeclared">Undeclared</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-slate-400">
+                    Changing role affects which surfaces are emphasised on Home.
+                  </p>
+                </div>
+                <Button
+                  type="submit" disabled={savingAccount}
+                  className="bg-[#0A1F44] hover:bg-[#0E2958] rounded-sm h-9"
+                  data-testid="save-account-btn"
+                >
+                  {savingAccount ? "Saving…" : "Save changes"}
+                </Button>
+              </form>
+            </section>
+
+            <section className="bg-white border border-[#E1E6ED] rounded-sm">
+              <div className="px-6 py-4 border-b border-[#E1E6ED] flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-[#0A1F44] flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-[#C9A961]" /> Account security
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Two-factor authentication, session management, sign-out.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => navigate("/app/security")}
+                  variant="outline"
+                  className="rounded-sm h-9 border-[#E1E6ED]"
+                  data-testid="open-security-btn"
+                >
+                  Manage security
+                </Button>
+              </div>
+              <div className="px-6 py-4 flex items-center justify-between text-sm">
+                <div className="flex items-center gap-3">
+                  <span className="text-slate-500">Two-factor authentication</span>
+                  <span className={`text-[10px] uppercase tracking-wider px-2 py-1 rounded-sm ${account?.mfa_enabled ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
+                    {account?.mfa_enabled ? "Enabled" : "Off"}
+                  </span>
+                </div>
+              </div>
+            </section>
+          </TabsContent>
+
+          {/* CONTEXTS list */}
+          <TabsContent value="contexts" className="space-y-6">
+            <section>
+              <div className="flex items-end justify-between mb-5">
+                <div>
+                  <p className="akki-overline mb-2">Your contexts</p>
+                  <h2 className="text-xl font-medium tracking-tight text-[#0A1F44]">
+                    {contexts.length} {contexts.length === 1 ? "context" : "contexts"}
+                  </h2>
+                </div>
+                <Button
+                  onClick={() => navigate("/app/contexts/new")}
+                  className="bg-[#C9A961] hover:bg-[#B39556] text-[#0A1F44] rounded-sm h-9 font-medium"
+                  data-testid="add-context-btn"
+                >
+                  <Sparkles className="w-4 h-4 mr-2" /> Add context
+                </Button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {contexts.map((c) => {
+                  const isActive = c.id === activeContext?.id;
+                  const isDefault = c.id === account?.default_context_id;
+                  const isOwner = c.owner_account_id === account?.id;
+                  const ContextIcon = c.type?.startsWith("ned") ? Landmark : Building2;
+                  return (
+                    <div
+                      key={c.id}
+                      className={`relative bg-white border rounded-sm p-5 transition-colors ${isActive ? "border-[#C9A961] ring-1 ring-[#C9A961]/30" : "border-[#E1E6ED] hover:border-slate-300"}`}
+                      data-testid={`context-card-${c.id}`}
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <ContextIcon className={`w-5 h-5 ${isActive ? "text-[#C9A961]" : "text-slate-400"}`} strokeWidth={1.6} />
+                        {isDefault && (
+                          <span className="inline-flex items-center gap-1 text-[9px] uppercase tracking-widest text-[#C9A961]">
+                            <Star className="w-3 h-3 fill-[#C9A961]" /> Default
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[#0A1F44] font-medium mb-1">{c.name}</p>
+                      <div className="flex items-center gap-2 flex-wrap mb-4">
+                        <ContextTypeBadge type={c.type} />
+                        {c.my_role && (
+                          <span className="text-[10px] uppercase tracking-wider text-slate-500">
+                            Your role: <span className="text-[#0A1F44] font-medium">{c.my_role}</span>
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {!isActive && (
+                          <Button
+                            size="sm" variant="outline"
+                            className="rounded-sm h-8 text-xs border-[#E1E6ED]"
+                            onClick={() => switchContext(c.id)}
+                            data-testid={`switch-to-${c.id}`}
+                          >
+                            <Eye className="w-3.5 h-3.5 mr-1.5" /> Switch to
+                          </Button>
+                        )}
+                        {!isDefault && (
+                          <Button
+                            size="sm" variant="outline"
+                            className="rounded-sm h-8 text-xs border-[#E1E6ED]"
+                            onClick={() => onSetDefault(c.id)}
+                            data-testid={`set-default-${c.id}`}
+                          >
+                            <Star className="w-3.5 h-3.5 mr-1.5" /> Set default
+                          </Button>
+                        )}
+                        {!isOwner && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                size="sm" variant="ghost"
+                                className="rounded-sm h-8 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                                data-testid={`leave-context-${c.id}`}
+                              >
+                                <LogOutIcon className="w-3.5 h-3.5 mr-1.5" /> Leave
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent className="rounded-sm">
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Leave {c.name}?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  You'll lose access immediately. An admin will need to re-invite you to return.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel className="rounded-sm">Cancel</AlertDialogCancel>
+                                <AlertDialogAction className="bg-red-600 hover:bg-red-700 rounded-sm" onClick={() => onLeaveContext(c.id)} data-testid={`confirm-leave-${c.id}`}>
+                                  Leave context
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          </TabsContent>
+
+          {/* CONTEXT (active one) */}
           <TabsContent value="context" className="space-y-8">
             <section className="bg-white border border-[#E1E6ED] rounded-sm">
               <div className="px-6 py-4 border-b border-[#E1E6ED]">
                 <p className="text-sm font-medium text-[#0A1F44]">Context identity</p>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Visible to every member. Context type affects data isolation and ownership rules.
-                </p>
+                <p className="text-xs text-slate-500 mt-0.5">Visible to every member of this context.</p>
               </div>
               <form onSubmit={onRename} className="p-6 space-y-4 max-w-md" data-testid="rename-form">
                 <div className="space-y-2">
                   <Label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Context name</Label>
                   <Input
-                    value={contextName}
-                    onChange={(e) => setContextName(e.target.value)}
-                    disabled={!isAdmin}
-                    className="rounded-sm h-10"
+                    value={contextName} onChange={(e) => setContextName(e.target.value)}
+                    disabled={!isAdmin} className="rounded-sm h-10"
                     data-testid="context-name-input"
                   />
                 </div>
@@ -268,14 +529,6 @@ export default function Settings() {
                   <p className="font-medium text-[#0A1F44] capitalize">{activeContext.status}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">MFA</p>
-                  <p className="font-medium text-[#0A1F44] flex items-center gap-1">
-                    {account?.mfa_enabled
-                      ? <><Lock className="w-3 h-3 text-emerald-600" /> Enabled</>
-                      : <span className="text-amber-600">Off</span>}
-                  </p>
-                </div>
-                <div>
                   <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">Created</p>
                   <p className="font-medium text-[#0A1F44]">{formatDate(activeContext.created_at)}</p>
                 </div>
@@ -287,7 +540,7 @@ export default function Settings() {
                 <div>
                   <p className="text-sm font-medium text-[#0A1F44]">Export context data</p>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    JSON snapshot of context, members, invitations, audit log, telemetry, and consent decisions.
+                    JSON snapshot — context, members, invitations, audit, telemetry, consent decisions.
                   </p>
                 </div>
                 {isAdmin && (
@@ -305,7 +558,7 @@ export default function Settings() {
               <div className="px-6 py-4 border-b border-[#E1E6ED] flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-[#0A1F44]">Members <span className="text-slate-400 font-normal">({members.length})</span></p>
-                  <p className="text-xs text-slate-500 mt-0.5">Admins manage context settings; members contribute.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Admins manage this context; members contribute.</p>
                 </div>
                 {isAdmin && (
                   <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
@@ -327,8 +580,7 @@ export default function Settings() {
                           <Input
                             type="email" required value={inviteEmail}
                             onChange={(e) => setInviteEmail(e.target.value)}
-                            className="rounded-sm h-10"
-                            placeholder="colleague@company.com"
+                            className="rounded-sm h-10" placeholder="colleague@company.com"
                             data-testid="invite-email-input"
                           />
                         </div>
@@ -503,6 +755,62 @@ export default function Settings() {
                       </li>
                     ))}
                   </ol>
+                )}
+              </div>
+            </section>
+          </TabsContent>
+
+          {/* PRIVACY */}
+          <TabsContent value="privacy" className="space-y-6">
+            <section className="bg-white border border-[#E1E6ED] rounded-sm">
+              <div className="px-6 py-4 border-b border-[#E1E6ED]">
+                <p className="text-sm font-medium text-[#0A1F44] flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-[#C9A961]" /> Synisense identity shielding
+                </p>
+              </div>
+              <div className="p-6 space-y-4 text-sm text-slate-700 leading-relaxed max-w-3xl">
+                <p>
+                  Every outbound LLM call is routed through Synisense first. Names, emails, organisation
+                  identifiers and other identity tokens are replaced with opaque references before the
+                  payload reaches any external model. Responses are rehydrated server-side so you
+                  never see the masked refs.
+                </p>
+                <p>
+                  The Lens Room is governed by strict framework guardrails — intellectual tools are
+                  applied to ideas, never associated with individuals. You will never see an interpretation
+                  that profiles a named person.
+                </p>
+                <div className="border border-[#E1E6ED] rounded-sm p-4 bg-slate-50/50">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-[#C9A961] font-bold mb-2">M1 status</p>
+                  <p className="text-xs text-slate-600">
+                    Running in <strong className="text-[#0A1F44]">mock-scaffolding</strong> mode. A live Synisense service
+                    replaces the mock at M5. Your shielding contract is already enforced on every call.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section className="bg-white border border-[#E1E6ED] rounded-sm">
+              <div className="px-6 py-4 border-b border-[#E1E6ED]">
+                <p className="text-sm font-medium text-[#0A1F44]">Consent decisions</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Immutable record of consent granted/withdrawn for sponsored contexts. Populated when someone sponsors a seat for you in M4.
+                </p>
+              </div>
+              <div className="p-6">
+                {consentLog.length === 0 ? (
+                  <p className="text-sm text-slate-400 py-4 text-center italic">
+                    No consent decisions recorded yet. This ledger will populate when an organisation sponsors a context for you.
+                  </p>
+                ) : (
+                  <ul className="space-y-3" data-testid="consent-log">
+                    {consentLog.map((d) => (
+                      <li key={d.id} className="border-l-2 border-[#C9A961] pl-4 py-1">
+                        <p className="text-sm text-[#0A1F44]">{d.decision} · {d.scope}</p>
+                        <p className="text-xs text-slate-500">{formatDate(d.decided_at)}</p>
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </div>
             </section>

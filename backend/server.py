@@ -146,6 +146,7 @@ def sanitize_account(a: Dict[str, Any]) -> Dict[str, Any]:
         "declared_role": a.get("declared_role", "undeclared"),
         "mfa_enabled": bool(a.get("mfa_enabled", False)),
         "default_context_id": a.get("default_context_id"),
+        "preferences": a.get("preferences") or {},
         "created_at": a.get("created_at"),
     }
 
@@ -268,6 +269,16 @@ class ContextRenameIn(BaseModel):
 
 class DeclareRoleIn(BaseModel):
     declared_role: AccountRole
+
+
+class AccountUpdateIn(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    declared_role: Optional[AccountRole] = None
+    preferences: Optional[Dict[str, Any]] = None
+
+
+class SetDefaultContextIn(BaseModel):
+    context_id: str
 
 
 class InvitationIn(BaseModel):
@@ -482,6 +493,73 @@ async def declare_role(
                       {"declared_role": body.declared_role})
     refreshed = await db.accounts.find_one({"id": current["id"]}, {"_id": 0})
     return {"account": sanitize_account(refreshed)}
+
+
+@api.patch("/accounts/me")
+async def update_account(
+    body: AccountUpdateIn, current: Dict[str, Any] = Depends(get_current_account)
+):
+    updates: Dict[str, Any] = {}
+    if body.name is not None:
+        updates["name"] = body.name.strip()
+    if body.declared_role is not None:
+        updates["declared_role"] = body.declared_role
+    if body.preferences is not None:
+        # merge, don't clobber
+        merged = {**(current.get("preferences") or {}), **body.preferences}
+        updates["preferences"] = merged
+    if not updates:
+        return {"account": sanitize_account(current)}
+    await db.accounts.update_one({"id": current["id"]}, {"$set": updates})
+    await write_audit(None, current["id"], "account.updated", "account", current["id"], updates)
+    refreshed = await db.accounts.find_one({"id": current["id"]}, {"_id": 0})
+    return {"account": sanitize_account(refreshed)}
+
+
+@api.post("/accounts/me/default-context")
+async def set_default_context(
+    body: SetDefaultContextIn, current: Dict[str, Any] = Depends(get_current_account)
+):
+    mem = await db.memberships.find_one(
+        {"context_id": body.context_id, "account_id": current["id"], "status": "active"}
+    )
+    if not mem:
+        raise HTTPException(status_code=404, detail="You are not a member of that context")
+    await db.accounts.update_one(
+        {"id": current["id"]}, {"$set": {"default_context_id": body.context_id}}
+    )
+    refreshed = await db.accounts.find_one({"id": current["id"]}, {"_id": 0})
+    return {"account": sanitize_account(refreshed)}
+
+
+@api.post("/contexts/{context_id}/leave")
+async def leave_context(
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    ctx_id = ctx["context"]["id"]
+    account_id = ctx["account"]["id"]
+    if ctx["context"]["owner_account_id"] == account_id:
+        raise HTTPException(status_code=400, detail="Context owner cannot leave — archive the context instead.")
+    res = await db.memberships.update_one(
+        {"context_id": ctx_id, "account_id": account_id, "status": "active"},
+        {"$set": {"status": "left", "left_at": _iso(_now())}},
+    )
+    if res.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Membership not found")
+    # If user's default context was this one, clear it
+    if ctx["account"].get("default_context_id") == ctx_id:
+        await db.accounts.update_one({"id": account_id}, {"$set": {"default_context_id": None}})
+    await write_audit(ctx_id, account_id, "member.left", "account", account_id, {})
+    return {"ok": True}
+
+
+# Privacy / consent decisions (stub — populated during sponsored-invite consent in M4)
+@api.get("/accounts/me/consent-decisions")
+async def list_consent_decisions(current: Dict[str, Any] = Depends(get_current_account)):
+    decisions = await db.consent_decisions.find(
+        {"account_id": current["id"]}, {"_id": 0}
+    ).sort("decided_at", -1).to_list(200)
+    return decisions
 
 
 # -----------------------------------------------------------------------------
@@ -899,7 +977,7 @@ async def record_event(
 # -----------------------------------------------------------------------------
 @api.get("/")
 async def root():
-    return {"app": APP_NAME, "status": "ok", "module": "M0", "brd_version": "3.0"}
+    return {"app": APP_NAME, "status": "ok", "module": "M1", "brd_version": "3.0"}
 
 
 @api.get("/health")

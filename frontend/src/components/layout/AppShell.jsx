@@ -1,13 +1,17 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import Logo from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import {
   Home, FileText, Sparkles, MessageSquareText, GraduationCap,
   Settings, LogOut, ChevronDown, Layers, CheckCircle2, Lock,
-  Briefcase, Landmark,
+  Briefcase, Landmark, Search,
 } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -45,6 +49,52 @@ export default function AppShell({ children }) {
   } = useAuth();
   const navigate = useNavigate();
 
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState("");
+  const paletteInputRef = useRef(null);
+
+  // Cmd/Ctrl+K opens the palette
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
+    if (paletteOpen) setTimeout(() => paletteInputRef.current?.focus(), 50);
+    else setPaletteQuery("");
+  }, [paletteOpen]);
+
+  // Role/context mismatch nudge
+  const mismatched =
+    activeRole && activeContext?.my_role &&
+    activeRole !== activeContext.my_role &&
+    // don't nag for 'reportee' since it's a different axis
+    (activeRole === "ned" || activeRole === "executive") &&
+    (activeContext.my_role === "ned" || activeContext.my_role === "executive");
+
+  const handleRoleSwitch = (r) => {
+    switchRole(r);
+    // If current context doesn't match the new role, try to find one that does
+    if (activeContext && activeContext.my_role !== r) {
+      const match = contexts.find((c) => c.my_role === r);
+      if (match) {
+        switchContext(match.id);
+        toast.success(`Switched to ${match.name} for your ${r === "ned" ? "NED" : "Executive"} role`);
+      } else {
+        toast.message(
+          `No ${r === "ned" ? "NED" : "Executive"} context yet`,
+          { description: "Create or accept an invite to set one up." }
+        );
+      }
+    }
+  };
+
   const mfaOwnerNudge = account && !account.mfa_enabled &&
     activeContext && activeContext.my_sub_role === "admin";
 
@@ -74,6 +124,17 @@ export default function AppShell({ children }) {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Cmd+K launcher */}
+          <button
+            className="hidden md:flex items-center gap-2 px-3 py-1.5 text-xs bg-[#193262]/60 hover:bg-[#1f3d73] text-white/70 rounded-sm transition-colors border border-white/10"
+            onClick={() => setPaletteOpen(true)}
+            data-testid="cmdk-launch-btn"
+          >
+            <Search className="w-3.5 h-3.5 text-white/50" strokeWidth={1.8} />
+            <span>Switch context</span>
+            <kbd className="ml-2 text-[9px] font-mono bg-white/10 px-1.5 py-0.5 rounded-sm tracking-wider">⌘K</kbd>
+          </button>
+
           {/* Role switcher (only if dual-capable) */}
           {showRoleSwitcher && (
             <DropdownMenu>
@@ -92,7 +153,7 @@ export default function AppShell({ children }) {
                 {availableRoles.map((r) => (
                   <DropdownMenuItem
                     key={r}
-                    onClick={() => switchRole(r)}
+                    onClick={() => handleRoleSwitch(r)}
                     className="cursor-pointer flex items-center justify-between"
                     data-testid={`role-switch-${r}`}
                   >
@@ -314,6 +375,18 @@ export default function AppShell({ children }) {
               </Button>
             </div>
           )}
+          {mismatched && (
+            <div
+              className="flex items-center gap-3 px-8 py-2 bg-[#0A1F44]/5 border-b border-[#0A1F44]/20 text-xs text-[#0A1F44]"
+              data-testid="role-mismatch-banner"
+            >
+              <span className="akki-overline">Heads up</span>
+              <span className="text-slate-600">
+                You're acting as <strong>{activeRole}</strong> but the current context is for <strong>{activeContext.my_role}</strong>.
+                Switch to a matching context from the palette (⌘K) or role-switch again to auto-route.
+              </span>
+            </div>
+          )}
           {isSponsored && (
             <div
               className="flex items-center gap-2 px-8 py-2 bg-[#0A1F44]/5 border-b border-[#C9A961]/30 text-xs text-[#0A1F44]"
@@ -326,6 +399,73 @@ export default function AppShell({ children }) {
           {children}
         </main>
       </div>
+
+      {/* Command palette — M1 stub: context switcher; becomes universal search in M7 */}
+      <Dialog open={paletteOpen} onOpenChange={setPaletteOpen}>
+        <DialogContent className="rounded-sm max-w-xl p-0 overflow-hidden">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Command palette</DialogTitle>
+            <DialogDescription>Switch context or search. Universal search unlocks at M7.</DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-3 border-b border-[#E1E6ED] px-4 py-3">
+            <Search className="w-4 h-4 text-slate-400" strokeWidth={1.8} />
+            <input
+              ref={paletteInputRef}
+              value={paletteQuery}
+              onChange={(e) => setPaletteQuery(e.target.value)}
+              placeholder="Switch context…  (universal search unlocks at M7)"
+              className="flex-1 bg-transparent outline-none text-sm placeholder:text-slate-400"
+              data-testid="palette-input"
+            />
+            <kbd className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-sm">esc</kbd>
+          </div>
+          <div className="max-h-80 overflow-y-auto py-2">
+            <p className="px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-slate-400">Contexts</p>
+            {contexts
+              .filter((c) => !paletteQuery || c.name.toLowerCase().includes(paletteQuery.toLowerCase()))
+              .map((c) => {
+                const active = c.id === activeContext?.id;
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => { switchContext(c.id); setPaletteOpen(false); }}
+                    className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-slate-50 text-left group"
+                    data-testid={`palette-switch-${c.id}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Layers className={`w-4 h-4 ${active ? "text-[#C9A961]" : "text-slate-400"}`} strokeWidth={1.6} />
+                      <div>
+                        <p className="text-sm text-[#0A1F44] font-medium">{c.name}</p>
+                        <p className="text-[10px] uppercase tracking-wider text-slate-400">
+                          {c.my_role || "member"}
+                          {c.provisioning === "sponsored" && <span className="ml-2 text-[#C9A961]">sponsored</span>}
+                        </p>
+                      </div>
+                    </div>
+                    {active && <CheckCircle2 className="w-4 h-4 text-[#C9A961]" />}
+                  </button>
+                );
+              })}
+            <p className="px-4 py-1.5 mt-2 text-[10px] uppercase tracking-[0.2em] text-slate-400">Actions</p>
+            <button
+              onClick={() => { setPaletteOpen(false); navigate("/app/contexts/new"); }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left"
+              data-testid="palette-new-context-btn"
+            >
+              <Sparkles className="w-4 h-4 text-[#C9A961]" strokeWidth={1.6} />
+              <span className="text-sm text-[#0A1F44]">Add a context…</span>
+            </button>
+            <button
+              onClick={() => { setPaletteOpen(false); navigate("/app/settings"); }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left"
+              data-testid="palette-settings-btn"
+            >
+              <Settings className="w-4 h-4 text-slate-400" strokeWidth={1.6} />
+              <span className="text-sm text-[#0A1F44]">Open settings</span>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
