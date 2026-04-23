@@ -20,20 +20,22 @@ function formatTime(iso) {
   catch { return iso; }
 }
 
-/** Render assistant answer with inline [doc:xxx] citations as chips. */
+/** Render assistant answer with inline [doc:xxx] citations as chips.
+ *  Supports both `[doc:xxx]` and `[doc:xxx, doc:yyy]` formats. */
 function renderAnswer(answer, sources, onCitationClick) {
   if (!answer) return null;
-  const parts = answer.split(/(\[doc:[a-f0-9-]+\])/g);
+  const BLOCK = /\[doc:[a-f0-9-]+(?:[,\s]+doc:[a-f0-9-]+)*\]/g;
+  const ID = /[a-f0-9-]{8,}/g;
+  const parts = answer.split(BLOCK);
+  const matches = answer.match(BLOCK) || [];
   const nameById = Object.fromEntries((sources || []).map((s) => [s.doc_id, s.doc_name]));
-  return parts.map((p, i) => {
-    const m = p.match(/^\[doc:([a-f0-9-]+)\]$/);
-    if (!m) return <span key={i}>{p}</span>;
-    const id = m[1];
+  const out = [];
+  const chipFor = (id, keyBase) => {
     const name = nameById[id];
     const Chip = onCitationClick ? "button" : "span";
     return (
       <Chip
-        key={i}
+        key={keyBase}
         type={onCitationClick ? "button" : undefined}
         onClick={onCitationClick ? () => onCitationClick(id) : undefined}
         className={`inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-sm text-[10px] bg-[#C9A961]/10 text-[#0A1F44] border border-[#C9A961]/30 font-medium ${
@@ -46,7 +48,15 @@ function renderAnswer(answer, sources, onCitationClick) {
         {name || id.slice(0, 8)}
       </Chip>
     );
+  };
+  parts.forEach((p, i) => {
+    if (p) out.push(<span key={`p-${i}`}>{p}</span>);
+    if (matches[i]) {
+      const ids = matches[i].match(ID) || [];
+      ids.forEach((id, j) => out.push(chipFor(id, `${i}-${j}`)));
+    }
   });
+  return out;
 }
 
 function QAExchange({ record, accountName, onCitationClick }) {

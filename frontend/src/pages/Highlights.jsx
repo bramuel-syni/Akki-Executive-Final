@@ -21,6 +21,43 @@ const TYPE_CONFIG = {
   opportunity: { label: "Opportunity", plural: "Opportunities", icon: TrendingUp,    cls: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" },
   gap:         { label: "Gap",         plural: "Gaps",          icon: CircleSlash,   cls: "bg-amber-50 text-amber-700 border-amber-200",    dot: "bg-amber-500" },
 };
+
+/** Render signal summary with inline [doc:xxx] citations as styled chips.
+ *  Handles both `[doc:xxx]` and `[doc:xxx, doc:yyy, ...]` formats. */
+function renderSummary(text, sources) {
+  if (!text) return null;
+  const BLOCK = /\[doc:[a-f0-9-]+(?:[,\s]+doc:[a-f0-9-]+)*\]/g;
+  const ID = /[a-f0-9-]{8,}/g;
+  const parts = text.split(BLOCK);
+  const matches = text.match(BLOCK) || [];
+  const nameById = Object.fromEntries((sources || []).map((s) => [s.doc_id, s]));
+
+  const chipsFor = (block, blockIdx) => {
+    const ids = block.match(ID) || [];
+    return ids.map((id, i) => {
+      const src = nameById[id];
+      const label = src?.doc_name || id.slice(0, 8);
+      return (
+        <Link
+          key={`${blockIdx}-${i}`}
+          to={`/app/documents/${id}`}
+          className="inline-flex items-center gap-0.5 px-1 py-0 mx-0.5 rounded-sm text-[10px] bg-[#C9A961]/10 text-[#0A1F44] border border-[#C9A961]/30 font-medium hover:bg-[#C9A961]/25 transition-colors align-baseline"
+          title={label}
+        >
+          <FileText className="w-2.5 h-2.5" strokeWidth={2.2} />
+          {label}
+        </Link>
+      );
+    });
+  };
+
+  const out = [];
+  parts.forEach((p, i) => {
+    if (p) out.push(<span key={`p-${i}`}>{p}</span>);
+    if (matches[i]) out.push(...chipsFor(matches[i], i));
+  });
+  return out;
+}
 const CONF_CONFIG = {
   high:   "text-emerald-700 bg-emerald-50 border-emerald-200",
   medium: "text-amber-700 bg-amber-50 border-amber-200",
@@ -107,7 +144,7 @@ function SignalCard({ signal, onDismiss }) {
         {signal.headline}
       </h3>
       <p className="text-[14px] text-slate-700 leading-relaxed whitespace-pre-wrap">
-        {signal.summary}
+        {renderSummary(signal.summary, signal.sources)}
       </p>
 
       {/* Sources row */}

@@ -1324,6 +1324,9 @@ async def generate_signals(
         f"• confidence: 'high' only when the numbers in the documents leave no room "
         f"for another reading. 'medium' for pattern-based inferences. 'low' only when "
         f"trust is weak.\n\n"
+        "For each signal the `doc_ids` array MUST contain every doc_id you used "
+        "as evidence. You may also reference them inline in the summary as "
+        "[doc:xxx] using the exact same UUIDs — do not invent ids.\n\n"
         'Return JSON: {"signals":[{"type":"risk|opportunity|gap","headline":"...",'
         '"summary":"...","confidence":"high|medium|low","doc_ids":["..."]}]}'
     )
@@ -1344,24 +1347,43 @@ async def generate_signals(
             detail=f"LLM did not return a valid signals list. Mode={llm_out.get('mode')}. Raw: {llm_out.get('response', '')[:500]}",
         )
 
+    import re as _re
+    # Matches both [doc:xxx] and combined [doc:xxx, doc:yyy, ...] blocks
+    _CITE_RE = _re.compile(r"\[doc:[a-f0-9-]+(?:[,\s]+doc:[a-f0-9-]+)*\]")
+    _ID_RE = _re.compile(r"[a-f0-9-]{8,}")
+
+    def _extract_cited_ids(text: str) -> List[str]:
+        found: List[str] = []
+        for block in _CITE_RE.findall(text or ""):
+            for d in _ID_RE.findall(block):
+                if d not in found:
+                    found.append(d)
+        return found
+
     doc_by_id = {d["id"]: d for d in docs}
     now = _iso(_now())
     stored: List[Dict[str, Any]] = []
     for s in signals_raw[:8]:
         sig_id = str(uuid.uuid4())
-        doc_ids = [x for x in (s.get("doc_ids") or []) if x in doc_by_id]
+        summary_text = (s.get("summary") or "")
+        inline_ids = _extract_cited_ids(summary_text) + _extract_cited_ids(s.get("headline") or "")
+        # Union of doc_ids from the explicit array AND inline [doc:xxx] citations
+        merged_ids: List[str] = []
+        for d_id in (list(s.get("doc_ids") or []) + inline_ids):
+            if d_id in doc_by_id and d_id not in merged_ids:
+                merged_ids.append(d_id)
         sources = [
             {"doc_id": d_id, "doc_name": doc_by_id[d_id]["name"], "data_trust": doc_by_id[d_id].get("data_trust", "mixed")}
-            for d_id in doc_ids
+            for d_id in merged_ids
         ]
         doc = {
             "id": sig_id, "context_id": context_id,
             "type": s.get("type") if s.get("type") in ("risk", "opportunity", "gap") else "risk",
             "headline": (s.get("headline") or "Unnamed signal")[:240],
-            "summary": (s.get("summary") or "")[:2000],
+            "summary": summary_text[:2000],
             "confidence": s.get("confidence") if s.get("confidence") in ("high", "medium", "low") else "medium",
             "sources": sources,
-            "data_trust": _docs_overall_trust([doc_by_id[i] for i in doc_ids]) if doc_ids else "unrated",
+            "data_trust": _docs_overall_trust([doc_by_id[i] for i in merged_ids]) if merged_ids else "unrated",
             "generated_by": ctx["account"]["id"],
             "focus": body.focus,
             "shielding_masked": llm_out.get("shielding", {}).get("identifiers_masked", 0),

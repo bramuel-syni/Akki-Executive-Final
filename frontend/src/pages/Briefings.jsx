@@ -30,26 +30,36 @@ function formatDate(iso) {
   catch { return iso; }
 }
 
-/** Render text with inline [doc:xxx] citations as footnote chips */
+/** Render text with inline [doc:xxx] citations as footnote chips.
+ *  Handles `[doc:xxx]` and `[doc:xxx, doc:yyy]` patterns. */
 function withCitations(text, sourceMap) {
   if (!text) return null;
-  const parts = text.split(/(\[doc:[a-f0-9-]+\])/g);
-  return parts.map((p, i) => {
-    const m = p.match(/^\[doc:([a-f0-9-]+)\]$/);
-    if (!m) return <span key={i}>{p}</span>;
-    const id = m[1];
-    const idx = sourceMap.get(id);
-    if (!idx) return null;
-    return (
-      <sup
-        key={i}
-        className="inline-flex items-center text-[10px] font-bold text-[#C9A961] mx-0.5"
-        title={sourceMap.get(`${id}:name`)}
-      >
-        [{idx}]
-      </sup>
-    );
+  const BLOCK = /\[doc:[a-f0-9-]+(?:[,\s]+doc:[a-f0-9-]+)*\]/g;
+  const ID = /[a-f0-9-]{8,}/g;
+  const parts = text.split(BLOCK);
+  const matches = text.match(BLOCK) || [];
+  const out = [];
+  parts.forEach((p, i) => {
+    if (p) out.push(<span key={`p-${i}`}>{p}</span>);
+    if (matches[i]) {
+      const ids = matches[i].match(ID) || [];
+      ids.forEach((id, j) => {
+        const idx = sourceMap.get(id);
+        if (idx) {
+          out.push(
+            <sup
+              key={`c-${i}-${j}`}
+              className="inline-flex items-center text-[10px] font-bold text-[#C9A961] mx-0.5"
+              title={sourceMap.get(`${id}:name`)}
+            >
+              [{idx}]
+            </sup>
+          );
+        }
+      });
+    }
   });
+  return out;
 }
 
 function BriefingViewer({ briefing, onArchive }) {
@@ -57,8 +67,11 @@ function BriefingViewer({ briefing, onArchive }) {
   const { sourceMap, orderedIds, docById } = useMemo(() => {
     const ids = [];
     const collect = (t) => {
-      (t || "").replace(/\[doc:([a-f0-9-]+)\]/g, (_, d) => {
-        if (!ids.includes(d)) ids.push(d);
+      (t || "").replace(/\[doc:[a-f0-9-]+(?:[,\s]+doc:[a-f0-9-]+)*\]/g, (block) => {
+        (block.match(/[a-f0-9-]{8,}/g) || []).forEach((d) => {
+          if (!ids.includes(d)) ids.push(d);
+        });
+        return block;
       });
     };
     collect(briefing.opening_paragraph);
