@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
+import CommitteeManager from "@/components/settings/CommitteeManager";
 import { api, apiErrorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -550,6 +551,8 @@ export default function Settings() {
                 )}
               </div>
             </section>
+
+            <CommitteeManager />
           </TabsContent>
 
           {/* MEMBERS */}

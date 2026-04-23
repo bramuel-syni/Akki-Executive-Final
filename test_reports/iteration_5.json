@@ -1,0 +1,40 @@
+{
+  "summary": "Sprint 3 (iteration 5) end-to-end verification: signals/ask router refactor, M14 Lens Room, M11 event-driven pipeline, Mention Inbox bell, Committee Manager in settings, role auto-route. 10/10 backend tests pass in 88s (dominated by real LLM lens call ~25s + pipeline 2-stage LLM run ~50s). Frontend: every required data-testid from the request is present and functional — mention-inbox-btn/list/mark-all-read, committee-manager + add/edit/delete rows, lens-rail/picker/subject-input/run-btn/splash, 6 lens-card-{id}s rendered after catalog fetch, role-mismatch-banner correctly suppressed when activeRole matches context, activeRole auto-routes to 'executive' when user switches into the exec context.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/app bootstrap", "issues": ["On FIRST /auth/me after login (fresh state, no prior localStorage.akki.activeRole), AuthContext leaves akki.activeRole as null and relies on the `effectiveRole = activeRole || availableRoles[0]` fallback. UI renders correctly (header shows 'Ned', no banner) but localStorage.akki.activeRole stays null until the user explicitly switches context. The auto-align branch (AuthContext.jsx lines 29-34) only fires when activeContextId is also absent. Minor polish only — not a functional regression."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sprint3.py",
+    "/app/test_reports/pytest/pytest_sprint3.xml"
+  ],
+  "action_items": [
+    "(Polish, non-blocking) In AuthContext.jsx bootstrap effect, always persist activeRole to localStorage when /auth/me returns a primary ctx — not only when activeContextId was previously null. Currently, `activeRole !== ctx.my_role` at lines 41-44 covers the mismatch case, but when activeRole is null the localStorage setItem is never triggered until the user clicks Switch."
+  ],
+  "critical_code_review_comments": [
+    "routers/pipeline.py: sequential stages in a single HTTP request work on single-pod but block the server for 30-90s per call. Acceptable for MVP; for production add BackgroundTasks or move to a worker queue once concurrency matters. File is 331 lines — fine.",
+    "routers/lens.py: well-structured, 222 lines. `confidence` validated against allowed set with fallback to 'medium' — good defensive parsing. LLM returns JSON; parse_json_response handles malformed. ✓",
+    "routers/signals_ask.py refactor: backend regression green — GET /signals (8+ seeded signals returned), POST /ask persists — no behavioural change detected.",
+    "server.py is now ~1305 lines (was 1942). Further extraction candidates remain (documents, telemetry) but not blocking.",
+    "LensRoom.jsx: lens cards are rendered inside a `catalog.length === 0 ? 'Loading lenses…' : map(...)` gate. During catalog-in-flight (≈300ms), the cards are absent — flaky for naïve Playwright queries. Ship as-is; tests must wait after navigation.",
+    "CommitteeManager admin gating: owner detection appears correct — Bramuel sees edit/delete buttons on all 3 Tuli committees (audit-committee, risk-committee, nominations-committee). ✓",
+    "MentionInbox: bell badge + count hidden when 0 unread — standard behaviour. 'Mark all read' button also correctly only rendered when there is at least 1 unread."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sprint3.py (new — 10 tests)"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% on all iteration-5 required testids + role-auto-route verification"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (pre-seeded 6 contexts, 50 signals, 15 docs)",
+  "seed_data_creation": "Pipeline run created new signals in Tuli Financial Group NED context (via LLM stage 1 + verifier stage 2). One lens run was created and then archived. One TEST_Sprint3Committee was added and deleted for committees regression. No user-visible residue.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_sprint3.py is the new regression suite for iteration 5 (lens room, pipeline, signals/ask router, committees, mentions). Together with test_sprint2.py (committees, simulate, comments+@mentions) and test_sprint1.py (auth, contexts) it forms the full regression pack. Lens run takes ~25s LLM; pipeline.run takes ~50s (two sequential LLM calls). If timeouts trip on slow days, bump pytest timeout to 300s. All backend tests green on 2026-01-23 run.",
+  "rca of the issue": "N/A — all pass. Only polish item is the AuthContext bootstrap not persisting activeRole to localStorage on first login when activeContextId was already set; UI still works via effectiveRole fallback."
+}

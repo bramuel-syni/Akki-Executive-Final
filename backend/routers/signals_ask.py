@@ -1,0 +1,255 @@
+"""M5 — Signals (Highlights) generation + Ask Q&A.
+
+Both endpoints share the same grounding pipeline (Context Object + uploaded
+documents), so they live together in a single router.
+"""
+from __future__ import annotations
+
+import re
+import uuid
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from llm_service import call_llm as llm_call_llm, parse_json_response
+from core import (
+    db, now, iso, write_audit, require_context_membership,
+    gather_context_object, gather_documents_for_grounding,
+    docs_as_grounding_block, docs_overall_trust,
+)
+
+router = APIRouter(prefix="/api")
+
+_CITE_RE = re.compile(r"\[doc:[a-f0-9-]+(?:[,\s]+doc:[a-f0-9-]+)*\]")
+_ID_RE = re.compile(r"[a-f0-9-]{8,}")
+
+
+def _extract_cited_ids(text: str) -> List[str]:
+    found: List[str] = []
+    for block in _CITE_RE.findall(text or ""):
+        for d in _ID_RE.findall(block):
+            if d not in found:
+                found.append(d)
+    return found
+
+
+class SignalGenerateIn(BaseModel):
+    focus: Optional[str] = None
+
+
+@router.post("/contexts/{context_id}/signals/generate")
+async def generate_signals(
+    body: SignalGenerateIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    context_id = ctx["context"]["id"]
+    ctx_obj = await gather_context_object(context_id)
+    docs = await gather_documents_for_grounding(context_id)
+    if not docs:
+        raise HTTPException(
+            status_code=400,
+            detail="Upload at least one document to this context before generating signals.",
+        )
+
+    grounding = docs_as_grounding_block(docs)
+    focus_line = (
+        f"The caller has specifically asked you to focus on: « {body.focus} ». "
+        f"Do not ignore other important signals, but weight this focus.\n\n"
+        if body.focus else ""
+    )
+    co_answers = (ctx_obj or {}).get("answers") or {}
+    persona_bits = []
+    for k in ("q1_role", "q3_focus_areas", "q5_prior_concerns", "q6_lens_preference", "q7_analytical_style"):
+        v = co_answers.get(k)
+        if v:
+            persona_bits.append(f"  · {v}")
+    persona_block = ("\n".join(persona_bits)) if persona_bits else "  · (generic board lens)"
+
+    user_query = (
+        f"Read these documents as a seasoned audit-committee chair would. Look for "
+        f"the 3–6 things that a sharp non-executive would notice on a careful first "
+        f"read. Not the obvious, not the trivial — the things that, if they weren't "
+        f"named, would represent a governance failure.\n\n"
+        f"[WHO YOU'RE WRITING FOR]\n{persona_block}\n\n"
+        f"{focus_line}"
+        f"[DOCUMENTS — every signal MUST cite at least one doc_id from this list]\n"
+        f"{grounding}\n\n"
+        f"For each signal:\n"
+        f"• headline: 8–14 words, declarative (a sentence, not a topic). State the "
+        f"thing that is happening, not its category.\n"
+        f"• summary: 2–4 sentences. Open with the finding. Give the SPECIFIC numbers "
+        f"from the documents. Close with what it implies for the board or executive "
+        f"— what they should ask, decide, or escalate. No filler.\n"
+        f"• type: risk / opportunity / gap. Use 'gap' for things that should exist "
+        f"but don't (e.g., a plan, a control, a succession).\n"
+        f"• confidence: 'high' only when the numbers in the documents leave no room "
+        f"for another reading. 'medium' for pattern-based inferences. 'low' only when "
+        f"trust is weak.\n\n"
+        "For each signal the `doc_ids` array MUST contain every doc_id you used "
+        "as evidence. You may also reference them inline in the summary as "
+        "[doc:xxx] using the exact same UUIDs — do not invent ids.\n\n"
+        'Return JSON: {"signals":[{"type":"risk|opportunity|gap","headline":"...",'
+        '"summary":"...","confidence":"high|medium|low","doc_ids":["..."]}]}'
+    )
+
+    llm_out = await llm_call_llm(
+        module="highlights",
+        user_query=user_query,
+        context_object=ctx_obj,
+        session_context={"session_id": f"signals-{context_id}"},
+        data_trust={"overall": docs_overall_trust(docs)},
+        response_format="json",
+    )
+    parsed = parse_json_response(llm_out.get("response", ""))
+    signals_raw = (parsed or {}).get("signals") if isinstance(parsed, dict) else None
+    if not isinstance(signals_raw, list):
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM did not return a valid signals list. Mode={llm_out.get('mode')}. Raw: {llm_out.get('response', '')[:500]}",
+        )
+
+    doc_by_id = {d["id"]: d for d in docs}
+    created_at = iso(now())
+    stored: List[Dict[str, Any]] = []
+    for s in signals_raw[:8]:
+        sig_id = str(uuid.uuid4())
+        summary_text = (s.get("summary") or "")
+        inline_ids = _extract_cited_ids(summary_text) + _extract_cited_ids(s.get("headline") or "")
+        merged_ids: List[str] = []
+        for d_id in (list(s.get("doc_ids") or []) + inline_ids):
+            if d_id in doc_by_id and d_id not in merged_ids:
+                merged_ids.append(d_id)
+        sources = [
+            {"doc_id": d_id, "doc_name": doc_by_id[d_id]["name"], "data_trust": doc_by_id[d_id].get("data_trust", "mixed")}
+            for d_id in merged_ids
+        ]
+        doc = {
+            "id": sig_id, "context_id": context_id,
+            "type": s.get("type") if s.get("type") in ("risk", "opportunity", "gap") else "risk",
+            "headline": (s.get("headline") or "Unnamed signal")[:240],
+            "summary": summary_text[:2000],
+            "confidence": s.get("confidence") if s.get("confidence") in ("high", "medium", "low") else "medium",
+            "sources": sources,
+            "data_trust": docs_overall_trust([doc_by_id[i] for i in merged_ids]) if merged_ids else "unrated",
+            "generated_by": ctx["account"]["id"],
+            "focus": body.focus,
+            "shielding_masked": llm_out.get("shielding", {}).get("identifiers_masked", 0),
+            "mode": llm_out.get("mode"),
+            "created_at": created_at, "status": "active",
+        }
+        await db.signals.insert_one(doc)
+        doc.pop("_id", None)
+        stored.append(doc)
+
+    await write_audit(
+        context_id, ctx["account"]["id"], "signals.generated", "signal", None,
+        {"count": len(stored), "mode": llm_out.get("mode")},
+    )
+    return {"signals": stored, "mode": llm_out.get("mode")}
+
+
+@router.get("/contexts/{context_id}/signals")
+async def list_signals(
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+    limit: int = 100,
+    committee_id: Optional[str] = None,
+):
+    q: Dict[str, Any] = {"context_id": ctx["context"]["id"], "status": "active"}
+    if committee_id:
+        q["committee_id"] = committee_id
+    sigs = await db.signals.find(q, {"_id": 0}).sort("created_at", -1).to_list(min(limit, 500))
+    return sigs
+
+
+@router.delete("/contexts/{context_id}/signals/{signal_id}")
+async def dismiss_signal(
+    context_id: str, signal_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    await db.signals.update_one(
+        {"id": signal_id, "context_id": context_id},
+        {"$set": {"status": "dismissed", "dismissed_at": iso(now())}},
+    )
+    await write_audit(context_id, ctx["account"]["id"], "signal.dismissed", "signal", signal_id, {})
+    return {"ok": True}
+
+
+class AskIn(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+
+
+@router.post("/contexts/{context_id}/ask")
+async def ask(
+    body: AskIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    context_id = ctx["context"]["id"]
+    ctx_obj = await gather_context_object(context_id)
+    docs = await gather_documents_for_grounding(context_id)
+    grounding = docs_as_grounding_block(docs)
+
+    co_answers = (ctx_obj or {}).get("answers") or {}
+    persona_bits = []
+    for k in ("q1_role", "q3_focus_areas", "q6_lens_preference", "q7_analytical_style"):
+        v = co_answers.get(k)
+        if v:
+            persona_bits.append(f"  · {v}")
+    persona_block = ("\n".join(persona_bits)) if persona_bits else "  · (no context object — respond generally, still grounded)"
+
+    user_query = (
+        f"The director / executive has just asked you this:\n\n"
+        f"    « {body.question} »\n\n"
+        f"Answer them directly — as a colleague, not a form response. Give them "
+        f"the insight first, then the evidence. Keep it tight. Use the numbers.\n\n"
+        f"[WHAT THIS PERSON CARES ABOUT]\n{persona_block}\n\n"
+        f"[THEIR DOCUMENTS — all citations MUST be to doc_ids in this list]\n"
+        f"{grounding}\n\n"
+        f"If the answer genuinely isn't in these documents, say so in one sentence "
+        f"and suggest what the caller could upload to let you answer. Do not speculate."
+    )
+    llm_out = await llm_call_llm(
+        module="ask",
+        user_query=user_query,
+        context_object=ctx_obj,
+        session_context={"session_id": f"ask-{context_id}"},
+        data_trust={"overall": docs_overall_trust(docs)},
+    )
+
+    cited_ids = list({m.group(1) for m in re.finditer(r"\[doc:([a-f0-9-]+)\]", llm_out.get("response", ""))})
+    doc_by_id = {d["id"]: d for d in docs}
+    sources = [
+        {"doc_id": d_id, "doc_name": doc_by_id[d_id]["name"], "data_trust": doc_by_id[d_id].get("data_trust", "mixed")}
+        for d_id in cited_ids if d_id in doc_by_id
+    ]
+
+    record = {
+        "id": str(uuid.uuid4()),
+        "context_id": context_id,
+        "question": body.question,
+        "answer": llm_out.get("response", ""),
+        "sources": sources,
+        "mode": llm_out.get("mode"),
+        "shielding_masked": llm_out.get("shielding", {}).get("identifiers_masked", 0),
+        "asked_by": ctx["account"]["id"],
+        "asked_by_email": ctx["account"]["email"],
+        "created_at": iso(now()),
+    }
+    await db.ask_messages.insert_one(record)
+    record.pop("_id", None)
+    await write_audit(
+        context_id, ctx["account"]["id"], "ask.asked", "ask", record["id"],
+        {"q_chars": len(body.question), "a_chars": len(record["answer"])},
+    )
+    return record
+
+
+@router.get("/contexts/{context_id}/ask")
+async def list_ask_history(
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+    limit: int = 50,
+):
+    msgs = await db.ask_messages.find(
+        {"context_id": ctx["context"]["id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(min(limit, 200))
+    return msgs

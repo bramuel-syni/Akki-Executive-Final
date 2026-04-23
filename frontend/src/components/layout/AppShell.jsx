@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import {
   Home, FileText, Sparkles, GraduationCap,
   Settings, LogOut, ChevronDown, Layers, CheckCircle2, Lock,
-  Briefcase, Landmark, Search, ScrollText, Target,
+  Briefcase, Landmark, Search, ScrollText, Target, Eye,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
@@ -16,6 +16,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import MentionInbox from "@/components/collab/MentionInbox";
 
 // v3.0 — Six surfaces (BRD §13)
 const NAV = [
@@ -24,6 +25,7 @@ const NAV = [
   { to: "/app/highlights", label: "Highlights", icon: Sparkles, module: "M5", ready: true },
   { to: "/app/briefings", label: "Briefings", icon: ScrollText, module: "M12", ready: true },
   { to: "/app/simulate", label: "Simulate", icon: Target, module: "M14", ready: true },
+  { to: "/app/lens", label: "Lens Room", icon: Eye, module: "M14", ready: true },
   { to: "/app/learn", label: "Learn", icon: GraduationCap, module: "M9", ready: true },
 ];
 
@@ -135,6 +137,9 @@ export default function AppShell({ children }) {
             <span className="akki-sans">Search</span>
             <kbd className="ml-2 text-[10px] font-mono bg-[var(--cream-deep)] px-1.5 py-0.5 rounded tracking-wider">⌘K</kbd>
           </button>
+
+          {/* Mentions bell — pulls from /mentions endpoint */}
+          <MentionInbox />
 
           {/* Role switcher (only if dual-capable) */}
           {showRoleSwitcher && (

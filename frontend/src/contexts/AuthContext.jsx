@@ -27,6 +27,21 @@ export function AuthProvider({ children }) {
         if (primary) {
           setActiveContextId(primary);
           window.localStorage.setItem("akki.activeContextId", primary);
+          // Auto-align activeRole with the primary context's my_role
+          const primaryCtx = data.contexts.find((c) => c.id === primary);
+          if (primaryCtx?.my_role && (primaryCtx.my_role === "ned" || primaryCtx.my_role === "executive")) {
+            setActiveRole(primaryCtx.my_role);
+            window.localStorage.setItem("akki.activeRole", primaryCtx.my_role);
+          }
+        }
+      } else if (activeContextId) {
+        // If we already had a persisted activeContextId but the stored role
+        // doesn't match — bring them back into alignment on every bootstrap.
+        const ctx = data.contexts.find((c) => c.id === activeContextId);
+        if (ctx?.my_role && activeRole !== ctx.my_role &&
+            (ctx.my_role === "ned" || ctx.my_role === "executive")) {
+          setActiveRole(ctx.my_role);
+          window.localStorage.setItem("akki.activeRole", ctx.my_role);
         }
       }
       if (!activeRole && data.account?.declared_role && data.account.declared_role !== "undeclared") {
@@ -68,6 +83,16 @@ export function AuthProvider({ children }) {
   const switchContext = useCallback((cid) => {
     setActiveContextId(cid);
     window.localStorage.setItem("akki.activeContextId", cid);
+    // Auto-route activeRole to the context's my_role when they differ, so
+    // Bramuel opening a NED board stops firing the role-mismatch banner.
+    setContexts((prev) => {
+      const target = prev.find((c) => c.id === cid);
+      if (target?.my_role && (target.my_role === "ned" || target.my_role === "executive")) {
+        setActiveRole(target.my_role);
+        window.localStorage.setItem("akki.activeRole", target.my_role);
+      }
+      return prev;
+    });
   }, []);
 
   const switchRole = useCallback((role) => {

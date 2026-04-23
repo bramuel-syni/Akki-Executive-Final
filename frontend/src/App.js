@@ -21,6 +21,7 @@ import InviteAccept from "@/pages/InviteAccept";
 import NewContext from "@/pages/NewWorkspace";
 import ContextPortfolio from "@/pages/ContextPortfolio";
 import Simulate from "@/pages/Simulate";
+import LensRoom from "@/pages/LensRoom";
 
 function PublicOnlyRoute({ children }) {
   const { account } = useAuth();
@@ -48,6 +49,7 @@ function App() {
           <Route path="/app/ask" element={<Navigate to="/app/workspace" replace />} />
           <Route path="/app/briefings" element={<ProtectedRoute><Briefings /></ProtectedRoute>} />
           <Route path="/app/simulate" element={<ProtectedRoute><Simulate /></ProtectedRoute>} />
+          <Route path="/app/lens" element={<ProtectedRoute><LensRoom /></ProtectedRoute>} />
           <Route path="/app/learn" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
           <Route path="/app/learn/:id" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
           <Route path="/app/documents/:id" element={<ProtectedRoute><DocumentViewer /></ProtectedRoute>} />
