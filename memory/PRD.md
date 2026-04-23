@@ -166,18 +166,45 @@ restructure.
     role-mismatch banner ever-present because Bramuel's default context is NED
     while `activeRole` defaults to `executive`) — both working-as-designed.
 
-## Sprint 2 — queued (user's 7-point feedback, items 3 / 6 / 7)
-- **Simulate & Forecasting** (Feedback #3) — qualitative scenario planner on a
-  new `/app/simulate` surface; takes a signal or context and walks through
-  1-year / 3-year trajectory on top of the Context Object.
-- **Sub-committees** (Feedback #6) — extend Context model with
-  `committees: [{ id, name, charter, members }]`, filter Highlights/Briefings
-  by committee, route-level scope chip in AppShell.
-- **Human-to-human collaboration** (Feedback #7) — inline comments +
-  @mentions + threads on Signals / Briefings / Documents; reuses the
-  existing Ask persistent panel pattern for thread UI.
+## Sprint 2 — SHIPPED 2026-04-23 (items 3 / 6 / 7 complete)
+### Phase 1 — Backend refactor
+- **NEW** `/app/backend/core.py`: single source for db + helpers + auth deps.
+- **NEW** `/app/backend/routers/{briefings,learn,committees,simulate,comments}.py`.
+- `server.py`: 1,941 → 1,570 lines. Pattern proven for future router migrations.
 
-## Recent fixes (legacy)
+### Phase 2 — Sub-committees (Feedback #6)
+- Contexts carry `committees: [{id, name, your_role}]`; IDs auto-backfilled on
+  startup for seeded boards.
+- Full CRUD at `/api/contexts/{id}/committees` (owner-only writes); deletion
+  unsets `committee_id` on referencing artefacts.
+- `committee_id` filter query param added to signals, briefings, documents,
+  simulations list endpoints.
+- Highlights shows a "Scope" chip row; Briefings left-rail gets a committee
+  `<select>`. Chair badge rendered when `your_role === "chair"`.
+
+### Phase 3 — Simulate / Forecasting (Feedback #3)
+- New surface `/app/simulate`. LLM produces Best / Base / Stress paragraphs
+  for 1y and/or 3y horizon, a 3–6 item watchlist with early-warning triggers
+  and committee routing, assumptions, and the single sharpest board question.
+- Backend: `routers/simulate.py`. Side-nav adds **Simulate** (Target icon).
+
+### Phase 4 — Human-to-human collaboration (Feedback #7)
+- Polymorphic comment store — artefacts: signal / briefing / document / simulation.
+  Threaded via flat list + `parent_id` for single-level replies.
+- `@mentions` parsed from body, resolved to context members by email-prefix
+  or first-name. Mention records written to a separate collection (inbox-ready).
+- Endpoints: `GET/POST /api/contexts/{id}/{artefact_type}/{id}/comments`,
+  `DELETE /api/contexts/{id}/comments/{id}`, `GET /mentions`, mark-read.
+- **NEW** `CommentThread.jsx` wired into Briefings, Simulate, DocumentViewer
+  viewers. Includes @mention highlight, relative timestamps, delete (author
+  or context admin), ping-count badge.
+
+### Testing
+- iteration_4 — 100% backend (18/18), 100% frontend on all Sprint-2 testids.
+- Only non-blocking note: pre-existing role-mismatch banner (unchanged since
+  iteration 3).
+
+## Recent fixes
 - **2026-04-23** — Workspace doc row nested-button hydration warning: outer wrapper
   converted to `<div role="button" tabIndex={0}>` with keyboard handler; TrustChip
   wrapped in a `stopPropagation` span so changing trust doesn't open the document.
