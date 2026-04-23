@@ -18,25 +18,11 @@ function greeting(name) {
   return `${g}, ${name}.`;
 }
 
-function SectionHeader({ overline, count, viewAllTo }) {
-  return (
-    <div className="flex items-end justify-between mb-4">
-      <div>
-        <p className="akki-overline">{overline}</p>
-      </div>
-      <div className="flex items-center gap-4 text-[12px] text-[var(--muted)]">
-        {typeof count === "number" && (
-          <span>{count} total</span>
-        )}
-        {viewAllTo && (
-          <Link to={viewAllTo} className="akki-gesture text-[13px]">
-            View all <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        )}
-      </div>
-    </div>
-  );
-}
+const HOME_TABS = [
+  { key: "signals",   label: "Top signals",    icon: Sparkles,   viewAllTo: "/app/highlights" },
+  { key: "briefings", label: "Top briefings",  icon: ScrollText, viewAllTo: "/app/briefings" },
+  { key: "documents", label: "New documents",  icon: FileText,   viewAllTo: "/app/workspace" },
+];
 
 export default function AppHome() {
   const { account, activeContext, activeRole, contexts } = useAuth();
@@ -45,6 +31,7 @@ export default function AppHome() {
   const [briefings, setBriefings] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("signals");
 
   const load = useCallback(async () => {
     if (!contextId) { setLoading(false); return; }
@@ -139,102 +126,146 @@ export default function AppHome() {
             </p>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto pr-2 -mr-2 space-y-10 pb-8" data-testid="home-sections">
-            {/* TOP SIGNALS */}
-            <section data-testid="section-top-signals">
-              <SectionHeader overline="Top signals" count={signals.length} viewAllTo="/app/highlights" />
-              {loading ? (
-                <div className="h-24 flex items-center text-[12px] uppercase tracking-widest text-[var(--muted)]">Loading…</div>
-              ) : topSignals.length === 0 ? (
-                <EmptySlot
-                  icon={Sparkles}
-                  copy="Upload a pack to let AKKI surface risks, opportunities, and gaps."
-                  cta={{ label: "Upload pack", to: "/app/workspace" }}
-                />
-              ) : (
-                <div className="space-y-3">
-                  {topSignals.map((s) => (
-                    <StreamCard
-                      key={s.id}
-                      type={s.type}
-                      lead={s.headline}
-                      timestamp={s.created_at}
-                      chips={[
-                        { label: CONFIDENCE_LABEL[s.confidence] || "Medium confidence" },
-                        { label: (s.data_trust || "unrated") + " data" },
-                      ]}
-                      to="/app/highlights"
-                      gesture={{ label: "Open signal", to: "/app/highlights" }}
-                      data-testid={`home-signal-${s.id}`}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden" data-testid="home-sections">
+            {/* Tab strip — next to each other per user's ask */}
+            <div className="shrink-0 flex items-center justify-between border-b border-[var(--rule)] mb-5">
+              <div className="flex items-center gap-0" data-testid="home-tabs">
+                {HOME_TABS.map((t) => {
+                  const Icon = t.icon;
+                  const active = activeTab === t.key;
+                  const count = t.key === "signals" ? signals.length
+                              : t.key === "briefings" ? briefings.length
+                              : documents.length;
+                  return (
+                    <button
+                      key={t.key}
+                      onClick={() => setActiveTab(t.key)}
+                      className={`relative flex items-center gap-2 px-4 py-2.5 text-[13.5px] transition-colors ${
+                        active
+                          ? "text-[var(--ink)] font-medium"
+                          : "text-[var(--muted)] hover:text-[var(--deep)]"
+                      }`}
+                      data-testid={`home-tab-${t.key}`}
+                    >
+                      <Icon className={`w-3.5 h-3.5 ${active ? "text-[var(--accent)]" : ""}`} strokeWidth={1.8} />
+                      <span>{t.label}</span>
+                      <span className={`text-[11px] ${active ? "text-[var(--accent)]" : "text-[var(--muted)]/70"}`}>
+                        {count}
+                      </span>
+                      {active && (
+                        <span className="absolute left-0 right-0 -bottom-px h-[2px] bg-[var(--accent)]" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              <Link
+                to={HOME_TABS.find((t) => t.key === activeTab)?.viewAllTo || "/app/highlights"}
+                className="akki-gesture text-[13px] pb-1"
+                data-testid="home-view-all"
+              >
+                View all <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
 
-            {/* TOP BRIEFINGS */}
-            <section data-testid="section-top-briefings">
-              <SectionHeader overline="Top briefings" count={briefings.length} viewAllTo="/app/briefings" />
-              {loading ? null : topBriefings.length === 0 ? (
-                <EmptySlot
-                  icon={ScrollText}
-                  copy={signals.length === 0
-                    ? "Briefings bundle your signals into a printable page. Generate signals first."
-                    : "No briefings yet — compose your first for the next meeting."}
-                  cta={signals.length === 0
-                    ? { label: "Generate signals", to: "/app/highlights" }
-                    : { label: "Compose briefing", to: "/app/briefings" }}
-                />
-              ) : (
-                <div className="space-y-3">
-                  {topBriefings.map((b) => (
-                    <StreamCard
-                      key={b.id}
-                      type="briefing"
-                      lead={b.title}
-                      timestamp={b.created_at}
-                      chips={[
-                        { label: `v${b.version}` },
-                        { label: `${b.items?.length || 0} items` },
-                      ]}
-                      to="/app/briefings"
-                      gesture={{ label: "Open briefing", to: "/app/briefings" }}
-                      data-testid={`home-briefing-${b.id}`}
+            {/* Scrolling panel — only one active stream visible */}
+            <div className="flex-1 min-h-0 overflow-y-auto pr-2 -mr-2 pb-8" data-testid="home-scroll">
+              {activeTab === "signals" && (
+                <section data-testid="section-top-signals">
+                  {loading ? (
+                    <div className="h-24 flex items-center text-[12px] uppercase tracking-widest text-[var(--muted)]">Loading…</div>
+                  ) : topSignals.length === 0 ? (
+                    <EmptySlot
+                      icon={Sparkles}
+                      copy="Upload a pack to let AKKI surface risks, opportunities, and gaps."
+                      cta={{ label: "Upload pack", to: "/app/workspace" }}
                     />
-                  ))}
-                </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {topSignals.map((s) => (
+                        <StreamCard
+                          key={s.id}
+                          type={s.type}
+                          lead={s.headline}
+                          timestamp={s.created_at}
+                          chips={[
+                            { label: CONFIDENCE_LABEL[s.confidence] || "Medium confidence" },
+                            { label: (s.data_trust || "unrated") + " data" },
+                          ]}
+                          to="/app/highlights"
+                          gesture={{ label: "Open signal", to: "/app/highlights" }}
+                          data-testid={`home-signal-${s.id}`}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
               )}
-            </section>
 
-            {/* NEW DOCUMENTS */}
-            <section data-testid="section-new-documents">
-              <SectionHeader overline="New documents" count={documents.length} viewAllTo="/app/workspace" />
-              {loading ? null : newDocs.length === 0 ? (
-                <EmptySlot
-                  icon={FileText}
-                  copy="Drop a board pack, minute, or report in Workspace to get started."
-                  cta={{ label: "Open Workspace", to: "/app/workspace" }}
-                />
-              ) : (
-                <div className="space-y-3">
-                  {newDocs.map((d) => (
-                    <StreamCard
-                      key={d.id}
-                      type="document"
-                      lead={d.name}
-                      timestamp={d.created_at}
-                      chips={[
-                        { label: d.data_trust || "unrated" },
-                        ...(d.extracted_chars ? [{ label: `${(d.extracted_chars / 1000).toFixed(1)}k chars` }] : []),
-                      ]}
-                      to={`/app/documents/${d.id}`}
-                      gesture={{ label: "Open document", to: `/app/documents/${d.id}` }}
-                      data-testid={`home-doc-${d.id}`}
+              {activeTab === "briefings" && (
+                <section data-testid="section-top-briefings">
+                  {loading ? null : topBriefings.length === 0 ? (
+                    <EmptySlot
+                      icon={ScrollText}
+                      copy={signals.length === 0
+                        ? "Briefings bundle your signals into a printable page. Generate signals first."
+                        : "No briefings yet — compose your first for the next meeting."}
+                      cta={signals.length === 0
+                        ? { label: "Generate signals", to: "/app/highlights" }
+                        : { label: "Compose briefing", to: "/app/briefings" }}
                     />
-                  ))}
-                </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {topBriefings.map((b) => (
+                        <StreamCard
+                          key={b.id}
+                          type="briefing"
+                          lead={b.title}
+                          timestamp={b.created_at}
+                          chips={[
+                            { label: `v${b.version}` },
+                            { label: `${b.items?.length || 0} items` },
+                          ]}
+                          to="/app/briefings"
+                          gesture={{ label: "Open briefing", to: "/app/briefings" }}
+                          data-testid={`home-briefing-${b.id}`}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
               )}
-            </section>
+
+              {activeTab === "documents" && (
+                <section data-testid="section-new-documents">
+                  {loading ? null : newDocs.length === 0 ? (
+                    <EmptySlot
+                      icon={FileText}
+                      copy="Drop a board pack, minute, or report in Workspace to get started."
+                      cta={{ label: "Open Workspace", to: "/app/workspace" }}
+                    />
+                  ) : (
+                    <div className="space-y-3">
+                      {newDocs.map((d) => (
+                        <StreamCard
+                          key={d.id}
+                          type="document"
+                          lead={d.name}
+                          timestamp={d.created_at}
+                          chips={[
+                            { label: d.data_trust || "unrated" },
+                            ...(d.extracted_chars ? [{ label: `${(d.extracted_chars / 1000).toFixed(1)}k chars` }] : []),
+                          ]}
+                          to={`/app/documents/${d.id}`}
+                          gesture={{ label: "Open document", to: `/app/documents/${d.id}` }}
+                          data-testid={`home-doc-${d.id}`}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+            </div>
           </div>
         </div>
 

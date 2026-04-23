@@ -139,12 +139,13 @@ restructure.
 ## Recent fixes
 - **2026-04-23** — **Sprint 1 shipped** (3 of the user's 7-point feedback list).
   - **Task 1 — Curated Home** (Feedback #2): `AppHome.jsx` now shows top-of-pile
-    *Top signals* (≤3, ranked by confidence then risk-bias then recency),
-    *Top briefings* (≤2 by recency) and *New documents* (≤3 by recency) with
-    per-section "View all" links to `/app/highlights`, `/app/briefings`,
-    `/app/workspace`. Fixed page height (`h-[calc(100vh-4rem)]`) — only the
-    inner stream section scrolls; chrome stays put. Companion rail adds
-    "My portfolio" link to `/app/contexts`.
+    content as **three sibling tabs** — *Top signals* (≤3, ranked by confidence
+    then risk-bias then recency), *Top briefings* (≤2 by recency), *New
+    documents* (≤3 by recency) — with a single right-aligned "View all" link
+    that follows the active tab (`/app/highlights`, `/app/briefings`,
+    `/app/workspace`). Default tab is *Top signals*. Fixed page height
+    (`h-[calc(100vh-4rem)]`) — only the active panel scrolls; chrome stays put.
+    Companion rail adds "My portfolio" link to `/app/contexts`.
   - **Task 2 — Learn mini-tabs** (Feedback #1): `Learn.jsx` refactored to four
     content-type tabs (`News · TL Articles · Videos · Case Studies`) with
     underline accent on active tab, per-tab topic pills on the left rail, and
