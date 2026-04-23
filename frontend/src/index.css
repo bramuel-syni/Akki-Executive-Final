@@ -2,19 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Georgia&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  --akki-navy: #0A1F44;
-  --akki-navy-hover: #0E2958;
-  --akki-navy-soft: #193262;
-  --akki-gold: #C9A961;
-  --akki-gold-hover: #B39556;
-  --akki-canvas: #FAFBFC;
-  --akki-surface: #FFFFFF;
-  --akki-border: #E1E6ED;
-  --akki-text: #0A1F44;
-  --akki-muted: #64748B;
+  /* AKKI v4.2 tokens — cream + oxblood + warm neutrals */
+  --ink:         #1A1A1A;
+  --deep:        #2B2B2A;
+  --muted:       #6F6A5D;
+  --cream:       #F7F3EA;
+  --cream-deep:  #EFE9D9;
+  --warm-white:  #FAFAF5;
+  --rule:        #D9D3C1;
+  --accent:      #8B2E2B;   /* oxblood */
+  --accent-soft: #F3E7E5;
+  --risk:        #8B2E2B;
+  --gap:         #A67C00;
+  --opportunity: #3D6F3D;
+  --neutral:     #6F6A5D;
+  --meeting:     #4A5568;
 }
 
 * {
@@ -28,90 +33,188 @@ html, body, #root {
 }
 
 body {
-  font-family: 'Inter', system-ui, sans-serif;
-  background: var(--akki-canvas);
-  color: var(--akki-text);
+  font-family: 'Inter', -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  background: var(--cream);
+  color: var(--ink);
   font-feature-settings: "ss01", "cv11";
 }
 
+/* Typography utilities */
+.akki-serif { font-family: Georgia, Cambria, 'Times New Roman', serif; }
+.akki-sans  { font-family: 'Inter', -apple-system, 'Helvetica Neue', Arial, sans-serif; }
+.akki-mono  { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
 ::selection {
-  background: var(--akki-gold);
-  color: var(--akki-navy);
+  background: var(--accent);
+  color: #fff;
 }
 
-/* Scrollbars — subtle, executive */
+/* Subtle scrollbars */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 0; }
-::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+::-webkit-scrollbar-thumb { background: #c7c1b0; border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
-/* Shadcn CSS variables for light theme, rewired to AKKI palette */
+/* Shadcn CSS variables rewired to AKKI v4.2 palette (cream + oxblood) */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222 60% 15%;
+    --background: 44 42% 94%;           /* #F7F3EA cream */
+    --foreground: 0 0% 10%;              /* #1A1A1A ink */
     --card: 0 0% 100%;
-    --card-foreground: 222 60% 15%;
+    --card-foreground: 0 0% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 60% 15%;
-    --primary: 222 74% 15%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 2 51% 36%;                /* #8B2E2B oxblood */
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 20% 96%;
-    --secondary-foreground: 222 60% 15%;
-    --muted: 210 20% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 40 44% 59%;
-    --accent-foreground: 222 74% 15%;
+    --secondary: 44 37% 89%;             /* cream-deep */
+    --secondary-foreground: 0 0% 10%;
+    --muted: 44 37% 89%;
+    --muted-foreground: 39 9% 40%;       /* muted */
+    --accent: 2 51% 36%;
+    --accent-foreground: 0 0% 100%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    --border: 213 20% 91%;
-    --input: 213 20% 91%;
-    --ring: 40 44% 59%;
-    --radius: 0.125rem;
+    --border: 42 27% 80%;                /* rule */
+    --input: 42 27% 80%;
+    --ring: 2 51% 36%;
+    --radius: 0.5rem;
   }
 }
 
-/* Utility: overline typography per design system */
+/* Typography utilities from spec */
 .akki-overline {
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--akki-gold);
+  letter-spacing: 0.16em;
+  color: var(--muted);
+  font-family: 'Inter', sans-serif;
 }
 
-/* Grid paper background for hero / marketing */
-.akki-grid-bg {
-  background-image:
-    linear-gradient(rgba(10, 31, 68, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(10, 31, 68, 0.04) 1px, transparent 1px);
-  background-size: 48px 48px;
+.akki-greeting {
+  font-family: Georgia, serif;
+  font-size: 26px;
+  line-height: 1.25;
+  color: var(--ink);
+  font-weight: 400;
 }
 
-/* Dotted texture */
-.akki-dots-bg {
-  background-image: radial-gradient(rgba(255,255,255,0.08) 1px, transparent 1px);
-  background-size: 20px 20px;
+.akki-lead {
+  font-family: Georgia, serif;
+  font-size: 18px;
+  line-height: 1.5;
+  color: var(--ink);
+  font-weight: 400;
 }
 
-@keyframes akki-shimmer {
-  0%, 100% { opacity: 0.8; }
-  50% { opacity: 1; }
-}
-.akki-pulse-gold {
-  animation: akki-shimmer 2.4s ease-in-out infinite;
+.akki-title-22 {
+  font-family: Georgia, serif;
+  font-size: 22px;
+  line-height: 1.3;
+  color: var(--ink);
+  font-weight: 400;
 }
 
+.akki-meta {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.akki-gesture {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: border-color 150ms ease;
+  border-bottom: 1px solid transparent;
+}
+.akki-gesture:hover { border-bottom-color: var(--accent); }
+
+.akki-context-chip {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  background: var(--cream-deep);
+  color: var(--deep);
+  padding: 4px 10px;
+  border-radius: 14px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.akki-scope-chip {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  padding: 4px 2px;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  transition: border-color 150ms ease, color 150ms ease;
+  cursor: pointer;
+}
+.akki-scope-chip[data-selected="true"] {
+  color: var(--deep);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+.akki-scope-chip:hover { color: var(--deep); }
+
+/* Stream card (Home + Highlights shared) */
+.akki-stream-card {
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 24px 24px 24px 28px;
+  transition: box-shadow 150ms ease, transform 150ms ease;
+  cursor: pointer;
+}
+.akki-stream-card::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 8px 0 0 8px;
+  transition: width 150ms ease;
+}
+.akki-stream-card[data-severity="opportunity"]::before { background: var(--opportunity); }
+.akki-stream-card[data-severity="gap"]::before         { background: var(--gap); }
+.akki-stream-card[data-severity="neutral"]::before     { background: var(--neutral); }
+.akki-stream-card[data-severity="meeting"]::before     { background: var(--meeting); }
+.akki-stream-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+.akki-stream-card:hover::before { width: 4px; }
+
+.akki-type-badge {
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+/* Oxblood focus ring */
+.akki-ring:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Animations */
 @keyframes akki-fade-up {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.akki-fade-up { animation: akki-fade-up 0.5s ease-out both; }
+.akki-fade-up { animation: akki-fade-up 0.35s ease-out both; }
 
-.akki-link {
-  color: var(--akki-gold);
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  transition: border-color 150ms ease-in-out;
+@keyframes akki-shimmer {
+  0%, 100% { opacity: 0.8; }
+  50%      { opacity: 1; }
 }
-.akki-link:hover { border-color: var(--akki-gold); }
+.akki-pulse { animation: akki-shimmer 2.4s ease-in-out infinite; }

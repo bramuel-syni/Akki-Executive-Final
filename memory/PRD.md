@@ -42,7 +42,37 @@ module that requires a paid/external service.
 - M5 frontend — Highlights + Ask pages wired.
 - Brute-force lockout bug fixed (ident keyed on email only, not ip:email).
 
-### 2026-04-23 — v4.0 Path A Phase 1 (UI restructure)
+### 2026-04-23 — v4.2 Frontend Polish (Path B + Act + Learn)
+- **Theme swap**: cream `#F7F3EA` + oxblood `#8B2E2B` + Georgia serif leads +
+  Inter chrome + JetBrains Mono for metadata. Tokenised as CSS variables plus
+  rewired Shadcn HSL tokens. All new utility classes (`akki-lead`, `akki-greeting`,
+  `akki-scope-chip`, `akki-context-chip`, `akki-gesture`, `akki-stream-card`).
+- **AppShell re-skin**: top cream chrome with AKKI wordmark + context switcher +
+  role switcher + global search button (⌘K) + avatar; 220px cream left rail
+  with 3px oxblood accent on the selected nav item.
+- **Attention stream Home** (replaces NedHome + ExecHome): single role-aware
+  card stream ranking signals / briefings / recent documents by freshness, with
+  scope chips (All / Signals / Briefings / Documents) and a 280px companion
+  rail (Sources / Recent briefings / Quick actions / Other contexts).
+- **Highlights** rewritten to the same card pattern with a filter bar
+  (type + confidence) and per-card "Act on this" button.
+- **StreamCard** shared component: 3-row structure (type badge + timestamp /
+  Georgia 18px lead / context chips + oxblood gesture), 3px severity-colored
+  left accent that thickens on hover.
+- **Ask merged into Workspace** per v4.2 spec: `/app/ask` redirects to
+  `/app/workspace`; Ask nav item removed. The persistent AskPanel on the
+  Workspace right pane is now the only Ask surface.
+- **Act overlay** (`ActModal`): unified 720px composition modal with two
+  destinations — *Message someone* (opens user's mail client pre-filled with
+  signal headline + summary + citations) and *Add to briefing* (backs to
+  `POST /api/contexts/:id/briefings` with the single signal).
+- **Learn module (M9)**: seven curated articles on AI governance for boards —
+  Governance basics, NIST + ISO 42001 frameworks, AI in financial services,
+  AI literacy in 60 minutes, EU AI Act, Incident response, Vendor AI oversight.
+  Each article pulls content from reputable sources (NACD, IoD, Deloitte,
+  Stanford HAI, NIST, European Commission, FCA/BoE, ICO) and closes with
+  "questions to take into the room". Search + topic filter in the library grid.
+  Reader view at `/app/learn/:id`.
 - **Reusable `AskPanel`** component — used by both `/app/ask` and Workspace right pane.
   Supports `onCitationClick(docId)` so `[doc:xxx]` citations can drive behaviour in the host.
 - **`DocumentViewer`** page (`/app/documents/:id`) with extracted-text render +

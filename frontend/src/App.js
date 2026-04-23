@@ -12,9 +12,9 @@ import Onboarding from "@/pages/Onboarding";
 import AppHome from "@/pages/AppHome";
 import Workspace from "@/pages/Workspace";
 import Highlights from "@/pages/Highlights";
-import Ask from "@/pages/Ask";
 import Briefings from "@/pages/Briefings";
 import DocumentViewer from "@/pages/DocumentViewer";
+import Learn from "@/pages/Learn";
 import TenantSettings from "@/pages/TenantSettings";
 import AccountSecurity from "@/pages/AccountSecurity";
 import InviteAccept from "@/pages/InviteAccept";
@@ -42,8 +42,11 @@ function App() {
           <Route path="/app" element={<ProtectedRoute><AppHome /></ProtectedRoute>} />
           <Route path="/app/workspace" element={<ProtectedRoute><Workspace /></ProtectedRoute>} />
           <Route path="/app/highlights" element={<ProtectedRoute><Highlights /></ProtectedRoute>} />
-          <Route path="/app/ask" element={<ProtectedRoute><Ask /></ProtectedRoute>} />
+          {/* v4.2: Ask merges into Workspace; any /app/ask redirects there */}
+          <Route path="/app/ask" element={<Navigate to="/app/workspace" replace />} />
           <Route path="/app/briefings" element={<ProtectedRoute><Briefings /></ProtectedRoute>} />
+          <Route path="/app/learn" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
+          <Route path="/app/learn/:id" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
           <Route path="/app/documents/:id" element={<ProtectedRoute><DocumentViewer /></ProtectedRoute>} />
           <Route path="/app/contexts/new" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />
           <Route path="/app/new-workspace" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />

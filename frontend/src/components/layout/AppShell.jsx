@@ -5,7 +5,7 @@ import Logo from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
-  Home, FileText, Sparkles, MessageSquareText, GraduationCap,
+  Home, FileText, Sparkles, GraduationCap,
   Settings, LogOut, ChevronDown, Layers, CheckCircle2, Lock,
   Briefcase, Landmark, Search, ScrollText,
 } from "lucide-react";
@@ -22,9 +22,8 @@ const NAV = [
   { to: "/app", label: "Home", icon: Home, end: true, ready: true },
   { to: "/app/workspace", label: "Workspace", icon: FileText, module: "M3", ready: true },
   { to: "/app/highlights", label: "Highlights", icon: Sparkles, module: "M5", ready: true },
-  { to: "/app/ask", label: "Ask", icon: MessageSquareText, module: "M5", ready: true },
   { to: "/app/briefings", label: "Briefings", icon: ScrollText, module: "M12", ready: true },
-  { to: "/app/learn", label: "Learn", icon: GraduationCap, module: "M9", ready: false },
+  { to: "/app/learn", label: "Learn", icon: GraduationCap, module: "M9", ready: true },
 ];
 
 const CONTEXT_TYPE_LABEL = {
@@ -109,31 +108,31 @@ export default function AppShell({ children }) {
   const RoleIcon = roleIcon;
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAFBFC]">
-      {/* Top navy header */}
+    <div className="min-h-screen flex flex-col bg-[var(--cream)]">
+      {/* Top chrome — cream, 64px, 1px rule border */}
       <header
-        className="bg-[#0A1F44] text-white border-b border-black/20 h-16 sticky top-0 z-40 flex items-center px-6 justify-between"
+        className="bg-[var(--cream)] text-[var(--ink)] border-b border-[var(--rule)] h-16 sticky top-0 z-40 flex items-center px-6 justify-between"
         data-testid="top-header"
       >
         <div className="flex items-center gap-8">
-          <Link to="/app" data-testid="header-home-link"><Logo inverted /></Link>
-          <div className="hidden md:flex items-center gap-1 text-[10px] tracking-[0.25em] uppercase text-white/40">
+          <Link to="/app" data-testid="header-home-link" className="akki-serif text-[24px] text-[var(--ink)] leading-none">AKKI</Link>
+          <div className="hidden md:flex items-center gap-1 text-[10px] tracking-[0.2em] uppercase text-[var(--muted)]">
             <span>Confidential</span>
-            <span className="text-white/20">·</span>
-            <span className="text-[#C9A961]/80">Internal</span>
+            <span className="opacity-40">·</span>
+            <span className="text-[var(--accent)]">Internal</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Cmd+K launcher */}
+        <div className="flex items-center gap-5">
+          {/* Cmd+K search */}
           <button
-            className="hidden md:flex items-center gap-2 px-3 py-1.5 text-xs bg-[#193262]/60 hover:bg-[#1f3d73] text-white/70 rounded-sm transition-colors border border-white/10"
+            className="hidden md:flex items-center gap-2 px-3 py-1.5 text-[13px] bg-white hover:bg-[var(--cream-deep)] text-[var(--muted)] rounded-md transition-colors border border-[var(--rule)]"
             onClick={() => setPaletteOpen(true)}
             data-testid="cmdk-launch-btn"
           >
-            <Search className="w-3.5 h-3.5 text-white/50" strokeWidth={1.8} />
-            <span>Switch context</span>
-            <kbd className="ml-2 text-[9px] font-mono bg-white/10 px-1.5 py-0.5 rounded-sm tracking-wider">⌘K</kbd>
+            <Search className="w-3.5 h-3.5" strokeWidth={1.8} />
+            <span className="akki-sans">Search</span>
+            <kbd className="ml-2 text-[10px] font-mono bg-[var(--cream-deep)] px-1.5 py-0.5 rounded tracking-wider">⌘K</kbd>
           </button>
 
           {/* Role switcher (only if dual-capable) */}
@@ -141,16 +140,16 @@ export default function AppShell({ children }) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm bg-[#193262] hover:bg-[#1f3d73] rounded-sm transition-colors"
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-[var(--deep)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
                   data-testid="role-switcher-btn"
                 >
-                  <RoleIcon className="w-4 h-4 text-[#C9A961]" strokeWidth={1.8} />
+                  <RoleIcon className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.8} />
                   <span className="capitalize">{activeRole}</span>
-                  <ChevronDown className="w-3.5 h-3.5 text-white/50" />
+                  <ChevronDown className="w-3.5 h-3.5 text-[var(--muted)]" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56 rounded-sm">
-                <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Acting as</DropdownMenuLabel>
+              <DropdownMenuContent align="end" className="w-56 rounded-md">
+                <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">Acting as</DropdownMenuLabel>
                 {availableRoles.map((r) => (
                   <DropdownMenuItem
                     key={r}
@@ -159,7 +158,7 @@ export default function AppShell({ children }) {
                     data-testid={`role-switch-${r}`}
                   >
                     <span className="capitalize">{r === "ned" ? "Non-Executive Director" : r}</span>
-                    {r === activeRole && <CheckCircle2 className="w-4 h-4 text-[#C9A961]" />}
+                    {r === activeRole && <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
@@ -170,19 +169,19 @@ export default function AppShell({ children }) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
-                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-[#193262] hover:bg-[#1f3d73] rounded-sm transition-colors"
+                className="flex items-center gap-2 px-3 py-1.5 text-[14px] text-[var(--deep)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
                 data-testid="context-switcher-btn"
               >
-                <Layers className="w-4 h-4 text-[#C9A961]" strokeWidth={1.8} />
-                <span className="max-w-[180px] truncate">{activeContext?.name || "—"}</span>
-                {isSponsored && <span className="text-[9px] uppercase tracking-[0.2em] text-[#C9A961]/80 ml-1">sponsored</span>}
-                <ChevronDown className="w-3.5 h-3.5 text-white/50" />
+                <Layers className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.8} />
+                <span className="max-w-[200px] truncate">{activeContext?.name || "—"}</span>
+                {isSponsored && <span className="text-[9px] uppercase tracking-[0.2em] text-[var(--accent)]">sponsored</span>}
+                <ChevronDown className="w-3.5 h-3.5 text-[var(--muted)]" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80 rounded-sm">
+            <DropdownMenuContent align="end" className="w-80 rounded-md">
               {groups.personal.length > 0 && (
                 <>
-                  <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Personal contexts</DropdownMenuLabel>
+                  <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">Personal contexts</DropdownMenuLabel>
                   {groups.personal.map((c) => (
                     <DropdownMenuItem
                       key={c.id}
@@ -192,11 +191,11 @@ export default function AppShell({ children }) {
                     >
                       <div className="flex flex-col">
                         <span className="font-medium">{c.name}</span>
-                        <span className="text-[10px] uppercase tracking-wider text-slate-400">
+                        <span className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
                           {CONTEXT_TYPE_LABEL[c.type] || c.type}
                         </span>
                       </div>
-                      {c.id === activeContext?.id && <CheckCircle2 className="w-4 h-4 text-[#C9A961]" />}
+                      {c.id === activeContext?.id && <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />}
                     </DropdownMenuItem>
                   ))}
                 </>
@@ -204,7 +203,7 @@ export default function AppShell({ children }) {
               {groups.sponsored.length > 0 && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.2em] text-[#C9A961]">Sponsored contexts</DropdownMenuLabel>
+                  <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.2em] text-[var(--accent)]">Sponsored contexts</DropdownMenuLabel>
                   {groups.sponsored.map((c) => (
                     <DropdownMenuItem
                       key={c.id}
@@ -214,47 +213,45 @@ export default function AppShell({ children }) {
                     >
                       <div className="flex flex-col">
                         <span className="font-medium">{c.name}</span>
-                        <span className="text-[10px] uppercase tracking-wider text-[#C9A961]">
+                        <span className="text-[10px] uppercase tracking-wider text-[var(--accent)]">
                           {CONTEXT_TYPE_LABEL[c.type] || c.type}
                         </span>
                       </div>
-                      {c.id === activeContext?.id && <CheckCircle2 className="w-4 h-4 text-[#C9A961]" />}
+                      {c.id === activeContext?.id && <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />}
                     </DropdownMenuItem>
                   ))}
                 </>
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                className="cursor-pointer"
+                className="cursor-pointer text-[var(--accent)]"
                 onClick={() => navigate("/app/contexts/new")}
                 data-testid="create-context-btn"
               >
-                + Add a context
+                + Add context →
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Account menu */}
+          {/* Account avatar */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
-                className="flex items-center gap-2 text-sm pl-3 pr-2 py-1.5 hover:bg-[#193262] rounded-sm transition-colors"
+                className="flex items-center gap-2 text-sm pl-2 pr-2 py-1 hover:bg-[var(--cream-deep)] rounded-md transition-colors"
                 data-testid="account-menu-btn"
               >
-                <div className="w-7 h-7 bg-[#C9A961] text-[#0A1F44] flex items-center justify-center text-xs font-bold rounded-sm">
+                <div className="w-7 h-7 bg-[var(--accent)] text-white flex items-center justify-center text-xs font-bold rounded-full">
                   {(account?.name || account?.email || "?").charAt(0).toUpperCase()}
                 </div>
-                <span className="hidden md:inline max-w-[140px] truncate">{account?.name || account?.email}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-white/50" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64 rounded-sm">
-              <div className="px-3 py-3 border-b">
-                <p className="text-sm font-medium text-[#0A1F44]">{account?.name}</p>
-                <p className="text-xs text-slate-500 truncate">{account?.email}</p>
+            <DropdownMenuContent align="end" className="w-64 rounded-md">
+              <div className="px-3 py-3 border-b border-[var(--rule)]">
+                <p className="text-sm font-medium text-[var(--ink)]">{account?.name}</p>
+                <p className="text-xs text-[var(--muted)] truncate">{account?.email}</p>
                 <div className="flex items-center gap-2 mt-2">
-                  <span className="text-[10px] uppercase tracking-wider text-slate-400">Role</span>
-                  <span className="text-[10px] uppercase tracking-wider font-medium text-[#0A1F44]">
+                  <span className="text-[10px] uppercase tracking-wider text-[var(--muted)]">Role</span>
+                  <span className="text-[10px] uppercase tracking-wider font-medium text-[var(--deep)]">
                     {account?.declared_role === "dual"
                       ? "NED + Executive"
                       : account?.declared_role === "undeclared"
@@ -291,13 +288,13 @@ export default function AppShell({ children }) {
       </header>
 
       <div className="flex flex-1 min-h-0">
-        {/* Left nav */}
+        {/* Left nav rail — cream, 220px, oxblood accent on selected */}
         <aside
-          className="hidden md:flex flex-col bg-[#0A1F44] text-white/80 w-60 border-r border-[#193262] pt-6 pb-8 gap-0.5"
+          className="hidden md:flex flex-col bg-[var(--cream)] text-[var(--deep)] w-[220px] border-r border-[var(--rule)] pt-6 pb-8 gap-0.5"
           data-testid="left-sidebar"
         >
           <div className="px-5 pb-4">
-            <p className="text-[10px] uppercase tracking-[0.25em] text-white/30">Surfaces</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">Surfaces</p>
           </div>
           {NAV.map((item) => {
             const Icon = item.icon;
@@ -305,13 +302,13 @@ export default function AppShell({ children }) {
               return (
                 <div
                   key={item.to}
-                  className="mx-2 flex items-center gap-3 px-3 py-2.5 text-sm text-white/35 cursor-not-allowed border-l-2 border-transparent"
+                  className="mx-2 flex items-center gap-3 px-3 py-2.5 text-[14px] text-[var(--muted)]/70 cursor-not-allowed rounded-sm"
                   data-testid={`nav-${item.label.toLowerCase()}-locked`}
                   title={`Unlocks at ${item.module}`}
                 >
                   <Icon className="w-4 h-4" strokeWidth={1.5} />
                   <span>{item.label}</span>
-                  <span className="ml-auto text-[9px] uppercase tracking-widest text-white/25 bg-white/5 px-1.5 py-0.5 rounded-sm">
+                  <span className="ml-auto text-[9px] uppercase tracking-widest text-[var(--muted)]/60 bg-[var(--cream-deep)] px-1.5 py-0.5 rounded-sm">
                     {item.module}
                   </span>
                 </div>
@@ -323,35 +320,49 @@ export default function AppShell({ children }) {
                 to={item.to}
                 end={item.end}
                 className={({ isActive }) =>
-                  `mx-2 flex items-center gap-3 px-3 py-2.5 text-sm border-l-2 transition-colors rounded-sm ${
+                  `group mx-2 relative flex items-center gap-3 px-3 py-2.5 text-[14px] transition-colors rounded-sm ${
                     isActive
-                      ? "bg-[#193262] text-white border-[#C9A961]"
-                      : "text-white/70 hover:bg-[#193262]/60 hover:text-white border-transparent"
+                      ? "bg-[var(--cream-deep)] text-[var(--ink)] font-medium"
+                      : "text-[var(--deep)] hover:bg-[var(--cream-deep)] hover:text-[var(--ink)]"
                   }`
                 }
                 data-testid={`nav-${item.label.toLowerCase()}`}
               >
-                <Icon className="w-4 h-4" strokeWidth={1.8} />
-                <span>{item.label}</span>
+                {({ isActive }) => (
+                  <>
+                    <span
+                      className={`absolute left-0 top-1 bottom-1 w-[3px] rounded-r transition-opacity ${
+                        isActive ? "bg-[var(--accent)] opacity-100" : "opacity-0"
+                      }`}
+                    />
+                    <Icon className="w-4 h-4" strokeWidth={1.8} />
+                    <span>{item.label}</span>
+                  </>
+                )}
               </NavLink>
             );
           })}
 
           <div className="mt-auto px-5 pt-8">
-            <p className="text-[10px] uppercase tracking-[0.25em] text-white/30 mb-2">Administration</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)] mb-2">Administration</p>
             <NavLink
               to="/app/settings"
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 text-sm border-l-2 transition-colors rounded-sm ${
+                `relative flex items-center gap-3 px-3 py-2.5 text-[14px] transition-colors rounded-sm ${
                   isActive
-                    ? "bg-[#193262] text-white border-[#C9A961]"
-                    : "text-white/70 hover:bg-[#193262]/60 hover:text-white border-transparent"
+                    ? "bg-[var(--cream-deep)] text-[var(--ink)] font-medium"
+                    : "text-[var(--deep)] hover:bg-[var(--cream-deep)] hover:text-[var(--ink)]"
                 }`
               }
               data-testid="nav-settings"
             >
-              <Settings className="w-4 h-4" strokeWidth={1.8} />
-              <span>Settings</span>
+              {({ isActive }) => (
+                <>
+                  <span className={`absolute left-0 top-1 bottom-1 w-[3px] rounded-r transition-opacity ${isActive ? "bg-[var(--accent)] opacity-100" : "opacity-0"}`} />
+                  <Settings className="w-4 h-4" strokeWidth={1.8} />
+                  <span>Settings</span>
+                </>
+              )}
             </NavLink>
           </div>
         </aside>
