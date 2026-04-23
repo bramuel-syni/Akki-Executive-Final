@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 2 — validated v4.0 Path A Phase 1 UI restructure. Backend regression smoke: lockout fix (5×401→429) confirmed; document upload + signal generation + Ask pipeline all still pass (15/15 relevant pytest). Frontend: all new routes render with correct data-testids — AppHome onboarding gate, Workspace 60/40 split with draggable divider (60%→48% on drag), DocumentViewer, Highlights 3-column feed with working type filters, Ask with persistent composer and citation chips. Workspace-citation-click-loads-document-in-left-pane end-to-end flow verified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/refresh", "issue": "Still does not return access_token in body (carried over from iteration 1). Bearer-only clients cannot rotate Authorization header."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Workspace.jsx (DocumentsBrowser doc row)", "issue": "React hydration error: <button data-testid='doc-open-{id}'> wraps the trust Select which renders its own <button role='combobox'>. Nested <button> inside <button> is invalid HTML and prints warning 'In HTML, <button> cannot be a descendant of <button>. This will cause a hydration error.' on every Workspace render. Functional but flags in console.", "selector": "[data-testid^='doc-open-']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_akki_v3.py",
+    "/app/test_reports/pytest/pytest_iter2.xml"
+  ],
+  "action_items": [
+    "[MEDIUM] Fix nested <button> in Workspace.jsx doc-row: make the outer doc-open clickable element a <div role='button' tabIndex=0> or move the trust Select outside the doc-open button wrapper so the Select.Trigger button isn't nested. Look around Workspace.jsx:~216 where <button data-testid='doc-open-{id}'> contains the trust Select component.",
+    "[OPTIONAL] NedHome + ExecHome bodies were not rendered in this run because the admin context has onboarding_completed=false (admin still shows 'Resume audit' CTA as expected). If main agent wants direct coverage, complete onboarding via UI once (7-step wizard) or POST /api/contexts/{id}/context-object with {step:7, completed:true, role:'executive'|'ned'} — then re-test /app for NedHome or ExecHome rendering."
+  ],
+  "critical_code_review_comments": [
+    "Workspace.jsx has the nested-button HTML bug described above. This is a real React hydration warning and should be fixed.",
+    "AppHome.jsx cleanly gates on isDeclared && auditComplete — good separation; role-switcher properly toggles between NedHome and ExecHome via activeRole.",
+    "AskPanel.jsx is nicely reusable and onCitationClick works end-to-end (verified clicking a citation chip in the Workspace persistent Ask pane loads the referenced doc in the left pane).",
+    "DocumentViewer extracted-text + outline-rail renders correctly; heading heuristic returns 'No headings detected' for plain txt which is acceptable behaviour.",
+    "Highlights 3-column layout with left filter rail + centre feed + right at-a-glance rail matches the spec. Type filter uncheck hides cards (3→2) and re-check restores (→3)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (15/15 on smoke slice: Auth lockout + Documents + Signals + Ask)", "frontend": "95% — all routes/components render, one HTML-validity bug in Workspace doc-row"},
+  "test_credentials": "admin@akki.ai / AkkiAdmin2026! — verified working. Admin default context 'Syni.ai HQ' already has 1 uploaded doc 'Q3 Board Pack' and 3 pre-generated signals.",
+  "seed_data_creation": "None created in this iteration (used existing admin context + pre-existing doc + pre-existing signals). Ask history gained +1 exchange from the test question 'What were the Q3 revenue figures?'.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 1's lockout bug is fixed (confirmed). v4.0 Phase 1 UI restructure is functionally complete. The only outstanding FE issue is the nested <button> in Workspace doc-row (hydration warning). NedHome and ExecHome weren't exercised via the rendered DOM because admin's onboarding is not completed — next agent can POST context-object to unblock or complete the onboarding wizard. All data-testids listed in the review_request files_of_reference are present and functional for: home-welcome, start-onboarding-btn, workspace-split, workspace-divider, workspace-ask-pane, doc-row-*, doc-open-*, doc-back-btn, doc-body, doc-outline-rail, doc-title, doc-download-btn, highlights-left-rail, highlights-feed, highlights-right-rail, filter-type-risk, signals-generate-btn, signal-card-*, signal-source-*, ask-panel, ask-composer, ask-question-input, ask-submit-btn, ask-exchange-*, citation-*, ask-source-*.",
+  "rca of the issue": "Nested-button hydration warning: Workspace.jsx renders each doc row as <button data-testid='doc-open-{id}'> ... </button> and inside that outer button it also renders the trust Select component which internally renders <button role='combobox'>. HTML spec forbids nesting interactive elements; React logs this and it can cause hydration mismatches. Reproduction: login → /app/workspace → open DevTools console → error appears immediately. Mitigation: (a) change the outer doc-open to a <div role='button' tabIndex={0} onKeyDown={Enter→click}> OR (b) move the trust Select outside the doc-open wrapper (e.g. into a sibling flex cell) so the Select's trigger button is not a descendant of the doc-open button."
+}
