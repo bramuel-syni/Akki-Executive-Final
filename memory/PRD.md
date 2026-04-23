@@ -137,6 +137,46 @@ restructure.
 - [ ] **ClamAV / VirusTotal** — real virus scan (we use a stub).
 
 ## Recent fixes
+- **2026-04-23** — **Sprint 1 shipped** (3 of the user's 7-point feedback list).
+  - **Task 1 — Curated Home** (Feedback #2): `AppHome.jsx` now shows top-of-pile
+    *Top signals* (≤3, ranked by confidence then risk-bias then recency),
+    *Top briefings* (≤2 by recency) and *New documents* (≤3 by recency) with
+    per-section "View all" links to `/app/highlights`, `/app/briefings`,
+    `/app/workspace`. Fixed page height (`h-[calc(100vh-4rem)]`) — only the
+    inner stream section scrolls; chrome stays put. Companion rail adds
+    "My portfolio" link to `/app/contexts`.
+  - **Task 2 — Learn mini-tabs** (Feedback #1): `Learn.jsx` refactored to four
+    content-type tabs (`News · TL Articles · Videos · Case Studies`) with
+    underline accent on active tab, per-tab topic pills on the left rail, and
+    fixed page height — only the card grid scrolls (`data-testid=learn-scroll`).
+    Added `content_type` field to each article in `lib/learnContent.js`, new
+    `LEARN_NEWS` array with 3 curated briefs (EU GPAI Code, FCA supervisory
+    posture, NACD 2026 benchmark), and `CONTENT_TYPE_LABEL` map.
+  - **Task 3 — Context Portfolio page** (Feedback #5): NEW `/app/contexts`
+    surface (`ContextPortfolio.jsx`). Portfolio summary strip shows totals for
+    Contexts / Signals / Briefings / Documents. Cards grouped into
+    *NED boards* and *Executive contexts*; each card shows type/admin chip,
+    sponsored badge, per-context metrics (signals/briefings/documents fetched
+    in parallel). Clicking a card calls `switchContext` and navigates to `/app`.
+    `AppShell` context dropdown now has a "View portfolio" item at the top
+    (`data-testid=context-portfolio-btn`).
+  - **Testing**: iteration_3 — 100% backend, 100% frontend. No critical or
+    minor issues. Two design notes flagged (summary-strip "…" during fan-out;
+    role-mismatch banner ever-present because Bramuel's default context is NED
+    while `activeRole` defaults to `executive`) — both working-as-designed.
+
+## Sprint 2 — queued (user's 7-point feedback, items 3 / 6 / 7)
+- **Simulate & Forecasting** (Feedback #3) — qualitative scenario planner on a
+  new `/app/simulate` surface; takes a signal or context and walks through
+  1-year / 3-year trajectory on top of the Context Object.
+- **Sub-committees** (Feedback #6) — extend Context model with
+  `committees: [{ id, name, charter, members }]`, filter Highlights/Briefings
+  by committee, route-level scope chip in AppShell.
+- **Human-to-human collaboration** (Feedback #7) — inline comments +
+  @mentions + threads on Signals / Briefings / Documents; reuses the
+  existing Ask persistent panel pattern for thread UI.
+
+## Recent fixes (legacy)
 - **2026-04-23** — Workspace doc row nested-button hydration warning: outer wrapper
   converted to `<div role="button" tabIndex={0}>` with keyboard handler; TrustChip
   wrapped in a `stopPropagation` span so changing trust doesn't open the document.
