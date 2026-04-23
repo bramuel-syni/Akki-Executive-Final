@@ -105,21 +105,23 @@ restructure.
 
 ## Prioritized backlog
 
-### P0 — Path A Phase 2 (backend expansion, no paid services)
-- [ ] **M12 Briefings** — auto-compose briefings from generated signals with opening
-      paragraph + evidence drawers + PDF/DOCX export (reportlab + python-docx) + versioning.
-- [ ] **M14 Lens Room** — 6-framework stress-testing engine embedded in Workspace
-      (First Principles, Customer Obsession, Systems Thinking, Capital Discipline,
-      Stakeholder Integration, Organisational Culture).
-- [ ] **M11 Event-driven signals pipeline** — refactor `/signals/generate` into a
-      `document.extracted` → candidate → mock-Synisense verify → persist flow so the
-      real Synisense microservice can be dropped in later via URL swap.
-- [ ] **M13 Hybrid retrieval for Ask** — upgrade inline grounding to BM25 keyword
-      scoring across chunks (no external vector DB yet).
-- [ ] **M5 Upload channels** — secure-link uploads and mobile camera capture
-      (email-to-upload deferred; needs SMTP/Mailgun which is paid).
-- [ ] **Refactor `server.py`** (1592 lines) into `/app/backend/routers/{auth,
-      contexts,documents,signals,ask,audit}.py`.
+### P0 — SHIPPED (2026-04-23)
+- [x] **M12 Briefings** — auto-composed via `routers/briefings.py` (PDF+DOCX export).
+- [x] **M14 Lens Room** — `routers/lens.py` + `pages/LensRoom.jsx` — 6 frameworks,
+      O→I→A output.
+- [x] **M11 Event-driven signals pipeline** — `routers/pipeline.py` — 4 staged events
+      (candidate_drafted → verified → persisted) with full auditability via
+      `signal_events` collection.
+- [x] **Refactor `server.py`** — partial: signals, ask, briefings, learn, committees,
+      simulate, comments, lens, pipeline all extracted. Remaining in server.py:
+      auth / contexts / accounts / memberships / invitations / documents / audit /
+      telemetry / llm_probe. Server.py now **1,305 lines** (from 1,942 — 33% off).
+
+### P0 — remaining
+- [ ] **M13 Hybrid retrieval for Ask** — BM25 across chunks.
+- [ ] **M5 Upload channels** — secure links + mobile camera capture.
+- [ ] **Finish server.py refactor** — move auth + contexts + documents + audit
+      into their own routers.
 
 ### P1 — Polish
 - [ ] Onboarding wizard end-to-end frontend subagent coverage.
@@ -137,6 +139,12 @@ restructure.
 - [ ] **ClamAV / VirusTotal** — real virus scan (we use a stub).
 
 ## Recent fixes
+- **2026-04-23 Sprint 3** — Shipped: role auto-route (AuthContext), Mention
+  Inbox bell in AppShell header, CommitteeManager in Settings, signals+ask
+  router extraction, M14 Lens Room (6 frameworks, full page), M11 event-
+  driven pipeline (4 stages, signal_events trace). iteration_5: 100% backend
+  (10/10), 100% frontend.
+
 - **2026-04-23** — **Sprint 1 shipped** (3 of the user's 7-point feedback list).
   - **Task 1 — Curated Home** (Feedback #2): `AppHome.jsx` now shows top-of-pile
     content as **three sibling tabs** — *Top signals* (≤3, ranked by confidence

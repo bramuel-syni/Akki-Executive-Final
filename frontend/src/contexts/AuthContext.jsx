@@ -35,11 +35,12 @@ export function AuthProvider({ children }) {
           }
         }
       } else if (activeContextId) {
-        // If we already had a persisted activeContextId but the stored role
-        // doesn't match — bring them back into alignment on every bootstrap.
+        // If we already had a persisted activeContextId, always realign the
+        // stored activeRole to the context's my_role on bootstrap — this covers
+        // both mismatch and the first-login case where activeRole is still null.
         const ctx = data.contexts.find((c) => c.id === activeContextId);
-        if (ctx?.my_role && activeRole !== ctx.my_role &&
-            (ctx.my_role === "ned" || ctx.my_role === "executive")) {
+        if (ctx?.my_role && (ctx.my_role === "ned" || ctx.my_role === "executive") &&
+            activeRole !== ctx.my_role) {
           setActiveRole(ctx.my_role);
           window.localStorage.setItem("akki.activeRole", ctx.my_role);
         }
