@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
   CalendarDays, Users, FileText, Sparkles, ArrowRight, Plus,
   Landmark, AlertTriangle, TrendingUp, CircleSlash, ShieldCheck,
-  Layers,
+  Layers, ScrollText,
 } from "lucide-react";
 
 const SECTOR_LABEL = {
@@ -243,7 +243,7 @@ export default function NedHome({ welcome }) {
       </div>
 
       {/* Quick actions */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Link to="/app/workspace" className="bg-white border border-[#E1E6ED] rounded-sm p-5 hover:border-[#C9A961]/60 transition-colors group">
           <FileText className="w-5 h-5 text-[#C9A961] mb-3" strokeWidth={1.6} />
           <p className="text-sm font-medium text-[#0A1F44] mb-1">Upload a pack</p>
@@ -260,10 +260,18 @@ export default function NedHome({ welcome }) {
             Open Highlights <ArrowRight className="w-3 h-3" />
           </span>
         </Link>
+        <Link to="/app/briefings" className="bg-white border border-[#E1E6ED] rounded-sm p-5 hover:border-[#C9A961]/60 transition-colors group">
+          <ScrollText className="w-5 h-5 text-[#C9A961] mb-3" strokeWidth={1.6} />
+          <p className="text-sm font-medium text-[#0A1F44] mb-1">Compose briefing</p>
+          <p className="text-xs text-slate-500 mb-3">1–2 page PDF or DOCX for the meeting.</p>
+          <span className="text-[11px] text-[#C9A961] inline-flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+            Open Briefings <ArrowRight className="w-3 h-3" />
+          </span>
+        </Link>
         <Link to="/app/ask" className="bg-white border border-[#E1E6ED] rounded-sm p-5 hover:border-[#C9A961]/60 transition-colors group">
           <Layers className="w-5 h-5 text-[#C9A961] mb-3" strokeWidth={1.6} />
           <p className="text-sm font-medium text-[#0A1F44] mb-1">Ask a question</p>
-          <p className="text-xs text-slate-500 mb-3">Grounded answers with citations from your board pack.</p>
+          <p className="text-xs text-slate-500 mb-3">Grounded answers with citations.</p>
           <span className="text-[11px] text-[#C9A961] inline-flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
             Open Ask <ArrowRight className="w-3 h-3" />
           </span>

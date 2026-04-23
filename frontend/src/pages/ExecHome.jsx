@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
   CalendarDays, Users, FileText, Sparkles, ArrowRight, CheckCircle2,
   Clock, AlertTriangle, TrendingUp, CircleSlash, ShieldCheck, Briefcase,
-  MessageSquareText,
+  MessageSquareText, ScrollText,
 } from "lucide-react";
 
 function daysUntilNextMeeting(id) {
@@ -145,6 +145,13 @@ export default function ExecHome({ welcome }) {
             <Link to="/app/highlights">
               <Button variant="outline" className="rounded-sm h-9 text-sm border-[#E1E6ED]">
                 <Sparkles className="w-3.5 h-3.5 mr-1.5 text-[#C9A961]" /> Generate signals
+              </Button>
+            </Link>
+          )}
+          {signals.length > 0 && (
+            <Link to="/app/briefings">
+              <Button variant="outline" className="rounded-sm h-9 text-sm border-[#E1E6ED]">
+                <ScrollText className="w-3.5 h-3.5 mr-1.5 text-[#C9A961]" /> Compose briefing
               </Button>
             </Link>
           )}
