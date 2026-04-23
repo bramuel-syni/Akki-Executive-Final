@@ -26,7 +26,13 @@ export default function Highlights() {
   const [focus, setFocus] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [minConf, setMinConf] = useState("all");
+  const [committeeFilter, setCommitteeFilter] = useState("all");
   const [actOn, setActOn] = useState(null);  // signal currently being acted on
+
+  // Reset committee filter when switching contexts
+  useEffect(() => { setCommitteeFilter("all"); }, [contextId]);
+
+  const committees = activeContext?.committees || [];
 
   const load = useCallback(async () => {
     if (!contextId) return;
@@ -69,9 +75,10 @@ export default function Highlights() {
       if (typeFilter !== "all" && s.type !== typeFilter) return false;
       if (minConf === "high" && s.confidence !== "high") return false;
       if (minConf === "medium" && s.confidence === "low") return false;
+      if (committeeFilter !== "all" && s.committee_id !== committeeFilter) return false;
       return true;
     });
-  }, [signals, typeFilter, minConf]);
+  }, [signals, typeFilter, minConf, committeeFilter]);
 
   const counts = useMemo(() => {
     const a = { all: signals.length, risk: 0, opportunity: 0, gap: 0 };
@@ -132,6 +139,39 @@ export default function Highlights() {
             </div>
           )}
         </div>
+
+        {/* Committee filter — only shown if this context has sub-committees */}
+        {committees.length > 0 && (
+          <div
+            className="flex items-center gap-2 mb-4 flex-wrap akki-fade-up"
+            data-testid="highlights-committee-filter"
+          >
+            <span className="akki-overline mr-1">Scope</span>
+            <button
+              data-selected={committeeFilter === "all"}
+              onClick={() => setCommitteeFilter("all")}
+              className="akki-scope-chip"
+              data-testid="committee-filter-all"
+            >
+              Full board
+            </button>
+            {committees.map((cm) => (
+              <button
+                key={cm.id}
+                data-selected={committeeFilter === cm.id}
+                onClick={() => setCommitteeFilter(cm.id)}
+                className="akki-scope-chip"
+                data-testid={`committee-filter-${cm.id}`}
+                title={cm.your_role ? `You: ${cm.your_role}` : undefined}
+              >
+                {cm.name}
+                {cm.your_role === "chair" && (
+                  <span className="ml-1.5 text-[9px] uppercase tracking-wider text-[var(--accent)]">chair</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Filter bar */}
         <div className="flex items-center gap-6 mb-6 border-b border-[var(--rule)] pb-1 akki-fade-up" data-testid="highlights-filters">

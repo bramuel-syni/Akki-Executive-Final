@@ -15,6 +15,7 @@ import {
   AlertTriangle, TrendingUp, CircleSlash, ShieldCheck, ArrowRight,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import CommentThread from "@/components/collab/CommentThread";
 
 const TYPE_CFG = {
   risk:        { icon: AlertTriangle, cls: "bg-red-50 text-red-700 border-red-200" },
@@ -230,6 +231,8 @@ function BriefingViewer({ briefing, onArchive }) {
           </div>
         </footer>
       )}
+
+      <CommentThread artefactType="briefing" artefactId={briefing.id} />
     </article>
   );
 }
@@ -245,6 +248,13 @@ export default function Briefings() {
   const [creating, setCreating] = useState(false);
   const [stage, setStage] = useState("");
   const [title, setTitle] = useState("");
+  const [committeeFilter, setCommitteeFilter] = useState("all");
+  const committees = activeContext?.committees || [];
+
+  const visibleList = useMemo(() => {
+    if (committeeFilter === "all") return list;
+    return list.filter((b) => b.committee_id === committeeFilter);
+  }, [list, committeeFilter]);
 
   const load = useCallback(async () => {
     if (!contextId) return;
@@ -317,7 +327,22 @@ export default function Briefings() {
           <div className="px-5 py-5 border-b border-[#E1E6ED] bg-white">
             <p className="akki-overline mb-1">Briefings · Module M12</p>
             <h1 className="text-lg font-medium tracking-tight text-[var(--ink)]">Your briefings</h1>
-            <p className="text-[11px] text-slate-500 mt-1">{list.length} in {activeContext.name}</p>
+            <p className="text-[11px] text-slate-500 mt-1">{visibleList.length} in {activeContext.name}
+              {committeeFilter !== "all" && ` · ${committees.find((c) => c.id === committeeFilter)?.name}`}
+            </p>
+            {committees.length > 0 && (
+              <select
+                value={committeeFilter}
+                onChange={(e) => setCommitteeFilter(e.target.value)}
+                className="mt-3 w-full text-[11px] border border-[var(--rule)] rounded-sm bg-white px-2 py-1.5 text-[var(--deep)] focus:outline-none focus:border-[var(--accent)]"
+                data-testid="briefing-committee-filter"
+              >
+                <option value="all">Full board</option>
+                {committees.map((cm) => (
+                  <option key={cm.id} value={cm.id}>{cm.name}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div className="px-4 py-4 border-b border-[#E1E6ED] bg-white space-y-2">
@@ -352,10 +377,12 @@ export default function Briefings() {
           <div className="flex-1 overflow-y-auto">
             {loading ? (
               <div className="p-6 text-center text-xs uppercase tracking-widest text-slate-400">Loading…</div>
-            ) : list.length === 0 ? (
+            ) : visibleList.length === 0 ? (
               <div className="p-6 text-center" data-testid="briefings-empty">
                 <ScrollText className="w-8 h-8 text-slate-300 mx-auto mb-3" strokeWidth={1.3} />
-                <p className="text-xs text-slate-500 mb-2">No briefings yet</p>
+                <p className="text-xs text-slate-500 mb-2">
+                  {committeeFilter === "all" ? "No briefings yet" : "None for this committee"}
+                </p>
                 <p className="text-[10.5px] text-slate-400 leading-relaxed max-w-[220px] mx-auto">
                   Generate signals from Highlights first, then compose your first briefing here.
                 </p>
@@ -368,7 +395,7 @@ export default function Briefings() {
               </div>
             ) : (
               <div className="p-2">
-                {list.map((b) => {
+                {visibleList.map((b) => {
                   const active = selectedId === b.id;
                   return (
                     <button

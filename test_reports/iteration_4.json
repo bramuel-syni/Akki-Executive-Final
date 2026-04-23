@@ -1,0 +1,36 @@
+{
+  "summary": "Sprint 2 end-to-end verification: refactor (briefings/learn routers), sub-committees, simulate, comments+@mentions. 18/19 backend tests passed (1 skipped because no briefings exist in NED context — expected). Frontend: all required data-testids present on Highlights, Briefings, and Simulate pages; Simulate page renders rail, hypothesis input, horizon select, run button, splash and 3 starter buttons. Committee chips show with correct slug ids (audit-committee, risk-committee, nominations-committee). Left-nav 'Simulate' link is present. LLM simulate call completed in ~30s returning full 1y/3y/watchlist/assumptions/question_for_management. @mention resolution correctly resolved 'Test Executive' via first-name 'test' on a comment authored by Bramuel in the Tuli Exec context after inviting exec.test@akki.ai.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/app/simulate", "issues": ["The 'Heads up' role-mismatch banner (Executive role vs NED context) renders at the top of the Simulate page for Bramuel, same as other surfaces — pre-existing behaviour from iteration 3, not Sprint-2-introduced. Worth confirming that activeRole auto-routes correctly once the user opens a simulation."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sprint2.py",
+    "/app/test_reports/pytest/pytest_sprint2.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is still 1570 lines — further extraction candidates: documents (~170 lines), signals/ask (~260 lines), telemetry+audit+export (~150 lines). Not blocking but would bring the file under the 700-line ideal.",
+    "routers/comments.py _resolve_mentions is O(N_members) — fine at current scale. Note it resolves by equality only; does not dedupe @tokens against body position, and if two users share the same first name both resolve. Acceptable for M5.",
+    "routers/simulate.py — no size/validation on signals fetched when body.signal_ids is very long. Limited to 8 via to_list(8) which is effectively a hard cap; could explicitly reject >20 signal ids upfront to save a DB round-trip.",
+    "Startup backfill for committee slug ids (server.py lines 1498-1509) correctly idempotent; committees with existing id are left untouched. Good.",
+    "DocumentViewer comment-thread component wiring not tested end-to-end in this run (no exec-context docs visible to Bramuel via /app/workspace — test comment was posted on a signal instead, which exercised the same artefact-polymorphic endpoint). Main agent can self-verify by uploading a doc and commenting on it."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sprint2.py (new)"
+  ],
+  "success_rate": {"backend": "100% (18/18, 1 legitimate skip)", "frontend": "100% on required Sprint-2 testids"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (pre-seeded); exec.test@akki.ai / TestExec2026! (registered by test_sprint2.py if absent; invited into Tuli Financial Group [CFO] exec context for @mention resolution)",
+  "seed_data_creation": "Registered exec.test@akki.ai in DB as part of @mention test. Invited into Bramuel's first executive context. One comment + one reply created and (reply) deleted; one mention record created targeting exec.test and marked read. One simulation created and archived in NED context. One TEST_Committee added + renamed + deleted.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_sprint2.py is the current regression suite for Sprint 2. All 19 tests take ~45s (dominated by the real LLM simulate call). If the simulate LLM call ever times out, bump the per-test timeout. @mention test requires exec.test@akki.ai to be a member of Bramuel's executive_personal 'Tuli Financial Group (CFO)' context — fixture `invited_exec` handles both first-run (invite+accept) and subsequent runs (409 tolerated). Committee slug IDs verified stable: audit-committee, risk-committee, nominations-committee.",
+  "rca of the issue": "N/A — all pass."
+}

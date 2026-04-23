@@ -54,20 +54,28 @@ from documents_service import (  # noqa: E402
     ACCEPT_EXT, MAX_BYTES, virus_scan_stub, save_to_storage, read_from_storage,
     delete_from_storage, extract_text, make_preview,
 )
+from core import (  # noqa: E402
+    db, now as _now, iso as _iso, write_audit,
+    get_current_account, require_context_membership,
+    gather_context_object as _gather_context_object,
+    docs_overall_trust as _docs_overall_trust,
+    create_access_token, create_refresh_token,
+    JWT_SECRET, JWT_ALGO, ACCESS_TOKEN_TTL_MIN, REFRESH_TOKEN_TTL_DAYS, APP_NAME,
+)
+from routers import briefings as briefings_router  # noqa: E402
+from routers import learn as learn_router  # noqa: E402
+from routers import committees as committees_router  # noqa: E402
+from routers import simulate as simulate_router  # noqa: E402
+from routers import comments as comments_router  # noqa: E402
 
 # -----------------------------------------------------------------------------
-# Config
+# Config — most constants come from core.py via the import block above.
 # -----------------------------------------------------------------------------
 MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
-JWT_SECRET = os.environ["JWT_SECRET"]
-JWT_ALGO = "HS256"
-ACCESS_TOKEN_TTL_MIN = 60 * 8  # 8h executive session
-REFRESH_TOKEN_TTL_DAYS = 7
-APP_NAME = os.environ.get("APP_NAME", "AKKI Sandbox")
 
-client = AsyncIOMotorClient(MONGO_URL)
-db = client[DB_NAME]
+# db + logger come from core.py
+client = None  # legacy placeholder; core.client is the actual connection
 
 logger = logging.getLogger("akki")
 logging.basicConfig(
@@ -88,16 +96,8 @@ Provisioning = Literal["personal", "sponsored"]
 
 
 # -----------------------------------------------------------------------------
-# Helpers
+# Helpers (auth-scoped — shared helpers live in core.py)
 # -----------------------------------------------------------------------------
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _iso(d: datetime) -> str:
-    return d.isoformat()
-
-
 def hash_password(pw: str) -> str:
     return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
 
@@ -107,27 +107,6 @@ def verify_password(pw: str, hashed: str) -> bool:
         return bcrypt.checkpw(pw.encode(), hashed.encode())
     except Exception:
         return False
-
-
-def create_access_token(account_id: str, email: str) -> str:
-    payload = {
-        "sub": account_id,
-        "email": email,
-        "type": "access",
-        "exp": _now() + timedelta(minutes=ACCESS_TOKEN_TTL_MIN),
-        "iat": _now(),
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
-
-
-def create_refresh_token(account_id: str) -> str:
-    payload = {
-        "sub": account_id,
-        "type": "refresh",
-        "exp": _now() + timedelta(days=REFRESH_TOKEN_TTL_DAYS),
-        "iat": _now(),
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
 
 
 def set_auth_cookies(response: Response, access: str, refresh: str) -> None:
@@ -171,81 +150,9 @@ def sanitize_context(c: Dict[str, Any]) -> Dict[str, Any]:
         "owner_account_id": c.get("owner_account_id"),
         "status": c.get("status", "active"),
         "progress_state": c.get("progress_state", {"onboarding_step": 0}),
+        "committees": c.get("committees") or [],
         "created_at": c.get("created_at"),
     }
-
-
-async def write_audit(
-    context_id: Optional[str],
-    account_id: Optional[str],
-    action: str,
-    resource_type: str,
-    resource_id: Optional[str],
-    metadata: Optional[Dict[str, Any]] = None,
-) -> None:
-    await db.audit_log.insert_one(
-        {
-            "id": str(uuid.uuid4()),
-            "context_id": context_id,
-            "account_id": account_id,
-            "action": action,
-            "resource_type": resource_type,
-            "resource_id": resource_id,
-            "metadata": metadata or {},
-            "created_at": _iso(_now()),
-        }
-    )
-
-
-# -----------------------------------------------------------------------------
-# Auth dependencies
-# -----------------------------------------------------------------------------
-async def get_current_account(request: Request) -> Dict[str, Any]:
-    token = request.cookies.get("access_token")
-    if not token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    if payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Invalid token type")
-    account = await db.accounts.find_one({"id": payload["sub"]}, {"_id": 0})
-    if not account:
-        raise HTTPException(status_code=401, detail="Account not found")
-    return account
-
-
-def require_context_membership(owner_only: bool = False):
-    """Dependency: validates current account has active membership in context_id."""
-    async def _dep(
-        context_id: str,
-        current: Dict[str, Any] = Depends(get_current_account),
-    ) -> Dict[str, Any]:
-        ctx = await db.contexts.find_one({"id": context_id}, {"_id": 0})
-        if not ctx:
-            raise HTTPException(status_code=404, detail="Context not found")
-        membership = await db.memberships.find_one(
-            {"context_id": context_id, "account_id": current["id"], "status": "active"},
-            {"_id": 0},
-        )
-        if not membership:
-            raise HTTPException(status_code=403, detail="Not a member of this context")
-        # owner_only means: account is the context owner (for personal)
-        # or an 'admin' membership (for sponsored/enterprise — stubbed as role=executive sub_role=admin)
-        if owner_only:
-            is_owner = ctx.get("owner_account_id") == current["id"]
-            if not is_owner and membership.get("sub_role") != "admin":
-                raise HTTPException(status_code=403, detail="Owner privilege required")
-        return {"account": current, "context": ctx, "membership": membership}
-
-    return _dep
 
 
 # -----------------------------------------------------------------------------
@@ -1133,10 +1040,13 @@ async def upload_document(
 async def list_documents(
     ctx: Dict[str, Any] = Depends(require_context_membership()),
     limit: int = 100,
+    committee_id: Optional[str] = None,
 ):
+    q: Dict[str, Any] = {"context_id": ctx["context"]["id"], "status": {"$ne": "archived"}}
+    if committee_id:
+        q["committee_id"] = committee_id
     docs = await db.documents.find(
-        {"context_id": ctx["context"]["id"], "status": {"$ne": "archived"}},
-        {"_id": 0, "extracted_text": 0, "storage_key": 0},
+        q, {"_id": 0, "extracted_text": 0, "storage_key": 0},
     ).sort("created_at", -1).to_list(min(limit, 500))
     return [sanitize_doc(d) for d in docs]
 
@@ -1228,13 +1138,6 @@ MAX_DOC_CHARS_PER_PROMPT = 40_000
 MAX_DOCS_PER_PROMPT = 10
 
 
-async def _gather_context_object(context_id: str) -> Optional[Dict[str, Any]]:
-    return await db.context_objects.find_one(
-        {"context_id": context_id, "completed": True},
-        {"_id": 0}, sort=[("version", -1)],
-    )
-
-
 async def _gather_documents_for_grounding(context_id: str) -> List[Dict[str, Any]]:
     docs = await db.documents.find(
         {"context_id": context_id, "status": {"$in": ["extracted"]}},
@@ -1258,17 +1161,6 @@ def _docs_as_grounding_block(docs: List[Dict[str, Any]]) -> str:
     if not parts:
         return "[No extracted documents in this context yet.]"
     return "\n".join(parts)
-
-
-def _docs_overall_trust(docs: List[Dict[str, Any]]) -> str:
-    if not docs:
-        return "unrated"
-    buckets = [d.get("data_trust", "mixed") for d in docs]
-    if "weak" in buckets:
-        return "weak"
-    if all(b == "trusted" for b in buckets):
-        return "trusted"
-    return "mixed"
 
 
 class SignalGenerateIn(BaseModel):
@@ -1405,10 +1297,12 @@ async def generate_signals(
 async def list_signals(
     ctx: Dict[str, Any] = Depends(require_context_membership()),
     limit: int = 100,
+    committee_id: Optional[str] = None,
 ):
-    sigs = await db.signals.find(
-        {"context_id": ctx["context"]["id"], "status": "active"}, {"_id": 0}
-    ).sort("created_at", -1).to_list(min(limit, 500))
+    q: Dict[str, Any] = {"context_id": ctx["context"]["id"], "status": "active"}
+    if committee_id:
+        q["committee_id"] = committee_id
+    sigs = await db.signals.find(q, {"_id": 0}).sort("created_at", -1).to_list(min(limit, 500))
     return sigs
 
 
@@ -1525,291 +1419,6 @@ async def llm_probe(
     )
     return out
 
-# -----------------------------------------------------------------------------
-# M12 · Briefings
-# -----------------------------------------------------------------------------
-class BriefingCreateIn(BaseModel):
-    signal_ids: Optional[List[str]] = None   # None → use all active signals
-    title: Optional[str] = Field(default=None, max_length=120)
-
-
-def _serialise_briefing(doc: Dict[str, Any]) -> Dict[str, Any]:
-    out = dict(doc)
-    out.pop("_id", None)
-    return out
-
-
-@api.post("/contexts/{context_id}/briefings")
-async def create_briefing(
-    body: BriefingCreateIn,
-    ctx: Dict[str, Any] = Depends(require_context_membership()),
-):
-    context_id = ctx["context"]["id"]
-    context_name = ctx["context"]["name"]
-
-    # My role in this context drives voice (NED vs Executive)
-    my_membership = await db.memberships.find_one(
-        {"context_id": context_id, "account_id": ctx["account"]["id"], "status": "active"},
-        {"_id": 0, "role": 1},
-    )
-    my_role = (my_membership or {}).get("role") or "executive"
-
-    # Load the signals we should brief on
-    q: Dict[str, Any] = {"context_id": context_id, "status": "active"}
-    if body.signal_ids:
-        q["id"] = {"$in": body.signal_ids}
-    signals = await db.signals.find(q, {"_id": 0}).sort("created_at", -1).to_list(20)
-    if not signals:
-        raise HTTPException(
-            status_code=400,
-            detail="No signals to brief on. Generate signals first, or select specific signal ids.",
-        )
-
-    # Pass a stable doc_id whitelist to the LLM so it can't fabricate
-    all_doc_ids: List[str] = []
-    for s in signals:
-        for src in (s.get("sources") or []):
-            d = src.get("doc_id")
-            if d and d not in all_doc_ids:
-                all_doc_ids.append(d)
-    docs = await db.documents.find(
-        {"context_id": context_id, "id": {"$in": all_doc_ids}, "status": {"$ne": "archived"}},
-        {"_id": 0, "id": 1, "name": 1, "data_trust": 1},
-    ).to_list(50)
-    docs_by_id = {d["id"]: d for d in docs}
-
-    ctx_obj = await _gather_context_object(context_id)
-
-    # LLM call — produces opening paragraph + item bodies + questions
-    prompt = build_briefing_prompt(
-        context_name=context_name,
-        role=my_role,
-        context_object=ctx_obj,
-        signals=[{**s, "id_for_prompt": s["id"]} for s in signals],
-        doc_ids_in_scope=all_doc_ids,
-    )
-    llm_out = await llm_call_llm(
-        module="briefing",
-        user_query=prompt,
-        context_object=ctx_obj,
-        session_context={"session_id": f"briefing-{context_id}"},
-        data_trust={"overall": _docs_overall_trust(docs)},
-        response_format="json",
-    )
-    parsed = parse_json_response(llm_out.get("response", ""))
-    if not isinstance(parsed, dict):
-        raise HTTPException(
-            status_code=502,
-            detail=f"LLM did not return a valid briefing. Mode={llm_out.get('mode')}. Raw: {llm_out.get('response', '')[:500]}",
-        )
-
-    # Map LLM items back to signals (signal_id must match one of the input signals)
-    sig_by_id = {s["id"]: s for s in signals}
-    items_raw = parsed.get("items") or []
-    items: List[Dict[str, Any]] = []
-    for raw in items_raw[:10]:
-        sid = raw.get("signal_id")
-        sig = sig_by_id.get(sid) if isinstance(sid, str) else None
-        if not sig:
-            continue
-        items.append({
-            "signal_id": sig["id"],
-            "signal_type": sig.get("type"),
-            "signal_headline": sig.get("headline"),
-            "confidence": sig.get("confidence"),
-            "sources": sig.get("sources", []),
-            "evidence": (raw.get("evidence") or "")[:1500],
-            "question": (raw.get("question") or "")[:600],
-        })
-
-    if not items:
-        raise HTTPException(status_code=502, detail="Briefing produced no usable items.")
-
-    # Version: increment per context
-    latest = await db.briefings.find_one(
-        {"context_id": context_id}, {"_id": 0, "version": 1}, sort=[("version", -1)]
-    )
-    version = (latest or {}).get("version", 0) + 1
-
-    now = _iso(_now())
-    briefing_id = str(uuid.uuid4())
-    title = (body.title or parsed.get("title") or f"{context_name} — briefing")[:120]
-    doc = {
-        "id": briefing_id,
-        "context_id": context_id,
-        "context_name": context_name,
-        "version": version,
-        "title": title,
-        "role": my_role,
-        "opening_paragraph": (parsed.get("opening_paragraph") or "")[:2500],
-        "items": items,
-        "closing_note": (parsed.get("closing_note") or None),
-        "source_doc_ids": list(docs_by_id.keys()),
-        "signal_ids": [s["id"] for s in signals],
-        "data_trust": _docs_overall_trust(docs),
-        "mode": llm_out.get("mode"),
-        "shielding_masked": llm_out.get("shielding", {}).get("identifiers_masked", 0),
-        "created_by": ctx["account"]["id"],
-        "created_at": now,
-        "status": "active",
-    }
-    await db.briefings.insert_one(doc)
-    await write_audit(
-        context_id, ctx["account"]["id"], "briefing.created", "briefing", briefing_id,
-        {"version": version, "items": len(items), "mode": llm_out.get("mode")},
-    )
-    return _serialise_briefing(doc)
-
-
-@api.get("/contexts/{context_id}/briefings")
-async def list_briefings(
-    ctx: Dict[str, Any] = Depends(require_context_membership()),
-    limit: int = 50,
-):
-    rows = await db.briefings.find(
-        {"context_id": ctx["context"]["id"], "status": "active"}, {"_id": 0}
-    ).sort("created_at", -1).to_list(limit)
-    return rows
-
-
-@api.get("/contexts/{context_id}/briefings/{briefing_id}")
-async def get_briefing(
-    briefing_id: str,
-    ctx: Dict[str, Any] = Depends(require_context_membership()),
-):
-    doc = await db.briefings.find_one(
-        {"id": briefing_id, "context_id": ctx["context"]["id"], "status": "active"},
-        {"_id": 0},
-    )
-    if not doc:
-        raise HTTPException(status_code=404, detail="Briefing not found")
-    return doc
-
-
-@api.delete("/contexts/{context_id}/briefings/{briefing_id}")
-async def archive_briefing(
-    briefing_id: str,
-    ctx: Dict[str, Any] = Depends(require_context_membership()),
-):
-    res = await db.briefings.update_one(
-        {"id": briefing_id, "context_id": ctx["context"]["id"], "status": "active"},
-        {"$set": {"status": "archived", "archived_at": _iso(_now())}},
-    )
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Briefing not found")
-    await write_audit(
-        ctx["context"]["id"], ctx["account"]["id"], "briefing.archived", "briefing", briefing_id, {},
-    )
-    return {"ok": True}
-
-
-@api.get("/contexts/{context_id}/briefings/{briefing_id}/export")
-async def export_briefing(
-    briefing_id: str,
-    fmt: str = "pdf",
-    ctx: Dict[str, Any] = Depends(require_context_membership()),
-):
-    context_id = ctx["context"]["id"]
-    doc = await db.briefings.find_one(
-        {"id": briefing_id, "context_id": context_id, "status": "active"}, {"_id": 0},
-    )
-    if not doc:
-        raise HTTPException(status_code=404, detail="Briefing not found")
-    if fmt not in ("pdf", "docx"):
-        raise HTTPException(status_code=400, detail="fmt must be 'pdf' or 'docx'")
-
-    # Load the cited documents (for the sources footer)
-    docs = await db.documents.find(
-        {"context_id": context_id, "id": {"$in": doc.get("source_doc_ids", [])}},
-        {"_id": 0, "id": 1, "name": 1, "data_trust": 1},
-    ).to_list(50)
-    docs_by_id = {d["id"]: d for d in docs}
-
-    if fmt == "pdf":
-        payload = render_pdf(doc, docs_by_id)
-        media = "application/pdf"
-        suffix = "pdf"
-    else:
-        payload = render_docx(doc, docs_by_id)
-        media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        suffix = "docx"
-
-    safe_title = "".join(c for c in (doc.get("title") or "briefing") if c.isalnum() or c in " -_.")[:60].strip() or "briefing"
-    filename = f"{safe_title}_v{doc.get('version', 1)}.{suffix}"
-
-    await write_audit(
-        context_id, ctx["account"]["id"], "briefing.exported", "briefing", briefing_id,
-        {"format": fmt},
-    )
-    return StreamingResponse(
-        io.BytesIO(payload),
-        media_type=media,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-
-# -----------------------------------------------------------------------------
-# M9 · Learn — on-demand research
-# -----------------------------------------------------------------------------
-class LearnResearchIn(BaseModel):
-    topic: str = Field(min_length=3, max_length=200)
-
-
-@api.post("/learn/research")
-async def learn_research(
-    body: LearnResearchIn,
-    current: Dict[str, Any] = Depends(get_current_account),
-):
-    """Synthesise a short governance-framed article on any topic the user asks about."""
-    prompt = (
-        f"A non-executive director or senior executive has asked for a short, board-ready "
-        f"briefing on this topic:\n\n    « {body.topic} »\n\n"
-        f"Write a piece they can read in 5–7 minutes. Serious, specific, no hype. Write "
-        f"as a colleague with governance experience — not as a tool. Do not preamble.\n\n"
-        f"Return JSON:\n"
-        f'{{\n'
-        f'  "title": "<= 80 chars, declarative",\n'
-        f'  "kicker": "e.g. Governance · 6 min read",\n'
-        f'  "topic": "slug (governance|frameworks|sector-banking|foundations|regulation|risk|vendor|leadership|strategy|custom)",\n'
-        f'  "summary": "one sentence distilling the insight",\n'
-        f'  "body": "4-7 paragraphs. Specific. Numerate where relevant. Name regulators, frameworks, authorities.",\n'
-        f'  "questions_to_ask": ["3-4 sharp questions a NED should put to management"],\n'
-        f'  "source_name": "the authoritative body whose material informed this",\n'
-        f'  "source_url": "best-effort primary-source URL. Must be plausible."\n'
-        f"}}\n"
-    )
-    llm_out = await llm_call_llm(
-        module="learn-research",
-        user_query=prompt,
-        context_object=None,
-        session_context={"session_id": f"learn-{current['id']}"},
-        data_trust={"overall": "trusted"},
-        response_format="json",
-    )
-    parsed = parse_json_response(llm_out.get("response", ""))
-    if not isinstance(parsed, dict) or not parsed.get("body"):
-        raise HTTPException(
-            status_code=502,
-            detail=f"LLM did not produce an article. Mode={llm_out.get('mode')}.",
-        )
-    return {
-        "id": f"ad-hoc-{uuid.uuid4().hex[:8]}",
-        "title": (parsed.get("title") or body.topic)[:120],
-        "kicker": (parsed.get("kicker") or "Research · on-demand")[:80],
-        "topic": (parsed.get("topic") or "custom")[:40],
-        "audience": ["ned", "executive"],
-        "source_name": (parsed.get("source_name") or "AKKI synthesis")[:120],
-        "source_url": (parsed.get("source_url") or "")[:500],
-        "summary": (parsed.get("summary") or "")[:400],
-        "body": (parsed.get("body") or "")[:6000],
-        "questions_to_ask": (parsed.get("questions_to_ask") or [])[:6],
-        "generated": True,
-        "mode": llm_out.get("mode"),
-    }
-
-
-
 
 # -----------------------------------------------------------------------------
 # Telemetry
@@ -1883,6 +1492,22 @@ async def on_startup():
     await db.signals.create_index("id", unique=True)
     await db.ask_messages.create_index([("context_id", 1), ("created_at", -1)])
 
+    # Backfill: ensure every committee on every context has a stable id.
+    # Committees on existing contexts were seeded as {name, your_role} — we add
+    # a deterministic slug id so signals/briefings/comments can reference it.
+    async for c in db.contexts.find({"committees": {"$exists": True, "$ne": []}}, {"_id": 0, "id": 1, "committees": 1}):
+        committees = c.get("committees") or []
+        mutated = False
+        for cm in committees:
+            if not cm.get("id"):
+                slug = "".join(
+                    ch if ch.isalnum() else "-" for ch in (cm.get("name") or "").lower()
+                ).strip("-")
+                cm["id"] = slug or f"committee-{uuid.uuid4().hex[:6]}"
+                mutated = True
+        if mutated:
+            await db.contexts.update_one({"id": c["id"]}, {"$set": {"committees": committees}})
+
     # Admin seed
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@akki.ai").lower()
     admin_password = os.environ.get("ADMIN_PASSWORD", "AkkiAdmin2026!")
@@ -1922,6 +1547,11 @@ async def on_shutdown():
 # Middleware
 # -----------------------------------------------------------------------------
 app.include_router(api)
+app.include_router(briefings_router.router)
+app.include_router(learn_router.router)
+app.include_router(committees_router.router)
+app.include_router(simulate_router.router)
+app.include_router(comments_router.router)
 
 cors_origins_env = os.environ.get("CORS_ORIGINS", "*")
 frontend_url = os.environ.get("FRONTEND_URL", "").strip()

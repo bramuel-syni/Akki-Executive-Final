@@ -1,0 +1,385 @@
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import AppShell from "@/components/layout/AppShell";
+import { useAuth } from "@/contexts/AuthContext";
+import { api, apiErrorMessage } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import {
+  ArrowRight, Loader2, TrendingUp, TrendingDown, Activity,
+  Target, HelpCircle, Sparkles, Trash2, Clock,
+} from "lucide-react";
+import CommentThread from "@/components/collab/CommentThread";
+
+const HORIZON_OPTS = [
+  { value: "1y",   label: "1 year" },
+  { value: "3y",   label: "3 years" },
+  { value: "1y3y", label: "1y + 3y" },
+];
+
+const HYPOTHESIS_STARTERS = [
+  "If our largest corporate borrower is acquired, what's the one- and three-year impact on our loan book and capital?",
+  "Assume Kenya's benchmark rate is cut 200bps over 12 months. How does this play out on our net interest margin and deposit mix?",
+  "What if AI-enabled fraud doubles in our sector within a year? Where does it hit us first?",
+  "If a major competitor exits the SME lending segment, what are our plausible trajectories over 3 years?",
+];
+
+function Paragraph({ icon: Icon, tone, label, body }) {
+  if (!body) return null;
+  const toneClasses = {
+    best:   "border-emerald-300/70 bg-emerald-50/40",
+    base:   "border-[var(--rule)] bg-white",
+    stress: "border-red-300/70 bg-red-50/40",
+  };
+  const toneIcon = {
+    best:   "text-emerald-700",
+    base:   "text-[var(--accent)]",
+    stress: "text-red-700",
+  };
+  return (
+    <div className={`rounded-md border p-4 ${toneClasses[tone]}`}>
+      <div className="flex items-center gap-2 mb-2">
+        <Icon className={`w-3.5 h-3.5 ${toneIcon[tone]}`} strokeWidth={1.8} />
+        <p className="akki-overline">{label}</p>
+      </div>
+      <p className="akki-serif text-[14.5px] leading-[1.65] text-[var(--deep)]">{body}</p>
+    </div>
+  );
+}
+
+function SimulationViewer({ sim, onArchive }) {
+  return (
+    <article className="akki-fade-up space-y-8" data-testid={`simulation-view-${sim.id}`}>
+      <header>
+        <p className="akki-overline mb-2">
+          Simulation · {new Date(sim.created_at).toLocaleDateString()}
+          {sim.horizon === "1y3y" ? " · 1y + 3y" : ` · ${sim.horizon}`}
+        </p>
+        <h1 className="akki-serif text-[30px] leading-[1.2] text-[var(--ink)] font-normal mb-3">{sim.title}</h1>
+        <p className="akki-lead text-[var(--deep)] italic mb-0">"{sim.hypothesis}"</p>
+      </header>
+
+      {sim.one_year && (
+        <section>
+          <h2 className="akki-overline mb-3">One-year trajectory</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Paragraph icon={TrendingUp}   tone="best"   label="Best case"   body={sim.one_year?.best} />
+            <Paragraph icon={Activity}     tone="base"   label="Base case"   body={sim.one_year?.base} />
+            <Paragraph icon={TrendingDown} tone="stress" label="Stress case" body={sim.one_year?.stress} />
+          </div>
+        </section>
+      )}
+
+      {sim.three_year && (
+        <section>
+          <h2 className="akki-overline mb-3">Three-year trajectory</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Paragraph icon={TrendingUp}   tone="best"   label="Best case"   body={sim.three_year?.best} />
+            <Paragraph icon={Activity}     tone="base"   label="Base case"   body={sim.three_year?.base} />
+            <Paragraph icon={TrendingDown} tone="stress" label="Stress case" body={sim.three_year?.stress} />
+          </div>
+        </section>
+      )}
+
+      {sim.watchlist?.length > 0 && (
+        <section className="bg-white border border-[var(--rule)] rounded-md p-5 relative">
+          <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[var(--accent)] rounded-l-md" />
+          <div className="flex items-center gap-2 mb-4">
+            <Target className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.8} />
+            <p className="akki-overline">Watchlist — early-warning indicators</p>
+          </div>
+          <div className="space-y-3">
+            {sim.watchlist.map((w, i) => (
+              <div key={i} className="flex items-start gap-3 pt-3 first:pt-0 border-t first:border-t-0 border-[var(--rule)]/60">
+                <span className="text-[12px] font-mono text-[var(--accent)] mt-0.5">{String(i + 1).padStart(2, "0")}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="akki-serif text-[15px] text-[var(--ink)] leading-snug">{w.indicator}</p>
+                  <p className="text-[12.5px] text-[var(--muted)] mt-1">
+                    <span className="text-[var(--accent)]">Trigger:</span> {w.early_warning}
+                  </p>
+                  {w.committee && (
+                    <span className="inline-block mt-2 akki-context-chip">{w.committee}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {sim.assumptions?.length > 0 && (
+        <section>
+          <h2 className="akki-overline mb-3">Assumptions</h2>
+          <ul className="space-y-2">
+            {sim.assumptions.map((a, i) => (
+              <li key={i} className="flex gap-2 akki-serif text-[14px] text-[var(--deep)]">
+                <span className="text-[var(--muted)]">·</span>
+                <span>{a}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {sim.question_for_management && (
+        <section className="bg-[var(--accent-soft)]/60 border border-[var(--accent)]/30 rounded-md p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <HelpCircle className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.8} />
+            <p className="akki-overline">Question for management</p>
+          </div>
+          <p className="akki-serif text-[16px] leading-[1.6] text-[var(--ink)] italic">
+            "{sim.question_for_management}"
+          </p>
+        </section>
+      )}
+
+      <div className="pt-5 border-t border-[var(--rule)] flex items-center justify-between text-[12px] text-[var(--muted)]">
+        <span>AKKI synthesis · mode: {sim.mode || "synth"}</span>
+        <button
+          onClick={() => onArchive(sim)}
+          className="akki-gesture text-[12.5px]"
+          data-testid={`simulation-archive-${sim.id}`}
+        >
+          <Trash2 className="w-3.5 h-3.5" /> Archive
+        </button>
+      </div>
+
+      <CommentThread artefactType="simulation" artefactId={sim.id} />
+    </article>
+  );
+}
+
+export default function Simulate() {
+  const { activeContext } = useAuth();
+  const contextId = activeContext?.id;
+  const [list, setList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+  const [hypothesis, setHypothesis] = useState("");
+  const [horizon, setHorizon] = useState("1y3y");
+  const [committeeId, setCommitteeId] = useState("all");
+  const [running, setRunning] = useState(false);
+  const [stage, setStage] = useState("");
+
+  const committees = activeContext?.committees || [];
+
+  const load = useCallback(async () => {
+    if (!contextId) return;
+    try {
+      const { data } = await api.get(`/contexts/${contextId}/simulations`);
+      setList(data);
+      if (data.length > 0 && !selected) setSelected(data[0]);
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setLoading(false); }
+  }, [contextId, selected]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setSelected(null); }, [contextId]);
+
+  const onRun = async () => {
+    const text = hypothesis.trim();
+    if (text.length < 10) { toast.message("Write at least a sentence for AKKI to work with."); return; }
+    setRunning(true);
+    setStage("Reading Context Object and active signals…");
+    const timers = [
+      setTimeout(() => setStage("Reasoning through base / best / stress…"), 8000),
+      setTimeout(() => setStage("Drafting the watchlist and assumptions…"), 20000),
+      setTimeout(() => setStage("Still working — complex scenarios can take a minute…"), 40000),
+    ];
+    try {
+      const { data } = await api.post(
+        `/contexts/${contextId}/simulate`,
+        {
+          hypothesis: text,
+          horizon,
+          committee_id: committeeId === "all" ? null : committeeId,
+        },
+        { timeout: 180000 },
+      );
+      toast.success("Simulation ready");
+      setHypothesis("");
+      setSelected(data);
+      setList((prev) => [data, ...prev]);
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally {
+      timers.forEach(clearTimeout);
+      setStage("");
+      setRunning(false);
+    }
+  };
+
+  const onArchive = async (sim) => {
+    try {
+      await api.delete(`/contexts/${contextId}/simulations/${sim.id}`);
+      toast.success("Simulation archived");
+      setList((prev) => prev.filter((x) => x.id !== sim.id));
+      if (selected?.id === sim.id) setSelected(null);
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+
+  const visibleList = useMemo(() => {
+    if (committeeId === "all") return list;
+    return list.filter((s) => s.committee_id === committeeId);
+  }, [list, committeeId]);
+
+  if (!contextId) {
+    return <AppShell><div className="p-12 text-center text-sm text-[var(--muted)]">No context selected.</div></AppShell>;
+  }
+
+  return (
+    <AppShell>
+      <div className="h-[calc(100vh-4rem)] max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-[320px_1fr] overflow-hidden">
+        {/* LEFT — compose + list */}
+        <aside className="border-r border-[var(--rule)] bg-[var(--cream)] flex flex-col min-h-0" data-testid="simulate-rail">
+          <div className="px-5 py-6 border-b border-[var(--rule)] bg-white">
+            <p className="akki-overline mb-1 flex items-center gap-1.5">
+              <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Simulate · scenarios
+            </p>
+            <h1 className="akki-serif text-[20px] font-normal text-[var(--ink)] mb-1">Stress-test a hypothesis.</h1>
+            <p className="text-[11.5px] text-[var(--muted)] leading-relaxed">
+              Feed AKKI a what-if, get qualitative best / base / stress trajectories plus a watchlist.
+            </p>
+          </div>
+
+          <div className="px-4 py-4 space-y-3 border-b border-[var(--rule)]">
+            <textarea
+              value={hypothesis}
+              onChange={(e) => setHypothesis(e.target.value)}
+              placeholder="Describe a what-if you're wrestling with…"
+              rows={4}
+              disabled={running}
+              className="w-full bg-white border border-[var(--rule)] rounded-sm text-[13px] p-3 resize-none focus:outline-none focus:border-[var(--accent)] akki-serif leading-relaxed"
+              data-testid="simulate-hypothesis-input"
+            />
+
+            <div className="flex items-center gap-2">
+              <select
+                value={horizon}
+                onChange={(e) => setHorizon(e.target.value)}
+                className="flex-1 text-[12px] border border-[var(--rule)] rounded-sm bg-white px-2 py-1.5 focus:outline-none focus:border-[var(--accent)]"
+                data-testid="simulate-horizon-select"
+              >
+                {HORIZON_OPTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              {committees.length > 0 && (
+                <select
+                  value={committeeId}
+                  onChange={(e) => setCommitteeId(e.target.value)}
+                  className="flex-1 text-[12px] border border-[var(--rule)] rounded-sm bg-white px-2 py-1.5 focus:outline-none focus:border-[var(--accent)]"
+                  data-testid="simulate-committee-select"
+                >
+                  <option value="all">Full board</option>
+                  {committees.map((cm) => <option key={cm.id} value={cm.id}>{cm.name}</option>)}
+                </select>
+              )}
+            </div>
+
+            <Button
+              onClick={onRun}
+              disabled={running || !hypothesis.trim()}
+              className="w-full bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-9 font-medium text-sm"
+              data-testid="simulate-run-btn"
+            >
+              {running
+                ? <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> Running…</>
+                : <><Sparkles className="w-3.5 h-3.5 mr-2" /> Run simulation</>}
+            </Button>
+
+            {running && stage && (
+              <div className="text-[11px] text-[var(--deep)] italic bg-[var(--accent-soft)] border border-[var(--accent)]/20 rounded-sm px-2 py-1.5 flex items-center gap-1.5" data-testid="simulate-stage">
+                <Loader2 className="w-3 h-3 animate-spin text-[var(--accent)] shrink-0" />
+                <span className="flex-1 truncate">{stage}</span>
+              </div>
+            )}
+
+            {!running && hypothesis.trim().length < 10 && (
+              <div className="text-[10.5px] text-[var(--muted)] leading-relaxed space-y-1">
+                <p className="akki-overline">Try one of these</p>
+                {HYPOTHESIS_STARTERS.slice(0, 3).map((s, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setHypothesis(s)}
+                    className="block text-left text-[11px] text-[var(--deep)] hover:text-[var(--accent)] hover:underline"
+                    data-testid={`simulate-starter-${i}`}
+                  >
+                    → {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex-1 overflow-y-auto" data-testid="simulate-history">
+            {loading ? (
+              <div className="p-5 text-center text-[11px] uppercase tracking-widest text-[var(--muted)]">Loading…</div>
+            ) : visibleList.length === 0 ? (
+              <div className="p-6 text-center text-[11.5px] text-[var(--muted)] leading-relaxed">
+                No simulations yet for this {committeeId === "all" ? "context" : "committee"}. Run your first above.
+              </div>
+            ) : (
+              <div className="p-2">
+                {visibleList.map((s) => {
+                  const active = selected?.id === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => setSelected(s)}
+                      className={`w-full text-left px-3 py-2.5 rounded-sm mb-1 transition-colors border ${
+                        active
+                          ? "bg-white border-[var(--accent)]/60"
+                          : "border-transparent hover:bg-white"
+                      }`}
+                      data-testid={`simulate-list-${s.id}`}
+                    >
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <Clock className="w-2.5 h-2.5 text-[var(--muted)]" />
+                        <span className="text-[10px] text-[var(--muted)]">
+                          {new Date(s.created_at).toLocaleDateString()} · {s.horizon === "1y3y" ? "1y+3y" : s.horizon}
+                        </span>
+                      </div>
+                      <p className={`text-[12.5px] font-medium leading-snug line-clamp-2 ${active ? "text-[var(--ink)]" : "text-[var(--deep)]"}`}>
+                        {s.title}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </aside>
+
+        {/* RIGHT — selected simulation */}
+        <main className="overflow-y-auto bg-[var(--cream)]" data-testid="simulate-detail">
+          <div className="max-w-3xl mx-auto px-8 py-10">
+            {running && !selected ? (
+              <div className="bg-white border border-[var(--rule)] rounded-md p-16 text-center">
+                <Loader2 className="w-8 h-8 animate-spin text-[var(--accent)] mx-auto mb-4" />
+                <p className="akki-lead mb-1">Thinking through your hypothesis…</p>
+                <p className="text-[12.5px] text-[var(--muted)] italic">{stage || "Working…"}</p>
+              </div>
+            ) : selected ? (
+              <SimulationViewer sim={selected} onArchive={onArchive} />
+            ) : (
+              <div className="bg-white border border-[var(--rule)] rounded-md p-16 text-center akki-fade-up" data-testid="simulate-splash">
+                <Sparkles className="w-10 h-10 text-[var(--muted)]/40 mx-auto mb-5" strokeWidth={1.2} />
+                <h2 className="akki-serif text-[22px] font-normal text-[var(--ink)] mb-2">Simulate — scenarios for the board.</h2>
+                <p className="text-[14px] text-[var(--muted)] leading-relaxed max-w-md mx-auto mb-6">
+                  Qualitative 1-year and 3-year trajectories for any hypothesis you're wrestling with. Every run produces a watchlist you can table at the next meeting.
+                </p>
+                <div className="text-left max-w-md mx-auto space-y-2">
+                  <p className="akki-overline mb-2">How it reads</p>
+                  <p className="text-[13px] text-[var(--deep)] akki-serif">
+                    Three paragraphs per horizon — best, base, stress. Grounded in your Context Object and active signals. Ends with the single sharpest question to put to management.
+                  </p>
+                </div>
+                <Link to="/app/highlights" className="akki-gesture text-[13px] mt-6 inline-flex">
+                  Or start from a signal <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
+    </AppShell>
+  );
+}

@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import {
   Home, FileText, Sparkles, GraduationCap,
   Settings, LogOut, ChevronDown, Layers, CheckCircle2, Lock,
-  Briefcase, Landmark, Search, ScrollText,
+  Briefcase, Landmark, Search, ScrollText, Target,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
@@ -23,6 +23,7 @@ const NAV = [
   { to: "/app/workspace", label: "Workspace", icon: FileText, module: "M3", ready: true },
   { to: "/app/highlights", label: "Highlights", icon: Sparkles, module: "M5", ready: true },
   { to: "/app/briefings", label: "Briefings", icon: ScrollText, module: "M12", ready: true },
+  { to: "/app/simulate", label: "Simulate", icon: Target, module: "M14", ready: true },
   { to: "/app/learn", label: "Learn", icon: GraduationCap, module: "M9", ready: true },
 ];
 
