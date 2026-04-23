@@ -213,9 +213,12 @@ function DocumentsBrowser({
                   className="group bg-white border border-[#E1E6ED] rounded-sm p-3 hover:border-[#C9A961]/50 hover:bg-slate-50/40 transition-colors flex items-center gap-3"
                   data-testid={`doc-row-${d.id}`}
                 >
-                  <button
+                  <div
                     onClick={() => onSelect(d.id)}
-                    className="flex-1 min-w-0 text-left"
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(d.id); } }}
+                    role="button"
+                    tabIndex={0}
+                    className="flex-1 min-w-0 text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9A961]/50 rounded-sm"
                     data-testid={`doc-open-${d.id}`}
                   >
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -223,7 +226,9 @@ function DocumentsBrowser({
                         {d.name}
                       </p>
                       <StatusChip status={d.status} />
-                      <TrustChip trust={d.data_trust} onChange={(v) => onTrustChange(d, v)} disabled={!canDelete} />
+                      <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                        <TrustChip trust={d.data_trust} onChange={(v) => onTrustChange(d, v)} disabled={!canDelete} />
+                      </span>
                     </div>
                     <p className="text-[10px] text-slate-400 font-mono truncate">{d.original_filename}</p>
                     {d.preview && <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">{d.preview}</p>}
@@ -234,7 +239,7 @@ function DocumentsBrowser({
                       <span>·</span>
                       <span>{d.uploaded_by_email}</span>
                     </div>
-                  </button>
+                  </div>
                   <a
                     href={`${API_BASE}/contexts/${d.context_id}/documents/${d.id}/download`}
                     target="_blank" rel="noreferrer"
