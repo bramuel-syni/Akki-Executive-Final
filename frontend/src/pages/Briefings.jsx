@@ -49,7 +49,7 @@ function withCitations(text, sourceMap) {
           out.push(
             <sup
               key={`c-${i}-${j}`}
-              className="inline-flex items-center text-[10px] font-bold text-[#C9A961] mx-0.5"
+              className="inline-flex items-center text-[10px] font-bold text-[var(--accent)] mx-0.5"
               title={sourceMap.get(`${id}:name`)}
             >
               [{idx}]
@@ -101,14 +101,14 @@ function BriefingViewer({ briefing, onArchive }) {
           <div className="flex items-center gap-1">
             <a
               href={downloadUrl("pdf")} target="_blank" rel="noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs text-slate-700 border border-[#E1E6ED] hover:bg-slate-50 hover:border-[#C9A961]/50 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs text-slate-700 border border-[#E1E6ED] hover:bg-slate-50 hover:border-[var(--accent)]/50 transition-colors"
               data-testid="briefing-export-pdf"
             >
               <Download className="w-3 h-3" /> PDF
             </a>
             <a
               href={downloadUrl("docx")} target="_blank" rel="noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs text-slate-700 border border-[#E1E6ED] hover:bg-slate-50 hover:border-[#C9A961]/50 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs text-slate-700 border border-[#E1E6ED] hover:bg-slate-50 hover:border-[var(--accent)]/50 transition-colors"
               data-testid="briefing-export-docx"
             >
               <Download className="w-3 h-3" /> DOCX
@@ -140,7 +140,7 @@ function BriefingViewer({ briefing, onArchive }) {
             </AlertDialog>
           </div>
         </div>
-        <h1 className="text-2xl font-light tracking-tight text-[#0A1F44] mb-2">{briefing.title}</h1>
+        <h1 className="text-2xl font-light tracking-tight text-[var(--ink)] mb-2">{briefing.title}</h1>
         <p className="text-[11px] text-slate-500">
           {briefing.context_name} · {formatDate(briefing.created_at)} · {briefing.items?.length || 0} items · role: {briefing.role}
           <span className={`ml-2 uppercase tracking-wider ${TRUST[briefing.data_trust] || TRUST.unrated}`}>
@@ -178,16 +178,16 @@ function BriefingViewer({ briefing, onArchive }) {
                 </span>
                 <span className="text-[10px] uppercase tracking-wider text-slate-400">{it.confidence} confidence</span>
               </div>
-              <h3 className="text-base font-medium text-[#0A1F44] tracking-tight mb-2">{it.signal_headline}</h3>
+              <h3 className="text-base font-medium text-[var(--ink)] tracking-tight mb-2">{it.signal_headline}</h3>
               {it.evidence && (
                 <p className="text-[13.5px] text-slate-700 leading-[1.7] mb-3 whitespace-pre-wrap">
                   {withCitations(it.evidence, sourceMap)}
                 </p>
               )}
               {it.question && (
-                <div className="border-l-2 border-[#C9A961] pl-4 py-1">
-                  <p className="text-[10px] uppercase tracking-wider text-[#C9A961] font-semibold mb-1">Ask</p>
-                  <p className="text-[14px] italic text-[#0A1F44] leading-relaxed">
+                <div className="border-l-2 border-[var(--accent)] pl-4 py-1">
+                  <p className="text-[10px] uppercase tracking-wider text-[var(--accent)] font-semibold mb-1">Ask</p>
+                  <p className="text-[14px] italic text-[var(--ink)] leading-relaxed">
                     {withCitations(it.question, sourceMap)}
                   </p>
                 </div>
@@ -215,11 +215,11 @@ function BriefingViewer({ briefing, onArchive }) {
                 <Link
                   key={did}
                   to={`/app/documents/${did}`}
-                  className="flex items-center gap-2 text-[12px] text-slate-600 hover:text-[#0A1F44] transition-colors group"
+                  className="flex items-center gap-2 text-[12px] text-slate-600 hover:text-[var(--ink)] transition-colors group"
                   data-testid={`briefing-source-${did}`}
                 >
-                  <span className="text-[10px] font-bold text-[#C9A961] tabular-nums w-5">[{i + 1}]</span>
-                  <FileText className="w-3 h-3 text-[#C9A961] shrink-0" />
+                  <span className="text-[10px] font-bold text-[var(--accent)] tabular-nums w-5">[{i + 1}]</span>
+                  <FileText className="w-3 h-3 text-[var(--accent)] shrink-0" />
                   <span className="truncate group-hover:underline">{doc?.doc_name || did}</span>
                   <span className={`ml-auto text-[10px] uppercase tracking-wider ${TRUST[doc?.data_trust] || TRUST.unrated}`}>
                     {doc?.data_trust || "unrated"}
@@ -316,7 +316,7 @@ export default function Briefings() {
         <aside className="border-r border-[#E1E6ED] bg-slate-50/50 flex flex-col" data-testid="briefings-rail">
           <div className="px-5 py-5 border-b border-[#E1E6ED] bg-white">
             <p className="akki-overline mb-1">Briefings · Module M12</p>
-            <h1 className="text-lg font-medium tracking-tight text-[#0A1F44]">Your briefings</h1>
+            <h1 className="text-lg font-medium tracking-tight text-[var(--ink)]">Your briefings</h1>
             <p className="text-[11px] text-slate-500 mt-1">{list.length} in {activeContext.name}</p>
           </div>
 
@@ -332,15 +332,15 @@ export default function Briefings() {
             <Button
               onClick={onCreate}
               disabled={creating}
-              className="w-full bg-[#C9A961] hover:bg-[#B39556] text-[#0A1F44] rounded-sm h-9 font-medium text-sm"
+              className="w-full bg-[var(--accent)] hover:bg-[var(--accent)] text-[var(--ink)] rounded-sm h-9 font-medium text-sm"
               data-testid="briefing-create-btn"
             >
               {creating ? <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> Composing…</>
                 : <><Sparkles className="w-3.5 h-3.5 mr-2" /> New briefing</>}
             </Button>
             {creating && stage && (
-              <div className="text-[11px] text-slate-500 italic bg-[#C9A961]/5 border border-[#C9A961]/20 rounded-sm px-2 py-1.5 flex items-center gap-1.5" data-testid="briefing-stage">
-                <Loader2 className="w-3 h-3 animate-spin text-[#C9A961] shrink-0" />
+              <div className="text-[11px] text-slate-500 italic bg-[var(--accent)]/5 border border-[var(--accent)]/20 rounded-sm px-2 py-1.5 flex items-center gap-1.5" data-testid="briefing-stage">
+                <Loader2 className="w-3 h-3 animate-spin text-[var(--accent)] shrink-0" />
                 <span className="flex-1 truncate">{stage}</span>
               </div>
             )}
@@ -361,7 +361,7 @@ export default function Briefings() {
                 </p>
                 <Link
                   to="/app/highlights"
-                  className="text-[11px] text-[#C9A961] hover:underline inline-flex items-center gap-1 mt-3"
+                  className="text-[11px] text-[var(--accent)] hover:underline inline-flex items-center gap-1 mt-3"
                 >
                   Open Highlights <ArrowRight className="w-3 h-3" />
                 </Link>
@@ -375,16 +375,16 @@ export default function Briefings() {
                       key={b.id}
                       onClick={() => { setSelectedId(b.id); setSelected(b); }}
                       className={`w-full text-left px-3 py-3 rounded-sm mb-1 transition-colors ${
-                        active ? "bg-white border border-[#C9A961]/60" : "hover:bg-white border border-transparent"
+                        active ? "bg-white border border-[var(--accent)]/60" : "hover:bg-white border border-transparent"
                       }`}
                       data-testid={`briefing-list-${b.id}`}
                     >
                       <div className="flex items-center gap-1.5 mb-1">
-                        <span className="text-[10px] font-mono text-[#C9A961]">v{b.version}</span>
+                        <span className="text-[10px] font-mono text-[var(--accent)]">v{b.version}</span>
                         <span className="text-[10px] text-slate-400">·</span>
                         <span className="text-[10px] uppercase tracking-wider text-slate-400">{b.role}</span>
                       </div>
-                      <p className={`text-[13px] font-medium leading-snug line-clamp-2 ${active ? "text-[#0A1F44]" : "text-slate-700"}`}>
+                      <p className={`text-[13px] font-medium leading-snug line-clamp-2 ${active ? "text-[var(--ink)]" : "text-slate-700"}`}>
                         {b.title}
                       </p>
                       <p className="text-[10px] text-slate-400 mt-1.5">
@@ -403,7 +403,7 @@ export default function Briefings() {
           <div className="max-w-3xl mx-auto py-8 px-6">
             {creating && !selected ? (
               <div className="bg-white border border-[#E1E6ED] rounded-sm p-16 text-center">
-                <Loader2 className="w-8 h-8 animate-spin text-[#C9A961] mx-auto mb-4" />
+                <Loader2 className="w-8 h-8 animate-spin text-[var(--accent)] mx-auto mb-4" />
                 <p className="text-sm text-slate-600 mb-1 font-medium">Composing your briefing…</p>
                 <p className="text-xs text-slate-500 italic">{stage || "Working…"}</p>
               </div>
@@ -412,7 +412,7 @@ export default function Briefings() {
             ) : list.length === 0 && !loading ? (
               <div className="bg-white border border-[#E1E6ED] rounded-sm p-16 text-center" data-testid="briefings-splash">
                 <ScrollText className="w-12 h-12 text-slate-300 mx-auto mb-5" strokeWidth={1.2} />
-                <h2 className="text-xl font-medium text-[#0A1F44] tracking-tight mb-2">
+                <h2 className="text-xl font-medium text-[var(--ink)] tracking-tight mb-2">
                   No briefings yet for {activeContext.name}
                 </h2>
                 <p className="text-sm text-slate-500 max-w-md mx-auto mb-6 leading-relaxed">
@@ -421,7 +421,7 @@ export default function Briefings() {
                 <Button
                   onClick={onCreate}
                   disabled={creating}
-                  className="bg-[#C9A961] hover:bg-[#B39556] text-[#0A1F44] rounded-sm h-10 px-5 font-medium"
+                  className="bg-[var(--accent)] hover:bg-[var(--accent)] text-[var(--ink)] rounded-sm h-10 px-5 font-medium"
                 >
                   <Sparkles className="w-4 h-4 mr-2" /> Compose first briefing
                 </Button>

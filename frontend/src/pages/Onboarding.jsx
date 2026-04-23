@@ -42,7 +42,7 @@ function ProgressBar({ value, total }) {
     <div className="flex items-center gap-3">
       <div className="flex-1 h-[3px] bg-slate-100 rounded-sm overflow-hidden">
         <div
-          className="h-full bg-[#C9A961] transition-all duration-500"
+          className="h-full bg-[var(--accent)] transition-all duration-500"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -210,7 +210,7 @@ export default function Onboarding() {
         <div className="p-8 md:p-12 max-w-5xl mx-auto">
           <div className="mb-10">
             <p className="akki-overline mb-3">Module M2 · Step 1 of 3</p>
-            <h1 className="text-4xl font-light tracking-tight text-[#0A1F44] mb-3">Declare your role.</h1>
+            <h1 className="text-4xl font-light tracking-tight text-[var(--ink)] mb-3">Declare your role.</h1>
             <p className="text-base text-slate-500 max-w-2xl leading-relaxed">
               Choose how you act. This shapes your Home, your audit questions, and which surfaces are emphasised.
             </p>
@@ -222,11 +222,11 @@ export default function Onboarding() {
                 <button
                   key={r.value} type="button"
                   onClick={() => setDeclaredRole(r.value)}
-                  className={`text-left border p-6 rounded-sm transition-all ${active ? "border-[#C9A961] bg-amber-50/30 ring-1 ring-[#C9A961]/40 -translate-y-0.5 shadow-sm" : "border-[#E1E6ED] bg-white hover:border-slate-300"}`}
+                  className={`text-left border p-6 rounded-sm transition-all ${active ? "border-[var(--accent)] bg-amber-50/30 ring-1 ring-[var(--accent)]/40 -translate-y-0.5 shadow-sm" : "border-[#E1E6ED] bg-white hover:border-slate-300"}`}
                   data-testid={`role-option-${r.value}`}
                 >
-                  <I className={`w-5 h-5 mb-4 ${active ? "text-[#C9A961]" : "text-slate-400"}`} strokeWidth={1.6} />
-                  <p className="text-sm font-medium text-[#0A1F44] mb-1">{r.title}</p>
+                  <I className={`w-5 h-5 mb-4 ${active ? "text-[var(--accent)]" : "text-slate-400"}`} strokeWidth={1.6} />
+                  <p className="text-sm font-medium text-[var(--ink)] mb-1">{r.title}</p>
                   <p className="text-xs text-slate-500 leading-relaxed">{r.subtitle}</p>
                 </button>
               );
@@ -234,7 +234,7 @@ export default function Onboarding() {
           </div>
           <Button
             onClick={declare} disabled={!declaredRole || saving}
-            className="bg-[#0A1F44] hover:bg-[#0E2958] rounded-sm h-11 px-6 group"
+            className="bg-[var(--ink)] hover:bg-[#0E2958] rounded-sm h-11 px-6 group"
             data-testid="declare-role-btn"
           >
             {saving ? "Saving…" : "Continue to audit"}
@@ -252,13 +252,13 @@ export default function Onboarding() {
         <div className="p-8 md:p-12 max-w-4xl mx-auto">
           <div className="bg-white border border-[#E1E6ED] rounded-sm p-10">
             <div className="flex items-start gap-5 mb-8">
-              <div className="w-12 h-12 bg-[#C9A961]/10 border border-[#C9A961]/40 flex items-center justify-center rounded-sm">
-                <CheckCircle2 className="w-6 h-6 text-[#C9A961]" strokeWidth={1.8} />
+              <div className="w-12 h-12 bg-[var(--accent)]/10 border border-[var(--accent)]/40 flex items-center justify-center rounded-sm">
+                <CheckCircle2 className="w-6 h-6 text-[var(--accent)]" strokeWidth={1.8} />
               </div>
               <div>
                 <p className="akki-overline mb-1">Context Object v1 · saved</p>
-                <h1 className="text-3xl font-light tracking-tight text-[#0A1F44] mb-2">
-                  AKKI is tuned to <span className="text-[#C9A961]">{activeContext?.name}.</span>
+                <h1 className="text-3xl font-light tracking-tight text-[var(--ink)] mb-2">
+                  AKKI is tuned to <span className="text-[var(--accent)]">{activeContext?.name}.</span>
                 </h1>
                 <p className="text-sm text-slate-500 max-w-2xl leading-relaxed">
                   Every signal, briefing, and lens session in this context will be grounded in the profile below. You can update your answers any time from Settings.
@@ -280,7 +280,7 @@ export default function Onboarding() {
                     <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1.5">
                       {q.question}
                     </p>
-                    <p className="text-sm text-[#0A1F44]">{display || "—"}</p>
+                    <p className="text-sm text-[var(--ink)]">{display || "—"}</p>
                   </div>
                 );
               })}
@@ -296,7 +296,7 @@ export default function Onboarding() {
                 <Edit3 className="w-4 h-4 mr-2" /> Edit answers
               </Button>
               <Link to="/app">
-                <Button className="bg-[#0A1F44] hover:bg-[#0E2958] rounded-sm h-10 group" data-testid="go-home-btn">
+                <Button className="bg-[var(--ink)] hover:bg-[#0E2958] rounded-sm h-10 group" data-testid="go-home-btn">
                   Go to home <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-0.5 transition-transform" />
                 </Button>
               </Link>
@@ -304,7 +304,7 @@ export default function Onboarding() {
           </div>
 
           <div className="mt-8 flex items-center gap-3 text-xs text-slate-500">
-            <ShieldCheck className="w-4 h-4 text-[#C9A961]" strokeWidth={1.6} />
+            <ShieldCheck className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.6} />
             <span>
               Answers are versioned. Every update creates a new Context Object version — the previous one is retained for audit.
             </span>
@@ -321,11 +321,11 @@ export default function Onboarding() {
         <div className="p-8 md:p-12 max-w-4xl mx-auto">
           <div className="mb-8">
             <p className="akki-overline mb-2">Module M2 · Review</p>
-            <h1 className="text-3xl font-light tracking-tight text-[#0A1F44] mb-2">
+            <h1 className="text-3xl font-light tracking-tight text-[var(--ink)] mb-2">
               Review your answers
             </h1>
             <p className="text-sm text-slate-500">
-              Submitting saves Context Object v1 for <strong className="text-[#0A1F44]">{activeContext?.name}</strong>.
+              Submitting saves Context Object v1 for <strong className="text-[var(--ink)]">{activeContext?.name}</strong>.
             </p>
           </div>
           <div className="bg-white border border-[#E1E6ED] rounded-sm">
@@ -341,7 +341,7 @@ export default function Onboarding() {
                 <div key={q.id} className="px-6 py-4 border-b last:border-b-0 border-[#E1E6ED] flex items-start justify-between gap-6">
                   <div>
                     <p className="text-[10px] uppercase tracking-wider text-slate-400 font-mono mb-1">Q{idx + 1}</p>
-                    <p className="text-sm font-medium text-[#0A1F44] mb-1">{q.question}</p>
+                    <p className="text-sm font-medium text-[var(--ink)] mb-1">{q.question}</p>
                     <p className="text-sm text-slate-600">{display || "—"}</p>
                   </div>
                   <Button
@@ -362,7 +362,7 @@ export default function Onboarding() {
             </Button>
             <Button
               onClick={onSubmit} disabled={saving}
-              className="bg-[#C9A961] hover:bg-[#B39556] text-[#0A1F44] font-medium rounded-sm h-10 group"
+              className="bg-[var(--accent)] hover:bg-[var(--accent)] text-[var(--ink)] font-medium rounded-sm h-10 group"
               data-testid="submit-audit-btn"
             >
               {saving ? "Saving…" : "Save Context Object"}
@@ -392,7 +392,7 @@ export default function Onboarding() {
         </div>
 
         <div className="bg-white border border-[#E1E6ED] rounded-sm p-8 md:p-10 akki-fade-up" key={step}>
-          <h2 className="text-2xl font-light tracking-tight text-[#0A1F44] mb-3">
+          <h2 className="text-2xl font-light tracking-tight text-[var(--ink)] mb-3">
             {q.question}
           </h2>
           {q.hint && <p className="text-sm text-slate-500 mb-8">{q.hint}</p>}
@@ -442,7 +442,7 @@ export default function Onboarding() {
                     <button
                       key={j} type="button"
                       onClick={() => setAnswer("jurisdiction", j)}
-                      className={`text-xs px-3 py-1.5 border rounded-sm transition-colors ${active ? "bg-[#0A1F44] text-white border-[#0A1F44]" : "bg-white border-[#E1E6ED] text-slate-600 hover:border-slate-300"}`}
+                      className={`text-xs px-3 py-1.5 border rounded-sm transition-colors ${active ? "bg-[var(--ink)] text-white border-[var(--ink)]" : "bg-white border-[#E1E6ED] text-slate-600 hover:border-slate-300"}`}
                       data-testid={`jurisdiction-${j.toLowerCase().replace(/\s+/g, '-')}`}
                     >
                       {j}
@@ -471,11 +471,11 @@ export default function Onboarding() {
                   <button
                     key={opt.value} type="button"
                     onClick={() => setAnswer(q.id, opt.value)}
-                    className={`w-full text-left flex items-center justify-between gap-4 border rounded-sm px-5 py-3.5 transition-colors ${active ? "border-[#C9A961] bg-amber-50/30 ring-1 ring-[#C9A961]/40" : "border-[#E1E6ED] hover:border-slate-300"}`}
+                    className={`w-full text-left flex items-center justify-between gap-4 border rounded-sm px-5 py-3.5 transition-colors ${active ? "border-[var(--accent)] bg-amber-50/30 ring-1 ring-[var(--accent)]/40" : "border-[#E1E6ED] hover:border-slate-300"}`}
                     data-testid={`opt-${q.id}-${opt.value}`}
                   >
-                    <span className="text-sm text-[#0A1F44]">{opt.label}</span>
-                    {active && <Check className="w-4 h-4 text-[#C9A961]" strokeWidth={2} />}
+                    <span className="text-sm text-[var(--ink)]">{opt.label}</span>
+                    {active && <Check className="w-4 h-4 text-[var(--accent)]" strokeWidth={2} />}
                   </button>
                 );
               })}
@@ -490,12 +490,12 @@ export default function Onboarding() {
                   <button
                     key={opt.value} type="button"
                     onClick={() => toggleMulti(q.id, opt.value)}
-                    className={`text-left flex items-center justify-between gap-3 border rounded-sm px-4 py-3 transition-colors ${active ? "border-[#C9A961] bg-amber-50/30 ring-1 ring-[#C9A961]/40" : "border-[#E1E6ED] hover:border-slate-300"}`}
+                    className={`text-left flex items-center justify-between gap-3 border rounded-sm px-4 py-3 transition-colors ${active ? "border-[var(--accent)] bg-amber-50/30 ring-1 ring-[var(--accent)]/40" : "border-[#E1E6ED] hover:border-slate-300"}`}
                     data-testid={`opt-${q.id}-${opt.value}`}
                   >
-                    <span className="text-sm text-[#0A1F44]">{opt.label}</span>
-                    <div className={`w-4 h-4 border rounded-sm flex items-center justify-center ${active ? "bg-[#C9A961] border-[#C9A961]" : "border-slate-300"}`}>
-                      {active && <Check className="w-3 h-3 text-[#0A1F44]" strokeWidth={2.5} />}
+                    <span className="text-sm text-[var(--ink)]">{opt.label}</span>
+                    <div className={`w-4 h-4 border rounded-sm flex items-center justify-center ${active ? "bg-[var(--accent)] border-[var(--accent)]" : "border-slate-300"}`}>
+                      {active && <Check className="w-3 h-3 text-[var(--ink)]" strokeWidth={2.5} />}
                     </div>
                   </button>
                 );
@@ -508,14 +508,14 @@ export default function Onboarding() {
           <Button
             variant="ghost"
             onClick={onBack} disabled={step <= 1}
-            className="rounded-sm h-10 text-slate-500 hover:text-[#0A1F44]"
+            className="rounded-sm h-10 text-slate-500 hover:text-[var(--ink)]"
             data-testid="back-btn"
           >
             <ArrowLeft className="w-4 h-4 mr-2" /> Back
           </Button>
           <Button
             onClick={onNext} disabled={!canAdvance}
-            className="bg-[#0A1F44] hover:bg-[#0E2958] rounded-sm h-10 px-6 group"
+            className="bg-[var(--ink)] hover:bg-[#0E2958] rounded-sm h-10 px-6 group"
             data-testid="next-btn"
           >
             {step === TOTAL_QUESTIONS ? "Review" : "Next"}

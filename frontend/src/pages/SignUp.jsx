@@ -41,17 +41,17 @@ export default function SignUp() {
 
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[1.05fr_1fr] bg-white">
-      <aside className="relative hidden lg:flex flex-col justify-between bg-[#0A1F44] text-white p-12 overflow-hidden">
+      <aside className="relative hidden lg:flex flex-col justify-between bg-[var(--ink)] text-white p-12 overflow-hidden">
         <div
           className="absolute inset-0 opacity-60"
           style={{ backgroundImage: `url(${BG})`, backgroundSize: "cover", backgroundPosition: "center" }}
         />
-        <div className="absolute inset-0 bg-gradient-to-br from-[#0A1F44]/85 via-[#0A1F44]/70 to-[#0A1F44]/95" />
+        <div className="absolute inset-0 bg-gradient-to-br from-[var(--ink)]/85 via-[var(--ink)]/70 to-[var(--ink)]/95" />
         <div className="relative z-10"><Logo size="lg" inverted /></div>
         <div className="relative z-10 max-w-xl">
           <p className="akki-overline mb-4">New account · 2 minutes</p>
           <h1 className="text-4xl lg:text-5xl font-light tracking-tight leading-[1.1] mb-6">
-            Create an <span className="text-[#C9A961]">AKKI account.</span>
+            Create an <span className="text-[var(--accent)]">AKKI account.</span>
           </h1>
           <p className="text-white/65 text-base leading-relaxed max-w-md">
             One account holds many contexts — each board, each organisation.
@@ -61,7 +61,7 @@ export default function SignUp() {
 
           <div className="mt-10 space-y-3 pt-8 border-t border-white/10 text-sm">
             <div className="flex items-start gap-3">
-              <span className="w-6 h-6 border border-[#C9A961]/50 text-[#C9A961] text-[10px] flex items-center justify-center tracking-wider">1</span>
+              <span className="w-6 h-6 border border-[var(--accent)]/50 text-[var(--accent)] text-[10px] flex items-center justify-center tracking-wider">1</span>
               <div><p className="font-medium text-white/90">Create account</p><p className="text-white/45 text-xs">Your email, your first context</p></div>
             </div>
             <div className="flex items-start gap-3">
@@ -83,7 +83,7 @@ export default function SignUp() {
         <div className="w-full max-w-sm akki-fade-up">
           <div className="lg:hidden mb-8"><Logo size="lg" /></div>
           <p className="akki-overline mb-3">Step 1 of 3 · Create account</p>
-          <h2 className="text-3xl font-light tracking-tight text-[#0A1F44] mb-2">Get started</h2>
+          <h2 className="text-3xl font-light tracking-tight text-[var(--ink)] mb-2">Get started</h2>
           <p className="text-sm text-slate-500 mb-10">
             Already have access?{" "}
             <Link to="/signin" className="akki-link" data-testid="go-to-signin-link">
@@ -126,7 +126,7 @@ export default function SignUp() {
             <Button
               type="submit"
               disabled={loading}
-              className="w-full h-11 bg-[#0A1F44] hover:bg-[#0E2958] text-white rounded-sm text-sm font-medium tracking-wide transition-colors group mt-2"
+              className="w-full h-11 bg-[var(--ink)] hover:bg-[#0E2958] text-white rounded-sm text-sm font-medium tracking-wide transition-colors group mt-2"
               data-testid="signup-submit-btn"
             >
               <span>{loading ? "Creating workspace…" : "Create workspace"}</span>

@@ -101,7 +101,7 @@ export default function DocumentViewer() {
           <Button
             variant="ghost"
             size="sm"
-            className="rounded-sm h-8 px-2 text-slate-600 hover:text-[#0A1F44]"
+            className="rounded-sm h-8 px-2 text-slate-600 hover:text-[var(--ink)]"
             onClick={() => navigate(-1)}
             data-testid="doc-back-btn"
           >
@@ -110,13 +110,13 @@ export default function DocumentViewer() {
           <div className="flex-1 min-w-0">
             {loading ? (
               <div className="flex items-center gap-2 text-xs text-slate-500">
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C9A961]" /> Loading document…
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--accent)]" /> Loading document…
               </div>
             ) : doc ? (
               <>
                 <p className="akki-overline mb-0.5">Document · {activeContext?.name}</p>
                 <div className="flex items-center gap-3 flex-wrap">
-                  <h1 className="text-xl font-light tracking-tight text-[#0A1F44] truncate" data-testid="doc-title">
+                  <h1 className="text-xl font-light tracking-tight text-[var(--ink)] truncate" data-testid="doc-title">
                     {doc.name}
                   </h1>
                   <span className="text-[10px] font-mono text-slate-400 truncate">{doc.original_filename}</span>
@@ -176,7 +176,7 @@ export default function DocumentViewer() {
                       <h2
                         key={i}
                         data-outline-id={it.id}
-                        className="text-lg font-medium text-[#0A1F44] tracking-tight mt-8 mb-3 scroll-mt-6"
+                        className="text-lg font-medium text-[var(--ink)] tracking-tight mt-8 mb-3 scroll-mt-6"
                       >
                         {it.text}
                       </h2>
@@ -198,7 +198,7 @@ export default function DocumentViewer() {
           >
             <div className="px-4 py-5 sticky top-0 bg-slate-50/90 backdrop-blur-sm border-b border-[#E1E6ED]">
               <div className="flex items-center gap-2">
-                <List className="w-3.5 h-3.5 text-[#C9A961]" />
+                <List className="w-3.5 h-3.5 text-[var(--accent)]" />
                 <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-semibold">Outline</p>
               </div>
             </div>
@@ -210,7 +210,7 @@ export default function DocumentViewer() {
                   <button
                     key={h.id}
                     onClick={() => scrollTo(h.id)}
-                    className="w-full text-left px-3 py-2 text-[12px] text-slate-600 hover:bg-white hover:text-[#0A1F44] rounded-sm transition-colors border-l-2 border-transparent hover:border-[#C9A961]"
+                    className="w-full text-left px-3 py-2 text-[12px] text-slate-600 hover:bg-white hover:text-[var(--ink)] rounded-sm transition-colors border-l-2 border-transparent hover:border-[var(--accent)]"
                     data-testid={`outline-${h.id}`}
                   >
                     <span className="line-clamp-2">{h.text}</span>
@@ -221,7 +221,7 @@ export default function DocumentViewer() {
             <div className="px-4 py-4 border-t border-[#E1E6ED]">
               <Link
                 to="/app/ask"
-                className="flex items-center gap-2 text-[11px] text-[#C9A961] hover:underline"
+                className="flex items-center gap-2 text-[11px] text-[var(--accent)] hover:underline"
               >
                 <FileText className="w-3 h-3" /> Ask about this document →
               </Link>

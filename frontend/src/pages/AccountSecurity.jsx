@@ -60,7 +60,7 @@ export default function AccountSecurity() {
       <div className="p-8 max-w-3xl mx-auto">
         <div className="mb-8">
           <p className="akki-overline mb-2">Account</p>
-          <h1 className="text-3xl font-light tracking-tight text-[#0A1F44]">Security</h1>
+          <h1 className="text-3xl font-light tracking-tight text-[var(--ink)]">Security</h1>
           <p className="text-sm text-slate-500 mt-2">
             Protect your account with two-factor authentication.
           </p>
@@ -69,8 +69,8 @@ export default function AccountSecurity() {
         <section className="bg-white border border-[#E1E6ED] rounded-sm">
           <div className="px-6 py-4 border-b border-[#E1E6ED] flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-[#0A1F44] flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-[#C9A961]" /> Two-factor authentication (TOTP)
+              <p className="text-sm font-medium text-[var(--ink)] flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-[var(--accent)]" /> Two-factor authentication (TOTP)
               </p>
               <p className="text-xs text-slate-500 mt-1">
                 Recommended for context admins. Use any authenticator app (1Password, Authy, Google Authenticator).
@@ -83,7 +83,7 @@ export default function AccountSecurity() {
           <div className="p-6 space-y-5">
             {account?.mfa_enabled ? (
               <div className="space-y-3">
-                <p className="text-sm text-[#0A1F44] flex items-center gap-2">
+                <p className="text-sm text-[var(--ink)] flex items-center gap-2">
                   <Lock className="w-4 h-4 text-emerald-600" /> MFA is active on your account.
                 </p>
                 <Button
@@ -97,7 +97,7 @@ export default function AccountSecurity() {
             ) : !setup ? (
               <Button
                 onClick={startSetup} disabled={busy}
-                className="bg-[#0A1F44] hover:bg-[#0E2958] rounded-sm h-9"
+                className="bg-[var(--ink)] hover:bg-[#0E2958] rounded-sm h-9"
                 data-testid="start-mfa-btn"
               >
                 {busy ? "Preparing…" : "Enable MFA"}
@@ -112,7 +112,7 @@ export default function AccountSecurity() {
                     <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-1">
                       Or enter this secret manually
                     </p>
-                    <code className="block text-xs font-mono bg-slate-50 border border-[#E1E6ED] p-2 rounded-sm text-[#0A1F44]" data-testid="mfa-secret">
+                    <code className="block text-xs font-mono bg-slate-50 border border-[#E1E6ED] p-2 rounded-sm text-[var(--ink)]" data-testid="mfa-secret">
                       {setup.secret}
                     </code>
                   </div>
@@ -131,7 +131,7 @@ export default function AccountSecurity() {
                       />
                     </div>
                     <div className="flex gap-2">
-                      <Button type="submit" disabled={busy || code.length !== 6} className="bg-[#0A1F44] hover:bg-[#0E2958] rounded-sm h-9" data-testid="verify-mfa-btn">
+                      <Button type="submit" disabled={busy || code.length !== 6} className="bg-[var(--ink)] hover:bg-[#0E2958] rounded-sm h-9" data-testid="verify-mfa-btn">
                         {busy ? "Verifying…" : "Verify & enable"}
                       </Button>
                       <Button type="button" variant="ghost" className="rounded-sm h-9" onClick={() => setSetup(null)} data-testid="cancel-mfa-btn">

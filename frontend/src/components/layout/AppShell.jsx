@@ -115,7 +115,7 @@ export default function AppShell({ children }) {
         data-testid="top-header"
       >
         <div className="flex items-center gap-8">
-          <Link to="/app" data-testid="header-home-link" className="akki-serif text-[24px] text-[var(--ink)] leading-none">AKKI</Link>
+          <Link to="/app" data-testid="header-home-link" className="akki-serif text-[24px] text-[var(--navy)] leading-none tracking-tight">AKKI</Link>
           <div className="hidden md:flex items-center gap-1 text-[10px] tracking-[0.2em] uppercase text-[var(--muted)]">
             <span>Confidential</span>
             <span className="opacity-40">·</span>
@@ -240,7 +240,7 @@ export default function AppShell({ children }) {
                 className="flex items-center gap-2 text-sm pl-2 pr-2 py-1 hover:bg-[var(--cream-deep)] rounded-md transition-colors"
                 data-testid="account-menu-btn"
               >
-                <div className="w-7 h-7 bg-[var(--accent)] text-white flex items-center justify-center text-xs font-bold rounded-full">
+                <div className="w-7 h-7 bg-[var(--navy)] text-white flex items-center justify-center text-xs font-bold rounded-full">
                   {(account?.name || account?.email || "?").charAt(0).toUpperCase()}
                 </div>
               </button>
@@ -389,7 +389,7 @@ export default function AppShell({ children }) {
           )}
           {mismatched && (
             <div
-              className="flex items-center gap-3 px-8 py-2 bg-[#0A1F44]/5 border-b border-[#0A1F44]/20 text-xs text-[#0A1F44]"
+              className="flex items-center gap-3 px-8 py-2 bg-[var(--ink)]/5 border-b border-[var(--ink)]/20 text-xs text-[var(--ink)]"
               data-testid="role-mismatch-banner"
             >
               <span className="akki-overline">Heads up</span>
@@ -401,7 +401,7 @@ export default function AppShell({ children }) {
           )}
           {isSponsored && (
             <div
-              className="flex items-center gap-2 px-8 py-2 bg-[#0A1F44]/5 border-b border-[#C9A961]/30 text-xs text-[#0A1F44]"
+              className="flex items-center gap-2 px-8 py-2 bg-[var(--ink)]/5 border-b border-[var(--accent)]/30 text-xs text-[var(--ink)]"
               data-testid="sponsored-context-banner"
             >
               <span className="akki-overline">Sponsored context</span>
@@ -445,16 +445,16 @@ export default function AppShell({ children }) {
                     data-testid={`palette-switch-${c.id}`}
                   >
                     <div className="flex items-center gap-3">
-                      <Layers className={`w-4 h-4 ${active ? "text-[#C9A961]" : "text-slate-400"}`} strokeWidth={1.6} />
+                      <Layers className={`w-4 h-4 ${active ? "text-[var(--accent)]" : "text-slate-400"}`} strokeWidth={1.6} />
                       <div>
-                        <p className="text-sm text-[#0A1F44] font-medium">{c.name}</p>
+                        <p className="text-sm text-[var(--ink)] font-medium">{c.name}</p>
                         <p className="text-[10px] uppercase tracking-wider text-slate-400">
                           {c.my_role || "member"}
-                          {c.provisioning === "sponsored" && <span className="ml-2 text-[#C9A961]">sponsored</span>}
+                          {c.provisioning === "sponsored" && <span className="ml-2 text-[var(--accent)]">sponsored</span>}
                         </p>
                       </div>
                     </div>
-                    {active && <CheckCircle2 className="w-4 h-4 text-[#C9A961]" />}
+                    {active && <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />}
                   </button>
                 );
               })}
@@ -464,8 +464,8 @@ export default function AppShell({ children }) {
               className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left"
               data-testid="palette-new-context-btn"
             >
-              <Sparkles className="w-4 h-4 text-[#C9A961]" strokeWidth={1.6} />
-              <span className="text-sm text-[#0A1F44]">Add a context…</span>
+              <Sparkles className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.6} />
+              <span className="text-sm text-[var(--ink)]">Add a context…</span>
             </button>
             <button
               onClick={() => { setPaletteOpen(false); navigate("/app/settings"); }}
@@ -473,7 +473,7 @@ export default function AppShell({ children }) {
               data-testid="palette-settings-btn"
             >
               <Settings className="w-4 h-4 text-slate-400" strokeWidth={1.6} />
-              <span className="text-sm text-[#0A1F44]">Open settings</span>
+              <span className="text-sm text-[var(--ink)]">Open settings</span>
             </button>
           </div>
         </DialogContent>

@@ -10,7 +10,7 @@ export default function ProtectedRoute({ children }) {
     return (
       <div className="h-screen flex items-center justify-center bg-[#FAFBFC]" data-testid="auth-loading">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-1.5 h-1.5 bg-[#C9A961] akki-pulse-gold rounded-full" />
+          <div className="w-1.5 h-1.5 bg-[var(--accent)] akki-pulse-gold rounded-full" />
           <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Verifying session</p>
         </div>
       </div>

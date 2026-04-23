@@ -71,7 +71,7 @@ const CONTEXT_TYPE_LABEL = {
 function ContextTypeBadge({ type }) {
   const isSponsored = type === "ned_sponsored" || type === "executive_enterprise";
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium uppercase tracking-wider ${isSponsored ? "bg-amber-50 text-[#C9A961] border border-[#C9A961]/30" : "bg-slate-100 text-slate-600 border border-slate-200"}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium uppercase tracking-wider ${isSponsored ? "bg-amber-50 text-[var(--accent)] border border-[var(--accent)]/30" : "bg-slate-100 text-slate-600 border border-slate-200"}`}>
       {CONTEXT_TYPE_LABEL[type] || type}
     </span>
   );
@@ -252,7 +252,7 @@ export default function Settings() {
       <div className="p-8 max-w-6xl mx-auto">
         <div className="mb-8">
           <p className="akki-overline mb-2">Administration · Module M1</p>
-          <h1 className="text-3xl font-light tracking-tight text-[#0A1F44]">Settings</h1>
+          <h1 className="text-3xl font-light tracking-tight text-[var(--ink)]">Settings</h1>
           <p className="text-sm text-slate-500 mt-2">
             Your account, your contexts, and how AKKI treats your data.
           </p>
@@ -274,7 +274,7 @@ export default function Settings() {
               <TabsTrigger
                 key={v} value={v}
                 disabled={!!lock}
-                className="relative bg-transparent data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none text-sm text-slate-500 data-[state=active]:text-[#0A1F44] py-3 px-5 border-b-2 border-transparent data-[state=active]:border-[#C9A961] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                className="relative bg-transparent data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none text-sm text-slate-500 data-[state=active]:text-[var(--ink)] py-3 px-5 border-b-2 border-transparent data-[state=active]:border-[var(--accent)] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                 data-testid={`settings-tab-${v}`}
               >
                 <I className="w-4 h-4 mr-2" strokeWidth={1.7} />
@@ -290,10 +290,10 @@ export default function Settings() {
               <div className="px-6 py-4 border-b border-[#E1E6ED] flex items-center gap-4">
                 <img src={avatarFor(account?.email)} alt="" className="w-12 h-12 rounded-sm object-cover" />
                 <div>
-                  <p className="text-sm font-medium text-[#0A1F44]">{account?.name || "—"}</p>
+                  <p className="text-sm font-medium text-[var(--ink)]">{account?.name || "—"}</p>
                   <p className="text-xs text-slate-500">{account?.email}</p>
                 </div>
-                <div className="ml-auto flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-[#C9A961]">
+                <div className="ml-auto flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-[var(--accent)]">
                   <AccRoleIcon className="w-3 h-3" strokeWidth={2} />
                   {account?.declared_role === "dual" ? "NED + Executive" : account?.declared_role}
                 </div>
@@ -331,7 +331,7 @@ export default function Settings() {
                 </div>
                 <Button
                   type="submit" disabled={savingAccount}
-                  className="bg-[#0A1F44] hover:bg-[#0E2958] rounded-sm h-9"
+                  className="bg-[var(--ink)] hover:bg-[#0E2958] rounded-sm h-9"
                   data-testid="save-account-btn"
                 >
                   {savingAccount ? "Saving…" : "Save changes"}
@@ -342,8 +342,8 @@ export default function Settings() {
             <section className="bg-white border border-[#E1E6ED] rounded-sm">
               <div className="px-6 py-4 border-b border-[#E1E6ED] flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-[#0A1F44] flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-[#C9A961]" /> Account security
+                  <p className="text-sm font-medium text-[var(--ink)] flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-[var(--accent)]" /> Account security
                   </p>
                   <p className="text-xs text-slate-500 mt-0.5">
                     Two-factor authentication, session management, sign-out.
@@ -375,13 +375,13 @@ export default function Settings() {
               <div className="flex items-end justify-between mb-5">
                 <div>
                   <p className="akki-overline mb-2">Your contexts</p>
-                  <h2 className="text-xl font-medium tracking-tight text-[#0A1F44]">
+                  <h2 className="text-xl font-medium tracking-tight text-[var(--ink)]">
                     {contexts.length} {contexts.length === 1 ? "context" : "contexts"}
                   </h2>
                 </div>
                 <Button
                   onClick={() => navigate("/app/contexts/new")}
-                  className="bg-[#C9A961] hover:bg-[#B39556] text-[#0A1F44] rounded-sm h-9 font-medium"
+                  className="bg-[var(--accent)] hover:bg-[var(--accent)] text-[var(--ink)] rounded-sm h-9 font-medium"
                   data-testid="add-context-btn"
                 >
                   <Sparkles className="w-4 h-4 mr-2" /> Add context
@@ -396,23 +396,23 @@ export default function Settings() {
                   return (
                     <div
                       key={c.id}
-                      className={`relative bg-white border rounded-sm p-5 transition-colors ${isActive ? "border-[#C9A961] ring-1 ring-[#C9A961]/30" : "border-[#E1E6ED] hover:border-slate-300"}`}
+                      className={`relative bg-white border rounded-sm p-5 transition-colors ${isActive ? "border-[var(--accent)] ring-1 ring-[var(--accent)]/30" : "border-[#E1E6ED] hover:border-slate-300"}`}
                       data-testid={`context-card-${c.id}`}
                     >
                       <div className="flex items-start justify-between mb-3">
-                        <ContextIcon className={`w-5 h-5 ${isActive ? "text-[#C9A961]" : "text-slate-400"}`} strokeWidth={1.6} />
+                        <ContextIcon className={`w-5 h-5 ${isActive ? "text-[var(--accent)]" : "text-slate-400"}`} strokeWidth={1.6} />
                         {isDefault && (
-                          <span className="inline-flex items-center gap-1 text-[9px] uppercase tracking-widest text-[#C9A961]">
-                            <Star className="w-3 h-3 fill-[#C9A961]" /> Default
+                          <span className="inline-flex items-center gap-1 text-[9px] uppercase tracking-widest text-[var(--accent)]">
+                            <Star className="w-3 h-3 fill-[var(--accent)]" /> Default
                           </span>
                         )}
                       </div>
-                      <p className="text-[#0A1F44] font-medium mb-1">{c.name}</p>
+                      <p className="text-[var(--ink)] font-medium mb-1">{c.name}</p>
                       <div className="flex items-center gap-2 flex-wrap mb-4">
                         <ContextTypeBadge type={c.type} />
                         {c.my_role && (
                           <span className="text-[10px] uppercase tracking-wider text-slate-500">
-                            Your role: <span className="text-[#0A1F44] font-medium">{c.my_role}</span>
+                            Your role: <span className="text-[var(--ink)] font-medium">{c.my_role}</span>
                           </span>
                         )}
                       </div>
@@ -476,7 +476,7 @@ export default function Settings() {
           <TabsContent value="context" className="space-y-8">
             <section className="bg-white border border-[#E1E6ED] rounded-sm">
               <div className="px-6 py-4 border-b border-[#E1E6ED]">
-                <p className="text-sm font-medium text-[#0A1F44]">Context identity</p>
+                <p className="text-sm font-medium text-[var(--ink)]">Context identity</p>
                 <p className="text-xs text-slate-500 mt-0.5">Visible to every member of this context.</p>
               </div>
               <form onSubmit={onRename} className="p-6 space-y-4 max-w-md" data-testid="rename-form">
@@ -492,7 +492,7 @@ export default function Settings() {
                   <Button
                     type="submit"
                     disabled={renaming || contextName === activeContext.name || !contextName.trim()}
-                    className="bg-[#0A1F44] hover:bg-[#0E2958] rounded-sm h-9"
+                    className="bg-[var(--ink)] hover:bg-[#0E2958] rounded-sm h-9"
                     data-testid="rename-submit-btn"
                   >
                     {renaming ? "Saving…" : "Save changes"}
@@ -505,32 +505,32 @@ export default function Settings() {
 
             <section className="bg-white border border-[#E1E6ED] rounded-sm">
               <div className="px-6 py-4 border-b border-[#E1E6ED]">
-                <p className="text-sm font-medium text-[#0A1F44]">Context detail</p>
+                <p className="text-sm font-medium text-[var(--ink)]">Context detail</p>
               </div>
               <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-8 text-sm">
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">Type</p>
-                  <p className="font-medium text-[#0A1F44]">{CONTEXT_TYPE_LABEL[activeContext.type] || activeContext.type}</p>
+                  <p className="font-medium text-[var(--ink)]">{CONTEXT_TYPE_LABEL[activeContext.type] || activeContext.type}</p>
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">Your role</p>
-                  <p className="font-medium text-[#0A1F44] capitalize">{activeContext.my_role}</p>
+                  <p className="font-medium text-[var(--ink)] capitalize">{activeContext.my_role}</p>
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">Provisioning</p>
-                  <p className="font-medium text-[#0A1F44] capitalize">{activeContext.provisioning}</p>
+                  <p className="font-medium text-[var(--ink)] capitalize">{activeContext.provisioning}</p>
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">Data ownership</p>
-                  <p className="font-medium text-[#0A1F44] capitalize">{activeContext.data_ownership}</p>
+                  <p className="font-medium text-[var(--ink)] capitalize">{activeContext.data_ownership}</p>
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">Status</p>
-                  <p className="font-medium text-[#0A1F44] capitalize">{activeContext.status}</p>
+                  <p className="font-medium text-[var(--ink)] capitalize">{activeContext.status}</p>
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">Created</p>
-                  <p className="font-medium text-[#0A1F44]">{formatDate(activeContext.created_at)}</p>
+                  <p className="font-medium text-[var(--ink)]">{formatDate(activeContext.created_at)}</p>
                 </div>
               </div>
             </section>
@@ -538,7 +538,7 @@ export default function Settings() {
             <section className="bg-white border border-[#E1E6ED] rounded-sm">
               <div className="px-6 py-4 border-b border-[#E1E6ED] flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-[#0A1F44]">Export context data</p>
+                  <p className="text-sm font-medium text-[var(--ink)]">Export context data</p>
                   <p className="text-xs text-slate-500 mt-0.5">
                     JSON snapshot — context, members, invitations, audit, telemetry, consent decisions.
                   </p>
@@ -557,19 +557,19 @@ export default function Settings() {
             <section className="bg-white border border-[#E1E6ED] rounded-sm">
               <div className="px-6 py-4 border-b border-[#E1E6ED] flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-[#0A1F44]">Members <span className="text-slate-400 font-normal">({members.length})</span></p>
+                  <p className="text-sm font-medium text-[var(--ink)]">Members <span className="text-slate-400 font-normal">({members.length})</span></p>
                   <p className="text-xs text-slate-500 mt-0.5">Admins manage this context; members contribute.</p>
                 </div>
                 {isAdmin && (
                   <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
                     <DialogTrigger asChild>
-                      <Button className="bg-[#C9A961] hover:bg-[#B39556] text-[#0A1F44] rounded-sm h-9 font-medium" data-testid="open-invite-dialog-btn">
+                      <Button className="bg-[var(--accent)] hover:bg-[var(--accent)] text-[var(--ink)] rounded-sm h-9 font-medium" data-testid="open-invite-dialog-btn">
                         <UserPlus className="w-4 h-4 mr-2" /> Invite member
                       </Button>
                     </DialogTrigger>
                     <DialogContent className="rounded-sm sm:max-w-md">
                       <DialogHeader>
-                        <DialogTitle className="font-light tracking-tight text-xl text-[#0A1F44]">Invite to {activeContext.name}</DialogTitle>
+                        <DialogTitle className="font-light tracking-tight text-xl text-[var(--ink)]">Invite to {activeContext.name}</DialogTitle>
                         <DialogDescription className="text-slate-500 text-sm">
                           The invitee will receive a context-scoped link. Invites expire in 7 days.
                         </DialogDescription>
@@ -596,8 +596,8 @@ export default function Settings() {
                           </Select>
                         </div>
                         {lastInviteLink && (
-                          <div className="border border-dashed border-[#C9A961]/50 bg-amber-50/40 p-3 rounded-sm text-xs">
-                            <p className="text-[10px] uppercase tracking-wider text-[#C9A961] font-bold mb-1">Share link (stubbed email)</p>
+                          <div className="border border-dashed border-[var(--accent)]/50 bg-amber-50/40 p-3 rounded-sm text-xs">
+                            <p className="text-[10px] uppercase tracking-wider text-[var(--accent)] font-bold mb-1">Share link (stubbed email)</p>
                             <div className="flex items-center gap-2">
                               <code className="flex-1 text-[10px] text-slate-600 truncate">{lastInviteLink}</code>
                               <Button type="button" size="sm" variant="outline" className="h-7 rounded-sm"
@@ -609,7 +609,7 @@ export default function Settings() {
                           </div>
                         )}
                         <DialogFooter className="pt-2">
-                          <Button type="submit" disabled={inviteBusy} className="bg-[#0A1F44] hover:bg-[#0E2958] rounded-sm h-9" data-testid="invite-submit-btn">
+                          <Button type="submit" disabled={inviteBusy} className="bg-[var(--ink)] hover:bg-[#0E2958] rounded-sm h-9" data-testid="invite-submit-btn">
                             {inviteBusy ? "Sending…" : "Send invitation"}
                           </Button>
                         </DialogFooter>
@@ -640,16 +640,16 @@ export default function Settings() {
                             <div className="flex items-center gap-3">
                               <img src={avatarFor(m.email)} alt="" className="w-8 h-8 rounded-sm object-cover grayscale-[20%]" />
                               <div>
-                                <p className="text-sm font-medium text-[#0A1F44]">
+                                <p className="text-sm font-medium text-[var(--ink)]">
                                   {m.name || m.email} {isMe && <span className="text-[10px] font-normal text-slate-400 ml-1">(you)</span>}
                                 </p>
-                                {isContextOwner && <p className="text-[10px] uppercase tracking-wider text-[#C9A961]">Context owner</p>}
+                                {isContextOwner && <p className="text-[10px] uppercase tracking-wider text-[var(--accent)]">Context owner</p>}
                               </div>
                             </div>
                           </td>
                           <td className="px-6 py-3 text-sm text-slate-600">{m.email}</td>
                           <td className="px-6 py-3">
-                            <span className={`inline-flex items-center px-2 py-1 rounded-sm text-[10px] font-medium uppercase tracking-wider ${m.sub_role === "admin" ? "bg-amber-50 text-[#C9A961] border border-[#C9A961]/30" : "bg-slate-100 text-slate-700 border border-slate-200"}`}>
+                            <span className={`inline-flex items-center px-2 py-1 rounded-sm text-[10px] font-medium uppercase tracking-wider ${m.sub_role === "admin" ? "bg-amber-50 text-[var(--accent)] border border-[var(--accent)]/30" : "bg-slate-100 text-slate-700 border border-slate-200"}`}>
                               {m.role}{m.sub_role === "admin" ? " · admin" : ""}
                             </span>
                           </td>
@@ -690,7 +690,7 @@ export default function Settings() {
             {invites.length > 0 && (
               <section className="bg-white border border-[#E1E6ED] rounded-sm">
                 <div className="px-6 py-4 border-b border-[#E1E6ED]">
-                  <p className="text-sm font-medium text-[#0A1F44]">Pending invitations <span className="text-slate-400 font-normal">({invites.length})</span></p>
+                  <p className="text-sm font-medium text-[var(--ink)]">Pending invitations <span className="text-slate-400 font-normal">({invites.length})</span></p>
                 </div>
                 <div>
                   {invites.map((inv) => (
@@ -698,7 +698,7 @@ export default function Settings() {
                       <div className="flex items-center gap-3">
                         <Mail className="w-4 h-4 text-slate-400" />
                         <div>
-                          <p className="text-sm text-[#0A1F44]">{inv.email}</p>
+                          <p className="text-sm text-[var(--ink)]">{inv.email}</p>
                           <p className="text-[10px] uppercase tracking-wider text-slate-400 flex items-center gap-2 mt-0.5">
                             <span>{inv.role}</span>
                             <span>·</span>
@@ -722,7 +722,7 @@ export default function Settings() {
           <TabsContent value="audit">
             <section className="bg-white border border-[#E1E6ED] rounded-sm">
               <div className="px-6 py-4 border-b border-[#E1E6ED]">
-                <p className="text-sm font-medium text-[#0A1F44]">Audit timeline</p>
+                <p className="text-sm font-medium text-[var(--ink)]">Audit timeline</p>
                 <p className="text-xs text-slate-500 mt-0.5">Every privileged action is logged. Reads are never recorded.</p>
               </div>
               <div className="p-6">
@@ -732,10 +732,10 @@ export default function Settings() {
                   <ol className="relative border-l border-[#E1E6ED] ml-2 space-y-6" data-testid="audit-timeline">
                     {orderedAudit.map((e) => (
                       <li key={e.id} className="pl-6 relative">
-                        <span className="absolute -left-[5px] top-1 w-2 h-2 bg-[#C9A961] rounded-full" />
+                        <span className="absolute -left-[5px] top-1 w-2 h-2 bg-[var(--accent)] rounded-full" />
                         <div className="flex items-baseline justify-between gap-4">
                           <div>
-                            <p className="text-sm text-[#0A1F44] font-medium">
+                            <p className="text-sm text-[var(--ink)] font-medium">
                               {ACTION_LABELS[e.action] || e.action}
                             </p>
                             <p className="text-xs text-slate-500 mt-0.5">
@@ -764,8 +764,8 @@ export default function Settings() {
           <TabsContent value="privacy" className="space-y-6">
             <section className="bg-white border border-[#E1E6ED] rounded-sm">
               <div className="px-6 py-4 border-b border-[#E1E6ED]">
-                <p className="text-sm font-medium text-[#0A1F44] flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-[#C9A961]" /> Synisense identity shielding
+                <p className="text-sm font-medium text-[var(--ink)] flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-[var(--accent)]" /> Synisense identity shielding
                 </p>
               </div>
               <div className="p-6 space-y-4 text-sm text-slate-700 leading-relaxed max-w-3xl">
@@ -781,9 +781,9 @@ export default function Settings() {
                   that profiles a named person.
                 </p>
                 <div className="border border-[#E1E6ED] rounded-sm p-4 bg-slate-50/50">
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-[#C9A961] font-bold mb-2">M1 status</p>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--accent)] font-bold mb-2">M1 status</p>
                   <p className="text-xs text-slate-600">
-                    Running in <strong className="text-[#0A1F44]">mock-scaffolding</strong> mode. A live Synisense service
+                    Running in <strong className="text-[var(--ink)]">mock-scaffolding</strong> mode. A live Synisense service
                     replaces the mock at M5. Your shielding contract is already enforced on every call.
                   </p>
                 </div>
@@ -792,7 +792,7 @@ export default function Settings() {
 
             <section className="bg-white border border-[#E1E6ED] rounded-sm">
               <div className="px-6 py-4 border-b border-[#E1E6ED]">
-                <p className="text-sm font-medium text-[#0A1F44]">Consent decisions</p>
+                <p className="text-sm font-medium text-[var(--ink)]">Consent decisions</p>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Immutable record of consent granted/withdrawn for sponsored contexts. Populated when someone sponsors a seat for you in M4.
                 </p>
@@ -805,8 +805,8 @@ export default function Settings() {
                 ) : (
                   <ul className="space-y-3" data-testid="consent-log">
                     {consentLog.map((d) => (
-                      <li key={d.id} className="border-l-2 border-[#C9A961] pl-4 py-1">
-                        <p className="text-sm text-[#0A1F44]">{d.decision} · {d.scope}</p>
+                      <li key={d.id} className="border-l-2 border-[var(--accent)] pl-4 py-1">
+                        <p className="text-sm text-[var(--ink)]">{d.decision} · {d.scope}</p>
                         <p className="text-xs text-slate-500">{formatDate(d.decided_at)}</p>
                       </li>
                     ))}
@@ -826,7 +826,7 @@ export default function Settings() {
               <div className="p-6 space-y-6">
                 <div className="flex items-start justify-between gap-6">
                   <div>
-                    <p className="text-sm font-medium text-[#0A1F44] mb-1">Archive this context</p>
+                    <p className="text-sm font-medium text-[var(--ink)] mb-1">Archive this context</p>
                     <p className="text-xs text-slate-600 max-w-xl leading-relaxed">
                       Archiving marks the context inactive and schedules hard purge in 7 days.
                       Members lose access immediately. Admins can export data first.

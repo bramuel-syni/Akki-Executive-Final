@@ -38,8 +38,8 @@ function renderAnswer(answer, sources, onCitationClick) {
         key={keyBase}
         type={onCitationClick ? "button" : undefined}
         onClick={onCitationClick ? () => onCitationClick(id) : undefined}
-        className={`inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-sm text-[10px] bg-[#C9A961]/10 text-[#0A1F44] border border-[#C9A961]/30 font-medium ${
-          onCitationClick ? "hover:bg-[#C9A961]/25 cursor-pointer transition-colors" : ""
+        className={`inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-sm text-[10px] bg-[var(--accent)]/10 text-[var(--ink)] border border-[var(--accent)]/30 font-medium ${
+          onCitationClick ? "hover:bg-[var(--accent)]/25 cursor-pointer transition-colors" : ""
         }`}
         title={name || id}
         data-testid={`citation-${id}`}
@@ -63,7 +63,7 @@ function QAExchange({ record, accountName, onCitationClick }) {
   return (
     <div className="space-y-3" data-testid={`ask-exchange-${record.id}`}>
       <div className="flex gap-2.5">
-        <div className="w-6 h-6 bg-[#0A1F44] text-white flex items-center justify-center rounded-sm shrink-0">
+        <div className="w-6 h-6 bg-[var(--navy)] text-white flex items-center justify-center rounded-sm shrink-0">
           <User className="w-3 h-3" strokeWidth={2} />
         </div>
         <div className="flex-1 bg-white border border-[#E1E6ED] rounded-sm p-3">
@@ -73,17 +73,17 @@ function QAExchange({ record, accountName, onCitationClick }) {
             </p>
             <p className="text-[9px] text-slate-400">{formatTime(record.created_at)}</p>
           </div>
-          <p className="text-[13px] text-[#0A1F44] leading-relaxed whitespace-pre-wrap">{record.question}</p>
+          <p className="text-[13px] text-[var(--ink)] leading-relaxed whitespace-pre-wrap">{record.question}</p>
         </div>
       </div>
 
       <div className="flex gap-2.5">
-        <div className="w-6 h-6 bg-[#C9A961] text-[#0A1F44] flex items-center justify-center rounded-sm shrink-0 font-bold text-[10px]">
+        <div className="w-6 h-6 bg-[var(--navy)] text-white flex items-center justify-center rounded-sm shrink-0 font-bold text-[10px] akki-serif">
           A
         </div>
         <div className="flex-1 bg-slate-50 border border-[#E1E6ED] rounded-sm p-3">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-[9px] uppercase tracking-wider text-[#C9A961] font-semibold">AKKI</p>
+            <p className="text-[9px] uppercase tracking-wider text-[var(--accent)] font-semibold">AKKI</p>
             {record.mode && (
               <p className="text-[9px] text-slate-400 font-mono">mode: {record.mode}</p>
             )}
@@ -99,10 +99,10 @@ function QAExchange({ record, accountName, onCitationClick }) {
                   key={s.doc_id}
                   type="button"
                   onClick={() => onCitationClick?.(s.doc_id)}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10px] bg-white text-slate-700 border border-[#E1E6ED] hover:border-[#C9A961]/50 transition-colors"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10px] bg-white text-slate-700 border border-[#E1E6ED] hover:border-[var(--accent)]/50 transition-colors"
                   data-testid={`ask-source-${record.id}-${s.doc_id}`}
                 >
-                  <FileText className="w-2.5 h-2.5 text-[#C9A961]" strokeWidth={2} />
+                  <FileText className="w-2.5 h-2.5 text-[var(--accent)]" strokeWidth={2} />
                   {s.doc_name}
                   <span className={`ml-0.5 ${TRUST_COLOR[s.data_trust] || TRUST_COLOR.unrated}`}>· {s.data_trust}</span>
                 </button>
@@ -220,12 +220,12 @@ export default function AskPanel({
         )}
         {asking && (
           <div className="flex gap-2.5" data-testid="ask-thinking">
-            <div className="w-6 h-6 bg-[#C9A961] text-[#0A1F44] flex items-center justify-center rounded-sm shrink-0 font-bold text-[10px]">
+            <div className="w-6 h-6 bg-[var(--navy)] text-white flex items-center justify-center rounded-sm shrink-0 font-bold text-[10px] akki-serif">
               A
             </div>
             <div className="flex-1 bg-slate-50 border border-[#E1E6ED] rounded-sm p-3">
               <p className="text-[11px] text-slate-500 italic flex items-center gap-2">
-                <Loader2 className="w-3 h-3 animate-spin text-[#C9A961]" />
+                <Loader2 className="w-3 h-3 animate-spin text-[var(--accent)]" />
                 AKKI is reading your documents…
               </p>
             </div>
@@ -256,7 +256,7 @@ export default function AskPanel({
           <Button
             type="submit"
             disabled={asking || !question.trim()}
-            className="bg-[#0A1F44] hover:bg-[#0E2958] text-white rounded-sm h-8 px-3 text-xs"
+            className="bg-[var(--ink)] hover:bg-[#0E2958] text-white rounded-sm h-8 px-3 text-xs"
             data-testid="ask-submit-btn"
           >
             {asking ? (

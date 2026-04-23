@@ -38,12 +38,12 @@ export default function SignIn() {
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[1.05fr_1fr] bg-white" data-testid="signin-page">
       {/* Left visual panel — navy with art */}
-      <aside className="relative hidden lg:flex flex-col justify-between bg-[#0A1F44] text-white p-12 overflow-hidden">
+      <aside className="relative hidden lg:flex flex-col justify-between bg-[var(--ink)] text-white p-12 overflow-hidden">
         <div
           className="absolute inset-0 opacity-60"
           style={{ backgroundImage: `url(${BG})`, backgroundSize: "cover", backgroundPosition: "center" }}
         />
-        <div className="absolute inset-0 bg-gradient-to-br from-[#0A1F44]/85 via-[#0A1F44]/70 to-[#0A1F44]/95" />
+        <div className="absolute inset-0 bg-gradient-to-br from-[var(--ink)]/85 via-[var(--ink)]/70 to-[var(--ink)]/95" />
         <div className="absolute inset-0 akki-dots-bg opacity-20" />
 
         <div className="relative z-10">
@@ -55,7 +55,7 @@ export default function SignIn() {
             <p className="akki-overline mb-4">Executive intelligence · v1.0</p>
             <h1 className="text-4xl lg:text-5xl font-light tracking-tight leading-[1.1] mb-6">
               The intelligence layer <br />
-              for <span className="text-[#C9A961]">boardrooms.</span>
+              for <span className="text-[var(--accent)]">boardrooms.</span>
             </h1>
             <p className="text-white/65 text-base leading-relaxed max-w-md">
               AKKI is built for non-executive directors and operating executives —
@@ -71,7 +71,7 @@ export default function SignIn() {
               { i: ShieldCheck, t: "Provable privacy", s: "Identity-shielded LLM calls via Synisense" },
             ].map(({ i: I, t, s }) => (
               <div key={t} className="flex items-start gap-3 text-sm">
-                <I className="w-4 h-4 text-[#C9A961] mt-0.5" strokeWidth={1.8} />
+                <I className="w-4 h-4 text-[var(--accent)] mt-0.5" strokeWidth={1.8} />
                 <div>
                   <p className="text-white/90 font-medium">{t}</p>
                   <p className="text-white/50 text-xs">{s}</p>
@@ -91,7 +91,7 @@ export default function SignIn() {
         <div className="w-full max-w-sm akki-fade-up">
           <div className="lg:hidden mb-8"><Logo size="lg" /></div>
           <p className="akki-overline mb-3">Access your workspace</p>
-          <h2 className="text-3xl font-light tracking-tight text-[#0A1F44] mb-2">Sign in</h2>
+          <h2 className="text-3xl font-light tracking-tight text-[var(--ink)] mb-2">Sign in</h2>
           <p className="text-sm text-slate-500 mb-10">
             New to AKKI?{" "}
             <Link to="/signup" className="akki-link" data-testid="go-to-signup-link">
@@ -144,7 +144,7 @@ export default function SignIn() {
             <Button
               type="submit"
               disabled={loading}
-              className="w-full h-11 bg-[#0A1F44] hover:bg-[#0E2958] text-white rounded-sm text-sm font-medium tracking-wide transition-colors group"
+              className="w-full h-11 bg-[var(--ink)] hover:bg-[#0E2958] text-white rounded-sm text-sm font-medium tracking-wide transition-colors group"
               data-testid="signin-submit-btn"
             >
               <span>{loading ? "Authenticating…" : "Sign in to workspace"}</span>

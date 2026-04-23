@@ -118,7 +118,7 @@ function DocumentsBrowser({
     <div className="flex flex-col h-full min-h-0">
       <div className="px-6 py-5 border-b border-[#E1E6ED] bg-white">
         <p className="akki-overline mb-1.5">Workspace · Module M3</p>
-        <h1 className="text-2xl font-light tracking-tight text-[#0A1F44]">Documents</h1>
+        <h1 className="text-2xl font-light tracking-tight text-[var(--ink)]">Documents</h1>
         <p className="text-xs text-slate-500 mt-1">
           Upload board packs, minutes, reports. AKKI extracts text, shields identifiers, and grounds every Ask response.
         </p>
@@ -126,7 +126,7 @@ function DocumentsBrowser({
 
       {/* Dropzone */}
       <div
-        className={`mx-6 mt-5 border-2 border-dashed rounded-sm transition-colors ${dragging ? "border-[#C9A961] bg-amber-50/50" : "border-[#E1E6ED] bg-white"}`}
+        className={`mx-6 mt-5 border-2 border-dashed rounded-sm transition-colors ${dragging ? "border-[var(--accent)] bg-amber-50/50" : "border-[#E1E6ED] bg-white"}`}
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => { e.preventDefault(); setDragging(false); if (e.dataTransfer?.files) onFiles(e.dataTransfer.files); }}
@@ -134,11 +134,11 @@ function DocumentsBrowser({
       >
         <div className="p-5 grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-4 items-end">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#0A1F44]/5 border border-[#0A1F44]/10 flex items-center justify-center rounded-sm shrink-0">
-              <Upload className="w-4 h-4 text-[#C9A961]" strokeWidth={1.6} />
+            <div className="w-10 h-10 bg-[var(--ink)]/5 border border-[var(--ink)]/10 flex items-center justify-center rounded-sm shrink-0">
+              <Upload className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.6} />
             </div>
             <div>
-              <p className="text-[#0A1F44] font-medium text-sm mb-0.5">Drop files to upload</p>
+              <p className="text-[var(--ink)] font-medium text-sm mb-0.5">Drop files to upload</p>
               <p className="text-[11px] text-slate-500">PDF · DOCX · TXT · MD · RTF · up to 25MB</p>
             </div>
           </div>
@@ -165,7 +165,7 @@ function DocumentsBrowser({
             </div>
             <Button
               onClick={() => fileInput.current?.click()} disabled={uploading}
-              className="bg-[#0A1F44] hover:bg-[#0E2958] rounded-sm h-8 text-xs"
+              className="bg-[var(--ink)] hover:bg-[#0E2958] rounded-sm h-8 text-xs"
               data-testid="upload-choose-btn"
             >
               {uploading ? "Uploading…" : "Choose files"}
@@ -184,7 +184,7 @@ function DocumentsBrowser({
               <div key={i} className="flex items-center gap-2 text-[11px]">
                 {q.error ? <AlertTriangle className="w-3.5 h-3.5 text-red-500" /> :
                   q.progress === 100 ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> :
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C9A961]" />}
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--accent)]" />}
                 <span className="text-slate-700 truncate">{q.name}</span>
                 {q.error && <span className="text-red-600 ml-auto">{q.error}</span>}
               </div>
@@ -210,7 +210,7 @@ function DocumentsBrowser({
               return (
                 <div
                   key={d.id}
-                  className="group bg-white border border-[#E1E6ED] rounded-sm p-3 hover:border-[#C9A961]/50 hover:bg-slate-50/40 transition-colors flex items-center gap-3"
+                  className="group bg-white border border-[#E1E6ED] rounded-sm p-3 hover:border-[var(--accent)]/50 hover:bg-slate-50/40 transition-colors flex items-center gap-3"
                   data-testid={`doc-row-${d.id}`}
                 >
                   <div
@@ -218,11 +218,11 @@ function DocumentsBrowser({
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(d.id); } }}
                     role="button"
                     tabIndex={0}
-                    className="flex-1 min-w-0 text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C9A961]/50 rounded-sm"
+                    className="flex-1 min-w-0 text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 rounded-sm"
                     data-testid={`doc-open-${d.id}`}
                   >
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <p className="text-sm font-medium text-[#0A1F44] group-hover:text-[#C9A961] transition-colors truncate max-w-[40ch]">
+                      <p className="text-sm font-medium text-[var(--ink)] group-hover:text-[var(--accent)] transition-colors truncate max-w-[40ch]">
                         {d.name}
                       </p>
                       <StatusChip status={d.status} />
@@ -243,7 +243,7 @@ function DocumentsBrowser({
                   <a
                     href={`${API_BASE}/contexts/${d.context_id}/documents/${d.id}/download`}
                     target="_blank" rel="noreferrer"
-                    className="text-slate-400 hover:text-[#0A1F44] shrink-0"
+                    className="text-slate-400 hover:text-[var(--ink)] shrink-0"
                     data-testid={`doc-download-${d.id}`}
                     title="Download"
                   >
@@ -317,7 +317,7 @@ function DocumentPane({ contextId, docId, onBack, onArchive, accountEmail, isAdm
         <Button
           variant="ghost" size="sm"
           onClick={onBack}
-          className="rounded-sm h-8 px-2 text-slate-600 hover:text-[#0A1F44] shrink-0"
+          className="rounded-sm h-8 px-2 text-slate-600 hover:text-[var(--ink)] shrink-0"
           data-testid="doc-back-btn"
         >
           <ArrowLeft className="w-4 h-4 mr-1.5" /> Documents
@@ -329,7 +329,7 @@ function DocumentPane({ contextId, docId, onBack, onArchive, accountEmail, isAdm
             </p>
           ) : doc ? (
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-base font-medium tracking-tight text-[#0A1F44] truncate max-w-[40ch]" data-testid="doc-title">
+              <h2 className="text-base font-medium tracking-tight text-[var(--ink)] truncate max-w-[40ch]" data-testid="doc-title">
                 {doc.name}
               </h2>
               <StatusChip status={doc.status} />
@@ -345,7 +345,7 @@ function DocumentPane({ contextId, docId, onBack, onArchive, accountEmail, isAdm
             <a
               href={`${API_BASE}/contexts/${contextId}/documents/${doc.id}/download`}
               target="_blank" rel="noreferrer"
-              className="text-slate-500 hover:text-[#0A1F44] shrink-0"
+              className="text-slate-500 hover:text-[var(--ink)] shrink-0"
               data-testid="doc-download-btn"
               title="Download original"
             >
@@ -390,7 +390,7 @@ function DocumentPane({ contextId, docId, onBack, onArchive, accountEmail, isAdm
             <article className="max-w-2xl mx-auto">
               {items.map((it, i) =>
                 it.type === "h" ? (
-                  <h3 key={i} data-outline-id={it.id} className="text-base font-medium text-[#0A1F44] tracking-tight mt-6 mb-2 scroll-mt-4">
+                  <h3 key={i} data-outline-id={it.id} className="text-base font-medium text-[var(--ink)] tracking-tight mt-6 mb-2 scroll-mt-4">
                     {it.text}
                   </h3>
                 ) : (
@@ -405,7 +405,7 @@ function DocumentPane({ contextId, docId, onBack, onArchive, accountEmail, isAdm
         <aside className="hidden md:block border-l border-[#E1E6ED] bg-slate-50/40 overflow-y-auto" data-testid="doc-outline-rail">
           <div className="px-3 py-3 sticky top-0 bg-slate-50/90 backdrop-blur-sm border-b border-[#E1E6ED]">
             <div className="flex items-center gap-1.5">
-              <List className="w-3 h-3 text-[#C9A961]" />
+              <List className="w-3 h-3 text-[var(--accent)]" />
               <p className="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-semibold">Outline</p>
             </div>
           </div>
@@ -417,7 +417,7 @@ function DocumentPane({ contextId, docId, onBack, onArchive, accountEmail, isAdm
                 <button
                   key={h.id}
                   onClick={() => scrollTo(h.id)}
-                  className="w-full text-left px-2 py-1.5 text-[11px] text-slate-600 hover:bg-white hover:text-[#0A1F44] rounded-sm transition-colors border-l-2 border-transparent hover:border-[#C9A961]"
+                  className="w-full text-left px-2 py-1.5 text-[11px] text-slate-600 hover:bg-white hover:text-[var(--ink)] rounded-sm transition-colors border-l-2 border-transparent hover:border-[var(--accent)]"
                   data-testid={`outline-${h.id}`}
                 >
                   <span className="line-clamp-2">{h.text}</span>
@@ -547,7 +547,7 @@ export default function Workspace() {
   const askHeader = (
     <div className="border-b border-[#E1E6ED] bg-white px-4 py-3">
       <p className="akki-overline mb-0.5">Ask · persistent</p>
-      <h2 className="text-sm font-medium text-[#0A1F44]">Grounded in your workspace</h2>
+      <h2 className="text-sm font-medium text-[var(--ink)]">Grounded in your workspace</h2>
       <p className="text-[11px] text-slate-500 mt-0.5">
         Click any <span className="font-mono">[doc:…]</span> citation to open the document on the left.
       </p>
@@ -592,7 +592,7 @@ export default function Workspace() {
         {/* Draggable divider */}
         <div
           onMouseDown={onMouseDown}
-          className="w-1.5 cursor-col-resize bg-[#E1E6ED] hover:bg-[#C9A961] transition-colors relative group shrink-0"
+          className="w-1.5 cursor-col-resize bg-[#E1E6ED] hover:bg-[var(--accent)] transition-colors relative group shrink-0"
           data-testid="workspace-divider"
           title="Drag to resize"
         >

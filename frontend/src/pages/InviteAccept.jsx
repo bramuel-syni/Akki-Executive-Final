@@ -50,10 +50,10 @@ export default function InviteAccept() {
 
         {error ? (
           <>
-            <h1 className="text-2xl font-light tracking-tight text-[#0A1F44] mb-3">Invitation unavailable</h1>
+            <h1 className="text-2xl font-light tracking-tight text-[var(--ink)] mb-3">Invitation unavailable</h1>
             <p className="text-sm text-slate-600 mb-8">{error}</p>
             <Link to="/signin">
-              <Button className="bg-[#0A1F44] hover:bg-[#0E2958] rounded-sm h-10" data-testid="invite-error-signin-btn">
+              <Button className="bg-[var(--ink)] hover:bg-[#0E2958] rounded-sm h-10" data-testid="invite-error-signin-btn">
                 Back to sign in
               </Button>
             </Link>
@@ -61,16 +61,16 @@ export default function InviteAccept() {
         ) : success ? (
           <>
             <CheckCircle2 className="w-8 h-8 text-emerald-600 mb-4" />
-            <h1 className="text-2xl font-light tracking-tight text-[#0A1F44] mb-2">Welcome to {preview?.context_name}</h1>
+            <h1 className="text-2xl font-light tracking-tight text-[var(--ink)] mb-2">Welcome to {preview?.context_name}</h1>
             <p className="text-sm text-slate-500">Redirecting…</p>
           </>
         ) : preview ? (
           <>
-            <h1 className="text-2xl font-light tracking-tight text-[#0A1F44] mb-2">
-              Join <span className="text-[#C9A961]">{preview.context_name}</span>
+            <h1 className="text-2xl font-light tracking-tight text-[var(--ink)] mb-2">
+              Join <span className="text-[var(--accent)]">{preview.context_name}</span>
             </h1>
             <p className="text-sm text-slate-500 mb-1 flex items-center gap-2">
-              <Mail className="w-3.5 h-3.5" /> Invited as <strong className="text-[#0A1F44] font-medium">{preview.email}</strong> · {preview.role}
+              <Mail className="w-3.5 h-3.5" /> Invited as <strong className="text-[var(--ink)] font-medium">{preview.email}</strong> · {preview.role}
             </p>
             {preview.context_type && (
               <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-6">
@@ -80,11 +80,11 @@ export default function InviteAccept() {
 
             {!account ? (
               <div className="space-y-3 mt-4">
-                <p className="text-sm text-slate-600 border border-dashed border-[#C9A961]/50 bg-amber-50/30 p-4 rounded-sm">
+                <p className="text-sm text-slate-600 border border-dashed border-[var(--accent)]/50 bg-amber-50/30 p-4 rounded-sm">
                   Sign in with <strong>{preview.email}</strong> to accept this invitation. If you don't have an account yet, create one with that email first.
                 </p>
                 <Link to="/signin" state={{ from: `/invite/${token}` }}>
-                  <Button className="w-full bg-[#0A1F44] hover:bg-[#0E2958] rounded-sm h-11" data-testid="invite-go-signin-btn">
+                  <Button className="w-full bg-[var(--ink)] hover:bg-[#0E2958] rounded-sm h-11" data-testid="invite-go-signin-btn">
                     Sign in to accept <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
                 </Link>
@@ -104,7 +104,7 @@ export default function InviteAccept() {
                 )}
                 <Button
                   onClick={accept} disabled={busy || account.email !== preview.email}
-                  className="w-full bg-[#C9A961] hover:bg-[#B39556] text-[#0A1F44] font-medium rounded-sm h-11"
+                  className="w-full bg-[var(--accent)] hover:bg-[var(--accent)] text-[var(--ink)] font-medium rounded-sm h-11"
                   data-testid="invite-accept-btn"
                 >
                   {busy ? "Joining…" : `Accept and join ${preview.context_name}`}

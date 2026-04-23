@@ -45,7 +45,7 @@ export default function NewContext() {
       <div className="p-8 max-w-2xl mx-auto">
         <div className="mb-8">
           <p className="akki-overline mb-2">Add a context</p>
-          <h1 className="text-3xl font-light tracking-tight text-[#0A1F44] mb-2">
+          <h1 className="text-3xl font-light tracking-tight text-[var(--ink)] mb-2">
             New context
           </h1>
           <p className="text-sm text-slate-500">
@@ -61,11 +61,11 @@ export default function NewContext() {
                 <button
                   type="button" key={t.value}
                   onClick={() => setType(t.value)}
-                  className={`text-left border rounded-sm p-5 transition-colors ${active ? "border-[#C9A961] bg-amber-50/40 ring-1 ring-[#C9A961]/40" : "border-[#E1E6ED] hover:border-slate-300"}`}
+                  className={`text-left border rounded-sm p-5 transition-colors ${active ? "border-[var(--accent)] bg-amber-50/40 ring-1 ring-[var(--accent)]/40" : "border-[#E1E6ED] hover:border-slate-300"}`}
                   data-testid={`context-type-${t.value}`}
                 >
-                  <I className={`w-5 h-5 mb-3 ${active ? "text-[#C9A961]" : "text-slate-400"}`} strokeWidth={1.6} />
-                  <p className="text-sm font-medium text-[#0A1F44] mb-1">{t.title}</p>
+                  <I className={`w-5 h-5 mb-3 ${active ? "text-[var(--accent)]" : "text-slate-400"}`} strokeWidth={1.6} />
+                  <p className="text-sm font-medium text-[var(--ink)] mb-1">{t.title}</p>
                   <p className="text-xs text-slate-500 leading-relaxed">{t.desc}</p>
                 </button>
               );
@@ -86,7 +86,7 @@ export default function NewContext() {
               <Input value={jurisdiction} onChange={(e) => setJurisdiction(e.target.value)} className="rounded-sm h-10" placeholder="Kenya · Nigeria · Pan-African" data-testid="new-context-jurisdiction-input" />
             </div>
           </div>
-          <Button type="submit" disabled={busy || !name.trim()} className="bg-[#0A1F44] hover:bg-[#0E2958] rounded-sm h-10 group" data-testid="new-context-submit-btn">
+          <Button type="submit" disabled={busy || !name.trim()} className="bg-[var(--ink)] hover:bg-[#0E2958] rounded-sm h-10 group" data-testid="new-context-submit-btn">
             {busy ? "Creating…" : "Create context"}
             {!busy && <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-0.5 transition-transform" />}
           </Button>

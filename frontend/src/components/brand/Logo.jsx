@@ -11,16 +11,16 @@ export default function Logo({ size = "md", inverted = false, className = "" }) 
   const s = sizes[size] || sizes.md;
   return (
     <div className={`flex items-center gap-2.5 ${className}`} data-testid="akki-logo">
-      <div className={`${s.bar} bg-[#C9A961]`} />
+      <div className={`${s.bar} bg-[var(--accent)]`} />
       <div className="flex items-baseline gap-1.5">
         <span
-          className={`font-semibold tracking-[0.15em] ${s.text} ${inverted ? "text-white" : "text-[#0A1F44]"}`}
+          className={`font-semibold tracking-[0.15em] ${s.text} ${inverted ? "text-white" : "text-[var(--ink)]"}`}
           style={{ fontFeatureSettings: '"ss01"' }}
         >
           AKKI
         </span>
         <span
-          className={`text-[9px] font-medium uppercase tracking-[0.3em] ${inverted ? "text-[#C9A961]" : "text-slate-400"}`}
+          className={`text-[9px] font-medium uppercase tracking-[0.3em] ${inverted ? "text-[var(--accent)]" : "text-slate-400"}`}
         >
           Sandbox
         </span>
@@ -31,7 +31,7 @@ export default function Logo({ size = "md", inverted = false, className = "" }) 
 
 export function TrustStamp({ label = "Synisense verified" }) {
   return (
-    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-[#C9A961]">
+    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-[var(--accent)]">
       <ShieldCheck className="w-3 h-3" strokeWidth={2} />
       {label}
     </span>
