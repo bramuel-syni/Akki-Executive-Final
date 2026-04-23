@@ -84,7 +84,9 @@ export default function StreamCard({
       {/* Row 2: Georgia 18px lead sentence */}
       <p className="akki-lead mb-4">{lead}</p>
 
-      {/* Row 3: context chips + primary gesture */}
+      {/* Row 3: context chips + primary gesture.
+          When the whole card is already a <Link>, we render the gesture
+          as a span to avoid nested <a> tags (HTML/React forbids it). */}
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div className="flex flex-wrap gap-2">
           {chips.map((c, i) => (
@@ -92,13 +94,19 @@ export default function StreamCard({
           ))}
         </div>
         {gesture && (
-          <Link
-            to={gesture.to}
-            className="akki-gesture"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {gesture.label} <ArrowRight className="w-3.5 h-3.5" strokeWidth={2} />
-          </Link>
+          to ? (
+            <span className="akki-gesture">
+              {gesture.label} <ArrowRight className="w-3.5 h-3.5" strokeWidth={2} />
+            </span>
+          ) : (
+            <Link
+              to={gesture.to}
+              className="akki-gesture"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {gesture.label} <ArrowRight className="w-3.5 h-3.5" strokeWidth={2} />
+            </Link>
+          )
         )}
       </div>
 
