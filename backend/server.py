@@ -1289,16 +1289,42 @@ async def generate_signals(
         )
 
     grounding = _docs_as_grounding_block(docs)
-    focus_line = f"User focus: {body.focus}\n\n" if body.focus else ""
+    focus_line = (
+        f"The caller has specifically asked you to focus on: « {body.focus} ». "
+        f"Do not ignore other important signals, but weight this focus.\n\n"
+        if body.focus else ""
+    )
+    # Extract persona bits so signals are written in the caller's register
+    co_answers = (ctx_obj or {}).get("answers") or {}
+    persona_bits = []
+    for k in ("q1_role", "q3_focus_areas", "q5_prior_concerns", "q6_lens_preference", "q7_analytical_style"):
+        v = co_answers.get(k)
+        if v:
+            persona_bits.append(f"  · {v}")
+    persona_block = ("\n".join(persona_bits)) if persona_bits else "  · (generic board lens)"
+
     user_query = (
-        "Generate 3-6 signals (risks, opportunities, or gaps) that a board "
-        "member or executive should notice, grounded strictly in the documents below. "
-        "Every signal MUST cite the doc_ids it came from using [doc:<id>] format.\n\n"
+        f"Read these documents as a seasoned audit-committee chair would. Look for "
+        f"the 3–6 things that a sharp non-executive would notice on a careful first "
+        f"read. Not the obvious, not the trivial — the things that, if they weren't "
+        f"named, would represent a governance failure.\n\n"
+        f"[WHO YOU'RE WRITING FOR]\n{persona_block}\n\n"
         f"{focus_line}"
-        f"=== DOCUMENTS ===\n{grounding}\n\n"
-        'Return JSON with shape: {"signals":[{"type":"risk|opportunity|gap",'
-        '"headline":"...","summary":"2-4 sentences","confidence":"high|medium|low",'
-        '"doc_ids":["..."]}]}'
+        f"[DOCUMENTS — every signal MUST cite at least one doc_id from this list]\n"
+        f"{grounding}\n\n"
+        f"For each signal:\n"
+        f"• headline: 8–14 words, declarative (a sentence, not a topic). State the "
+        f"thing that is happening, not its category.\n"
+        f"• summary: 2–4 sentences. Open with the finding. Give the SPECIFIC numbers "
+        f"from the documents. Close with what it implies for the board or executive "
+        f"— what they should ask, decide, or escalate. No filler.\n"
+        f"• type: risk / opportunity / gap. Use 'gap' for things that should exist "
+        f"but don't (e.g., a plan, a control, a succession).\n"
+        f"• confidence: 'high' only when the numbers in the documents leave no room "
+        f"for another reading. 'medium' for pattern-based inferences. 'low' only when "
+        f"trust is weak.\n\n"
+        'Return JSON: {"signals":[{"type":"risk|opportunity|gap","headline":"...",'
+        '"summary":"...","confidence":"high|medium|low","doc_ids":["..."]}]}'
     )
 
     llm_out = await llm_call_llm(
@@ -1390,11 +1416,25 @@ async def ask(
     docs = await _gather_documents_for_grounding(context_id)
     grounding = _docs_as_grounding_block(docs)
 
+    # Pull relevant context-object bits so AKKI can tune register/focus
+    co_answers = (ctx_obj or {}).get("answers") or {}
+    persona_bits = []
+    for k in ("q1_role", "q3_focus_areas", "q6_lens_preference", "q7_analytical_style"):
+        v = co_answers.get(k)
+        if v:
+            persona_bits.append(f"  · {v}")
+    persona_block = ("\n".join(persona_bits)) if persona_bits else "  · (no context object — respond generally, still grounded)"
+
     user_query = (
-        f"Question: {body.question}\n\n"
-        "Answer grounded ONLY in the documents below. Cite sources inline as [doc:<id>]. "
-        "If the documents do not contain the answer, say so explicitly — do not fabricate.\n\n"
-        f"=== DOCUMENTS ===\n{grounding}"
+        f"The director / executive has just asked you this:\n\n"
+        f"    « {body.question} »\n\n"
+        f"Answer them directly — as a colleague, not a form response. Give them "
+        f"the insight first, then the evidence. Keep it tight. Use the numbers.\n\n"
+        f"[WHAT THIS PERSON CARES ABOUT]\n{persona_block}\n\n"
+        f"[THEIR DOCUMENTS — all citations MUST be to doc_ids in this list]\n"
+        f"{grounding}\n\n"
+        f"If the answer genuinely isn't in these documents, say so in one sentence "
+        f"and suggest what the caller could upload to let you answer. Do not speculate."
     )
     llm_out = await llm_call_llm(
         module="ask",

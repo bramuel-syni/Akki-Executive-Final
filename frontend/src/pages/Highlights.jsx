@@ -160,6 +160,7 @@ export default function Highlights() {
   const [signals, setSignals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [genStage, setGenStage] = useState("");
   const [focus, setFocus] = useState("");
 
   // Filters
@@ -180,15 +181,27 @@ export default function Highlights() {
 
   const onGenerate = async () => {
     setGenerating(true);
+    setGenStage("Reading your documents…");
+    const stageTimers = [
+      setTimeout(() => setGenStage("Looking for patterns a sharp NED would notice…"), 8000),
+      setTimeout(() => setGenStage("Drafting signals and cross-checking citations…"), 18000),
+      setTimeout(() => setGenStage("Still working — complex packs can take up to a minute…"), 35000),
+    ];
     try {
-      const { data } = await api.post(`/contexts/${contextId}/signals/generate`, {
-        focus: focus.trim() || null,
-      });
+      const { data } = await api.post(
+        `/contexts/${contextId}/signals/generate`,
+        { focus: focus.trim() || null },
+        { timeout: 120000 }
+      );
       toast.success(`${data.signals.length} signals generated`);
       setFocus("");
       await load();
     } catch (e) { toast.error(apiErrorMessage(e)); }
-    finally { setGenerating(false); }
+    finally {
+      stageTimers.forEach(clearTimeout);
+      setGenStage("");
+      setGenerating(false);
+    }
   };
 
   const onDismiss = async (signal) => {
@@ -340,6 +353,16 @@ export default function Highlights() {
                   : <><Sparkles className="w-3.5 h-3.5 mr-2" /> Generate</>}
               </Button>
             </div>
+            {generating && genStage && (
+              <div
+                className="mt-3 flex items-center gap-2 text-[11px] text-slate-500 bg-[#C9A961]/5 border border-[#C9A961]/20 rounded-sm px-3 py-2"
+                data-testid="signals-progress"
+              >
+                <Loader2 className="w-3 h-3 animate-spin text-[#C9A961]" />
+                <span className="italic">{genStage}</span>
+                <span className="ml-auto text-[10px] uppercase tracking-wider text-slate-400">Usually 20–60s</span>
+              </div>
+            )}
           </div>
 
           {/* Feed body */}

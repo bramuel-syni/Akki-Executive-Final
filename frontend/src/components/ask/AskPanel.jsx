@@ -160,7 +160,11 @@ export default function AskPanel({
     if (!q || asking) return;
     setAsking(true);
     try {
-      const { data } = await api.post(`/contexts/${contextId}/ask`, { question: q });
+      const { data } = await api.post(
+        `/contexts/${contextId}/ask`,
+        { question: q },
+        { timeout: 120000 }
+      );
       setHistory((prev) => [data, ...prev]);
       setQuestion("");
     } catch (err) {
