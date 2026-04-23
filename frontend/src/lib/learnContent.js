@@ -10,6 +10,7 @@ export const LEARN_ARTICLES = [
     id: "ai-governance-for-neds",
     title: "AI oversight: what a non-executive director actually needs to know",
     kicker: "Governance · 7 min read",
+    content_type: "tl_article",
     topic: "governance",
     audience: ["ned", "executive"],
     source_name: "Harvard Corp Gov · Deloitte · NACD · IoD (curated)",
@@ -40,6 +41,7 @@ A practical tactic: run a 60-minute "AI tabletop" each quarter. Management walks
     id: "nist-ai-rmf-and-iso-42001",
     title: "NIST AI RMF and ISO 42001: the two frameworks worth knowing by name",
     kicker: "Frameworks · 9 min read",
+    content_type: "tl_article",
     topic: "frameworks",
     audience: ["ned", "executive"],
     source_name: "NIST · ISO · Deloitte · ISPartners (curated)",
@@ -72,6 +74,7 @@ You are not auditing management's AI code. You are auditing their governance sys
     id: "ai-in-financial-services",
     title: "AI in financial services: provisioning models, fraud detection, and the FCA/CBK line",
     kicker: "Sector · 6 min read",
+    content_type: "case_study",
     topic: "sector-banking",
     audience: ["ned", "executive"],
     source_name: "FCA · Bank of England · Basel · CBK (curated)",
@@ -102,6 +105,7 @@ A pattern worth noticing across recent FCA supervisory letters: the regulator is
     id: "ai-literacy-in-60-minutes",
     title: "AI literacy in 60 minutes: the mental model a director needs",
     kicker: "Foundations · 8 min read",
+    content_type: "tl_article",
     topic: "foundations",
     audience: ["ned", "executive", "reportee"],
     source_name: "Stanford HAI · Ethan Mollick · WEF (curated)",
@@ -137,6 +141,7 @@ The simplest heuristic for a NED evaluating any AI proposal: ask whether the pro
     id: "eu-ai-act-and-the-compliance-clock",
     title: "The EU AI Act: the compliance clock every multinational board is now on",
     kicker: "Regulation · 7 min read",
+    content_type: "tl_article",
     topic: "regulation",
     audience: ["ned", "executive"],
     source_name: "European Commission · IAPP · Debevoise (curated)",
@@ -168,6 +173,7 @@ The practical board posture: ensure management has classified every system, has 
     id: "building-an-ai-incident-response-plan",
     title: "AI incident response: the plan you will need before you realise it",
     kicker: "Risk · 6 min read",
+    content_type: "case_study",
     topic: "risk",
     audience: ["ned", "executive"],
     source_name: "CISA · NCSC · MITRE ATLAS (curated)",
@@ -200,6 +206,7 @@ The board's role is not to run the plan; it is to verify that the plan exists, i
     id: "vendor-ai-oversight",
     title: "Vendor AI: most of your AI risk is in your supply chain",
     kicker: "Third-party · 5 min read",
+    content_type: "case_study",
     topic: "vendor",
     audience: ["ned", "executive"],
     source_name: "ICO · Shared Assessments · Deloitte (curated)",
@@ -238,7 +245,93 @@ export const TOPIC_LABEL = {
   vendor: "Third-party",
   leadership: "Leadership",
   strategy: "Strategy",
+  news: "News",
 };
+
+export const CONTENT_TYPE_LABEL = {
+  news: "News",
+  tl_article: "TL Articles",
+  video: "Videos",
+  case_study: "Case Studies",
+};
+
+/**
+ * News briefs — short board-relevant AI governance news items.
+ * Curated from reputable outlets (FT, Reuters, Bloomberg, Deloitte, NACD, FCA, ICO).
+ * Each brief is a 3–5 sentence summary with a primary-source link.
+ */
+export const LEARN_NEWS = [
+  {
+    id: "news-eu-ai-act-gpai-code",
+    title: "EU publishes the GPAI Code of Practice — material for any board using GPT/Claude/Gemini",
+    kicker: "News · EU · 3 min read",
+    content_type: "news",
+    topic: "regulation",
+    audience: ["ned", "executive"],
+    source_name: "European Commission · IAPP",
+    source_url: "https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai",
+    summary: "The voluntary Code of Practice for General-Purpose AI (GPAI) providers went live in 2025 and becomes the reference point for AI Act enforcement in 2026. If your business substantially integrates a frontier model, the code now sets the documentation, transparency, and copyright-compliance bar your regulator will assume you meet.",
+    body: `The European Commission finalised the General-Purpose AI Code of Practice in 2025. Signing it is voluntary, but non-signatories will have to demonstrate equivalent compliance when the AI Act's GPAI obligations apply.
+
+What this means for a board:
+  - Any business substantially modifying or deploying a GPAI (LLM) inherits provider-side obligations downstream. Your AI vendor contracts should now reference the Code.
+  - Documentation expectations (model cards, evaluation summaries, systemic risk assessments) are public and specific.
+  - Expect your insurers and auditors to start asking whether your providers are signatories.
+
+A practical board ask: "Is our LLM vendor a signatory of the EU GPAI Code of Practice, and if not, what equivalent attestation do we hold?"`,
+    questions_to_ask: [
+      "Are our frontier model vendors (OpenAI, Anthropic, Google) signatories of the GPAI Code of Practice?",
+      "What documentation have we received from them to satisfy AI Act downstream obligations?",
+      "Has our legal counsel reviewed the code against our existing DPA / AI addenda?",
+    ],
+  },
+  {
+    id: "news-fca-ai-discussion-paper",
+    title: "FCA sharpens its AI supervisory posture — model governance under the microscope",
+    kicker: "News · UK · 2 min read",
+    content_type: "news",
+    topic: "sector-banking",
+    audience: ["ned", "executive"],
+    source_name: "FCA · Bank of England",
+    source_url: "https://www.fca.org.uk/firms/artificial-intelligence-ai",
+    summary: "Recent FCA supervisory letters have shifted emphasis from 'do you use AI?' to 'how do you govern the AI you use?' The ask is for a live inventory, challenger models on high-stakes decisions, and a 48-hour rollback plan.",
+    body: `Pattern across recent FCA supervisory correspondence and Dear CEO letters in 2025:
+
+  - Less interest in individual model mechanics, more interest in the management system around them.
+  - Explicit expectation of a live, dated model inventory including owner, validation date, and last drift check.
+  - Questions about challenger models (often logistic regression baselines) for any material production model.
+  - Explicit ask: can you suspend the model and revert to human judgement within 48 hours? Have you rehearsed this?
+
+Audit committees in UK regulated firms should expect a version of this conversation at their next PRA / FCA engagement.`,
+    questions_to_ask: [
+      "When was our model inventory last refreshed and reviewed by the audit committee?",
+      "For our three most material production models, when did the challenger and champion last diverge?",
+      "Have we rehearsed a 48-hour model suspension and human-fallback this year?",
+    ],
+  },
+  {
+    id: "news-nacd-ai-oversight-bench",
+    title: "NACD 2026 benchmark: AI oversight is now a named standing-committee charge at 41% of S&P 500 boards",
+    kicker: "News · US · 2 min read",
+    content_type: "news",
+    topic: "governance",
+    audience: ["ned", "executive"],
+    source_name: "NACD · Harvard Corp Gov",
+    source_url: "https://corpgov.law.harvard.edu/",
+    summary: "The 2026 NACD governance benchmark shows AI oversight has moved from a full-board topic to a named charter line — usually on the audit committee, increasingly on a new technology committee. Committee charters are catching up in real time.",
+    body: `Key 2026 NACD data points:
+  - 41% of S&P 500 companies now name AI oversight in a standing committee charter, up from 19% in 2024.
+  - The audit committee is the most common home, followed by a distinct technology / risk committee.
+  - Dedicated "AI" committees remain rare — preferred pattern is integrating AI oversight into an existing committee with updated remit.
+
+For NEDs, the tactical question is whether YOUR committee charter reflects this. If not, request the redline at your next governance review.`,
+    questions_to_ask: [
+      "Does our committee charter name AI oversight explicitly, and if not, who proposes the redline?",
+      "What is the reporting cadence from management on the AI risk register to this committee?",
+      "Do we have the right expertise in the room to execute the charge?",
+    ],
+  },
+];
 
 export const LEARN_VIDEOS = [
   {

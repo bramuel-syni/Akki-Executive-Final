@@ -19,6 +19,7 @@ import TenantSettings from "@/pages/TenantSettings";
 import AccountSecurity from "@/pages/AccountSecurity";
 import InviteAccept from "@/pages/InviteAccept";
 import NewContext from "@/pages/NewWorkspace";
+import ContextPortfolio from "@/pages/ContextPortfolio";
 
 function PublicOnlyRoute({ children }) {
   const { account } = useAuth();
@@ -48,6 +49,7 @@ function App() {
           <Route path="/app/learn" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
           <Route path="/app/learn/:id" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
           <Route path="/app/documents/:id" element={<ProtectedRoute><DocumentViewer /></ProtectedRoute>} />
+          <Route path="/app/contexts" element={<ProtectedRoute><ContextPortfolio /></ProtectedRoute>} />
           <Route path="/app/contexts/new" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />
           <Route path="/app/new-workspace" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />
           <Route path="/app/settings" element={<ProtectedRoute><TenantSettings /></ProtectedRoute>} />

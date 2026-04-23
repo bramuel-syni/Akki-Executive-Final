@@ -1,0 +1,37 @@
+{
+  "summary": "Sprint 1 end-to-end verification for bramuel@syni.ai. All three Sprint 1 deliverables (curated Home with fixed height + view-all links, Learn mini-tabs with fixed-height inner-scroll + topic pills, new Context Portfolio at /app/contexts with NED/Executive grouping + summary strip + card-click switchContext) render and behave per spec. Header context switcher includes 'View portfolio' item that navigates to /app/contexts. Backend smoke (login, /auth/me, per-context signals/briefings/documents) all 200 with the expected 6 contexts (5 NED + 1 Exec). Regression pass on /app/highlights, /app/workspace, /app/briefings — all load clean with ZERO console errors and ZERO hydration warnings (iteration-2's Workspace nested-button warning did not reproduce).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/app/contexts (ContextPortfolio)", "issues": ["Summary-strip tiles (Signals/Briefings/Documents) show ellipsis '…' while the per-context fan-out fetches run (6 contexts × 3 endpoints = 18 requests on mount). UX-acceptable but on a slow link the loading hint persists for a beat. Consider (a) skeleton pulse instead of '…', or (b) showing partial totals as each context resolves. Not blocking."]},
+      {"screen": "Global top-banner", "issues": ["'Heads up — You're acting as executive but the current context is for ned…' banner renders on every page because Bramuel's active context is a NED board but activeRole defaults to executive. Expected UX per design but worth confirming the role auto-route/palette-switch CTA works once Sprint-2 role router lands."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sprint1.py",
+    "/app/test_reports/pytest/pytest_sprint1.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ContextPortfolio.jsx is clean: fetches metrics in parallel, groups by NED/Exec, handles empty state, active context shown via left accent + CheckCircle2. Good separation.",
+    "Learn.jsx TABS array is well-structured; handleTabChange correctly resets topic to 'all' on tab switch (verified).",
+    "AppHome.jsx fixed-height shell (h-[calc(100vh-4rem)]) with inner overflow-y-auto on .home-sections works — outer chrome does not scroll, only the stream does. Companion-rail 'My portfolio' link present.",
+    "AppShell.jsx context-switcher dropdown now exposes context-portfolio-btn at the top of the menu — good data-testid hygiene.",
+    "Iteration-2's nested-<button> hydration warning in Workspace could NOT be reproduced in this run — either fixed between iterations or does not trigger under Bramuel's workspace state. Worth a quick re-verification by main agent after any future Workspace.jsx edits."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sprint1.py (new)"
+  ],
+  "success_rate": {"backend": "100% (3/3)", "frontend": "100% (all Sprint-1 testids present and wired)"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! — verified working; seeded with 6 contexts (Mawingu Logistics, Chai Agri Holdings, Pwani Hospitality Group, Safiri Telecom, Tuli Financial Group [NED + Exec]).",
+  "seed_data_creation": "No new seed data created. Used Bramuel's existing seeded portfolio.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Sprint 1 is fully validated. test_sprint1.py is kept small (3 tests) as a regression smoke — add per-context-type assertions here if Sprint 2 introduces sub-committees or comments. The 'Heads up' role-mismatch banner persists on every page under bramuel because activeRole=executive but default_context=ned board — that is design-intent per AppShell role-mismatch-banner. Workspace nested-button hydration warning (iter 2) is currently not reproducing. All Sprint-1 data-testids confirmed present: learn-tab-{news,tl_article,video,case_study}, learn-scroll, learn-grid, learn-empty, learn-topic-{key}, learn-search, learn-research-btn, home-sections, section-top-{signals,briefings}, section-new-documents, companion-rail, portfolio-add-context-btn, portfolio-card-{id}, portfolio-section-{ned,executive}, portfolio-scroll, context-switcher-btn, context-portfolio-btn.",
+  "rca of the issue": "N/A — no failing cases."
+}

@@ -179,6 +179,16 @@ export default function AppShell({ children }) {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-80 rounded-md">
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => navigate("/app/contexts")}
+                data-testid="context-portfolio-btn"
+              >
+                <Layers className="w-4 h-4 mr-2 text-[var(--accent)]" strokeWidth={1.8} />
+                <span className="font-medium">View portfolio</span>
+                <span className="ml-auto text-[10px] uppercase tracking-wider text-[var(--muted)]">{contexts.length}</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               {groups.personal.length > 0 && (
                 <>
                   <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">Personal contexts</DropdownMenuLabel>
