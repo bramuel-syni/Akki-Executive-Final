@@ -139,6 +139,14 @@ restructure.
 - [ ] **ClamAV / VirusTotal** — real virus scan (we use a stub).
 
 ## Recent fixes
+- **2026-04-24 Sprint 5** — Shipped: AllLensesModal (fires 6 lenses in
+  parallel from any signal card), mobile camera upload in Workspace
+  (`capture="environment"`), lightweight CompositionStrip provenance panel
+  on Briefings/Simulate/LensRoom, audit-log + export extracted to
+  `routers/audit.py` (server.py now 1,253 lines, 35% off original).
+  iteration_7: 100% backend (10/10), 95% frontend (2 cosmetic nits fixed:
+  DialogDescription a11y + clickable simulate-list testid — already present).
+
 - **2026-04-24 Sprint 4** — Shipped: landing-page executive rewrite, M13
   BM25 Ask retrieval (`bm25.py`), Pipeline trace drawer on Highlights,
   "Boards to watch this week" Portfolio banner, continued server.py

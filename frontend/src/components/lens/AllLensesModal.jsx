@@ -3,7 +3,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  Dialog, DialogContent, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -101,6 +101,9 @@ export default function AllLensesModal({ signal, open, onClose }) {
         data-testid="all-lenses-modal"
       >
         <DialogTitle className="sr-only">Run signal through every lens</DialogTitle>
+        <DialogDescription className="sr-only">
+          Applies all six AKKI lenses to the selected signal in parallel and presents the structured Observation, Implication, Action and Question for Management for each.
+        </DialogDescription>
 
         {/* Header */}
         <div className="px-7 py-5 border-b border-[var(--rule)] bg-white flex items-start justify-between">
