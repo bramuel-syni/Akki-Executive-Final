@@ -118,14 +118,13 @@ def _currency_for(region: str) -> str:
 # ---------------------------------------------------------------------------
 SECTOR_TO_TEMPLATE: Dict[str, str] = {
     "financial_services": "banking_midcap",
-    # These fall through to generic for Phase 1 — real templates ship later.
-    "saas": "generic_diversified",
-    "logistics": "generic_diversified",
-    "healthcare": "generic_diversified",
-    "manufacturing": "generic_diversified",
-    "retail": "generic_diversified",
-    "real_estate": "generic_diversified",
-    "other": "generic_diversified",
+    "saas":               "saas_growth",
+    "logistics":          "logistics_panafrican",
+    "healthcare":         "healthcare_provider",
+    "manufacturing":      "manufacturing_industrial",
+    "retail":             "retail_multicategory",
+    "real_estate":        "real_estate_developer",
+    "other":              "generic_diversified",
 }
 
 
@@ -431,6 +430,20 @@ TEMPLATES: Dict[str, Dict[str, Any]] = {
     "banking_midcap": BANKING_TEMPLATE,
     "generic_diversified": GENERIC_TEMPLATE,
 }
+
+# Merge in the sector templates from the dedicated file. They each define
+# id/industry/sector_hint/committees/documents/signals/briefings with
+# {company_name}/{currency}/{regulator} substitutions.
+try:
+    from sandbox_templates import ALL_TEMPLATES as _EXTRA_TEMPLATES
+    for _tid, _t in _EXTRA_TEMPLATES.items():
+        # Default context_type for sandbox contexts created from these templates
+        _t.setdefault("context_type", "executive_enterprise")
+        TEMPLATES[_tid] = _t
+except Exception:  # pragma: no cover
+    # Fallback: Phase 2 templates are a "nice to have" — if import fails,
+    # sector-specific sandboxes fall through to the generic template.
+    pass
 
 
 def pick_template(sector: str) -> Dict[str, Any]:

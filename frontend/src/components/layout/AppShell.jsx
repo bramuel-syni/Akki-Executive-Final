@@ -12,6 +12,7 @@ import {
   Users, Building2,
 } from "lucide-react";
 import SandboxBanner from "@/components/sandbox/SandboxBanner";
+import SandboxEmailCapture from "@/components/sandbox/SandboxEmailCapture";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -125,6 +126,7 @@ export default function AppShell({ children }) {
   return (
     <div className="min-h-screen flex flex-col bg-[var(--cream)]">
       <SandboxBanner />
+      <SandboxEmailCapture />
       {/* Top chrome — cream, 64px, 1px rule border */}
       <header
         className="bg-[var(--cream)] text-[var(--ink)] border-b border-[var(--rule)] h-16 sticky top-0 z-40 flex items-center px-6 justify-between"

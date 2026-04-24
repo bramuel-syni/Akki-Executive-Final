@@ -1,0 +1,49 @@
+{
+  "summary": "Addendum v4.3 §1 Phase 2 verified. Backend: 15/15 PASS in new /app/backend/tests/test_sandbox_phase2.py covering: GET /api/sandbox/templates (all 8 sectors present with correct polished template_ids — saas→saas_growth, logistics→logistics_panafrican, healthcare→healthcare_provider, manufacturing→manufacturing_industrial, retail→retail_multicategory, real_estate→real_estate_developer, financial_services→banking_midcap, other→generic_diversified; is_polished=true for 7, false for other). POST /api/sandbox/generate for each of the 6 new sectors resolves to the polished template (NOT generic), produces >=4 signals with sector-specific keywords in headlines (saas:'net revenue retention', logistics:'ERP', healthcare:'readmission', manufacturing:'hedg', retail:'Shrinkage', real_estate:'Coast Gardens'), and {company_name}/{currency}/{regulator} substitutions render cleanly (no residual curly-brace placeholders leak into document text). POST /api/sandbox/contexts/{cid}/capture-email stores lowercased email on context.sandbox_metadata.prospect_email (verified via /auth/me), rejects invalid email format (422), and returns 404 for non-existent/non-sandbox context. POST /api/sandbox/convert: (a) flips executive-role context from 'sandbox' to 'executive_personal' with converted_at stamped and expires_at/read_only_until/hard_delete_at unset; (b) flips NED-role context to 'ned_personal'; (c) returns 409 when email already exists (bramuel@syni.ai); (d) returns 400 when non-sandbox account calls it; (e) keep_sandbox=false actually deletes context + all sandbox artefacts and the converted user has zero sandbox contexts afterward. Regression: test_sprint6 + test_iter11_speaking_notes + test_iter12_shares_home (26 tests) all PASS unchanged. Frontend arc verified live: /sandbox → fill Q1-Q4 with TEST_ConvertFE + Financial services + NED + East Africa → /sandbox/generating/<id> → /app with sandbox-banner present and exact spec copy → click sandbox-banner-convert → /signup?from_sandbox=<cid> renders the conversion UI with overline 'STEP 1 OF 1 · TURN YOUR SANDBOX INTO AN ACCOUNT', heading 'Keep exploring — for real.', signup-keep-sandbox checkbox (default-checked with TEST_ConvertFE name), and 'Finish setup' CTA — all testids/copy match spec. PublicOnlyRoute allowSandbox is working (sandbox-authenticated user successfully reaches /signup instead of being bounced to /app).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/sandbox/cleanup/expired", "issue": "Still unauthenticated (flagged in iter13). Not a P0 but Mongo delete_many cost is non-trivial under abuse."},
+      {"endpoint": "core.sanitize_account", "issue": "is_sandbox/sandbox_session_id still not surfaced by sanitize_account — frontend keys off contexts[0].type==='sandbox' which works but is brittle. Carried from iter13."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Sandbox Q2 sector dropdown", "issue": "Despite the Phase 2 claim that position='popper' + side='bottom' fixes the iter13 dropdown bug, the visible panel still starts at 'SaaS / Technology' — 'Financial services' is FIRST in DOM ordering (role=option[0]) but is scrolled past in the viewport. Screenshot confirms the visible options in order are SaaS/Logistics/Healthcare/Manufacturing/Retail/Real estate/Other with Financial services not visible without scroll-up. Setting listbox scrollTop=0 on open, or rendering with a taller panel that fits all 8 options, would actually resolve this.", "selector": "[data-testid='sandbox-q2-sector']", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sandbox_phase2.py",
+    "/app/backend/tests/test_sandbox_phase1.py",
+    "/app/test_reports/pytest/pytest_iter14.xml"
+  ],
+  "action_items": [
+    "Actually fix the /sandbox Q2 sector dropdown — position='popper' side='bottom' does open it downward but the internal listbox is still scrolled past 'Financial services'. Set scrollTop=0 on the SelectContent root when open, OR increase the max-height so all 8 options fit without scroll, OR scrollIntoView the first option.",
+    "iter13 staleness: tests/test_sandbox_phase1.py::TestTemplatesMeta::test_list_templates now FAILS because it asserts saas→generic_diversified (was true in Phase 1, now saas→saas_growth). Update that test assertion to match the Phase 2 contract or remove it now that test_sandbox_phase2.py covers the full 8-sector meta.",
+    "(Minor) Surface is_sandbox on sanitize_account so future FE code doesn't have to key off contexts[0].type."
+  ],
+  "critical_code_review_comments": [
+    "routers/sandbox.py::convert_sandbox — correct behaviour: rewrites email/password/name, strips is_sandbox+sandbox_session_id, flips each sandbox context to ned_personal/executive_personal based on membership role, clears the three expiry fields, re-issues access+refresh tokens via set_auth_cookies. keep_sandbox=false deletes documents/signals/briefings/context_objects/memberships and the context itself — verified no orphans left (test_keep_sandbox_false_deletes_context_and_artefacts passes).",
+    "routers/sandbox.py::capture_email — guards on owner_account_id + type='sandbox', inserts sandbox_pickups row with send_after=now+24h, writes audit. Good. Minor: the duplicate email capture case isn't guarded — posting twice with different emails will queue two pickups; probably fine but worth a note.",
+    "sandbox_templates.py — 6 new templates are ~590 lines total. Clean structure, consistent schema (id, label, industry, sector_hint, committees, documents, signals, briefings). All three substitution tokens ({company_name}/{currency}/{regulator}) appear across templates and render cleanly in tests (no placeholder leakage).",
+    "sandbox_service.py::TEMPLATES merge — using try/except ImportError as a soft-fail for the new templates module is pragmatic but silently swallows import errors (e.g. a syntax error in sandbox_templates.py would hide as 'falls back to generic'). Log the exception at WARNING level inside the except block.",
+    "SandboxEmailCapture modal (DOM-mounted on AppShell per spec) — 3-minute timeout + localStorage guard is a sound dismissal pattern. Not live-exercised in this pass because timing-gated; component wiring verified by spec-sheet inspection.",
+    "PublicOnlyRoute allowSandbox — working; the sandbox-authenticated user successfully reached /signup?from_sandbox=<cid> instead of being bounced to /app."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sandbox_phase2.py (new)",
+    "/app/test_reports/pytest/pytest_iter14.xml (pytest JUnit)"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15 Phase 2 tests PASS: templates-meta, 6 parametrised sector template seeds, capture-email OK+422+404, convert OK+ned_flip+409+400+keep_sandbox_false). Plus 26/26 regression tests PASS (sprint6 shielding, iter11 speaking notes, iter12 shares-home). One iter13 test — test_list_templates asserting saas→generic — is stale because Phase 2 changed the contract; documented as action item.",
+    "frontend": "95% — full arc /sandbox → /app (banner) → /signup?from_sandbox=<cid> verified with all testids + copy per spec. Finish setup CTA present. Dropdown still has the iter13 visual-scroll bug: Financial services is DOM-first but visually below the scroll on open."
+  },
+  "test_credentials": "Sandbox is credential-less. Regression leg uses bramuel@syni.ai / TestBramuel2026! (also used for 409-duplicate assertion in test_duplicate_email_returns_409).",
+  "seed_data_creation": "Created ~12 TEST_-prefixed sandbox contexts during phase2 test run (one per parametrised sector plus convert/capture-email scenarios) + their disposable sandbox+<id>@akki.local accounts + seeded docs/signals/briefings. Not cleaned (hard_delete_at is +22d). Main agent can sweep by back-dating sandbox_metadata.hard_delete_at on TEST_-named contexts and calling POST /api/sandbox/cleanup/expired.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && python -m pytest tests/test_sandbox_phase2.py tests/test_sandbox_phase1.py -v. 27 tests run, 26 pass; only test_sandbox_phase1.py::TestTemplatesMeta::test_list_templates fails (stale Phase-1 assertion vs the new Phase-2 contract — saas is now polished). The 6 parametrised sector tests prove Phase 2 works. Frontend dropdown fix is still visually broken (Financial services is DOM[0] but scrolled past on open) — exact same symptom as iter13, despite the addendum claim that position='popper'/side='bottom' resolved it.",
+  "rca of the issue": "Dropdown issue RCA: the SelectContent uses Radix's SelectPrimitive which positions 'popper' with side='bottom' — verified, the panel DOES render below the trigger. But the listbox viewport default scrollTop is whatever Radix sets based on the currently-selected item or the internal scroll restoration logic, and with 8 items at roughly 32px each the visible window starts at item[1]='SaaS / Technology'. The fix requires EITHER (a) onOpenAutoFocus/ref-based scrollTop=0 on the Radix Viewport, (b) setting the SelectContent max-height to accommodate all 8 items without scroll (about 256px), or (c) moving Financial services with an explicit <SelectItem value='financial_services' autoFocus>. Option (b) is the simplest and matches the 'this is the polished template — show it first' intent."
+}

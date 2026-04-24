@@ -26,10 +26,11 @@ import Manage from "@/pages/Manage";
 import Sandbox from "@/pages/Sandbox";
 import SandboxGenerating from "@/pages/SandboxGenerating";
 
-function PublicOnlyRoute({ children }) {
+function PublicOnlyRoute({ children, allowSandbox = false }) {
   const { account } = useAuth();
   if (account === null) return null;
-  if (account) return <Navigate to="/app" replace />;
+  // Sandbox users must be allowed through to /signup so they can convert.
+  if (account && !(allowSandbox && account.is_sandbox)) return <Navigate to="/app" replace />;
   return children;
 }
 
@@ -41,7 +42,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/signin" element={<PublicOnlyRoute><SignIn /></PublicOnlyRoute>} />
-          <Route path="/signup" element={<PublicOnlyRoute><SignUp /></PublicOnlyRoute>} />
+          <Route path="/signup" element={<PublicOnlyRoute allowSandbox><SignUp /></PublicOnlyRoute>} />
           <Route path="/invite/:token" element={<InviteAccept />} />
           <Route path="/sandbox" element={<Sandbox />} />
           <Route path="/sandbox/generating/:sessionId" element={<SandboxGenerating />} />

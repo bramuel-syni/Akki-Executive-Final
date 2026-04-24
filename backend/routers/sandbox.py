@@ -24,8 +24,11 @@ from pydantic import BaseModel, EmailStr, Field
 
 from core import (
     db, now as _now, iso as _iso, write_audit,
+    get_current_account,
     create_access_token, create_refresh_token, hash_password,
+    set_auth_cookies, sanitize_account, sanitize_context,
 )
+from fastapi import Depends, Response
 from sandbox_service import (
     pick_template, build_seed_payload, resolve_stage_texts,
     sandbox_expiry_defaults, REGION_PROFILES,
@@ -120,6 +123,19 @@ async def generation_status(session_id: str):
             _sessions.pop(session_id, None)
         s["expire_task"] = asyncio.create_task(_expire())
     return payload
+
+
+class SandboxConvertIn(BaseModel):
+    """Payload for converting a sandbox session into a real account.
+
+    Caller is the sandbox user (authenticated via their sandbox JWT). We
+    rewrite the disposable account's email/password/name, strip `is_sandbox`,
+    flip the context `type` off 'sandbox', and drop the expiry fields.
+    """
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    name: str = Field(min_length=1, max_length=120)
+    keep_sandbox: bool = True
 
 
 # -----------------------------------------------------------------------------
@@ -338,3 +354,134 @@ async def cleanup_expired_sandboxes():
             await db.accounts.delete_one({"id": ctx["owner_account_id"], "is_sandbox": True})
         swept += 1
     return {"swept": swept}
+
+
+class SandboxEmailCaptureIn(BaseModel):
+    """Optional mid-exploration email drop — we store it on the context so a
+    later drip-email ("Pick up where you left off") can find the session."""
+    email: EmailStr
+
+
+@router.post("/contexts/{context_id}/capture-email")
+async def capture_email(
+    context_id: str,
+    body: SandboxEmailCaptureIn,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    ctx = await db.contexts.find_one(
+        {"id": context_id, "owner_account_id": current["id"], "type": "sandbox"},
+        {"_id": 0},
+    )
+    if not ctx:
+        raise HTTPException(status_code=404, detail="Sandbox context not found")
+    await db.contexts.update_one(
+        {"id": context_id},
+        {"$set": {
+            "sandbox_metadata.prospect_email": body.email.lower().strip(),
+            "sandbox_metadata.email_captured_at": _iso(_now()),
+        }},
+    )
+    await write_audit(context_id, current["id"], "sandbox.email_captured", "sandbox", context_id,
+                      {"email": body.email.lower().strip()})
+    # Schedule a pickup-where-you-left-off marker. Actual email delivery ships
+    # with §6 Email-in; for now we log the intent and persist the trigger row.
+    await db.sandbox_pickups.insert_one({
+        "id": str(uuid.uuid4()),
+        "context_id": context_id,
+        "account_id": current["id"],
+        "email": body.email.lower().strip(),
+        "send_after": _iso(_now() + timedelta(hours=24)),
+        "status": "queued",
+        "created_at": _iso(_now()),
+    })
+    logger.info(f"[sandbox-pickup-queued] ctx={context_id} email={body.email} "
+                f"send_after=+24h")
+    return {"ok": True}
+
+
+@router.post("/convert")
+async def convert_sandbox(
+    body: SandboxConvertIn,
+    response: Response,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Migrate the caller's sandbox account into a real, persistent account.
+
+    After conversion:
+      · Disposable email is rewritten to the real one + password updated.
+      · The `is_sandbox` flag and sandbox_session_id are stripped from account.
+      · Each of the user's sandbox-typed contexts is flipped to a real type
+        (ned_personal / executive_personal based on the membership role),
+        `sandbox_metadata.converted_at` is stamped, and expires_at /
+        read_only_until / hard_delete_at are cleared so the sweeper skips it.
+    """
+    if not current.get("is_sandbox"):
+        raise HTTPException(status_code=400, detail="Not a sandbox account — nothing to convert.")
+
+    new_email = body.email.lower().strip()
+    # Email uniqueness — bail cleanly if it's already in use by a different account
+    existing = await db.accounts.find_one({"email": new_email, "id": {"$ne": current["id"]}}, {"_id": 0, "id": 1})
+    if existing:
+        raise HTTPException(status_code=409, detail="That email is already registered. Sign in instead.")
+
+    # 1. Rewrite the account
+    await db.accounts.update_one(
+        {"id": current["id"]},
+        {
+            "$set": {
+                "email": new_email,
+                "name": body.name.strip(),
+                "password_hash": hash_password(body.password),
+            },
+            "$unset": {"is_sandbox": "", "sandbox_session_id": ""},
+        },
+    )
+
+    # 2. Flip sandbox contexts to real ones (only if keep_sandbox)
+    my_ctx_ids: List[str] = []
+    async for m in db.memberships.find(
+        {"account_id": current["id"], "status": "active"},
+        {"_id": 0, "context_id": 1, "role": 1},
+    ):
+        my_ctx_ids.append(m["context_id"])
+        real_type = "ned_personal" if m.get("role") == "ned" else "executive_personal"
+        if body.keep_sandbox:
+            await db.contexts.update_one(
+                {"id": m["context_id"], "type": "sandbox"},
+                {
+                    "$set": {
+                        "type": real_type,
+                        "sandbox_metadata.converted_at": _iso(_now()),
+                    },
+                    "$unset": {
+                        "sandbox_metadata.expires_at": "",
+                        "sandbox_metadata.read_only_until": "",
+                        "sandbox_metadata.hard_delete_at": "",
+                    },
+                },
+            )
+        else:
+            # Discard the explored sandbox entirely on conversion
+            await db.documents.delete_many({"context_id": m["context_id"]})
+            await db.signals.delete_many({"context_id": m["context_id"]})
+            await db.briefings.delete_many({"context_id": m["context_id"]})
+            await db.context_objects.delete_many({"context_id": m["context_id"]})
+            await db.memberships.delete_many({"context_id": m["context_id"]})
+            await db.contexts.delete_one({"id": m["context_id"], "type": "sandbox"})
+
+    # 3. Rotate tokens + set real cookies so the user is cleanly logged in
+    access = create_access_token(current["id"], new_email)
+    refresh = create_refresh_token(current["id"])
+    set_auth_cookies(response, access, refresh)
+
+    await write_audit(
+        None, current["id"], "sandbox.converted", "account", current["id"],
+        {"email": new_email, "kept_sandbox": body.keep_sandbox,
+         "contexts_migrated": len(my_ctx_ids)},
+    )
+    refreshed_acc = await db.accounts.find_one({"id": current["id"]}, {"_id": 0})
+    return {
+        "account": sanitize_account(refreshed_acc),
+        "contexts_kept": len(my_ctx_ids) if body.keep_sandbox else 0,
+        "access_token": access,
+    }

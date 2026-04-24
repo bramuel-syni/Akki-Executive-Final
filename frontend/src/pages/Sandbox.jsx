@@ -128,7 +128,7 @@ export default function Sandbox() {
                 >
                   <SelectValue placeholder="Choose the sector closest to your work" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper" side="bottom" align="start" sideOffset={4}>
                   {SECTORS.map((s) => (
                     <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                   ))}
@@ -175,7 +175,7 @@ export default function Sandbox() {
                 >
                   <SelectValue placeholder="Pick a region" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper" side="bottom" align="start" sideOffset={4}>
                   {REGIONS.map((r) => (
                     <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
                   ))}
