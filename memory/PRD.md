@@ -139,6 +139,12 @@ restructure.
 - [ ] **ClamAV / VirusTotal** — real virus scan (we use a stub).
 
 ## Recent fixes
+- **2026-04-24 Sprint 4** — Shipped: landing-page executive rewrite, M13
+  BM25 Ask retrieval (`bm25.py`), Pipeline trace drawer on Highlights,
+  "Boards to watch this week" Portfolio banner, continued server.py
+  refactor (signals+ask extracted; now 33% off original). iteration_6:
+  100% backend (7/7), 100% frontend, zero issues.
+
 - **2026-04-23 Sprint 3** — Shipped: role auto-route (AuthContext), Mention
   Inbox bell in AppShell header, CommitteeManager in Settings, signals+ask
   router extraction, M14 Lens Room (6 frameworks, full page), M11 event-
