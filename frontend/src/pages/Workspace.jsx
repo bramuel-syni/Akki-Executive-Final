@@ -117,8 +117,8 @@ function DocumentsBrowser({
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="px-6 py-5 border-b border-[#E1E6ED] bg-white">
-        <p className="akki-overline mb-1.5">Workspace · Module M3</p>
-        <h1 className="text-2xl font-light tracking-tight text-[var(--ink)]">Documents</h1>
+        <p className="akki-overline mb-1.5">Document Journal · Module M3</p>
+        <h1 className="text-2xl font-light tracking-tight text-[var(--ink)]">Document Journal</h1>
         <p className="text-xs text-slate-500 mt-1">
           Upload board packs, minutes, reports. AKKI extracts text, shields identifiers, and grounds every Ask response.
         </p>
@@ -496,6 +496,11 @@ export default function Workspace() {
   }, [contextId]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const handler = () => load();
+    window.addEventListener("akki:document-uploaded", handler);
+    return () => window.removeEventListener("akki:document-uploaded", handler);
+  }, [load]);
 
   const uploadOne = async (file) => {
     const fd = new FormData();

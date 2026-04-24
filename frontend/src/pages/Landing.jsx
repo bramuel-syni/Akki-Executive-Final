@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   ArrowRight, Sparkles, ScrollText, Eye, FileText, Target, GraduationCap,
-  Quote, Check,
+  Quote, Check, Upload, Loader2, AlertTriangle, TrendingUp,
 } from "lucide-react";
 
 /**
@@ -14,6 +14,82 @@ import {
  * copy does the work. The audience is NEDs and senior executives; restraint
  * over decoration, typography over hero shots.
  */
+
+const FAKE_SIGNALS = [
+  { icon: AlertTriangle, tone: "risk", label: "Risk", delay: 0, headline: "ERP migration 90% complete for six months — schedule risk on Q1 close." },
+  { icon: AlertTriangle, tone: "gap",  label: "Gap",  delay: 1, headline: "No succession plan filed for the CFO — board-reserved matter unaddressed." },
+  { icon: TrendingUp,    tone: "opp",  label: "Opportunity", delay: 2, headline: "Top-5 borrowers concentration easing — credit committee can widen exposure limits." },
+];
+
+function FirstRunDemo() {
+  return (
+    <div className="relative bg-white border border-[var(--rule)] rounded-md p-6 md:p-8 overflow-hidden" style={{ minHeight: 280 }}>
+      <style>{`
+        @keyframes akki-fru-upload  { 0%,5%{opacity:0;transform:translateY(6px)} 10%,28%{opacity:1;transform:translateY(0)} 32%,100%{opacity:0.3;transform:translateY(0)} }
+        @keyframes akki-fru-progress{ 0%,10%{width:0%}  28%{width:100%} 32%,100%{width:100%} }
+        @keyframes akki-fru-thinking{ 0%,28%{opacity:0} 30%,38%{opacity:1} 40%,100%{opacity:0} }
+        @keyframes akki-fru-sig-1   { 0%,38%{opacity:0;transform:translateY(4px)} 42%,100%{opacity:1;transform:translateY(0)} }
+        @keyframes akki-fru-sig-2   { 0%,48%{opacity:0;transform:translateY(4px)} 52%,100%{opacity:1;transform:translateY(0)} }
+        @keyframes akki-fru-sig-3   { 0%,58%{opacity:0;transform:translateY(4px)} 62%,100%{opacity:1;transform:translateY(0)} }
+        .akki-fru-upload   { animation: akki-fru-upload 12s ease-in-out infinite; }
+        .akki-fru-progress { animation: akki-fru-progress 12s ease-in-out infinite; }
+        .akki-fru-thinking { animation: akki-fru-thinking 12s ease-in-out infinite; }
+        .akki-fru-s1       { animation: akki-fru-sig-1 12s ease-in-out infinite; opacity:0; }
+        .akki-fru-s2       { animation: akki-fru-sig-2 12s ease-in-out infinite; opacity:0; }
+        .akki-fru-s3       { animation: akki-fru-sig-3 12s ease-in-out infinite; opacity:0; }
+        @media (prefers-reduced-motion: reduce) {
+          .akki-fru-upload, .akki-fru-progress, .akki-fru-thinking,
+          .akki-fru-s1, .akki-fru-s2, .akki-fru-s3 { animation: none; opacity: 1; }
+          .akki-fru-progress { width: 100%; }
+        }
+      `}</style>
+
+      {/* Upload line */}
+      <div className="akki-fru-upload flex items-center gap-3 mb-3">
+        <div className="w-8 h-8 bg-[var(--cream-deep)] rounded-sm flex items-center justify-center">
+          <Upload className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[12px] font-medium text-[var(--ink)]">Q4_Audit_Committee_Pack_Nov2025.pdf</p>
+          <p className="text-[10px] text-[var(--muted)]">2.4 MB · 42 pages · shielded by Synisense</p>
+        </div>
+      </div>
+      <div className="h-[2px] bg-[var(--cream-deep)] rounded-full mb-5 overflow-hidden">
+        <div className="akki-fru-progress h-full bg-[var(--accent)]" style={{ width: 0 }} />
+      </div>
+
+      {/* Thinking marker */}
+      <div className="akki-fru-thinking flex items-center gap-2 mb-5 text-[11.5px] text-[var(--muted)] italic">
+        <Loader2 className="w-3 h-3 animate-spin text-[var(--accent)]" />
+        AKKI is reading the pack the way an audit chair would…
+      </div>
+
+      {/* Signals appear, staggered */}
+      <div className="space-y-2.5">
+        {FAKE_SIGNALS.map((s, i) => {
+          const Icon = s.icon;
+          const anim = ["akki-fru-s1", "akki-fru-s2", "akki-fru-s3"][i];
+          const toneClass =
+            s.tone === "risk" ? "border-red-300/70 bg-red-50/60 text-red-900"
+            : s.tone === "gap" ? "border-amber-300/70 bg-amber-50/60 text-amber-900"
+            : "border-emerald-300/70 bg-emerald-50/60 text-emerald-900";
+          return (
+            <div
+              key={i}
+              className={`${anim} border-l-2 ${toneClass} rounded-sm px-4 py-3 flex items-start gap-3`}
+            >
+              <Icon className="w-3.5 h-3.5 mt-0.5 shrink-0" strokeWidth={1.8} />
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.2em] opacity-70 mb-0.5">{s.label} · cited</p>
+                <p className="text-[13px] text-[var(--ink)] leading-snug">{s.headline}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 const PROPOSITIONS = [
   {
@@ -153,6 +229,28 @@ export default function Landing() {
               — {VOICE_QUOTE.attribution}
             </p>
           </aside>
+        </div>
+      </section>
+
+      {/* ─── First-run animation — quiet, CSS-only, loops every 12s ───── */}
+      <section className="border-b border-[var(--rule)] bg-[var(--cream)]">
+        <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-14 md:py-20 grid md:grid-cols-12 gap-10 md:gap-16 items-center">
+          <div className="md:col-span-5">
+            <p className="akki-overline mb-4">What a first run looks like</p>
+            <h2 className="akki-serif text-[28px] md:text-[36px] leading-[1.12] tracking-[-0.015em] text-[var(--ink)] font-normal mb-4">
+              Upload the pack. Pour the coffee. Read the signals.
+            </h2>
+            <p className="akki-serif text-[16px] leading-[1.75] text-[var(--deep)] max-w-[48ch]">
+              The average first run on a 40-page audit pack completes in under 90
+              seconds. AKKI surfaces the three to six things a sharp non-executive
+              would notice — each cited to the document it came from, each
+              defensible in the room.
+            </p>
+          </div>
+
+          <div className="md:col-span-7" data-testid="landing-first-run-demo">
+            <FirstRunDemo />
+          </div>
         </div>
       </section>
 

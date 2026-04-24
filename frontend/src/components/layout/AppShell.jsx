@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import {
   Home, FileText, Sparkles, GraduationCap,
   Settings, LogOut, ChevronDown, Layers, CheckCircle2, Lock,
-  Briefcase, Landmark, Search, ScrollText, Target, Eye,
+  Briefcase, Landmark, Search, ScrollText, Target, Eye, Plus, BookOpenCheck,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
@@ -17,11 +17,12 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import MentionInbox from "@/components/collab/MentionInbox";
+import UploadModal from "@/components/upload/UploadModal";
 
 // v3.0 — Six surfaces (BRD §13)
 const NAV = [
   { to: "/app", label: "Home", icon: Home, end: true, ready: true },
-  { to: "/app/workspace", label: "Workspace", icon: FileText, module: "M3", ready: true },
+  { to: "/app/workspace", label: "Document Journal", icon: BookOpenCheck, module: "M3", ready: true },
   { to: "/app/highlights", label: "Highlights", icon: Sparkles, module: "M5", ready: true },
   { to: "/app/briefings", label: "Briefings", icon: ScrollText, module: "M12", ready: true },
   { to: "/app/simulate", label: "Simulate", icon: Target, module: "M14", ready: true },
@@ -53,6 +54,7 @@ export default function AppShell({ children }) {
   const navigate = useNavigate();
 
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
   const paletteInputRef = useRef(null);
 
@@ -309,6 +311,20 @@ export default function AppShell({ children }) {
           className="hidden md:flex flex-col bg-[var(--cream)] text-[var(--deep)] w-[220px] border-r border-[var(--rule)] pt-6 pb-8 gap-0.5"
           data-testid="left-sidebar"
         >
+          {/* Primary action — upload to Document Journal. Styled to feel like
+              Google Drive's "+ New" button: oxblood pill, sits above nav,
+              never recedes into the surface list. */}
+          <div className="px-4 pb-4">
+            <button
+              onClick={() => setUploadOpen(true)}
+              className="w-full flex items-center justify-center gap-2 bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-full h-10 px-4 shadow-sm transition-all text-[13px] font-medium"
+              data-testid="sidebar-upload-btn"
+              title="Add a document to this context"
+            >
+              <Plus className="w-4 h-4" strokeWidth={2.4} />
+              Add document
+            </button>
+          </div>
           <div className="px-5 pb-4">
             <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">Surfaces</p>
           </div>
@@ -494,6 +510,16 @@ export default function AppShell({ children }) {
           </div>
         </DialogContent>
       </Dialog>
+
+      <UploadModal
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onUploaded={() => {
+          toast.success("Added to your Document Journal.");
+          // Broadcast so whatever surface is open can re-fetch its doc list
+          window.dispatchEvent(new CustomEvent("akki:document-uploaded"));
+        }}
+      />
     </div>
   );
 }

@@ -339,15 +339,30 @@ function SignalStreamCard({ signal, onLoad, onAct, onLens }) {
               <GitBranch className="w-3 h-3" strokeWidth={2} /> Trace
             </button>
           )}
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onLens?.(signal); }}
-            className="akki-gesture text-[13px]"
-            data-testid={`signal-lens-all-${signal.id}`}
-            title="Apply every lens to this signal, in parallel"
-          >
-            <Eye className="w-3 h-3" strokeWidth={2} /> All lenses
-          </button>
+          {/* High-conf risk/gap signals get the All-lenses CTA promoted to a
+              full pill button — the chairman's instinct to stress-test
+              something serious from every angle. */}
+          {(signal.confidence === "high" && (signal.type === "risk" || signal.type === "gap")) ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onLens?.(signal); }}
+              className="inline-flex items-center gap-1.5 bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors"
+              data-testid={`signal-lens-primary-${signal.id}`}
+            >
+              <Eye className="w-3 h-3" strokeWidth={2.2} />
+              See this through all six lenses
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onLens?.(signal); }}
+              className="akki-gesture text-[13px]"
+              data-testid={`signal-lens-all-${signal.id}`}
+              title="Apply every lens to this signal, in parallel"
+            >
+              <Eye className="w-3 h-3" strokeWidth={2} /> All lenses
+            </button>
+          )}
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onAct?.(signal); }}

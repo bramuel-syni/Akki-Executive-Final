@@ -6,6 +6,7 @@ import { api, apiErrorMessage, API_BASE } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import CommentThread from "@/components/collab/CommentThread";
+import DocumentThread from "@/components/documents/DocumentThread";
 import {
   ArrowLeft, Download, FileText, ShieldCheck, Loader2, List, AlertTriangle,
 } from "lucide-react";
@@ -192,9 +193,12 @@ export default function DocumentViewer() {
 
               {/* Collaboration — threaded comments with @mentions */}
               {doc && !doc.error && (
-                <div className="mt-8" data-testid="doc-comments">
-                  <CommentThread artefactType="document" artefactId={doc.id} />
-                </div>
+                <>
+                  <DocumentThread doc={doc} />
+                  <div className="mt-8" data-testid="doc-comments">
+                    <CommentThread artefactType="document" artefactId={doc.id} />
+                  </div>
+                </>
               )}
             </div>
           </div>

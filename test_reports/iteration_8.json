@@ -1,0 +1,43 @@
+{
+  "summary": "Sprint 6 — backend & frontend verified end-to-end. Backend pytest 3/4 PASS. Synisense /status returns 9 categories + engine=synisense-local + version=1.0 + enabled=true. /dryrun masks email/url/natid/phone/acct/person with stable category-indexed tokens ([EMAIL_1], [PERSON_1] etc.), originals never leak, report.shielded_by='synisense-local' + by_category populated. Upload endpoint accepts display_name/description/data_trust/related_doc_id/relation_type; validates relation_type enum (400 on BOGUS) + related_doc_id existence (404 on bad id); sanitize_doc returns all new fields. Thread endpoint returns ancestors oldest→self and descendants correctly after chaining doc_b.related_doc_id=doc_a.id with relation_type='update'. Frontend: landing FirstRunDemo testid present with Risk/Gap/Opportunity + 'reading' copy; sidebar-upload-btn renders with oxblood pill 'Add document'; NAV shows 'Document Journal' (Workspace label removed); /app/workspace header contains 'Document Journal' + 'M3'; UploadModal exposes all required testids (close, pick-file-btn, camera-btn, camera-input w/ capture=environment + accept=image/*, generate-meta-btn, submit-btn, trust-trusted/mixed/weak); /app/highlights shows 20 primary 'See this through all six lenses' pills + 4 subtle 'All lenses' gestures — primary click opens all-lenses-modal.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "/api/contexts/{id}/ask (and other LLM-backed endpoints)", "issue": "Response exposes only shielding_masked (integer count) — NOT shielding.by_category as required by Sprint 6 spec. Grep of routers/signals_ask.py + routers/briefings.py shows they do `shielding_masked: llm_out.get('shielding',{}).get('identifiers_masked',0)` but do NOT surface the categorised dict. Needs to add `shielding: llm_out.get('shielding')` (or at minimum `shielding.by_category`) to the persisted/returned payload on /signals/generate, /ask, /briefings, /simulate, /lens/run, /documents/generate-meta.", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sprint6.py",
+    "/app/test_reports/pytest/pytest_sprint6.xml"
+  ],
+  "action_items": [
+    "In each LLM-backed router endpoint response, surface `shielding: {identifiers_masked, by_category, shielded_by}` (the full dict produced by shielding_report), not just the scalar `shielding_masked` count. Apply to: /api/contexts/{id}/signals/generate, /api/contexts/{id}/ask, /api/contexts/{id}/briefings, /api/contexts/{id}/simulate, /api/lens/run, /api/contexts/{id}/documents/generate-meta."
+  ],
+  "critical_code_review_comments": [
+    "llm_service.shield_payload is clean, stable within-call, reversible via rehydrate, and caps person-masking at 20 to preserve narrative readability — good engineering.",
+    "routers/synisense.py is tight (~125 lines), status endpoint exposes exactly 9 categories with human-readable labels + examples — matches frontend expectations.",
+    "server.upload_document correctly validates relation_type enum and related_doc_id existence scoped to same context; mentioned_account_ids validated against active context members; mentions collection written for bell inbox — all four new form fields land in the sanitized response.",
+    "DocumentThread endpoint walks ancestors via related_doc_id chain (with depth guard of 20) and fetches descendants by related_doc_id IN ancestor_ids — logically correct, ancestors oldest→self ordering via insert(0,_) is right.",
+    "UploadModal wiring on AppShell + sidebar-upload-btn: labelled 'Add document' (not literal '+ Add document' text as the spec wording suggested — there is a + icon alongside the label; acceptable, matches Google-Drive visual convention).",
+    "Highlights.jsx high-confidence risk/gap rendering is correct — 20 primary pills on Tuli (plenty to exercise) + 4 subtle gestures for everything else; clicking primary opens the same AllLensesModal.",
+    "MISS: llm_out.shielding (which is shielding_report()) is dropped on the floor in routers/signals_ask.py + briefings.py — only the scalar count survives. Sprint 6 spec explicitly names this as a required payload addition."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sprint6.py (new)"
+  ],
+  "success_rate": {
+    "backend": "75% (3/4 passed — 1 failure is the shielding.by_category miss above; status + dryrun + upload/thread all green)",
+    "frontend": "100% — every Sprint 6 UI testid & label in scope verified visually + programmatically"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026!",
+  "seed_data_creation": "Two TEST_doc_* .txt files uploaded to Tuli Financial Group context (doc_a standalone + doc_b linked to doc_a via relation_type=update) for thread-endpoint verification. Plus 2 rejected upload attempts (bad relation_type + bad related_doc_id) that returned 400/404 as expected (no persistence).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_sprint6.py has four classes: TestSynisenseStatus, TestSynisenseDryRun, TestUploadWithMeta (covers 2 uploads + 2 validation rejections + thread GET on both child and parent + docs list field presence), TestLLMShieldingReport (the currently-failing /ask assertion — flip this green once the router is fixed to surface the full shielding dict). Use pytest /app/backend/tests/test_sprint6.py -v --junitxml=/app/test_reports/pytest/pytest_sprint6.xml. Note: requests.Session must NOT have Content-Type=application/json session-wide or multipart uploads break — fixtures are already corrected. Regression artefacts from iter7 still run (test_sprint5.py + test_iter6.py) — haven't re-exercised but no scope changes there.",
+  "rca of the issue": "Sprint 6 spec: 'every LLM-backed endpoint ... now returns shielding.by_category in the response payload (not just identifiers_masked)'. Reality: llm_service.call_llm produces llm_out['shielding'] = {identifiers_masked, by_category, shielded_by}, but each router endpoint only copies llm_out.shielding.identifiers_masked into its own response (field name shielding_masked). The by_category dict never reaches the client. Mitigation: in each endpoint, replace `'shielding_masked': llm_out.get('shielding',{}).get('identifiers_masked',0)` with (or supplement with) `'shielding': llm_out.get('shielding', {})` — that single line change per endpoint satisfies the contract. Frontend callers that read shielding.by_category will then light up."
+}
