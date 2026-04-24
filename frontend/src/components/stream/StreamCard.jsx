@@ -64,6 +64,7 @@ export default function StreamCard({
   secondary = [],
   to,
   severity,
+  source,   // optional left-chip: { label: "TULI" | "SHARED BY RUTH", tone?: "context" | "share" }
   "data-testid": testId,
 }) {
   const sev = severity || SEVERITY_BY_TYPE[type] || "neutral";
@@ -72,8 +73,20 @@ export default function StreamCard({
 
   const cardInner = (
     <>
-      {/* Row 1: type badge + timestamp */}
+      {/* Row 1: (optional source chip) + type badge + timestamp */}
       <div className="flex items-center gap-3 mb-3">
+        {source?.label && (
+          <span
+            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[9.5px] uppercase tracking-[0.14em] font-medium border ${
+              source.tone === "share"
+                ? "bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent)]/30"
+                : "bg-[var(--cream-deep)] text-[var(--muted)] border-[var(--rule)]"
+            }`}
+            title={source.title || source.label}
+          >
+            {source.label}
+          </span>
+        )}
         <span className="akki-type-badge inline-flex items-center gap-1.5">
           <Icon className="w-3 h-3" strokeWidth={2.2} />
           {label}

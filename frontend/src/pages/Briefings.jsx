@@ -12,11 +12,12 @@ import {
 import { toast } from "sonner";
 import {
   ScrollText, FileText, Download, Loader2, Sparkles, Plus, Trash2,
-  AlertTriangle, TrendingUp, CircleSlash, ShieldCheck, ArrowRight,
+  AlertTriangle, TrendingUp, CircleSlash, ShieldCheck, ArrowRight, Share2,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import CommentThread from "@/components/collab/CommentThread";
 import CompositionStrip from "@/components/trace/CompositionStrip";
+import ShareModal from "@/components/share/ShareModal";
 
 const TYPE_CFG = {
   risk:        { icon: AlertTriangle, cls: "bg-red-50 text-red-700 border-red-200" },
@@ -64,7 +65,7 @@ function withCitations(text, sourceMap) {
   return out;
 }
 
-function BriefingViewer({ briefing, onArchive, onDraftNotes, notesDrafting }) {
+function BriefingViewer({ briefing, onArchive, onDraftNotes, notesDrafting, onShare }) {
   // Build stable citation-to-footnote map from all items+opening
   const { sourceMap, orderedIds, docById } = useMemo(() => {
     const ids = [];
@@ -148,6 +149,15 @@ function BriefingViewer({ briefing, onArchive, onDraftNotes, notesDrafting }) {
             >
               <Download className="w-3 h-3" /> DOCX
             </a>
+            <button
+              type="button"
+              onClick={() => onShare && onShare(briefing)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs text-slate-700 border border-[#E1E6ED] hover:bg-slate-50 hover:border-[var(--accent)]/50 transition-colors"
+              data-testid="briefing-share-btn"
+              title="Share this briefing with a colleague"
+            >
+              <Share2 className="w-3 h-3" /> Share
+            </button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <button
@@ -351,6 +361,7 @@ export default function Briefings() {
   };
 
   const [notesDrafting, setNotesDrafting] = useState(false);
+  const [shareOn, setShareOn] = useState(null);
   const onDraftNotes = async (b) => {
     setNotesDrafting(true);
     try {
@@ -496,6 +507,7 @@ export default function Briefings() {
                 onArchive={onArchive}
                 onDraftNotes={onDraftNotes}
                 notesDrafting={notesDrafting}
+                onShare={setShareOn}
               />
             ) : list.length === 0 && !loading ? (
               <div className="bg-white border border-[#E1E6ED] rounded-sm p-16 text-center" data-testid="briefings-splash">
@@ -522,6 +534,14 @@ export default function Briefings() {
           </div>
         </main>
       </div>
+
+      <ShareModal
+        open={!!shareOn}
+        onClose={() => setShareOn(null)}
+        contextId={contextId}
+        itemType="briefing"
+        item={shareOn ? { ...shareOn, context_name: activeContext?.name } : null}
+      />
     </AppShell>
   );
 }

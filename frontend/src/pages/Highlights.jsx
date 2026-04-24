@@ -10,11 +10,12 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import {
   Sparkles, Loader2, ArrowRight, X, ShieldCheck, FileText,
-  SlidersHorizontal, Zap, GitBranch, Eye,
+  SlidersHorizontal, Zap, GitBranch, Eye, Share2,
 } from "lucide-react";
 import ActModal from "@/components/act/ActModal";
 import AllLensesModal from "@/components/lens/AllLensesModal";
 import HighlightsStats from "@/components/highlights/HighlightsStats";
+import ShareModal from "@/components/share/ShareModal";
 
 const CONFIDENCE_LABEL = { high: "High confidence", medium: "Medium confidence", low: "Low confidence" };
 
@@ -32,6 +33,7 @@ export default function Highlights() {
   const [committeeFilter, setCommitteeFilter] = useState("all");
   const [actOn, setActOn] = useState(null);  // signal currently being acted on
   const [lensSignal, setLensSignal] = useState(null);  // signal for AllLensesModal
+  const [shareOn, setShareOn] = useState(null);  // signal for ShareModal
 
   // Reset committee filter when switching contexts
   useEffect(() => { setCommitteeFilter("all"); }, [contextId]);
@@ -245,7 +247,7 @@ export default function Highlights() {
                   show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.2, 0.8, 0.2, 1] } },
                 }}
               >
-                <SignalStreamCard signal={s} onLoad={load} onAct={setActOn} onLens={setLensSignal} />
+                <SignalStreamCard signal={s} onLoad={load} onAct={setActOn} onLens={setLensSignal} onShare={setShareOn} />
               </motion.div>
             ))}
           </motion.div>
@@ -264,13 +266,21 @@ export default function Highlights() {
         onClose={() => setLensSignal(null)}
         signal={lensSignal}
       />
+
+      <ShareModal
+        open={!!shareOn}
+        onClose={() => setShareOn(null)}
+        contextId={contextId}
+        itemType="signal"
+        item={shareOn ? { ...shareOn, context_name: activeContext?.name } : null}
+      />
     </AppShell>
   );
 }
 
 /** Thin wrapper that maps a signal to the StreamCard shape + adds a summary row
  *  with inline [doc:xxx] citations and dismiss action. */
-function SignalStreamCard({ signal, onLoad, onAct, onLens }) {
+function SignalStreamCard({ signal, onLoad, onAct, onLens, onShare }) {
   const [confirmingDismiss, setConfirmingDismiss] = useState(false);
   const [traceOpen, setTraceOpen] = useState(false);
   const [traceEvents, setTraceEvents] = useState(null);
@@ -393,6 +403,15 @@ function SignalStreamCard({ signal, onLoad, onAct, onLens }) {
             data-testid={`signal-act-${signal.id}`}
           >
             <Zap className="w-3 h-3" strokeWidth={2} /> Act on this
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onShare?.(signal); }}
+            className="akki-gesture text-[13px]"
+            data-testid={`signal-share-${signal.id}`}
+            title="Share externally — email or AKKI notification"
+          >
+            <Share2 className="w-3 h-3" strokeWidth={2} /> Share
           </button>
         </div>
       </div>

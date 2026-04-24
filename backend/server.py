@@ -44,6 +44,7 @@ from routers import lens as lens_router  # noqa: E402
 from routers import pipeline as pipeline_router  # noqa: E402
 from routers import audit as audit_router  # noqa: E402
 from routers import synisense as synisense_router  # noqa: E402
+from routers import shares as shares_router  # noqa: E402
 
 
 logger = logging.getLogger("akki")
@@ -72,6 +73,7 @@ app.include_router(lens_router.router)
 app.include_router(pipeline_router.router)
 app.include_router(audit_router.router)
 app.include_router(synisense_router.router)
+app.include_router(shares_router.router)
 
 
 # -----------------------------------------------------------------------------
@@ -118,6 +120,9 @@ async def on_startup():
     await db.signals.create_index([("context_id", 1), ("created_at", -1)])
     await db.signals.create_index("id", unique=True)
     await db.ask_messages.create_index([("context_id", 1), ("created_at", -1)])
+    await db.shares.create_index("id", unique=True)
+    await db.shares.create_index([("shared_with_account_id", 1), ("created_at", -1)])
+    await db.shares.create_index([("shared_by_account_id", 1), ("created_at", -1)])
 
     # Backfill: ensure every committee on every context has a stable id.
     async for c in db.contexts.find(

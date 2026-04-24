@@ -1,0 +1,40 @@
+{
+  "summary": "Iter12 — Build Addendum v4.3 §8 (Aggregated Home stream) and §9 (External Share) fully verified. Backend: 14/14 PASS in new /app/backend/tests/test_iter12_shares_home.py covering home-stream shape, auth guard, share lifecycle (self-share 400, missing-signal 404, happy-path create, inbox/outbox, auth-guarded get, opened_at stamping, revoke-only-by-sharer, post-revoke state), share-artefact comment via comments router, and sprint6 /ask shielding regression. Frontend round-trip verified end-to-end: Bramuel logged in → All-boards scope toggle visible (6 contexts) → home-scope-toggle/current/all testids present → All-boards view renders uppercase context badges left of type badge (e.g. 'MAWINGU · RISK'), Highlights has 24 signal-share-<id> buttons, ShareModal renders with all 8 required testids (share-to-email, share-subject, share-message, share-include-quote, share-delivery-method, share-cancel, share-submit, share-modal-close), share submits successfully. Admin→Bramuel share over HTTP produced a populated 'Shared with you' tab on Bramuel's home (home-tab-shared with count=1, section-shared-with-you, shared-with-you-list, 1× shared-card-<id>) with 'SHARED BY AKKI' accent-soft badge + 'From Syni.ai HQ' context chip + 'with a note' indicator — matches spec. Cream/oxblood/Georgia design fidelity preserved.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Home (admin@akki.ai)", "issues": ["Admin account is still in sprint-2 Adaptive-Scaffolding audit-onboarding state, so the entire Home tabs bar (including Shared-with-you) is hidden behind the 'Finish the board-focused audit to unlock your signals' card. Not an iter12 bug — documented as expected per Addendum v4.3 §2 which is out of scope for this sprint — but verification of Shared-with-you had to be done via Admin→Bramuel (Bramuel is past onboarding) instead of Bramuel→Admin."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter12_shares_home.py",
+    "/app/test_reports/pytest/pytest_iter12.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/shares.py is clean — 299 lines, single-purpose, proper pydantic validation, auth via require_context_membership for create and get_current_account for inbox/outbox/get/revoke. Good ownership checks (sharer-only revoke, sharer-or-recipient read, self-share 400, missing-artefact 404).",
+    "routers/shares.py::create_share status logic is a no-op ternary: `'delivered' if recipient_account_id or body.delivery_method == 'email' else 'delivered'` — always 'delivered'. Consider either dropping the conditional or introducing a real 'queued'/'pending' state for email-only deliveries so ops can filter on it later.",
+    "routers/shares.py::aggregated_stream — returns documents=[] intentionally per review note. The frontend correctly shows the empty-state pointing to /app/manage?tab=companies. Good.",
+    "routers/shares.py::aggregated_stream ignores `status` filter on signals (only applied to briefings) — a soft-deleted signal may still surface in All-boards. Consider adding status=='active' to the signals query for consistency with other surfaces (Highlights, Home single-context).",
+    "routers/comments.py — ARTEFACT_COLLECTIONS correctly extended with 'share'; _assert_artefact_exists treats share as source-context-scoped (caller must be member of share.context_id). Good — this stops a recipient commenting on a share in a context they aren't a member of, which matches spec (comments on shares live with the sharer, not the recipient).",
+    "server.py — shares indexes on (shared_with_account_id, created_at DESC) and (shared_by_account_id, created_at DESC) are correctly placed. Consider also indexing (context_id, created_at DESC) for audit-log queries once they arrive.",
+    "Frontend AppHome.jsx — home-tab-shared count badge updates live from the inbox fetch, which is good UX; consider a lightweight poll (or SSE) so the count refreshes without a hard reload when a new share lands.",
+    "ShareModal testids are all present and stable; form validation on empty 'to_email' should probably be client-side guarded too (currently relies on server pydantic EmailStr). Minor polish."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter12_shares_home.py (new)",
+    "/app/test_reports/pytest/pytest_iter12.xml (pytest JUnit)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 iter12 tests PASS — home stream shape+auth, share lifecycle incl. 400 self / 404 missing / create / inbox / outbox / auth / opened_at / revoke / post-revoke view, share-comment via comments router, sprint6 shielding regression)",
+    "frontend": "100% on reviewed surfaces — all 11 required testids present (home-scope-toggle / -current / -all, home-tab-shared, section-shared-with-you, shared-with-you-list, shared-card-<id>, signal-share-<id>, briefing-share-btn verified in source, share-modal + 8 modal testids). 'SHARED BY AKKI' accent-soft badge renders on recipient card. Zero console errors during the full happy-path."
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (sharer, 6 contexts), admin@akki.ai / AkkiAdmin2026! (AKKI-user recipient). Seeded by scripts/seed_bramuel.py + server.py startup admin-seed.",
+  "seed_data_creation": "Round-trip test created 2 TEST_-prefixed shares (one bramuel→admin via UI submit, one admin→bramuel via direct API). Both were revoked in the test's finally block (revoke via DELETE /api/shares/{id}). One TEST_signal_for_bramuel_share was created in admin's Syni.ai HQ context — not cleaned up (no signal-delete API) but is harmless seed noise confined to admin's context.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && python -m pytest tests/test_iter12_shares_home.py -v. All 14 should pass in ~12s (no LLM calls except the shielding regression which self-skips on 502). The test loads BASE_URL from /app/frontend/.env via python-dotenv. Cleanup fixture revokes any TEST_-prefixed outbox shares in a module-scope finally. If you see stale TEST_ shares lingering, run: db.shares.update_many({'subject': {'$regex': '^TEST_'}}, {'$set': {'revoked_at': iso(now()), 'status': 'revoked'}}). Frontend tabs don't render for admin because admin is in adaptive-scaffolding onboarding (out of scope for iter12) — verify shared-with-you on Bramuel instead.",
+  "rca of the issue": "No outstanding issues. All 16 review items verified end-to-end. Two minor code-quality nits (no-op status ternary, missing status-active filter on aggregated signals query) documented in critical_code_review_comments — neither is a blocker."
+}

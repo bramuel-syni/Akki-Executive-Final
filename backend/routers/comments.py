@@ -27,6 +27,7 @@ ARTEFACT_COLLECTIONS = {
     "briefing":   "briefings",
     "document":   "documents",
     "simulation": "simulations",
+    "share":      "shares",
 }
 
 MENTION_RE = re.compile(r"@([A-Za-z0-9_.\-@]+)")
@@ -60,6 +61,13 @@ async def _assert_artefact_exists(
     elif artefact_type == "briefing":
         ok = await db.briefings.find_one(
             {"id": artefact_id, "context_id": context_id, "status": "active"}, {"_id": 0, "id": 1}
+        )
+    elif artefact_type == "share":
+        # Shares are cross-context artefacts — we still require the caller is a
+        # member of the share's *source* context_id (standard membership dep).
+        ok = await db.shares.find_one(
+            {"id": artefact_id, "context_id": context_id, "revoked_at": None},
+            {"_id": 0, "id": 1},
         )
     else:  # signal
         ok = await db.signals.find_one(

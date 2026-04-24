@@ -8,8 +8,9 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   ArrowRight, FileText, Sparkles, ScrollText, Landmark, Briefcase,
-  Layers,
+  Layers, Globe, Mail,
 } from "lucide-react";
+import ShareModal from "@/components/share/ShareModal";
 
 const CONFIDENCE_LABEL = { high: "High confidence", medium: "Medium confidence", low: "Low confidence" };
 
@@ -23,32 +24,57 @@ const HOME_TABS = [
   { key: "signals",   label: "Top signals",    icon: Sparkles,   viewAllTo: "/app/highlights" },
   { key: "briefings", label: "Top briefings",  icon: ScrollText, viewAllTo: "/app/briefings" },
   { key: "documents", label: "New documents",  icon: FileText,   viewAllTo: "/app/workspace" },
+  { key: "shared",    label: "Shared with you", icon: Mail,      viewAllTo: null },
 ];
 
 export default function AppHome() {
   const { account, activeContext, activeRole, contexts } = useAuth();
   const contextId = activeContext?.id;
+  const [scope, setScope] = useState("current"); // "current" | "all"
   const [signals, setSignals] = useState([]);
   const [briefings, setBriefings] = useState([]);
   const [documents, setDocuments] = useState([]);
+  const [shared, setShared] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("signals");
+  const [shareOn, setShareOn] = useState(null);  // signal currently being shared
+
+  const hasMultipleContexts = (contexts?.length || 0) >= 2;
 
   const load = useCallback(async () => {
-    if (!contextId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const [s, b, d] = await Promise.all([
-        api.get(`/contexts/${contextId}/signals`),
-        api.get(`/contexts/${contextId}/briefings`),
-        api.get(`/contexts/${contextId}/documents`),
-      ]);
-      setSignals(s.data || []);
-      setBriefings(b.data || []);
-      setDocuments(d.data || []);
+      // Shared inbox is always loaded (cross-context)
+      const sharedPromise = api.get(`/me/shares/inbox?limit=30`).catch(() => ({ data: [] }));
+
+      if (scope === "all" && hasMultipleContexts) {
+        const [agg, sh] = await Promise.all([
+          api.get(`/me/home/stream?limit=20`),
+          sharedPromise,
+        ]);
+        setSignals(agg.data?.signals || []);
+        setBriefings(agg.data?.briefings || []);
+        setDocuments([]); // documents are intentionally scoped to one context
+        setShared(sh.data || []);
+      } else if (contextId) {
+        const [s, b, d, sh] = await Promise.all([
+          api.get(`/contexts/${contextId}/signals`),
+          api.get(`/contexts/${contextId}/briefings`),
+          api.get(`/contexts/${contextId}/documents`),
+          sharedPromise,
+        ]);
+        setSignals(s.data || []);
+        setBriefings(b.data || []);
+        setDocuments(d.data || []);
+        setShared(sh.data || []);
+      } else {
+        setSignals([]); setBriefings([]); setDocuments([]);
+        const sh = await sharedPromise;
+        setShared(sh.data || []);
+      }
     } catch { /* silent — empty sections render */ }
     finally { setLoading(false); }
-  }, [contextId]);
+  }, [contextId, scope, hasMultipleContexts]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -128,14 +154,16 @@ export default function AppHome() {
           </div>
 
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden" data-testid="home-sections">
-            {/* Tab strip — next to each other per user's ask */}
-            <div className="shrink-0 flex items-center border-b border-[var(--rule)] mb-5">
+            {/* Tab strip with a quiet scope toggle on the right.
+                The 'All boards' toggle only appears when the user has 2+ contexts. */}
+            <div className="shrink-0 flex items-center border-b border-[var(--rule)] mb-5 gap-4">
               <div className="flex items-center gap-0" data-testid="home-tabs">
                 {HOME_TABS.map((t) => {
                   const Icon = t.icon;
                   const active = activeTab === t.key;
                   const count = t.key === "signals" ? signals.length
                               : t.key === "briefings" ? briefings.length
+                              : t.key === "shared" ? shared.length
                               : documents.length;
                   return (
                     <button
@@ -160,6 +188,38 @@ export default function AppHome() {
                   );
                 })}
               </div>
+
+              {hasMultipleContexts && activeTab !== "shared" && (
+                <div
+                  className="ml-auto inline-flex items-center rounded-sm border border-[var(--rule)] bg-white p-[3px] shrink-0"
+                  data-testid="home-scope-toggle"
+                >
+                  <button
+                    onClick={() => setScope("current")}
+                    className={`px-2.5 py-1 text-[11.5px] uppercase tracking-wider rounded-[3px] transition-colors ${
+                      scope === "current"
+                        ? "bg-[var(--cream-deep)] text-[var(--ink)]"
+                        : "text-[var(--muted)] hover:text-[var(--ink)]"
+                    }`}
+                    data-testid="home-scope-current"
+                    title={`Show only ${activeContext?.name || "this context"}`}
+                  >
+                    This context
+                  </button>
+                  <button
+                    onClick={() => setScope("all")}
+                    className={`px-2.5 py-1 text-[11.5px] uppercase tracking-wider rounded-[3px] inline-flex items-center gap-1 transition-colors ${
+                      scope === "all"
+                        ? "bg-[var(--accent)] text-white"
+                        : "text-[var(--muted)] hover:text-[var(--ink)]"
+                    }`}
+                    data-testid="home-scope-all"
+                    title="Aggregate across every board and context you're a member of"
+                  >
+                    <Globe className="w-3 h-3" strokeWidth={2} /> All boards
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Scrolling panel — only one active stream visible */}
@@ -169,11 +229,14 @@ export default function AppHome() {
                 const hasItems =
                   (activeTab === "signals"   && topSignals.length > 0) ||
                   (activeTab === "briefings" && topBriefings.length > 0) ||
-                  (activeTab === "documents" && newDocs.length > 0);
+                  (activeTab === "documents" && newDocs.length > 0) ||
+                  (activeTab === "shared"    && shared.length > 0);
                 const totalCount =
                   activeTab === "signals"   ? signals.length
                   : activeTab === "briefings" ? briefings.length
+                  : activeTab === "shared"    ? shared.length
                   : documents.length;
+                const aggregated = scope === "all" && hasMultipleContexts;
                 return (
                   <>
                     {activeTab === "signals" && (
@@ -183,7 +246,9 @@ export default function AppHome() {
                         ) : topSignals.length === 0 ? (
                           <EmptySlot
                             icon={Sparkles}
-                            copy="Upload a pack to let AKKI surface risks, opportunities, and gaps."
+                            copy={aggregated
+                              ? "No signals across any of your boards yet."
+                              : "Upload a pack to let AKKI surface risks, opportunities, and gaps."}
                             cta={{ label: "Upload pack", to: "/app/workspace" }}
                           />
                         ) : (
@@ -207,12 +272,20 @@ export default function AppHome() {
                                   type={s.type}
                                   lead={s.headline}
                                   timestamp={s.created_at}
+                                  source={aggregated && s.context_name ? {
+                                    label: s.context_name.split(" ")[0].toUpperCase().slice(0, 12),
+                                    title: s.context_name,
+                                    tone: "context",
+                                  } : null}
                                   chips={[
                                     { label: CONFIDENCE_LABEL[s.confidence] || "Medium confidence" },
                                     { label: (s.data_trust || "unrated") + " data" },
                                   ]}
                                   to="/app/highlights"
                                   gesture={{ label: "Open signal", to: "/app/highlights" }}
+                                  secondary={[
+                                    { label: "Share →", onClick: () => setShareOn(s) },
+                                  ]}
                                   data-testid={`home-signal-${s.id}`}
                                 />
                               </motion.div>
@@ -242,6 +315,11 @@ export default function AppHome() {
                                 type="briefing"
                                 lead={b.title}
                                 timestamp={b.created_at}
+                                source={aggregated && b.context_name ? {
+                                  label: b.context_name.split(" ")[0].toUpperCase().slice(0, 12),
+                                  title: b.context_name,
+                                  tone: "context",
+                                } : null}
                                 chips={[
                                   { label: `v${b.version}` },
                                   { label: `${b.items?.length || 0} items` },
@@ -261,8 +339,12 @@ export default function AppHome() {
                         {loading ? null : newDocs.length === 0 ? (
                           <EmptySlot
                             icon={FileText}
-                            copy="Drop a board pack, minute, or report in Workspace to get started."
-                            cta={{ label: "Open Workspace", to: "/app/workspace" }}
+                            copy={aggregated
+                              ? "Switch to a single context to browse its documents."
+                              : "Drop a board pack, minute, or report in Workspace to get started."}
+                            cta={aggregated
+                              ? { label: "Choose a context", to: "/app/manage?tab=companies" }
+                              : { label: "Open Workspace", to: "/app/workspace" }}
                           />
                         ) : (
                           <div className="space-y-3">
@@ -286,12 +368,48 @@ export default function AppHome() {
                       </section>
                     )}
 
+                    {activeTab === "shared" && (
+                      <section data-testid="section-shared-with-you">
+                        {loading ? null : shared.length === 0 ? (
+                          <EmptySlot
+                            icon={Mail}
+                            copy="Nothing shared with you yet. When a colleague shares a signal or briefing, it lands here."
+                            cta={null}
+                          />
+                        ) : (
+                          <div className="space-y-3" data-testid="shared-with-you-list">
+                            {shared.map((sh) => (
+                              <StreamCard
+                                key={sh.id}
+                                type={sh.item_type === "briefing" ? "briefing" : "signal"}
+                                lead={sh.item_preview || sh.subject || "(no preview)"}
+                                timestamp={sh.created_at}
+                                source={{
+                                  label: `SHARED BY ${(sh.shared_by_name || sh.shared_by_email || "someone").split(" ")[0].toUpperCase()}`,
+                                  title: sh.shared_by_email,
+                                  tone: "share",
+                                }}
+                                chips={[
+                                  { label: `From ${sh.context_name || "a context"}` },
+                                  ...(sh.message ? [{ label: "with a note" }] : []),
+                                ]}
+                                to={sh.item_type === "briefing" ? "/app/briefings" : "/app/highlights"}
+                                gesture={{ label: "Look at this", to: sh.item_type === "briefing" ? "/app/briefings" : "/app/highlights" }}
+                                data-testid={`shared-card-${sh.id}`}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </section>
+                    )}
+
                     {/* Footer "View all" — appears AFTER the cards, inside the scroll box */}
-                    {hasItems && currentTab && (
+                    {hasItems && currentTab && currentTab.viewAllTo && (
                       <div className="pt-6 mt-6 border-t border-[var(--rule)] flex items-center justify-between">
                         <span className="text-[12px] text-[var(--muted)]">
                           Showing {activeTab === "signals" ? topSignals.length
                                   : activeTab === "briefings" ? topBriefings.length
+                                  : activeTab === "shared" ? shared.length
                                   : newDocs.length} of {totalCount}
                         </span>
                         <Link
@@ -345,6 +463,14 @@ export default function AppHome() {
           </div>
         </aside>
       </div>
+
+      <ShareModal
+        open={!!shareOn}
+        onClose={() => setShareOn(null)}
+        contextId={shareOn?.context_id || contextId}
+        itemType="signal"
+        item={shareOn ? { ...shareOn, context_name: shareOn.context_name || activeContext?.name } : null}
+      />
     </AppShell>
   );
 }
