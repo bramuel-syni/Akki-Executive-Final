@@ -440,10 +440,15 @@ try:
         # Default context_type for sandbox contexts created from these templates
         _t.setdefault("context_type", "executive_enterprise")
         TEMPLATES[_tid] = _t
-except Exception:  # pragma: no cover
-    # Fallback: Phase 2 templates are a "nice to have" — if import fails,
-    # sector-specific sandboxes fall through to the generic template.
-    pass
+except Exception as _tpl_err:  # pragma: no cover
+    # Fallback: Phase 2 templates are a "nice to have" — if the import fails,
+    # sector-specific sandboxes fall through to the generic template. We log
+    # the exception so a syntax error in sandbox_templates.py doesn't silently
+    # degrade the sandbox experience.
+    import logging as _l
+    _l.getLogger("akki.sandbox").warning(
+        f"sandbox_templates import failed, falling back to generic only: {_tpl_err!r}"
+    )
 
 
 def pick_template(sector: str) -> Dict[str, Any]:

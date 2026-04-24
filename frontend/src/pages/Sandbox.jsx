@@ -50,7 +50,7 @@ const ROLES = [
 export default function Sandbox() {
   const navigate = useNavigate();
   const [companyName, setCompanyName] = useState("");
-  const [sector, setSector] = useState("");
+  const [sector, setSector] = useState("financial_services");
   const [role, setRole] = useState("");
   const [region, setRegion] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -128,7 +128,7 @@ export default function Sandbox() {
                 >
                   <SelectValue placeholder="Choose the sector closest to your work" />
                 </SelectTrigger>
-                <SelectContent position="popper" side="bottom" align="start" sideOffset={4}>
+                <SelectContent className="max-h-[360px]">
                   {SECTORS.map((s) => (
                     <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                   ))}
@@ -175,7 +175,7 @@ export default function Sandbox() {
                 >
                   <SelectValue placeholder="Pick a region" />
                 </SelectTrigger>
-                <SelectContent position="popper" side="bottom" align="start" sideOffset={4}>
+                <SelectContent className="max-h-[400px]">
                   {REGIONS.map((r) => (
                     <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
                   ))}

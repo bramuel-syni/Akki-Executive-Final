@@ -228,10 +228,12 @@ class TestTemplatesMeta:
         assert r.status_code == 200
         arr = r.json()
         by_sector = {x["sector"]: x for x in arr}
+        # Phase 1 polished template stayed the same
         assert by_sector["financial_services"]["template_id"] == "banking_midcap"
         assert by_sector["financial_services"]["is_polished"] is True
-        assert by_sector["saas"]["template_id"] == "generic_diversified"
-        assert by_sector["saas"]["is_polished"] is False
+        # Phase 2 added 'other' as the only non-polished sector
+        assert by_sector["other"]["template_id"] == "generic_diversified"
+        assert by_sector["other"]["is_polished"] is False
 
 
 # ---------- Cookie-auth regression ----------

@@ -143,6 +143,36 @@ restructure.
 ## Recent fixes
 ## Recent fixes
 ## Recent fixes
+## Recent fixes
+- **2026-04-24 Sprint 11** — Addendum v4.3 §1 Phase 2 — Sandbox sprint complete.
+  - **6 polished sector templates** (`sandbox_templates.py`): SaaS/tech,
+    logistics, healthcare, manufacturing, retail, real estate. Each ships
+    3 committees / 2–3 docs / 4–6 sector-specific signals / 1 composed
+    briefing, all parameterised over `{company_name}/{currency}/{regulator}`.
+    Only "Other" still falls through to `generic_diversified`.
+  - **Sandbox → account conversion** (`POST /api/sandbox/convert`): rewrites
+    the disposable account email/password/name, strips `is_sandbox`, flips
+    sandbox contexts to `executive_personal` or `ned_personal`, drops expiry
+    metadata, sets real cookies. `keep_sandbox=false` deletes the explored
+    environment entirely. `PublicOnlyRoute allowSandbox` lets the sandbox
+    user reach /signup to convert; regular authed users still redirect.
+  - **SignUp.jsx** detects `?from_sandbox=<cid>` + `account.is_sandbox` and
+    renders a distinct editorial conversion UX: "Keep exploring — for real."
+    heading, "Keep my sandbox as a working context" checkbox with the
+    sandbox's name surfaced, "Finish setup" CTA.
+  - **Mid-exploration email capture** (`POST /contexts/{cid}/capture-email`
+    + `SandboxEmailCapture.jsx`): bottom-right modal surfaces after 3 min
+    of sandbox browsing (localStorage-guarded, once per device). Stores
+    email on `sandbox_metadata.prospect_email` and queues a
+    `sandbox_pickups` record for a +24h drip (SMTP ships with §6 Email-in).
+  - **Dropdown fix**: `Financial services` now pre-selected on /sandbox so
+    Radix's item-aligned Select positions the polished template adjacent to
+    the trigger with every other sector naturally visible below.
+  - **iteration_14**: 15/15 new backend tests PASS + 26/26 regression PASS.
+    47 test-generated sandboxes swept. iteration_14 code-review nits
+    addressed (dropdown, `is_sandbox` on sanitize_account, stale Phase 1
+    assertion, template-import WARNING log).
+
 - **2026-04-24 Sprint 10** — Addendum v4.3 §1 Phase 1: Sandbox pre-auth evaluation.
   - New `/sandbox` route: 4-question editorial intake (company name,
     sector, role, region). No sign-up required up front. Primary hero CTA
