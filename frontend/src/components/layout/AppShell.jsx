@@ -9,7 +9,7 @@ import {
   Home, FileText, Sparkles, GraduationCap,
   Settings, LogOut, ChevronDown, Layers, CheckCircle2, Lock,
   Briefcase, Landmark, Search, ScrollText, Target, Eye, Plus, BookOpenCheck,
-  Users, Building2,
+  Users, Building2, ShieldCheck,
 } from "lucide-react";
 import SandboxBanner from "@/components/sandbox/SandboxBanner";
 import SandboxEmailCapture from "@/components/sandbox/SandboxEmailCapture";
@@ -469,7 +469,7 @@ export default function AppShell({ children }) {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 min-w-0">
+        <main className="flex-1 min-w-0 flex flex-col min-h-[calc(100vh-4rem)]">
           {mfaOwnerNudge && (
             <div
               className="flex items-center justify-between px-8 py-2.5 bg-amber-50/70 border-b border-amber-200 text-amber-900 text-xs"
@@ -495,9 +495,20 @@ export default function AppShell({ children }) {
             >
               <span className="akki-overline">Heads up</span>
               <span className="text-slate-600">
-                You're acting as <strong>{activeRole}</strong> but the current context is for <strong>{activeContext.my_role}</strong>.
-                Switch to a matching context from the palette (⌘K) or role-switch again to auto-route.
+                You're acting as <strong>{activeRole}</strong> but <strong>{activeContext.name}</strong> is a <strong>{activeContext.my_role === "ned" ? "NED" : "Executive"}</strong> context.
               </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = activeContext.my_role;
+                  switchRole(target);
+                  toast.success(`Now acting as ${target === "ned" ? "NED" : "Executive"} on ${activeContext.name}.`);
+                }}
+                className="ml-auto inline-flex items-center gap-1.5 px-3 py-1 text-[11.5px] font-medium bg-[var(--chrome)] text-white hover:bg-[var(--chrome)]/90 rounded-sm transition-colors"
+                data-testid="role-mismatch-fix-btn"
+              >
+                Act as {activeContext.my_role === "ned" ? "NED" : "Executive"}
+              </button>
             </div>
           )}
           {isSponsored && (
@@ -510,6 +521,28 @@ export default function AppShell({ children }) {
             </div>
           )}
           {children}
+
+          {/* Trust footer — low-weight, persistent line that reinforces
+              AKKI's data posture on every page. Editorial mono, muted tone,
+              reads like a masthead colophon rather than marketing copy. */}
+          <footer
+            className="border-t border-[var(--rule)] bg-[var(--cream-deep)]/60 px-8 py-3 mt-auto flex flex-wrap items-center gap-x-5 gap-y-1 text-[10.5px] text-[var(--muted)] font-mono uppercase tracking-wider"
+            data-testid="trust-footer"
+          >
+            <span className="inline-flex items-center gap-1.5 text-[var(--deep)]">
+              <ShieldCheck className="w-3 h-3 text-[var(--chrome)]" strokeWidth={2} />
+              Synisense-shielded
+            </span>
+            <span>· Your context never leaves this account</span>
+            <span className="hidden md:inline">· Every signal cites its source</span>
+            <Link
+              to="/app/settings?tab=trust"
+              className="ml-auto hover:text-[var(--ink)] transition-colors"
+              data-testid="trust-footer-link"
+            >
+              Trust centre →
+            </Link>
+          </footer>
         </main>
       </div>
 

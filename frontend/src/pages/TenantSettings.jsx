@@ -20,7 +20,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   UserPlus, Trash2, Download, AlertTriangle, X, Copy, History, Users,
   UserCog, ArchiveX, Mail, Clock, CreditCard, Plug, ShieldCheck, Lock,
@@ -81,8 +81,16 @@ function ContextTypeBadge({ type }) {
 export default function Settings() {
   const { account, activeContext, contexts, switchContext, refreshContexts, bootstrap } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const contextId = activeContext?.id;
   const isAdmin = activeContext?.my_sub_role === "admin";
+
+  // Tab deep-link: accept either ?tab=privacy or ?tab=trust (alias from the
+  // global trust footer) — they render the same surface. Falls back to 'account'.
+  const tabParam = (searchParams.get("tab") || "").toLowerCase();
+  const defaultTab = tabParam === "trust" ? "privacy" :
+    (tabParam && ["account", "contexts", "context", "members", "audit", "privacy", "danger"].includes(tabParam))
+      ? tabParam : "account";
 
   // Account editing
   const [accountName, setAccountName] = useState(account?.name || "");
@@ -259,7 +267,7 @@ export default function Settings() {
           </p>
         </div>
 
-        <Tabs defaultValue="account" className="w-full">
+        <Tabs defaultValue={defaultTab} className="w-full">
           <TabsList className="bg-transparent border-b border-[#E1E6ED] w-full justify-start h-auto p-0 rounded-none mb-8 overflow-x-auto">
             {[
               ["account", "Account", UserCircle2],
@@ -267,7 +275,7 @@ export default function Settings() {
               ["context", "This context", UserCog],
               ["members", "Members", Users],
               ["audit", "Audit log", History],
-              ["privacy", "Privacy", ShieldCheck],
+              ["privacy", "Trust", ShieldCheck],
               ["billing", "Billing", CreditCard, "M4"],
               ["integrations", "Integrations", Plug, "M6"],
               ["danger", "Danger", AlertTriangle],
@@ -763,8 +771,54 @@ export default function Settings() {
             </section>
           </TabsContent>
 
-          {/* PRIVACY */}
+          {/* PRIVACY / TRUST — deep-linked via ?tab=trust from the global
+              footer. Presents AKKI's data posture as four concrete promises
+              the user can verify, above the existing Synisense + consent
+              sections. */}
           <TabsContent value="privacy" className="space-y-6">
+            <section className="bg-white border border-[#E1E6ED] rounded-sm" data-testid="trust-centre">
+              <div className="px-6 py-4 border-b border-[#E1E6ED]">
+                <p className="text-sm font-medium text-[var(--ink)] flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-[var(--chrome)]" /> Trust centre
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Four promises AKKI keeps. Each is enforced in code, not marketing.
+                </p>
+              </div>
+              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 text-sm text-slate-700">
+                <div>
+                  <p className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--chrome)] font-bold mb-2">01 · Residency</p>
+                  <p className="akki-serif text-[15px] text-[var(--ink)] mb-1.5">Your context never leaves this account.</p>
+                  <p className="text-[12.5px] text-slate-600 leading-relaxed">
+                    Documents, signals, briefings, and lens outputs are scoped to your active context and visible
+                    only to its members. No cross-tenant leakage by construction — enforced at query time.
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--chrome)] font-bold mb-2">02 · Shielding</p>
+                  <p className="akki-serif text-[15px] text-[var(--ink)] mb-1.5">Identities are masked before any LLM call.</p>
+                  <p className="text-[12.5px] text-slate-600 leading-relaxed">
+                    Synisense rewrites names, emails, and identifiers to opaque tokens before the prompt leaves
+                    the server. Every response surfaces a <code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded-sm">shielding</code> receipt.
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--chrome)] font-bold mb-2">03 · Provenance</p>
+                  <p className="akki-serif text-[15px] text-[var(--ink)] mb-1.5">Every signal cites the exact page it came from.</p>
+                  <p className="text-[12.5px] text-slate-600 leading-relaxed">
+                    Briefings ship with a Receipts slide; lens runs expose Observation → Implication → Action; Ask answers carry <code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded-sm">[doc:xxx]</code> citations. Nothing gets asserted without a source.
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--chrome)] font-bold mb-2">04 · Control</p>
+                  <p className="akki-serif text-[15px] text-[var(--ink)] mb-1.5">You can export or delete everything, any time.</p>
+                  <p className="text-[12.5px] text-slate-600 leading-relaxed">
+                    The Audit log tab shows every action taken on this context. The Danger tab exports the full context as JSON or archives it. Sandbox data is hard-deleted on day 22 automatically.
+                  </p>
+                </div>
+              </div>
+            </section>
+
             <section className="bg-white border border-[#E1E6ED] rounded-sm">
               <div className="px-6 py-4 border-b border-[#E1E6ED]">
                 <p className="text-sm font-medium text-[var(--ink)] flex items-center gap-2">

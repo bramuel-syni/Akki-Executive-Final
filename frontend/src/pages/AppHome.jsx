@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   ArrowRight, FileText, Sparkles, ScrollText, Landmark, Briefcase,
-  Layers, Globe, Mail,
+  Layers, Globe, Mail, Clock,
 } from "lucide-react";
 import ShareModal from "@/components/share/ShareModal";
 import SandboxPackDrop from "@/components/sandbox/SandboxPackDrop";
@@ -249,13 +249,15 @@ export default function AppHome() {
                         {loading ? (
                           <div className="h-24 flex items-center text-[12px] uppercase tracking-widest text-[var(--muted)]">Loading…</div>
                         ) : topSignals.length === 0 ? (
-                          <EmptySlot
-                            icon={Sparkles}
-                            copy={aggregated
-                              ? "No signals across any of your boards yet."
-                              : "Upload a pack to let AKKI surface risks, opportunities, and gaps."}
-                            cta={{ label: "Upload pack", to: "/app/workspace" }}
-                          />
+                          aggregated ? (
+                            <EmptySlot
+                              icon={Sparkles}
+                              copy="No signals across any of your boards yet."
+                              cta={{ label: "Upload pack", to: "/app/workspace" }}
+                            />
+                          ) : (
+                            <NextBestActionCard />
+                          )
                         ) : (
                           <motion.div
                             className="space-y-3"
@@ -495,5 +497,53 @@ function EmptySlot({ icon: Icon, copy, cta }) {
         </Link>
       )}
     </div>
+  );
+}
+
+/**
+ * NextBestActionCard — first-time-account hero. Surfaces the single most
+ * valuable action a new user can take (upload a pack, AKKI drafts signals in
+ * ~40s) in an editorial-grade card rather than a humble EmptySlot. Addresses
+ * the "no clear first step" gap on the real-account home.
+ */
+function NextBestActionCard() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45 }}
+      className="bg-gradient-to-br from-white to-[var(--cream-deep)] border border-[var(--accent)]/15 rounded-lg p-8 relative overflow-hidden"
+      data-testid="home-nba-card"
+    >
+      <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[var(--accent)]" />
+      <p className="akki-overline mb-3 flex items-center gap-2">
+        <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Your next best action
+      </p>
+      <h3 className="akki-serif text-[24px] font-normal text-[var(--ink)] leading-snug mb-3 max-w-2xl">
+        Upload your last board pack. AKKI will surface risks, opportunities, and gaps in about forty seconds.
+      </h3>
+      <p className="text-[13.5px] text-[var(--deep)] leading-relaxed max-w-2xl mb-6">
+        Every signal cites the exact page it came from. Nothing leaves your context without a receipt.
+      </p>
+      <div className="flex items-center gap-3 flex-wrap">
+        <Link
+          to="/app/workspace"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-[var(--chrome)] hover:bg-[var(--chrome)]/90 text-white text-[13.5px] font-medium rounded-md transition-colors"
+          data-testid="home-nba-upload"
+        >
+          <FileText className="w-3.5 h-3.5" strokeWidth={1.8} /> Upload a pack
+        </Link>
+        <Link
+          to="/app/highlights"
+          className="inline-flex items-center gap-2 px-4 py-2.5 border border-[var(--rule)] hover:border-[var(--accent)]/40 bg-white text-[13.5px] rounded-md text-[var(--deep)] hover:text-[var(--ink)] transition-colors"
+          data-testid="home-nba-generate"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} /> Or generate without uploading
+        </Link>
+      </div>
+      <p className="text-[11.5px] text-[var(--muted)] mt-5 flex items-center gap-2">
+        <Clock className="w-3 h-3" /> PDF, DOCX, or TXT · up to 20MB · stays in this context
+      </p>
+    </motion.div>
   );
 }

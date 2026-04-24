@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import CommentThread from "@/components/collab/CommentThread";
 import CompositionStrip from "@/components/trace/CompositionStrip";
+import { useAIStageTicker } from "@/hooks/useAIStageTicker";
 import {
   Eye, Loader2, Trash2, HelpCircle, Sparkles,
   Scale, UsersRound, TrendingUp, Brain, Globe2, Network,
@@ -129,6 +130,22 @@ export default function LensRoom() {
   const [subject, setSubject] = useState("");
   const [committeeId, setCommitteeId] = useState("all");
   const [running, setRunning] = useState(false);
+
+  // Per-lens narrative during the run — gives the UI an "AI thinking" voice
+  // instead of a lonely spinner. Drawn from the lens catalogue to fit the
+  // framework the user selected.
+  const stageScript = useMemo(() => {
+    const activeLensObj = catalog.find((l) => l.id === lens);
+    const framework = activeLensObj?.name || "the framework";
+    return [
+      { at: 0, text: `Reading the subject against ${framework}…` },
+      { at: 5500, text: "Pulling the relevant evidence from your documents…" },
+      { at: 13000, text: "Drafting Observation → Implication → Action…" },
+      { at: 24000, text: "Landing the single question for management…" },
+      { at: 40000, text: "Still thinking — deep subjects take a moment longer…" },
+    ];
+  }, [catalog, lens]);
+  const runStage = useAIStageTicker(running, stageScript);
 
   const load = useCallback(async () => {
     if (!contextId) return;
@@ -301,9 +318,17 @@ export default function LensRoom() {
         <main className="overflow-y-auto bg-[var(--cream)]" data-testid="lens-detail">
           <div className="max-w-3xl mx-auto px-8 py-10">
             {running && !selected ? (
-              <div className="bg-white border border-[var(--rule)] rounded-md p-16 text-center">
+              <div className="bg-white border border-[var(--rule)] rounded-md p-16 text-center" data-testid="lens-running">
                 <Loader2 className="w-8 h-8 animate-spin text-[var(--accent)] mx-auto mb-4" />
-                <p className="akki-lead mb-1">Applying {activeLens?.name || "the lens"}…</p>
+                <p className="akki-lead mb-2">Applying {activeLens?.name || "the lens"}…</p>
+                {runStage && (
+                  <p className="text-[13px] text-[var(--deep)] italic max-w-md mx-auto" data-testid="lens-run-stage">
+                    {runStage}
+                  </p>
+                )}
+                <p className="text-[10.5px] uppercase tracking-widest text-[var(--muted)] mt-5">
+                  Usually 20–60s
+                </p>
               </div>
             ) : selected ? (
               <RunViewer run={selected} onArchive={onArchive} />
