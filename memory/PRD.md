@@ -139,6 +139,33 @@ restructure.
 - [ ] **ClamAV / VirusTotal** — real virus scan (we use a stub).
 
 ## Recent fixes
+## Recent fixes
+- **2026-04-24 Sprint 7** — Executive-ready board deck + housekeeping + visual life.
+  - **Board deck PDF** (new `render_board_deck_pdf` in `briefings_service.py`):
+    landscape A4, one signal per slide — cover, executive summary, per-item
+    slides (headline + evidence + sharpest question + source chips), optional
+    closing slide, final "Receipts" sources slide. Oxblood/Cream palette +
+    serif/sans split. Exposed as `GET /export?fmt=board_deck`. Briefings page
+    gets a new oxblood "Board deck" pill left of PDF/DOCX.
+  - **Housekeeping sidebar** — two new nav items below Learn: "Manage my team"
+    and "Manage my companies", both deep-linking to `/app/manage?tab=…`.
+    Sidebar items now slide in with a staggered framer-motion entrance.
+  - **`/app/manage` page** (new `Manage.jsx`) — 2-tab surface:
+      · **Team** — invite / revoke invitation / remove member scoped to the
+        active context. Admin-only write actions. Link out to full settings.
+      · **Companies** — grid of all user contexts with hover-lift motion,
+        quick "Switch & open" action, non-destructive "Archive" confirm,
+        and a top-right "Add company" pill.
+  - **Motion pass** — framer-motion installed. AppHome top-signals + Highlights
+    signals grid + Manage members/companies now enter with stagger animation;
+    Manage tab indicator uses `layoutId` for spring-animated underline.
+  - **Highlights stats strip** (`HighlightsStats.jsx`) — pure-SVG confidence
+    donut + 14-day sparkline in oxblood tones. Sits above the committee
+    filter so the reader sees shape → scope → cards. Zero chart-lib
+    dependency.
+  - **Testing** — iteration_10: 5/5 new backend tests PASS, frontend 100% on
+    all new surfaces, zero console errors.
+
 - **2026-04-24 Sprint 6** — Shielding payload regression fixed + server.py refactor completed.
   - **Shielding fix**: every LLM-backed endpoint now returns a top-level
     `shielding: {identifiers_masked, by_category, shielded_by}` dict alongside
