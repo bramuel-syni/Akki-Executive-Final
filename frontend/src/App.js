@@ -22,6 +22,7 @@ import NewContext from "@/pages/NewWorkspace";
 import ContextPortfolio from "@/pages/ContextPortfolio";
 import Simulate from "@/pages/Simulate";
 import LensRoom from "@/pages/LensRoom";
+import Manage from "@/pages/Manage";
 
 function PublicOnlyRoute({ children }) {
   const { account } = useAuth();
@@ -52,6 +53,7 @@ function App() {
           <Route path="/app/lens" element={<ProtectedRoute><LensRoom /></ProtectedRoute>} />
           <Route path="/app/learn" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
           <Route path="/app/learn/:id" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
+          <Route path="/app/manage" element={<ProtectedRoute><Manage /></ProtectedRoute>} />
           <Route path="/app/documents/:id" element={<ProtectedRoute><DocumentViewer /></ProtectedRoute>} />
           <Route path="/app/contexts" element={<ProtectedRoute><ContextPortfolio /></ProtectedRoute>} />
           <Route path="/app/contexts/new" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />

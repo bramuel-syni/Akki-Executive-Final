@@ -1,0 +1,38 @@
+{
+  "summary": "Iter10 — both surfaces verified. Backend: 5/5 PASS in new test_iter10_board_deck.py (board_deck PDF is valid %PDF + >2KB, fmt=pdf + fmt=docx backwards-compat, fmt=xyz → 400, /ask top-level shielding dict still present). Frontend: login via /signin, sidebar Housekeeping label + both new nav items render (nav-manage-my-team / nav-manage-my-companies), /app/manage loads with both tabs and all required testids (invite email/role/submit, members, company grid w/ 6 cards + opens + archives, add-company), archive confirmation dialog opens and cancels non-destructively, /app/highlights shows highlights-stats + highlights-donut + highlights-sparkline (24 signals in Tuli context), /app/briefings has the new oxblood 'Board deck' pill with correct ?fmt=board_deck href and sits LEFT of PDF (deck.x=1244 < pdf.x=1355). Zero console/page errors across Home, Highlights, Manage, Briefings — framer-motion renders cleanly. Cream/Oxblood/Georgia editorial palette is intact on every tested screen.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter10_board_deck.py",
+    "/app/test_reports/pytest/pytest_iter10.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "briefings_service.render_board_deck_pdf is cleanly separated from render_pdf — good. Landscape A4, one PageBreak per signal, cover + exec summary + items + closing + sources — matches the spec. Citation footnote numbering is computed globally so [1]/[2] references stay stable across slides.",
+    "routers/briefings.py fmt validation tightened to the whitelist {pdf, docx, board_deck} with an explicit 400 — aligned with the test expectation.",
+    "Manage.jsx is 508 lines and already under the 700-line threshold; TeamPanel + CompaniesPanel are split within the same file which is fine at this size.",
+    "Manage page uses AlertDialog for both member-remove and company-archive — good UX; archive defaults to cancel, destructive action is behind a confirm. Verified live.",
+    "Highlights stats strip sits above the committee filter / below Generate button as specified. SVG donut + sparkline are plain SVG (no external charting lib) which keeps the editorial palette strict.",
+    "Minor: /app/highlights triggers a 'heads up' banner about executive role mismatch on Tuli Financial Group context — pre-existing behaviour, not in scope for this iteration but worth double-checking role declaration on sign-in flow later."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter10_board_deck.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (5/5 new iter10 tests PASS; earlier iter9 regression suite unchanged)",
+    "frontend": "100% on the reviewed surfaces (sidebar + /app/manage + /app/highlights + /app/briefings board-deck button + non-destructive archive dialog; no console errors)"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (login surfaces at /signin, not /login — /login redirects to the marketing page)",
+  "seed_data_creation": "None — no contexts archived, no invitations sent, no briefings generated. Archive dialog was opened and cancelled to preserve data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && REACT_APP_BACKEND_URL=<frontend .env URL> python -m pytest tests/test_iter10_board_deck.py -v. Expect 5 passed. The /ask endpoint is POST /api/contexts/{cid}/ask with body {'question': ...} — NOT /api/ask and NOT 'query'. Login page for UI tests is at /signin (/login redirects to marketing homepage). Tuli context id is 2ceb9fde-a202-4891-adb1-ecf47dfe2258 and has a seeded briefing used by the export tests.",
+  "rca of the issue": "No outstanding issues. All eight items from the review request verified."
+}

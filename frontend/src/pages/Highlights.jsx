@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
 import AppShell from "@/components/layout/AppShell";
 import StreamCard from "@/components/stream/StreamCard";
 import { useAuth } from "@/contexts/AuthContext";
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 import ActModal from "@/components/act/ActModal";
 import AllLensesModal from "@/components/lens/AllLensesModal";
+import HighlightsStats from "@/components/highlights/HighlightsStats";
 
 const CONFIDENCE_LABEL = { high: "High confidence", medium: "Medium confidence", low: "Low confidence" };
 
@@ -142,6 +144,11 @@ export default function Highlights() {
           )}
         </div>
 
+        {/* Stats strip — donut of confidence distribution + sparkline of
+            volume-over-time. Sits above the committee filter so the reader
+            first sees *shape*, then scopes, then individual cards. */}
+        <HighlightsStats signals={filtered} />
+
         {/* Committee filter — only shown if this context has sub-committees */}
         {committees.length > 0 && (
           <div
@@ -221,11 +228,27 @@ export default function Highlights() {
         ) : filtered.length === 0 ? (
           <div className="p-16 text-center text-sm text-[var(--muted)]">No signals match your filter.</div>
         ) : (
-          <div className="space-y-4" data-testid="signals-grid">
+          <motion.div
+            className="space-y-4"
+            data-testid="signals-grid"
+            initial="hidden" animate="show"
+            variants={{
+              hidden: {},
+              show: { transition: { staggerChildren: 0.06, delayChildren: 0.05 } },
+            }}
+          >
             {filtered.map((s) => (
-              <SignalStreamCard key={s.id} signal={s} onLoad={load} onAct={setActOn} onLens={setLensSignal} />
+              <motion.div
+                key={s.id}
+                variants={{
+                  hidden: { opacity: 0, y: 8 },
+                  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.2, 0.8, 0.2, 1] } },
+                }}
+              >
+                <SignalStreamCard signal={s} onLoad={load} onAct={setActOn} onLens={setLensSignal} />
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         )}
       </div>
 

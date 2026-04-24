@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
 import AppShell from "@/components/layout/AppShell";
 import StreamCard from "@/components/stream/StreamCard";
 import { useAuth } from "@/contexts/AuthContext";
@@ -186,23 +187,37 @@ export default function AppHome() {
                             cta={{ label: "Upload pack", to: "/app/workspace" }}
                           />
                         ) : (
-                          <div className="space-y-3">
+                          <motion.div
+                            className="space-y-3"
+                            initial="hidden" animate="show"
+                            variants={{
+                              hidden: {},
+                              show: { transition: { staggerChildren: 0.06 } },
+                            }}
+                          >
                             {topSignals.map((s) => (
-                              <StreamCard
+                              <motion.div
                                 key={s.id}
-                                type={s.type}
-                                lead={s.headline}
-                                timestamp={s.created_at}
-                                chips={[
-                                  { label: CONFIDENCE_LABEL[s.confidence] || "Medium confidence" },
-                                  { label: (s.data_trust || "unrated") + " data" },
-                                ]}
-                                to="/app/highlights"
-                                gesture={{ label: "Open signal", to: "/app/highlights" }}
-                                data-testid={`home-signal-${s.id}`}
-                              />
+                                variants={{
+                                  hidden: { opacity: 0, y: 6 },
+                                  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+                                }}
+                              >
+                                <StreamCard
+                                  type={s.type}
+                                  lead={s.headline}
+                                  timestamp={s.created_at}
+                                  chips={[
+                                    { label: CONFIDENCE_LABEL[s.confidence] || "Medium confidence" },
+                                    { label: (s.data_trust || "unrated") + " data" },
+                                  ]}
+                                  to="/app/highlights"
+                                  gesture={{ label: "Open signal", to: "/app/highlights" }}
+                                  data-testid={`home-signal-${s.id}`}
+                                />
+                              </motion.div>
                             ))}
-                          </div>
+                          </motion.div>
                         )}
                       </section>
                     )}

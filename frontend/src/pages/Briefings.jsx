@@ -102,6 +102,14 @@ function BriefingViewer({ briefing, onArchive }) {
           <p className="akki-overline">PRIVATE · AKKI BRIEFING · v{briefing.version}</p>
           <div className="flex items-center gap-1">
             <a
+              href={downloadUrl("board_deck")} target="_blank" rel="noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs text-white bg-[var(--accent)] hover:bg-[var(--accent)]/90 transition-colors"
+              data-testid="briefing-export-board-deck"
+              title="Landscape slide-deck PDF — one slide per signal, built to present"
+            >
+              <Download className="w-3 h-3" /> Board deck
+            </a>
+            <a
               href={downloadUrl("pdf")} target="_blank" rel="noreferrer"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs text-slate-700 border border-[#E1E6ED] hover:bg-slate-50 hover:border-[var(--accent)]/50 transition-colors"
               data-testid="briefing-export-pdf"

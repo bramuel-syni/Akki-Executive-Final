@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import Logo from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,7 @@ import {
   Home, FileText, Sparkles, GraduationCap,
   Settings, LogOut, ChevronDown, Layers, CheckCircle2, Lock,
   Briefcase, Landmark, Search, ScrollText, Target, Eye, Plus, BookOpenCheck,
+  Users, Building2,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
@@ -28,6 +30,13 @@ const NAV = [
   { to: "/app/simulate", label: "Simulate", icon: Target, module: "M14", ready: true },
   { to: "/app/lens", label: "Lens Room", icon: Eye, module: "M14", ready: true },
   { to: "/app/learn", label: "Learn", icon: GraduationCap, module: "M9", ready: true },
+];
+
+// Housekeeping shortcuts — surfaced just below Learn for low-ceremony access.
+// Both deep-link to /app/manage and activate the matching tab.
+const MANAGE_NAV = [
+  { to: "/app/manage?tab=team", label: "Manage my team", icon: Users, match: "/app/manage" },
+  { to: "/app/manage?tab=companies", label: "Manage my companies", icon: Building2, match: "/app/manage" },
 ];
 
 const CONTEXT_TYPE_LABEL = {
@@ -328,7 +337,7 @@ export default function AppShell({ children }) {
           <div className="px-5 pb-4">
             <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">Surfaces</p>
           </div>
-          {NAV.map((item) => {
+          {NAV.map((item, idx) => {
             const Icon = item.icon;
             if (!item.ready) {
               return (
@@ -347,31 +356,87 @@ export default function AppShell({ children }) {
               );
             }
             return (
-              <NavLink
+              <motion.div
                 key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  `group mx-2 relative flex items-center gap-3 px-3 py-2.5 text-[14px] transition-colors rounded-sm ${
-                    isActive
-                      ? "bg-[var(--cream-deep)] text-[var(--ink)] font-medium"
-                      : "text-[var(--deep)] hover:bg-[var(--cream-deep)] hover:text-[var(--ink)]"
-                  }`
-                }
-                data-testid={`nav-${item.label.toLowerCase()}`}
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.04 + idx * 0.025, duration: 0.25, ease: "easeOut" }}
               >
-                {({ isActive }) => (
-                  <>
-                    <span
-                      className={`absolute left-0 top-1 bottom-1 w-[3px] rounded-r transition-opacity ${
-                        isActive ? "bg-[var(--accent)] opacity-100" : "opacity-0"
-                      }`}
-                    />
-                    <Icon className="w-4 h-4" strokeWidth={1.8} />
-                    <span>{item.label}</span>
-                  </>
-                )}
-              </NavLink>
+                <NavLink
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) =>
+                    `group mx-2 relative flex items-center gap-3 px-3 py-2.5 text-[14px] transition-colors rounded-sm ${
+                      isActive
+                        ? "bg-[var(--cream-deep)] text-[var(--ink)] font-medium"
+                        : "text-[var(--deep)] hover:bg-[var(--cream-deep)] hover:text-[var(--ink)]"
+                    }`
+                  }
+                  data-testid={`nav-${item.label.toLowerCase()}`}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <span
+                        className={`absolute left-0 top-1 bottom-1 w-[3px] rounded-r transition-opacity ${
+                          isActive ? "bg-[var(--accent)] opacity-100" : "opacity-0"
+                        }`}
+                      />
+                      <Icon className="w-4 h-4" strokeWidth={1.8} />
+                      <span>{item.label}</span>
+                    </>
+                  )}
+                </NavLink>
+              </motion.div>
+            );
+          })}
+
+          {/* Housekeeping — sits below Learn, same accent treatment, labelled
+              as a secondary block so it doesn't compete with the six core
+              surfaces. Both items deep-link to /app/manage with the matching
+              tab. */}
+          <div className="px-5 pt-6 pb-2">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">Housekeeping</p>
+          </div>
+          {MANAGE_NAV.map((item, idx) => {
+            const Icon = item.icon;
+            return (
+              <motion.div
+                key={item.to}
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.22 + idx * 0.03, duration: 0.25, ease: "easeOut" }}
+              >
+                <NavLink
+                  to={item.to}
+                  className={({ isActive }) => {
+                    // Match on pathname since query-string tabs are sibling targets.
+                    const active = isActive || (typeof window !== "undefined" && window.location.pathname === item.match);
+                    return `group mx-2 relative flex items-center gap-3 px-3 py-2.5 text-[14px] transition-colors rounded-sm ${
+                      active
+                        ? "bg-[var(--cream-deep)] text-[var(--ink)] font-medium"
+                        : "text-[var(--deep)] hover:bg-[var(--cream-deep)] hover:text-[var(--ink)]"
+                    }`;
+                  }}
+                  data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                >
+                  {() => {
+                    const active = typeof window !== "undefined" &&
+                      window.location.pathname === item.match &&
+                      window.location.search.includes(item.to.split("?")[1] || "");
+                    return (
+                      <>
+                        <span
+                          className={`absolute left-0 top-1 bottom-1 w-[3px] rounded-r transition-opacity ${
+                            active ? "bg-[var(--accent)] opacity-100" : "opacity-0"
+                          }`}
+                        />
+                        <Icon className="w-4 h-4" strokeWidth={1.8} />
+                        <span>{item.label}</span>
+                      </>
+                    );
+                  }}
+                </NavLink>
+              </motion.div>
             );
           })}
 

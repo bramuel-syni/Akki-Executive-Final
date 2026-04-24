@@ -21,7 +21,7 @@ from docx import Document
 from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (
@@ -415,4 +415,232 @@ def render_docx(briefing: Dict[str, Any], docs_by_id: Dict[str, Dict[str, Any]])
 
     buf = io.BytesIO()
     doc.save(buf)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Board deck PDF — landscape A4 slide-per-signal, designed to be projected or
+# printed and walked into a board room. The visual system stays aligned with
+# the cream/oxblood editorial brief: deep navy headings, oxblood accents,
+# muted slate body, generous margins. One logical slide per page.
+# ---------------------------------------------------------------------------
+AKKI_CREAM_BG = colors.HexColor("#F7F3EA")
+AKKI_OXBLOOD = colors.HexColor("#8B2E2B")
+AKKI_OXBLOOD_SOFT = colors.HexColor("#C58A88")
+
+
+def _slide_header(footer_text: str, page_num: int, total: int):
+    """Top-of-slide overline + a thin oxblood rule + page counter."""
+    return [
+        Paragraph(
+            f'<font color="#8B2E2B">●</font>  <font color="#64748B">'
+            f'{footer_text}  ·  slide {page_num} / {total}</font>',
+            ParagraphStyle(
+                "slide-overline", fontName="Helvetica-Bold",
+                fontSize=7.5, leading=10, textColor=AKKI_MUTED,
+                spaceAfter=4,
+            ),
+        ),
+        Table([[""]], colWidths=[None], rowHeights=[0.6 * mm], style=TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), AKKI_OXBLOOD),
+        ])),
+        Spacer(1, 14),
+    ]
+
+
+def render_board_deck_pdf(briefing: Dict[str, Any], docs_by_id: Dict[str, Dict[str, Any]]) -> bytes:
+    """Landscape slide-deck PDF — one signal per page, built to be presented.
+
+    Slide sequence:
+      1. Cover — title, context, date
+      2. Executive summary — opening paragraph
+      3..N. One slide per item (headline, evidence, sharpest question)
+      N+1. Closing question / next steps (if set)
+      Last. Sources list
+    """
+    buf = io.BytesIO()
+    pagesize = landscape(A4)
+    doc = SimpleDocTemplate(
+        buf, pagesize=pagesize,
+        leftMargin=28 * mm, rightMargin=28 * mm,
+        topMargin=22 * mm, bottomMargin=18 * mm,
+        title=briefing.get("title", "AKKI Board Deck"),
+        author="AKKI",
+    )
+
+    styles = getSampleStyleSheet()
+    style_overline = ParagraphStyle(
+        "deck-overline", parent=styles["Normal"],
+        textColor=AKKI_OXBLOOD, fontName="Helvetica-Bold",
+        fontSize=9, leading=11, spaceAfter=4,
+    )
+    style_cover_title = ParagraphStyle(
+        "deck-cover-title", parent=styles["Normal"],
+        textColor=AKKI_INK, fontName="Times-Roman",
+        fontSize=42, leading=48, spaceAfter=12,
+    )
+    style_cover_meta = ParagraphStyle(
+        "deck-cover-meta", parent=styles["Normal"],
+        textColor=AKKI_MUTED, fontName="Helvetica",
+        fontSize=11, leading=15, spaceAfter=6,
+    )
+    style_slide_kicker = ParagraphStyle(
+        "deck-kicker", parent=styles["Normal"],
+        textColor=AKKI_OXBLOOD, fontName="Helvetica-Bold",
+        fontSize=9, leading=11, spaceAfter=6,
+    )
+    style_slide_title = ParagraphStyle(
+        "deck-slide-title", parent=styles["Normal"],
+        textColor=AKKI_INK, fontName="Times-Roman",
+        fontSize=26, leading=32, spaceAfter=12,
+    )
+    style_slide_body = ParagraphStyle(
+        "deck-slide-body", parent=styles["Normal"],
+        textColor=AKKI_INK, fontName="Helvetica",
+        fontSize=13, leading=20, spaceAfter=10,
+    )
+    style_question = ParagraphStyle(
+        "deck-question", parent=styles["Normal"],
+        textColor=AKKI_OXBLOOD, fontName="Times-Italic",
+        fontSize=14, leading=20, spaceBefore=10, spaceAfter=6,
+        leftIndent=12,
+    )
+    style_source_line = ParagraphStyle(
+        "deck-src", parent=styles["Normal"],
+        textColor=AKKI_MUTED, fontName="Helvetica",
+        fontSize=10, leading=14, spaceAfter=4,
+    )
+
+    # Collect citations up-front so each slide can footnote them
+    all_ids: List[str] = []
+
+    def _collect(text: str):
+        for m in re.finditer(r"\[doc:([a-f0-9-]+)\]", text or ""):
+            d = m.group(1)
+            if d not in all_ids and d in docs_by_id:
+                all_ids.append(d)
+
+    _collect(briefing.get("opening_paragraph", ""))
+    for it in briefing.get("items", []):
+        _collect(it.get("evidence", ""))
+        _collect(it.get("question", ""))
+
+    def _with_footnotes(text: str) -> str:
+        def repl(m):
+            d = m.group(1)
+            if d not in all_ids:
+                return ""
+            idx = all_ids.index(d) + 1
+            return f'<font color="#8B2E2B"><b>[{idx}]</b></font>'
+        return re.sub(r"\[doc:([a-f0-9-]+)\]", repl, _escape(text))
+
+    # Compute total pages for slide counter
+    item_count = len(briefing.get("items", []))
+    total_slides = 2 + item_count + (1 if briefing.get("closing_note") else 0) + (1 if all_ids else 0)
+
+    flow: List[Any] = []
+
+    context_name = briefing.get("context_name") or "Board"
+
+    # ── Slide 1 · Cover ────────────────────────────────────────────────────
+    flow.extend(_slide_header(f"{context_name} · PRIVATE BOARD DECK", 1, total_slides))
+    flow.append(Spacer(1, 40))
+    flow.append(Paragraph("PRESENTED TO THE BOARD", style_overline))
+    flow.append(Paragraph(_escape(briefing.get("title", "Board Briefing")), style_cover_title))
+    created_at = briefing.get("created_at", "")
+    meta_line = context_name
+    if created_at:
+        try:
+            dt = datetime.fromisoformat(created_at)
+            meta_line += f"  ·  {dt.strftime('%-d %B %Y')}"
+        except Exception:
+            pass
+    meta_line += f"  ·  v{briefing.get('version', 1)}  ·  {item_count} item{'s' if item_count != 1 else ''}"
+    flow.append(Paragraph(meta_line, style_cover_meta))
+    flow.append(Spacer(1, 20))
+    flow.append(Paragraph(
+        '<font color="#8B2E2B">❝</font>  <i>Read sharper. Challenge better. '
+        'Decide with receipts.</i>  <font color="#8B2E2B">❞</font>',
+        ParagraphStyle("cover-tag", fontName="Times-Italic", fontSize=12,
+                       textColor=AKKI_MUTED, leading=18),
+    ))
+    flow.append(PageBreak())
+
+    # ── Slide 2 · Executive summary ────────────────────────────────────────
+    flow.extend(_slide_header(f"{context_name} · PRIVATE BOARD DECK", 2, total_slides))
+    flow.append(Paragraph("EXECUTIVE SUMMARY", style_slide_kicker))
+    flow.append(Paragraph("What the board should front-of-mind", style_slide_title))
+    opening = briefing.get("opening_paragraph") or ""
+    if opening:
+        flow.append(Paragraph(_with_footnotes(opening), style_slide_body))
+    else:
+        flow.append(Paragraph(
+            f"The briefing contains {item_count} item{'s' if item_count != 1 else ''} "
+            f"across the board's scope. Each item follows on the next slide — "
+            f"headline, evidence, and the sharpest question to raise.",
+            style_slide_body,
+        ))
+    flow.append(PageBreak())
+
+    # ── Slides 3..N · One per signal ───────────────────────────────────────
+    for idx, it in enumerate(briefing.get("items", []), 1):
+        slide_num = 2 + idx
+        flow.extend(_slide_header(f"{context_name} · PRIVATE BOARD DECK", slide_num, total_slides))
+        sig_type = (it.get("signal_type") or "signal").upper()
+        conf = (it.get("confidence") or "medium").upper()
+        flow.append(Paragraph(
+            f"ITEM {idx:02d}  ·  {sig_type}  ·  {conf} CONFIDENCE",
+            style_slide_kicker,
+        ))
+        flow.append(Paragraph(_escape(it.get("signal_headline") or "Untitled"), style_slide_title))
+        ev = it.get("evidence") or ""
+        if ev:
+            flow.append(Paragraph(_with_footnotes(ev), style_slide_body))
+        q = it.get("question") or ""
+        if q:
+            flow.append(Paragraph(
+                f'<font color="#8B2E2B">→</font> &nbsp; Question for the chair: <i>{_with_footnotes(q)}</i>',
+                style_question,
+            ))
+        # Per-item source chips (small, muted)
+        srcs = it.get("sources") or []
+        if srcs:
+            chip_bits = []
+            for s in srcs[:4]:
+                nm = (s.get("doc_name") or "source")[:44]
+                trust = s.get("data_trust") or "mixed"
+                chip_bits.append(f'<font color="#8B2E2B">●</font> {_escape(nm)} <font color="#94A3B8">· {trust}</font>')
+            flow.append(Spacer(1, 8))
+            flow.append(Paragraph(
+                "  &nbsp;&nbsp;".join(chip_bits),
+                ParagraphStyle("deck-chips", fontName="Helvetica", fontSize=9,
+                               textColor=AKKI_MUTED, leading=13),
+            ))
+        flow.append(PageBreak())
+
+    # ── Closing slide (if set) ─────────────────────────────────────────────
+    if briefing.get("closing_note"):
+        slide_num = 3 + item_count
+        flow.extend(_slide_header(f"{context_name} · PRIVATE BOARD DECK", slide_num, total_slides))
+        flow.append(Paragraph("IN CLOSING", style_slide_kicker))
+        flow.append(Paragraph("One thing to take away", style_slide_title))
+        flow.append(Paragraph(_escape(briefing["closing_note"]), style_slide_body))
+        flow.append(PageBreak())
+
+    # ── Sources slide ──────────────────────────────────────────────────────
+    if all_ids:
+        flow.extend(_slide_header(f"{context_name} · PRIVATE BOARD DECK", total_slides, total_slides))
+        flow.append(Paragraph("RECEIPTS", style_slide_kicker))
+        flow.append(Paragraph("Every claim, to the document it came from", style_slide_title))
+        for idx, did in enumerate(all_ids, 1):
+            d = docs_by_id.get(did, {})
+            name = d.get("name") or did[:8]
+            trust = d.get("data_trust") or "unrated"
+            flow.append(Paragraph(
+                f'<font color="#8B2E2B"><b>[{idx}]</b></font> &nbsp; '
+                f'{_escape(name)} <font color="#94A3B8">· data trust: {_escape(trust)}</font>',
+                style_source_line,
+            ))
+
+    doc.build(flow)
     return buf.getvalue()

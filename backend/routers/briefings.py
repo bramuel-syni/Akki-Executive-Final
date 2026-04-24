@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from briefings_service import build_briefing_prompt, render_pdf, render_docx
+from briefings_service import build_briefing_prompt, render_pdf, render_docx, render_board_deck_pdf
 from llm_service import call_llm as llm_call_llm, parse_json_response
 
 from core import (
@@ -204,8 +204,8 @@ async def export_briefing(
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Briefing not found")
-    if fmt not in ("pdf", "docx"):
-        raise HTTPException(status_code=400, detail="fmt must be 'pdf' or 'docx'")
+    if fmt not in ("pdf", "docx", "board_deck"):
+        raise HTTPException(status_code=400, detail="fmt must be 'pdf', 'docx', or 'board_deck'")
 
     docs = await db.documents.find(
         {"context_id": context_id, "id": {"$in": doc.get("source_doc_ids", [])}},
@@ -217,6 +217,10 @@ async def export_briefing(
         payload = render_pdf(doc, docs_by_id)
         media = "application/pdf"
         suffix = "pdf"
+    elif fmt == "board_deck":
+        payload = render_board_deck_pdf(doc, docs_by_id)
+        media = "application/pdf"
+        suffix = "deck.pdf"
     else:
         payload = render_docx(doc, docs_by_id)
         media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
