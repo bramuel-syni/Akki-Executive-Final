@@ -139,12 +139,36 @@ restructure.
 - [ ] **ClamAV / VirusTotal** — real virus scan (we use a stub).
 
 ## Recent fixes
-## Recent fixes
-## Recent fixes
-## Recent fixes
-## Recent fixes
-## Recent fixes
-- **2026-04-24 Sprint 11** — Addendum v4.3 §1 Phase 2 — Sandbox sprint complete.
+- **2026-04-24 Sprint 12 / iter16** — Label refresh + Learn "View more" + personalised research + cleanup gate.
+  - **Display renames (routes unchanged):** sidebar "Highlights" → "Signals"
+    everywhere, "Lens Room" → "The Lens". /app/highlights overline now reads
+    "SIGNALS · &lt;context&gt;". Briefings empty-state gesture reads "Open
+    Signals". Routes /app/highlights and /app/lens still resolve — zero link
+    rot, zero bookmarks broken.
+  - **Learn `View more` modal** — new pill button under the card grid opens a
+    medium Dialog ("Further reading · &lt;tab&gt;"). Shows editor-curated
+    external primary sources grouped by topic; filters by the user's current
+    topic pill when one is active. Counts: TL Articles 12, News 10, Videos 8,
+    Case Studies 8 — meets the ≥ 8 threshold flagged by iter16.
+  - **`/learn/research` personalisation** — endpoint accepts optional
+    `context_id`; when the caller is a member, the LLM prompt is weighted
+    to the context's sector + jurisdiction. Verified: Bramuel on his Tuli
+    Financial Group (Kenya, banking) context researching "vendor AI
+    oversight" returns a CBK-flavoured article with Kenyan references woven
+    in. Response surfaces `personalised:true` +
+    `personalisation_from:{sector,jurisdiction}` so the toast can say
+    "weighted to Kenya". Membership verified BEFORE context read — no
+    enumeration leak.
+  - **Sandbox cleanup secret gate** — `POST /api/sandbox/cleanup/expired`
+    now requires `X-Cron-Secret` matching `AKKI_CRON_SECRET` in the
+    environment. Fails closed (503) if the env var is unset. Anonymous
+    POSTs return 401. Closes the iter15 nit.
+  - **iter16**: 37/37 backend PASS (32 regression + 5 new iter16 covering
+    personalisation + cleanup gate). Frontend: labels, modal flow, Governance
+    topic filtering, and ESC close all verified. LEARN_MORE depth padded
+    post-testing to meet the ≥ 8 spec across all four tabs.
+
+
   - **6 polished sector templates** (`sandbox_templates.py`): SaaS/tech,
     logistics, healthcare, manufacturing, retail, real estate. Each ships
     3 committees / 2–3 docs / 4–6 sector-specific signals / 1 composed
