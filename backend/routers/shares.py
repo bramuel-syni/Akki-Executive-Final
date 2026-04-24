@@ -108,7 +108,7 @@ async def create_share(
         "message": message,
         "include_as_quote": body.include_as_quote,
         "delivery_method": body.delivery_method,
-        "status": "delivered" if recipient_account_id or body.delivery_method == "email" else "delivered",
+        "status": "delivered" if recipient_account_id else ("queued" if body.delivery_method == "email" else "delivered"),
         "opened_at": None,
         "revoked_at": None,
         "created_at": now_iso,
@@ -268,7 +268,7 @@ async def aggregated_stream(
 
     # Pull recent signals + briefings from every context in one go
     signals_cursor = db.signals.find(
-        {"context_id": {"$in": active_ctx_ids}},
+        {"context_id": {"$in": active_ctx_ids}, "status": {"$ne": "archived"}},
         {"_id": 0},
     ).sort("created_at", -1).limit(min(limit, 100))
     signals = [s async for s in signals_cursor]

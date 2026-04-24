@@ -141,6 +141,29 @@ restructure.
 ## Recent fixes
 ## Recent fixes
 ## Recent fixes
+## Recent fixes
+- **2026-04-24 Sprint 9** — Build Addendum v4.3 §8 + §9 closed.
+  - **§8 — All boards aggregated Home stream**: new
+    `GET /api/me/home/stream` merges signals + briefings across every active
+    membership, attaches `context_name` to each card. Home renders a quiet
+    'This context | All boards' toggle (only when user has 2+ contexts);
+    aggregated mode shows an uppercase context badge (first token of context
+    name) left of the type badge.
+  - **§9 — External Share**: new `shares` collection + router
+    (`POST /api/contexts/{cid}/shares`, inbox, outbox, auth-guarded
+    `GET /api/shares/{id}`, sharer-only DELETE revoke). Creates a mention
+    inbox row for AKKI recipients; logs an email-send intent for non-AKKI
+    emails (SMTP deferred to §6). Extended comments router with
+    `artefact_type='share'` so the one-to-one comment thread on shared
+    items just works. New `ShareModal` composition overlay, Share buttons
+    on signals (Highlights + Home) and briefings (Briefings viewer), and a
+    new "Shared with you" tab on Home.
+  - **New `source` prop on `StreamCard`**: optional left-chip rendering
+    either a context badge (aggregated mode) or a "SHARED BY X" accent-soft
+    badge (shared-with-you cards). Non-breaking.
+  - **Testing** — iteration_12: 14/14 backend PASS + 100% frontend, zero
+    design or integration issues.
+
 - **2026-04-24 Sprint 8** — Speaking notes on the board deck.
   - New endpoint `POST /api/contexts/{cid}/briefings/{bid}/speaking-notes`
     — one LLM call produces 3 spoken-voice bullets per briefing item (fact →
