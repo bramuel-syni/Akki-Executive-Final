@@ -140,6 +140,23 @@ restructure.
 
 ## Recent fixes
 ## Recent fixes
+## Recent fixes
+- **2026-04-24 Sprint 8** — Speaking notes on the board deck.
+  - New endpoint `POST /api/contexts/{cid}/briefings/{bid}/speaking-notes`
+    — one LLM call produces 3 spoken-voice bullets per briefing item (fact →
+    why it matters → what to watch/escalate). Persisted to
+    `briefing.items[i].speaking_notes` + timestamp on
+    `briefing.speaking_notes_at`.
+  - `render_board_deck_pdf` now renders them under each item slide, prefaced
+    by a tiny `WHAT YOU WOULD SAY` label in oxblood + Georgia-italic bullets
+    in muted slate. Only appears when drafted.
+  - Briefings page gets a new outlined oxblood "Draft speaking notes" button
+    that toggles to "Re-draft notes" once notes exist, and a small "+ notes"
+    chip lands on the Board deck pill after drafting.
+  - iteration_11: 8/8 backend tests PASS (happy path, idempotency, 404, 401,
+    400 empty-items, PDF embedding, /ask shielding regression, deck-without-
+    notes regression). Frontend 100%, zero console errors.
+
 - **2026-04-24 Sprint 7** — Executive-ready board deck + housekeeping + visual life.
   - **Board deck PDF** (new `render_board_deck_pdf` in `briefings_service.py`):
     landscape A4, one signal per slide — cover, executive summary, per-item
