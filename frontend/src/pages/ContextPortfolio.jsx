@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Landmark, Briefcase, Plus, CheckCircle2, Layers, ArrowRight,
-  Sparkles, FileText, ScrollText,
+  Sparkles, FileText, ScrollText, Flame,
 } from "lucide-react";
 
 const TYPE_LABEL = {
@@ -134,10 +134,21 @@ export default function ContextPortfolio() {
               api.get(`/contexts/${c.id}/briefings`).catch(() => ({ data: [] })),
               api.get(`/contexts/${c.id}/documents`).catch(() => ({ data: [] })),
             ]);
+            const sigs = s.data || [];
+            // "Boards to watch" heuristic: count fresh (<14d) high-confidence
+            // risks + gaps — the signals a NED actually cares about right now.
+            const FRESH_MS = 14 * 86400 * 1000;
+            const cutoff = Date.now() - FRESH_MS;
+            const watchCount = sigs.filter((sig) =>
+              (sig.type === "risk" || sig.type === "gap") &&
+              sig.confidence === "high" &&
+              new Date(sig.created_at).getTime() >= cutoff
+            ).length;
             return [c.id, {
-              signals: (s.data || []).length,
+              signals: sigs.length,
               briefings: (b.data || []).length,
               documents: (d.data || []).length,
+              watchCount,
             }];
           } catch {
             return [c.id, { signals: 0, briefings: 0, documents: 0 }];
@@ -160,6 +171,15 @@ export default function ContextPortfolio() {
   const totalSignals = Object.values(metricsMap).reduce((sum, m) => sum + (m?.signals || 0), 0);
   const totalBriefings = Object.values(metricsMap).reduce((sum, m) => sum + (m?.briefings || 0), 0);
   const totalDocs = Object.values(metricsMap).reduce((sum, m) => sum + (m?.documents || 0), 0);
+
+  // Derive "boards to watch" — contexts with the most fresh high-conf risks/gaps.
+  const boardsToWatch = useMemo(() => {
+    return contexts
+      .map((c) => ({ ctx: c, watchCount: metricsMap[c.id]?.watchCount || 0 }))
+      .filter((x) => x.watchCount > 0)
+      .sort((a, b) => b.watchCount - a.watchCount)
+      .slice(0, 2);
+  }, [contexts, metricsMap]);
 
   const openContext = (cid) => {
     switchContext(cid);
@@ -203,6 +223,47 @@ export default function ContextPortfolio() {
 
         {/* Scrolling body */}
         <div className="flex-1 min-h-0 overflow-y-auto pr-2 -mr-2 pb-8 space-y-10" data-testid="portfolio-scroll">
+          {/* Boards to watch this week — opinionated triage banner */}
+          {!loading && boardsToWatch.length > 0 && (
+            <section
+              className="bg-[var(--accent-soft)]/70 border border-[var(--accent)]/25 rounded-md p-5 akki-fade-up"
+              data-testid="boards-to-watch"
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <Flame className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.8} />
+                <p className="akki-overline">Boards to watch this week</p>
+                <span className="text-[11px] text-[var(--muted)] ml-auto">
+                  Fresh high-confidence risks & gaps · last 14 days
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {boardsToWatch.map(({ ctx, watchCount }) => (
+                  <button
+                    key={ctx.id}
+                    onClick={() => openContext(ctx.id)}
+                    className="text-left bg-white border border-[var(--rule)] rounded-md p-4 hover:border-[var(--accent)]/60 transition-colors group"
+                    data-testid={`watch-card-${ctx.id}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="akki-serif text-[18px] text-[var(--ink)] leading-snug mb-1">{ctx.name}</p>
+                        <p className="text-[12px] text-[var(--muted)]">
+                          {ctx.industry ? `${ctx.industry} · ` : ""}{watchCount} fresh signal{watchCount > 1 ? "s" : ""} for your attention
+                        </p>
+                      </div>
+                      <div className="w-10 h-10 bg-[var(--accent)] text-white rounded-sm flex items-center justify-center shrink-0">
+                        <span className="akki-serif text-[18px]">{watchCount}</span>
+                      </div>
+                    </div>
+                    <p className="text-[12px] text-[var(--accent)] mt-3 flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                      Open this board <ArrowRight className="w-3 h-3" />
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
           {grouped.ned.length > 0 && (
             <section data-testid="portfolio-section-ned">
               <div className="flex items-center gap-2 mb-4">

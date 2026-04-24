@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import {
   Sparkles, Loader2, ArrowRight, X, ShieldCheck, FileText,
-  SlidersHorizontal, Zap,
+  SlidersHorizontal, Zap, GitBranch,
 } from "lucide-react";
 import ActModal from "@/components/act/ActModal";
 
@@ -241,6 +241,9 @@ export default function Highlights() {
  *  with inline [doc:xxx] citations and dismiss action. */
 function SignalStreamCard({ signal, onLoad, onAct }) {
   const [confirmingDismiss, setConfirmingDismiss] = useState(false);
+  const [traceOpen, setTraceOpen] = useState(false);
+  const [traceEvents, setTraceEvents] = useState(null);
+  const [traceLoading, setTraceLoading] = useState(false);
 
   const onDismiss = async () => {
     try {
@@ -248,6 +251,20 @@ function SignalStreamCard({ signal, onLoad, onAct }) {
       toast.success("Signal dismissed");
       onLoad?.();
     } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+
+  const openTrace = async () => {
+    setTraceOpen(true);
+    if (traceEvents || !signal.pipeline_run_id) return;
+    setTraceLoading(true);
+    try {
+      const { data } = await api.get(
+        `/contexts/${signal.context_id}/pipeline/events`,
+        { params: { pipeline_run_id: signal.pipeline_run_id, limit: 50 } }
+      );
+      setTraceEvents(data || []);
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setTraceLoading(false); }
   };
 
   // Render summary with inline [doc:xxx] chips
@@ -304,6 +321,16 @@ function SignalStreamCard({ signal, onLoad, onAct }) {
               Open source <ArrowRight className="w-3 h-3" />
             </Link>
           )}
+          {signal.pipeline_run_id && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); openTrace(); }}
+              className="akki-gesture text-[13px]"
+              data-testid={`signal-trace-${signal.id}`}
+            >
+              <GitBranch className="w-3 h-3" strokeWidth={2} /> Trace
+            </button>
+          )}
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onAct?.(signal); }}
@@ -314,8 +341,76 @@ function SignalStreamCard({ signal, onLoad, onAct }) {
           </button>
         </div>
       </div>
+
+      {/* Trace drawer — pipeline audit for this signal */}
+      {traceOpen && (
+        <div
+          className="mt-5 pt-5 border-t border-[var(--rule)] akki-fade-up"
+          data-testid={`signal-trace-drawer-${signal.id}`}
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <GitBranch className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} />
+            <p className="akki-overline">How this signal was generated</p>
+            <button
+              onClick={() => setTraceOpen(false)}
+              className="ml-auto text-[11px] text-[var(--muted)] hover:text-[var(--accent)]"
+            >
+              Close
+            </button>
+          </div>
+          {signal.verifier_note && (
+            <div className="mb-3 bg-[var(--accent-soft)]/60 border-l-2 border-[var(--accent)] pl-3 py-2">
+              <p className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-1">Verifier's note</p>
+              <p className="akki-serif italic text-[13.5px] text-[var(--deep)] leading-relaxed">
+                {signal.verifier_note}
+              </p>
+            </div>
+          )}
+          {traceLoading ? (
+            <p className="text-[12px] text-[var(--muted)] italic py-2">Loading trace…</p>
+          ) : traceEvents && traceEvents.length > 0 ? (
+            <ol className="relative pl-5 space-y-2.5">
+              {traceEvents.slice().reverse().map((ev) => (
+                <li key={ev.id} className="relative">
+                  <span className="absolute -left-5 top-1.5 w-2 h-2 rounded-full bg-[var(--accent)]" />
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[11.5px] font-mono text-[var(--accent)]">{ev.type}</span>
+                    <span className="text-[10.5px] text-[var(--muted)]">{new Date(ev.created_at).toLocaleTimeString()}</span>
+                  </div>
+                  <p className="text-[12px] text-[var(--deep)] leading-snug mt-0.5">
+                    {summariseEvent(ev)}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="text-[12px] text-[var(--muted)] italic py-2">No pipeline events recorded.</p>
+          )}
+          <p className="text-[10.5px] text-[var(--muted)] mt-3 italic">
+            Pipeline run: <span className="font-mono">{signal.pipeline_run_id?.slice(0, 8)}…</span>
+          </p>
+        </div>
+      )}
     </article>
   );
+}
+
+function summariseEvent(ev) {
+  const p = ev.payload || {};
+  switch (ev.type) {
+    case "pipeline.started":
+      return `${p.doc_count || 0} documents in scope${p.focus ? ` · focus: ${p.focus}` : ""}`;
+    case "signal.candidate_drafted":
+      return `Stage 1 — ${p.count || 0} candidates drafted by LLM (mode: ${p.mode || "synth"})`;
+    case "signal.verified":
+      return `Stage 2 — ${p.accepted || 0} accepted, ${p.rejected || 0} rejected${p.verifier_failed ? " (verifier failed — candidates kept)" : ""}`;
+    case "signal.persisted":
+      return `Stage 3 — ${p.count || 0} signals written to the board stream`;
+    case "pipeline.completed":
+      return `Finished — ${p.persisted || 0} persisted, ${p.rejected || 0} rejected`;
+    default:
+      return ev.type;
+  }
 }
 
 function renderWithCitations(text, sources) {

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from llm_service import call_llm as llm_call_llm, parse_json_response
+from bm25 import chunk_documents, score_bm25, ranked_chunks_as_grounding_block
 from core import (
     db, now, iso, write_audit, require_context_membership,
     gather_context_object, gather_documents_for_grounding,
@@ -187,7 +188,20 @@ async def ask(
     context_id = ctx["context"]["id"]
     ctx_obj = await gather_context_object(context_id)
     docs = await gather_documents_for_grounding(context_id)
-    grounding = docs_as_grounding_block(docs)
+
+    # M13 — Hybrid retrieval: chunk every doc, then BM25-rank chunks against the
+    # question. We keep `docs` around for citation bookkeeping and pass only the
+    # top chunks into the prompt. This lets Ask be grounded against 50-doc
+    # contexts without blowing past the prompt window.
+    retrieval_mode = "bm25"
+    chunks = chunk_documents(docs)
+    ranked = score_bm25(body.question, chunks, k=12)
+    if not ranked or all(s == 0 for s, _ in ranked):
+        # Fall back to the flat, most-recent-doc block when BM25 finds nothing.
+        grounding = docs_as_grounding_block(docs)
+        retrieval_mode = "recency_fallback"
+    else:
+        grounding, _ = ranked_chunks_as_grounding_block(ranked)
 
     co_answers = (ctx_obj or {}).get("answers") or {}
     persona_bits = []
@@ -230,6 +244,7 @@ async def ask(
         "answer": llm_out.get("response", ""),
         "sources": sources,
         "mode": llm_out.get("mode"),
+        "retrieval_mode": retrieval_mode,
         "shielding_masked": llm_out.get("shielding", {}).get("identifiers_masked", 0),
         "asked_by": ctx["account"]["id"],
         "asked_by_email": ctx["account"]["email"],

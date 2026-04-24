@@ -3,121 +3,331 @@ import { Link } from "react-router-dom";
 import Logo from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
-import { ArrowRight, Radar, FileText, LineChart, MessageSquareText, GraduationCap, Layers } from "lucide-react";
+import {
+  ArrowRight, Sparkles, ScrollText, Eye, FileText, Target, GraduationCap,
+  Quote, Check,
+} from "lucide-react";
 
-const BG = "https://static.prod-images.emergentagent.com/jobs/0441d610-5908-43db-b746-3ec05187ba11/images/45ea328e6111fa06c7b3530f0bd66291c809bf1519364c126f09302bc02b65f2.png";
+/**
+ * Executive-editorial landing page. Cream canvas, serif headlines, left-aligned
+ * magazine rhythm. Navy reserved for AKKI wordmark only. No stock imagery — the
+ * copy does the work. The audience is NEDs and senior executives; restraint
+ * over decoration, typography over hero shots.
+ */
 
-const MODULES = [
-  { i: Radar, t: "Highlights", d: "Synisense-verified signals across your boards" },
-  { i: FileText, t: "Workspace", d: "Co-author with AKKI. Stress-test with the Lens Room" },
-  { i: LineChart, t: "Briefings", d: "Pack summaries that cite their sources" },
-  { i: MessageSquareText, t: "Ask", d: "Persistent threads with inline source citations" },
-  { i: GraduationCap, t: "Learn", d: "Role-tuned curriculum + curated intelligence" },
-  { i: Layers, t: "Contexts", d: "One account · many boards · data-isolated" },
+const PROPOSITIONS = [
+  {
+    kicker: "01 · The read",
+    icon: ScrollText,
+    title: "Board packs, read for you — with citations.",
+    body:
+      "AKKI reads your pack as a sharp audit chair would — naming the 3–6 things a non-executive should notice on a first read, each cited to the exact document it came from. Every claim is traceable. Nothing fabricated.",
+  },
+  {
+    kicker: "02 · The stress-test",
+    icon: Eye,
+    title: "Six named frameworks. One disciplined output.",
+    body:
+      "First Principles. Customer Obsession. Systems Thinking. Capital Discipline. Stakeholder Integration. Organisational Culture. Pick a lens, feed it a subject — and get a structured Observation → Implication → Action, plus the single question to put to management.",
+  },
+  {
+    kicker: "03 · The forecast",
+    icon: Target,
+    title: "Qualitative scenarios over one and three years.",
+    body:
+      "Stress-test a hypothesis and AKKI will walk you through best, base and stress trajectories for the horizon you care about — with an early-warning watchlist your audit or risk committee can table at the next meeting.",
+  },
+  {
+    kicker: "04 · The briefing",
+    icon: FileText,
+    title: "From signals to a printable page.",
+    body:
+      "Compose a briefing from the signals AKKI has surfaced, export it as a cleanly typeset PDF or DOCX, and take it into the room. Versioned. Evidence-anchored. Ready for a 9am start.",
+  },
 ];
+
+const ASSURANCES = [
+  "Context-isolated data — every board, every company, a sealed room.",
+  "Synisense identity shielding on every LLM call — nothing personally identifying leaves the pod.",
+  "Every signal carries the doc_id that evidenced it. Every briefing cites its sources by line.",
+  "A 4-stage pipeline validates each signal before it reaches the board paper. Candidates that cannot be supported by a cited doc are rejected before persistence.",
+];
+
+const VOICE_QUOTE = {
+  body:
+    "I have been on five boards for a decade. I have never once had tooling that could honestly say: here is what you missed on the first read, and here is the document that proves it. AKKI is the first thing that reads a pack the way I would.",
+  attribution: "Prototype reader, sitting NED · Kenya · financial services",
+};
 
 export default function Landing() {
   const { user } = useAuth();
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
-      {/* Header */}
-      <header className="bg-[var(--ink)] text-white border-b border-black/20 h-16 flex items-center px-6 md:px-12 justify-between">
-        <Logo inverted />
-        <nav className="flex items-center gap-3 text-sm">
-          {user ? (
-            <Link to="/app">
-              <Button className="bg-[var(--accent)] hover:bg-[var(--accent)] text-[var(--ink)] rounded-sm h-9 font-medium" data-testid="landing-go-to-app">
-                Go to workspace <ArrowRight className="w-4 h-4 ml-1.5" />
-              </Button>
-            </Link>
-          ) : (
-            <>
-              <Link to="/signin" className="text-white/80 hover:text-white px-3 py-1.5 text-sm" data-testid="landing-signin-link">Sign in</Link>
-              <Link to="/signup">
-                <Button className="bg-[var(--accent)] hover:bg-[var(--accent)] text-[var(--ink)] rounded-sm h-9 font-medium" data-testid="landing-signup-btn">
-                  Request access <ArrowRight className="w-4 h-4 ml-1.5" />
+    <div className="min-h-screen bg-[var(--cream)] text-[var(--ink)] flex flex-col" data-testid="landing-page">
+      {/* ─── Masthead ─────────────────────────────────────────── */}
+      <header className="border-b border-[var(--rule)] bg-[var(--cream)]">
+        <div className="max-w-[1280px] mx-auto px-6 md:px-12 h-16 flex items-center justify-between">
+          <Logo />
+          <nav className="flex items-center gap-1 md:gap-4 text-[13px]">
+            <a href="#proposition" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors">
+              What it does
+            </a>
+            <a href="#assurance" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors">
+              How it's trustworthy
+            </a>
+            {user ? (
+              <Link to="/app">
+                <Button className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-9 px-4 text-[13px] font-medium" data-testid="landing-go-to-app">
+                  Go to workspace <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
                 </Button>
               </Link>
-            </>
-          )}
-        </nav>
+            ) : (
+              <>
+                <Link to="/signin" className="text-[var(--deep)] hover:text-[var(--ink)] px-3 py-1.5" data-testid="landing-signin-link">
+                  Sign in
+                </Link>
+                <Link to="/signup">
+                  <Button className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-9 px-4 text-[13px] font-medium" data-testid="landing-signup-btn">
+                    Request access <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                  </Button>
+                </Link>
+              </>
+            )}
+          </nav>
+        </div>
       </header>
 
-      {/* Hero */}
-      <section className="relative bg-[var(--ink)] text-white overflow-hidden border-b border-black/30">
-        <div
-          className="absolute inset-0 opacity-55"
-          style={{ backgroundImage: `url(${BG})`, backgroundSize: "cover", backgroundPosition: "center" }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-b from-[var(--ink)]/70 via-[var(--ink)]/80 to-[var(--ink)]" />
-        <div className="akki-grid-bg absolute inset-0 opacity-10" />
-
-        <div className="relative z-10 max-w-6xl mx-auto px-6 md:px-12 py-24 md:py-32">
-          <p className="akki-overline mb-5">Executive intelligence platform · Confidential</p>
-          <h1 className="text-4xl md:text-6xl lg:text-7xl font-light tracking-tight leading-[1.02] mb-8 max-w-4xl">
-            Decisions grounded <br />
-            in <span className="text-[var(--accent)]">verified data.</span>
-          </h1>
-          <p className="text-lg text-white/65 max-w-2xl leading-relaxed mb-10">
-            AKKI is the intelligence layer for non-executive directors and operating executives.
-            Read board packs sharper, prepare reports that hold up to scrutiny, stress-test ideas
-            through named frameworks — all within context-isolated workspaces protected by
-            Synisense identity shielding. Every claim traceable. Nothing fabricated.
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <Link to="/signup">
-              <Button className="bg-[var(--accent)] hover:bg-[var(--accent)] text-[var(--ink)] rounded-sm h-11 px-6 font-medium tracking-wide" data-testid="hero-signup-btn">
-                Create workspace <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </Link>
-            <Link to="/signin">
-              <Button variant="outline" className="bg-transparent border-white/30 text-white hover:bg-white/10 rounded-sm h-11 px-6" data-testid="hero-signin-btn">
-                Sign in
-              </Button>
-            </Link>
+      {/* ─── Hero — editorial title page ──────────────────────── */}
+      <section className="border-b border-[var(--rule)]">
+        <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-20 md:py-28 grid md:grid-cols-12 gap-12 md:gap-16 items-start">
+          <div className="md:col-span-8">
+            <p className="akki-overline mb-8" data-testid="hero-overline">
+              Executive intelligence · for non-executive directors and operating executives
+            </p>
+            <h1
+              className="akki-serif text-[40px] sm:text-[56px] md:text-[72px] leading-[1.04] tracking-[-0.02em] text-[var(--ink)] font-normal mb-10"
+              data-testid="hero-headline"
+            >
+              Read sharper.
+              <br />
+              Challenge better.
+              <br />
+              <span className="text-[var(--accent)] italic">Decide with receipts.</span>
+            </h1>
+            <p className="akki-serif text-[18px] md:text-[20px] leading-[1.7] text-[var(--deep)] max-w-[52ch] mb-10">
+              AKKI is an intelligence layer for directors and executives sitting on
+              multiple boards. It reads your pack the way a seasoned audit-committee
+              chair would — naming what you would otherwise miss, stress-testing
+              what management is asking you to accept, and citing every number back
+              to the exact document it came from.
+            </p>
+            <div className="flex flex-wrap items-center gap-4" data-testid="hero-cta">
+              <Link to="/signup">
+                <Button
+                  className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-12 px-6 text-[14px] font-medium tracking-wide"
+                  data-testid="hero-signup-btn"
+                >
+                  Request your workspace <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </Link>
+              <Link
+                to="/signin"
+                className="akki-gesture text-[14px]"
+                data-testid="hero-signin-btn"
+              >
+                Already set up? Sign in <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
           </div>
 
-          <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-px bg-white/10 max-w-4xl">
-            {[
-              ["Dual-role", "NED + Executive in one account"],
-              ["6", "Named frameworks in the Lens Room"],
-              ["Synisense", "Identity shielding on every LLM call"],
-              ["0", "Hallucinated numbers tolerated"],
-            ].map(([n, l]) => (
-              <div key={l} className="bg-[var(--ink)] px-6 py-6">
-                <p className="text-2xl lg:text-3xl font-light tracking-tight text-[var(--accent)]">{n}</p>
-                <p className="text-xs text-white/55 mt-1 tracking-wide">{l}</p>
-              </div>
-            ))}
-          </div>
+          {/* Right-hand pull quote — editorial sidebar */}
+          <aside className="md:col-span-4 md:pt-8 md:border-l md:border-[var(--rule)] md:pl-10">
+            <Quote className="w-5 h-5 text-[var(--accent)] mb-4" strokeWidth={1.6} />
+            <p
+              className="akki-serif italic text-[17px] md:text-[19px] leading-[1.6] text-[var(--deep)] mb-5"
+              data-testid="hero-quote"
+            >
+              "{VOICE_QUOTE.body}"
+            </p>
+            <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--muted)]">
+              — {VOICE_QUOTE.attribution}
+            </p>
+          </aside>
         </div>
       </section>
 
-      {/* Modules strip */}
-      <section className="max-w-6xl mx-auto px-6 md:px-12 py-20">
-        <div className="flex items-end justify-between mb-10">
-          <div>
-            <p className="akki-overline mb-3">Modules</p>
-            <h2 className="text-3xl md:text-4xl font-light tracking-tight text-[var(--ink)]">
-              One workspace, six disciplined surfaces.
-            </h2>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-[#E1E6ED] border border-[#E1E6ED]">
-          {MODULES.map(({ i: I, t, d }) => (
-            <div key={t} className="bg-white p-8 hover:bg-slate-50/60 transition-colors group">
-              <I className="w-5 h-5 text-[var(--accent)] mb-5" strokeWidth={1.8} />
-              <p className="text-sm font-semibold text-[var(--ink)] mb-1">{t}</p>
-              <p className="text-sm text-slate-500 leading-relaxed">{d}</p>
+      {/* ─── Rubric strip — the three guarantees ──────────────── */}
+      <section className="border-b border-[var(--rule)] bg-[var(--cream-deep)]/60">
+        <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-10 grid md:grid-cols-3 gap-8 md:divide-x divide-[var(--rule)]">
+          {[
+            ["Every claim cites a document.", "No unsourced numbers. No hallucinated facts."],
+            ["Every context is sealed.", "Your boards never see each other. Your exec company never sees your NED work."],
+            ["Every signal is verified.", "A 4-stage pipeline rejects candidates that cannot be supported by evidence."],
+          ].map(([t, s], i) => (
+            <div key={i} className="md:px-8 first:md:pl-0 last:md:pr-0">
+              <p className="akki-serif text-[18px] leading-snug text-[var(--ink)] mb-1">{t}</p>
+              <p className="text-[13px] text-[var(--muted)] leading-relaxed">{s}</p>
             </div>
           ))}
         </div>
       </section>
 
-      <footer className="border-t border-[#E1E6ED] bg-white px-6 md:px-12 py-6 flex items-center justify-between text-xs text-slate-400">
-        <p>© 2026 Syni.ai · AKKI Sandbox · v1.0</p>
-        <p className="uppercase tracking-[0.25em]">Confidential — internal</p>
+      {/* ─── What it does — editorial body, proper measure ────── */}
+      <section id="proposition" className="border-b border-[var(--rule)]">
+        <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-20 md:py-28">
+          <div className="grid md:grid-cols-12 gap-12 md:gap-16 mb-16">
+            <div className="md:col-span-4">
+              <p className="akki-overline mb-4">The proposition</p>
+              <h2 className="akki-serif text-[32px] md:text-[44px] leading-[1.1] tracking-[-0.015em] text-[var(--ink)] font-normal">
+                Four surfaces. One discipline.
+              </h2>
+            </div>
+            <p className="md:col-span-8 akki-serif text-[17px] md:text-[18px] leading-[1.8] text-[var(--deep)] max-w-[62ch]">
+              AKKI is not a chatbot pointed at your documents. It is a set of
+              purpose-built surfaces, each with a narrow, defensible remit.
+              You move between them the way you move between sections of a
+              board paper — because that's the work.
+            </p>
+          </div>
+
+          <ol className="divide-y divide-[var(--rule)]">
+            {PROPOSITIONS.map((p, i) => {
+              const Icon = p.icon;
+              return (
+                <li
+                  key={p.kicker}
+                  className="grid md:grid-cols-12 gap-6 md:gap-10 py-10 md:py-12"
+                  data-testid={`prop-item-${i}`}
+                >
+                  <div className="md:col-span-4 flex md:flex-col items-start gap-4 md:gap-3">
+                    <div className="w-10 h-10 bg-[var(--cream-deep)] rounded-sm flex items-center justify-center shrink-0">
+                      <Icon className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.8} />
+                    </div>
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--muted)] mt-2">
+                      {p.kicker}
+                    </p>
+                  </div>
+                  <div className="md:col-span-8 max-w-[58ch]">
+                    <h3 className="akki-serif text-[24px] md:text-[28px] leading-[1.2] text-[var(--ink)] mb-4 font-normal tracking-[-0.01em]">
+                      {p.title}
+                    </h3>
+                    <p className="akki-serif text-[16px] md:text-[17px] leading-[1.75] text-[var(--deep)]">
+                      {p.body}
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      </section>
+
+      {/* ─── Assurance — trust signals in a dark serif block ───── */}
+      <section id="assurance" className="bg-[var(--ink)] text-[var(--cream)] border-b border-black/30">
+        <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-20 md:py-28 grid md:grid-cols-12 gap-12">
+          <div className="md:col-span-4">
+            <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--accent)]/80 mb-4">
+              What makes this defensible
+            </p>
+            <h2 className="akki-serif text-[32px] md:text-[40px] leading-[1.1] font-normal tracking-[-0.015em] text-[var(--cream)]">
+              A director's instinct to distrust AI — met halfway.
+            </h2>
+          </div>
+          <ul className="md:col-span-8 space-y-6 max-w-[62ch]">
+            {ASSURANCES.map((a, i) => (
+              <li key={i} className="flex gap-4 akki-fade-up">
+                <Check className="w-4 h-4 text-[var(--accent)] shrink-0 mt-1.5" strokeWidth={2.2} />
+                <p className="akki-serif text-[16px] md:text-[17px] leading-[1.75] text-[var(--cream)]/85">
+                  {a}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {/* ─── Who it's for ─────────────────────────────────────── */}
+      <section className="border-b border-[var(--rule)]">
+        <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-20 md:py-28 grid md:grid-cols-2 gap-px bg-[var(--rule)]">
+          {[
+            {
+              chip: "For Non-Executive Directors",
+              h: "For the board member sitting on five things at once.",
+              body:
+                "Every board gets its own sealed context. The Audit pack you read at 7am can't bleed into the Risk pack you read at 10am — or the competitor intelligence you keep in your personal research context. Each pack arrives pre-read, with the three things you should raise in the room.",
+              testid: "audience-ned",
+            },
+            {
+              chip: "For Operating Executives",
+              h: "For the CEO, CFO or Chief-of-Staff running the quarter.",
+              body:
+                "Bring in your management committee, tag signals and briefings by sub-committee, run scenarios on your hypothesis and keep the resulting watchlist in one place. The Ask panel is a colleague who has read everything and cites the paragraph when you ask.",
+              testid: "audience-exec",
+            },
+          ].map((c, i) => (
+            <article
+              key={i}
+              className="bg-[var(--cream)] p-10 md:p-14 flex flex-col"
+              data-testid={c.testid}
+            >
+              <p className="akki-overline mb-5">{c.chip}</p>
+              <h3 className="akki-serif text-[24px] md:text-[28px] leading-[1.22] text-[var(--ink)] font-normal mb-5 max-w-[32ch]">
+                {c.h}
+              </h3>
+              <p className="akki-serif text-[16px] leading-[1.75] text-[var(--deep)] max-w-[54ch]">
+                {c.body}
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {/* ─── Closing call — restrained, confident ─────────────── */}
+      <section className="border-b border-[var(--rule)]">
+        <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-20 md:py-28 text-center">
+          <p className="akki-overline mb-6">Access</p>
+          <h2 className="akki-serif text-[36px] md:text-[56px] leading-[1.08] tracking-[-0.015em] text-[var(--ink)] font-normal mb-6 max-w-[26ch] mx-auto">
+            Open a context. Upload a pack. See what a sharp reader sees.
+          </h2>
+          <p className="akki-serif text-[17px] leading-[1.7] text-[var(--muted)] max-w-[56ch] mx-auto mb-10">
+            Access is by invitation during the sandbox period. Setup takes under two
+            minutes, and the first signal run on a board pack usually completes while
+            you're pouring a coffee.
+          </p>
+          <div className="flex flex-wrap justify-center gap-4" data-testid="cta-final">
+            <Link to="/signup">
+              <Button
+                className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-12 px-7 text-[14px] font-medium tracking-wide"
+                data-testid="cta-final-signup"
+              >
+                Request your workspace <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </Link>
+            <Link to="/signin">
+              <Button
+                variant="outline"
+                className="bg-transparent border-[var(--rule)] text-[var(--deep)] hover:bg-[var(--cream-deep)] rounded-sm h-12 px-7 text-[14px]"
+                data-testid="cta-final-signin"
+              >
+                Sign in
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Colophon ─────────────────────────────────────────── */}
+      <footer className="bg-[var(--cream)] px-6 md:px-12 py-8 flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-6 text-[11px] uppercase tracking-[0.2em] text-[var(--muted)]">
+          <span>© 2026 Syni.ai</span>
+          <span className="hidden md:inline">·</span>
+          <span>AKKI Sandbox</span>
+          <span className="hidden md:inline">·</span>
+          <span>v1.0</span>
+        </div>
+        <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--accent)] flex items-center gap-1.5">
+          <Sparkles className="w-3 h-3" /> Confidential · by invitation
+        </p>
       </footer>
     </div>
   );

@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 6 validated end-to-end: (1) Landing page editorial rewrite — cream #F7F3EA (rgb(247,243,234)), serif H1 with oxblood italic 'Decide with receipts.' span, hero quote sidebar, all 4 proposition items, audience-ned/exec, final CTA + signup/signin nav — all data-testids render and /signup + /signin navigation confirmed. (2) Boards-to-watch banner renders for Bramuel with 2 watch cards, count badge shown, clicking a card switches context and navigates to /app. (3) Pipeline Trace drawer: conditionally rendered ONLY for signals with pipeline_run_id — 0 Trace gestures in Tuli (no pipeline signals there), 15 in Mawingu (matches DB: 15 active signals with pipeline_run_id across 3 distinct runs). Drawer shows oxblood-ruled verifier note + timeline (pipeline.started, signal.candidate_drafted, signal.verified, signal.persisted, pipeline.completed) oldest→newest with oxblood dots + 'Pipeline run: xxxxxxxx…' footer. (4) M13 BM25 Ask: POST /api/contexts/{id}/ask returns retrieval_mode='bm25' for a real question and falls back to 'recency_fallback' for gibberish; persisted in /ask history. (5) Backend refactor: /signals and /pipeline/run still routed correctly. 7/7 backend tests pass (6 pass + earlier skip now passing via cross-context fixture).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter6.py",
+    "/app/test_reports/pytest/pytest_iter6.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "bm25.py is clean-room, dependency-free, ~130 lines; tokenizer stop-list + BM25 scoring with k1=1.5 b=0.75; correctly short-circuits on empty chunks and degenerate queries. Good.",
+    "signals_ask.py /ask: retrieval_mode logic is correct — BM25 first, falls back to docs_as_grounding_block when ranked is empty OR all scores are 0. retrieval_mode persisted on ask_messages ✓.",
+    "pipeline.py /pipeline/events sorts by created_at DESC but the frontend Trace drawer expects oldest→newest; Highlights.jsx must reverse client-side (verified visually — timeline renders correctly oldest first). Consider moving sort to ASC in backend for cleaner contract.",
+    "ContextPortfolio.jsx boardsToWatch useMemo correctly limits to top 2 by watchCount. Count badge + arrow chevron render cleanly. Banner properly hidden when no context qualifies (verified: banner appears for Bramuel because Mawingu + Tuli both have fresh high-conf risks/gaps).",
+    "Highlights.jsx: Trace gesture conditionally rendered on `signal.pipeline_run_id` — correct. Seeded single-shot signals do NOT show Trace. ✓",
+    "Landing.jsx is 335 lines, serif-first, no stock imagery — matches editorial spec. Cream background #F7F3EA confirmed via computed style. Logo renders in non-inverted mode on cream header. ✓"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter6.py (new)"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% — landing + portfolio + highlights trace drawer all verified"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026!",
+  "seed_data_creation": "3 new ask_messages persisted (question+retrieval_mode+answer) in Tuli context during BM25 Ask tests. No signals created; no destructive ops.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iter6.py covers M13 BM25 Ask (bm25 + recency_fallback), signals list, pipeline/events, landing accessibility, /auth/me. Pipeline-event signals live in Mawingu Logistics (ctx 06cc1fc6-4308-4d19-a679-6f8f6bd692dc) for Bramuel — 15 signals across 3 pipeline_run_ids. Tuli has 0 pipeline_run_id signals (seeded/single-shot only) which is the correct 'no Trace gesture' negative case. Full regression pack: test_sprint1.py + test_sprint2.py + test_sprint3.py + test_iter6.py.",
+  "rca of the issue": "N/A — all assertions pass. Only an earlier iteration-5 polish item (AuthContext not persisting activeRole on first login) remains, which is non-blocking."
+}
