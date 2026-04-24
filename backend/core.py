@@ -220,7 +220,7 @@ def clear_auth_cookies(response: Response) -> None:
 
 
 def sanitize_account(a: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    out = {
         "id": a["id"],
         "email": a["email"],
         "name": a.get("name", ""),
@@ -230,6 +230,13 @@ def sanitize_account(a: Dict[str, Any]) -> Dict[str, Any]:
         "preferences": a.get("preferences") or {},
         "created_at": a.get("created_at"),
     }
+    # Surface sandbox markers only when present — non-sandbox accounts stay
+    # lean. Lets the frontend key off account.is_sandbox if it wants to.
+    if a.get("is_sandbox"):
+        out["is_sandbox"] = True
+        if a.get("sandbox_session_id"):
+            out["sandbox_session_id"] = a["sandbox_session_id"]
+    return out
 
 
 def sanitize_context(c: Dict[str, Any]) -> Dict[str, Any]:

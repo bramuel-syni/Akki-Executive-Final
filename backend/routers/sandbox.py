@@ -103,7 +103,7 @@ async def generation_status(session_id: str):
     s = _sessions.get(session_id)
     if not s:
         raise HTTPException(status_code=404, detail="Sandbox session not found or expired")
-    return {
+    payload = {
         "session_id": session_id,
         "status": s["status"],
         "ready": s["status"] == "ready",
@@ -112,6 +112,14 @@ async def generation_status(session_id: str):
         "access_token": s.get("access_token") if s["status"] == "ready" else None,
         "error": s.get("error"),
     }
+    # Schedule session expiry 90s after we first report ready — keeps the
+    # in-memory dict bounded under heavy sandbox traffic.
+    if s["status"] == "ready" and "expire_task" not in s:
+        async def _expire():
+            await asyncio.sleep(90)
+            _sessions.pop(session_id, None)
+        s["expire_task"] = asyncio.create_task(_expire())
+    return payload
 
 
 # -----------------------------------------------------------------------------
@@ -263,6 +271,22 @@ async def _seed_sandbox(session_id: str):
 
     except Exception as e:
         logger.exception(f"[sandbox] session={session_id} seed failed: {e}")
+        # Roll back any half-seeded artefacts so orphans don't linger until
+        # the daily sweep. Tolerant: each step is independently try/ignored.
+        ctx_id = s.get("context_id")
+        acc_id = s.get("account_id")
+        try:
+            if ctx_id:
+                await db.documents.delete_many({"context_id": ctx_id})
+                await db.signals.delete_many({"context_id": ctx_id})
+                await db.briefings.delete_many({"context_id": ctx_id})
+                await db.context_objects.delete_many({"context_id": ctx_id})
+                await db.memberships.delete_many({"context_id": ctx_id})
+                await db.contexts.delete_one({"id": ctx_id})
+            if acc_id:
+                await db.accounts.delete_one({"id": acc_id, "is_sandbox": True})
+        except Exception:
+            logger.exception(f"[sandbox] session={session_id} rollback also failed")
         s["status"] = "error"
         s["error"] = str(e)
 

@@ -142,6 +142,39 @@ restructure.
 ## Recent fixes
 ## Recent fixes
 ## Recent fixes
+## Recent fixes
+- **2026-04-24 Sprint 10** — Addendum v4.3 §1 Phase 1: Sandbox pre-auth evaluation.
+  - New `/sandbox` route: 4-question editorial intake (company name,
+    sector, role, region). No sign-up required up front. Primary hero CTA
+    on Landing now points here.
+  - New `/sandbox/generating/:sessionId` streaming page — plays the 10-stage
+    60-second narrative with the prospect's company name, sector, region
+    country, and role label substituted into stage text. Cream canvas, serif
+    title, oxblood progress bar with ambient shimmer. Holds on stage 9
+    until the backend seed is genuinely ready.
+  - New backend `routers/sandbox.py` + `sandbox_service.py`:
+    `POST /api/sandbox/generate` → `GET /generate/{id}/status` flow, async
+    background seed (ready in ~2s), returns JWT. Creates disposable account
+    `sandbox+<id>@akki.local`, sandbox-typed context with
+    `sandbox_metadata.{expires_at (+14d), read_only_until (+21d),
+    hard_delete_at (+22d)}`, full seeded artefacts.
+  - **banking_midcap template** — 3 committees + 3 documents + 6 signals +
+    1 pre-composed briefing, every string parameterised for company name,
+    currency (KSh, ₦, €, $ etc. driven by region) and regulator (CBK, CBN,
+    SARB, FCA, SEC, MAS). Generic template fallback (1 doc + 3 signals + 1
+    briefing) for non-polished sectors in Phase 1.
+  - `SandboxBanner` chrome renders above top bar when
+    `activeContext.type==='sandbox'` — "14 days remaining · Set up your
+    account →". Hidden for non-sandbox users.
+  - Bearer token interceptor in `lib/api.js` attaches
+    `Authorization: Bearer <akki_access_token>` from localStorage when
+    present. Cookie-auth sessions unaffected (additive). Logout clears it.
+  - Rollback on seed failure, 90s session TTL, and `is_sandbox` surfaced on
+    sanitize_account from iter13 code review.
+  - **iteration_13: 12/12 backend PASS + 100% frontend arc verified.** Full
+    round-trip screenshot sequence captured (intake → generating → landing
+    with banner + banking signals visible).
+
 - **2026-04-24 Sprint 9** — Build Addendum v4.3 §8 + §9 closed.
   - **§8 — All boards aggregated Home stream**: new
     `GET /api/me/home/stream` merges signals + briefings across every active
