@@ -11,6 +11,7 @@ import {
   Layers, Globe, Mail,
 } from "lucide-react";
 import ShareModal from "@/components/share/ShareModal";
+import SandboxPackDrop from "@/components/sandbox/SandboxPackDrop";
 
 const CONFIDENCE_LABEL = { high: "High confidence", medium: "Medium confidence", low: "Low confidence" };
 
@@ -154,6 +155,10 @@ export default function AppHome() {
           </div>
 
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden" data-testid="home-sections">
+            {/* Sandbox-only: a discreet drop-your-own-pack affordance. Never
+                renders outside sandbox contexts. */}
+            <SandboxPackDrop onSignalsReady={load} />
+
             {/* Tab strip with a quiet scope toggle on the right.
                 The 'All boards' toggle only appears when the user has 2+ contexts. */}
             <div className="shrink-0 flex items-center border-b border-[var(--rule)] mb-5 gap-4">

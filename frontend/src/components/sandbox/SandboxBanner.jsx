@@ -30,18 +30,18 @@ export default function SandboxBanner() {
 
   return (
     <div
-      className="bg-[var(--cream-deep)] border-b border-[var(--rule)] px-6 py-2 flex items-center justify-center gap-3 text-[12.5px]"
+      className="bg-[var(--chrome)] text-white/90 px-6 py-2 flex items-center justify-center gap-3 text-[12.5px] border-b border-[var(--chrome)]"
       data-testid="sandbox-banner"
     >
-      <Sparkles className="w-3 h-3 text-[var(--accent)]" strokeWidth={2} />
-      <span className="text-[var(--muted)]">
+      <Sparkles className="w-3 h-3 text-white/70" strokeWidth={2} />
+      <span className="text-white/80">
         {isReadOnly ? (
           <>Sandbox expired — read-only for {readOnlyDays} more day{readOnlyDays === 1 ? "" : "s"}. </>
         ) : days !== null ? (
           <>
             Sandbox — you are exploring fictional data for{" "}
-            <span className="text-[var(--ink)] font-medium">{activeContext?.name}</span>.{" "}
-            <span className="text-[var(--accent)] font-medium" data-testid="sandbox-banner-days">
+            <span className="text-white font-medium">{activeContext?.name}</span>.{" "}
+            <span className="text-white font-medium" data-testid="sandbox-banner-days">
               {days} {days === 1 ? "day" : "days"} remaining
             </span>.{" "}
           </>
@@ -52,7 +52,7 @@ export default function SandboxBanner() {
       </span>
       <Link
         to={`/signup?from_sandbox=${encodeURIComponent(activeContext?.id || "")}`}
-        className="inline-flex items-center gap-1 text-[var(--accent)] hover:text-[var(--accent)]/80 font-medium transition-colors"
+        className="inline-flex items-center gap-1 text-white hover:text-white/80 font-medium transition-colors underline underline-offset-2 decoration-white/30 hover:decoration-white"
         data-testid="sandbox-banner-convert"
       >
         Set up your account <ArrowRight className="w-3 h-3" />

@@ -1,0 +1,43 @@
+{
+  "summary": "Addendum v4.4 — Palette migration + Board-pack generator verified end-to-end. Backend: 4/4 NEW tests PASS in /app/backend/tests/test_iter15_board_pack.py covering the full sandbox board-pack round-trip (create sandbox via POST /api/sandbox/generate with {company_name, sector, role, region} → poll /generate/{sid}/status until ready → upload a reportlab-generated 1-page PDF with selectable text via POST /api/contexts/{cid}/documents using sandbox Bearer token → assert status=='extracted' and extracted_chars>0 → verify doc is in GET /contexts/{cid}/documents listing → POST /api/contexts/{cid}/signals/generate with focus string returns 200 with signals[] and mode fields). Regression: 26/26 tests in test_sprint6 + test_iter11_speaking_notes + test_iter12_shares_home PASS unchanged (palette was CSS-only, no backend contract changes). Frontend palette + pack-drop live arc verified: (1) /sandbox submit button computed bg = rgb(26,43,76) navy (--chrome #1A2B4C) — EXACT match; (2) /sandbox/generating → /app landing: SandboxBanner bg = rgb(26,43,76) navy, text color = rgba(255,255,255,0.9) — matches the 'white/90 on navy' spec; (3) SandboxPackDrop[data-testid='sandbox-pack-drop'] renders, collapsed toggle shows 'Want to see AKKI on your pack?' copy, chevron is visible; clicking sandbox-pack-drop-toggle expands the drop zone with hidden sandbox-pack-drop-input + visible sandbox-pack-drop-browse button, and the exact copy 'Drop a PDF, DOCX, or TXT here · browse your files · UP TO 20MB · STAYS IN YOUR SANDBOX' is present; (4) Active nav-rail (nav-home > span.absolute) bg = rgb(26,43,76) navy — matches --chrome; (5) Sidebar 'Add document' upload pill bg = rgb(139,46,43) — oxblood (--accent) preserved as required; (6) Risk signal cards visibly show oxblood left-rail + oxblood RISK label (semantic oxblood preserved in the stream). Bramuel regression: bramuel@syni.ai successfully signs in, reaches /app, NO sandbox-banner, NO sandbox-pack-drop rendered (correctly gated by activeContext?.type==='sandbox'); active nav-rail still navy; risk signals still oxblood.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/sandbox/cleanup/expired", "issue": "Still unauthenticated (carried from iter13/iter14). Public endpoint — abuse would trigger mongo delete_many scans. Not a P0 but worth rate-limiting or gating by internal cron token."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter15_board_pack.py",
+    "/app/test_reports/pytest/pytest_iter15.xml"
+  ],
+  "action_items": [
+    "(Optional) Gate POST /api/sandbox/cleanup/expired behind a superadmin-only or internal-cron shared-secret — it currently accepts anonymous POSTs.",
+    "(Optional) Note from iter14 that stale test_sandbox_phase1.py::TestTemplatesMeta::test_list_templates asserting saas→generic_diversified was still stale; iter15 did not re-run phase1 but test_sandbox_phase2 covers the full contract."
+  ],
+  "critical_code_review_comments": [
+    "SandboxPackDrop.jsx: clean ~220 LOC, properly gated by isSandbox=activeContext?.type==='sandbox', graceful uploading/generating states with Loader2, optimistic toast+reset pattern. The onSignalsReady callback is fired after POST /signals/generate so the parent AppHome reloads the stream — verified wiring in AppHome.jsx line 160 (onSignalsReady={load}).",
+    "SandboxPackDrop.jsx line 54: correctly surfaces the 'couldn't extract readable text' toast when status !== 'extracted' — matches the scan-PDF rejection UX noted in the review request.",
+    "SandboxBanner.jsx: full-width navy bar, white/90 text, conversion link underlined — fully matches spec. read-only branch (days===0) still reads 'Sandbox expired' with white/90.",
+    "AppShell.jsx: active nav-rail rendering bg-[var(--chrome)] for both NAV and MANAGE_NAV items. Settings (line 462) uses bg-[var(--accent)] (oxblood) — intentional per the split between 'chrome rails' and the Settings surface accent? Worth flagging if E1 wants Settings rail also navy; otherwise fine.",
+    "Palette variables in index.css lines 18-23: --navy (#0F1E3A, 'narrow voice'), --chrome (#1A2B4C, 'institutional chrome'), --chrome-soft (#E6EAF1, hover tint). Split is documented and the two tokens are used distinctly (navy on wordmark, chrome on CTAs/rails).",
+    "SandboxPackDrop uploads data_trust='mixed' — sensible default for prospect-uploaded material. Considered flagging it as 'mine' or similar but 'mixed' reads well in the UI."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter15_board_pack.py (new — 4 E2E tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (4/4 iter15 board-pack E2E PASS; 26/26 regression sprint6+iter11+iter12 PASS)",
+    "frontend": "100% (palette tokens verified via computed CSS; SandboxPackDrop renders, toggles, expands with correct testids and exact spec copy; bramuel regression clean)"
+  },
+  "test_credentials": "Sandbox is credential-less (iter15 creates a throwaway sandbox+<id>@akki.local via POST /api/sandbox/generate). Bramuel regression: bramuel@syni.ai / TestBramuel2026!.",
+  "seed_data_creation": "Created 2 TEST_-prefixed sandbox contexts during this run: 1 from backend test (TEST_BoardPack Bank) + 1 from Playwright (TEST_PackDropFE Bank). Both have hard_delete_at +22d; main agent can sweep by back-dating hard_delete_at on TEST_-named contexts and calling POST /api/sandbox/cleanup/expired.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && python -m pytest tests/test_iter15_board_pack.py tests/test_sprint6.py tests/test_iter11_speaking_notes.py tests/test_iter12_shares_home.py -v. Expect 30/30 PASS. The iter15 test uses reportlab to generate a small PDF with selectable text; a scan-only PDF would be correctly rejected at /documents upload (status != 'extracted') and the FE would toast 'couldn't extract readable text' — by design. Palette: --chrome=#1A2B4C (navy) for CTAs/rails, --accent=#8B2E2B (oxblood) preserved for risk/editorial. Sandbox banner bg is now navy (was cream-deep). SandboxPackDrop only renders when activeContext?.type==='sandbox'.",
+  "rca of the issue": "No bugs found this iteration. All palette + board-pack checkpoints green."
+}

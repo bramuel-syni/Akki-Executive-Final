@@ -382,7 +382,7 @@ export default function AppShell({ children }) {
                     <>
                       <span
                         className={`absolute left-0 top-1 bottom-1 w-[3px] rounded-r transition-opacity ${
-                          isActive ? "bg-[var(--accent)] opacity-100" : "opacity-0"
+                          isActive ? "bg-[var(--chrome)] opacity-100" : "opacity-0"
                         }`}
                       />
                       <Icon className="w-4 h-4" strokeWidth={1.8} />
@@ -431,7 +431,7 @@ export default function AppShell({ children }) {
                       <>
                         <span
                           className={`absolute left-0 top-1 bottom-1 w-[3px] rounded-r transition-opacity ${
-                            active ? "bg-[var(--accent)] opacity-100" : "opacity-0"
+                            active ? "bg-[var(--chrome)] opacity-100" : "opacity-0"
                           }`}
                         />
                         <Icon className="w-4 h-4" strokeWidth={1.8} />

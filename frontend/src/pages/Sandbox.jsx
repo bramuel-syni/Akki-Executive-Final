@@ -186,7 +186,7 @@ export default function Sandbox() {
             <Button
               type="submit"
               disabled={!canSubmit}
-              className="w-full bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-md h-12 text-[15px] font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-[var(--chrome)] hover:bg-[var(--chrome)]/90 text-white rounded-md h-12 text-[15px] font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               data-testid="sandbox-submit-btn"
             >
               {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}

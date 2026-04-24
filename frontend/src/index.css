@@ -13,9 +13,14 @@
   --cream-deep:  #EFE9D9;
   --warm-white:  #FAFAF5;
   --rule:        #D9D3C1;
-  --accent:      #8B2E2B;   /* oxblood — decisions, accents, severity */
+  --accent:      #8B2E2B;   /* oxblood — RISK, severity, editorial pull-quotes, "read this closely" */
   --accent-soft: #F3E7E5;
-  --navy:        #0F1E3A;   /* institutional voice — wordmark & AKKI replies only */
+  --navy:        #0F1E3A;   /* institutional voice — wordmark, AKKI replies, chrome */
+  /* --chrome is the primary navy used on shell elements, primary CTAs, and
+     the active-nav rail. Split from --navy (which is the narrow voice token)
+     so we can tune chrome without affecting AKKI-voice copy. */
+  --chrome:      #1A2B4C;   /* navy institutional — primary CTAs, active nav, focus ring */
+  --chrome-soft: #E6EAF1;   /* subtle navy tint for hover / soft backgrounds */
   --risk:        #8B2E2B;
   --gap:         #A67C00;
   --opportunity: #3D6F3D;

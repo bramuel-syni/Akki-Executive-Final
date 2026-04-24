@@ -200,7 +200,7 @@ export default function Landing() {
             <div className="flex flex-wrap items-center gap-4" data-testid="hero-cta">
               <Link to="/sandbox">
                 <Button
-                  className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-12 px-6 text-[14px] font-medium tracking-wide"
+                  className="bg-[var(--chrome)] hover:bg-[var(--chrome)]/90 text-white rounded-sm h-12 px-6 text-[14px] font-medium tracking-wide"
                   data-testid="hero-sandbox-btn"
                 >
                   Try AKKI in 60 seconds <ArrowRight className="w-4 h-4 ml-2" />
