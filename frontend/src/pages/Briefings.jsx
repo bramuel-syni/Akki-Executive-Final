@@ -64,7 +64,7 @@ function withCitations(text, sourceMap) {
   return out;
 }
 
-function BriefingViewer({ briefing, onArchive }) {
+function BriefingViewer({ briefing, onArchive, onDraftNotes, notesDrafting }) {
   // Build stable citation-to-footnote map from all items+opening
   const { sourceMap, orderedIds, docById } = useMemo(() => {
     const ids = [];
@@ -101,6 +101,23 @@ function BriefingViewer({ briefing, onArchive }) {
         <div className="flex items-baseline justify-between gap-4 mb-3">
           <p className="akki-overline">PRIVATE · AKKI BRIEFING · v{briefing.version}</p>
           <div className="flex items-center gap-1">
+            {/* Draft speaking notes — LLM writes 3 spoken-voice bullets per
+                item, cached onto briefing.items[i].speaking_notes. Subsequent
+                Board-deck exports auto-embed them under each slide. */}
+            <button
+              type="button"
+              onClick={() => onDraftNotes && onDraftNotes(briefing)}
+              disabled={notesDrafting}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs text-[var(--accent)] border border-[var(--accent)]/30 hover:bg-[var(--accent-soft)] hover:border-[var(--accent)] transition-colors disabled:opacity-60 disabled:cursor-progress"
+              data-testid="briefing-draft-notes-btn"
+              title={briefing.speaking_notes_at
+                ? "Re-draft the speaking notes under each slide"
+                : "Write what you'd actually say when each slide is on screen"}
+            >
+              {notesDrafting
+                ? <><Loader2 className="w-3 h-3 animate-spin" /> Drafting…</>
+                : <><Sparkles className="w-3 h-3" /> {briefing.speaking_notes_at ? "Re-draft notes" : "Draft speaking notes"}</>}
+            </button>
             <a
               href={downloadUrl("board_deck")} target="_blank" rel="noreferrer"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs text-white bg-[var(--accent)] hover:bg-[var(--accent)]/90 transition-colors"
@@ -108,6 +125,14 @@ function BriefingViewer({ briefing, onArchive }) {
               title="Landscape slide-deck PDF — one slide per signal, built to present"
             >
               <Download className="w-3 h-3" /> Board deck
+              {briefing.speaking_notes_at && (
+                <span
+                  className="ml-1 text-[9px] uppercase tracking-wider bg-white/25 px-1 py-0.5 rounded"
+                  data-testid="briefing-deck-notes-badge"
+                >
+                  + notes
+                </span>
+              )}
             </a>
             <a
               href={downloadUrl("pdf")} target="_blank" rel="noreferrer"
@@ -325,6 +350,27 @@ export default function Briefings() {
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
+  const [notesDrafting, setNotesDrafting] = useState(false);
+  const onDraftNotes = async (b) => {
+    setNotesDrafting(true);
+    try {
+      const { data } = await api.post(
+        `/contexts/${contextId}/briefings/${b.id}/speaking-notes`,
+        {},
+        { timeout: 120000 }
+      );
+      const updated = data.briefing;
+      toast.success(
+        `Speaking notes ready — ${data.items_narrated} item${data.items_narrated === 1 ? "" : "s"} narrated.`,
+        { description: "They now appear under each slide in your Board deck." }
+      );
+      // Update list + selected with the freshly-narrated briefing
+      setList((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+      setSelected(updated);
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setNotesDrafting(false); }
+  };
+
   if (!contextId) {
     return <AppShell><div className="p-12 text-center text-slate-500 text-sm">No context selected.</div></AppShell>;
   }
@@ -445,7 +491,12 @@ export default function Briefings() {
                 <p className="text-xs text-slate-500 italic">{stage || "Working…"}</p>
               </div>
             ) : selected ? (
-              <BriefingViewer briefing={selected} onArchive={onArchive} />
+              <BriefingViewer
+                briefing={selected}
+                onArchive={onArchive}
+                onDraftNotes={onDraftNotes}
+                notesDrafting={notesDrafting}
+              />
             ) : list.length === 0 && !loading ? (
               <div className="bg-white border border-[#E1E6ED] rounded-sm p-16 text-center" data-testid="briefings-splash">
                 <ScrollText className="w-12 h-12 text-slate-300 mx-auto mb-5" strokeWidth={1.2} />

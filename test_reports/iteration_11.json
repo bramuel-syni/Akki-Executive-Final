@@ -1,0 +1,40 @@
+{
+  "summary": "Iter11 — Speaking Notes feature fully verified on both surfaces. Backend: 8/8 PASS in new /app/backend/tests/test_iter11_speaking_notes.py covering happy path (items_narrated=6, 1–3 string bullets per item, speaking_notes_at stamped), idempotency (second POST overwrites + refreshes timestamp), 404 unknown briefing, 401 unauthenticated, 400 empty-items (direct pymongo insert of TEST_ briefing with items=[] then delete), PDF embedding (fmt=board_deck contains 'WHAT YOU WOULD SAY' via pypdf text extraction), regression /ask top-level shielding dict still present, fmt=board_deck without notes still renders valid %PDF. Frontend: logged in as bramuel@syni.ai, navigated to /app/briefings, briefing-draft-notes-btn present and LEFT of briefing-export-board-deck pill (x=1084 < 1247), click transitions button to 'Drafting…' loading state, LLM completes in ~20s, success toast 'Speaking notes ready — 6 items narrated. They now appear under each slide in your Board deck.' renders, briefing-deck-notes-badge ('+ notes') is attached to Board deck pill, button label auto-switches to 'Re-draft notes'. Zero console errors across the flow.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter11_speaking_notes.py",
+    "/app/test_reports/pytest/pytest_iter11.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/briefings.py draft_speaking_notes uses a single LLM call for the whole briefing (one prompt listing all items) which keeps latency and cost predictable — sensible choice vs N calls. Clean index-based mapping from LLM 'item: N' back to items[i].",
+    "Bullet length cap (200 chars) and max 3 bullets per item are defensively trimmed — resistant to over-eager LLM output.",
+    "Empty-items guard (HTTP 400) and 404 guard come before the LLM call — no budget burn on invalid states.",
+    "briefings_service.render_board_deck_pdf now embeds 'WHAT YOU WOULD SAY' + speaking_notes bullets under item slides — verified via pypdf text extraction.",
+    "Frontend Briefings.jsx exposes all required test hooks (briefing-draft-notes-btn, briefing-deck-notes-badge) and correctly toggles label between 'Draft speaking notes' ↔ 'Re-draft notes' based on briefing.speaking_notes_at.",
+    "Minor nit: when LLM is in budget-error mode (502) the endpoint returns a detail string only — consider surfacing mode=error in the JSON body so the UI can show a clearer 'LLM unavailable' toast instead of the generic apiErrorMessage. Not blocking.",
+    "Minor nit: the test_400 negative case requires direct DB insertion because POST /briefings mandates ≥1 signal — consider adding an admin-only 'create empty briefing' or simply documenting this constraint in the API contract."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter11_speaking_notes.py (new)",
+    "/app/test_reports/pytest/pytest_iter11.xml (pytest JUnit)"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 iter11 tests PASS — happy path, idempotency, 404, 401, 400 empty-items, PDF embed, /ask shielding regression, board_deck-without-notes regression)",
+    "frontend": "100% on the reviewed surfaces (draft-notes button present + correctly positioned, loading state, toast, badge attachment, label toggle — zero console errors)"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! — login via /signin",
+  "seed_data_creation": "Two TEST_empty_items_briefing rows were created and cleaned up during backend test runs (delete_many by title in finally block). Test-run side effect: the seeded Tuli briefing now has speaking_notes + speaking_notes_at populated (expected — that's what the feature does). No other persistent changes.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && python -m pytest tests/test_iter11_speaking_notes.py -v. All 8 should pass in ~30s (LLM calls ~8–12s each, 3 of them). If LLM budget is exhausted the 502-aware tests will self-skip with 'LLM budget' message. The 400-empty-items test uses pymongo (sync) to insert/cleanup a TEST_ briefing — if you see stale TEST_empty_items_briefing rows, delete with: db.briefings.delete_many({'title': 'TEST_empty_items_briefing'}). Frontend login is at /signin (not /login). Draft notes button is data-testid=briefing-draft-notes-btn; notes badge is data-testid=briefing-deck-notes-badge.",
+  "rca of the issue": "No outstanding issues. All eight review items verified end-to-end."
+}

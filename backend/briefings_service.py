@@ -510,6 +510,17 @@ def render_board_deck_pdf(briefing: Dict[str, Any], docs_by_id: Dict[str, Dict[s
         textColor=AKKI_MUTED, fontName="Helvetica",
         fontSize=10, leading=14, spaceAfter=4,
     )
+    style_notes_label = ParagraphStyle(
+        "deck-notes-label", parent=styles["Normal"],
+        textColor=AKKI_OXBLOOD, fontName="Helvetica-Bold",
+        fontSize=7.5, leading=10, spaceBefore=14, spaceAfter=3,
+    )
+    style_notes_bullet = ParagraphStyle(
+        "deck-notes-bullet", parent=styles["Normal"],
+        textColor=AKKI_MUTED, fontName="Times-Italic",
+        fontSize=10, leading=15, spaceAfter=2,
+        leftIndent=14,
+    )
 
     # Collect citations up-front so each slide can footnote them
     all_ids: List[str] = []
@@ -616,6 +627,17 @@ def render_board_deck_pdf(briefing: Dict[str, Any], docs_by_id: Dict[str, Dict[s
                 ParagraphStyle("deck-chips", fontName="Helvetica", fontSize=9,
                                textColor=AKKI_MUTED, leading=13),
             ))
+
+        # Speaker notes — what the presenter will actually say with this slide
+        # on screen. Only rendered when drafted via /speaking-notes.
+        notes = [n for n in (it.get("speaking_notes") or []) if n]
+        if notes:
+            flow.append(Paragraph("WHAT YOU WOULD SAY", style_notes_label))
+            for note in notes[:3]:
+                flow.append(Paragraph(
+                    f'<font color="#8B2E2B">●</font> &nbsp; {_escape(note)}',
+                    style_notes_bullet,
+                ))
         flow.append(PageBreak())
 
     # ── Closing slide (if set) ─────────────────────────────────────────────

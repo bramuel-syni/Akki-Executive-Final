@@ -192,6 +192,124 @@ async def archive_briefing(
     return {"ok": True}
 
 
+@router.post("/contexts/{context_id}/briefings/{briefing_id}/speaking-notes")
+async def draft_speaking_notes(
+    briefing_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Generate 3 speaker-note bullets per briefing item.
+
+    What you would actually *say* when each slide is on screen. Persists onto
+    briefing.items[i].speaking_notes so subsequent board-deck exports render
+    them under the slide. Re-calling overwrites the notes for every item.
+    """
+    context_id = ctx["context"]["id"]
+    context_name = ctx["context"]["name"]
+    doc = await db.briefings.find_one(
+        {"id": briefing_id, "context_id": context_id, "status": "active"}, {"_id": 0},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Briefing not found")
+
+    items = doc.get("items", []) or []
+    if not items:
+        raise HTTPException(status_code=400, detail="Briefing has no items to narrate.")
+
+    ctx_obj = await gather_context_object(context_id)
+    co_answers = (ctx_obj or {}).get("answers") or {}
+    persona_bits = []
+    for k in ("q1_role", "q3_focus_areas", "q6_lens_preference", "q7_analytical_style"):
+        v = co_answers.get(k)
+        if v:
+            persona_bits.append(f"  · {v}")
+    persona_block = "\n".join(persona_bits) if persona_bits else "  · (generic board lens)"
+
+    # Build a single prompt that returns notes for every item — one LLM call per
+    # briefing keeps latency + cost predictable.
+    items_block_lines: List[str] = []
+    for i, it in enumerate(items, 1):
+        items_block_lines.append(
+            f"[item {i}] {it.get('signal_type','signal').upper()} · "
+            f"{it.get('confidence','medium')} confidence\n"
+            f"HEADLINE: {it.get('signal_headline','')}\n"
+            f"EVIDENCE: {(it.get('evidence') or '')[:800]}\n"
+            f"QUESTION: {it.get('question','')}\n"
+        )
+    items_block = "\n---\n".join(items_block_lines)
+
+    prompt = (
+        f"You are writing the speaker notes for a board deck — the lines "
+        f"directly under each slide the presenter will glance at while the "
+        f"slide is on screen. Not narration, not a script. Three short, "
+        f"spoken-voice bullets per item. How a sharp chair or CFO would "
+        f"frame the number, land the implication, and set up the question.\n\n"
+        f"[WHO'S PRESENTING]\n{persona_block}\n\n"
+        f"[BOARD / CONTEXT]\n  · {context_name}\n\n"
+        f"[ITEMS — {len(items)} in total]\n{items_block}\n\n"
+        f"For every item produce exactly 3 bullets. Each bullet ≤ 22 words, "
+        f"spoken voice, no lists of lists, no filler. The first bullet "
+        f"states the fact/number. The second bullet lands why it matters. "
+        f"The third bullet flags what to watch / escalate next.\n\n"
+        'Return JSON only: {"notes":[{"item":1,"bullets":["...","...","..."]},...]}. '
+        f"Produce notes for every item from 1..{len(items)} in order."
+    )
+
+    llm_out = await llm_call_llm(
+        module="briefing.speaking_notes",
+        user_query=prompt,
+        context_object=ctx_obj,
+        session_context={"session_id": f"notes-{briefing_id}"},
+        data_trust={"overall": "mixed"},
+        response_format="json",
+    )
+    parsed = parse_json_response(llm_out.get("response", ""))
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("notes"), list):
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM did not return valid speaking notes. Mode={llm_out.get('mode')}.",
+        )
+
+    notes_by_item = {}
+    for n in parsed["notes"]:
+        if not isinstance(n, dict):
+            continue
+        idx = n.get("item")
+        bullets = n.get("bullets")
+        if isinstance(idx, int) and isinstance(bullets, list):
+            clean = [str(b).strip()[:200] for b in bullets if str(b).strip()][:3]
+            if clean:
+                notes_by_item[idx] = clean
+
+    # Stamp notes onto items (by index; item idx is 1-based above)
+    updated_items: List[Dict[str, Any]] = []
+    for i, it in enumerate(items, 1):
+        new_it = dict(it)
+        new_it["speaking_notes"] = notes_by_item.get(i, [])
+        updated_items.append(new_it)
+
+    await db.briefings.update_one(
+        {"id": briefing_id, "context_id": context_id},
+        {"$set": {"items": updated_items, "speaking_notes_at": iso(now()),
+                  "shielding": llm_out.get("shielding", {})}},
+    )
+    await write_audit(
+        context_id, ctx["account"]["id"], "briefing.speaking_notes.drafted",
+        "briefing", briefing_id,
+        {"items_narrated": sum(1 for b in notes_by_item.values() if b),
+         "mode": llm_out.get("mode")},
+    )
+
+    refreshed = await db.briefings.find_one(
+        {"id": briefing_id, "context_id": context_id}, {"_id": 0},
+    )
+    return {
+        "briefing": refreshed,
+        "items_narrated": sum(1 for b in notes_by_item.values() if b),
+        "mode": llm_out.get("mode"),
+        "shielding": llm_out.get("shielding", {}),
+    }
+
+
 @router.get("/contexts/{context_id}/briefings/{briefing_id}/export")
 async def export_briefing(
     briefing_id: str,
