@@ -105,23 +105,24 @@ restructure.
 
 ## Prioritized backlog
 
-### P0 — SHIPPED (2026-04-23)
+### P0 — SHIPPED (2026-04-23 → 2026-04-24)
 - [x] **M12 Briefings** — auto-composed via `routers/briefings.py` (PDF+DOCX export).
 - [x] **M14 Lens Room** — `routers/lens.py` + `pages/LensRoom.jsx` — 6 frameworks,
       O→I→A output.
 - [x] **M11 Event-driven signals pipeline** — `routers/pipeline.py` — 4 staged events
       (candidate_drafted → verified → persisted) with full auditability via
       `signal_events` collection.
-- [x] **Refactor `server.py`** — partial: signals, ask, briefings, learn, committees,
-      simulate, comments, lens, pipeline all extracted. Remaining in server.py:
-      auth / contexts / accounts / memberships / invitations / documents / audit /
-      telemetry / llm_probe. Server.py now **1,305 lines** (from 1,942 — 33% off).
+- [x] **M13 Hybrid retrieval for Ask** — BM25 across chunks (`bm25.py`).
+- [x] **M5 Upload channels** — secure links + mobile camera capture.
+- [x] **Finish server.py refactor** — DONE (2026-04-24). server.py is now a
+      171-line thin assembler; auth/contexts/documents/misc all in their own
+      routers. 4 new router modules, core.py expanded with shared helpers.
+- [x] **Real Synisense PII shielding** — regex-based masking in `llm_service.py`,
+      full `shielding.{identifiers_masked, by_category, shielded_by}` dict now
+      surfaced on every LLM-backed endpoint response.
 
 ### P0 — remaining
-- [ ] **M13 Hybrid retrieval for Ask** — BM25 across chunks.
-- [ ] **M5 Upload channels** — secure links + mobile camera capture.
-- [ ] **Finish server.py refactor** — move auth + contexts + documents + audit
-      into their own routers.
+- _(none — all P0 items complete)_
 
 ### P1 — Polish
 - [ ] Onboarding wizard end-to-end frontend subagent coverage.
@@ -131,14 +132,31 @@ restructure.
 
 ### P2 — Paid / external integrations (explicitly deferred)
 - [ ] **M4 Stripe Billing** — sponsored seat subscriptions (test key available in pod).
-- [ ] **Real Synisense** — replace mock-shielding module with real microservice.
-- [ ] **Real vector DB** — Pinecone or pgvector.
+- [ ] **Real vector DB** — Pinecone or pgvector (current BM25 is sufficient for MVP).
 - [ ] **M6 Integrations** — Google Calendar, board portals (Diligent / BoardPaQ).
 - [ ] **Clerk / Auth0** — v4.0 M1 preference; we use custom JWT (recommended to keep).
 - [ ] **Unstructured.io** — richer extraction than our `pypdf` + `python-docx`.
 - [ ] **ClamAV / VirusTotal** — real virus scan (we use a stub).
 
 ## Recent fixes
+- **2026-04-24 Sprint 6** — Shielding payload regression fixed + server.py refactor completed.
+  - **Shielding fix**: every LLM-backed endpoint now returns a top-level
+    `shielding: {identifiers_masked, by_category, shielded_by}` dict alongside
+    the legacy scalar count. Touched: `/signals/generate`, `/ask`,
+    `/briefings`, `/simulate`, `/lens/run`, `/documents/generate-meta`.
+    iter8 flagged → iter9 100% green.
+  - **server.py refactor**: 1,400 → 171 lines (88% reduction). Extracted into
+    4 new routers: `routers/auth.py` (register/login/logout/refresh/me/role/MFA),
+    `routers/contexts.py` (CRUD + members + invitations + context-object +
+    presets + accounts/me), `routers/documents.py` (upload + thread +
+    list/get/patch/archive/download + generate-meta), `routers/misc.py`
+    (llm/probe + /events + /health). `core.py` now exports
+    `hash_password` / `verify_password` / `set_auth_cookies` /
+    `sanitize_account` / `sanitize_context` / `provision_default_context`.
+    server.py is now a pure assembler (startup indexes + admin seed + router
+    wiring + CORS). iteration_9: 100% backend — 52 existing sprint tests +
+    11 new iter9 refactor-smoke tests all green.
+
 - **2026-04-24 Sprint 5** — Shipped: AllLensesModal (fires 6 lenses in
   parallel from any signal card), mobile camera upload in Workspace
   (`capture="environment"`), lightweight CompositionStrip provenance panel
