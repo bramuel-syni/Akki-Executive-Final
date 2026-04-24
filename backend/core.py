@@ -245,6 +245,7 @@ def sanitize_context(c: Dict[str, Any]) -> Dict[str, Any]:
         "status": c.get("status", "active"),
         "progress_state": c.get("progress_state", {"onboarding_step": 0}),
         "committees": c.get("committees") or [],
+        "sandbox_metadata": c.get("sandbox_metadata"),
         "created_at": c.get("created_at"),
     }
 

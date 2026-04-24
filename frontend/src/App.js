@@ -23,6 +23,8 @@ import ContextPortfolio from "@/pages/ContextPortfolio";
 import Simulate from "@/pages/Simulate";
 import LensRoom from "@/pages/LensRoom";
 import Manage from "@/pages/Manage";
+import Sandbox from "@/pages/Sandbox";
+import SandboxGenerating from "@/pages/SandboxGenerating";
 
 function PublicOnlyRoute({ children }) {
   const { account } = useAuth();
@@ -41,6 +43,8 @@ function App() {
           <Route path="/signin" element={<PublicOnlyRoute><SignIn /></PublicOnlyRoute>} />
           <Route path="/signup" element={<PublicOnlyRoute><SignUp /></PublicOnlyRoute>} />
           <Route path="/invite/:token" element={<InviteAccept />} />
+          <Route path="/sandbox" element={<Sandbox />} />
+          <Route path="/sandbox/generating/:sessionId" element={<SandboxGenerating />} />
 
           <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
           <Route path="/app" element={<ProtectedRoute><AppHome /></ProtectedRoute>} />

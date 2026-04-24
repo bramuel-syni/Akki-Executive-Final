@@ -75,6 +75,7 @@ export function AuthProvider({ children }) {
     try { await api.post("/auth/logout"); } catch { /* ignore */ }
     window.localStorage.removeItem("akki.activeContextId");
     window.localStorage.removeItem("akki.activeRole");
+    window.localStorage.removeItem("akki_access_token");
     setAccount(false);
     setContexts([]);
     setActiveContextId(null);

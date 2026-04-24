@@ -198,20 +198,27 @@ export default function Landing() {
               to the exact document it came from.
             </p>
             <div className="flex flex-wrap items-center gap-4" data-testid="hero-cta">
-              <Link to="/signup">
+              <Link to="/sandbox">
                 <Button
                   className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-12 px-6 text-[14px] font-medium tracking-wide"
-                  data-testid="hero-signup-btn"
+                  data-testid="hero-sandbox-btn"
                 >
-                  Request your workspace <ArrowRight className="w-4 h-4 ml-2" />
+                  Try AKKI in 60 seconds <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               </Link>
               <Link
-                to="/signin"
+                to="/signup"
                 className="akki-gesture text-[14px]"
+                data-testid="hero-signup-btn"
+              >
+                Request your workspace <ArrowRight className="w-4 h-4" />
+              </Link>
+              <Link
+                to="/signin"
+                className="akki-gesture text-[14px] text-[var(--muted)]"
                 data-testid="hero-signin-btn"
               >
-                Already set up? Sign in <ArrowRight className="w-4 h-4" />
+                Already set up? Sign in
               </Link>
             </div>
           </div>

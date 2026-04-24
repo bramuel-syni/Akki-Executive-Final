@@ -45,6 +45,7 @@ from routers import pipeline as pipeline_router  # noqa: E402
 from routers import audit as audit_router  # noqa: E402
 from routers import synisense as synisense_router  # noqa: E402
 from routers import shares as shares_router  # noqa: E402
+from routers import sandbox as sandbox_router  # noqa: E402
 
 
 logger = logging.getLogger("akki")
@@ -74,6 +75,7 @@ app.include_router(pipeline_router.router)
 app.include_router(audit_router.router)
 app.include_router(synisense_router.router)
 app.include_router(shares_router.router)
+app.include_router(sandbox_router.router)
 
 
 # -----------------------------------------------------------------------------
