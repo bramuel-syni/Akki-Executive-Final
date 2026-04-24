@@ -135,6 +135,7 @@ async def create_briefing(
         "data_trust": docs_overall_trust(docs),
         "mode": llm_out.get("mode"),
         "shielding_masked": llm_out.get("shielding", {}).get("identifiers_masked", 0),
+        "shielding": llm_out.get("shielding", {}),
         "created_by": ctx["account"]["id"],
         "created_at": created_at,
         "status": "active",

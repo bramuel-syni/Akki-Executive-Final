@@ -10,8 +10,9 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+import bcrypt
 import jwt
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, Response
 from motor.motor_asyncio import AsyncIOMotorClient
 
 # -----------------------------------------------------------------------------
@@ -186,3 +187,102 @@ def create_refresh_token(account_id: str) -> str:
         },
         JWT_SECRET, algorithm=JWT_ALGO,
     )
+
+
+# -----------------------------------------------------------------------------
+# Password hashing + cookie helpers (moved from server.py for re-use in routers)
+# -----------------------------------------------------------------------------
+def hash_password(pw: str) -> str:
+    return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+
+
+def verify_password(pw: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(pw.encode(), hashed.encode())
+    except Exception:
+        return False
+
+
+def set_auth_cookies(response: Response, access: str, refresh: str) -> None:
+    response.set_cookie(
+        "access_token", access, httponly=True, secure=True, samesite="none",
+        max_age=ACCESS_TOKEN_TTL_MIN * 60, path="/",
+    )
+    response.set_cookie(
+        "refresh_token", refresh, httponly=True, secure=True, samesite="none",
+        max_age=REFRESH_TOKEN_TTL_DAYS * 86400, path="/",
+    )
+
+
+def clear_auth_cookies(response: Response) -> None:
+    response.delete_cookie("access_token", path="/")
+    response.delete_cookie("refresh_token", path="/")
+
+
+def sanitize_account(a: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": a["id"],
+        "email": a["email"],
+        "name": a.get("name", ""),
+        "declared_role": a.get("declared_role", "undeclared"),
+        "mfa_enabled": bool(a.get("mfa_enabled", False)),
+        "default_context_id": a.get("default_context_id"),
+        "preferences": a.get("preferences") or {},
+        "created_at": a.get("created_at"),
+    }
+
+
+def sanitize_context(c: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": c["id"],
+        "name": c["name"],
+        "type": c.get("type", "executive_personal"),
+        "industry": c.get("industry"),
+        "jurisdiction": c.get("jurisdiction"),
+        "sector": c.get("sector"),
+        "sponsoring_org_id": c.get("sponsoring_org_id"),
+        "owner_account_id": c.get("owner_account_id"),
+        "status": c.get("status", "active"),
+        "progress_state": c.get("progress_state", {"onboarding_step": 0}),
+        "committees": c.get("committees") or [],
+        "created_at": c.get("created_at"),
+    }
+
+
+async def provision_default_context(account: Dict[str, Any], name: str) -> Dict[str, Any]:
+    """Create the account's first personal context (executive_personal by default)."""
+    ctx_id = str(uuid.uuid4())
+    _now_iso = iso(now())
+    ctx_doc = {
+        "id": ctx_id,
+        "name": name,
+        "type": "executive_personal",  # refined at onboarding (M2)
+        "industry": None,
+        "jurisdiction": None,
+        "sector": None,
+        "sponsoring_org_id": None,
+        "owner_account_id": account["id"],
+        "status": "active",
+        "progress_state": {"onboarding_step": 0},
+        "created_at": _now_iso,
+    }
+    await db.contexts.insert_one(ctx_doc)
+    await db.memberships.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "account_id": account["id"],
+            "context_id": ctx_id,
+            "role": "executive",  # refined at onboarding
+            "sub_role": "admin",
+            "provisioning": "personal",
+            "data_ownership": "account",
+            "status": "active",
+            "created_at": _now_iso,
+        }
+    )
+    await db.accounts.update_one(
+        {"id": account["id"]}, {"$set": {"default_context_id": ctx_id}}
+    )
+    await write_audit(ctx_id, account["id"], "context.created", "context", ctx_id, {"name": name})
+    ctx_doc.pop("_id", None)
+    return ctx_doc

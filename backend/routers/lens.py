@@ -162,6 +162,8 @@ async def run_lens(
         "created_at": created_at,
         "role": my_role,
         "mode": llm_out.get("mode"),
+        "shielding_masked": llm_out.get("shielding", {}).get("identifiers_masked", 0),
+        "shielding": llm_out.get("shielding", {}),
         "status": "active",
     }
     await db.lens_runs.insert_one(doc)

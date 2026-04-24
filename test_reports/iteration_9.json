@@ -1,0 +1,39 @@
+{
+  "summary": "Iter9 backend-only verification after Sprint 6 shielding fix + server.py refactor (1400 -> 171 lines). test_sprint6.py 4/4 PASS (TestLLMShieldingReport flipped green). Refactor regression tests (sprint1+sprint2+sprint3+sprint5+iter6+sprint6) 52 passed / 2 skipped / 0 failed. Added new smoke file test_iter9_refactor_smoke.py (11/11 PASS) that hits every router carved out in the refactor (auth register+login+me, contexts GET+members+invitations, documents upload+list+download, misc /api/+/api/health) plus re-verifies the top-level `shielding` dict on /signals/generate, /ask, /briefings. No 404s, no missing paths — refactor is clean.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sprint6.py",
+    "/app/backend/tests/test_iter9_refactor_smoke.py",
+    "/app/test_reports/pytest/pytest_sprint6.xml",
+    "/app/test_reports/pytest/pytest_iter9_refactor.xml",
+    "/app/test_reports/pytest/pytest_iter9_smoke.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now a pure assembler (171 lines) — startup indexes, committee-id backfill, admin seed, router wiring, CORS. Very clean separation.",
+    "All 4 new routers (auth/contexts/documents/misc) preserve the original paths; no breaking rename observed in the smoke suite.",
+    "shielding fix verified at wire level: body.shielding is a dict with identifiers_masked/by_category/shielded_by on /signals/generate, /ask, and /briefings endpoints (tested on live backend against bramuel@syni.ai / Tuli Financial Group context).",
+    "Tests test_sprint2.py and test_sprint3.py hard-fail at collection time if REACT_APP_BACKEND_URL env var is not set (os.environ[...] KeyError). Minor ergonomics — consider fallback to reading /app/frontend/.env or using os.environ.get with pytest.skip, so running pytest from /app/backend without exporting the var doesn't crash collection. Not a blocker."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter9_refactor_smoke.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (52 sprint/iter tests passed + 11 iter9 refactor-smoke tests passed; 2 pre-existing skips — empty-comments list and non-owner export 403 assertion — are environmental, not failures)",
+    "frontend": "not tested (per review_request — no frontend changes in this iteration)"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026!",
+  "seed_data_creation": "1 net-new registered account TEST_iter9_<uuid>@akki.ai (auto-provisions a default context) + 1 uploaded document TEST_iter9_smoke.txt in Tuli Financial Group. All TEST_-prefixed as per conventions.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && REACT_APP_BACKEND_URL=<frontend .env URL> python -m pytest tests/test_sprint1.py tests/test_sprint2.py tests/test_sprint3.py tests/test_sprint5.py tests/test_iter6.py tests/test_sprint6.py tests/test_iter9_refactor_smoke.py -v. Expect 63 passed + 2 skipped. Skip test_akki_g1.py and test_akki_v3.py (pre-pivot architecture). Note: tests blow up at collection time if REACT_APP_BACKEND_URL isn't exported — two sprint files use os.environ[...] instead of os.environ.get.",
+  "rca of the issue": "No outstanding issue — Sprint 6 shielding regression (iter8 flag) confirmed fixed. Routers signals_ask.py/briefings.py/simulate.py/lens.py now place the full shielding dict at top level of the response, alongside (not replacing) the legacy shielding_masked count. test_sprint6.py::TestLLMShieldingReport::test_ask_returns_by_category exercises the exact assertion and now passes against live backend."
+}

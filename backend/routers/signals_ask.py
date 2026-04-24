@@ -136,6 +136,7 @@ async def generate_signals(
             "generated_by": ctx["account"]["id"],
             "focus": body.focus,
             "shielding_masked": llm_out.get("shielding", {}).get("identifiers_masked", 0),
+            "shielding": llm_out.get("shielding", {}),
             "mode": llm_out.get("mode"),
             "created_at": created_at, "status": "active",
         }
@@ -147,7 +148,7 @@ async def generate_signals(
         context_id, ctx["account"]["id"], "signals.generated", "signal", None,
         {"count": len(stored), "mode": llm_out.get("mode")},
     )
-    return {"signals": stored, "mode": llm_out.get("mode")}
+    return {"signals": stored, "mode": llm_out.get("mode"), "shielding": llm_out.get("shielding", {})}
 
 
 @router.get("/contexts/{context_id}/signals")
@@ -246,6 +247,7 @@ async def ask(
         "mode": llm_out.get("mode"),
         "retrieval_mode": retrieval_mode,
         "shielding_masked": llm_out.get("shielding", {}).get("identifiers_masked", 0),
+        "shielding": llm_out.get("shielding", {}),
         "asked_by": ctx["account"]["id"],
         "asked_by_email": ctx["account"]["email"],
         "created_at": iso(now()),

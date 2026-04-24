@@ -146,6 +146,8 @@ async def simulate(
         "question_for_management": (parsed.get("question_for_management") or "")[:600],
         "signal_ids": body.signal_ids or [],
         "mode": llm_out.get("mode"),
+        "shielding_masked": llm_out.get("shielding", {}).get("identifiers_masked", 0),
+        "shielding": llm_out.get("shielding", {}),
         "status": "active",
     }
     await db.simulations.insert_one(doc)
