@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import CommentThread from "@/components/collab/CommentThread";
+import CompositionStrip from "@/components/trace/CompositionStrip";
 
 const TYPE_CFG = {
   risk:        { icon: AlertTriangle, cls: "bg-red-50 text-red-700 border-red-200" },
@@ -232,6 +233,7 @@ function BriefingViewer({ briefing, onArchive }) {
         </footer>
       )}
 
+      <CompositionStrip artefact={briefing} kind="briefing" />
       <CommentThread artefactType="briefing" artefactId={briefing.id} />
     </article>
   );

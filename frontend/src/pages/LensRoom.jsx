@@ -5,6 +5,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import CommentThread from "@/components/collab/CommentThread";
+import CompositionStrip from "@/components/trace/CompositionStrip";
 import {
   Eye, Loader2, Trash2, HelpCircle, Sparkles,
   Scale, UsersRound, TrendingUp, Brain, Globe2, Network,
@@ -107,6 +108,7 @@ function RunViewer({ run, onArchive }) {
         </button>
       </div>
 
+      <CompositionStrip artefact={run} kind="lens" />
       <CommentThread artefactType="signal" artefactId={run.signal_id || run.id} />
     </article>
   );

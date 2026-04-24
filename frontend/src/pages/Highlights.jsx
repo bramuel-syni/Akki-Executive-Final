@@ -9,9 +9,10 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import {
   Sparkles, Loader2, ArrowRight, X, ShieldCheck, FileText,
-  SlidersHorizontal, Zap, GitBranch,
+  SlidersHorizontal, Zap, GitBranch, Eye,
 } from "lucide-react";
 import ActModal from "@/components/act/ActModal";
+import AllLensesModal from "@/components/lens/AllLensesModal";
 
 const CONFIDENCE_LABEL = { high: "High confidence", medium: "Medium confidence", low: "Low confidence" };
 
@@ -28,6 +29,7 @@ export default function Highlights() {
   const [minConf, setMinConf] = useState("all");
   const [committeeFilter, setCommitteeFilter] = useState("all");
   const [actOn, setActOn] = useState(null);  // signal currently being acted on
+  const [lensSignal, setLensSignal] = useState(null);  // signal for AllLensesModal
 
   // Reset committee filter when switching contexts
   useEffect(() => { setCommitteeFilter("all"); }, [contextId]);
@@ -221,7 +223,7 @@ export default function Highlights() {
         ) : (
           <div className="space-y-4" data-testid="signals-grid">
             {filtered.map((s) => (
-              <SignalStreamCard key={s.id} signal={s} onLoad={load} onAct={setActOn} />
+              <SignalStreamCard key={s.id} signal={s} onLoad={load} onAct={setActOn} onLens={setLensSignal} />
             ))}
           </div>
         )}
@@ -233,13 +235,19 @@ export default function Highlights() {
         signal={actOn}
         contextId={contextId}
       />
+
+      <AllLensesModal
+        open={!!lensSignal}
+        onClose={() => setLensSignal(null)}
+        signal={lensSignal}
+      />
     </AppShell>
   );
 }
 
 /** Thin wrapper that maps a signal to the StreamCard shape + adds a summary row
  *  with inline [doc:xxx] citations and dismiss action. */
-function SignalStreamCard({ signal, onLoad, onAct }) {
+function SignalStreamCard({ signal, onLoad, onAct, onLens }) {
   const [confirmingDismiss, setConfirmingDismiss] = useState(false);
   const [traceOpen, setTraceOpen] = useState(false);
   const [traceEvents, setTraceEvents] = useState(null);
@@ -331,6 +339,15 @@ function SignalStreamCard({ signal, onLoad, onAct }) {
               <GitBranch className="w-3 h-3" strokeWidth={2} /> Trace
             </button>
           )}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onLens?.(signal); }}
+            className="akki-gesture text-[13px]"
+            data-testid={`signal-lens-all-${signal.id}`}
+            title="Apply every lens to this signal, in parallel"
+          >
+            <Eye className="w-3 h-3" strokeWidth={2} /> All lenses
+          </button>
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onAct?.(signal); }}

@@ -17,7 +17,7 @@ import {
 import { toast } from "sonner";
 import {
   Upload, FileText, Trash2, Download, ShieldCheck, AlertTriangle,
-  CheckCircle2, Loader2, ArrowLeft, List, GripVertical,
+  CheckCircle2, Loader2, ArrowLeft, List, GripVertical, Camera,
 } from "lucide-react";
 
 const TRUST_STYLE = {
@@ -111,7 +111,7 @@ function StatusChip({ status }) {
 /** Left pane when no document is selected: upload + list. */
 function DocumentsBrowser({
   docs, loading, uploading, dragging, setDragging, queued, onFiles,
-  displayName, setDisplayName, trust, setTrust, fileInput,
+  displayName, setDisplayName, trust, setTrust, fileInput, cameraInput,
   onSelect, onArchive, onTrustChange, accountEmail, isAdmin,
 }) {
   return (
@@ -170,11 +170,26 @@ function DocumentsBrowser({
             >
               {uploading ? "Uploading…" : "Choose files"}
             </Button>
+            <Button
+              onClick={() => cameraInput.current?.click()} disabled={uploading}
+              variant="outline"
+              className="rounded-sm h-8 text-xs border-[#E1E6ED]"
+              data-testid="upload-camera-btn"
+              title="Capture a document page with your device camera"
+            >
+              <Camera className="w-3.5 h-3.5 mr-1" /> Camera
+            </Button>
             <input
               ref={fileInput} type="file" multiple accept={ACCEPT}
               className="hidden"
               onChange={(e) => onFiles(e.target.files)}
               data-testid="upload-file-input"
+            />
+            <input
+              ref={cameraInput} type="file" accept="image/*" capture="environment"
+              className="hidden"
+              onChange={(e) => onFiles(e.target.files)}
+              data-testid="upload-camera-input"
             />
           </div>
         </div>
@@ -445,6 +460,7 @@ export default function Workspace() {
   const [trust, setTrust] = useState("mixed");
   const [queued, setQueued] = useState([]);
   const fileInput = useRef(null);
+  const cameraInput = useRef(null);
 
   const [selectedDocId, setSelectedDocId] = useState(null);
 
@@ -580,6 +596,7 @@ export default function Workspace() {
               displayName={displayName} setDisplayName={setDisplayName}
               trust={trust} setTrust={setTrust}
               fileInput={fileInput}
+              cameraInput={cameraInput}
               onSelect={setSelectedDocId}
               onArchive={onArchive}
               onTrustChange={onTrustChange}

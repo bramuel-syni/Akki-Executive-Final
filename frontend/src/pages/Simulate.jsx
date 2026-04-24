@@ -10,6 +10,7 @@ import {
   Target, HelpCircle, Sparkles, Trash2, Clock,
 } from "lucide-react";
 import CommentThread from "@/components/collab/CommentThread";
+import CompositionStrip from "@/components/trace/CompositionStrip";
 
 const HORIZON_OPTS = [
   { value: "1y",   label: "1 year" },
@@ -144,6 +145,7 @@ function SimulationViewer({ sim, onArchive }) {
         </button>
       </div>
 
+      <CompositionStrip artefact={sim} kind="simulation" />
       <CommentThread artefactType="simulation" artefactId={sim.id} />
     </article>
   );
