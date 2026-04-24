@@ -195,7 +195,7 @@ export default function LensRoom() {
         <aside className="border-r border-[var(--rule)] bg-[var(--cream)] flex flex-col min-h-0" data-testid="lens-rail">
           <div className="px-5 py-6 border-b border-[var(--rule)] bg-white">
             <p className="akki-overline mb-1 flex items-center gap-1.5">
-              <Eye className="w-3 h-3 text-[var(--accent)]" /> Lens Room · Module M14
+              <Eye className="w-3 h-3 text-[var(--accent)]" /> The Lens · Module M14
             </p>
             <h1 className="akki-serif text-[20px] font-normal text-[var(--ink)] mb-1">Six frameworks. One subject.</h1>
             <p className="text-[11.5px] text-[var(--muted)] leading-relaxed">

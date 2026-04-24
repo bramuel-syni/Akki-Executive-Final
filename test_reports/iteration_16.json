@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 16 verification — label renames (Highlights→Signals, Lens Room→The Lens), Learn 'View more' modal, /learn/research personalisation (Kenya/CBK-flavoured), and X-Cron-Secret gate on /sandbox/cleanup/expired. Backend: 32/32 regression tests GREEN (test_sprint6 + test_iter11_speaking_notes + test_iter12_shares_home + test_iter15_board_pack + test_sandbox_phase1::TestCleanupSweep), plus 5/5 NEW iter16 tests in test_iter16_learn_personalisation.py covering (a) personalised=true with personalisation_from.jurisdiction=='Kenya' when Bramuel passes his Tuli context_id to POST /api/learn/research with topic='vendor AI oversight', (b) personalised=false when context_id omitted, (c) cleanup returns 401 on missing secret, (d) 401 on wrong secret, (e) 200 with {swept:int} when X-Cron-Secret matches AKKI_CRON_SECRET. Frontend: signed in as bramuel@syni.ai, verified sidebar nav labels render 'Signals' (not 'Highlights') and 'The Lens' (not 'Lens Room'); /app/highlights overline renders 'SIGNALS · TULI FINANCIAL GROUP'; /app/lens rail header renders 'THE LENS · MODULE M14' (literal 'The Lens · Module M14' in DOM; CSS text-transform:uppercase is the styling); Briefings.jsx source confirms 'Open Signals' replaces 'Open Highlights' (grep returns 0 stale matches). Learn 'View more' flow: data-testid='learn-view-more-btn' present on TL Articles tab; clicking opens data-testid='learn-more-modal' with the correct 'Further reading · TL Articles' header (rendered uppercase) and 12 target=_blank external links (Director's Handbook, NACD, IoD, PRA, MIT AI Risk Repository, Stanford HAI, etc.); switching to News tab via data-testid='learn-tab-news' and re-opening correctly renders 'Further reading · News' with 6 external links; Governance topic pill filter renders a 'Governance' section inside the modal and the 'Filtered for Governance' hint; ESC closes the modal (modal count=0 after Escape).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/app/learn View more modal", "issues": ["Review request said 'each tab ≥ 8 curated sources'. Actual LEARN_MORE counts in /app/frontend/src/lib/learnContent.js: tl_article=12 ✓, news=6 ✗, video=3 ✗, case_study=3 ✗. News / Videos / Case Studies are below the ≥ 8 threshold. Not a functional bug — the modal still opens, closes, filters, and links correctly — but curated-content depth is shallower than spec on 3 of 4 tabs."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter16_learn_personalisation.py",
+    "/app/test_reports/pytest/pytest_iter16.xml",
+    "/app/test_reports/pytest/pytest_iter16_new.xml"
+  ],
+  "action_items": [
+    "(Optional) Pad LEARN_MORE.news / .video / .case_study from 6/3/3 to ≥ 8 curated external sources each to fully match the 'Further reading' ≥ 8 spec. Currently only tl_article hits the 8-item bar.",
+    "(Nice-to-have) Consider lowercasing the modal header token ('Further reading · <Tab>') if the uppercase CSS styling is unintended — the raw string is already 'Further reading · TL Articles' in source, only visual transform is applied."
+  ],
+  "critical_code_review_comments": [
+    "backend/routers/sandbox.py line 331-346: X-Cron-Secret gate implemented cleanly — fails closed (503) when AKKI_CRON_SECRET env var is unset, returns 401 for missing/wrong header, 200 only on exact match. Proper defence against the iter15 'anonymous POST sweep' concern. Good.",
+    "backend/routers/learn.py _personalisation_clause(): membership is verified BEFORE reading the context — correct. Prevents a user from leaking sector/jurisdiction hints from a context they don't belong to. Returns personalised:false silently if membership absent (no enumeration leak). Good.",
+    "frontend/src/pages/Learn.jsx: View more button only renders when active tab has articles and LEARN_MORE[activeTab] is populated — sensible guard. Modal passes activeTopic for filtering and uses shadcn Dialog (ESC close works out-of-box).",
+    "frontend/src/components/learn/LearnMoreModal.jsx: external links correctly use target='_blank' rel='noopener noreferrer'. Good.",
+    "frontend/src/lib/learnContent.js: LEARN_MORE.news/video/case_study have only 6/3/3 items — below the ≥ 8 threshold stated in the review request. Curated-content shallowness, not a code bug.",
+    "frontend/src/pages/Highlights.jsx + LensRoom.jsx: overline/header strings correctly updated to 'SIGNALS' and 'The Lens · Module M14'. grep confirms no lingering 'Lens Room' or 'HIGHLIGHTS ·' on the new routes. Briefings.jsx line 460 uses 'Open Signals'.",
+    "frontend/src/components/layout/AppShell.jsx: nav labels are display-only renames — routes /app/highlights and /app/lens unchanged, so deep links and existing bookmarks continue to resolve. Clean."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter16_learn_personalisation.py (new — 5 tests, all PASS)"
+  ],
+  "success_rate": {
+    "backend": "100% (32/32 regression + 5/5 new iter16 tests PASS)",
+    "frontend": "95% (label renames ✓, Learn modal flow ✓, Governance filter ✓, ESC close ✓; soft finding: 3 of 4 LEARN_MORE tabs under the ≥ 8 curated-source threshold)"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (used); admin@akki.ai / AkkiAdmin2026! (not needed for this iter). AKKI_CRON_SECRET=local-dev-cron-secret-rotate-in-prod-2026 verified in /app/backend/.env and matches the cleanup endpoint contract.",
+  "seed_data_creation": "None — all tests reuse existing Bramuel seed + cleanup endpoint sweeps only expired sandboxes. Iter16 personalisation test does not persist state (LLM call is stateless).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 16 is 100% green on all functional contracts. Only soft follow-up is whether E1 wants to pad learnContent.js News/Videos/Case Studies to ≥ 8 curated items each. To re-run: cd /app/backend && python -m pytest tests/test_sprint6.py tests/test_iter11_speaking_notes.py tests/test_iter12_shares_home.py tests/test_iter15_board_pack.py tests/test_sandbox_phase1.py::TestCleanupSweep tests/test_iter16_learn_personalisation.py -v. Expect 37/37. The learn-research personalisation test can take ~60s end-to-end due to the Claude Sonnet 4.5 LLM call; retry once on 5xx (already wired into the test). Frontend: learn-tab-news / learn-tab-tl_article / learn-tab-video / learn-tab-case_study are the tab testids; learn-view-more-btn + learn-more-modal are the modal testids. CSS text-transform:uppercase affects inner_text readouts in the rail — do case-insensitive or raw-HTML checks when asserting header strings.",
+  "rca of the issue": "No bugs found in iter16. Single soft deviation documented: LEARN_MORE News/Videos/Case Studies below the ≥ 8 threshold stated in the review request (see design_issues + action_items)."
+}

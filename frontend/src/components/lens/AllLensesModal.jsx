@@ -214,7 +214,7 @@ export default function AllLensesModal({ signal, open, onClose }) {
         {/* Footer */}
         <div className="px-7 py-4 border-t border-[var(--rule)] bg-white flex items-center justify-between">
           <p className="text-[11px] text-[var(--muted)]">
-            Each lens opens in <a href="/app/lens" className="text-[var(--accent)] hover:underline">Lens Room</a> for a full read.
+            Each lens opens in <a href="/app/lens" className="text-[var(--accent)] hover:underline">The Lens</a> for a full read.
           </p>
           <Button
             onClick={onClose}

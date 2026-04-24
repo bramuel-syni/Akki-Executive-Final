@@ -108,7 +108,7 @@ export default function Highlights() {
       <div className="max-w-[1280px] mx-auto px-8 py-10">
         {/* Header */}
         <div className="mb-6 akki-fade-up">
-          <p className="akki-overline mb-2">Highlights · {activeContext.name}</p>
+          <p className="akki-overline mb-2">Signals · {activeContext.name}</p>
           <h1 className="akki-greeting mb-2">Signals worth your attention.</h1>
           <p className="akki-meta max-w-2xl">
             AKKI reads your documents and surfaces risks, opportunities, and gaps. Every signal cites its source.

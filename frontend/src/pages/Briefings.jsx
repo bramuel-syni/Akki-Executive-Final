@@ -451,13 +451,13 @@ export default function Briefings() {
                   {committeeFilter === "all" ? "No briefings yet" : "None for this committee"}
                 </p>
                 <p className="text-[10.5px] text-slate-400 leading-relaxed max-w-[220px] mx-auto">
-                  Generate signals from Highlights first, then compose your first briefing here.
+                  Generate signals from the Signals page first, then compose your first briefing here.
                 </p>
                 <Link
                   to="/app/highlights"
                   className="text-[11px] text-[var(--accent)] hover:underline inline-flex items-center gap-1 mt-3"
                 >
-                  Open Highlights <ArrowRight className="w-3 h-3" />
+                  Open Signals <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>
             ) : (

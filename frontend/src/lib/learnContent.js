@@ -256,6 +256,149 @@ export const CONTENT_TYPE_LABEL = {
 };
 
 /**
+ * "View more" reading list — per active tab. Opens in a modal below the grid
+ * as supplementary reference reading vetted by AKKI editors. Grouped by topic
+ * so a NED researching, say, 'regulation' gets the 4 primary-source URLs we'd
+ * hand them if asked in person.
+ *
+ * Shape: { [tab_key]: { [topic_slug]: [{title, source, url, note}] } }
+ * Topic 'general' = always shown regardless of topic filter.
+ */
+export const LEARN_MORE = {
+  tl_article: {
+    general: [
+      { title: "Principles for the Responsible Use of AI in Financial Services",
+        source: "Bank of England · Prudential Regulation Authority",
+        url: "https://www.bankofengland.co.uk/prudential-regulation/publication/2024/november/artificial-intelligence-and-machine-learning",
+        note: "PRA's evolving supervisory expectations — the clearest public signal of what UK regulators will look for." },
+      { title: "The AI Risk Repository",
+        source: "MIT Center for Collective Intelligence",
+        url: "https://airisk.mit.edu/",
+        note: "1,600+ categorised AI risks — useful as a risk-register starter pack, reviewed by MIT." },
+      { title: "AI Governance Scorecard",
+        source: "Stanford HAI",
+        url: "https://hai.stanford.edu/policy",
+        note: "Self-assessment tool published quarterly; lets boards benchmark their AI governance maturity." },
+    ],
+    governance: [
+      { title: "Director's Handbook — AI Oversight",
+        source: "NACD",
+        url: "https://www.nacdonline.org/all-governance-resources/ai/",
+        note: "The US director-community reference work. Updated annually. Members-only full text." },
+      { title: "AI and Corporate Governance",
+        source: "Institute of Directors (UK)",
+        url: "https://www.iod.com/resources/factsheets/technology/artificial-intelligence-ai-and-corporate-governance/",
+        note: "UK counterpart to NACD. Pragmatic, short, usable inside a board meeting." },
+    ],
+    frameworks: [
+      { title: "AI RMF Playbook",
+        source: "NIST",
+        url: "https://airc.nist.gov/AI_RMF_Knowledge_Base/Playbook",
+        note: "Stage-by-stage actionable playbook mapped to the NIST AI RMF functions." },
+      { title: "ISO/IEC 42001 explainer",
+        source: "BSI",
+        url: "https://www.bsigroup.com/en-GB/iso-42001-ai-management-system/",
+        note: "Readable certification-body summary — cheaper than buying the standard upfront." },
+    ],
+    "sector-banking": [
+      { title: "Artificial Intelligence in banking supervision",
+        source: "Central Bank of Kenya",
+        url: "https://www.centralbank.go.ke/",
+        note: "CBK's emerging stance on AI model risk management — directors of Kenyan banks should watch this." },
+      { title: "AI in financial services — discussion paper",
+        source: "Financial Conduct Authority (UK)",
+        url: "https://www.fca.org.uk/publications/discussion-papers/dp5-24-artificial-intelligence-machine-learning",
+        note: "Reference document quoted in current supervisory letters." },
+    ],
+    regulation: [
+      { title: "EU AI Act — consolidated text",
+        source: "European Parliament",
+        url: "https://artificialintelligenceact.eu/",
+        note: "Searchable annotated version. More usable than the Official Journal PDF." },
+      { title: "AI governance in Africa — state-of-play",
+        source: "Access Partnership",
+        url: "https://accesspartnership.com/africa-ai-policy-tracker/",
+        note: "Country-by-country tracker. Important for multi-jurisdictional boards." },
+    ],
+    vendor: [
+      { title: "Shared Assessments — AI in Third Party Risk",
+        source: "Shared Assessments",
+        url: "https://sharedassessments.org/ai/",
+        note: "Vendor-AI specific TPRM tooling, including an AI addendum for SIG questionnaires." },
+    ],
+  },
+  news: {
+    general: [
+      { title: "FT Artificial Intelligence coverage",
+        source: "Financial Times",
+        url: "https://www.ft.com/artificial-intelligence",
+        note: "Paywalled but the serious business of record for executive AI news." },
+      { title: "Reuters AI",
+        source: "Reuters",
+        url: "https://www.reuters.com/technology/artificial-intelligence/",
+        note: "Breaking, fact-first — pairs well with FT for perspective." },
+      { title: "Stanford AI Index — annual report",
+        source: "Stanford HAI",
+        url: "https://aiindex.stanford.edu/report/",
+        note: "The closest thing AI has to an annual almanac. Cite with confidence in board papers." },
+    ],
+    regulation: [
+      { title: "EU AI Act — implementing acts tracker",
+        source: "Future of Life Institute",
+        url: "https://artificialintelligenceact.eu/implementation/",
+        note: "Tracks secondary legislation in real time — more useful than the Official Journal for practitioners." },
+      { title: "White House AI Executive Orders — live tracker",
+        source: "Center for AI Safety",
+        url: "https://www.safe.ai/",
+        note: "Independent tracker of US federal AI policy actions." },
+    ],
+    "sector-banking": [
+      { title: "Basel Committee — AI supervisory implications",
+        source: "BIS",
+        url: "https://www.bis.org/bcbs/publications.htm",
+        note: "BCBS consultative documents on AI model risk — source material for all central-bank supervisory letters." },
+    ],
+  },
+  video: {
+    general: [
+      { title: "Stanford HAI — AI+X Executive Courses",
+        source: "Stanford Online",
+        url: "https://online.stanford.edu/programs/artificial-intelligence",
+        note: "Executive-grade short courses from HAI faculty. Paid, but a recognised credential." },
+      { title: "MIT Sloan — AI for Senior Executives",
+        source: "MIT Sloan",
+        url: "https://executive.mit.edu/course/artificial-intelligence/",
+        note: "The US counterpart. Strong alumni track record in financial services." },
+    ],
+    leadership: [
+      { title: "Andrew Ng — AI Transformation Playbook",
+        source: "Landing.AI",
+        url: "https://landing.ai/case-studies/",
+        note: "Case-by-case implementation write-ups. Not academic; practical." },
+    ],
+  },
+  case_study: {
+    general: [
+      { title: "Harvard CorpGov — AI in the Boardroom series",
+        source: "Harvard Law",
+        url: "https://corpgov.law.harvard.edu/category/artificial-intelligence/",
+        note: "Free, rigorous, frequently updated. The anchor reading list for any director serious about AI oversight." },
+      { title: "Deloitte — State of Generative AI in the Enterprise",
+        source: "Deloitte",
+        url: "https://www.deloitte.com/global/en/issues/trends/state-of-generative-ai-in-the-enterprise.html",
+        note: "Quarterly survey — useful for benchmarking 'are we behind our peers?'." },
+    ],
+    vendor: [
+      { title: "ICO — AI and data protection",
+        source: "Information Commissioner's Office (UK)",
+        url: "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/artificial-intelligence/",
+        note: "Regulator guidance on vendor AI data flows. Apply as a floor, not a ceiling." },
+    ],
+  },
+};
+
+
+/**
  * News briefs — short board-relevant AI governance news items.
  * Curated from reputable outlets (FT, Reuters, Bloomberg, Deloitte, NACD, FCA, ICO).
  * Each brief is a 3–5 sentence summary with a primary-source link.

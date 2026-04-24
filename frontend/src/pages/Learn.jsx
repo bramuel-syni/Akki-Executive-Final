@@ -2,6 +2,8 @@ import React, { useMemo, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import VideoModal from "@/components/learn/VideoModal";
+import LearnMoreModal from "@/components/learn/LearnMoreModal";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   LEARN_ARTICLES, LEARN_VIDEOS, LEARN_NEWS, TOPIC_LABEL, CONTENT_TYPE_LABEL,
 } from "@/lib/learnContent";
@@ -11,7 +13,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, ArrowRight, BookOpen, ExternalLink, GraduationCap, Search,
   HelpCircle, Clock, Play, Sparkles, Loader2, FileText, Video as VideoIcon,
-  Newspaper, Briefcase,
+  Newspaper, Briefcase, ChevronRight,
 } from "lucide-react";
 
 /**
@@ -174,12 +176,14 @@ function ArticleReader({ article }) {
 export default function Learn() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { activeContext } = useAuth();
   const [q, setQ] = useState("");
   const [activeTab, setActiveTab] = useState("tl_article");
   const [topic, setTopic] = useState("all");
   const [videoPlaying, setVideoPlaying] = useState(null);
   const [researching, setResearching] = useState(false);
   const [adHocCache, setAdHocCache] = useState([]);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   // Tab counts — what's available in each bucket (pre-topic/query filter)
   const tabCounts = useMemo(() => ({
@@ -251,9 +255,17 @@ export default function Learn() {
     }
     setResearching(true);
     try {
-      const { data } = await api.post("/learn/research", { topic: needle }, { timeout: 120000 });
+      // Personalise on server by passing the active context id — so a Kenyan
+      // bank NED gets CBK-flavoured sources, a UK exec gets FCA/PRA ones.
+      const payload = { topic: needle };
+      if (activeContext?.id) payload.context_id = activeContext.id;
+      const { data } = await api.post("/learn/research", payload, { timeout: 120000 });
       setAdHocCache((prev) => [{ ...data, content_type: "tl_article" }, ...prev]);
-      toast.success("AKKI researched that for you.");
+      if (data.personalised) {
+        toast.success(`AKKI researched that, weighted to ${data.personalisation_from?.jurisdiction || "your context"}.`);
+      } else {
+        toast.success("AKKI researched that for you.");
+      }
       navigate(`/app/learn/${data.id}`);
     } catch (e) {
       toast.error(apiErrorMessage(e));
@@ -420,12 +432,29 @@ export default function Learn() {
                 )}
               </div>
             ) : activeTab === "video" ? (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 pb-6" data-testid="learn-grid">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 pb-4" data-testid="learn-grid">
                 {filtered.map((v) => <VideoCard key={v.id} v={v} onPlay={() => setVideoPlaying(v)} />)}
               </div>
             ) : (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 pb-6" data-testid="learn-grid">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 pb-4" data-testid="learn-grid">
                 {filtered.map((a) => <ArticleCard key={a.id} a={a} />)}
+              </div>
+            )}
+
+            {/* "View more" — opens a medium modal with editor-curated further
+                reading for the active tab (and current topic filter). */}
+            {filtered.length > 0 && (
+              <div className="pb-6 pt-2 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setMoreOpen(true)}
+                  className="group inline-flex items-center gap-2 px-5 py-2.5 text-[13px] border border-[var(--rule)] bg-white hover:bg-[var(--cream-deep)] hover:border-[var(--accent)]/40 rounded-full transition-colors text-[var(--deep)] hover:text-[var(--ink)]"
+                  data-testid="learn-view-more-btn"
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} />
+                  <span>View more {CONTENT_TYPE_LABEL[activeTab]?.toLowerCase() || "reading"}</span>
+                  <ChevronRight className="w-3.5 h-3.5 text-[var(--muted)] group-hover:text-[var(--accent)] group-hover:translate-x-0.5 transition-all" strokeWidth={1.8} />
+                </button>
               </div>
             )}
           </div>
@@ -436,6 +465,13 @@ export default function Learn() {
         open={!!videoPlaying}
         onOpenChange={(o) => { if (!o) setVideoPlaying(null); }}
         video={videoPlaying}
+      />
+
+      <LearnMoreModal
+        open={moreOpen}
+        onOpenChange={setMoreOpen}
+        tab={activeTab}
+        topic={topic}
       />
     </AppShell>
   );

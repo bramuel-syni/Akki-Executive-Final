@@ -27,10 +27,10 @@ import UploadModal from "@/components/upload/UploadModal";
 const NAV = [
   { to: "/app", label: "Home", icon: Home, end: true, ready: true },
   { to: "/app/workspace", label: "Document Journal", icon: BookOpenCheck, module: "M3", ready: true },
-  { to: "/app/highlights", label: "Highlights", icon: Sparkles, module: "M5", ready: true },
+  { to: "/app/highlights", label: "Signals", icon: Sparkles, module: "M5", ready: true },
   { to: "/app/briefings", label: "Briefings", icon: ScrollText, module: "M12", ready: true },
   { to: "/app/simulate", label: "Simulate", icon: Target, module: "M14", ready: true },
-  { to: "/app/lens", label: "Lens Room", icon: Eye, module: "M14", ready: true },
+  { to: "/app/lens", label: "The Lens", icon: Eye, module: "M14", ready: true },
   { to: "/app/learn", label: "Learn", icon: GraduationCap, module: "M9", ready: true },
 ];
 

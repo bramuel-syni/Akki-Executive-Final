@@ -66,7 +66,7 @@ export default function SignIn() {
 
           <div className="space-y-4 pt-4 border-t border-white/10">
             {[
-              { i: Radar, t: "Highlights", s: "Synisense-verified signals across your boards" },
+              { i: Radar, t: "Signals", s: "Synisense-verified signals across your boards" },
               { i: LineChart, t: "Briefings", s: "Pack summaries that cite their sources" },
               { i: ShieldCheck, t: "Provable privacy", s: "Identity-shielded LLM calls via Synisense" },
             ].map(({ i: I, t, s }) => (

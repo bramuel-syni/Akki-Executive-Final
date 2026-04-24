@@ -256,7 +256,20 @@ class TestCookieAuthRegression:
 
 # ---------- Cleanup sweep ----------
 class TestCleanupSweep:
-    def test_cleanup_endpoint_runs(self, s):
+    def test_cleanup_requires_secret(self, s):
+        # Unauthenticated now returns 401 (iter16 hardening)
         r = s.post(f"{API}/sandbox/cleanup/expired", timeout=15)
-        assert r.status_code == 200
+        assert r.status_code == 401, r.text
+
+    def test_cleanup_endpoint_runs(self, s):
+        import os
+        # Read the secret from the backend's runtime config — test runner
+        # inherits the same .env values via the FastAPI process.
+        secret = os.environ.get("AKKI_CRON_SECRET", "local-dev-cron-secret-rotate-in-prod-2026")
+        r = s.post(
+            f"{API}/sandbox/cleanup/expired",
+            headers={"X-Cron-Secret": secret},
+            timeout=15,
+        )
+        assert r.status_code == 200, r.text
         assert "swept" in r.json()

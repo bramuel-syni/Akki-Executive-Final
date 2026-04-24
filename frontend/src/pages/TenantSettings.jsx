@@ -779,7 +779,7 @@ export default function Settings() {
                   never see the masked refs.
                 </p>
                 <p>
-                  The Lens Room is governed by strict framework guardrails — intellectual tools are
+                  The Lens is governed by strict framework guardrails — intellectual tools are
                   applied to ideas, never associated with individuals. You will never see an interpretation
                   that profiles a named person.
                 </p>

@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel, EmailStr, Field
 
 from core import (
@@ -329,9 +329,21 @@ async def list_templates():
 # Cleanup helper — called by a cron elsewhere, exposed for testing
 # -----------------------------------------------------------------------------
 @router.post("/cleanup/expired")
-async def cleanup_expired_sandboxes():
-    """Admin-ish endpoint — sweep contexts past hard_delete_at. No auth for now
-    since there's no real PII in sandboxes and this is trivial to rate-limit."""
+async def cleanup_expired_sandboxes(
+    x_cron_secret: Optional[str] = Header(default=None, alias="X-Cron-Secret"),
+):
+    """Sweep sandboxes past `hard_delete_at`. Gated by an `X-Cron-Secret`
+    header that matches the `AKKI_CRON_SECRET` env var (shared with the
+    scheduled-job runner). Anonymous callers are rejected.
+
+    If `AKKI_CRON_SECRET` is unset in the environment we fail closed — the
+    endpoint returns 503 so a misconfigured deploy can't be abused."""
+    import os as _os
+    expected = _os.environ.get("AKKI_CRON_SECRET")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Cleanup disabled — AKKI_CRON_SECRET not configured.")
+    if not x_cron_secret or x_cron_secret != expected:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-Cron-Secret header.")
     now_iso_str = _iso(_now())
     cursor = db.contexts.find(
         {
