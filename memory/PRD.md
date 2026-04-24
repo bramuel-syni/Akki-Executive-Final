@@ -139,7 +139,36 @@ restructure.
 - [ ] **ClamAV / VirusTotal** — real virus scan (we use a stub).
 
 ## Recent fixes
-- **2026-04-24 Sprint 12 / iter16** — Label refresh + Learn "View more" + personalised research + cleanup gate.
+- **2026-04-24 Sprint 13 / iter17** — Product-review P1 fixes.
+  - **Actionable role-mismatch banner** — new "Act as NED/Executive" button
+    (data-testid `role-mismatch-fix-btn`) inside the banner flips activeRole
+    to match the current context in one click. In practice the banner
+    rarely fires because AuthContext bootstrap auto-realigns on mount — but
+    when it does, the fix is inline instead of being buried in the role
+    switcher.
+  - **Next Best Action card on Home** — new `NextBestActionCard` replaces
+    the humble EmptySlot when a non-aggregated Home has zero signals.
+    Cream-gradient hero with oxblood accent rail, "Your next best action"
+    overline, a primary Upload CTA (navy) and a secondary Generate link.
+    Shows post-audit only — the audit gate still takes precedence pre-audit.
+  - **The Lens run narrative** — new shared `useAIStageTicker` hook; Lens
+    Room's "Apply lens" now shows a 5-stage typed narrative ("Reading the
+    subject against Capital Discipline…" → "Drafting Observation → Implication
+    → Action…") instead of a lonely spinner. Unifies the AI-thinking voice
+    across Signals, Briefings, and The Lens.
+  - **Trust centre + global footer** — new 4-card posture panel (01 Residency
+    · 02 Shielding · 03 Provenance · 04 Control) at the top of the Privacy
+    tab (renamed "Trust"), deep-linked via `/app/settings?tab=trust`. A
+    persistent low-weight Trust footer sits below every authed page with
+    ShieldCheck + "Synisense-shielded · Your context never leaves this
+    account · Every signal cites its source · Trust centre →". Footer link
+    SPA-navigates via `useNavigate` (iter17 bug fix — initial `<Link>` had
+    a click no-op on scroll-containing surfaces).
+  - **iter17**: Trust footer + Trust centre verified live; NBA card + role-
+    mismatch fix button + lens-run ticker all correctly wired in source.
+    Footer Link→button regression fixed post-testing.
+
+
   - **Display renames (routes unchanged):** sidebar "Highlights" → "Signals"
     everywhere, "Lens Room" → "The Lens". /app/highlights overline now reads
     "SIGNALS · &lt;context&gt;". Briefings empty-state gesture reads "Open

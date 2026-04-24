@@ -535,13 +535,14 @@ export default function AppShell({ children }) {
             </span>
             <span>· Your context never leaves this account</span>
             <span className="hidden md:inline">· Every signal cites its source</span>
-            <Link
-              to="/app/settings?tab=trust"
-              className="ml-auto hover:text-[var(--ink)] transition-colors"
+            <button
+              type="button"
+              onClick={() => navigate("/app/settings?tab=trust")}
+              className="ml-auto hover:text-[var(--ink)] transition-colors cursor-pointer bg-transparent border-0 p-0 m-0 font-mono uppercase tracking-wider text-[10.5px] text-[var(--muted)]"
               data-testid="trust-footer-link"
             >
               Trust centre →
-            </Link>
+            </button>
           </footer>
         </main>
       </div>
