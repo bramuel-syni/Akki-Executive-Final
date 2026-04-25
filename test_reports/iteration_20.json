@@ -1,0 +1,41 @@
+{
+  "summary": "Iter20 — re-test of the 3 iter19-blocked E2E flows after seeding (committees + audit reportee + 588-word Mawingu draft). Flow 1 Polish Diff Modal: FULLY GREEN end-to-end — diff modal opens with strike/add markers, reject preserves body, accept replaces body, Save fires 'Saved.' toast, change persists across reload. Flow 2 Committee Scope Strip: chip strip + 3 chips ('Whole context', 'Audit Committee · audit', 'Risk Committee · risk') all render with the expected data-testids; audit chip clickable; FE sends correct payload to /checklists/generate; HOWEVER Draft fails with 400 'The Question Bank is empty' because Tuli ned ctx (fb4df969...) has 0 questions in the question bank — second seed gap. Flow 3 Copy for Medium: BLOCKED by a NEW critical auth bug — /app/blog-admin renders 'Superadmin only.' for admin@akki.ai because sanitize_account() in /app/backend/core.py does NOT surface the is_superadmin flag in the /auth/me + /auth/login responses. DB has is_superadmin:True; FE gate `account?.is_superadmin` is undefined; admin can never reach the Medium button. Flow 4 Regression: /blog public OK, /app/cycle tabs (5/5) render without console errors.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "/api/auth/me + /api/auth/login", "issue": "sanitize_account() in /app/backend/core.py omits is_superadmin from the response payload. admin@akki.ai has is_superadmin=True in the DB but the FE never sees it, so the BlogAdmin gate (account?.is_superadmin) renders 'Superadmin only.' and blocks /app/blog-admin entirely — including the Medium copy button under test. Add `out['is_superadmin'] = bool(a.get('is_superadmin', False))` to sanitize_account.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "/api/contexts/{id}/checklists/generate", "issue": "Tuli ned ctx fb4df969... has 0 documents in the cycle questions collection, so generate returns 400 'The Question Bank is empty.' The committee-scope strip wiring is correct (POST body includes committee_id) but cannot be E2E-validated against a checklist row. Seed at least 6 open questions on Tuli ned to allow Draft → Pending Approval → 1 row for Ruth Kamau."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "BlogAdmin Copy-for-Medium (per-row)", "issue": "Cannot reach the page — 'Superadmin only.' message renders for the legitimate superadmin admin@akki.ai because the auth payload omits is_superadmin (see backend critical above). Once the backend fix lands, the per-row [data-testid=\"copy-medium-...\"] should be testable; data-testid 'copy-medium-vigilant-kalam-4' is NOT a real slug — it's the agent slug placeholder. Real post slugs in DB are e.g. 'vol1-iss1-audit-committees-cant-delegate-...'.", "affected_selectors": ["[data-testid^=\"copy-medium-\"]", "[data-testid^=\"admin-post-\"]"]},
+      {"flow": "Committee scope Draft checklists", "issue": "Backend rejects with 400 'Question Bank is empty' on Tuli ned. UI shows error toast (apiErrorMessage(e)), no Pending Approval rows created. Wiring (chip click → committee_id in payload) is correct.", "affected_selectors": ["[data-testid=\"checklist-committee-strip\"]", "[data-testid=\"cycle-name-input\"]", "[data-testid=\"cycle-deadline-input\"]"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter19_polish_committee_medium.py"
+  ],
+  "action_items": [
+    "CRITICAL: Patch /app/backend/core.py sanitize_account() to surface is_superadmin (one-line fix: `out['is_superadmin'] = bool(a.get('is_superadmin', False))`). Without this admin@akki.ai cannot use /app/blog-admin at all. Re-test Flow 3 Copy-for-Medium afterwards.",
+    "Seed ≥6 open questions on Tuli ned ctx fb4df969... so the Committee Scope Draft checklists path can be E2E-validated end-to-end (currently 400 'Question Bank is empty'). Audit chip + payload wiring already proven correct.",
+    "Update /app/backend/scripts/seed_iter19_e2e.py to also upsert ~6 cycle_questions for the audit committee on Tuli (so that the audit-scoped Draft produces exactly one checklist for Ruth Kamau, as iter20's request specified)."
+  ],
+  "critical_code_review_comments": [
+    "Auth-shape regression: sanitize_account() omits is_superadmin while at least one client gate (BlogAdmin.jsx:39) and one backend dep (blog.py:_require_admin via current.get('is_superadmin')) depend on it. The backend dep works because get_current_account returns the raw DB doc, not the sanitized one — but the FE only ever sees the sanitized shape. Pick a single source of truth and document.",
+    "FE BlogAdmin slug expectation mismatch: the iter20 request lists 'data-testid=copy-medium-vigilant-kalam-4' but that's the Emergent preview hostname slug, not a real post slug. Real per-row testids are `copy-medium-vol1-iss1-...`. Future iterations should target `[data-testid^='copy-medium-']` rather than a hard slug.",
+    "Cycle.jsx: Draft checklists swallows the backend 400 only via toast.error(apiErrorMessage(e)) but the toast was not visible in the headless run. Suspect the sonner toast container is hidden behind something, or the fetch error is being eaten. Worth double-checking apiErrorMessage gives a non-empty string for FastAPI's `{detail: 'string'}` payload.",
+    "PolishDiffModal works as designed on a 588-word body — observed diff output ~59 KB HTML, contains line-through + ins/strike markers, accept replaces body (3790 → 3741 chars), reject preserves. Persistence verified: post-reload textarea matches the polished version. Toast 'Saved.' fires on Save edits."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only re-test)", "frontend": "Flow1 100% PASS; Flow2 70% (UI wiring proven, draft blocked on seed); Flow3 0% (blocked on auth bug); Flow4 100% PASS"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026!  ;  admin@akki.ai / AkkiAdmin2026!",
+  "seed_data_creation": "Re-ran /app/backend/scripts/seed_iter19_e2e.py (idempotent). No new seed artefacts added by this iteration.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Flow 1 (Polish Diff Modal) is fully GREEN — no need to re-test. Flow 4 regression is GREEN. After main agent (a) patches sanitize_account to include is_superadmin and (b) seeds ≥6 questions on Tuli ned, re-run only Flows 2 and 3. Selectors confirmed working: data-testid=checklist-committee-strip, checklist-scope-{all|iter19-tuli-audit-cmte|iter19-tuli-risk-cmte}, cycle-name-input, cycle-deadline-input, blog-posts-list, admin-post-{slug}, copy-medium-{slug}. The clipboard-read perm grant on context works.",
+  "rca of the issue": "Two distinct root causes: (1) Auth bug — sanitize_account() at /app/backend/core.py:222 silently drops is_superadmin. The DB row has it (verified via direct mongo read: admin@akki.ai is_superadmin=True), but every /auth/me + /auth/login + /auth/refresh response goes through sanitize_account, so the FE always sees account.is_superadmin === undefined. BlogAdmin.jsx:39 then renders the 'Superadmin only.' fallback. Fix is one line in core.py. (2) Seed gap — Tuli ned ctx has 0 questions in the cycle questions collection, so generate_checklists raises 400 before any committee-scope branching matters. Both flow-2 (committee scope) and flow-3 (Medium copy) cannot be E2E-validated until both fixes land."
+}
