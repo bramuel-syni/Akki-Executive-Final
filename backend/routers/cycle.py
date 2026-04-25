@@ -621,3 +621,436 @@ async def list_submissions(
         q["cycle_name"] = cycle_name
     cursor = db.submissions.find(q, {"_id": 0}).sort("submitted_at", -1).limit(500)
     return {"submissions": await cursor.to_list(length=500)}
+
+
+
+# ---------------------------------------------------------------------------
+# Reports (multi-tier review chain) — Phase 3
+# ---------------------------------------------------------------------------
+# A Report is the consolidated artefact a single tier of the chain composes
+# from their reportees' submissions. Each Report carries a `chain[]` —
+# successive reviewers in escalation order (e.g. CFO → CEO → Board). When the
+# author finalises a tier, the next reviewer's account_id is flipped to
+# `pending`. Reviewers can: edit body / add comments / approve & forward /
+# send back. The receiving reviewer becomes the next-tier author and their
+# act of sending up creates a new "envelope" entry on the chain.
+#
+# This is the smallest model that captures the user's described flow:
+# "compilation to CFO, CFO approves, sent to CEO, CEO reviews, and approves,
+#  sent to board".
+
+
+ReviewerStatus = Literal["pending", "approved", "sent_back", "skipped"]
+ReportStatus = Literal["draft", "in_review", "finalised", "withdrawn"]
+
+
+class ReviewerIn(BaseModel):
+    email: EmailStr
+    name: str = Field(min_length=2, max_length=120)
+    title: str = Field(min_length=2, max_length=120,
+                       description="e.g. 'CEO', 'Board chair', 'Audit committee chair'")
+
+
+class ReportComposeIn(BaseModel):
+    cycle_name: str = Field(min_length=3, max_length=120)
+    title: str = Field(min_length=4, max_length=200)
+    chain: List[ReviewerIn] = Field(
+        min_length=1, max_length=5,
+        description="Escalation order: first item = first reviewer after the author. "
+                    "e.g. CFO author → chain = [CEO, Board chair].",
+    )
+
+
+class ReportPatchIn(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=4, max_length=200)
+    body: Optional[str] = Field(default=None, max_length=40000)
+    note: Optional[str] = Field(default=None, max_length=2000,
+                                description="A note from the current reviewer to the next tier or the author.")
+
+
+class ReviewActionIn(BaseModel):
+    action: Literal["approve", "send_back"]
+    note: Optional[str] = Field(default=None, max_length=2000)
+
+
+def _initial_chain(chain_in: List[ReviewerIn], author_id: str, author_name: str) -> List[Dict[str, Any]]:
+    """Build the chain list with the author at position 0 (always approved
+    on creation since they composed it) and reviewers in pending state.
+    Position 1 is `pending`; everyone after is `pending` but blocked until
+    the previous tier approves."""
+    result: List[Dict[str, Any]] = [{
+        "tier": 0,
+        "role": "author",
+        "name": author_name,
+        "title": "Author",
+        "email": None,
+        "account_id": author_id,
+        "status": "approved",
+        "acted_at": _iso(_now()),
+        "note": None,
+    }]
+    for i, r in enumerate(chain_in):
+        result.append({
+            "tier": i + 1,
+            "role": "reviewer",
+            "name": r.name.strip(),
+            "title": r.title.strip(),
+            "email": r.email.lower().strip(),
+            "account_id": None,  # resolved on first review (lookup by email)
+            "status": "pending" if i == 0 else "blocked",
+            "acted_at": None,
+            "note": None,
+        })
+    return result
+
+
+def _current_reviewer_idx(chain: List[Dict[str, Any]]) -> Optional[int]:
+    """Return index of the chain entry currently awaiting action, or None
+    if the report is fully approved or withdrawn."""
+    for i, entry in enumerate(chain):
+        if entry.get("status") == "pending":
+            return i
+    return None
+
+
+async def _consolidate_submissions_into_body(
+    *, context_id: str, cycle_name: str
+) -> str:
+    """Pull every submission for this cycle and stitch them into a clean
+    starting markdown body the author can edit. Cheap, deterministic — no
+    LLM call needed for the v1; the LLM-polish path can come later."""
+    subs = await db.submissions.find(
+        {"context_id": context_id, "cycle_name": cycle_name},
+        {"_id": 0},
+    ).sort("reportee_name", 1).to_list(length=500)
+    if not subs:
+        return f"# {cycle_name}\n\n_No reportee submissions yet for this cycle._\n"
+    lines: List[str] = [f"# {cycle_name}\n"]
+    lines.append("## Inputs from your team\n")
+    for s in subs:
+        lines.append(f"### {s['reportee_name']}")
+        for ans in (s.get("answers") or []):
+            qt = ans.get("question_text") or ans.get("question_id") or "Untitled"
+            lines.append(f"**{qt}**")
+            lines.append(ans.get("answer", "_(no response)_") or "_(no response)_")
+            lines.append("")
+        if s.get("notes"):
+            lines.append(f"_{s['reportee_name']}'s note: {s['notes']}_")
+            lines.append("")
+    lines.append("## Author's commentary\n")
+    lines.append("_Add your synthesis above the team inputs before sending up the chain._")
+    lines.append("")
+    return "\n".join(lines)
+
+
+@router.post("/contexts/{context_id}/reports/compose")
+async def compose_report(
+    context_id: str,
+    body: ReportComposeIn,
+    current: Dict[str, Any] = Depends(get_current_account),
+    membership: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Compose a draft report from this cycle's submissions and define the
+    review chain. Report starts in `draft` — author can edit freely, nothing
+    is sent up until they `send_up`."""
+    author_name = await _executive_name(current["id"])
+    initial_body = await _consolidate_submissions_into_body(
+        context_id=context_id, cycle_name=body.cycle_name,
+    )
+    rid = str(uuid.uuid4())
+    rec = {
+        "id": rid,
+        "context_id": context_id,
+        "cycle_name": body.cycle_name,
+        "title": body.title.strip(),
+        "body": initial_body,
+        "author_id": current["id"],
+        "author_name": author_name,
+        "status": "draft",
+        "chain": _initial_chain(body.chain, current["id"], author_name),
+        "events": [{
+            "at": _iso(_now()),
+            "actor_id": current["id"],
+            "actor_name": author_name,
+            "action": "composed",
+            "note": None,
+        }],
+        "created_at": _iso(_now()),
+        "updated_at": _iso(_now()),
+    }
+    await db.reports.insert_one(rec.copy())
+    await write_audit(context_id, current["id"], "report.composed", "report", rid,
+                      {"cycle_name": body.cycle_name, "chain_len": len(rec["chain"]) - 1})
+    return {k: v for k, v in rec.items() if k != "_id"}
+
+
+@router.get("/contexts/{context_id}/reports")
+async def list_reports(
+    context_id: str,
+    membership: Dict[str, Any] = Depends(require_context_membership()),
+):
+    cursor = db.reports.find(
+        {"context_id": context_id, "status": {"$ne": "withdrawn"}},
+        {"_id": 0},
+    ).sort("updated_at", -1).limit(200)
+    return {"reports": await cursor.to_list(length=200)}
+
+
+async def _resolve_report_access(
+    *, context_id: str, rid: str, current: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Gate for per-report endpoints (get/patch/send_up/review). Allows access
+    if the caller is EITHER an active member of the context OR the email of
+    the current pending reviewer matches the caller's email. This is the
+    multi-tier flow's central insight: a reviewer (e.g. CEO) doesn't need to
+    be a member of the upstream-author's board to act on the report — they
+    only need to be the named reviewer on the chain. Returns the report dict.
+    Raises 403/404 on rejection."""
+    rec = await db.reports.find_one({"id": rid, "context_id": context_id}, {"_id": 0})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Report not found.")
+
+    # Path 1: full context member — sees + acts on everything per usual rules
+    membership = await db.memberships.find_one(
+        {"account_id": current["id"], "context_id": context_id, "status": "active"},
+        {"_id": 0, "role": 1},
+    )
+    if membership:
+        return rec
+
+    # Path 2: not a member, but is a named reviewer on this report's chain
+    caller_email = (current.get("email") or "").lower()
+    reviewer_emails = {
+        (entry.get("email") or "").lower()
+        for entry in (rec.get("chain") or [])
+        if entry.get("email")
+    }
+    if caller_email and caller_email in reviewer_emails:
+        return rec
+
+    raise HTTPException(status_code=403, detail="Not authorised to access this report.")
+
+
+@router.get("/contexts/{context_id}/reports/{rid}")
+async def get_report(
+    context_id: str,
+    rid: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    return await _resolve_report_access(context_id=context_id, rid=rid, current=current)
+
+
+@router.patch("/contexts/{context_id}/reports/{rid}")
+async def patch_report(
+    context_id: str,
+    rid: str,
+    body: ReportPatchIn,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Edit body/title. Author may edit while in `draft`; current reviewer may
+    edit while `in_review`. Other tiers — even members — cannot edit, only read."""
+    rec = await _resolve_report_access(context_id=context_id, rid=rid, current=current)
+
+    idx = _current_reviewer_idx(rec.get("chain") or [])
+    is_author = rec["author_id"] == current["id"] and rec["status"] == "draft"
+    current_email = (current.get("email") or "").lower()
+    is_current_reviewer = (
+        idx is not None
+        and rec["chain"][idx].get("email") == current_email
+    )
+    if not (is_author or is_current_reviewer):
+        raise HTTPException(status_code=403, detail="Only the author (in draft) or the current reviewer can edit this report.")
+
+    update = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "note" in update:
+        # Notes attach to the chain at the current author/reviewer's position
+        target_idx = idx if is_current_reviewer else 0
+        rec["chain"][target_idx]["note"] = update.pop("note")[:2000]
+        update["chain"] = rec["chain"]
+    if not update:
+        return rec
+    update["updated_at"] = _iso(_now())
+    await db.reports.update_one({"id": rid}, {"$set": update})
+    return await db.reports.find_one({"id": rid}, {"_id": 0})
+
+
+@router.post("/contexts/{context_id}/reports/{rid}/send_up")
+async def send_report_up(
+    context_id: str,
+    rid: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Author flips draft → in_review. Notifies the next reviewer via Resend
+    (or a mailto fallback if Resend is unconfigured). Each call advances the
+    chain by one position when invoked by the current reviewer; sending from
+    `draft` advances from author (tier 0) to first reviewer (tier 1)."""
+    rec = await _resolve_report_access(context_id=context_id, rid=rid, current=current)
+    if rec["status"] not in ("draft", "in_review"):
+        raise HTTPException(status_code=409, detail=f"Report is {rec['status']}, cannot be sent up.")
+
+    chain = rec["chain"]
+    idx = _current_reviewer_idx(chain)
+    if idx is None:
+        raise HTTPException(status_code=409, detail="No pending reviewer in chain.")
+
+    # Sanity: only the actual author or current reviewer can send up
+    current_email = (current.get("email") or "").lower()
+    can_send = (
+        rec["status"] == "draft" and rec["author_id"] == current["id"]
+    ) or (
+        rec["status"] == "in_review" and chain[idx].get("email") == current_email
+    )
+    if not can_send:
+        raise HTTPException(status_code=403, detail="Only the author (in draft) or the current reviewer can send this report up.")
+
+    # Notify the *target* reviewer (chain[idx])
+    target = chain[idx]
+    sender_name = (await db.accounts.find_one({"id": current["id"]}, {"_id": 0, "name": 1, "email": 1})).get("name") or rec["author_name"]
+    review_url = f"{_frontend_origin()}/app/cycle/reports/{rid}"
+    subject = f"AKKI for {sender_name}: review request — {rec['title']}"
+    html = f"""
+<div style="font-family:Georgia,serif;color:#2A2622;background:#F7F3EA;padding:32px;">
+  <div style="max-width:580px;margin:0 auto;background:#fff;border:1px solid #E8E0D0;padding:32px 36px;">
+    <p style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#8B2E2B;margin:0 0 8px 0;font-weight:600;">AKKI · Review request</p>
+    <h2 style="margin:0 0 16px 0;font-size:22px;font-weight:normal;color:#1a1a1a;line-height:1.3;">{rec['title']}</h2>
+    <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;">Hi {target['name']},</p>
+    <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;">
+      <strong>{sender_name}</strong> has prepared the <strong>{rec['cycle_name']}</strong> report and asked AKKI to forward it to you for review as <em>{target['title']}</em>.
+    </p>
+    <p style="margin:0 0 22px 0;font-size:15px;line-height:1.6;">
+      You can edit, add comments, then either approve and forward to the next reviewer, or send it back with notes.
+    </p>
+    <a href="{review_url}" style="display:inline-block;padding:11px 22px;background:#1A2B4C;color:#fff;text-decoration:none;font-family:-apple-system,sans-serif;font-size:14px;border-radius:4px;">Open report in AKKI</a>
+    <p style="margin:18px 0 0 0;font-size:12px;color:#8b6f47;font-family:-apple-system,sans-serif;">AKKI never reads private replies sent outside its product surface.</p>
+  </div>
+</div>
+"""
+    if resend_configured():
+        send_res = await send_email(
+            to=[target["email"]],
+            subject=subject,
+            html=html,
+            reply_to=(await db.accounts.find_one({"id": current["id"]}, {"_id": 0, "email": 1})).get("email"),
+            from_executive_name=sender_name,
+            tags=[{"name": "kind", "value": "report-review"},
+                  {"name": "report_id", "value": rid[:24]}],
+        )
+    else:
+        send_res = {"ok": False, "mode": "noop"}
+
+    new_events = list(rec.get("events") or [])
+    new_events.append({
+        "at": _iso(_now()),
+        "actor_id": current["id"],
+        "actor_name": sender_name,
+        "action": "sent_up",
+        "to_email": target["email"],
+        "to_name": target["name"],
+        "note": None,
+    })
+    await db.reports.update_one(
+        {"id": rid},
+        {"$set": {
+            "status": "in_review",
+            "events": new_events,
+            "updated_at": _iso(_now()),
+            "current_reviewer_email": target["email"],
+        }},
+    )
+    await write_audit(context_id, current["id"], "report.sent_up", "report", rid,
+                      {"to": target["email"], "tier": target["tier"]})
+    return {
+        "ok": True,
+        "to": target["email"],
+        "send_id": send_res.get("id"),
+        "send_mode": send_res.get("mode"),
+        "review_url": review_url,
+    }
+
+
+@router.post("/contexts/{context_id}/reports/{rid}/review")
+async def review_report(
+    context_id: str,
+    rid: str,
+    body: ReviewActionIn,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Current reviewer approves or sends back. On approve, the next reviewer
+    becomes pending; if there is no next reviewer, the report is finalised.
+    On send_back, the entire chain rolls back to the author and they can
+    revise + send up again."""
+    rec = await _resolve_report_access(context_id=context_id, rid=rid, current=current)
+    if rec["status"] != "in_review":
+        raise HTTPException(status_code=409, detail=f"Report is {rec['status']}, cannot be reviewed.")
+
+    chain = rec["chain"]
+    idx = _current_reviewer_idx(chain)
+    if idx is None:
+        raise HTTPException(status_code=409, detail="No pending reviewer.")
+
+    current_email = (current.get("email") or "").lower()
+    if chain[idx].get("email") != current_email:
+        raise HTTPException(status_code=403, detail="You are not the current reviewer.")
+
+    chain[idx]["account_id"] = current["id"]
+    chain[idx]["acted_at"] = _iso(_now())
+    chain[idx]["note"] = (body.note or chain[idx].get("note") or "")[:2000] or None
+
+    new_status = rec["status"]
+    new_current_email = rec.get("current_reviewer_email")
+
+    if body.action == "approve":
+        chain[idx]["status"] = "approved"
+        # Promote the next blocked tier to pending
+        if idx + 1 < len(chain) and chain[idx + 1]["status"] == "blocked":
+            chain[idx + 1]["status"] = "pending"
+            new_current_email = chain[idx + 1]["email"]
+        else:
+            new_status = "finalised"
+            new_current_email = None
+    else:  # send_back
+        chain[idx]["status"] = "sent_back"
+        # Reset tiers ≥ idx (they all need redoing) — but keep history of acted_at/note
+        for i in range(idx + 1, len(chain)):
+            chain[i]["status"] = "blocked"
+        new_status = "draft"  # author may revise + send up again
+        new_current_email = None
+
+    new_events = list(rec.get("events") or [])
+    new_events.append({
+        "at": _iso(_now()),
+        "actor_id": current["id"],
+        "actor_name": current.get("name") or current_email,
+        "action": body.action,
+        "tier": chain[idx]["tier"],
+        "note": body.note,
+    })
+    await db.reports.update_one(
+        {"id": rid},
+        {"$set": {
+            "chain": chain,
+            "status": new_status,
+            "events": new_events,
+            "current_reviewer_email": new_current_email,
+            "updated_at": _iso(_now()),
+        }},
+    )
+    await write_audit(context_id, current["id"], f"report.{body.action}", "report", rid,
+                      {"tier": chain[idx]["tier"], "new_status": new_status})
+    return await db.reports.find_one({"id": rid}, {"_id": 0})
+
+
+@router.get("/reports/inbox")
+async def reports_inbox(
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Cross-context: every report in the platform where this user is the
+    current pending reviewer. Powers the 'awaiting your review' Home card."""
+    email = (current.get("email") or "").lower()
+    if not email:
+        return {"reports": []}
+    cursor = db.reports.find(
+        {"status": "in_review", "current_reviewer_email": email},
+        {"_id": 0},
+    ).sort("updated_at", -1).limit(50)
+    return {"reports": await cursor.to_list(length=50)}

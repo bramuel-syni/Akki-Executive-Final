@@ -15,7 +15,9 @@ import { toast } from "sonner";
 import {
   Users, MessageCircleQuestion, Send, Inbox, Plus, Trash2, Sparkles,
   Loader2, ArrowRight, Clock, CheckCircle2, Mail, Copy, ExternalLink, Edit3,
+  FileText,
 } from "lucide-react";
+import ReportsTab from "@/components/cycle/ReportsTab";
 
 const CATS = [
   "audit", "risk", "operational", "strategic",
@@ -589,8 +591,19 @@ function SubmissionsInbox({ contextId }) {
 
 // ---------- Page ----------
 export default function Cycle() {
-  const { activeContext } = useAuth();
+  const { activeContext, account } = useAuth();
   const cid = activeContext?.id;
+  const [cycleNames, setCycleNames] = useState([]);
+  useEffect(() => {
+    (async () => {
+      if (!cid) return;
+      try {
+        const { data } = await api.get(`/contexts/${cid}/checklists`);
+        const names = Array.from(new Set((data.checklists || []).map((c) => c.cycle_name))).filter(Boolean);
+        setCycleNames(names);
+      } catch { /* silent */ }
+    })();
+  }, [cid]);
   if (!cid) return <AppShell><div className="p-12 text-center text-[var(--muted)] text-sm">No context selected.</div></AppShell>;
   return (
     <AppShell>
@@ -601,17 +614,18 @@ export default function Cycle() {
           </p>
           <h1 className="akki-greeting mb-2">AKKI runs the cycle. You gate the conversation.</h1>
           <p className="akki-meta max-w-2xl">
-            Manage the questions worth asking, the people who'll answer them, and the checklists AKKI sends on your behalf for <strong className="text-[var(--ink)]">{activeContext.name}</strong>.
+            Manage the questions worth asking, the people who'll answer them, the checklists AKKI sends on your behalf, and the reports you compile up your chain — all for <strong className="text-[var(--ink)]">{activeContext.name}</strong>.
           </p>
         </div>
 
         <Tabs defaultValue="checklists" className="w-full">
-          <TabsList className="bg-transparent border-b border-[var(--rule)] w-full justify-start h-auto p-0 rounded-none mb-8">
+          <TabsList className="bg-transparent border-b border-[var(--rule)] w-full justify-start h-auto p-0 rounded-none mb-8 overflow-x-auto">
             {[
               ["checklists", "Checklists", Send],
               ["bank", "Question Bank", MessageCircleQuestion],
               ["reportees", "Reportees", Users],
               ["inbox", "Submissions", Inbox],
+              ["reports", "Reports", FileText],
             ].map(([v, l, I]) => (
               <TabsTrigger
                 key={v} value={v}
@@ -626,6 +640,7 @@ export default function Cycle() {
           <TabsContent value="bank"><QuestionBank contextId={cid} /></TabsContent>
           <TabsContent value="reportees"><Reportees contextId={cid} /></TabsContent>
           <TabsContent value="inbox"><SubmissionsInbox contextId={cid} /></TabsContent>
+          <TabsContent value="reports"><ReportsTab contextId={cid} currentEmail={account?.email} cycleNames={cycleNames} /></TabsContent>
         </Tabs>
       </div>
     </AppShell>

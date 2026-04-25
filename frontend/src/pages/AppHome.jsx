@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import ShareModal from "@/components/share/ShareModal";
 import SandboxPackDrop from "@/components/sandbox/SandboxPackDrop";
+import ReviewInboxCard from "@/components/cycle/ReviewInboxCard";
 
 const CONFIDENCE_LABEL = { high: "High confidence", medium: "Medium confidence", low: "Low confidence" };
 
@@ -158,6 +159,10 @@ export default function AppHome() {
             {/* Sandbox-only: a discreet drop-your-own-pack affordance. Never
                 renders outside sandbox contexts. */}
             <SandboxPackDrop onSignalsReady={load} />
+
+            {/* Cross-context: any reports where this user is the current
+                pending reviewer. Renders only when there's actually one. */}
+            <ReviewInboxCard />
 
             {/* Tab strip with a quiet scope toggle on the right.
                 The 'All boards' toggle only appears when the user has 2+ contexts. */}
