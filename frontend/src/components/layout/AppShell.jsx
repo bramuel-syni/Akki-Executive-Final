@@ -9,7 +9,7 @@ import {
   Home, FileText, Sparkles, GraduationCap,
   Settings, LogOut, ChevronDown, Layers, CheckCircle2, Lock,
   Briefcase, Landmark, Search, ScrollText, Target, Eye, Plus, BookOpenCheck,
-  Users, Building2, ShieldCheck,
+  Users, Building2, ShieldCheck, Send,
 } from "lucide-react";
 import SandboxBanner from "@/components/sandbox/SandboxBanner";
 import SandboxEmailCapture from "@/components/sandbox/SandboxEmailCapture";
@@ -31,6 +31,7 @@ const NAV = [
   { to: "/app/briefings", label: "Briefings", icon: ScrollText, module: "M12", ready: true },
   { to: "/app/simulate", label: "Simulate", icon: Target, module: "M14", ready: true },
   { to: "/app/lens", label: "The Lens", icon: Eye, module: "M14", ready: true },
+  { to: "/app/cycle", label: "Cycle", icon: Send, module: "§12", ready: true },
   { to: "/app/learn", label: "Learn", icon: GraduationCap, module: "M9", ready: true },
 ];
 

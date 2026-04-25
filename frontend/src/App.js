@@ -25,6 +25,14 @@ import LensRoom from "@/pages/LensRoom";
 import Manage from "@/pages/Manage";
 import Sandbox from "@/pages/Sandbox";
 import SandboxGenerating from "@/pages/SandboxGenerating";
+import Cycle from "@/pages/Cycle";
+import RespondToChecklist from "@/pages/RespondToChecklist";
+import About from "@/pages/marketing/About";
+import Features from "@/pages/marketing/Features";
+import Security from "@/pages/marketing/Security";
+import Blog from "@/pages/marketing/Blog";
+import BlogPost from "@/pages/marketing/BlogPost";
+import BlogAdmin from "@/pages/marketing/BlogAdmin";
 
 function PublicOnlyRoute({ children, allowSandbox = false }) {
   const { account } = useAuth();
@@ -41,6 +49,12 @@ function App() {
         <Toaster position="top-right" richColors />
         <Routes>
           <Route path="/" element={<Landing />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/features" element={<Features />} />
+          <Route path="/security" element={<Security />} />
+          <Route path="/blog" element={<Blog />} />
+          <Route path="/blog/:slug" element={<BlogPost />} />
+          <Route path="/respond/:token" element={<RespondToChecklist />} />
           <Route path="/signin" element={<PublicOnlyRoute><SignIn /></PublicOnlyRoute>} />
           <Route path="/signup" element={<PublicOnlyRoute allowSandbox><SignUp /></PublicOnlyRoute>} />
           <Route path="/invite/:token" element={<InviteAccept />} />
@@ -49,6 +63,8 @@ function App() {
 
           <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
           <Route path="/app" element={<ProtectedRoute><AppHome /></ProtectedRoute>} />
+          <Route path="/app/cycle" element={<ProtectedRoute><Cycle /></ProtectedRoute>} />
+          <Route path="/app/blog-admin" element={<ProtectedRoute><BlogAdmin /></ProtectedRoute>} />
           <Route path="/app/workspace" element={<ProtectedRoute><Workspace /></ProtectedRoute>} />
           <Route path="/app/highlights" element={<ProtectedRoute><Highlights /></ProtectedRoute>} />
           {/* v4.2: Ask merges into Workspace; any /app/ask redirects there */}
