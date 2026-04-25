@@ -542,8 +542,14 @@ async def dispatch_checklists(
 # Submissions (reportee-side response)
 # ---------------------------------------------------------------------------
 
+class AnswerIn(BaseModel):
+    question_id: Optional[str] = None
+    question_text: Optional[str] = Field(default=None, max_length=400)
+    answer: str = Field(default="", max_length=4000)
+
+
 class SubmissionIn(BaseModel):
-    answers: List[Dict[str, Any]]
+    answers: List[AnswerIn]
     notes: Optional[str] = Field(default=None, max_length=4000)
 
 
@@ -575,6 +581,7 @@ async def submit_response(token: str, body: SubmissionIn):
         raise HTTPException(status_code=410, detail="This checklist is no longer accepting responses.")
 
     sub_id = str(uuid.uuid4())
+    answers_raw = [a.model_dump() for a in body.answers]
     rec = {
         "id": sub_id,
         "context_id": cl["context_id"],
@@ -583,7 +590,7 @@ async def submit_response(token: str, body: SubmissionIn):
         "reportee_name": cl["reportee_name"],
         "reportee_email": cl["reportee_email"],
         "cycle_name": cl["cycle_name"],
-        "answers": body.answers,
+        "answers": answers_raw,
         "notes": body.notes,
         "submitted_at": _iso(_now()),
     }
@@ -593,9 +600,9 @@ async def submit_response(token: str, body: SubmissionIn):
         {"$set": {"status": "responded", "responded_at": _iso(_now())}},
     )
     # Mark each answered question as 'answered' if not already
-    for ans in body.answers:
+    for ans in answers_raw:
         qid = ans.get("question_id")
-        if qid:
+        if qid and (ans.get("answer") or "").strip():
             await db.questions.update_one(
                 {"id": qid, "context_id": cl["context_id"], "status": "open"},
                 {"$set": {"status": "answered", "answered_at": _iso(_now())}},

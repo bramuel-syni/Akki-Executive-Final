@@ -597,11 +597,11 @@ export default function Cycle() {
       <div className="max-w-[1200px] mx-auto px-8 py-10">
         <div className="mb-8 akki-fade-up">
           <p className="akki-overline mb-2 flex items-center gap-2">
-            <Send className="w-3 h-3 text-[var(--accent)]" /> Reporting cycle · §12
+            <Send className="w-3 h-3 text-[var(--accent)]" /> Reporting cycle · §12 · {activeContext.name}
           </p>
           <h1 className="akki-greeting mb-2">AKKI runs the cycle. You gate the conversation.</h1>
           <p className="akki-meta max-w-2xl">
-            Manage the questions worth asking, the people who'll answer them, and the checklists AKKI sends on your behalf.
+            Manage the questions worth asking, the people who'll answer them, and the checklists AKKI sends on your behalf for <strong className="text-[var(--ink)]">{activeContext.name}</strong>.
           </p>
         </div>
 
