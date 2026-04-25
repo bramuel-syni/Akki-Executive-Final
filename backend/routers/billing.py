@@ -251,7 +251,7 @@ async def stripe_webhook(request: Request):
     sig = request.headers.get("Stripe-Signature")
     try:
         evt = await sc.handle_webhook(payload, sig)
-    except (KeyError, ValueError, Exception) as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         logger.exception("Stripe webhook verify failed: %s", e)
         raise HTTPException(status_code=400, detail="Invalid Stripe signature.")
 
