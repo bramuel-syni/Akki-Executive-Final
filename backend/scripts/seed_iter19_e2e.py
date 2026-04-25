@@ -86,6 +86,34 @@ async def main():
     await db.reportees.update_one({"id": reportee["id"]}, {"$set": reportee}, upsert=True)
     print(f"[reportees] upserted {SCOPED_REPORTEE_ID} on Tuli ctx (scoped to Audit)")
 
+    # --- 2b. Audit-committee question bank on Tuli ned ----------------------
+    # Without these, /checklists/generate raises 400 'Question Bank is empty'
+    # and the committee scope strip cannot be E2E tested.
+    audit_questions = [
+        ("iter19-q-prov", "Has provisioning kept pace with loan-book growth this quarter?", "audit"),
+        ("iter19-q-cap",  "Are capital ratios trending toward or away from the regulatory floor under the current plan?", "financial"),
+        ("iter19-q-aud",  "Which audit findings from FY25 remain unresolved and what is the dated remediation plan?", "audit"),
+        ("iter19-q-reg",  "Are there any recent regulatory communications from CBK that the audit committee has not yet seen?", "regulatory"),
+        ("iter19-q-itctl","Have IT general controls been formally re-assessed since the core-banking patch?", "audit"),
+        ("iter19-q-vendor","Is concentration risk in our top-three audit-relevant vendors disclosed and within tolerance?", "risk"),
+    ]
+    for qid, text, cat in audit_questions:
+        doc = {
+            "id": qid,
+            "context_id": TULI_NED_CTX,
+            "text": text,
+            "category": cat,
+            "status": "open",
+            "committee_id": AUDIT_CTTE_ID,
+            "source": "iter19_seed",
+            "times_asked": 0,
+            "last_asked_at": None,
+            "created_at": _now_iso(),
+            "updated_at": _now_iso(),
+        }
+        await db.questions.update_one({"id": qid}, {"$set": doc}, upsert=True)
+    print(f"[questions] upserted {len(audit_questions)} audit-scoped questions on Tuli ctx")
+
     # --- 3. Rich draft report on Mawingu (so Polish makes real diffs) ------
     rich_body = """\
 # Mawingu Logistics — Q2 2026 Submission to the Board
