@@ -467,9 +467,45 @@ restructure.
   iteration 3).
 
 ## Recent fixes
+- **2026-04-25** (iter21) — `sanitize_account()` was silently dropping `is_superadmin`,
+  blocking the BlogAdmin gate. Fixed in `/app/backend/core.py`. Verified via
+  `/api/auth/me` returning `account.is_superadmin=true` for `admin@akki.ai`.
 - **2026-04-23** — Workspace doc row nested-button hydration warning: outer wrapper
   converted to `<div role="button" tabIndex={0}>` with keyboard handler; TrustChip
   wrapped in a `stopPropagation` span so changing trust doesn't open the document.
 - **2026-04-22** — Brute-force login lockout: was keyed on `ip:email`; changed to
   email-only because Kubernetes ingress rotates `request.client.host`. Verified
   5×401 → 429 on 6th attempt.
+
+## §12.x Final UI polish batch (iter19–21, 2026-04-25)
+- **PolishDiffModal** (`/app/frontend/src/components/cycle/PolishDiffModal.jsx`)
+  — word-level diff (LCS over whitespace tokens) showing red strike-through for
+  removed words and green highlight for added. Wired into `ReportsTab` so
+  "Polish with AKKI" no longer silently overwrites the body — instead it opens
+  the diff and lets the executive **Accept** or **Reject** before saving. If the
+  LLM returns identical text, a "no changes" toast fires and the modal stays
+  closed. Verified end-to-end on a 588-word draft fixture.
+- **Committee scope strip** on `/app/cycle` Checklists tab. When the active
+  context has ≥1 committee, a chip strip renders ("Whole context" + one chip
+  per committee). Selecting a committee scopes both the reportee match AND the
+  question pool to that committee for the next `/checklists/generate` POST.
+  Verified end-to-end on Tuli ned ctx with the iter19 seed (Audit + Risk
+  committees, Ruth Kamau audit-scoped reportee, 6 audit-scoped questions).
+- **Copy for Medium** in BlogAdmin (`/app/blog-admin`). Both the live draft
+  preview tile-grid AND each row of All Posts now have a Medium button. Per-row
+  click fetches the full post body via the new admin endpoint
+  `GET /api/blog/admin/posts/{slug}` (gated by `_require_admin`) and writes a
+  Medium-ready markdown payload to the clipboard:
+  `**KICKER**\n\n# Title\n\n> Dek\n\nbody...\n\n_Tags: ..._`.
+- **Seed script** `/app/backend/scripts/seed_iter19_e2e.py` (idempotent) —
+  seeds the committee + reportee + question + rich-draft fixtures the E2E
+  tests rely on.
+
+### Open / deferred
+- M4 Stripe Billing — P1, deferred to a separate sprint.
+- §4 Monitor (KPI snapshots) + §5 Forecasts as Report Composer sources — P2.
+- Medium / LinkedIn auto-posting — manual copy-paste only for now (tokens /
+  developer-platform approval still required).
+- Resend domain verification — sandbox-only sends until the user verifies their
+  own domain on the Resend dashboard.
+
