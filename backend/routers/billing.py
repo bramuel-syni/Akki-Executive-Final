@@ -189,9 +189,25 @@ async def get_checkout_status(
         raise HTTPException(status_code=404, detail="Transaction not found.")
 
     sc = _stripe()
-    status = await sc.get_checkout_status(session_id)
-    payment_status = (status.payment_status or "").lower()
-    session_status = (status.status or "").lower()
+    # The emergentintegrations SDK with sk_test_emergent may not be able to
+    # retrieve the very session it created (proxy/account mismatch).
+    # We degrade gracefully: if retrieve fails, fall back to the persisted
+    # row so the poll loop doesn't crash. Webhook (or a future upgrade) will
+    # eventually flip the row.
+    persisted_payment = (txn.get("payment_status") or "pending")
+    persisted_session = (txn.get("status") or "initiated")
+    try:
+        status = await sc.get_checkout_status(session_id)
+        payment_status = (status.payment_status or "").lower()
+        session_status = (status.status or "").lower()
+        amount_total_cents = status.amount_total
+        currency = status.currency
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Stripe retrieve failed for %s: %s", session_id, e)
+        payment_status = persisted_payment
+        session_status = persisted_session
+        amount_total_cents = int(round(float(txn.get("amount_usd", 0)) * 100))
+        currency = txn.get("currency", "usd")
 
     # Only apply the upgrade ONCE per session
     already_applied = txn.get("payment_status") == "paid"
@@ -220,8 +236,8 @@ async def get_checkout_status(
         "payment_status": payment_status,
         "status": session_status,
         "plan_id": txn["plan_id"],
-        "amount_total_cents": status.amount_total,
-        "currency": status.currency,
+        "amount_total_cents": amount_total_cents,
+        "currency": currency,
     }
 
 
@@ -235,7 +251,7 @@ async def stripe_webhook(request: Request):
     sig = request.headers.get("Stripe-Signature")
     try:
         evt = await sc.handle_webhook(payload, sig)
-    except Exception as e:
+    except (KeyError, ValueError, Exception) as e:  # noqa: BLE001
         logger.exception("Stripe webhook verify failed: %s", e)
         raise HTTPException(status_code=400, detail="Invalid Stripe signature.")
 

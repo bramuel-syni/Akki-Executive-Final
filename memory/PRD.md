@@ -501,11 +501,45 @@ restructure.
   seeds the committee + reportee + question + rich-draft fixtures the E2E
   tests rely on.
 
+## §M4 Stripe Billing + Schedule cron + polish (2026-04-25, iter22)
+- **Stripe Billing M4** — Free / Pro ($29/mo) / Team ($99/mo) plans, fixed
+  server-side. Settings → Billing tab (`/app/settings?tab=billing` or
+  `/app/settings/billing`). Backend: `/api/billing/{plans,me,checkout,status/{sid}}`
+  + webhook `/api/webhook/stripe`. Uses `emergentintegrations.payments.stripe.checkout.StripeCheckout`.
+  `STRIPE_API_KEY=sk_test_emergent` in `/app/backend/.env`.
+  - Checkout creates real `https://checkout.stripe.com/c/pay/cs_test_...` URLs.
+  - Status endpoint degrades gracefully (returns persisted `payment_status`)
+    when the test-mode SDK can't retrieve the just-created session — the UI
+    poll loop never crashes.
+  - `payment_transactions` collection holds every initiated session;
+    `accounts.plan` is flipped on `paid`. Webhook + poll both apply once.
+  - Sanitize_account now surfaces `plan` + `subscription_status` so the UI
+    can gate paid features (e.g. recurring schedule, dispatch).
+
+- **Recurring Cycle Schedule (cron)** — single schedule per context.
+  - `GET/PUT/DELETE /api/contexts/{cid}/cycle/schedule` (auth + membership).
+  - `POST /api/cycle/cron/run-schedules` gated by `X-Cron-Secret` =
+    `AKKI_CRON_SECRET`. Idempotent (advances `next_run_at` after each run).
+  - Frontend "Schedule recurring" button on Cycle → Checklists tab opens a
+    modal (cadence, weekday, cycle name template with tokens
+    `{month}|{date}|{iso_week}|{year}`, deadline offset days, committee scope).
+    Verified end-to-end: a forced-past `next_run_at` yields 1 draft for the
+    audit-scoped reportee with cycle name "April 2026 report".
+
+- **Frontend polishes** (P2 backlog cleared in this iteration):
+  - `PolishDiffModal` wordDiff is now paragraph-chunked → bounded LCS
+    memory even on long appendices.
+  - `BlogAdmin` caches the full post body per slug after the first per-row
+    Medium fetch (no repeat round-trips).
+  - `ReportEditor` shows an "Unsaved changes" badge above the body textarea
+    when title/body/polish-accept has dirtied the local state, and
+    `window.confirm` blocks an accidental close-without-save.
+
 ### Open / deferred
-- M4 Stripe Billing — P1, deferred to a separate sprint.
-- §4 Monitor (KPI snapshots) + §5 Forecasts as Report Composer sources — P2.
-- Medium / LinkedIn auto-posting — manual copy-paste only for now (tokens /
-  developer-platform approval still required).
-- Resend domain verification — sandbox-only sends until the user verifies their
-  own domain on the Resend dashboard.
+- LinkedIn / Medium auto-posting — manual copy-paste only (tokens still
+  blocked; LinkedIn requires Marketing Developer Platform approval).
+- Resend domain verification — still sandbox-only (`delivered@resend.dev`)
+  until the user verifies their own domain. User action.
+- Stripe customer-portal-redirect endpoint — not exposed yet; users cancel
+  via Stripe Dashboard for now (test mode).
 

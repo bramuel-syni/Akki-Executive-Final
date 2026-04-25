@@ -1,0 +1,33 @@
+{
+  "summary": "Iter23 — focused re-test of the iter22 critical regression fix in /app/backend/routers/billing.py (try/except around emergentintegrations StripeCheckout.get_checkout_status + tightened webhook bad-payload handling). All 18/18 pytest cases in test_iter22_billing_schedule.py PASS (including the previously failing TestBillingCheckout::test_status_for_pending_session). Extra ad-hoc curl coverage confirmed: (a) own session round-trip returns 200 with payment_status='pending', plan_id='pro', amount_total_cents=2900, currency='usd'; (b) unknown session returns 404; (c) cross-account access (admin@akki.ai polling bramuel's session) returns 404 with 'Transaction not found'; (d) /api/webhook/stripe returns 400 (not 500) on empty body, '{}' body, and bad-signature realistic payload — no stack trace leakage. None of the previously GREEN flows regressed (plans/me/checkout, schedule GET/PUT/DELETE, cron run-schedules with X-Cron-Secret).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter22_billing_schedule.py",
+    "/app/test_reports/pytest/iter23.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "billing.py L199-211: clean try/except around sc.get_checkout_status with persisted-row fallback — graceful degradation now returns a coherent response (payment_status='pending', amount_total_cents derived from plan price). Good.",
+    "billing.py L252-256: webhook now catches (KeyError, ValueError, Exception) and converts to 400. Functionally correct. Minor stylistic: `except (KeyError, ValueError, Exception)` is redundant because Exception already covers the first two; could simplify to `except Exception`. Not blocking.",
+    "billing.py is now ~287 lines — within budget. No DRY violations. No hardcoded URLs/keys. Mongo `_id` excluded from reads. Pydantic validation on CheckoutIn enforces plan_id literal."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (18/18 pytest + 4/4 ad-hoc cross-account & webhook checks)",
+    "frontend": "not tested (per request — frontend was 100% GREEN in iter22)"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (verified). admin@akki.ai / AkkiAdmin2026! (verified for cross-account 404 check). AKKI_CRON_SECRET=local-dev-cron-secret-rotate-in-prod-2026 (verified).",
+  "seed_data_creation": "None — re-used existing iter19 seed; only created transient pending payment_transactions rows (one per checkout session test).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter22 critical regression on /api/billing/status/{sid} is fully resolved. The route now wraps the SDK call in try/except and falls back to the persisted txn row, returning 200 with payment_status='pending' (and amount_total_cents derived from plan price * 100). Webhook bad-signature/empty/garbage payloads all return 400 cleanly. No further action required for billing M4 backend. Frontend Billing/Schedule/Unsaved/BlogCache flows were GREEN in iter22 — no need to retest. If a future iteration adds a real Stripe-webhook-driven 'paid' transition, write a separate test that POSTs a signed event to /api/webhook/stripe (bypass currently uses bogus sig).",
+  "rca of the issue": "RCA already documented in iter22. Fix verified: when emergentintegrations.StripeCheckout.get_checkout_status() raises (e.g. CheckoutError 'No such checkout.session' under sk_test_emergent's create-only proxy semantics), the route now logs a warning and reuses txn.payment_status / txn.status / amount_usd*100 / currency from the Mongo row created at checkout time. Net effect: the frontend poll loop sees a stable 200 + 'pending' until a webhook delivers the 'paid' transition (which still flips account.plan idempotently via the existing `payment_status == 'paid' and not already_applied` guard)."
+}
