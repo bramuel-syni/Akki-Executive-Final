@@ -139,6 +139,14 @@ restructure.
 - [ ] **ClamAV / VirusTotal** — real virus scan (we use a stub).
 
 ## Recent fixes
+- **2026-04-25 Sprint 16 / iter21** — Reports PDF + LLM polish + Committees scoping for Reportees.
+  - **Reports PDF export** — new `reports_service.py` builds an A4 portrait PDF with editorial cream/oxblood/Georgia palette, body rendered from markdown, a **chain-of-custody back page** with timestamped tier table (Tier · Role · Name & email · Action · When · Note), an **event log** of every chain action, and the trust footer. Endpoint `GET /api/contexts/{cid}/reports/{rid}/export.pdf` available to context members + named reviewers (same gate as `get`); allowed for `draft`, `in_review`, and `finalised`.
+  - **LLM polish** — new `POST /api/contexts/{cid}/reports/{rid}/polish` returns a polished body (does NOT auto-save; executive reviews then commits via patch). Author-or-current-reviewer only. Strips stray `\`\`\`` fences the LLM might add.
+  - **Committee scoping for Reportees** — `committee_id` field added to ReporteeIn + reportees `list` accepts `committee_id` query param; new `GET /api/contexts/{cid}/cycle/committees` lists the context's committees so the Cycle UI can scope work. Reportee form gets a Committee Select; visible cards show a `[var(--chrome)]`-tinted committee chip; new filter strip above the list lets the executive scope to All / Unscoped / specific committee.
+  - **Question Bank `committee_id`** also accepted as a list filter (already on the schema; now exposed on the GET endpoint) — sets the foundation for committee-chair-scoped checklists in a follow-up.
+  - **Editor footer redesigned** to surface five distinct actions: Close · Download PDF · Polish with AKKI · Save edits · Send up / Approve & forward / Send back. Sparkle icon on Polish, Download icon on PDF.
+
+## Recent fixes
 - **2026-04-25 Sprint 15 / iter20** — §12 Phase 3: Multi-tier review chain (Reports).
   - **Reports collection** — composed from a cycle's submissions; carries a `chain[]` of tiers (author at tier 0, escalating reviewers at tier 1+). `compose` stitches reportee answers into a starter markdown body the author edits before sending up.
   - **`send_up`** flips draft → in_review and sends a Resend email to the next pending reviewer with a deep link to /app/cycle/reports/:id. Reviewer doesn't need to be a member of the upstream context — the new `_resolve_report_access` gate accepts EITHER context-membership OR named-reviewer-on-chain (matched by email).

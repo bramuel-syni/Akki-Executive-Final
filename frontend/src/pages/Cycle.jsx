@@ -160,18 +160,25 @@ function QuestionBank({ contextId }) {
 // ---------- Reportees ----------
 function Reportees({ contextId }) {
   const [items, setItems] = useState([]);
+  const [committees, setCommittees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [title, setTitle] = useState("");
   const [areas, setAreas] = useState([]);
+  const [committeeId, setCommitteeId] = useState("");
+  const [filterCommittee, setFilterCommittee] = useState("all");
 
   const load = useCallback(async () => {
     if (!contextId) return;
     setLoading(true);
     try {
-      const { data } = await api.get(`/contexts/${contextId}/reportees`);
-      setItems(data.reportees || []);
+      const [r, c] = await Promise.all([
+        api.get(`/contexts/${contextId}/reportees`),
+        api.get(`/contexts/${contextId}/cycle/committees`),
+      ]);
+      setItems(r.data.reportees || []);
+      setCommittees(c.data.committees || []);
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setLoading(false); }
   }, [contextId]);
@@ -182,8 +189,9 @@ function Reportees({ contextId }) {
     try {
       await api.post(`/contexts/${contextId}/reportees`, {
         name: name.trim(), email: email.trim(), title: title.trim(), areas,
+        committee_id: committeeId || null,
       });
-      setName(""); setEmail(""); setTitle(""); setAreas([]);
+      setName(""); setEmail(""); setTitle(""); setAreas([]); setCommitteeId("");
       toast.success("Reportee added.");
       load();
     } catch (e) { toast.error(apiErrorMessage(e)); }
@@ -196,6 +204,13 @@ function Reportees({ contextId }) {
       load();
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
+
+  const visible = items.filter((r) => {
+    if (filterCommittee === "all") return true;
+    if (filterCommittee === "none") return !r.committee_id;
+    return r.committee_id === filterCommittee;
+  });
+  const committeeName = (cid) => committees.find((c) => c.id === cid)?.name;
 
   return (
     <div className="space-y-6">
@@ -222,6 +237,20 @@ function Reportees({ contextId }) {
             })}
           </div>
         </div>
+        {committees.length > 0 && (
+          <div className="mt-3">
+            <p className="text-[11px] uppercase tracking-wider text-[var(--muted)] mb-2">Committee (optional)</p>
+            <Select value={committeeId || "none"} onValueChange={(v) => setCommitteeId(v === "none" ? "" : v)}>
+              <SelectTrigger className="w-72 h-10 bg-[var(--cream)] border-[var(--rule)] text-sm" data-testid="reportee-committee-trigger">
+                <SelectValue placeholder="Not committee-scoped" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">— Not committee-scoped —</SelectItem>
+                {committees.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}{c.kind ? ` · ${c.kind}` : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div className="mt-4">
           <Button onClick={onAdd} className="bg-[var(--chrome)] hover:bg-[var(--chrome)]/90 text-white" data-testid="reportee-add-btn">
             <Plus className="w-3.5 h-3.5 mr-1.5" /> Add reportee
@@ -229,17 +258,28 @@ function Reportees({ contextId }) {
         </div>
       </div>
 
+      {committees.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap" data-testid="reportee-filter-strip">
+          <span className="text-[11px] uppercase tracking-wider text-[var(--muted)]">Filter:</span>
+          <button onClick={() => setFilterCommittee("all")} className={`px-2.5 py-1 text-[12px] rounded-full border ${filterCommittee === "all" ? "bg-[var(--ink)] text-white border-[var(--ink)]" : "bg-white border-[var(--rule)] text-[var(--deep)]"}`}>All</button>
+          <button onClick={() => setFilterCommittee("none")} className={`px-2.5 py-1 text-[12px] rounded-full border ${filterCommittee === "none" ? "bg-[var(--ink)] text-white border-[var(--ink)]" : "bg-white border-[var(--rule)] text-[var(--deep)]"}`}>Unscoped</button>
+          {committees.map((c) => (
+            <button key={c.id} onClick={() => setFilterCommittee(c.id)} className={`px-2.5 py-1 text-[12px] rounded-full border ${filterCommittee === c.id ? "bg-[var(--accent)] text-white border-[var(--accent)]" : "bg-white border-[var(--rule)] text-[var(--deep)]"}`}>{c.name}</button>
+          ))}
+        </div>
+      )}
+
       {loading ? (
         <p className="p-8 text-center text-[12px] uppercase tracking-widest text-[var(--muted)]">Loading…</p>
-      ) : items.length === 0 ? (
+      ) : visible.length === 0 ? (
         <div className="bg-white border border-dashed border-[var(--rule)] rounded-lg p-10 text-center" data-testid="reportee-empty">
           <Users className="w-10 h-10 text-[var(--muted)]/40 mx-auto mb-4" strokeWidth={1.3} />
-          <p className="akki-lead mb-2">No reportees yet.</p>
-          <p className="text-[13px] text-[var(--muted)]">Add the people who report into you so AKKI can run reporting cycles for them.</p>
+          <p className="akki-lead mb-2">{items.length === 0 ? "No reportees yet." : "No reportees match this filter."}</p>
+          <p className="text-[13px] text-[var(--muted)]">{items.length === 0 ? "Add the people who report into you so AKKI can run reporting cycles for them." : "Try a different filter, or add one for this committee."}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3" data-testid="reportee-list">
-          {items.map((r) => (
+          {visible.map((r) => (
             <div key={r.id} className="bg-white border border-[var(--rule)] rounded-lg p-4" data-testid={`reportee-${r.id}`}>
               <div className="flex items-start justify-between gap-2">
                 <div>
@@ -251,11 +291,14 @@ function Reportees({ contextId }) {
                   <Trash2 className="w-4 h-4" strokeWidth={1.6} />
                 </button>
               </div>
-              {r.areas?.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-2.5">
-                  {r.areas.map((a) => <span key={a} className="akki-context-chip">{a}</span>)}
-                </div>
-              )}
+              <div className="flex flex-wrap gap-1 mt-2.5">
+                {r.committee_id && committeeName(r.committee_id) && (
+                  <span className="akki-context-chip bg-[var(--chrome)]/10 text-[var(--chrome)] border-[var(--chrome)]/20">
+                    {committeeName(r.committee_id)}
+                  </span>
+                )}
+                {r.areas?.map((a) => <span key={a} className="akki-context-chip">{a}</span>)}
+              </div>
             </div>
           ))}
         </div>

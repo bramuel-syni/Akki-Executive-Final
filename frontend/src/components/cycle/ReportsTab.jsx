@@ -9,7 +9,7 @@ import {
 import { toast } from "sonner";
 import {
   FileText, Send, Loader2, Plus, Trash2, ArrowRight, CheckCircle2,
-  Clock, Users, RotateCcw, ShieldCheck,
+  Clock, Users, RotateCcw, ShieldCheck, Sparkles, Download,
 } from "lucide-react";
 
 function shortDate(iso) {
@@ -170,6 +170,7 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [savingNote, setSavingNote] = useState(false);
+  const [polishing, setPolishing] = useState(false);
 
   useEffect(() => {
     if (report) { setBody(report.body || ""); setTitle(report.title || ""); setNote(""); }
@@ -230,6 +231,38 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
       setNote("");
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setSavingNote(false); }
+  };
+
+  const onPolish = async () => {
+    setPolishing(true);
+    try {
+      const { data } = await api.post(
+        `/contexts/${contextId}/reports/${report.id}/polish`,
+        {},
+        { timeout: 180000 },
+      );
+      setBody(data.polished_body || body);
+      toast.success("AKKI polished it. Review the changes, then save.");
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setPolishing(false); }
+  };
+
+  const onDownloadPdf = async () => {
+    try {
+      const resp = await api.get(
+        `/contexts/${contextId}/reports/${report.id}/export.pdf`,
+        { responseType: "blob" },
+      );
+      const url = URL.createObjectURL(new Blob([resp.data], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(report.title || "report").replace(/[^a-zA-Z0-9-_ ]/g, "_").slice(0, 60)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Report PDF downloaded.");
+    } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
   return (
@@ -318,6 +351,19 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
             <ShieldCheck className="w-3 h-3 text-[var(--chrome)]" /> Synisense-shielded · routed only to the named chain
           </p>
           <Button variant="outline" onClick={onClose} className="border-[var(--rule)]">Close</Button>
+          {/* PDF available at any non-trivial state */}
+          {report.status !== "withdrawn" && (
+            <Button onClick={onDownloadPdf} variant="outline" className="border-[var(--rule)]" data-testid="report-pdf-btn">
+              <Download className="w-3.5 h-3.5 mr-1.5" /> Download PDF
+            </Button>
+          )}
+          {canEdit && (
+            <Button onClick={onPolish} disabled={polishing || busy} variant="outline" className="border-[var(--rule)]" data-testid="report-polish-btn">
+              {polishing
+                ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Polishing…</>
+                : <><Sparkles className="w-3.5 h-3.5 mr-1.5 text-[var(--accent)]" /> Polish with AKKI</>}
+            </Button>
+          )}
           {canEdit && (
             <Button onClick={onSave} disabled={busy} variant="outline" className="border-[var(--rule)]" data-testid="report-save-btn">
               {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save edits"}

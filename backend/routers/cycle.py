@@ -70,6 +70,9 @@ class ReporteeIn(BaseModel):
     email: EmailStr
     title: str = Field(min_length=2, max_length=120)
     areas: List[QuestionCategory] = Field(default_factory=list)
+    committee_id: Optional[str] = Field(default=None,
+                                        description="If this reportee belongs to a specific committee, the chair "
+                                                    "of that committee can scope cycle work to them.")
 
 
 class ChecklistGenerateIn(BaseModel):
@@ -101,6 +104,7 @@ async def list_questions(
     context_id: str,
     status: Optional[str] = None,
     category: Optional[str] = None,
+    committee_id: Optional[str] = None,
     membership: Dict[str, Any] = Depends(require_context_membership()),
 ):
     q: Dict[str, Any] = {"context_id": context_id}
@@ -108,6 +112,8 @@ async def list_questions(
         q["status"] = status
     if category:
         q["category"] = category
+    if committee_id:
+        q["committee_id"] = committee_id
     cursor = db.questions.find(q, {"_id": 0}).sort("created_at", -1).limit(500)
     return {"questions": await cursor.to_list(length=500)}
 
@@ -218,12 +224,13 @@ async def seed_questions_from_briefings(
 @router.get("/contexts/{context_id}/reportees")
 async def list_reportees(
     context_id: str,
+    committee_id: Optional[str] = None,
     membership: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    cursor = db.reportees.find(
-        {"context_id": context_id, "status": {"$ne": "removed"}},
-        {"_id": 0},
-    ).sort("created_at", 1)
+    q: Dict[str, Any] = {"context_id": context_id, "status": {"$ne": "removed"}}
+    if committee_id:
+        q["committee_id"] = committee_id
+    cursor = db.reportees.find(q, {"_id": 0}).sort("created_at", 1)
     return {"reportees": await cursor.to_list(length=200)}
 
 
@@ -242,6 +249,7 @@ async def add_reportee(
         "email": body.email.lower().strip(),
         "title": body.title.strip(),
         "areas": body.areas,
+        "committee_id": body.committee_id,
         "status": "active",
         "added_by": current["id"],
         "created_at": _iso(_now()),
@@ -1054,3 +1062,119 @@ async def reports_inbox(
         {"_id": 0},
     ).sort("updated_at", -1).limit(50)
     return {"reports": await cursor.to_list(length=50)}
+
+
+
+# ---------------------------------------------------------------------------
+# PDF export + LLM polish for finalised reports — iter21
+# ---------------------------------------------------------------------------
+
+@router.get("/contexts/{context_id}/reports/{rid}/export.pdf")
+async def export_report_pdf(
+    context_id: str,
+    rid: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Download the finalised report as a board-secretariat-ready PDF with a
+    chain-of-custody back page. Available to context members, the named
+    author, and any reviewer on the chain — same access surface as `get`.
+    Allowed for `finalised` reports; also allowed for `in_review` so reviewers
+    can preview the artefact before approving."""
+    rec = await _resolve_report_access(context_id=context_id, rid=rid, current=current)
+    if rec.get("status") not in ("finalised", "in_review", "draft"):
+        raise HTTPException(status_code=409, detail=f"Cannot export a {rec.get('status')} report.")
+
+    from fastapi.responses import Response
+    from reports_service import render_report_pdf
+
+    ctx = await db.contexts.find_one(
+        {"id": context_id}, {"_id": 0, "name": 1},
+    ) or {}
+    pdf_bytes = render_report_pdf(rec, context_name=ctx.get("name") or "")
+    safe_title = "".join(c if c.isalnum() or c in "-_ " else "_" for c in (rec.get("title") or "report"))[:60].strip().replace(" ", "_")
+    filename = f"{safe_title}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+class PolishIn(BaseModel):
+    instruction: Optional[str] = Field(
+        default=None, max_length=400,
+        description="Optional steer — 'tighten the executive summary', 'add a Capital "
+                    "section', etc. Default: keep all facts, tighten prose, add structure.",
+    )
+
+
+@router.post("/contexts/{context_id}/reports/{rid}/polish")
+async def polish_report(
+    context_id: str,
+    rid: str,
+    body: PolishIn,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """LLM-polish the report body. Only callable by the author in `draft` or
+    the current reviewer in `in_review`. Returns the polished body — does NOT
+    auto-save, so the executive can review the change before committing."""
+    rec = await _resolve_report_access(context_id=context_id, rid=rid, current=current)
+
+    idx = _current_reviewer_idx(rec.get("chain") or [])
+    is_author = rec["author_id"] == current["id"] and rec["status"] == "draft"
+    current_email = (current.get("email") or "").lower()
+    is_current_reviewer = (
+        idx is not None
+        and rec["chain"][idx].get("email") == current_email
+    )
+    if not (is_author or is_current_reviewer):
+        raise HTTPException(status_code=403, detail="Only the author (in draft) or current reviewer can polish this report.")
+
+    instruction = (body.instruction or "Tighten the prose, fix any awkward phrasing, add light structure (## headings) where the body is a wall of text. Do not invent facts. Keep every figure, name, and concrete detail. Preserve markdown formatting.").strip()
+    prompt = (
+        f"You are AKKI, polishing a draft report for an executive. Apply this steer:\n\n"
+        f"    « {instruction} »\n\n"
+        f"Return ONLY the polished markdown body. No preamble, no JSON wrapper, no fenced code block.\n\n"
+        f"--- DRAFT BEGINS ---\n{rec.get('body', '')}\n--- DRAFT ENDS ---"
+    )
+    llm_out = await llm_call_llm(
+        module="report-polish",
+        user_query=prompt,
+        context_object=None,
+        session_context={"session_id": f"report-polish-{rid}"},
+        data_trust={"overall": "trusted"},
+        response_format="text",
+    )
+    polished = (llm_out.get("response") or "").strip()
+    # Strip any stray ``` fences the LLM might add despite instructions
+    if polished.startswith("```"):
+        polished = "\n".join(polished.split("\n")[1:])
+        if polished.endswith("```"):
+            polished = "\n".join(polished.split("\n")[:-1])
+    polished = polished.strip()
+    if len(polished) < 50:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Polish returned a too-short response. Mode={llm_out.get('mode')}.",
+        )
+    return {"polished_body": polished, "mode": llm_out.get("mode")}
+
+
+# ---------------------------------------------------------------------------
+# Committees — list endpoint scoped to user's context (used by Cycle filter)
+# ---------------------------------------------------------------------------
+
+@router.get("/contexts/{context_id}/cycle/committees")
+async def list_cycle_committees(
+    context_id: str,
+    membership: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Surface the committees configured on this context so the Cycle UI can
+    filter Question Bank, Reportees, Checklists, and Reports by committee.
+    Wraps the existing committees collection — duplicating to a /cycle path
+    avoids a circular import with the committees router."""
+    cursor = db.committees.find(
+        {"context_id": context_id, "status": {"$ne": "archived"}},
+        {"_id": 0, "id": 1, "name": 1, "kind": 1, "chair_email": 1},
+    ).sort("name", 1)
+    return {"committees": await cursor.to_list(length=50)}
