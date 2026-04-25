@@ -84,6 +84,11 @@ class ChecklistGenerateIn(BaseModel):
         default=None,
         description="Subset to draft for; None = every active reportee",
     )
+    committee_id: Optional[str] = Field(
+        default=None,
+        description="If set, only committee-scoped reportees + committee-scoped questions are used. "
+                    "This enables an Audit-committee chair to run their own cycle on committee members.",
+    )
 
 
 class ChecklistEdit(BaseModel):
@@ -337,12 +342,16 @@ async def generate_checklists(
     """Compose a per-reportee checklist tailored from the open question bank.
     Returns drafts in `pending_approval` state — nothing is sent yet. The
     executive reviews/edits/approves them via /dispatch below."""
-    # Pull all active reportees (or the requested subset)
+    # Pull all active reportees (or the requested subset / committee-scoped)
     rep_query: Dict[str, Any] = {"context_id": context_id, "status": "active"}
+    if body.committee_id:
+        rep_query["committee_id"] = body.committee_id
     if body.reportee_ids:
         rep_query["id"] = {"$in": body.reportee_ids}
     reportees = await db.reportees.find(rep_query, {"_id": 0}).to_list(length=200)
     if not reportees:
+        if body.committee_id:
+            raise HTTPException(status_code=400, detail="No reportees scoped to this committee. Add some via the Reportees tab.")
         raise HTTPException(status_code=400, detail="No reportees configured for this context.")
 
     # Anti-spam: skip reportees who got a checklist in the last ANTI_SPAM_DAYS
@@ -353,9 +362,19 @@ async def generate_checklists(
     ).to_list(length=500)
     recent_ids = {r["reportee_id"] for r in recent}
 
-    open_qs = await db.questions.find(
-        {"context_id": context_id, "status": "open"}, {"_id": 0},
-    ).sort("created_at", -1).to_list(length=500)
+    open_qs_query: Dict[str, Any] = {"context_id": context_id, "status": "open"}
+    if body.committee_id:
+        # Committee-chair cycle: prefer questions tagged to this committee, but
+        # fall through to context-wide questions if the committee bank is thin.
+        committee_qs = await db.questions.find(
+            {**open_qs_query, "committee_id": body.committee_id}, {"_id": 0},
+        ).sort("created_at", -1).to_list(length=300)
+        if len(committee_qs) >= 4:
+            open_qs = committee_qs
+        else:
+            open_qs = await db.questions.find(open_qs_query, {"_id": 0}).sort("created_at", -1).to_list(length=500)
+    else:
+        open_qs = await db.questions.find(open_qs_query, {"_id": 0}).sort("created_at", -1).to_list(length=500)
     if not open_qs:
         raise HTTPException(
             status_code=400,
@@ -378,6 +397,7 @@ async def generate_checklists(
         rec = {
             "id": cid,
             "context_id": context_id,
+            "committee_id": body.committee_id,
             "reportee_id": r["id"],
             "reportee_name": r["name"],
             "reportee_email": r["email"],
@@ -406,11 +426,14 @@ async def generate_checklists(
 async def list_checklists(
     context_id: str,
     status: Optional[str] = None,
+    committee_id: Optional[str] = None,
     membership: Dict[str, Any] = Depends(require_context_membership()),
 ):
     q: Dict[str, Any] = {"context_id": context_id}
     if status:
         q["status"] = status
+    if committee_id:
+        q["committee_id"] = committee_id
     cursor = db.checklists.find(q, {"_id": 0}).sort("created_at", -1).limit(200)
     return {"checklists": await cursor.to_list(length=200)}
 

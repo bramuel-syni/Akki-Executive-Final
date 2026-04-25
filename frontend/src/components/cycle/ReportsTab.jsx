@@ -11,6 +11,7 @@ import {
   FileText, Send, Loader2, Plus, Trash2, ArrowRight, CheckCircle2,
   Clock, Users, RotateCcw, ShieldCheck, Sparkles, Download,
 } from "lucide-react";
+import PolishDiffModal from "@/components/cycle/PolishDiffModal";
 
 function shortDate(iso) {
   if (!iso) return "—";
