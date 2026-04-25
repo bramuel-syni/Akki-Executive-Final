@@ -1,0 +1,44 @@
+{
+  "summary": "Iter19 — focused regression for the 3 UI polish features (Polish diff modal, Committee scope strip, Copy for Medium). Backend pytest 7/7 PASS + 1 SKIP. Live UI verified the Cycle tabs (5/5), report editor opens, Polish endpoint round-trip wired correctly (returned no-op toast 'AKKI didn't suggest any changes.' for the trivial-body seed report — expected behaviour per the request). BlogAdmin per-row 'Medium' button + draft-tile button confirmed in source with correct data-testids and buildMediumMarkdown helper produces kicker/title/dek/body/tags markdown. Backend GET /api/blog/admin/posts/{slug} 200/auth-gated correctly (admin OK, no-auth 401, non-superadmin 403, unknown slug 404). Committee strip: backend GET /cycle/committees returns [] for ALL of Bramuel's contexts — no committees seeded — so the strip correctly does NOT render in UI. Could not validate the chip-click + scoped POST end-to-end live without seed data.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Polish-with-AKKI diff modal end-to-end", "issue": "Could not exercise the diff modal live: the only Tuli draft has body length 68 (\"# Q2 2026 board pack\\n_No reportee submissions yet for this cycle._\") and Polish returned an identical string — toast 'AKKI didn't suggest any changes.' fires (expected per spec). Wiring is correct: PolishDiffModal component imported, polishDraft state set, modal mounted as sibling. To fully validate live, seed a longer draft body or have the LLM produce a meaningful change. Static review of ReportsTab.jsx + PolishDiffModal.jsx confirms data-testids polish-diff-modal/body/accept/reject are correct and onAcceptPolish replaces body via setBody(polished).", "affected_selectors": ["[data-testid=\"polish-diff-modal\"]", "[data-testid=\"polish-diff-accept\"]", "[data-testid=\"polish-diff-reject\"]"]},
+      {"flow": "Committee scope strip live render", "issue": "Bramuel's six contexts return {\"committees\": []} from GET /api/contexts/{cid}/cycle/committees so the strip correctly hides per the gate `committees.length > 0`. The credentials.md note claiming 'Tuli Financial Group has committees+reportees seeded' is wrong — Tuli ned ctx fb4df969... has 0 committees AND 0 reportees; only Mawingu (06cc1fc6...) has reportees. Recommend seeding at least one committee on Tuli or adding a seed script so the chip rendering + scoped generate POST can be E2E tested. Schema-level acceptance of committee_id (null + value) verified GREEN against the backend.", "affected_selectors": ["[data-testid=\"checklist-committee-strip\"]", "[data-testid=\"checklist-scope-all\"]", "[data-testid=\"checklist-scope-{committee_id}\"]"]},
+      {"flow": "BlogAdmin per-row Medium copy", "issue": "Admin login + /app/blog-admin route failed to surface the [data-testid=\"blog-posts-list\"] within 15s in the headless run (likely due to slow first-render of useAuth gate). Backend endpoint GET /api/blog/admin/posts/{slug} is fully green (200 with body, 401 unauth, 403 non-superadmin, 404 unknown). buildMediumMarkdown logic verified by code review — emits **KICKER**, # title, > dek, body, tags. Recommend main agent open /app/blog-admin in a browser and click any row's Medium button, then check clipboard.", "affected_selectors": ["[data-testid^=\"copy-medium-\"]", "[data-testid=\"copy-medium\"]"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter19_polish_committee_medium.py",
+    "/app/test_reports/pytest/iter19.xml"
+  ],
+  "action_items": [
+    "SEED a committee on Tuli Financial Group ctx fb4df969-3f17-4279-bf78-f07bb9e29650 (e.g. {id, name:'Audit Committee', reportee_ids:[...]}) AND seed at least one reportee — without this the committee strip cannot be E2E-tested in UI and the credentials.md note is misleading.",
+    "SEED a longer-body draft report on Tuli/Mawingu so the Polish-with-AKKI flow produces a non-trivial diff and the diff modal can render in tests (the trivial 68-char body causes the LLM to return identical text → 'no changes' toast every time).",
+    "VERIFY MANUALLY: open /app/blog-admin as admin@akki.ai, confirm the All Posts list shows a 'Medium' row button per post, click it, paste into a text editor, check format = `**KICKER**\\n\\n# Title\\n\\n> Dek\\n\\nbody...\\n\\n_Tags: ..._`. Backend already proven OK.",
+    "(Optional) Update /app/memory/test_credentials.md so it stops claiming Tuli ned ctx has committees+reportees seeded — currently misleading."
+  ],
+  "critical_code_review_comments": [
+    "PolishDiffModal.jsx wordDiff() builds full m×n LCS DP table (Uint16Array(m+1) × (n+1)) — for a 4k-word body that's 16M cells × 2 bytes = 32 MB allocation per render. The component is wrapped in useMemo but every modal open allocates it once. Consider Myers diff or chunking on paragraph boundaries before LCS for any body > 1500 tokens. Fine for current board-paper sizes but a foot-gun for long appendices.",
+    "ReportsTab.jsx onAcceptPolish() calls setBody(polishDraft.polished) but does NOT auto-save — user must click 'Save edits' to persist. Toast says so ('Polish accepted. Save edits to commit.') but a user who closes the modal/dialog after accept will lose the polish. Consider an auto-save-on-accept or a visual 'unsaved' badge on the textarea.",
+    "BlogAdmin.jsx onCopyForMedium() falls back to GET /blog/admin/posts/{slug} only when !p.body. The list endpoint GET /blog/posts?include_drafts=true currently returns posts WITHOUT body fields, so every per-row click triggers a network round-trip — that's fine but worth caching the fetched full doc in state to avoid re-fetching on repeat clicks.",
+    "Cycle.jsx — when scopedCommitteeId is set and the user later clicks 'Whole context', the chip toggles but there's no explicit confirmation that already-drafted checklists scoped to a committee are NOT silently mixed with whole-context drafts. UX could surface 'You drafted N for Audit Committee — those will be skipped now' when switching scopes mid-flow.",
+    "The /api/contexts/{cid}/cycle/committees endpoint returns 200 with empty array — good. But if the committees collection doesn't exist for older contexts, the UI relies on the strip-hide gate. Recommend a one-time backfill that ensures every context has a (possibly empty) committees doc, so the GET is consistent.",
+    "Backend /blog/admin/posts/{slug} correctly excludes _id (projection {_id:0}) — clean. Auth via _require_admin gate verified to 401 unauth and 403 non-superadmin."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter19_polish_committee_medium.py (new, 8 tests, 7 pass / 1 skip due to missing committee seed)"
+  ],
+  "success_rate": {"backend": "100% (7/7 executed; 1 skipped on missing seed)", "frontend": "~70% — Cycle tabs render, Reports editor opens, Polish endpoint wired (no-op path), strip correctly gated. Live diff-modal + per-row Medium copy paths could not be exercised without (a) richer report body (b) committee seed (c) longer page wait on /app/blog-admin first-render"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026!  ;  admin@akki.ai / AkkiAdmin2026!",
+  "seed_data_creation": "None added in this iteration. Iter19 only exercised existing data. No TEST_ artifacts persisted (the schema-only test posts to checklists/generate were rejected at domain layer with 400 — no rows written).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend admin/posts/{slug} + cycle/committees + report polish endpoints are all GREEN — keep test_iter19_polish_committee_medium.py as a regression. Live UI E2E for the diff modal and committee strip is BLOCKED on seed data: (1) seed a committee on Tuli ned ctx (and a reportee or two), (2) seed a draft report with body ≥ 300 words so Polish produces a real diff. Once seeded, re-run the playwright script in this iteration's tool calls — selectors are correct.",
+  "rca of the issue": "Two seed-data blockers prevent full live verification: (a) Tuli Financial Group ned ctx (fb4df969...) has no committees AND no reportees despite the credentials.md note — confirmed via direct GET; (b) the only Tuli draft report has a 68-char placeholder body, so 'Polish with AKKI' returns the same text and triggers the documented 'no changes' toast (correct behaviour, not a bug, but blocks E2E modal validation). Mitigation is purely seed-side: add a committees doc + a richer draft body. All UI wiring (data-testids, state machines, fetch-fallback) was verified by code review and is correct."
+}

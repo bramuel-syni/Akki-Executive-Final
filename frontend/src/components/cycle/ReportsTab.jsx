@@ -172,9 +172,10 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
   const [busy, setBusy] = useState(false);
   const [savingNote, setSavingNote] = useState(false);
   const [polishing, setPolishing] = useState(false);
+  const [polishDraft, setPolishDraft] = useState(null); // { original, polished }
 
   useEffect(() => {
-    if (report) { setBody(report.body || ""); setTitle(report.title || ""); setNote(""); }
+    if (report) { setBody(report.body || ""); setTitle(report.title || ""); setNote(""); setPolishDraft(null); }
   }, [report]);
 
   if (!report) return null;
@@ -242,10 +243,22 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
         {},
         { timeout: 180000 },
       );
-      setBody(data.polished_body || body);
-      toast.success("AKKI polished it. Review the changes, then save.");
+      const polished = data.polished_body || "";
+      if (!polished || polished.trim() === (body || "").trim()) {
+        toast.message("AKKI didn't suggest any changes.");
+        return;
+      }
+      setPolishDraft({ original: body, polished });
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setPolishing(false); }
+  };
+
+  const onAcceptPolish = () => {
+    if (polishDraft?.polished) {
+      setBody(polishDraft.polished);
+      toast.success("Polish accepted. Save edits to commit.");
+    }
+    setPolishDraft(null);
   };
 
   const onDownloadPdf = async () => {
@@ -267,6 +280,7 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-4xl max-h-[90vh] bg-[var(--cream)] border border-[var(--rule)] overflow-hidden flex flex-col" data-testid="report-editor-modal">
         <DialogHeader>
@@ -388,6 +402,14 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
         </div>
       </DialogContent>
     </Dialog>
+    <PolishDiffModal
+      open={!!polishDraft}
+      onClose={() => setPolishDraft(null)}
+      original={polishDraft?.original || ""}
+      polished={polishDraft?.polished || ""}
+      onAccept={onAcceptPolish}
+    />
+    </>
   );
 }
 

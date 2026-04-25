@@ -310,6 +310,8 @@ function Reportees({ contextId }) {
 // ---------- Checklists ----------
 function Checklists({ contextId }) {
   const [items, setItems] = useState([]);
+  const [committees, setCommittees] = useState([]);
+  const [scopedCommitteeId, setScopedCommitteeId] = useState(""); // "" = whole context
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [cycleName, setCycleName] = useState("");
@@ -323,8 +325,12 @@ function Checklists({ contextId }) {
     if (!contextId) return;
     setLoading(true);
     try {
-      const { data } = await api.get(`/contexts/${contextId}/checklists`);
-      setItems(data.checklists || []);
+      const [cl, com] = await Promise.all([
+        api.get(`/contexts/${contextId}/checklists`),
+        api.get(`/contexts/${contextId}/cycle/committees`),
+      ]);
+      setItems(cl.data.checklists || []);
+      setCommittees(com.data.committees || []);
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setLoading(false); }
   }, [contextId]);
@@ -338,6 +344,7 @@ function Checklists({ contextId }) {
     try {
       const { data } = await api.post(`/contexts/${contextId}/checklists/generate`, {
         cycle_name: cycleName.trim(), deadline_date: deadline.trim(),
+        committee_id: scopedCommitteeId || null,
       });
       setSkipped(data.skipped || []);
       toast.success(`Drafted ${data.drafts.length} checklist${data.drafts.length === 1 ? "" : "s"}. Review before dispatching.`);
@@ -379,6 +386,30 @@ function Checklists({ contextId }) {
 
   return (
     <div className="space-y-6">
+      {committees.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap" data-testid="checklist-committee-strip">
+          <span className="text-[11px] uppercase tracking-wider text-[var(--muted)]">Run cycle for:</span>
+          <button
+            onClick={() => setScopedCommitteeId("")}
+            className={`px-2.5 py-1 text-[12px] rounded-full border transition-colors ${scopedCommitteeId === "" ? "bg-[var(--ink)] text-white border-[var(--ink)]" : "bg-white border-[var(--rule)] text-[var(--deep)] hover:border-[var(--accent)]/40"}`}
+            data-testid="checklist-scope-all"
+          >Whole context</button>
+          {committees.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => setScopedCommitteeId(c.id)}
+              className={`px-2.5 py-1 text-[12px] rounded-full border transition-colors ${scopedCommitteeId === c.id ? "bg-[var(--accent)] text-white border-[var(--accent)]" : "bg-white border-[var(--rule)] text-[var(--deep)] hover:border-[var(--accent)]/40"}`}
+              data-testid={`checklist-scope-${c.id}`}
+            >{c.name}{c.kind ? ` · ${c.kind}` : ""}</button>
+          ))}
+          {scopedCommitteeId && (
+            <span className="text-[11.5px] text-[var(--muted)] italic ml-1">
+              Only reportees scoped to this committee will receive checklists.
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="bg-white border border-[var(--rule)] rounded-lg p-5" data-testid="checklist-generate">
         <p className="akki-overline mb-2">Draft checklists for the next cycle</p>
         <div className="flex gap-2 flex-wrap items-center">

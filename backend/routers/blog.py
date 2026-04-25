@@ -457,6 +457,19 @@ async def delete_post(
     return {"ok": True}
 
 
+@router.get("/admin/posts/{slug}")
+async def get_post_admin(
+    slug: str,
+    current: Dict[str, Any] = Depends(_require_admin),
+):
+    """Full post fetch for the admin surface — returns drafts + published alike,
+    body included. Used by the BlogAdmin 'Copy for Medium' action."""
+    p = await db.blog_posts.find_one({"slug": slug}, {"_id": 0})
+    if not p:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    return p
+
+
 @router.get("/subscribers")
 async def list_subscribers(
     current: Dict[str, Any] = Depends(_require_admin),

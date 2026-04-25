@@ -6,7 +6,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Loader2, Sparkles, FileText, Send, ExternalLink, Copy, Trash2 } from "lucide-react";
+import { Loader2, Sparkles, FileText, Send, ExternalLink, Copy, Trash2, BookOpen } from "lucide-react";
 
 /**
  * BlogAdmin — superadmin-only surface for composing and publishing
@@ -75,6 +75,31 @@ export default function BlogAdmin() {
     toast.success(`${label} copied.`);
   };
 
+  // Build a Medium-flavored markdown payload from a draft (or any post-shaped object).
+  // Medium's import accepts standard markdown — kicker becomes a label line, dek becomes
+  // a blockquote so it renders as a styled subtitle, then body markdown is preserved.
+  const buildMediumMarkdown = (p) => {
+    const lines = [];
+    if (p.kicker) lines.push(`**${p.kicker.toUpperCase()}**`, "");
+    lines.push(`# ${p.title}`, "");
+    if (p.dek) lines.push(`> ${p.dek}`, "");
+    lines.push((p.body || "").trim());
+    if (p.tags?.length) lines.push("", `_Tags: ${p.tags.join(", ")}_`);
+    return lines.join("\n");
+  };
+
+  const onCopyForMedium = async (p) => {
+    let full = p;
+    if (!full?.body) {
+      try {
+        const { data } = await api.get(`/blog/admin/posts/${p.slug}`);
+        full = data;
+      } catch (e) { toast.error(apiErrorMessage(e)); return; }
+    }
+    if (!full?.body) { toast.error("This post has no body to copy."); return; }
+    copy(buildMediumMarkdown(full), "Medium-ready markdown");
+  };
+
   return (
     <AppShell>
       <div className="max-w-[1100px] mx-auto px-8 py-10">
@@ -112,7 +137,7 @@ export default function BlogAdmin() {
               <span className="text-[12px] text-[var(--muted)]">· {draft.read_minutes} min read</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
               {draft.linkedin_post && (
                 <button onClick={() => copy(draft.linkedin_post, "LinkedIn post")} className="text-left bg-white border border-[var(--rule)] rounded-md p-3 hover:border-[var(--accent)]/40 transition-colors" data-testid="copy-linkedin">
                   <p className="text-[10.5px] uppercase tracking-wider text-[var(--accent)] mb-1.5 inline-flex items-center gap-1.5"><Copy className="w-3 h-3" /> Copy for LinkedIn</p>
@@ -125,6 +150,12 @@ export default function BlogAdmin() {
                   <p className="text-[13px] text-[var(--deep)] line-clamp-3">{draft.email_intro.slice(0, 220)}…</p>
                 </button>
               )}
+              <button onClick={() => onCopyForMedium(draft)} className="text-left bg-white border border-[var(--rule)] rounded-md p-3 hover:border-[var(--accent)]/40 transition-colors" data-testid="copy-medium">
+                <p className="text-[10.5px] uppercase tracking-wider text-[var(--accent)] mb-1.5 inline-flex items-center gap-1.5"><BookOpen className="w-3 h-3" /> Copy for Medium</p>
+                <p className="text-[13px] text-[var(--deep)] line-clamp-3">
+                  Title, dek and full body as Medium-ready markdown. Paste into <em>Stories → Import a story</em> or a new draft.
+                </p>
+              </button>
             </div>
 
             <div className="flex justify-end gap-2">
@@ -155,6 +186,9 @@ export default function BlogAdmin() {
                     <Link to={`/blog/${p.slug}`} target="_blank" className="text-[12px] text-[var(--accent)] hover:underline inline-flex items-center gap-1">
                       <ExternalLink className="w-3 h-3" /> View
                     </Link>
+                    <button onClick={() => onCopyForMedium(p)} className="text-[12px] text-[var(--deep)] hover:text-[var(--accent)] inline-flex items-center gap-1" data-testid={`copy-medium-${p.slug}`}>
+                      <BookOpen className="w-3 h-3" /> Medium
+                    </button>
                     {p.status === "draft" && (
                       <button onClick={() => onPublish(p.slug)} className="text-[12px] text-emerald-700 hover:underline" data-testid={`publish-${p.slug}`}>Publish</button>
                     )}
