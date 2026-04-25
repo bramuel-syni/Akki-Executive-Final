@@ -197,29 +197,30 @@ export default function Landing() {
               what management is asking you to accept, and citing every number back
               to the exact document it came from.
             </p>
-            <div className="flex flex-wrap items-center gap-4" data-testid="hero-cta">
-              <Link to="/sandbox">
+            <div className="flex flex-col items-start gap-5 max-w-md" data-testid="hero-cta">
+              {/* Primary — single prominent button. The whole funnel collapses
+                  to "try it without commitment, see if it earns the conversation." */}
+              <Link to="/sandbox" className="group" data-testid="hero-sandbox-btn">
                 <Button
-                  className="bg-[var(--chrome)] hover:bg-[var(--chrome)]/90 text-white rounded-sm h-12 px-6 text-[14px] font-medium tracking-wide"
-                  data-testid="hero-sandbox-btn"
+                  className="bg-[var(--chrome)] hover:bg-[var(--chrome)]/90 text-white rounded-sm h-14 px-8 text-[15px] font-medium tracking-wide shadow-sm"
                 >
-                  Try AKKI in 60 seconds <ArrowRight className="w-4 h-4 ml-2" />
+                  Try AKKI in 60 seconds <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-0.5 transition-transform" />
                 </Button>
               </Link>
-              <Link
-                to="/signup"
-                className="akki-gesture text-[14px]"
-                data-testid="hero-signup-btn"
-              >
-                Request your workspace <ArrowRight className="w-4 h-4" />
-              </Link>
-              <Link
-                to="/signin"
-                className="akki-gesture text-[14px] text-[var(--muted)]"
-                data-testid="hero-signin-btn"
-              >
-                Already set up? Sign in
-              </Link>
+              <p className="text-[12.5px] text-[var(--muted)] -mt-2 leading-relaxed">
+                <strong className="text-[var(--deep)]">The Sandbox</strong> is AKKI loaded with sample data for a fictional company in your sector. No signup. Yours for 14 days, then it deletes itself.
+              </p>
+
+              {/* Secondary — quiet, side-by-side, styled as gestures not buttons */}
+              <div className="flex items-center gap-5 pt-3 mt-1 border-t border-[var(--rule)] w-full">
+                <Link to="/signin" className="text-[13px] text-[var(--deep)] hover:text-[var(--ink)] transition-colors" data-testid="hero-signin-btn">
+                  Sign in to your workspace
+                </Link>
+                <span className="text-[var(--rule)]">·</span>
+                <Link to="/signup" className="text-[13px] text-[var(--deep)] hover:text-[var(--ink)] transition-colors" data-testid="hero-signup-btn">
+                  Request a team workspace
+                </Link>
+              </div>
             </div>
           </div>
 
@@ -426,7 +427,7 @@ export default function Landing() {
         <div className="flex items-center gap-6 text-[11px] uppercase tracking-[0.2em] text-[var(--muted)]">
           <span>© 2026 Syni.ai</span>
           <span className="hidden md:inline">·</span>
-          <span>AKKI Sandbox</span>
+          <span>AKKI</span>
           <span className="hidden md:inline">·</span>
           <span>v1.0</span>
         </div>

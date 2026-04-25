@@ -104,7 +104,7 @@ export default function SignUp() {
           </div>
         </div>
         <div className="relative z-10 text-[10px] uppercase tracking-[0.3em] text-white/30">
-          Confidential · Internal · AKKI Sandbox
+          Confidential · Internal · AKKI
         </div>
       </aside>
 
