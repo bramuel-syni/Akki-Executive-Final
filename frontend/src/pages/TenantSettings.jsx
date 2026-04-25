@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import CommitteeManager from "@/components/settings/CommitteeManager";
+import BillingTab from "@/components/settings/BillingTab";
 import { api, apiErrorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -87,9 +88,13 @@ export default function Settings() {
 
   // Tab deep-link: accept either ?tab=privacy or ?tab=trust (alias from the
   // global trust footer) — they render the same surface. Falls back to 'account'.
+  // Also accept the path /app/settings/billing as an alias for ?tab=billing
+  // (Stripe redirect lands there with ?session_id=...).
   const tabParam = (searchParams.get("tab") || "").toLowerCase();
-  const defaultTab = tabParam === "trust" ? "privacy" :
-    (tabParam && ["account", "contexts", "context", "members", "audit", "privacy", "danger"].includes(tabParam))
+  const onBillingPath = typeof window !== "undefined" && window.location.pathname.endsWith("/billing");
+  const defaultTab = onBillingPath ? "billing" :
+    tabParam === "trust" ? "privacy" :
+    (tabParam && ["account", "contexts", "context", "members", "audit", "privacy", "danger", "billing"].includes(tabParam))
       ? tabParam : "account";
 
   // Account editing
@@ -276,7 +281,7 @@ export default function Settings() {
               ["members", "Members", Users],
               ["audit", "Audit log", History],
               ["privacy", "Trust", ShieldCheck],
-              ["billing", "Billing", CreditCard, "M4"],
+              ["billing", "Billing", CreditCard],
               ["integrations", "Integrations", Plug, "M6"],
               ["danger", "Danger", AlertTriangle],
             ].map(([v, l, I, lock]) => (
@@ -871,6 +876,11 @@ export default function Settings() {
                 )}
               </div>
             </section>
+          </TabsContent>
+
+          {/* BILLING */}
+          <TabsContent value="billing">
+            <BillingTab />
           </TabsContent>
 
           {/* DANGER */}

@@ -1,0 +1,55 @@
+{
+  "summary": "Iter22 — full E2E test of (A) Stripe Billing M4, (B) Recurring Cycle Schedule cron, (C) Frontend polishes (PolishDiffModal chunking, BlogAdmin body cache, ReportEditor unsaved badge). Backend: 17/18 pytest cases pass; 1 critical 500 on /api/billing/status/{sid} due to emergentintegrations Stripe SDK can't read back the very session it just created (key/account mismatch with sk_test_emergent). Frontend: ALL 4 flows GREEN — Billing tab redirects to a real https://checkout.stripe.com/c/pay/cs_test_... URL; Cycle Schedule modal saves Monthly·wed and persists across reload, Clear reverts; ReportEditor unsaved badge appears on type, confirm dialog fires on close ('You have unsaved changes. Discard and close?'), badge clears on save; BlogAdmin per-row Medium body is cached client-side (2nd click on the same copy-medium-* button issued ZERO additional GET /api/blog/admin/posts/{slug}).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/billing/status/{session_id}",
+        "issue": "Returns 500 (CheckoutError 'No such checkout.session: cs_test_...') for a session that was just created by POST /api/billing/checkout in the same backend with the same STRIPE_API_KEY. emergentintegrations.StripeCheckout.get_checkout_status() raises a CheckoutError that propagates as 500. The frontend polling loop after Stripe redirect will therefore always 500 and the upgrade can never be confirmed. Likely cause: emergentintegrations 'sk_test_emergent' SDK uses Emergent's backend account on create but a different account on retrieve; either way, the route should catch CheckoutError and return a graceful payment_status='unknown' (or 200 with status='pending') rather than 500.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/webhook/stripe",
+        "issue": "Bad-signature path returns 400 as expected, but the underlying SDK raises KeyError('id') on minimal JSON bodies (the SDK assumes 'id' exists before signature verification). Functional behaviour OK — just a noisy log line."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Billing → poll status after Stripe return",
+        "issue": "Because GET /api/billing/status/{sid} 500s, the post-redirect polling in BillingTab.jsx will never observe payment_status='paid' and the plan won't flip in the UI even after a real test-mode successful Stripe checkout. End-to-end upgrade is broken via this path. (Webhook upgrade path may still work if Stripe is configured to hit the webhook URL, but the dashboard/UI confirmation loop is broken.)",
+        "affected_selectors": ["[data-testid='billing-upgrade-pro']", "[data-testid='billing-upgrade-team']"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter22_billing_schedule.py",
+    "/app/test_reports/pytest/iter22.xml"
+  ],
+  "action_items": [
+    "FIX (critical): Wrap the `await sc.get_checkout_status(session_id)` call in /app/backend/routers/billing.py inside try/except emergentintegrations.payments.stripe.checkout.CheckoutError and return 200 with payment_status='unknown' (or fall back to the persisted txn.payment_status) instead of 500. Without this, the entire upgrade poll loop is dead.",
+    "INVESTIGATE: emergentintegrations behaviour with STRIPE_API_KEY=sk_test_emergent — checkout.create succeeds and returns a real cs_test_... URL but checkout.retrieve() against that same session id raises 'No such checkout.session'. Confirm with the integrations team whether sk_test_emergent is meant for create-only and a different mechanism (webhook + cached metadata) is the supported way to detect 'paid'."
+  ],
+  "critical_code_review_comments": [
+    "billing.py L191-225: the get_checkout_status route is not defensive; a single SDK exception turns into a 500 to the user. Always wrap third-party SDK calls and degrade gracefully (esp. for poll endpoints).",
+    "billing.py L92-100: _stripe() correctly guards on missing STRIPE_API_KEY with 503, but the SDK is constructed with webhook_url='' — fine for create/retrieve but webhook handler also relies on the same SDK; explicit comment in code about that contract would help.",
+    "cycle.py schedule endpoints look solid: weekly/monthly + weekday + template + offset + scope all persisted, next_run_at advances on cron, X-Cron-Secret guard works (401 on missing/wrong, 200 on correct). Clean implementation."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter22_billing_schedule.py (new)"
+  ],
+  "success_rate": {
+    "backend": "94% (17/18 pytest pass; 1 critical 500 on billing/status)",
+    "frontend": "100% (4/4 flows: Billing tab + Stripe redirect, Schedule modal save+persist+clear, ReportEditor unsaved badge + confirm dialog, BlogAdmin Medium body cache)"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (verified). admin@akki.ai / AkkiAdmin2026! (verified for blog-admin). AKKI_CRON_SECRET=local-dev-cron-secret-rotate-in-prod-2026 (verified). STRIPE_API_KEY=sk_test_emergent (creates sessions OK, retrieve fails — see backend issue).",
+  "seed_data_creation": "None — used existing iter19 seed (Tuli ned ctx fb4df969..., Mawingu ned ctx 06cc1fc6..., 6 blog admin posts).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Frontend Billing/Schedule/Unsaved/BlogCache flows are GREEN — do NOT retest. Only retest needed is `GET /api/billing/status/{sid}` after main agent applies the try/except CheckoutError fix in /app/backend/routers/billing.py. The pytest file /app/backend/tests/test_iter22_billing_schedule.py::TestBillingCheckout::test_status_for_pending_session is the regression. Note: signin route is /signin (not /login). Schedule modal test must FIRST switch to Tuli ned ctx fb4df969... via context-switch-{cid}; do NOT click any role-switcher items (caused session loss in iter21). For ReportEditor test, click [data-testid^='report-card-'] to open the editor — there is no Edit button.",
+  "rca of the issue": "RCA for /api/billing/status/{sid} 500: emergentintegrations StripeCheckout.create_checkout_session() returns a session_id like cs_test_a1UB5..., the URL works in the browser to load the Stripe-hosted checkout page, but a subsequent get_checkout_status(session_id) call to Stripe with the same SDK key responds with 'No such checkout.session'. Either (1) sk_test_emergent routes create through a server-side proxy that owns the actual key, while retrieve attempts to use sk_test_emergent directly against Stripe (and Stripe rejects it), or (2) the SDK retrieve path is missing the same proxy behaviour. Mitigation in app code: catch CheckoutError, return 200 with payment_status=current persisted value (so the UI poll keeps showing 'pending' instead of crashing). Long-term: align with emergentintegrations on whether retrieve is supported under sk_test_emergent or whether webhooks are the only paid-confirmation path."
+}

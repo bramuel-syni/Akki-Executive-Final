@@ -21,6 +21,7 @@ export default function BlogAdmin() {
   const [draft, setDraft] = useState(null);
   const [posts, setPosts] = useState([]);
   const [subscribers, setSubscribers] = useState([]);
+  const [bodyCache, setBodyCache] = useState({}); // slug -> full post doc
 
   const loadPosts = useCallback(async () => {
     try {
@@ -89,11 +90,12 @@ export default function BlogAdmin() {
   };
 
   const onCopyForMedium = async (p) => {
-    let full = p;
+    let full = p?.body ? p : bodyCache[p?.slug];
     if (!full?.body) {
       try {
         const { data } = await api.get(`/blog/admin/posts/${p.slug}`);
         full = data;
+        setBodyCache((prev) => ({ ...prev, [p.slug]: data }));
       } catch (e) { toast.error(apiErrorMessage(e)); return; }
     }
     if (!full?.body) { toast.error("This post has no body to copy."); return; }

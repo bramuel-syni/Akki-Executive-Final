@@ -8,14 +8,29 @@ import { Sparkles, CheckCircle2, X } from "lucide-react";
 /**
  * Tiny, dependency-free word-level diff. Marks unchanged words plain,
  * removed words with strikethrough red, and added words highlighted green.
- * Algorithm: longest-common-subsequence on whitespace-tokenised input.
- * Good enough for board-paper-length bodies (≤ 4k words).
+ * Algorithm: longest-common-subsequence on whitespace-tokenised input,
+ * chunked on paragraph boundaries (\n\n) to keep the LCS DP table small
+ * even for very long appendices. Each paragraph aligns independently;
+ * for board-paper bodies this matches editor intuition (paragraphs are
+ * the unit of meaning) and bounds memory at O(p_max × q_max) per chunk.
  */
-function wordDiff(a, b) {
+function paragraphPairs(a, b) {
+  // Split on blank lines while preserving the separators so they re-emit verbatim.
+  const splitParas = (s) => (s || "").split(/(\n\s*\n)/);
+  const A = splitParas(a);
+  const B = splitParas(b);
+  // Pad the shorter side with empty paragraphs so we still diff the leftover content.
+  const n = Math.max(A.length, B.length);
+  const pairs = [];
+  for (let i = 0; i < n; i++) pairs.push([A[i] ?? "", B[i] ?? ""]);
+  return pairs;
+}
+
+function wordDiffChunk(a, b) {
   const A = (a || "").split(/(\s+)/);
   const B = (b || "").split(/(\s+)/);
   const m = A.length, n = B.length;
-  // LCS DP table
+  // LCS DP table — bounded per chunk, not per whole document.
   const dp = Array.from({ length: m + 1 }, () => new Uint16Array(n + 1));
   for (let i = m - 1; i >= 0; i--) {
     for (let j = n - 1; j >= 0; j--) {
@@ -31,12 +46,17 @@ function wordDiff(a, b) {
   }
   while (i < m) out.push({ t: "rem", v: A[i++] });
   while (j < n) out.push({ t: "add", v: B[j++] });
-  // Collapse adjacent same-type tokens for cleaner rendering
+  return out;
+}
+
+function wordDiff(a, b) {
   const collapsed = [];
-  for (const tok of out) {
-    if (collapsed.length && collapsed[collapsed.length - 1].t === tok.t) {
-      collapsed[collapsed.length - 1].v += tok.v;
-    } else { collapsed.push({ ...tok }); }
+  for (const [pa, pb] of paragraphPairs(a, b)) {
+    for (const tok of wordDiffChunk(pa, pb)) {
+      if (collapsed.length && collapsed[collapsed.length - 1].t === tok.t) {
+        collapsed[collapsed.length - 1].v += tok.v;
+      } else { collapsed.push({ ...tok }); }
+    }
   }
   return collapsed;
 }

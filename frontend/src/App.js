@@ -80,6 +80,7 @@ function App() {
           <Route path="/app/contexts/new" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />
           <Route path="/app/new-workspace" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />
           <Route path="/app/settings" element={<ProtectedRoute><TenantSettings /></ProtectedRoute>} />
+          <Route path="/app/settings/billing" element={<ProtectedRoute><TenantSettings /></ProtectedRoute>} />
           <Route path="/app/security" element={<ProtectedRoute><AccountSecurity /></ProtectedRoute>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />

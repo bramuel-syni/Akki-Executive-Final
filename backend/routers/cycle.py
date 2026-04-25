@@ -23,8 +23,9 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, EmailStr, Field
+import os as _os
 
 from core import (
     db, now as _now, iso as _iso, write_audit,
@@ -1201,3 +1202,213 @@ async def list_cycle_committees(
         {"_id": 0, "id": 1, "name": 1, "kind": 1, "chair_email": 1},
     ).sort("name", 1)
     return {"committees": await cursor.to_list(length=50)}
+
+
+# ---------------------------------------------------------------------------
+# Schedule (cron-able recurring cycle generation)
+# ---------------------------------------------------------------------------
+
+WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+Cadence = Literal["weekly", "monthly"]
+
+
+class CycleScheduleIn(BaseModel):
+    cadence: Cadence = "weekly"
+    weekday: Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"] = "mon"
+    cycle_name_template: str = Field(min_length=3, max_length=120,
+                                     description="Used as the cycle name for each auto-draft. "
+                                                 "Tokens: {date}, {iso_week}, {month}, {year}.")
+    deadline_offset_days: int = Field(default=10, ge=2, le=60,
+                                      description="How many days after the auto-draft to set the deadline.")
+    committee_id: Optional[str] = None
+    enabled: bool = True
+
+
+def _next_run_at_for(cadence: str, weekday: str, from_dt: datetime) -> datetime:
+    """Compute the next run instant given a cadence + target weekday.
+    Always returns a future-dated UTC datetime at 09:00 to keep things tidy."""
+    target_idx = WEEKDAYS.index(weekday)
+    base = from_dt.replace(hour=9, minute=0, second=0, microsecond=0)
+    if cadence == "weekly":
+        delta = (target_idx - base.weekday()) % 7
+        if delta == 0 and from_dt > base:
+            delta = 7
+        return base + timedelta(days=delta)
+    # monthly — same weekday in the next month from base
+    nxt = base + timedelta(days=28)
+    delta = (target_idx - nxt.weekday()) % 7
+    return nxt + timedelta(days=delta)
+
+
+def _format_cycle_name(template: str, when: datetime) -> str:
+    return (template
+            .replace("{date}", when.strftime("%-d %b %Y"))
+            .replace("{iso_week}", f"W{when.isocalendar()[1]:02d} {when.year}")
+            .replace("{month}", when.strftime("%B %Y"))
+            .replace("{year}", str(when.year)))
+
+
+async def _run_one_schedule(schedule: Dict[str, Any]) -> Dict[str, Any]:
+    """Materialise a scheduled cycle into pending_approval drafts. Mirrors the
+    /checklists/generate endpoint logic but skips committee gating's 400 errors
+    — the cron should never raise, only record skip reasons."""
+    cid = schedule["context_id"]
+    when = _now()
+    cycle_name = _format_cycle_name(schedule["cycle_name_template"], when)
+    deadline_dt = when + timedelta(days=int(schedule.get("deadline_offset_days", 10)))
+    deadline_str = deadline_dt.strftime("%-d %b %Y")
+    committee_id = schedule.get("committee_id")
+
+    rep_query: Dict[str, Any] = {"context_id": cid, "status": "active"}
+    if committee_id:
+        rep_query["committee_id"] = committee_id
+    reportees = await db.reportees.find(rep_query, {"_id": 0}).to_list(length=200)
+    if not reportees:
+        return {"schedule_id": schedule["id"], "drafts": 0, "skipped_reason": "no_reportees"}
+
+    cutoff = _iso(_now() - timedelta(days=ANTI_SPAM_DAYS))
+    recent = await db.checklists.find(
+        {"context_id": cid, "dispatched_at": {"$gte": cutoff}},
+        {"_id": 0, "reportee_id": 1},
+    ).to_list(length=500)
+    recent_ids = {r["reportee_id"] for r in recent}
+
+    open_qs_query: Dict[str, Any] = {"context_id": cid, "status": "open"}
+    open_qs: List[Dict[str, Any]] = []
+    if committee_id:
+        committee_qs = await db.questions.find(
+            {**open_qs_query, "committee_id": committee_id}, {"_id": 0},
+        ).sort("created_at", -1).to_list(length=300)
+        if len(committee_qs) >= 4:
+            open_qs = committee_qs
+    if not open_qs:
+        open_qs = await db.questions.find(open_qs_query, {"_id": 0}).sort("created_at", -1).to_list(length=500)
+    if not open_qs:
+        return {"schedule_id": schedule["id"], "drafts": 0, "skipped_reason": "empty_question_bank"}
+
+    drafts_n = 0
+    for r in reportees:
+        if r["id"] in recent_ids:
+            continue
+        questions = await _draft_questions_for_reportee(
+            reportee=r, open_questions=open_qs, cycle_name=cycle_name,
+        )
+        if not questions:
+            continue
+        rec_id = str(uuid.uuid4())
+        rec = {
+            "id": rec_id,
+            "context_id": cid,
+            "committee_id": committee_id,
+            "reportee_id": r["id"],
+            "reportee_name": r["name"],
+            "reportee_email": r["email"],
+            "cycle_name": cycle_name,
+            "deadline_date": deadline_str,
+            "questions": questions,
+            "note_to_reportee": None,
+            "status": "pending_approval",
+            "submission_token": uuid.uuid4().hex,
+            "executive_id": schedule["created_by"],
+            "created_at": _iso(_now()),
+            "created_via": "schedule",
+            "schedule_id": schedule["id"],
+            "dispatched_at": None,
+            "responded_at": None,
+        }
+        await db.checklists.insert_one(rec.copy())
+        drafts_n += 1
+    return {"schedule_id": schedule["id"], "drafts": drafts_n, "cycle_name": cycle_name}
+
+
+@router.get("/contexts/{context_id}/cycle/schedule")
+async def get_cycle_schedule(
+    context_id: str,
+    membership: Dict[str, Any] = Depends(require_context_membership()),
+):
+    s = await db.cycle_schedules.find_one({"context_id": context_id}, {"_id": 0})
+    return {"schedule": s}
+
+
+@router.put("/contexts/{context_id}/cycle/schedule")
+async def upsert_cycle_schedule(
+    context_id: str,
+    body: CycleScheduleIn,
+    current: Dict[str, Any] = Depends(get_current_account),
+    membership: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Single schedule per context — easier mental model for the executive
+    than 'manage N schedules'. To change cadence, just PUT again."""
+    next_run = _next_run_at_for(body.cadence, body.weekday, _now())
+    rec = {
+        "id": f"schedule-{context_id}",
+        "context_id": context_id,
+        "cadence": body.cadence,
+        "weekday": body.weekday,
+        "cycle_name_template": body.cycle_name_template,
+        "deadline_offset_days": body.deadline_offset_days,
+        "committee_id": body.committee_id,
+        "enabled": body.enabled,
+        "created_by": current["id"],
+        "created_by_email": current["email"],
+        "next_run_at": _iso(next_run),
+        "last_run_at": None,
+        "last_result": None,
+        "updated_at": _iso(_now()),
+    }
+    await db.cycle_schedules.update_one({"id": rec["id"]}, {"$set": rec}, upsert=True)
+    await write_audit(context_id, current["id"], "schedule.set", "cycle_schedule",
+                      rec["id"], {"cadence": body.cadence, "weekday": body.weekday})
+    return {"schedule": rec}
+
+
+@router.delete("/contexts/{context_id}/cycle/schedule")
+async def disable_cycle_schedule(
+    context_id: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+    membership: Dict[str, Any] = Depends(require_context_membership()),
+):
+    res = await db.cycle_schedules.delete_one({"context_id": context_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="No schedule set.")
+    await write_audit(context_id, current["id"], "schedule.disabled", "cycle_schedule",
+                      f"schedule-{context_id}", {})
+    return {"ok": True}
+
+
+@router.post("/cycle/cron/run-schedules")
+async def cron_run_schedules(
+    x_cron_secret: Optional[str] = Header(default=None, alias="X-Cron-Secret"),
+):
+    """Cron-protected. Iterates all enabled schedules whose next_run_at has
+    passed, drafts pending_approval checklists for each, then advances
+    next_run_at. Designed to run hourly — idempotent because we update
+    next_run_at atomically."""
+    expected = _os.environ.get("AKKI_CRON_SECRET")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Cron disabled — AKKI_CRON_SECRET not configured.")
+    if not x_cron_secret or x_cron_secret != expected:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-Cron-Secret header.")
+    now_iso = _iso(_now())
+    cursor = db.cycle_schedules.find(
+        {"enabled": True, "next_run_at": {"$lte": now_iso}},
+        {"_id": 0},
+    )
+    ran = []
+    async for s in cursor:
+        try:
+            result = await _run_one_schedule(s)
+        except Exception as e:  # never let a single bad ctx break the sweep
+            logger.exception("schedule run failed for %s: %s", s.get("id"), e)
+            result = {"schedule_id": s["id"], "error": str(e)[:200]}
+        nxt = _next_run_at_for(s["cadence"], s["weekday"], _now())
+        await db.cycle_schedules.update_one(
+            {"id": s["id"]},
+            {"$set": {
+                "last_run_at": now_iso,
+                "last_result": result,
+                "next_run_at": _iso(nxt),
+            }},
+        )
+        ran.append(result)
+    return {"ran": len(ran), "results": ran}

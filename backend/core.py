@@ -227,6 +227,8 @@ def sanitize_account(a: Dict[str, Any]) -> Dict[str, Any]:
         "declared_role": a.get("declared_role", "undeclared"),
         "mfa_enabled": bool(a.get("mfa_enabled", False)),
         "is_superadmin": bool(a.get("is_superadmin", False)),
+        "plan": a.get("plan") or "free",
+        "subscription_status": a.get("subscription_status"),
         "default_context_id": a.get("default_context_id"),
         "preferences": a.get("preferences") or {},
         "created_at": a.get("created_at"),

@@ -173,9 +173,10 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
   const [savingNote, setSavingNote] = useState(false);
   const [polishing, setPolishing] = useState(false);
   const [polishDraft, setPolishDraft] = useState(null); // { original, polished }
+  const [unsaved, setUnsaved] = useState(false);
 
   useEffect(() => {
-    if (report) { setBody(report.body || ""); setTitle(report.title || ""); setNote(""); setPolishDraft(null); }
+    if (report) { setBody(report.body || ""); setTitle(report.title || ""); setNote(""); setPolishDraft(null); setUnsaved(false); }
   }, [report]);
 
   if (!report) return null;
@@ -192,6 +193,7 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
     try {
       await api.patch(`/contexts/${contextId}/reports/${report.id}`, { title, body });
       toast.success("Saved.");
+      setUnsaved(false);
       onUpdated();
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setBusy(false); }
@@ -256,6 +258,7 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
   const onAcceptPolish = () => {
     if (polishDraft?.polished) {
       setBody(polishDraft.polished);
+      setUnsaved(true);
       toast.success("Polish accepted. Save edits to commit.");
     }
     setPolishDraft(null);
@@ -281,7 +284,12 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
 
   return (
     <>
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={open} onOpenChange={(o) => {
+      if (!o) {
+        if (unsaved && !confirm("You have unsaved changes. Discard and close?")) return;
+        onClose();
+      }
+    }}>
       <DialogContent className="max-w-4xl max-h-[90vh] bg-[var(--cream)] border border-[var(--rule)] overflow-hidden flex flex-col" data-testid="report-editor-modal">
         <DialogHeader>
           <DialogTitle className="akki-serif text-[22px] font-normal">{title || report.title}</DialogTitle>
@@ -322,7 +330,7 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
             <p className="akki-overline mb-2">Title</p>
             <Input
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => { setTitle(e.target.value); setUnsaved(true); }}
               disabled={!canEdit}
               className="h-10 bg-white border-[var(--rule)] text-sm"
               data-testid="report-title-input"
@@ -330,10 +338,17 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
           </div>
 
           <div>
-            <p className="akki-overline mb-2">Body (markdown)</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="akki-overline">Body (markdown)</p>
+              {unsaved && (
+                <span className="inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-wider px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-mono" data-testid="report-unsaved-badge">
+                  <Clock className="w-3 h-3" /> Unsaved changes
+                </span>
+              )}
+            </div>
             <textarea
               value={body}
-              onChange={(e) => setBody(e.target.value)}
+              onChange={(e) => { setBody(e.target.value); setUnsaved(true); }}
               disabled={!canEdit}
               rows={18}
               className="w-full text-[14px] font-mono leading-relaxed bg-white border border-[var(--rule)] rounded-md p-4 focus:outline-none focus:border-[var(--accent)]"

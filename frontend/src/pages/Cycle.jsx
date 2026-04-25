@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import {
   Users, MessageCircleQuestion, Send, Inbox, Plus, Trash2, Sparkles,
   Loader2, ArrowRight, Clock, CheckCircle2, Mail, Copy, ExternalLink, Edit3,
-  FileText,
+  FileText, CalendarClock,
 } from "lucide-react";
 import ReportsTab from "@/components/cycle/ReportsTab";
 
@@ -307,6 +307,132 @@ function Reportees({ contextId }) {
   );
 }
 
+// ---------- Schedule modal ----------
+function ScheduleModal({ open, onClose, contextId, committees, current, onSaved, onCleared }) {
+  const [cadence, setCadence] = useState(current?.cadence || "weekly");
+  const [weekday, setWeekday] = useState(current?.weekday || "mon");
+  const [tpl, setTpl] = useState(current?.cycle_name_template || "{month} report");
+  const [offset, setOffset] = useState(current?.deadline_offset_days || 10);
+  const [committeeId, setCommitteeId] = useState(current?.committee_id || "");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setCadence(current?.cadence || "weekly");
+      setWeekday(current?.weekday || "mon");
+      setTpl(current?.cycle_name_template || "{month} report");
+      setOffset(current?.deadline_offset_days || 10);
+      setCommitteeId(current?.committee_id || "");
+    }
+  }, [open, current]);
+
+  const onSave = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.put(`/contexts/${contextId}/cycle/schedule`, {
+        cadence, weekday, cycle_name_template: tpl,
+        deadline_offset_days: Number(offset) || 10,
+        committee_id: committeeId || null, enabled: true,
+      });
+      toast.success(`Scheduled — next run ${new Date(data.schedule.next_run_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}.`);
+      onSaved(data.schedule);
+      onClose();
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+
+  const onClear = async () => {
+    if (!confirm("Stop the recurring cycle? You can re-schedule any time.")) return;
+    setBusy(true);
+    try {
+      await api.delete(`/contexts/${contextId}/cycle/schedule`);
+      toast.success("Schedule cleared.");
+      onCleared();
+      onClose();
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+
+  const days = [["mon","Mon"],["tue","Tue"],["wed","Wed"],["thu","Thu"],["fri","Fri"],["sat","Sat"],["sun","Sun"]];
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg bg-[var(--cream)] border border-[var(--rule)]" data-testid="schedule-modal">
+        <DialogHeader>
+          <DialogTitle className="akki-serif text-[22px] font-normal">Schedule recurring cycle</DialogTitle>
+          <DialogDescription className="text-[12.5px] text-[var(--muted)]">
+            AKKI auto-drafts checklists on your cadence — they land in <em>Pending your approval</em>.
+            You still gate every dispatch.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <p className="akki-overline mb-1.5">Cadence</p>
+            <div className="flex gap-1.5">
+              {[["weekly","Weekly"],["monthly","Monthly"]].map(([v,l]) => (
+                <button key={v} onClick={() => setCadence(v)}
+                  className={`px-3 py-1.5 text-[13px] rounded-full border ${cadence === v ? "bg-[var(--ink)] text-white border-[var(--ink)]" : "bg-white border-[var(--rule)] text-[var(--deep)]"}`}
+                  data-testid={`schedule-cadence-${v}`}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="akki-overline mb-1.5">Day of week</p>
+            <div className="flex gap-1 flex-wrap">
+              {days.map(([v, l]) => (
+                <button key={v} onClick={() => setWeekday(v)}
+                  className={`px-2.5 py-1 text-[12px] rounded-full border min-w-[44px] ${weekday === v ? "bg-[var(--accent)] text-white border-[var(--accent)]" : "bg-white border-[var(--rule)] text-[var(--deep)]"}`}
+                  data-testid={`schedule-weekday-${v}`}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="akki-overline mb-1.5">Cycle name template</p>
+            <Input value={tpl} onChange={(e) => setTpl(e.target.value)}
+              placeholder="e.g. {month} report"
+              className="h-10 bg-white border-[var(--rule)] text-sm"
+              data-testid="schedule-template-input" />
+            <p className="text-[11px] text-[var(--muted)] mt-1.5">
+              Tokens: <code>{"{month}"}</code>, <code>{"{date}"}</code>, <code>{"{iso_week}"}</code>, <code>{"{year}"}</code>.
+            </p>
+          </div>
+          <div>
+            <p className="akki-overline mb-1.5">Deadline offset (days after draft)</p>
+            <Input type="number" min={2} max={60} value={offset}
+              onChange={(e) => setOffset(e.target.value)}
+              className="h-10 bg-white border-[var(--rule)] text-sm w-32"
+              data-testid="schedule-offset-input" />
+          </div>
+          {committees.length > 0 && (
+            <div>
+              <p className="akki-overline mb-1.5">Scope (optional)</p>
+              <Select value={committeeId || "none"} onValueChange={(v) => setCommitteeId(v === "none" ? "" : v)}>
+                <SelectTrigger className="h-10 bg-white border-[var(--rule)] text-sm" data-testid="schedule-committee-trigger">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— Whole context —</SelectItem>
+                  {committees.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}{c.kind ? ` · ${c.kind}` : ""}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 pt-3 border-t border-[var(--rule)]">
+          {current && (
+            <Button variant="outline" onClick={onClear} disabled={busy} className="border-red-200 text-red-700 hover:bg-red-50 mr-auto" data-testid="schedule-clear-btn">
+              <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Clear schedule
+            </Button>
+          )}
+          <Button variant="outline" onClick={onClose} className="border-[var(--rule)]">Cancel</Button>
+          <Button onClick={onSave} disabled={busy} className="bg-[var(--chrome)] text-white" data-testid="schedule-save-btn">
+            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save schedule"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ---------- Checklists ----------
 function Checklists({ contextId }) {
   const [items, setItems] = useState([]);
@@ -320,17 +446,21 @@ function Checklists({ contextId }) {
   const [reviewing, setReviewing] = useState(null); // checklist being edited
   const [dispatching, setDispatching] = useState(false);
   const [dispatchResult, setDispatchResult] = useState(null);
+  const [schedule, setSchedule] = useState(null);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!contextId) return;
     setLoading(true);
     try {
-      const [cl, com] = await Promise.all([
+      const [cl, com, sc] = await Promise.all([
         api.get(`/contexts/${contextId}/checklists`),
         api.get(`/contexts/${contextId}/cycle/committees`),
+        api.get(`/contexts/${contextId}/cycle/schedule`).catch(() => ({ data: { schedule: null } })),
       ]);
       setItems(cl.data.checklists || []);
       setCommittees(com.data.committees || []);
+      setSchedule(sc.data.schedule || null);
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setLoading(false); }
   }, [contextId]);
@@ -411,7 +541,19 @@ function Checklists({ contextId }) {
       )}
 
       <div className="bg-white border border-[var(--rule)] rounded-lg p-5" data-testid="checklist-generate">
-        <p className="akki-overline mb-2">Draft checklists for the next cycle</p>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <p className="akki-overline">Draft checklists for the next cycle</p>
+          <button
+            onClick={() => setScheduleOpen(true)}
+            className={`text-[12px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-colors ${schedule?.enabled ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-white border-[var(--rule)] text-[var(--deep)] hover:border-[var(--accent)]/40"}`}
+            data-testid="schedule-toggle-btn"
+          >
+            <CalendarClock className="w-3.5 h-3.5" />
+            {schedule?.enabled
+              ? `${schedule.cadence === "weekly" ? "Weekly" : "Monthly"} · ${schedule.weekday}`
+              : "Schedule recurring"}
+          </button>
+        </div>
         <div className="flex gap-2 flex-wrap items-center">
           <Input
             value={cycleName}
@@ -544,6 +686,15 @@ function Checklists({ contextId }) {
         cl={reviewing}
         onClose={() => setReviewing(null)}
         onSave={onSaveEdit}
+      />
+      <ScheduleModal
+        open={scheduleOpen}
+        onClose={() => setScheduleOpen(false)}
+        contextId={contextId}
+        committees={committees}
+        current={schedule}
+        onSaved={(s) => setSchedule(s)}
+        onCleared={() => setSchedule(null)}
       />
     </div>
   );
