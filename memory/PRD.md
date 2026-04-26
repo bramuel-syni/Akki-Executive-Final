@@ -591,16 +591,52 @@ layer (Surfaces, Artefacts, **Plays**) — named, staged journeys that
 - Pause→Resume→Pause toggles correctly via optimistic update (was
   flagged in iter24).
 
-### Open / deferred — Slice 2+
-- **Pre-Board Play** (NED) — next, second demo story.
-- **Monthly Performance Play** — needs §4 Monitor service hooks.
-- **Team Reporting / Cross-Board Pulse / Open Threads** — implement
-  after observing how Slice 1 lands in real demos.
-- Plays-aware M13 Ask context biasing — P2.
-- §6 email-in pipeline → auto-trigger Pre-Board Play — needs §6 first.
-- Workspace "Play context" right-panel section across all artefacts — P2.
-- Schedule auto-launch hook: when a recurring cycle runs, spawn a fresh
-  Board Pack Play instead of just drafting checklists — P2.
-- Replace shallow-merge `PATCH /state` with proper deep-merge once a
-  future Play needs nested per-stage state.
+## §13 Plays — Slice 2 (2026-04-26, iter25)
+
+### Schedule auto-launch hook
+- `_run_one_schedule` in `/app/backend/routers/cycle.py` now calls
+  `_spawn_auto_launched_play` after drafting checklists. The spawned (or
+  resumed) Board Pack Play is positioned at stage 1 ("Where the gaps are")
+  with `auto_launched=true`, `auto_launch_seen=false`, and
+  `state.cycle_name` / `state.deadline` / `state.auto_launched_schedule_id`
+  carried through. **Re-running the cron resets `auto_launch_seen=false`**
+  so a fresh PLAY READY card surfaces every cycle, while keeping the same
+  `play_id` (idempotent).
+
+### Pre-Board Play (NED, available)
+- Backend: `PRE_BOARD_PLAY` definition + `POST /api/contexts/{cid}/plays/{pid}/pre_board/read`
+  endpoint. Calls Claude Sonnet 4.5 via the Emergent LLM key with
+  `module="pre_board.read"`, `response_format="json"`. Returns 5 reading
+  notes + 3-4 standouts (each `{label, detail, why}`).
+- Frontend: 5 stage components in `/app/frontend/src/components/plays/PreBoardStages.jsx`:
+  Arrival (paste pack), Reading (notes), Standouts (oxblood-bordered cards),
+  Questions (textarea + standouts working set), Walking In (one-page brief).
+- Self-verified output sample: *"Revenue growth of 14.2% is flattering a
+  balance sheet that has deteriorated across three core ratios in six months."*
+
+### PLAY READY trigger card on Home
+- `/app/frontend/src/components/home/PlayReadyCards.jsx` — renders cards for
+  any play where `auto_launched && !auto_launch_seen`. Editorial layout:
+  oxblood "PLAY READY · Board Pack Play" kicker, Georgia headline
+  ("April 2026 report just dispatched."), italic transition phrase,
+  "Open the Play →" + "Not now" affordances. Click 'Not now' → POST `/seen` →
+  card disappears. Opening the play also fires `/seen` automatically.
+- `POST /api/contexts/{cid}/plays/{pid}/seen` — idempotent, used by both UI
+  paths and by PlayView's load() to mark auto-launched plays as seen.
+
+### Backend tests
+- 13/13 new pytests in `/app/backend/tests/test_iter25_plays_slice2.py` GREEN
+  (after testing-agent fixed a `call_llm` kwargs bug). Existing 40+ tests
+  still GREEN.
+
+### Open / deferred — Slice 3+
+- **Monthly Performance Play** (executive) — needs §4 Monitor service hooks.
+- **Cross-Board Pulse Play** (NED) — needs cross-context signal aggregation.
+- **Team Reporting Play** + **Open Threads Play** — implement after observing
+  Slice 1+2 in real demos.
+- Plays-aware M13 Ask context biasing.
+- Workspace "Play context" right-panel section across all artefacts.
+- Pre-Board "pick from Document Journal" — the Arrival stage links there but
+  doesn't yet pull a doc into the play (textarea paste only for Slice 2).
+- Replace shallow-merge `PATCH /state` with deep-merge.
 
