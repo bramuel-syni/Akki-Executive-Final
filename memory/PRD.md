@@ -705,3 +705,52 @@ simplification audit.
   ~~linked-docs map~~ ✅ — DONE iter26b. SMTP send for share recipients (deferred).
 - NED document evolution chain: thread pack → questions → answers → follow-up docs.
 - Monthly Performance Workflow + Cross-Board Pulse Workflow (need §4 Monitor hooks).
+
+## §4 Monitor + UX polish (2026-04-26, iter27)
+
+### §4 Monitor — role-adaptive mission-critical touchpoints
+- New `routers/monitor.py` → `GET /api/contexts/{cid}/monitor?function=ceo|cfo|coo|commercial|ned|other`.
+  Composes from existing collections — signals (filtered by role-relevant categories),
+  cycle (overdue + awaiting approval + in-flight checklists, reportees fuzzy-matched
+  by area-of-ownership keywords), reports pending the caller, recent briefings,
+  document engagement (your-uploaded docs read in last 30 days). NED gets an extra
+  `ned` block with `open_threads` + `recent_mentions`.
+- New page `/app/monitor` (`Monitor.jsx`). Light editorial layout:
+  - Function chip strip (CEO/CFO/COO/Commercial/Other) for executives,
+    persisted in `localStorage.akki_monitor_function` so the user lands on
+    the same view next session. NED users see no chip strip — single view.
+  - 4 tiles in a responsive 2-column grid: Signals · Cycle · Reports awaiting you
+    · Document engagement (or Open threads when function=ned).
+  - Each tile carries a kicker, headline that summarises the count, sub-content,
+    and a single outbound CTA to the relevant detail surface.
+- Sidebar entry "Monitor" (Activity icon) wired into `AppShell.jsx` between
+  Cycle and Workflows. Route registered in `App.js`.
+
+### Other polish
+- **Landing page marketing nav** — added 4 links (About / Features / Security /
+  Exco360) to the landing header so the public site's nav matches what's on
+  About/Features/Security/Blog pages. Original anchor links and Sign-in/Request
+  Access buttons preserved.
+- **PortfolioRail role-scoped filter** — the rail now filters contexts by the
+  user's `activeRole`. NED users see only NED boards; executives see only
+  their executive contexts. Falls back to `c.type` prefix when `my_role` is
+  absent (legacy contexts).
+- **Learn page horizontal layout** — articles, news, case studies, and videos
+  now render in a single `space-y-4 max-w-2xl` column (was a `grid-cols-1
+  xl:grid-cols-2` 2-up grid). VideoCard refactored to a horizontal layout
+  with a compact `w-40 aspect-video` thumbnail on the left + content on the
+  right; play button shrunk from `w-14` to `w-9`.
+
+### Tests
+- 15/15 new pytests in `test_iter27_monitor.py` GREEN. Frontend critical flows
+  100% verified live (Monitor tiles + chip persistence, nav-monitor present,
+  PortfolioRail role filter, Landing nav hrefs, Learn grid layout).
+
+### Open / deferred — Slice 5+
+- **Influence Map** (suggested follow-up) — week-over-week reading momentum
+  on every doc + "going dark" signals on key decision-makers.
+- **NED document evolution chain** — thread pack → questions → answers
+  → follow-up docs.
+- **Backend prefs persistence for Monitor function** — currently localStorage;
+  move to account.preferences for cross-device continuity.
+- **Monitor v2** — on-demand LLM commentary per tile ("AKKI, why is this red?").
