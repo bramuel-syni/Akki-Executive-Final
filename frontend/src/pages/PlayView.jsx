@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { ChevronRight, Pause, X, Play as PlayIcon, Loader2 } from "lucide-react";
 
 import { boardPackStageView } from "@/components/plays/BoardPackStages";
+import { preBoardStageView } from "@/components/plays/PreBoardStages";
 
 /**
  * PlayShell — the choreography primitive.
@@ -25,6 +26,7 @@ import { boardPackStageView } from "@/components/plays/BoardPackStages";
  */
 const STAGE_RENDERERS = {
   board_pack: boardPackStageView,
+  pre_board: preBoardStageView,
 };
 
 function StagesPanel({ open, onClose, play, onJump }) {
@@ -149,6 +151,12 @@ export default function PlayView() {
         setPlay(data.play);
         setContextId(ctxId);
         setLoading(false);
+        // Auto-launched plays light up the Home PLAY READY card; mark
+        // them seen as soon as the executive opens the Play view so the
+        // card doesn't keep shouting.
+        if (data.play.auto_launched && !data.play.auto_launch_seen) {
+          api.post(`/contexts/${ctxId}/plays/${playId}/seen`).catch(() => {});
+        }
         return;
       } catch { /* try next ctx */ }
     }

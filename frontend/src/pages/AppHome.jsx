@@ -14,6 +14,7 @@ import ShareModal from "@/components/share/ShareModal";
 import SandboxPackDrop from "@/components/sandbox/SandboxPackDrop";
 import ReviewInboxCard from "@/components/cycle/ReviewInboxCard";
 import PlaysInProgressStrip from "@/components/home/PlaysInProgressStrip";
+import PlayReadyCards from "@/components/home/PlayReadyCards";
 
 const CONFIDENCE_LABEL = { high: "High confidence", medium: "Medium confidence", low: "Low confidence" };
 
@@ -160,6 +161,11 @@ export default function AppHome() {
             {/* Sandbox-only: a discreet drop-your-own-pack affordance. Never
                 renders outside sandbox contexts. */}
             <SandboxPackDrop onSignalsReady={load} />
+
+            {/* Auto-launched Plays the executive hasn't opened yet — these
+                are PLAY READY trigger cards. Renders nothing when there
+                are none, per the cadence rule of restraint over insistence. */}
+            <PlayReadyCards />
 
             {/* Plays in progress — restrained chips that bring the executive
                 back to the active choreography. Renders nothing if no Plays

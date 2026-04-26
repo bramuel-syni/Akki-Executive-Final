@@ -1,0 +1,39 @@
+{
+  "summary": "Iter25 §13 Plays Slice 2 — Backend 13/13 PASS (after fixing 1 backend bug). Frontend Plays library + Pre-Board Play arrival stage verified. PLAY READY home card surfaced on the executive context but auto-launched play was created against the NED context — the test couldn't fully verify the dismiss/reload flow because the browser ctx switcher needs UI navigation; backend behaviour is verified end-to-end via pytest.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/contexts/{cid}/plays/{pid}/pre_board/read", "issue": "Initial implementation called call_llm() with wrong kwargs (tenant_id, user_prompt) which always raised TypeError → 502. FIXED by testing agent in /app/backend/routers/plays.py — now uses module/user_query/response_format='json'."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Home PLAY READY card render", "issue": "Could not fully validate dismiss + persist-on-reload from automated test because the auto-launched play lives on the Tuli NED ctx (fb4df969-...) but localStorage key 'akki_active_context_id' did not switch the rendered context — header still showed 'Tuli Financial Group (CFO)'. PlayReadyCards is mounted (verified by code review), and backend /seen + auto_launched flags work end-to-end via pytest. Main agent should self-verify by manually switching contexts via the ctx-switcher in browser.", "affected_selectors": ["home-play-ready", "home-play-ready-open-{playId}", "home-play-ready-dismiss-{playId}"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter25_plays_slice2.py",
+    "/app/test_reports/pytest/iter25_results.xml"
+  ],
+  "action_items": [
+    "Self-verify: switch browser to Tuli NED ctx (fb4df969-3f17-4279-bf78-f07bb9e29650) via ctx switcher; confirm PLAY READY card renders, 'Not now' POSTs /seen and card disappears, reload keeps it gone. Then re-run cron and verify card re-surfaces (auto_launch_seen reset to False — already covered in backend pytest)."
+  ],
+  "critical_code_review_comments": [
+    "FIXED in /app/backend/routers/plays.py: pre_board_read_pack was calling call_llm(tenant_id=..., user_prompt=..., session_context=...) but call_llm() signature is (module, user_query, ..., response_format) — old call always raised TypeError caught by the except block returning 502 'AKKI couldn't read the pack just now.'. Now passes module='pre_board.read', user_query=prompt, session_context={session_id, context_id}, response_format='json'.",
+    "_spawn_auto_launched_play in /app/backend/routers/cycle.py correctly resets auto_launch_seen=False on each cron run (existing branch line 1368) — this is the desired behaviour per review request: a re-spawned cycle should re-surface a fresh PLAY READY card.",
+    "PRE_BOARD_PLAY definition has 5 stages with correct keys [arrival, reading, standouts, questions, walking_in] and editorial transition phrases, no progress-app vocabulary."
+  ],
+  "updated_files": [
+    "/app/backend/routers/plays.py (FIXED call_llm kwargs bug)",
+    "/app/backend/tests/test_iter25_plays_slice2.py (NEW)"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "~75% (Plays library + Pre-Board arrival verified; PLAY READY home card not fully verified due to ctx switcher friction)"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Used existing Tuli NED ctx fb4df969-...; tests force schedule next_run_at to past + clear plays/checklists for clean idempotent verification.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend 13/13 GREEN after one fix (call_llm kwargs). The PLAY READY home card needs manual ctx-switch to NED ctx fb4df969-3f17-4279-bf78-f07bb9e29650 — the localStorage('akki_active_context_id') trick did not flip the visible ctx. To re-arm the card: python -c \"...\" to set next_run_at to past + reset auto_launch_seen=false on the auto-launched play, then curl POST /api/cycle/cron/run-schedules with X-Cron-Secret: local-dev-cron-secret-rotate-in-prod-2026.",
+  "rca of the issue": "Pre-Board /read 502: call_llm() signature mismatch — code in plays.py used tenant_id/user_prompt kwargs, real signature is module/user_query. except block masked the TypeError as a 502. Fixed by aligning kwargs with llm_service.call_llm(module='pre_board.read', user_query=prompt, session_context={'session_id', 'context_id'}, response_format='json')."
+}

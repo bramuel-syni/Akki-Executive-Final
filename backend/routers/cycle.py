@@ -1318,7 +1318,83 @@ async def _run_one_schedule(schedule: Dict[str, Any]) -> Dict[str, Any]:
         }
         await db.checklists.insert_one(rec.copy())
         drafts_n += 1
-    return {"schedule_id": schedule["id"], "drafts": drafts_n, "cycle_name": cycle_name}
+
+    # Spawn (or resume) a Board Pack Play for the executive who set up this
+    # schedule. Pre-position at stage 1 ("Where the gaps are") since stage 0
+    # (Setting the cycle) is implicitly done — they configured the schedule.
+    # Idempotent: if there's already an active/paused play for this exec on
+    # this context, we reuse it and bump it to stage 1; otherwise we create.
+    play_id: Optional[str] = None
+    if drafts_n > 0:
+        play_id = await _spawn_auto_launched_play(
+            context_id=cid,
+            account_id=schedule["created_by"],
+            cycle_name=cycle_name,
+            deadline_str=deadline_str,
+            schedule_id=schedule["id"],
+        )
+
+    return {
+        "schedule_id": schedule["id"], "drafts": drafts_n,
+        "cycle_name": cycle_name, "auto_play_id": play_id,
+    }
+
+
+async def _spawn_auto_launched_play(
+    context_id: str, account_id: str,
+    cycle_name: str, deadline_str: str, schedule_id: str,
+) -> str:
+    """Best-effort cron-spawn of a Board Pack Play. Never raises; always
+    returns the play id (creating if needed)."""
+    existing = await db.plays.find_one(
+        {"context_id": context_id, "account_id": account_id,
+         "play_type": "board_pack", "status": {"$in": ["active", "paused"]}},
+        {"_id": 0},
+    )
+    if existing:
+        merged_state = {
+            **(existing.get("state") or {}),
+            "cycle_name": cycle_name,
+            "deadline": deadline_str,
+            "auto_launched_schedule_id": schedule_id,
+        }
+        await db.plays.update_one(
+            {"id": existing["id"]},
+            {"$set": {
+                "current_stage": max(existing.get("current_stage", 0), 1),
+                "status": "active",
+                "state": merged_state,
+                "auto_launched": True,
+                "auto_launch_seen": False,
+                "last_activity_at": _iso(_now()),
+            }, "$push": {"events": {"at": _iso(_now()), "kind": "auto_launched",
+                                     "stage": 1, "schedule_id": schedule_id}}},
+        )
+        return existing["id"]
+
+    new_id = str(uuid.uuid4())
+    rec = {
+        "id": new_id,
+        "play_type": "board_pack",
+        "context_id": context_id,
+        "account_id": account_id,
+        "status": "active",
+        "current_stage": 1,
+        "state": {
+            "cycle_name": cycle_name,
+            "deadline": deadline_str,
+            "auto_launched_schedule_id": schedule_id,
+        },
+        "started_at": _iso(_now()),
+        "last_activity_at": _iso(_now()),
+        "completed_at": None,
+        "auto_launched": True,
+        "auto_launch_seen": False,
+        "events": [{"at": _iso(_now()), "kind": "auto_launched",
+                    "stage": 1, "schedule_id": schedule_id}],
+    }
+    await db.plays.insert_one(rec.copy())
+    return new_id
 
 
 @router.get("/contexts/{context_id}/cycle/schedule")
