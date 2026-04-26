@@ -873,3 +873,76 @@ view (expectation list + score + probability).
 - **SMTP send for `document_shares`** (still open) — currently records
   intent only; no email actually goes out.
 - target_date ISO normalization for proper sort order.
+
+## §UX big-batch (2026-04-26, iter30)
+
+Eight pieces shipped. Verified by testing agent (9/9 backend + 100%
+frontend critical claims).
+
+### Brand & navigation
+- **AKKI top-bar** now reads "AKKI" with an italic muted "for Executives"
+  (`brand-subtitle`) on screens ≥640 px.
+- **Marketing nav** "Security" → "Security Design"; footer
+  "Context never leaves your account" → "Your data never leaves your account".
+
+### Score visualisation
+- `ScoreDial` rewritten as a conic-gradient ring with banded colours:
+  red < 65 (off-track), amber 65–80 (at-risk), green > 80 (on-track).
+  Empty state is a dashed circle. Title attribute carries plain-language
+  status. Testids `score-dial-red|amber|green`.
+
+### Context → Company rename (UI labels only — not code)
+- PortfolioRail "Add context" → "Add company".
+- Inactive aria-label "Inactive context" → "Inactive company".
+- AppHome "This context" → "This company"; "Your context" → "Your company".
+- Marketing footer copy refreshed.
+
+### Role / company switch confirm dialog
+- New `switch-confirm-dialog` AlertDialog wraps every `rail-context-{id}`
+  and `rail-role-{role}` click. Title and body adapt to the kind of
+  switch. Cancel = "Stay where I am". Proceed = "Switch role" / "Switch
+  company". Stops accidental loss of context when the user is two clicks
+  away from a different board.
+
+### Security marketing copy rewrite
+- 4 new promise cards in the user's voice — "Your data stays yours" /
+  "Identities are scrubbed" / "Receipts on every claim" / "Leave clean
+  any time". H1: "Four things you should be able to verify yourself."
+  Posture details rewritten to match the same direct register.
+
+### "See in The Lens" CTA
+- `Highlights.jsx` line 386 — "See this through all six lenses" →
+  "See in The Lens". One-line copy nudge that clarifies what the CTA does.
+
+### Learn recency tabs
+- New `learn-recency-tabs` row below the search bar with three buttons:
+  All / Fresh (≤ 5 days) / Stayed a bit (> 5 days OR undated). Counts
+  per bucket shown inline. "Stayed a bit" includes undated items so seed
+  content remains discoverable.
+
+### Medium-style Blog + RSS + auto-cron
+- `Blog.jsx` redesigned Medium-style: featured hero (latest issue) above
+  a 2-column reading-list grid. Author byline, kicker, dek, read-time,
+  and category surfaced consistently per Medium recommended-stories
+  pattern. Subscribe card carries a "Subscribe via RSS →" link.
+- New `GET /api/blog/rss` returns Atom XML of the most recent 30
+  published posts. Importable into Medium Stories Import.
+- New APScheduler cron in `server.py` startup — fires
+  `/api/blog/cron/weekly` every Tuesday 10:00 UTC. Logs
+  "Exco360 weekly scheduler armed (Tue 10:00 UTC)." on boot.
+- `/cron/weekly` upgraded with the user-supplied **PERSONA_PROMPT**
+  (Medium ghostwriter persona, 4-phase intake → structure → draft →
+  self-critique). Emails superadmins via Resend with a "Review and
+  publish →" link instead of auto-publishing (per choice D.c).
+- New `POST /api/blog/seed/launch-10` admin endpoint composes 10 launch
+  drafts on opportunity / risk / compliance / adoption / growth.
+  Idempotent on `topic_seed`. BlogAdmin gets a `seed-launch-banner`
+  with one-click CTA.
+- BlogAdmin row actions now include **Copy MD** + **Publish to Medium**
+  (the Medium API was deprecated in 2023; "Publish to Medium" copies
+  the markdown to clipboard and opens medium.com/new-story for paste).
+
+### Tests
+- `test_iter30_blog_lens.py` — 9/9 backend GREEN. Frontend 100% on all 8
+  batch claims; one minor Learn-recency bucketing issue fixed in-batch
+  (undated items now bucket into "Stayed a bit").

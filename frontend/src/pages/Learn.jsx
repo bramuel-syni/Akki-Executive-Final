@@ -192,15 +192,17 @@ export default function Learn() {
   const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
   const itemAgeMs = (item) => {
     const iso = item.published_at || item.created_at;
-    if (!iso) return Infinity;
+    if (!iso) return null;  // explicit "no date" sentinel
     const t = new Date(iso).getTime();
-    return isNaN(t) ? Infinity : Date.now() - t;
+    return isNaN(t) ? null : Date.now() - t;
   };
   const matchesRecency = (item) => {
     if (recency === "all") return true;
     const age = itemAgeMs(item);
-    if (recency === "fresh") return age <= FIVE_DAYS_MS;
-    return age > FIVE_DAYS_MS && age !== Infinity;
+    if (recency === "fresh") return age !== null && age <= FIVE_DAYS_MS;
+    // 'stayed a bit' — older than 5 days OR undated (we treat the seed
+    // library as "still useful but not freshly added").
+    return age === null || age > FIVE_DAYS_MS;
   };
 
   // Tab counts — what's available in each bucket (pre-topic/query filter)
@@ -430,8 +432,8 @@ export default function Learn() {
                 const count = tabItems.filter((it) => {
                   if (k === "all") return true;
                   const age = itemAgeMs(it);
-                  if (k === "fresh") return age <= FIVE_DAYS_MS;
-                  return age > FIVE_DAYS_MS && age !== Infinity;
+                  if (k === "fresh") return age !== null && age <= FIVE_DAYS_MS;
+                  return age === null || age > FIVE_DAYS_MS;
                 }).length;
                 const active = recency === k;
                 return (
