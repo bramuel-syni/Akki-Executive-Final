@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import Sparkline from "@/components/monitor/Sparkline";
 import {
   Target, Sparkles, FileText, ChevronRight, ChevronDown, Loader2, X,
   TrendingUp, AlertTriangle, CheckCircle2, Pencil, Plus,
@@ -206,9 +207,12 @@ function GoalRow({ goal, isLast, isNED, isEditing, onEdit, onCancel, onSaved, co
           </div>
         </div>
 
-        {/* Score + probability dials */}
+        {/* Score + probability dials + sparkline */}
         <div className="flex items-center gap-3 shrink-0">
-          <ScoreDial label="Score" value={score} />
+          <div className="flex flex-col items-center" data-testid={`goal-score-block-${goal.id}`}>
+            <ScoreDial label="Score" value={score} />
+            <Sparkline history={goal.score_history} />
+          </div>
           <ScoreDial label="Probability" value={prob} />
           {!isNED && (
             <button
@@ -365,6 +369,11 @@ function ExtractFromDocModal({ contextId, onClose, onExtracted }) {
       const { data } = await api.post(`/contexts/${contextId}/strategic-goals/extract`, {
         doc_id: pickedId, replace_existing: replace,
       }, { timeout: 90000 });
+      if (!data.count) {
+        toast.message("AKKI couldn't find board-level goals in that document. Try a strategic plan, three-year roadmap, or a board OKR pack.");
+        setBusy(false);
+        return;
+      }
       toast.success(`AKKI surfaced ${data.count} goal${data.count === 1 ? "" : "s"} from the strategy.`);
       onExtracted();
     } catch (e) { toast.error(apiErrorMessage(e)); }

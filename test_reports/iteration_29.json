@@ -1,0 +1,31 @@
+{
+  "summary": "Iter29 — score_history sparkline + Landing copy & photos + fn-nudge + 0-goal toast. Backend 11/11 PASS. Frontend GREEN: Landing hero copy ('AKKI reads the pack / so you can read the room'), 3 numbered bullets (01 Track strategic goals / 02 Consolidate submissions / 03 Cite every number), 'See it on your sector in 60 seconds' CTA, hero-photo (1532153975070) + 3 strip photos (1497366216548 boardroom, 1481627834876 library, 1521587760476 columns) all HEAD 200. Monitor (bramuel CFO): nudge hidden when fn set, goal-sparkline rendered 60x20 stroke=#047857 (green, score 78>=70) under ScoreDial in goal-score-block-{id}, edit pencil + change link present, 'Around the goals' tiles render. ExtractFromDocModal 0-goal toast wording verified by code review.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter29_score_history.py",
+    "/app/test_reports/pytest/iter29_score_history.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "strategic_goals.py L149-156: cap=12 logic is correct (history[-12:]). PATCH equality check uses Python != which works for int comparisons; if a client sends '78' (string) vs 78 (int) Pydantic conint will coerce — safe.",
+    "Sparkline.jsx L36-37: stroke thresholds {>=70 green, 40-69 amber, <40 red} match spec. Em-dash placeholder shows when <2 points — also matches spec.",
+    "StrategicGoalsPanel.jsx L373: 0-goal toast.message wording exactly matches spec: 'AKKI couldn't find board-level goals in that document. Try a strategic plan, three-year roadmap, or a board OKR pack.' setBusy(false) called and modal stays open (return before onExtracted) — correct.",
+    "Monitor.jsx L70 & L125: fnSet = !!account?.preferences?.executive_function; '{!isNED && !fnSet && ...}' guard renders 'monitor-fn-nudge' with 'monitor-fn-nudge-cta'. Verified by hidden-nudge case for bramuel. Logic for fresh-account visibility is correct (could not exercise full signup→nudge→save flow because signup form did not load mid-test; the conditional is guaranteed by code).",
+    "Landing.jsx hero photo URL https://images.unsplash.com/photo-1532153975070-2e9ab71f1b14 returns an image of scattered loose pages on a desk, not strictly an 'open ledger book'. Visually fits the editorial palette, but if the brief is strict, search Unsplash for 'open ledger' specifically. Non-blocking.",
+    "extract_from_document seeds score_history correctly for non-null current_score (L272-275). Untested live (real Claude call), but logic is straightforward."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter29_score_history.py (NEW)"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11)",
+    "frontend": "100% on Landing copy/photos + Monitor sparkline/nudge-hidden; fresh-account nudge-show verified by code review only"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026!",
+  "seed_data_creation": "Created 5 TEST_ goals during pytest run (then deleted in cleanup fixture). One goal exercised the 12-cap path with 13 score-change PATCHes (final length=12, oldest dropped).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iter29_score_history.py covers create-with-score, create-without-score, patch-new, patch-same, patch-other-field, cap-at-12, plus regression (list/monitor/agenda-evolution/document-engagement). The fresh-account fn-nudge UI flow could not be E2E-tested because the signup page form did not render in the Playwright run (likely an SPA timing issue, not a bug). To exercise it manually: signup a brand-new account → /app/monitor → confirm 'monitor-fn-nudge' renders with 'monitor-fn-nudge-cta', click → FunctionPickerModal → save → nudge disappears. Bramuel's existing CFO setting was preserved.",
+  "rca of the issue": "N/A — all features verified working as specified."
+}

@@ -184,40 +184,45 @@ export default function Landing() {
         <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-20 md:py-28 grid md:grid-cols-12 gap-12 md:gap-16 items-start">
           <div className="md:col-span-8">
             <p className="akki-overline mb-8" data-testid="hero-overline">
-              Executive intelligence · for non-executive directors and operating executives
+              For non-executive directors and operating executives
             </p>
             <h1
               className="akki-serif text-[40px] sm:text-[56px] md:text-[72px] leading-[1.04] tracking-[-0.02em] text-[var(--ink)] font-normal mb-10"
               data-testid="hero-headline"
             >
-              Read sharper.
+              AKKI reads the pack
               <br />
-              Challenge better.
-              <br />
-              <span className="text-[var(--accent)] italic">Decide with receipts.</span>
+              so you can <span className="text-[var(--accent)] italic">read the room.</span>
             </h1>
-            <p className="akki-serif text-[18px] md:text-[20px] leading-[1.7] text-[var(--deep)] max-w-[52ch] mb-10">
-              AKKI is an intelligence layer for directors and executives sitting on
-              multiple boards. It reads your pack the way a seasoned audit-committee
-              chair would — naming what you would otherwise miss, stress-testing
-              what management is asking you to accept, and citing every number back
-              to the exact document it came from.
+            <p className="akki-serif text-[18px] md:text-[20px] leading-[1.7] text-[var(--deep)] max-w-[52ch] mb-6">
+              An intelligence layer for the boardroom. Three things, done with care:
             </p>
+            <ul className="akki-serif text-[16.5px] md:text-[17.5px] leading-[1.7] text-[var(--deep)] max-w-[58ch] mb-10 space-y-2.5" data-testid="hero-bullets">
+              <li className="flex gap-3">
+                <span className="text-[var(--accent)] font-mono text-[13px] mt-1.5 shrink-0">01</span>
+                <span><strong className="text-[var(--ink)]">Track strategic goals against where you actually are.</strong> Not where the deck says.</span>
+              </li>
+              <li className="flex gap-3">
+                <span className="text-[var(--accent)] font-mono text-[13px] mt-1.5 shrink-0">02</span>
+                <span><strong className="text-[var(--ink)]">Consolidate your team's submissions into board-ready reports.</strong> Without chasing.</span>
+              </li>
+              <li className="flex gap-3">
+                <span className="text-[var(--accent)] font-mono text-[13px] mt-1.5 shrink-0">03</span>
+                <span><strong className="text-[var(--ink)]">Cite every number to the page it came from.</strong> No unsourced claims.</span>
+              </li>
+            </ul>
             <div className="flex flex-col items-start gap-5 max-w-md" data-testid="hero-cta">
-              {/* Primary — single prominent button. The whole funnel collapses
-                  to "try it without commitment, see if it earns the conversation." */}
               <Link to="/sandbox" className="group" data-testid="hero-sandbox-btn">
                 <Button
                   className="bg-[var(--chrome)] hover:bg-[var(--chrome)]/90 text-white rounded-sm h-14 px-8 text-[15px] font-medium tracking-wide shadow-sm"
                 >
-                  Try AKKI in 60 seconds <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-0.5 transition-transform" />
+                  See it on your sector in 60 seconds <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-0.5 transition-transform" />
                 </Button>
               </Link>
               <p className="text-[12.5px] text-[var(--muted)] -mt-2 leading-relaxed">
-                <strong className="text-[var(--deep)]">The Sandbox</strong> is AKKI loaded with sample data for a fictional company in your sector. No signup. Yours for 14 days, then it deletes itself.
+                Loaded with sample data for a fictional company in your sector. No signup. 14-day Sandbox, then it deletes itself.
               </p>
 
-              {/* Secondary — quiet, side-by-side, styled as gestures not buttons */}
               <div className="flex items-center gap-5 pt-3 mt-1 border-t border-[var(--rule)] w-full">
                 <Link to="/signin" className="text-[13px] text-[var(--deep)] hover:text-[var(--ink)] transition-colors" data-testid="hero-signin-btn">
                   Sign in to your workspace
@@ -243,23 +248,23 @@ export default function Landing() {
               — {VOICE_QUOTE.attribution}
             </p>
 
-            {/* Editorial photograph — sits beneath the testimonial. Sepia
-                duotone via CSS filter to match the cream/oxblood palette
-                without the photo screaming for attention. */}
+            {/* Editorial photograph — sits beneath the testimonial. An open
+                bound report on a quiet desk. Sepia duotone via CSS filter
+                keeps it inside the cream/oxblood palette. No people. */}
             <div
               className="mt-8 relative overflow-hidden rounded-sm border border-[var(--rule)]"
               data-testid="hero-photo"
             >
               <img
-                src="https://images.unsplash.com/photo-1664575600796-ffa828c5cb6e?w=800&q=80&auto=format&fit=crop"
-                alt="A board pack, fountain pen, and reading glasses on a walnut desk"
+                src="https://images.unsplash.com/photo-1532153975070-2e9ab71f1b14?w=900&q=80&auto=format&fit=crop"
+                alt="An open bound report on a desk, fountain pen alongside"
                 className="w-full h-[260px] object-cover"
-                style={{ filter: "sepia(0.25) saturate(0.85) contrast(1.05)" }}
+                style={{ filter: "sepia(0.22) saturate(0.85) contrast(1.05)" }}
                 loading="lazy"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[var(--cream)]/30 via-transparent to-transparent pointer-events-none" />
               <p className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--muted)] mt-2 italic">
-                The work of reading well, again.
+                Where the work begins.
               </p>
             </div>
           </aside>
@@ -272,13 +277,10 @@ export default function Landing() {
           <div className="md:col-span-5">
             <p className="akki-overline mb-4">What a first run looks like</p>
             <h2 className="akki-serif text-[28px] md:text-[36px] leading-[1.12] tracking-[-0.015em] text-[var(--ink)] font-normal mb-4">
-              Upload the pack. Pour the coffee. Read the signals.
+              Drop in the pack. Read the signals.
             </h2>
             <p className="akki-serif text-[16px] leading-[1.75] text-[var(--deep)] max-w-[48ch]">
-              The average first run on a 40-page audit pack completes in under 90
-              seconds. AKKI surfaces the three to six things a sharp non-executive
-              would notice — each cited to the document it came from, each
-              defensible in the room.
+              90 seconds on a 40-page audit pack. Three to six things a sharp non-executive would notice — each one cited to the document it came from.
             </p>
           </div>
 
@@ -292,9 +294,9 @@ export default function Landing() {
       <section className="border-b border-[var(--rule)] bg-[var(--cream-deep)]/60">
         <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-10 grid md:grid-cols-3 gap-8 md:divide-x divide-[var(--rule)]">
           {[
-            ["Every claim cites a document.", "No unsourced numbers. No hallucinated facts."],
-            ["Every context is sealed.", "Your boards never see each other. Your exec company never sees your NED work."],
-            ["Every signal is verified.", "A 4-stage pipeline rejects candidates that cannot be supported by evidence."],
+            ["Every claim cites a document.", "No unsourced numbers. No fabricated facts."],
+            ["Every context stays sealed.", "Your boards never see each other. Your exec company never sees your NED work."],
+            ["Every signal is verified.", "A four-stage pipeline rejects anything not supported by evidence."],
           ].map(([t, s], i) => (
             <div key={i} className="md:px-8 first:md:pl-0 last:md:pr-0">
               <p className="akki-serif text-[18px] leading-snug text-[var(--ink)] mb-1">{t}</p>
@@ -304,29 +306,32 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ─── Editorial photo strip — three classy stock images, low-key ── */}
+      {/* ─── Editorial photo strip — three classy stills, no humans ── */}
       <section className="border-b border-[var(--rule)] bg-[var(--cream)]" data-testid="landing-photo-strip">
         <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-10 grid grid-cols-1 md:grid-cols-3 gap-5">
           {[
             {
-              src: "https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=900&q=80&auto=format&fit=crop",
-              caption: "In the boardroom — where decisions need receipts.",
+              src: "https://images.unsplash.com/photo-1497366216548-37526070297c?w=900&q=80&auto=format&fit=crop",
+              alt: "An empty boardroom — leather chairs, polished table, daylight",
+              caption: "The room you walk into.",
             },
             {
-              src: "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=900&q=80&auto=format&fit=crop",
-              caption: "Quiet preparation. The hours before the room.",
+              src: "https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=900&q=80&auto=format&fit=crop",
+              alt: "A vast library with books from floor to ceiling",
+              caption: "Every claim cites a document.",
             },
             {
-              src: "https://images.unsplash.com/photo-1621905251918-48416bd8575a?w=900&q=80&auto=format&fit=crop",
-              caption: "After the meeting. Threads tracked. Receipts kept.",
+              src: "https://images.unsplash.com/photo-1521587760476-6c12a4b040da?w=900&q=80&auto=format&fit=crop",
+              alt: "Classical neoclassical columns at dusk",
+              caption: "Built for institutions that endure.",
             },
           ].map((p, i) => (
             <figure key={i} className="relative overflow-hidden rounded-sm border border-[var(--rule)] bg-white">
               <img
                 src={p.src}
-                alt=""
+                alt={p.alt}
                 className="w-full h-[220px] md:h-[260px] object-cover"
-                style={{ filter: "sepia(0.18) saturate(0.9) contrast(1.04)" }}
+                style={{ filter: "sepia(0.2) saturate(0.85) contrast(1.05)" }}
                 loading="lazy"
               />
               <figcaption className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[var(--ink)]/85 to-transparent px-4 py-3">
@@ -419,16 +424,16 @@ export default function Landing() {
           {[
             {
               chip: "For Non-Executive Directors",
-              h: "For the board member sitting on five things at once.",
+              h: "For the director sitting on five boards at once.",
               body:
-                "Every board gets its own sealed context. The Audit pack you read at 7am can't bleed into the Risk pack you read at 10am — or the competitor intelligence you keep in your personal research context. Each pack arrives pre-read, with the three things you should raise in the room.",
+                "Each board gets its own sealed context. The Audit pack you read at 7am can't bleed into the Risk pack at 10am. Each pack arrives pre-read, with the three things to raise in the room.",
               testid: "audience-ned",
             },
             {
               chip: "For Operating Executives",
-              h: "For the CEO, CFO or Chief-of-Staff running the quarter.",
+              h: "For the CEO, CFO or COO running the quarter.",
               body:
-                "Bring in your management committee, tag signals and briefings by sub-committee, run scenarios on your hypothesis and keep the resulting watchlist in one place. The Ask panel is a colleague who has read everything and cites the paragraph when you ask.",
+                "Bring in your management committee. Tag signals by sub-committee. Run scenarios. The Ask panel is a colleague who has read everything and cites the paragraph when you ask.",
               testid: "audience-exec",
             },
           ].map((c, i) => (
@@ -454,12 +459,10 @@ export default function Landing() {
         <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-20 md:py-28 text-center">
           <p className="akki-overline mb-6">Access</p>
           <h2 className="akki-serif text-[36px] md:text-[56px] leading-[1.08] tracking-[-0.015em] text-[var(--ink)] font-normal mb-6 max-w-[26ch] mx-auto">
-            Open a context. Upload a pack. See what a sharp reader sees.
+            Open a context. Upload a pack. See what AKKI sees.
           </h2>
           <p className="akki-serif text-[17px] leading-[1.7] text-[var(--muted)] max-w-[56ch] mx-auto mb-10">
-            Access is by invitation during the sandbox period. Setup takes under two
-            minutes, and the first signal run on a board pack usually completes while
-            you're pouring a coffee.
+            By invitation during the sandbox period. Setup takes under two minutes. The first run on a board pack runs while you pour a coffee.
           </p>
           <div className="flex flex-wrap justify-center gap-4" data-testid="cta-final">
             <Link to="/signup">

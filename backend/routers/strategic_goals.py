@@ -110,6 +110,10 @@ async def create_goal(
         "id": str(uuid.uuid4()),
         "context_id": context_id,
         **body.dict(),
+        "score_history": (
+            [{"score": body.current_score, "recorded_at": now_iso}]
+            if body.current_score is not None else []
+        ),
         "created_at": now_iso,
         "updated_at": now_iso,
         "created_by": ctx["account"]["id"],
@@ -133,12 +137,31 @@ async def update_goal(
         if not existing:
             raise HTTPException(status_code=404, detail="Goal not found")
         return sanitize(existing)
-    updates["updated_at"] = _iso(_now())
-    res = await db.strategic_goals.update_one(
-        {"id": goal_id, "context_id": context_id}, {"$set": updates},
-    )
-    if res.matched_count == 0:
+
+    existing = await db.strategic_goals.find_one(
+        {"id": goal_id, "context_id": context_id}, {"_id": 0})
+    if not existing:
         raise HTTPException(status_code=404, detail="Goal not found")
+
+    now_iso = _iso(_now())
+    updates["updated_at"] = now_iso
+
+    # If the score moved, append a history point and cap at 12 entries.
+    push_history = None
+    if "current_score" in updates and updates["current_score"] != existing.get("current_score"):
+        history = list(existing.get("score_history") or [])
+        history.append({"score": updates["current_score"], "recorded_at": now_iso})
+        # Cap at 12 trailing points (one per "week" of board cadence).
+        history = history[-12:]
+        push_history = history
+
+    set_payload: Dict[str, Any] = {**updates}
+    if push_history is not None:
+        set_payload["score_history"] = push_history
+
+    await db.strategic_goals.update_one(
+        {"id": goal_id, "context_id": context_id}, {"$set": set_payload},
+    )
     await write_audit(context_id, ctx["account"]["id"], "strategic_goal.updated", "strategic_goal", goal_id, updates)
     fresh = await db.strategic_goals.find_one({"id": goal_id}, {"_id": 0})
     return sanitize(fresh)
@@ -231,6 +254,7 @@ async def extract_from_document(
         status = (raw.get("status") or "on_track").lower()
         if status not in valid_status:
             status = "on_track"
+        score_seed = _safe_int(raw.get("current_score"))
         goal = {
             "id": str(uuid.uuid4()),
             "context_id": context_id,
@@ -242,9 +266,13 @@ async def extract_from_document(
             "target_value": (str(raw.get("target_value") or "")[:120]) or None,
             "target_date": (str(raw.get("target_date") or "")[:40]) or None,
             "current_value": (str(raw.get("current_value") or "")[:120]) or None,
-            "current_score": _safe_int(raw.get("current_score")),
+            "current_score": score_seed,
             "probability": _safe_int(raw.get("probability")),
             "status": status,
+            "score_history": (
+                [{"score": score_seed, "recorded_at": now_iso}]
+                if score_seed is not None else []
+            ),
             "source_doc_id": doc["id"],
             "source_doc_name": doc.get("name"),
             "created_at": now_iso,
