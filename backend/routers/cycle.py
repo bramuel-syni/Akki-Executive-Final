@@ -687,6 +687,13 @@ class ReviewerIn(BaseModel):
 class ReportComposeIn(BaseModel):
     cycle_name: str = Field(min_length=3, max_length=120)
     title: str = Field(min_length=4, max_length=200)
+    description: Optional[str] = Field(
+        default=None, max_length=4000,
+        description="Free-text steer telling AKKI what kind of report the "
+                    "author wants. e.g. 'Audit committee deep-dive on revenue "
+                    "recognition with Q3 vs Q2 deltas.' Used to bias the "
+                    "starter draft.",
+    )
     chain: List[ReviewerIn] = Field(
         min_length=1, max_length=5,
         description="Escalation order: first item = first reviewer after the author. "
@@ -747,18 +754,29 @@ def _current_reviewer_idx(chain: List[Dict[str, Any]]) -> Optional[int]:
 
 
 async def _consolidate_submissions_into_body(
-    *, context_id: str, cycle_name: str
+    *, context_id: str, cycle_name: str, description: Optional[str] = None,
 ) -> str:
     """Pull every submission for this cycle and stitch them into a clean
     starting markdown body the author can edit. Cheap, deterministic — no
-    LLM call needed for the v1; the LLM-polish path can come later."""
+    LLM call needed for the v1; the LLM-polish path can come later.
+
+    If `description` is provided, the user's free-text steer is recorded at
+    the top of the draft as "What the author asked for" so the polish step
+    and the human reviewers know what shape this report is meant to take.
+    """
     subs = await db.submissions.find(
         {"context_id": context_id, "cycle_name": cycle_name},
         {"_id": 0},
     ).sort("reportee_name", 1).to_list(length=500)
-    if not subs:
-        return f"# {cycle_name}\n\n_No reportee submissions yet for this cycle._\n"
     lines: List[str] = [f"# {cycle_name}\n"]
+    if description and description.strip():
+        lines.append("## What the author asked for")
+        lines.append(f"> {description.strip()}")
+        lines.append("")
+    if not subs:
+        lines.append("_No reportee submissions yet for this cycle._")
+        lines.append("")
+        return "\n".join(lines)
     lines.append("## Inputs from your team\n")
     for s in subs:
         lines.append(f"### {s['reportee_name']}")
@@ -789,6 +807,7 @@ async def compose_report(
     author_name = await _executive_name(current["id"])
     initial_body = await _consolidate_submissions_into_body(
         context_id=context_id, cycle_name=body.cycle_name,
+        description=body.description,
     )
     rid = str(uuid.uuid4())
     rec = {
@@ -796,6 +815,7 @@ async def compose_report(
         "context_id": context_id,
         "cycle_name": body.cycle_name,
         "title": body.title.strip(),
+        "description": (body.description or "").strip() or None,
         "body": initial_body,
         "author_id": current["id"],
         "author_name": author_name,

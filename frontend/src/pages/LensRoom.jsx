@@ -7,27 +7,31 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Eye, Sparkles, Loader2, Brain, ArrowRight, MessageCircle,
-  Layers, Lightbulb, Coins, Users, Heart, ChevronRight, Trash2, HelpCircle, Send,
+  Layers, Lightbulb, Coins, Users, Heart, ChevronDown, Trash2, HelpCircle, Send,
 } from "lucide-react";
 import { useAIStageTicker } from "@/hooks/useAIStageTicker";
 import CompositionStrip from "@/components/trace/CompositionStrip";
 import CommentThread from "@/components/collab/CommentThread";
 
 /**
- * The Lens — redesigned.
+ * In the Lens — the redesigned single-line picker.
  *
- *   Two modes share the same lens picker:
- *     · Stress-test  — paste a signal/claim/proposal/question, AKKI returns a
- *                       structured Observation → Implication → Action through
- *                       the chosen lens.
- *     · Coach        — multi-turn chat. AKKI replies in the voice of the
- *                       chosen lens. The user can switch lenses mid-chat
- *                       to compare framings without losing the thread.
+ *   ┌───────────────────────┬───────────────────┬──────────┐
+ *   │  In the Lens (mode ▾) │  Test us (kind ▾) │  Apply  │
+ *   └───────────────────────┴───────────────────┴──────────┘
  *
- *   Pattern adopted from 2026 best-practice persona-switcher chat UIs:
- *   compact lens-pill row above the input, always visible; one-click
- *   switching; stress-test history and coach sessions live in one
- *   timeline so the user keeps a single record of "thinking with AKKI".
+ *   • Mode dropdown picks WHAT lens you want to read your subject through
+ *     — first principles, capital discipline, etc.
+ *   • Test-us dropdown picks WHAT KIND of subject — signal, claim,
+ *     proposal, question — OR coach-mode for a back-and-forth.
+ *   • Apply runs it; a clean Observation → Implication → Action drops
+ *     into the canvas below.
+ *
+ *   The page is shaped around the user's mental model:
+ *     1. What do I do?     → drop a subject in the box
+ *     2. What kind?        → choose lens + kind in the dropdowns above
+ *     3. Where do I get it?→ canvas immediately below
+ *     4. What do I get?    → Observation, Implication, Action, Question
  */
 
 const LENS_ICON = {
@@ -39,39 +43,40 @@ const LENS_ICON = {
   organisational_culture: Lightbulb,
 };
 
-const INPUT_KIND_OPTIONS = [
-  { id: "signal", label: "Signal" },
-  { id: "claim", label: "Claim" },
-  { id: "proposal", label: "Proposal" },
-  { id: "question", label: "Question" },
-];
-
-const MODE_OPTIONS = [
-  { id: "stress", label: "Stress-test", hint: "Run a structured Observation → Implication → Action through the lens." },
-  { id: "coach", label: "Coach", hint: "Talk through your thinking. AKKI replies in the lens's voice." },
+// "Test us" kinds — what is the user putting into AKKI?
+// 'coach' is the multi-turn chat mode.
+const KIND_OPTIONS = [
+  { id: "signal",   label: "A signal — pressure-test the framing",        kind: "stress" },
+  { id: "claim",    label: "A claim — verify it through the lens",         kind: "stress" },
+  { id: "proposal", label: "A proposal — should the board approve it?",    kind: "stress" },
+  { id: "question", label: "A question — sharpen what to ask",             kind: "stress" },
+  { id: "coach",    label: "Coach me — talk it through, multi-turn",       kind: "coach"  },
 ];
 
 export default function LensRoom() {
   const { activeContext } = useAuth();
   const cid = activeContext?.id;
   const [params] = useSearchParams();
-  const initialSignalId = params.get("signal");
   const initialSessionId = params.get("session");
 
-  const [mode, setMode] = useState("stress");
   const [catalog, setCatalog] = useState([]);
   const [lens, setLens] = useState("first_principles");
+  const [kindId, setKindId] = useState("signal");
+  const kindCfg = useMemo(() => KIND_OPTIONS.find((k) => k.id === kindId) || KIND_OPTIONS[0], [kindId]);
+  const mode = kindCfg.kind;
+
+  // Subject is the user's input — used by both stress (single-shot) and
+  // coach (seed message) flows.
+  const [subject, setSubject] = useState("");
 
   // Stress-test state
-  const [inputKind, setInputKind] = useState("signal");
-  const [subject, setSubject] = useState("");
   const [running, setRunning] = useState(false);
   const [runs, setRuns] = useState([]);
   const [selectedRun, setSelectedRun] = useState(null);
 
   // Coach state
   const [coachSessions, setCoachSessions] = useState([]);
-  const [activeSession, setActiveSession] = useState(null);  // hydrated session
+  const [activeSession, setActiveSession] = useState(null);
   const [coachInput, setCoachInput] = useState("");
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef(null);
@@ -88,23 +93,19 @@ export default function LensRoom() {
       setCatalog(c.data || []);
       setRuns(r.data || []);
       setCoachSessions(s.data || []);
-      // If a ?session=… is present, auto-open it in coach mode.
       if (initialSessionId && !activeSession) {
         const found = (s.data || []).find((x) => x.id === initialSessionId);
         if (found) {
-          setMode("coach");
+          setKindId("coach");
           try {
             const { data: full } = await api.get(`/contexts/${cid}/lens/coach/sessions/${initialSessionId}`);
             setActiveSession(full);
             setLens(full.lens || "first_principles");
-          } catch { /* ignore — session may have been archived */ }
+          } catch { /* ignore */ }
         }
       }
-      if (initialSignalId && (r.data || []).length > 0 && !selectedRun) {
-        setSelectedRun(r.data[0]);
-      }
     } catch (e) { toast.error(apiErrorMessage(e)); }
-  }, [cid, initialSignalId, initialSessionId, activeSession, selectedRun]);
+  }, [cid, initialSessionId, activeSession]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setSelectedRun(null); setActiveSession(null); }, [cid]);
 
@@ -112,21 +113,21 @@ export default function LensRoom() {
   const stageScript = useMemo(() => {
     const name = catalog.find((l) => l.id === lens)?.name || "the lens";
     return [
-      { at: 0, text: `Reading your ${inputKind} against ${name}…` },
+      { at: 0, text: `Reading your ${kindCfg.id} against ${name}…` },
       { at: 6000, text: "Pulling supporting evidence from your documents…" },
       { at: 14000, text: "Drafting Observation → Implication → Action…" },
       { at: 26000, text: "Landing the single question for management…" },
       { at: 42000, text: "Still thinking — deep subjects take a moment longer…" },
     ];
-  }, [catalog, lens, inputKind]);
+  }, [catalog, lens, kindCfg.id]);
   const runStage = useAIStageTicker(running, stageScript);
 
-  const onRunStress = async () => {
+  const onApplyStress = async () => {
     const text = subject.trim();
     if (text.length < 10) { toast.message("Give AKKI something to chew on (≥10 chars)."); return; }
     setRunning(true);
     try {
-      const fullSubject = `[${inputKind.toUpperCase()}] ${text}`;
+      const fullSubject = `[${kindCfg.id.toUpperCase()}] ${text}`;
       const { data } = await api.post(
         `/contexts/${cid}/lens/run`,
         { lens, subject: fullSubject },
@@ -150,8 +151,9 @@ export default function LensRoom() {
   };
 
   // ── Coach session lifecycle ───────────────────────────────────────────
-  const onStartSession = async () => {
-    const seed = subject.trim() || "What's on your mind?";
+  const onApplyCoach = async () => {
+    const seed = subject.trim();
+    if (seed.length < 4) { toast.message("Type the topic on your mind (a sentence is enough)."); return; }
     try {
       const { data } = await api.post(
         `/contexts/${cid}/lens/coach/sessions`,
@@ -159,12 +161,15 @@ export default function LensRoom() {
       );
       setActiveSession(data);
       setCoachSessions((prev) => [{
-        ...data,
-        message_count: 0,
-        last_message_preview: "",
+        ...data, message_count: 0, last_message_preview: "",
       }, ...prev]);
       setSubject("");
     } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+
+  const onApply = () => {
+    if (mode === "coach") return onApplyCoach();
+    return onApplyStress();
   };
 
   const onOpenSession = async (s) => {
@@ -172,14 +177,20 @@ export default function LensRoom() {
       const { data } = await api.get(`/contexts/${cid}/lens/coach/sessions/${s.id}`);
       setActiveSession(data);
       setLens(data.lens || lens);
+      setKindId("coach");
     } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+
+  const onSelectRun = (r) => {
+    setSelectedRun(r);
+    setActiveSession(null);
+    setKindId("signal"); // arbitrary — keep stress-mode active
   };
 
   const onSendCoach = async () => {
     const text = coachInput.trim();
     if (!text || !activeSession) return;
     setSending(true);
-    // Optimistic append
     const optimistic = { role: "user", content: text, lens, at: new Date().toISOString() };
     setActiveSession((prev) => ({ ...prev, messages: [...(prev.messages || []), optimistic] }));
     setCoachInput("");
@@ -190,8 +201,7 @@ export default function LensRoom() {
         { timeout: 120000 },
       );
       setActiveSession((prev) => ({
-        ...prev,
-        lens,
+        ...prev, lens,
         messages: [...(prev.messages || []).slice(0, -1), data.user, data.akki],
       }));
       setCoachSessions((prev) => prev.map((s) =>
@@ -202,7 +212,6 @@ export default function LensRoom() {
       ));
     } catch (e) {
       toast.error(apiErrorMessage(e));
-      // Rollback optimistic
       setActiveSession((prev) => ({ ...prev, messages: (prev.messages || []).slice(0, -1) }));
     } finally { setSending(false); }
   };
@@ -216,7 +225,6 @@ export default function LensRoom() {
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
-  // ── Auto-scroll coach messages
   useEffect(() => {
     if (mode === "coach") messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeSession?.messages?.length, mode]);
@@ -230,22 +238,21 @@ export default function LensRoom() {
   return (
     <AppShell>
       <div className="h-[calc(100vh-4rem)] max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-[300px_1fr] overflow-hidden" data-testid="lens-room">
-        {/* LEFT — history rail (unified runs + coach sessions) */}
+        {/* LEFT — history rail */}
         <aside className="border-r border-[var(--rule)] bg-[var(--cream)] flex flex-col min-h-0">
           <div className="px-5 py-5 border-b border-[var(--rule)] bg-white">
             <p className="akki-overline mb-1 flex items-center gap-1.5">
               <Eye className="w-3 h-3 text-[var(--accent)]" /> The Lens
             </p>
             <h1 className="akki-serif text-[19px] font-normal text-[var(--ink)] mb-1">
-              Test claims. Coach yourself.
+              Pressure-test what's coming to the board.
             </h1>
             <p className="text-[11.5px] text-[var(--muted)] leading-relaxed">
-              Pick a lens, drop in a signal/claim/proposal — or start a coaching chat through it.
+              Pick a lens, drop your text, hit Apply.
             </p>
           </div>
 
           <div className="flex-1 overflow-y-auto" data-testid="lens-history">
-            {/* Stress-test history */}
             <div className="px-3 py-3">
               <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)] font-mono px-2 mb-2">
                 Stress-tests
@@ -258,7 +265,7 @@ export default function LensRoom() {
                 return (
                   <button
                     key={r.id}
-                    onClick={() => { setMode("stress"); setSelectedRun(r); setActiveSession(null); }}
+                    onClick={() => onSelectRun(r)}
                     className={`w-full text-left px-3 py-2 rounded-sm mb-1 transition-colors border ${
                       active ? "bg-white border-[var(--accent)]/60" : "border-transparent hover:bg-white"
                     }`}
@@ -276,7 +283,6 @@ export default function LensRoom() {
               })}
             </div>
 
-            {/* Coach sessions */}
             <div className="px-3 py-3 border-t border-[var(--rule)]">
               <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)] font-mono px-2 mb-2">
                 Coaching threads
@@ -289,7 +295,7 @@ export default function LensRoom() {
                 return (
                   <button
                     key={s.id}
-                    onClick={() => { setMode("coach"); onOpenSession(s); }}
+                    onClick={() => onOpenSession(s)}
                     className={`w-full text-left px-3 py-2 rounded-sm mb-1 transition-colors border ${
                       active ? "bg-white border-[var(--accent)]/60" : "border-transparent hover:bg-white"
                     }`}
@@ -309,56 +315,91 @@ export default function LensRoom() {
           </div>
         </aside>
 
-        {/* RIGHT — mode + canvas */}
+        {/* RIGHT — picker + canvas */}
         <main className="overflow-y-auto bg-[var(--cream)]" data-testid="lens-detail">
           <div className="max-w-3xl mx-auto px-8 py-8">
-            {/* Mode tabs */}
-            <div className="flex items-center gap-1 mb-6" data-testid="lens-mode-tabs">
-              {MODE_OPTIONS.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => setMode(m.id)}
-                  className={`px-4 py-1.5 text-[12.5px] rounded-full border transition-colors ${
-                    mode === m.id
-                      ? "bg-[var(--ink)] text-white border-[var(--ink)]"
-                      : "bg-white border-[var(--rule)] text-[var(--deep)] hover:border-[var(--accent)]/40"
-                  }`}
-                  data-testid={`lens-mode-${m.id}`}
-                  title={m.hint}
-                >
-                  {m.label}
-                </button>
-              ))}
-              <span className="text-[11.5px] text-[var(--muted)] italic ml-2">
-                {MODE_OPTIONS.find((m) => m.id === mode)?.hint}
-              </span>
+            {/* PICKER ROW — In the Lens (lens) · Test us (kind) · Apply */}
+            <div className="bg-white border border-[var(--rule)] rounded-md p-3 mb-4 flex flex-wrap items-stretch gap-2" data-testid="lens-picker-row">
+              <LensDropdown
+                catalog={catalog}
+                value={lens}
+                onChange={setLens}
+              />
+              <KindDropdown
+                value={kindId}
+                onChange={(v) => {
+                  setKindId(v);
+                  // Switching INTO coach mode keeps the active session if any;
+                  // switching OUT clears it so the stress canvas takes over.
+                  if (KIND_OPTIONS.find((k) => k.id === v)?.kind !== "coach") {
+                    setActiveSession(null);
+                  }
+                }}
+              />
+              <div className="flex-1 min-w-[100px]" />
+              <Button
+                onClick={onApply}
+                disabled={running || !subject.trim() || (mode === "coach" && !!activeSession)}
+                className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white text-[13px] h-10 px-5"
+                data-testid="lens-apply-btn"
+                title={mode === "coach" && activeSession ? "A coaching thread is already open below — reply there" : ""}
+              >
+                {running
+                  ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Reading…</>
+                  : <><Sparkles className="w-3.5 h-3.5 mr-1.5" /> Apply</>}
+              </Button>
             </div>
 
-            {/* Lens chips — always visible, the operative selector */}
-            <LensChipRow catalog={catalog} active={lens} onPick={setLens} />
-
-            {mode === "stress" ? (
-              <StressMode
-                inputKind={inputKind} setInputKind={setInputKind}
-                subject={subject} setSubject={setSubject}
-                onRun={onRunStress} running={running} runStage={runStage}
-                activeLens={activeLens}
-                selectedRun={selectedRun}
-                onArchive={onArchiveRun}
+            {/* INPUT — single textarea, what the user is putting in. */}
+            <div className="bg-white border border-[var(--rule)] rounded-md p-4 mb-6" data-testid="lens-input-card">
+              <p className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--muted)] font-mono mb-2">
+                {mode === "coach" ? "Topic on your mind" : `Your ${kindCfg.id}`}
+              </p>
+              <textarea
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                placeholder={
+                  mode === "coach"
+                    ? `e.g. We're considering raising prices in Q2. Walk me through it via ${activeLens?.name || "the lens"}.`
+                    : `Paste the ${kindCfg.id} the board needs to react to. AKKI will read it through ${activeLens?.name || "the lens"}.`
+                }
+                rows={mode === "coach" ? 2 : 4}
+                disabled={running || (mode === "coach" && !!activeSession)}
+                className="w-full bg-transparent text-[14.5px] resize-none focus:outline-none akki-serif leading-relaxed"
+                data-testid="lens-input"
               />
-            ) : (
-              <CoachMode
+              <div className="flex items-center justify-between mt-1 pt-2 border-t border-[var(--rule)]">
+                <p className="text-[11px] text-[var(--muted)] italic">
+                  {activeLens?.hint || ""}
+                </p>
+                <p className="text-[10.5px] text-[var(--muted)]">
+                  {mode === "coach"
+                    ? activeSession ? "Thread open below — reply there." : "Apply starts the conversation."
+                    : "Apply returns Observation → Implication → Action."}
+                </p>
+              </div>
+            </div>
+
+            {/* CANVAS — output / coach thread / placeholder */}
+            {mode === "coach" ? (
+              <CoachCanvas
                 activeSession={activeSession}
-                onStart={onStartSession}
                 onSend={onSendCoach}
                 onArchive={onArchiveSession}
                 input={coachInput} setInput={setCoachInput}
-                subject={subject} setSubject={setSubject}
                 sending={sending}
-                lens={lens}
                 activeLens={activeLens}
                 messagesEndRef={messagesEndRef}
               />
+            ) : running ? (
+              <div className="bg-white border border-[var(--rule)] rounded-md p-12 text-center" data-testid="stress-running">
+                <Loader2 className="w-6 h-6 animate-spin text-[var(--accent)] mx-auto mb-4" />
+                {runStage && <p className="text-[13px] text-[var(--deep)] italic max-w-md mx-auto">{runStage}</p>}
+              </div>
+            ) : selectedRun ? (
+              <RunViewer run={selectedRun} onArchive={onArchiveRun} />
+            ) : (
+              <EmptyHelp activeLens={activeLens} kindCfg={kindCfg} />
             )}
           </div>
         </main>
@@ -367,120 +408,105 @@ export default function LensRoom() {
   );
 }
 
-function LensChipRow({ catalog, active, onPick }) {
-  if (catalog.length === 0) {
-    return <div className="h-9 mb-5 text-[11.5px] text-[var(--muted)]">Loading lenses…</div>;
-  }
+/** Reusable dropdown — accessible <details>/<summary> wouldn't carry the
+ *  hover state styles we want, so this is a controlled popover with a
+ *  click-outside handler. */
+function NativeDropdown({ label, value, options, onChange, testid, kicker }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+  const active = options.find((o) => o.id === value);
   return (
-    <div className="flex flex-wrap items-center gap-2 mb-5" data-testid="lens-chip-row">
-      <span className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--muted)] font-mono mr-1">Lens</span>
-      {catalog.map((l) => {
-        const Icon = LENS_ICON[l.id] || Eye;
-        const isActive = l.id === active;
-        return (
-          <button
-            key={l.id}
-            onClick={() => onPick(l.id)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] rounded-full border transition-colors ${
-              isActive
-                ? "bg-[var(--accent)] text-white border-[var(--accent)]"
-                : "bg-white border-[var(--rule)] text-[var(--deep)] hover:border-[var(--accent)]/40"
-            }`}
-            data-testid={`lens-chip-${l.id}`}
-            title={l.hint}
-          >
-            <Icon className="w-3 h-3" strokeWidth={2} /> {l.name}
-          </button>
-        );
-      })}
+    <div className="relative" ref={ref} data-testid={testid}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="h-10 inline-flex items-center gap-2 px-3 rounded-md border border-[var(--rule)] bg-white hover:border-[var(--accent)]/40 text-left transition-colors"
+        data-testid={`${testid}-trigger`}
+      >
+        <div className="flex flex-col items-start leading-tight">
+          <span className="text-[9.5px] uppercase tracking-[0.2em] text-[var(--muted)] font-mono">{kicker}</span>
+          <span className="text-[13px] text-[var(--ink)] truncate max-w-[260px]">
+            {active?.label || label}
+          </span>
+        </div>
+        <ChevronDown className={`w-3.5 h-3.5 text-[var(--muted)] ml-1 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div
+          className="absolute z-30 mt-1 left-0 min-w-[320px] bg-white border border-[var(--rule)] rounded-md shadow-lg py-1 max-h-80 overflow-y-auto"
+          data-testid={`${testid}-menu`}
+        >
+          {options.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => { onChange(o.id); setOpen(false); }}
+              className={`w-full text-left px-3 py-2 hover:bg-[var(--cream-deep)]/40 ${
+                o.id === value ? "bg-[var(--cream-deep)]/30" : ""
+              }`}
+              data-testid={`${testid}-opt-${o.id}`}
+            >
+              <div className="flex items-center gap-2">
+                {o.icon ? <o.icon className="w-3 h-3 text-[var(--accent)] shrink-0" /> : null}
+                <span className="text-[13px] text-[var(--ink)]">{o.label}</span>
+              </div>
+              {o.hint && <p className="text-[11px] text-[var(--muted)] italic mt-0.5 ml-5 leading-relaxed">{o.hint}</p>}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function StressMode({ inputKind, setInputKind, subject, setSubject, onRun, running, runStage, activeLens, selectedRun, onArchive }) {
+function LensDropdown({ catalog, value, onChange }) {
+  const options = catalog.map((l) => ({
+    id: l.id,
+    label: l.name,
+    hint: l.hint,
+    icon: LENS_ICON[l.id] || Eye,
+  }));
   return (
-    <>
-      {/* Input kind chips */}
-      <div className="flex flex-wrap items-center gap-2 mb-3" data-testid="stress-kind-row">
-        <span className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--muted)] font-mono mr-1">Test as</span>
-        {INPUT_KIND_OPTIONS.map((k) => (
-          <button
-            key={k.id}
-            onClick={() => setInputKind(k.id)}
-            className={`px-2.5 py-1 text-[11.5px] rounded-full border ${
-              inputKind === k.id
-                ? "bg-[var(--ink)] text-white border-[var(--ink)]"
-                : "bg-white border-[var(--rule)] text-[var(--deep)] hover:border-[var(--accent)]/40"
-            }`}
-            data-testid={`stress-kind-${k.id}`}
-          >
-            {k.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="bg-white border border-[var(--rule)] rounded-md p-4 mb-6" data-testid="stress-input-card">
-        <textarea
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-          placeholder={`Paste a ${inputKind} the board needs to decide on. AKKI will read it through ${activeLens?.name || "the lens"}…`}
-          rows={4}
-          disabled={running}
-          className="w-full bg-transparent text-[14px] resize-none focus:outline-none akki-serif leading-relaxed"
-          data-testid="stress-input"
-        />
-        <div className="flex items-center justify-between mt-2 pt-2 border-t border-[var(--rule)]">
-          <p className="text-[11px] text-[var(--muted)] italic">{activeLens?.hint || ""}</p>
-          <Button
-            onClick={onRun}
-            disabled={running || !subject.trim()}
-            size="sm"
-            className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white text-[12.5px] h-8"
-            data-testid="stress-run-btn"
-          >
-            {running
-              ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Reading…</>
-              : <><Sparkles className="w-3 h-3 mr-1.5" /> Apply lens</>}
-          </Button>
-        </div>
-      </div>
-
-      {running && !selectedRun ? (
-        <div className="bg-white border border-[var(--rule)] rounded-md p-12 text-center" data-testid="stress-running">
-          <Loader2 className="w-6 h-6 animate-spin text-[var(--accent)] mx-auto mb-4" />
-          {runStage && <p className="text-[13px] text-[var(--deep)] italic max-w-md mx-auto">{runStage}</p>}
-        </div>
-      ) : selectedRun ? (
-        <RunViewer run={selectedRun} onArchive={onArchive} />
-      ) : (
-        <EmptyHelp text="Drop in your text above. Pick a lens. AKKI returns Observation → Implication → Action plus the single question to put to management." />
-      )}
-    </>
+    <NativeDropdown
+      kicker="In the Lens"
+      label="Pick a lens…"
+      value={value}
+      options={options}
+      onChange={onChange}
+      testid="lens-mode-dropdown"
+    />
   );
 }
 
-function CoachMode({ activeSession, onStart, onSend, onArchive, input, setInput, subject, setSubject, sending, lens, activeLens, messagesEndRef }) {
+function KindDropdown({ value, onChange }) {
+  return (
+    <NativeDropdown
+      kicker="Test us"
+      label="Pick what you're testing…"
+      value={value}
+      options={KIND_OPTIONS}
+      onChange={onChange}
+      testid="lens-kind-dropdown"
+    />
+  );
+}
+
+function CoachCanvas({ activeSession, onSend, onArchive, input, setInput, sending, activeLens, messagesEndRef }) {
   if (!activeSession) {
     return (
-      <div className="bg-white border border-[var(--rule)] rounded-md p-6" data-testid="coach-empty">
-        <p className="akki-overline mb-2">Start a coaching thread</p>
-        <p className="text-[13.5px] text-[var(--deep)] leading-relaxed mb-4">
-          Type the topic on your mind. AKKI will reply through <strong>{activeLens?.name || "the chosen lens"}</strong>. Switch lenses any time using the chips above.
+      <div className="bg-white border border-dashed border-[var(--rule)] rounded-md p-8 text-center" data-testid="coach-empty">
+        <MessageCircle className="w-7 h-7 text-[var(--muted)]/40 mx-auto mb-3" strokeWidth={1.2} />
+        <p className="akki-serif text-[15.5px] text-[var(--ink)] mb-2 max-w-md mx-auto leading-snug">
+          Type your topic above. Apply starts the conversation through <strong>{activeLens?.name || "the chosen lens"}</strong>.
         </p>
-        <input
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-          placeholder="e.g. We're considering raising prices in Q2."
-          className="w-full bg-white border border-[var(--rule)] rounded-sm text-[14px] px-3 py-2 mb-3 focus:outline-none focus:border-[var(--accent)]"
-          data-testid="coach-subject-input"
-        />
-        <Button
-          onClick={onStart}
-          className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white text-[12.5px] h-8"
-          data-testid="coach-start-btn"
-        >
-          <MessageCircle className="w-3 h-3 mr-1.5" /> Start the conversation
-        </Button>
+        <p className="text-[11.5px] text-[var(--muted)] italic">
+          Switch lenses any time using the dropdown to reframe the next reply.
+        </p>
       </div>
     );
   }
@@ -488,7 +514,7 @@ function CoachMode({ activeSession, onStart, onSend, onArchive, input, setInput,
   const messages = activeSession.messages || [];
 
   return (
-    <div className="bg-white border border-[var(--rule)] rounded-md flex flex-col" style={{ minHeight: "60vh" }} data-testid="coach-thread">
+    <div className="bg-white border border-[var(--rule)] rounded-md flex flex-col" style={{ minHeight: "55vh" }} data-testid="coach-thread">
       <div className="px-5 py-3 border-b border-[var(--rule)] flex items-center justify-between">
         <div className="min-w-0 flex-1">
           <p className="akki-overline mb-0.5">{activeLens?.name} · coaching</p>
@@ -544,9 +570,6 @@ function CoachMode({ activeSession, onStart, onSend, onArchive, input, setInput,
             {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
           </Button>
         </div>
-        <p className="text-[10.5px] text-[var(--muted)] italic mt-1.5">
-          Switch lenses with the chips above to reframe the next reply.
-        </p>
       </div>
     </div>
   );
@@ -563,9 +586,7 @@ function CoachBubble({ m }) {
         {isUser ? <span className="text-[11px] font-mono">YOU</span> : <Icon className="w-3.5 h-3.5" />}
       </div>
       <div className={`flex-1 ${isUser ? "text-right" : ""}`}>
-        <p className={`akki-serif text-[14.5px] leading-[1.65] text-[var(--ink)] whitespace-pre-wrap ${
-          isUser ? "" : ""
-        }`}>{m.content}</p>
+        <p className="akki-serif text-[14.5px] leading-[1.65] text-[var(--ink)] whitespace-pre-wrap">{m.content}</p>
       </div>
     </div>
   );
@@ -617,7 +638,7 @@ function RunViewer({ run, onArchive }) {
 
 function Section({ label, body, accent = false }) {
   return (
-    <section className={`bg-white border border-[var(--rule)] rounded-md p-5 relative ${accent ? "" : ""}`}>
+    <section className={`bg-white border border-[var(--rule)] rounded-md p-5 relative`}>
       {accent && <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[var(--accent)] rounded-l-md" />}
       <p className="akki-overline mb-2">{label}</p>
       <p className="akki-serif text-[14.5px] leading-[1.7] text-[var(--deep)]">{body}</p>
@@ -625,13 +646,15 @@ function Section({ label, body, accent = false }) {
   );
 }
 
-function EmptyHelp({ text }) {
+function EmptyHelp({ activeLens, kindCfg }) {
   return (
     <div className="bg-white border border-dashed border-[var(--rule)] rounded-md p-8 text-center" data-testid="lens-empty-help">
       <Eye className="w-8 h-8 text-[var(--muted)]/40 mx-auto mb-3" strokeWidth={1.2} />
-      <p className="text-[13.5px] text-[var(--deep)] leading-relaxed max-w-md mx-auto">{text}</p>
-      <p className="text-[11px] text-[var(--muted)] mt-3 inline-flex items-center gap-1">
-        Drop your text above <ChevronRight className="w-3 h-3" />
+      <p className="akki-serif text-[15px] text-[var(--ink)] leading-snug max-w-md mx-auto mb-2">
+        Ready when you are.
+      </p>
+      <p className="text-[12.5px] text-[var(--muted)] leading-relaxed max-w-md mx-auto">
+        Drop your {kindCfg.id} above. Apply runs it through {activeLens?.name || "the lens"} and returns Observation → Implication → Action plus the single question for management.
       </p>
     </div>
   );

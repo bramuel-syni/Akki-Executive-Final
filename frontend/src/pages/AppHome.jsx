@@ -13,10 +13,7 @@ import {
 import ShareModal from "@/components/share/ShareModal";
 import SandboxPackDrop from "@/components/sandbox/SandboxPackDrop";
 import ReviewInboxCard from "@/components/cycle/ReviewInboxCard";
-import PlaysInProgressStrip from "@/components/home/PlaysInProgressStrip";
-import PlayReadyCards from "@/components/home/PlayReadyCards";
-import AgendaEvolutionCard from "@/components/home/AgendaEvolutionCard";
-import QuickActions from "@/components/home/QuickActions";
+import WorkflowsHub from "@/components/home/WorkflowsHub";
 import InSummaryTiles from "@/components/home/InSummaryTiles";
 
 const CONFIDENCE_LABEL = { high: "High confidence", medium: "Medium confidence", low: "Low confidence" };
@@ -164,22 +161,16 @@ export default function AppHome() {
             {/* Sandbox-only: a discreet drop-your-own-pack affordance. */}
             <SandboxPackDrop onSignalsReady={load} />
 
-            {/* Two-up: Ready-for-you (auto-launched workflow trigger) sits next to
-                Agenda-evolution (what changed since the last meeting). 50/50 grid;
-                Agenda fills the right slot even when no workflow is waiting. */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5 shrink-0" data-testid="home-ready-row">
-              <PlayReadyCards />
-              <AgendaEvolutionCard />
-            </div>
-
-            {/* Workflows in progress — restrained chips back into active flow. */}
-            <PlaysInProgressStrip />
-
-            {/* Quick actions — three intent-anchored tiles. */}
-            <QuickActions />
-
-            {/* In summary — the numbers the user would scan first thing. */}
+            {/* In summary — dashboard metrics scan FIRST, before
+                workflows or stream. (Per user feedback: "the page
+                should feel more like a dashboard with reporting
+                numbers at a glance".) */}
             <InSummaryTiles />
+
+            {/* Workflows hub — consolidates Ready / Agenda / In-progress
+                / Quick actions into one tabbed surface so the previous
+                walls of text no longer dominate. */}
+            <WorkflowsHub />
 
             {/* Cross-context review inbox card. */}
             <ReviewInboxCard />

@@ -96,6 +96,78 @@ async def generate_document_meta(
     }
 
 
+@router.post("/contexts/{context_id}/documents/{doc_id}/summary")
+async def generate_document_summary(
+    context_id: str, doc_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+    refresh: bool = False,
+):
+    """AKKI summary of a single document for the Document Journal.
+
+    Returns:
+        - tldr: 2-3 sentence executive summary
+        - highlights: list of 4-7 important points the reader should know
+        - questions: list of 2-3 questions the reader should bring back
+
+    Cached on the document so opening it twice doesn't re-burn the LLM.
+    Pass ?refresh=true to regenerate.
+    """
+    d = await db.documents.find_one(
+        {"id": doc_id, "context_id": context_id}, {"_id": 0},
+    )
+    if not d:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    cached = d.get("akki_summary")
+    if cached and not refresh:
+        return cached
+
+    text = (d.get("extracted_text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="No extractable text on this document.")
+
+    sample = text[:12000]
+    prompt = (
+        "Read the executive document below. Summarise it for a board "
+        "member who has 60 seconds. Return JSON ONLY:\n"
+        '{\n'
+        '  "tldr": "<=2 sentences, what this document is and what it says>",\n'
+        '  "highlights": [\n'
+        '    "<the single most important point — a fact or a claim — phrased plainly>",\n'
+        '    "<next>",\n'
+        '    "<...4 to 7 total>"\n'
+        '  ],\n'
+        '  "questions": [\n'
+        '    "<question the reader should walk into the room with>",\n'
+        '    "<...2 to 3 total>"\n'
+        '  ]\n'
+        '}\n\n'
+        f"Document name: {d.get('name')}\n\n"
+        f"Document text (first ~12KB):\n{sample}"
+    )
+    out = await llm_call_llm(
+        module="document.summary",
+        user_query=prompt,
+        context_object=None,
+        session_context={"session_id": f"docsum-{doc_id}"},
+        data_trust={"overall": d.get("data_trust", "unrated")},
+        response_format="json",
+    )
+    parsed = parse_json_response(out.get("response", "")) or {}
+    summary = {
+        "tldr": (parsed.get("tldr") or "").strip(),
+        "highlights": [str(h).strip() for h in (parsed.get("highlights") or []) if str(h).strip()][:7],
+        "questions": [str(q).strip() for q in (parsed.get("questions") or []) if str(q).strip()][:3],
+        "mode": out.get("mode"),
+        "generated_at": _iso(_now()),
+    }
+    await db.documents.update_one(
+        {"id": doc_id, "context_id": context_id},
+        {"$set": {"akki_summary": summary, "updated_at": _iso(_now())}},
+    )
+    return summary
+
+
 @router.post("/contexts/{context_id}/documents")
 async def upload_document(
     context_id: str,
@@ -267,6 +339,8 @@ async def get_document_detail(
         raise HTTPException(status_code=404, detail="Document not found")
     out = sanitize_doc(d)
     out["extracted_text"] = d.get("extracted_text", "")[:MAX_EXTRACT_CHARS_OUT]
+    if d.get("akki_summary"):
+        out["akki_summary"] = d["akki_summary"]
     return out
 
 

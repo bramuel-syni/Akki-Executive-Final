@@ -207,23 +207,17 @@ function GoalRow({ goal, isLast, isNED, isEditing, onEdit, onCancel, onSaved, co
           </div>
         </div>
 
-        {/* Score + probability dials + sparkline */}
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="flex flex-col items-center" data-testid={`goal-score-block-${goal.id}`}>
-            <ScoreDial label="Score" value={score} />
+        {/* Performance Score + Success Probability — aligned on the same
+            horizontal line per user spec. Sparkline tucks under the row,
+            spanning both dials so they read as a unit, not a list. */}
+        <div className="flex flex-col items-end shrink-0" data-testid={`goal-score-block-${goal.id}`}>
+          <div className="flex items-center gap-4">
+            <ScoreDial label="Performance Score" value={score} />
+            <ScoreDial label="Success Probability" value={prob} />
+          </div>
+          <div className="mt-1.5">
             <Sparkline history={goal.score_history} />
           </div>
-          <ScoreDial label="Probability" value={prob} />
-          {!isNED && (
-            <button
-              onClick={onEdit}
-              className="text-[var(--muted)] hover:text-[var(--accent)] p-1"
-              data-testid={`goal-edit-${goal.id}`}
-              aria-label="Edit goal"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
-          )}
         </div>
       </div>
     </div>

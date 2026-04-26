@@ -17,8 +17,10 @@ import {
 import { toast } from "sonner";
 import {
   Upload, FileText, Trash2, Download, ShieldCheck, AlertTriangle,
-  CheckCircle2, Loader2, ArrowLeft, List, GripVertical, Camera,
+  CheckCircle2, Loader2, ArrowLeft, List, GripVertical, Camera, Sparkles,
 } from "lucide-react";
+import DocumentJournalStats from "@/components/documents/DocumentJournalStats";
+import DocumentSummaryPanel from "@/components/documents/DocumentSummaryPanel";
 
 const TRUST_STYLE = {
   trusted: { label: "Trusted", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
@@ -108,52 +110,61 @@ function StatusChip({ status }) {
   );
 }
 
-/** Left pane when no document is selected: upload + list. */
+/** Left pane when no document is selected: stats hero + collapsible upload + list. */
 function DocumentsBrowser({
   docs, loading, uploading, dragging, setDragging, queued, onFiles,
   displayName, setDisplayName, trust, setTrust, fileInput, cameraInput,
   onSelect, onArchive, onTrustChange, accountEmail, isAdmin,
 }) {
+  // Drawer auto-collapses by default. User clicks "Add a document" in the
+  // stats hero to expand it. Per user feedback: don't take up space when
+  // it isn't needed.
+  const [uploadOpen, setUploadOpen] = React.useState(docs.length === 0);
+  React.useEffect(() => {
+    // When nothing's been uploaded yet, keep it open so the first-time
+    // user has somewhere obvious to drop a file.
+    if (docs.length === 0) setUploadOpen(true);
+  }, [docs.length]);
+
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="px-6 py-5 border-b border-[#E1E6ED] bg-white">
-        <p className="akki-overline mb-1.5">Document Journal · Module M3</p>
-        <h1 className="text-2xl font-light tracking-tight text-[var(--ink)]">Document Journal</h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Upload board packs, minutes, reports. AKKI extracts text, shields identifiers, and grounds every Ask response.
+      <div className="px-6 py-4 border-b border-[#E1E6ED] bg-white">
+        <p className="akki-overline mb-1">Document journal · M3</p>
+        <h1 className="text-xl font-light tracking-tight text-[var(--ink)]">Document Journal</h1>
+        <p className="text-[11.5px] text-[var(--muted)] mt-0.5">
+          Board packs, minutes, reports. Click any document to read AKKI's summary on the right.
         </p>
       </div>
 
-      {/* Dropzone */}
-      <div
-        className={`mx-6 mt-5 border-2 border-dashed rounded-sm transition-colors ${dragging ? "border-[var(--accent)] bg-amber-50/50" : "border-[#E1E6ED] bg-white"}`}
-        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => { e.preventDefault(); setDragging(false); if (e.dataTransfer?.files) onFiles(e.dataTransfer.files); }}
-        data-testid="upload-dropzone"
-      >
-        <div className="p-5 grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-4 items-end">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[var(--ink)]/5 border border-[var(--ink)]/10 flex items-center justify-center rounded-sm shrink-0">
-              <Upload className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.6} />
+      <DocumentJournalStats
+        docs={docs}
+        uploading={uploading}
+        onUploadClick={() => { setUploadOpen(true); setTimeout(() => fileInput.current?.click(), 50); }}
+        onCameraClick={() => { setUploadOpen(true); setTimeout(() => cameraInput.current?.click(), 50); }}
+      />
+
+      {uploadOpen && (
+        <div
+          className={`mx-6 mb-3 border-2 border-dashed rounded-sm transition-colors ${dragging ? "border-[var(--accent)] bg-amber-50/50" : "border-[#E1E6ED] bg-white"}`}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => { e.preventDefault(); setDragging(false); if (e.dataTransfer?.files) onFiles(e.dataTransfer.files); }}
+          data-testid="upload-dropzone"
+        >
+          <div className="p-4 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <Upload className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" strokeWidth={1.6} />
+              <p className="text-[12px] text-[var(--ink)]">
+                Drag & drop a file here — PDF · DOCX · TXT · MD · RTF · up to 25MB
+              </p>
             </div>
-            <div>
-              <p className="text-[var(--ink)] font-medium text-sm mb-0.5">Drop files to upload</p>
-              <p className="text-[11px] text-slate-500">PDF · DOCX · TXT · MD · RTF · up to 25MB</p>
-            </div>
-          </div>
-          <div className="flex items-end gap-2 flex-wrap">
-            <div className="space-y-1">
-              <Label className="text-[9px] uppercase tracking-wider text-slate-500 font-semibold">Display name</Label>
+            <div className="flex items-center gap-2">
               <Input
                 value={displayName} onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="optional"
+                placeholder="Display name (optional)"
                 className="rounded-sm h-8 w-44 text-xs"
                 data-testid="upload-display-name"
               />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[9px] uppercase tracking-wider text-slate-500 font-semibold">Trust</Label>
               <Select value={trust} onValueChange={setTrust}>
                 <SelectTrigger className="rounded-sm h-8 w-28 text-xs" data-testid="upload-trust-select"><SelectValue /></SelectTrigger>
                 <SelectContent className="rounded-sm">
@@ -162,54 +173,47 @@ function DocumentsBrowser({
                   <SelectItem value="weak">Weak</SelectItem>
                 </SelectContent>
               </Select>
+              {docs.length > 0 && (
+                <button
+                  onClick={() => setUploadOpen(false)}
+                  className="text-[11px] text-[var(--muted)] hover:text-[var(--ink)]"
+                  data-testid="upload-collapse-btn"
+                >
+                  Hide
+                </button>
+              )}
+              <input
+                ref={fileInput} type="file" multiple accept={ACCEPT}
+                className="hidden"
+                onChange={(e) => onFiles(e.target.files)}
+                data-testid="upload-file-input"
+              />
+              <input
+                ref={cameraInput} type="file" accept="image/*" capture="environment"
+                className="hidden"
+                onChange={(e) => onFiles(e.target.files)}
+                data-testid="upload-camera-input"
+              />
             </div>
-            <Button
-              onClick={() => fileInput.current?.click()} disabled={uploading}
-              className="bg-[var(--ink)] hover:bg-[#0E2958] rounded-sm h-8 text-xs"
-              data-testid="upload-choose-btn"
-            >
-              {uploading ? "Uploading…" : "Choose files"}
-            </Button>
-            <Button
-              onClick={() => cameraInput.current?.click()} disabled={uploading}
-              variant="outline"
-              className="rounded-sm h-8 text-xs border-[#E1E6ED]"
-              data-testid="upload-camera-btn"
-              title="Capture a document page with your device camera"
-            >
-              <Camera className="w-3.5 h-3.5 mr-1" /> Camera
-            </Button>
-            <input
-              ref={fileInput} type="file" multiple accept={ACCEPT}
-              className="hidden"
-              onChange={(e) => onFiles(e.target.files)}
-              data-testid="upload-file-input"
-            />
-            <input
-              ref={cameraInput} type="file" accept="image/*" capture="environment"
-              className="hidden"
-              onChange={(e) => onFiles(e.target.files)}
-              data-testid="upload-camera-input"
-            />
           </div>
+          {queued.length > 0 && (
+            <div className="border-t border-[#E1E6ED] px-4 py-2.5 space-y-1.5">
+              {queued.map((q, i) => (
+                <div key={i} className="flex items-center gap-2 text-[11px]">
+                  {q.error ? <AlertTriangle className="w-3.5 h-3.5 text-red-500" /> :
+                    q.progress === 100 ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> :
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--accent)]" />}
+                  <span className="text-slate-700 truncate">{q.name}</span>
+                  {q.error && <span className="text-red-600 ml-auto">{q.error}</span>}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-        {queued.length > 0 && (
-          <div className="border-t border-[#E1E6ED] px-5 py-3 space-y-1.5">
-            {queued.map((q, i) => (
-              <div key={i} className="flex items-center gap-2 text-[11px]">
-                {q.error ? <AlertTriangle className="w-3.5 h-3.5 text-red-500" /> :
-                  q.progress === 100 ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> :
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--accent)]" />}
-                <span className="text-slate-700 truncate">{q.name}</span>
-                {q.error && <span className="text-red-600 ml-auto">{q.error}</span>}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Doc list */}
-      <div className="flex-1 overflow-y-auto px-6 py-5">
+      <div className="flex-1 overflow-y-auto px-6 py-3">
         {loading ? (
           <div className="p-10 text-center text-xs uppercase tracking-widest text-slate-400">Loading…</div>
         ) : docs.length === 0 ? (
@@ -393,7 +397,7 @@ function DocumentPane({ contextId, docId, onBack, onArchive, accountEmail, isAdm
         )}
       </div>
 
-      <div className="flex-1 min-h-0 grid grid-cols-[1fr_220px]">
+      <div className="flex-1 min-h-0 grid grid-cols-[1fr_320px]">
         <div ref={bodyRef} className="overflow-y-auto bg-white px-8 py-8" data-testid="doc-body">
           {loading ? null : !doc ? null : doc.error ? (
             <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-sm p-4 max-w-2xl mx-auto">
@@ -417,27 +421,28 @@ function DocumentPane({ contextId, docId, onBack, onArchive, accountEmail, isAdm
             </article>
           )}
         </div>
-        <aside className="hidden md:block border-l border-[#E1E6ED] bg-slate-50/40 overflow-y-auto" data-testid="doc-outline-rail">
-          <div className="px-3 py-3 sticky top-0 bg-slate-50/90 backdrop-blur-sm border-b border-[#E1E6ED]">
-            <div className="flex items-center gap-1.5">
-              <List className="w-3 h-3 text-[var(--accent)]" />
-              <p className="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-semibold">Outline</p>
-            </div>
-          </div>
-          <div className="p-1.5">
-            {headings.length === 0 ? (
-              <p className="text-[10px] text-slate-400 px-2 py-3">No headings detected.</p>
-            ) : (
-              headings.map((h) => (
-                <button
-                  key={h.id}
-                  onClick={() => scrollTo(h.id)}
-                  className="w-full text-left px-2 py-1.5 text-[11px] text-slate-600 hover:bg-white hover:text-[var(--ink)] rounded-sm transition-colors border-l-2 border-transparent hover:border-[var(--accent)]"
-                  data-testid={`outline-${h.id}`}
-                >
-                  <span className="line-clamp-2">{h.text}</span>
-                </button>
-              ))
+        <aside className="hidden md:block border-l border-[#E1E6ED] bg-[var(--cream)] overflow-y-auto" data-testid="doc-summary-rail">
+          <div className="px-4 py-4 space-y-4">
+            <DocumentSummaryPanel contextId={contextId} document={doc} />
+            {headings.length > 0 && (
+              <div className="bg-white border border-[#E1E6ED] rounded-md p-3" data-testid="doc-outline-rail">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <List className="w-3 h-3 text-[var(--accent)]" />
+                  <p className="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-semibold">Outline</p>
+                </div>
+                <div>
+                  {headings.map((h) => (
+                    <button
+                      key={h.id}
+                      onClick={() => scrollTo(h.id)}
+                      className="w-full text-left px-2 py-1.5 text-[11px] text-slate-600 hover:bg-[var(--cream-deep)]/50 hover:text-[var(--ink)] rounded-sm transition-colors border-l-2 border-transparent hover:border-[var(--accent)]"
+                      data-testid={`outline-${h.id}`}
+                    >
+                      <span className="line-clamp-2">{h.text}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         </aside>

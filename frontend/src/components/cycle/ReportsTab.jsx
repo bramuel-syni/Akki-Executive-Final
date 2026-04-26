@@ -29,6 +29,7 @@ const STATUS_PILL = {
 function ComposeModal({ open, onClose, contextId, cycleNames, onCreated }) {
   const [cycleName, setCycleName] = useState(cycleNames?.[0] || "");
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [chain, setChain] = useState([{ name: "", title: "", email: "" }]);
   const [busy, setBusy] = useState(false);
 
@@ -44,11 +45,12 @@ function ComposeModal({ open, onClose, contextId, cycleNames, onCreated }) {
     try {
       const { data } = await api.post(`/contexts/${contextId}/reports/compose`, {
         cycle_name: cycleName, title, chain: cleanChain,
+        description: description.trim() || null,
       });
       toast.success("Report drafted from your team's submissions.");
       onCreated(data);
       onClose();
-      setTitle(""); setChain([{ name: "", title: "", email: "" }]);
+      setTitle(""); setDescription(""); setChain([{ name: "", title: "", email: "" }]);
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setBusy(false); }
   };
@@ -93,6 +95,20 @@ function ComposeModal({ open, onClose, contextId, cycleNames, onCreated }) {
               className="h-10 bg-white border-[var(--rule)] text-sm"
               data-testid="compose-title-input"
             />
+          </div>
+          <div>
+            <p className="akki-overline mb-1.5">Describe what you need <span className="text-[var(--muted)] normal-case font-mono text-[10px]">optional</span></p>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="e.g. Audit committee deep-dive on revenue recognition. Pull the Q3 deltas vs Q2, highlight the three reportees flagging risk, recommend follow-up questions for the CEO."
+              rows={3}
+              className="w-full bg-white border border-[var(--rule)] rounded-md px-3 py-2 text-[13.5px] focus:outline-none focus:border-[var(--accent)] akki-serif leading-relaxed"
+              data-testid="compose-description-input"
+            />
+            <p className="text-[11px] text-[var(--muted)] italic mt-1 leading-relaxed">
+              Tell AKKI the angle. The starter draft will surface your steer at the top so the chain knows what shape this report is meant to take.
+            </p>
           </div>
           <div>
             <p className="akki-overline mb-2">Review chain (escalation order)</p>

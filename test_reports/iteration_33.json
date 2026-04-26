@@ -1,0 +1,44 @@
+{
+  "summary": "iter33 (large UX feedback batch across 9 pages) — fully verified. Backend 7/7 PASS for the 3 new/changed endpoints: POST /summary (LLM JSON payload + 12s cache hit + 404 missing-doc, len caps for highlights<=7 / questions<=3), POST /reports/compose with new optional description (echoed on the report record + surfaced at top of body as 'What the author asked for'; 422 when >4000 chars; backwards-compatible without description), GET /documents/{did} now includes akki_summary after a summary has been generated. Frontend: every spec'd data-testid and copy change verified end-to-end with Playwright on Bramuel/Tuli-CFO context: Lens picker row + lens-mode/kind dropdown + apply + input; Monitor 'Performance Score' + 'Success Probability' labels and 0 pencil icons in goal rows; Home InSummaryTiles ABOVE WorkflowsHub (y-coord verified) with 4 workflow tabs (actions/ready/agenda/active); In Summary signals tile breakdown bug fixed — now shows '10 risks · 0 opportunities · 1 gaps' (was severity-based critical/high/medium); Documents Workspace renders docs-journal-stats hero, upload-collapse-btn, and doc-summary-panel with TL;DR + What matters + Walk in asking; Briefings briefing-journey block with 3 columns (about/cycle/after) at top of viewer; Cycle 5-step spine reordered (Overview, 1·Your team, 2·Question bank, 3·Send checklists, 4·Receive submissions, 5·Consolidate & send up) and the new compose-description-input textarea is rendered + visible + fillable inside the Compose Report modal launched from the spine step 5; Simulate input-first redesign — simulate-hero + simulate-journey-strip + simulate-input-card + simulate-starters; Highlights stats panel shows risk/opportunity/gap breakdown bars (highlights-breakdown-risk/-opportunity/-gap) and 'Risks. Opportunities. Gaps.' header copy.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter33_summary_compose.py",
+    "/app/test_reports/pytest/iter33.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "documents.py generate_document_summary: cache key is `akki_summary` on the doc; ?refresh=true bypasses cache. LLM uses first 12KB of extracted_text. Highlights capped at 7, questions at 3 — matches UX spec. 400 when no extracted_text, 404 when doc_id mismatch — verified.",
+    "documents.py sanitize_doc surfaces akki_summary only when present (line ~342) — clean, no leakage of internal fields.",
+    "cycle.py ReportComposeIn.description: Optional[str], max 4000, default None — Pydantic 422 enforced (verified). _consolidate_submissions_into_body prepends a quoted blockquote with header 'What the author asked for' when description is non-empty/non-whitespace; absent header when empty — verified by both positive and negative tests.",
+    "ReportsTab.jsx ComposeModal: textarea data-testid='compose-description-input' rendered correctly, label is 'Describe what you need optional', helper copy reinforces that the steer surfaces at top of starter draft. Modal opens cleanly from compose-report-btn inside the new step-5 'Consolidate & send up' tab.",
+    "StrategicGoalsPanel.jsx: `Pencil` is still imported but no longer rendered anywhere in the file — minor cosmetic cleanup opportunity (unused import). Not a functional issue.",
+    "InSummaryTiles.jsx signal breakdown uses s.type (risk/opportunity/gap) — verified live: '10 risks · 0 opportunities · 1 gaps' on Tuli CFO. Old severity-based copy ('critical/high/medium') is gone.",
+    "AppHome.jsx layout: InSummaryTiles renders before WorkflowsHub — verified by bounding-box y-coord comparison (summary.y < workflows.y).",
+    "WorkflowsHub.jsx: 4 tabs each carry data-testid workflows-tab-{actions|ready|agenda|active} — all four mount on first render.",
+    "Workspace.jsx DocumentJournalStats hero + collapsible upload drawer + DocumentSummaryPanel right-rail all verified. doc-summary-panel auto-generates summary on mount and renders the cached payload thereafter (matches the cache test on the backend).",
+    "Briefings.jsx briefing-journey block at top of viewer renders 3 columns covering about/cycle/after — verified.",
+    "Simulate.jsx full input-first redesign: hero + journey-strip + input-card + starters — all four landmarks present on /app/simulate.",
+    "Highlights.jsx + HighlightsStats.jsx: header copy 'Risks. Opportunities. Gaps.' present; breakdown bars wired with data-testid='highlights-breakdown-{risk|opportunity|gap}'."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter33_summary_compose.py (NEW, 7 tests, all pass in ~7s incl. one real LLM burn)"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7 passed)",
+    "frontend": "100% — all 9 page redesigns + 11 features-or-bugs items in the review request directly verified"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (Tuli CFO context 2ceb9fde-a202-4891-adb1-ecf47dfe2258, doc a90b82e3-3fa9-4a26-be0c-d63bdfc51909)",
+  "seed_data_creation": "Created 2 TEST_iter33_compose_<rand> reports via the /reports/compose endpoint (one with description steer, one without). Both attached to the Tuli CFO context with TEST_iter33_reviewer@example.com on the chain — easy to clean up by prefix.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Always export REACT_APP_BACKEND_URL before invoking pytest — the test file asserts it must be set. The summary endpoint takes 30-60s on first call (real LLM via Emergent key), <2s on subsequent cached calls. The compose endpoint requires `email` on every chain entry (Pydantic v2 hard-fails 422 without it) — DO NOT omit it. To reach the Reports/Compose modal, click the '5 · Consolidate & send up' tab on /app/cycle (no longer a 'Reports' tab — renamed in iter33 spine reorganization).",
+  "rca of the issue": "No bugs found in iter33. Initial Playwright run flagged compose-description-input missing — root cause was the cycle tab rename: 'Reports' is now '5 · Consolidate & send up' (intentional per spec). After clicking the renamed tab, compose-report-btn appears and the modal contains the new textarea, which is visible, fillable, and persists value via the description field on the backend record."
+}

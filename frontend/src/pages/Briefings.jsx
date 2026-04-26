@@ -97,6 +97,40 @@ function BriefingViewer({ briefing, onArchive, onDraftNotes, notesDrafting, onSh
 
   return (
     <article className="bg-white border border-[#E1E6ED] rounded-sm" data-testid={`briefing-${briefing.id}`}>
+      {/* Journey block — what am I being briefed on, why, what next?
+          Sits at the very top so the user is grounded BEFORE they read.
+          (Per user feedback: the page used to land on populated content
+          with no context — this answers Before / During / After.) */}
+      <section className="px-8 pt-6 pb-5 border-b border-[#E1E6ED] bg-[var(--cream-deep)]/40" data-testid="briefing-journey">
+        <p className="akki-overline mb-3">Briefing · what you're walking into</p>
+        <dl className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-3 text-[12.5px]">
+          <div>
+            <dt className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--accent)] font-mono mb-1">What this is about</dt>
+            <dd className="text-[var(--ink)] akki-serif leading-snug">
+              {briefing.title}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--accent)] font-mono mb-1">Cycle / company</dt>
+            <dd className="text-[var(--deep)] leading-snug">
+              {briefing.context_name}
+              {briefing.committee_name && <> · {briefing.committee_name}</>}
+              <br />
+              <span className="text-[11px] text-[var(--muted)]">
+                Composed {formatDate(briefing.created_at)}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--accent)] font-mono mb-1">What you should do after</dt>
+            <dd className="text-[var(--deep)] leading-snug">
+              Walk in with the {briefing.items?.length || 0} item{(briefing.items?.length || 0) === 1 ? "" : "s"} below in mind.
+              Each carries the question to put to management.
+            </dd>
+          </div>
+        </dl>
+      </section>
+
       {/* Header */}
       <header className="px-8 py-6 border-b border-[#E1E6ED]">
         <div className="flex items-baseline justify-between gap-4 mb-3">

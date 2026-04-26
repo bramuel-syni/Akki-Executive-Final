@@ -66,9 +66,12 @@ export default function InSummaryTiles() {
   useEffect(() => { load(); }, [load]);
 
   const tiles = useMemo(() => {
-    const sigCounts = data.signals.reduce((acc, s) => {
-      const sev = (s.severity || s.priority || "medium").toLowerCase();
-      acc[sev] = (acc[sev] || 0) + 1;
+    // Signals carry `type` (risk | opportunity | gap) and `confidence`
+    // (high | medium | low) — NOT severity/priority. Bucket them
+    // accordingly so the breakdown actually populates.
+    const sigByType = data.signals.reduce((acc, s) => {
+      const t = (s.type || "risk").toLowerCase();
+      acc[t] = (acc[t] || 0) + 1;
       return acc;
     }, {});
     const lastSig = data.signals.length ? data.signals.reduce((latest, s) => {
@@ -93,9 +96,9 @@ export default function InSummaryTiles() {
         key: "signals", to: "/app/highlights", icon: Sparkles,
         kicker: "Signals", count: data.signals.length,
         breakdown: [
-          { label: "Critical", n: sigCounts.critical || 0, tone: "text-red-700" },
-          { label: "High",     n: sigCounts.high || 0,     tone: "text-amber-700" },
-          { label: "Medium",   n: sigCounts.medium || 0,   tone: "text-[var(--deep)]" },
+          { label: "Risks",         n: sigByType.risk || 0,        tone: "text-red-700" },
+          { label: "Opportunities", n: sigByType.opportunity || 0, tone: "text-emerald-700" },
+          { label: "Gaps",          n: sigByType.gap || 0,         tone: "text-amber-700" },
         ],
         last: lastSig,
       },

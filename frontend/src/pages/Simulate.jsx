@@ -235,80 +235,12 @@ export default function Simulate() {
         <aside className="border-r border-[var(--rule)] bg-[var(--cream)] flex flex-col min-h-0" data-testid="simulate-rail">
           <div className="px-5 py-6 border-b border-[var(--rule)] bg-white">
             <p className="akki-overline mb-1 flex items-center gap-1.5">
-              <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Simulate · scenarios
+              <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Simulate
             </p>
-            <h1 className="akki-serif text-[20px] font-normal text-[var(--ink)] mb-1">Stress-test a hypothesis.</h1>
+            <h1 className="akki-serif text-[20px] font-normal text-[var(--ink)] mb-1">Test a hypothesis.</h1>
             <p className="text-[11.5px] text-[var(--muted)] leading-relaxed">
-              Feed AKKI a what-if, get qualitative best / base / stress trajectories plus a watchlist.
+              Past simulations live below.
             </p>
-          </div>
-
-          <div className="px-4 py-4 space-y-3 border-b border-[var(--rule)]">
-            <textarea
-              value={hypothesis}
-              onChange={(e) => setHypothesis(e.target.value)}
-              placeholder="Describe a what-if you're wrestling with…"
-              rows={4}
-              disabled={running}
-              className="w-full bg-white border border-[var(--rule)] rounded-sm text-[13px] p-3 resize-none focus:outline-none focus:border-[var(--accent)] akki-serif leading-relaxed"
-              data-testid="simulate-hypothesis-input"
-            />
-
-            <div className="flex items-center gap-2">
-              <select
-                value={horizon}
-                onChange={(e) => setHorizon(e.target.value)}
-                className="flex-1 text-[12px] border border-[var(--rule)] rounded-sm bg-white px-2 py-1.5 focus:outline-none focus:border-[var(--accent)]"
-                data-testid="simulate-horizon-select"
-              >
-                {HORIZON_OPTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              {committees.length > 0 && (
-                <select
-                  value={committeeId}
-                  onChange={(e) => setCommitteeId(e.target.value)}
-                  className="flex-1 text-[12px] border border-[var(--rule)] rounded-sm bg-white px-2 py-1.5 focus:outline-none focus:border-[var(--accent)]"
-                  data-testid="simulate-committee-select"
-                >
-                  <option value="all">Full board</option>
-                  {committees.map((cm) => <option key={cm.id} value={cm.id}>{cm.name}</option>)}
-                </select>
-              )}
-            </div>
-
-            <Button
-              onClick={onRun}
-              disabled={running || !hypothesis.trim()}
-              className="w-full bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-9 font-medium text-sm"
-              data-testid="simulate-run-btn"
-            >
-              {running
-                ? <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> Running…</>
-                : <><Sparkles className="w-3.5 h-3.5 mr-2" /> Run simulation</>}
-            </Button>
-
-            {running && stage && (
-              <div className="text-[11px] text-[var(--deep)] italic bg-[var(--accent-soft)] border border-[var(--accent)]/20 rounded-sm px-2 py-1.5 flex items-center gap-1.5" data-testid="simulate-stage">
-                <Loader2 className="w-3 h-3 animate-spin text-[var(--accent)] shrink-0" />
-                <span className="flex-1 truncate">{stage}</span>
-              </div>
-            )}
-
-            {!running && hypothesis.trim().length < 10 && (
-              <div className="text-[10.5px] text-[var(--muted)] leading-relaxed space-y-1">
-                <p className="akki-overline">Try one of these</p>
-                {HYPOTHESIS_STARTERS.slice(0, 3).map((s, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setHypothesis(s)}
-                    className="block text-left text-[11px] text-[var(--deep)] hover:text-[var(--accent)] hover:underline"
-                    data-testid={`simulate-starter-${i}`}
-                  >
-                    → {s}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
 
           <div className="flex-1 overflow-y-auto" data-testid="simulate-history">
@@ -316,7 +248,7 @@ export default function Simulate() {
               <div className="p-5 text-center text-[11px] uppercase tracking-widest text-[var(--muted)]">Loading…</div>
             ) : visibleList.length === 0 ? (
               <div className="p-6 text-center text-[11.5px] text-[var(--muted)] leading-relaxed">
-                No simulations yet for this {committeeId === "all" ? "context" : "committee"}. Run your first above.
+                No simulations yet. Run your first on the right.
               </div>
             ) : (
               <div className="p-2">
@@ -350,34 +282,129 @@ export default function Simulate() {
           </div>
         </aside>
 
-        {/* RIGHT — selected simulation */}
+        {/* RIGHT — input-first journey */}
         <main className="overflow-y-auto bg-[var(--cream)]" data-testid="simulate-detail">
           <div className="max-w-3xl mx-auto px-8 py-10">
-            {running && !selected ? (
-              <div className="bg-white border border-[var(--rule)] rounded-md p-16 text-center">
-                <Loader2 className="w-8 h-8 animate-spin text-[var(--accent)] mx-auto mb-4" />
-                <p className="akki-lead mb-1">Thinking through your hypothesis…</p>
-                <p className="text-[12.5px] text-[var(--muted)] italic">{stage || "Working…"}</p>
-              </div>
-            ) : selected ? (
-              <SimulationViewer sim={selected} onArchive={onArchive} />
+            {selected && !running ? (
+              <>
+                <button
+                  onClick={() => setSelected(null)}
+                  className="text-[11.5px] text-[var(--muted)] hover:text-[var(--ink)] inline-flex items-center gap-1 mb-4"
+                  data-testid="simulate-new-btn"
+                >
+                  <Sparkles className="w-3 h-3" /> Run a new simulation
+                </button>
+                <SimulationViewer sim={selected} onArchive={onArchive} />
+              </>
             ) : (
-              <div className="bg-white border border-[var(--rule)] rounded-md p-16 text-center akki-fade-up" data-testid="simulate-splash">
-                <Sparkles className="w-10 h-10 text-[var(--muted)]/40 mx-auto mb-5" strokeWidth={1.2} />
-                <h2 className="akki-serif text-[22px] font-normal text-[var(--ink)] mb-2">Simulate — scenarios for the board.</h2>
-                <p className="text-[14px] text-[var(--muted)] leading-relaxed max-w-md mx-auto mb-6">
-                  Qualitative 1-year and 3-year trajectories for any hypothesis you're wrestling with. Every run produces a watchlist you can table at the next meeting.
-                </p>
-                <div className="text-left max-w-md mx-auto space-y-2">
-                  <p className="akki-overline mb-2">How it reads</p>
-                  <p className="text-[13px] text-[var(--deep)] akki-serif">
-                    Three paragraphs per horizon — best, base, stress. Grounded in your Context Object and active signals. Ends with the single sharpest question to put to management.
+              <>
+                {/* Hero — what is Simulate, in two lines */}
+                <header className="mb-6 akki-fade-up" data-testid="simulate-hero">
+                  <p className="akki-overline mb-2">Simulate · hypothesis testing</p>
+                  <h1 className="akki-serif text-[28px] leading-[1.2] text-[var(--ink)] font-normal mb-2">
+                    Pressure-test a "what-if" before the board does.
+                  </h1>
+                  <p className="text-[14px] text-[var(--deep)] leading-relaxed max-w-2xl">
+                    Drop in any claim someone is asking the board to act on — a major investment, a market scenario, a risk forecast — and AKKI returns three plausible trajectories (best, base, stress), the indicators to watch, and the single sharpest question to put to management.
                   </p>
+                </header>
+
+                {/* Numbered journey strip — three cards = the input/output flow.
+                    Each card is intentionally bare so the user knows EXACTLY
+                    where to act. */}
+                <div className="grid grid-cols-3 gap-2 mb-4 text-[10.5px] uppercase tracking-[0.2em] font-mono text-[var(--muted)]" data-testid="simulate-journey-strip">
+                  <div className="border-l-2 border-[var(--accent)] pl-2">01 · You write the hypothesis</div>
+                  <div className="border-l-2 border-[var(--rule)] pl-2">02 · AKKI runs it</div>
+                  <div className="border-l-2 border-[var(--rule)] pl-2">03 · You get three trajectories + a watchlist</div>
                 </div>
-                <Link to="/app/highlights" className="akki-gesture text-[13px] mt-6 inline-flex">
-                  Or start from a signal <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
-              </div>
+
+                {/* INPUT CARD — large, central, the obvious thing to use */}
+                <div className="bg-white border border-[var(--rule)] rounded-md p-5 mb-4" data-testid="simulate-input-card">
+                  <p className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--accent)] font-mono mb-2">
+                    Your hypothesis
+                  </p>
+                  <textarea
+                    value={hypothesis}
+                    onChange={(e) => setHypothesis(e.target.value)}
+                    placeholder="e.g. If our largest corporate borrower is acquired, what's the impact on our loan book and capital over the next year and three years?"
+                    rows={4}
+                    disabled={running}
+                    className="w-full bg-transparent text-[15px] resize-none focus:outline-none akki-serif leading-relaxed"
+                    data-testid="simulate-hypothesis-input"
+                  />
+                  <div className="flex items-center justify-between gap-3 pt-3 mt-2 border-t border-[var(--rule)] flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <label className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--muted)] font-mono">Horizon</label>
+                      <select
+                        value={horizon}
+                        onChange={(e) => setHorizon(e.target.value)}
+                        className="text-[12px] border border-[var(--rule)] rounded-sm bg-white px-2 py-1.5 focus:outline-none focus:border-[var(--accent)]"
+                        data-testid="simulate-horizon-select"
+                      >
+                        {HORIZON_OPTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                      {committees.length > 0 && (
+                        <>
+                          <label className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--muted)] font-mono ml-2">Scope</label>
+                          <select
+                            value={committeeId}
+                            onChange={(e) => setCommitteeId(e.target.value)}
+                            className="text-[12px] border border-[var(--rule)] rounded-sm bg-white px-2 py-1.5 focus:outline-none focus:border-[var(--accent)]"
+                            data-testid="simulate-committee-select"
+                          >
+                            <option value="all">Full board</option>
+                            {committees.map((cm) => <option key={cm.id} value={cm.id}>{cm.name}</option>)}
+                          </select>
+                        </>
+                      )}
+                    </div>
+                    <Button
+                      onClick={onRun}
+                      disabled={running || !hypothesis.trim()}
+                      className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white text-[13px] h-9 px-5"
+                      data-testid="simulate-run-btn"
+                    >
+                      {running
+                        ? <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> Running…</>
+                        : <><Sparkles className="w-3.5 h-3.5 mr-2" /> Run simulation</>}
+                    </Button>
+                  </div>
+                  {running && stage && (
+                    <div className="text-[11.5px] text-[var(--deep)] italic bg-[var(--accent-soft)] border border-[var(--accent)]/20 rounded-sm px-2.5 py-1.5 flex items-center gap-1.5 mt-3" data-testid="simulate-stage">
+                      <Loader2 className="w-3 h-3 animate-spin text-[var(--accent)] shrink-0" />
+                      <span className="flex-1 truncate">{stage}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Starters — only show when input is empty */}
+                {!running && hypothesis.trim().length < 10 && (
+                  <div className="bg-white border border-dashed border-[var(--rule)] rounded-md p-5" data-testid="simulate-starters">
+                    <p className="akki-overline mb-3">Don't know how to start? Try one of these</p>
+                    <ul className="space-y-2">
+                      {HYPOTHESIS_STARTERS.map((s, i) => (
+                        <li key={i}>
+                          <button
+                            onClick={() => setHypothesis(s)}
+                            className="text-left text-[13px] text-[var(--deep)] hover:text-[var(--accent)] leading-snug"
+                            data-testid={`simulate-starter-${i}`}
+                          >
+                            <span className="text-[var(--accent)] mr-1.5">→</span> {s}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {running && !selected && (
+                  <div className="bg-white border border-[var(--rule)] rounded-md p-12 text-center mt-4">
+                    <Loader2 className="w-8 h-8 animate-spin text-[var(--accent)] mx-auto mb-4" />
+                    <p className="akki-lead mb-1">Thinking through your hypothesis…</p>
+                    <p className="text-[12.5px] text-[var(--muted)] italic">{stage || "Working…"}</p>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </main>

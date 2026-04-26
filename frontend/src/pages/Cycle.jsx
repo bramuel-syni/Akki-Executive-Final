@@ -839,21 +839,21 @@ export default function Cycle() {
           <p className="akki-overline mb-2 flex items-center gap-2">
             <Send className="w-3 h-3 text-[var(--accent)]" /> Reporting cycle · §12 · {activeContext.name}
           </p>
-          <h1 className="akki-greeting mb-2">AKKI runs the cycle. You gate the conversation.</h1>
+          <h1 className="akki-greeting mb-2">Receive · Consolidate · Send up.</h1>
           <p className="akki-meta max-w-2xl">
-            Manage the questions worth asking, the people who'll answer them, the checklists AKKI sends on your behalf, and the reports you compile up your chain — all for <strong className="text-[var(--ink)]">{activeContext.name}</strong>.
+            The reporting cycle, in five clean steps. Manage your team, the questions worth asking, the checklists AKKI sends on your behalf, the submissions that come back, and the report you send up the chain — all for <strong className="text-[var(--ink)]">{activeContext.name}</strong>.
           </p>
         </div>
 
         <Tabs defaultValue="tracker" className="w-full">
           <TabsList className="bg-transparent border-b border-[var(--rule)] w-full justify-start h-auto p-0 rounded-none mb-8 overflow-x-auto">
             {[
-              ["tracker", "Tracker", Eye],
-              ["checklists", "Checklists", Send],
-              ["bank", "Question Bank", MessageCircleQuestion],
-              ["reportees", "Reportees", Users],
-              ["inbox", "Submissions", Inbox],
-              ["reports", "Reports", FileText],
+              ["tracker",    "Overview",          Eye],
+              ["reportees",  "1 · Your team",     Users],
+              ["bank",       "2 · Question bank", MessageCircleQuestion],
+              ["checklists", "3 · Send checklists", Send],
+              ["inbox",      "4 · Receive submissions", Inbox],
+              ["reports",    "5 · Consolidate & send up", FileText],
             ].map(([v, l, I]) => (
               <TabsTrigger
                 key={v} value={v}

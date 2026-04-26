@@ -109,19 +109,19 @@ export default function Highlights() {
         {/* Header */}
         <div className="mb-6 akki-fade-up">
           <p className="akki-overline mb-2">Signals · {activeContext.name}</p>
-          <h1 className="akki-greeting mb-2">Signals worth your attention.</h1>
+          <h1 className="akki-greeting mb-2">Risks. Opportunities. Gaps.</h1>
           <p className="akki-meta max-w-2xl">
-            AKKI reads your documents and surfaces risks, opportunities, and gaps. Every signal cites its source.
+            What the executive needs to react to. AKKI reads your documents, surfaces what matters, and cites the page it came from.
           </p>
         </div>
 
-        {/* Generator */}
-        <div className="bg-white border border-[var(--rule)] rounded-lg p-5 mb-8 akki-fade-up">
+        {/* Generator — kept as a single quiet line, not a wall */}
+        <div className="bg-white border border-[var(--rule)] rounded-lg p-4 mb-6 akki-fade-up">
           <div className="flex items-stretch gap-3">
             <Input
               value={focus}
               onChange={(e) => setFocus(e.target.value)}
-              placeholder="Focus (optional) — e.g. liquidity · cyber exposure · succession"
+              placeholder="Optional focus — e.g. liquidity · cyber exposure · succession"
               className="rounded-md h-10 text-sm flex-1 border-[var(--rule)] bg-[var(--cream)]"
               disabled={generating}
               data-testid="signals-focus-input"
