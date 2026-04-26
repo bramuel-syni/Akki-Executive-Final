@@ -1,0 +1,39 @@
+{
+  "summary": "Iter27 — §4 Monitor (role-adaptive) + Landing marketing nav + PortfolioRail role-scoped filter + Learn single-column layout. Backend 15/15 PASS. Frontend critical flows GREEN: Monitor page renders 4 tiles + chip strip with localStorage persistence across reload; sidebar nav-monitor present between Cycle and Workflows; PortfolioRail filters strictly by activeRole (NED→only ned_personal contexts, Exec→only executive_personal); Landing page exposes all 4 marketing nav links with correct hrefs; Learn page learn-grid is single-column max-w-2xl space-y-4 (no xl:grid-cols-2).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter27_monitor.py",
+    "/app/test_reports/pytest/iter27_monitor.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "monitor.py: clean role→category whitelist (FUNCTION_FILTERS) with fuzzy reportee area-keyword match. Read-only composition over signals/checklists/submissions/reports/briefings/document_views — no new model. Good.",
+    "monitor.py L73-78: function param uses regex validator '^(ceo|cfo|coo|commercial|ned|other)$' — invalid functions return 422 (verified).",
+    "monitor.py L184-197: NED extra payload (open_threads + recent_mentions[]) gated to function=='ned' only; null otherwise — verified.",
+    "Monitor.jsx L36-43: getDefaultFunction reads localStorage on mount + EXEC_FUNCTIONS guard prevents stale 'ned' value from persisting when user is acting as executive. Good defensive pattern.",
+    "PortfolioRail.jsx L40-46: filter falls back to context.type prefix when c.my_role is absent — handles legacy contexts cleanly. Strict equality role===activeRole means NED contexts hidden in Exec view and vice-versa, matching spec.",
+    "Landing.jsx L154-166: 4 new marketing nav links use 'hidden md:inline' so they don't crowd mobile — sensible responsive hide.",
+    "Learn.jsx L437/441: learn-grid switched to 'space-y-4 max-w-2xl pb-4' — single column at full search-bar width verified by class introspection."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter27_monitor.py (NEW)"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15)",
+    "frontend": "100% (Monitor tiles + chip persistence + nav-monitor + PortfolioRail role filter + Landing nav hrefs + Learn grid all verified live)"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None new. Used existing seeded contexts: Tuli CFO (executive), Mawingu (NED).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Login URL is /signin (not /login). Use data-testid='signin-email-input' / 'signin-password-input' / 'signin-submit-btn'. Bramuel currently has 5 ned_personal + 2 executive_personal contexts — slight drift from the 4+2 noted in the request, likely due to test data accumulation; not a functional issue. The Learn Videos tab couldn't be reached via [role='tab'] selector in this run (the tabs use a custom non-ARIA pattern), but the grid layout (max-w-2xl space-y-4 single column) is verified by class introspection on the visible tab. Visual verification of VideoCard w-40 thumb + w-9 play button was performed by main agent already.",
+  "rca of the issue": "N/A — no bugs found in this batch. All four user-requested deliverables (Monitor module, Landing marketing nav, PortfolioRail role filter, Learn horizontal layout) implemented correctly and pass live + automated checks."
+}

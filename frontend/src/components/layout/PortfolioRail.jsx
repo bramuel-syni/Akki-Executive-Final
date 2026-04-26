@@ -33,12 +33,24 @@ export default function PortfolioRail() {
 
   const groups = useMemo(() => {
     const g = { personal: [], sponsored: [] };
-    for (const c of contexts || []) {
-      if (c.kind === "sponsored" || c.is_sponsored) g.sponsored.push(c);
+    // Role-scoped: only show contexts where the user holds the active role.
+    // If activeRole='ned', list NED boards; 'executive', list executive
+    // contexts. This matches the user's mental model of "my portfolio" =
+    // boards I'm NED on, OR companies I run, never the union.
+    const filtered = (contexts || []).filter((c) => {
+      if (!activeRole) return true;
+      // my_role is canonical when present; fall back to context.type prefix
+      // ('ned_personal' / 'executive_personal' / 'ned_sponsored' / 'executive_enterprise').
+      const role = c.my_role || (c.type || "").split("_")[0];
+      return role === activeRole;
+    });
+    for (const c of filtered) {
+      if (c.kind === "sponsored" || c.is_sponsored
+          || c.type === "ned_sponsored" || c.type === "executive_enterprise") g.sponsored.push(c);
       else g.personal.push(c);
     }
     return g;
-  }, [contexts]);
+  }, [contexts, activeRole]);
 
   const activeRoleLabel = activeRole === "ned" ? "Non-Executive Director" : (activeRole?.charAt(0).toUpperCase() + activeRole?.slice(1));
 

@@ -151,6 +151,18 @@ export default function Landing() {
             <a href="#assurance" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors">
               How it's trustworthy
             </a>
+            <Link to="/about" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors" data-testid="landing-nav-about">
+              About
+            </Link>
+            <Link to="/features" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors" data-testid="landing-nav-features">
+              Features
+            </Link>
+            <Link to="/security" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors" data-testid="landing-nav-security">
+              Security
+            </Link>
+            <Link to="/blog" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors" data-testid="landing-nav-blog">
+              Exco360
+            </Link>
             {user ? (
               <Link to="/app">
                 <Button className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-9 px-4 text-[13px] font-medium" data-testid="landing-go-to-app">

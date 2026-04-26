@@ -26,6 +26,7 @@ import Manage from "@/pages/Manage";
 import Sandbox from "@/pages/Sandbox";
 import SandboxGenerating from "@/pages/SandboxGenerating";
 import Cycle from "@/pages/Cycle";
+import Monitor from "@/pages/Monitor";
 import PlaysLibrary from "@/pages/PlaysLibrary";
 import PlayView from "@/pages/PlayView";
 import RespondToChecklist from "@/pages/RespondToChecklist";
@@ -66,6 +67,7 @@ function App() {
           <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
           <Route path="/app" element={<ProtectedRoute><AppHome /></ProtectedRoute>} />
           <Route path="/app/cycle" element={<ProtectedRoute><Cycle /></ProtectedRoute>} />
+          <Route path="/app/monitor" element={<ProtectedRoute><Monitor /></ProtectedRoute>} />
           <Route path="/app/plays" element={<ProtectedRoute><PlaysLibrary /></ProtectedRoute>} />
           <Route path="/app/plays/:playId" element={<ProtectedRoute><PlayView /></ProtectedRoute>} />
           <Route path="/app/blog-admin" element={<ProtectedRoute><BlogAdmin /></ProtectedRoute>} />

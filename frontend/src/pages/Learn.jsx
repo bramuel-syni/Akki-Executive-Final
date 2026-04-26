@@ -66,46 +66,48 @@ function ArticleCard({ a }) {
   );
 }
 
-/** Video card — opens modal. */
+/** Video card — horizontal layout with compact thumbnail. */
 function VideoCard({ v, onPlay }) {
-  const thumb = `https://i.ytimg.com/vi/${v.youtube_id}/hqdefault.jpg`;
+  const thumb = `https://i.ytimg.com/vi/${v.youtube_id}/mqdefault.jpg`;
   return (
     <button
       type="button"
       onClick={onPlay}
-      className="text-left akki-stream-card group akki-fade-up w-full"
+      className="text-left akki-stream-card group akki-fade-up w-full flex gap-5 items-start"
       data-severity="neutral"
       data-testid={`learn-video-${v.id}`}
     >
-      <div className="relative aspect-video mb-4 -mx-6 -mt-6 overflow-hidden">
+      <div className="relative w-40 aspect-video shrink-0 overflow-hidden rounded-sm">
         <img src={thumb} alt="" className="w-full h-full object-cover" loading="lazy" />
         <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/10 transition-colors">
-          <div className="w-14 h-14 rounded-full bg-[var(--accent)] flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-            <Play className="w-5 h-5 text-white ml-0.5" fill="currentColor" strokeWidth={0} />
+          <div className="w-9 h-9 rounded-full bg-[var(--accent)] flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+            <Play className="w-3 h-3 text-white ml-0.5" fill="currentColor" strokeWidth={0} />
           </div>
         </div>
         {v.duration && (
-          <div className="absolute bottom-2 right-2 text-[11px] font-mono bg-black/80 text-white px-1.5 py-0.5 rounded">
+          <div className="absolute bottom-1 right-1 text-[10px] font-mono bg-black/80 text-white px-1 py-0.5 rounded-sm">
             {v.duration}
           </div>
         )}
       </div>
 
-      <div className="flex items-center gap-2 mb-2">
-        <span className="akki-type-badge inline-flex items-center gap-1.5">
-          <VideoIcon className="w-3 h-3" strokeWidth={2.2} /> Video
-        </span>
-        <span className="text-[12px] text-[var(--muted)]">{v.source_name}</span>
-      </div>
-      <h3 className="akki-title-22 mb-2 leading-snug text-[19px]">{v.title}</h3>
-      <p className="akki-serif text-[13.5px] text-[var(--deep)] leading-relaxed mb-4 italic">{v.summary}</p>
-      <div className="flex items-end justify-between gap-4 flex-wrap">
-        <div className="flex flex-wrap gap-2">
-          <span className="akki-context-chip">{TOPIC_LABEL[v.topic] || v.topic}</span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+          <span className="akki-type-badge inline-flex items-center gap-1.5">
+            <VideoIcon className="w-3 h-3" strokeWidth={2.2} /> Video
+          </span>
+          <span className="text-[12px] text-[var(--muted)]">{v.source_name}</span>
         </div>
-        <span className="akki-gesture text-[13px]">
-          Watch <Play className="w-3.5 h-3.5" strokeWidth={2} />
-        </span>
+        <h3 className="akki-serif text-[17px] leading-snug text-[var(--ink)] mb-2 font-normal">{v.title}</h3>
+        <p className="akki-serif text-[13px] text-[var(--deep)] leading-relaxed mb-3 italic line-clamp-2">{v.summary}</p>
+        <div className="flex items-end justify-between gap-3 flex-wrap">
+          <div className="flex flex-wrap gap-2">
+            <span className="akki-context-chip">{TOPIC_LABEL[v.topic] || v.topic}</span>
+          </div>
+          <span className="akki-gesture text-[12.5px]">
+            Watch <Play className="w-3 h-3" strokeWidth={2} />
+          </span>
+        </div>
       </div>
     </button>
   );
@@ -432,11 +434,11 @@ export default function Learn() {
                 )}
               </div>
             ) : activeTab === "video" ? (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 pb-4" data-testid="learn-grid">
+              <div className="space-y-4 max-w-2xl pb-4" data-testid="learn-grid">
                 {filtered.map((v) => <VideoCard key={v.id} v={v} onPlay={() => setVideoPlaying(v)} />)}
               </div>
             ) : (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 pb-4" data-testid="learn-grid">
+              <div className="space-y-4 max-w-2xl pb-4" data-testid="learn-grid">
                 {filtered.map((a) => <ArticleCard key={a.id} a={a} />)}
               </div>
             )}
