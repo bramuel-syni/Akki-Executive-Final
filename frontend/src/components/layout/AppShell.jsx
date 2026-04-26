@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import MentionInbox from "@/components/collab/MentionInbox";
 import UploadModal from "@/components/upload/UploadModal";
+import PortfolioRail from "@/components/layout/PortfolioRail";
 
 // v3.0 — Six surfaces (BRD §13)
 const NAV = [
@@ -32,7 +33,7 @@ const NAV = [
   { to: "/app/simulate", label: "Simulate", icon: Target, module: "M14", ready: true },
   { to: "/app/lens", label: "The Lens", icon: Eye, module: "M14", ready: true },
   { to: "/app/cycle", label: "Cycle", icon: Send, module: "§12", ready: true },
-  { to: "/app/plays", label: "Plays", icon: Compass, module: "§13", ready: true },
+  { to: "/app/plays", label: "Workflows", icon: Compass, module: "§13", ready: true },
   { to: "/app/learn", label: "Learn", icon: GraduationCap, module: "M9", ready: true },
 ];
 
@@ -158,113 +159,9 @@ export default function AppShell({ children }) {
           {/* Mentions bell — pulls from /mentions endpoint */}
           <MentionInbox />
 
-          {/* Role switcher (only if dual-capable) */}
-          {showRoleSwitcher && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-[var(--deep)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
-                  data-testid="role-switcher-btn"
-                >
-                  <RoleIcon className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.8} />
-                  <span className="capitalize">{activeRole}</span>
-                  <ChevronDown className="w-3.5 h-3.5 text-[var(--muted)]" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56 rounded-md">
-                <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">Acting as</DropdownMenuLabel>
-                {availableRoles.map((r) => (
-                  <DropdownMenuItem
-                    key={r}
-                    onClick={() => handleRoleSwitch(r)}
-                    className="cursor-pointer flex items-center justify-between"
-                    data-testid={`role-switch-${r}`}
-                  >
-                    <span className="capitalize">{r === "ned" ? "Non-Executive Director" : r}</span>
-                    {r === activeRole && <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-
-          {/* Context switcher */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="flex items-center gap-2 px-3 py-1.5 text-[14px] text-[var(--deep)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
-                data-testid="context-switcher-btn"
-              >
-                <Layers className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.8} />
-                <span className="max-w-[200px] truncate">{activeContext?.name || "—"}</span>
-                {isSponsored && <span className="text-[9px] uppercase tracking-[0.2em] text-[var(--accent)]">sponsored</span>}
-                <ChevronDown className="w-3.5 h-3.5 text-[var(--muted)]" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80 rounded-md">
-              <DropdownMenuItem
-                className="cursor-pointer"
-                onClick={() => navigate("/app/contexts")}
-                data-testid="context-portfolio-btn"
-              >
-                <Layers className="w-4 h-4 mr-2 text-[var(--accent)]" strokeWidth={1.8} />
-                <span className="font-medium">View portfolio</span>
-                <span className="ml-auto text-[10px] uppercase tracking-wider text-[var(--muted)]">{contexts.length}</span>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              {groups.personal.length > 0 && (
-                <>
-                  <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">Personal contexts</DropdownMenuLabel>
-                  {groups.personal.map((c) => (
-                    <DropdownMenuItem
-                      key={c.id}
-                      onClick={() => switchContext(c.id)}
-                      className="flex items-center justify-between cursor-pointer"
-                      data-testid={`context-switch-${c.id}`}
-                    >
-                      <div className="flex flex-col">
-                        <span className="font-medium">{c.name}</span>
-                        <span className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
-                          {CONTEXT_TYPE_LABEL[c.type] || c.type}
-                        </span>
-                      </div>
-                      {c.id === activeContext?.id && <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />}
-                    </DropdownMenuItem>
-                  ))}
-                </>
-              )}
-              {groups.sponsored.length > 0 && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.2em] text-[var(--accent)]">Sponsored contexts</DropdownMenuLabel>
-                  {groups.sponsored.map((c) => (
-                    <DropdownMenuItem
-                      key={c.id}
-                      onClick={() => switchContext(c.id)}
-                      className="flex items-center justify-between cursor-pointer"
-                      data-testid={`context-switch-${c.id}`}
-                    >
-                      <div className="flex flex-col">
-                        <span className="font-medium">{c.name}</span>
-                        <span className="text-[10px] uppercase tracking-wider text-[var(--accent)]">
-                          {CONTEXT_TYPE_LABEL[c.type] || c.type}
-                        </span>
-                      </div>
-                      {c.id === activeContext?.id && <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />}
-                    </DropdownMenuItem>
-                  ))}
-                </>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="cursor-pointer text-[var(--accent)]"
-                onClick={() => navigate("/app/contexts/new")}
-                data-testid="create-context-btn"
-              >
-                + Add context →
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Role + context have moved to the permanent right-side
+              PortfolioRail (more discoverable, indicates active context
+              with a green dot). The top bar now stays minimal. */}
 
           {/* Account avatar */}
           <DropdownMenu>
@@ -320,7 +217,13 @@ export default function AppShell({ children }) {
         </div>
       </header>
 
-      <div className="flex flex-1 min-h-0">
+      {/* Permanent right-side portfolio rail — visible on every /app page,
+          shows the user's contexts with a green active dot, and exposes
+          role switcher inline. Self-positions via fixed; we add right
+          padding to the main content below to keep the rail clear. */}
+      <PortfolioRail />
+
+      <div className="flex flex-1 min-h-0 lg:pr-[260px]">
         {/* Left nav rail — cream, 220px, oxblood accent on selected */}
         <aside
           className="hidden md:flex flex-col bg-[var(--cream)] text-[var(--deep)] w-[220px] border-r border-[var(--rule)] pt-6 pb-8 gap-0.5"

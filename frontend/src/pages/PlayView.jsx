@@ -45,8 +45,7 @@ function StagesPanel({ open, onClose, play, onJump }) {
         <header className="px-5 py-4 border-b border-[var(--rule)]">
           <p className="akki-overline mb-1">{play.name}</p>
           <p className="text-[12px] text-[var(--muted)] italic">{play.outcome}</p>
-        </header>
-        <ol className="py-2">
+        </header>        <ol className="py-2">
           {play.stages.map((s) => {
             const isCurrent = s.idx === play.current_stage;
             const isPast = s.idx < play.current_stage || play.status === "completed";
@@ -90,13 +89,10 @@ function PlayHeader({ play, transitioning, onOpenStages, onPause, onResume, onEx
       data-testid="play-header"
     >
       <div className="flex-1 min-w-0">
-        <p className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--accent)] font-mono mb-0.5">
-          {play.name}
-        </p>
-        <div className="relative h-6">
+        <div className="relative h-7">
           <p
             key={play.current_stage}
-            className={`akki-serif text-[18px] text-[var(--ink)] absolute inset-0 transition-opacity duration-300 ${transitioning ? "opacity-0" : "opacity-100"}`}
+            className={`akki-serif text-[20px] text-[var(--ink)] absolute inset-0 transition-opacity duration-300 ${transitioning ? "opacity-0" : "opacity-100"}`}
             data-testid="play-current-stage"
           >
             {stage?.name}
@@ -108,7 +104,7 @@ function PlayHeader({ play, transitioning, onOpenStages, onPause, onResume, onEx
         className="text-[12px] text-[var(--deep)] hover:text-[var(--accent)] underline-offset-4 hover:underline"
         data-testid="play-open-stages"
       >
-        Stages
+        All steps
       </button>
       {play.status === "active" ? (
         <button onClick={onPause} className="text-[12px] text-[var(--muted)] hover:text-[var(--ink)] inline-flex items-center gap-1" data-testid="play-pause">

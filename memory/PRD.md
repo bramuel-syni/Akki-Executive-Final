@@ -640,3 +640,29 @@ layer (Surfaces, Artefacts, **Plays**) — named, staged journeys that
   doesn't yet pull a doc into the play (textarea paste only for Slice 2).
 - Replace shallow-merge `PATCH /state` with deep-merge.
 
+
+## §13 Workflows — Slice 3 (2026-04-26, iter26): rename + simplification + Home redesign
+
+### Why
+After demo feedback, the user said: "I don't understand what the Play function is
+supposed to do as it has been currently executed. The idea is simple — prepare,
+review or submit submissions, as part of the quick action tabs." That broke the
+simplification audit.
+
+### What shipped
+- Rename "Play" → "Workflow" everywhere user-facing.
+- Board Pack collapsed from 6 stages to 5 — "Setting the cycle" + "Where the gaps are"
+  merged into "Consolidate and review submissions". Pre-Board "When the pack arrives"
+  → "Add the board pack".
+- PlayHeader chrome stripped (no more "BOARD PACK PLAY" kicker on the workflow page).
+- Permanent right-side PortfolioRail on every /app/* page with green dot on the
+  active context. Top-bar context + role dropdowns removed.
+- Home redesign: QuickActions (3 intent tiles) + InSummaryTiles (4 hot-data tiles).
+- Cycle Tracker tab (default): reportee × latest cycle × status × AKKI is missing
+  × intervention button.
+- Demo seed `/app/backend/scripts/seed_iter26_demo.py` — 16 signals, 4 reportees,
+  6 questions, 2 checklists (1 responded, 1 outstanding), 3 briefings, 1 board pack.
+
+### Open / deferred — Slice 4+
+- Document distribution/engagement: read receipts, share counter, linked-docs map.
+- NED document evolution chain: thread pack → questions → answers → follow-up docs.

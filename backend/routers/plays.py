@@ -45,38 +45,33 @@ router = APIRouter(prefix="/api")
 
 BOARD_PACK_PLAY: Dict[str, Any] = {
     "type": "board_pack",
-    "name": "Board Pack Play",
+    "name": "Board Pack Workflow",
     "audience": "executive",
     "outcome": "A board pack you've reviewed and committed to.",
     "trigger_hint": "Run when the next board cycle is on the horizon.",
     "stages": [
         {
-            "idx": 0, "key": "setting_cycle",
-            "name": "Setting the cycle",
-            "transition": "Start here. Decide the cadence and who reports.",
+            "idx": 0, "key": "consolidate",
+            "name": "Consolidate and review submissions",
+            "transition": "Your team's submissions are in. See what's there and what's missing.",
         },
         {
-            "idx": 1, "key": "gaps",
-            "name": "Where the gaps are",
-            "transition": "Your team's submissions are in. Time to look at what's there.",
-        },
-        {
-            "idx": 2, "key": "consolidation",
-            "name": "Consolidation",
+            "idx": 1, "key": "consolidation",
+            "name": "Draft from submissions",
             "transition": "AKKI is reading what your team sent.",
         },
         {
-            "idx": 3, "key": "review",
+            "idx": 2, "key": "review",
             "name": "Your review",
             "transition": "The draft is yours. Edit. Accept. Or rewrite.",
         },
         {
-            "idx": 4, "key": "distribution",
-            "name": "Distribution",
+            "idx": 3, "key": "distribution",
+            "name": "Send it up",
             "transition": "Send it up the chain when you're ready.",
         },
         {
-            "idx": 5, "key": "done",
+            "idx": 4, "key": "done",
             "name": "Done",
             "transition": "Committed. Distributed.",
         },
@@ -85,19 +80,19 @@ BOARD_PACK_PLAY: Dict[str, Any] = {
 
 PRE_BOARD_PLAY: Dict[str, Any] = {
     "type": "pre_board",
-    "name": "Pre-Board Play",
+    "name": "Pre-Board Workflow",
     "audience": "ned",
     "outcome": "Walk into the meeting having read the pack the way a chair would.",
     "trigger_hint": "Run when a board pack lands in your inbox.",
     "stages": [
         {
             "idx": 0, "key": "arrival",
-            "name": "When the pack arrives",
+            "name": "Add the board pack",
             "transition": "Pull in the pack — paste it, upload it, or pick from your Document Journal.",
         },
         {
             "idx": 1, "key": "reading",
-            "name": "Reading the pack",
+            "name": "Read the pack",
             "transition": "Take it in once. AKKI keeps notes alongside.",
         },
         {
@@ -112,22 +107,21 @@ PRE_BOARD_PLAY: Dict[str, Any] = {
         },
         {
             "idx": 4, "key": "walking_in",
-            "name": "Walking in",
+            "name": "Walk in",
             "transition": "A one-page brief in your hand.",
         },
     ],
 }
 
 
-# Stub definitions for the remaining 4 Plays.
 _PLAY_STUBS = [
-    ("monthly_performance", "Monthly Performance Play", "executive",
+    ("monthly_performance", "Monthly Performance Workflow", "executive",
      "A read on where you stand and what deserves attention."),
-    ("team_reporting", "Team Reporting Play", "executive",
+    ("team_reporting", "Team Reporting Workflow", "executive",
      "Set a reporting rhythm with your team and watch it land."),
-    ("cross_board_pulse", "Cross-Board Pulse Play", "ned",
+    ("cross_board_pulse", "Cross-Board Pulse Workflow", "ned",
      "What AKKI is seeing across your boards, and what to do about it."),
-    ("open_threads", "Open Threads Play", "ned",
+    ("open_threads", "Open Threads Workflow", "ned",
      "Every loose end from the last meeting, and your follow-ups."),
 ]
 

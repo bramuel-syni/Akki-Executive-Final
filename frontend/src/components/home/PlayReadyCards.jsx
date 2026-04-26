@@ -52,7 +52,7 @@ export default function PlayReadyCards() {
             data-testid={`home-play-ready-${p.id}`}
           >
             <p className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--accent)] font-mono mb-2 flex items-center gap-2">
-              Play ready
+              Ready for you
               <span className="text-[var(--muted)]/60">·</span>
               <span className="text-[var(--ink)]">{p.name}</span>
             </p>
@@ -68,7 +68,7 @@ export default function PlayReadyCards() {
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white text-[13px] rounded-md"
                 data-testid={`home-play-ready-open-${p.id}`}
               >
-                Open the Play →
+                Open the workflow →
               </Link>
               <button
                 onClick={() => dismiss(p.id)}

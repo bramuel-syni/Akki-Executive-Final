@@ -42,103 +42,31 @@ function ObservationLead({ kicker, headline, body }) {
 }
 
 // ---------------------------------------------------------------------------
-// Stage 0 — Setting the cycle
+// Stage 0 — Consolidate and review submissions (combines old Setting + Gaps)
 // ---------------------------------------------------------------------------
-function StageSettingCycle({ play, contextId, onAdvance, onPatchState }) {
-  const [schedule, setSchedule] = useState(undefined);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await api.get(`/contexts/${contextId}/cycle/schedule`);
-        setSchedule(data.schedule);
-      } catch { setSchedule(null); }
-    })();
-  }, [contextId]);
-
-  const ready = !!schedule?.enabled;
-
-  return (
-    <StageFrame
-      left={
-        <>
-          <ObservationLead
-            headline="Decide who reports, and how often."
-            body="Your team's submissions feed the rest of the Play. AKKI will dispatch checklists on your cadence; you gate every send."
-          />
-          <div className="space-y-4 max-w-xl">
-            <div className="bg-white border border-[var(--rule)] rounded-md p-5 flex items-start gap-3" data-testid="stage-cycle-card">
-              <CalendarClock className="w-4 h-4 text-[var(--accent)] mt-1" strokeWidth={1.7} />
-              <div className="flex-1">
-                <p className="akki-serif text-[16px] text-[var(--ink)] mb-1">Reporting cadence</p>
-                {schedule === undefined ? (
-                  <p className="text-[13px] text-[var(--muted)]">Reading your context…</p>
-                ) : ready ? (
-                  <p className="text-[13px] text-[var(--deep)]">
-                    <strong className="text-[var(--ink)] capitalize">{schedule.cadence}</strong> on <strong className="text-[var(--ink)] uppercase">{schedule.weekday}</strong>.
-                    Template: <em>"{schedule.cycle_name_template}"</em>.
-                    Next run: {new Date(schedule.next_run_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}.
-                  </p>
-                ) : (
-                  <p className="text-[13px] text-[var(--muted)] italic">No recurring cadence yet. Set one, or run this cycle manually.</p>
-                )}
-                <Link
-                  to="/app/cycle"
-                  className="text-[12px] text-[var(--accent)] hover:underline mt-2 inline-flex items-center gap-1"
-                  data-testid="stage-cycle-link"
-                >
-                  Open Cycle to {ready ? "edit" : "set up"} <ExternalLink className="w-3 h-3" />
-                </Link>
-              </div>
-            </div>
-            <Button onClick={onAdvance} className="bg-[var(--chrome)] hover:bg-[var(--chrome)]/90 text-white" data-testid="stage-advance-btn">
-              {ready ? "Move on to where the gaps are" : "Skip ahead — I'll do it manually"} <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-            </Button>
-          </div>
-        </>
-      }
-      right={
-        <>
-          <p className="akki-overline mb-3">What this stage covers</p>
-          <ul className="space-y-3 text-[13px] text-[var(--deep)] leading-relaxed">
-            <li><strong className="text-[var(--ink)]">Reportees</strong> — who answers each cycle.</li>
-            <li><strong className="text-[var(--ink)]">Question bank</strong> — what AKKI asks them.</li>
-            <li><strong className="text-[var(--ink)]">Schedule</strong> — when to dispatch.</li>
-            <li><strong className="text-[var(--ink)]">Committee scope</strong> — narrow if you chair Audit or Risk.</li>
-          </ul>
-          <p className="text-[11.5px] text-[var(--muted)] italic mt-6 leading-relaxed">
-            Set this once. AKKI will draft each cycle for your approval; nothing leaves until you say so.
-          </p>
-        </>
-      }
-    />
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Stage 1 — Where the gaps are
-// ---------------------------------------------------------------------------
-function StageGaps({ contextId, onAdvance }) {
+function StageConsolidateAndReview({ play, contextId, onAdvance }) {
   const [submissions, setSubmissions] = useState([]);
   const [checklists, setChecklists] = useState([]);
+  const [schedule, setSchedule] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
-        const [s, c] = await Promise.all([
+        const [s, c, sc] = await Promise.all([
           api.get(`/contexts/${contextId}/submissions`),
           api.get(`/contexts/${contextId}/checklists`),
+          api.get(`/contexts/${contextId}/cycle/schedule`).catch(() => ({ data: { schedule: null } })),
         ]);
         setSubmissions(s.data.submissions || []);
         setChecklists(c.data.checklists || []);
+        setSchedule(sc.data.schedule);
       } catch (e) { toast.error(apiErrorMessage(e)); }
       finally { setLoading(false); }
     })();
   }, [contextId]);
 
   const dispatched = checklists.filter((c) => c.status === "dispatched");
-  const responded = checklists.filter((c) => c.status === "responded");
   const submittedNames = new Set(submissions.map((s) => s.reportee_name));
   const outstanding = dispatched.filter((c) => !submittedNames.has(c.reportee_name));
 
@@ -147,8 +75,10 @@ function StageGaps({ contextId, onAdvance }) {
       left={
         <>
           <ObservationLead
-            headline="Your team's submissions are in. Time to look at what's there."
-            body="AKKI doesn't fill the gaps for you. It tells you where they are."
+            headline="Consolidate and review what's come in."
+            body={schedule?.enabled
+              ? "Your reporting cadence is set. AKKI is showing you what's arrived and what's still out."
+              : "Pull in your team's reports. AKKI tracks who's submitted and what's still missing."}
           />
           {loading ? <p className="text-[12px] uppercase tracking-widest text-[var(--muted)]">Reading the inbox…</p> : (
             <div className="space-y-6 max-w-2xl">
@@ -170,7 +100,7 @@ function StageGaps({ contextId, onAdvance }) {
               <section data-testid="stage-gaps-outstanding">
                 <p className="akki-overline mb-2 text-amber-700">Still outstanding ({outstanding.length})</p>
                 {outstanding.length === 0 ? (
-                  <p className="text-[13px] text-[var(--muted)] italic">Everyone has reported.</p>
+                  <p className="text-[13px] text-[var(--muted)] italic">{dispatched.length === 0 ? "No checklists out — set a cadence first." : "Everyone has reported."}</p>
                 ) : (
                   <ul className="space-y-1.5">
                     {outstanding.map((c) => (
@@ -183,7 +113,7 @@ function StageGaps({ contextId, onAdvance }) {
                 )}
               </section>
               <Button onClick={onAdvance} className="bg-[var(--chrome)] hover:bg-[var(--chrome)]/90 text-white" data-testid="stage-advance-btn">
-                Consolidate what's here <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                Draft from these submissions <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
               </Button>
             </div>
           )}
@@ -191,12 +121,17 @@ function StageGaps({ contextId, onAdvance }) {
       }
       right={
         <>
-          <p className="akki-overline mb-3">Working set</p>
-          <p className="text-[13px] text-[var(--deep)] leading-relaxed mb-4">
-            <strong>{submissions.length}</strong> submissions, <strong>{responded.length}</strong> responded checklists, <strong>{outstanding.length}</strong> still out.
-          </p>
-          <Link to="/app/cycle" className="text-[12.5px] text-[var(--accent)] hover:underline inline-flex items-center gap-1" data-testid="stage-gaps-open-inbox">
-            Open the full inbox <ExternalLink className="w-3 h-3" />
+          <p className="akki-overline mb-3">Cadence</p>
+          {schedule?.enabled ? (
+            <p className="text-[13px] text-[var(--deep)] leading-relaxed mb-3">
+              <strong className="text-[var(--ink)] capitalize">{schedule.cadence}</strong> on <strong className="text-[var(--ink)] uppercase">{schedule.weekday}</strong>.
+              Next run: {new Date(schedule.next_run_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}.
+            </p>
+          ) : (
+            <p className="text-[13px] text-[var(--muted)] italic mb-3">No recurring cadence set.</p>
+          )}
+          <Link to="/app/cycle" className="text-[12.5px] text-[var(--accent)] hover:underline inline-flex items-center gap-1" data-testid="stage-cycle-link">
+            Open Cycle to manage <ExternalLink className="w-3 h-3" />
           </Link>
         </>
       }
@@ -426,8 +361,7 @@ function StageDone({ play }) {
 
 export function boardPackStageView() {
   return [
-    StageSettingCycle,
-    StageGaps,
+    StageConsolidateAndReview,
     StageConsolidation,
     StageReview,
     StageDistribution,

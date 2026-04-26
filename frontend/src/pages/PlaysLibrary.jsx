@@ -50,10 +50,10 @@ export default function PlaysLibrary() {
     <AppShell>
       <div className="max-w-[1200px] mx-auto px-8 py-10">
         <header className="mb-10 akki-fade-up">
-          <p className="akki-overline mb-2 text-[var(--accent)]">Plays · Choreography for board work</p>
+          <p className="akki-overline mb-2 text-[var(--accent)]">Workflows · Choreography for board work</p>
           <h1 className="akki-greeting mb-2">Named journeys, not feature tours.</h1>
           <p className="akki-meta max-w-2xl">
-            A Play is a staged path through AKKI to a recognisable outcome —
+            A Workflow is a staged path through AKKI to a recognisable outcome —
             a board pack you've committed to, a meeting you've prepared for,
             a month you've actually closed. Pick one. AKKI handles the in-between.
           </p>

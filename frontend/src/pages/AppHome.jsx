@@ -15,6 +15,8 @@ import SandboxPackDrop from "@/components/sandbox/SandboxPackDrop";
 import ReviewInboxCard from "@/components/cycle/ReviewInboxCard";
 import PlaysInProgressStrip from "@/components/home/PlaysInProgressStrip";
 import PlayReadyCards from "@/components/home/PlayReadyCards";
+import QuickActions from "@/components/home/QuickActions";
+import InSummaryTiles from "@/components/home/InSummaryTiles";
 
 const CONFIDENCE_LABEL = { high: "High confidence", medium: "Medium confidence", low: "Low confidence" };
 
@@ -139,7 +141,7 @@ export default function AppHome() {
   return (
     <AppShell>
       {/* Fixed-height page: only inner content column scrolls */}
-      <div className="h-[calc(100vh-4rem)] max-w-[1280px] mx-auto px-8 grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-10 overflow-hidden">
+      <div className="h-[calc(100vh-4rem)] max-w-[1100px] mx-auto px-8 grid grid-cols-1 gap-10 overflow-hidden">
         {/* Main — sticky header + scrolling stream */}
         <div className="flex flex-col min-h-0 py-8">
           <div className="mb-6 akki-fade-up shrink-0">
@@ -162,18 +164,21 @@ export default function AppHome() {
                 renders outside sandbox contexts. */}
             <SandboxPackDrop onSignalsReady={load} />
 
-            {/* Auto-launched Plays the executive hasn't opened yet — these
-                are PLAY READY trigger cards. Renders nothing when there
-                are none, per the cadence rule of restraint over insistence. */}
+            {/* Auto-launched workflows the executive hasn't opened yet. */}
             <PlayReadyCards />
 
-            {/* Plays in progress — restrained chips that bring the executive
-                back to the active choreography. Renders nothing if no Plays
-                are active. */}
+            {/* Workflows in progress — restrained chips back into active flow. */}
             <PlaysInProgressStrip />
 
-            {/* Cross-context: any reports where this user is the current
-                pending reviewer. Renders only when there's actually one. */}
+            {/* Quick actions — three intent-anchored tiles that ARE the
+                workflows (start/resume Board Pack or Pre-Board at a
+                contextual stage). */}
+            <QuickActions />
+
+            {/* In summary — the numbers the user would scan first thing. */}
+            <InSummaryTiles />
+
+            {/* Cross-context review inbox card. */}
             <ReviewInboxCard />
 
             {/* Tab strip with a quiet scope toggle on the right.
@@ -452,40 +457,11 @@ export default function AppHome() {
           </div>
         </div>
 
-        {/* Companion rail */}
-        <aside className="hidden lg:block py-8 overflow-y-auto" data-testid="companion-rail">
-          <div className="space-y-8">
-            <div>
-              <p className="akki-overline mb-3">Your portfolio</p>
-              <div className="space-y-1 mb-2">
-                {contexts.slice(0, 6).map((c) => (
-                  <div key={c.id} className={`flex items-center gap-2 px-2 py-1.5 rounded-sm ${c.id === contextId ? "bg-[var(--cream-deep)]" : ""}`}>
-                    <Layers className={`w-3 h-3 shrink-0 ${c.id === contextId ? "text-[var(--accent)]" : "text-[var(--muted)]"}`} />
-                    <span className={`text-[13px] truncate ${c.id === contextId ? "text-[var(--ink)] font-medium" : "text-[var(--deep)]"}`}>{c.name}</span>
-                  </div>
-                ))}
-              </div>
-              <Link to="/app/contexts" className="akki-gesture text-[13px] ml-2">
-                My portfolio <ArrowRight className="w-3 h-3" />
-              </Link>
-            </div>
-
-            <div className="border-t border-[var(--rule)] pt-5">
-              <p className="akki-overline mb-3">Quick actions</p>
-              <div className="space-y-2">
-                <Link to="/app/workspace" className="flex items-center gap-2 text-[13px] text-[var(--deep)] hover:text-[var(--accent)]">
-                  <FileText className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} /> Upload pack
-                </Link>
-                <Link to="/app/highlights" className="flex items-center gap-2 text-[13px] text-[var(--deep)] hover:text-[var(--accent)]">
-                  <Sparkles className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} /> Generate signals
-                </Link>
-                <Link to="/app/briefings" className="flex items-center gap-2 text-[13px] text-[var(--deep)] hover:text-[var(--accent)]">
-                  <ScrollText className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} /> Compose briefing
-                </Link>
-              </div>
-            </div>
-          </div>
-        </aside>
+        {/* Companion rail removed — its portfolio + quick-actions content
+            now lives in the permanent right-side <PortfolioRail /> + the
+            on-page <QuickActions /> tiles. Keeping the grid column
+            structure unchanged would cause an empty gutter, so we let the
+            main content fill the row instead. */}
       </div>
 
       <ShareModal

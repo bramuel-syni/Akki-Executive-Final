@@ -18,6 +18,8 @@ import {
   FileText, CalendarClock,
 } from "lucide-react";
 import ReportsTab from "@/components/cycle/ReportsTab";
+import CycleTracker from "@/components/cycle/CycleTracker";
+import { Eye } from "lucide-react";
 
 const CATS = [
   "audit", "risk", "operational", "strategic",
@@ -843,9 +845,10 @@ export default function Cycle() {
           </p>
         </div>
 
-        <Tabs defaultValue="checklists" className="w-full">
+        <Tabs defaultValue="tracker" className="w-full">
           <TabsList className="bg-transparent border-b border-[var(--rule)] w-full justify-start h-auto p-0 rounded-none mb-8 overflow-x-auto">
             {[
+              ["tracker", "Tracker", Eye],
               ["checklists", "Checklists", Send],
               ["bank", "Question Bank", MessageCircleQuestion],
               ["reportees", "Reportees", Users],
@@ -861,6 +864,7 @@ export default function Cycle() {
               </TabsTrigger>
             ))}
           </TabsList>
+          <TabsContent value="tracker"><CycleTracker contextId={cid} /></TabsContent>
           <TabsContent value="checklists"><Checklists contextId={cid} /></TabsContent>
           <TabsContent value="bank"><QuestionBank contextId={cid} /></TabsContent>
           <TabsContent value="reportees"><Reportees contextId={cid} /></TabsContent>
