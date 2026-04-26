@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
+import { Sparkles } from "lucide-react";
 
 /**
  * Home stream — "PLAY READY" trigger cards for any auto-launched plays

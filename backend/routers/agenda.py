@@ -116,8 +116,10 @@ async def get_agenda_evolution(
     submitted_keys = set()
     sub_lookup = db.submissions.find({"context_id": context_id}, {"_id": 0, "reportee_id": 1, "checklist_id": 1})
     async for s in sub_lookup:
-        if s.get("checklist_id"): submitted_keys.add(s["checklist_id"])
-        if s.get("reportee_id"): submitted_keys.add(s["reportee_id"])
+        if s.get("checklist_id"):
+            submitted_keys.add(s["checklist_id"])
+        if s.get("reportee_id"):
+            submitted_keys.add(s["reportee_id"])
 
     async for c in cl_cursor:
         if c.get("id") in submitted_keys or c.get("reportee_id") in submitted_keys:

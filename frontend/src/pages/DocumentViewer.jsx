@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import CommentThread from "@/components/collab/CommentThread";
 import DocumentThread from "@/components/documents/DocumentThread";
+import DocumentEngagement from "@/components/documents/DocumentEngagement";
 import {
   ArrowLeft, Download, FileText, ShieldCheck, Loader2, List, AlertTriangle,
 } from "lucide-react";
@@ -74,6 +75,8 @@ export default function DocumentViewer() {
     try {
       const { data } = await api.get(`/contexts/${contextId}/documents/${docId}`);
       setDoc(data);
+      // Fire-and-forget read receipt; ignore failures.
+      api.post(`/contexts/${contextId}/documents/${docId}/view`).catch(() => {});
     } catch (e) {
       toast.error(apiErrorMessage(e));
     } finally {
@@ -238,6 +241,10 @@ export default function DocumentViewer() {
                 <FileText className="w-3 h-3" /> Ask about this document →
               </Link>
             </div>
+
+            {doc && !doc.error && (
+              <DocumentEngagement contextId={contextId} docId={doc.id} />
+            )}
           </aside>
         </div>
       </div>

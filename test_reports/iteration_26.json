@@ -1,0 +1,44 @@
+{
+  "summary": "Iter26 — Agenda Evolution + Document Engagement (read receipts, share, linked docs) + Home 50/50 layout + Cycle copy. Backend 9/9 PASS. Frontend critical flows GREEN: home-ready-row contains both AgendaEvolutionCard + PlayReadyCards children; DocumentEngagement panel renders all stat tiles (reads/shares/linked) + share modal opens, submits, and refreshes the share count live. Iter25 plays regression has 4 pre-existing failures unrelated to this batch (Plays→Workflows rename + /seen 405 + /read 404).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/contexts/{cid}/plays/{pid}/seen", "issue": "Returns 405 Method Not Allowed — pre-existing iter25 regression, not introduced by this batch."},
+      {"endpoint": "POST /api/contexts/{cid}/plays/{pid}/pre_board/read", "issue": "Returns 404 Not Found — pre-existing iter25 regression."},
+      {"endpoint": "GET play title", "issue": "Title 'Pre-Board Play' renamed to 'Pre-Board Workflow' — iter25 test_iter25_plays_slice2.py needs updating to match new copy."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "CycleTracker empty state", "issue": "When the context has no active reportees, the empty-state div is rendered WITHOUT data-testid='cycle-tracker' wrapper, so smoke tests on a fresh context can't assert tracker presence. The populated tracker (with 'Awaiting your sign-off' copy) is correct. Tuli CFO ctx falls into empty-state; switch to Tuli NED (fb4df969-3f17-4279-bf78-f07bb9e29650) to see populated copy.", "selector": "[data-testid='cycle-tracker']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter26_engagement.py",
+    "/app/test_reports/pytest/iter26.xml",
+    "/app/test_reports/pytest/iter26_regression.xml"
+  ],
+  "action_items": [
+    "(Optional) Add data-testid='cycle-tracker' to the CycleTracker empty-state branch (line 126 of CycleTracker.jsx) for testability.",
+    "(Out of scope for this batch) Fix iter25 plays regressions: /seen 405, /read 404, and the 'Pre-Board Play' → 'Pre-Board Workflow' rename — update test_iter25_plays_slice2.py to match new copy."
+  ],
+  "critical_code_review_comments": [
+    "agenda.py: clean composition over existing collections (reports/submissions/checklists/briefings) — no new model. Caps 'since_then' to 6 lines, sorts desc by 'at'. Good.",
+    "document_engagement.py: read-receipt dedupe via (doc_id, account_id, day) upsert is correct; owner views correctly excluded from unique_readers (line 168). Linked-docs walks ancestors via related_doc_id and descendants via inverse — handles cycle protection via seen_ids set.",
+    "DocumentEngagement.jsx: fire-and-forget POST /view on viewer mount + load on mount + reload after share submit. Modal closes onShared. Three Stat tiles use distinct data-testids (doc-eng-reads/shares/linked).",
+    "AppHome.jsx lines 170-173: 'home-ready-row' grid grid-cols-1 md:grid-cols-2 with both children as direct children — correct 50/50 layout.",
+    "CycleTracker.jsx line 134: explanation paragraph correctly says 'Awaiting your sign-off' (replaces ambiguous 'awaiting approval'). line 73: status label also 'Awaiting your sign-off'."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter26_engagement.py (NEW)"
+  ],
+  "success_rate": {"backend": "100% (9/9 new + 64/68 regression — 4 pre-existing iter25 failures unrelated to this batch)", "frontend": "~95% (home grid, doc engagement panel, share modal all verified live; cycle tracker copy verified by source — empty state on test ctx blocked live verification)"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Tests recorded TEST_share@example.com, TEST_uitest@example.com, TEST_uitest2@example.com, TEST_uitest3@example.com share entries on doc a90b82e3-3fa9-4a26-be0c-d63bdfc51909 in Tuli CFO ctx — share_count visible at 3+ in UI after submit.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All new iter26 endpoints work. The DocumentEngagement panel auto-refreshes share count after modal submit (verified visually showing '3' shares). To verify 'unique_readers' counting, log in as a non-owner member (admin@akki.ai must first be added as a member of Tuli CFO ctx) and POST /view; current Tuli CFO membership only includes Bramuel (owner), so unique_readers stays 0 in our tests — the exclusion logic is verified by absence of bramuel from readers[].",
+  "rca of the issue": "N/A — no new bugs in this batch's code. Iter25 regressions appear after a 'Plays' → 'Workflows' rename + handler refactor between iter25 testing and now; their fix is out of scope for this batch and the main agent should pick up test_iter25_plays_slice2.py separately."
+}

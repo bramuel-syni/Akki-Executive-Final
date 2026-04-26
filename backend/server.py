@@ -51,6 +51,7 @@ from routers import blog as blog_router  # noqa: E402
 from routers import billing as billing_router  # noqa: E402
 from routers import plays as plays_router  # noqa: E402
 from routers import agenda as agenda_router  # noqa: E402
+from routers import document_engagement as document_engagement_router  # noqa: E402
 
 
 logger = logging.getLogger("akki")
@@ -86,6 +87,7 @@ app.include_router(blog_router.router)
 app.include_router(billing_router.router)
 app.include_router(plays_router.router)
 app.include_router(agenda_router.router)
+app.include_router(document_engagement_router.router)
 
 
 # -----------------------------------------------------------------------------
@@ -135,6 +137,13 @@ async def on_startup():
     await db.shares.create_index("id", unique=True)
     await db.shares.create_index([("shared_with_account_id", 1), ("created_at", -1)])
     await db.shares.create_index([("shared_by_account_id", 1), ("created_at", -1)])
+
+    # Document engagement indexes
+    await db.document_views.create_index(
+        [("doc_id", 1), ("account_id", 1), ("day", 1)], unique=True,
+    )
+    await db.document_views.create_index([("doc_id", 1), ("viewed_at", -1)])
+    await db.document_shares.create_index([("doc_id", 1), ("created_at", -1)])
 
     # Backfill: ensure every committee on every context has a stable id.
     async for c in db.contexts.find(
