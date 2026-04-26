@@ -9,7 +9,7 @@ import {
 import { toast } from "sonner";
 import {
   FileText, Send, Loader2, Plus, Trash2, ArrowRight, CheckCircle2,
-  Clock, Users, RotateCcw, ShieldCheck, Sparkles, Download,
+  Clock, Users, RotateCcw, ShieldCheck, Sparkles, Download, Layers,
 } from "lucide-react";
 import PolishDiffModal from "@/components/cycle/PolishDiffModal";
 
@@ -282,6 +282,24 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
+  const onDownloadDeck = async () => {
+    try {
+      const resp = await api.get(
+        `/contexts/${contextId}/reports/${report.id}/export.deck.pdf`,
+        { responseType: "blob" },
+      );
+      const url = URL.createObjectURL(new Blob([resp.data], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(report.title || "report").replace(/[^a-zA-Z0-9-_ ]/g, "_").slice(0, 60)}_deck.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Board deck downloaded.");
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+
   return (
     <>
     <Dialog open={open} onOpenChange={(o) => {
@@ -383,9 +401,14 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
           <Button variant="outline" onClick={onClose} className="border-[var(--rule)]">Close</Button>
           {/* PDF available at any non-trivial state */}
           {report.status !== "withdrawn" && (
-            <Button onClick={onDownloadPdf} variant="outline" className="border-[var(--rule)]" data-testid="report-pdf-btn">
-              <Download className="w-3.5 h-3.5 mr-1.5" /> Download PDF
-            </Button>
+            <>
+              <Button onClick={onDownloadPdf} variant="outline" className="border-[var(--rule)]" data-testid="report-pdf-btn">
+                <Download className="w-3.5 h-3.5 mr-1.5" /> Download PDF
+              </Button>
+              <Button onClick={onDownloadDeck} variant="outline" className="border-[var(--rule)]" data-testid="report-deck-btn" title="One-section-per-slide landscape PDF for projecting in the boardroom">
+                <Layers className="w-3.5 h-3.5 mr-1.5" /> Board deck
+              </Button>
+            </>
           )}
           {canEdit && (
             <Button onClick={onPolish} disabled={polishing || busy} variant="outline" className="border-[var(--rule)]" data-testid="report-polish-btn">

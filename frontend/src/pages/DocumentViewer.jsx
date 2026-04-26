@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import CommentThread from "@/components/collab/CommentThread";
 import DocumentThread from "@/components/documents/DocumentThread";
 import DocumentEngagement from "@/components/documents/DocumentEngagement";
+import DocLensRail from "@/components/documents/DocLensRail";
 import {
   ArrowLeft, Download, FileText, ShieldCheck, Loader2, List, AlertTriangle,
 } from "lucide-react";
@@ -243,7 +244,10 @@ export default function DocumentViewer() {
             </div>
 
             {doc && !doc.error && (
-              <DocumentEngagement contextId={contextId} docId={doc.id} />
+              <>
+                <DocLensRail contextId={contextId} doc={doc} />
+                <DocumentEngagement contextId={contextId} docId={doc.id} />
+              </>
             )}
           </aside>
         </div>

@@ -56,6 +56,7 @@ export default function LensRoom() {
   const cid = activeContext?.id;
   const [params] = useSearchParams();
   const initialSignalId = params.get("signal");
+  const initialSessionId = params.get("session");
 
   const [mode, setMode] = useState("stress");
   const [catalog, setCatalog] = useState([]);
@@ -87,11 +88,23 @@ export default function LensRoom() {
       setCatalog(c.data || []);
       setRuns(r.data || []);
       setCoachSessions(s.data || []);
+      // If a ?session=… is present, auto-open it in coach mode.
+      if (initialSessionId && !activeSession) {
+        const found = (s.data || []).find((x) => x.id === initialSessionId);
+        if (found) {
+          setMode("coach");
+          try {
+            const { data: full } = await api.get(`/contexts/${cid}/lens/coach/sessions/${initialSessionId}`);
+            setActiveSession(full);
+            setLens(full.lens || "first_principles");
+          } catch { /* ignore — session may have been archived */ }
+        }
+      }
       if (initialSignalId && (r.data || []).length > 0 && !selectedRun) {
         setSelectedRun(r.data[0]);
       }
     } catch (e) { toast.error(apiErrorMessage(e)); }
-  }, [cid, initialSignalId, selectedRun]);
+  }, [cid, initialSignalId, initialSessionId, activeSession, selectedRun]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setSelectedRun(null); setActiveSession(null); }, [cid]);
 

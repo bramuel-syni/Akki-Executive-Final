@@ -102,39 +102,9 @@ function BriefingViewer({ briefing, onArchive, onDraftNotes, notesDrafting, onSh
         <div className="flex items-baseline justify-between gap-4 mb-3">
           <p className="akki-overline">PRIVATE · AKKI BRIEFING · v{briefing.version}</p>
           <div className="flex items-center gap-1">
-            {/* Draft speaking notes — LLM writes 3 spoken-voice bullets per
-                item, cached onto briefing.items[i].speaking_notes. Subsequent
-                Board-deck exports auto-embed them under each slide. */}
-            <button
-              type="button"
-              onClick={() => onDraftNotes && onDraftNotes(briefing)}
-              disabled={notesDrafting}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs text-[var(--accent)] border border-[var(--accent)]/30 hover:bg-[var(--accent-soft)] hover:border-[var(--accent)] transition-colors disabled:opacity-60 disabled:cursor-progress"
-              data-testid="briefing-draft-notes-btn"
-              title={briefing.speaking_notes_at
-                ? "Re-draft the speaking notes under each slide"
-                : "Write what you'd actually say when each slide is on screen"}
-            >
-              {notesDrafting
-                ? <><Loader2 className="w-3 h-3 animate-spin" /> Drafting…</>
-                : <><Sparkles className="w-3 h-3" /> {briefing.speaking_notes_at ? "Re-draft notes" : "Draft speaking notes"}</>}
-            </button>
-            <a
-              href={downloadUrl("board_deck")} target="_blank" rel="noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs text-white bg-[var(--accent)] hover:bg-[var(--accent)]/90 transition-colors"
-              data-testid="briefing-export-board-deck"
-              title="Landscape slide-deck PDF — one slide per signal, built to present"
-            >
-              <Download className="w-3 h-3" /> Board deck
-              {briefing.speaking_notes_at && (
-                <span
-                  className="ml-1 text-[9px] uppercase tracking-wider bg-white/25 px-1 py-0.5 rounded"
-                  data-testid="briefing-deck-notes-badge"
-                >
-                  + notes
-                </span>
-              )}
-            </a>
+            {/* Briefing slim-down (iter32): "Draft speaking notes" and
+                "Board deck" buttons are migrated to Reports. The briefing
+                stays as a one-pager — PDF + email send only. */}
             <a
               href={downloadUrl("pdf")} target="_blank" rel="noreferrer"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs text-slate-700 border border-[#E1E6ED] hover:bg-slate-50 hover:border-[var(--accent)]/50 transition-colors"

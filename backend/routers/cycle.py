@@ -19,6 +19,7 @@ Multi-tier compilation (CFO → CEO → Board) is reserved for Phase 3.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
@@ -1117,6 +1118,72 @@ async def export_report_pdf(
     pdf_bytes = render_report_pdf(rec, context_name=ctx.get("name") or "")
     safe_title = "".join(c if c.isalnum() or c in "-_ " else "_" for c in (rec.get("title") or "report"))[:60].strip().replace(" ", "_")
     filename = f"{safe_title}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/contexts/{context_id}/reports/{rid}/export.deck.pdf")
+async def export_report_deck_pdf(
+    context_id: str,
+    rid: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Landscape slide-deck export of a finalised report — one page per
+    section, designed to be projected. Reuses the briefings_service deck
+    renderer by mapping the report's H2 sections to deck items.
+
+    Iter32 implementation: minimal viable deck (cover + sections + sources).
+    Future polish: rich speaker notes per slide and section-level evidence.
+    """
+    rec = await _resolve_report_access(context_id=context_id, rid=rid, current=current)
+    if rec.get("status") not in ("finalised", "in_review", "draft"):
+        raise HTTPException(status_code=409, detail=f"Cannot export a {rec.get('status')} report.")
+
+    from fastapi.responses import Response
+    from briefings_service import render_board_deck_pdf
+
+    ctx = await db.contexts.find_one(
+        {"id": context_id}, {"_id": 0, "name": 1},
+    ) or {}
+
+    # Map the report into the briefing-shape the deck renderer expects.
+    # Sections are split on H2 (## ) headings; each becomes one slide.
+    body_md = (rec.get("content") or rec.get("body") or "").strip()
+    sections: List[Dict[str, Any]] = []
+    chunks = re.split(r"\n##\s+", body_md, flags=re.MULTILINE)
+    intro = chunks[0].strip() if chunks else ""
+    for ch in chunks[1:]:
+        head, _, rest = ch.partition("\n")
+        sections.append({
+            "headline": head.strip()[:120] or "Untitled section",
+            "evidence": rest.strip()[:1400],
+            "sharpest_question": "",
+            "citations": [],
+        })
+
+    pseudo_briefing = {
+        "title": rec.get("title") or "Report deck",
+        "context_name": ctx.get("name") or "",
+        "version": rec.get("version") or 1,
+        "created_at": rec.get("updated_at") or rec.get("created_at"),
+        "opening": intro[:1500],
+        "items": sections or [{
+            "headline": "Report",
+            "evidence": body_md[:1400] or "(no content)",
+            "sharpest_question": "",
+            "citations": [],
+        }],
+        "next_steps": rec.get("next_steps") or "",
+        "sources": [],
+        "speaking_notes_at": None,
+    }
+
+    pdf_bytes = render_board_deck_pdf(pseudo_briefing, docs_by_id={})
+    safe_title = "".join(c if c.isalnum() or c in "-_ " else "_" for c in (rec.get("title") or "report"))[:60].strip().replace(" ", "_")
+    filename = f"{safe_title}_deck.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

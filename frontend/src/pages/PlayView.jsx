@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { ChevronRight, Pause, X, Play as PlayIcon, Loader2 } from "lucide-react";
+import { ChevronRight, Pause, X, Play as PlayIcon, Loader2, Eye } from "lucide-react";
 
 import { boardPackStageView } from "@/components/plays/BoardPackStages";
 import { preBoardStageView } from "@/components/plays/PreBoardStages";
@@ -81,7 +81,7 @@ function StagesPanel({ open, onClose, play, onJump }) {
   );
 }
 
-function PlayHeader({ play, transitioning, onOpenStages, onPause, onResume, onExit }) {
+function PlayHeader({ play, transitioning, onOpenStages, onPause, onResume, onExit, onCoachMe }) {
   const stage = play.stages?.[play.current_stage];
   return (
     <div
@@ -99,6 +99,14 @@ function PlayHeader({ play, transitioning, onOpenStages, onPause, onResume, onEx
           </p>
         </div>
       </div>
+      <button
+        onClick={onCoachMe}
+        className="text-[12px] text-[var(--accent)] hover:text-[var(--accent)]/80 inline-flex items-center gap-1 underline-offset-4 hover:underline"
+        data-testid="play-coach-me"
+        title="Open a Lens coaching thread for this stage"
+      >
+        <Eye className="w-3 h-3" /> Coach me
+      </button>
       <button
         onClick={onOpenStages}
         className="text-[12px] text-[var(--deep)] hover:text-[var(--accent)] underline-offset-4 hover:underline"
@@ -221,6 +229,29 @@ export default function PlayView() {
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
+  const onCoachMe = async () => {
+    if (!play || !contextId) return;
+    const stage = play.stages?.[play.current_stage];
+    const subject = `[${play.name}] ${stage?.name || "this decision"}`;
+    try {
+      const seedLens = play.play_type === "pre_board" ? "systems_thinking" : "first_principles";
+      const { data } = await api.post(`/contexts/${contextId}/lens/coach/sessions`, {
+        lens: seedLens,
+        subject: subject.slice(0, 180),
+      });
+      const kickoff = `I'm working through "${stage?.name}" inside the ${play.name} workflow. The outcome we're aiming for: ${play.outcome || "—"}. What should I be thinking about right now?`;
+      await api.post(
+        `/contexts/${contextId}/lens/coach/sessions/${data.id}/messages`,
+        { lens: seedLens, message: kickoff },
+        { timeout: 90000 },
+      ).catch(() => {});
+      toast.success("Coach session opened.");
+      navigate(`/app/lens?session=${data.id}`);
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    }
+  };
+
   const patchState = useCallback(async (patch) => {
     if (!play || !contextId) return;
     const { data } = await api.patch(`/contexts/${contextId}/plays/${play.id}/state`, { state: patch });
@@ -246,6 +277,7 @@ export default function PlayView() {
         onPause={onPause}
         onResume={onResume}
         onExit={onExit}
+        onCoachMe={onCoachMe}
       />
       <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-0 min-h-[calc(100vh-12rem)]" data-testid="play-body">
         {StageComponent ? (
