@@ -663,6 +663,45 @@ simplification audit.
 - Demo seed `/app/backend/scripts/seed_iter26_demo.py` — 16 signals, 4 reportees,
   6 questions, 2 checklists (1 responded, 1 outstanding), 3 briefings, 1 board pack.
 
+## §13.x Agenda Evolution + Document Engagement (2026-04-26, iter26b)
+
+### Agenda Evolution card on Home
+- New `routers/agenda.py` → `GET /api/contexts/{cid}/agenda-evolution`. Composes
+  from existing collections (last committed/published report → "the meeting",
+  submissions/checklists/reports/briefings since → "since then" narrative,
+  next dispatched checklist → "next up"). Caps the narrative at 6 lines.
+- New `components/home/AgendaEvolutionCard.jsx` — sister card to "Ready for you".
+  Editorial (cream + Calendar icon, no progress bars).
+- `AppHome.jsx` lines 170-173: `home-ready-row` grid (`grid-cols-1 md:grid-cols-2`)
+  pairs `PlayReadyCards` + `AgendaEvolutionCard` 50/50.
+- `PlayReadyCards.jsx` now renders an empty placeholder (`home-play-ready-empty`)
+  when no auto-launched workflow is waiting, so the grid doesn't collapse.
+- `CycleTracker.jsx` copy: "awaiting approval" → "Awaiting your sign-off" with a
+  full explanation paragraph at the top of the table (line 132-135).
+
+### Document Engagement Metrics
+- New `routers/document_engagement.py` with three endpoints:
+  - `POST /contexts/{cid}/documents/{did}/view` — read receipt, deduped per-account
+    per-UTC-day (upsert on `(doc_id, account_id, day)`). Owner views are flagged
+    but excluded from `unique_readers`.
+  - `POST /contexts/{cid}/documents/{did}/share` (body: `{to_email, to_name?, message?}`)
+    — records a share intent in `document_shares`.
+  - `GET /contexts/{cid}/documents/{did}/engagement` — returns
+    `{view_count, unique_readers, readers[], share_count, shares[], linked_count,
+    linked_documents[]}`. Linked = ancestors (via `related_doc_id`) + descendants.
+- New `components/documents/DocumentEngagement.jsx` panel in the DocumentViewer
+  outline rail. Three stat tiles (reads/shares/linked), Read-by/Shared-with/Linked
+  lists, and a "Share by email" CTA → in-app modal. Auto-refreshes after submit.
+- `DocumentViewer.jsx` fires `POST /view` on viewer mount.
+- New indexes (server.py startup): `document_views` unique on `(doc_id, account_id, day)`
+  + secondary on `(doc_id, viewed_at desc)`; `document_shares` on `(doc_id, created_at desc)`.
+
+### Tests
+- 9/9 new pytests in `test_iter26_engagement.py` GREEN. iter26 frontend critical
+  flows verified live (50/50 grid, doc engagement panel, share modal submit).
+
 ### Open / deferred — Slice 4+
-- Document distribution/engagement: read receipts, share counter, linked-docs map.
+- Document distribution/engagement: ~~read receipts~~ ✅ ~~share counter~~ ✅
+  ~~linked-docs map~~ ✅ — DONE iter26b. SMTP send for share recipients (deferred).
 - NED document evolution chain: thread pack → questions → answers → follow-up docs.
+- Monthly Performance Workflow + Cross-Board Pulse Workflow (need §4 Monitor hooks).

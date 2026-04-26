@@ -123,7 +123,7 @@ export default function CycleTracker({ contextId }) {
   }
 
   if (rows.length === 0) {
-    return <div className="bg-white border border-[var(--rule)] rounded-lg p-8 text-[13px] text-[var(--muted)] italic">No active reportees on this context yet. Add one in the Reportees tab.</div>;
+    return <div className="bg-white border border-[var(--rule)] rounded-lg p-8 text-[13px] text-[var(--muted)] italic" data-testid="cycle-tracker">No active reportees on this context yet. Add one in the Reportees tab.</div>;
   }
 
   return (
