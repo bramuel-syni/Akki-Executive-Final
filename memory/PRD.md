@@ -819,3 +819,57 @@ view (expectation list + score + probability).
 - Influence Map (still open).
 - NED document evolution chain (still open).
 - target_date normalization to ISO month for proper sort order.
+
+## §4 Monitor v2.1 + Landing rewrite (2026-04-26, iter29)
+
+### Score history sparkline (improvement suggestion shipped)
+- `strategic_goals` rows now carry `score_history: [{score, recorded_at}]`,
+  capped at the last 12 entries.
+- `POST /strategic-goals` seeds one history point when `current_score` is set.
+- `PATCH /strategic-goals/{id}` appends a history point only when
+  `current_score` actually changes value (no churn on identical updates).
+- `POST /strategic-goals/extract` seeds history on each LLM-extracted goal.
+- New `components/monitor/Sparkline.jsx` — pure-SVG 60×20 trend line, stroke
+  colour-keyed to the latest score (green ≥70, amber 40-69, red <40).
+  Renders an em-dash placeholder when <2 points exist.
+- `StrategicGoalsPanel.GoalRow` wraps `ScoreDial + Sparkline` in a
+  `goal-score-block-{id}` flex column so the trend sits beneath the score.
+
+### Landing rewrite — direct, executive, creative-director voice
+- New headline: "AKKI reads the pack / so you can **read the room.**"
+- Old prose paragraph replaced with a numbered three-bullet explainer:
+  - 01 — Track strategic goals against where you actually are. Not where the deck says.
+  - 02 — Consolidate your team's submissions into board-ready reports. Without chasing.
+  - 03 — Cite every number to the page it came from. No unsourced claims.
+- Primary CTA: "See it on your sector in 60 seconds" (was "Try AKKI in 60 seconds").
+- Tightened first-run, audience, rubric, and closing copy throughout.
+
+### Photo replacement — non-human editorial imagery
+- Hero: open historical pages on a desk (1532153975070).
+- Strip 1: empty boardroom with leather chairs (1497366216548) — "The room you walk into."
+- Strip 2: cathedral-style library (1481627834876) — "Every claim cites a document."
+- Strip 3: neoclassical columns at dusk (1521587760476) — "Built for institutions that endure."
+- All photos use a `sepia(0.2) saturate(0.85) contrast(1.05)` filter to
+  stay inside the cream/oxblood palette without dominating.
+
+### P2 polish shipped
+- ExtractFromDocModal now shows a friendly toast.message when the LLM
+  returns 0 goals: "AKKI couldn't find board-level goals in that document.
+  Try a strategic plan, three-year roadmap, or a board OKR pack." Modal
+  stays open so the user can pick a different doc.
+- Monitor: `monitor-fn-nudge` inline banner appears when an executive's
+  `account.preferences.executive_function` is unset, prompting a one-click
+  function pick. Auto-dismisses once set.
+
+### Tests
+- 11/11 new pytests in `test_iter29_score_history.py` GREEN. Frontend
+  critical flows 100% verified live.
+
+### Open / deferred — Slice 7+
+- **NED document evolution chain** (still open) — thread pack → questions
+  → answers → follow-up docs.
+- **Influence Map** (still open) — week-over-week reading momentum on every
+  doc + "going dark" signals on key decision-makers.
+- **SMTP send for `document_shares`** (still open) — currently records
+  intent only; no email actually goes out.
+- target_date ISO normalization for proper sort order.
