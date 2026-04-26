@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import Sparkline from "@/components/monitor/Sparkline";
 import {
   Target, Sparkles, FileText, ChevronRight, ChevronDown, Loader2, X,
-  TrendingUp, AlertTriangle, CheckCircle2, Pencil, Plus,
+  TrendingUp, AlertTriangle, CheckCircle2, Plus,
 } from "lucide-react";
 
 /**

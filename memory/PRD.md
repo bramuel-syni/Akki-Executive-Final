@@ -984,12 +984,56 @@ frontend critical claims).
   GET tightened post-review (now 404s correctly).
 
 ### Open / deferred — Slice 8+
-- **Briefing slim-down phase 2** — actually move board-deck PDF + footnotes
-  out of /briefings into Reports.
-- **Lens chips on Document Viewer** (improvement) — read any section
-  through a chosen lens. Now feasible with the new coach engine.
+- **Movable / draggable home cards** — user feedback iter33; deferred
+  (low-impact relative to the rest of the iter33 batch and risk of
+  breaking the InSummaryTiles scan order). Re-pickable.
 - **Learn refresh agent** — periodic agent that pulls fresh exec-grade
   primary-source content. Best-practice protocol still pending.
 - **NED document evolution chain** (still open).
 - **Influence Map** (still open).
 - target_date ISO sort.
+
+## Iter33 — User feedback batch (Apr 2026)
+9 page redesigns shipped in one batch, 7/7 backend + 11/11 frontend
+verified by testing agent (`/app/test_reports/iteration_33.json`):
+- **Lens** — renamed kicker to "In the Lens"; replaced the cluttered top
+  rail with a single horizontal picker (Lens dropdown · Test-us dropdown
+  · Apply); single textarea labelled by what the user is testing.
+- **Home** — InSummaryTiles moved to TOP for at-a-glance scan; fixed
+  signal breakdown bug (was bucketing on s.severity which doesn't
+  exist; now buckets on s.type → risk/opp/gap); consolidated
+  PlayReadyCards + AgendaEvolutionCard + PlaysInProgressStrip +
+  QuickActions into one tabbed `<WorkflowsHub />` so the page no longer
+  reads as walls of text.
+- **Documents/Journal** — replaced upload chalkboard with a stats hero
+  (`<DocumentJournalStats />`) showing total / trust split / extracted;
+  upload drawer auto-collapses when docs exist; selecting a document
+  generates an AKKI summary in the right rail
+  (`<DocumentSummaryPanel />`) with TL;DR + What matters + Walk in
+  asking. New endpoint
+  `POST /api/contexts/{cid}/documents/{did}/summary` (cached on the
+  doc record; ?refresh=true bypasses).
+- **Signals** — header copy changed to "Risks. Opportunities. Gaps.";
+  decorative donut replaced by `<HighlightsStats />` carrying actual
+  informational mass (% breakdown bars + 14-day volume sparkline +
+  confidence split); generator collapsed to a single quiet line.
+- **Briefing** — added a `briefing-journey` block at the top of every
+  briefing answering Before / During / After (what this is about · cycle
+  & company · what to do once briefed).
+- **Compose Report** — new optional `description` field
+  (`compose-description-input`) lets the author tell AKKI the angle;
+  surfaced as a quoted "What the author asked for" header at the top of
+  the starter draft. Backend persists the field on the report record.
+- **Simulate** — input-first redesign: hero explains hypothesis testing
+  in two lines, journey strip numbers the 01/02/03 input → run → output
+  flow, large input card is the obvious thing to use, starters card
+  shows when input is empty.
+- **Monitor** — renamed Score → Performance Score and Probability →
+  Success Probability; aligned the two dials on the same horizontal
+  line with the sparkline beneath spanning both; removed the edit
+  pencil (the score is machine-generated, not user-editable).
+- **Cycle** — tab order reorganised around the 4-step spine: Overview ·
+  1·Your team · 2·Question bank · 3·Send checklists · 4·Receive
+  submissions · 5·Consolidate & send up. Header copy "Receive ·
+  Consolidate · Send up." reinforces the spine.
+
