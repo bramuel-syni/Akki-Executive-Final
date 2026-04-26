@@ -185,18 +185,36 @@ export default function PlayView() {
   }, [play, contextId]);
 
   const onPause = async () => {
-    const { data } = await api.post(`/contexts/${contextId}/plays/${play.id}/pause`);
-    setPlay(data.play);
-    toast.message("Paused. Pick up where you left off.");
+    if (!play || !contextId) return;
+    setPlay((prev) => prev ? { ...prev, status: "paused" } : prev); // optimistic
+    try {
+      const { data } = await api.post(`/contexts/${contextId}/plays/${play.id}/pause`);
+      setPlay(data.play);
+      toast.message("Paused. Pick up where you left off.");
+    } catch (e) {
+      // rollback
+      setPlay((prev) => prev ? { ...prev, status: "active" } : prev);
+      toast.error(apiErrorMessage(e));
+    }
   };
   const onResume = async () => {
-    const { data } = await api.post(`/contexts/${contextId}/plays/${play.id}/resume`);
-    setPlay(data.play);
+    if (!play || !contextId) return;
+    setPlay((prev) => prev ? { ...prev, status: "active" } : prev); // optimistic
+    try {
+      const { data } = await api.post(`/contexts/${contextId}/plays/${play.id}/resume`);
+      setPlay(data.play);
+    } catch (e) {
+      setPlay((prev) => prev ? { ...prev, status: "paused" } : prev);
+      toast.error(apiErrorMessage(e));
+    }
   };
   const onExit = async () => {
+    if (!play || !contextId) return;
     if (!confirm("Exit this Play? You can start it again later.")) return;
-    await api.post(`/contexts/${contextId}/plays/${play.id}/exit`);
-    navigate("/app");
+    try {
+      await api.post(`/contexts/${contextId}/plays/${play.id}/exit`);
+      navigate("/app");
+    } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
   const patchState = useCallback(async (patch) => {

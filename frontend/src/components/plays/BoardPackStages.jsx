@@ -63,9 +63,8 @@ function StageSettingCycle({ play, contextId, onAdvance, onPatchState }) {
       left={
         <>
           <ObservationLead
-            kicker="Stage 1"
             headline="Decide who reports, and how often."
-            body="Your team's submissions feed the rest of the Play. AKKI will dispatch checklists on your cadence, you gate every send."
+            body="Your team's submissions feed the rest of the Play. AKKI will dispatch checklists on your cadence; you gate every send."
           />
           <div className="space-y-4 max-w-xl">
             <div className="bg-white border border-[var(--rule)] rounded-md p-5 flex items-start gap-3" data-testid="stage-cycle-card">
@@ -148,7 +147,6 @@ function StageGaps({ contextId, onAdvance }) {
       left={
         <>
           <ObservationLead
-            kicker="Stage 2"
             headline="Your team's submissions are in. Time to look at what's there."
             body="AKKI doesn't fill the gaps for you. It tells you where they are."
           />
@@ -241,7 +239,6 @@ function StageConsolidation({ play, contextId, onAdvance, onPatchState }) {
       left={
         <>
           <ObservationLead
-            kicker="Stage 3"
             headline="AKKI is reading what your team sent."
             body="A starter draft. Not the final word. You'll edit it next."
           />
@@ -304,7 +301,6 @@ function StageReview({ play, onAdvance }) {
       left={
         <>
           <ObservationLead
-            kicker="Stage 4"
             headline="The draft is yours. Edit. Accept. Or rewrite."
           />
           <div className="space-y-4 max-w-xl">
@@ -357,7 +353,6 @@ function StageDistribution({ play, onAdvance }) {
       left={
         <>
           <ObservationLead
-            kicker="Stage 5"
             headline="Send it up the chain when you're ready."
             body="AKKI delivers the email under your name. Each tier reviews, comments, then approves."
           />
@@ -399,7 +394,6 @@ function StageDone({ play }) {
       left={
         <>
           <ObservationLead
-            kicker="Done"
             headline="Committed. Distributed."
             body="A board pack you've reviewed and committed to. Your team's submissions are filed; the chain is moving."
           />

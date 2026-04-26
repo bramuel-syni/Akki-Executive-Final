@@ -341,7 +341,12 @@ async def patch_play_state(
 ):
     """Per-stage front-ends use this to persist their bindings — e.g. the
     Setting-the-cycle stage stores `schedule_id`, the Consolidation stage
-    stores `report_id`. The shell never inspects these; they're opaque."""
+    stores `report_id`. The shell never inspects these; they're opaque.
+
+    Top-level keys are shallow-merged with the existing state. Stage state
+    in Slice 1 is intentionally flat (one key per binding); we'll move to a
+    proper deep-merge if a future Play needs nested per-stage state.
+    """
     p = await db.plays.find_one({"id": play_id, "context_id": context_id}, {"_id": 0})
     if not p:
         raise HTTPException(status_code=404, detail="Play not found.")

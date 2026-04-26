@@ -535,11 +535,72 @@ restructure.
     when title/body/polish-accept has dirtied the local state, and
     `window.confirm` blocks an accidental close-without-save.
 
-### Open / deferred
-- LinkedIn / Medium auto-posting — manual copy-paste only (tokens still
-  blocked; LinkedIn requires Marketing Developer Platform approval).
-- Resend domain verification — still sandbox-only (`delivered@resend.dev`)
-  until the user verifies their own domain. User action.
-- Stripe customer-portal-redirect endpoint — not exposed yet; users cancel
-  via Stripe Dashboard for now (test mode).
+## §13 Plays — choreography over existing surfaces (2026-04-26, iter24)
+
+### Why
+After a CFO/CEO demo, the user observed AKKI's value was present but the
+*journey* to it was not — the executive had to know to go to Settings →
+configure cycle → Workspace → start a Report → Cycle → approve dispatch.
+Per Build Addendum v4.4, **Plays** are introduced as a third structural
+layer (Surfaces, Artefacts, **Plays**) — named, staged journeys that
+*compose* existing features into a coherent flow.
+
+### Cadence (non-negotiable)
+- Quiet, not noisy. Editorial, not transactional. Trust-first.
+- **No** progress bars / percentages / step counters / "Stage 2 of 6" /
+  checklist marks / celebratory animations.
+- Stage transitions = name fade + a single editorial phrase.
+- Pause-and-resume native — full state persists.
+
+### Slice 1 shipped
+- **Backend** (`/app/backend/routers/plays.py`):
+  - `GET /api/plays/library` — 6 plays, only `board_pack` available.
+  - `POST /api/contexts/{cid}/plays` — start (idempotent: returns the same
+    active/paused play if one exists for the same type).
+  - `GET /api/contexts/{cid}/plays` — list (sorted by activity).
+  - `GET /api/contexts/{cid}/plays/{pid}` — full play state.
+  - `POST .../advance` — bumps current_stage; entering the last stage
+    flips `status='completed'` + sets `completed_at`.
+  - `POST .../jump` — backwards free; forward requires `confirm=true`
+    (returns 409 otherwise).
+  - `POST .../pause`, `.../resume`, `.../exit`.
+  - `PATCH .../state` — shallow-merge per-stage bindings (e.g.
+    `report_id`, `schedule_id`).
+- **Frontend**:
+  - `/app/plays` — `PlaysLibrary.jsx`. 6 cards in two sections (executive,
+    NED). Stubs render as "Coming next" lock state.
+  - `/app/plays/:id` — `PlayView.jsx`. 64px Play header (kicker + stage
+    name with fade), 60/40 split, right-side "Stages" overlay panel with
+    forward-jump confirm.
+  - `BoardPackStages.jsx` — 6 stage components (Setting the cycle, Where
+    the gaps are, Consolidation, Your review, Distribution, Done) — each
+    reuses the existing Cycle/Reports/Schedule/Submissions surfaces.
+  - `PlaysInProgressStrip.jsx` on Home — restrained chips that bring the
+    executive back to active choreography.
+  - Side-nav entry `Plays` between Cycle and Learn (Compass icon).
+
+### Backend tests
+- 14/14 new pytests in `/app/backend/tests/test_iter24_plays.py` GREEN.
+- 26/26 prior regression (iter19 polish/committee/medium + iter22
+  billing/schedule) STILL GREEN. Plays add a layer; nothing existing was
+  modified.
+
+### Frontend self-test
+- All 6 stages cadence-clean (no STAGE N counters; replaced with bare
+  editorial headlines).
+- Pause→Resume→Pause toggles correctly via optimistic update (was
+  flagged in iter24).
+
+### Open / deferred — Slice 2+
+- **Pre-Board Play** (NED) — next, second demo story.
+- **Monthly Performance Play** — needs §4 Monitor service hooks.
+- **Team Reporting / Cross-Board Pulse / Open Threads** — implement
+  after observing how Slice 1 lands in real demos.
+- Plays-aware M13 Ask context biasing — P2.
+- §6 email-in pipeline → auto-trigger Pre-Board Play — needs §6 first.
+- Workspace "Play context" right-panel section across all artefacts — P2.
+- Schedule auto-launch hook: when a recurring cycle runs, spawn a fresh
+  Board Pack Play instead of just drafting checklists — P2.
+- Replace shallow-merge `PATCH /state` with proper deep-merge once a
+  future Play needs nested per-stage state.
 
