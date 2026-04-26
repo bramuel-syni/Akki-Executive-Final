@@ -49,6 +49,7 @@ from routers import sandbox as sandbox_router  # noqa: E402
 from routers import cycle as cycle_router  # noqa: E402
 from routers import blog as blog_router  # noqa: E402
 from routers import billing as billing_router  # noqa: E402
+from routers import plays as plays_router  # noqa: E402
 
 
 logger = logging.getLogger("akki")
@@ -82,6 +83,7 @@ app.include_router(sandbox_router.router)
 app.include_router(cycle_router.router)
 app.include_router(blog_router.router)
 app.include_router(billing_router.router)
+app.include_router(plays_router.router)
 
 
 # -----------------------------------------------------------------------------

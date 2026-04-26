@@ -13,6 +13,7 @@ import {
 import ShareModal from "@/components/share/ShareModal";
 import SandboxPackDrop from "@/components/sandbox/SandboxPackDrop";
 import ReviewInboxCard from "@/components/cycle/ReviewInboxCard";
+import PlaysInProgressStrip from "@/components/home/PlaysInProgressStrip";
 
 const CONFIDENCE_LABEL = { high: "High confidence", medium: "Medium confidence", low: "Low confidence" };
 
@@ -159,6 +160,11 @@ export default function AppHome() {
             {/* Sandbox-only: a discreet drop-your-own-pack affordance. Never
                 renders outside sandbox contexts. */}
             <SandboxPackDrop onSignalsReady={load} />
+
+            {/* Plays in progress — restrained chips that bring the executive
+                back to the active choreography. Renders nothing if no Plays
+                are active. */}
+            <PlaysInProgressStrip />
 
             {/* Cross-context: any reports where this user is the current
                 pending reviewer. Renders only when there's actually one. */}

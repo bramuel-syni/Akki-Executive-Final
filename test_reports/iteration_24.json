@@ -1,0 +1,44 @@
+{
+  "summary": "Iter24 — §13 Plays Slice 1 (Board Pack Play + Library + Lifecycle). Backend: 14/14 NEW pytests in test_iter24_plays.py PASS covering library (6 plays, exactly 1 available, audience split 3/3), start (idempotency, locked stub 400), list/get, advance to completion (5x → status='completed' + completed_at, 6th 400), jump (forward 409 without confirm, 200 with confirm, backward 200), pause/resume, exit, and PATCH state deep-merge. Regression: 26/26 prior tests (iter22 billing+schedule + iter19 polish/committee/medium) STILL GREEN — Plays added a layer without disturbing existing surfaces. Frontend smoke (Bramuel → /app/plays): library renders 6 cards with correct data-testid='plays-card-{type}', only board_pack has data-testid='plays-start-board_pack', side-nav 'Plays' link present (between Cycle and Learn). Click Start → routes to /app/plays/{playId}; play-header, play-current-stage ('Setting the cycle'), stage-primary, stage-working-set, play-open-stages, play-pause, play-exit, stage-advance-btn all present. Stages panel opens with all 6 rows (setting_cycle/gaps/consolidation/review/distribution/done). Home /app renders home-plays-strip + home-play-chip-{playId}.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "PlayView pause toggle", "issue": "After clicking data-testid='play-pause' on an active play, the button did NOT toggle to data-testid='play-resume' within 2s. Backend POST .../pause returns 200 with status='paused' (verified in pytest), so this is a frontend state-sync bug — the local play state likely isn't being refreshed after the pause mutation, or the conditional render keys off the wrong field. Re-loading the page would probably show the Resume button. Worth a quick re-test after fix.", "selector": "[data-testid='play-resume']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PlayView stage-primary card", "issues": ["The Setting-the-cycle card renders a 'STAGE 1' kicker as the eyebrow label. Per AKKI v4.4 cadence spec ('no step counter, no \"Stage 2 of 6\" style copy'), 'STAGE 1' is a borderline step counter even without the 'of 6' suffix. Recommend replacing with 'BOARD PACK PLAY · SETTING THE CYCLE' or just dropping the eyebrow — the play-header already names the play and current stage. Same likely applies to other stage components in BoardPackStages.jsx — please grep for 'STAGE \\d' or similar kickers."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter24_plays.py",
+    "/app/test_reports/pytest/iter24.xml"
+  ],
+  "action_items": [
+    "Fix PlayView pause→resume button toggle: ensure local play state is updated (or re-fetched) after POST /pause and POST /resume so the conditional renders flip between data-testid='play-pause' and data-testid='play-resume' without a page reload.",
+    "Cadence audit: review BoardPackStages.jsx stage-primary kicker copy. 'STAGE 1' / 'STAGE 2' etc. read as a step counter — replace with the play name or drop the eyebrow. The play-header already carries 'BOARD PACK PLAY' + the stage name.",
+    "Confirm there is no stray 'Checklist' / progress-dot / percentage copy on any stage component (the keyword 'checklist' appeared somewhere in body innerText during the audit — could be unrelated nav copy but worth a quick visual sweep of all 6 BoardPackStages components)."
+  ],
+  "critical_code_review_comments": [
+    "plays.py:262 — completion trigger is `nxt >= len(stages) - 1` which fires when entering stage idx 5 (the 'done' stage). Confirmed correct via pytest (5 advances from 0 → stage 5 + completed). Subtle: if a future Play has fewer stages this off-by-one logic still holds, but using `nxt == len(stages) - 1` would be clearer than `>=`.",
+    "plays.py: idempotency on start_play correctly scopes to (context_id, account_id, play_type, status in active|paused). Completed/exited plays do NOT block a fresh start — verified.",
+    "plays.py PATCH state is a SHALLOW merge ({**old, **new}), not deep. The router docstring says 'deep-merges'. For Slice 1 stage state (flat keys like report_id, schedule_id) this is fine, but the docstring is misleading. Either fix the docstring or implement a real deep-merge for nested dicts.",
+    "plays.py: write_audit only fires on play.started and play.exited. The advance / jump / pause / resume / state_patched events go into the embedded play.events array but are NOT in the global audit_log. Fine for Slice 1 (the executive owns the play), but for Slice 2+ (Team Reporting Play with reportees) consider auditing every transition.",
+    "router: no rate limit / spam guard on PATCH /state. A buggy front-end could write thousands of events into the play.events array. Consider a soft cap (last 200) once Slice 2 ships."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter24_plays.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 new pytests + 26/26 regression)",
+    "frontend": "~92% — library, navigation, header/stages/transitions, home strip all GREEN; pause→resume toggle did not flip in-page (1 issue); 'STAGE 1' kicker borderline cadence violation (1 design issue)"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! — verified. Tuli ned ctx fb4df969-3f17-4279-bf78-f07bb9e29650 — verified.",
+  "seed_data_creation": "Created and exited 2 transient board_pack play records in db.plays for ctx fb4df969 during pytest execution. The completed one + the exited one remain in the collection (status='completed' / 'exited'); they do not block future starts thanks to the idempotency scope. No production data touched.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter24 backend is fully GREEN. Frontend: re-test the pause→resume toggle after the main agent's fix (script in /app/test_reports/iteration_24 thought log shows the exact testids). Also re-run a cadence visual sweep on every stage of the Board Pack Play once the 'STAGE 1' kicker copy is reworked — verify NO 'STAGE N' eyebrow on any of the 6 stage components and no progress affordances. Stage advance fade-in of the transition phrase ('Your team's submissions are in...') was not visually verified end-to-end because pause flow blocked the timeline; please retest the advance animation after pause-toggle fix. The stage-advance-btn label 'Skip ahead — I'll do it manually' is editorial-correct (matches AKKI cadence)."
+}
