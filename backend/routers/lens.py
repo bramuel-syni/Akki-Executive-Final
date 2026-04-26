@@ -321,7 +321,7 @@ async def get_coach_session(
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
     s = await db.lens_coach_sessions.find_one(
-        {"id": sid, "context_id": context_id, "owner_id": ctx["account"]["id"]},
+        {"id": sid, "context_id": context_id, "owner_id": ctx["account"]["id"], "status": "active"},
         {"_id": 0},
     )
     if not s:

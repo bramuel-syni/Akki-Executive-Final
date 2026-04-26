@@ -946,3 +946,50 @@ frontend critical claims).
 - `test_iter30_blog_lens.py` — 9/9 backend GREEN. Frontend 100% on all 8
   batch claims; one minor Learn-recency bucketing issue fixed in-batch
   (undated items now bucket into "Stayed a bit").
+
+## The Lens redesign + Resend send-out + slim Briefing (2026-04-26, iter31)
+
+### The Lens — full redesign
+- Two modes share one lens picker:
+  - **Stress-test** — input-kind chips (Signal / Claim / Proposal / Question)
+    + lens chips above a single textarea. "Apply lens" → existing run
+    engine returns Observation → Implication → Action + question-for-management.
+  - **Coach** — multi-turn chat through the chosen lens. Lens chips remain
+    above the input so the user can switch lenses mid-thread.
+- Unified left rail shows **Stress-tests** + **Coaching threads** in one
+  timeline of "thinking with AKKI".
+- Five new endpoints (POST/GET/GET/POST/DELETE) on
+  `/api/contexts/{cid}/lens/coach/sessions`. New `db.lens_coach_sessions`
+  collection.
+
+### Resend send-out wired
+- `POST /api/contexts/{cid}/shares` (delivery_method=email) AND
+  `POST /api/contexts/{cid}/documents/{did}/share` now actually email
+  recipients via Resend. Persists `email_send_id`, `email_send_mode`,
+  `status` on the share record. Failures are logged; share-intent record
+  still persists.
+
+### Briefings — explainer banner (slim-down step 1)
+- Page header: "Your 90-second pre-meeting one-pagers" + one-liner
+  pointing to Reports for the long-form. Full board-deck migration
+  remains queued.
+
+### Learn recency — Fresh bucket populates
+- `synthesizedAge()` hash bucketing tuned: ~33/33/33 across Fresh (0-4d),
+  mid-Stayed (5-14d), old-Stayed (15-29d).
+
+### Tests
+- `test_iter31_lens_coach_email.py` — 11/11 backend GREEN. Frontend 100%
+  on Lens redesign + Briefings explainer + regression. Archived-session
+  GET tightened post-review (now 404s correctly).
+
+### Open / deferred — Slice 8+
+- **Briefing slim-down phase 2** — actually move board-deck PDF + footnotes
+  out of /briefings into Reports.
+- **Lens chips on Document Viewer** (improvement) — read any section
+  through a chosen lens. Now feasible with the new coach engine.
+- **Learn refresh agent** — periodic agent that pulls fresh exec-grade
+  primary-source content. Best-practice protocol still pending.
+- **NED document evolution chain** (still open).
+- **Influence Map** (still open).
+- target_date ISO sort.

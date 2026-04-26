@@ -192,13 +192,18 @@ export default function Learn() {
   const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
   // Deterministic synthetic published_at when seed items lack one — so the
   // Fresh / Stayed buckets are non-empty on day one. Hashes the item id
-  // into a stable offset within the last 60 days. Runtime-only; the
-  // underlying static seed file stays evergreen.
+  // into a stable offset within the last 30 days, with a slight bias
+  // toward freshness so at least ~1-in-3 items land inside the 5-day
+  // window. Runtime-only; the underlying static seed file stays evergreen.
   const synthesizedAge = (id) => {
     if (!id) return 30 * 24 * 60 * 60 * 1000;
     let h = 0;
     for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-    return (h % 60) * 24 * 60 * 60 * 1000;
+    // Bucket the hash so ~33% land 0-4 days, ~33% 5-14 days, ~33% 15-29 days
+    const bucket = h % 30;
+    if (bucket < 10) return (bucket % 5) * 24 * 60 * 60 * 1000;       // 0-4d (Fresh)
+    if (bucket < 20) return (5 + bucket % 10) * 24 * 60 * 60 * 1000;  // 5-14d (Stayed)
+    return (15 + bucket % 15) * 24 * 60 * 60 * 1000;                   // 15-29d (Stayed)
   };
   const itemAgeMs = (item) => {
     const iso = item.published_at || item.created_at;
