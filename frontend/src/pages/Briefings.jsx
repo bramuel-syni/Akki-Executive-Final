@@ -392,8 +392,11 @@ export default function Briefings() {
         {/* LEFT RAIL — list */}
         <aside className="border-r border-[#E1E6ED] bg-slate-50/50 flex flex-col" data-testid="briefings-rail">
           <div className="px-5 py-5 border-b border-[#E1E6ED] bg-white">
-            <p className="akki-overline mb-1">Briefings · Module M12</p>
-            <h1 className="text-lg font-medium tracking-tight text-[var(--ink)]">Your briefings</h1>
+            <p className="akki-overline mb-1">Briefings</p>
+            <h1 className="text-lg font-medium tracking-tight text-[var(--ink)]">Your 90-second pre-meeting one-pagers</h1>
+            <p className="text-[12px] text-[var(--muted)] italic mt-1 max-w-2xl leading-relaxed">
+              A briefing is what you read in the lift before the room. The three things to raise. Cited to the document. Not the long-form discussion paper — that's <Link to="/app/cycle?tab=reports" className="text-[var(--accent)] hover:underline">Reports</Link>.
+            </p>
             <p className="text-[11px] text-slate-500 mt-1">{visibleList.length} in {activeContext.name}
               {committeeFilter !== "all" && ` · ${committees.find((c) => c.id === committeeFilter)?.name}`}
             </p>

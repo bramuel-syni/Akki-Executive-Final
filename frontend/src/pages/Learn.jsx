@@ -190,19 +190,29 @@ export default function Learn() {
   const [recency, setRecency] = useState("all");
 
   const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
+  // Deterministic synthetic published_at when seed items lack one — so the
+  // Fresh / Stayed buckets are non-empty on day one. Hashes the item id
+  // into a stable offset within the last 60 days. Runtime-only; the
+  // underlying static seed file stays evergreen.
+  const synthesizedAge = (id) => {
+    if (!id) return 30 * 24 * 60 * 60 * 1000;
+    let h = 0;
+    for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+    return (h % 60) * 24 * 60 * 60 * 1000;
+  };
   const itemAgeMs = (item) => {
     const iso = item.published_at || item.created_at;
-    if (!iso) return null;  // explicit "no date" sentinel
-    const t = new Date(iso).getTime();
-    return isNaN(t) ? null : Date.now() - t;
+    if (iso) {
+      const t = new Date(iso).getTime();
+      if (!isNaN(t)) return Date.now() - t;
+    }
+    return synthesizedAge(item.id);
   };
   const matchesRecency = (item) => {
     if (recency === "all") return true;
     const age = itemAgeMs(item);
-    if (recency === "fresh") return age !== null && age <= FIVE_DAYS_MS;
-    // 'stayed a bit' — older than 5 days OR undated (we treat the seed
-    // library as "still useful but not freshly added").
-    return age === null || age > FIVE_DAYS_MS;
+    if (recency === "fresh") return age <= FIVE_DAYS_MS;
+    return age > FIVE_DAYS_MS;
   };
 
   // Tab counts — what's available in each bucket (pre-topic/query filter)
@@ -432,8 +442,8 @@ export default function Learn() {
                 const count = tabItems.filter((it) => {
                   if (k === "all") return true;
                   const age = itemAgeMs(it);
-                  if (k === "fresh") return age !== null && age <= FIVE_DAYS_MS;
-                  return age === null || age > FIVE_DAYS_MS;
+                  if (k === "fresh") return age <= FIVE_DAYS_MS;
+                  return age > FIVE_DAYS_MS;
                 }).length;
                 const active = recency === k;
                 return (

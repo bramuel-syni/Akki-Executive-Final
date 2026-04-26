@@ -23,6 +23,7 @@ from core import (
     db, now as _now, iso as _iso, write_audit,
     get_current_account, require_context_membership,
 )
+from email_service import send_email
 
 logger = logging.getLogger("akki.shares")
 
@@ -133,11 +134,53 @@ async def create_share(
             "read": False,
         })
     elif body.delivery_method == "email":
-        logger.info(
-            f"[share-email-stub] to={recipient_email} subject={subject!r} "
-            f"item_type={body.item_type} item_id={body.item_id} "
-            f"sharer={share_doc['shared_by_email']}"
-        )
+        # Real send via Resend. The deck PDF or briefing PDF link is
+        # included so the recipient can view it without an AKKI account.
+        # Failures are logged but the share record still persists; the
+        # sender can re-send from the outbox.
+        try:
+            artefact_path = "briefings" if body.item_type == "briefing" else "highlights"
+            view_url = f"{__import__('os').environ.get('FRONTEND_ORIGIN', '').rstrip('/')}/app/{artefact_path}/{body.item_id}"
+            html = (
+                f"<div style=\"font-family:Georgia,serif;max-width:560px;margin:0 auto;padding:32px 24px;"
+                f"background:#f5efe6;color:#1a1f2e;\">"
+                f"<p style=\"font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#7a6a52;"
+                f"margin:0 0 16px 0;\">{share_doc['shared_by_name']} shared this with you via AKKI</p>"
+                f"<h1 style=\"font-size:22px;line-height:1.3;margin:0 0 14px 0;font-weight:normal;\">"
+                f"{subject}</h1>"
+                + (f"<blockquote style=\"font-style:italic;color:#3a3a3a;border-left:3px solid #722f37;padding-left:14px;margin:0 0 18px 0;\">{preview}</blockquote>" if body.include_as_quote and preview else "")
+                + (f"<p style=\"font-size:14px;line-height:1.7;color:#3a3a3a;margin:0 0 24px 0;\">{message}</p>" if message else "")
+                + (f"<a href=\"{view_url}\" style=\"display:inline-block;background:#722f37;color:#fff;padding:11px 22px;text-decoration:none;font-size:13px;letter-spacing:0.05em;\">Open in AKKI &rarr;</a>" if view_url else "")
+                + "<p style=\"font-size:11px;color:#7a6a52;margin:32px 0 0 0;\">Sent via AKKI · for executives</p>"
+                + "</div>"
+            )
+            send_result = await send_email(
+                to=recipient_email,
+                subject=subject,
+                html=html,
+                text=f"{share_doc['shared_by_name']} shared this with you via AKKI:\n\n{subject}\n\n{message}\n\n{preview}",
+            )
+            share_doc["email_send_id"] = send_result.get("id")
+            share_doc["email_send_mode"] = send_result.get("mode")
+            await db.shares.update_one(
+                {"id": share_doc["id"]},
+                {"$set": {
+                    "email_send_id": send_result.get("id"),
+                    "email_send_mode": send_result.get("mode"),
+                    "status": "sent" if send_result.get("id") else "queued",
+                }},
+            )
+            share_doc["status"] = "sent" if send_result.get("id") else "queued"
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "Share email failed to send: to=%s subject=%r err=%s",
+                recipient_email, subject, e,
+            )
+            await db.shares.update_one(
+                {"id": share_doc["id"]},
+                {"$set": {"status": "send_failed", "send_error": str(e)[:500]}},
+            )
+            share_doc["status"] = "send_failed"
 
     await write_audit(
         context_id, ctx["account"]["id"], "share.created", "share", share_doc["id"],

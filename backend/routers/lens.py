@@ -221,3 +221,164 @@ async def archive_lens_run(
         ctx["context"]["id"], ctx["account"]["id"], "lens.archived", "lens_run", run_id, {},
     )
     return {"ok": True}
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Lens Coach — multi-turn chat through a chosen lens.
+#
+# A coaching session is a thread of messages where AKKI replies in the
+# voice of the selected lens. The lens can be switched mid-thread; the
+# next reply is generated through the new lens but the conversation
+# history stays intact (so the user can compare framings).
+# ─────────────────────────────────────────────────────────────────────────
+class CoachStartIn(BaseModel):
+    lens: str = Field(min_length=1, max_length=40)
+    subject: str = Field(min_length=2, max_length=200)
+
+
+class CoachMessageIn(BaseModel):
+    lens: str = Field(min_length=1, max_length=40)
+    message: str = Field(min_length=1, max_length=4000)
+
+
+COACH_SYSTEM = (
+    "You are AKKI, an executive thinking partner. The user has chosen a "
+    "specific mental-model lens for this conversation. Reply in the voice "
+    "and frame of that lens. Be concrete, ask sharp clarifying questions, "
+    "challenge sloppy thinking, and refuse to give generic advice.\n\n"
+    "Format: 1-3 short paragraphs. End with ONE question that pulls the "
+    "user one step deeper. Never use bullet lists unless the user asks.\n\n"
+    "Tell the user when their question is outside what this lens can see "
+    "and suggest the lens that would see it better."
+)
+
+
+def _coach_prompt(lens_id: str, history: List[Dict[str, str]], next_message: str) -> str:
+    lens = LENS_CATALOG.get(lens_id) or {"name": lens_id, "hint": ""}
+    lines = [
+        COACH_SYSTEM,
+        "",
+        f"Active lens: {lens['name']}",
+        f"Lens posture: {lens['hint']}",
+        "",
+        "Conversation so far:",
+    ]
+    for m in history[-12:]:  # last 12 turns is plenty for coaching
+        role = "USER" if m.get("role") == "user" else "AKKI"
+        lines.append(f"{role}: {m.get('content', '').strip()}")
+    lines.append("")
+    lines.append(f"USER: {next_message.strip()}")
+    lines.append(f"AKKI (through {lens['name']}):")
+    return "\n".join(lines)
+
+
+@router.post("/contexts/{context_id}/lens/coach/sessions")
+async def start_coach_session(
+    context_id: str,
+    body: CoachStartIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    if body.lens not in LENS_CATALOG:
+        raise HTTPException(status_code=400, detail="Unknown lens")
+    sid = str(uuid.uuid4())
+    now_iso = iso(now())
+    session = {
+        "id": sid, "context_id": context_id,
+        "subject": body.subject.strip(), "lens": body.lens,
+        "messages": [],
+        "owner_id": ctx["account"]["id"],
+        "owner_name": ctx["account"].get("name") or ctx["account"]["email"],
+        "status": "active",
+        "created_at": now_iso, "updated_at": now_iso,
+    }
+    await db.lens_coach_sessions.insert_one(session.copy())
+    session.pop("_id", None)
+    return session
+
+
+@router.get("/contexts/{context_id}/lens/coach/sessions")
+async def list_coach_sessions(
+    context_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    cursor = db.lens_coach_sessions.find(
+        {"context_id": context_id, "owner_id": ctx["account"]["id"], "status": "active"},
+        {"_id": 0},
+    ).sort("updated_at", -1).limit(50)
+    items = await cursor.to_list(50)
+    # Strip messages on the index — list view shows previews only.
+    for it in items:
+        msgs = it.get("messages") or []
+        it["last_message_preview"] = (msgs[-1].get("content") if msgs else "")[:160]
+        it["message_count"] = len(msgs)
+        it.pop("messages", None)
+    return items
+
+
+@router.get("/contexts/{context_id}/lens/coach/sessions/{sid}")
+async def get_coach_session(
+    context_id: str, sid: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    s = await db.lens_coach_sessions.find_one(
+        {"id": sid, "context_id": context_id, "owner_id": ctx["account"]["id"]},
+        {"_id": 0},
+    )
+    if not s:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return s
+
+
+@router.post("/contexts/{context_id}/lens/coach/sessions/{sid}/messages")
+async def post_coach_message(
+    context_id: str, sid: str,
+    body: CoachMessageIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    if body.lens not in LENS_CATALOG:
+        raise HTTPException(status_code=400, detail="Unknown lens")
+    s = await db.lens_coach_sessions.find_one(
+        {"id": sid, "context_id": context_id, "owner_id": ctx["account"]["id"]},
+        {"_id": 0},
+    )
+    if not s:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    history = s.get("messages") or []
+    prompt = _coach_prompt(body.lens, history, body.message)
+    out = await llm_call_llm(
+        module="lens.coach",
+        user_query=prompt,
+        context_object=None,
+        session_context={"session_id": f"lens-coach-{sid}"},
+        data_trust={"overall": "trusted"},
+    )
+    reply_text = (out.get("response") or "").strip()
+    if not reply_text:
+        raise HTTPException(status_code=502, detail="The lens didn't return a reply.")
+
+    now_iso = iso(now())
+    user_turn = {"role": "user", "content": body.message.strip(), "lens": body.lens, "at": now_iso}
+    akki_turn = {"role": "akki", "content": reply_text, "lens": body.lens, "at": now_iso, "mode": out.get("mode")}
+    await db.lens_coach_sessions.update_one(
+        {"id": sid},
+        {
+            "$push": {"messages": {"$each": [user_turn, akki_turn]}},
+            "$set": {"lens": body.lens, "updated_at": now_iso},
+        },
+    )
+    return {"user": user_turn, "akki": akki_turn}
+
+
+@router.delete("/contexts/{context_id}/lens/coach/sessions/{sid}")
+async def archive_coach_session(
+    context_id: str, sid: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    res = await db.lens_coach_sessions.update_one(
+        {"id": sid, "context_id": context_id, "owner_id": ctx["account"]["id"]},
+        {"$set": {"status": "archived", "archived_at": iso(now())}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"ok": True}

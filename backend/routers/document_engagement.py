@@ -18,6 +18,7 @@ Three primitives:
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -122,6 +123,40 @@ async def share_document(
     }
     await db.document_shares.insert_one(record)
     record.pop("_id", None)
+
+    # Real send via Resend. The recipient gets a brief note + a "View
+    # in AKKI" CTA. The document_views tracking will pick up reads when
+    # they actually open the doc. Failures are logged but the share
+    # intent record still persists.
+    try:
+        from email_service import send_email
+        view_url = f"{os.environ.get('FRONTEND_ORIGIN', '').rstrip('/')}/app/documents/{doc_id}"
+        sender_label = record["shared_by_name"]
+        html = (
+            f"<div style=\"font-family:Georgia,serif;max-width:560px;margin:0 auto;padding:32px 24px;"
+            f"background:#f5efe6;color:#1a1f2e;\">"
+            f"<p style=\"font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#7a6a52;"
+            f"margin:0 0 16px 0;\">{sender_label} sent you a document via AKKI</p>"
+            f"<h1 style=\"font-size:22px;line-height:1.35;margin:0 0 14px 0;font-weight:normal;\">"
+            f"{doc.get('name')}</h1>"
+            + (f"<p style=\"font-size:14px;line-height:1.7;color:#3a3a3a;margin:0 0 22px 0;font-style:italic;\">{record['message']}</p>" if record["message"] else "")
+            + f"<a href=\"{view_url}\" style=\"display:inline-block;background:#722f37;color:#fff;padding:11px 22px;text-decoration:none;font-size:13px;letter-spacing:0.05em;\">Open the document &rarr;</a>"
+            + "<p style=\"font-size:11px;color:#7a6a52;margin:32px 0 0 0;\">Your read is recorded so the sender knows you've seen it.</p>"
+            + "</div>"
+        )
+        send_result = await send_email(
+            to=body.to_email, subject=f"{sender_label} shared: {doc.get('name')}",
+            html=html,
+            text=f"{sender_label} shared a document with you via AKKI: {doc.get('name')}\n\n{record['message'] or ''}\n\nOpen: {view_url}",
+        )
+        record["email_send_id"] = send_result.get("id")
+        record["email_send_mode"] = send_result.get("mode")
+        await db.document_shares.update_one(
+            {"id": record["id"]},
+            {"$set": {"email_send_id": send_result.get("id"), "email_send_mode": send_result.get("mode")}},
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Document share email failed: %s", e)
 
     await write_audit(
         context_id, account["id"], "document.shared", "document", doc_id,
