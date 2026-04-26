@@ -754,3 +754,68 @@ simplification audit.
 - **Backend prefs persistence for Monitor function** — currently localStorage;
   move to account.preferences for cross-device continuity.
 - **Monitor v2** — on-demand LLM commentary per tile ("AKKI, why is this red?").
+
+## §4 Monitor v2 — Strategic Goals tracker (2026-04-26, iter28)
+
+### Why
+After demoing Monitor v1 the user clarified the actual mental model:
+"Monitor reports on actual operational targets vs success metrics — Strategic
+KPIs being tracked at board level (e.g. migrate to new ERP by Dec 2026,
+revenue target growth)." And critically: **the user cannot pick their own
+function** — the system populates based on profile. NEDs see a scorecard
+view (expectation list + score + probability).
+
+### What shipped
+- New `routers/strategic_goals.py` with full CRUD + LLM extract:
+  - `GET/POST/PATCH/DELETE /api/contexts/{cid}/strategic-goals` (department filter)
+  - `POST /api/contexts/{cid}/strategic-goals/extract` reads a context document
+    via Claude Sonnet 4.5 (Emergent LLM key, JSON response_format, module
+    `strategic_goals.extract`) and seeds 5–12 measurable board-level goals
+    tagged to a department (`ceo|cfo|coo|commercial|board`).
+- Schema: `{title, description, department, owner_name, target_metric,
+  target_value, target_date, current_value, current_score (0-100),
+  probability (0-100), status (on_track|at_risk|off_track|achieved|
+  abandoned), source_doc_id, source_doc_name}`. Numeric fields clamped via
+  Pydantic `conint(ge=0, le=100)`.
+- New `components/monitor/StrategicGoalsPanel.jsx` — primary tile on Monitor.
+  Goals grouped by department with score + probability dials per row, inline
+  edit (status/score/probability/current_value) for executives, read-only
+  for NEDs. Empty-state CTA opens the `goals-extract-modal` document picker.
+- `Monitor.jsx` rewritten:
+  - **Function chip strip removed.** Function is now derived from
+    `account.preferences.executive_function` (CEO default if unset). A small
+    read-only "Chief Financial (CFO)" chip + "change" pencil opens a
+    `FunctionPickerModal` that PATCHes `/accounts/me`.
+  - StrategicGoalsPanel is the headline tile; signals/cycle/reports/engagement
+    moved to a smaller "Around the goals" secondary section below.
+  - **NED scorecard mode** — single read-only view: "Board scorecard.
+    What's expected. Where it stands." Goals from every department visible,
+    no edit affordances, no extract CTA.
+- `PATCH /api/accounts/me` was already accepting arbitrary `preferences`
+  (shallow-merge); we just added a new well-known key.
+
+### Landing & Learn polish
+- **Landing**: removed the two in-page anchor links ("What it does", "How it's
+  trustworthy") since the same content sits in the page. Renamed the marketing
+  nav "Security" → "Security Design". Added two stock photo placements:
+  - `hero-photo` — sepia-duotoned editorial portrait below the testimonial.
+  - `landing-photo-strip` — three-figure section after the rubric strip
+    (boardroom · preparation · post-meeting), each with an italic caption.
+- **Learn**: tile heights cut by ~50%. ArticleCard switched from
+  `akki-stream-card` to compact `px-4 py-3` rounded-md with line-clamp-2
+  summary. VideoCard thumbnail halved (`w-40 → w-20`), play button
+  `w-9 → w-5`, summary line-clamp-1, vertical density reduced. Grid container
+  changed to `space-y-2 max-w-2xl`.
+
+### Tests
+- 12/12 new pytests in `test_iter28_strategic_goals.py` GREEN (1 skipped for
+  unavailable seed data on the empty-text 400 path — main agent can address
+  in a follow-up). Frontend critical flows 100% verified live.
+
+### Open / deferred — Slice 6+
+- LLM extract happy-path E2E (currently smoke-tested manually).
+- Friendly UX message when extract returns 0 goals.
+- First-time exec onboarding banner when `executive_function` is unset.
+- Influence Map (still open).
+- NED document evolution chain (still open).
+- target_date normalization to ISO month for proper sort order.
