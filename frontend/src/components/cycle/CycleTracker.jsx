@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { CheckCircle2, Clock, AlertTriangle, Mail, Loader2 } from "lucide-react";
@@ -66,7 +67,7 @@ export default function CycleTracker({ contextId }) {
         statusIcon = CheckCircle2;
       } else if (latest?.status === "pending_approval") {
         statusKey = "pending_approval";
-        statusLabel = "Awaiting your approval";
+        statusLabel = "Awaiting your sign-off";
         statusTone = "text-amber-700";
         statusIcon = AlertTriangle;
       } else if (latest?.status === "dispatched") {
@@ -127,6 +128,12 @@ export default function CycleTracker({ contextId }) {
 
   return (
     <div className="bg-white border border-[var(--rule)] rounded-lg overflow-hidden" data-testid="cycle-tracker">
+      <div className="px-5 pt-4 pb-2 border-b border-[var(--rule)] bg-[var(--cream-deep)]/40">
+        <p className="akki-overline mb-1">Cycle tracker</p>
+        <p className="text-[12px] text-[var(--muted)] italic leading-relaxed">
+          One row per reportee. <strong className="text-[var(--deep)] not-italic">Awaiting your sign-off</strong> means AKKI has drafted a checklist for this person; nothing leaves until you approve it. <strong className="text-[var(--deep)] not-italic">Sent — awaiting reply</strong> means the email is out and the deadline still has time. <strong className="text-[var(--deep)] not-italic">Overdue</strong> = past deadline; click <em>Nudge</em> to resend.
+        </p>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-[13px]">
           <thead className="bg-[var(--cream-deep)]/60 border-b border-[var(--rule)]">
@@ -181,7 +188,13 @@ export default function CycleTracker({ contextId }) {
                     ) : row.statusKey === "responded" ? (
                       <span className="text-[11.5px] text-[var(--muted)] italic">No action needed</span>
                     ) : row.statusKey === "pending_approval" ? (
-                      <span className="text-[11.5px] text-amber-700 italic">Approve in Checklists</span>
+                      <Link
+                        to="/app/cycle?tab=checklists"
+                        className="inline-flex items-center gap-1 text-[12px] text-amber-700 hover:underline"
+                        data-testid={`tracker-approve-${row.reportee.id}`}
+                      >
+                        Sign off the draft AKKI prepared →
+                      </Link>
                     ) : (
                       <span className="text-[11.5px] text-[var(--muted)] italic">—</span>
                     )}

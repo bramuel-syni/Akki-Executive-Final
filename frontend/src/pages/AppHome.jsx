@@ -15,6 +15,7 @@ import SandboxPackDrop from "@/components/sandbox/SandboxPackDrop";
 import ReviewInboxCard from "@/components/cycle/ReviewInboxCard";
 import PlaysInProgressStrip from "@/components/home/PlaysInProgressStrip";
 import PlayReadyCards from "@/components/home/PlayReadyCards";
+import AgendaEvolutionCard from "@/components/home/AgendaEvolutionCard";
 import QuickActions from "@/components/home/QuickActions";
 import InSummaryTiles from "@/components/home/InSummaryTiles";
 
@@ -160,19 +161,21 @@ export default function AppHome() {
           </div>
 
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden" data-testid="home-sections">
-            {/* Sandbox-only: a discreet drop-your-own-pack affordance. Never
-                renders outside sandbox contexts. */}
+            {/* Sandbox-only: a discreet drop-your-own-pack affordance. */}
             <SandboxPackDrop onSignalsReady={load} />
 
-            {/* Auto-launched workflows the executive hasn't opened yet. */}
-            <PlayReadyCards />
+            {/* Two-up: Ready-for-you (auto-launched workflow trigger) sits next to
+                Agenda-evolution (what changed since the last meeting). 50/50 grid;
+                Agenda fills the right slot even when no workflow is waiting. */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5 shrink-0" data-testid="home-ready-row">
+              <PlayReadyCards />
+              <AgendaEvolutionCard />
+            </div>
 
             {/* Workflows in progress — restrained chips back into active flow. */}
             <PlaysInProgressStrip />
 
-            {/* Quick actions — three intent-anchored tiles that ARE the
-                workflows (start/resume Board Pack or Pre-Board at a
-                contextual stage). */}
+            {/* Quick actions — three intent-anchored tiles. */}
             <QuickActions />
 
             {/* In summary — the numbers the user would scan first thing. */}
