@@ -1,0 +1,38 @@
+{
+  "summary": "Iter28 — Strategic Goals tracker on Monitor surface + auto-derived executive_function (no chip strip) + Landing photo strip & nav rename + Learn compact tiles. Backend 12 PASS / 1 SKIP (no empty-text doc in seed for 400-path; 404 path verified). Frontend GREEN: Monitor (Exec view) renders 'Strategic goals against where you are.', read-only function chip 'Chief Financial (CFO)' with change link, FunctionPickerModal lists 4 options and PATCH /accounts/me persists, primary StrategicGoalsPanel shows 'Migrate to new ERP by Dec 2026' with score/probability dials and edit pencil for execs, secondary 'Around the goals' tiles below. NED switch → Mawingu shows 'Board scorecard / What's expected. Where it stands.' with empty-state scorecard, function chip hidden, edit pencils hidden, extract CTA hidden. Landing: Security Design link present, hero-photo + landing-photo-strip rendered, 'What it does' / 'How it's trustworthy' anchors removed. Learn: learn-grid is space-y-2 max-w-2xl (compact single column).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter28_strategic_goals.py",
+    "/app/test_reports/pytest/iter28_strategic_goals.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "strategic_goals.py L99: sort by target_date asc looks right but stores target_date as a free-string ('2026-12' or 'Q4 2026') — string sort works for YYYY-MM but mixed formats ('Q4 2026' vs '2026-12') won't sort meaningfully. Acceptable for MVP; consider normalizing to ISO month later.",
+    "strategic_goals.py L216: 502 raised when LLM returns no parseable goals. Frontend ExtractFromDocModal surfaces the message via toast — good. Consider a friendlier UX message ('AKKI couldn't find board-level goals; try a richer doc.').",
+    "Monitor.jsx L47-52: deriveFunction silently falls back to 'ceo' if account.preferences.executive_function is unset — an exec who hasn't picked a function will see CEO view by default with no nudge. The Pencil/'change' affordance is the only nudge; consider an inline banner the first time. Not blocking.",
+    "StrategicGoalsPanel.jsx L40-45: visibleGoalsForFunction adds 'board' + 'ceo' to every non-CEO function's allow-set (cross-cutting concept is fine), but a CFO whose own department has 0 goals will still see CEO/Board goals — clarify in copy that 'On your function's plate' includes cross-cutting items.",
+    "strategic_goals.py L177-216: extract-from-doc uses an 18k-char sample and trusts LLM to mark department; valid_departments fallback to 'ceo' silently — good defensive parse. The 90s frontend timeout aligns with possible LLM latency.",
+    "PATCH /accounts/me preferences merge: must not blow away other preference keys. Verified by patching CFO→CEO→COO→Commercial→CFO sequentially — the executive_function key updates and other keys remain (no regression observed)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter28_strategic_goals.py (NEW)"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12 executed; 1 skipped for unavailable seed-data)",
+    "frontend": "100% (Monitor exec + NED scorecard + FunctionPickerModal save + Landing testids + Learn compact grid all verified live)"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Created and deleted one TEST_ goal on Tuli CFO context during the test; pre-existing 'Migrate to new ERP by Dec 2026' seed used for UI verification.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Login URL is /signin. After login, default ctx is Tuli CFO (executive). To reach NED scorecard: click 'NED' in role-switcher, then click 'Mawingu Logistics' in portfolio rail. test_iter28_strategic_goals.py covers all CRUD + extract 404 + clamp + accounts.me preferences round-trip. The 400-path for extract (doc with no extracted_text) is currently SKIPPED because no doc with extracted_chars=0 exists on the Tuli CFO ctx — main agent can either seed a stub doc or the next agent can create one inline via direct mongo insert. The LLM extract happy-path (real call) was NOT exercised to keep tests deterministic; manual smoke via UI is recommended.",
+  "rca of the issue": "N/A — all features verified working as specified in the request."
+}

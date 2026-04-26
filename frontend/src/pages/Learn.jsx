@@ -27,84 +27,84 @@ const TABS = [
   { key: "case_study", label: "Case Studies", icon: Briefcase },
 ];
 
-/** Article card — opens reader. */
+/** Article card — opens reader. Compact horizontal tile (50% reduced height). */
 function ArticleCard({ a }) {
   const kickerSource = (a.kicker || "").split("·").slice(1).join("·").trim();
   return (
     <Link
       to={`/app/learn/${a.id}`}
-      className="block akki-stream-card group akki-fade-up"
+      className="block bg-white border border-[var(--rule)] rounded-md px-4 py-3 hover:border-[var(--accent)]/40 transition-colors group akki-fade-up"
       data-severity="neutral"
       data-testid={`learn-article-${a.id}`}
     >
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
         <span className="akki-type-badge inline-flex items-center gap-1.5">
           <FileText className="w-3 h-3" strokeWidth={2.2} />
           {a.content_type === "case_study" ? "Case" : a.content_type === "news" ? "News" : "Article"}
         </span>
-        <span className="text-[12px] text-[var(--muted)]">{kickerSource}</span>
+        <span className="text-[11.5px] text-[var(--muted)]">{kickerSource}</span>
         {a.generated && (
           <span className="ml-auto text-[10px] uppercase tracking-wider text-[var(--accent)] bg-[var(--accent-soft)] px-1.5 py-0.5 rounded">
             On-demand
           </span>
         )}
       </div>
-      <h3 className="akki-title-22 mb-3 leading-snug">{a.title}</h3>
-      <p className="akki-serif text-[14px] text-[var(--deep)] leading-relaxed mb-4">{a.summary}</p>
-      <div className="flex items-end justify-between gap-4 flex-wrap">
-        <div className="flex flex-wrap gap-2">
+      <h3 className="akki-serif text-[16px] text-[var(--ink)] leading-snug font-normal mb-1.5">{a.title}</h3>
+      <p className="akki-serif text-[12.5px] text-[var(--deep)] leading-relaxed mb-2 line-clamp-2">{a.summary}</p>
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div className="flex flex-wrap gap-1.5">
           <span className="akki-context-chip">{TOPIC_LABEL[a.topic] || a.topic}</span>
           {a.audience.slice(0, 2).map((x) => (
             <span key={x} className="akki-context-chip capitalize">{x === "ned" ? "NED" : x}</span>
           ))}
         </div>
-        <span className="akki-gesture text-[13px]">
-          Read <ArrowRight className="w-3.5 h-3.5" />
+        <span className="akki-gesture text-[12px]">
+          Read <ArrowRight className="w-3 h-3" />
         </span>
       </div>
     </Link>
   );
 }
 
-/** Video card — horizontal layout with compact thumbnail. */
+/** Video card — horizontal layout with very compact thumbnail (halved). */
 function VideoCard({ v, onPlay }) {
   const thumb = `https://i.ytimg.com/vi/${v.youtube_id}/mqdefault.jpg`;
   return (
     <button
       type="button"
       onClick={onPlay}
-      className="text-left akki-stream-card group akki-fade-up w-full flex gap-5 items-start"
+      className="text-left bg-white border border-[var(--rule)] rounded-md px-4 py-3 hover:border-[var(--accent)]/40 transition-colors group akki-fade-up w-full flex gap-4 items-start"
       data-severity="neutral"
       data-testid={`learn-video-${v.id}`}
     >
-      <div className="relative w-40 aspect-video shrink-0 overflow-hidden rounded-sm">
+      <div className="relative w-20 aspect-video shrink-0 overflow-hidden rounded-sm">
         <img src={thumb} alt="" className="w-full h-full object-cover" loading="lazy" />
         <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/10 transition-colors">
-          <div className="w-9 h-9 rounded-full bg-[var(--accent)] flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
-            <Play className="w-3 h-3 text-white ml-0.5" fill="currentColor" strokeWidth={0} />
+          <div className="w-5 h-5 rounded-full bg-[var(--accent)] flex items-center justify-center shadow-sm">
+            <Play className="w-2 h-2 text-white ml-0.5" fill="currentColor" strokeWidth={0} />
           </div>
         </div>
         {v.duration && (
-          <div className="absolute bottom-1 right-1 text-[10px] font-mono bg-black/80 text-white px-1 py-0.5 rounded-sm">
+          <div className="absolute bottom-0.5 right-0.5 text-[8.5px] font-mono bg-black/80 text-white px-1 py-px rounded-sm">
             {v.duration}
           </div>
         )}
       </div>
 
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
           <span className="akki-type-badge inline-flex items-center gap-1.5">
             <VideoIcon className="w-3 h-3" strokeWidth={2.2} /> Video
           </span>
-          <span className="text-[12px] text-[var(--muted)]">{v.source_name}</span>
+          <span className="text-[11.5px] text-[var(--muted)]">{v.source_name}</span>
         </div>
-        <h3 className="akki-serif text-[17px] leading-snug text-[var(--ink)] mb-2 font-normal">{v.title}</h3>
-        <p className="akki-serif text-[13px] text-[var(--deep)] leading-relaxed mb-3 italic line-clamp-2">{v.summary}</p>
+        <h3 className="akki-serif text-[15px] leading-snug text-[var(--ink)] mb-1 font-normal">{v.title}</h3>
+        <p className="akki-serif text-[12px] text-[var(--deep)] leading-relaxed mb-1.5 italic line-clamp-1">{v.summary}</p>
         <div className="flex items-end justify-between gap-3 flex-wrap">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             <span className="akki-context-chip">{TOPIC_LABEL[v.topic] || v.topic}</span>
           </div>
-          <span className="akki-gesture text-[12.5px]">
+          <span className="akki-gesture text-[12px]">
             Watch <Play className="w-3 h-3" strokeWidth={2} />
           </span>
         </div>
@@ -434,11 +434,11 @@ export default function Learn() {
                 )}
               </div>
             ) : activeTab === "video" ? (
-              <div className="space-y-4 max-w-2xl pb-4" data-testid="learn-grid">
+              <div className="space-y-2 max-w-2xl pb-4" data-testid="learn-grid">
                 {filtered.map((v) => <VideoCard key={v.id} v={v} onPlay={() => setVideoPlaying(v)} />)}
               </div>
             ) : (
-              <div className="space-y-4 max-w-2xl pb-4" data-testid="learn-grid">
+              <div className="space-y-2 max-w-2xl pb-4" data-testid="learn-grid">
                 {filtered.map((a) => <ArticleCard key={a.id} a={a} />)}
               </div>
             )}

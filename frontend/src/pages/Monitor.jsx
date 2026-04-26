@@ -4,41 +4,50 @@ import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import StrategicGoalsPanel from "@/components/monitor/StrategicGoalsPanel";
 import {
-  Activity, AlertTriangle, ArrowRight, Briefcase, Eye, FileText,
-  Landmark, Send, Sparkles, TrendingUp, Users, ScrollText, Layers,
+  Activity, AlertTriangle, ArrowRight, Eye, FileText,
+  Send, Sparkles, Target, ScrollText, Layers, Pencil, X, Loader2,
 } from "lucide-react";
 
 /**
- * Monitor — role-adaptive mission-critical touchpoints.
+ * Monitor — board-level performance tracker.
  *
- * Light experience that answers "what should I be paying attention to as
- * a CEO/CFO/COO/Commercial/NED right now". Composes from existing data
- * (signals, cycle, reports, briefings, document engagement, mentions)
- * via GET /api/contexts/{cid}/monitor?function=...
+ * What's reported:
+ *   • Strategic Goals — the headline (board-tracked KPIs against targets +
+ *     dates, with current score and probability of success)
+ *   • Function-relevant signals/cycle/reports/engagement (composed by
+ *     /api/contexts/{cid}/monitor)
+ *   • For NEDs — the same goals appear in scorecard form (expectation +
+ *     score + probability)
  *
- * Function selection persists in localStorage so the user lands on the
- * same view next time without round-tripping the backend.
+ * Function (CEO/CFO/COO/Commercial) is NOT user-selectable. It's derived
+ * from account.preferences.executive_function. The user sets it once via
+ * the small "Set your function" affordance; thereafter Monitor renders
+ * the role's view automatically.
  */
 
-const EXEC_FUNCTIONS = [
-  { key: "ceo", label: "CEO", description: "Cross-functional pulse" },
-  { key: "cfo", label: "CFO", description: "Financial · Risk · Audit" },
-  { key: "coo", label: "COO", description: "Operations · People" },
-  { key: "commercial", label: "Commercial", description: "Strategy · Growth" },
-  { key: "other", label: "Other", description: "Generic executive view" },
-];
+const FUNCTION_LABEL = {
+  ceo: "Chief Executive",
+  cfo: "Chief Financial",
+  coo: "Chief Operating",
+  commercial: "Commercial",
+  ned: "Non-Executive Director",
+};
 
-const NED_FUNCTIONS = [
-  { key: "ned", label: "NED", description: "Cross-board reading" },
-];
+const FUNCTION_DESCRIPTION = {
+  ceo: "Cross-functional pulse",
+  cfo: "Financial · Risk · Audit",
+  coo: "Operations · People",
+  commercial: "Strategy · Growth",
+  ned: "Cross-board reading",
+};
 
-function getDefaultFunction(activeRole) {
+function deriveFunction(account, activeRole) {
   if (activeRole === "ned") return "ned";
-  try {
-    const saved = localStorage.getItem("akki_monitor_function");
-    if (saved && EXEC_FUNCTIONS.some((f) => f.key === saved)) return saved;
-  } catch { /* ignore */ }
+  const stored = account?.preferences?.executive_function;
+  if (stored && ["ceo", "cfo", "coo", "commercial"].includes(stored)) return stored;
   return "ceo";
 }
 
@@ -55,16 +64,13 @@ function fmtRelative(iso) {
 }
 
 export default function Monitor() {
-  const { activeContext, activeRole } = useAuth();
+  const { account, activeContext, activeRole, refreshContexts } = useAuth();
   const cid = activeContext?.id;
-  const [fn, setFn] = useState(() => getDefaultFunction(activeRole));
+  const fn = deriveFunction(account, activeRole);
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  // Re-pin function when role flips
-  useEffect(() => {
-    setFn(getDefaultFunction(activeRole));
-  }, [activeRole]);
+  const [editFn, setEditFn] = useState(false);
 
   const load = useCallback(async () => {
     if (!cid) return;
@@ -77,69 +83,76 @@ export default function Monitor() {
   }, [cid, fn]);
   useEffect(() => { load(); }, [load]);
 
-  const onPickFn = (key) => {
-    setFn(key);
-    if (activeRole !== "ned") {
-      try { localStorage.setItem("akki_monitor_function", key); } catch { /* ignore */ }
-    }
-  };
-
-  const FUNCTIONS = activeRole === "ned" ? NED_FUNCTIONS : EXEC_FUNCTIONS;
-  const activeFn = useMemo(() => FUNCTIONS.find((f) => f.key === fn) || FUNCTIONS[0], [FUNCTIONS, fn]);
+  const isNED = activeRole === "ned";
 
   return (
     <AppShell>
       <div className="h-[calc(100vh-4rem)] max-w-[1100px] mx-auto px-8 overflow-y-auto" data-testid="monitor-page">
-        <div className="pt-10 pb-8">
+        <div className="pt-10 pb-6">
           <p className="akki-overline mb-2 flex items-center gap-2">
-            <Activity className="w-3 h-3 text-[var(--accent)]" /> Monitor · Mission-critical touchpoints
+            <Activity className="w-3 h-3 text-[var(--accent)]" />
+            Monitor · {isNED ? "Board scorecard" : "Performance tracker"}
           </p>
-          <h1 className="akki-greeting mb-2">What needs your attention.</h1>
+          <h1 className="akki-greeting mb-2">
+            {isNED ? "What's expected. Where it stands." : "Strategic goals against where you are."}
+          </h1>
           <p className="akki-meta max-w-2xl">
-            A focused view of {activeContext?.name || "this context"} adapted to how {activeRole === "ned" ? "you read across boards" : "you run your function"}. Tiles compose from your signals, cycle, reports, and document engagement.
+            {isNED
+              ? `Each expectation set for ${activeContext?.name || "this board"}, the current score, and the probability of hitting it.`
+              : `${FUNCTION_LABEL[fn] || "Executive"} view of ${activeContext?.name || "this context"} — board-tracked goals you own, plus signals and cycle items adapted to your function.`}
           </p>
 
-          {/* Function chip strip — only shown for executives */}
-          {activeRole !== "ned" && (
-            <div className="mt-6 flex items-center gap-2 flex-wrap" data-testid="monitor-function-strip">
-              <span className="text-[11px] uppercase tracking-[0.2em] text-[var(--muted)] font-mono mr-2">Acting as</span>
-              {FUNCTIONS.map((f) => (
-                <button
-                  key={f.key}
-                  onClick={() => onPickFn(f.key)}
-                  className={`px-3 py-1.5 text-[12.5px] rounded-full border transition-colors ${
-                    fn === f.key
-                      ? "bg-[var(--ink)] text-white border-[var(--ink)]"
-                      : "bg-white border-[var(--rule)] text-[var(--deep)] hover:border-[var(--accent)]/40"
-                  }`}
-                  data-testid={`monitor-fn-${f.key}`}
-                  title={f.description}
-                >
-                  {f.label}
-                </button>
-              ))}
-              <span className="text-[11.5px] text-[var(--muted)] italic ml-2">{activeFn.description}</span>
+          {/* Function indicator — read-only, with a small change affordance.
+              The chip strip from iter27 is gone — the system populates this
+              based on profile, not user selection. */}
+          {!isNED && (
+            <div className="mt-4 flex items-center gap-2 text-[12px]" data-testid="monitor-function-indicator">
+              <span className="akki-context-chip">{FUNCTION_LABEL[fn]} ({fn.toUpperCase()})</span>
+              <span className="text-[var(--muted)] italic">{FUNCTION_DESCRIPTION[fn]}</span>
+              <button
+                onClick={() => setEditFn(true)}
+                className="text-[var(--muted)] hover:text-[var(--accent)] inline-flex items-center gap-1 ml-1"
+                data-testid="monitor-edit-fn"
+              >
+                <Pencil className="w-3 h-3" /> change
+              </button>
             </div>
           )}
         </div>
 
+        {/* PRIMARY — Strategic goals tracker */}
+        <StrategicGoalsPanel
+          contextId={cid}
+          fn={fn}
+          isNED={isNED}
+          onChange={load}
+        />
+
+        {/* SECONDARY — function-relevant tiles */}
         {loading ? (
-          <div className="bg-white border border-[var(--rule)] rounded-lg p-12 text-center text-[12px] uppercase tracking-widest text-[var(--muted)]">
+          <div className="bg-white border border-[var(--rule)] rounded-lg p-12 text-center text-[12px] uppercase tracking-widest text-[var(--muted)] mt-6">
             Reading what's moving…
           </div>
-        ) : !data ? (
-          <div className="bg-white border border-[var(--rule)] rounded-lg p-12 text-center text-[13px] text-[var(--muted)] italic">
-            Nothing to monitor yet on this context.
+        ) : data ? (
+          <div className="mt-8" data-testid="monitor-secondary">
+            <p className="akki-overline mb-3">Around the goals</p>
+            <SecondaryTiles data={data} fn={fn} isNED={isNED} />
           </div>
-        ) : (
-          <MonitorTiles data={data} fn={fn} />
+        ) : null}
+
+        {editFn && (
+          <FunctionPickerModal
+            current={fn}
+            onClose={() => setEditFn(false)}
+            onSaved={async () => { setEditFn(false); await refreshContexts?.(); load(); }}
+          />
         )}
       </div>
     </AppShell>
   );
 }
 
-function MonitorTiles({ data, fn }) {
+function SecondaryTiles({ data, fn, isNED }) {
   const totalAttention =
     (data.cycle?.overdue?.length || 0) +
     (data.cycle?.awaiting_approval?.length || 0) +
@@ -147,7 +160,6 @@ function MonitorTiles({ data, fn }) {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pb-12" data-testid="monitor-tiles">
-      {/* Signals tile */}
       <Tile
         icon={Sparkles}
         kicker={fn === "cfo" ? "Financial & risk signals" : fn === "coo" ? "Operational signals" : fn === "commercial" ? "Strategic & opportunity signals" : "Signals"}
@@ -178,15 +190,10 @@ function MonitorTiles({ data, fn }) {
         )}
       </Tile>
 
-      {/* Cycle tile */}
       <Tile
         icon={Send}
         kicker="Reporting cycle"
-        title={
-          totalAttention > 0
-            ? `${totalAttention} item${totalAttention === 1 ? "" : "s"} need${totalAttention === 1 ? "s" : ""} you.`
-            : "Cycle is clear."
-        }
+        title={totalAttention > 0 ? `${totalAttention} item${totalAttention === 1 ? "" : "s"} need${totalAttention === 1 ? "s" : ""} you.` : "Cycle is clear."}
         testid="monitor-tile-cycle"
       >
         {data.cycle?.overdue?.length > 0 && (
@@ -214,19 +221,7 @@ function MonitorTiles({ data, fn }) {
             </ul>
           </div>
         )}
-        {data.cycle?.in_flight?.length > 0 && totalAttention === 0 && (
-          <div className="mb-3">
-            <p className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] mb-1.5">Out for response</p>
-            <ul className="space-y-1">
-              {data.cycle.in_flight.slice(0, 3).map((c) => (
-                <li key={c.id} className="text-[12.5px] text-[var(--deep)]">
-                  <strong>{c.reportee_name}</strong> · due {c.deadline_date}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {totalAttention === 0 && data.cycle?.in_flight?.length === 0 && data.cycle?.matched_reportees === 0 && (
+        {totalAttention === 0 && data.cycle?.matched_reportees === 0 && (
           <p className="text-[13px] text-[var(--muted)] italic">No reportees match your function. Add areas of ownership in the Cycle page.</p>
         )}
         <Link to="/app/cycle" className="akki-gesture text-[12.5px] mt-2 inline-flex items-center gap-1">
@@ -234,7 +229,6 @@ function MonitorTiles({ data, fn }) {
         </Link>
       </Tile>
 
-      {/* Reports tile */}
       <Tile
         icon={ScrollText}
         kicker="Reports awaiting you"
@@ -244,26 +238,20 @@ function MonitorTiles({ data, fn }) {
         {data.reports_pending?.length > 0 ? (
           <ul className="space-y-2">
             {data.reports_pending.slice(0, 4).map((r) => (
-              <li key={r.id} className="text-[12.5px] text-[var(--deep)] flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <p className="truncate">{r.title}</p>
-                  <p className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] mt-0.5">
-                    {r.stage === "draft" ? "Your draft" : "Pending review"} · {fmtRelative(r.updated_at)}
-                  </p>
-                </div>
+              <li key={r.id} className="text-[12.5px] text-[var(--deep)]">
+                <p className="truncate">{r.title}</p>
+                <p className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] mt-0.5">
+                  {r.stage === "draft" ? "Your draft" : "Pending review"} · {fmtRelative(r.updated_at)}
+                </p>
               </li>
             ))}
           </ul>
         ) : (
           <p className="text-[13px] text-[var(--muted)] italic">Inbox clear.</p>
         )}
-        <Link to="/app/cycle?tab=reports" className="akki-gesture text-[12.5px] mt-3 inline-flex items-center gap-1">
-          Open reports <ArrowRight className="w-3 h-3" />
-        </Link>
       </Tile>
 
-      {/* Document engagement OR NED open threads */}
-      {fn === "ned" ? (
+      {isNED ? (
         <Tile
           icon={Layers}
           kicker="Open threads"
@@ -306,9 +294,6 @@ function MonitorTiles({ data, fn }) {
           ) : (
             <p className="text-[13px] text-[var(--muted)] italic">Last-30-days view counts will appear once readers open your packs.</p>
           )}
-          <Link to="/app/workspace" className="akki-gesture text-[12.5px] mt-3 inline-flex items-center gap-1">
-            Open Document Journal <ArrowRight className="w-3 h-3" />
-          </Link>
         </Tile>
       )}
     </div>
@@ -335,5 +320,57 @@ function Stat({ label, value, tone = "neutral" }) {
       <strong className="text-[14px]">{value}</strong>
       <span className="text-[10.5px] uppercase tracking-wider text-[var(--muted)]">{label}</span>
     </span>
+  );
+}
+
+function FunctionPickerModal({ current, onClose, onSaved }) {
+  const [pick, setPick] = useState(current);
+  const [busy, setBusy] = useState(false);
+  const FUNCTIONS = [
+    { key: "ceo", label: "Chief Executive (CEO)", desc: "Cross-functional pulse" },
+    { key: "cfo", label: "Chief Financial (CFO)", desc: "Financial · Risk · Audit" },
+    { key: "coo", label: "Chief Operating (COO)", desc: "Operations · People" },
+    { key: "commercial", label: "Commercial", desc: "Strategy · Growth" },
+  ];
+  const save = async () => {
+    setBusy(true);
+    try {
+      await api.patch("/accounts/me", { preferences: { executive_function: pick } });
+      toast.success("Function set.");
+      onSaved();
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-md shadow-xl border border-[var(--rule)] w-full max-w-md mx-4 p-6" onClick={(e) => e.stopPropagation()} data-testid="monitor-fn-modal">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="akki-serif text-[18px] text-[var(--ink)]">Set your function</h2>
+          <button onClick={onClose} className="text-[var(--muted)] hover:text-[var(--ink)]"><X className="w-4 h-4" /></button>
+        </div>
+        <p className="text-[12.5px] text-[var(--muted)] italic mb-4">
+          We'll surface signals, cycle items, and strategic goals adapted to this function. You can change it any time.
+        </p>
+        <div className="space-y-2">
+          {FUNCTIONS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setPick(f.key)}
+              className={`w-full text-left px-4 py-3 rounded-md border transition-colors ${pick === f.key ? "border-[var(--accent)] bg-[var(--cream-deep)]" : "border-[var(--rule)] hover:bg-[var(--cream-deep)]/50"}`}
+              data-testid={`monitor-fn-pick-${f.key}`}
+            >
+              <p className="text-[14px] text-[var(--ink)] font-medium">{f.label}</p>
+              <p className="text-[12px] text-[var(--muted)] italic">{f.desc}</p>
+            </button>
+          ))}
+        </div>
+        <div className="flex justify-end gap-2 mt-5">
+          <Button type="button" variant="ghost" onClick={onClose} className="text-[12px] h-8">Cancel</Button>
+          <Button onClick={save} disabled={busy} className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white text-[12px] h-8" data-testid="monitor-fn-save">
+            {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save"}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }

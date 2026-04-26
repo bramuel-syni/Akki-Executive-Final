@@ -145,12 +145,6 @@ export default function Landing() {
         <div className="max-w-[1280px] mx-auto px-6 md:px-12 h-16 flex items-center justify-between">
           <Logo />
           <nav className="flex items-center gap-1 md:gap-4 text-[13px]">
-            <a href="#proposition" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors">
-              What it does
-            </a>
-            <a href="#assurance" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors">
-              How it's trustworthy
-            </a>
             <Link to="/about" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors" data-testid="landing-nav-about">
               About
             </Link>
@@ -158,7 +152,7 @@ export default function Landing() {
               Features
             </Link>
             <Link to="/security" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors" data-testid="landing-nav-security">
-              Security
+              Security Design
             </Link>
             <Link to="/blog" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors" data-testid="landing-nav-blog">
               Exco360
@@ -248,6 +242,26 @@ export default function Landing() {
             <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--muted)]">
               — {VOICE_QUOTE.attribution}
             </p>
+
+            {/* Editorial photograph — sits beneath the testimonial. Sepia
+                duotone via CSS filter to match the cream/oxblood palette
+                without the photo screaming for attention. */}
+            <div
+              className="mt-8 relative overflow-hidden rounded-sm border border-[var(--rule)]"
+              data-testid="hero-photo"
+            >
+              <img
+                src="https://images.unsplash.com/photo-1664575600796-ffa828c5cb6e?w=800&q=80&auto=format&fit=crop"
+                alt="A board pack, fountain pen, and reading glasses on a walnut desk"
+                className="w-full h-[260px] object-cover"
+                style={{ filter: "sepia(0.25) saturate(0.85) contrast(1.05)" }}
+                loading="lazy"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[var(--cream)]/30 via-transparent to-transparent pointer-events-none" />
+              <p className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--muted)] mt-2 italic">
+                The work of reading well, again.
+              </p>
+            </div>
           </aside>
         </div>
       </section>
@@ -286,6 +300,41 @@ export default function Landing() {
               <p className="akki-serif text-[18px] leading-snug text-[var(--ink)] mb-1">{t}</p>
               <p className="text-[13px] text-[var(--muted)] leading-relaxed">{s}</p>
             </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ─── Editorial photo strip — three classy stock images, low-key ── */}
+      <section className="border-b border-[var(--rule)] bg-[var(--cream)]" data-testid="landing-photo-strip">
+        <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-10 grid grid-cols-1 md:grid-cols-3 gap-5">
+          {[
+            {
+              src: "https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=900&q=80&auto=format&fit=crop",
+              caption: "In the boardroom — where decisions need receipts.",
+            },
+            {
+              src: "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=900&q=80&auto=format&fit=crop",
+              caption: "Quiet preparation. The hours before the room.",
+            },
+            {
+              src: "https://images.unsplash.com/photo-1621905251918-48416bd8575a?w=900&q=80&auto=format&fit=crop",
+              caption: "After the meeting. Threads tracked. Receipts kept.",
+            },
+          ].map((p, i) => (
+            <figure key={i} className="relative overflow-hidden rounded-sm border border-[var(--rule)] bg-white">
+              <img
+                src={p.src}
+                alt=""
+                className="w-full h-[220px] md:h-[260px] object-cover"
+                style={{ filter: "sepia(0.18) saturate(0.9) contrast(1.04)" }}
+                loading="lazy"
+              />
+              <figcaption className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[var(--ink)]/85 to-transparent px-4 py-3">
+                <p className="akki-serif italic text-[13px] text-white leading-snug">
+                  {p.caption}
+                </p>
+              </figcaption>
+            </figure>
           ))}
         </div>
       </section>

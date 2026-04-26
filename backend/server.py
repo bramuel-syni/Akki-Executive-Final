@@ -53,6 +53,7 @@ from routers import plays as plays_router  # noqa: E402
 from routers import agenda as agenda_router  # noqa: E402
 from routers import document_engagement as document_engagement_router  # noqa: E402
 from routers import monitor as monitor_router  # noqa: E402
+from routers import strategic_goals as strategic_goals_router  # noqa: E402
 
 
 logger = logging.getLogger("akki")
@@ -90,6 +91,7 @@ app.include_router(plays_router.router)
 app.include_router(agenda_router.router)
 app.include_router(document_engagement_router.router)
 app.include_router(monitor_router.router)
+app.include_router(strategic_goals_router.router)
 
 
 # -----------------------------------------------------------------------------
