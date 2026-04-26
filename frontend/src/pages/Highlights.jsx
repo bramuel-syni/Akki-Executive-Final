@@ -383,7 +383,7 @@ function SignalStreamCard({ signal, onLoad, onAct, onLens, onShare }) {
               data-testid={`signal-lens-primary-${signal.id}`}
             >
               <Eye className="w-3 h-3" strokeWidth={2.2} />
-              See this through all six lenses
+              See in The Lens
             </button>
           ) : (
             <button

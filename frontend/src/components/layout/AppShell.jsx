@@ -137,7 +137,12 @@ export default function AppShell({ children }) {
         data-testid="top-header"
       >
         <div className="flex items-center gap-8">
-          <Link to="/app" data-testid="header-home-link" className="akki-serif text-[24px] text-[var(--navy)] leading-none tracking-tight">AKKI</Link>
+          <Link to="/app" data-testid="header-home-link" className="flex items-baseline gap-2.5 leading-none">
+            <span className="akki-serif text-[24px] text-[var(--navy)] tracking-tight">AKKI</span>
+            <span className="hidden sm:inline akki-serif italic text-[13.5px] text-[var(--muted)] tracking-tight" data-testid="brand-subtitle">
+              for Executives
+            </span>
+          </Link>
           <div className="hidden md:flex items-center gap-1 text-[10px] tracking-[0.2em] uppercase text-[var(--muted)]">
             <span>Confidential</span>
             <span className="opacity-40">·</span>
@@ -439,7 +444,7 @@ export default function AppShell({ children }) {
               <ShieldCheck className="w-3 h-3 text-[var(--chrome)]" strokeWidth={2} />
               Synisense-shielded
             </span>
-            <span>· Your context never leaves this account</span>
+            <span>· Your data never leaves this account</span>
             <span className="hidden md:inline">· Every signal cites its source</span>
             <button
               type="button"

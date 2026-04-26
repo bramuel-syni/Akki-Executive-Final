@@ -186,6 +186,22 @@ export default function Learn() {
   const [researching, setResearching] = useState(false);
   const [adHocCache, setAdHocCache] = useState([]);
   const [moreOpen, setMoreOpen] = useState(false);
+  // Recency tab — "fresh" (≤ 5 days) | "stayed" (> 5 days) | "all"
+  const [recency, setRecency] = useState("all");
+
+  const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
+  const itemAgeMs = (item) => {
+    const iso = item.published_at || item.created_at;
+    if (!iso) return Infinity;
+    const t = new Date(iso).getTime();
+    return isNaN(t) ? Infinity : Date.now() - t;
+  };
+  const matchesRecency = (item) => {
+    if (recency === "all") return true;
+    const age = itemAgeMs(item);
+    if (recency === "fresh") return age <= FIVE_DAYS_MS;
+    return age > FIVE_DAYS_MS && age !== Infinity;
+  };
 
   // Tab counts — what's available in each bucket (pre-topic/query filter)
   const tabCounts = useMemo(() => ({
@@ -228,9 +244,9 @@ export default function Learn() {
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return tabItems.filter(
-      (item) => (topic === "all" || item.topic === topic) && matchesQuery(item, needle)
+      (item) => (topic === "all" || item.topic === topic) && matchesQuery(item, needle) && matchesRecency(item)
     );
-  }, [tabItems, topic, q]);
+  }, [tabItems, topic, q, recency]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reader view
   if (id) {
@@ -403,6 +419,39 @@ export default function Learn() {
                 {filtered.length} match{filtered.length === 1 ? "" : "es"} in this tab. If none are right, click <span className="text-[var(--accent)] font-medium">Research this</span> and AKKI will compose a fresh article.
               </p>
             )}
+
+            {/* Recency mini-tabs — Fresh (≤5 days) | Stayed a bit (>5 days) | All */}
+            <div className="flex items-center gap-1 mt-3 text-[12px]" data-testid="learn-recency-tabs">
+              {[
+                ["all", "All"],
+                ["fresh", "Fresh"],
+                ["stayed", "Stayed a bit"],
+              ].map(([k, label]) => {
+                const count = tabItems.filter((it) => {
+                  if (k === "all") return true;
+                  const age = itemAgeMs(it);
+                  if (k === "fresh") return age <= FIVE_DAYS_MS;
+                  return age > FIVE_DAYS_MS && age !== Infinity;
+                }).length;
+                const active = recency === k;
+                return (
+                  <button
+                    key={k}
+                    onClick={() => setRecency(k)}
+                    className={`px-3 py-1 rounded-full border transition-colors inline-flex items-center gap-1.5 ${
+                      active
+                        ? "bg-[var(--ink)] text-white border-[var(--ink)]"
+                        : "bg-white border-[var(--rule)] text-[var(--deep)] hover:border-[var(--accent)]/40"
+                    }`}
+                    data-testid={`learn-recency-${k}`}
+                  >
+                    {label}
+                    <span className={`text-[10px] font-mono ${active ? "text-white/70" : "text-[var(--muted)]"}`}>{count}</span>
+                  </button>
+                );
+              })}
+              <span className="text-[11px] text-[var(--muted)] italic ml-2">Refreshed within 5 days · or longer.</span>
+            </div>
           </div>
 
           {/* Scrolling grid — the only part that scrolls */}

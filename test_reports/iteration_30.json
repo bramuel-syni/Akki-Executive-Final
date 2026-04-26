@@ -1,0 +1,45 @@
+{
+  "summary": "iter30 — 8 changes (brand-subtitle, score-dial conic gradients, Context→Company, switch-confirm dialogs, security copy rewrite, 'See in The Lens', learn-recency tabs, Medium-style Blog + RSS + cron + seed/launch-10). Backend 9/9 PASS quick tests; cron/weekly LLM-touching path also exercised separately and returned 200 OK (took ~155s). Frontend GREEN on all UI claims: brand-subtitle 'for Executives' renders; PortfolioRail uses 'Add company' label and 'Inactive company' aria-labels; switch-confirm-dialog opens for both context AND role switches with Cancel='Stay where I am' and Proceed='Switch company'/'Switch role'; score-dial-amber for score=78, score-dial-red for score=60, score-dial-green confirmed after PATCH to 85; /security h1 'Four things you should be able to verify yourself.' + 4 promise cards exact wording + footer 'Your data never leaves your account' + nav 'Security Design'; /app/highlights uses 'See in The Lens' (old 'all six lenses' removed); /app/learn renders learn-recency-tabs with All/Fresh/Stayed a bit testids; /blog hero (blog-featured-{slug}) + RSS link (data-testid='blog-rss-link' href='/api/blog/rss'); /app/blog-admin shows Copy MD + publish-medium-{slug} per row.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/blog/cron/weekly", "issue": "End-to-end LLM call took ~155s once and ~92s a second time. Within 180s budget but if Emergent gateway is slow, may hit edge. Not a wiring bug."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Learn recency filter", "issue": "On /app/learn TL Articles tab, totals are All=4 / Fresh=0 / Stayed a bit=0. Fresh+Stayed should equal All. Likely the seed TL Articles lack a `published_at` field so matchesRecency rejects them from BOTH buckets. Either default missing dates to 'stayed' or backfill published_at in seed.", "affected_selectors": ["[data-testid='learn-recency-fresh']", "[data-testid='learn-recency-stayed']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter30_blog_lens.py",
+    "/app/test_reports/pytest/iter30_blog_lens.xml"
+  ],
+  "action_items": [
+    "Investigate why seed TL Articles aren't bucketed into Fresh or Stayed (likely missing published_at). Either backfill seed metadata or treat missing date as 'stayed a bit'."
+  ],
+  "critical_code_review_comments": [
+    "blog.py PERSONA_PROMPT + _TOPIC_SEEDS rotation correctly cycles opportunity/risk/compliance/adoption/growth (5 categories × 2 = 10 launch articles).",
+    "/api/blog/rss correctly returns Atom XML 200 with empty <feed> when no posts published; content-type 'application/atom+xml; charset=utf-8'.",
+    "APScheduler arm-on-startup logged 'Exco360 weekly scheduler armed (Tue 10:00 UTC).' at every backend reload — confirmed in /var/log/supervisor/backend.err.log.",
+    "PortfolioRail switch-confirm-dialog correctly fires on both rail-context-{id} and rail-role-{role} clicks. Proper a11y (data-testid on dialog + Cancel + Proceed buttons), Cancel restores prior selection, Proceed calls switchContext/switchRole.",
+    "ScoreDial conic-gradient threshold logic: <65 red / 65-80 amber / >80 green. 78 → amber, 85 → green, 60 → red — verified live.",
+    "Security.jsx PROMISES rewrite delivered; nav rename 'Security Design' applied; footer copy updated to 'Your data never leaves your account'.",
+    "BlogAdmin seed-launch-banner correctly gated on posts.length<5 (currently 6 posts so hidden — correct behaviour, banner will appear after admin clears drafts or on fresh deploy).",
+    "Learn page recency tab counts don't sum because seed items lack published_at — see action_items."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter30_blog_lens.py (NEW)"
+  ],
+  "success_rate": {
+    "backend": "100% (9/9 quick + cron-weekly real LLM call once succeeded with 200 ok)",
+    "frontend": "100% on all 8 batch claims; 1 minor data integration (Learn recency bucketing) flagged"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026!  ·  admin@akki.ai / AkkiAdmin2026!  ·  AKKI_CRON_SECRET=local-dev-cron-secret-rotate-in-prod-2026",
+  "seed_data_creation": "PATCHed Bramuel CFO context goal 'Migrate to new ERP' score 78→85 to verify score-dial-green, then restored to 78. No other test data created. Did not call /api/blog/seed/launch-10 in admin mode to avoid 60-120s of LLM cost (main agent confirmed wiring already).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iter30_blog_lens.py covers RSS shape + cron auth (3 cases: no-secret 401, wrong-secret 401, correct-secret 200/502/503) + seed/launch-10 RBAC (anon→401, non-admin→403) + regression (blog/posts, strategic-goals, monitor, scheduler-log). The expensive LLM tests (cron-weekly with correct secret AND seed/launch-10 admin happy path) are present but slow — run individually with high timeout if needed. Frontend tests all hit live APIs via signin → /app/* routes via [data-testid]. Score-dial PATCH→reload pattern is well-established."
+}

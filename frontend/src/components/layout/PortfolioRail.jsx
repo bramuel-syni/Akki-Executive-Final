@@ -1,6 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { CheckCircle2, Layers, Plus, ChevronDown, ChevronUp, Briefcase, User as UserIcon } from "lucide-react";
 
 const CONTEXT_TYPE_LABEL = {
@@ -10,6 +14,11 @@ const CONTEXT_TYPE_LABEL = {
   cfo: "CFO",
   ceo: "CEO",
   personal: "Personal",
+};
+
+const ROLE_LABEL = {
+  ned: "Non-Executive Director",
+  executive: "Operating Executive",
 };
 
 /**
@@ -28,8 +37,39 @@ export default function PortfolioRail() {
     activeRole, availableRoles, switchRole,
   } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
+  // Confirm dialog state — { kind: 'role'|'company', target: <id-or-role>, label }
+  const [confirm, setConfirm] = useState(null);
 
-  const handleRoleSwitch = switchRole;
+  // Wrap role/company switches behind a confirm dialog so the user knows
+  // exactly what they are about to change.
+  const requestRoleSwitch = (role) => {
+    if (role === activeRole) return;
+    setConfirm({
+      kind: "role",
+      target: role,
+      title: `Switching to ${ROLE_LABEL[role] || role}`,
+      body: `You're about to switch from ${ROLE_LABEL[activeRole] || activeRole} to ${ROLE_LABEL[role] || role}. The companies in your portfolio will change to those you hold this role on. You'll need to pick a company to continue working.`,
+    });
+  };
+
+  const requestContextSwitch = (cid, cname) => {
+    if (cid === activeContext?.id) return;
+    setConfirm({
+      kind: "company",
+      target: cid,
+      title: `Switching company to ${cname}`,
+      body: `Everything you see — Home, Monitor, Cycle, Workflows, Documents — will refresh to ${cname}. Your other companies stay sealed and untouched.`,
+    });
+  };
+
+  const handleConfirm = async () => {
+    if (!confirm) return;
+    if (confirm.kind === "role") await switchRole(confirm.target);
+    else if (confirm.kind === "company") await switchContext(confirm.target);
+    setConfirm(null);
+  };
+
+  const handleRoleSwitch = requestRoleSwitch;
 
   const groups = useMemo(() => {
     const g = { personal: [], sponsored: [] };
@@ -113,14 +153,14 @@ export default function PortfolioRail() {
                   return (
                     <li key={c.id}>
                       <button
-                        onClick={() => switchContext(c.id)}
+                        onClick={() => requestContextSwitch(c.id, c.name)}
                         className={`w-full text-left px-2.5 py-2 rounded-md transition-colors ${isActive ? "bg-white border border-[var(--accent)]/30" : "hover:bg-white"}`}
                         data-testid={`rail-context-${c.id}`}
                       >
                         <div className="flex items-start gap-2">
                           <span
                             className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${isActive ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-transparent border border-[var(--muted)]/40"}`}
-                            aria-label={isActive ? "Active context" : "Inactive context"}
+                            aria-label={isActive ? "Active company" : "Inactive company"}
                             data-testid={`rail-dot-${c.id}`}
                           />
                           <div className="flex-1 min-w-0">
@@ -144,7 +184,7 @@ export default function PortfolioRail() {
                     return (
                       <li key={c.id}>
                         <button
-                          onClick={() => switchContext(c.id)}
+                          onClick={() => requestContextSwitch(c.id, c.name)}
                           className={`w-full text-left px-2.5 py-2 rounded-md transition-colors ${isActive ? "bg-white border border-[var(--accent)]/30" : "hover:bg-white"}`}
                           data-testid={`rail-context-${c.id}`}
                         >
@@ -171,11 +211,34 @@ export default function PortfolioRail() {
               className="w-full text-left px-2.5 py-2 rounded-md text-[12.5px] text-[var(--accent)] hover:bg-white inline-flex items-center gap-2"
               data-testid="rail-add-context"
             >
-              <Plus className="w-3.5 h-3.5" /> Add context
+              <Plus className="w-3.5 h-3.5" /> Add company
             </button>
           </section>
         </div>
       )}
+
+      {/* Confirm dialog — fires on every role / company switch so the user
+          knows exactly what they're about to change. */}
+      <AlertDialog open={!!confirm} onOpenChange={(o) => { if (!o) setConfirm(null); }}>
+        <AlertDialogContent data-testid="switch-confirm-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirm?.title}</AlertDialogTitle>
+            <AlertDialogDescription className="text-[13px] leading-relaxed pt-2">
+              {confirm?.body}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="switch-confirm-cancel">Stay where I am</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirm}
+              className="bg-[var(--accent)] hover:bg-[var(--accent)]/90"
+              data-testid="switch-confirm-proceed"
+            >
+              {confirm?.kind === "role" ? "Switch role" : "Switch company"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </aside>
   );
 }

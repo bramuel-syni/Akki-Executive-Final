@@ -5,48 +5,48 @@ import { ShieldCheck, Lock, Eye, FileCheck, ArrowRight } from "lucide-react";
 
 const PROMISES = [
   {
-    n: "01", icon: Lock, title: "Residency",
-    headline: "Your context never leaves this account.",
-    detail: "Documents, signals, briefings, and lens outputs are scoped to the active context and visible only to its members. Cross-tenant leakage is impossible by construction — enforced at query time, not by a configuration toggle.",
-    proof: "Audit log shows every read and write per actor. Memberships are exclusive per context.",
+    n: "01", icon: Lock, title: "Your data stays yours",
+    headline: "AKKI cannot train on your board pack. Period.",
+    detail: "Your documents and signals never join a public training set. We use the Emergent LLM gateway with a private contract — no logging of your content, no model fine-tuning, no \"you sent it to us, you said we could.\" Every read and write is scoped to the company you're working in. Cross-company leakage isn't a setting; it's a query-time impossibility.",
+    proof: "Audit log: every read and write, with actor and timestamp. Export it any time.",
   },
   {
-    n: "02", icon: ShieldCheck, title: "Shielding",
-    headline: "Identities are masked before any LLM call.",
-    detail: "Synisense rewrites names, emails, organisation identifiers, and other identity tokens to opaque references before the prompt leaves the server. Responses are rehydrated server-side. The model never sees your principals.",
-    proof: "Every LLM-backed response surfaces a `shielding` receipt — masked count, by category, shielded-by service tag.",
+    n: "02", icon: ShieldCheck, title: "Identities are scrubbed",
+    headline: "The model never sees your CEO's name. Or yours.",
+    detail: "Before any prompt leaves our server, names, emails, organisation IDs, and other identifiers are replaced with opaque tokens. The model reasons over masked text. We swap the names back on the way out. If the LLM provider gets breached tomorrow, the breach isn't yours.",
+    proof: "Every AI response carries a shielding receipt: count of identities masked, categories, signed by the masking service.",
   },
   {
-    n: "03", icon: FileCheck, title: "Provenance",
-    headline: "Every signal cites the exact page it came from.",
-    detail: "Briefings ship with a Receipts page. Lens runs expose Observation → Implication → Action with their sources. Ask answers carry [doc:xxx] inline citations. Nothing gets asserted without traceable evidence.",
-    proof: "Click any citation to open the source document at the exact section. Export the briefing PDF — receipts travel with it.",
+    n: "03", icon: FileCheck, title: "Receipts on every claim",
+    headline: "Every number cites the page it came from.",
+    detail: "Signals, briefings, lens runs and Ask answers all carry [doc:xxx] citations inline. Click any citation, the source opens at the exact section. Nothing AKKI tells you is unsourceable. That alone disqualifies the \"AI hallucination\" defence in a board meeting.",
+    proof: "Export the briefing PDF — the citations travel with it. Ready for the audit committee.",
   },
   {
-    n: "04", icon: Eye, title: "Control",
-    headline: "Export or delete everything, any time.",
-    detail: "The Audit log shows every action ever taken on this context. The Danger zone in Settings exports the full context as JSON or archives it. Sandbox data is hard-deleted on day 22 automatically.",
-    proof: "No retention bargains, no hidden tiers. The 'Delete' button does what it says.",
+    n: "04", icon: Eye, title: "Leave clean, any time",
+    headline: "One button deletes everything.",
+    detail: "Settings → Danger zone gives you JSON export of your whole company workspace — documents, signals, reports, audit log — and a hard delete. No retention bargains. No support ticket required. The Sandbox auto-deletes on day 22 with no human in the loop.",
+    proof: "No \"call sales to delete\" flow. The button does what it says.",
   },
 ];
 
 const POSTURE_ITEMS = [
-  ["AKKI never sends external communications without your approval.", "When AKKI emails a reportee, you reviewed and approved the checklist first. The sender header reads 'AKKI for [your name]' so the role is explicit. Replies route to your real inbox, not AKKI's."],
-  ["Mock-by-default for paid integrations until you opt in.", "Stripe billing, real virus scanning, vector DBs — all of these stay mocked until you explicitly turn them on. We ship value before we ship spend."],
-  ["Custom JWT auth with bcrypt + optional TOTP MFA.", "Brute-force lockout keyed on email (not IP, since Kubernetes ingress rotates). MFA can be enabled per-account. Cookies are httpOnly + samesite=none."],
-  ["Open-source LLM key managed by Emergent.", "We use Anthropic's Claude Sonnet via the Emergent universal key — a single entry point with rotation, rate limits, and cost telemetry under our control."],
+  ["We don't email your team without you reading the email first.", "Every cycle email is reviewed and approved by you. The sender header reads 'AKKI for [your name]' so your reportees know it's authorised. Replies go to your real inbox."],
+  ["MFA, lockouts, and bcrypt — the boring stuff done right.", "Custom JWT with bcrypt-hashed passwords. Brute-force lockout per-account. Optional TOTP MFA. Cookies are httpOnly and samesite=none. No \"reset by SMS\" social-engineering surface."],
+  ["What you turn on costs money. What's off doesn't.", "Stripe billing, vector DBs, virus scanners — every paid integration stays mocked until you explicitly opt in. You'll never see a charge for something you didn't ask for."],
+  ["The data residency answer your CISO wants.", "Database in Atlas, region of your choice. Backups encrypted at rest. We're happy to share architecture docs and run a security review with your team before you onboard real boards."],
 ];
 
 export default function Security() {
   return (
     <MarketingShell>
       <section className="max-w-[1100px] mx-auto px-6 lg:px-10 py-20" data-testid="security-page">
-        <p className="akki-overline mb-3 text-[var(--accent)]">Security & Trust</p>
+        <p className="akki-overline mb-3 text-[var(--accent)]">Security · Why you can trust this</p>
         <h1 className="akki-serif text-[44px] sm:text-[52px] leading-[1.1] tracking-tight text-[var(--ink)] mb-6 font-normal max-w-3xl">
-          Four promises. Each enforced in code.
+          Four things you should be able to verify yourself.
         </h1>
         <p className="akki-serif text-[18px] leading-relaxed text-[var(--deep)] mb-12 italic max-w-2xl">
-          Boards that hold their managers to a standard of "trust but verify" deserve the same posture from the tool that prepares them.
+          You ask your CFO for receipts. You ask your auditor for working papers. Ask the same of the tool that prepares you for the boardroom.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8" data-testid="security-promises">
@@ -72,7 +72,7 @@ export default function Security() {
           })}
         </div>
 
-        <h2 className="akki-serif text-[28px] font-normal text-[var(--ink)] mt-20 mb-8">Posture details we'd flag if you asked us in person</h2>
+        <h2 className="akki-serif text-[28px] font-normal text-[var(--ink)] mt-20 mb-8">If you asked me face-to-face, here's what else I'd tell you</h2>
         <div className="space-y-6 max-w-3xl">
           {POSTURE_ITEMS.map(([h, b], i) => (
             <div key={i} className="border-l-2 border-[var(--accent)]/40 pl-5">

@@ -6,7 +6,7 @@ import { ShieldCheck } from "lucide-react";
 const NAV = [
   { to: "/about", label: "About" },
   { to: "/features", label: "Features" },
-  { to: "/security", label: "Security" },
+  { to: "/security", label: "Security Design" },
   { to: "/blog", label: "Exco360" },
 ];
 
@@ -51,14 +51,14 @@ export function MarketingFooter() {
         <div>
           <Logo />
           <p className="text-[12.5px] text-[var(--deep)] mt-4 leading-relaxed max-w-xs">
-            Context-primary intelligence for non-executive directors and operating executives.
+            Intelligence for non-executive directors and operating executives.
           </p>
         </div>
         <div>
           <p className="akki-overline mb-3">Product</p>
           <ul className="space-y-2 text-[13px] text-[var(--deep)]">
             <li><Link to="/features" className="hover:text-[var(--ink)]">Features</Link></li>
-            <li><Link to="/security" className="hover:text-[var(--ink)]">Security & Trust</Link></li>
+            <li><Link to="/security" className="hover:text-[var(--ink)]">Security Design</Link></li>
             <li><Link to="/sandbox" className="hover:text-[var(--ink)]">Try the sandbox</Link></li>
             <li><Link to="/signin" className="hover:text-[var(--ink)]">Sign in</Link></li>
           </ul>
@@ -77,7 +77,7 @@ export function MarketingFooter() {
           </p>
           <ul className="space-y-2 text-[12.5px] text-[var(--deep)] leading-relaxed">
             <li>Synisense-shielded LLM calls</li>
-            <li>Context never leaves your account</li>
+            <li>Your data never leaves your account</li>
             <li>Every signal cites its source</li>
             <li>Export or delete on demand</li>
           </ul>

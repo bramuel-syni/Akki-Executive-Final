@@ -34,6 +34,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr, Field
 
 from core import db, get_current_account, now as _now, iso as _iso, write_audit
@@ -331,21 +332,82 @@ async def publish_post(
 # publish manually so a human stays in the loop on what AKKI says publicly).
 # ---------------------------------------------------------------------------
 
-# Default rotating topic seeds — picked deterministically by ISO week so a
-# weekly trigger never hits the same topic twice in a 12-week window.
+# ---------------------------------------------------------------------------
+# Persona prompt — applied to every weekly auto-generation. Distilled from
+# the user-supplied Medium ghostwriter brief. The cron runs the four phases
+# (intake → structure → draft → self-critique) inside one call and saves the
+# revised draft so a human can publish it after review.
+# ---------------------------------------------------------------------------
+PERSONA_PROMPT = """You are a Medium ghostwriter for an African-market operator who thinks
+in systems, challenges convention, and is allergic to imported templates.
+Your finished article must have a realistic shot at a 50%+ read ratio.
+
+AUTHOR PERSONA
+- Thinks structurally and integrative — connects B2C, B2B, internal teams,
+  infrastructure into one thesis. Never lists features.
+- Commercially serious. Demands post-grant viability and unit economics.
+  Stress-tests whether a thesis survives without subsidy.
+- Impatient with corporate softeners, hedging, polish. Wants specifics,
+  declarative claims, peers not students.
+- POV: African operator building institution-grade products, betting that
+  local nuance with global rigour is the moat.
+
+PHASE 1 — INTAKE (do internally before writing)
+Pick a non-obvious angle. If your first instinct is generic ("AI is the
+future", "consistency matters"), STOP and find something contrarian but
+truthful. Define a specific target reader (e.g. "CFOs of mid-cap African
+financial services" not "executives interested in AI"). Identify the
+"lessons that stick" — what should the reader walk away believing?
+
+PHASE 2 — STRUCTURE
+Choose ONE title that creates a curiosity gap (no "How I…" or "X lessons
+from Y" formulas unless the specifics are unusually strong). 4-6 H2
+section headers. A specific opening hook (number/scene/claim, never a
+definition). A concrete payoff the reader leaves with.
+
+PHASE 3 — DRAFT (the article body)
+VOICE: First-person, conversational not casual. No throat-clearing intros.
+No "it's important to note", "at the end of the day", "in today's
+fast-paced world". Cut every sentence that adds no meaning.
+
+STRUCTURE: Open with a specific scene/number/claim. H2 every 200-400 words.
+Short paragraphs (1-4 sentences). A bolded line or pulled quote every
+400-600 words for scan-ability. Close with a specific takeaway, never
+"what do you think? comment below".
+
+CONTENT RULES: Every claim needs a concrete anchor — a number, name,
+date, or example. If you can't anchor it, cut it. No invented statistics.
+No "studies show" without a specific study. Replace adjectives with
+specifics ("went from 12% to 41%" not "huge improvement"). If you find
+yourself writing a list of generic tips, stop — write an argument.
+
+WHAT TO AVOID: em-dash overuse, "It's not X, it's Y", "—and that's the
+point" tics (these read as AI now). Header questions like "Why Does This
+Matter?". Conclusions that summarise what you just said. Sentences that
+could appear in any article on this topic.
+
+PHASE 4 — SELF-CRITIQUE
+Before returning, audit: which sentence has the highest bounce risk? Are
+there 3 sentences that could appear in any article on this topic — rewrite
+or cut them. Count concrete details (numbers, names, scenes); if under 5
+in the whole piece, rewrite. Flag any AI-tells. Then deliver the revised
+version.
+"""
+
+
 _TOPIC_SEEDS = [
-    "Why audit committees should ask about model drift this quarter",
-    "What 'human in the loop' actually looks like in practice — three patterns NEDs should learn to distinguish",
-    "The AI vendor due-diligence questions that separate boards who'll regret their procurement from those who won't",
-    "Capital allocation in the age of AI: what's a one-year payback now, and what isn't",
-    "Why every risk register should now have a model-risk section — and what belongs in it",
-    "ESG meets AI: the disclosure questions regulators are signalling",
-    "Reporting cycles in the age of agentic AI — what board secretaries should be tracking",
-    "Why most AI governance frameworks are written for engineers, not directors",
-    "The 'red team' question every board should put to management this year",
-    "AI in customer-facing workflows: what's the directors' duty when the model lies?",
-    "Vendor lock-in and AI: how to negotiate exit rights into your model contracts",
-    "AI's quiet effect on M&A: due diligence has changed in ways most boards haven't noticed",
+    "Opportunity: the AI-procurement asymmetry African boards keep losing — and the three contract clauses that close it",
+    "Risk: model-risk registers your audit committee should refuse to sign without",
+    "Compliance: what the EU AI Act actually means for a Nairobi or Lagos board (and what it doesn't)",
+    "Adoption management: the leadership move that separates AI rollouts that compound from those that stall",
+    "Growth as an executive: why pattern-matchers plateau and systems-thinkers compound",
+    "Opportunity: the strategic-finance lever AI unlocks that most CFOs aren't pulling",
+    "Risk: the vendor lock-in trap hiding in your AI procurement, and the exit clause to demand",
+    "Compliance: the disclosure obligations that turn an AI deployment into a board-level matter",
+    "Adoption management: the three friction points that kill AI rollouts in mid-cap African corporates",
+    "Growth as an executive: how to develop conviction in a market with poor benchmarks",
+    "Opportunity: the data-asset most boards are still treating as a cost",
+    "Risk: why agentic AI changes your cybersecurity posture, and what to brief the chair",
 ]
 
 
@@ -381,23 +443,22 @@ async def cron_weekly(
 
     vi = await _next_volume_issue()
     prompt = (
-        f"You are writing the next instalment of '{SERIES_NAME} — {SERIES_TAGLINE}'. "
-        f"This is Volume {vi['volume']}, Issue {vi['issue']}.\n\n"
-        f"Topic for this issue:\n    « {topic} »\n\n"
-        f"Audience: NEDs and operating executives.\n\n"
-        f"Write 700-1,100 words. Voice: AKKI — a sharp, sober colleague with governance experience. "
-        f"Specific. Numerate where useful. Cite real authorities (NACD, IoD, NIST, EU AI Act, FCA, CBK, "
-        f"ISO 42001, Stanford HAI, MIT). No hype. No tool-marketing.\n\n"
-        f"Return JSON:\n{{\n"
-        f'  "title": "<= 90 chars",\n'
-        f'  "dek": "1-sentence sub-headline",\n'
-        f'  "hero_quote": "1-sentence pull-quote",\n'
+        f"{PERSONA_PROMPT}\n\n"
+        f"This is Volume {vi['volume']}, Issue {vi['issue']} of '{SERIES_NAME} — "
+        f"{SERIES_TAGLINE}'.\n\n"
+        f"Topic to write on: « {topic} »\n\n"
+        f"Audience: NEDs and operating executives in African mid-cap and "
+        f"large-cap businesses. Length: 1,200-1,800 words.\n\n"
+        f"Return STRICT JSON ONLY:\n{{\n"
+        f'  "title": "<= 90 chars; specific curiosity gap; no \\"How I…\\" formulas",\n'
+        f'  "dek": "1-sentence sub-headline, <= 180 chars",\n'
+        f'  "hero_quote": "1-sentence pull-quote that distills the piece",\n'
         f'  "tags": ["3-5 short slugs"],\n'
-        f'  "body": "Markdown. 4-7 sections. Include a 3-bullet \'Questions for the boardroom\' near the end.",\n'
-        f'  "sources": ["3-5 plausible primary-source URLs"],\n'
-        f'  "linkedin_post": "180-280 word LinkedIn post",\n'
-        f'  "twitter_post": "<= 270 chars",\n'
-        f'  "email_intro": "120-200 word newsletter intro"\n'
+        f'  "body": "Markdown. Open with a specific scene/number/claim. 4-6 ## H2 sections. Short paragraphs (1-4 sentences). A **bolded sentence** every 400-600 words. Close with a specific takeaway, no comment-bait CTA.",\n'
+        f'  "sources": ["3-5 real primary-source URLs (NACD, IoD, NIST, FCA, CBK, EU AI Act, ISO 42001, Stanford HAI, MIT, etc.)"],\n'
+        f'  "linkedin_post": "180-280 word LinkedIn preview in author voice; 2-3 hashtags",\n'
+        f'  "twitter_post": "<= 270 chars, sharp, no thread",\n'
+        f'  "email_intro": "120-200 word newsletter intro framing why this issue matters now"\n'
         f"}}\n"
     )
     llm_out = await llm_call_llm(
@@ -443,7 +504,151 @@ async def cron_weekly(
         "published_at": None,
     }
     await db.blog_posts.insert_one(rec.copy())
-    return {"ok": True, "post": rec}
+
+    # Notify admins so they can review + one-click publish.
+    try:
+        admins = await db.accounts.find(
+            {"is_superadmin": True}, {"_id": 0, "email": 1, "name": 1},
+        ).to_list(20)
+        review_url = f"{_frontend_origin()}/blog/admin?slug={slug}"
+        for a in admins:
+            await send_email(
+                to=a["email"],
+                subject=f"AKKI: weekly draft ready — {title}",
+                html=(
+                    f"<div style=\"font-family:Georgia,serif;max-width:560px;margin:0 auto;padding:32px 24px;"
+                    f"background:#f5efe6;color:#1a1f2e;\">"
+                    f"<p style=\"font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#7a6a52;"
+                    f"margin:0 0 16px 0;\">Exco360 · Weekly draft</p>"
+                    f"<h1 style=\"font-size:24px;line-height:1.25;margin:0 0 12px 0;font-weight:normal;\">"
+                    f"{title}</h1>"
+                    f"<p style=\"font-size:14px;color:#4a4a4a;margin:0 0 24px 0;font-style:italic;\">"
+                    f"{(parsed.get('dek') or '').strip()[:200]}</p>"
+                    f"<p style=\"font-size:13px;line-height:1.7;color:#3a3a3a;margin:0 0 24px 0;\">"
+                    f"AKKI auto-drafted this article using the Medium ghostwriter persona. "
+                    f"Read the draft, edit if you need to, and publish when you're ready. "
+                    f"Subscribers will receive it on publish.</p>"
+                    f"<a href=\"{review_url}\" style=\"display:inline-block;background:#722f37;color:#fff;"
+                    f"padding:12px 24px;text-decoration:none;font-size:13px;letter-spacing:0.05em;\">"
+                    f"Review and publish &rarr;</a>"
+                    f"<p style=\"font-size:11px;color:#7a6a52;margin:32px 0 0 0;\">"
+                    f"Draft created automatically. No subscribers were emailed yet.</p>"
+                    f"</div>"
+                ),
+                text=f"AKKI weekly draft ready: {title}\n\nReview at: {review_url}",
+            )
+    except Exception as e:  # noqa: BLE001 — best-effort notification
+        logger.warning("Cron admin notification failed: %s", e)
+
+    return {"ok": True, "post": rec, "admins_notified": True}
+
+
+@router.post("/seed/launch-10")
+async def seed_launch_articles(
+    current: Dict[str, Any] = Depends(_require_admin),
+):
+    """One-shot seed: composes 10 launch articles across opportunity, risk,
+    compliance, adoption-management, and growth-as-an-executive (2 each)
+    using the persona prompt. Returns immediately with how many were
+    queued; the LLM calls run sequentially and persist as drafts.
+
+    Idempotent: skips topics that already have a draft on this server."""
+    SEED_TOPICS = [
+        ("opportunity", "The AI procurement asymmetry African boards keep losing — and the three contract clauses that close it"),
+        ("opportunity", "The data asset most boards still treat as a cost — and the three reframings that change it"),
+        ("risk", "Model-risk registers your audit committee should refuse to sign without"),
+        ("risk", "Why agentic AI changes your cybersecurity posture, and what to brief the chair this quarter"),
+        ("compliance", "What the EU AI Act actually means for a Nairobi or Lagos board (and what it doesn't)"),
+        ("compliance", "The disclosure obligations that turn an AI deployment into a board-level matter"),
+        ("adoption", "The leadership move that separates AI rollouts that compound from those that stall"),
+        ("adoption", "The three friction points that kill AI rollouts in mid-cap African corporates"),
+        ("growth", "Why pattern-matchers plateau and systems-thinkers compound — what executives can change about how they think"),
+        ("growth", "How to develop conviction in a market with poor benchmarks"),
+    ]
+
+    composed: List[Dict[str, Any]] = []
+    skipped: List[str] = []
+
+    for category, topic in SEED_TOPICS:
+        # Idempotency: if a draft or published post with the same topic
+        # already exists, skip.
+        existing = await db.blog_posts.find_one(
+            {"topic_seed": topic}, {"_id": 0, "slug": 1, "title": 1},
+        )
+        if existing:
+            skipped.append(topic)
+            continue
+
+        vi = await _next_volume_issue()
+        prompt = (
+            f"{PERSONA_PROMPT}\n\n"
+            f"This is Volume {vi['volume']}, Issue {vi['issue']} of "
+            f"'{SERIES_NAME} — {SERIES_TAGLINE}'.\n\n"
+            f"Category: {category}\n"
+            f"Topic to write on: « {topic} »\n\n"
+            f"Audience: NEDs and operating executives in African mid-cap "
+            f"and large-cap businesses. Length: 1,200-1,800 words.\n\n"
+            f"Return STRICT JSON ONLY:\n{{\n"
+            f'  "title": "<= 90 chars",\n'
+            f'  "dek": "1-sentence sub-headline",\n'
+            f'  "hero_quote": "1-sentence pull-quote",\n'
+            f'  "tags": ["3-5 short slugs"],\n'
+            f'  "body": "Markdown. Open with a specific scene/number/claim. 4-6 ## H2 sections. Short paragraphs.",\n'
+            f'  "sources": ["3-5 real primary-source URLs"],\n'
+            f'  "linkedin_post": "180-280 words",\n'
+            f'  "twitter_post": "<= 270 chars",\n'
+            f'  "email_intro": "120-200 words"\n'
+            f"}}\n"
+        )
+        try:
+            llm_out = await llm_call_llm(
+                module="blog-seed",
+                user_query=prompt,
+                context_object=None,
+                session_context={"session_id": f"blog-seed-{category}"},
+                data_trust={"overall": "trusted"},
+                response_format="json",
+            )
+            parsed = parse_json_response(llm_out.get("response", ""))
+            if not isinstance(parsed, dict) or not parsed.get("body"):
+                logger.warning("Seed compose failed for %s", topic)
+                continue
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Seed compose threw for %s: %s", topic, e)
+            continue
+
+        title = (parsed.get("title") or topic)[:120]
+        slug = _slugify(f"vol{vi['volume']}-iss{vi['issue']}-{title}")
+        rec = {
+            "id": str(uuid.uuid4()),
+            "slug": slug,
+            "series": SERIES_NAME,
+            "volume": vi["volume"],
+            "issue": vi["issue"],
+            "kicker": f"{SERIES_NAME} · Vol {vi['volume']} · Issue {vi['issue']}",
+            "title": title,
+            "dek": (parsed.get("dek") or "")[:300],
+            "hero_quote": (parsed.get("hero_quote") or "")[:300],
+            "tags": (parsed.get("tags") or [])[:8],
+            "body": (parsed.get("body") or "")[:18000],
+            "sources": (parsed.get("sources") or [])[:8],
+            "linkedin_post": (parsed.get("linkedin_post") or "")[:1800],
+            "twitter_post": (parsed.get("twitter_post") or "")[:300],
+            "email_intro": (parsed.get("email_intro") or "")[:1500],
+            "read_minutes": max(2, len((parsed.get("body") or "").split()) // 220),
+            "category": category,
+            "status": "draft",
+            "reads": 0,
+            "topic_seed": topic,
+            "created_at": _iso(_now()),
+            "created_by": current["id"],
+            "created_via": "seed",
+            "published_at": None,
+        }
+        await db.blog_posts.insert_one(rec.copy())
+        composed.append({"slug": slug, "title": title, "category": category})
+
+    return {"composed": composed, "skipped_existing": skipped, "total_drafts_now": len(composed)}
 
 
 @router.delete("/posts/{slug}")
@@ -478,3 +683,56 @@ async def list_subscribers(
         {"status": "active"}, {"_id": 0},
     ).sort("subscribed_at", -1).limit(2000)
     return {"subscribers": await cursor.to_list(length=2000)}
+
+
+# ---------------------------------------------------------------------------
+# Public RSS feed — for Medium "Stories Import" and any other feed reader.
+# Medium polls the feed; new items become drafts in the user's Medium account.
+# ---------------------------------------------------------------------------
+@router.get("/rss", response_class=Response)
+async def rss_feed():
+    """Atom feed of the most recent 30 published posts."""
+    posts = await db.blog_posts.find(
+        {"status": "published"}, {"_id": 0},
+    ).sort("published_at", -1).limit(30).to_list(30)
+
+    site = _frontend_origin()
+    feed_self = f"{site}/api/blog/rss"
+    feed_link = f"{site}/blog"
+
+    def esc(s: str) -> str:
+        return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    items_xml = []
+    for p in posts:
+        url = f"{site}/blog/{p['slug']}"
+        published = p.get("published_at") or p.get("created_at") or _iso(_now())
+        # Markdown body wrapped in CDATA so feed readers (incl. Medium) can render it.
+        body_md = (p.get("body") or "").strip()
+        items_xml.append(
+            f"<entry>"
+            f"<id>{url}</id>"
+            f"<title>{esc(p.get('title') or '')}</title>"
+            f"<link href=\"{url}\"/>"
+            f"<updated>{published}</updated>"
+            f"<published>{published}</published>"
+            f"<author><name>AKKI</name></author>"
+            f"<summary>{esc(p.get('dek') or '')}</summary>"
+            f"<content type=\"html\"><![CDATA[{body_md}]]></content>"
+            + "".join(f"<category term=\"{esc(t)}\"/>" for t in (p.get("tags") or []))
+            + "</entry>"
+        )
+
+    feed = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<feed xmlns="http://www.w3.org/2005/Atom">'
+        f'<id>{feed_self}</id>'
+        f'<title>{SERIES_NAME} — {SERIES_TAGLINE}</title>'
+        f'<subtitle>AKKI · for executives</subtitle>'
+        f'<link rel="self" href="{feed_self}"/>'
+        f'<link rel="alternate" href="{feed_link}"/>'
+        f'<updated>{_iso(_now())}</updated>'
+        + "".join(items_xml)
+        + '</feed>'
+    )
+    return Response(content=feed, media_type="application/atom+xml")

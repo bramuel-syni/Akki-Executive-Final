@@ -74,7 +74,7 @@ export default function Blog() {
           A weekly editorial. Research-driven. Specific. No hype. No tool-marketing. Written for the colleague at the board table.
         </p>
 
-        <div className="bg-white border border-[var(--accent)]/20 rounded-lg p-6 mb-14 max-w-2xl" data-testid="subscribe-card">
+        <div className="bg-white border border-[var(--accent)]/20 rounded-lg p-6 mb-16 max-w-2xl" data-testid="subscribe-card">
           <p className="akki-overline mb-2 flex items-center gap-2">
             <Mail className="w-3 h-3 text-[var(--accent)]" /> Subscribe
           </p>
@@ -82,6 +82,9 @@ export default function Blog() {
             One short editorial in your inbox each week. Unsubscribe in one click.
           </p>
           <SubscribeForm />
+          <p className="text-[11px] text-[var(--muted)] mt-3 italic">
+            Prefer Medium? <a href="/api/blog/rss" className="text-[var(--accent)] hover:underline" data-testid="blog-rss-link">Subscribe via RSS →</a>
+          </p>
         </div>
 
         {loading ? (
@@ -92,33 +95,89 @@ export default function Blog() {
             <p className="text-[13.5px] text-[var(--muted)]">Subscribe above and you'll be the first to read it.</p>
           </div>
         ) : (
-          <div className="space-y-12" data-testid="blog-list">
-            {posts.map((p) => (
-              <Link
-                key={p.slug}
-                to={`/blog/${p.slug}`}
-                className="block group border-b border-[var(--rule)] pb-12 last:border-0"
-                data-testid={`blog-post-${p.slug}`}
-              >
-                <p className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--accent)] font-mono mb-3">{p.kicker}</p>
-                <h2 className="akki-serif text-[28px] sm:text-[34px] leading-[1.15] text-[var(--ink)] font-normal mb-3 group-hover:text-[var(--accent)] transition-colors max-w-3xl">
-                  {p.title}
-                </h2>
-                {p.dek && (
-                  <p className="akki-serif text-[16.5px] leading-relaxed text-[var(--deep)] italic mb-4 max-w-2xl">{p.dek}</p>
-                )}
-                <div className="flex items-center gap-4 text-[12px] text-[var(--muted)] font-mono">
-                  <span>{shortDate(p.published_at)}</span>
-                  <span>· {p.read_minutes} min read</span>
-                  <span className="ml-auto inline-flex items-center gap-1.5 text-[var(--accent)] font-sans">
-                    Read <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                  </span>
-                </div>
-              </Link>
-            ))}
-          </div>
+          <MediumStyleList posts={posts} />
         )}
       </section>
     </MarketingShell>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * MediumStyleList — featured hero (latest) + 2-column reading list grid.
+ * Patterns lifted from Medium's recommended-stories shelf:
+ *   • ample serif typography
+ *   • date + read-time + author byline on every row
+ *   • compact card body, no gimmicks, plenty of whitespace
+ * ──────────────────────────────────────────────────────────────────────── */
+function MediumStyleList({ posts }) {
+  const [featured, ...rest] = posts;
+  return (
+    <div data-testid="blog-list">
+      <p className="akki-overline mb-5">Latest issue</p>
+      <Link
+        to={`/blog/${featured.slug}`}
+        className="block group border-b border-[var(--rule)] pb-14 mb-14"
+        data-testid={`blog-featured-${featured.slug}`}
+      >
+        <div className="grid md:grid-cols-12 gap-8">
+          <div className="md:col-span-8">
+            <p className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--accent)] font-mono mb-4">
+              {featured.kicker}
+            </p>
+            <h2 className="akki-serif text-[34px] sm:text-[42px] leading-[1.12] text-[var(--ink)] font-normal mb-4 group-hover:text-[var(--accent)] transition-colors">
+              {featured.title}
+            </h2>
+            {featured.dek && (
+              <p className="akki-serif text-[18px] leading-[1.6] text-[var(--deep)] italic mb-5">
+                {featured.dek}
+              </p>
+            )}
+            <div className="flex items-center gap-3 text-[12.5px] text-[var(--muted)]">
+              <span className="w-7 h-7 rounded-full bg-[var(--accent)] text-white inline-flex items-center justify-center akki-serif text-[12px]">A</span>
+              <span><strong className="text-[var(--ink)] font-normal">AKKI</strong> · for executives</span>
+              <span>·</span>
+              <span>{shortDate(featured.published_at)}</span>
+              <span>·</span>
+              <span>{featured.read_minutes} min read</span>
+            </div>
+          </div>
+          <div className="md:col-span-4 flex items-center">
+            {featured.hero_quote && (
+              <p className="akki-serif italic text-[15.5px] leading-[1.6] text-[var(--deep)] border-l-2 border-[var(--accent)] pl-5">
+                "{featured.hero_quote}"
+              </p>
+            )}
+          </div>
+        </div>
+      </Link>
+
+      <p className="akki-overline mb-5">More from Exco360</p>
+      <div className="grid md:grid-cols-2 gap-x-10 gap-y-12">
+        {rest.map((p) => (
+          <Link
+            key={p.slug}
+            to={`/blog/${p.slug}`}
+            className="block group"
+            data-testid={`blog-post-${p.slug}`}
+          >
+            <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--muted)] font-mono mb-2">
+              {p.kicker}
+            </p>
+            <h3 className="akki-serif text-[22px] leading-[1.22] text-[var(--ink)] font-normal mb-2 group-hover:text-[var(--accent)] transition-colors">
+              {p.title}
+            </h3>
+            {p.dek && (
+              <p className="akki-serif text-[14px] leading-[1.6] text-[var(--deep)] italic mb-3 line-clamp-2">{p.dek}</p>
+            )}
+            <div className="flex items-center gap-2.5 text-[11.5px] text-[var(--muted)] font-mono">
+              <span>{shortDate(p.published_at)}</span>
+              <span>·</span>
+              <span>{p.read_minutes} min</span>
+              {p.category && <><span>·</span><span className="capitalize">{p.category}</span></>}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
   );
 }

@@ -195,7 +195,50 @@ async def on_startup():
         )
         logger.info("Admin password rotated from .env")
 
+    # ── Tuesday 10am scheduler — auto-drafts the weekly Exco360 article.
+    # In-process APScheduler. Single-replica deploys only; for HA, route
+    # this to an external scheduled-trigger calling /api/blog/cron/weekly.
+    cron_secret = os.environ.get("AKKI_CRON_SECRET")
+    if cron_secret:
+        try:
+            from apscheduler.schedulers.asyncio import AsyncIOScheduler
+            from apscheduler.triggers.cron import CronTrigger
+            import httpx
+
+            async def _fire_weekly_cron():
+                try:
+                    async with httpx.AsyncClient(timeout=180.0) as ac:
+                        resp = await ac.post(
+                            "http://localhost:8001/api/blog/cron/weekly",
+                            headers={"X-Cron-Secret": cron_secret},
+                        )
+                    logger.info("Weekly cron fired: status=%s body=%s",
+                                resp.status_code, (resp.text or "")[:200])
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("Weekly cron call failed: %s", e)
+
+            scheduler = AsyncIOScheduler(timezone="UTC")
+            # Tuesdays at 10:00 UTC. The user's market is East Africa
+            # (UTC+3) — 10:00 UTC = 13:00 EAT. Adjust the timezone string
+            # if a different reference is required.
+            scheduler.add_job(
+                _fire_weekly_cron,
+                CronTrigger(day_of_week="tue", hour=10, minute=0),
+                id="exco360_weekly",
+                replace_existing=True,
+            )
+            scheduler.start()
+            app.state.scheduler = scheduler
+            logger.info("Exco360 weekly scheduler armed (Tue 10:00 UTC).")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Could not arm weekly scheduler: %s", e)
+    else:
+        logger.info("AKKI_CRON_SECRET not set — weekly scheduler skipped.")
+
 
 @app.on_event("shutdown")
 async def on_shutdown():
+    sched = getattr(app.state, "scheduler", None)
+    if sched:
+        sched.shutdown(wait=False)
     client.close()

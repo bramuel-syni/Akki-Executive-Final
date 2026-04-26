@@ -233,16 +233,37 @@ function GoalRow({ goal, isLast, isNED, isEditing, onEdit, onCancel, onSaved, co
 function ScoreDial({ label, value }) {
   if (value === null || value === undefined) {
     return (
-      <div className="text-center w-14">
-        <p className="text-[16px] text-[var(--muted)]">—</p>
-        <p className="text-[9.5px] uppercase tracking-wider text-[var(--muted)]">{label}</p>
+      <div className="text-center w-16" data-testid="score-dial-empty">
+        <div className="w-10 h-10 rounded-full border-2 border-dashed border-[var(--rule)] flex items-center justify-center mx-auto">
+          <span className="text-[12px] text-[var(--muted)]">—</span>
+        </div>
+        <p className="text-[9.5px] uppercase tracking-wider text-[var(--muted)] mt-1">{label}</p>
       </div>
     );
   }
-  const tone = value >= 70 ? "text-emerald-700" : value >= 40 ? "text-amber-700" : "text-red-700";
+  // Banded thresholds per user spec:
+  //   < 65   → red (off-track)
+  //   65-80  → amber (at-risk)
+  //   > 80   → green (on-track)
+  const { ring, text, bg } = value > 80
+    ? { ring: "#047857", text: "text-emerald-700", bg: "bg-emerald-50" }
+    : value >= 65
+      ? { ring: "#b45309", text: "text-amber-700",  bg: "bg-amber-50" }
+      : { ring: "#b91c1c", text: "text-red-700",    bg: "bg-red-50" };
+  // Conic gradient gives a clean ring without an extra <svg>.
   return (
-    <div className="text-center w-14">
-      <p className={`akki-serif text-[18px] leading-none ${tone}`}>{value}</p>
+    <div className="text-center w-16" data-testid={`score-dial-${value > 80 ? "green" : value >= 65 ? "amber" : "red"}`}>
+      <div
+        className={`w-10 h-10 rounded-full mx-auto flex items-center justify-center ${bg}`}
+        style={{
+          background: `conic-gradient(${ring} ${value * 3.6}deg, rgba(0,0,0,0.06) 0)`,
+        }}
+        title={`${value}% — ${value > 80 ? "on track" : value >= 65 ? "at risk" : "off track"}`}
+      >
+        <div className="w-[30px] h-[30px] rounded-full bg-white flex items-center justify-center">
+          <span className={`akki-serif text-[12px] leading-none ${text}`}>{value}</span>
+        </div>
+      </div>
       <p className="text-[9.5px] uppercase tracking-wider text-[var(--muted)] mt-1">{label}</p>
     </div>
   );

@@ -115,7 +115,7 @@ export default function AppHome() {
     return (
       <AppShell>
         <div className="max-w-3xl mx-auto px-8 py-16 akki-fade-up">
-          <p className="akki-overline mb-3">Home · {activeContext?.name || "Your context"}</p>
+          <p className="akki-overline mb-3">Home · {activeContext?.name || "Your company"}</p>
           <h1 className="akki-greeting mb-6">{greeting(firstName)}</h1>
           <div className="bg-white border border-[var(--rule)] rounded-lg p-10 relative overflow-hidden">
             <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[var(--accent)]" />
@@ -232,9 +232,9 @@ export default function AppHome() {
                         : "text-[var(--muted)] hover:text-[var(--ink)]"
                     }`}
                     data-testid="home-scope-current"
-                    title={`Show only ${activeContext?.name || "this context"}`}
+                    title={`Show only ${activeContext?.name || "this company"}`}
                   >
-                    This context
+                    This company
                   </button>
                   <button
                     onClick={() => setScope("all")}

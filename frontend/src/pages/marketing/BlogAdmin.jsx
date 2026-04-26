@@ -102,6 +102,41 @@ export default function BlogAdmin() {
     copy(buildMediumMarkdown(full), "Medium-ready markdown");
   };
 
+  /** "Publish to Medium" — opens Medium's "New story" page with the
+   *  title and body markdown copied to clipboard. The Medium API was
+   *  deprecated in 2023; this is the cleanest hands-on path. */
+  const onPublishToMedium = async (p) => {
+    let full = p?.body ? p : bodyCache[p?.slug];
+    if (!full?.body) {
+      try {
+        const { data } = await api.get(`/blog/admin/posts/${p.slug}`);
+        full = data;
+        setBodyCache((prev) => ({ ...prev, [p.slug]: data }));
+      } catch (e) { toast.error(apiErrorMessage(e)); return; }
+    }
+    if (!full?.body) { toast.error("This post has no body to copy."); return; }
+    await navigator.clipboard.writeText(buildMediumMarkdown(full));
+    toast.success("Markdown copied. Paste into the new Medium story window.");
+    window.open("https://medium.com/new-story", "_blank", "noopener");
+  };
+
+  /** Seed-launch — fires the backend to compose 10 launch articles. */
+  const onSeedLaunch = async () => {
+    if (!confirm("Generate 10 launch articles via Claude? This may take 60-90 seconds.")) return;
+    const id = toast.loading("AKKI is composing 10 launch drafts…");
+    try {
+      const { data } = await api.post("/blog/seed/launch-10", {}, { timeout: 600000 });
+      toast.success(
+        `${data.composed?.length || 0} drafts ready · ${data.skipped_existing?.length || 0} skipped (already existed)`,
+        { id },
+      );
+      const fresh = await api.get("/blog/posts?include_drafts=1");
+      setPosts(fresh.data.posts || []);
+    } catch (e) {
+      toast.error(apiErrorMessage(e), { id });
+    }
+  };
+
   return (
     <AppShell>
       <div className="max-w-[1100px] mx-auto px-8 py-10">
@@ -109,6 +144,20 @@ export default function BlogAdmin() {
           <p className="akki-overline mb-2 text-[var(--accent)]">Exco360 · Admin</p>
           <h1 className="akki-greeting mb-2">Compose, publish, distribute.</h1>
           <p className="akki-meta">{subscribers.length} active subscribers · {posts.filter((p) => p.status === "published").length} published · {posts.filter((p) => p.status === "draft").length} drafts</p>
+          {posts.length < 5 && (
+            <div className="mt-4 bg-[var(--cream-deep)]/60 border border-[var(--accent)]/20 rounded-md px-4 py-3 flex items-start gap-3 max-w-3xl" data-testid="seed-launch-banner">
+              <Sparkles className="w-4 h-4 text-[var(--accent)] mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="text-[13px] text-[var(--ink)] mb-0.5">Seed your launch shelf.</p>
+                <p className="text-[12px] text-[var(--muted)] italic">
+                  Compose 10 drafts on opportunity, risk, compliance, adoption management, and growth — using the Medium ghostwriter persona. Review and publish at your pace.
+                </p>
+              </div>
+              <Button size="sm" onClick={onSeedLaunch} className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white text-[12px] h-7" data-testid="seed-launch-cta">
+                Seed 10 articles
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="bg-white border border-[var(--rule)] rounded-lg p-5 mb-8" data-testid="blog-compose">
@@ -189,7 +238,10 @@ export default function BlogAdmin() {
                       <ExternalLink className="w-3 h-3" /> View
                     </Link>
                     <button onClick={() => onCopyForMedium(p)} className="text-[12px] text-[var(--deep)] hover:text-[var(--accent)] inline-flex items-center gap-1" data-testid={`copy-medium-${p.slug}`}>
-                      <BookOpen className="w-3 h-3" /> Medium
+                      <BookOpen className="w-3 h-3" /> Copy MD
+                    </button>
+                    <button onClick={() => onPublishToMedium(p)} className="text-[12px] text-[var(--deep)] hover:text-[var(--accent)] inline-flex items-center gap-1" data-testid={`publish-medium-${p.slug}`}>
+                      <ExternalLink className="w-3 h-3" /> Publish to Medium
                     </button>
                     {p.status === "draft" && (
                       <button onClick={() => onPublish(p.slug)} className="text-[12px] text-emerald-700 hover:underline" data-testid={`publish-${p.slug}`}>Publish</button>
