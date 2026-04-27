@@ -1186,6 +1186,37 @@ Cycle + Workflows in NED mode** (the iter36 surgical fix).
 - **LinkedIn API posting scaffold** — manual copy/paste fallback exists.
 - target_date ISO sort.
 
+## Iter43 — Tier-A · Strategic Addendum: Quick-Results + Validation chip + Differentiator copy (Apr 2026)
+100% backend + 100% frontend GREEN
+(`/app/test_reports/iteration_43.json`,
+`/app/backend/tests/test_iter43_quick_results.py`):
+- **§1.1 Sandbox Quick-Results journey** — new
+  `/app/quick-results/:contextId/:docId` page. After a sandbox upload,
+  the user lands on a focused screen with **3 doc-bound use-cases**
+  (Read me the summary · What does the board need to notice? · Draft
+  a briefing for my next meeting). One-click each, output renders
+  inline. After ANY result completes, a single "Want more? — Open my
+  full sandbox" CTA reveals. Replaces the previous flood-the-stream
+  pattern with a "client seeks, client gets" moment. SandboxPackDrop
+  now redirects here on successful upload.
+- **§4.2 / §5 ValidatedBadge** — `<ValidatedBadge />` chip
+  (`Validated by an independent model`) surfaced on briefings header,
+  document summary panel (top of summary content), every signal card
+  row (after the type chip), and the QuickResults hero. Hover/click
+  reveals an editorial methodology popover explaining the second-model
+  countercheck. Methodology grounded on the existing Synisense-shielded
+  pass; backend-side real second-model validator is a deferred
+  follow-up per user steer.
+- **§5 Differentiator sublines in Sandbox streaming reveal** — woven
+  into existing STREAMING_STAGES (no new stages):
+  · stage 0/1 — multi-LLM avatar + "GPT, Claude and Gemini through one
+    secure surface"
+  · stage 3 — "Wiring AKKI's email handle so it can send checklists"
+  · stage 5 — "A separate model counterchecks every claim"
+  · stage 8 — "Each section will carry the 'Validated by an
+    independent model' mark"
+
+
 ## Iter42 — Cycle drawer fix + Workflow spine + Home metrics + Act-on KPI (Apr 2026)
 100% backend + 100% frontend GREEN
 (`/app/test_reports/iteration_42.json`,
