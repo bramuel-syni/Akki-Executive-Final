@@ -30,7 +30,7 @@ logger = logging.getLogger("akki.shares")
 router = APIRouter(prefix="/api")
 
 
-ItemType = Literal["signal", "briefing", "doc_summary"]
+ItemType = Literal["signal", "briefing", "doc_summary", "doc_evolution"]
 DeliveryMethod = Literal["email", "akki_notification"]
 
 
@@ -64,6 +64,12 @@ async def _load_artefact(item_type: str, item_id: str, context_id: str) -> Optio
         if d and d.get("akki_summary", {}).get("tldr"):
             return d
         return None
+    if item_type == "doc_evolution":
+        # Need both: an evolution_diff cached AND a related_doc_id link.
+        d = await db.documents.find_one({"id": item_id, "context_id": context_id}, {"_id": 0})
+        if d and d.get("evolution_diff", {}).get("diff", {}).get("what_changed") and d.get("related_doc_id"):
+            return d
+        return None
     return None
 
 
@@ -75,6 +81,8 @@ def _preview_from_item(item_type: str, item: Dict[str, Any]) -> str:
     if item_type == "doc_summary":
         # Lead with the document name; the TL;DR goes into the email body.
         return (item.get("name") or item.get("original_filename") or "Document summary")[:240]
+    if item_type == "doc_evolution":
+        return (item.get("name") or item.get("original_filename") or "Document evolution")[:240]
     return ""
 
 
@@ -156,7 +164,7 @@ async def create_share(
             elif body.item_type == "signal":
                 artefact_path = "highlights"
                 view_url = f"{__import__('os').environ.get('FRONTEND_ORIGIN', '').rstrip('/')}/app/{artefact_path}/{body.item_id}"
-            else:  # doc_summary
+            else:  # doc_summary or doc_evolution — both link into workspace
                 view_url = f"{__import__('os').environ.get('FRONTEND_ORIGIN', '').rstrip('/')}/app/workspace/{body.item_id}"
 
             # For doc_summary shares, surface AKKI's summary in the email body
@@ -194,6 +202,51 @@ async def create_share(
                         + "</div>"
                     )
 
+            # Doc evolution: render the LLM diff (what changed / +stronger /
+            # -weakened / questions for management) directly in the email.
+            elif body.item_type == "doc_evolution":
+                ev = ((item.get("evolution_diff") or {}).get("diff") or {})
+                what_changed = (ev.get("what_changed") or "").strip()
+                added = [str(x) for x in (ev.get("added_or_strengthened") or []) if str(x).strip()]
+                weak  = [str(x) for x in (ev.get("weakened_or_removed") or []) if str(x).strip()]
+                qs    = [str(x) for x in (ev.get("questions_for_management") or []) if str(x).strip()]
+                if what_changed:
+                    summary_block += (
+                        "<p style=\"font-size:11px;letter-spacing:0.18em;text-transform:uppercase;"
+                        "color:#7a6a52;margin:0 0 6px 0;\">What changed</p>"
+                        f"<p style=\"font-size:14.5px;line-height:1.7;color:#1a1f2e;"
+                        f"margin:0 0 18px 0;\">{what_changed}</p>"
+                    )
+                if added:
+                    summary_block += (
+                        "<p style=\"font-size:11px;letter-spacing:0.18em;text-transform:uppercase;"
+                        "color:#047857;margin:0 0 8px 0;\">+ Added or strengthened</p>"
+                        "<ul style=\"font-size:13.5px;line-height:1.6;color:#3a3a3a;margin:0 0 16px 0;padding-left:20px;\">"
+                        + "".join(f"<li style=\"margin-bottom:5px;\">{x}</li>" for x in added[:5])
+                        + "</ul>"
+                    )
+                if weak:
+                    summary_block += (
+                        "<p style=\"font-size:11px;letter-spacing:0.18em;text-transform:uppercase;"
+                        "color:#b45309;margin:0 0 8px 0;\">− Weakened or removed</p>"
+                        "<ul style=\"font-size:13.5px;line-height:1.6;color:#3a3a3a;margin:0 0 16px 0;padding-left:20px;\">"
+                        + "".join(f"<li style=\"margin-bottom:5px;\">{x}</li>" for x in weak[:5])
+                        + "</ul>"
+                    )
+                if qs:
+                    summary_block += (
+                        "<div style=\"background:#f7eee0;border:1px solid #e5d5b8;padding:14px 16px;"
+                        "margin:0 0 18px 0;border-radius:3px;\">"
+                        "<p style=\"font-size:11px;letter-spacing:0.18em;text-transform:uppercase;"
+                        "color:#722f37;margin:0 0 6px 0;\">Put on the table</p>"
+                        + "".join(
+                            f"<p style=\"font-size:13.5px;line-height:1.55;color:#1a1f2e;"
+                            f"font-style:italic;margin:0 0 4px 0;\">\"{q}\"</p>"
+                            for q in qs[:3]
+                        )
+                        + "</div>"
+                    )
+
             html = (
                 f"<div style=\"font-family:Georgia,serif;max-width:560px;margin:0 auto;padding:32px 24px;"
                 f"background:#f5efe6;color:#1a1f2e;\">"
@@ -201,7 +254,7 @@ async def create_share(
                 f"margin:0 0 16px 0;\">{share_doc['shared_by_name']} shared this with you via AKKI</p>"
                 f"<h1 style=\"font-size:22px;line-height:1.3;margin:0 0 14px 0;font-weight:normal;\">"
                 f"{subject}</h1>"
-                + (f"<blockquote style=\"font-style:italic;color:#3a3a3a;border-left:3px solid #722f37;padding-left:14px;margin:0 0 18px 0;\">{preview}</blockquote>" if body.include_as_quote and preview and body.item_type != "doc_summary" else "")
+                + (f"<blockquote style=\"font-style:italic;color:#3a3a3a;border-left:3px solid #722f37;padding-left:14px;margin:0 0 18px 0;\">{preview}</blockquote>" if body.include_as_quote and preview and body.item_type not in ("doc_summary", "doc_evolution") else "")
                 + summary_block
                 + (f"<p style=\"font-size:14px;line-height:1.7;color:#3a3a3a;margin:0 0 24px 0;\">{message}</p>" if message else "")
                 + (f"<a href=\"{view_url}\" style=\"display:inline-block;background:#722f37;color:#fff;padding:11px 22px;text-decoration:none;font-size:13px;letter-spacing:0.05em;\">Open in AKKI &rarr;</a>" if view_url else "")

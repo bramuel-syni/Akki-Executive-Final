@@ -15,12 +15,13 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import {
   Layers, Loader2, RotateCw, ArrowRight, ArrowDownRight, Link2,
-  Unlink, Plus, Minus, HelpCircle, CalendarClock,
+  Unlink, Plus, Minus, HelpCircle, CalendarClock, Send,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import ShareModal from "@/components/share/ShareModal";
 
 function fmtDate(s) {
   if (!s) return "";
@@ -35,6 +36,7 @@ export default function DocumentEvolutionPanel({ contextId, document: doc, onLin
   const [loadingThread, setLoadingThread] = useState(false);
   const [loadingDiff, setLoadingDiff] = useState(false);
   const [error, setError] = useState(null);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const loadThread = useCallback(async () => {
     if (!contextId || !doc?.id) return;
@@ -97,14 +99,24 @@ export default function DocumentEvolutionPanel({ contextId, document: doc, onLin
             onChange={() => { onLinkChange?.(); loadThread(); loadDiff(true); }}
           />
           {diff && !loadingDiff && (
-            <button
-              onClick={() => loadDiff(true)}
-              className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] hover:text-[var(--accent)] inline-flex items-center gap-1"
-              data-testid="doc-evolution-rediff"
-              title="Ask AKKI to re-compare"
-            >
-              <RotateCw className="w-3 h-3" /> Re-compare
-            </button>
+            <>
+              <button
+                onClick={() => setShareOpen(true)}
+                className="text-[10.5px] uppercase tracking-wider text-[var(--accent)] hover:opacity-80 inline-flex items-center gap-1"
+                data-testid="doc-evolution-share"
+                title="Email this evolution drift to a colleague"
+              >
+                <Send className="w-3 h-3" /> Share
+              </button>
+              <button
+                onClick={() => loadDiff(true)}
+                className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] hover:text-[var(--accent)] inline-flex items-center gap-1"
+                data-testid="doc-evolution-rediff"
+                title="Ask AKKI to re-compare"
+              >
+                <RotateCw className="w-3 h-3" /> Re-compare
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -229,6 +241,14 @@ export default function DocumentEvolutionPanel({ contextId, document: doc, onLin
           )}
         </div>
       )}
+
+      <ShareModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        contextId={contextId}
+        itemType="doc_evolution"
+        item={doc}
+      />
     </div>
   );
 }

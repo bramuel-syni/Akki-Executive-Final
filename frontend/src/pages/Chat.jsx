@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Plus, Send, Loader2, Shield, ShieldOff, Trash2, MessageCircle,
-  ChevronDown, FileLock2, Eye, AlertTriangle,
+  ChevronDown, FileLock2, Eye, AlertTriangle, Download,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
@@ -557,15 +557,46 @@ function AuditDialog({ open, onClose, chatId }) {
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
   }, [open, chatId]);
+
+  const onDownload = async () => {
+    if (!chatId) return;
+    try {
+      const res = await api.get(`/chats/${chatId}/audit/export.zip`, {
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = window.document.createElement("a");
+      a.href = url;
+      a.download = `akki-chat-audit-${chatId.slice(0, 8)}.zip`;
+      window.document.body.appendChild(a);
+      a.click();
+      window.document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      toast.success("Audit pack downloaded.");
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="bg-[var(--cream)] border-[var(--rule)] max-w-3xl max-h-[80vh] overflow-y-auto" data-testid="chat-audit-dialog">
         <DialogHeader>
-          <DialogTitle className="akki-serif font-normal">Audit trail</DialogTitle>
+          <div className="flex items-center justify-between gap-3">
+            <DialogTitle className="akki-serif font-normal">Audit trail</DialogTitle>
+            <Button
+              size="sm"
+              onClick={onDownload}
+              disabled={loading || rows.length === 0}
+              className="bg-[var(--ink)] hover:bg-[var(--ink)]/90 text-white text-[11.5px] h-8"
+              data-testid="chat-audit-export-btn"
+            >
+              <Download className="w-3 h-3 mr-1.5" /> Export audit pack
+            </Button>
+          </div>
           <DialogDescription className="text-[12.5px] text-[var(--muted)]">
             Append-only, hash-chained. Auditors can verify the chain by recomputing each
             row's SHA256 against the canonical JSON of (prev_hash, id, at, account_id,
-            chat_id, action, payload, ip, ua_sha).
+            chat_id, action, payload, ip, ua_sha). The export bundles a stdlib-only
+            <code className="font-mono text-[11px] px-1">verify.py</code> for one-shot validation.
           </DialogDescription>
         </DialogHeader>
         {loading ? (

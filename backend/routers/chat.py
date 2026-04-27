@@ -495,3 +495,182 @@ async def get_chat_audit(
             "Recompute and compare to detect tampering."
         ),
     }
+
+
+@router.get("/chats/{chat_id}/audit/export.zip")
+async def export_chat_audit_pack(
+    chat_id: str, current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Bank-grade audit pack — a single zip an auditor can ingest:
+
+        manifest.txt        — schema + verification recipe
+        chat.json           — chat metadata
+        messages.json       — every message's content_sha256, role,
+                              created_at, shielding decision (NO raw content)
+        audit_chain.json    — full hash-chained log
+        verify.py           — pure-stdlib script that recomputes the chain
+                              against audit_chain.json and reports any
+                              broken links.
+
+    Raw message content is NEVER included; only its SHA256 fingerprint.
+    Auditors prove existence + ordering + integrity without exposure.
+    """
+    import io
+    import zipfile
+
+    from fastapi.responses import Response
+
+    chat = await db.chats.find_one(
+        {"id": chat_id, "account_id": current["id"]}, {"_id": 0},
+    )
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    # Strip raw content; keep the SHA fingerprint that already lives on
+    # the user message and compute one for assistant messages too.
+    msgs = await db.chat_messages.find(
+        {"chat_id": chat_id, "account_id": current["id"]},
+        {"_id": 0, "shielded_text": 0},
+    ).sort("created_at", 1).to_list(5000)
+    redacted = []
+    for m in msgs:
+        sha = m.get("content_sha256")
+        if not sha:
+            sha = hashlib.sha256(
+                (m.get("content") or "").encode("utf-8", "ignore")
+            ).hexdigest()
+        redacted.append({
+            "id": m.get("id"),
+            "role": m.get("role"),
+            "created_at": m.get("created_at"),
+            "model_label": m.get("model_label"),
+            "model_id": m.get("model_id"),
+            "mode": m.get("mode"),
+            "latency_ms": m.get("latency_ms"),
+            "shielded": m.get("shielded"),
+            "shielding_policy": m.get("shielding_policy"),
+            "bypass_reason": m.get("bypass_reason"),
+            "shielding": m.get("shielding"),
+            "char_len": len(m.get("content") or ""),
+            "content_sha256": sha,
+        })
+
+    rows = await db.chat_audit_log.find(
+        {"chat_id": chat_id, "account_id": current["id"]},
+        {"_id": 0},
+    ).sort("at", 1).to_list(5000)
+
+    chat_clean = {k: v for k, v in chat.items() if k not in ("_id",)}
+
+    manifest = (
+        "AKKI Chat — Bank-grade audit pack\n"
+        "==================================\n"
+        f"Chat ID:       {chat_id}\n"
+        f"Account ID:    {current['id']}\n"
+        f"Exported at:   {_iso(_now())} (UTC)\n"
+        f"Audit rows:    {len(rows)}\n"
+        f"Messages:      {len(redacted)}\n"
+        "\n"
+        "Files\n"
+        "-----\n"
+        "  chat.json          chat record (model_id, shielding_policy, etc.)\n"
+        "  messages.json      message metadata + SHA256 fingerprints\n"
+        "                     (raw content NOT included)\n"
+        "  audit_chain.json   append-only hash-chained log\n"
+        "  verify.py          stdlib-only chain verifier\n"
+        "\n"
+        "Verification\n"
+        "------------\n"
+        "Each audit row carries:\n"
+        "  prev_hash  — hash of the previous row (genesis: "
+        "GENESIS-AKKI-CHAT-AUDIT-2026)\n"
+        "  row_hash   — SHA256 of the canonical JSON of:\n"
+        "    {prev: prev_hash, id, at, account_id, chat_id,\n"
+        "     action, payload, ip, ua_sha}\n"
+        "  json.dumps with sort_keys=True, separators=(',',':')\n"
+        "\n"
+        "Run `python3 verify.py` to recompute the chain and confirm.\n"
+    )
+
+    verify_py = '''#!/usr/bin/env python3
+"""AKKI Chat audit-pack verifier — stdlib only.
+
+Usage: place this file alongside `audit_chain.json` and run:
+
+    python3 verify.py
+"""
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+GENESIS = "GENESIS-AKKI-CHAT-AUDIT-2026"
+
+
+def main() -> int:
+    chain_path = Path(__file__).with_name("audit_chain.json")
+    if not chain_path.exists():
+        print("audit_chain.json not found next to this script.", file=sys.stderr)
+        return 2
+    rows = json.loads(chain_path.read_text())
+    if not rows:
+        print("Chain is empty — nothing to verify.")
+        return 0
+
+    prev = None  # we accept whatever the first row's prev_hash claims
+    failures = []
+    for i, r in enumerate(rows):
+        canonical = {
+            "prev": r["prev_hash"],
+            "id": r["id"], "at": r["at"],
+            "account_id": r["account_id"], "chat_id": r["chat_id"],
+            "action": r["action"], "payload": r.get("payload", {}),
+            "ip": r.get("ip", ""), "ua_sha": r.get("ua_sha", ""),
+        }
+        expected = hashlib.sha256(
+            json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+            .encode()
+        ).hexdigest()
+        ok = expected == r["row_hash"]
+        chained_ok = (prev is None) or (prev == r["prev_hash"])
+        if not ok:
+            failures.append((i, "hash mismatch", r["id"]))
+        if not chained_ok:
+            failures.append((i, "broken chain — prev_hash does not match prior row_hash", r["id"]))
+        prev = r["row_hash"]
+
+    if failures:
+        print(f"FAIL — {len(failures)} issue(s):")
+        for idx, kind, rid in failures:
+            print(f"  row[{idx}] id={rid}: {kind}")
+        return 1
+    print(f"OK — verified {len(rows)} rows. Chain intact.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("manifest.txt", manifest)
+        z.writestr("chat.json", json.dumps(chat_clean, indent=2, sort_keys=True))
+        z.writestr("messages.json", json.dumps(redacted, indent=2))
+        z.writestr("audit_chain.json", json.dumps(rows, indent=2))
+        z.writestr("verify.py", verify_py)
+    payload = buf.getvalue()
+
+    await _append_audit(
+        account_id=current["id"], chat_id=chat_id,
+        action="audit.exported", request=None,
+        payload={"rows": len(rows), "messages": len(redacted), "size_bytes": len(payload)},
+    )
+
+    return Response(
+        content=payload,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="akki-chat-audit-{chat_id[:8]}.zip"'
+        },
+    )

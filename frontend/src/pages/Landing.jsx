@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   ArrowRight, Sparkles, ScrollText, Eye, FileText, Target, GraduationCap,
-  Quote, Check, Upload, Loader2, AlertTriangle, TrendingUp,
+  Quote, Check, Upload, Loader2, AlertTriangle, TrendingUp, MessageCircle,
 } from "lucide-react";
 
 /**
@@ -119,6 +119,13 @@ const PROPOSITIONS = [
     title: "From signals to a printable page.",
     body:
       "Compose a briefing from the signals AKKI has surfaced, export it as a cleanly typeset PDF or DOCX, and take it into the room. Versioned. Evidence-anchored. Ready for a 9am start.",
+  },
+  {
+    kicker: "05 · The chat",
+    icon: MessageCircle,
+    title: "One subscription. Every model. Bank-grade audit.",
+    body:
+      "An AKKI Chat replaces three private subscriptions — ChatGPT, Claude and Gemini — under one bill, behind one privacy layer. Synisense automatically shields the names, emails and numbers a consumer LLM would otherwise ingest. Every shielding decision is hash-chained to a tamper-evident audit trail your compliance team can export and verify.",
   },
 ];
 
@@ -351,7 +358,7 @@ export default function Landing() {
             <div className="md:col-span-4">
               <p className="akki-overline mb-4">The proposition</p>
               <h2 className="akki-serif text-[32px] md:text-[44px] leading-[1.1] tracking-[-0.015em] text-[var(--ink)] font-normal">
-                Four surfaces. One discipline.
+                Five surfaces. One discipline.
               </h2>
             </div>
             <p className="md:col-span-8 akki-serif text-[17px] md:text-[18px] leading-[1.8] text-[var(--deep)] max-w-[62ch]">

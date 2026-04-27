@@ -24,7 +24,10 @@ import MentionInbox from "@/components/collab/MentionInbox";
 import UploadModal from "@/components/upload/UploadModal";
 import PortfolioRail from "@/components/layout/PortfolioRail";
 
-// v3.0 — Six surfaces (BRD §13)
+// v3.0 — surfaces (BRD §13). The `roles` field scopes a nav entry
+// to the role(s) that actually use it. Omit `roles` for surfaces both
+// roles share. NEDs don't run reporting cycles on boards they sit on;
+// they consume briefings + signals + monitor.
 const NAV = [
   { to: "/app", label: "Home", icon: Home, end: true, ready: true },
   { to: "/app/workspace", label: "Document Journal", icon: BookOpenCheck, module: "M3", ready: true },
@@ -33,9 +36,12 @@ const NAV = [
   { to: "/app/simulate", label: "Simulate", icon: Target, module: "M14", ready: true },
   { to: "/app/lens", label: "The Lens", icon: Eye, module: "M14", ready: true },
   { to: "/app/chat", label: "Chat", icon: MessageCircle, module: "§15", ready: true },
-  { to: "/app/cycle", label: "Cycle", icon: Send, module: "§12", ready: true },
+  { to: "/app/cycle", label: "Cycle", icon: Send, module: "§12", ready: true,
+    roles: ["executive"] },
   { to: "/app/monitor", label: "Monitor", icon: Activity, module: "§4", ready: true },
-  { to: "/app/plays", label: "Workflows", icon: Compass, module: "§13", ready: true },
+  { to: "/app/influence", label: "Influence Map", icon: Compass, module: "§16", ready: true },
+  { to: "/app/plays", label: "Workflows", icon: Compass, module: "§13", ready: true,
+    roles: ["executive"] },
   { to: "/app/learn", label: "Learn", icon: GraduationCap, module: "M9", ready: true },
 ];
 
@@ -253,7 +259,9 @@ export default function AppShell({ children }) {
           <div className="px-5 pb-4">
             <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">Surfaces</p>
           </div>
-          {NAV.map((item, idx) => {
+          {NAV
+            .filter((item) => !item.roles || item.roles.includes(activeRole))
+            .map((item, idx) => {
             const Icon = item.icon;
             if (!item.ready) {
               return (

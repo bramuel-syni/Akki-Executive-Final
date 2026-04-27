@@ -38,12 +38,14 @@ export default function ShareModal({
   const itemTitle = (
     itemType === "signal" ? item?.headline :
     itemType === "doc_summary" ? (item?.name || item?.original_filename) :
+    itemType === "doc_evolution" ? `Drift in: ${item?.name || item?.original_filename || "document"}` :
     item?.title
   ) || "(untitled)";
   const quote = (itemTitle || "").slice(0, 260);
   const itemKicker = (
     itemType === "signal" ? "Signal" :
     itemType === "doc_summary" ? "Document summary" :
+    itemType === "doc_evolution" ? "Document evolution" :
     "Briefing"
   );
 
@@ -54,10 +56,12 @@ export default function ShareModal({
       const defaultByType =
         itemType === "doc_summary"
           ? `AKKI's read on ${itemTitle}. The TL;DR + the questions worth walking in with.`
+          : itemType === "doc_evolution"
+          ? `How this report has drifted since the last cycle — the additions, the softening, and the questions to put on the table.`
           : `Sharing this ${itemType} — worth a look.`;
       setMessage(defaultMessage ?? defaultByType);
       setIncludeQuote(true);
-      setDeliveryMethod(itemType === "doc_summary" ? "email" : "akki_notification");
+      setDeliveryMethod((itemType === "doc_summary" || itemType === "doc_evolution") ? "email" : "akki_notification");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, item?.id]);
