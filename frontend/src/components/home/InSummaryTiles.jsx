@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
-import { Sparkles, ScrollText, Send, Eye, BookOpen } from "lucide-react";
+import { Sparkles, ScrollText, Send, Eye, BookOpen, FileText, Building2 } from "lucide-react";
 
 /**
  * InSummaryTiles — neat hook tiles on Home that surface the user's most
@@ -36,22 +36,25 @@ function fmtRelative(iso) {
 }
 
 export default function InSummaryTiles() {
-  const { activeContext } = useAuth();
+  const { activeContext, contexts: allContexts } = useAuth();
   const cid = activeContext?.id;
   const [data, setData] = useState({
     signals: [], briefings: [], submissions: [], checklists: [], docs: [],
+    reports: [], members: [],
   });
   const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async () => {
     if (!cid) return;
     try {
-      const [sg, br, sb, cl, dc] = await Promise.all([
+      const [sg, br, sb, cl, dc, rp, mb] = await Promise.all([
         api.get(`/contexts/${cid}/signals`).catch(() => ({ data: [] })),
         api.get(`/contexts/${cid}/briefings`).catch(() => ({ data: { briefings: [] } })),
         api.get(`/contexts/${cid}/submissions`).catch(() => ({ data: { submissions: [] } })),
         api.get(`/contexts/${cid}/checklists`).catch(() => ({ data: { checklists: [] } })),
         api.get(`/contexts/${cid}/documents`).catch(() => ({ data: { documents: [] } })),
+        api.get(`/contexts/${cid}/reports`).catch(() => ({ data: { reports: [] } })),
+        api.get(`/contexts/${cid}/members`).catch(() => ({ data: [] })),
       ]);
       setData({
         signals: Array.isArray(sg.data) ? sg.data : (sg.data.signals || []),
@@ -59,6 +62,8 @@ export default function InSummaryTiles() {
         submissions: sb.data.submissions || [],
         checklists: cl.data.checklists || [],
         docs: Array.isArray(dc.data) ? dc.data : (dc.data.documents || dc.data.docs || []),
+        reports: Array.isArray(rp.data) ? rp.data : (rp.data.reports || []),
+        members: Array.isArray(mb.data) ? mb.data : (mb.data.members || []),
       });
     } catch { /* swallow — tiles render with zeros */ }
     finally { setLoaded(true); }
@@ -91,6 +96,20 @@ export default function InSummaryTiles() {
     const docCount = data.docs.length;
     const lastDoc = data.docs.length ? (data.docs[0]?.uploaded_at || data.docs[0]?.created_at) : null;
 
+    // ── Reports sent (this company): final/sent reports the user has authored
+    const reportsSent = data.reports.filter((r) =>
+      ["sent", "delivered", "final", "approved"].includes((r.status || "").toLowerCase())
+    ).length;
+    const reportsTotal = data.reports.length;
+    const lastReport = data.reports.length
+      ? (data.reports[0]?.sent_at || data.reports[0]?.created_at)
+      : null;
+
+    // ── Network: companies + people across the user's portfolio
+    const companies = (allContexts || []).filter((c) => c.status !== "archived").length;
+    // Members on the active company (admins + reportees + collaborators)
+    const teamMembers = data.members.length;
+
     return [
       {
         key: "signals", to: "/app/highlights", icon: Sparkles,
@@ -122,20 +141,38 @@ export default function InSummaryTiles() {
         last: lastSub,
       },
       {
+        key: "reports", to: "/app/cycle", icon: FileText,
+        kicker: "Reports", count: reportsSent,
+        sublabel: "sent",
+        breakdown: [
+          { label: "Total drafted", n: reportsTotal, tone: "text-[var(--deep)]" },
+        ],
+        last: lastReport,
+      },
+      {
         key: "documents", to: "/app/workspace", icon: BookOpen,
         kicker: "Document Journal", count: docCount,
         breakdown: [],
         last: lastDoc,
       },
+      {
+        key: "network", to: "/app/manage", icon: Building2,
+        kicker: "Network", count: companies,
+        sublabel: "companies",
+        breakdown: [
+          { label: "Team members on this company", n: teamMembers, tone: "text-[var(--deep)]" },
+        ],
+        last: null,
+      },
     ];
-  }, [data]);
+  }, [data, allContexts]);
 
   if (!cid) return null;
 
   return (
     <section className="mb-7 shrink-0" data-testid="home-in-summary">
       <p className="akki-overline mb-3">In summary</p>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {tiles.map((t) => {
           const Icon = t.icon;
           return (

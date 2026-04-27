@@ -1,0 +1,32 @@
+{
+  "summary": "iter35 (login bug fix + standalone Chat surface + 6-tile Home) — backend 13/13 PASS in ~14s on a real Emergent LLM round trip. Frontend e2e: login regression verified (akki_access_token persisted to localStorage, len=244, no bounce on /app), all 6 home tiles render with correct sub-labels (Reports: '5 total drafted', Network: '7 companies / 9 team members on this company'), Chat page mounts sidebar + main + composer, new-chat → header with model picker + policy picker visible, neutral send produces user+assistant bubbles, policy=off + sensitive → chat-bypass-dialog opens, cancel + confirm path emits amber 'Sent unshielded · 1 email · acknowledged' badge.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter35_chat.py",
+    "/app/test_reports/pytest/iter35.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/chat.py audit chain: SHA256(canonical_json({prev,id,at,account_id,chat_id,action,payload,ip,ua_sha})) verified by recomputing rows 2..N in the test — every hash matches and prev_hash links to the previous row's row_hash. Genesis constant 'GENESIS-AKKI-CHAT-AUDIT-2026' applied to first-ever row only.",
+    "routers/chat.py policy=off footgun guard: when has_identifiers and not acknowledge_unshielded → 409 with detail.code='shielding_acknowledgement_required'. Acknowledged path persists bypass_reason='policy_off_acknowledged' on both the message and the audit row — verified.",
+    "routers/chat.py auto policy: identifiers detected → will_shield=True, identifiers_masked counted, by_category split (email + phone) — verified live with 'x@y.com / +254712345678' yielding identifiers_masked=2.",
+    "routers/chat.py list_chats fallback sort: re-sorts in Python by (last_message_at OR created_at) desc so freshly-created empty chats sit at the top — verified by creating two empty chats in sequence and asserting the newer id ranks above the older.",
+    "routers/chat.py cross-account: GET/PATCH/DELETE/audit on a Bramuel-owned chat from admin all return 404 — no cross-tenant leakage.",
+    "routers/chat.py multi-turn shielded: 'My name is Bramuel.' shielded as [PERSON_1] in transit; the next turn 'What is my name?' rehydrated correctly to 'Bramuel' in the assistant reply — confirms the manual replay loop preserves conversational reference even with shielding active.",
+    "AuthContext.jsx afterAuth persist: data.access_token written to localStorage('akki_access_token'); subsequent /auth/me uses Bearer interceptor. Bootstrap clears stale token on /auth/me failure so a poisoned token can't loop the user. Verified by post-login localStorage read (len=244)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter35_chat.py (NEW, 13 tests, all pass in ~14s with 4 live LLM round trips on claude-haiku-4-5)"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% on the four flows tested (login persist, 6 tiles, chat compose, policy-off bypass)"},
+  "test_credentials": "Bramuel: bramuel@syni.ai / TestBramuel2026!  ·  Admin: admin@akki.ai / AkkiAdmin2026!",
+  "seed_data_creation": "Created several TEST_-prefixed chats during pytest (TEST iter35 chat, TEST shield, TEST chain, TEST iso, TEST patch, TEST listA/B, TEST archive, TEST neutral, TEST multi, TEST policy_off). All scoped to bramuel@syni.ai account. Visible in sidebar; safe to leave for next iteration regression.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Chat router endpoints all live and verified. Sidebar testids: chat-new-btn, chat-list, chat-item-{id}, chat-empty-new-btn. Header testids: chat-header, chat-title, chat-title-input, chat-model-picker, chat-model-trigger, chat-model-opt-{id}, chat-policy-picker (custom dropdown — NOT a native select), chat-audit-btn, chat-archive-btn. Composer: chat-input, chat-send-btn. Modals: chat-bypass-dialog/-cancel/-confirm, chat-audit-dialog/-rows. Note: chat-audit-dialog renders inside a Radix portal — querying right after click may need `await page.wait_for_selector('[data-testid=chat-audit-dialog]', state='attached', timeout=3000)`. Policy picker is a custom button-driven menu (click then choose option text Auto-shield / Always shield / Off)."
+}
