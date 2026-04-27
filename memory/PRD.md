@@ -1186,6 +1186,40 @@ Cycle + Workflows in NED mode** (the iter36 surgical fix).
 - **LinkedIn API posting scaffold** — manual copy/paste fallback exists.
 - target_date ISO sort.
 
+## Iter41 — Tier 2.5 batch (Apr 2026)
+100% backend + 100% frontend GREEN
+(`/app/test_reports/iteration_41.json`,
+`/app/backend/tests/test_iter41_signal_actions.py`):
+- **Simulate horizontal scenario rows** — replaced 3-column vertical grid
+  with full-width `<ScenarioRow>` (label gutter + body running across at
+  ~70-char measure). Best / Base / Stress on stacked horizontal rows.
+  Prominent "New simulation" button (`simulate-new-btn`) at the top of
+  the viewer.
+- **Document Journal — 3 panels → 2** — Summary + Evolution stacked in
+  the right rail; Outline moved to a header popover
+  (`doc-outline-toggle` + `doc-outline-popover`). Conditionally rendered
+  when headings.length > 0.
+- **Signals · Act vs Share differentiation** — new
+  `signal_actions` collection, `_RECS_BY_TYPE` templates indexed by
+  signal bucket (risk / opportunity / gap / neutral), heuristic
+  classifier on tone/kind/headline keywords.
+  `GET  /api/contexts/{cid}/signals/{sid}/recommendations` →
+  `{bucket, recommendations[3]}`.
+  `POST /api/contexts/{cid}/signals/{sid}/actions` (acted | shared) —
+  resolves `recommendation_label` server-side from idx; persists
+  recipients + note.
+  `GET  /actions` returns `{actions[], summary: {acted,
+  last_acted_label, shared_count, shared_with}}` — `shared_count`
+  de-dupes recipients.
+  Frontend: 'Act on this' opens a 3-recommendation dropdown
+  (`signal-act-menu-{id}` + `signal-act-rec-{id}-{idx}`); 'Something
+  else' escape opens the existing ActModal. After action, button flips
+  to "Acted on" + indicator chip (`signal-acted-badge-{id}`,
+  `signal-shared-badge-{id}`) renders below the summary. Share success
+  auto-logs a shared action via `ShareModal.onShared` callback +
+  cross-component `akki:signal-action` event-bus.
+
+
 ## Iter40 — Strategic Goals card overhaul + Sandbox KPI dashboard (Apr 2026)
 100% backend + 100% frontend GREEN
 (`/app/test_reports/iteration_40.json`,
