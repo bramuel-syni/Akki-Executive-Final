@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -32,11 +32,20 @@ const ROLE_LABEL = {
  */
 export default function PortfolioRail() {
   const navigate = useNavigate();
+  const location = useLocation();
   const {
     activeContext, contexts, switchContext,
     activeRole, availableRoles, switchRole,
   } = useAuth();
-  const [collapsed, setCollapsed] = useState(false);
+  // Iter44 — auto-collapse on routes that need maximal display width
+  // (/app/documents most notably; also /app/quick-results which is a
+  // focused conversion screen). User can still re-expand manually.
+  const collapseRoutes = ["/app/documents", "/app/quick-results"];
+  const shouldAutoCollapse = collapseRoutes.some((r) => location.pathname.startsWith(r));
+  const [collapsed, setCollapsed] = useState(shouldAutoCollapse);
+  React.useEffect(() => {
+    setCollapsed(shouldAutoCollapse);
+  }, [shouldAutoCollapse]);
   // Confirm dialog state — { kind: 'role'|'company', target: <id-or-role>, label }
   const [confirm, setConfirm] = useState(null);
 

@@ -150,36 +150,24 @@ export default function AppHome() {
             <p className="akki-overline mb-2 flex items-center gap-2">
               <RoleIcon className="w-3 h-3 text-[var(--accent)]" strokeWidth={2} />
               Acting as {activeRole === "ned" ? "Non-Executive Director" : "Executive"}
-              <span className="text-[var(--muted)]/60">·</span>
-              <span>{activeContext?.name}</span>
             </p>
             <h1 className="akki-greeting">{greeting(firstName)}</h1>
-            <p className="akki-meta mt-2 max-w-xl">
-              {signals.length + briefings.length + documents.length === 0
-                ? "Your workspace is quiet. Upload a pack to let AKKI surface signals."
-                : `A brief scan of what's moving in ${activeContext?.name}.`}
-            </p>
 
-            {/* Iter42 — single editorial metrics strip. Replaces the
-                cluttered SaaS-dashboard tile pattern with a single
-                horizontal row of serif numerals separated by middle-dots.
-                Reads like a magazine masthead, not a stat-tile farm. */}
-            {(signals.length + briefings.length + documents.length) > 0 && (
-              <div
-                className="mt-5 pt-4 border-t border-[var(--rule)] flex items-center gap-x-7 gap-y-2 flex-wrap text-[var(--deep)]"
-                data-testid="home-metrics-strip"
-              >
-                <MetricItem label="Signals"     value={signals.length} testId="home-metric-signals" />
-                <MetricItem label="Briefings"   value={briefings.length} testId="home-metric-briefings" />
-                <MetricItem label="Documents"   value={documents.length} testId="home-metric-documents" />
-                {hasMultipleContexts && (
-                  <MetricItem label="Companies" value={contexts?.length || 1} testId="home-metric-companies" />
-                )}
-                {shared.length > 0 && (
-                  <MetricItem label="Shared with you" value={shared.length} testId="home-metric-shared" accent />
-                )}
-              </div>
-            )}
+            {/* Iter44 — deliberate context picker as the top action.
+                The user shouldn't be auto-dropped into a context without
+                a moment of awareness. If they have multiple contexts,
+                this row asks them to choose; if they have one, it just
+                names where they are with a soft lead into a relevant
+                action. Replaces the Apr-2026 metrics strip which was
+                duplicating the In-Summary tiles right below it. */}
+            <ContextChooser
+              contexts={contexts}
+              activeContext={activeContext}
+              hasMultipleContexts={hasMultipleContexts}
+              signals={signals}
+              briefings={briefings}
+              documents={documents}
+            />
           </div>
 
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden" data-testid="home-sections">
@@ -562,27 +550,102 @@ function NextBestActionCard() {
 }
 
 /**
- * MetricItem — one masthead-style metric in the home strip.
- * Renders the value in a large serif numeral with a tiny uppercase
- * caption underneath, aligned baseline-left so a row of these reads
- * like an editorial figure rather than a SaaS stat tile.
+ * ContextChooser — the deliberate "you are here" moment at the top of
+ * Home. Per Apr-2026 user feedback ("don't sign me up to a specific
+ * company automatically"):
+ *
+ *  · If the user has 2+ contexts: present the chooser as the primary
+ *    top action so they consciously pick where they're working before
+ *    doing anything else. Defaults to the most recently active.
+ *  · If the user has exactly 1 context: render a soft-lead line that
+ *    NAMES where they are (no surprise) and points them at the most
+ *    interesting thing AKKI noticed — not a metrics strip.
  */
-function MetricItem({ label, value, testId, accent }) {
+function ContextChooser({ contexts, activeContext, hasMultipleContexts, signals, briefings, documents }) {
+  const { switchContext } = useAuth();
+  const sortedContexts = (contexts || []).slice().sort(
+    (a, b) => (a.id === activeContext?.id ? -1 : b.id === activeContext?.id ? 1 : 0),
+  );
+
+  // The "soft lead" line for the single-context case — pulls the most
+  // interesting thing AKKI has on the user's plate today.
+  const softLead = (() => {
+    if (signals.length > 0) {
+      const top = signals[0];
+      return {
+        label: "Newest signal worth a look",
+        text: top.headline || top.title,
+        href: "/app/highlights",
+      };
+    }
+    if (briefings.length > 0) {
+      const top = briefings[0];
+      return {
+        label: "Latest brief on your desk",
+        text: top.title,
+        href: "/app/briefings",
+      };
+    }
+    if (documents.length > 0) {
+      const top = documents[0];
+      return {
+        label: "Most recent document",
+        text: top.name,
+        href: `/app/documents/${top.id}`,
+      };
+    }
+    return null;
+  })();
+
+  if (hasMultipleContexts) {
+    return (
+      <div className="mt-5" data-testid="home-context-chooser">
+        <p className="akki-overline mb-3 text-[var(--muted)]">
+          Where are you working today?
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {sortedContexts.map((c) => {
+            const active = c.id === activeContext?.id;
+            return (
+              <button
+                key={c.id}
+                onClick={() => !active && switchContext(c.id)}
+                className={`px-4 py-2 rounded-md border text-[13px] transition-colors ${
+                  active
+                    ? "bg-[var(--ink)] text-[var(--cream)] border-[var(--ink)]"
+                    : "bg-white text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)] hover:text-[var(--ink)]"
+                }`}
+                data-testid={`home-context-chooser-${c.id}${active ? "-active" : ""}`}
+              >
+                <span className="akki-serif">{c.name}</span>
+                {active && <span className="text-[10px] uppercase tracking-wider ml-2 opacity-70">Active</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      className="flex items-baseline gap-2 first:pl-0"
-      data-testid={testId}
-    >
-      <span
-        className={`akki-serif text-[26px] leading-none ${
-          accent ? "text-[var(--accent)]" : "text-[var(--ink)]"
-        }`}
-      >
-        {value}
-      </span>
-      <span className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--muted)]">
-        {label}
-      </span>
+    <div className="mt-3" data-testid="home-soft-lead">
+      <p className="akki-meta">
+        Working on <strong className="text-[var(--ink)]">{activeContext?.name}</strong>.
+      </p>
+      {softLead && (
+        <Link
+          to={softLead.href}
+          className="mt-3 inline-flex items-start gap-3 max-w-[640px] group"
+          data-testid="home-soft-lead-link"
+        >
+          <span className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--muted)] mt-1 shrink-0 w-[170px]">
+            {softLead.label}
+          </span>
+          <span className="akki-serif text-[15px] text-[var(--deep)] leading-snug group-hover:text-[var(--accent)] transition-colors line-clamp-2">
+            {softLead.text} →
+          </span>
+        </Link>
+      )}
     </div>
   );
 }

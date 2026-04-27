@@ -117,15 +117,13 @@ function DocumentsBrowser({
   displayName, setDisplayName, trust, setTrust, fileInput, cameraInput,
   onSelect, onArchive, onTrustChange, accountEmail, isAdmin,
 }) {
-  // Drawer auto-collapses by default. User clicks "Add a document" in the
-  // stats hero to expand it. Per user feedback: don't take up space when
-  // it isn't needed.
-  const [uploadOpen, setUploadOpen] = React.useState(docs.length === 0);
-  React.useEffect(() => {
-    // When nothing's been uploaded yet, keep it open so the first-time
-    // user has somewhere obvious to drop a file.
-    if (docs.length === 0) setUploadOpen(true);
-  }, [docs.length]);
+  // Iter44 — uploads are intentionally collapsed on this page. The user
+  // feedback was clear: "remove the upload sections; the arrangement of
+  // elements should be neat." We keep the upload mechanism — there must
+  // be a way to add a document — but it's hidden behind an explicit
+  // "Add document" affordance in the stats hero. The dropzone only
+  // appears when the user opts in.
+  const [uploadOpen, setUploadOpen] = React.useState(false);
 
   return (
     <div className="flex flex-col h-full min-h-0">

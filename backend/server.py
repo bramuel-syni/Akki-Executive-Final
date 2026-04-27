@@ -60,6 +60,7 @@ from routers import admin_health as admin_health_router  # noqa: E402
 from routers import admin_sandbox_kpi as admin_sandbox_kpi_router  # noqa: E402
 from routers import signal_actions as signal_actions_router  # noqa: E402
 from routers import admin_signal_kpi as admin_signal_kpi_router  # noqa: E402
+from routers import prepare as prepare_router  # noqa: E402
 
 
 logger = logging.getLogger("akki")
