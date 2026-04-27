@@ -1186,6 +1186,36 @@ Cycle + Workflows in NED mode** (the iter36 surgical fix).
 - **LinkedIn API posting scaffold** — manual copy/paste fallback exists.
 - target_date ISO sort.
 
+## Iter38 — Tier 1 · Sandbox conversion overhaul (Apr 2026)
+100% backend + 100% frontend GREEN
+(`/app/test_reports/iteration_38.json`,
+`/app/backend/tests/test_iter38_sandbox_tier1.py`):
+- **Capture testing objective** — Sandbox + Add Company now ask Q5
+  ("What would make this trial feel like time well spent?"). Stored
+  on `sandbox_metadata.objective` / `seeded_metadata.objective`.
+- **Tutorial-style first-run card** — `/api/sandbox/contexts/{id}/tutorial`
+  returns objective recap + first seeded brief + first signal headline +
+  3 step links + suggested chat opener. `<SandboxTutorial />` renders on
+  AppHome; dismiss persists via `/tutorial/dismiss`.
+- **Hybrid serif streaming reveal** — Generation page redesigned. Each
+  stage now has `headline` + `sublines[]` (1–3 italic Georgia lines that
+  reveal one-by-one inside the stage window). Paper-tape scrolls upward
+  with serif headlines + italic sublines. No terminal/code aesthetic.
+- **Other-sector free-text** — Picking "Other" reveals `other_sector_name`
+  + `other_sector_description`; `resolve_stage_texts` substitutes the
+  user's named sector into the streaming narrative.
+- **Add Company unified flow** — `NewWorkspace.jsx` rewritten to mirror
+  the Sandbox 5-question editorial journey. Submits to new
+  `POST /api/sandbox/contexts/seeded` which provisions a real
+  (executive_personal/ned_personal) context, seeds the matching sector
+  template, and returns the new context for `switchContext()`.
+- **Dropdown contrast bug** — `select.jsx` SelectTrigger now sets
+  `text-foreground` so selected values render in dark ink (was white-on-
+  white in some pages).
+- **Chat ?prompt= deeplink** — `/app/chat?prompt=…` pre-fills the
+  composer, then strips the param. Used by tutorial card "Open in Chat".
+
+
 ## Iter36 — Audit pack · Influence Map · Share evolution diff · Role bleed (Apr 2026)
 12/12 backend + 100% frontend GREEN
 (`/app/test_reports/iteration_36.json`):
