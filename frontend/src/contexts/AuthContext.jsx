@@ -53,6 +53,11 @@ export function AuthProvider({ children }) {
     } catch {
       setAccount(false);
       setContexts([]);
+      // If /auth/me failed, the stored Bearer token (if any) is stale or
+      // invalid. Drop it so the next successful login isn't shadowed by
+      // a poisoned header. The active-context preference is preserved —
+      // it's harmless to keep and helps re-routing after a new login.
+      try { window.localStorage.removeItem("akki_access_token"); } catch { /* noop */ }
     }
   }, [activeContextId, activeRole]);
 
@@ -64,6 +69,17 @@ export function AuthProvider({ children }) {
   const afterAuth = useCallback((data) => {
     setAccount(data.account);
     setContexts(data.contexts || []);
+    // Persist the access_token to localStorage so the Bearer interceptor
+    // can recover when cross-site cookies are blocked (Safari 16+ ITP,
+    // Brave shields, Firefox strict, or any deploy where the API and
+    // the SPA live on different parent domains). The httpOnly cookie
+    // remains the primary auth surface; this is a graceful-degradation
+    // backup that prevents users from being bounced back to the landing
+    // page after a successful login.
+    if (data.access_token) {
+      try { window.localStorage.setItem("akki_access_token", data.access_token); }
+      catch { /* quota/private-mode noop */ }
+    }
     const primary = pickPrimaryContext(data.account, data.contexts);
     if (primary) {
       setActiveContextId(primary);
