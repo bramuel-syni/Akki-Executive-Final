@@ -1,0 +1,30 @@
+{
+  "summary": "Iter43 — QuickResults + ValidatedBadge + Sandbox differentiator sublines: 5/5 backend tests pass, frontend QuickResults flow works end-to-end (hero, 3 cards, ValidatedBadge + popover, summary card generate → output render, Want-more CTA, Open-full button). ValidatedBadge confirmed on /app/briefings and /app/highlights at runtime; on DocumentSummaryPanel confirmed via source review (data-testid='doc-summary-validated' at line 131). All 5 Apr-2026 differentiator sublines present in sandbox/generate stages 0,1,3,5,8.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter43_quick_results.py",
+    "/app/test_reports/pytest/iter43_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "QuickResults.jsx uses POST to /contexts/{cid}/documents/{did}/summary (review doc said GET but actual backend route is POST — matches code, so fine). Review doc copy should be corrected.",
+    "Review doc lists GET /api/sandbox/generate but the actual endpoint is POST /api/sandbox/generate — tests adjusted accordingly and passing. Review doc copy should be corrected.",
+    "DocumentSummaryPanel wrapper was verified by source inspection because active-context switching in UI keeps Bramuel on the CFO exec ctx; the NED-ctx doc flow is still correctly wired and the same ValidatedBadge is rendered on the QuickResults page which shares the component.",
+    "ValidatedBadge popover positions absolutely below-left as expected; hover + focus + click all toggle state — works in Chromium."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter43_quick_results.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest suite for iter43 at /app/backend/tests/test_iter43_quick_results.py covers: sandbox generate sublines, document summary flat shape, signals list, briefings POST reachability. QuickResults page at /app/quick-results/{cid}/{docId} works for Tuli NED ctx fb4df969/doc 12d411aa with cached summary (sub-5s roundtrip). ValidatedBadge renders on QuickResults, Briefings (next to PRIVATE header), Highlights (signal card) and DocumentSummaryPanel (source-verified). Note: opening /app/documents/{docId} directly keeps the user's active ctx (CFO exec_personal) and returns 'Document not found' for the NED-ctx doc — that's expected context-scoping behaviour, not a bug.",
+  "rca of the issue": "N/A — all targeted surfaces working. One behavioural note: DocumentSummaryPanel wrapper not runtime-verified through UI because active context stayed on CFO exec_personal despite localStorage override; the shared ValidatedBadge component was instead verified via QuickResults render + source inspection of DocumentSummaryPanel.jsx line 131."
+}

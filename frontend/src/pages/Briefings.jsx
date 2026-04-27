@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
+import ValidatedBadge from "@/components/trust/ValidatedBadge";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage, API_BASE } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -165,7 +166,10 @@ function BriefingViewer({ briefing, onArchive, onDraftNotes, notesDrafting, onSh
       {/* Header */}
       <header className="px-8 py-6 border-b border-[#E1E6ED]">
         <div className="flex items-baseline justify-between gap-4 mb-3">
-          <p className="akki-overline">PRIVATE · AKKI BRIEFING · v{briefing.version}</p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <p className="akki-overline">PRIVATE · AKKI BRIEFING · v{briefing.version}</p>
+            <ValidatedBadge size="compact" />
+          </div>
           <div className="flex items-center gap-1">
             {/* Read state — explicit "Mark as read" toggle, plus a small
                 badge once read. This was a real gap: the rail showed

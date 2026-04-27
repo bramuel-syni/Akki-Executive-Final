@@ -27,6 +27,7 @@ import InfluenceMap from "@/pages/InfluenceMap";
 import HealthDashboard from "@/pages/admin/HealthDashboard";
 import SandboxKPI from "@/pages/admin/SandboxKPI";
 import SignalKPI from "@/pages/admin/SignalKPI";
+import QuickResults from "@/pages/QuickResults";
 import Manage from "@/pages/Manage";
 import Sandbox from "@/pages/Sandbox";
 import SandboxGenerating from "@/pages/SandboxGenerating";
@@ -98,6 +99,7 @@ function App() {
           <Route path="/admin/health" element={<ProtectedRoute><HealthDashboard /></ProtectedRoute>} />
           <Route path="/admin/sandbox-kpi" element={<ProtectedRoute><SandboxKPI /></ProtectedRoute>} />
           <Route path="/admin/signal-kpi" element={<ProtectedRoute><SignalKPI /></ProtectedRoute>} />
+          <Route path="/app/quick-results/:contextId/:docId" element={<ProtectedRoute><QuickResults /></ProtectedRoute>} />
           <Route path="/app/learn" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
           <Route path="/app/learn/:id" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
           <Route path="/app/manage" element={<ProtectedRoute><Manage /></ProtectedRoute>} />

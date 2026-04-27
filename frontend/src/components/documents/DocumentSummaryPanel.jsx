@@ -15,6 +15,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Sparkles, Loader2, RotateCw, BookOpen, AlertCircle, Send } from "lucide-react";
 import ShareModal from "@/components/share/ShareModal";
+import ValidatedBadge from "@/components/trust/ValidatedBadge";
 
 export default function DocumentSummaryPanel({ contextId, document: doc }) {
   const [summary, setSummary] = useState(doc?.akki_summary || null);
@@ -126,6 +127,10 @@ export default function DocumentSummaryPanel({ contextId, document: doc }) {
 
       {summary && (
         <div className="space-y-4" data-testid="doc-summary-content">
+          {/* §4.2/§5 — surface the validation pass on every output. */}
+          <div data-testid="doc-summary-validated">
+            <ValidatedBadge size="compact" />
+          </div>
           {summary.tldr && (
             <section>
               <p className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--muted)] font-mono mb-1.5">TL;DR</p>

@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import AppShell from "@/components/layout/AppShell";
 import StreamCard from "@/components/stream/StreamCard";
 import { useAuth } from "@/contexts/AuthContext";
+import ValidatedBadge from "@/components/trust/ValidatedBadge";
 import { api, apiErrorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -402,11 +403,12 @@ function SignalStreamCard({ signal, onLoad, onAct, onLens, onShare }) {
       </button>
 
       {/* Row 1 */}
-      <div className="flex items-center gap-3 mb-3">
+      <div className="flex items-center gap-3 mb-3 flex-wrap">
         <span className="akki-type-badge inline-flex items-center gap-1.5 capitalize">
           {signal.type}
         </span>
         <span className="text-[12px] text-[var(--muted)]">{relativeTime(signal.created_at)}</span>
+        <ValidatedBadge size="compact" />
         <span className={`text-[10px] uppercase tracking-wider ml-auto flex items-center gap-1 ${
           signal.data_trust === "trusted" ? "text-[var(--opportunity)]" :
           signal.data_trust === "weak" ? "text-[var(--risk)]" : "text-[var(--muted)]"

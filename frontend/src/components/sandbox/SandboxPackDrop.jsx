@@ -11,6 +11,7 @@
  * click. Never nags.
  */
 import React, { useCallback, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
@@ -25,6 +26,7 @@ const MAX_MB = 20;
 
 export default function SandboxPackDrop({ onSignalsReady }) {
   const { activeContext } = useAuth();
+  const navigate = useNavigate();
   const isSandbox = activeContext?.type === "sandbox";
   const [expanded, setExpanded] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -59,30 +61,15 @@ export default function SandboxPackDrop({ onSignalsReady }) {
         setUploading(false);
         return;
       }
-      toast.success("Uploaded. Asking AKKI to read it…");
       setUploading(false);
 
-      // 2. Trigger signal generation against the whole sandbox (it will
-      //    include this doc alongside the pre-seeded ones)
-      setGenerating(true);
-      const { data } = await api.post(
-        `/contexts/${activeContext.id}/signals/generate`,
-        { focus: `From the document "${up.data.name}", what does the board need to notice?` },
-        { timeout: 120000 },
-      );
-      const count = (data.signals || []).length;
-      setLastResult({
-        doc_name: up.data.name,
-        signals_count: count,
-        mode: data.mode,
-      });
-      toast.success(
-        count === 0
-          ? "Read your pack — nothing new stood out."
-          : `${count} fresh signal${count === 1 ? "" : "s"} from your pack.`,
-        count > 0 ? { description: "Scroll down — they're at the top of your stream." } : undefined,
-      );
+      // §1.1 — Quick-Results journey. Don't dump the user back into the
+      // home stream; route them to a focused page that asks AKKI to do
+      // ONE of three things on this exact document. Conversion moment.
+      toast.success("AKKI is reading your pack…");
+      navigate(`/app/quick-results/${activeContext.id}/${up.data.id}`);
       onSignalsReady && onSignalsReady();
+      return;
     } catch (err) {
       toast.error(apiErrorMessage(err, "Couldn't read that one. Try another pack."));
     } finally {
