@@ -983,7 +983,59 @@ frontend critical claims).
   on Lens redesign + Briefings explainer + regression. Archived-session
   GET tightened post-review (now 404s correctly).
 
-## Iter35 — Login fix + Standalone Chat + Home metrics (Apr 2026)
+## Iter36 — Audit pack · Influence Map · Share evolution diff · Role bleed (Apr 2026)
+12/12 backend + 100% frontend GREEN
+(`/app/test_reports/iteration_36.json`,
+`/app/backend/tests/test_iter36.py`):
+
+### Chat — bank-grade audit pack export
+- New `GET /api/chats/{cid}/audit/export.zip` — returns a 5-file zip:
+  `manifest.txt`, `chat.json`, `messages.json`, `audit_chain.json`,
+  `verify.py`. Messages carry `content_sha256` only — raw content is
+  never bundled.
+- `verify.py` is stdlib-only; runs `python3 verify.py` against the
+  unzipped chain and exits 0 ('OK — verified N rows. Chain intact.')
+  on integrity, 1 ('hash mismatch') on tampering.
+- The export itself appends an `audit.exported` row to the chain.
+
+### Share Evolution Diff CTA (extension of iter34)
+- `/api/shares` `item_type` extended with `doc_evolution`; gated on
+  cached `evolution_diff.diff.what_changed` + `related_doc_id`.
+- Email body now renders the LLM diff blocks: What changed · Added or
+  strengthened · Weakened or removed · Put on the table.
+- Share gesture mounted on `<DocumentEvolutionPanel />`.
+
+### Influence Map (last open P1)
+- New `routers/influence_map.py` aggregates over `document_engagement`
+  + `shares` (doc-targeted) + `collab_comments` + `mentions`. Edge
+  weights: read=1, share=3, comment=4, mention=5.
+- `GET /api/contexts/{cid}/influence-map?days=N` returns nodes
+  (people + docs), edges (source/target/kind/weight/last_at), and
+  rolled-up `people` / `top_docs` / `totals`.
+- New `/app/influence` page — editorial bipartite matrix (people × docs)
+  with cell intensity scaling 5 levels of cream → oxblood, glyphs
+  ·/◐/●/★ per kind, top-influencers and most-engaged-docs panels,
+  7d/30d/90d/1y window picker.
+
+### Role-separation surgical fix
+- `NAV[i].roles` flag in `AppShell`. `Cycle` and `Workflows` scoped to
+  `executive` only — NEDs no longer see them in the rail. Smallest
+  safe change to address the loudest bleed without breaking either
+  flow.
+
+### Landing copy
+- New `05 · The chat` feature block: "One subscription. Every model.
+  Bank-grade audit." Heading updated to "Five surfaces. One discipline."
+
+### Open / deferred — Slice 11+
+- Monitor "green stick" — needs user pointer.
+- Status bar redesign on Signals page — needs user pointer.
+- Deeper role-separation across Highlights, Briefings, Workspace,
+  Simulate, Lens (currently identical for both roles).
+- Production swap: Stripe live key + Resend verified sender domain
+  (env-only, no code).
+
+
 13/13 backend + 100% frontend e2e GREEN
 (`/app/test_reports/iteration_35.json`,
 `/app/backend/tests/test_iter35_chat.py`):
@@ -1068,6 +1120,22 @@ frontend critical claims).
 - **Learn refresh agent** — periodic primary-source content puller.
 - **LinkedIn API posting scaffold** — manual copy/paste fallback exists.
 - target_date ISO sort.
+
+## Iter35 — Login fix + Standalone Chat + Home metrics (Apr 2026)
+13/13 backend + 100% frontend GREEN
+(`/app/test_reports/iteration_35.json`,
+`/app/backend/tests/test_iter35_chat.py`):
+- **Login fix** — `AuthContext.afterAuth` now persists `access_token`
+  to localStorage as a Bearer fallback for browsers blocking
+  cross-site cookies (Safari ITP, Brave, Firefox strict). `bootstrap()`
+  clears stale tokens on `/auth/me` failure.
+- **Standalone Chat surface** at `/app/chat` — privacy-shielded
+  multi-model AI workspace untethered from any company context. 5
+  models via `EMERGENT_LLM_KEY`. Bank-grade audit log
+  (`chat_audit_log` collection, SHA256-chained, IP + UA-hash
+  captured, content stored as `content_sha256` only).
+- **Home metrics** — added Reports (sent + total drafted) and
+  Network (companies + team members) tiles. 6 tiles total.
 
 ## Iter34 — Three follow-on items (Apr 2026)
 13/13 backend + iter33 regression GREEN. Frontend e2e GREEN
