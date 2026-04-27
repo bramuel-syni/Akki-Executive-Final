@@ -1470,3 +1470,58 @@ verified by testing agent (`/app/test_reports/iteration_33.json`):
   submissions · 5·Consolidate & send up. Header copy "Receive ·
   Consolidate · Send up." reinforces the spine.
 
+
+## §UX iter44 — Prepare consolidation + tone polish (2026-04-27)
+
+### Why
+Per Apr-2026 user feedback: "Combine Signal and Briefing into one section.
+Use line tabs to separate the two. When loading these pages, do NOT
+pre-populate them with data. Prompt the user to generate." The Strategic
+Addendum also asked for a calmer, less-marketing post-login register.
+
+### What shipped
+- **Sidebar consolidation** — Signals + Briefings nav entries replaced with a
+  single **Prepare** entry (`AppShell.jsx` line 33).
+- **Routing** — `/app/prepare` registered in `App.js`. `/app/highlights`
+  and `/app/briefings` now `<Navigate>` to `/app/prepare` (no link rot).
+- **Backend router** — `prepare_router` now mounted in `server.py`. The
+  `prepare.py` LLM JSON parser was hardened with a fence-strip pass + prose
+  fallback (was 502'ing when Claude wrapped the JSON in a code fence).
+- **Frontend `Prepare.jsx`** — two line-tabs (Brief / Signals). Brief tab is
+  on-demand: pick a kind chip (claim/proposal/topic/period/report), state
+  your objective, generate, save. The result opens **inline as a Dialog**
+  (no separate route — saves one URL surface). Signals tab follows the same
+  filter + focus + generate pattern; results refresh in place.
+- **Cross-link migration** — every `/app/highlights` and `/app/briefings`
+  string in `MentionInbox`, `ActModal`, `SandboxTutorial`, `InSummaryTiles`,
+  `AppHome`, `QuickResults`, `Monitor` migrated to `/app/prepare`. The old
+  URLs still resolve via redirect.
+- **Tone polish** — softened a handful of slightly-promotional strings:
+  - SandboxBanner: "Ready to use AKKI on your real data?" → "When you're
+    ready, AKKI will read your real pack the same way."
+  - Manage page H1: "Keep your team and your companies tidy." → "Your
+    team and your companies." Sub: "Quiet, no ceremony."
+  - HealthDashboard H1: "One-click green light." → "Pre-flight, in one
+    read."
+
+### Tests
+- iteration_44: 12/12 backend tests in `test_iter44_prepare.py` GREEN.
+  Frontend 100% (Prepare flow + redirect verification + sidebar entry).
+  No regressions. Test report: `/app/test_reports/iteration_44.json`.
+
+### Open / deferred — Slice 8+
+- Tier-B: persistent "Continue with [doc]" topbar pill (Quick-Results in
+  product).
+- Tier-B: multi-LLM model switcher in standalone Chat + avatar visual.
+- Tier-C: Minutes as first-class entity (anchor for Cycle + Monitor).
+- Tier-C: Personal vs Enterprise tier split (`akki.ai/personal` vs
+  `akki.ai/enterprise`).
+- Tier-C: Inbound email parsing/receiving integration.
+- Upgrade `ValidatedBadge` from a Synisense-shielded re-skin to an actual
+  second-LLM validation pass.
+- Refactor: extract `_safe_parse_json` helper out of `prepare.py` +
+  `plays.py` into a shared `helpers/llm_json.py` (review note).
+- Delete-orphaned: `/app/frontend/src/pages/Highlights.jsx` and
+  `/app/frontend/src/pages/Briefings.jsx` are no longer routed but the
+  files remain (kept in case the user wants to roll back). Remove after a
+  stability window.
