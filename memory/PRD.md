@@ -983,14 +983,38 @@ frontend critical claims).
   on Lens redesign + Briefings explainer + regression. Archived-session
   GET tightened post-review (now 404s correctly).
 
-### Open / deferred — Slice 8+
-- **Movable / draggable home cards** — user feedback iter33; deferred
-  (low-impact relative to the rest of the iter33 batch and risk of
-  breaking the InSummaryTiles scan order). Re-pickable.
-- **Learn refresh agent** — periodic agent that pulls fresh exec-grade
-  primary-source content. Best-practice protocol still pending.
-- **NED document evolution chain** (still open).
-- **Influence Map** (still open).
+## Iter34 — Three follow-on items (Apr 2026)
+13/13 backend + iter33 regression GREEN. Frontend e2e GREEN
+(`/app/test_reports/iteration_34.json`):
+- **Share Document Summary** — new `doc_summary` item type on
+  `POST /api/contexts/{cid}/shares`. Email body carries TL;DR +
+  numbered "What matters" + italicised "Walk in asking" quotes plus
+  a deep link to the workspace doc. AKKI-internal recipients still
+  get a mention row. Wired into `<DocumentSummaryPanel />` as a
+  `Send` gesture next to `Re-read`.
+- **Movable home cards** — native HTML5 DnD via
+  `useDraggableSections('home', …)` hook. Order persists per user
+  to `localStorage['akki:section-order:home']`; reconciliation on
+  mount handles added / removed sections. Drag handle appears on
+  hover only so the page stays editorial. Reset gesture surfaces
+  only after a reorder.
+- **NED Document Evolution Chain** — `PATCH /…/documents/{did}` now
+  also accepts `related_doc_id` (null to unlink) with self-link,
+  cycle, and cross-context guards. New
+  `POST /…/documents/{did}/evolution-diff` returns LLM-powered
+  what-changed (added_or_strengthened / weakened_or_removed /
+  questions_for_management) cached on the doc record. Frontend
+  surfaces it as `<DocumentEvolutionPanel />` in the Document Viewer
+  right rail with chain ribbon + diff body + LinkVersionDialog
+  (filter + unlink).
+
+### Open / deferred — Slice 9+
+- **Influence Map** — visualise who's read / shared / commented on
+  what. Engagement records already exist (`document_engagement`,
+  `shares`, `mentions`); needs an aggregator endpoint + a node-link
+  visualisation.
+- **Learn refresh agent** — periodic primary-source content puller.
+- **LinkedIn API posting scaffold** — manual copy/paste fallback exists.
 - target_date ISO sort.
 
 ## Iter33 — User feedback batch (Apr 2026)
