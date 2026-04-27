@@ -34,6 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
+import ShareModal from "@/components/share/ShareModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
@@ -43,11 +44,24 @@ import {
 } from "lucide-react";
 
 const TABS = [
-  { id: "brief",    label: "Brief",    icon: ScrollText,
-    blurb: "A quick orientation on a claim, topic, period or report." },
-  { id: "signals",  label: "Signals",  icon: Activity,
-    blurb: "What the board needs to notice. Generated on demand." },
+  { id: "brief",    label: "Brief",    icon: ScrollText },
+  { id: "signals",  label: "Signals",  icon: Activity },
 ];
+
+const TAB_INTRO = {
+  brief: {
+    kicker: "Generate Brief",
+    blurb:
+      "A short orientation on a claim, proposal, topic, period or report. " +
+      "Around 250–400 words, saved here for next time.",
+  },
+  signals: {
+    kicker: "Generate Signals",
+    blurb:
+      "What the board needs to notice — risks, opportunities, gaps. " +
+      "Generated on demand against a focus you choose.",
+  },
+};
 
 export default function Prepare() {
   const { activeContext } = useAuth();
@@ -75,8 +89,9 @@ export default function Prepare() {
           Short, focused, on-demand. Tell AKKI what you want to be ready for, and AKKI drafts it.
         </p>
 
-        {/* Line tabs */}
-        <div className="mt-8 mb-6 border-b border-[var(--rule)] flex items-stretch gap-0" data-testid="prepare-line-tabs">
+        {/* Line tabs — labels only. Description moves below into a section
+            header so it has room to breathe. */}
+        <div className="mt-8 border-b border-[var(--rule)] flex items-stretch gap-0" data-testid="prepare-line-tabs">
           {TABS.map((t) => {
             const Icon = t.icon;
             const active = tab === t.id;
@@ -84,21 +99,27 @@ export default function Prepare() {
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
-                className={`px-5 py-3 text-[13px] inline-flex items-center gap-2 border-b-2 transition-colors ${
+                className={`px-5 py-3 text-[13.5px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
                   active
-                    ? "border-[var(--accent)] text-[var(--ink)]"
+                    ? "border-[var(--accent)] text-[var(--ink)] font-medium"
                     : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
                 }`}
                 data-testid={`prepare-tab-${t.id}${active ? "-active" : ""}`}
               >
                 <Icon className="w-3.5 h-3.5" />
                 {t.label}
-                <span className="text-[10.5px] uppercase tracking-wider text-[var(--muted)]/70 ml-1 hidden md:inline">
-                  · {t.blurb}
-                </span>
               </button>
             );
           })}
+        </div>
+
+        {/* Section header for the active tab — the description lives here,
+            with room to read, instead of being squeezed into the tab label. */}
+        <div className="mt-8 mb-5" data-testid={`prepare-section-${tab}`}>
+          <p className="akki-overline mb-1.5">{TAB_INTRO[tab].kicker}</p>
+          <p className="akki-serif text-[15.5px] text-[var(--ink)] leading-[1.55] max-w-2xl">
+            {TAB_INTRO[tab].blurb}
+          </p>
         </div>
 
         {tab === "brief"   && <BriefTab   contextId={cid} />}
@@ -173,43 +194,64 @@ function BriefTab({ contextId }) {
     <div data-testid="prepare-brief-tab">
       <form
         onSubmit={generate}
-        className="bg-white border border-[var(--rule)] rounded-md p-5 mb-8"
+        className="bg-white border border-[var(--rule)] rounded-md overflow-hidden mb-10"
         data-testid="prepare-brief-form"
       >
-        <p className="akki-overline mb-3">Brief me on…</p>
-        <div className="flex flex-wrap gap-2 mb-4" data-testid="prepare-brief-kinds">
-          {kinds.map((k) => {
-            const active = kind === k.id;
-            return (
-              <button
-                key={k.id}
-                type="button"
-                onClick={() => setKind(k.id)}
-                className={`px-3 py-1.5 rounded-md border text-[13px] transition-colors ${
-                  active
-                    ? "bg-[var(--ink)] text-[var(--cream)] border-[var(--ink)]"
-                    : "bg-white text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)]"
-                }`}
-                title={k.blurb}
-                data-testid={`prepare-brief-kind-${k.id}${active ? "-active" : ""}`}
-              >
-                {k.label}
-              </button>
-            );
-          })}
+        {/* INPUT — kind picker. */}
+        <div className="px-6 pt-5 pb-4 border-b border-[var(--rule)]/60">
+          <p className="akki-overline mb-3">Step 1 · Pick a kind</p>
+          <div className="flex flex-wrap gap-2" data-testid="prepare-brief-kinds">
+            {kinds.map((k) => {
+              const active = kind === k.id;
+              return (
+                <button
+                  key={k.id}
+                  type="button"
+                  onClick={() => setKind(k.id)}
+                  className={`px-3.5 py-1.5 rounded-full border text-[13px] transition-colors ${
+                    active
+                      ? "bg-[var(--ink)] text-[var(--cream)] border-[var(--ink)]"
+                      : "bg-white text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)]"
+                  }`}
+                  title={k.blurb}
+                  data-testid={`prepare-brief-kind-${k.id}${active ? "-active" : ""}`}
+                >
+                  {k.label}
+                </button>
+              );
+            })}
+          </div>
+          {kinds.find((k) => k.id === kind)?.blurb && (
+            <p className="text-[12.5px] text-[var(--muted)] italic mt-3">
+              {kinds.find((k) => k.id === kind).blurb}
+            </p>
+          )}
         </div>
 
-        <p className="akki-overline mb-2">My objective</p>
-        <Textarea
-          value={objective}
-          onChange={(e) => setObjective(e.target.value)}
-          placeholder="What do you want to be quickly oriented on? Be specific — e.g., 'Walk me through the underwriting margin question for Q2 in two paragraphs.'"
-          rows={3}
-          maxLength={600}
-          className="bg-[var(--cream-deep)]/30 rounded-md text-[14px] text-[var(--ink)] placeholder:text-[var(--muted)] border-[var(--rule)] focus:border-[var(--accent)] resize-none mb-3"
-          data-testid="prepare-brief-objective"
-        />
-        <div className="flex items-center justify-between gap-3">
+        {/* INPUT — objective. */}
+        <div className="px-6 pt-5 pb-4">
+          <p className="akki-overline mb-2">Step 2 · Your objective</p>
+          <Textarea
+            value={objective}
+            onChange={(e) => setObjective(e.target.value)}
+            placeholder="What do you want to be oriented on? e.g., 'Walk me through the underwriting margin question for Q2 in two paragraphs.'"
+            rows={3}
+            maxLength={600}
+            className="bg-[var(--cream-deep)]/30 rounded-md text-[14px] text-[var(--ink)] placeholder:text-[var(--muted)] border-[var(--rule)] focus:border-[var(--accent)] resize-none"
+            data-testid="prepare-brief-objective"
+          />
+          <div className="flex items-center justify-between mt-1.5">
+            <p className="text-[11px] text-[var(--muted)] tabular-nums">
+              {objective.trim().length} / 600
+            </p>
+            <p className="text-[11px] text-[var(--muted)] italic">
+              {objective.trim().length < 8 ? "Tell AKKI a little more — at least 8 characters." : " "}
+            </p>
+          </div>
+        </div>
+
+        {/* ACTION — validated badge + submit. */}
+        <div className="px-6 py-4 bg-[var(--cream-deep)]/30 border-t border-[var(--rule)]/60 flex items-center justify-between gap-3">
           <ValidatedBadge size="compact" />
           <Button
             type="submit"
@@ -218,7 +260,7 @@ function BriefTab({ contextId }) {
             data-testid="prepare-brief-generate"
           >
             {busy ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
-            {busy ? "Drafting…" : "Generate brief"} {!busy && <ArrowRight className="w-3.5 h-3.5 ml-1.5" />}
+            {busy ? "Drafting…" : "Generate Brief"} {!busy && <ArrowRight className="w-3.5 h-3.5 ml-1.5" />}
           </Button>
         </div>
       </form>
@@ -233,7 +275,11 @@ function BriefTab({ contextId }) {
         testId="prepare-brief-history"
       />
 
-      <BriefDetailModal brief={openBrief} onClose={() => setOpenBrief(null)} />
+      <BriefDetailModal
+        brief={openBrief}
+        contextId={contextId}
+        onClose={() => setOpenBrief(null)}
+      />
     </div>
   );
 }
@@ -291,41 +337,52 @@ function SignalsTab({ contextId, contextName }) {
     <div data-testid="prepare-signals-tab">
       <form
         onSubmit={generate}
-        className="bg-white border border-[var(--rule)] rounded-md p-5 mb-8"
+        className="bg-white border border-[var(--rule)] rounded-md overflow-hidden mb-10"
         data-testid="prepare-signals-form"
       >
-        <p className="akki-overline mb-3">Surface signals on…</p>
-        <div className="flex flex-wrap gap-2 mb-4" data-testid="prepare-signals-filters">
-          {SIGNAL_FILTERS.map((f) => {
-            const active = filter === f.id;
-            return (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => setFilter(f.id)}
-                className={`px-3 py-1.5 rounded-md border text-[13px] transition-colors ${
-                  active
-                    ? "bg-[var(--ink)] text-[var(--cream)] border-[var(--ink)]"
-                    : "bg-white text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)]"
-                }`}
-                data-testid={`prepare-signals-filter-${f.id}${active ? "-active" : ""}`}
-              >
-                {f.label}
-              </button>
-            );
-          })}
+        {/* INPUT — filter. */}
+        <div className="px-6 pt-5 pb-4 border-b border-[var(--rule)]/60">
+          <p className="akki-overline mb-3">Step 1 · Pick a focus area</p>
+          <div className="flex flex-wrap gap-2" data-testid="prepare-signals-filters">
+            {SIGNAL_FILTERS.map((f) => {
+              const active = filter === f.id;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setFilter(f.id)}
+                  className={`px-3.5 py-1.5 rounded-full border text-[13px] transition-colors ${
+                    active
+                      ? "bg-[var(--ink)] text-[var(--cream)] border-[var(--ink)]"
+                      : "bg-white text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)]"
+                  }`}
+                  data-testid={`prepare-signals-filter-${f.id}${active ? "-active" : ""}`}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <p className="akki-overline mb-2">My focus</p>
-        <Input
-          value={objective}
-          onChange={(e) => setObjective(e.target.value)}
-          placeholder={`What in ${contextName} are we looking at? e.g. "Loss ratio drift in marine business."`}
-          maxLength={400}
-          className="bg-[var(--cream-deep)]/30 h-11 text-[14px] text-[var(--ink)] placeholder:text-[var(--muted)] border-[var(--rule)] focus:border-[var(--accent)] mb-3"
-          data-testid="prepare-signals-objective"
-        />
-        <div className="flex items-center justify-between gap-3">
+        {/* INPUT — focus query. */}
+        <div className="px-6 pt-5 pb-4">
+          <p className="akki-overline mb-2">Step 2 · Your focus</p>
+          <Input
+            value={objective}
+            onChange={(e) => setObjective(e.target.value)}
+            placeholder={`What in ${contextName} are we looking at? e.g. "Loss ratio drift in marine business."`}
+            maxLength={400}
+            className="bg-[var(--cream-deep)]/30 h-11 text-[14px] text-[var(--ink)] placeholder:text-[var(--muted)] border-[var(--rule)] focus:border-[var(--accent)]"
+            data-testid="prepare-signals-objective"
+          />
+          <p className="text-[11px] text-[var(--muted)] tabular-nums mt-1.5">
+            {objective.trim().length} / 400
+          </p>
+        </div>
+
+        {/* ACTION — validated badge + submit. */}
+        <div className="px-6 py-4 bg-[var(--cream-deep)]/30 border-t border-[var(--rule)]/60 flex items-center justify-between gap-3">
           <ValidatedBadge size="compact" />
           <Button
             type="submit"
@@ -334,7 +391,7 @@ function SignalsTab({ contextId, contextName }) {
             data-testid="prepare-signals-generate"
           >
             {busy ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
-            {busy ? "Reading…" : "Surface signals"} {!busy && <ArrowRight className="w-3.5 h-3.5 ml-1.5" />}
+            {busy ? "Reading…" : "Generate Signals"} {!busy && <ArrowRight className="w-3.5 h-3.5 ml-1.5" />}
           </Button>
         </div>
       </form>
@@ -365,10 +422,15 @@ function SignalsTab({ contextId, contextName }) {
 function SavedHistory({ items, loading, emptyText, labelTotal, onOpen, onRemove, testId }) {
   return (
     <section data-testid={testId}>
-      <p className="akki-overline mb-3 flex items-center gap-2">
-        <Clock className="w-3 h-3 text-[var(--accent)]" />
-        Recent {labelTotal} · {loading ? "…" : items.length}
-      </p>
+      <div className="flex items-baseline justify-between mb-3 pb-2 border-b border-[var(--rule)]">
+        <p className="akki-overline flex items-center gap-2">
+          <Clock className="w-3 h-3 text-[var(--accent)]" />
+          Recent {labelTotal}
+        </p>
+        <p className="text-[11px] text-[var(--muted)] tabular-nums">
+          {loading ? "—" : `${items.length} saved`}
+        </p>
+      </div>
       <div className="bg-white border border-[var(--rule)] rounded-md overflow-hidden">
         {loading ? (
           <p className="px-5 py-6 text-center text-[12.5px] text-[var(--muted)] italic">
@@ -414,8 +476,9 @@ function SavedHistory({ items, loading, emptyText, labelTotal, onOpen, onRemove,
 // BriefDetailModal — read the saved brief in place. Markdown rendered as
 // pre-wrap text (calm, editorial) so we don't pull in another dependency.
 // ---------------------------------------------------------------------------
-function BriefDetailModal({ brief, onClose }) {
+function BriefDetailModal({ brief, contextId, onClose }) {
   const open = Boolean(brief);
+  const [shareOpen, setShareOpen] = useState(false);
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose?.(); }}>
       <DialogContent className="max-w-2xl bg-[var(--cream)]" data-testid="prepare-brief-detail">
@@ -430,12 +493,33 @@ function BriefDetailModal({ brief, onClose }) {
             {brief?.objective}
           </DialogDescription>
         </DialogHeader>
-        <div className="mt-2">
+        <div className="mt-2 flex items-center justify-between gap-3">
           <ValidatedBadge size="compact" />
+          {brief?.id && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShareOpen(true)}
+              className="h-8 text-[12.5px] border-[var(--rule)] hover:border-[var(--accent)] text-[var(--ink)]"
+              data-testid="prepare-brief-share"
+            >
+              Send to a colleague
+            </Button>
+          )}
         </div>
         <div className="mt-3 max-h-[60vh] overflow-y-auto akki-serif text-[15px] leading-[1.7] text-[var(--ink)] whitespace-pre-wrap">
           {brief?.body}
         </div>
+
+        {brief?.id && contextId && (
+          <ShareModal
+            open={shareOpen}
+            onClose={() => setShareOpen(false)}
+            contextId={contextId}
+            itemType="brief"
+            item={brief}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );

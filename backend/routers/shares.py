@@ -30,7 +30,7 @@ logger = logging.getLogger("akki.shares")
 router = APIRouter(prefix="/api")
 
 
-ItemType = Literal["signal", "briefing", "doc_summary", "doc_evolution"]
+ItemType = Literal["signal", "briefing", "brief", "doc_summary", "doc_evolution"]
 DeliveryMethod = Literal["email", "akki_notification"]
 
 
@@ -56,6 +56,12 @@ async def _load_artefact(item_type: str, item_id: str, context_id: str) -> Optio
         return await db.signals.find_one({"id": item_id, "context_id": context_id}, {"_id": 0})
     if item_type == "briefing":
         return await db.briefings.find_one({"id": item_id, "context_id": context_id}, {"_id": 0})
+    if item_type == "brief":
+        # Lightweight Prepare-tab brief (collection: briefs). Authoring-user-
+        # scoped is enforced upstream via require_context_membership; the
+        # brief itself is owned by an account but anyone in the context can
+        # forward it on (matches the "send a colleague this brief" flow).
+        return await db.briefs.find_one({"id": item_id, "context_id": context_id}, {"_id": 0})
     if item_type == "doc_summary":
         # The artefact is the document — but we only allow sharing once an
         # AKKI summary has been generated. Otherwise there's nothing
@@ -78,6 +84,8 @@ def _preview_from_item(item_type: str, item: Dict[str, Any]) -> str:
         return (item.get("headline") or "")[:240]
     if item_type == "briefing":
         return (item.get("title") or "")[:240]
+    if item_type == "brief":
+        return (item.get("title") or item.get("objective") or "Brief")[:240]
     if item_type == "doc_summary":
         # Lead with the document name; the TL;DR goes into the email body.
         return (item.get("name") or item.get("original_filename") or "Document summary")[:240]

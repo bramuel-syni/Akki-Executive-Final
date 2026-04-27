@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import CommentThread from "@/components/collab/CommentThread";
 import DocumentThread from "@/components/documents/DocumentThread";
 import DocumentEngagement from "@/components/documents/DocumentEngagement";
+import { recordContinueWith } from "@/components/layout/ContinueWithPill";
 import DocLensRail from "@/components/documents/DocLensRail";
 import {
   ArrowLeft, Download, FileText, ShieldCheck, Loader2, List, AlertTriangle,
@@ -78,6 +79,14 @@ export default function DocumentViewer() {
       setDoc(data);
       // Fire-and-forget read receipt; ignore failures.
       api.post(`/contexts/${contextId}/documents/${docId}/view`).catch(() => {});
+      // Tier-B: record as the most-recent doc the user is working with so
+      // the topbar pill can take them straight back to the QuickResults
+      // surface from anywhere else in the app.
+      recordContinueWith({
+        contextId,
+        docId,
+        docName: data?.name || data?.original_filename,
+      });
     } catch (e) {
       toast.error(apiErrorMessage(e));
     } finally {

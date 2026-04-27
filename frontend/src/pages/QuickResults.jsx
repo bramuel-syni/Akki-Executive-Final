@@ -26,6 +26,7 @@ import {
   Loader2, BookOpen, ScrollText, AlertTriangle, ArrowRight, FileText,
   Sparkles, Check,
 } from "lucide-react";
+import { recordContinueWith } from "@/components/layout/ContinueWithPill";
 
 const USE_CASES = [
   {
@@ -65,7 +66,16 @@ export default function QuickResults() {
     (async () => {
       try {
         const { data } = await api.get(`/contexts/${contextId}/documents/${docId}`);
-        if (!cancelled) setDoc(data);
+        if (!cancelled) {
+          setDoc(data);
+          // Tier-B Continue-with pill: record this as the user's most-recent
+          // doc-anchored read so it's surfaced from the topbar across pages.
+          recordContinueWith({
+            contextId,
+            docId,
+            docName: data?.name || data?.original_filename,
+          });
+        }
       } catch { /* silent — header just renders generic copy */ }
     })();
     return () => { cancelled = true; };

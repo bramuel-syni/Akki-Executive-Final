@@ -454,19 +454,13 @@ async def pre_board_read_pack(
         logger.exception("Pre-Board LLM call failed: %s", e)
         raise HTTPException(status_code=502, detail="AKKI couldn't read the pack just now.")
 
-    # Best-effort JSON parse — strip the common ```json fences if present.
-    import json as _json
-    cleaned = raw_text.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.split("```", 2)[1]
-        if cleaned.startswith("json"):
-            cleaned = cleaned[4:]
-        cleaned = cleaned.rsplit("```", 1)[0].strip()
-    try:
-        parsed = _json.loads(cleaned)
+    # Best-effort JSON parse — shared helper handles fences + fallback.
+    from helpers.llm_json import safe_parse_json
+    parsed, _ = safe_parse_json(raw_text)
+    if parsed:
         notes = [str(n) for n in parsed.get("notes", []) if str(n).strip()][:6]
         standouts = parsed.get("standouts", [])[:5]
-    except Exception:  # noqa: BLE001
+    else:
         notes = [s.strip(" -•") for s in raw_text.split("\n") if s.strip()][:5]
         standouts = []
 

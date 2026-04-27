@@ -47,6 +47,7 @@ export default function ShareModal({
     itemType === "signal" ? "Signal" :
     itemType === "doc_summary" ? "Document summary" :
     itemType === "doc_evolution" ? "Document evolution" :
+    itemType === "brief" ? "Brief" :
     "Briefing"
   );
 

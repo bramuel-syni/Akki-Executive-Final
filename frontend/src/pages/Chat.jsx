@@ -23,6 +23,7 @@ import {
   Plus, Send, Loader2, Shield, ShieldOff, Trash2, MessageCircle,
   ChevronDown, FileLock2, Eye, AlertTriangle, Download,
 } from "lucide-react";
+import ModelAvatar from "@/components/chat/ModelAvatar";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
   DialogFooter,
@@ -287,7 +288,7 @@ export default function Chat() {
                     Type your first message below.
                   </p>
                 ) : (activeChat.messages || []).map((m) => (
-                  <Message key={m.id} m={m} activeModel={activeModel} />
+                  <Message key={m.id} m={m} activeModel={activeModel} models={models} />
                 ))}
                 {sending && (
                   <div className="flex items-center gap-2 text-[12.5px] text-[var(--muted)] italic">
@@ -399,23 +400,27 @@ function ModelPicker({ models, value, onChange }) {
     <div className="relative" ref={ref} data-testid="chat-model-picker">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="h-8 inline-flex items-center gap-1.5 px-2.5 text-[12px] border border-[var(--rule)] rounded-sm bg-white hover:border-[var(--accent)]/40"
+        className="h-8 inline-flex items-center gap-1.5 px-2 text-[12px] border border-[var(--rule)] rounded-sm bg-white hover:border-[var(--accent)]/40"
         data-testid="chat-model-trigger"
       >
+        <ModelAvatar model={active} size="xs" />
         <span className="text-[var(--ink)] truncate max-w-[140px]">{active?.label || value}</span>
         <ChevronDown className={`w-3 h-3 text-[var(--muted)] transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-30 min-w-[260px] bg-white border border-[var(--rule)] rounded-sm shadow-lg py-1" data-testid="chat-model-menu">
+        <div className="absolute right-0 top-full mt-1 z-30 min-w-[280px] bg-white border border-[var(--rule)] rounded-sm shadow-lg py-1" data-testid="chat-model-menu">
           {models.map((m) => (
             <button
               key={m.id}
               onClick={() => { onChange(m.id); setOpen(false); }}
-              className={`w-full text-left px-3 py-2 text-[13px] hover:bg-[var(--cream-deep)]/40 ${m.id === value ? "bg-[var(--cream-deep)]/30" : ""}`}
+              className={`w-full text-left px-3 py-2 text-[13px] hover:bg-[var(--cream-deep)]/40 flex items-center gap-2.5 ${m.id === value ? "bg-[var(--cream-deep)]/30" : ""}`}
               data-testid={`chat-model-opt-${m.id}`}
             >
-              <p className="text-[var(--ink)]">{m.label}</p>
-              <p className="text-[11px] text-[var(--muted)] italic">{m.tone}</p>
+              <ModelAvatar model={m} size="sm" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[var(--ink)]">{m.label}</p>
+                <p className="text-[11px] text-[var(--muted)] italic">{m.tone}</p>
+              </div>
             </button>
           ))}
         </div>
@@ -440,20 +445,27 @@ function PolicyPicker({ value, onChange }) {
   );
 }
 
-function Message({ m, activeModel }) {
+function Message({ m, activeModel, models }) {
   const isUser = m.role === "user";
   const shielded = m.shielded;
   const detected = (m.shielding?.identifiers_masked || 0) > 0;
   const cats = m.shielding?.by_category || {};
   const catSummary = Object.entries(cats).map(([k, n]) => `${n} ${k}${n === 1 ? "" : "s"}`).join(" · ");
+  // Resolve the model that produced this assistant message — fall back to
+  // activeModel for messages persisted before model_id was tracked.
+  const msgModel = !isUser
+    ? (models?.find?.((x) => x.id === m.model_id) || activeModel)
+    : null;
 
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`} data-testid={`chat-msg-${m.role}`}>
-      <div className={`w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[10px] font-mono ${
-        isUser ? "bg-[var(--ink)] text-white" : "bg-[var(--accent-soft)] text-[var(--accent)]"
-      }`}>
-        {isUser ? "YOU" : "A"}
-      </div>
+      {isUser ? (
+        <div className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[10px] font-mono bg-[var(--ink)] text-white">
+          YOU
+        </div>
+      ) : (
+        <ModelAvatar model={msgModel} size="md" className="rounded-full" />
+      )}
       <div className={`flex-1 min-w-0 ${isUser ? "text-right" : ""}`}>
         {isUser && detected && (
           <div className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wider mb-1 px-1.5 py-0.5 rounded-sm ${
@@ -465,9 +477,9 @@ function Message({ m, activeModel }) {
             {shielded ? `Shielded · ${catSummary}` : `Sent unshielded · ${catSummary} · acknowledged`}
           </div>
         )}
-        {!isUser && m.model_label && (
+        {!isUser && (m.model_label || msgModel?.label) && (
           <p className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-1">
-            {m.model_label || activeModel?.label} · {m.latency_ms ? `${(m.latency_ms / 1000).toFixed(1)}s` : ""}
+            {m.model_label || msgModel?.label} · {m.latency_ms ? `${(m.latency_ms / 1000).toFixed(1)}s` : ""}
           </p>
         )}
         <div className={`inline-block max-w-full akki-serif text-[14.5px] leading-[1.65] whitespace-pre-wrap ${

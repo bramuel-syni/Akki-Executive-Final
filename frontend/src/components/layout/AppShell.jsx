@@ -23,6 +23,7 @@ import {
 import MentionInbox from "@/components/collab/MentionInbox";
 import UploadModal from "@/components/upload/UploadModal";
 import PortfolioRail from "@/components/layout/PortfolioRail";
+import ContinueWithPill from "@/components/layout/ContinueWithPill";
 
 // v3.0 — surfaces (BRD §13). The `roles` field scopes a nav entry
 // to the role(s) that actually use it. Omit `roles` for surfaces both
@@ -157,6 +158,11 @@ export default function AppShell({ children }) {
         </div>
 
         <div className="flex items-center gap-5">
+          {/* Continue-with-doc pill — Tier-B persistent thread back to the
+              last document the executive opened in QuickResults. Hidden
+              on surfaces where it would be redundant. */}
+          <ContinueWithPill />
+
           {/* Cmd+K search */}
           <button
             className="hidden md:flex items-center gap-2 px-3 py-1.5 text-[13px] bg-white hover:bg-[var(--cream-deep)] text-[var(--muted)] rounded-md transition-colors border border-[var(--rule)]"
