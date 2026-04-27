@@ -1186,6 +1186,41 @@ Cycle + Workflows in NED mode** (the iter36 surgical fix).
 - **LinkedIn API posting scaffold** — manual copy/paste fallback exists.
 - target_date ISO sort.
 
+## Iter40 — Strategic Goals card overhaul + Sandbox KPI dashboard (Apr 2026)
+100% backend + 100% frontend GREEN
+(`/app/test_reports/iteration_40.json`,
+`/app/backend/tests/test_iter40_goals_kpi.py`):
+- **Strategic Goals card overhaul** per user spec:
+  - `category` field added (revenue | customer | product | people |
+    operations | compliance) — top-left chip, color-coded.
+  - `initiatives_count` (0–99) — small layered icon + count in the
+    secondary row.
+  - Conic dials replaced with slim horizontal **progress bars** sitting
+    side-by-side on a single row to the right of the title, equal
+    spacing.
+  - **Narrative under each bar** ("At risk. Drift is real but
+    recoverable." / "Plausible — assumes the current trajectory
+    holds.") — answers "what does a 78 mean".
+  - Tight whitespace — title row + secondary row, two clean editorial
+    lines.
+  - "How is this calculated?" hoisted to the panel header (single
+    instance, not per-row).
+  - LLM extraction prompt updated to populate both new fields;
+    backend whitelist-clamps invalid values.
+- **Sandbox Conversion KPI dashboard** (`/admin/sandbox-kpi`,
+  superadmin-only) — closes the Q5 measurement loop:
+  - `GET /api/admin/sandbox/kpi` — totals (captured / answered / yes /
+    partial / no / skipped + answer-rate-% + delivery-rate-%) +
+    per-sector breakdown sorted by volume.
+  - `GET /api/admin/sandbox/objectives?limit=&sector=&answer=` —
+    most-recent-first list with answer + free-text note, server-side
+    filtered.
+  - Aggregation handles BOTH sandbox-typed and seeded real contexts
+    (sandbox_metadata vs seeded_metadata via `_flatten_meta`).
+  - Frontend: 4 stat tiles + sector table + objectives list with
+    sector + answer filters; non-superadmin redirected to /app.
+
+
 ## Iter39 — Tier 1 gap-plug + Tier 2 quick wins (Apr 2026)
 100% backend + 100% frontend GREEN
 (`/app/test_reports/iteration_39.json`,
