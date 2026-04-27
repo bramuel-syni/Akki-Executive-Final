@@ -24,6 +24,7 @@ import Simulate from "@/pages/Simulate";
 import LensRoom from "@/pages/LensRoom";
 import Chat from "@/pages/Chat";
 import InfluenceMap from "@/pages/InfluenceMap";
+import HealthDashboard from "@/pages/admin/HealthDashboard";
 import Manage from "@/pages/Manage";
 import Sandbox from "@/pages/Sandbox";
 import SandboxGenerating from "@/pages/SandboxGenerating";
@@ -92,6 +93,7 @@ function App() {
           <Route path="/app/lens" element={<ProtectedRoute><LensRoom /></ProtectedRoute>} />
           <Route path="/app/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
           <Route path="/app/influence" element={<ProtectedRoute><InfluenceMap /></ProtectedRoute>} />
+          <Route path="/admin/health" element={<ProtectedRoute><HealthDashboard /></ProtectedRoute>} />
           <Route path="/app/learn" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
           <Route path="/app/learn/:id" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
           <Route path="/app/manage" element={<ProtectedRoute><Manage /></ProtectedRoute>} />

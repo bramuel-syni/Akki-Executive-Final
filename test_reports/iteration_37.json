@@ -1,0 +1,32 @@
+{
+  "summary": "iter37+38 backend 7/7 PASS and frontend 8/8 flows PASS. Admin Health Dashboard, Influence-Map digest manual + cron, and login URL aliases all verified end-to-end against the live preview URL.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter37_38.py",
+    "/app/test_reports/pytest/iter37_38.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/admin_health.py: 6 parallel checks (mongo+llm+resend+stripe via asyncio.gather, then scheduler+cron_secret synchronously). All return canonical {status, ...evidence/error/note, latency_ms?} shape. Superadmin guard via accounts.is_superadmin checked through Depends(get_current_account) — returns 403 with 'Superadmin required' for non-superadmins, 401 for unauth (verified).",
+    "Stripe FAIL is the platform sandbox placeholder key 'sk_test_emergent' rejected by Stripe API ('Invalid API Key provided: sk_test_****gent'). This is correctly diagnosed by the health page, not a regression. Resend WARN is the sandbox sender 'onboarding@resend.dev' — also correctly flagged. Both are pre-existing env states, not iter37+38 bugs.",
+    "Scheduler check confirms both jobs registered: exco360_weekly (Tuesday) and influence_digest_weekly (Monday 08:00 UTC) with valid next_run_time ISO timestamps (2026-04-28 / 2026-05-04 in this run).",
+    "App.js URL alias routes verified live: /sign-in, /login, /log-in -> /signin (redirected via <Navigate replace>); /sign-up, /register -> /signup. All five aliases tested on the public URL.",
+    "Influence-map manual digest endpoint POST /api/contexts/{cid}/influence-map/digest returns {ok, mode, totals} as designed. Tuli CFO ctx returned a graceful response — body shape correct even when Resend send is attempted; cron weekly-digest with correct AKKI_CRON_SECRET returns {sent, skipped_no_engagement, failed, ran_at} and does not crash on Resend send failures (verified live).",
+    "HealthDashboard.jsx: auto-runs on mount via useEffect when account.is_superadmin becomes true; redirects non-superadmins to '/' via <Navigate replace>. Six rows render with data-testid health-check-{key} and badge data-testid health-check-{key}-status (PASS/WARN/FAIL). Run-checks button (data-testid health-refresh-btn) re-triggers the fetch. Confirmed against live UI."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter37_38.py (NEW, 7 tests, all pass in ~4s)"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (8/8 flows: 5 URL aliases + bramuel UI login + bramuel /admin/health redirect + admin /admin/health full grid + Run-checks refresh)"},
+  "test_credentials": "admin@akki.ai / AkkiAdmin2026! (superadmin); bramuel@syni.ai / TestBramuel2026! (regular dual user). Cron secret env: AKKI_CRON_SECRET=local-dev-cron-secret-rotate-in-prod-2026.",
+  "seed_data_creation": "None added in this iteration. The cron weekly-digest run iterates existing contexts and is idempotent.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Admin Health Dashboard live at /admin/health. data-testids: health-dashboard, health-summary, health-overall-{pass|warn|fail|skip}, health-checks, health-check-{mongo|llm|resend|stripe|scheduler|cron_secret}, health-check-{key}-status, health-refresh-btn, health-env. Backend: GET /api/admin/health/full (superadmin), POST /api/cron/weekly-digest (X-Cron-Secret), POST /api/contexts/{cid}/influence-map/digest (member). Stripe FAIL on the live env is the placeholder sk_test_emergent — not a bug. Resend WARN is sandbox sender — also expected. Both surface correctly.",
+  "rca of the issue": "No bugs found. iter37+38 ships clean. Stripe FAIL and Resend WARN on the live grid are intentional and correctly diagnosed by the health page (env values are platform sandbox defaults) — they should NOT be treated as iter37+38 regressions."
+}

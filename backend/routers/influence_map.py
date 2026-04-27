@@ -35,10 +35,11 @@ from collections import defaultdict
 from datetime import timedelta
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from core import db, get_current_account, now as _now, iso as _iso
 from core import require_context_membership
+from email_service import send_email
 
 router = APIRouter(prefix="/api")
 
@@ -258,3 +259,192 @@ async def get_influence_map(
             "mentions": sum(1 for e in edges if e[2] == "mention"),
         },
     }
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Weekly Influence Digest — Monday 08:00 UTC cron
+# ──────────────────────────────────────────────────────────────────────
+
+def _digest_html(*, exec_name: str, context_name: str, payload: Dict[str, Any],
+                 view_url: str) -> str:
+    """Editorial email body — top 5 influencers + most-read docs of the week.
+    Style matches the rest of AKKI's transactional email: cream + oxblood."""
+    people = payload.get("people", [])[:5]
+    docs = payload.get("top_docs", [])[:5]
+    totals = payload.get("totals", {})
+
+    def _row_html(rows, kind):
+        if not rows:
+            return ('<p style="font-size:12.5px;color:#7a6a52;font-style:italic;'
+                    'margin:0 0 18px 0;">Nothing to flag this week.</p>')
+        items = []
+        for i, r in enumerate(rows, 1):
+            right = (
+                f"score {r.get('score', 0)}" if kind == "people"
+                else f"{r.get('readers', 0)} reader{'' if r.get('readers') == 1 else 's'}"
+            )
+            items.append(
+                f'<li style="margin-bottom:8px;padding:0;font-size:13.5px;'
+                f'line-height:1.55;color:#1a1f2e;">'
+                f'<span style="font-family:monospace;color:#7a6a52;'
+                f'margin-right:6px;">{i:02d}</span>'
+                f'<span>{r["label"]}</span>'
+                f'<span style="float:right;font-size:11px;color:#7a6a52;'
+                f'font-family:monospace;">{right}</span>'
+                f'</li>'
+            )
+        return f'<ol style="list-style:none;padding:0;margin:0 0 22px 0;">{"".join(items)}</ol>'
+
+    return (
+        '<div style="font-family:Georgia,serif;max-width:600px;margin:0 auto;'
+        'padding:36px 28px;background:#f5efe6;color:#1a1f2e;">'
+        f'<p style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;'
+        f'color:#7a6a52;margin:0 0 14px 0;">'
+        f'AKKI · Influence digest · {context_name}</p>'
+        f'<h1 style="font-size:24px;line-height:1.25;margin:0 0 6px 0;'
+        f'font-weight:normal;">Who actually read.</h1>'
+        f'<p style="font-size:14px;line-height:1.6;color:#3a3a3a;margin:0 0 26px 0;">'
+        f'Good morning, {exec_name}. The pattern of attention across your '
+        f'board\'s papers, this past week.</p>'
+        '<p style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;'
+        'color:#722f37;margin:0 0 8px 0;">Top influencers</p>'
+        + _row_html(people, "people") +
+        '<p style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;'
+        'color:#722f37;margin:0 0 8px 0;">Most-engaged documents</p>'
+        + _row_html(docs, "docs") +
+        '<div style="border-top:1px solid #d6caa6;padding-top:18px;margin-top:6px;'
+        'font-size:11.5px;color:#7a6a52;line-height:1.6;">'
+        f'{totals.get("people", 0)} people · {totals.get("documents_engaged", 0)} docs · '
+        f'{totals.get("reads", 0)} reads · {totals.get("shares", 0)} shares · '
+        f'{totals.get("comments", 0)} comments · {totals.get("mentions", 0)} mentions'
+        '</div>'
+        f'<a href="{view_url}" style="display:inline-block;background:#722f37;color:#fff;'
+        'padding:11px 22px;text-decoration:none;font-size:13px;letter-spacing:0.05em;'
+        'margin-top:24px;">Open the full map &rarr;</a>'
+        '<p style="font-size:11px;color:#7a6a52;margin:32px 0 0 0;">'
+        'Sent every Monday morning · adjust in <em>Settings → Notifications</em>'
+        '</p>'
+        '</div>'
+    )
+
+
+@router.post("/contexts/{context_id}/influence-map/digest")
+async def send_influence_digest_now(
+    context_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Send the Influence Digest email for THIS context to the calling user
+    immediately. Used by the admin tile and as the unit of work the cron
+    calls per context."""
+    payload = await get_influence_map(context_id=context_id, days=7, ctx=ctx)
+    if payload["totals"]["edges"] == 0:
+        return {"ok": False, "skipped": True, "reason": "no engagement"}
+
+    account = ctx.get("account") or {}
+    context = ctx.get("context") or {}
+    exec_name = (account.get("name") or account.get("email") or "there").split("@")[0]
+    context_name = context.get("name") or "your company"
+    origin = (__import__("os").environ.get("FRONTEND_ORIGIN") or "").rstrip("/")
+    view_url = f"{origin}/app/influence" if origin else "/app/influence"
+
+    html = _digest_html(
+        exec_name=exec_name, context_name=context_name,
+        payload=payload, view_url=view_url,
+    )
+    res = await send_email(
+        to=[account["email"]],
+        subject=f"Influence Digest · {context_name}",
+        html=html,
+        tags=[{"name": "kind", "value": "influence_digest"},
+              {"name": "context_id", "value": context_id}],
+    )
+    return {"ok": res.get("ok"), "mode": res.get("mode"),
+            "id": res.get("id"), "totals": payload["totals"]}
+
+
+@router.post("/cron/weekly-digest")
+async def cron_weekly_digest(
+    x_cron_secret: str = Header(default=""),
+):
+    """Internal cron endpoint — called by APScheduler every Monday 08:00
+    UTC. Iterates every active executive role across every context,
+    builds the previous-7-day digest, and emails each executive their
+    own roll-up.
+
+    Authenticated via the `AKKI_CRON_SECRET` shared header. Mirrors the
+    blog cron so the same secret rotates the lot.
+    """
+    import os as _os
+    expected = _os.environ.get("AKKI_CRON_SECRET", "")
+    if not expected or x_cron_secret != expected:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    sent = 0
+    skipped = 0
+    failed = 0
+    # Walk every active context. For each, build the digest once, then
+    # send to each executive member. NEDs get a lightweight version
+    # (this v1 emails executives only — they own the read patterns;
+    # NEDs receive briefings via a different cadence).
+    contexts = await db.contexts.find(
+        {"status": {"$ne": "archived"}}, {"_id": 0, "id": 1, "name": 1},
+    ).to_list(2000)
+
+    for c in contexts:
+        cid = c["id"]
+        # Members with the 'executive' role on this context
+        members = await db.context_members.find(
+            {"context_id": cid, "status": {"$ne": "archived"}},
+            {"_id": 0},
+        ).to_list(2000)
+        execs = [m for m in members if "executive" in (m.get("roles") or [])]
+        if not execs:
+            continue
+
+        # Build the digest payload ONCE for this context (cheap; same
+        # 7-day rollup for everyone here).
+        # Fake `ctx` dependency object — the helper only uses .context.
+        # Use the route function directly with a synthetic ctx.
+        try:
+            payload = await get_influence_map(
+                context_id=cid, days=7,
+                ctx={"context": c, "account": {"id": "cron"}},
+            )
+        except Exception:
+            failed += 1
+            continue
+
+        if payload["totals"]["edges"] == 0:
+            skipped += 1
+            continue
+
+        origin = (_os.environ.get("FRONTEND_ORIGIN") or "").rstrip("/")
+        view_url = f"{origin}/app/influence" if origin else "/app/influence"
+
+        for ex in execs:
+            account = await db.accounts.find_one(
+                {"id": ex.get("account_id")}, {"_id": 0, "email": 1, "name": 1},
+            )
+            if not account or not account.get("email"):
+                continue
+            # Honour an opt-out flag if present on the member record.
+            if ex.get("digest_opt_out") is True:
+                continue
+            exec_name = (account.get("name") or account["email"]).split("@")[0]
+            html = _digest_html(
+                exec_name=exec_name, context_name=c.get("name") or "your company",
+                payload=payload, view_url=view_url,
+            )
+            res = await send_email(
+                to=[account["email"]],
+                subject=f"Influence Digest · {c.get('name') or 'your company'}",
+                html=html,
+                tags=[{"name": "kind", "value": "influence_digest"},
+                      {"name": "context_id", "value": cid}],
+            )
+            if res.get("ok"):
+                sent += 1
+            else:
+                failed += 1
+    return {"sent": sent, "skipped_no_engagement": skipped,
+            "failed": failed, "ran_at": _iso(_now())}
