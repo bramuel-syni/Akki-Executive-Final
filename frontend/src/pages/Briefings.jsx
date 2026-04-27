@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import {
   ScrollText, FileText, Download, Loader2, Sparkles, Plus, Trash2,
   AlertTriangle, TrendingUp, CircleSlash, ShieldCheck, ArrowRight, Share2,
+  Check, Eye,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import CommentThread from "@/components/collab/CommentThread";
@@ -65,7 +66,7 @@ function withCitations(text, sourceMap) {
   return out;
 }
 
-function BriefingViewer({ briefing, onArchive, onDraftNotes, notesDrafting, onShare }) {
+function BriefingViewer({ briefing, onArchive, onDraftNotes, notesDrafting, onShare, onMarkRead }) {
   // Build stable citation-to-footnote map from all items+opening
   const { sourceMap, orderedIds, docById } = useMemo(() => {
     const ids = [];
@@ -95,8 +96,38 @@ function BriefingViewer({ briefing, onArchive, onDraftNotes, notesDrafting, onSh
   const downloadUrl = (fmt) =>
     `${API_BASE}/contexts/${briefing.context_id}/briefings/${briefing.id}/export?fmt=${fmt}`;
 
+  // Scroll-depth tracking — auto mark-as-read when the user reaches ≥70% of
+  // the article. The user feedback was explicit: "Without a real signal,
+  // the read/unread status is meaningless." 70% is a defensible threshold —
+  // they've passed the body of the brief but maybe not the closing CTA.
+  const articleRef = React.useRef(null);
+  const autoMarkedRef = React.useRef(false);
+  React.useEffect(() => {
+    autoMarkedRef.current = false;  // reset on briefing change
+  }, [briefing.id]);
+  React.useEffect(() => {
+    if (briefing.is_read || autoMarkedRef.current) return;
+    const onScroll = () => {
+      const el = articleRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const total = el.scrollHeight;
+      const seen = window.innerHeight - rect.top;
+      const pct = total > 0 ? seen / total : 0;
+      if (pct >= 0.7) {
+        autoMarkedRef.current = true;
+        onMarkRead && onMarkRead(briefing, "scroll");
+      }
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [briefing, onMarkRead]);
+
   return (
-    <article className="bg-white border border-[#E1E6ED] rounded-sm" data-testid={`briefing-${briefing.id}`}>
+    <article
+      ref={articleRef}
+      className="bg-white border border-[#E1E6ED] rounded-sm" data-testid={`briefing-${briefing.id}`}>
       {/* Journey block — what am I being briefed on, why, what next?
           Sits at the very top so the user is grounded BEFORE they read.
           (Per user feedback: the page used to land on populated content
@@ -136,6 +167,29 @@ function BriefingViewer({ briefing, onArchive, onDraftNotes, notesDrafting, onSh
         <div className="flex items-baseline justify-between gap-4 mb-3">
           <p className="akki-overline">PRIVATE · AKKI BRIEFING · v{briefing.version}</p>
           <div className="flex items-center gap-1">
+            {/* Read state — explicit "Mark as read" toggle, plus a small
+                badge once read. This was a real gap: the rail showed
+                "X unread" but there was no way for the user to actually
+                signal they'd read one. */}
+            {briefing.is_read ? (
+              <span
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs text-emerald-700 border border-emerald-200 bg-emerald-50"
+                data-testid="briefing-read-badge"
+                title={`Read ${briefing.read_via === "scroll" ? "via scroll" : "manually"}${briefing.read_at ? ` · ${formatDate(briefing.read_at)}` : ""}`}
+              >
+                <Check className="w-3 h-3" /> Read
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onMarkRead && onMarkRead(briefing, "manual")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs text-slate-700 border border-[#E1E6ED] hover:bg-slate-50 hover:border-[var(--accent)]/50 transition-colors"
+                data-testid="briefing-mark-read-btn"
+                title="Stamp as read"
+              >
+                <Eye className="w-3 h-3" /> Mark as read
+              </button>
+            )}
             {/* Briefing slim-down (iter32): "Draft speaking notes" and
                 "Board deck" buttons are migrated to Reports. The briefing
                 stays as a one-pager — PDF + email send only. */}
@@ -366,6 +420,23 @@ export default function Briefings() {
 
   const [notesDrafting, setNotesDrafting] = useState(false);
   const [shareOn, setShareOn] = useState(null);
+  const onMarkRead = useCallback(async (briefing, via = "manual") => {
+    if (!briefing || briefing.is_read) return;
+    try {
+      await api.post(
+        `/contexts/${contextId}/briefings/${briefing.id}/mark-read`,
+        { via },
+      );
+      // Optimistic local update — both list + selected
+      setList((prev) => prev.map((x) => x.id === briefing.id
+        ? { ...x, is_read: true, read_via: via, read_at: new Date().toISOString() }
+        : x));
+      setSelected((prev) => prev && prev.id === briefing.id
+        ? { ...prev, is_read: true, read_via: via, read_at: new Date().toISOString() }
+        : prev);
+      if (via === "manual") toast.success("Marked as read.");
+    } catch { /* silent — UI stays unchanged */ }
+  }, [contextId]);
   const onDraftNotes = async (b) => {
     setNotesDrafting(true);
     try {
@@ -403,6 +474,12 @@ export default function Briefings() {
             </p>
             <p className="text-[11px] text-slate-500 mt-1">{visibleList.length} in {activeContext.name}
               {committeeFilter !== "all" && ` · ${committees.find((c) => c.id === committeeFilter)?.name}`}
+              {visibleList.length > 0 && (() => {
+                const unread = visibleList.filter((b) => !b.is_read).length;
+                return unread > 0
+                  ? <span className="ml-1.5 text-[var(--accent)]" data-testid="briefings-unread-count">· {unread} unread</span>
+                  : <span className="ml-1.5 text-emerald-700" data-testid="briefings-all-read">· all read</span>;
+              })()}
             </p>
             {committees.length > 0 && (
               <select
@@ -484,6 +561,13 @@ export default function Briefings() {
                         <span className="text-[10px] font-mono text-[var(--accent)]">v{b.version}</span>
                         <span className="text-[10px] text-slate-400">·</span>
                         <span className="text-[10px] uppercase tracking-wider text-slate-400">{b.role}</span>
+                        {b.is_read ? (
+                          <span className="ml-auto inline-flex items-center gap-0.5 text-[10px] text-emerald-700" title="Read">
+                            <Check className="w-3 h-3" />
+                          </span>
+                        ) : (
+                          <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)]" title="Unread" />
+                        )}
                       </div>
                       <p className={`text-[13px] font-medium leading-snug line-clamp-2 ${active ? "text-[var(--ink)]" : "text-slate-700"}`}>
                         {b.title}
@@ -515,6 +599,7 @@ export default function Briefings() {
                 onDraftNotes={onDraftNotes}
                 notesDrafting={notesDrafting}
                 onShare={setShareOn}
+                onMarkRead={onMarkRead}
               />
             ) : list.length === 0 && !loading ? (
               <div className="bg-white border border-[#E1E6ED] rounded-sm p-16 text-center" data-testid="briefings-splash">

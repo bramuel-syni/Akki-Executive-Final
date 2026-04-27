@@ -518,6 +518,118 @@ async def dismiss_tutorial(
     return {"ok": True, "dismissed": bool(body.dismissed)}
 
 
+# -----------------------------------------------------------------------------
+# Objective-delivery follow-up — surfaces ~24h after the sandbox/seeded
+# context was generated. Asks the user "Did AKKI deliver on your objective?"
+# and stores the answer as a per-sector conversion KPI (the doc's exact ask:
+# "we use this to measure later whether AKKI delivered on it").
+# -----------------------------------------------------------------------------
+class ObjectiveCheckAnswerIn(BaseModel):
+    answer: str = Field(pattern=r"^(yes|partial|no|skip)$")
+    note: Optional[str] = Field(default=None, max_length=400)
+
+
+def _meta_branch(ctx: Dict[str, Any]) -> tuple[Dict[str, Any], str]:
+    """Return (metadata_dict, dotted_field_prefix) for the right metadata
+    bucket (sandbox vs seeded)."""
+    if ctx.get("type") == "sandbox":
+        return ctx.get("sandbox_metadata") or {}, "sandbox_metadata"
+    return ctx.get("seeded_metadata") or {}, "seeded_metadata"
+
+
+@router.get("/contexts/{context_id}/objective-check")
+async def get_objective_check(
+    context_id: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Frontend hits this on home load. Returns whether the follow-up should
+    be shown (eligible=True only when ≥24h after generation, an objective
+    was captured, and the user hasn't already answered or dismissed)."""
+    ctx = await db.contexts.find_one(
+        {"id": context_id, "owner_account_id": current["id"]},
+        {"_id": 0},
+    )
+    if not ctx:
+        raise HTTPException(status_code=404, detail="Context not found")
+
+    meta, _ = _meta_branch(ctx)
+    if not meta:
+        return {"eligible": False}
+
+    objective = (meta.get("objective") or "").strip()
+    if not objective:
+        return {"eligible": False}
+
+    check = meta.get("objective_check") or {}
+    if check.get("answered_at") or check.get("dismissed"):
+        return {"eligible": False, "answered": bool(check.get("answered_at")),
+                "answer": check.get("answer")}
+
+    generated_at = meta.get("generated_at")
+    eligible = False
+    if generated_at:
+        try:
+            gdt = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+            eligible = (_now() - gdt) >= timedelta(hours=24)
+        except (ValueError, TypeError):
+            eligible = False
+
+    return {
+        "eligible": eligible,
+        "objective": objective,
+        "generated_at": generated_at,
+        "answered": False,
+    }
+
+
+@router.post("/contexts/{context_id}/objective-check")
+async def answer_objective_check(
+    context_id: str,
+    body: ObjectiveCheckAnswerIn,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Persist the user's answer. `skip` flips dismissed=True so we never
+    re-show; yes/partial/no record the answer + optional free-text note."""
+    ctx = await db.contexts.find_one(
+        {"id": context_id, "owner_account_id": current["id"]},
+        {"_id": 0},
+    )
+    if not ctx:
+        raise HTTPException(status_code=404, detail="Context not found")
+
+    meta, prefix = _meta_branch(ctx)
+    if not meta or not (meta.get("objective") or "").strip():
+        raise HTTPException(status_code=400, detail="No objective captured for this context.")
+
+    now_iso = _iso(_now())
+    if body.answer == "skip":
+        await db.contexts.update_one(
+            {"id": context_id},
+            {"$set": {f"{prefix}.objective_check": {
+                "dismissed": True, "dismissed_at": now_iso,
+            }}},
+        )
+        return {"ok": True, "dismissed": True}
+
+    payload = {
+        "answered_at": now_iso,
+        "answer": body.answer,
+        "note": (body.note or "").strip() or None,
+    }
+    await db.contexts.update_one(
+        {"id": context_id},
+        {"$set": {f"{prefix}.objective_check": payload}},
+    )
+    await write_audit(
+        context_id, current["id"], "sandbox.objective_answered", "context", context_id,
+        {"answer": body.answer,
+         "sector": (meta.get("intake_inputs") or {}).get("sector")},
+    )
+    return {"ok": True, **payload}
+
+
+
+
 @router.post("/convert")
 async def convert_sandbox(
     body: SandboxConvertIn,

@@ -3,10 +3,9 @@ import { Link } from "react-router-dom";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import Sparkline from "@/components/monitor/Sparkline";
 import {
   Target, Sparkles, FileText, ChevronRight, ChevronDown, Loader2, X,
-  TrendingUp, AlertTriangle, CheckCircle2, Plus,
+  TrendingUp, AlertTriangle, CheckCircle2, Plus, Info,
 } from "lucide-react";
 
 /**
@@ -208,16 +207,17 @@ function GoalRow({ goal, isLast, isNED, isEditing, onEdit, onCancel, onSaved, co
         </div>
 
         {/* Performance Score + Success Probability — aligned on the same
-            horizontal line per user spec. Sparkline tucks under the row,
-            spanning both dials so they read as a unit, not a list. */}
+            horizontal line per user spec. (April 2026: removed the trend
+            sparkline beneath the dials — its purpose was unclear at this
+            density and it broke the editorial cleanliness of the row.
+            Replaced with a single discreet "How is this calculated?"
+            affordance so a sceptical user can audit the methodology.) */}
         <div className="flex flex-col items-end shrink-0" data-testid={`goal-score-block-${goal.id}`}>
           <div className="flex items-center gap-4">
             <ScoreDial label="Performance Score" value={score} />
             <ScoreDial label="Success Probability" value={prob} />
           </div>
-          <div className="mt-1.5">
-            <Sparkline history={goal.score_history} />
-          </div>
+          <ScoreMethodologyTip />
         </div>
       </div>
     </div>
@@ -259,6 +259,49 @@ function ScoreDial({ label, value }) {
         </div>
       </div>
       <p className="text-[9.5px] uppercase tracking-wider text-[var(--muted)] mt-1">{label}</p>
+    </div>
+  );
+}
+
+/**
+ * ScoreMethodologyTip — discreet "How is this calculated?" affordance under
+ * the dials. Hover/click reveals an editorial paragraph explaining that the
+ * score is benchmarked automatically against the user's strategy document
+ * and updates as new reports arrive. Replaces the earlier sparkline that
+ * carried no narrative weight.
+ */
+function ScoreMethodologyTip() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative mt-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        className="text-[10.5px] text-[var(--muted)] hover:text-[var(--accent)] inline-flex items-center gap-1 italic underline-offset-2 hover:underline"
+        data-testid="goal-score-methodology-trigger"
+      >
+        <Info className="w-3 h-3" /> How is this calculated?
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 top-[20px] z-10 w-[280px] bg-white border border-[var(--rule)] rounded-md shadow-md p-3 text-[12px] text-[var(--deep)] leading-relaxed"
+          data-testid="goal-score-methodology-popover"
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+        >
+          <p className="akki-serif italic text-[12.5px] text-[var(--ink)] mb-1">
+            The score is machine-generated.
+          </p>
+          <p>
+            AKKI benchmarks reported performance against the strategic document
+            (or any goal document) and re-scores automatically as new reports
+            come in. It is not user-editable on purpose — it should reflect the
+            data, not the desk that owns the goal.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

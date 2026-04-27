@@ -79,13 +79,13 @@ export default function SandboxTutorial({ contextId, isSandbox: _isSandbox }) {
 
         <p className="akki-overline mb-2 flex items-center gap-2">
           <Sparkles className="w-3 h-3 text-[var(--accent)]" />
-          Welcome — one thing to try first
+          {data.objective ? "Welcome — here's how this plays out for you" : "Welcome — one thing to try first"}
         </p>
 
         <h2 className="akki-serif text-[22px] md:text-[26px] text-[var(--ink)] leading-snug mb-2">
           {data.objective
-            ? "Here's a path to test what you came for."
-            : "Here's a quick path to see how AKKI thinks."}
+            ? "A story shaped to what you came here for."
+            : "A story shaped to your sector."}
         </h2>
 
         {data.objective && (

@@ -318,7 +318,9 @@ export default function LensRoom() {
         {/* RIGHT — picker + canvas */}
         <main className="overflow-y-auto bg-[var(--cream)]" data-testid="lens-detail">
           <div className="max-w-3xl mx-auto px-8 py-8">
-            {/* PICKER ROW — In the Lens (lens) · Test us (kind) · Apply */}
+            {/* PICKER ROW — In the Lens (lens) · Test us (kind).
+                (April 2026: Apply moved BELOW the input box per user feedback —
+                the natural flow is read → apply, not pick → apply → read.) */}
             <div className="bg-white border border-[var(--rule)] rounded-md p-3 mb-4 flex flex-wrap items-stretch gap-2" data-testid="lens-picker-row">
               <LensDropdown
                 catalog={catalog}
@@ -336,22 +338,10 @@ export default function LensRoom() {
                   }
                 }}
               />
-              <div className="flex-1 min-w-[100px]" />
-              <Button
-                onClick={onApply}
-                disabled={running || !subject.trim() || (mode === "coach" && !!activeSession)}
-                className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white text-[13px] h-10 px-5"
-                data-testid="lens-apply-btn"
-                title={mode === "coach" && activeSession ? "A coaching thread is already open below — reply there" : ""}
-              >
-                {running
-                  ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Reading…</>
-                  : <><Sparkles className="w-3.5 h-3.5 mr-1.5" /> Apply</>}
-              </Button>
             </div>
 
             {/* INPUT — single textarea, what the user is putting in. */}
-            <div className="bg-white border border-[var(--rule)] rounded-md p-4 mb-6" data-testid="lens-input-card">
+            <div className="bg-white border border-[var(--rule)] rounded-md p-4 mb-4" data-testid="lens-input-card">
               <p className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--muted)] font-mono mb-2">
                 {mode === "coach" ? "Topic on your mind" : `Your ${kindCfg.id}`}
               </p>
@@ -378,6 +368,23 @@ export default function LensRoom() {
                     : "Apply returns Observation → Implication → Action."}
                 </p>
               </div>
+            </div>
+
+            {/* APPLY — placed AFTER the description so the user reads first,
+                then applies. Right-aligned so the action sits where the
+                user's eye lands at the end of the textarea. */}
+            <div className="flex justify-end mb-6" data-testid="lens-apply-row">
+              <Button
+                onClick={onApply}
+                disabled={running || !subject.trim() || (mode === "coach" && !!activeSession)}
+                className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white text-[13px] h-10 px-6"
+                data-testid="lens-apply-btn"
+                title={mode === "coach" && activeSession ? "A coaching thread is already open below — reply there" : ""}
+              >
+                {running
+                  ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Reading…</>
+                  : <><Sparkles className="w-3.5 h-3.5 mr-1.5" /> Apply</>}
+              </Button>
             </div>
 
             {/* CANVAS — output / coach thread / placeholder */}

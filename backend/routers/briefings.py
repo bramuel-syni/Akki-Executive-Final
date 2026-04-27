@@ -158,7 +158,70 @@ async def list_briefings(
     if committee_id:
         q["committee_id"] = committee_id
     rows = await db.briefings.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    # Annotate each row with is_read for the current account so the rail can
+    # show read/unread state. Read = explicit "Mark as read" OR ≥70%
+    # scroll-depth (frontend stamps either via /mark-read).
+    if rows:
+        ids = [r["id"] for r in rows]
+        read_cursor = db.briefing_reads.find(
+            {"briefing_id": {"$in": ids}, "account_id": ctx["account"]["id"]},
+            {"_id": 0, "briefing_id": 1, "read_at": 1, "read_via": 1},
+        )
+        read_map: Dict[str, Dict[str, Any]] = {}
+        async for rr in read_cursor:
+            read_map[rr["briefing_id"]] = {
+                "read_at": rr.get("read_at"),
+                "read_via": rr.get("read_via") or "manual",
+            }
+        for r in rows:
+            rd = read_map.get(r["id"])
+            r["is_read"] = bool(rd)
+            r["read_at"] = (rd or {}).get("read_at")
+            r["read_via"] = (rd or {}).get("read_via")
     return rows
+
+
+class MarkReadIn(BaseModel):
+    via: str = Field(default="manual", pattern=r"^(manual|scroll)$")
+
+
+@router.post("/contexts/{context_id}/briefings/{briefing_id}/mark-read")
+async def mark_briefing_read(
+    briefing_id: str,
+    body: MarkReadIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Stamp this briefing as read for the current account. Idempotent —
+    upserts on (briefing_id, account_id) so repeated calls just refresh
+    the timestamp + via channel.
+
+    "Read" is now a real signal:
+      • via='manual' — user clicked "Mark as read"
+      • via='scroll' — frontend reached ≥70% scroll depth
+    Either is enough to flip the rail badge.
+    """
+    doc = await db.briefings.find_one(
+        {"id": briefing_id, "context_id": ctx["context"]["id"], "status": "active"},
+        {"_id": 0, "id": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Briefing not found")
+    now_iso = iso(now())
+    await db.briefing_reads.update_one(
+        {"briefing_id": briefing_id, "account_id": ctx["account"]["id"]},
+        {
+            "$set": {
+                "briefing_id": briefing_id,
+                "account_id": ctx["account"]["id"],
+                "context_id": ctx["context"]["id"],
+                "read_at": now_iso,
+                "read_via": body.via,
+            },
+            "$setOnInsert": {"first_read_at": now_iso},
+        },
+        upsert=True,
+    )
+    return {"ok": True, "read_at": now_iso, "read_via": body.via}
 
 
 @router.get("/contexts/{context_id}/briefings/{briefing_id}")

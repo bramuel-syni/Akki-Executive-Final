@@ -1,0 +1,33 @@
+{
+  "summary": "Iter39 Tier 1 gap-plug + Tier 2 quick wins fully verified end-to-end. 7/7 backend pytest cases pass: briefings list returns is_read/read_via/read_at; mark-read upserts (manual + scroll, idempotent, 404 on unknown); objective-check eligibility flips to true after backdating seeded_metadata.generated_at >24h, persists answer (yes/partial/no with note), skip flips dismissed=true, invalid answer rejected with 422. UI smoke (Bramuel real account on Tuli Financial Group NED ctx) confirms: Monitor — green sparkline gone, 'How is this calculated?' methodology trigger renders popover on hover with copy 'The score is machine-generated. AKKI benchmarks reported performance against the strategic document…'; Lens — apply button removed from picker row, lens-apply-row sits below lens-input-card in DOM; Cycle '3·Send checklists' — cycle-deadline-input has type='date' and accepts 2026-04-30; Cycle '5·Consolidate & send up' — compose-report-tile renders with status 'No reportees set up yet. Compose a freeform report or seed your team in 1 · Your team.' and the Compose button is inside the tile; Briefings — '1 unread' rail count, clicking the unread row reveals the Mark-as-read button, click flips it to briefing-read-badge, page reload persists the read state. Tutorial copy + ObjectiveCheck card correctly hidden on Bramuel's real (non-sandbox) home; their visibility is gated on sandbox/seeded metadata which the backend lifecycle test confirms works end-to-end.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter39_briefings_objective_check.py",
+    "/app/test_reports/pytest/iter39_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "briefings.py mark-read endpoint correctly uses upsert with $setOnInsert for first_read_at while $set refreshes read_at + read_via — clean idempotent pattern; 404 on unknown briefing or wrong context preserved.",
+    "sandbox.py _meta_branch helper neatly switches between sandbox_metadata and seeded_metadata based on ctx.type — single source of truth for both paths; lifecycle (eligible→answered→non-eligible) and skip→dismissed both persist cleanly.",
+    "Briefings.jsx scroll-depth handler triggers /mark-read with via='scroll' — backend persists this distinct read_via channel so analytics can later differentiate intentional vs passive reads.",
+    "Cycle.jsx YYYY-MM-DD → 'DD Month YYYY' conversion uses Date constructor on date-only string which can drift in non-UTC timezones (Date.UTC parsing); consider parsing Y-M-D explicitly to avoid off-by-one for users near date-line. Not blocking.",
+    "ObjectiveCheck.jsx skip path posts answer:'skip' to backend (not just hides locally) — correctly idempotent and backend flips dismissed:true so it never re-surfaces."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter39_briefings_objective_check.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026!  · Tuli NED ctx fb4df969-3f17-4279-bf78-f07bb9e29650",
+  "seed_data_creation": "Test creates and tears down its own seeded contexts ('TEST_iter39 Objective Check Co'). Briefing-reads collection cleared at test start for the calling account on Tuli ctx so the unread→read flip is observable.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter39 fully green. The mark-read flow leaves a read entry in briefing_reads for the test account on Tuli NED ctx (fb4df969…); if a later iter needs an unread state to test, clear briefing_reads for that account+ctx first (the test does this in test_clear_then_mark_read_manual). Objective-check tests create-and-delete their own contexts so no residue. SandboxTutorial+ObjectiveCheck card visibility on /app home is correctly gated on sandbox_metadata/seeded_metadata; not visible for Bramuel's real account — to test the cards visually, log in as a fresh sandbox account or backdate a seeded ctx's generated_at via mongo (as the backend test does)."
+}

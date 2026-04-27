@@ -472,10 +472,20 @@ function Checklists({ contextId }) {
     if (cycleName.trim().length < 3 || deadline.trim().length < 4) {
       toast.message("Cycle name and deadline date are required."); return;
     }
+    // The native date picker returns YYYY-MM-DD. Convert to a human-readable
+    // form before storing so emails read "Please respond by 15 May 2026."
+    let humanDeadline = deadline.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(humanDeadline)) {
+      const dt = new Date(`${humanDeadline}T00:00:00`);
+      if (!isNaN(dt.getTime())) {
+        humanDeadline = dt.toLocaleDateString("en-GB",
+          { day: "numeric", month: "long", year: "numeric" });
+      }
+    }
     setGenerating(true);
     try {
       const { data } = await api.post(`/contexts/${contextId}/checklists/generate`, {
-        cycle_name: cycleName.trim(), deadline_date: deadline.trim(),
+        cycle_name: cycleName.trim(), deadline_date: humanDeadline,
         committee_id: scopedCommitteeId || null,
       });
       setSkipped(data.skipped || []);
@@ -565,10 +575,10 @@ function Checklists({ contextId }) {
             data-testid="cycle-name-input"
           />
           <Input
+            type="date"
             value={deadline}
             onChange={(e) => setDeadline(e.target.value)}
-            placeholder="Deadline (e.g. 15 May 2026)"
-            className="w-56 h-10 bg-[var(--cream)] border-[var(--rule)] text-sm"
+            className="w-56 h-10 bg-[var(--cream)] border-[var(--rule)] text-sm text-[var(--ink)]"
             data-testid="cycle-deadline-input"
           />
           <Button onClick={onGenerate} disabled={generating} className="h-10 bg-[var(--chrome)] hover:bg-[var(--chrome)]/90 text-white" data-testid="generate-checklists-btn">

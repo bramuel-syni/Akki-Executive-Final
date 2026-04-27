@@ -13,6 +13,7 @@ import {
 import ShareModal from "@/components/share/ShareModal";
 import SandboxPackDrop from "@/components/sandbox/SandboxPackDrop";
 import SandboxTutorial from "@/components/sandbox/SandboxTutorial";
+import ObjectiveCheck from "@/components/sandbox/ObjectiveCheck";
 import ReviewInboxCard from "@/components/cycle/ReviewInboxCard";
 import WorkflowsHub from "@/components/home/WorkflowsHub";
 import InSummaryTiles from "@/components/home/InSummaryTiles";
@@ -164,6 +165,10 @@ export default function AppHome() {
             {/* Sandbox-only: first-run guided tutorial card. Auto-dismisses
                 once the user closes it; never re-appears. */}
             <SandboxTutorial contextId={contextId} isSandbox={!!account?.is_sandbox} />
+
+            {/* 24-hour objective follow-up. Only fires after the tutorial
+                window has elapsed AND the user captured a Q5 objective. */}
+            <ObjectiveCheck contextId={contextId} />
 
             {/* Sandbox-only: a discreet drop-your-own-pack affordance.
                 Pinned — not draggable. */}

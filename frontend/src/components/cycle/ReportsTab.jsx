@@ -18,6 +18,73 @@ function shortDate(iso) {
   try { return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); } catch { return iso; }
 }
 
+/**
+ * ComposeReportTile — tile-style entry point with contextual notes that tell
+ * the user whether AKKI is ready or whether reportees still owe a response.
+ * Replaces the iter34 small "Compose report" corner button per April-2026
+ * user-testing feedback.
+ */
+function ComposeReportTile({ readiness, reportCount, onCompose }) {
+  const pending = readiness?.pending_reportees ?? 0;
+  const total = readiness?.total_reportees ?? 0;
+  const ready = total > 0 && pending === 0;
+  const hasNoTeam = total === 0;
+
+  const status = hasNoTeam
+    ? { tone: "neutral", line: "No reportees set up yet. Compose a freeform report or seed your team in 1 · Your team." }
+    : ready
+      ? { tone: "ready", line: "AKKI has all the information you need." }
+      : { tone: "waiting",
+          line: `${pending} direct ${pending === 1 ? "report hasn't" : "reports haven't"} responded to AKKI yet.` };
+
+  return (
+    <div
+      className="bg-white border border-[var(--rule)] rounded-md p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4"
+      data-testid="compose-report-tile"
+    >
+      <div className="min-w-0 flex-1">
+        <p className="akki-overline mb-2 flex items-center gap-2">
+          <Sparkles className="w-3 h-3 text-[var(--accent)]" />
+          Compose your report
+        </p>
+        <h3 className="akki-serif text-[20px] text-[var(--ink)] leading-snug mb-1">
+          {ready
+            ? "Everyone's in. Time to draft."
+            : hasNoTeam
+              ? "Compose from what you have."
+              : "Almost ready — chase the gaps first."}
+        </h3>
+        <p
+          className={
+            "text-[13px] leading-relaxed " +
+            (status.tone === "ready"
+              ? "text-emerald-700"
+              : status.tone === "waiting"
+                ? "text-amber-700"
+                : "text-[var(--muted)]")
+          }
+          data-testid="compose-report-tile-status"
+        >
+          {status.line}
+        </p>
+        {reportCount > 0 && (
+          <p className="text-[11.5px] text-[var(--muted)] italic mt-1">
+            {reportCount} report{reportCount === 1 ? "" : "s"} on this context already.
+          </p>
+        )}
+      </div>
+      <Button
+        onClick={onCompose}
+        className="bg-[var(--chrome)] hover:bg-[var(--chrome)]/90 text-white h-11 px-6 shrink-0"
+        data-testid="compose-report-btn"
+      >
+        <Plus className="w-3.5 h-3.5 mr-1.5" /> Compose report
+      </Button>
+    </div>
+  );
+}
+
+
 const STATUS_PILL = {
   draft:       { bg: "bg-slate-100",   fg: "text-slate-700",  label: "Draft" },
   in_review:   { bg: "bg-amber-50",    fg: "text-amber-800",  label: "In review" },
@@ -473,13 +540,36 @@ export default function ReportsTab({ contextId, currentEmail, cycleNames }) {
   const [loading, setLoading] = useState(true);
   const [composeOpen, setComposeOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [readiness, setReadiness] = useState(null);  // {pending_reportees, total_reportees, has_submissions}
 
   const load = useCallback(async () => {
     if (!contextId) return;
     setLoading(true);
     try {
-      const { data } = await api.get(`/contexts/${contextId}/reports`);
-      setItems(data.reports || []);
+      const [r, rep, sub, cl] = await Promise.all([
+        api.get(`/contexts/${contextId}/reports`),
+        api.get(`/contexts/${contextId}/reportees`).catch(() => ({ data: { reportees: [] } })),
+        api.get(`/contexts/${contextId}/submissions`).catch(() => ({ data: { submissions: [] } })),
+        api.get(`/contexts/${contextId}/checklists`).catch(() => ({ data: { checklists: [] } })),
+      ]);
+      setItems(r.data.reports || []);
+      const reportees = rep.data?.reportees || [];
+      const submissions = sub.data?.submissions || [];
+      const checklists = cl.data?.checklists || [];
+      // A reportee is "pending" if AKKI has dispatched a checklist to them
+      // for the current cycle window AND they haven't submitted yet.
+      const dispatchedReporteeIds = new Set(
+        checklists.filter((c) => c.status === "dispatched" || c.status === "responded").map((c) => c.reportee_id)
+      );
+      const respondedReporteeIds = new Set(
+        submissions.filter((s) => s.status === "submitted").map((s) => s.reportee_id)
+      );
+      const pending = [...dispatchedReporteeIds].filter((id) => !respondedReporteeIds.has(id));
+      setReadiness({
+        pending_reportees: pending.length,
+        total_reportees: dispatchedReporteeIds.size || reportees.length,
+        has_submissions: submissions.length > 0,
+      });
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setLoading(false); }
   }, [contextId]);
@@ -496,16 +586,15 @@ export default function ReportsTab({ contextId, currentEmail, cycleNames }) {
 
   return (
     <div className="space-y-6" data-testid="reports-tab">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-[14px] text-[var(--deep)] max-w-2xl">
-            Compose a report from this cycle's submissions. Send it up your review chain — CFO to CEO to Board chair, or whatever shape your governance takes. Each tier reviews, comments, then approves & forwards. AKKI handles the email; you gate every step.
-          </p>
-        </div>
-        <Button onClick={() => setComposeOpen(true)} className="bg-[var(--chrome)] hover:bg-[var(--chrome)]/90 text-white shrink-0" data-testid="compose-report-btn">
-          <Plus className="w-3.5 h-3.5 mr-1.5" /> Compose report
-        </Button>
-      </div>
+      {/* Compose Report TILE — replaces the small inline button. Surfaces
+          contextual notes ("AKKI has all the information you need." vs.
+          "N reportees haven't responded yet.") so the next action is
+          intuitive rather than hidden behind a corner button. */}
+      <ComposeReportTile
+        readiness={readiness}
+        reportCount={items.length}
+        onCompose={() => setComposeOpen(true)}
+      />
 
       {loading ? (
         <p className="p-8 text-center text-[12px] uppercase tracking-widest text-[var(--muted)]">Loading…</p>
