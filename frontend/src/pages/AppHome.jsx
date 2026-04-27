@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import ShareModal from "@/components/share/ShareModal";
 import SandboxPackDrop from "@/components/sandbox/SandboxPackDrop";
+import SandboxTutorial from "@/components/sandbox/SandboxTutorial";
 import ReviewInboxCard from "@/components/cycle/ReviewInboxCard";
 import WorkflowsHub from "@/components/home/WorkflowsHub";
 import InSummaryTiles from "@/components/home/InSummaryTiles";
@@ -160,6 +161,10 @@ export default function AppHome() {
           </div>
 
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden" data-testid="home-sections">
+            {/* Sandbox-only: first-run guided tutorial card. Auto-dismisses
+                once the user closes it; never re-appears. */}
+            <SandboxTutorial contextId={contextId} isSandbox={!!account?.is_sandbox} />
+
             {/* Sandbox-only: a discreet drop-your-own-pack affordance.
                 Pinned — not draggable. */}
             <SandboxPackDrop onSignalsReady={load} />

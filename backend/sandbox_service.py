@@ -130,24 +130,49 @@ SECTOR_TO_TEMPLATE: Dict[str, str] = {
 
 # ---------------------------------------------------------------------------
 # Streaming generation narrative — 10 stages with substitutions
+# Each stage has a headline + 1-3 italic sublines that reveal one-by-one
+# (serif streaming aesthetic — the "hybrid code-stream" look the user picked).
 # ---------------------------------------------------------------------------
 STREAMING_STAGES = [
-    # (min_ms, max_ms, template)
-    (0,     4000,  "Preparing your environment…"),
-    (4000,  10000, "Creating your avatar profile to protect your data from the LLM."),
-    (10000, 16000, "Building {company_name} — a fictional {sector_label} group based in {region_label}."),
-    (16000, 24000, "Generating 12 months of realistic operational data…"),
-    (24000, 30000, "Constructing recent board papers and management reports…"),
-    (30000, 36000, "Synisense is verifying the data signals before AKKI sees them."),
-    (36000, 42000, "AKKI is reading the pack and surfacing observations worth your attention…"),
-    (42000, 48000, "Finding cross-board patterns relevant to a {role_label} in {sector_label}…"),
-    (48000, 54000, "Preparing your first briefing. Almost ready."),
-    (54000, 60000, "Ready. Taking you in."),
+    # (min_ms, max_ms, headline, sublines[])
+    (0,     4000,  "Preparing your environment…",
+        ["Building your data blocks.",
+         "Setting up your avatar to keep your data safe from third-party LLMs."]),
+    (4000,  10000, "Creating your avatar profile.",
+        ["AKKI never sees raw identifiers — your avatar is the layer that keeps it that way.",
+         "Indexing your sector benchmarks."]),
+    (10000, 16000, "Building {company_name} — a fictional {sector_label} group based in {region_label}.",
+        ["Adding committees, cadences, and the right regulator references.",
+         "Picking peer companies for benchmark comparisons."]),
+    (16000, 24000, "Generating 12 months of realistic operational data…",
+        ["Quarterly numbers, audit findings, internal memos.",
+         "All fictional — designed to mirror how your sector actually reports."]),
+    (24000, 30000, "Constructing recent board papers and management reports…",
+        ["Board pack, management commentary, risk register.",
+         "Drafted in a tone you'll recognise from real meetings."]),
+    (30000, 36000, "Synisense is verifying the data signals before AKKI sees them.",
+        ["Cross-checking facts, flagging mixed-trust passages.",
+         "What survives the verification is what AKKI reads next."]),
+    (36000, 42000, "AKKI is reading the pack and surfacing observations worth your attention…",
+        ["Looking for risks, opportunities, and gaps in the narrative.",
+         "Anchoring each observation to the source paragraph."]),
+    (42000, 48000, "Finding cross-board patterns relevant to a {role_label} in {sector_label}…",
+        ["What would a sharp committee chair pick up first?",
+         "Sequencing the observations so the constructive points land before the concerns."]),
+    (48000, 54000, "Preparing your first briefing.",
+        ["Drafting the opening paragraph in your voice.",
+         "Almost ready — just composing the closing recommendations."]),
+    (54000, 60000, "Ready. Taking you in.",
+        ["Your environment is live.",
+         "AKKI has read the pack. The first brief is on the home screen."]),
 ]
 
 
 def resolve_stage_texts(intake: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Render the 10 stage strings with the prospect's intake substituted in."""
+    """Render the 10 stage strings (headline + sublines) with the prospect's
+    intake substituted in. Each stage carries its own dwell window so the
+    frontend can pace the streaming reveal.
+    """
     company_name = (intake.get("company_name") or "Your Company").strip()
     sector = intake.get("sector") or "other"
     region = intake.get("region") or "east_africa"
@@ -161,7 +186,7 @@ def resolve_stage_texts(intake: Dict[str, Any]) -> List[Dict[str, Any]]:
         "manufacturing": "manufacturing",
         "retail": "retail and consumer",
         "real_estate": "real estate",
-        "other": "diversified",
+        "other": (intake.get("other_sector_name") or "diversified").strip() or "diversified",
     }.get(sector, "diversified")
 
     region_label = (REGION_PROFILES.get(region) or {}).get("primary_country") or "Kenya"
@@ -178,17 +203,21 @@ def resolve_stage_texts(intake: Dict[str, Any]) -> List[Dict[str, Any]]:
         "role_label": role_label,
     }
 
-    stages = []
-    for idx, (min_ms, max_ms, tmpl) in enumerate(STREAMING_STAGES):
+    def fmt(s: str) -> str:
         try:
-            text = tmpl.format(**ctx)
-        except KeyError:
-            text = tmpl
+            return s.format(**ctx)
+        except (KeyError, IndexError):
+            return s
+
+    stages = []
+    for idx, (min_ms, max_ms, head_tmpl, sub_tmpls) in enumerate(STREAMING_STAGES):
         stages.append({
             "index": idx,
             "min_ms": min_ms,
             "max_ms": max_ms,
-            "text": text,
+            "text": fmt(head_tmpl),               # legacy alias
+            "headline": fmt(head_tmpl),
+            "sublines": [fmt(s) for s in (sub_tmpls or [])],
         })
     return stages
 

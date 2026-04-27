@@ -57,6 +57,9 @@ class SandboxIntakeIn(BaseModel):
     sector: SandboxSector
     role: SandboxRole
     region: SandboxRegion
+    objective: Optional[str] = Field(default=None, max_length=400)
+    other_sector_name: Optional[str] = Field(default=None, max_length=80)
+    other_sector_description: Optional[str] = Field(default=None, max_length=400)
     prospect_email: Optional[EmailStr] = None  # optional — captured later if missing
 
 
@@ -200,7 +203,11 @@ async def _seed_sandbox(session_id: str):
             "sandbox_metadata": {
                 "template_id": pick_template(sector)["id"],
                 "intake_inputs": intake,
+                "objective": (intake.get("objective") or "").strip() or None,
+                "other_sector_name": (intake.get("other_sector_name") or "").strip() or None,
+                "other_sector_description": (intake.get("other_sector_description") or "").strip() or None,
                 "prospect_email": intake.get("prospect_email"),
+                "tutorial_dismissed": False,
                 "generated_at": _iso(now_dt),
                 "expires_at": _iso(expires_at),
                 "read_only_until": _iso(read_only_until),
@@ -411,6 +418,106 @@ async def capture_email(
     return {"ok": True}
 
 
+# -----------------------------------------------------------------------------
+# Sandbox tutorial — first-run guided card. Returns the user's stated objective,
+# the seeded first briefing, and a suggested chat opener so the user has a
+# guaranteed first action when they land.
+# -----------------------------------------------------------------------------
+@router.get("/contexts/{context_id}/tutorial")
+async def sandbox_tutorial(
+    context_id: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    ctx = await db.contexts.find_one(
+        {"id": context_id, "owner_account_id": current["id"]},
+        {"_id": 0},
+    )
+    if not ctx:
+        raise HTTPException(status_code=404, detail="Context not found")
+
+    # Tutorial fires for sandbox contexts AND seeded real contexts.
+    meta = ctx.get("sandbox_metadata") or ctx.get("seeded_metadata") or {}
+    if not meta:
+        return {"context_id": context_id, "dismissed": True, "objective": None,
+                "first_briefing": None, "first_signal_headline": None,
+                "suggested_chat_opener": None, "steps": []}
+
+    objective = meta.get("objective") or ""
+    dismissed = bool(meta.get("tutorial_dismissed"))
+
+    # First seeded briefing (most recent).
+    brief = await db.briefings.find_one(
+        {"context_id": context_id, "sandbox_artefact": True},
+        {"_id": 0, "id": 1, "title": 1, "opening_paragraph": 1},
+        sort=[("created_at", 1)],
+    )
+
+    # First seeded signal headline (for the suggested chat opener).
+    sig = await db.signals.find_one(
+        {"context_id": context_id, "sandbox_artefact": True},
+        {"_id": 0, "headline": 1},
+        sort=[("created_at", 1)],
+    )
+
+    # Suggested opener — anchored to objective when available, else to the
+    # most cutting first signal.
+    if objective:
+        opener = f"What's the sharpest question I should ask given my objective: \"{objective[:160]}\"?"
+    elif sig:
+        opener = f"Walk me through this: {sig['headline']}"
+    else:
+        opener = "What are the highlights of the latest board pack?"
+
+    return {
+        "context_id": context_id,
+        "dismissed": dismissed,
+        "objective": objective or None,
+        "first_briefing": {
+            "id": brief["id"], "title": brief["title"],
+            "opening_paragraph": brief["opening_paragraph"],
+        } if brief else None,
+        "first_signal_headline": sig["headline"] if sig else None,
+        "suggested_chat_opener": opener,
+        "steps": [
+            {"key": "read_brief", "title": "Read your first briefing",
+             "blurb": "AKKI has already drafted what to bring to the next committee.",
+             "cta": "Open the brief", "href": "/app/briefings"},
+            {"key": "ask_chat", "title": "Ask AKKI one sharp question",
+             "blurb": "Chat is your primary surface — try the suggested opener.",
+             "cta": "Open Chat", "href": "/app/chat"},
+            {"key": "scan_signals", "title": "Scan the signals on your radar",
+             "blurb": "Risks, opportunities, and gaps AKKI surfaced from the pack.",
+             "cta": "Open Signals", "href": "/app/highlights"},
+        ],
+    }
+
+
+class TutorialDismissIn(BaseModel):
+    dismissed: bool = True
+
+
+@router.post("/contexts/{context_id}/tutorial/dismiss")
+async def dismiss_tutorial(
+    context_id: str,
+    body: TutorialDismissIn,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    ctx = await db.contexts.find_one(
+        {"id": context_id, "owner_account_id": current["id"]},
+        {"_id": 0, "id": 1, "type": 1},
+    )
+    if not ctx:
+        raise HTTPException(status_code=404, detail="Context not found")
+    # Stamp the right metadata branch depending on context flavour.
+    set_field = "sandbox_metadata.tutorial_dismissed" if ctx.get("type") == "sandbox" \
+        else "seeded_metadata.tutorial_dismissed"
+    await db.contexts.update_one(
+        {"id": context_id},
+        {"$set": {set_field: bool(body.dismissed)}},
+    )
+    return {"ok": True, "dismissed": bool(body.dismissed)}
+
+
 @router.post("/convert")
 async def convert_sandbox(
     body: SandboxConvertIn,
@@ -497,3 +604,137 @@ async def convert_sandbox(
         "contexts_kept": len(my_ctx_ids) if body.keep_sandbox else 0,
         "access_token": access,
     }
+
+
+
+# -----------------------------------------------------------------------------
+# Authenticated "Add company" — same 5-question journey as the public sandbox,
+# but creates a REAL context (not type=sandbox) owned by the current account.
+# Reuses the same template seeding so the user gets the populated experience
+# from second one. The doc was explicit: there is no good reason for the
+# Sandbox onboarding flow and Add-company flow to be different.
+# -----------------------------------------------------------------------------
+class SeededContextIn(BaseModel):
+    company_name: str = Field(min_length=1, max_length=120)
+    sector: SandboxSector
+    role: SandboxRole
+    region: SandboxRegion
+    objective: Optional[str] = Field(default=None, max_length=400)
+    other_sector_name: Optional[str] = Field(default=None, max_length=80)
+    other_sector_description: Optional[str] = Field(default=None, max_length=400)
+    seed_data: bool = True
+
+
+@router.post("/contexts/seeded")
+async def create_seeded_context(
+    body: SeededContextIn,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Create a real (non-sandbox) context for the authenticated user, then
+    optionally seed it with the same sector-template artefacts the public
+    sandbox uses. Returns the new context id so the frontend can switch into it.
+    """
+    intake = body.model_dump()
+    company_name = intake["company_name"].strip()
+    sector = intake["sector"]
+    region = intake["region"]
+    role = intake["role"]
+
+    region_profile = REGION_PROFILES.get(region) or REGION_PROFILES["east_africa"]
+    template = pick_template(sector)
+
+    real_type = "ned_personal" if role == "ned" else "executive_personal"
+    context_id = str(uuid.uuid4())
+    now_dt = _now()
+
+    ctx_doc = {
+        "id": context_id,
+        "name": company_name,
+        "type": real_type,
+        "industry": sector,
+        "jurisdiction": region_profile.get("primary_country"),
+        "sector": template["sector_hint"],
+        "sponsoring_org_id": None,
+        "owner_account_id": current["id"],
+        "status": "active",
+        "progress_state": {
+            "onboarding_step": 7,
+            "onboarding_completed": True,
+            "context_object_version": 1,
+        },
+        "committees": [
+            {**c, "id": f"committee-{uuid.uuid4().hex[:6]}"}
+            for c in template["committees"]
+        ],
+        "seeded_metadata": {
+            "template_id": template["id"],
+            "intake_inputs": intake,
+            "objective": (intake.get("objective") or "").strip() or None,
+            "other_sector_name": (intake.get("other_sector_name") or "").strip() or None,
+            "other_sector_description": (intake.get("other_sector_description") or "").strip() or None,
+            "tutorial_dismissed": False,
+            "generated_at": _iso(now_dt),
+        },
+        "created_at": _iso(now_dt),
+    }
+    await db.contexts.insert_one(ctx_doc)
+
+    await db.memberships.insert_one({
+        "id": str(uuid.uuid4()),
+        "account_id": current["id"],
+        "context_id": context_id,
+        "role": "ned" if role == "ned" else "executive",
+        "sub_role": "admin",
+        "provisioning": "self_serve_seeded",
+        "data_ownership": "personal",
+        "status": "active",
+        "created_at": _iso(now_dt),
+    })
+
+    co_doc = {
+        "id": str(uuid.uuid4()),
+        "context_id": context_id,
+        "version": 1,
+        "industry": sector,
+        "sector": template["sector_hint"],
+        "jurisdiction": region_profile.get("primary_country"),
+        "role": "ned" if role == "ned" else "executive",
+        "answers": {
+            "q1_role": {
+                "ned": "Independent Director",
+                "executive": "CEO / Operating Executive",
+                "both": "Dual-role leader",
+            }.get(role, "Executive"),
+            "q3_focus_areas": f"Key {template['sector_hint']} themes — risk, capital, strategy",
+            "q6_lens_preference": "Generalist · board-chair lens",
+            "q7_analytical_style": "Reads the pack; wants sharp questions for the chair.",
+        },
+        "step": 7,
+        "completed": True,
+        "created_by": current["id"],
+        "created_at": _iso(now_dt),
+        "updated_at": _iso(now_dt),
+    }
+    await db.context_objects.insert_one(co_doc)
+
+    if body.seed_data:
+        seeds = build_seed_payload(
+            context_id=context_id, template=template, intake=intake,
+            owner_account_id=current["id"],
+        )
+        if seeds["documents"]:
+            await db.documents.insert_many(seeds["documents"])
+        if seeds["signals"]:
+            await db.signals.insert_many(seeds["signals"])
+        if seeds["briefings"]:
+            await db.briefings.insert_many(seeds["briefings"])
+
+    await write_audit(
+        context_id, current["id"], "context.seeded", "context", context_id,
+        {"template_id": template["id"], "sector": sector, "region": region, "role": role,
+         "seeded": bool(body.seed_data)},
+    )
+
+    new_ctx = await db.contexts.find_one({"id": context_id}, {"_id": 0})
+    return {"context": sanitize_context(new_ctx) if new_ctx else None,
+            "context_id": context_id}

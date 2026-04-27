@@ -1,0 +1,39 @@
+{
+  "summary": "Tier 1 Sandbox conversion overhaul tested end-to-end (backend + frontend). All 8 backend pytest cases pass. All critical UI flows pass: 5-question intake with new objective + Other-sector reveal, dropdown contrast bug fix verified (Q2/Q4 SelectTrigger renders dark ink rgb(26,26,26) on white), serif streaming reveal at /sandbox/generating with serif tape-head (Georgia) + italic tape-sub, redirect to /app?tutorial=1, SandboxTutorial card with 3 step links + open-chat + dismiss buttons, ?prompt= prefill into chat-input textarea (and removed from URL), dismiss persists across reload, /app/contexts/new (Add Company) creates a real seeded context (executive_personal) and switches into it. Tutorial endpoint also works on seeded real (non-sandbox) contexts via seeded_metadata branch.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter38_sandbox_tier1.py",
+    "/app/test_reports/pytest/iter38_results.xml"
+  ],
+  "action_items": [
+    "Optional: review_request mentions data-testid='newctx-q3-role' but implementation uses card-grid testids 'newctx-role-ned|executive|both' (mirrors sandbox). Functionally equivalent and clicked successfully; consider documenting the actual testid pattern in the spec, or add an outer 'newctx-q3-role' wrapper testid for parity with the request."
+  ],
+  "critical_code_review_comments": [
+    "GET /api/sandbox/contexts/{id}/tutorial double-loads seeded_metadata vs sandbox_metadata via `or` chain — clean abstraction; tutorial works for both context flavours.",
+    "resolve_stage_texts safely substitutes {other_sector_name} with .format and falls back to 'diversified' on KeyError — correct.",
+    "Sandbox session state is in-memory dict with 90s expiry timer — fine for current scale; flag for rollout when horizontal scaling is enabled (sticky sessions or move to Redis).",
+    "/api/sandbox/contexts/seeded creates a context but does NOT update accounts.default_context_id for the caller, unlike _seed_sandbox which does. Not a bug per current spec (caller already has a default), but worth noting if 'first context' semantics ever change.",
+    "Both endpoints correctly exclude MongoDB _id via projection ({_id: 0})."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter38_sandbox_tier1.py"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "100%"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (used for /api/sandbox/contexts/seeded + Add Company UI flow)",
+  "seed_data_creation": "Created TEST_-prefixed sandbox sessions and 3 TEST_-prefixed real seeded contexts under bramuel account: TEST_SeededExecCo (executive_personal), TEST_SeededNedCo (ned_personal), TEST_NewCo Inc (executive_personal via UI). Manual cleanup advised but not critical (all flagged with TEST_ prefix).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest covers generate (with objective + other_sector substitution, accept-without-objective, status->ready), tutorial GET (with/without objective), tutorial dismiss persistence, and seeded real-context creation (executive + NED) plus tutorial-on-seeded. Frontend manual playwright verified: dropdown contrast (rgb(26,26,26) dark ink), Submit gating logic on Q5 length and other-sector fields, serif/italic stream tape, /app?tutorial=1 redirect, tutorial card 3-step + open-chat + dismiss + persistence-across-reload, /app/contexts/new flow creates a real ctx and switches into it, and the chat composer (data-testid='chat-input') is prefilled from ?prompt= and the param is stripped from the URL. Note: Q3 role uses card grid testids (sandbox-role-{ned/exec/both} and newctx-role-{ned/exec/both}); there is no single 'sandbox-q3-role' or 'newctx-q3-role' testid wrapper.",
+  "rca of the issue": "N/A — no defects found."
+}

@@ -14,6 +14,7 @@
  *             would shield and the user wants to bypass
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
@@ -34,6 +35,7 @@ const POLICY_LABEL = {
 };
 
 export default function Chat() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [models, setModels] = useState([]);
   const [defaultModel, setDefaultModel] = useState("claude-sonnet-4-5");
   const [chats, setChats] = useState([]);
@@ -77,6 +79,18 @@ export default function Chat() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeChat?.messages?.length, sending]);
+
+  // Pre-fill the composer when arriving with ?prompt=… (e.g. from the
+  // sandbox tutorial card). One-shot: we strip the param after consuming it.
+  useEffect(() => {
+    const p = searchParams.get("prompt");
+    if (p) {
+      setInput(p);
+      const next = new URLSearchParams(searchParams);
+      next.delete("prompt");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const onNewChat = async () => {
     try {
