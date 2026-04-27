@@ -983,7 +983,28 @@ frontend critical claims).
   on Lens redesign + Briefings explainer + regression. Archived-session
   GET tightened post-review (now 404s correctly).
 
-## Iter36 — Audit pack · Influence Map · Share evolution diff · Role bleed (Apr 2026)
+## Iter37 — Login URL alias fix (Apr 2026)
+
+### Login was broken for users hitting `/sign-in` (with hyphen)
+The app's internal links use `/signin`, but external bookmarks, search
+engines, old emails, and muscle memory commonly reach for `/sign-in`,
+`/login`, or `/log-in`. The catch-all route was silently bouncing
+those to `/` (the marketing landing page), which from the user's
+perspective looked exactly like "the login is broken." Reproduced
+end-to-end: typing `/sign-in` rendered the landing hero, the form
+testid never resolved.
+
+### Fix
+Added explicit aliases in `/app/frontend/src/App.js`:
+- `/sign-in`, `/login`, `/log-in` → `<Navigate to="/signin" replace />`
+- `/sign-up`, `/register` → `<Navigate to="/signup" replace />`
+
+Verified end-to-end: typing `/sign-in` now redirects to `/signin`,
+form renders, login returns 200, lands on `/app` with token
+persisted, dashboard renders, **role-scoped nav correctly hides
+Cycle + Workflows in NED mode** (the iter36 surgical fix).
+
+
 12/12 backend + 100% frontend GREEN
 (`/app/test_reports/iteration_36.json`,
 `/app/backend/tests/test_iter36.py`):
@@ -1120,6 +1141,22 @@ frontend critical claims).
 - **Learn refresh agent** — periodic primary-source content puller.
 - **LinkedIn API posting scaffold** — manual copy/paste fallback exists.
 - target_date ISO sort.
+
+## Iter36 — Audit pack · Influence Map · Share evolution diff · Role bleed (Apr 2026)
+12/12 backend + 100% frontend GREEN
+(`/app/test_reports/iteration_36.json`):
+- **Chat audit pack export** — `GET /api/chats/{cid}/audit/export.zip`
+  returns 5-file zip (manifest + chat + messages + chain + verify.py).
+  Stdlib-only verifier; passes on integrity, fails on tampering.
+- **Share Evolution Diff CTA** — `/api/shares` `item_type='doc_evolution'`
+  with full LLM-diff email body. Wired into `<DocumentEvolutionPanel />`.
+- **Influence Map** — `routers/influence_map.py` aggregator across
+  engagement + shares + comments + mentions; `/app/influence` page with
+  editorial bipartite matrix view + top-influencers/top-docs panels.
+- **Role-separation surgical fix** — `NAV[i].roles=['executive']` on
+  Cycle + Workflows; NEDs no longer see them.
+- **Landing copy** — `05 · The chat` block + heading "Five surfaces.
+  One discipline."
 
 ## Iter35 — Login fix + Standalone Chat + Home metrics (Apr 2026)
 13/13 backend + 100% frontend GREEN

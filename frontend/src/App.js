@@ -61,7 +61,17 @@ function App() {
           <Route path="/blog/:slug" element={<BlogPost />} />
           <Route path="/respond/:token" element={<RespondToChecklist />} />
           <Route path="/signin" element={<PublicOnlyRoute><SignIn /></PublicOnlyRoute>} />
+          {/* URL aliases for muscle-memory / external-bookmark variants. The
+              app's internal links use /signin, but users (and search engines,
+              and old emails we've sent) commonly hit /sign-in or /login. The
+              catch-all below would otherwise bounce them silently to /, which
+              looks identical to the user as 'login is broken'. */}
+          <Route path="/sign-in" element={<Navigate to="/signin" replace />} />
+          <Route path="/login" element={<Navigate to="/signin" replace />} />
+          <Route path="/log-in" element={<Navigate to="/signin" replace />} />
           <Route path="/signup" element={<PublicOnlyRoute allowSandbox><SignUp /></PublicOnlyRoute>} />
+          <Route path="/sign-up" element={<Navigate to="/signup" replace />} />
+          <Route path="/register" element={<Navigate to="/signup" replace />} />
           <Route path="/invite/:token" element={<InviteAccept />} />
           <Route path="/sandbox" element={<Sandbox />} />
           <Route path="/sandbox/generating/:sessionId" element={<SandboxGenerating />} />
