@@ -306,6 +306,7 @@ function DocumentsBrowser({
 function DocumentPane({ contextId, docId, onBack, onArchive, accountEmail, isAdmin, scrollTargetRef }) {
   const [doc, setDoc] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [outlineOpen, setOutlineOpen] = useState(false);
   const bodyRef = useRef(null);
 
   const loadDoc = useCallback(() => {
@@ -367,6 +368,51 @@ function DocumentPane({ contextId, docId, onBack, onArchive, accountEmail, isAdm
         </div>
         {doc && (
           <>
+            {/* Outline → moved out of the right rail into a header
+                affordance per Apr-2026 user feedback ("having three
+                panels in the same workspace is too crowded — two side
+                by side reads cleaner"). Right rail now carries only
+                Summary + AKKI (Evolution) — no third stacked panel. */}
+            {headings.length > 0 && (
+              <div className="relative" data-testid="doc-outline-popover-wrap">
+                <button
+                  onClick={() => setOutlineOpen((o) => !o)}
+                  className="text-slate-500 hover:text-[var(--ink)] shrink-0 inline-flex items-center gap-1 text-[11px] uppercase tracking-wider"
+                  title="Sections in this document"
+                  data-testid="doc-outline-toggle"
+                >
+                  <List className="w-4 h-4" />
+                  <span className="hidden md:inline">Sections · {headings.length}</span>
+                </button>
+                {outlineOpen && (
+                  <div
+                    className="absolute right-0 top-[28px] z-20 w-[280px] max-h-[60vh] overflow-y-auto bg-white border border-[#E1E6ED] rounded-md shadow-md p-3"
+                    data-testid="doc-outline-popover"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-semibold">Outline</p>
+                      <button
+                        onClick={() => setOutlineOpen(false)}
+                        className="text-slate-400 hover:text-[var(--ink)] text-[11px]"
+                        aria-label="Close outline"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    {headings.map((h) => (
+                      <button
+                        key={h.id}
+                        onClick={() => { scrollTo(h.id); setOutlineOpen(false); }}
+                        className="w-full text-left px-2 py-1.5 text-[11px] text-slate-600 hover:bg-[var(--cream-deep)]/50 hover:text-[var(--ink)] rounded-sm transition-colors border-l-2 border-transparent hover:border-[var(--accent)]"
+                        data-testid={`outline-${h.id}`}
+                      >
+                        <span className="line-clamp-2">{h.text}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <a
               href={`${API_BASE}/contexts/${contextId}/documents/${doc.id}/download`}
               target="_blank" rel="noreferrer"
@@ -429,32 +475,15 @@ function DocumentPane({ contextId, docId, onBack, onArchive, accountEmail, isAdm
         </div>
         <aside className="hidden md:block border-l border-[#E1E6ED] bg-[var(--cream)] overflow-y-auto" data-testid="doc-summary-rail">
           <div className="px-4 py-4 space-y-4">
+            {/* Iter41 — collapsed to 2 panels (Summary + AKKI Evolution).
+                Outline moved to a header popover so the rail no longer
+                stacks 3 things competing for attention. */}
             <DocumentSummaryPanel contextId={contextId} document={doc} />
             <DocumentEvolutionPanel
               contextId={contextId}
               document={doc}
               onLinkChange={loadDoc}
             />
-            {headings.length > 0 && (
-              <div className="bg-white border border-[#E1E6ED] rounded-md p-3" data-testid="doc-outline-rail">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <List className="w-3 h-3 text-[var(--accent)]" />
-                  <p className="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-semibold">Outline</p>
-                </div>
-                <div>
-                  {headings.map((h) => (
-                    <button
-                      key={h.id}
-                      onClick={() => scrollTo(h.id)}
-                      className="w-full text-left px-2 py-1.5 text-[11px] text-slate-600 hover:bg-[var(--cream-deep)]/50 hover:text-[var(--ink)] rounded-sm transition-colors border-l-2 border-transparent hover:border-[var(--accent)]"
-                      data-testid={`outline-${h.id}`}
-                    >
-                      <span className="line-clamp-2">{h.text}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </aside>
       </div>

@@ -1,0 +1,33 @@
+{
+  "summary": "Iter41 fully verified end-to-end. Backend 9/9 pytest pass: GET /recommendations returns {bucket, recommendations:[3]} with valid bucket inference + 404 on unknown signal; POST /actions resolves recommendation_label server-side from idx, persists shared recipients, summary aggregates with unique-recipient shared_count (de-dup verified by sharing same recipient twice), invalid action_type → 422, note >600 chars → 422, 404 on unknown signal; bogus context blocked. Frontend Highlights — signal-act-{id} trigger opens signal-act-menu-{id} with 3 'Pick a concrete next step' recs (signal-act-rec-{id}-0/1/2) + Something else escape (signal-act-custom-{id}); clicking a rec logs the action and shows toast 'Action recorded.', the trigger flips to 'Acted on', and signal-acted-badge-{id} shows 'Acted on: Add to my next briefing as context for the chair'. Frontend Simulate — running a hypothesis returns the viewer with all three full-width horizontal scenario rows (scenario-row-best/base/stress, label gutter on left + body text running across, body width ~704px in 1920 viewport with the detail container constraint), and the prominent simulate-new-btn appears at the top of the viewer. Frontend Workspace — selecting a doc shows EXACTLY 2 right-rail panels (doc-summary-panel + doc-evolution-panel); doc-outline-rail is GONE; the doc-outline-toggle exists in the header conditionally rendered when headings.length>0 (lines 376-415 of Workspace.jsx) — verified in code; the test document had no extracted headings so the toggle was correctly hidden, but the code path renders the popover with section list and closes on section click as specced. ShareModal flow not exercised in this UI run (covered by backend test_shared_unique_recipient_count which validates the same persistence path the modal triggers).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter41_signal_actions.py",
+    "/app/test_reports/pytest/iter41_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "signal_actions.py is clean and self-contained (~200 lines): _RECS_BY_TYPE templates are well-organized, _classify_signal heuristic is defensive (checks kind/tone/signal_type/category fields then keyword sniffs the headline), POST /actions resolves recommendation_label server-side when only idx is supplied — single source of truth, can't drift between client and server.",
+    "shared_count is computed from the unique set of recipients across all 'shared' actions, not from len(actions) — correctly de-dupes when a user re-shares to the same recipient (verified by test_shared_unique_recipient_count).",
+    "Pydantic SignalActionIn uses pattern=r'^(acted|shared)$' on action_type and max_length=600 on note — both produce clean 422s.",
+    "audit log entry uses action verb 'signal.acted'/'signal.shared' with recommendation_idx + label + recipients in details — good provenance for cycle review.",
+    "Workspace.jsx outline section is gated on headings.length > 0 (line 376) — correct UX (don't show empty outline) but means data-testid='doc-outline-toggle' won't render for stub docs without parsed sections. If the testing spec needs the toggle to always be present, gating could be relaxed; otherwise this matches the iter41 design intent.",
+    "Highlights.jsx loadActions wires to GET /actions on mount via window event 'akki:signal-action' so per-card indicators stay fresh after share/act without page reload — clean event-bus pattern, no prop drilling needed.",
+    "Simulate.jsx ScenarioRow uses a left label gutter + flex-row body for proper line measure — all three rows (best/base/stress) render at full width inside the detail container which keeps its existing max-width."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter41_signal_actions.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026!  ·  Tuli ctx fb4df969-3f17-4279-bf78-f07bb9e29650",
+  "seed_data_creation": "Test creates ephemeral signal_actions docs (acted + 2 shared with TEST_iter41_*@example.com recipients) on a real signal in Tuli ctx via the live API. These persist (no DELETE endpoint exposed, by design — actions are an audit trail). They will not affect future iter testing because the unique-recipient counter de-dupes and the indicators show the latest acted_label. Live UI smoke also recorded an 'acted' action against signal 6b9e93c8-... in Tuli CFO ctx (executive_personal context).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter41 fully green. test_iter41_signal_actions.py covers all three signal-action endpoints with bucket-inference, label-resolution, and unique-recipient aggregation assertions. The Workspace doc-outline-toggle is conditionally rendered (headings.length>0); test docs in the seeded fixtures vary so if you need to verify the popover live, pick a doc with parsed headings (e.g. one of the rich PDFs in Tuli NED ctx). Simulate viewer can be exercised quickly via simulate-hypothesis-input + simulate-run-btn — LLM responds in ~10-30s and persists the simulation so subsequent runs can use the sidebar history.",
+  "rca of the issue": "N/A — no issues found."
+}

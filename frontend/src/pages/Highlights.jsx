@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import {
   Sparkles, Loader2, ArrowRight, X, ShieldCheck, FileText,
-  SlidersHorizontal, Zap, GitBranch, Eye, Share2,
+  SlidersHorizontal, Zap, GitBranch, Eye, Share2, Check, Users,
 } from "lucide-react";
 import ActModal from "@/components/act/ActModal";
 import AllLensesModal from "@/components/lens/AllLensesModal";
@@ -273,6 +273,22 @@ export default function Highlights() {
         contextId={contextId}
         itemType="signal"
         item={shareOn ? { ...shareOn, context_name: activeContext?.name } : null}
+        onShared={async ({ to_email }) => {
+          // Log a 'shared' action so the per-signal indicator updates with
+          // an editorial 'Shared with N people' chip on the next render.
+          if (!shareOn || !to_email) return;
+          try {
+            await api.post(
+              `/contexts/${shareOn.context_id}/signals/${shareOn.id}/actions`,
+              { action_type: "shared", recipients: [to_email] },
+            );
+            // Trigger a stream reload so the indicator picks up the new
+            // count without needing a full page refresh.
+            window.dispatchEvent(new CustomEvent("akki:signal-action", {
+              detail: { signal_id: shareOn.id },
+            }));
+          } catch { /* silent — share already succeeded */ }
+        }}
       />
     </AppShell>
   );
@@ -285,6 +301,60 @@ function SignalStreamCard({ signal, onLoad, onAct, onLens, onShare }) {
   const [traceOpen, setTraceOpen] = useState(false);
   const [traceEvents, setTraceEvents] = useState(null);
   const [traceLoading, setTraceLoading] = useState(false);
+  // Iter41 — load the action summary so we can render concrete indicators
+  // ('Acted on: <label>' / 'Shared with N') below the headline.
+  const [actSummary, setActSummary] = useState(null);
+  const [actMenuOpen, setActMenuOpen] = useState(false);
+  const [recommendations, setRecommendations] = useState(null);
+
+  const loadActions = useCallback(async () => {
+    try {
+      const { data } = await api.get(`/contexts/${signal.context_id}/signals/${signal.id}/actions`);
+      setActSummary(data?.summary || null);
+    } catch { /* silent — not critical */ }
+  }, [signal.context_id, signal.id]);
+
+  useEffect(() => { loadActions(); }, [loadActions]);
+
+  // Refresh the action summary when ShareModal fires its onShared callback
+  // for this signal — surfacing the new "Shared with N" count instantly.
+  useEffect(() => {
+    const onAction = (e) => {
+      if (e?.detail?.signal_id === signal.id) loadActions();
+    };
+    window.addEventListener("akki:signal-action", onAction);
+    return () => window.removeEventListener("akki:signal-action", onAction);
+  }, [signal.id, loadActions]);
+
+  const openActMenu = async () => {
+    if (recommendations || actMenuOpen) { setActMenuOpen(true); return; }
+    try {
+      const { data } = await api.get(`/contexts/${signal.context_id}/signals/${signal.id}/recommendations`);
+      setRecommendations(data?.recommendations || []);
+      setActMenuOpen(true);
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+
+  const pickRecommendation = async (idx, rec) => {
+    setActMenuOpen(false);
+    try {
+      await api.post(`/contexts/${signal.context_id}/signals/${signal.id}/actions`, {
+        action_type: "acted",
+        recommendation_idx: idx,
+        recommendation_label: rec.label,
+        note: rec.note,
+      });
+      toast.success("Action recorded.");
+      loadActions();
+      // For "Forward / share" recommendations, route into the existing
+      // ActModal so the user can actually compose the message — the act
+      // log fires regardless so the indicator updates immediately.
+      if (rec.label.toLowerCase().includes("forward")
+          || rec.label.toLowerCase().includes("share")) {
+        onAct?.(signal);
+      }
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
 
   const onDismiss = async () => {
     try {
@@ -347,12 +417,39 @@ function SignalStreamCard({ signal, onLoad, onAct, onLens, onShare }) {
 
       {/* Row 2: Georgia headline + summary */}
       <p className="akki-lead mb-2">{signal.headline}</p>
-      <p className="text-[14px] text-[var(--deep)] leading-relaxed mb-4 whitespace-pre-wrap">
+      <p className="text-[14px] text-[var(--deep)] leading-relaxed mb-3 whitespace-pre-wrap">
         {summaryNodes}
       </p>
 
+      {/* Action indicators — surface concrete attribution per Apr-2026 user
+          feedback: differentiate Act vs Share with WHAT was done. */}
+      {(actSummary?.acted || actSummary?.shared_count > 0) && (
+        <div className="flex flex-wrap items-center gap-2 mb-3" data-testid={`signal-action-indicators-${signal.id}`}>
+          {actSummary.acted && actSummary.last_acted_label && (
+            <span
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-[10.5px] text-emerald-700 bg-emerald-50 border border-emerald-200"
+              data-testid={`signal-acted-badge-${signal.id}`}
+              title={actSummary.last_acted_label}
+            >
+              <Check className="w-3 h-3" />
+              <span className="truncate max-w-[280px]">Acted on: {actSummary.last_acted_label}</span>
+            </span>
+          )}
+          {actSummary.shared_count > 0 && (
+            <span
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-[10.5px] text-[var(--accent)] bg-[var(--accent-soft)] border border-[var(--accent)]/20"
+              data-testid={`signal-shared-badge-${signal.id}`}
+              title={(actSummary.shared_with || []).join(", ")}
+            >
+              <Users className="w-3 h-3" />
+              Shared with {actSummary.shared_count}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Row 3: chips + gestures */}
-      <div className="flex items-end justify-between gap-4 flex-wrap">
+      <div className="relative flex items-end justify-between gap-4 flex-wrap">
         <div className="flex flex-wrap gap-2">
           {chips.map((c, i) => <span key={i} className="akki-context-chip">{c.label}</span>)}
         </div>
@@ -398,12 +495,44 @@ function SignalStreamCard({ signal, onLoad, onAct, onLens, onShare }) {
           )}
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); onAct?.(signal); }}
-            className="akki-gesture text-[13px]"
+            onClick={(e) => { e.stopPropagation(); openActMenu(); }}
+            className={`akki-gesture text-[13px] relative ${actSummary?.acted ? "text-emerald-700" : ""}`}
             data-testid={`signal-act-${signal.id}`}
           >
-            <Zap className="w-3 h-3" strokeWidth={2} /> Act on this
+            {actSummary?.acted
+              ? <><Check className="w-3 h-3" strokeWidth={2.4} /> Acted on</>
+              : <><Zap className="w-3 h-3" strokeWidth={2} /> Act on this</>}
           </button>
+          {actMenuOpen && (
+            <div
+              className="absolute z-30 mt-2 right-0 w-[340px] bg-white border border-[var(--rule)] rounded-md shadow-md py-2"
+              data-testid={`signal-act-menu-${signal.id}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p className="px-3 pb-1.5 text-[10px] uppercase tracking-[0.18em] text-[var(--muted)] font-mono">
+                Pick a concrete next step
+              </p>
+              {(recommendations || []).map((r, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => pickRecommendation(idx, r)}
+                  className="block w-full text-left px-3 py-2 text-[12.5px] text-[var(--deep)] hover:bg-[var(--cream-deep)]/50 hover:text-[var(--ink)]"
+                  data-testid={`signal-act-rec-${signal.id}-${idx}`}
+                >
+                  <span className="text-[var(--accent)] mr-1.5">→</span> {r.label}
+                </button>
+              ))}
+              <div className="border-t border-[var(--rule)] mt-1 pt-1">
+                <button
+                  onClick={() => { setActMenuOpen(false); onAct?.(signal); }}
+                  className="block w-full text-left px-3 py-2 text-[12px] italic text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)]/50"
+                  data-testid={`signal-act-custom-${signal.id}`}
+                >
+                  Something else — open the composer…
+                </button>
+              </div>
+            </div>
+          )}
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onShare?.(signal); }}

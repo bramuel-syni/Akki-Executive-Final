@@ -25,25 +25,40 @@ const HYPOTHESIS_STARTERS = [
   "If a major competitor exits the SME lending segment, what are our plausible trajectories over 3 years?",
 ];
 
-function Paragraph({ icon: Icon, tone, label, body }) {
+/**
+ * ScenarioRow — full-width horizontal scenario card.
+ *
+ * Replaces the iter-prior 3-column vertical grid that gave each card too
+ * narrow a measure. The user feedback was explicit: "Use horizontal cards
+ * rather than vertical for Best Case, Base Case, and Stress Case. Vertical
+ * cards make the text harder to read because line lengths are too short."
+ *
+ * Layout: a thin coloured rail on the left, label/icon in a fixed-width
+ * gutter, body running across the rest of the row at proper measure
+ * (~75-80 chars). Stacks back to a single column under 768px.
+ */
+function ScenarioRow({ icon: Icon, tone, label, body }) {
   if (!body) return null;
-  const toneClasses = {
-    best:   "border-emerald-300/70 bg-emerald-50/40",
-    base:   "border-[var(--rule)] bg-white",
-    stress: "border-red-300/70 bg-red-50/40",
+  const tones = {
+    best:   { rail: "bg-emerald-600",          label: "text-emerald-700",       chip: "bg-emerald-50 border-emerald-200" },
+    base:   { rail: "bg-[var(--accent)]",      label: "text-[var(--accent)]",   chip: "bg-[var(--accent-soft)] border-[var(--accent)]/20" },
+    stress: { rail: "bg-red-700",              label: "text-red-700",           chip: "bg-red-50 border-red-200" },
   };
-  const toneIcon = {
-    best:   "text-emerald-700",
-    base:   "text-[var(--accent)]",
-    stress: "text-red-700",
-  };
+  const t = tones[tone] || tones.base;
   return (
-    <div className={`rounded-md border p-4 ${toneClasses[tone]}`}>
-      <div className="flex items-center gap-2 mb-2">
-        <Icon className={`w-3.5 h-3.5 ${toneIcon[tone]}`} strokeWidth={1.8} />
-        <p className="akki-overline">{label}</p>
+    <div className="flex flex-col md:flex-row gap-0 md:gap-5 bg-white border border-[var(--rule)] rounded-md overflow-hidden" data-testid={`scenario-row-${tone}`}>
+      {/* Left rail + label gutter — 180px on desktop, full-width strip on mobile */}
+      <div className={`flex md:flex-col items-center md:items-start gap-2 md:gap-3 md:w-[180px] shrink-0 px-4 md:px-5 py-3 md:py-5 border-b md:border-b-0 md:border-r border-[var(--rule)] ${t.chip}`}>
+        <div className={`w-1 h-5 md:h-12 rounded-sm ${t.rail}`} />
+        <div className="flex md:flex-col items-center md:items-start gap-2 md:gap-1.5">
+          <Icon className={`w-3.5 h-3.5 ${t.label}`} strokeWidth={1.8} />
+          <p className={`text-[10.5px] uppercase tracking-[0.2em] font-mono ${t.label}`}>{label}</p>
+        </div>
       </div>
-      <p className="akki-serif text-[14.5px] leading-[1.65] text-[var(--deep)]">{body}</p>
+      {/* Body — runs across the rest of the row at proper measure */}
+      <p className="akki-serif text-[15px] leading-[1.7] text-[var(--deep)] px-5 py-4 md:py-5 flex-1 min-w-0">
+        {body}
+      </p>
     </div>
   );
 }
@@ -63,10 +78,10 @@ function SimulationViewer({ sim, onArchive }) {
       {sim.one_year && (
         <section>
           <h2 className="akki-overline mb-3">One-year trajectory</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <Paragraph icon={TrendingUp}   tone="best"   label="Best case"   body={sim.one_year?.best} />
-            <Paragraph icon={Activity}     tone="base"   label="Base case"   body={sim.one_year?.base} />
-            <Paragraph icon={TrendingDown} tone="stress" label="Stress case" body={sim.one_year?.stress} />
+          <div className="space-y-3">
+            <ScenarioRow icon={TrendingUp}   tone="best"   label="Best case"   body={sim.one_year?.best} />
+            <ScenarioRow icon={Activity}     tone="base"   label="Base case"   body={sim.one_year?.base} />
+            <ScenarioRow icon={TrendingDown} tone="stress" label="Stress case" body={sim.one_year?.stress} />
           </div>
         </section>
       )}
@@ -74,10 +89,10 @@ function SimulationViewer({ sim, onArchive }) {
       {sim.three_year && (
         <section>
           <h2 className="akki-overline mb-3">Three-year trajectory</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <Paragraph icon={TrendingUp}   tone="best"   label="Best case"   body={sim.three_year?.best} />
-            <Paragraph icon={Activity}     tone="base"   label="Base case"   body={sim.three_year?.base} />
-            <Paragraph icon={TrendingDown} tone="stress" label="Stress case" body={sim.three_year?.stress} />
+          <div className="space-y-3">
+            <ScenarioRow icon={TrendingUp}   tone="best"   label="Best case"   body={sim.three_year?.best} />
+            <ScenarioRow icon={Activity}     tone="base"   label="Base case"   body={sim.three_year?.base} />
+            <ScenarioRow icon={TrendingDown} tone="stress" label="Stress case" body={sim.three_year?.stress} />
           </div>
         </section>
       )}
@@ -287,13 +302,24 @@ export default function Simulate() {
           <div className="max-w-3xl mx-auto px-8 py-10">
             {selected && !running ? (
               <>
-                <button
-                  onClick={() => setSelected(null)}
-                  className="text-[11.5px] text-[var(--muted)] hover:text-[var(--ink)] inline-flex items-center gap-1 mb-4"
-                  data-testid="simulate-new-btn"
-                >
-                  <Sparkles className="w-3 h-3" /> Run a new simulation
-                </button>
+                <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+                  <button
+                    onClick={() => setSelected(null)}
+                    className="text-[11.5px] text-[var(--muted)] hover:text-[var(--ink)] inline-flex items-center gap-1"
+                    data-testid="simulate-back"
+                  >
+                    ← Back
+                  </button>
+                  {/* Prominent New Simulation button — users running multiple
+                      sims should not have to back out. */}
+                  <Button
+                    onClick={() => { setSelected(null); setHypothesis(""); }}
+                    className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white text-[12.5px] h-9 px-4"
+                    data-testid="simulate-new-btn"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 mr-1.5" /> New simulation
+                  </Button>
+                </div>
                 <SimulationViewer sim={selected} onArchive={onArchive} />
               </>
             ) : (

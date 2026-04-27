@@ -27,6 +27,7 @@ export default function ShareModal({
   itemType,          // "signal" | "briefing"
   item,              // the full artefact object (headline/title, etc.)
   defaultMessage,    // optional prefill
+  onShared,          // optional — called with {to_email} after a successful share
 }) {
   const [toEmail, setToEmail] = useState("");
   const [subject, setSubject] = useState("");
@@ -93,6 +94,7 @@ export default function ShareModal({
           ? "They'll see it in their Home stream."
           : "Email stub logged — SMTP delivery ships with email-in integration.",
       });
+      onShared?.({ to_email: toEmail.trim(), itemType, item });
       onClose?.();
     } catch (e) {
       toast.error(apiErrorMessage(e));
