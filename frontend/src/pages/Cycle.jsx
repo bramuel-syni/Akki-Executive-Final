@@ -833,6 +833,9 @@ export default function Cycle() {
   const { activeContext, account } = useAuth();
   const cid = activeContext?.id;
   const [cycleNames, setCycleNames] = useState([]);
+  // Iter42 — moved above the early return so useState is unconditional and
+  // the React-hooks rule isn't violated.
+  const [activeTab, setActiveTab] = useState("tracker");
   useEffect(() => {
     (async () => {
       if (!cid) return;
@@ -844,21 +847,87 @@ export default function Cycle() {
     })();
   }, [cid]);
   if (!cid) return <AppShell><div className="p-12 text-center text-[var(--muted)] text-sm">No context selected.</div></AppShell>;
+  // Iter42 — 4-step workflow spine. Each tab maps onto exactly one stage
+  // of Receive → Consolidate → Generate → Submit. Used to drive the
+  // SpineStrip indicator above the tab row so the user always knows where
+  // the current tab sits in the overall workflow.
+  const TAB_STAGE = {
+    tracker:    "monitor",      // overview lives outside the spine
+    reportees:  "receive",
+    bank:       "receive",
+    checklists: "receive",
+    inbox:      "consolidate",
+    reports:    "generate",     // the report drafting step
+    // "submit" stage is reached when an existing report is sent up the
+    // chain (handled inside the reports view itself, no dedicated tab).
+  };
+  const SPINE = [
+    { id: "receive",     label: "Receive",     blurb: "Brief your team, send checklists, collect responses." },
+    { id: "consolidate", label: "Consolidate", blurb: "Read the inbox, surface what matters." },
+    { id: "generate",    label: "Generate",    blurb: "Draft the report from what's in the pack." },
+    { id: "submit",      label: "Submit",      blurb: "Send up the chain — every tier reviews, then approves." },
+  ];
+  const activeStage = TAB_STAGE[activeTab] || "monitor";
+
   return (
     <AppShell>
       <div className="max-w-[1200px] mx-auto px-8 py-10">
-        <div className="mb-8 akki-fade-up">
+        <div className="mb-6 akki-fade-up">
           <p className="akki-overline mb-2 flex items-center gap-2">
             <Send className="w-3 h-3 text-[var(--accent)]" /> Reporting cycle · §12 · {activeContext.name}
           </p>
-          <h1 className="akki-greeting mb-2">Receive · Consolidate · Send up.</h1>
+          <h1 className="akki-greeting mb-2">Receive · Consolidate · Generate · Submit.</h1>
           <p className="akki-meta max-w-2xl">
-            The reporting cycle, in five clean steps. Manage your team, the questions worth asking, the checklists AKKI sends on your behalf, the submissions that come back, and the report you send up the chain — all for <strong className="text-[var(--ink)]">{activeContext.name}</strong>.
+            The reporting cycle, on a single spine. Each tab below sits in one of the four stages — AKKI handles the
+            email, you gate every step — all for <strong className="text-[var(--ink)]">{activeContext.name}</strong>.
           </p>
         </div>
 
-        <Tabs defaultValue="tracker" className="w-full">
-          <TabsList className="bg-transparent border-b border-[var(--rule)] w-full justify-start h-auto p-0 rounded-none mb-8 overflow-x-auto">
+        {/* SPINE STRIP — 4 stages with the active tab's stage highlighted */}
+        <div className="mb-6 bg-white border border-[var(--rule)] rounded-md p-3" data-testid="cycle-spine-strip">
+          <div className="flex flex-wrap items-stretch gap-0">
+            {SPINE.map((stage, idx) => {
+              const isActive = stage.id === activeStage;
+              const isPast = SPINE.findIndex((s) => s.id === activeStage) > idx;
+              return (
+                <div
+                  key={stage.id}
+                  className={`flex-1 min-w-[140px] px-3 py-2 border-l first:border-l-0 border-[var(--rule)] transition-colors ${
+                    isActive ? "bg-[var(--accent-soft)]" : ""
+                  }`}
+                  data-testid={`cycle-spine-${stage.id}${isActive ? "-active" : ""}`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-mono font-medium ${
+                      isActive
+                        ? "bg-[var(--accent)] text-white"
+                        : isPast
+                          ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                          : "bg-[var(--cream-deep)] text-[var(--muted)] border border-[var(--rule)]"
+                    }`}>
+                      {idx + 1}
+                    </span>
+                    <p className={`text-[11px] uppercase tracking-[0.18em] font-medium ${
+                      isActive ? "text-[var(--accent)]" : "text-[var(--muted)]"
+                    }`}>
+                      {stage.label}
+                    </p>
+                  </div>
+                  <p className={`text-[11.5px] leading-snug ${isActive ? "text-[var(--ink)]" : "text-[var(--muted)]"}`}>
+                    {stage.blurb}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          {/* April 2026 — switched from overflow-x-auto to flex-wrap so the
+              tab row wraps cleanly on tablet widths instead of sliding the
+              rightmost tab under the right portfolio rail. The wrapped row
+              still reads as one menu thanks to the shared bottom border. */}
+          <TabsList className="bg-transparent border-b border-[var(--rule)] w-full justify-start h-auto p-0 rounded-none mb-8 flex-wrap" data-testid="cycle-tabs-list">
             {[
               ["tracker",    "Overview",          Eye],
               ["reportees",  "1 · Your team",     Users],

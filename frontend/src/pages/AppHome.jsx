@@ -159,6 +159,27 @@ export default function AppHome() {
                 ? "Your workspace is quiet. Upload a pack to let AKKI surface signals."
                 : `A brief scan of what's moving in ${activeContext?.name}.`}
             </p>
+
+            {/* Iter42 — single editorial metrics strip. Replaces the
+                cluttered SaaS-dashboard tile pattern with a single
+                horizontal row of serif numerals separated by middle-dots.
+                Reads like a magazine masthead, not a stat-tile farm. */}
+            {(signals.length + briefings.length + documents.length) > 0 && (
+              <div
+                className="mt-5 pt-4 border-t border-[var(--rule)] flex items-center gap-x-7 gap-y-2 flex-wrap text-[var(--deep)]"
+                data-testid="home-metrics-strip"
+              >
+                <MetricItem label="Signals"     value={signals.length} testId="home-metric-signals" />
+                <MetricItem label="Briefings"   value={briefings.length} testId="home-metric-briefings" />
+                <MetricItem label="Documents"   value={documents.length} testId="home-metric-documents" />
+                {hasMultipleContexts && (
+                  <MetricItem label="Companies" value={contexts?.length || 1} testId="home-metric-companies" />
+                )}
+                {shared.length > 0 && (
+                  <MetricItem label="Shared with you" value={shared.length} testId="home-metric-shared" accent />
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden" data-testid="home-sections">
@@ -537,6 +558,32 @@ function NextBestActionCard() {
         <Clock className="w-3 h-3" /> PDF, DOCX, or TXT · up to 20MB · stays in this context
       </p>
     </motion.div>
+  );
+}
+
+/**
+ * MetricItem — one masthead-style metric in the home strip.
+ * Renders the value in a large serif numeral with a tiny uppercase
+ * caption underneath, aligned baseline-left so a row of these reads
+ * like an editorial figure rather than a SaaS stat tile.
+ */
+function MetricItem({ label, value, testId, accent }) {
+  return (
+    <div
+      className="flex items-baseline gap-2 first:pl-0"
+      data-testid={testId}
+    >
+      <span
+        className={`akki-serif text-[26px] leading-none ${
+          accent ? "text-[var(--accent)]" : "text-[var(--ink)]"
+        }`}
+      >
+        {value}
+      </span>
+      <span className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--muted)]">
+        {label}
+      </span>
+    </div>
   );
 }
 

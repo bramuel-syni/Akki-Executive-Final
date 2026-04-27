@@ -1,0 +1,33 @@
+{
+  "summary": "Iter42 fully verified end-to-end. Backend 8/8 pytest pass on /api/admin/signals/action-heatmap (superadmin only) — shape {by_bucket, totals, recent_actions} validated; bucket values constrained to {risk, opportunity, gap, neutral}; recommendations sorted by picks desc with picks>0; shared actions bump bucket.shared but do NOT add to bucket.recommendations (only acted picks roll up there); share_recipients de-dupes (sending same email twice produced delta 0–1, not 2); non-superadmin (bramuel@syni.ai) gets 403; unauthenticated gets 401/403. Iter41 regression endpoints (recommendations + actions) still alive. Frontend: /admin/signal-kpi as admin@akki.ai renders signal-kpi-page with totals card (4 acted · 6 shared · 6 unique recipients on live data), one neutral bucket card (signal-kpi-bucket-neutral) showing 2 recommendation pick bars + recent timeline of 10 actions with neutral chips. Refresh button works. Bramuel navigated to /admin/signal-kpi is correctly redirected to /app (signal-kpi-page hidden). /app home shows home-metrics-strip with all three metrics (signals, briefings, documents) on a context with content. /app/cycle heading reads 'Receive · Consolidate · Generate · Submit.' — cycle-spine-strip renders 4 stages (receive/consolidate/generate/submit). On default Overview tab no spine stage is active; clicking '4 · Receive submissions' activates cycle-spine-consolidate-active; clicking '5 · Consolidate & send up' activates cycle-spine-generate-active (mapping reports→generate). At 1280×820, TabsList has flex-wrap (no overflow-x-auto) — tabs wrap onto 2 rows, rightmost tab '5 · Consolidate & send up' fully visible within main content not under right portfolio rail. Right rail has soft shadow on left edge. Highlights / Briefings / Monitor / Lens all load post-iter42 with no error overlays.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter42_signal_kpi.py",
+    "/app/test_reports/pytest/iter42_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "admin_signal_kpi.py is clean (~140 lines): superadmin guard is a small Depends helper that 403s cleanly, the bucket classifier is duplicated inline from signal_actions.py (intentional per the docstring) so the heatmap groups identically to how the dropdown serves them — but consider extracting to a shared utility so a future bucket rule change only needs one edit instead of two. Custom-composer note labels collapse to '(custom — composer)' to keep the heatmap readable when label is null — good UX. Recommendations sorted by picks desc; bucket cards sorted by acted+shared desc — both stable.",
+    "Single Mongo query for actions + one $in batch query for related signal metadata — no per-action signal lookup, so the endpoint is O(1) round-trips regardless of action count.",
+    "share_recipients is built from a Python set of recipient emails across all 'shared' actions — correctly de-dupes across multiple share events to the same recipient (verified in test_share_recipients_dedupes; delta was 0 or 1, never 2).",
+    "SignalKPI.jsx page is well-structured with proper loading/error states, the 'TOTAL ACTED / TOTAL SHARED / UNIQUE SHARE RECIPIENTS' editorial layout is consistent with the iter42 home metrics strip aesthetic, and all key elements have data-testid coverage (signal-kpi-page, -totals, -refresh, -by-bucket, -bucket-{name}, -rec-{bucket}-{idx}, -recent, -action-{id}).",
+    "Cycle.jsx SPINE config maps tabs cleanly: tracker/monitor → no spine stage; reportees/bank/checklists → receive; inbox → consolidate; reports → generate. The active state cycles through correctly per click. TabsList class transitioned from overflow-x-auto to flex-wrap — tabs reflow onto 2 rows at 1280px which is the right call vs. horizontal scroll under a fixed right rail.",
+    "PortfolioRail shadow `shadow-[-8px_0_16px_-12px_rgba(0,0,0,0.15)]` provides a subtle visual separator that signals 'this is a side rail, not main content' without being heavy — appropriate for an executive UI.",
+    "Iter42 is non-destructive — no existing endpoints altered, no test data wiped, regression tests (recommendations + actions) still pass without modification."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter42_signal_kpi.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@akki.ai / AkkiAdmin2026!  ·  bramuel@syni.ai / TestBramuel2026!  ·  Tuli ctx fb4df969-3f17-4279-bf78-f07bb9e29650",
+  "seed_data_creation": "Two ephemeral signal_actions docs created during heatmap tests: one shared action with TEST_iter42_share_*@example.com and two shared actions to the same TEST_iter42_dup_*@example.com (de-dup test). Both persist in signal_actions collection (audit trail by design) and are unique-prefixed so they won't collide with future iters. Heatmap totals are inflated slightly (acted: was 3 → now 4 after the iter41 regression test ran an 'acted' POST; shared: 6 unique recipients).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter42 fully green. test_iter42_signal_kpi.py covers superadmin heatmap shape + bucket validity + shared-vs-recommendations isolation + recipient de-dup + 403/401 guards, plus iter41 regression on recommendations and actions endpoints. The /admin/signal-kpi page only renders the neutral bucket because all live signal_actions are against ubora-sig-1 (no headline → falls into neutral via classifier). To test multi-bucket cards, seed an 'acted' action against a signal whose headline contains 'risk' / 'opportunity' / 'gap'. The home-metrics-strip is gated on (signals>0 || briefings>0 || documents>0) — to verify the empty-state hide path, create a fresh empty context and visit /app while it's selected. Cycle TabsList wraps onto 2 rows at 1280×820 — at narrower widths (e.g., mobile 390px) it will wrap further; if you need to verify mobile, the 4-step spine and tab wrap should both still hold.",
+  "rca of the issue": "N/A — no issues found."
+}

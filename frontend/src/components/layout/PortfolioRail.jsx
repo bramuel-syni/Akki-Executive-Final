@@ -96,7 +96,7 @@ export default function PortfolioRail() {
 
   return (
     <aside
-      className={`hidden lg:flex flex-col fixed top-14 right-0 bottom-0 ${collapsed ? "w-12" : "w-[260px]"} bg-[var(--cream-deep)]/40 border-l border-[var(--rule)] transition-[width] duration-200 z-20`}
+      className={`hidden lg:flex flex-col fixed top-14 right-0 bottom-0 ${collapsed ? "w-12" : "w-[260px]"} bg-[var(--cream-deep)]/40 border-l border-[var(--rule)] transition-[width] duration-200 z-20 shadow-[-8px_0_16px_-12px_rgba(0,0,0,0.15)]`}
       data-testid="portfolio-rail"
     >
       <button
