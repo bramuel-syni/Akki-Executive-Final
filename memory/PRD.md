@@ -983,7 +983,59 @@ frontend critical claims).
   on Lens redesign + Briefings explainer + regression. Archived-session
   GET tightened post-review (now 404s correctly).
 
-## Iter34 — Three follow-on items (Apr 2026)
+## Iter35 — Login fix + Standalone Chat + Home metrics (Apr 2026)
+13/13 backend + 100% frontend e2e GREEN
+(`/app/test_reports/iteration_35.json`,
+`/app/backend/tests/test_iter35_chat.py`):
+
+### Login bug fix
+- `AuthContext.afterAuth` now persists `data.access_token` to
+  `localStorage['akki_access_token']` so the Bearer interceptor can
+  recover when cross-site cookies are blocked (Safari 16+ ITP, Brave
+  shields, Firefox strict, deployed-on-different-domain scenarios).
+- `bootstrap()` clears stale tokens on `/auth/me` failure so a
+  poisoned token can't loop the user back to the landing page.
+
+### Standalone Chat surface (NEW · `/app/chat`)
+- Untethered from any company context — privacy-shielded multi-model
+  AI workspace. Replaces the need for separate ChatGPT/Claude/Gemini
+  subscriptions.
+- 5 models: Claude Sonnet 4.5, Claude Haiku 4.5, GPT-5.2,
+  Gemini 2.5 Pro, Gemini 2.5 Flash (via `EMERGENT_LLM_KEY`).
+- Conversations persist by default (1a). Per-conversation shielding
+  policy: auto (default) · always · off.
+- **Auto policy** detects identifiers via `shield_payload()` and
+  shields BEFORE sending to provider, then rehydrates the reply.
+  Multi-turn references survive shielding (verified live).
+- **Policy=off footgun guard**: sensitive content + no acknowledgement
+  → 409 `shielding_acknowledgement_required`. User must explicitly
+  confirm via bypass dialog; the bypass + reason is audited.
+- **Bank-grade audit log** (`chat_audit_log` collection):
+  - Append-only (insert only, no updates/deletes from app code)
+  - SHA256-chained: each row's `row_hash` = SHA256 of canonical JSON
+    of `(prev_hash, id, at, account_id, chat_id, action, payload, ip,
+    ua_sha)`. Tampering with any row breaks every downstream hash.
+  - Captures IP and `ua_sha` (truncated SHA of user-agent) per event.
+  - Never stores raw message content — uses `content_sha256` as a
+    fingerprint so auditors can prove existence without exposure.
+  - GET `/api/chats/{cid}/audit` returns the chain plus the
+    verification recipe.
+- Cross-account isolation: every read/write filters on `account_id`
+  → 404 on attempts to read another user's chats or audit.
+
+### Home metrics (filling the iter33 gap)
+- Six tiles (was four): Signals · Briefings · Cycle · **Reports
+  (sent + total drafted)** · Document Journal · **Network (companies +
+  team members)**. Grid: `grid-cols-2 md:grid-cols-3 lg:grid-cols-6`.
+
+### Open / deferred — Slice 10+
+- **Influence Map** — last open P1.
+- **Share Evolution Diff CTA** — small extension of `doc_summary`
+  share to also share the LLM-generated drift summary across cycles.
+- **Role-separation bleed sweep** — NED ↔ Exec UI bleed
+  (needs user pointers).
+- **Monitor "green stick"** — needs user clarification.
+- **Status bar redesign on Signals page** — needs user pointer.
 13/13 backend + iter33 regression GREEN. Frontend e2e GREEN
 (`/app/test_reports/iteration_34.json`):
 - **Share Document Summary** — new `doc_summary` item type on
@@ -1016,6 +1068,21 @@ frontend critical claims).
 - **Learn refresh agent** — periodic primary-source content puller.
 - **LinkedIn API posting scaffold** — manual copy/paste fallback exists.
 - target_date ISO sort.
+
+## Iter34 — Three follow-on items (Apr 2026)
+13/13 backend + iter33 regression GREEN. Frontend e2e GREEN
+(`/app/test_reports/iteration_34.json`):
+- **Share Document Summary** — new `doc_summary` item type on
+  `/api/shares` with TL;DR + numbered "What matters" + "Walk in
+  asking" quotes plus deep link.
+- **Movable home cards** — native HTML5 DnD via
+  `useDraggableSections('home', …)` hook, persisted to
+  `localStorage['akki:section-order:home']`, drag handle on hover.
+- **NED Document Evolution Chain** — `PATCH related_doc_id` (with
+  self-link / cycle / context guards) +
+  `POST /…/documents/{did}/evolution-diff` LLM endpoint returning
+  drift (added/weakened/questions). `<DocumentEvolutionPanel />` in
+  Document Viewer right rail with chain ribbon + LinkVersionDialog.
 
 ## Iter33 — User feedback batch (Apr 2026)
 9 page redesigns shipped in one batch, 7/7 backend + 11/11 frontend
