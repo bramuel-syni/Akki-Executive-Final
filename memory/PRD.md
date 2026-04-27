@@ -1186,6 +1186,41 @@ Cycle + Workflows in NED mode** (the iter36 surgical fix).
 - **LinkedIn API posting scaffold** — manual copy/paste fallback exists.
 - target_date ISO sort.
 
+## Iter39 — Tier 1 gap-plug + Tier 2 quick wins (Apr 2026)
+100% backend + 100% frontend GREEN
+(`/app/test_reports/iteration_39.json`,
+`/app/backend/tests/test_iter39_briefings_objective_check.py`):
+- **24-hour objective-check follow-up** — `GET/POST
+  /api/sandbox/contexts/{id}/objective-check`. Surfaces ~24h after
+  generation, captures yes/partial/no + optional note (or `skip`).
+  Works on both sandbox + seeded real contexts.
+  `<ObjectiveCheck />` rendered on AppHome below the tutorial card.
+- **Briefings read tracking** — `briefing_reads` collection (Mongo
+  upsert per (briefing_id, account_id)). `POST
+  /api/contexts/{cid}/briefings/{bid}/mark-read` with
+  `via: "manual"|"scroll"`. List endpoint annotates each row with
+  `is_read` / `read_via` / `read_at` for the caller. Frontend:
+  Mark-as-read button in the viewer header + auto-mark on ≥70%
+  scroll-depth + read-state indicator on rail rows + total/unread
+  count in rail header.
+- **Monitor green sparkline removed** — replaced with a discreet
+  "How is this calculated?" methodology popover so a sceptical user
+  can audit the score's machine-generated derivation.
+- **The Lens — Apply repositioned** — picker row now holds only the
+  two dropdowns; Apply moved BELOW the input description. Natural
+  read → apply flow.
+- **Cycle deadline picker** — replaced free-text deadline input with
+  `<input type="date">`; YYYY-MM-DD is converted to "DD Month YYYY"
+  for the dispatch email body (UTC-explicit to avoid TZ drift).
+- **Compose Report tile** — `<ComposeReportTile />` replaces the
+  inline corner button. Surfaces contextual notes:
+  "AKKI has all the information you need." (all reportees in) /
+  "N direct reports haven't responded to AKKI yet." (pending) /
+  "No reportees set up yet." (empty roster).
+- **Tutorial copy** — sector-narrative framing per the doc:
+  "A story shaped to what you came here for."
+
+
 ## Iter38 — Tier 1 · Sandbox conversion overhaul (Apr 2026)
 100% backend + 100% frontend GREEN
 (`/app/test_reports/iteration_38.json`,

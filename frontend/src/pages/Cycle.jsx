@@ -474,12 +474,14 @@ function Checklists({ contextId }) {
     }
     // The native date picker returns YYYY-MM-DD. Convert to a human-readable
     // form before storing so emails read "Please respond by 15 May 2026."
+    // Parse explicitly to UTC to avoid timezone-driven off-by-one near midnight.
     let humanDeadline = deadline.trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(humanDeadline)) {
-      const dt = new Date(`${humanDeadline}T00:00:00`);
+    const m = humanDeadline.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) {
+      const dt = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
       if (!isNaN(dt.getTime())) {
         humanDeadline = dt.toLocaleDateString("en-GB",
-          { day: "numeric", month: "long", year: "numeric" });
+          { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
       }
     }
     setGenerating(true);
