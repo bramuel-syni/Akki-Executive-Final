@@ -1471,6 +1471,68 @@ verified by testing agent (`/app/test_reports/iteration_33.json`):
   Consolidate · Send up." reinforces the spine.
 
 
+## §UX iter45 — Prepare redesign + Send-to-colleague + Tier-B pills (2026-04-27)
+
+### Why
+User feedback after iter44: "Replace [the line-tab inline blurbs] with
+'Generate Brief' and 'Generate Signals'. Describe the section beneath the
+selection line before the input box. Redesign the section under the line
+tab dock. Organise input, output and list nicely." Plus: ship the full
+backlog and the suggested improvement (send-to-colleague chip).
+
+### What shipped
+- **Prepare page redesigned** — line tabs now carry just labels (Brief /
+  Signals). Below the tabs: a section kicker ("Generate Brief" /
+  "Generate Signals") + descriptive serif blurb. Form box reorganised into
+  three zones — **Step 1** (kind / focus chips) → **Step 2** (objective /
+  focus textarea with character counter and inline help) → **Action** (the
+  validated-by-independent-model badge on the left, primary button on the
+  right). Recent items list now sits under a proper section divider with
+  an "X saved" tabular count.
+- **Send to a colleague** chip on `BriefDetailModal` — opens the existing
+  `ShareModal` with `itemType="brief"`. Backend `routers/shares.py`
+  extended to accept `brief` as an `ItemType`; cross-context 404 guard
+  intact.
+- **Continue with [doc] topbar pill** (Tier-B) — new
+  `components/layout/ContinueWithPill.jsx`. Records the last document
+  the user opened (in QuickResults or DocumentViewer) into
+  `localStorage.akki_continue_with`. The pill renders in the AppShell
+  topbar across every authed page, hidden on `/app/workspace` and
+  `/app/quick-results/*` where it would be redundant. Stale > 7 days
+  auto-clears. Click takes the user back to QuickResults; X dismisses.
+- **Chat model avatar visual** (Tier-B) — new
+  `components/chat/ModelAvatar.jsx`. Provider-coloured monograms
+  (oxblood C for Claude, ink G for GPT, gold ✦ for Gemini). Wired into
+  the model picker trigger, dropdown rows, and every assistant message
+  bubble so the executive sees at a glance which model produced which
+  reply.
+- **Helper extracted** — `helpers/llm_json.py:safe_parse_json` consolidates
+  the fence-strip + prose-fallback logic that was duplicated in
+  `prepare.py` + `plays.py`. Behaviour-equivalent.
+- **Cleanup** — removed the now-unrouted `pages/Highlights.jsx` and
+  `pages/Briefings.jsx` files.
+
+### Tests
+- `test_iter45_shares_brief.py` — 9/9 backend GREEN (brief share happy
+  path, 404, regression on existing share types, safe_parse_json
+  regression via brief CRUD).
+- `test_iter44_prepare.py` — 12/12 STILL GREEN.
+- Frontend 100% on Prepare redesign, ContinueWithPill, ModelAvatar
+  picker + bubbles, sidebar Prepare entry, redirect from /app/highlights
+  and /app/briefings.
+
+### Open / deferred — Tier-C and beyond
+- Minutes as first-class entity (anchor for Cycle + Monitor) — needs new
+  doc type, extraction, linkage. Sized for its own session.
+- Personal vs Enterprise tier split (`akki.ai/personal` vs
+  `akki.ai/enterprise`) — separate billing/data models. Sized for its
+  own session.
+- Inbound email parsing/receiving integration — needs an external
+  inbound provider (Postmark / Resend Inbound).
+- Upgrade `ValidatedBadge` to a real second-LLM validation pass
+  (currently re-uses Synisense shielding).
+
+
 ## §UX iter44 — Prepare consolidation + tone polish (2026-04-27)
 
 ### Why
