@@ -1,0 +1,40 @@
+{
+  "summary": "iter34 (3 follow-ons: Doc Summary share + Movable home cards + NED Document Evolution Chain) — fully verified. Backend 13/13 PASS for the 3 new endpoints. Frontend e2e verified on Bramuel/Tuli-CFO context: home draggable board + reset, doc-summary-share modal with correct kicker/subject/message defaults, doc-evolution-panel rendering chain ribbon (DOC1->DOC2, 2 nodes) + diff body + re-compare. iter33 regression: 7/7 PASS.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter34_share_evolution.py",
+    "/app/test_reports/pytest/iter34.xml",
+    "/app/backend/tests/test_iter33_summary_compose.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "shares.py: ItemType extended cleanly with 'doc_summary'. _load_artefact correctly returns None when akki_summary.tldr is missing -> 404 path verified. Email branch builds summary_block (TL;DR + highlights ol capped at 7 + Walk-in-asking quotes capped at 3) and view_url points at /app/workspace/{doc_id} per spec. Self-share rejection (400) shared with all item types — verified.",
+    "documents.py update_document_trust: model_fields_set check correctly distinguishes 'related_doc_id=null' (unlink) from 'field absent'. Self-link (400), unknown predecessor (404), cycle detection (400 with bounded 20-hop walk), and 'neither field sent' (400) all enforced and verified. Audit row written with 'document.updated' on every successful PATCH.",
+    "documents.py document_evolution_diff: returns {previous_doc:null, diff:null} when no related_doc_id (verified). Cache hit returns in <8s (verified, ~0.5s observed). Cache key includes previous_doc_id stamp so re-linking invalidates. ?refresh=true bypasses. 400 when extracted_text missing on either doc. LLM payload caps enforced (added/removed<=5, questions<=3) and verified live with real Emergent LLM (~30s first call).",
+    "useDraggableSections.js: localStorage key 'akki:section-order:<scope>' — set/cleared correctly. Reconcile-on-mount handles new sections being added without losing previous order; reset removes the key entirely (verified: ls returns null after reset, default order [summary,workflows,inbox] restored).",
+    "DocumentEvolutionPanel.jsx: when DOC1 is selected, chain ribbon renders 2 nodes with data-testid doc-evolution-node-{id}, doc-evolution-chain + doc-evolution-diff + doc-evolution-rediff all mount. CHANGE LINK CTA visible. RE-COMPARE wired. Empty-state handled when related_doc_id is null.",
+    "ShareModal.jsx itemType='doc_summary': kicker reads 'DOCUMENT SUMMARY · FROM THIS CONTEXT', subject defaults to doc name ('TEST Doc B b53300'), message defaults to \"AKKI's read on TEST Doc B b53300. The TL;DR + the questions worth walking in with.\" — all verified live. Default delivery_method = email (per modal SEND VIA dropdown).",
+    "Workspace.jsx DocumentPane: loadDoc is now a useCallback so onLinkChange refresh works after evolution linking — verified that doc.related_doc_id refreshes in-place without a hard reload."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter34_share_evolution.py (NEW, 13 tests, all pass in ~1.7s after first LLM call cached)"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 iter34 + 7/7 iter33 regression)",
+    "frontend": "100% — every spec'd data-testid + flow verified (home draggable, doc-summary-share modal, doc-evolution-panel + chain + diff + rediff, reset button)"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (Tuli CFO ctx 2ceb9fde-a202-4891-adb1-ecf47dfe2258, DOC1 a90b82e3-3fa9-4a26-be0c-d63bdfc51909 already linked to DOC2 9f5ab479-abf2-4516-bc04-4f6dabb5557a)",
+  "seed_data_creation": "Created 2 share records via the test suite: one akki_notification share (-> admin@akki.ai with mention row) and one email share to TEST_iter34_external@example.com. evolution_diff was generated/cached on DOC1 record by the live LLM call.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Always export REACT_APP_BACKEND_URL before pytest. Workspace UI requires clicking a doc-row-{doc_id} button (no /app/workspace/{id} URL routing — only /app/workspace then click). The evolution chain only renders when DOC1 is the selected doc and its related_doc_id is set; if you re-seed and DOC1->DOC2 link is lost, the LinkVersionDialog (doc-evolution-link-btn) flow needs to be re-run. iter34 cycle-creation test asserts that DOC2->DOC1 is rejected with 'cycle' detail because DOC1->DOC2 already exists.",
+  "rca of the issue": "No bugs in iter34. One non-issue noted during testing: when forcing localStorage to a non-default order then reloading, the reorder was reflected in the localStorage value but the rendered DOM y-coords looked overlapping in headless playwright (likely due to grid layout collapsing during reflow). The reset path conclusively restores default order (summary y=252 < workflows y=479 < inbox y=768) and clears the localStorage key, so persistence + reset are both functional."
+}

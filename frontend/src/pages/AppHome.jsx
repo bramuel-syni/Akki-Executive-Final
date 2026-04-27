@@ -15,6 +15,8 @@ import SandboxPackDrop from "@/components/sandbox/SandboxPackDrop";
 import ReviewInboxCard from "@/components/cycle/ReviewInboxCard";
 import WorkflowsHub from "@/components/home/WorkflowsHub";
 import InSummaryTiles from "@/components/home/InSummaryTiles";
+import useDraggableSections from "@/hooks/useDraggableSections";
+import { GripVertical, RotateCcw } from "lucide-react";
 
 const CONFIDENCE_LABEL = { high: "High confidence", medium: "Medium confidence", low: "Low confidence" };
 
@@ -158,22 +160,15 @@ export default function AppHome() {
           </div>
 
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden" data-testid="home-sections">
-            {/* Sandbox-only: a discreet drop-your-own-pack affordance. */}
+            {/* Sandbox-only: a discreet drop-your-own-pack affordance.
+                Pinned — not draggable. */}
             <SandboxPackDrop onSignalsReady={load} />
 
-            {/* In summary — dashboard metrics scan FIRST, before
-                workflows or stream. (Per user feedback: "the page
-                should feel more like a dashboard with reporting
-                numbers at a glance".) */}
-            <InSummaryTiles />
+            <DraggableHomeBoard />
 
-            {/* Workflows hub — consolidates Ready / Agenda / In-progress
-                / Quick actions into one tabbed surface so the previous
-                walls of text no longer dominate. */}
-            <WorkflowsHub />
-
-            {/* Cross-context review inbox card. */}
-            <ReviewInboxCard />
+            {/* Stream tabs and cards live below the draggable board.
+                Pinned to the bottom of the home so the user always
+                lands on what's new without having to scroll past it.*/}
 
             {/* Tab strip with a quiet scope toggle on the right.
                 The 'All boards' toggle only appears when the user has 2+ contexts. */}
@@ -534,3 +529,79 @@ function NextBestActionCard() {
     </motion.div>
   );
 }
+
+/**
+ * DraggableHomeBoard — wraps the three rearrangeable home sections
+ * (InSummaryTiles, WorkflowsHub, ReviewInboxCard) in drag-to-reorder
+ * cards. Order is persisted to localStorage per user (akki:section-order:home).
+ *
+ * Per user feedback (iter34): "The board needs to be moveable / draggable
+ * around the page." Sandbox drop and the stream tabs are intentionally
+ * pinned (anchor + recency) so the page still has a stable spine.
+ */
+function DraggableHomeBoard() {
+  // Memoise the section list so the hook doesn't see a new array on
+  // every render and reset the order on each refresh.
+  const sections = useMemo(() => ([
+    { key: "summary",   node: <InSummaryTiles />,    label: "In summary" },
+    { key: "workflows", node: <WorkflowsHub />,      label: "Workflows" },
+    { key: "inbox",     node: <ReviewInboxCard />,   label: "Inbox" },
+  ]), []);
+
+  const { items, getDragProps, getHandleProps, reset, draggingKey, overKey } =
+    useDraggableSections("home", sections);
+
+  // Hide the reset gesture unless the user has actually reordered
+  // anything — keeps the page quiet by default.
+  const hasReordered = useMemo(() => {
+    const baseline = ["summary", "workflows", "inbox"];
+    const current = items.map((s) => s.key);
+    return current.join("|") !== baseline.join("|");
+  }, [items]);
+
+  return (
+    <section data-testid="home-draggable-board" className="mb-1">
+      {hasReordered && (
+        <div className="flex justify-end mb-1.5">
+          <button
+            onClick={reset}
+            className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--muted)] hover:text-[var(--accent)] inline-flex items-center gap-1"
+            data-testid="home-board-reset"
+            title="Reset card order to the AKKI default"
+          >
+            <RotateCcw className="w-3 h-3" /> Reset layout
+          </button>
+        </div>
+      )}
+      <div className="space-y-0">
+        {items.map((it) => (
+          <div
+            key={it.key}
+            {...getDragProps(it.key)}
+            data-testid={`home-section-${it.key}`}
+            className={`relative group/section transition-all ${
+              draggingKey === it.key ? "opacity-40" : ""
+            } ${
+              overKey === it.key && draggingKey && draggingKey !== it.key
+                ? "ring-2 ring-[var(--accent)]/40 ring-offset-2 ring-offset-[var(--cream)] rounded-lg"
+                : ""
+            }`}
+          >
+            {/* Drag handle — appears on hover so it never adds visual
+                noise when the user is reading. */}
+            <div
+              {...getHandleProps(it.key)}
+              className="absolute left-[-26px] top-3 opacity-0 group-hover/section:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-[var(--muted)]/50 hover:text-[var(--accent)] p-1 rounded-sm"
+              data-testid={`home-section-handle-${it.key}`}
+              title={`Drag · ${it.label}`}
+            >
+              <GripVertical className="w-3.5 h-3.5" />
+            </div>
+            {it.node}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+

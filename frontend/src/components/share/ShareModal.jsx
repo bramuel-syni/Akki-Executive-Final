@@ -35,19 +35,29 @@ export default function ShareModal({
   const [deliveryMethod, setDeliveryMethod] = useState("akki_notification");
   const [sending, setSending] = useState(false);
 
-  const itemTitle = (itemType === "signal" ? item?.headline : item?.title) || "(untitled)";
+  const itemTitle = (
+    itemType === "signal" ? item?.headline :
+    itemType === "doc_summary" ? (item?.name || item?.original_filename) :
+    item?.title
+  ) || "(untitled)";
   const quote = (itemTitle || "").slice(0, 260);
+  const itemKicker = (
+    itemType === "signal" ? "Signal" :
+    itemType === "doc_summary" ? "Document summary" :
+    "Briefing"
+  );
 
   useEffect(() => {
     if (open) {
       setToEmail("");
       setSubject(itemTitle.slice(0, 120));
-      setMessage(
-        defaultMessage ??
-        `Sharing this ${itemType} — worth a look.`
-      );
+      const defaultByType =
+        itemType === "doc_summary"
+          ? `AKKI's read on ${itemTitle}. The TL;DR + the questions worth walking in with.`
+          : `Sharing this ${itemType} — worth a look.`;
+      setMessage(defaultMessage ?? defaultByType);
       setIncludeQuote(true);
-      setDeliveryMethod("akki_notification");
+      setDeliveryMethod(itemType === "doc_summary" ? "email" : "akki_notification");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, item?.id]);
@@ -126,8 +136,7 @@ export default function ShareModal({
                   <QuoteIcon className="w-3.5 h-3.5 text-[var(--accent)] mt-[3px] shrink-0" strokeWidth={1.8} />
                   <div className="min-w-0 flex-1">
                     <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--muted)] mb-1">
-                      {itemType === "signal" ? "Signal · " : "Briefing · "}
-                      from {item?.context_name || "this context"}
+                      {itemKicker} · from {item?.context_name || "this context"}
                     </p>
                     <p className="akki-serif text-[15px] leading-snug text-[var(--ink)]">{quote}</p>
                   </div>

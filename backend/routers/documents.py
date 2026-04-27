@@ -50,7 +50,14 @@ def sanitize_doc(d: Dict[str, Any]) -> Dict[str, Any]:
 
 
 class DocumentTrustUpdate(BaseModel):
-    data_trust: Literal["trusted", "mixed", "weak"]
+    data_trust: Optional[Literal["trusted", "mixed", "weak"]] = None
+    related_doc_id: Optional[str] = Field(
+        default=None,
+        description="Link this document as a successor of an existing doc — "
+                    "lets NEDs trace how a recurring report has evolved across "
+                    "cycles. Pass `null` to unlink. Pass an empty string for "
+                    "no change (use Optional[None] sentinel below).",
+    )
 
 
 class DocumentMetaGenerateIn(BaseModel):
@@ -350,16 +357,176 @@ async def update_document_trust(
     body: DocumentTrustUpdate,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
+    """Patch trust and/or evolution-chain link.
+
+    The endpoint name predates the evolution-link feature (added iter34); the
+    payload now carries either `data_trust`, `related_doc_id`, or both.
+    Passing `related_doc_id=null` unlinks the document from any predecessor.
+    """
+    update: Dict[str, Any] = {"updated_at": _iso(_now())}
+    if body.data_trust is not None:
+        update["data_trust"] = body.data_trust
+    if "related_doc_id" in body.model_fields_set:
+        new_link = body.related_doc_id
+        if new_link == doc_id:
+            raise HTTPException(status_code=400, detail="A document cannot be its own predecessor.")
+        if new_link:
+            # Verify the predecessor exists in the same context AND that
+            # linking won't introduce a cycle.
+            parent = await db.documents.find_one(
+                {"id": new_link, "context_id": context_id},
+                {"_id": 0, "id": 1, "related_doc_id": 1},
+            )
+            if not parent:
+                raise HTTPException(status_code=404, detail="Predecessor document not found in this company.")
+            cur = parent
+            for _ in range(20):
+                if cur.get("related_doc_id") == doc_id:
+                    raise HTTPException(status_code=400, detail="That link would create a cycle.")
+                if not cur.get("related_doc_id"):
+                    break
+                cur = await db.documents.find_one(
+                    {"id": cur["related_doc_id"], "context_id": context_id},
+                    {"_id": 0, "id": 1, "related_doc_id": 1},
+                ) or {}
+        update["related_doc_id"] = new_link
+    if len(update) == 1:  # only updated_at — nothing was sent
+        raise HTTPException(status_code=400, detail="Send data_trust and/or related_doc_id.")
     res = await db.documents.update_one(
         {"id": doc_id, "context_id": context_id},
-        {"$set": {"data_trust": body.data_trust, "updated_at": _iso(_now())}},
+        {"$set": update},
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Document not found")
-    await write_audit(context_id, ctx["account"]["id"], "document.trust_updated", "document", doc_id,
-                      {"data_trust": body.data_trust})
+    audit_changes = {k: v for k, v in update.items() if k != "updated_at"}
+    await write_audit(
+        context_id, ctx["account"]["id"], "document.updated", "document", doc_id,
+        audit_changes,
+    )
     d = await db.documents.find_one({"id": doc_id}, {"_id": 0, "storage_key": 0, "extracted_text": 0})
     return sanitize_doc(d)
+
+
+@router.post("/contexts/{context_id}/documents/{doc_id}/evolution-diff")
+async def document_evolution_diff(
+    context_id: str, doc_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+    refresh: bool = False,
+):
+    """LLM-powered "what changed" between this doc and its immediate
+    predecessor. Used by the NED Document Evolution panel to surface drift
+    in recurring reports across cycles.
+
+    Returns:
+        {
+          "previous_doc": {id, name, created_at} | null,
+          "diff": {
+            "what_changed": "<2-3 sentences: the headline of the drift>",
+            "added_or_strengthened": ["<bullet>", ...],
+            "weakened_or_removed":   ["<bullet>", ...],
+            "questions_for_management": ["<bullet>", "<bullet>"]
+          } | null
+        }
+
+    Cached on the doc record; pass ?refresh=true to regenerate.
+    """
+    d = await db.documents.find_one(
+        {"id": doc_id, "context_id": context_id}, {"_id": 0},
+    )
+    if not d:
+        raise HTTPException(status_code=404, detail="Document not found")
+    parent_id = d.get("related_doc_id")
+    if not parent_id:
+        return {"previous_doc": None, "diff": None}
+    parent = await db.documents.find_one(
+        {"id": parent_id, "context_id": context_id}, {"_id": 0},
+    )
+    if not parent:
+        return {"previous_doc": None, "diff": None}
+
+    cached = d.get("evolution_diff")
+    if cached and cached.get("previous_doc_id") == parent_id and not refresh:
+        return {
+            "previous_doc": {
+                "id": parent["id"], "name": parent.get("name"),
+                "created_at": parent.get("created_at"),
+            },
+            "diff": cached.get("diff"),
+        }
+
+    cur_text  = (d.get("extracted_text") or "").strip()[:8000]
+    prev_text = (parent.get("extracted_text") or "").strip()[:8000]
+    if not cur_text or not prev_text:
+        raise HTTPException(
+            status_code=400,
+            detail="Both documents must have extractable text for a comparison.",
+        )
+
+    prompt = (
+        "Compare two versions of a recurring executive report. Tell a NED, "
+        "in plain English, how the second version has evolved from the first. "
+        "Stay neutral. Surface drift, softening, and quiet omissions — these "
+        "are the parts NEDs actually want flagged. Return JSON ONLY:\n"
+        '{\n'
+        '  "what_changed": "<2-3 sentences — the headline of the drift>",\n'
+        '  "added_or_strengthened": [\n'
+        '    "<plain-language bullet — claim/figure/promise that is new or now stronger>",\n'
+        '    "<...3-5 bullets total>"\n'
+        '  ],\n'
+        '  "weakened_or_removed": [\n'
+        '    "<bullet — claim/figure that is gone or now hedged>",\n'
+        '    "<...3-5 bullets total>"\n'
+        '  ],\n'
+        '  "questions_for_management": [\n'
+        '    "<question NED should put on the table>",\n'
+        '    "<question 2>"\n'
+        '  ]\n'
+        '}\n\n'
+        f"=== PREVIOUS VERSION ({parent.get('name')}, {parent.get('created_at')}) ===\n"
+        f"{prev_text}\n\n"
+        f"=== CURRENT VERSION ({d.get('name')}, {d.get('created_at')}) ===\n"
+        f"{cur_text}"
+    )
+    out = await llm_call_llm(
+        module="document.evolution_diff",
+        user_query=prompt,
+        context_object=None,
+        session_context={"session_id": f"docevo-{doc_id}"},
+        data_trust={"overall": d.get("data_trust", "unrated")},
+        response_format="json",
+    )
+    parsed = parse_json_response(out.get("response", "")) or {}
+    diff = {
+        "what_changed": (parsed.get("what_changed") or "").strip(),
+        "added_or_strengthened": [
+            str(x).strip() for x in (parsed.get("added_or_strengthened") or [])
+            if str(x).strip()
+        ][:5],
+        "weakened_or_removed": [
+            str(x).strip() for x in (parsed.get("weakened_or_removed") or [])
+            if str(x).strip()
+        ][:5],
+        "questions_for_management": [
+            str(x).strip() for x in (parsed.get("questions_for_management") or [])
+            if str(x).strip()
+        ][:3],
+        "mode": out.get("mode"),
+        "generated_at": _iso(_now()),
+    }
+    await db.documents.update_one(
+        {"id": doc_id, "context_id": context_id},
+        {"$set": {
+            "evolution_diff": {"previous_doc_id": parent_id, "diff": diff},
+            "updated_at": _iso(_now()),
+        }},
+    )
+    return {
+        "previous_doc": {
+            "id": parent["id"], "name": parent.get("name"),
+            "created_at": parent.get("created_at"),
+        },
+        "diff": diff,
+    }
 
 
 @router.delete("/contexts/{context_id}/documents/{doc_id}")

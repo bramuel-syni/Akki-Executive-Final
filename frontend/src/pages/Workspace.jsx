@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import DocumentJournalStats from "@/components/documents/DocumentJournalStats";
 import DocumentSummaryPanel from "@/components/documents/DocumentSummaryPanel";
+import DocumentEvolutionPanel from "@/components/documents/DocumentEvolutionPanel";
 
 const TRUST_STYLE = {
   trusted: { label: "Trusted", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
@@ -307,13 +308,18 @@ function DocumentPane({ contextId, docId, onBack, onArchive, accountEmail, isAdm
   const [loading, setLoading] = useState(true);
   const bodyRef = useRef(null);
 
-  useEffect(() => {
-    setLoading(true); setDoc(null);
+  const loadDoc = useCallback(() => {
+    setLoading(true);
     api.get(`/contexts/${contextId}/documents/${docId}`)
       .then(({ data }) => setDoc(data))
       .catch((e) => toast.error(apiErrorMessage(e)))
       .finally(() => setLoading(false));
   }, [contextId, docId]);
+
+  useEffect(() => {
+    setDoc(null);
+    loadDoc();
+  }, [loadDoc]);
 
   const items = useMemo(() => parseOutline(doc?.extracted_text), [doc]);
   const headings = items.filter((x) => x.type === "h");
@@ -424,6 +430,11 @@ function DocumentPane({ contextId, docId, onBack, onArchive, accountEmail, isAdm
         <aside className="hidden md:block border-l border-[#E1E6ED] bg-[var(--cream)] overflow-y-auto" data-testid="doc-summary-rail">
           <div className="px-4 py-4 space-y-4">
             <DocumentSummaryPanel contextId={contextId} document={doc} />
+            <DocumentEvolutionPanel
+              contextId={contextId}
+              document={doc}
+              onLinkChange={loadDoc}
+            />
             {headings.length > 0 && (
               <div className="bg-white border border-[#E1E6ED] rounded-md p-3" data-testid="doc-outline-rail">
                 <div className="flex items-center gap-1.5 mb-2">

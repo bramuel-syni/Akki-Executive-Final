@@ -30,7 +30,7 @@ logger = logging.getLogger("akki.shares")
 router = APIRouter(prefix="/api")
 
 
-ItemType = Literal["signal", "briefing"]
+ItemType = Literal["signal", "briefing", "doc_summary"]
 DeliveryMethod = Literal["email", "akki_notification"]
 
 
@@ -56,6 +56,14 @@ async def _load_artefact(item_type: str, item_id: str, context_id: str) -> Optio
         return await db.signals.find_one({"id": item_id, "context_id": context_id}, {"_id": 0})
     if item_type == "briefing":
         return await db.briefings.find_one({"id": item_id, "context_id": context_id}, {"_id": 0})
+    if item_type == "doc_summary":
+        # The artefact is the document — but we only allow sharing once an
+        # AKKI summary has been generated. Otherwise there's nothing
+        # readable to send.
+        d = await db.documents.find_one({"id": item_id, "context_id": context_id}, {"_id": 0})
+        if d and d.get("akki_summary", {}).get("tldr"):
+            return d
+        return None
     return None
 
 
@@ -64,6 +72,9 @@ def _preview_from_item(item_type: str, item: Dict[str, Any]) -> str:
         return (item.get("headline") or "")[:240]
     if item_type == "briefing":
         return (item.get("title") or "")[:240]
+    if item_type == "doc_summary":
+        # Lead with the document name; the TL;DR goes into the email body.
+        return (item.get("name") or item.get("original_filename") or "Document summary")[:240]
     return ""
 
 
@@ -139,8 +150,50 @@ async def create_share(
         # Failures are logged but the share record still persists; the
         # sender can re-send from the outbox.
         try:
-            artefact_path = "briefings" if body.item_type == "briefing" else "highlights"
-            view_url = f"{__import__('os').environ.get('FRONTEND_ORIGIN', '').rstrip('/')}/app/{artefact_path}/{body.item_id}"
+            if body.item_type == "briefing":
+                artefact_path = "briefings"
+                view_url = f"{__import__('os').environ.get('FRONTEND_ORIGIN', '').rstrip('/')}/app/{artefact_path}/{body.item_id}"
+            elif body.item_type == "signal":
+                artefact_path = "highlights"
+                view_url = f"{__import__('os').environ.get('FRONTEND_ORIGIN', '').rstrip('/')}/app/{artefact_path}/{body.item_id}"
+            else:  # doc_summary
+                view_url = f"{__import__('os').environ.get('FRONTEND_ORIGIN', '').rstrip('/')}/app/workspace/{body.item_id}"
+
+            # For doc_summary shares, surface AKKI's summary in the email body
+            # so the recipient gets the read even before clicking through.
+            summary_block = ""
+            if body.item_type == "doc_summary":
+                s = (item.get("akki_summary") or {})
+                tldr = (s.get("tldr") or "").strip()
+                highlights = [str(h) for h in (s.get("highlights") or []) if str(h).strip()]
+                questions = [str(q) for q in (s.get("questions") or []) if str(q).strip()]
+                if tldr:
+                    summary_block += (
+                        f"<p style=\"font-size:14.5px;line-height:1.7;color:#1a1f2e;"
+                        f"font-style:italic;margin:0 0 18px 0;\">{tldr}</p>"
+                    )
+                if highlights:
+                    summary_block += (
+                        "<p style=\"font-size:11px;letter-spacing:0.18em;text-transform:uppercase;"
+                        "color:#7a6a52;margin:0 0 8px 0;\">What matters</p>"
+                        "<ol style=\"font-size:13.5px;line-height:1.6;color:#3a3a3a;margin:0 0 18px 0;padding-left:20px;\">"
+                        + "".join(f"<li style=\"margin-bottom:6px;\">{h}</li>" for h in highlights[:7])
+                        + "</ol>"
+                    )
+                if questions:
+                    summary_block += (
+                        "<div style=\"background:#f7eee0;border:1px solid #e5d5b8;padding:14px 16px;"
+                        "margin:0 0 18px 0;border-radius:3px;\">"
+                        "<p style=\"font-size:11px;letter-spacing:0.18em;text-transform:uppercase;"
+                        "color:#722f37;margin:0 0 6px 0;\">Walk in asking</p>"
+                        + "".join(
+                            f"<p style=\"font-size:13.5px;line-height:1.55;color:#1a1f2e;"
+                            f"font-style:italic;margin:0 0 4px 0;\">\"{q}\"</p>"
+                            for q in questions[:3]
+                        )
+                        + "</div>"
+                    )
+
             html = (
                 f"<div style=\"font-family:Georgia,serif;max-width:560px;margin:0 auto;padding:32px 24px;"
                 f"background:#f5efe6;color:#1a1f2e;\">"
@@ -148,7 +201,8 @@ async def create_share(
                 f"margin:0 0 16px 0;\">{share_doc['shared_by_name']} shared this with you via AKKI</p>"
                 f"<h1 style=\"font-size:22px;line-height:1.3;margin:0 0 14px 0;font-weight:normal;\">"
                 f"{subject}</h1>"
-                + (f"<blockquote style=\"font-style:italic;color:#3a3a3a;border-left:3px solid #722f37;padding-left:14px;margin:0 0 18px 0;\">{preview}</blockquote>" if body.include_as_quote and preview else "")
+                + (f"<blockquote style=\"font-style:italic;color:#3a3a3a;border-left:3px solid #722f37;padding-left:14px;margin:0 0 18px 0;\">{preview}</blockquote>" if body.include_as_quote and preview and body.item_type != "doc_summary" else "")
+                + summary_block
                 + (f"<p style=\"font-size:14px;line-height:1.7;color:#3a3a3a;margin:0 0 24px 0;\">{message}</p>" if message else "")
                 + (f"<a href=\"{view_url}\" style=\"display:inline-block;background:#722f37;color:#fff;padding:11px 22px;text-decoration:none;font-size:13px;letter-spacing:0.05em;\">Open in AKKI &rarr;</a>" if view_url else "")
                 + "<p style=\"font-size:11px;color:#7a6a52;margin:32px 0 0 0;\">Sent via AKKI · for executives</p>"

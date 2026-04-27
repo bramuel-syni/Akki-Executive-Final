@@ -13,12 +13,14 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
-import { Sparkles, Loader2, RotateCw, BookOpen, AlertCircle } from "lucide-react";
+import { Sparkles, Loader2, RotateCw, BookOpen, AlertCircle, Send } from "lucide-react";
+import ShareModal from "@/components/share/ShareModal";
 
 export default function DocumentSummaryPanel({ contextId, document: doc }) {
   const [summary, setSummary] = useState(doc?.akki_summary || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const generate = useCallback(async (refresh = false) => {
     if (!contextId || !doc?.id) return;
@@ -81,14 +83,24 @@ export default function DocumentSummaryPanel({ contextId, document: doc }) {
           <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Document summary
         </p>
         {summary && !loading && (
-          <button
-            onClick={() => generate(true)}
-            className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] hover:text-[var(--accent)] inline-flex items-center gap-1"
-            data-testid="doc-summary-refresh"
-            title="Ask AKKI to re-read this document"
-          >
-            <RotateCw className="w-3 h-3" /> Re-read
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShareOpen(true)}
+              className="text-[10.5px] uppercase tracking-wider text-[var(--accent)] hover:opacity-80 inline-flex items-center gap-1"
+              data-testid="doc-summary-share"
+              title="Email this summary to a colleague"
+            >
+              <Send className="w-3 h-3" /> Share
+            </button>
+            <button
+              onClick={() => generate(true)}
+              className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] hover:text-[var(--accent)] inline-flex items-center gap-1"
+              data-testid="doc-summary-refresh"
+              title="Ask AKKI to re-read this document"
+            >
+              <RotateCw className="w-3 h-3" /> Re-read
+            </button>
+          </div>
         )}
       </div>
 
@@ -157,6 +169,14 @@ export default function DocumentSummaryPanel({ contextId, document: doc }) {
           )}
         </div>
       )}
+
+      <ShareModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        contextId={contextId}
+        itemType="doc_summary"
+        item={doc}
+      />
     </div>
   );
 }
