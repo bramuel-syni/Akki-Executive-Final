@@ -1186,6 +1186,34 @@ Cycle + Workflows in NED mode** (the iter36 surgical fix).
 - **LinkedIn API posting scaffold** — manual copy/paste fallback exists.
 - target_date ISO sort.
 
+## Iter42 — Cycle drawer fix + Workflow spine + Home metrics + Act-on KPI (Apr 2026)
+100% backend + 100% frontend GREEN
+(`/app/test_reports/iteration_42.json`,
+`/app/backend/tests/test_iter42_signal_kpi.py`):
+- **Cycle drawer overlap bug fix** — TabsList swapped from
+  `overflow-x-auto` → `flex-wrap` so tabs reflow onto a second row at
+  tablet widths instead of sliding under the right portfolio rail.
+  PortfolioRail given a soft left-edge shadow as a visual separator.
+- **Workflow 4-step spine** — page heading rewritten as
+  "Receive · Consolidate · Generate · Submit." A new
+  `cycle-spine-strip` renders 4 stages above the tabs with the active
+  tab's stage highlighted (`tracker`→none, `reportees|bank|checklists`
+  →receive, `inbox`→consolidate, `reports`→generate).
+- **Home editorial metrics strip** — replaces the "too SaaS-tile"
+  pattern with a single horizontal row of serif numerals separated
+  visually by spacing (Signals · Briefings · Documents · Companies ·
+  Shared with you). Hidden on empty contexts.
+- **Act-on heatmap** (improvement, `/admin/signal-kpi`,
+  superadmin-only):
+  - `GET /api/admin/signals/action-heatmap` —
+    `{by_bucket: [{bucket, acted, shared, recommendations:
+    [{label, picks}]}], totals: {acted, shared, share_recipients},
+    recent_actions[≤25]}`. Custom (no-rec-idx) acts collapse to
+    "(custom — composer)" so the heatmap stays legible.
+  - Frontend: per-bucket cards with horizontal pick bars +
+    most-recent-25 timeline.
+
+
 ## Iter41 — Tier 2.5 batch (Apr 2026)
 100% backend + 100% frontend GREEN
 (`/app/test_reports/iteration_41.json`,
