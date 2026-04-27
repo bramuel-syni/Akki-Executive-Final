@@ -100,13 +100,24 @@ async def create_brief(
     )
     raw = llm_out.get("response") or "{}"
     import json as _json
+    # Best-effort JSON parse — strip common ```json fences Claude may add.
+    cleaned = raw.strip() if isinstance(raw, str) else raw
+    if isinstance(cleaned, str) and cleaned.startswith("```"):
+        cleaned = cleaned.split("```", 2)[1]
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:]
+        cleaned = cleaned.rsplit("```", 1)[0].strip()
     try:
-        parsed = _json.loads(raw) if isinstance(raw, str) else raw
+        parsed = _json.loads(cleaned) if isinstance(cleaned, str) else cleaned
     except (_json.JSONDecodeError, TypeError):
         parsed = {}
 
     title = (parsed.get("title") or body.objective[:80]).strip()
     md_body = (parsed.get("body") or "").strip()
+    # Fallback: if the model answered in prose despite the JSON instruction,
+    # treat the whole response as the brief body rather than 502'ing.
+    if not md_body and isinstance(raw, str) and len(raw.strip()) >= 40:
+        md_body = raw.strip()
     if not md_body:
         raise HTTPException(status_code=502, detail="AKKI couldn't draft this brief — try again.")
 

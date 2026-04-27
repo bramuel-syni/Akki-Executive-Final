@@ -66,9 +66,9 @@ export default function Manage() {
           className="mb-8"
         >
           <p className="akki-overline mb-2">Housekeeping</p>
-          <h1 className="akki-greeting mb-2">Keep your team and your companies tidy.</h1>
+          <h1 className="akki-greeting mb-2">Your team and your companies.</h1>
           <p className="akki-meta max-w-2xl">
-            Invite a colleague, spin up a new board, archive one you've stepped off. Low-ceremony, just what you need.
+            Invite a colleague. Add a board. Archive one you've stepped off. Quiet, no ceremony.
           </p>
         </motion.div>
 

@@ -206,7 +206,7 @@ function SecondaryTiles({ data, fn, isNED }) {
                 </li>
               ))}
             </ul>
-            <Link to="/app/highlights" className="akki-gesture text-[12.5px] mt-3 inline-flex items-center gap-1">
+            <Link to="/app/prepare" className="akki-gesture text-[12.5px] mt-3 inline-flex items-center gap-1">
               Open Signals <ArrowRight className="w-3 h-3" />
             </Link>
           </>

@@ -26,12 +26,14 @@
  * → save. No pre-population.
  */
 import React, { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import ValidatedBadge from "@/components/trust/ValidatedBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
@@ -42,9 +44,9 @@ import {
 
 const TABS = [
   { id: "brief",    label: "Brief",    icon: ScrollText,
-    blurb: "Quick orientation on a claim, proposal, topic, period or report." },
+    blurb: "A quick orientation on a claim, topic, period or report." },
   { id: "signals",  label: "Signals",  icon: Activity,
-    blurb: "What does the board need to notice? Generate, then act." },
+    blurb: "What the board needs to notice. Generated on demand." },
 ];
 
 export default function Prepare() {
@@ -110,13 +112,13 @@ export default function Prepare() {
 // Brief tab — Brief me on [kind] · objective → generate → save with title.
 // ---------------------------------------------------------------------------
 function BriefTab({ contextId }) {
-  const navigate = useNavigate();
   const [kinds, setKinds] = useState([]);
   const [kind, setKind] = useState("topic");
   const [objective, setObjective] = useState("");
   const [busy, setBusy] = useState(false);
   const [items, setItems] = useState([]);
   const [loadingItems, setLoadingItems] = useState(true);
+  const [openBrief, setOpenBrief] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -147,9 +149,17 @@ function BriefTab({ contextId }) {
       });
       toast.success("Brief saved.");
       setObjective("");
-      navigate(`/app/prepare/brief/${data.id}`);
+      setOpenBrief(data);
+      loadHistory();
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setBusy(false); }
+  };
+
+  const openItem = async (it) => {
+    try {
+      const { data } = await api.get(`/contexts/${contextId}/briefs/${it.id}`);
+      setOpenBrief(data);
+    } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
   const remove = async (id) => {
@@ -216,12 +226,14 @@ function BriefTab({ contextId }) {
       <SavedHistory
         items={items}
         loading={loadingItems}
-        emptyText="Nothing yet. Generate your first brief above — it'll appear here for next time."
+        emptyText="Nothing yet. Generate your first brief above — it will appear here for next time."
         labelTotal="briefs"
-        onOpen={(it) => navigate(`/app/prepare/brief/${it.id}`)}
+        onOpen={openItem}
         onRemove={remove}
         testId="prepare-brief-history"
       />
+
+      <BriefDetailModal brief={openBrief} onClose={() => setOpenBrief(null)} />
     </div>
   );
 }
@@ -240,7 +252,6 @@ const SIGNAL_FILTERS = [
 ];
 
 function SignalsTab({ contextId, contextName }) {
-  const navigate = useNavigate();
   const [filter, setFilter] = useState("general");
   const [objective, setObjective] = useState("");
   const [busy, setBusy] = useState(false);
@@ -269,10 +280,12 @@ function SignalsTab({ contextId, contextName }) {
       await api.post(`/contexts/${contextId}/signals/generate`, { focus });
       toast.success("Signals surfaced.");
       setObjective("");
-      navigate(`/app/highlights`);
+      loadHistory();
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setBusy(false); }
   };
+
+  const [openSignal, setOpenSignal] = useState(null);
 
   return (
     <div data-testid="prepare-signals-tab">
@@ -332,13 +345,16 @@ function SignalsTab({ contextId, contextName }) {
           title: s.headline || s.title,
           kind: s.type || s.tone,
           created_at: s.created_at,
+          _raw: s,
         }))}
         loading={loadingRecent}
-        emptyText="No signals yet. Tell AKKI what to look at and they'll appear here."
+        emptyText="No signals yet. Tell AKKI what to look at and they will appear here."
         labelTotal="signals"
-        onOpen={() => navigate(`/app/highlights`)}
+        onOpen={(it) => setOpenSignal(it._raw)}
         testId="prepare-signals-history"
       />
+
+      <SignalDetailModal signal={openSignal} onClose={() => setOpenSignal(null)} />
     </div>
   );
 }
@@ -391,5 +407,78 @@ function SavedHistory({ items, loading, emptyText, labelTotal, onOpen, onRemove,
         )}
       </div>
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// BriefDetailModal — read the saved brief in place. Markdown rendered as
+// pre-wrap text (calm, editorial) so we don't pull in another dependency.
+// ---------------------------------------------------------------------------
+function BriefDetailModal({ brief, onClose }) {
+  const open = Boolean(brief);
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose?.(); }}>
+      <DialogContent className="max-w-2xl bg-[var(--cream)]" data-testid="prepare-brief-detail">
+        <DialogHeader>
+          <p className="akki-overline mb-1">
+            Brief · {brief?.kind} · {brief?.created_at ? new Date(brief.created_at).toLocaleString() : ""}
+          </p>
+          <DialogTitle className="akki-serif text-[22px] leading-snug text-[var(--ink)]">
+            {brief?.title}
+          </DialogTitle>
+          <DialogDescription className="text-[12px] italic text-[var(--muted)]">
+            {brief?.objective}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="mt-2">
+          <ValidatedBadge size="compact" />
+        </div>
+        <div className="mt-3 max-h-[60vh] overflow-y-auto akki-serif text-[15px] leading-[1.7] text-[var(--ink)] whitespace-pre-wrap">
+          {brief?.body}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SignalDetailModal — quick read-in-place for a generated signal. We don't
+// re-implement Act / Share here; the signal lives in the existing collection
+// and any deep workflow continues from there.
+// ---------------------------------------------------------------------------
+function SignalDetailModal({ signal, onClose }) {
+  const open = Boolean(signal);
+  if (!signal) return null;
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose?.(); }}>
+      <DialogContent className="max-w-2xl bg-[var(--cream)]" data-testid="prepare-signal-detail">
+        <DialogHeader>
+          <p className="akki-overline mb-1">
+            Signal · {signal.type || signal.tone} · {signal.created_at ? new Date(signal.created_at).toLocaleDateString() : ""}
+          </p>
+          <DialogTitle className="akki-serif text-[20px] leading-snug text-[var(--ink)]">
+            {signal.headline || signal.title}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="mt-2">
+          <ValidatedBadge size="compact" />
+        </div>
+        {signal.summary && (
+          <p className="mt-3 akki-serif text-[15px] leading-[1.7] text-[var(--ink)]">
+            {signal.summary}
+          </p>
+        )}
+        {Array.isArray(signal.evidence) && signal.evidence.length > 0 && (
+          <div className="mt-4">
+            <p className="akki-overline mb-2">Evidence</p>
+            <ul className="text-[13px] text-[var(--ink)] space-y-1.5 list-disc pl-5">
+              {signal.evidence.slice(0, 5).map((e, i) => (
+                <li key={i}>{typeof e === "string" ? e : (e.text || e.quote || JSON.stringify(e))}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

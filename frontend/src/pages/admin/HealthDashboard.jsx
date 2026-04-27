@@ -61,7 +61,7 @@ export default function HealthDashboard() {
           <p className="akki-overline mb-2 flex items-center gap-1.5">
             <ShieldCheck className="w-3 h-3 text-[var(--accent)]" /> Platform health · superadmin
           </p>
-          <h1 className="akki-greeting mb-2">One-click green light.</h1>
+          <h1 className="akki-greeting mb-2">Pre-flight, in one read.</h1>
           <p className="akki-meta max-w-xl">
             Every external service AKKI depends on, pinged in parallel. Use this before a deploy
             or demo to catch credential drift before a customer does.

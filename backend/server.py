@@ -105,6 +105,7 @@ app.include_router(admin_health_router.router)
 app.include_router(admin_sandbox_kpi_router.router)
 app.include_router(signal_actions_router.router)
 app.include_router(admin_signal_kpi_router.router)
+app.include_router(prepare_router.router)
 
 
 # -----------------------------------------------------------------------------

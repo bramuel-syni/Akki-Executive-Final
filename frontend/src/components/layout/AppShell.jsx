@@ -31,8 +31,7 @@ import PortfolioRail from "@/components/layout/PortfolioRail";
 const NAV = [
   { to: "/app", label: "Home", icon: Home, end: true, ready: true },
   { to: "/app/workspace", label: "Document Journal", icon: BookOpenCheck, module: "M3", ready: true },
-  { to: "/app/highlights", label: "Signals", icon: Sparkles, module: "M5", ready: true },
-  { to: "/app/briefings", label: "Briefings", icon: ScrollText, module: "M12", ready: true },
+  { to: "/app/prepare", label: "Prepare", icon: Sparkles, module: "M5+M12", ready: true },
   { to: "/app/simulate", label: "Simulate", icon: Target, module: "M14", ready: true },
   { to: "/app/lens", label: "The Lens", icon: Eye, module: "M14", ready: true },
   { to: "/app/chat", label: "Chat", icon: MessageCircle, module: "§15", ready: true },

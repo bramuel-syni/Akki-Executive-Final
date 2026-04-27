@@ -29,8 +29,8 @@ function greeting(name) {
 }
 
 const HOME_TABS = [
-  { key: "signals",   label: "Top signals",    icon: Sparkles,   viewAllTo: "/app/highlights" },
-  { key: "briefings", label: "Top briefings",  icon: ScrollText, viewAllTo: "/app/briefings" },
+  { key: "signals",   label: "Top signals",    icon: Sparkles,   viewAllTo: "/app/prepare" },
+  { key: "briefings", label: "Top briefings",  icon: ScrollText, viewAllTo: "/app/prepare" },
   { key: "documents", label: "New documents",  icon: FileText,   viewAllTo: "/app/workspace" },
   { key: "shared",    label: "Shared with you", icon: Mail,      viewAllTo: null },
 ];
@@ -318,8 +318,8 @@ export default function AppHome() {
                                     { label: CONFIDENCE_LABEL[s.confidence] || "Medium confidence" },
                                     { label: (s.data_trust || "unrated") + " data" },
                                   ]}
-                                  to="/app/highlights"
-                                  gesture={{ label: "Open signal", to: "/app/highlights" }}
+                                  to="/app/prepare"
+                                  gesture={{ label: "Open signal", to: "/app/prepare" }}
                                   secondary={[
                                     { label: "Share →", onClick: () => setShareOn(s) },
                                   ]}
@@ -341,8 +341,8 @@ export default function AppHome() {
                               ? "Briefings bundle your signals into a printable page. Generate signals first."
                               : "No briefings yet — compose your first for the next meeting."}
                             cta={signals.length === 0
-                              ? { label: "Generate signals", to: "/app/highlights" }
-                              : { label: "Compose briefing", to: "/app/briefings" }}
+                              ? { label: "Generate signals", to: "/app/prepare" }
+                              : { label: "Compose briefing", to: "/app/prepare" }}
                           />
                         ) : (
                           <div className="space-y-3">
@@ -361,8 +361,8 @@ export default function AppHome() {
                                   { label: `v${b.version}` },
                                   { label: `${b.items?.length || 0} items` },
                                 ]}
-                                to="/app/briefings"
-                                gesture={{ label: "Open briefing", to: "/app/briefings" }}
+                                to="/app/prepare"
+                                gesture={{ label: "Open briefing", to: "/app/prepare" }}
                                 data-testid={`home-briefing-${b.id}`}
                               />
                             ))}
@@ -430,8 +430,8 @@ export default function AppHome() {
                                   { label: `From ${sh.context_name || "a context"}` },
                                   ...(sh.message ? [{ label: "with a note" }] : []),
                                 ]}
-                                to={sh.item_type === "briefing" ? "/app/briefings" : "/app/highlights"}
-                                gesture={{ label: "Look at this", to: sh.item_type === "briefing" ? "/app/briefings" : "/app/highlights" }}
+                                to={sh.item_type === "briefing" ? "/app/prepare" : "/app/prepare"}
+                                gesture={{ label: "Look at this", to: sh.item_type === "briefing" ? "/app/prepare" : "/app/prepare" }}
                                 data-testid={`shared-card-${sh.id}`}
                               />
                             ))}
@@ -535,7 +535,7 @@ function NextBestActionCard() {
           <FileText className="w-3.5 h-3.5" strokeWidth={1.8} /> Upload a pack
         </Link>
         <Link
-          to="/app/highlights"
+          to="/app/prepare"
           className="inline-flex items-center gap-2 px-4 py-2.5 border border-[var(--rule)] hover:border-[var(--accent)]/40 bg-white text-[13.5px] rounded-md text-[var(--deep)] hover:text-[var(--ink)] transition-colors"
           data-testid="home-nba-generate"
         >
@@ -575,7 +575,7 @@ function ContextChooser({ contexts, activeContext, hasMultipleContexts, signals,
       return {
         label: "Newest signal worth a look",
         text: top.headline || top.title,
-        href: "/app/highlights",
+        href: "/app/prepare",
       };
     }
     if (briefings.length > 0) {
@@ -583,7 +583,7 @@ function ContextChooser({ contexts, activeContext, hasMultipleContexts, signals,
       return {
         label: "Latest brief on your desk",
         text: top.title,
-        href: "/app/briefings",
+        href: "/app/prepare",
       };
     }
     if (documents.length > 0) {

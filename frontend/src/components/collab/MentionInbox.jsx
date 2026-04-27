@@ -38,10 +38,10 @@ export default function MentionInbox() {
     setMentions((prev) => prev.map((x) => (x.id === m.id ? { ...x, read: true } : x)));
     setOpen(false);
     // Route to the artefact that hosts the comment
-    if (m.artefact_type === "briefing") navigate("/app/briefings");
+    if (m.artefact_type === "briefing") navigate("/app/prepare");
     else if (m.artefact_type === "document") navigate(`/app/documents/${m.artefact_id}`);
     else if (m.artefact_type === "simulation") navigate("/app/simulate");
-    else if (m.artefact_type === "signal") navigate("/app/highlights");
+    else if (m.artefact_type === "signal") navigate("/app/prepare");
   };
 
   const markAllRead = async () => {

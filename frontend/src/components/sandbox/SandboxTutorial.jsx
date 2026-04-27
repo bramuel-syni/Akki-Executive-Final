@@ -98,7 +98,7 @@ export default function SandboxTutorial({ contextId, isSandbox: _isSandbox }) {
           <p className="text-[14px] text-[var(--deep)] leading-relaxed mb-5 max-w-[700px]">
             AKKI has already drafted{" "}
             <Link
-              to="/app/briefings"
+              to="/app/prepare"
               className="text-[var(--accent)] underline-offset-2 hover:underline"
               data-testid="sandbox-tutorial-brief-link"
             >

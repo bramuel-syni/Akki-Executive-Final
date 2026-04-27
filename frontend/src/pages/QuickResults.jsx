@@ -265,7 +265,7 @@ function ResultBlock({ kind, payload, contextId, navigate }) {
         ))}
         {sigs.length > 3 && (
           <button
-            onClick={() => navigate("/app/highlights")}
+            onClick={() => navigate("/app/prepare")}
             className="text-[11px] text-[var(--accent)] hover:underline"
           >
             See all {sigs.length} signals →
@@ -283,7 +283,7 @@ function ResultBlock({ kind, payload, contextId, navigate }) {
         </p>
         {b?.id && (
           <button
-            onClick={() => navigate("/app/briefings")}
+            onClick={() => navigate("/app/prepare")}
             className="text-[11px] text-[var(--accent)] hover:underline mt-2 inline-flex items-center gap-1"
             data-testid="quick-results-open-briefing"
           >

@@ -112,7 +112,7 @@ export default function InSummaryTiles() {
 
     return [
       {
-        key: "signals", to: "/app/highlights", icon: Sparkles,
+        key: "signals", to: "/app/prepare", icon: Sparkles,
         kicker: "Signals", count: data.signals.length,
         breakdown: [
           { label: "Risks",         n: sigByType.risk || 0,        tone: "text-red-700" },
@@ -122,7 +122,7 @@ export default function InSummaryTiles() {
         last: lastSig,
       },
       {
-        key: "briefings", to: "/app/briefings", icon: ScrollText,
+        key: "briefings", to: "/app/prepare", icon: ScrollText,
         kicker: "Briefings", count: data.briefings.length,
         breakdown: [
           { label: "Unread", n: briefUnread, tone: "text-[var(--accent)]" },

@@ -76,7 +76,7 @@ export default function ActModal({ open, onOpenChange, signal, contextId }) {
       );
       toast.success(`Briefing v${data.version} composed`);
       onOpenChange(false);
-      navigate("/app/briefings");
+      navigate("/app/prepare");
     } catch (e) {
       toast.error(apiErrorMessage(e));
     } finally { setSubmitting(false); }

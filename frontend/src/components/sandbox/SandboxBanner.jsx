@@ -48,7 +48,7 @@ export default function SandboxBanner() {
         ) : (
           <>Sandbox — you are exploring fictional data. </>
         )}
-        <span>Ready to use AKKI on your real data?</span>
+        <span>When you're ready, AKKI will read your real pack the same way.</span>
       </span>
       <Link
         to={`/signup?from_sandbox=${encodeURIComponent(activeContext?.id || "")}`}
