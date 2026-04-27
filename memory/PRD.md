@@ -983,7 +983,51 @@ frontend critical claims).
   on Lens redesign + Briefings explainer + regression. Archived-session
   GET tightened post-review (now 404s correctly).
 
-## Iter37 — Login URL alias fix (Apr 2026)
+## Iter37/38 — Login alias · Influence Digest cron · Admin Health Dashboard (Apr 2026)
+7/7 backend + 8/8 frontend GREEN
+(`/app/test_reports/iteration_37.json`,
+`/app/backend/tests/test_iter37_38.py`):
+
+### Login URL aliases
+- `/sign-in`, `/login`, `/log-in` → `/signin`
+- `/sign-up`, `/register` → `/signup`
+- Root cause was a routing gap, not auth logic. Fixed in `App.js`.
+
+### Weekly Influence Digest
+- New APScheduler job `influence_digest_weekly` — Monday 08:00 UTC,
+  beats the Tuesday Exco360 (10:00 UTC) into the inbox.
+- `POST /api/cron/weekly-digest` (X-Cron-Secret guarded) iterates
+  every active context, builds the 7-day Influence Map per context,
+  emails each executive member their own roll-up. Honours
+  `digest_opt_out` flag on context_members.
+- `POST /api/contexts/{cid}/influence-map/digest` — manual fire for
+  the calling user only. Used by the admin tile + tested directly.
+- Editorial email body: top-5 influencers + most-engaged docs +
+  totals strip + open-the-full-map CTA. Cream + oxblood + Georgia.
+
+### Admin Health Dashboard (`/admin/health`)
+- Superadmin-only one-click pre-deploy / pre-demo green light.
+- `GET /api/admin/health/full` runs 6 checks in parallel via
+  `asyncio.gather`:
+  - **mongo** — ping + insert/delete round-trip on
+    `db.health_check`
+  - **llm** — 1-token Emergent call, claude-haiku-4-5
+  - **resend** — API-key shape + sender-domain config check
+    (no email sent)
+  - **stripe** — read-only `/v1/balance` probe, distinguishes test
+    vs live key
+  - **scheduler** — `app.state.scheduler.running` + jobs registered
+    with next_run_time
+  - **cron_secret** — env presence + length sanity
+- Each check returns `{status: pass|warn|fail|skip, evidence|error|
+  note, latency_ms?}`; overall is the worst.
+- Frontend: auto-runs on mount, manual refresh, 4-status colour grid.
+  Live grid currently surfaces two real pre-launch items the user
+  should swap before going live: **Stripe (FAIL — placeholder key
+  `sk_test_emergent` rejected by Stripe)** and **Resend (WARN —
+  sandbox sender; verify a domain)**. Both are env-only swaps.
+
+
 
 ### Login was broken for users hitting `/sign-in` (with hyphen)
 The app's internal links use `/signin`, but external bookmarks, search
