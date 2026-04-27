@@ -40,6 +40,11 @@ router = APIRouter(prefix="/api")
 
 Department = Literal["ceo", "cfo", "coo", "commercial", "board"]
 Status = Literal["on_track", "at_risk", "off_track", "achieved", "abandoned"]
+# Iter40 — strategic goal categorisation (top-row marker on the card).
+# Six executive-language categories that map to the typical goal
+# vocabulary on a board pack. Defaults to "operations" when AKKI can't
+# infer the right one from the source document.
+Category = Literal["revenue", "customer", "product", "people", "operations", "compliance"]
 
 
 def sanitize(g: Dict[str, Any]) -> Dict[str, Any]:
@@ -53,6 +58,8 @@ class GoalIn(BaseModel):
     title: str = Field(..., min_length=2, max_length=180)
     description: Optional[str] = Field(default=None, max_length=600)
     department: Department = "ceo"
+    category: Category = "operations"
+    initiatives_count: conint(ge=0, le=99) = 0
     owner_name: Optional[str] = Field(default=None, max_length=120)
     target_metric: Optional[str] = Field(default=None, max_length=160)
     target_value: Optional[str] = Field(default=None, max_length=120)
@@ -67,6 +74,8 @@ class GoalPatch(BaseModel):
     title: Optional[str] = Field(default=None, min_length=2, max_length=180)
     description: Optional[str] = Field(default=None, max_length=600)
     department: Optional[Department] = None
+    category: Optional[Category] = None
+    initiatives_count: Optional[conint(ge=0, le=99)] = None
     owner_name: Optional[str] = Field(default=None, max_length=120)
     target_metric: Optional[str] = Field(default=None, max_length=160)
     target_value: Optional[str] = Field(default=None, max_length=120)
@@ -204,12 +213,16 @@ async def extract_from_document(
         "You are reading a company's strategic plan or board pack. Extract the "
         "board-level strategic goals being tracked. Each goal must be measurable "
         "and tied to a date or deadline. Tag each to ONE department: ceo, cfo, "
-        "coo, commercial, or board.\n\n"
+        "coo, commercial, or board. Tag each to ONE category: revenue, customer, "
+        "product, people, operations, or compliance. Estimate the number of "
+        "ACTIVE INITIATIVES rolling up to the goal (0 if the doc doesn't say).\n\n"
         "Return STRICT JSON ONLY:\n"
         "{\"goals\": [{"
         "\"title\": \"<<concise <=120 char goal title>>\", "
         "\"description\": \"<<<=300 char detail>>\", "
         "\"department\": \"<<ceo|cfo|coo|commercial|board>>\", "
+        "\"category\": \"<<revenue|customer|product|people|operations|compliance>>\", "
+        "\"initiatives_count\": <<0-99 integer count of active initiatives>>, "
         "\"target_metric\": \"<<what's measured, e.g. Annual recurring revenue>>\", "
         "\"target_value\": \"<<the target, e.g. $50M | 99.5% uptime | Dec 2026>>\", "
         "\"target_date\": \"<<deadline as YYYY-MM or 'Q4 2026'>>\", "
@@ -221,7 +234,8 @@ async def extract_from_document(
         "}, ...]}\n\n"
         "Rules: 5–12 goals max. Skip operational metrics. Only items the BOARD "
         "would track. Do NOT invent specific numeric targets — leave blank if the "
-        "doc doesn't say. Use 'on_track' as default status when uncertain.\n\n"
+        "doc doesn't say. Use 'on_track' as default status when uncertain. "
+        "Use 'operations' as default category when uncertain.\n\n"
         f"Document title: {doc.get('name')}\n\nText:\n{sample}"
     )
 
@@ -242,6 +256,7 @@ async def extract_from_document(
         await db.strategic_goals.delete_many({"context_id": context_id})
 
     valid_departments = {"ceo", "cfo", "coo", "commercial", "board"}
+    valid_categories = {"revenue", "customer", "product", "people", "operations", "compliance"}
     valid_status = {"on_track", "at_risk", "off_track", "achieved", "abandoned"}
     inserted: List[Dict[str, Any]] = []
     now_iso = _iso(_now())
@@ -251,16 +266,28 @@ async def extract_from_document(
         dept = (raw.get("department") or "ceo").lower()
         if dept not in valid_departments:
             dept = "ceo"
+        cat = (raw.get("category") or "operations").lower()
+        if cat not in valid_categories:
+            cat = "operations"
         status = (raw.get("status") or "on_track").lower()
         if status not in valid_status:
             status = "on_track"
         score_seed = _safe_int(raw.get("current_score"))
+        # Initiatives — clamp 0..99 to match schema. _safe_int caps at 100
+        # which is fine; we floor at 0 for safety.
+        try:
+            ic = int(raw.get("initiatives_count") or 0)
+        except (TypeError, ValueError):
+            ic = 0
+        ic = max(0, min(99, ic))
         goal = {
             "id": str(uuid.uuid4()),
             "context_id": context_id,
             "title": str(raw.get("title"))[:180],
             "description": (str(raw.get("description") or "")[:600]) or None,
             "department": dept,
+            "category": cat,
+            "initiatives_count": ic,
             "owner_name": (str(raw.get("owner_name") or "")[:120]) or None,
             "target_metric": (str(raw.get("target_metric") or "")[:160]) or None,
             "target_value": (str(raw.get("target_value") or "")[:120]) or None,

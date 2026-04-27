@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Target, Sparkles, FileText, ChevronRight, ChevronDown, Loader2, X,
-  TrendingUp, AlertTriangle, CheckCircle2, Plus, Info,
+  TrendingUp, AlertTriangle, CheckCircle2, Plus, Info, Layers,
 } from "lucide-react";
 
 /**
@@ -114,17 +114,20 @@ export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange }) 
               : `${visible.length} goal${visible.length === 1 ? "" : "s"} on your function's plate.`}
           </h2>
         </div>
-        {!isNED && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setExtractOpen(true)}
-            className="border-[var(--rule)] text-[12px] h-8"
-            data-testid="strategic-goals-add"
-          >
-            <Sparkles className="w-3 h-3 mr-1.5" /> Read from a strategy doc
-          </Button>
-        )}
+        <div className="flex items-center gap-3">
+          <ScoreMethodologyTip />
+          {!isNED && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setExtractOpen(true)}
+              className="border-[var(--rule)] text-[12px] h-8"
+              data-testid="strategic-goals-add"
+            >
+              <Sparkles className="w-3 h-3 mr-1.5" /> Read from a strategy doc
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-5" data-testid="strategic-goals-groups">
@@ -163,10 +166,48 @@ export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange }) 
   );
 }
 
+// ---------------------------------------------------------------------------
+// Iter40 — Strategic Goal card overhaul.
+//
+// Per user feedback: replace the dual conic dials with progress bars on a
+// single horizontal row, add a category marker (Revenue, Customer, etc.),
+// surface initiatives count, and write a one-line narrative beneath each
+// score so a 78 actually MEANS something. Reduce whitespace — everything
+// reads as one tight editorial line, then a slim secondary row.
+// ---------------------------------------------------------------------------
+
+const CATEGORY_STYLE = {
+  revenue:    { label: "Revenue",    bar: "bg-emerald-600", chip: "bg-emerald-50 text-emerald-800 border-emerald-200" },
+  customer:   { label: "Customer",   bar: "bg-blue-600",    chip: "bg-blue-50 text-blue-800 border-blue-200" },
+  product:    { label: "Product",    bar: "bg-violet-600",  chip: "bg-violet-50 text-violet-800 border-violet-200" },
+  people:     { label: "People",     bar: "bg-amber-600",   chip: "bg-amber-50 text-amber-800 border-amber-200" },
+  operations: { label: "Operations", bar: "bg-slate-700",   chip: "bg-slate-100 text-slate-800 border-slate-200" },
+  compliance: { label: "Compliance", bar: "bg-red-700",     chip: "bg-red-50 text-red-800 border-red-200" },
+};
+
+function performanceNarrative(value) {
+  if (value === null || value === undefined) return "Not yet scored.";
+  if (value >= 90) return "Ahead of plan — convert this into a board talking-point.";
+  if (value >= 80) return "On track. Keep the cadence.";
+  if (value >= 65) return "At risk. Drift is real but recoverable.";
+  if (value >= 40) return "Off track. Needs an intervention this cycle.";
+  return "Materially behind plan. Escalate to the chair.";
+}
+
+function probabilityNarrative(value) {
+  if (value === null || value === undefined) return "Confidence not yet calibrated.";
+  if (value >= 80) return "High confidence in hitting the target.";
+  if (value >= 60) return "Plausible — assumes the current trajectory holds.";
+  if (value >= 40) return "Coin-flip. The next reporting period decides.";
+  return "Unlikely without a different plan.";
+}
+
 function GoalRow({ goal, isLast, isNED, isEditing, onEdit, onCancel, onSaved, contextId }) {
   const status = STATUS_STYLE[goal.status] || STATUS_STYLE.on_track;
   const score = typeof goal.current_score === "number" ? goal.current_score : null;
   const prob = typeof goal.probability === "number" ? goal.probability : null;
+  const cat = CATEGORY_STYLE[goal.category] || CATEGORY_STYLE.operations;
+  const initiatives = typeof goal.initiatives_count === "number" ? goal.initiatives_count : 0;
 
   if (isEditing) {
     return <EditGoalRow goal={goal} contextId={contextId} onCancel={onCancel} onSaved={onSaved} isLast={isLast} />;
@@ -174,24 +215,58 @@ function GoalRow({ goal, isLast, isNED, isEditing, onEdit, onCancel, onSaved, co
 
   return (
     <div
-      className={`px-5 py-4 ${!isLast ? "border-b border-[var(--rule)]" : ""} hover:bg-[var(--cream-deep)]/30`}
+      className={`px-5 py-3.5 ${!isLast ? "border-b border-[var(--rule)]" : ""} hover:bg-[var(--cream-deep)]/30`}
       data-testid={`strategic-goal-${goal.id}`}
     >
-      <div className="flex items-start gap-4">
+      {/* TOP ROW — single line. Title + category chip + status + the two
+          progress bars sit on the same horizontal axis with consistent gaps,
+          so the eye runs left → right without re-anchoring. */}
+      <div className="flex items-center gap-4">
+        {/* TITLE BLOCK — flexes to consume the row's left half. */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-1">
-            <h3 className="text-[14.5px] text-[var(--ink)] font-medium">{goal.title}</h3>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className={`inline-block px-1.5 py-0.5 rounded-sm text-[9.5px] uppercase tracking-wider border ${cat.chip}`}
+              data-testid={`goal-category-${goal.id}`}
+            >
+              {cat.label}
+            </span>
+            <h3 className="text-[14.5px] text-[var(--ink)] font-medium truncate">{goal.title}</h3>
             <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10px] uppercase tracking-wider border ${status.tone}`}>
-              {goal.status === "on_track" ? <CheckCircle2 className="w-2.5 h-2.5" /> :
-               goal.status === "achieved" ? <CheckCircle2 className="w-2.5 h-2.5" /> :
+              {goal.status === "on_track" || goal.status === "achieved" ? <CheckCircle2 className="w-2.5 h-2.5" /> :
                goal.status === "at_risk" || goal.status === "off_track" ? <AlertTriangle className="w-2.5 h-2.5" /> : null}
               {status.label}
             </span>
           </div>
-          {goal.description && (
-            <p className="text-[12.5px] text-[var(--muted)] italic mb-2 leading-relaxed">{goal.description}</p>
-          )}
-          <div className="flex items-center gap-4 text-[11.5px] text-[var(--deep)] flex-wrap">
+        </div>
+
+        {/* PROGRESS BARS — equal width, even spacing, one line. */}
+        <div className="flex items-center gap-6 shrink-0" data-testid={`goal-score-block-${goal.id}`}>
+          <ScoreBar
+            label="Performance"
+            value={score}
+            barClass={cat.bar}
+            testId={`goal-perf-bar-${goal.id}`}
+          />
+          <ScoreBar
+            label="Probability"
+            value={prob}
+            barClass="bg-[var(--ink)]"
+            testId={`goal-prob-bar-${goal.id}`}
+          />
+        </div>
+      </div>
+
+      {/* SECONDARY ROW — initiatives + key facts + score narratives, all
+          on one tight line. Uses the same equal-spacing rhythm as the top
+          row so the card reads as a single editorial unit. */}
+      <div className="flex items-center gap-4 mt-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-x-4 gap-y-1 text-[11.5px] text-[var(--deep)] flex-wrap">
+            <span className="inline-flex items-center gap-1" data-testid={`goal-initiatives-${goal.id}`}>
+              <Layers className="w-3 h-3 text-[var(--muted)]" />
+              <strong>{initiatives}</strong> {initiatives === 1 ? "initiative" : "initiatives"}
+            </span>
             {goal.target_metric && goal.target_value && (
               <span><span className="text-[var(--muted)]">Target:</span> <strong>{goal.target_value}</strong> {goal.target_metric}</span>
             )}
@@ -206,59 +281,48 @@ function GoalRow({ goal, isLast, isNED, isEditing, onEdit, onCancel, onSaved, co
           </div>
         </div>
 
-        {/* Performance Score + Success Probability — aligned on the same
-            horizontal line per user spec. (April 2026: removed the trend
-            sparkline beneath the dials — its purpose was unclear at this
-            density and it broke the editorial cleanliness of the row.
-            Replaced with a single discreet "How is this calculated?"
-            affordance so a sceptical user can audit the methodology.) */}
-        <div className="flex flex-col items-end shrink-0" data-testid={`goal-score-block-${goal.id}`}>
-          <div className="flex items-center gap-4">
-            <ScoreDial label="Performance Score" value={score} />
-            <ScoreDial label="Success Probability" value={prob} />
-          </div>
-          <ScoreMethodologyTip />
+        {/* Narrative pair — italic Georgia, lines up under each bar. */}
+        <div className="flex items-center gap-6 shrink-0">
+          <p className="akki-serif italic text-[11px] text-[var(--muted)] w-[150px] truncate text-left" title={performanceNarrative(score)}>
+            {performanceNarrative(score)}
+          </p>
+          <p className="akki-serif italic text-[11px] text-[var(--muted)] w-[150px] truncate text-left" title={probabilityNarrative(prob)}>
+            {probabilityNarrative(prob)}
+          </p>
         </div>
       </div>
+
+      {goal.description && (
+        <p className="text-[12px] text-[var(--muted)] italic mt-2 leading-relaxed line-clamp-2">{goal.description}</p>
+      )}
     </div>
   );
 }
 
-function ScoreDial({ label, value }) {
-  if (value === null || value === undefined) {
-    return (
-      <div className="text-center w-16" data-testid="score-dial-empty">
-        <div className="w-10 h-10 rounded-full border-2 border-dashed border-[var(--rule)] flex items-center justify-center mx-auto">
-          <span className="text-[12px] text-[var(--muted)]">—</span>
-        </div>
-        <p className="text-[9.5px] uppercase tracking-wider text-[var(--muted)] mt-1">{label}</p>
-      </div>
-    );
-  }
-  // Banded thresholds per user spec:
-  //   < 65   → red (off-track)
-  //   65-80  → amber (at-risk)
-  //   > 80   → green (on-track)
-  const { ring, text, bg } = value > 80
-    ? { ring: "#047857", text: "text-emerald-700", bg: "bg-emerald-50" }
-    : value >= 65
-      ? { ring: "#b45309", text: "text-amber-700",  bg: "bg-amber-50" }
-      : { ring: "#b91c1c", text: "text-red-700",    bg: "bg-red-50" };
-  // Conic gradient gives a clean ring without an extra <svg>.
+/**
+ * ScoreBar — slim horizontal progress bar replacing the conic-gradient dial.
+ * Editorial: thin track, sharp fill, value rendered to the right of the
+ * label, no gradients. Empty state shown as a muted dashed track.
+ */
+function ScoreBar({ label, value, barClass, testId }) {
+  const empty = value === null || value === undefined;
+  const pct = empty ? 0 : Math.max(0, Math.min(100, value));
   return (
-    <div className="text-center w-16" data-testid={`score-dial-${value > 80 ? "green" : value >= 65 ? "amber" : "red"}`}>
-      <div
-        className={`w-10 h-10 rounded-full mx-auto flex items-center justify-center ${bg}`}
-        style={{
-          background: `conic-gradient(${ring} ${value * 3.6}deg, rgba(0,0,0,0.06) 0)`,
-        }}
-        title={`${value}% — ${value > 80 ? "on track" : value >= 65 ? "at risk" : "off track"}`}
-      >
-        <div className="w-[30px] h-[30px] rounded-full bg-white flex items-center justify-center">
-          <span className={`akki-serif text-[12px] leading-none ${text}`}>{value}</span>
-        </div>
+    <div className="w-[150px]" data-testid={testId}>
+      <div className="flex items-baseline justify-between mb-1">
+        <span className="text-[9.5px] uppercase tracking-wider text-[var(--muted)]">{label}</span>
+        <span className={`akki-serif text-[14px] leading-none ${empty ? "text-[var(--muted)]" : "text-[var(--ink)]"}`}>
+          {empty ? "—" : pct}
+        </span>
       </div>
-      <p className="text-[9.5px] uppercase tracking-wider text-[var(--muted)] mt-1">{label}</p>
+      <div className={`h-1.5 rounded-sm w-full ${empty ? "border border-dashed border-[var(--rule)]" : "bg-[var(--cream-deep)]"} overflow-hidden`}>
+        {!empty && (
+          <div
+            className={`h-full ${barClass}`}
+            style={{ width: `${pct}%` }}
+          />
+        )}
+      </div>
     </div>
   );
 }
