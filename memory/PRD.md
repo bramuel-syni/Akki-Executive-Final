@@ -1815,3 +1815,64 @@ Addendum also asked for a calmer, less-marketing post-login register.
   `/app/frontend/src/pages/Briefings.jsx` are no longer routed but the
   files remain (kept in case the user wants to roll back). Remove after a
   stability window.
+
+### 2026-04-28 — iter51/52 · Tier-C: Postmark inbound + Minutes extractor + Personal-Enterprise split
+**Postmark inbound email**
+- New router `/app/backend/routers/inbound_email.py`. Endpoints:
+  - `GET /api/inbound/address[?context_id=…]` — auth-required. Mints / returns
+    the user's `inbound+<account_token>@inbound.akki.ai` address (and a
+    `inbound+<account>.<ctx>@…` context-scoped variant). Tokens are 8-char
+    URL-safe slugs persisted on `accounts.inbound_token` /
+    `contexts.inbound_token`.
+  - `POST /api/inbound/postmark?secret=<TOKEN>` — Postmark webhook receiver.
+    Verifies shared secret (env: `POSTMARK_WEBHOOK_SECRET`, falls back to
+    `POSTMARK_SERVER_TOKEN`), parses `From / Subject / TextBody / Attachments`,
+    routes by `MailboxHash`, picks the most useful attachment (PDF > DOCX >
+    TXT > first), runs through the existing `extract_text` pipeline, writes a
+    fully-fledged `documents` row tagged `source: 'inbound_email'`. Idempotent
+    on `(context_id, inbound_message_id)`. Auto-tags `doc_type='minutes'` if
+    subject contains "minutes" or any attachment filename does.
+- Settings → Integrations now wired (was M6-locked) and renders
+  `InboundEmailPanel` showing the personal + ctx-scoped forwarding addresses
+  with copy-to-clipboard buttons.
+- `POSTMARK_SERVER_TOKEN` added to `/app/backend/.env`.
+
+**Minutes extractor end-to-end**
+- Fixed `prepare.py:extract_minutes` — `call_llm` was being called with
+  wrong kwargs (`system_message`/`user_message`); switched to the actual
+  signature (`module / user_query / system_override / response_format`).
+- Prepare → Minutes UI (`Prepare.jsx`) now renders an "Extract" button per
+  row when `minutes_meta` is missing, and a "Show extract" toggle when it
+  exists. The expanded detail surfaces attendees / decisions / actions /
+  open questions inline.
+
+**Personal vs Enterprise (light-split, option 1a)**
+- New backend router `/app/backend/routers/enterprise.py`:
+  - `POST /api/enterprise/interest` (auth) — captures `{use_case, company_size, timing}`.
+  - `GET /api/enterprise/interest/me` — returns latest submission.
+- New frontend page `/app/enterprise` (`Enterprise.jsx`) — calm, editorial
+  lead-gen surface. Form flips to a thank-you state once submitted.
+- AppShell: a small "Akki for Enterprise" pill renders in the left rail
+  (above Settings) **only** when the active context type is `ned_personal`
+  or `executive_personal`. Click → `/app/enterprise`. No structural code
+  split; same login, same shell.
+
+**Header trust badge**
+- Centred and reordered to "INTERNAL · SECURE · CONFIDENTIAL" in `AppShell.jsx`.
+  "Internal" remains oxblood (`var(--accent)`); "Secure" + "Confidential"
+  use the muted text colour. Centred via `absolute left-1/2 -translate-x-1/2`.
+
+### Tests
+- iteration_51 — backend: 16/16 new + 6/6 iter50 regression GREEN.
+- iteration_52 — frontend: 5/5 surfaces (trust badge, Settings →
+  Integrations, /app/enterprise, Minutes Extract toggle, upsell pill).
+- Reports: `/app/test_reports/iteration_51.json`, `/iteration_52.json`.
+
+### Open / deferred
+- Optional polish on Enterprise: surface an "Update my note" affordance once
+  a lead has been submitted (today the form short-circuits to thanks state).
+- Optional ops-visibility: an `inbound_rejected` audit row when the webhook
+  soft-fails (bad attachment, virus scan).
+- Defence-in-depth: unique sparse index on `accounts.inbound_token` /
+  `contexts.inbound_token` (currently uses _mint_token() collision-free in
+  practice but lacks a DB-level guarantee).
