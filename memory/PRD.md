@@ -1987,3 +1987,66 @@ Read-only; returns today's deep-tier usage so the UI can render an accurate
   rather than scanning all rows.
 - Inbound rejections without a MessageID share the literal `(no-id)` as
   audit resource_id — could collide; consider a uuid fallback.
+
+### 2026-04-28 — iter55 · Decks pipeline + behaviour monitoring + admin index
+**Decks generator (`/app/decks` + 4 backend endpoints)**
+Three-step flow that prevents budget waste on weak prompts:
+1. **Outline (STANDARD tier — free of deep budget)**
+   - `POST /api/contexts/{cid}/decks/outline` body `{intent, audience?, target_slides?}`.
+   - Sonnet plans the deck against actual context (40 most-recent docs, 30 signals, 20 briefs); returns `research_question`, `evidence_used[]`, `missing_context[]`,
+     `context_sufficiency`, proposed `slides[]`. User reviews & may iterate
+     (`parent_outline_id`) before any deep call fires.
+2. **Generate (DEEP tier — 1 of 3 daily slots)**
+   - `POST /api/contexts/{cid}/decks/{outline_id}/generate` body `{outline_id, confirmed:true, edits?}`.
+   - 400 if `confirmed:false`; 409 if outline already consumed (forces iteration).
+   - On budget exhaustion → graceful fallback to Sonnet with `quota.downgraded:true` and a UI banner.
+3. **Quality check (FAST tier — free)**
+   - `POST /api/contexts/{cid}/decks/{deck_id}/quality_check`.
+   - Gemini Flash scores 0-100 across coherence / evidence / audience-fit and
+     returns `free_refinements[]` (edits the user can make WITHOUT regenerating).
+   - Recommends regen only when `score<55` AND issues can't be edited away.
+4. **Feedback (free)** — `POST .../feedback` `{rating:'up'|'down', will_regenerate?}`.
+
+**Behaviour monitoring**
+- `deck_telemetry` collection captures outline iterations, sufficiency,
+  quality_score, user_rating, will_regenerate.
+- `GET /api/admin/llm/decks/quality?days=N` rolls up:
+  decks_generated · outlines_drafted · outline_to_deck_ratio · avg_outline_iterations ·
+  avg_quality_score · thumbs_up/down · satisfaction_pct ·
+  user_will_regenerate_count · quality_recommends_regen_count ·
+  insufficient_context_count · partial_context_count.
+- Surfaced in `/admin/llm-spend` as the new "Deck quality · behaviour" panel
+  (Avg quality / Outline → deck / Satisfaction / Insufficient ctx).
+
+**Admin control room (`/admin`)**
+- New landing page tying all five admin surfaces together with at-a-glance
+  pills (Health: green / LLM spend: $32.64 7d / Deck quality: q94 · 4 decks / Sandbox: 0/0 / Signals: 0 acts).
+
+**Backlog cleared**
+- LLMSpend by-surface bars now use **max-in-window** (top fills track,
+  others scaled to it) — fixes the always-100% top bar from iter54.
+- Inbound rejection audit row now uses `no-id-<uuid8>` fallback when
+  Postmark MessageID is missing.
+- Enterprise "Update my note →" verified.
+- Minutes-narrative regenerate confirm verified.
+
+### Tests
+- iteration_55: backend 11/11 functional pass + frontend testids verified +
+  3 screenshots captured. End-to-end flow verified live: outline → confirmed
+  generate → Opus 4.6 deck → quality 93/100 → feedback persisted.
+- Screenshots: `/app/test_reports/screenshots_iter55/{decks_step1, admin_index, admin_llm_spend}.jpeg`.
+
+### Open / deferred
+- Decks step 2/3 e2e screenshots blocked by ingress 502 on long Opus calls
+  during the testing pass (curl flow OK). Capture after 00:00 UTC reset
+  with a fresh user.
+- Optional: persist `outline.edits` so re-generation regenerates against the
+  edited outline (today the edits ride on the generate call but aren't
+  versioned).
+- Optional: per-account daily deck-quality average alert threshold.
+
+### Backlog tracker (P-bands)
+P0: none.
+P1: Postmark inbound stream URL one-time wire-up in Postmark dashboard (user task).
+P2: Decks UI E2E retest after midnight; max-of-window label phrasing on
+    LLMSpend; opt-in "auto-regenerate when quality<55".

@@ -519,6 +519,16 @@ function DeckStep({ deck, contextId, onUpdated, onNew }) {
 
   return (
     <section className="space-y-6" data-testid="decks-deck-card">
+      {deck.quota?.downgraded && (
+        <div
+          className="bg-amber-50 border border-amber-200 rounded-sm px-4 py-3 text-[12.5px] text-amber-700"
+          data-testid="decks-downgraded-banner"
+        >
+          <AlertTriangle className="w-3.5 h-3.5 inline mr-1.5" />
+          Daily deep capacity was full when this deck generated — used the standard
+          tier instead. Tomorrow's slots reset at 00:00 UTC.
+        </div>
+      )}
       <div className="bg-white border border-[var(--rule)] rounded-sm p-6">
         <p className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--muted)] mb-1">
           {deck.tier === "deep" ? "Deep tier · " : "Standard tier · "}
