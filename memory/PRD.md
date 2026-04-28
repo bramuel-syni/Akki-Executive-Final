@@ -2050,3 +2050,62 @@ P0: none.
 P1: Postmark inbound stream URL one-time wire-up in Postmark dashboard (user task).
 P2: Decks UI E2E retest after midnight; max-of-window label phrasing on
     LLMSpend; opt-in "auto-regenerate when quality<55".
+
+### 2026-04-28 — iter56 · Final backlog clear · regen-reason learning loop + admin alerts
+**Regen-reason learning loop**
+- `FeedbackIn.regen_reason` enum added: `audience_drift | weak_research_question |
+  missing_evidence | wrong_tone | other`. Persisted on `decks.user_feedback.regen_reason`
+  and `deck_telemetry.user_regen_reason`.
+- Frontend: clicking 👎 on a deck now opens a reason-chips panel
+  (`decks-regen-reason-panel`) before submitting feedback. Each click
+  records the feedback with regen_reason set.
+- **The actual learning loop**: `create_outline()` now queries the user's
+  most-recent regen_reason (scoped to the same context) and folds it into
+  the planner prompt as a `LEARNING FROM THIS USER'S PRIOR DECKS` block.
+  The new outline persists `learning_hint_used` for telemetry visibility.
+- Verified live: feedback `weak_research_question` → next outline returns
+  `learning_hint_used: "the research question was too weak — user said: …"`
+  → planner produces a tighter research_question (zero deep budget).
+
+**Outline-edit versioning**
+- `generate()` now persists `edits_applied: {...}` AND snapshots the
+  post-edit `research_question / slides / audience_assumed` onto the
+  outline record. Admin views & history now show what was actually
+  generated, not just what was originally proposed.
+
+**Admin alerts & coaching list**
+- `GET /api/admin/llm/decks/quality` now returns:
+  - `alerted_accounts[]` — users with ≥3 of last 5 decks scoring <55.
+    Each entry: `{account_id, email, name, weak_count, window, avg_score}`.
+  - `top_regen_reasons[]` — sorted reason counts so ops can see whether
+    failures cluster on audience/question/evidence/tone.
+  - `alert_threshold:55, alert_window:5, alert_min_hits:3` — env-overridable later.
+- Frontend `/admin/llm-spend`:
+  - **`llm-spend-deck-alerts`** amber panel — coaching list, "ned X · 47/100 · 5 of last 5 weak".
+  - **`llm-spend-regen-reasons`** panel — top-N reasons with counts.
+
+**Cosmetic**
+- LLMSpend by-surface bar label now reads "X% of total · Y% of top".
+  Bar geometry already used max-of-window from iter55.
+
+### Tests
+- iteration_56: backend 7/7 + admin panels verified live + 2 admin
+  screenshots captured. Regen-chip UI structurally verified in source
+  (testing agent flagged a pre-existing context-switch quirk on /app/decks
+  that blocked live click; backend persistence proven via API).
+- Reports: `/app/test_reports/iteration_56.json`,
+  `/app/test_reports/screenshots_iter56_*.jpg`.
+
+### Open / deferred (P2, low)
+- **Context-switch on /app/decks**: clicking a NED context from the
+  portfolio sidebar while on /app/decks doesn't always re-filter sidebar
+  to that role. Pre-existing; orthogonal to the deck pipeline. Worth a
+  separate small investigation — likely AppShell role state sticky.
+- **Auto-regenerate when quality<55 (opt-in)**: telemetry now captures
+  the signal but we haven't built a one-click "regenerate with the lesson
+  baked in" yet. Easy follow-up: button on the deck quality panel that
+  drafts a new outline + immediately confirms-and-generates if quota
+  available.
+- **Per-account quality-score threshold env-override**: hard-coded as
+  `QUALITY_ALERT_THRESHOLD=55, WINDOW=5, MIN_HITS=3`. Promote to env vars
+  (`AKKI_QUALITY_ALERT_*`) when ops want to tune.
