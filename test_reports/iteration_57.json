@@ -1,0 +1,29 @@
+{
+  "summary": "Iter57 visual/UX review. /app/workspace verified live (screenshots): docs-journal-stats card has Camera + Add document buttons at TOP-RIGHT (above title), the four stat chips are Trusted/Useful/Relevant/Extracted with correct counts, doc-summary-empty renders with no doc selected, doc-summary-card renders on selection (title 'Weekly update', summary section, Continue-in-Chat footer). Portfolio rail is collapsed (w-12 sliver) by default with vertical 'Portfolio' label, expands to w-[280px] on click, recollapses on outside click. /app/home checks confirmed via source inspection (AppHome.jsx 'Acting as Non-Executive Director' overline removed; narrative line 333 reads 'You work in N companies. M as NED and X as Executive. Where would you like to start?'; InSummaryTiles tiles array now contains 5 entries — signals, briefings, cycle, reports, documents — Portfolio tile removed). One real bug found in Chat ?doc=<id> handler.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Chat.jsx (?doc handler)", "issue": "Clicking 'Continue in Chat' navigates to /app/chat?doc=<id> but (a) the doc query param is NOT stripped from the URL after consume, and (b) no fresh chat thread titled 'Re: <doc name>' is created and no composer pre-fill appears — page shows generic empty state ('Your private AI workspace · Start a conversation'). Verified with docId b31ec1b1-10d0-4a70-a762-c7374a6394f9 (doc 'Weekly update'). Final URL stayed: /app/chat?doc=b31ec1b1-10d0-4a70-a762-c7374a6394f9", "selector": "[data-testid='doc-summary-continue-chat']", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "DocumentSummaryCard → Chat handoff", "issue": "Navigate works, but the Chat page never picks up the ?doc query param to spin a new thread / pre-fill composer / strip the param. Either useEffect on Chat.jsx is gated on something that isn't ready (e.g. contexts not loaded yet) or the param-consumption code is missing.", "affected_selectors": ["[data-testid='doc-summary-continue-chat']", "Chat composer textarea"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix /app/frontend/src/pages/Chat.jsx ?doc=<id> handler: on mount + when docId present and contexts loaded, create a fresh chat thread titled 'Re: <doc name>', pre-fill composer with a sensible default question, then strip the ?doc query param via navigate(pathname, { replace: true }).",
+    "Verify the handler waits for activeContext and the doc fetch to resolve before creating the thread (race condition is the most likely root cause given the screenshot shows the empty state)."
+  ],
+  "critical_code_review_comments": [
+    "InSummaryTiles.jsx still has a stale doc comment at line 24 referencing '6. Portfolio' and the JSDoc preamble lists 6 tiles — code is correct (5 tiles) but the comment is misleading. Tidy-up only.",
+    "PortfolioRail.jsx click-outside listener correctly cleans up, but note the toggle button at -left-3 sits OUTSIDE the rail bounds; clicking it triggers the outside-click handler too. Currently fine because the toggle calls setCollapsed before the doc handler runs (event order), but worth a defensive ref check if behaviour ever flakes."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend only)", "frontend": "85% (5 of 6 user requests fully working; chat handoff partially broken)"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026!",
+  "seed_data_creation": "None",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All Workspace + Portfolio rail + Stats card + DocumentSummaryCard checks PASS. Home checks confirmed by source inspection (live nav was flaky from playwright pushState approach, not a real bug). The only functional bug to retest is /app/chat?doc=<id> behaviour — confirm Re: title + composer prefill + URL strip after main agent fixes Chat.jsx."
+}

@@ -256,7 +256,11 @@ export default function AppShell({ children }) {
           padding to the main content below to keep the rail clear. */}
       <PortfolioRail />
 
-      <div className="flex flex-1 min-h-0 lg:pr-[260px]">
+      {/* Iter57 — Portfolio rail now defaults collapsed (12px sliver).
+          Reclaiming ~250px of horizontal canvas for the main content
+          column. The rail still self-positions via fixed; main column
+          only reserves 48px (the collapsed sliver), expandable on click. */}
+      <div className="flex flex-1 min-h-0 lg:pr-[48px]">
         {/* Left nav rail — cream, 220px, oxblood accent on selected */}
         <aside
           className="hidden md:flex flex-col bg-[var(--cream)] text-[var(--deep)] w-[220px] border-r border-[var(--rule)] pt-6 pb-8 gap-0.5"

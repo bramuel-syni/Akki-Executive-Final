@@ -153,10 +153,6 @@ export default function AppHome() {
         {/* Main — sticky header + scrolling stream */}
         <div className="flex flex-col min-h-0 py-8">
           <div className="mb-6 akki-fade-up shrink-0">
-            <p className="akki-overline mb-2 flex items-center gap-2">
-              <RoleIcon className="w-3 h-3 text-[var(--accent)]" strokeWidth={2} />
-              Acting as {activeRole === "ned" ? "Non-Executive Director" : "Executive"}
-            </p>
             <h1 className="akki-greeting">{greeting(firstName)}</h1>
 
             {/* Iter44 — deliberate context picker as the top action.
@@ -334,7 +330,7 @@ function ContextChooser({ contexts, activeContext, hasMultipleContexts, signals,
 
   const intro = (() => {
     if (nedCount && execCount) {
-      return `You work in ${nedCount} ${nedCount === 1 ? "company" : "companies"} as NED and ${execCount} as Executive. Where would you like to start?`;
+      return `You work in ${nedCount + execCount} ${(nedCount + execCount) === 1 ? "company" : "companies"}. ${nedCount} as NED and ${execCount} as Executive. Where would you like to start?`;
     }
     if (nedCount) return `You sit on ${nedCount} ${nedCount === 1 ? "board" : "boards"} as NED. Where would you like to start?`;
     if (execCount) return `You operate in ${execCount} ${execCount === 1 ? "company" : "companies"} as Executive. Where would you like to start?`;

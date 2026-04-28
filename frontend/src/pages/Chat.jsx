@@ -15,6 +15,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import AppShell from "@/components/layout/AppShell";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
@@ -36,6 +37,7 @@ const POLICY_LABEL = {
 };
 
 export default function Chat() {
+  const { activeContext } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [models, setModels] = useState([]);
   const [defaultModel, setDefaultModel] = useState("claude-sonnet-4-5");
@@ -90,11 +92,32 @@ export default function Chat() {
     const p = searchParams.get("prompt");
     const wantNew = searchParams.get("new") === "1";
     const seedTitle = searchParams.get("seed_title");
-    if (!p && !seedTitle) return;
+    const docId = searchParams.get("doc");
+    if (!p && !seedTitle && !docId) return;
     let cancelled = false;
     (async () => {
       try {
-        if (wantNew) {
+        // Iter57 — when user clicks "Continue in Chat" from a document,
+        // we land here with ?doc=<id>. Spin up a fresh conversation
+        // titled with the doc's name (resolved client-side) and
+        // pre-fill the composer so they can ask their question.
+        if (docId && activeContext?.id) {
+          let docTitle = "this document";
+          try {
+            const { data } = await api.get(`/contexts/${activeContext.id}/documents/${docId}`);
+            docTitle = data?.name || data?.original_filename || docTitle;
+          } catch { /* fall through with default title */ }
+          const { data } = await api.post("/chats", {
+            title: `Re: ${docTitle.slice(0, 80)}`,
+            model_id: defaultModel,
+            shielding_policy: "auto",
+          });
+          if (!cancelled) {
+            setChats((prev) => [data, ...prev]);
+            setActiveId(data.id);
+            setInput(p || `What's the most important thing for me to know from "${docTitle}"?`);
+          }
+        } else if (wantNew) {
           const { data } = await api.post("/chats", {
             title: seedTitle || "Continued from a brief",
             model_id: defaultModel,
@@ -103,13 +126,16 @@ export default function Chat() {
           if (cancelled) return;
           setChats((prev) => [data, ...prev]);
           setActiveId(data.id);
+          if (p) setInput(p);
+        } else if (p) {
+          setInput(p);
         }
-        if (p) setInput(p);
       } catch { /* swallow — just leave the composer empty */ }
       const next = new URLSearchParams(searchParams);
       next.delete("prompt");
       next.delete("new");
       next.delete("seed_title");
+      next.delete("doc");
       setSearchParams(next, { replace: true });
     })();
     return () => { cancelled = true; };

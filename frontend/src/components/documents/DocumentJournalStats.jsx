@@ -36,9 +36,16 @@ export default function DocumentJournalStats({ docs = [], onUploadClick, onCamer
     const total = docs.length;
     const trust = { trusted: 0, mixed: 0, weak: 0 };
     const status = { extracted: 0, empty: 0, failed: 0, uploaded: 0 };
+    let useful = 0;     // documents AKKI has actually digested (has summary)
+    let relevant = 0;   // documents added/referenced in the last 30 days
+    const cutoff = Date.now() - 30 * 86400 * 1000;
     for (const d of docs) {
       if (trust[d.data_trust] !== undefined) trust[d.data_trust] += 1;
       if (status[d.status] !== undefined) status[d.status] += 1;
+      if (d.akki_summary || (d.preview && d.preview.length > 80)) useful += 1;
+      try {
+        if (d.created_at && new Date(d.created_at).getTime() > cutoff) relevant += 1;
+      } catch { /* ignore */ }
     }
     const lastAt = docs.length
       ? docs.reduce((latest, d) => {
@@ -46,7 +53,7 @@ export default function DocumentJournalStats({ docs = [], onUploadClick, onCamer
           return t && (!latest || t > latest) ? t : latest;
         }, null)
       : null;
-    return { total, trust, status, lastAt };
+    return { total, trust, status, useful, relevant, lastAt };
   }, [docs]);
 
   const lastRel = useMemo(() => {
@@ -64,43 +71,46 @@ export default function DocumentJournalStats({ docs = [], onUploadClick, onCamer
 
   return (
     <div className="bg-white border border-[#E1E6ED] rounded-md p-5 mx-6 mt-5 mb-3" data-testid="docs-journal-stats">
-      <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
-        <div>
-          <p className="akki-overline mb-1">Document journal · at a glance</p>
-          <h2 className="akki-serif text-[20px] text-[var(--ink)] leading-snug">
-            {stats.total === 0 ? "No documents yet." : `${stats.total} document${stats.total === 1 ? "" : "s"} on file.`}
-          </h2>
-          <p className="text-[12px] text-[var(--muted)] mt-1">
-            Last addition · <span className="text-[var(--deep)]">{lastRel}</span>
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            onClick={onCameraClick}
-            disabled={uploading}
-            variant="outline"
-            className="rounded-md h-9 text-[12px] border-[#E1E6ED]"
-            data-testid="docs-camera-btn"
-            title="Capture a page with your device camera"
-          >
-            <Camera className="w-3.5 h-3.5 mr-1.5" /> Camera
-          </Button>
-          <Button
-            onClick={onUploadClick}
-            disabled={uploading}
-            className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-md h-9 text-[12px]"
-            data-testid="docs-upload-btn"
-          >
-            <Upload className="w-3.5 h-3.5 mr-1.5" />
-            {uploading ? "Uploading…" : "Add a document"}
-          </Button>
-        </div>
+      {/* Iter57 — Camera + Add document buttons relocated above the heading
+          per user feedback. They were competing visually with the title and
+          made the card top-heavy on the right. Now they sit cleanly at the
+          top-right corner of the card, action-bar style. */}
+      <div className="flex items-center justify-end gap-2 mb-4 pb-3 border-b border-[#E1E6ED]">
+        <Button
+          onClick={onCameraClick}
+          disabled={uploading}
+          variant="outline"
+          className="rounded-md h-9 text-[12px] border-[#E1E6ED]"
+          data-testid="docs-camera-btn"
+          title="Capture a page with your device camera"
+        >
+          <Camera className="w-3.5 h-3.5 mr-1.5" /> Camera
+        </Button>
+        <Button
+          onClick={onUploadClick}
+          disabled={uploading}
+          className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-md h-9 text-[12px]"
+          data-testid="docs-upload-btn"
+        >
+          <Upload className="w-3.5 h-3.5 mr-1.5" />
+          {uploading ? "Uploading…" : "Add a document"}
+        </Button>
+      </div>
+
+      <div className="mb-4">
+        <p className="akki-overline mb-1">Document journal · at a glance</p>
+        <h2 className="akki-serif text-[20px] text-[var(--ink)] leading-snug">
+          {stats.total === 0 ? "No documents yet." : `${stats.total} document${stats.total === 1 ? "" : "s"} on file.`}
+        </h2>
+        <p className="text-[12px] text-[var(--muted)] mt-1">
+          Last addition · <span className="text-[var(--deep)]">{lastRel}</span>
+        </p>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3 pt-4 border-t border-[#E1E6ED]">
-        <StatChip label="Trusted" n={stats.trust.trusted} total={stats.total} tone="good" />
-        <StatChip label="Mixed trust" n={stats.trust.mixed} total={stats.total} tone="warn" />
-        <StatChip label="Weak trust" n={stats.trust.weak} total={stats.total} tone="alert" />
+        <StatChip label="Trusted"   n={stats.trust.trusted} total={stats.total} tone="good"  />
+        <StatChip label="Useful"    n={stats.useful}        total={stats.total} tone="good"  />
+        <StatChip label="Relevant"  n={stats.relevant}      total={stats.total} tone="good"  />
         <StatChip label="Extracted" n={stats.status.extracted} total={stats.total} tone="good" />
       </div>
     </div>

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
 import AskPanel from "@/components/ask/AskPanel";
+import DocumentSummaryCard from "@/components/documents/DocumentSummaryCard";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage, API_BASE } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -671,15 +672,9 @@ export default function Workspace() {
           </div>
         </div>
 
-        {/* Right pane: persistent Ask */}
-        <div className="flex-1 bg-[#FAFBFC] overflow-hidden" data-testid="workspace-ask-pane">
-          <AskPanel
-            contextId={contextId}
-            accountName={account?.name}
-            onCitationClick={onCitationClick}
-            dense
-            header={askHeader}
-          />
+        {/* Right pane: doc summary card (replaces persistent Ask in iter57) */}
+        <div className="flex-1 bg-[#FAFBFC] overflow-hidden" data-testid="workspace-summary-pane">
+          <DocumentSummaryCard contextId={contextId} docId={selectedDocId} />
         </div>
       </div>
     </AppShell>

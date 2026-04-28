@@ -216,16 +216,6 @@ export default function InSummaryTiles() {
           { n: `${usefulnessPct}%`, label: "usefulness score", tone: usefulnessPct >= 60 ? "text-emerald-700" : "text-amber-700" },
         ],
       },
-      {
-        key: "portfolio", to: "/app/contexts", icon: Building2,
-        kicker: "Portfolio",
-        hero: companies, heroLabel: companies === 1 ? "company" : "companies",
-        attrs: [
-          { n: nedCompanies,   label: "acting as NED",  tone: "text-[var(--deep)]" },
-          { n: execCompanies,  label: "acting as Exec", tone: "text-[var(--deep)]" },
-          { n: pendingActions, label: "pending actions", tone: pendingActions > 0 ? "text-[var(--accent)]" : "text-[var(--muted)]" },
-        ],
-      },
     ];
   }, [data, allContexts, activeRole]);
 
@@ -234,7 +224,7 @@ export default function InSummaryTiles() {
   return (
     <section className="mb-7 shrink-0" data-testid="home-in-summary">
       <p className="akki-overline mb-3">In summary</p>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         {tiles.map((t) => {
           const Icon = t.icon;
           return (

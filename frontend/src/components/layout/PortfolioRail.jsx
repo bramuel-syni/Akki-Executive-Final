@@ -37,15 +37,24 @@ export default function PortfolioRail() {
     activeContext, contexts, switchContext,
     activeRole, availableRoles, switchRole,
   } = useAuth();
-  // Iter44 — auto-collapse on routes that need maximal display width
-  // (/app/documents most notably; also /app/quick-results which is a
-  // focused conversion screen). User can still re-expand manually.
-  const collapseRoutes = ["/app/documents", "/app/quick-results"];
-  const shouldAutoCollapse = collapseRoutes.some((r) => location.pathname.startsWith(r));
-  const [collapsed, setCollapsed] = useState(shouldAutoCollapse);
+  // Iter57 — Portfolio rail now starts COLLAPSED everywhere. User clicks
+  // the tab to expand. This reclaims ~260px (≈18% of typical desktop) of
+  // horizontal space for the main content column. Previous auto-expand
+  // behaviour was consuming too much canvas; collapsed-by-default keeps
+  // the rail discoverable without dominating the layout. Click outside
+  // (when expanded) collapses again so it behaves like an on-demand drawer.
+  const [collapsed, setCollapsed] = useState(true);
+  const railRef = React.useRef(null);
   React.useEffect(() => {
-    setCollapsed(shouldAutoCollapse);
-  }, [shouldAutoCollapse]);
+    if (collapsed) return;
+    const onDocClick = (e) => {
+      if (railRef.current && !railRef.current.contains(e.target)) {
+        setCollapsed(true);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [collapsed]);
   // Confirm dialog state — { kind: 'role'|'company', target: <id-or-role>, label }
   const [confirm, setConfirm] = useState(null);
 
@@ -105,7 +114,8 @@ export default function PortfolioRail() {
 
   return (
     <aside
-      className={`hidden lg:flex flex-col fixed top-14 right-0 bottom-0 ${collapsed ? "w-12" : "w-[260px]"} bg-[var(--cream-deep)]/40 border-l border-[var(--rule)] transition-[width] duration-200 z-20 shadow-[-8px_0_16px_-12px_rgba(0,0,0,0.15)]`}
+      ref={railRef}
+      className={`hidden lg:flex flex-col fixed top-14 right-0 bottom-0 ${collapsed ? "w-12" : "w-[280px]"} bg-[var(--cream-deep)]/40 border-l border-[var(--rule)] transition-[width] duration-200 z-20 shadow-[-8px_0_16px_-12px_rgba(0,0,0,0.15)]`}
       data-testid="portfolio-rail"
     >
       <button
@@ -118,10 +128,16 @@ export default function PortfolioRail() {
       </button>
 
       {collapsed ? (
-        <div className="flex flex-col items-center pt-6 gap-3">
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          className="flex flex-col items-center pt-6 gap-3 h-full hover:bg-[var(--cream-deep)]/60 transition-colors"
+          data-testid="portfolio-rail-expand"
+          aria-label="Open portfolio"
+        >
           <Briefcase className="w-4 h-4 text-[var(--accent)]" />
           <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]" style={{ writingMode: "vertical-rl" }}>Portfolio</span>
-        </div>
+        </button>
       ) : (
         <div className="flex-1 overflow-y-auto px-5 py-6">
           {/* Acting as block */}
