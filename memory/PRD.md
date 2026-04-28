@@ -1471,6 +1471,63 @@ verified by testing agent (`/app/test_reports/iteration_33.json`):
   Consolidate · Send up." reinforces the spine.
 
 
+## §UX iter48 — Activity grouped + Sandbox accept-upload + Backlog burn-down (2026-04-28)
+
+### Why
+Two new user asks added to the queue, and the user instructed "ensure
+all pending requests are tracked and the backlog is not significant".
+Iter48 ships both new asks plus the small/medium backlog items so only
+genuinely architectural Tier-C work remains.
+
+### What shipped
+- **Activity feed regrouped** (`RecentActivity.jsx`) — five category
+  tiles instead of a chronological list: Briefings & meetings ·
+  Questions answered · Signals surfaced · Documents added · Sent your
+  way. Each tile shows count + verb + latest title + "View timeline →".
+  Tiles with zero count render disabled. AppHome now also fetches
+  `/contexts/{cid}/briefs` so "Questions answered" reflects saved briefs.
+- **Activity timeline page** (`/app/activity?cat={key}`) — chronological
+  day-grouped list for the chosen category, category-pill switcher,
+  back-to-Home link.
+- **Sandbox accept-upload** — new `GET /api/sandbox/contexts/{cid}/sample-doc`
+  returns a tailored "this could be your board pack" preview;
+  `POST /api/sandbox/contexts/{cid}/sample-doc/accept` materialises it
+  as a real document and stamps `sandbox_metadata.sample_doc_accepted`.
+  Frontend: `SandboxSampleDoc` card on AppHome (sandbox-only, hidden
+  once accepted). Sits ABOVE the existing drop-your-own affordance.
+- **BriefDetailModal Continue-in-Chat chip** — navigates to
+  `/app/chat?prompt=…&new=1&seed_title=…`. Chat now auto-creates a fresh
+  conversation with the title, seeds the composer with the brief body,
+  and strips the query params after consumption.
+- **InSummary Portfolio aggregation** — pending_actions now folds in
+  `c.pending_actions` across the role-scoped portfolio (max of portfolio
+  aggregate vs active-context number).
+- **Strategic-goals sort** — list endpoint now sorts by a normalised
+  target_date key (handles `YYYY-MM-DD`, `Q1-Q4 YYYY`, `Mmm YYYY`,
+  null-last). Editorial sort order on the Strategic Goals card is now
+  deterministic.
+
+### Tests
+- iteration_48 — backend 6/6 (after testing agent fixed a bad
+  `write_audit` call in `sandbox_sample_doc_accept` — wrong kwargs +
+  missing `await`), frontend 95% (Continue-in-Chat testid was reachable
+  by code but not by data; main agent then seeded a brief for Bramuel
+  so it is now exercisable).
+
+### Open / deferred — Tier-C only
+- Minutes as first-class entity (will become a third tab in Prepare's
+  right rail).
+- Personal vs Enterprise tier split.
+- Inbound email parsing/receiving.
+- Real second-LLM ValidatedBadge pass.
+- Plays-aware M13 Ask context biasing.
+- Workspace "Play context" right-panel section.
+
+### Cleanups parked (not blocking)
+- framer-motion stagger on AppShell NAV (mild first-paint nit).
+- Lift `_sort_key` regex compilation out of `list_goals` to module scope.
+
+
 ## §UX iter47 — Prepare 2-col rail + Dynamic Workflow dock + Recent activity (2026-04-28)
 
 ### Why
