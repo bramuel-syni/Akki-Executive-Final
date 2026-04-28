@@ -148,7 +148,7 @@ export default function AppShell({ children }) {
       <SandboxEmailCapture />
       {/* Top chrome — cream, 64px, 1px rule border */}
       <header
-        className="bg-[var(--cream)] text-[var(--ink)] border-b border-[var(--rule)] h-16 sticky top-0 z-40 flex items-center px-6 justify-between"
+        className="relative bg-[var(--cream)] text-[var(--ink)] border-b border-[var(--rule)] h-16 sticky top-0 z-40 flex items-center px-6 justify-between"
         data-testid="top-header"
       >
         <div className="flex items-center gap-8">
@@ -158,11 +158,16 @@ export default function AppShell({ children }) {
               for Executives
             </span>
           </Link>
-          <div className="hidden md:flex items-center gap-1 text-[10px] tracking-[0.2em] uppercase text-[var(--muted)]">
-            <span>Confidential</span>
-            <span className="opacity-40">·</span>
-            <span className="text-[var(--accent)]">Internal</span>
-          </div>
+        </div>
+        <div
+          className="hidden md:flex absolute left-1/2 -translate-x-1/2 items-center gap-1 text-[10px] tracking-[0.2em] uppercase text-[var(--muted)] pointer-events-none"
+          data-testid="trust-badge"
+        >
+          <span className="text-[var(--accent)]">Internal</span>
+          <span className="opacity-40">·</span>
+          <span>Secure</span>
+          <span className="opacity-40">·</span>
+          <span>Confidential</span>
         </div>
 
         <div className="flex items-center gap-5">
@@ -368,6 +373,25 @@ export default function AppShell({ children }) {
           })}
 
           <div className="mt-auto px-5 pt-8">
+            {(() => {
+              const t = activeContext?.type;
+              const isPersonal = t === "ned_personal" || t === "executive_personal";
+              if (!isPersonal) return null;
+              return (
+                <NavLink
+                  to="/app/enterprise"
+                  className="block mb-3 px-3 py-2.5 rounded-sm border border-[var(--accent)]/30 bg-[var(--accent)]/[0.04] hover:bg-[var(--accent)]/[0.08] transition-colors"
+                  data-testid="nav-enterprise-upsell"
+                >
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--accent)] font-medium">
+                    Akki for Enterprise
+                  </div>
+                  <div className="text-[12px] text-[var(--deep)] mt-0.5 leading-snug">
+                    Sponsored seats, audit-grade exports, SSO →
+                  </div>
+                </NavLink>
+              );
+            })()}
             <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)] mb-2">Administration</p>
             <NavLink
               to="/app/settings"

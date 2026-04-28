@@ -1,0 +1,25 @@
+{
+  "summary": "Iter51 — Tier-C backlog verified end-to-end. 16/16 new pytest pass + 6/6 iter50 regression pass (0 regressions). Coverage: (1) GET /api/inbound/address returns configured=true with POSTMARK_SERVER_TOKEN set, mints 8-char account_token + ctx-token idempotently, requires auth (401 when anonymous); (2) POST /api/inbound/postmark rejects missing/wrong secret with 401 and returns 200 {ok:false,error:unresolved_recipient} for unknown MailboxHash (no retry storm), successfully routes account-only mailbox (minutes=false when subject is 'Weekly update'), routes context-scoped mailbox to fb4df969 Tuli NED ctx, auto-detects minutes=true when subject contains 'Minutes', and is idempotent on MessageID replay (duplicate:true with same doc_id); (3) inbound-ingested doc surfaces immediately in GET /api/contexts/{cid}/minutes alongside filename-heuristic matches; (4) POST /api/contexts/{cid}/minutes/{doc_id}/extract returns minutes_meta with attendees[]/decisions[]/actions[]/questions[] all list-shaped, actions carry who/what/when (confirmed live Emergent LLM call, ~3s); (5) POST /api/enterprise/interest inserts lead with 200 {ok,id}, GET /interest/me returns latest record reflecting timing+company_size+use_case, second submission correctly supersedes first via sort (created_at desc), both endpoints require auth.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter51_inbound_enterprise.py",
+    "/app/test_reports/pytest/iter51.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "inbound_email.py:_resolve_mailbox raises HTTPException(404) for unknown account_token and _verify_secret raises 401. The webhook route catches only HTTPException after resolve, so a missing/wrong secret will correctly return 401 (FastAPI bubbles it), but the catch block only covers _resolve_mailbox — good separation. No change needed.",
+    "inbound_email.py:_mint_token uses rjust(8,'x') after stripping '_'/'-' from token_urlsafe(6); worst-case a collision on 'x'-padded short tokens is astronomically unlikely but is *not* guaranteed unique — no DB uniqueness index on accounts.inbound_token / contexts.inbound_token. Add a unique sparse index for defence-in-depth (one-liner on startup).",
+    "inbound_email.py:receive_postmark_inbound returns 200 on `bad_attachment`/`virus_scan` but writes nothing to audit/documents — consider a lightweight 'inbound_rejected' audit row for ops visibility.",
+    "enterprise.py stores one row per POST with no uniqueness constraint, so /interest/me's sort=created_at desc always picks latest — correct by design, but the collection will grow unbounded. Consider TTL or an upsert-by-account_id with a history sub-array if this ever graduates beyond lead-gen.",
+    "prepare.py:extract_minutes call_llm signature (module/user_query/system_override/response_format) now works as expected; verified live through the test. No further action."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter51_inbound_enterprise.py (new)"],
+  "success_rate": {"backend": "100% (16/16 new + 6/6 iter50 regression)", "frontend": "not tested — backend-only request"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026!",
+  "seed_data_creation": "Created 3 inbound-email documents on ctx fb4df969 (1 account-scoped 'Weekly update', 1 ctx-scoped 'Board Minutes — Q1 2026', 1 replay-test 'Minutes replay test') + 2 TEST_iter51 enterprise_interest rows on Bramuel's account. All carry TEST_iter51 / iter51-{account,minutes,replay}-<uuid> MessageIDs for easy cleanup. Minutes-marked doc also carries minutes_meta after the extract test ran.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter51 backend ships clean — all three Tier-C groups (inbound email, minutes extractor, enterprise interest) pass. Key testids/contract points: (a) /api/inbound/address always returns {address, context_address, domain, configured} — configured mirrors POSTMARK_SERVER_TOKEN presence; (b) Postmark route /api/inbound/postmark uses ?secret=<token> query param and returns 200 on soft-fail (unresolved_recipient | bad_attachment | virus_scan) — never 4xx to prevent Postmark retry storm, so tests must inspect body.ok instead of status; (c) minutes auto-detect fires on subject contains 'minutes|board minutes|minute of|mom ' OR any attachment filename containing 'minute' (case-insensitive); (d) idempotency keyed by (context_id, inbound_message_id) — the only unique guarantee; same MessageID across different contexts would NOT dedupe; (e) enterprise_interest returns the latest by created_at desc, not by any primary key. Frontend not tested this iteration.",
+  "rca of the issue": "n/a — no bugs surfaced."
+}

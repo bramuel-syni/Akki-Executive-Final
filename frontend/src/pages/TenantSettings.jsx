@@ -3,6 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import CommitteeManager from "@/components/settings/CommitteeManager";
 import BillingTab from "@/components/settings/BillingTab";
+import InboundEmailPanel from "@/components/settings/InboundEmailPanel";
 import { api, apiErrorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -94,7 +95,7 @@ export default function Settings() {
   const onBillingPath = typeof window !== "undefined" && window.location.pathname.endsWith("/billing");
   const defaultTab = onBillingPath ? "billing" :
     tabParam === "trust" ? "privacy" :
-    (tabParam && ["account", "contexts", "context", "members", "audit", "privacy", "danger", "billing"].includes(tabParam))
+    (tabParam && ["account", "contexts", "context", "members", "audit", "privacy", "danger", "billing", "integrations"].includes(tabParam))
       ? tabParam : "account";
 
   // Account editing
@@ -282,7 +283,7 @@ export default function Settings() {
               ["audit", "Audit log", History],
               ["privacy", "Trust", ShieldCheck],
               ["billing", "Billing", CreditCard],
-              ["integrations", "Integrations", Plug, "M6"],
+              ["integrations", "Integrations", Plug],
               ["danger", "Danger", AlertTriangle],
             ].map(([v, l, I, lock]) => (
               <TabsTrigger
@@ -881,6 +882,14 @@ export default function Settings() {
           {/* BILLING */}
           <TabsContent value="billing">
             <BillingTab />
+          </TabsContent>
+
+          {/* INTEGRATIONS */}
+          <TabsContent value="integrations" className="space-y-6">
+            <InboundEmailPanel
+              contextId={activeContext?.id}
+              contextName={activeContext?.name}
+            />
           </TabsContent>
 
           {/* DANGER */}

@@ -29,6 +29,7 @@ import SandboxKPI from "@/pages/admin/SandboxKPI";
 import SignalKPI from "@/pages/admin/SignalKPI";
 import QuickResults from "@/pages/QuickResults";
 import Manage from "@/pages/Manage";
+import Enterprise from "@/pages/Enterprise";
 import Sandbox from "@/pages/Sandbox";
 import SandboxGenerating from "@/pages/SandboxGenerating";
 import Cycle from "@/pages/Cycle";
@@ -107,6 +108,7 @@ function App() {
           <Route path="/app/learn" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
           <Route path="/app/learn/:id" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
           <Route path="/app/manage" element={<ProtectedRoute><Manage /></ProtectedRoute>} />
+          <Route path="/app/enterprise" element={<ProtectedRoute><Enterprise /></ProtectedRoute>} />
           <Route path="/app/documents/:id" element={<ProtectedRoute><DocumentViewer /></ProtectedRoute>} />
           <Route path="/app/contexts" element={<ProtectedRoute><ContextPortfolio /></ProtectedRoute>} />
           <Route path="/app/contexts/new" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />

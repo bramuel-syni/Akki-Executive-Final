@@ -228,7 +228,12 @@ export default function Prepare() {
               />
             )}
             {tab === "minutes" && (
-              <MinutesTab minutes={minutes} loading={loadingMinutes} />
+              <MinutesTab
+                minutes={minutes}
+                loading={loadingMinutes}
+                contextId={cid}
+                onRefresh={loadMinutes}
+              />
             )}
           </div>
 
@@ -474,7 +479,24 @@ function SignalsTab({ contextId, contextName, onCreated }) {
 // company. Click a row to open the source document. Structured extraction
 // (participants, decisions, actions) lands in a follow-up session.
 // ---------------------------------------------------------------------------
-function MinutesTab({ minutes, loading }) {
+function MinutesTab({ minutes, loading, contextId, onRefresh }) {
+  const [busy, setBusy] = useState(null);
+  const [open, setOpen] = useState({}); // doc_id -> bool
+
+  const extractOne = async (docId) => {
+    setBusy(docId);
+    try {
+      await api.post(`/contexts/${contextId}/minutes/${docId}/extract`);
+      toast.success("Minutes extracted");
+      await onRefresh?.();
+      setOpen((s) => ({ ...s, [docId]: true }));
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="px-5 py-10 text-center text-[12.5px] text-[var(--muted)] italic" data-testid="prepare-minutes-tab">
@@ -503,29 +525,92 @@ function MinutesTab({ minutes, loading }) {
   return (
     <div className="bg-white border border-[var(--rule)] rounded-md overflow-hidden" data-testid="prepare-minutes-tab">
       <ul className="divide-y divide-[var(--rule)]">
-        {minutes.map((m) => (
-          <li key={m.id}>
-            <a
-              href={`/app/documents/${m.id}`}
-              className="flex items-start gap-3 px-5 py-3.5 hover:bg-[var(--cream-deep)]/30 transition-colors group"
-              data-testid={`prepare-minutes-item-${m.id}`}
-            >
-              <FileText className="w-3.5 h-3.5 mt-0.5 text-[var(--muted)] shrink-0" strokeWidth={1.7} />
-              <div className="flex-1 min-w-0">
-                <p className="akki-serif text-[14.5px] text-[var(--ink)] leading-snug truncate group-hover:text-[var(--accent)] transition-colors">
-                  {m.title}
-                </p>
-                <p className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] mt-0.5">
-                  {m.created_at ? new Date(m.created_at).toLocaleDateString() : "—"}
-                  {m.trust_level && ` · ${m.trust_level}`}
-                  {m.extracted && " · extracted"}
-                </p>
+        {minutes.map((m) => {
+          const meta = m.minutes_meta;
+          const isOpen = !!open[m.id];
+          return (
+            <li key={m.id}>
+              <div
+                className="flex items-start gap-3 px-5 py-3.5 hover:bg-[var(--cream-deep)]/30 transition-colors"
+                data-testid={`prepare-minutes-item-${m.id}`}
+              >
+                <FileText className="w-3.5 h-3.5 mt-0.5 text-[var(--muted)] shrink-0" strokeWidth={1.7} />
+                <div className="flex-1 min-w-0">
+                  <a
+                    href={`/app/documents/${m.id}`}
+                    className="akki-serif text-[14.5px] text-[var(--ink)] leading-snug truncate hover:text-[var(--accent)] transition-colors block"
+                  >
+                    {m.title}
+                  </a>
+                  <p className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] mt-0.5">
+                    {m.created_at ? new Date(m.created_at).toLocaleDateString() : "—"}
+                    {m.trust_level && ` · ${m.trust_level}`}
+                    {meta?.meeting_date && ` · ${meta.meeting_date}`}
+                  </p>
+                </div>
+                {meta ? (
+                  <button
+                    type="button"
+                    onClick={() => setOpen((s) => ({ ...s, [m.id]: !isOpen }))}
+                    className="text-[11px] uppercase tracking-[0.14em] text-[var(--muted)] hover:text-[var(--accent)] px-2 py-1"
+                    data-testid={`prepare-minutes-toggle-${m.id}`}
+                  >
+                    {isOpen ? "Hide" : "Show"} extract
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy === m.id}
+                    onClick={() => extractOne(m.id)}
+                    className="text-[11px] uppercase tracking-[0.14em] text-[var(--accent)] hover:underline px-2 py-1 disabled:opacity-50"
+                    data-testid={`prepare-minutes-extract-${m.id}`}
+                  >
+                    {busy === m.id ? "Extracting…" : "Extract"}
+                  </button>
+                )}
               </div>
-              <ArrowRight className="w-3 h-3 mt-1.5 text-[var(--muted)] shrink-0 group-hover:text-[var(--accent)]" />
-            </a>
-          </li>
-        ))}
+              {meta && isOpen && <MinutesExtractDetail meta={meta} docId={m.id} />}
+            </li>
+          );
+        })}
       </ul>
+    </div>
+  );
+}
+
+function MinutesExtractDetail({ meta, docId }) {
+  return (
+    <div
+      className="px-5 pb-5 pl-12 grid md:grid-cols-2 gap-x-8 gap-y-4 bg-[var(--cream)]/40"
+      data-testid={`prepare-minutes-detail-${docId}`}
+    >
+      <ExtractList label="Attendees" items={meta.attendees} />
+      <ExtractList label="Decisions" items={meta.decisions} />
+      <ExtractList
+        label="Actions"
+        items={(meta.actions || []).map((a) =>
+          `${a.who ? `${a.who}: ` : ""}${a.what}${a.when ? ` (by ${a.when})` : ""}`
+        )}
+      />
+      <ExtractList label="Open questions" items={meta.questions} />
+    </div>
+  );
+}
+
+function ExtractList({ label, items }) {
+  const arr = Array.isArray(items) ? items.filter(Boolean) : [];
+  return (
+    <div>
+      <p className="text-[10.5px] uppercase tracking-[0.16em] text-[var(--muted)] mb-1.5">{label}</p>
+      {arr.length === 0 ? (
+        <p className="text-[12.5px] italic text-[var(--muted)]">— none extracted</p>
+      ) : (
+        <ul className="space-y-1 list-disc list-inside marker:text-[var(--accent)]">
+          {arr.map((it, i) => (
+            <li key={i} className="text-[13px] text-[var(--ink)] leading-snug">{it}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

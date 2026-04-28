@@ -292,11 +292,12 @@ async def extract_minutes(
     try:
         from llm_service import call_llm
         llm_out = await call_llm(
-            system_message=(
+            module="minutes_extract",
+            user_query=prompt,
+            system_override=(
                 "You are AKKI's structured-extraction model. Strict JSON only. "
                 "Never invent. If a field is genuinely absent from the source, return [] or null."
             ),
-            user_message=prompt,
             response_format="json",
         )
     except Exception as e:  # noqa: BLE001
