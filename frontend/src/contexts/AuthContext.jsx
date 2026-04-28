@@ -17,11 +17,26 @@ export function AuthProvider({ children }) {
   const pickPrimaryContext = (acc, ctxs) =>
     acc?.default_context_id || (ctxs && ctxs[0] && ctxs[0].id) || null;
 
+  // Apr-2026: /auth/me sometimes omits my_role on a context membership.
+  // Derive it from c.type (ned_* / executive_*) so every downstream
+  // consumer (ContextChooser, InSummaryTiles, role isolation) has a
+  // single source of truth without needing a backend round-trip.
+  const enrichContexts = (ctxs) =>
+    (ctxs || []).map((c) => {
+      if (c.my_role === "ned" || c.my_role === "executive") return c;
+      const t = (c.type || "").toLowerCase();
+      const derived =
+        t.startsWith("ned_") ? "ned" :
+        t.startsWith("executive_") ? "executive" :
+        null;
+      return derived ? { ...c, my_role: derived } : c;
+    });
+
   const bootstrap = useCallback(async () => {
     try {
       const { data } = await api.get("/auth/me");
       setAccount(data.account);
-      setContexts(data.contexts);
+      setContexts(enrichContexts(data.contexts));
       if (!activeContextId && data.contexts.length > 0) {
         const primary = pickPrimaryContext(data.account, data.contexts);
         if (primary) {
@@ -68,7 +83,7 @@ export function AuthProvider({ children }) {
 
   const afterAuth = useCallback((data) => {
     setAccount(data.account);
-    setContexts(data.contexts || []);
+    setContexts(enrichContexts(data.contexts || []));
     // Persist the access_token to localStorage so the Bearer interceptor
     // can recover when cross-site cookies are blocked (Safari 16+ ITP,
     // Brave shields, Firefox strict, or any deploy where the API and
@@ -145,9 +160,10 @@ export function AuthProvider({ children }) {
   const refreshContexts = useCallback(async () => {
     try {
       const { data } = await api.get("/auth/me");
-      setContexts(data.contexts);
+      const enriched = enrichContexts(data.contexts);
+      setContexts(enriched);
       setAccount(data.account);
-      return data.contexts;
+      return enriched;
     } catch {
       return [];
     }

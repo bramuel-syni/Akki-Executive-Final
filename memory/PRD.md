@@ -1471,6 +1471,67 @@ verified by testing agent (`/app/test_reports/iteration_33.json`):
   Consolidate · Send up." reinforces the spine.
 
 
+## §UX iter46 — Role isolation + InSummary redesign + Sidebar reorder (2026-04-28)
+
+### Why
+User feedback batch: workflow dock was getting truncated; intro copy
+needed updating; explicit role toggle (NED/Exec) needed; strict role
+isolation rule across the entire system; sidebar reorder + renames;
+InSummary tile metrics rewritten; Prepare page lacked visual lift.
+
+### What shipped
+- **Sidebar reorder + renames** (`AppShell.jsx`):
+  Home → Chat → Prepare → Workflows (exec) → The Lens (POV) → Test
+  Hypothesis (was Simulate) → Reporting Cycle (was Cycle, exec) →
+  Monitor → Learn → Influence Map → Document Journal.
+- **ContextChooser**: new copy "You work in X companies as NED and Y as
+  Executive. Where would you like to start?" with role-toggle buttons
+  (`home-role-ned`, `home-role-executive`). Filter only shows contexts
+  for the active role.
+- **Strict role isolation** (`AuthContext.switchRole` + `QuickActions`):
+  Switching role rebuilds the experience — if active context's
+  `my_role` mismatches new role, redirect to `/app` and pick a same-org
+  fallback if available. QuickActions tile filter no longer exposes the
+  other role's tiles.
+- **`my_role` enrichment** (`AuthContext.enrichContexts`): /auth/me
+  sometimes omits `my_role`; we now derive it from `c.type` (`ned_*` →
+  ned, `executive_*` → executive) so every consumer has a single source
+  of truth.
+- **InSummaryTiles fully rewritten**: each tile carries hero number +
+  3 attribute lines per spec (Signals/Briefings/Reporting Cycle/Reports/
+  Documents/Portfolio).
+- **Workflow dock truncation fix**: removed `overflow-hidden` on the
+  AppHome content wrapper that was clipping Quick Actions cards on
+  narrower viewports.
+- **PrepareStatsDock**: new component above the line tabs with three
+  progress-bar cards (Brief coverage, Signal pulse, Briefing rhythm).
+
+### Tests
+- iteration_46.json — frontend: sidebar order + renames, role toggle,
+  context-chooser intro, InSummary structure, Prepare stats dock,
+  WorkflowsHub truncation all pass.
+- After my_role enrichment fix verified manually:
+  intro = "You work in 6 companies as NED and 5 as Executive."
+  Portfolio attrs = "6 acting as NED · 5 acting as Exec · 0 pending".
+  NED chip list = 6 chips. Switching to Exec → 5 chips, right rail
+  swaps to Exec-only contexts, sidebar gains Workflows + Reporting
+  Cycle.
+
+### Known nits / follow-ups
+- "0 pending actions" on Portfolio when scoped to a single context;
+  could aggregate across all contexts a user holds the active role on.
+  Deferred — current scope is "today's focus".
+- True same-org context-switch on role change requires `org_id` on
+  ContextRecord, which isn't always populated. Falls through to "any
+  context with new role" gracefully.
+
+### Next (Tier-C — sized for separate sessions)
+- Minutes as first-class entity
+- Personal vs Enterprise tier split
+- Inbound email parsing
+- Real second-LLM ValidatedBadge pass
+
+
 ## §UX iter45 — Prepare redesign + Send-to-colleague + Tier-B pills (2026-04-27)
 
 ### Why
