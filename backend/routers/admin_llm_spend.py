@@ -207,6 +207,47 @@ async def deck_quality(
         1 for r in rows if r.get("context_sufficiency") == "partial"
     )
 
+    # Per-account quality alert: which users dropped below 55 on >=3 of last 5
+    # decks? These are the ones to coach before they burn more budget.
+    QUALITY_ALERT_THRESHOLD = 55
+    QUALITY_ALERT_WINDOW = 5
+    QUALITY_ALERT_HITS = 3
+
+    by_account: Dict[str, List[Dict[str, Any]]] = {}
+    for r in sorted(rows, key=lambda x: x.get("created_at") or "", reverse=True):
+        if r.get("quality_score") is None:
+            continue
+        by_account.setdefault(r["account_id"], []).append(r)
+
+    alerted_accounts: List[Dict[str, Any]] = []
+    for aid, recs in by_account.items():
+        last_n = recs[:QUALITY_ALERT_WINDOW]
+        weak = [x for x in last_n if (x.get("quality_score") or 100) < QUALITY_ALERT_THRESHOLD]
+        if len(weak) >= QUALITY_ALERT_HITS:
+            acct = await db.accounts.find_one(
+                {"id": aid}, {"_id": 0, "id": 1, "email": 1, "name": 1}
+            )
+            alerted_accounts.append({
+                "account_id": aid,
+                "email": (acct or {}).get("email") or "(unknown)",
+                "name": (acct or {}).get("name") or "",
+                "weak_count": len(weak),
+                "window": len(last_n),
+                "avg_score": round(sum(x["quality_score"] for x in last_n) / len(last_n), 1),
+            })
+    alerted_accounts.sort(key=lambda x: x["avg_score"])
+
+    # Top regen reasons (the learning-loop signal).
+    reasons_acc: Dict[str, int] = {}
+    for r in rows:
+        rr = r.get("user_regen_reason")
+        if rr:
+            reasons_acc[rr] = reasons_acc.get(rr, 0) + 1
+    top_regen_reasons = sorted(
+        [{"reason": k, "count": v} for k, v in reasons_acc.items()],
+        key=lambda x: x["count"], reverse=True,
+    )
+
     return {
         "window_days": days,
         "decks_generated": decks_count,
@@ -224,4 +265,9 @@ async def deck_quality(
         "quality_recommends_regen_count": quality_recommends_regen,
         "insufficient_context_count": insufficient_ctx,
         "partial_context_count": partial_ctx,
+        "alerted_accounts": alerted_accounts,
+        "alert_threshold": QUALITY_ALERT_THRESHOLD,
+        "alert_window": QUALITY_ALERT_WINDOW,
+        "alert_min_hits": QUALITY_ALERT_HITS,
+        "top_regen_reasons": top_regen_reasons,
     }

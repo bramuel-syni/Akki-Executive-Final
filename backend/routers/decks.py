@@ -63,6 +63,9 @@ class FeedbackIn(BaseModel):
     rating: str = Field(pattern="^(up|down)$")
     comment: Optional[str] = Field(None, max_length=500)
     will_regenerate: bool = False
+    regen_reason: Optional[str] = Field(
+        None, pattern="^(audience_drift|weak_research_question|missing_evidence|wrong_tone|other)$"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +97,8 @@ async def _gather_context_signals(context_id: str) -> Dict[str, Any]:
 
 
 def _outline_prompt(intent: str, audience: Optional[str], target_slides: int,
-                    ctx_name: str, evidence: Dict[str, Any]) -> str:
+                    ctx_name: str, evidence: Dict[str, Any],
+                    learning_hint: Optional[str] = None) -> str:
     docs_block = "\n".join(
         f"- doc[{d['id'][:8]}] {d.get('name','(untitled)')} "
         f"({d.get('doc_type') or 'doc'}, {d.get('extracted_chars',0)} chars)"
@@ -110,6 +114,17 @@ def _outline_prompt(intent: str, audience: Optional[str], target_slides: int,
         for b in evidence["briefs"][:10]
     ) or "  (none)"
 
+    learning_block = ""
+    if learning_hint:
+        learning_block = (
+            "\nLEARNING FROM THIS USER'S PRIOR DECKS\n"
+            f"On their last regenerate they flagged: {learning_hint}.\n"
+            "Use this as a corrective hint: tighten the research question, "
+            "be sharper about audience, or call out missing evidence "
+            "explicitly so they can fix the upstream gap rather than "
+            "burning another deep slot.\n"
+        )
+
     return (
         "You are AKKI's deck-planning model. Your job here is NOT to write the "
         "deck. Your job is to plan it cheaply and surface gaps so the user "
@@ -117,8 +132,9 @@ def _outline_prompt(intent: str, audience: Optional[str], target_slides: int,
         f"CONTEXT: {ctx_name}\n"
         f"AUDIENCE: {audience or 'unspecified — assume board/ExCo'}\n"
         f"TARGET LENGTH: {target_slides} slides.\n"
-        f"USER INTENT: {intent}\n\n"
-        "AVAILABLE EVIDENCE\n"
+        f"USER INTENT: {intent}\n"
+        + learning_block +
+        "\nAVAILABLE EVIDENCE\n"
         "Documents:\n" + docs_block + "\n\n"
         "Signals:\n" + sigs_block + "\n\n"
         "Briefs:\n" + briefs_block + "\n\n"
@@ -152,8 +168,33 @@ async def create_outline(
     target_slides = body.target_slides or 8
     ctx_name = ctx["context"].get("name") or "the company"
     evidence = await _gather_context_signals(context_id)
+
+    # Look up the most recent regen-reason this user gave on a prior deck
+    # so the planner can fold the lesson into this outline (zero deep budget).
+    last_regen = await db.decks.find_one(
+        {"context_id": context_id,
+         "account_id": ctx["account"]["id"],
+         "user_feedback.regen_reason": {"$nin": [None, ""]}},
+        {"_id": 0, "user_feedback.regen_reason": 1, "user_feedback.comment": 1},
+        sort=[("created_at", -1)],
+    )
+    learning_hint = None
+    if last_regen and last_regen.get("user_feedback"):
+        reason = last_regen["user_feedback"].get("regen_reason")
+        comment = last_regen["user_feedback"].get("comment")
+        if reason:
+            label = {
+                "audience_drift":         "the deck drifted from the audience",
+                "weak_research_question": "the research question was too weak",
+                "missing_evidence":       "key evidence was missing",
+                "wrong_tone":             "the tone was off",
+                "other":                  "the deck didn't land",
+            }.get(reason, reason)
+            learning_hint = label + (f" — user said: \"{comment}\"" if comment else "")
+
     prompt = _outline_prompt(
-        body.intent.strip(), body.audience, target_slides, ctx_name, evidence
+        body.intent.strip(), body.audience, target_slides, ctx_name, evidence,
+        learning_hint=learning_hint,
     )
 
     from llm_service import call_llm
@@ -199,6 +240,7 @@ async def create_outline(
         "parent_outline_id": body.parent_outline_id,
         "approved": False,
         "consumed_deck_id": None,
+        "learning_hint_used": learning_hint,
         "created_at": iso(now()),
     }
     await db.deck_outlines.insert_one(rec)
@@ -260,14 +302,19 @@ async def generate_deck(
         )
 
     # Apply user edits to the outline before generating (research question
-    # tweak, slide titles, etc.).
+    # tweak, slide titles, etc.). Edits are versioned ON the outline record
+    # so re-runs and admin telemetry can see exactly what was generated.
+    edits_applied = {}
     if body.edits:
         if body.edits.get("research_question"):
             outline["research_question"] = body.edits["research_question"][:280]
+            edits_applied["research_question"] = outline["research_question"]
         if body.edits.get("slides"):
             outline["slides"] = body.edits["slides"]
+            edits_applied["slides_edited"] = True
         if body.edits.get("audience_assumed"):
             outline["audience_assumed"] = body.edits["audience_assumed"]
+            edits_applied["audience_assumed"] = outline["audience_assumed"]
 
     ctx_name = ctx["context"].get("name") or "the company"
     prompt = _generate_prompt(outline, ctx_name)
@@ -316,8 +363,17 @@ async def generate_deck(
     # Mark outline as consumed.
     await db.deck_outlines.update_one(
         {"id": outline_id, "context_id": context_id},
-        {"$set": {"approved": True, "consumed_deck_id": deck_id,
-                  "approved_at": iso(now())}},
+        {"$set": {
+            "approved": True,
+            "consumed_deck_id": deck_id,
+            "approved_at": iso(now()),
+            "edits_applied": edits_applied or None,
+            # Snapshot the post-edit research_question / slides on the outline
+            # so admin & history views show what was actually generated.
+            "research_question": outline.get("research_question"),
+            "slides": outline.get("slides"),
+            "audience_assumed": outline.get("audience_assumed"),
+        }},
     )
 
     # Telemetry — used by /admin/llm/spend → deck quality panel.
@@ -453,6 +509,7 @@ async def feedback(
         "rating": body.rating,
         "comment": body.comment,
         "will_regenerate": body.will_regenerate,
+        "regen_reason": body.regen_reason,
         "submitted_at": iso(now()),
         "submitted_by": ctx["account"]["id"],
     }
@@ -463,7 +520,8 @@ async def feedback(
     await db.deck_telemetry.update_one(
         {"deck_id": deck_id},
         {"$set": {"user_rating": body.rating,
-                  "user_will_regenerate": body.will_regenerate}},
+                  "user_will_regenerate": body.will_regenerate,
+                  "user_regen_reason": body.regen_reason}},
     )
     return {"ok": True, "deck_id": deck_id, "feedback": fb}
 

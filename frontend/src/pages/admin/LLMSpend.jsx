@@ -170,7 +170,7 @@ export default function LLMSpend() {
                         />
                       </div>
                       <p className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)] mt-1.5 tabular-nums">
-                        {pctOfTotal}% of window
+                        {pctOfTotal}% of total · {pctOfMax}% of top
                       </p>
                     </div>
                     <div className="col-span-3 text-right">
@@ -258,6 +258,75 @@ export default function LLMSpend() {
                 hint={`partial ${deckQuality.partial_context_count} · regen rec ${deckQuality.quality_recommends_regen_count}`}
               />
             </div>
+          </section>
+        )}
+
+        {/* Deck quality alerts — accounts to coach */}
+        {deckQuality?.alerted_accounts?.length > 0 && (
+          <section
+            className="bg-amber-50 border border-amber-200 rounded-sm mb-8"
+            data-testid="llm-spend-deck-alerts"
+          >
+            <header className="px-5 py-3.5 border-b border-amber-200 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-700" strokeWidth={1.7} />
+              <h2 className="akki-serif text-[17px] text-amber-900">
+                Coaching list · users producing weak decks
+              </h2>
+              <span className="ml-auto text-[10.5px] uppercase tracking-[0.14em] text-amber-700">
+                ≥ {deckQuality.alert_min_hits} of last {deckQuality.alert_window} below {deckQuality.alert_threshold}/100
+              </span>
+            </header>
+            <ul className="divide-y divide-amber-200">
+              {deckQuality.alerted_accounts.map((a) => (
+                <li
+                  key={a.account_id}
+                  className="px-5 py-3 flex items-center justify-between gap-3"
+                  data-testid={`llm-spend-deck-alert-${a.account_id}`}
+                >
+                  <div className="min-w-0">
+                    <p className="text-[var(--ink)]">{a.name || a.email}</p>
+                    <p className="text-[11px] text-amber-700 font-mono">{a.email}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="akki-serif text-[20px] tabular-nums text-amber-900">
+                      {a.avg_score}<span className="text-[12px] text-amber-700">/100</span>
+                    </p>
+                    <p className="text-[11px] text-amber-700 tabular-nums">
+                      {a.weak_count} of last {a.window} weak
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {deckQuality?.top_regen_reasons?.length > 0 && (
+          <section
+            className="bg-white border border-[var(--rule)] rounded-sm mb-8"
+            data-testid="llm-spend-regen-reasons"
+          >
+            <header className="px-5 py-3.5 border-b border-[var(--rule)] flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.7} />
+              <h2 className="akki-serif text-[17px] text-[var(--ink)]">
+                Why decks are coming back
+              </h2>
+              <span className="ml-auto text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)]">
+                signals folded into next outline (free)
+              </span>
+            </header>
+            <ul className="divide-y divide-[var(--rule)]">
+              {deckQuality.top_regen_reasons.map((r) => (
+                <li key={r.reason} className="px-5 py-3 flex items-center justify-between">
+                  <span className="text-[var(--ink)] text-[13.5px] capitalize">
+                    {r.reason.replace(/_/g, " ")}
+                  </span>
+                  <span className="akki-serif text-[20px] tabular-nums text-[var(--accent)]">
+                    {r.count}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </section>
         )}
 

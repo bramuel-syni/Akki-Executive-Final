@@ -22,6 +22,14 @@ import {
  *   Step 2 · Generate  — DEEP tier, consumes 1 of 3 daily slots.
  *   Step 3 · Review    — FAST-tier quality check + thumbs feedback.
  */
+const REGEN_REASON_LABEL = {
+  audience_drift:         "Audience drift",
+  weak_research_question: "Weak question",
+  missing_evidence:       "Missing evidence",
+  wrong_tone:             "Wrong tone",
+  other:                  "Other",
+};
+
 export default function Decks() {
   const { activeContext } = useAuth();
   const cid = activeContext?.id;
@@ -495,6 +503,7 @@ function OutlineStep({ outline, contextId, onIterate, onGenerated, onCancel }) {
 // ---------------------------------------------------------------------------
 function DeckStep({ deck, contextId, onUpdated, onNew }) {
   const [busy, setBusy] = useState(null);
+  const [showReasonChips, setShowReasonChips] = useState(false);
   const qc = deck.quality_check;
   const fb = deck.user_feedback;
 
@@ -507,12 +516,24 @@ function DeckStep({ deck, contextId, onUpdated, onNew }) {
     finally { setBusy(null); }
   };
 
-  const submitFeedback = async (rating) => {
+  const submitFeedback = async (rating, regenReason = null) => {
     setBusy("feedback");
     try {
-      const { data } = await api.post(`/contexts/${contextId}/decks/${deck.id}/feedback`, { rating });
+      const { data } = await api.post(
+        `/contexts/${contextId}/decks/${deck.id}/feedback`,
+        {
+          rating,
+          regen_reason: regenReason,
+          will_regenerate: !!regenReason,
+        },
+      );
       onUpdated({ ...deck, user_feedback: data.feedback });
-      toast.success("Thanks for the signal.");
+      setShowReasonChips(false);
+      if (regenReason) {
+        toast.success("Noted — your next outline will fold this in.");
+      } else {
+        toast.success("Thanks for the signal.");
+      }
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setBusy(null); }
   };
@@ -624,42 +645,78 @@ function DeckStep({ deck, contextId, onUpdated, onNew }) {
       </div>
 
       {/* Feedback + new */}
-      <div className="flex items-center justify-between gap-3 pt-2">
-        <div className="flex items-center gap-2">
-          {!fb && (
-            <>
-              <Button
-                variant="outline" size="sm"
-                onClick={() => submitFeedback("up")}
-                className="border-[var(--rule)]"
-                data-testid="decks-feedback-up"
-              >
-                <ThumbsUp className="w-3.5 h-3.5 mr-1.5" /> Useful
-              </Button>
-              <Button
-                variant="outline" size="sm"
-                onClick={() => submitFeedback("down")}
-                className="border-[var(--rule)]"
-                data-testid="decks-feedback-down"
-              >
-                <ThumbsDown className="w-3.5 h-3.5 mr-1.5" /> Off
-              </Button>
-            </>
-          )}
-          {fb && (
-            <p className="text-[12px] text-[var(--muted)]" data-testid="decks-feedback-recorded">
-              Feedback: {fb.rating === "up" ? "useful 👍" : "off 👎"}
-            </p>
-          )}
+      <div className="space-y-3 pt-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            {!fb && !showReasonChips && (
+              <>
+                <Button
+                  variant="outline" size="sm"
+                  onClick={() => submitFeedback("up")}
+                  className="border-[var(--rule)]"
+                  data-testid="decks-feedback-up"
+                >
+                  <ThumbsUp className="w-3.5 h-3.5 mr-1.5" /> Useful
+                </Button>
+                <Button
+                  variant="outline" size="sm"
+                  onClick={() => setShowReasonChips(true)}
+                  className="border-[var(--rule)]"
+                  data-testid="decks-feedback-down"
+                >
+                  <ThumbsDown className="w-3.5 h-3.5 mr-1.5" /> Off
+                </Button>
+              </>
+            )}
+            {fb && (
+              <p className="text-[12px] text-[var(--muted)]" data-testid="decks-feedback-recorded">
+                Feedback: {fb.rating === "up" ? "useful 👍" : "off 👎"}
+                {fb.regen_reason && ` · ${REGEN_REASON_LABEL[fb.regen_reason] || fb.regen_reason}`}
+              </p>
+            )}
+          </div>
+          <Button
+            onClick={onNew}
+            variant="outline"
+            className="border-[var(--rule)]"
+            data-testid="decks-new-btn"
+          >
+            <FileText className="w-3.5 h-3.5 mr-1.5" /> New deck
+          </Button>
         </div>
-        <Button
-          onClick={onNew}
-          variant="outline"
-          className="border-[var(--rule)]"
-          data-testid="decks-new-btn"
-        >
-          <FileText className="w-3.5 h-3.5 mr-1.5" /> New deck
-        </Button>
+
+        {showReasonChips && !fb && (
+          <div
+            className="bg-[var(--cream-deep)]/40 border border-[var(--rule)] rounded-sm px-4 py-3"
+            data-testid="decks-regen-reason-panel"
+          >
+            <p className="text-[11px] uppercase tracking-[0.16em] text-[var(--muted)] mb-2">
+              Why didn't this work? (We'll fold this into your next outline — free.)
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(REGEN_REASON_LABEL).map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  disabled={busy === "feedback"}
+                  onClick={() => submitFeedback("down", k)}
+                  className="text-[11.5px] uppercase tracking-[0.14em] px-3 py-1.5 rounded-sm border border-[var(--rule)] text-[var(--deep)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-50"
+                  data-testid={`decks-regen-reason-${k}`}
+                >
+                  {label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setShowReasonChips(false)}
+                className="text-[11.5px] uppercase tracking-[0.14em] px-3 py-1.5 text-[var(--muted)] hover:text-[var(--ink)]"
+                data-testid="decks-regen-reason-cancel"
+              >
+                Skip
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );
