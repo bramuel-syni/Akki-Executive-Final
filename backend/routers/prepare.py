@@ -224,8 +224,6 @@ async def list_minutes(
     limit: int = 50,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    # Match either explicit doc_type or filename heuristic. We deliberately
-    # avoid a regex on extracted_text — that would be expensive and noisy.
     or_clause: List[Dict[str, Any]] = [
         {"doc_type": "minutes"},
         {"name": {"$regex": "minutes", "$options": "i"}},
@@ -250,3 +248,91 @@ async def list_minutes(
             "minutes_meta": d.get("minutes_meta") or None,
         })
     return {"items": out, "count": len(out)}
+
+
+@router.post("/contexts/{context_id}/minutes/{doc_id}/extract")
+async def extract_minutes(
+    context_id: str,
+    doc_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """LLM-extract structured minutes data from the document.
+
+    Pulls: meeting_date, attendees[], decisions[], actions[], questions[].
+    Caches the result on the document under `minutes_meta` so the structured
+    view loads instantly on subsequent reads.
+    """
+    doc = await db.documents.find_one(
+        {"id": doc_id, "context_id": context_id},
+        {"_id": 0, "id": 1, "extracted_text": 1, "name": 1,
+         "original_filename": 1, "minutes_meta": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    text = (doc.get("extracted_text") or "").strip()
+    if len(text) < 80:
+        raise HTTPException(status_code=400, detail="Document has no readable text to extract from.")
+
+    # Build the extraction prompt — strict schema, JSON-only response.
+    prompt = (
+        "You are reading meeting minutes for an executive who wasn't in the "
+        "room. Extract the structured artefacts they need. Be precise. Don't "
+        "invent attendees, decisions, or actions that aren't in the text.\n\n"
+        f"DOCUMENT TITLE: {doc.get('name') or doc.get('original_filename') or 'Minutes'}\n\n"
+        "MINUTES TEXT (truncated to first 12000 chars):\n"
+        f"{text[:12000]}\n\n"
+        "Return STRICT JSON ONLY with this exact shape:\n"
+        "{\"meeting_date\": \"YYYY-MM-DD or null\","
+        " \"attendees\": [\"Name (Role if stated)\"],"
+        " \"decisions\": [\"<<one sentence each, ≤25 words>>\"],"
+        " \"actions\": [{\"who\": \"Name\", \"what\": \"<<verb-led action>>\","
+        " \"when\": \"YYYY-MM-DD or 'next meeting' or null\"}],"
+        " \"questions\": [\"<<open questions raised but not resolved>>\"]}"
+    )
+    try:
+        from llm_service import call_llm
+        llm_out = await call_llm(
+            system_message=(
+                "You are AKKI's structured-extraction model. Strict JSON only. "
+                "Never invent. If a field is genuinely absent from the source, return [] or null."
+            ),
+            user_message=prompt,
+            response_format="json",
+        )
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Extractor unavailable: {e}") from e
+
+    from helpers.llm_json import safe_parse_json
+    parsed, _ = safe_parse_json(llm_out.get("response") or "{}")
+    if not parsed:
+        raise HTTPException(status_code=502, detail="Extractor returned no usable JSON.")
+
+    minutes_meta = {
+        "meeting_date": parsed.get("meeting_date") or None,
+        "attendees": [str(a)[:120] for a in (parsed.get("attendees") or []) if str(a).strip()][:20],
+        "decisions": [str(d)[:280] for d in (parsed.get("decisions") or []) if str(d).strip()][:30],
+        "actions": [
+            {
+                "who": str(a.get("who") or "")[:80],
+                "what": str(a.get("what") or "")[:280],
+                "when": (str(a.get("when"))[:40] if a.get("when") else None),
+            }
+            for a in (parsed.get("actions") or [])
+            if isinstance(a, dict) and a.get("what")
+        ][:30],
+        "questions": [str(q)[:280] for q in (parsed.get("questions") or []) if str(q).strip()][:20],
+        "extracted_at": iso(now()),
+        "extractor_model": llm_out.get("mode"),
+    }
+
+    await db.documents.update_one(
+        {"id": doc_id, "context_id": context_id},
+        {"$set": {"doc_type": "minutes", "minutes_meta": minutes_meta,
+                  "updated_at": iso(now())}},
+    )
+    await write_audit(
+        context_id, ctx["account"]["id"],
+        "minutes.extracted", "document", doc_id,
+        {"actions": len(minutes_meta["actions"]), "decisions": len(minutes_meta["decisions"])},
+    )
+    return {"ok": True, "doc_id": doc_id, "minutes_meta": minutes_meta}
