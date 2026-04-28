@@ -1876,3 +1876,70 @@ Addendum also asked for a calmer, less-marketing post-login register.
 - Defence-in-depth: unique sparse index on `accounts.inbound_token` /
   `contexts.inbound_token` (currently uses _mint_token() collision-free in
   practice but lacks a DB-level guarantee).
+
+### 2026-04-28 — iter53 · Deep-tier (Claude Opus 4.6) routing + per-surface daily quota + Minutes→Cycle one-click
+**Tier system (`/app/backend/llm_service.py` + `/app/backend/llm_tier_quota.py`)**
+- `call_llm()` now accepts `tier="fast" | "standard" | "deep"`. Model ids are
+  read from env (`LLM_MODEL_FAST` / `LLM_MODEL_STANDARD` / `LLM_MODEL_DEEP`)
+  so we can swap to Opus 4.7 the moment the Emergent key catalogue picks it
+  up — no code change. Defaults today:
+  - fast → `gemini-2.5-flash` (validation/extraction)
+  - standard → `claude-sonnet-4-5-20250929` (today's default)
+  - deep → `claude-opus-4-6` (long-form narrative, decks, blog)
+- `llm_tier_quota.py` adds per-account-per-day quotas, persisted in
+  `llm_deep_usage{account_id, surface, day_utc, count}`. Defaults (env-overridable
+  via `AKKI_DEEP_QUOTA_<SURFACE>`):
+    `brief=10`, `blog=5`, `deck=3`, `chat=30`, `validate=20`, `minutes=5`.
+- `call_llm_with_tier(surface, account_id, requested_tier, call_args)` wraps
+  the whole "check quota → consume → call → graceful fallback" flow. When a
+  user is over their daily deep budget the call transparently downgrades to
+  standard tier and the response carries
+  `quota.{requested_tier, served_tier, downgraded, remaining, limit, used, reset_at}`.
+
+**Surfaces wired**
+- **Brief generation** (`POST /api/contexts/{cid}/briefs`) — accepts
+  `deep:true` to opt in. UI exposes a "Deep mode" checkbox with a live
+  "X/N today" indicator (`prepare-brief-deep-toggle`). Saved brief carries
+  `tier` and `model_id` for audit.
+- **ExCo360 blog generation** (`POST /api/blog/compose`, admin) — always
+  deep tier. Quota state surfaced on response.
+- **Minutes narrative** (NEW: `POST /api/contexts/{cid}/minutes/{doc_id}/narrative`)
+  — 250–400 word editorial summary on the deep tier. Persisted at
+  `documents.minutes_narrative.{body,model,tier,generated_at}` so re-renders
+  are instant. Re-running silently overwrites.
+
+**New endpoint: `GET /api/llm/quota[?surface=…]`** — auth-required.
+Read-only; returns today's deep-tier usage so the UI can render an accurate
+"X/N today" hint.
+
+**Minutes → Cycle dispatch (one-click)**
+- New endpoint: `POST /api/contexts/{cid}/minutes/{doc_id}/to_cycle`.
+- Walks `minutes_meta.actions[]` and seeds one row per action into the
+  `questions` collection with `source='minutes:<doc_id>'`,
+  `source_label='<title> (<date>)'`, and best-effort assignment to a
+  reportee whose `name` matches `action.who` (exact match → first-token
+  match → unassigned).
+- Idempotent on `(context_id, source, text)` — re-running on an unchanged
+  doc adds zero duplicates.
+- Returns `{seeded[], unmatched[], next:'/app/cycle?ctx=<id>'}` so the UI
+  can show "5 matched · 2 unassigned · Continue to Cycle →".
+- UI: 'Turn into checklist' button on the Minutes detail panel
+  (`prepare-minutes-to-cycle-<id>`) + a 'Draft narrative summary' button
+  (`prepare-minutes-narrative-<id>`) that calls the deep-tier endpoint.
+
+### Tests
+- iteration_53 — backend: 9/9 pass (live Opus call confirmed
+  tier=deep / model_id=claude-opus-4-6 / quota auto-downgrades cleanly on
+  exhaustion). Frontend smoke OK. No regressions on iter51/52.
+- Report: `/app/test_reports/iteration_53.json`.
+
+### Open / deferred
+- When Emergent catalogue lists `claude-opus-4-7`, swap by setting
+  `LLM_MODEL_DEEP=claude-opus-4-7` in `/app/backend/.env`. No code change.
+- Race-tighten: `check_and_consume()` reads-then-upserts; on simultaneous
+  deep requests at `used=N-1` two could both pass. Acceptable 1-call slop
+  for now; switch to `find_one_and_update({count:{$lt:limit}}, $inc:{count:1})`
+  if integrity becomes a concern.
+- Decks surface — quota slot already reserved (`deck=3/day`). Build the
+  generator when the design is ready.
+- Optional: 'Regenerate narrative' affordance with a confirm-overwrite UX.
