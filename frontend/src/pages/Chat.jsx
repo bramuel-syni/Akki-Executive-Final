@@ -94,6 +94,11 @@ export default function Chat() {
     const seedTitle = searchParams.get("seed_title");
     const docId = searchParams.get("doc");
     if (!p && !seedTitle && !docId) return;
+    // Iter57 — when the trigger is ?doc=<id>, we *must* wait for the
+    // active context to hydrate before we can resolve the doc title and
+    // mint a chat. Re-firing this effect when activeContext.id changes
+    // closes the race that the testing pass surfaced.
+    if (docId && !activeContext?.id) return;
     let cancelled = false;
     (async () => {
       try {
@@ -140,7 +145,7 @@ export default function Chat() {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams.toString()]);
+  }, [searchParams.toString(), activeContext?.id]);
 
   const onNewChat = async () => {
     try {
