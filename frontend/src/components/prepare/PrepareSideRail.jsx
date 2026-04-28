@@ -165,7 +165,7 @@ export default function PrepareSideRail({ tab, briefs, signals, loadingBriefs, l
             {filtered.map((it) => {
               const r = config.renderItem(it);
               return (
-                <li key={it.id}>
+                <li key={it.id} data-testid={`prepare-brief-history-${it.id}`}>
                   <button
                     onClick={() => config.onOpen?.(r.raw || it)}
                     className="w-full text-left px-4 py-2.5 hover:bg-[var(--cream-deep)]/30 transition-colors group"

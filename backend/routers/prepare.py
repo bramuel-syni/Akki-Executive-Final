@@ -128,8 +128,9 @@ async def create_brief(
         "title": title[:120],
         "body": md_body,
         "model": llm_out.get("mode"),
-        "validated": True,  # stamps the shielded pass for the chip
-        "validation": validation,  # NEW: real second-model verdict
+        # Real second-LLM countercheck; the boolean `validated` flag was
+        # deprecated iter49 — readers should consult validation.verdict.
+        "validation": validation,
         "created_at": iso(now()),
     }
     await db.briefs.insert_one(doc)

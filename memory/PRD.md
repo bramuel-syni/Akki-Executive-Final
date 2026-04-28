@@ -1471,6 +1471,56 @@ verified by testing agent (`/app/test_reports/iteration_33.json`):
   Consolidate · Send up." reinforces the spine.
 
 
+## §UX iter49 — Real validator + Mark-as-read + Plays-aware Ask + Workflow rail (2026-04-28)
+
+### Why
+Burn down the iter48 backlog so only architectural Tier-C work remains.
+
+### What shipped
+- **Mark-as-read on Activity timeline** (`/app/activity?cat=*`) —
+  per-user, per-context, persisted in `localStorage` under
+  `akki.activity.read.{cid}`. Read items render italic + muted, no
+  unread dot. New "Mark all read" button.
+- **Real second-LLM validator** — `llm_service.validate_independent`
+  (Gemini 2.5 Flash) runs after Claude drafts a brief, returns
+  `{verdict, confidence, notes[], validator_provider, validator_model}`.
+  Persisted on the brief record. ValidatedBadge accepts a `validation`
+  prop and renders a verdict-coloured chip with a hover popover showing
+  the validator's notes and identity. Soft-fails closed
+  (verdict='qualified', 'Validator unavailable') so the brief endpoint
+  is never gated by validator outage.
+- **Plays-aware M13 Ask** — the `/ask` prompt now includes an
+  `[ACTIVE WORKFLOWS]` block listing up to 3 currently-active plays for
+  the context so answers frame themselves in the user's working state.
+- **Workspace 'Workflow context' panel** — third right-rail section on
+  the Document Journal listing active plays in the company with click-
+  through to `/app/plays/{id}`. Light-touch link today; ready to upgrade
+  when play↔doc linkage ships.
+- **Polish**: `_target_date_sort_key` lifted to module scope in
+  `strategic_goals.py` (no per-request regex compile). Deprecated the
+  redundant `validated: True` boolean on briefs in favour of
+  `validation.verdict`. Stable `prepare-brief-history-{id}` testid on
+  the past-brief rail rows.
+
+### Tests
+- iteration_49.json — backend 6/6, frontend 95% (all features
+  verified; one minor click-target selector stability nit fixed in
+  the same iteration).
+
+### Open / deferred — Tier-C only
+- Minutes as first-class entity (large architectural — needs new doc
+  type, extractor, linkage to Cycle/Monitor; will plug into Prepare's
+  right rail as a third tab).
+- Personal vs Enterprise tier split (largest — separate billing + data
+  models; needs scoping conversation with the user).
+- Inbound email parsing/receiving (needs Postmark or Resend Inbound
+  API key from the user).
+- Concurrency optimisation: issue Gemini validator concurrently with
+  audit-log writes via `asyncio.gather` to keep p50 brief latency
+  under 30s once warm.
+- framer-motion stagger first-paint nit on AppShell NAV.
+
+
 ## §UX iter48 — Activity grouped + Sandbox accept-upload + Backlog burn-down (2026-04-28)
 
 ### Why
