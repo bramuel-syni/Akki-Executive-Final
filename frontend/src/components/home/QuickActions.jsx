@@ -91,11 +91,11 @@ export default function QuickActions() {
     finally { setStarting(null); }
   };
 
-  // Filter tiles by active role (executive sees executive + any; ned sees ned + any)
+  // Strict role isolation (Apr-2026): if the user is acting as Executive,
+  // they only see Executive intent tiles. As NED, only NED tiles. The
+  // platform never offers a NED option to an Exec or vice-versa.
   const visible = TILE_DEFS.filter((t) =>
-    t.role === "any" ||
-    (activeRole === "executive" && t.role === "executive") ||
-    (activeRole === "ned" && (t.role === "ned" || t.role === "executive")) // NEDs sometimes review too
+    t.role === "any" || t.role === activeRole
   );
 
   if (!cid) return null;

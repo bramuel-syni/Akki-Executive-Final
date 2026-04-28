@@ -36,7 +36,7 @@ const HOME_TABS = [
 ];
 
 export default function AppHome() {
-  const { account, activeContext, activeRole, contexts } = useAuth();
+  const { account, activeContext, activeRole, contexts, availableRoles } = useAuth();
   const contextId = activeContext?.id;
   const [scope, setScope] = useState("current"); // "current" | "all"
   const [signals, setSignals] = useState([]);
@@ -142,8 +142,10 @@ export default function AppHome() {
 
   return (
     <AppShell>
-      {/* Fixed-height page: only inner content column scrolls */}
-      <div className="h-[calc(100vh-4rem)] max-w-[1100px] mx-auto px-8 grid grid-cols-1 gap-10 overflow-hidden">
+      {/* Fixed-height page: only inner content column scrolls.
+          (Apr-2026 fix: removed overflow-hidden which was clipping the
+          Workflows hub Quick Actions on narrow viewports.) */}
+      <div className="min-h-[calc(100vh-4rem)] max-w-[1100px] mx-auto px-8 grid grid-cols-1 gap-10">
         {/* Main — sticky header + scrolling stream */}
         <div className="flex flex-col min-h-0 py-8">
           <div className="mb-6 akki-fade-up shrink-0">
@@ -167,6 +169,8 @@ export default function AppHome() {
               signals={signals}
               briefings={briefings}
               documents={documents}
+              activeRole={activeRole}
+              availableRoles={availableRoles}
             />
           </div>
 
@@ -561,11 +565,30 @@ function NextBestActionCard() {
  *    NAMES where they are (no surprise) and points them at the most
  *    interesting thing AKKI noticed — not a metrics strip.
  */
-function ContextChooser({ contexts, activeContext, hasMultipleContexts, signals, briefings, documents }) {
-  const { switchContext } = useAuth();
-  const sortedContexts = (contexts || []).slice().sort(
+function ContextChooser({ contexts, activeContext, hasMultipleContexts, signals, briefings, documents, activeRole, availableRoles }) {
+  const { switchContext, switchRole } = useAuth();
+
+  // Role isolation: only show contexts where the user holds the *current*
+  // active role. Switching role swaps the visible portfolio entirely.
+  const roleScopedContexts = (contexts || []).filter(
+    (c) => !c.my_role || c.my_role === activeRole
+  );
+  const sortedContexts = roleScopedContexts.slice().sort(
     (a, b) => (a.id === activeContext?.id ? -1 : b.id === activeContext?.id ? 1 : 0),
   );
+
+  // Counts per role for the editorial intro line.
+  const nedCount = (contexts || []).filter((c) => c.my_role === "ned" && c.status !== "archived").length;
+  const execCount = (contexts || []).filter((c) => c.my_role === "executive" && c.status !== "archived").length;
+
+  const intro = (() => {
+    if (nedCount && execCount) {
+      return `You work in ${nedCount} ${nedCount === 1 ? "company" : "companies"} as NED and ${execCount} as Executive. Where would you like to start?`;
+    }
+    if (nedCount) return `You sit on ${nedCount} ${nedCount === 1 ? "board" : "boards"} as NED. Where would you like to start?`;
+    if (execCount) return `You operate in ${execCount} ${execCount === 1 ? "company" : "companies"} as Executive. Where would you like to start?`;
+    return "Where are you working today?";
+  })();
 
   // The "soft lead" line for the single-context case — pulls the most
   // interesting thing AKKI has on the user's plate today.
@@ -597,32 +620,75 @@ function ContextChooser({ contexts, activeContext, hasMultipleContexts, signals,
     return null;
   })();
 
-  if (hasMultipleContexts) {
+  // Always render the role toggle when the user holds both roles. This
+  // is the "single source of truth" for the role lens — switching here
+  // re-anchors the whole experience (see AuthContext.switchRole).
+  const showRoleToggle = (availableRoles || []).length >= 2;
+
+  if (hasMultipleContexts || showRoleToggle) {
     return (
       <div className="mt-5" data-testid="home-context-chooser">
-        <p className="akki-overline mb-3 text-[var(--muted)]">
-          Where are you working today?
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {sortedContexts.map((c) => {
-            const active = c.id === activeContext?.id;
-            return (
+        {showRoleToggle && (
+          <div className="mb-4 flex items-center gap-2" data-testid="home-role-toggle">
+            <span className="akki-overline text-[var(--muted)] mr-1">Acting as</span>
+            {availableRoles.includes("ned") && (
               <button
-                key={c.id}
-                onClick={() => !active && switchContext(c.id)}
-                className={`px-4 py-2 rounded-md border text-[13px] transition-colors ${
-                  active
+                onClick={() => activeRole !== "ned" && switchRole("ned")}
+                className={`px-3 py-1 rounded-full text-[12.5px] border transition-colors ${
+                  activeRole === "ned"
                     ? "bg-[var(--ink)] text-[var(--cream)] border-[var(--ink)]"
-                    : "bg-white text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)] hover:text-[var(--ink)]"
+                    : "bg-white text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)]"
                 }`}
-                data-testid={`home-context-chooser-${c.id}${active ? "-active" : ""}`}
+                data-testid={`home-role-ned${activeRole === "ned" ? "-active" : ""}`}
               >
-                <span className="akki-serif">{c.name}</span>
-                {active && <span className="text-[10px] uppercase tracking-wider ml-2 opacity-70">Active</span>}
+                NED
               </button>
-            );
-          })}
-        </div>
+            )}
+            {availableRoles.includes("executive") && (
+              <button
+                onClick={() => activeRole !== "executive" && switchRole("executive")}
+                className={`px-3 py-1 rounded-full text-[12.5px] border transition-colors ${
+                  activeRole === "executive"
+                    ? "bg-[var(--ink)] text-[var(--cream)] border-[var(--ink)]"
+                    : "bg-white text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)]"
+                }`}
+                data-testid={`home-role-executive${activeRole === "executive" ? "-active" : ""}`}
+              >
+                Exec
+              </button>
+            )}
+          </div>
+        )}
+
+        <p className="akki-overline mb-3 text-[var(--muted)]" data-testid="home-chooser-intro">
+          {intro}
+        </p>
+        {sortedContexts.length === 0 ? (
+          <p className="text-[13px] text-[var(--muted)] italic">
+            No companies as {activeRole === "ned" ? "NED" : "Executive"} yet. Add one from the right rail.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {sortedContexts.map((c) => {
+              const active = c.id === activeContext?.id;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => !active && switchContext(c.id)}
+                  className={`px-4 py-2 rounded-md border text-[13px] transition-colors ${
+                    active
+                      ? "bg-[var(--ink)] text-[var(--cream)] border-[var(--ink)]"
+                      : "bg-white text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)] hover:text-[var(--ink)]"
+                  }`}
+                  data-testid={`home-context-chooser-${c.id}${active ? "-active" : ""}`}
+                >
+                  <span className="akki-serif">{c.name}</span>
+                  {active && <span className="text-[10px] uppercase tracking-wider ml-2 opacity-70">Active</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }

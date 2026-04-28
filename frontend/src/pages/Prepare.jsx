@@ -35,6 +35,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import ShareModal from "@/components/share/ShareModal";
+import PrepareStatsDock from "@/components/prepare/PrepareStatsDock";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
@@ -88,6 +89,12 @@ export default function Prepare() {
         <p className="akki-meta mt-2 max-w-xl">
           Short, focused, on-demand. Tell AKKI what you want to be ready for, and AKKI drafts it.
         </p>
+
+        {/* Stats dock — at-a-glance posture for this context. Three cards
+            with progress bars: brief coverage, signal pulse, briefing
+            rhythm. (Apr-2026 — restored after user feedback that the
+            page felt undifferentiated without the visual lift.) */}
+        <PrepareStatsDock contextId={cid} />
 
         {/* Line tabs — labels only. Description moves below into a section
             header so it has room to breathe. */}

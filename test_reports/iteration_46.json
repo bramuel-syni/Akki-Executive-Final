@@ -1,0 +1,56 @@
+{
+  "summary": "Iter46 frontend verification — Sidebar reorder/renames, Home role toggle, InSummaryTiles redesign, QuickActions role isolation, Prepare stats dock, and WorkflowsHub truncation fix all pass. Two frontend bugs surface around the role-count logic on Home: ContextChooser intro falls back to the generic copy because `my_role` is not set/populated on user contexts (observed from both intro counting and Portfolio summary tile both reading 0). The role-scoped context filter also over-renders because it allows contexts with missing my_role.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AppHome · ContextChooser",
+        "issue": "Intro text falls back to 'Where are you working today?' even though the authenticated user (bramuel@syni.ai) holds many NED + Exec contexts in the right-rail portfolio (NED_PERSONAL, EXECUTIVE_PERSONAL badges visible). Expected copy per spec: 'You work in X companies as NED and Y as Executive. Where would you like to start?'. Root cause: ContextChooser counts rely on `c.my_role === 'ned'|'executive'`, but the `my_role` field is blank/undefined on the contexts returned by `/auth/me`. The portfolio rail uses `c.type` (ned_personal / executive_personal) instead, which is why it renders correctly.",
+        "selector": "[data-testid=\"home-chooser-intro\"]",
+        "priority": "HIGH"
+      },
+      {
+        "component": "InSummaryTiles · Portfolio tile",
+        "issue": "Shows '0 acting as NED' and '0 acting as Exec' despite a hero value of 11 companies. Same root cause as above — InSummaryTiles filters on `c.my_role` which is absent. Should fall back to deriving role from `c.type` (ned_* vs executive_*).",
+        "selector": "[data-testid=\"summary-tile-portfolio\"]",
+        "priority": "HIGH"
+      },
+      {
+        "component": "AppHome · ContextChooser · role-scoped list",
+        "issue": "When acting as NED, the context chip list still shows Exec-type contexts (e.g. TEST_SeededExecCo, TEST_DeliveryCheck, NBA Test Co 1777063329102). The filter `!c.my_role || c.my_role === activeRole` admits contexts whose `my_role` is undefined, defeating the new role-isolation rule. Suggest tightening the filter: derive role from `c.type.startsWith('ned_')` / `'executive_'` when `my_role` is missing.",
+        "selector": "[data-testid^=\"home-context-chooser-\"]",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passing_checks": [
+    "Sidebar order matches spec (Home, Chat, Prepare, The Lens (POV), Test Hypothesis, Monitor, Learn, Influence Map, Document Journal) with Workflows + Reporting Cycle correctly hidden when activeRole=ned.",
+    "The Lens label rendered as 'The Lens (POV)'; 'Test Hypothesis' and 'Reporting Cycle' labels correct.",
+    "home-role-toggle present; home-role-ned-active selector renders with active suffix; Exec button visible next to it.",
+    "InSummaryTiles — all six tiles (Signals, Briefings, Reporting Cycle, Reports, Documents, Portfolio) render hero value + heroLabel + three attribute lines with correct data-testid='summary-attr-{key}-{i}'. Hero labels match spec ('generated', 'cycles reported', 'processed', 'uploads', 'companies').",
+    "QuickActions on Home: under activeRole=ned only 'Read & prepare for tomorrow' (role=any) renders; no exec-only tiles — strict role isolation working.",
+    "WorkflowsHub Quick Actions card 'Read & prepare for tomorrow' is not truncated on 1920x900 (scrollWidth == clientWidth == 292). Apr-2026 overflow-hidden removal verified.",
+    "Prepare (/app/prepare) renders PrepareStatsDock above line tabs with three sub-cards (prepare-stat-brief-coverage, -signal-pulse, -briefing-rhythm) each with a progress bar.",
+    "Prepare line tabs still functional; Generate Brief / Generate Signals section headers render under prepare-section-brief / -signals."
+  ],
+  "test_report_links": [],
+  "action_items": [
+    "Fix role attribution on contexts: either (a) ensure /auth/me populates `my_role` on every context membership, or (b) in the frontend derive role from `c.type` (ned_* → 'ned', executive_* → 'executive') as a fallback in ContextChooser, InSummaryTiles.portfolio, and AppShell role-filter logic. Without it, the new intro copy + role-scoped chooser + portfolio breakdown all misreport.",
+    "After fixing my_role, re-verify: (i) intro copy uses the new 'X companies as NED and Y as Executive' template, (ii) chip list only shows contexts that match the active role, (iii) Portfolio tile 'acting as NED' / 'acting as Exec' counts match the NED/Exec portfolio rail groupings."
+  ],
+  "critical_code_review_comments": [
+    "AppHome.jsx ContextChooser and InSummaryTiles.jsx both read `c.my_role` but the contexts from /auth/me appear to lack it — should either be populated server-side or a deriveRole(c) helper used consistently.",
+    "The role filter in ContextChooser (`!c.my_role || c.my_role === activeRole`) is too permissive — undefined my_role should not auto-match the active role; it should either be derived from c.type or excluded.",
+    "AuthContext.switchRole() uses window.location.assign('/app') only when current context's my_role mismatches — with my_role undefined this branch never fires, so the 'hard nav on role switch' spec is effectively not enforced in practice."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "80%"},
+  "test_credentials": "Executive: bramuel@syni.ai / TestBramuel2026! (verified working)",
+  "seed_data_creation": "None",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Role attribution bug (context.my_role blank) blocks three iter46 acceptance criteria: the new intro copy, the role-scoped context chooser, and Portfolio tile's NED/Exec split. All visual/structural redesign checks pass; fix is likely a small data-derivation patch in frontend or a field population in /auth/me backend serializer. After patch: re-run the same playwright flow and assert (1) home-chooser-intro text contains 'as NED and' and 'as Executive', (2) after clicking the NED toggle, chip list length equals NED portfolio count only, (3) summary-tile-portfolio attrs show non-zero 'acting as NED' / 'acting as Exec'."
+}

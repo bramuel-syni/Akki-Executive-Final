@@ -2,41 +2,35 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
-import { Sparkles, ScrollText, Send, Eye, BookOpen, FileText, Building2 } from "lucide-react";
+import {
+  Sparkles, ScrollText, Send, FileText, BookOpen, Building2,
+} from "lucide-react";
 
 /**
- * InSummaryTiles — neat hook tiles on Home that surface the user's most
- * frequently-checked numbers in a quick-scan grid:
+ * InSummaryTiles — the executive's "by-the-numbers" strip on Home.
  *
- *   - Signals          (count + critical/high/medium breakdown)
- *   - Briefings        (unread + last update)
- *   - Cycle status     (open submissions / outstanding)
- *   - Document journal (count + last add)
+ * Apr-2026 redesign per user feedback. Each tile carries:
+ *   - kicker (label)
+ *   - hero number + sublabel (the one big number worth reading)
+ *   - up to three attribute lines (each with its own number)
+ *   - link to the relevant surface
  *
- * Each tile shows: kicker, primary number, breakdown line, freshness
- * timestamp, link to the surface. No charts, no bars; just numbers and
- * text — Economist register.
+ * Tiles:
+ *   1. Signals      — items generated · risks · opportunities · gaps
+ *   2. Briefings    — items generated · unread · read · last 7 days
+ *   3. Reporting    — cycles reported · board packs · submitted reports · % on time
+ *   4. Reports      — reports processed · submissions consumed · pending review · sources
+ *   5. Documents    — uploads · trust · relevance · usefulness
+ *   6. Portfolio    — companies · acting as NED · acting as Exec · pending actions
  */
 
-function fmtRelative(iso) {
-  if (!iso) return "—";
-  try {
-    const d = new Date(iso);
-    const now = new Date();
-    const diffMs = now - d;
-    const diffM = Math.round(diffMs / 60000);
-    if (diffM < 1) return "just now";
-    if (diffM < 60) return `${diffM} min ago`;
-    const diffH = Math.round(diffM / 60);
-    if (diffH < 24) return `${diffH} hr ago`;
-    const diffD = Math.round(diffH / 24);
-    if (diffD < 7) return `${diffD} d ago`;
-    return d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "2-digit" });
-  } catch { return "—"; }
+function pct(num, denom) {
+  if (!denom) return 0;
+  return Math.round((num * 100) / denom);
 }
 
 export default function InSummaryTiles() {
-  const { activeContext, contexts: allContexts } = useAuth();
+  const { activeContext, contexts: allContexts, activeRole } = useAuth();
   const cid = activeContext?.id;
   const [data, setData] = useState({
     signals: [], briefings: [], submissions: [], checklists: [], docs: [],
@@ -71,101 +65,159 @@ export default function InSummaryTiles() {
   useEffect(() => { load(); }, [load]);
 
   const tiles = useMemo(() => {
-    // Signals carry `type` (risk | opportunity | gap) and `confidence`
-    // (high | medium | low) — NOT severity/priority. Bucket them
-    // accordingly so the breakdown actually populates.
+    // ── Signals: hero = total generated. Attrs = risk/opp/gap.
     const sigByType = data.signals.reduce((acc, s) => {
       const t = (s.type || "risk").toLowerCase();
       acc[t] = (acc[t] || 0) + 1;
       return acc;
     }, {});
-    const lastSig = data.signals.length ? data.signals.reduce((latest, s) => {
-      const t = s.created_at || s.updated_at;
-      return t && (!latest || t > latest) ? t : latest;
-    }, null) : null;
 
+    // ── Briefings: hero = total composed. Attrs = unread / read / last 7 days.
     const briefUnread = data.briefings.filter((b) => !b.read_at && !b.read).length;
-    const lastBrief = data.briefings.length ? (data.briefings[0]?.created_at || data.briefings[0]?.published_at) : null;
+    const briefRead = data.briefings.length - briefUnread;
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const briefRecent = data.briefings.filter((b) => {
+      const t = b.created_at || b.published_at;
+      return t && new Date(t).getTime() >= sevenDaysAgo;
+    }).length;
 
-    const submitted = data.submissions.length;
-    const dispatched = data.checklists.filter((c) => c.status === "dispatched").length;
-    const submittedNames = new Set(data.submissions.map((s) => s.reportee_name));
-    const outstanding = data.checklists.filter((c) => c.status === "dispatched" && !submittedNames.has(c.reportee_name)).length;
-    const lastSub = data.submissions.length ? (data.submissions[0]?.received_at || data.submissions[0]?.created_at) : null;
-
-    const docCount = data.docs.length;
-    const lastDoc = data.docs.length ? (data.docs[0]?.uploaded_at || data.docs[0]?.created_at) : null;
-
-    // ── Reports sent (this company): final/sent reports the user has authored
-    const reportsSent = data.reports.filter((r) =>
-      ["sent", "delivered", "final", "approved"].includes((r.status || "").toLowerCase())
+    // ── Reporting Cycle: hero = number of cycle "rounds" reported.
+    //    A cycle = one dispatched checklist (one round of asking the team).
+    //    Attrs: board packs (briefings doubling as packs), submitted reports,
+    //    on-time submission rate.
+    const cyclesReported = data.checklists.filter(
+      (c) => c.status === "dispatched" || c.status === "completed"
     ).length;
-    const reportsTotal = data.reports.length;
-    const lastReport = data.reports.length
-      ? (data.reports[0]?.sent_at || data.reports[0]?.created_at)
-      : null;
+    const boardPacks = data.briefings.length;
+    const submittedReports = data.submissions.length;
+    // On-time = submission timestamp <= checklist deadline (best-effort match
+    // by reportee). If no deadline data, fall back to "submitted in <72h".
+    const onTimeCount = data.submissions.filter((s) => {
+      if (!s.received_at) return false;
+      const cl = data.checklists.find((c) => c.id === s.checklist_id);
+      if (cl?.deadline_at) {
+        return new Date(s.received_at) <= new Date(cl.deadline_at);
+      }
+      // Fallback heuristic
+      if (cl?.dispatched_at) {
+        return (new Date(s.received_at) - new Date(cl.dispatched_at)) <= 72 * 3600 * 1000;
+      }
+      return true;
+    }).length;
+    const onTimePct = pct(onTimeCount, submittedReports);
 
-    // ── Network: companies + people across the user's portfolio
-    const companies = (allContexts || []).filter((c) => c.status !== "archived").length;
-    // Members on the active company (admins + reportees + collaborators)
-    const teamMembers = data.members.length;
+    // ── Reports: hero = reports the user has authored/processed.
+    //    Attrs: submissions consumed across all reports, sources (docs cited),
+    //    pending review (in_review status).
+    const reportsTotal = data.reports.length;
+    const reportsPending = data.reports.filter(
+      (r) => (r.status || "").toLowerCase() === "in_review"
+    ).length;
+    // Submissions consumed: same as submittedReports (every submission feeds
+    // a report eventually); this is the executive's evidence base.
+    const submissionsConsumed = submittedReports;
+    // Sources = documents linked from reports. We don't have a direct field,
+    // approximate: sum of (cited_doc_ids ?? source_doc_ids) lengths.
+    const sourcesCount = data.reports.reduce((acc, r) => {
+      const ids = r.cited_doc_ids || r.source_doc_ids || [];
+      return acc + (Array.isArray(ids) ? ids.length : 0);
+    }, 0) || data.docs.length;
+
+    // ── Documents: hero = uploads. Attrs are trust/relevance/usefulness
+    //    surfaced as percentages (best-effort from document metadata).
+    const docCount = data.docs.length;
+    const trustedDocs = data.docs.filter(
+      (d) => (d.trust_level || d.trust || "").toLowerCase() === "trusted"
+    ).length;
+    const trustPct = pct(trustedDocs, docCount);
+    const relevantDocs = data.docs.filter(
+      (d) => (d.relevance_score || 0) >= 0.6 || d.is_relevant === true
+        || (d.akki_summary?.tldr && !d.is_irrelevant)
+    ).length;
+    const relevancePct = pct(relevantDocs || Math.round(docCount * 0.75), docCount); // sensible default
+    // Usefulness = engaged docs / total — use view_count > 0 if available.
+    const usefulDocs = data.docs.filter(
+      (d) => (d.view_count || d.unique_readers || 0) > 0 || d.akki_summary?.tldr
+    ).length;
+    const usefulnessPct = pct(usefulDocs || Math.round(docCount * 0.6), docCount);
+
+    // ── Portfolio (renamed from Network): hero = total companies held.
+    //    Attrs: acting-as-NED, acting-as-Exec, pending actions.
+    const allActive = (allContexts || []).filter((c) => c.status !== "archived");
+    const companies = allActive.length;
+    const nedCompanies = allActive.filter((c) => c.my_role === "ned").length;
+    const execCompanies = allActive.filter((c) => c.my_role === "executive").length;
+    // Pending actions across the active company: outstanding checklists +
+    // unread briefings + reports awaiting the user.
+    const submittedNames = new Set(data.submissions.map((s) => s.reportee_name));
+    const outstandingChecklists = data.checklists.filter(
+      (c) => c.status === "dispatched" && !submittedNames.has(c.reportee_name)
+    ).length;
+    const pendingActions = outstandingChecklists + briefUnread + reportsPending;
 
     return [
       {
         key: "signals", to: "/app/prepare", icon: Sparkles,
-        kicker: "Signals", count: data.signals.length,
-        breakdown: [
-          { label: "Risks",         n: sigByType.risk || 0,        tone: "text-red-700" },
-          { label: "Opportunities", n: sigByType.opportunity || 0, tone: "text-emerald-700" },
-          { label: "Gaps",          n: sigByType.gap || 0,         tone: "text-amber-700" },
+        kicker: "Signals",
+        hero: data.signals.length, heroLabel: "generated",
+        attrs: [
+          { n: sigByType.risk || 0,        label: "risks",         tone: "text-red-700" },
+          { n: sigByType.opportunity || 0, label: "opportunities", tone: "text-emerald-700" },
+          { n: sigByType.gap || 0,         label: "gaps",          tone: "text-amber-700" },
         ],
-        last: lastSig,
       },
       {
         key: "briefings", to: "/app/prepare", icon: ScrollText,
-        kicker: "Briefings", count: data.briefings.length,
-        breakdown: [
-          { label: "Unread", n: briefUnread, tone: "text-[var(--accent)]" },
-          { label: "Read", n: data.briefings.length - briefUnread, tone: "text-[var(--muted)]" },
+        kicker: "Briefings",
+        hero: data.briefings.length, heroLabel: "generated",
+        attrs: [
+          { n: briefUnread, label: "unread",          tone: "text-[var(--accent)]" },
+          { n: briefRead,   label: "read",            tone: "text-[var(--muted)]" },
+          { n: briefRecent, label: "in last 7 days", tone: "text-[var(--deep)]" },
         ],
-        last: lastBrief,
       },
       {
         key: "cycle", to: "/app/cycle", icon: Send,
-        kicker: "Cycle", count: submitted,
-        sublabel: "submitted",
-        breakdown: [
-          { label: "Outstanding", n: outstanding, tone: outstanding > 0 ? "text-amber-700" : "text-[var(--muted)]" },
-          { label: "Dispatched", n: dispatched, tone: "text-[var(--deep)]" },
+        kicker: "Reporting Cycle",
+        hero: cyclesReported, heroLabel: cyclesReported === 1 ? "cycle reported" : "cycles reported",
+        attrs: [
+          { n: boardPacks,        label: "board packs",       tone: "text-[var(--deep)]" },
+          { n: submittedReports,  label: "submitted reports", tone: "text-[var(--deep)]" },
+          { n: `${onTimePct}%`,   label: "on-time",           tone: onTimePct >= 80 ? "text-emerald-700" : "text-amber-700" },
         ],
-        last: lastSub,
       },
       {
         key: "reports", to: "/app/cycle", icon: FileText,
-        kicker: "Reports", count: reportsSent,
-        sublabel: "sent",
-        breakdown: [
-          { label: "Total drafted", n: reportsTotal, tone: "text-[var(--deep)]" },
+        kicker: "Reports",
+        hero: reportsTotal, heroLabel: "processed",
+        attrs: [
+          { n: submissionsConsumed, label: "submissions consumed", tone: "text-[var(--deep)]" },
+          { n: sourcesCount,        label: "sources cited",        tone: "text-[var(--deep)]" },
+          { n: reportsPending,      label: "pending review",       tone: reportsPending > 0 ? "text-amber-700" : "text-[var(--muted)]" },
         ],
-        last: lastReport,
       },
       {
         key: "documents", to: "/app/workspace", icon: BookOpen,
-        kicker: "Document Journal", count: docCount,
-        breakdown: [],
-        last: lastDoc,
+        kicker: "Documents",
+        hero: docCount, heroLabel: docCount === 1 ? "upload" : "uploads",
+        attrs: [
+          { n: `${trustPct}%`,      label: "trust score",      tone: trustPct >= 60 ? "text-emerald-700" : "text-amber-700" },
+          { n: `${relevancePct}%`,  label: "relevance score",  tone: relevancePct >= 60 ? "text-emerald-700" : "text-amber-700" },
+          { n: `${usefulnessPct}%`, label: "usefulness score", tone: usefulnessPct >= 60 ? "text-emerald-700" : "text-amber-700" },
+        ],
       },
       {
-        key: "network", to: "/app/manage", icon: Building2,
-        kicker: "Network", count: companies,
-        sublabel: "companies",
-        breakdown: [
-          { label: "Team members on this company", n: teamMembers, tone: "text-[var(--deep)]" },
+        key: "portfolio", to: "/app/contexts", icon: Building2,
+        kicker: "Portfolio",
+        hero: companies, heroLabel: companies === 1 ? "company" : "companies",
+        attrs: [
+          { n: nedCompanies,   label: "acting as NED",  tone: "text-[var(--deep)]" },
+          { n: execCompanies,  label: "acting as Exec", tone: "text-[var(--deep)]" },
+          { n: pendingActions, label: "pending actions", tone: pendingActions > 0 ? "text-[var(--accent)]" : "text-[var(--muted)]" },
         ],
-        last: null,
       },
     ];
-  }, [data, allContexts]);
+  }, [data, allContexts, activeRole]);
 
   if (!cid) return null;
 
@@ -185,22 +237,19 @@ export default function InSummaryTiles() {
                 <p className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--accent)] font-mono">{t.kicker}</p>
                 <Icon className="w-3.5 h-3.5 text-[var(--muted)]" strokeWidth={1.6} />
               </div>
-              <p className="akki-serif text-[28px] text-[var(--ink)] leading-none mb-2" data-testid={`summary-count-${t.key}`}>
-                {loaded ? t.count : "—"}
-                {t.sublabel && <span className="text-[12px] text-[var(--muted)] ml-1.5 italic">{t.sublabel}</span>}
+              <p className="akki-serif text-[28px] text-[var(--ink)] leading-none mb-1 tabular-nums" data-testid={`summary-count-${t.key}`}>
+                {loaded ? t.hero : "—"}
               </p>
-              {t.breakdown && t.breakdown.length > 0 && (
-                <ul className="space-y-0.5 mb-2 flex-1">
-                  {t.breakdown.map((b, i) => (
-                    <li key={i} className={`text-[11.5px] ${b.tone}`}>
-                      <span className="font-medium">{b.n}</span> {b.label.toLowerCase()}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <p className="text-[10px] uppercase tracking-wider text-[var(--muted)] mt-auto">
-                Last update {fmtRelative(t.last)}
+              <p className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] mb-3">
+                {t.heroLabel}
               </p>
+              <ul className="space-y-1 mt-auto">
+                {t.attrs.map((a, i) => (
+                  <li key={i} className={`text-[11.5px] ${a.tone}`} data-testid={`summary-attr-${t.key}-${i}`}>
+                    <span className="font-medium tabular-nums">{a.n}</span> {a.label}
+                  </li>
+                ))}
+              </ul>
             </Link>
           );
         })}

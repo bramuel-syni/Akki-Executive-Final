@@ -113,10 +113,34 @@ export function AuthProvider({ children }) {
     });
   }, []);
 
+  // Role isolation rule (Apr-2026): switching role rebuilds the lens —
+  // if the active context isn't a board where the user holds the new
+  // role, drop them on Home so they can pick a context that fits.
+  // Same-org NED↔Exec switches are preserved.
   const switchRole = useCallback((role) => {
     setActiveRole(role);
     window.localStorage.setItem("akki.activeRole", role);
-  }, []);
+    setContexts((prev) => {
+      const current = prev.find((c) => c.id === activeContextId);
+      if (current && current.my_role && current.my_role !== role) {
+        // Try to find another context where the user holds the new role —
+        // ideally in the same organisation, falling back to any.
+        const sameOrg = prev.find(
+          (c) => c.my_role === role && (c.org_id ? c.org_id === current.org_id : false)
+        );
+        const anyMatch = sameOrg || prev.find((c) => c.my_role === role);
+        if (anyMatch) {
+          setActiveContextId(anyMatch.id);
+          window.localStorage.setItem("akki.activeContextId", anyMatch.id);
+        }
+        // Reset to Home so the user re-anchors deliberately.
+        if (typeof window !== "undefined") {
+          window.location.assign("/app");
+        }
+      }
+      return prev;
+    });
+  }, [activeContextId]);
 
   const refreshContexts = useCallback(async () => {
     try {
