@@ -660,6 +660,9 @@ function MinutesExtractDetail({ meta, narrative: narrativeProp, docId, contextId
   };
 
   const writeNarrative = async () => {
+    if (narrative && !window.confirm("This replaces the existing narrative summary. Continue?")) {
+      return;
+    }
     setBusy("narrative");
     try {
       const { data } = await api.post(`/contexts/${contextId}/minutes/${docId}/narrative`);

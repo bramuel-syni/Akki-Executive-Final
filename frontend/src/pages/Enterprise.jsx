@@ -88,17 +88,27 @@ export default function Enterprise() {
 
         <section className="bg-white border border-[#E1E6ED] rounded-sm p-8" data-testid="enterprise-interest-card">
           {submitted ? (
-            <div className="flex items-start gap-4" data-testid="enterprise-interest-thanks">
-              <Check className="w-6 h-6 text-[var(--accent)] mt-1" strokeWidth={1.7} />
-              <div>
-                <h3 className="akki-serif text-[20px] text-[var(--ink)] mb-1">
-                  Noted — thank you.
-                </h3>
-                <p className="text-[14px] text-slate-600 leading-relaxed">
-                  We'll be in touch within two working days. In the meantime,
-                  your Personal workspace stays exactly as it is.
-                </p>
+            <div className="space-y-4" data-testid="enterprise-interest-thanks">
+              <div className="flex items-start gap-4">
+                <Check className="w-6 h-6 text-[var(--accent)] mt-1" strokeWidth={1.7} />
+                <div>
+                  <h3 className="akki-serif text-[20px] text-[var(--ink)] mb-1">
+                    Noted — thank you.
+                  </h3>
+                  <p className="text-[14px] text-slate-600 leading-relaxed">
+                    We'll be in touch within two working days. In the meantime,
+                    your Personal workspace stays exactly as it is.
+                  </p>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setSubmitted(false)}
+                className="text-[12px] uppercase tracking-[0.14em] text-[var(--accent)] hover:underline pl-10"
+                data-testid="enterprise-update-note-btn"
+              >
+                Update my note →
+              </button>
             </div>
           ) : (
             <>

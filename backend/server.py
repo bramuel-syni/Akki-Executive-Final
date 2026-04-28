@@ -64,6 +64,7 @@ from routers import prepare as prepare_router  # noqa: E402
 from routers import inbound_email as inbound_email_router  # noqa: E402
 from routers import enterprise as enterprise_router  # noqa: E402
 from routers import llm_quota as llm_quota_router  # noqa: E402
+from routers import admin_llm_spend as admin_llm_spend_router  # noqa: E402
 
 
 logger = logging.getLogger("akki")
@@ -112,6 +113,7 @@ app.include_router(prepare_router.router)
 app.include_router(inbound_email_router.router)
 app.include_router(enterprise_router.router)
 app.include_router(llm_quota_router.router)
+app.include_router(admin_llm_spend_router.router)
 
 
 # -----------------------------------------------------------------------------
@@ -168,6 +170,17 @@ async def on_startup():
     )
     await db.document_views.create_index([("doc_id", 1), ("viewed_at", -1)])
     await db.document_shares.create_index([("doc_id", 1), ("created_at", -1)])
+
+    # Deep-tier (Opus) usage — unique key per (account, surface, day) is what
+    # makes the race-safe quota path in llm_tier_quota.py actually safe.
+    await db.llm_deep_usage.create_index(
+        [("account_id", 1), ("surface", 1), ("day_utc", 1)], unique=True,
+    )
+    await db.llm_deep_usage.create_index([("day_utc", 1)])
+
+    # Inbound-email idempotency
+    await db.accounts.create_index("inbound_token", sparse=True)
+    await db.contexts.create_index("inbound_token", sparse=True)
 
     # Backfill: ensure every committee on every context has a stable id.
     async for c in db.contexts.find(

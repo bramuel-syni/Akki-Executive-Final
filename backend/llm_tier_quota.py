@@ -73,37 +73,45 @@ async def check_and_consume(account_id: str, surface: str) -> Dict[str, Any]:
             "surface": surface, "reset_at": _next_midnight_iso(),
         }
 
-    # Find existing usage row to decide allow/deny BEFORE incrementing —
-    # avoids racing past the cap by 1 if two requests land simultaneously.
-    existing = await db.llm_deep_usage.find_one(key, {"_id": 0, "count": 1})
-    used = (existing or {}).get("count", 0) or 0
-    if used >= limit:
+    # Race-safe atomic check-and-consume.
+    # Pass 1: increment IF count < limit AND a row already exists.
+    nowiso = datetime.now(timezone.utc).isoformat()
+    res = await db.llm_deep_usage.find_one_and_update(
+        {**key, "count": {"$lt": limit}},
+        {"$inc": {"count": 1}, "$set": {"last_used_at": nowiso}},
+        return_document=True,
+        projection={"_id": 0, "count": 1},
+    )
+    if res is not None:
+        used_now = res.get("count", 1)
+        return {
+            "allowed": True,
+            "remaining": max(0, limit - used_now),
+            "limit": limit, "used": used_now,
+            "surface": surface, "reset_at": _next_midnight_iso(),
+        }
+
+    # Pass 2: either no row yet (first call of the day) OR row already at cap.
+    # Try to insert a fresh count=1 row; the unique index on (account_id, surface,
+    # day_utc) makes this atomic — a duplicate-key error means a row already
+    # exists, which (since pass 1 didn't match) must be at cap, so deny.
+    try:
+        await db.llm_deep_usage.insert_one({
+            **key, "count": 1,
+            "first_used_at": nowiso, "last_used_at": nowiso,
+        })
+        return {
+            "allowed": True, "remaining": max(0, limit - 1),
+            "limit": limit, "used": 1,
+            "surface": surface, "reset_at": _next_midnight_iso(),
+        }
+    except Exception:  # noqa: BLE001 — DuplicateKeyError or any insert failure
+        existing = await db.llm_deep_usage.find_one(key, {"_id": 0, "count": 1})
+        used = (existing or {}).get("count", limit) or limit
         return {
             "allowed": False, "remaining": 0, "limit": limit, "used": used,
             "surface": surface, "reset_at": _next_midnight_iso(),
         }
-
-    # Atomic upsert + increment. Returns post-increment doc.
-    res = await db.llm_deep_usage.find_one_and_update(
-        key,
-        {
-            "$inc": {"count": 1},
-            "$setOnInsert": {**key, "first_used_at": datetime.now(timezone.utc).isoformat()},
-            "$set": {"last_used_at": datetime.now(timezone.utc).isoformat()},
-        },
-        upsert=True,
-        return_document=True,
-        projection={"_id": 0, "count": 1},
-    )
-    used_now = (res or {}).get("count", used + 1)
-    return {
-        "allowed": True,
-        "remaining": max(0, limit - used_now),
-        "limit": limit,
-        "used": used_now,
-        "surface": surface,
-        "reset_at": _next_midnight_iso(),
-    }
 
 
 async def peek(account_id: str, surface: Optional[str] = None) -> Dict[str, Any]:

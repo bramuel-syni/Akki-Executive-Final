@@ -271,11 +271,22 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
             data = base64.b64decode(primary_att.get("Content") or "")
         except Exception as e:  # noqa: BLE001
             logger.error("Postmark inbound: base64 decode failed: %s", e)
+            await write_audit(
+                context["id"], account["id"],
+                "inbound_email.rejected", "inbound", message_id or "(no-id)",
+                {"reason": "bad_attachment", "from": from_email, "subject": subject},
+            )
             return {"ok": False, "error": "bad_attachment"}
         filename = primary_att.get("Name") or "attachment"
         clean, reason = virus_scan_stub(data, filename)
         if not clean:
             logger.warning("Postmark inbound: rejected attachment (%s) — %s", filename, reason)
+            await write_audit(
+                context["id"], account["id"],
+                "inbound_email.rejected", "inbound", message_id or "(no-id)",
+                {"reason": "virus_scan", "scan_reason": reason,
+                 "from": from_email, "subject": subject, "filename": filename},
+            )
             return {"ok": False, "error": "virus_scan", "reason": reason}
         storage_key = save_to_storage(context["id"], doc_id, filename, data)
         text, err = extract_text(data, filename, primary_att.get("ContentType") or "")
