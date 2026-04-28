@@ -181,13 +181,19 @@ async def compose(
         f'  "email_intro": "120-200 word intro for the weekly Exco360 newsletter that frames why this issue matters."\n'
         f"}}\n"
     )
-    llm_out = await llm_call_llm(
-        module="blog-compose",
-        user_query=prompt,
-        context_object=None,
-        session_context={"session_id": f"blog-{current['id']}"},
-        data_trust={"overall": "trusted"},
-        response_format="json",
+    from llm_tier_quota import call_llm_with_tier
+    llm_out, quota_state = await call_llm_with_tier(
+        surface="blog",
+        account_id=current["id"],
+        requested_tier="deep",
+        call_args={
+            "module": "blog-compose",
+            "user_query": prompt,
+            "context_object": None,
+            "session_context": {"session_id": f"blog-{current['id']}"},
+            "data_trust": {"overall": "trusted"},
+            "response_format": "json",
+        },
     )
     parsed = parse_json_response(llm_out.get("response", ""))
     if not isinstance(parsed, dict) or not parsed.get("body"):
@@ -223,7 +229,9 @@ async def compose(
     await db.blog_posts.insert_one(rec.copy())
     await write_audit(None, current["id"], "blog.composed", "blog_post", rec["id"],
                       {"title": title, "slug": slug, "vol": vi["volume"], "issue": vi["issue"]})
-    return {k: v for k, v in rec.items() if k != "_id"}
+    out = {k: v for k, v in rec.items() if k != "_id"}
+    out["quota"] = quota_state
+    return out
 
 
 def _frontend_origin() -> str:

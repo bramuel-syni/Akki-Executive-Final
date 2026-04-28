@@ -272,12 +272,18 @@ function BriefTab({ contextId, onCreated }) {
   const [kind, setKind] = useState("topic");
   const [objective, setObjective] = useState("");
   const [busy, setBusy] = useState(false);
+  const [deep, setDeep] = useState(false);
+  const [briefQuota, setBriefQuota] = useState(null);
 
   useEffect(() => {
     (async () => {
       try {
         const { data } = await api.get(`/prepare/brief-kinds`);
         setKinds(data?.kinds || []);
+      } catch { /* silent */ }
+      try {
+        const { data } = await api.get(`/llm/quota?surface=brief`);
+        setBriefQuota(data);
       } catch { /* silent */ }
     })();
   }, []);
@@ -288,9 +294,22 @@ function BriefTab({ contextId, onCreated }) {
     setBusy(true);
     try {
       const { data } = await api.post(`/contexts/${contextId}/briefs`, {
-        kind, objective: objective.trim(),
+        kind, objective: objective.trim(), deep,
       });
-      toast.success("Brief saved.");
+      if (data?.quota?.downgraded) {
+        toast.info("Deep capacity is full for today — drafted with the standard model.");
+      } else {
+        toast.success(deep ? "Deep brief saved." : "Brief saved.");
+      }
+      if (data?.quota) {
+        setBriefQuota({
+          surface: "brief",
+          used: data.quota.used ?? briefQuota?.used,
+          limit: data.quota.limit ?? briefQuota?.limit,
+          remaining: data.quota.remaining ?? briefQuota?.remaining,
+          reset_at: data.quota.reset_at ?? briefQuota?.reset_at,
+        });
+      }
       setObjective("");
       onCreated?.(data);
     } catch (e) { toast.error(apiErrorMessage(e)); }
@@ -357,9 +376,40 @@ function BriefTab({ contextId, onCreated }) {
           </div>
         </div>
 
-        {/* ACTION — validated badge + submit. */}
+        {/* ACTION — validated badge + deep toggle + submit. */}
         <div className="px-6 py-4 bg-[var(--cream-deep)]/30 border-t border-[var(--rule)]/60 flex items-center justify-between gap-3">
-          <ValidatedBadge size="compact" />
+          <div className="flex items-center gap-4">
+            <ValidatedBadge size="compact" />
+            <label
+              className="flex items-center gap-2 cursor-pointer select-none"
+              data-testid="prepare-brief-deep-toggle"
+              title={
+                briefQuota
+                  ? `Deep mode uses Claude Opus for richer narrative. ${briefQuota.remaining}/${briefQuota.limit} deep briefs remaining today.`
+                  : "Deep mode uses Claude Opus for richer narrative."
+              }
+            >
+              <input
+                type="checkbox"
+                checked={deep}
+                onChange={(e) => setDeep(e.target.checked)}
+                disabled={busy || (briefQuota && briefQuota.remaining === 0)}
+                className="accent-[var(--accent)] w-3.5 h-3.5"
+                data-testid="prepare-brief-deep-checkbox"
+              />
+              <span className="text-[12px] tracking-[0.06em] text-[var(--deep)]">
+                Deep mode
+              </span>
+              {briefQuota && (
+                <span
+                  className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)] tabular-nums"
+                  data-testid="prepare-brief-deep-quota"
+                >
+                  {briefQuota.remaining}/{briefQuota.limit} today
+                </span>
+              )}
+            </label>
+          </div>
           <Button
             type="submit"
             disabled={objective.trim().length < 8 || busy}
@@ -367,7 +417,7 @@ function BriefTab({ contextId, onCreated }) {
             data-testid="prepare-brief-generate"
           >
             {busy ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
-            {busy ? "Drafting…" : "Generate Brief"} {!busy && <ArrowRight className="w-3.5 h-3.5 ml-1.5" />}
+            {busy ? "Drafting…" : (deep ? "Generate Deep Brief" : "Generate Brief")} {!busy && <ArrowRight className="w-3.5 h-3.5 ml-1.5" />}
           </Button>
         </div>
       </form>
@@ -569,7 +619,15 @@ function MinutesTab({ minutes, loading, contextId, onRefresh }) {
                   </button>
                 )}
               </div>
-              {meta && isOpen && <MinutesExtractDetail meta={meta} docId={m.id} />}
+              {meta && isOpen && (
+                <MinutesExtractDetail
+                  meta={meta}
+                  narrative={m.minutes_narrative}
+                  docId={m.id}
+                  contextId={contextId}
+                  onMutated={onRefresh}
+                />
+              )}
             </li>
           );
         })}
@@ -578,21 +636,111 @@ function MinutesTab({ minutes, loading, contextId, onRefresh }) {
   );
 }
 
-function MinutesExtractDetail({ meta, docId }) {
+function MinutesExtractDetail({ meta, narrative: narrativeProp, docId, contextId, onMutated }) {
+  const [busy, setBusy] = useState(null);
+  const [narrative, setNarrative] = useState(narrativeProp || null);
+  const [cycleResult, setCycleResult] = useState(null);
+
+  const toCycle = async () => {
+    setBusy("cycle");
+    try {
+      const { data } = await api.post(`/contexts/${contextId}/minutes/${docId}/to_cycle`);
+      setCycleResult(data);
+      const total = (data.seeded?.length || 0) + (data.unmatched?.length || 0);
+      if (total === 0) {
+        toast.info("All actions already in the Question Bank.");
+      } else {
+        toast.success(`${total} action${total === 1 ? "" : "s"} added to the Question Bank.`);
+      }
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const writeNarrative = async () => {
+    setBusy("narrative");
+    try {
+      const { data } = await api.post(`/contexts/${contextId}/minutes/${docId}/narrative`);
+      setNarrative(data?.narrative || null);
+      if (data?.quota?.downgraded) {
+        toast.info("Deep capacity full — used the standard model.");
+      } else {
+        toast.success("Narrative drafted.");
+      }
+      onMutated?.();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div
-      className="px-5 pb-5 pl-12 grid md:grid-cols-2 gap-x-8 gap-y-4 bg-[var(--cream)]/40"
+      className="px-5 pb-5 pl-12 bg-[var(--cream)]/40"
       data-testid={`prepare-minutes-detail-${docId}`}
     >
-      <ExtractList label="Attendees" items={meta.attendees} />
-      <ExtractList label="Decisions" items={meta.decisions} />
-      <ExtractList
-        label="Actions"
-        items={(meta.actions || []).map((a) =>
-          `${a.who ? `${a.who}: ` : ""}${a.what}${a.when ? ` (by ${a.when})` : ""}`
-        )}
-      />
-      <ExtractList label="Open questions" items={meta.questions} />
+      <div className="grid md:grid-cols-2 gap-x-8 gap-y-4">
+        <ExtractList label="Attendees" items={meta.attendees} />
+        <ExtractList label="Decisions" items={meta.decisions} />
+        <ExtractList
+          label="Actions"
+          items={(meta.actions || []).map((a) =>
+            `${a.who ? `${a.who}: ` : ""}${a.what}${a.when ? ` (by ${a.when})` : ""}`
+          )}
+        />
+        <ExtractList label="Open questions" items={meta.questions} />
+      </div>
+
+      {(meta.actions || []).length > 0 && (
+        <div className="mt-5 pt-4 border-t border-[var(--rule)]/60 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={busy === "cycle"}
+            onClick={toCycle}
+            className="text-[11.5px] uppercase tracking-[0.14em] px-3 py-1.5 rounded-sm border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white transition-colors disabled:opacity-50"
+            data-testid={`prepare-minutes-to-cycle-${docId}`}
+          >
+            {busy === "cycle" ? "Adding…" : "Turn into checklist →"}
+          </button>
+          <button
+            type="button"
+            disabled={busy === "narrative"}
+            onClick={writeNarrative}
+            className="text-[11.5px] uppercase tracking-[0.14em] px-3 py-1.5 rounded-sm border border-[var(--rule)] text-[var(--deep)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-50"
+            data-testid={`prepare-minutes-narrative-${docId}`}
+          >
+            {busy === "narrative" ? "Drafting…" : (narrative ? "Re-draft narrative" : "Draft narrative summary")}
+          </button>
+          {cycleResult && (
+            <span
+              className="text-[11px] text-[var(--muted)]"
+              data-testid={`prepare-minutes-cycle-result-${docId}`}
+            >
+              {cycleResult.seeded.length} matched · {cycleResult.unmatched.length} unassigned ·{" "}
+              <a href={cycleResult.next} className="text-[var(--accent)] hover:underline">
+                Continue to Cycle →
+              </a>
+            </span>
+          )}
+        </div>
+      )}
+
+      {narrative && (
+        <div
+          className="mt-5 pt-4 border-t border-[var(--rule)]/60"
+          data-testid={`prepare-minutes-narrative-body-${docId}`}
+        >
+          <p className="text-[10.5px] uppercase tracking-[0.16em] text-[var(--muted)] mb-2">
+            Narrative summary{narrative.tier === "deep" && " · deep"}
+          </p>
+          <div className="akki-serif text-[14.5px] text-[var(--ink)] leading-relaxed whitespace-pre-wrap">
+            {narrative.body}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

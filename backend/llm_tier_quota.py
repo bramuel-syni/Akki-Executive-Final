@@ -1,0 +1,173 @@
+"""Deep-tier quota governance.
+
+Opus 4.x is ~5× the cost of Sonnet on output tokens, so deep-tier calls are
+metered per-account-per-day. Each surface declares a `surface` slug and a
+daily limit; when a user is over quota we fall back to the standard tier
+with a soft notice surfaced back to the UI in the call response.
+
+Persistence: a single `llm_deep_usage` collection keyed on
+`(account_id, surface, day_utc)` with `count: int`.
+
+Reset: implicit — the day_utc key changes at 00:00 UTC. No cron needed.
+"""
+from __future__ import annotations
+
+import logging
+import os
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, Tuple
+
+from core import db
+
+logger = logging.getLogger("akki.deep_quota")
+
+# Default daily budgets per surface (per user). Overridable via env using
+# AKKI_DEEP_QUOTA_<surface_upper> e.g. AKKI_DEEP_QUOTA_DECK=5.
+DEFAULT_QUOTAS: Dict[str, int] = {
+    "brief":     10,   # Deep Brief (long-form narrative)
+    "blog":       5,   # ExCo360 blog generation (admin)
+    "deck":       3,   # Deck generation (when shipped)
+    "chat":      30,   # Chat with Opus selected
+    "validate":  20,   # High-stakes second-pass validation
+    "minutes":    5,   # Minutes → narrative summary / Cycle dispatch
+}
+
+
+def _today_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def quota_for(surface: str) -> int:
+    """Look up the daily limit for a surface, env-overridable."""
+    key = f"AKKI_DEEP_QUOTA_{surface.upper()}"
+    env = os.environ.get(key)
+    if env:
+        try:
+            return max(0, int(env))
+        except ValueError:
+            pass
+    return DEFAULT_QUOTAS.get(surface, 5)
+
+
+async def check_and_consume(account_id: str, surface: str) -> Dict[str, Any]:
+    """Check whether the user is within their daily deep-tier budget for
+    `surface` and atomically increment if so.
+
+    Returns:
+        {
+          "allowed": bool,
+          "remaining": int,
+          "limit": int,
+          "used": int,
+          "surface": str,
+          "reset_at": "<ISO of next 00:00 UTC>",
+        }
+    """
+    limit = quota_for(surface)
+    day = _today_utc()
+    key = {"account_id": account_id, "surface": surface, "day_utc": day}
+
+    if limit <= 0:
+        return {
+            "allowed": False, "remaining": 0, "limit": 0, "used": 0,
+            "surface": surface, "reset_at": _next_midnight_iso(),
+        }
+
+    # Find existing usage row to decide allow/deny BEFORE incrementing —
+    # avoids racing past the cap by 1 if two requests land simultaneously.
+    existing = await db.llm_deep_usage.find_one(key, {"_id": 0, "count": 1})
+    used = (existing or {}).get("count", 0) or 0
+    if used >= limit:
+        return {
+            "allowed": False, "remaining": 0, "limit": limit, "used": used,
+            "surface": surface, "reset_at": _next_midnight_iso(),
+        }
+
+    # Atomic upsert + increment. Returns post-increment doc.
+    res = await db.llm_deep_usage.find_one_and_update(
+        key,
+        {
+            "$inc": {"count": 1},
+            "$setOnInsert": {**key, "first_used_at": datetime.now(timezone.utc).isoformat()},
+            "$set": {"last_used_at": datetime.now(timezone.utc).isoformat()},
+        },
+        upsert=True,
+        return_document=True,
+        projection={"_id": 0, "count": 1},
+    )
+    used_now = (res or {}).get("count", used + 1)
+    return {
+        "allowed": True,
+        "remaining": max(0, limit - used_now),
+        "limit": limit,
+        "used": used_now,
+        "surface": surface,
+        "reset_at": _next_midnight_iso(),
+    }
+
+
+async def peek(account_id: str, surface: Optional[str] = None) -> Dict[str, Any]:
+    """Inspect today's deep-tier usage without consuming. If `surface` is
+    None, returns a dict for every surface with a configured default."""
+    day = _today_utc()
+    if surface:
+        row = await db.llm_deep_usage.find_one(
+            {"account_id": account_id, "surface": surface, "day_utc": day},
+            {"_id": 0, "count": 1},
+        )
+        used = (row or {}).get("count", 0) or 0
+        limit = quota_for(surface)
+        return {
+            "surface": surface, "used": used, "limit": limit,
+            "remaining": max(0, limit - used), "reset_at": _next_midnight_iso(),
+        }
+    # All surfaces.
+    out = {}
+    for s in DEFAULT_QUOTAS:
+        out[s] = await peek(account_id, s)
+    out["reset_at"] = _next_midnight_iso()
+    return out
+
+
+def _next_midnight_iso() -> str:
+    now = datetime.now(timezone.utc)
+    nxt = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # 86400s in a day; add one day's worth of seconds at most.
+    from datetime import timedelta
+    nxt += timedelta(days=1)
+    return nxt.isoformat()
+
+
+async def call_llm_with_tier(
+    *,
+    surface: str,
+    account_id: str,
+    requested_tier: str,
+    call_args: Dict[str, Any],
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Convenience wrapper. Calls llm_service.call_llm with the requested
+    tier if quota allows; otherwise downgrades to "standard" and surfaces
+    a `quota` block on the result.
+
+    Returns (llm_result, quota_state). The caller can decide whether to
+    bubble the quota state to the API response.
+    """
+    from llm_service import call_llm
+
+    quota_state: Dict[str, Any] = {
+        "requested_tier": requested_tier,
+        "served_tier": requested_tier,
+        "surface": surface,
+        "downgraded": False,
+    }
+
+    if requested_tier == "deep":
+        budget = await check_and_consume(account_id, surface)
+        quota_state.update(budget)
+        if not budget["allowed"]:
+            requested_tier = "standard"
+            quota_state["served_tier"] = "standard"
+            quota_state["downgraded"] = True
+
+    result = await call_llm(**{**call_args, "tier": requested_tier})
+    return result, quota_state

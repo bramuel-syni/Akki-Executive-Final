@@ -1,0 +1,25 @@
+{
+  "summary": "Iter53 backend e2e for deep-tier (Claude Opus 4.6) brief, per-surface daily quota, Minutes->Cycle dispatch, and Minutes deep-tier narrative. 9/9 backend tests pass against the live preview URL using bramuel@syni.ai on Tuli NED ctx fb4df969 / minutes doc ec51b7d9. Frontend smoke confirms BriefTab deep-mode UI (toggle/checkbox/quota indicator showing '10/10 today' after reset) and MinutesTab list render. The minutes-detail buttons (to_cycle / narrative) render only on rows with extracted minutes_meta — exercised end-to-end via backend tests on the seeded doc.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter53_deep_tier_minutes.py",
+    "/app/test_reports/pytest/iter53.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "llm_tier_quota.check_and_consume(): reads-then-upserts, so two simultaneous deep requests at used=9 could both pass the read and increment to 11 — race goes 1 over the cap. For per-user-per-day budgets this is acceptable (1-call slop), but if higher integrity is needed, switch to a single find_one_and_update with a {count:{$lt:limit}} filter and treat 'no doc returned' as deny.",
+    "prepare.create_brief stamps doc.model = llm_out.get('mode') (e.g. 'live'/'no-key-fallback') and doc.model_id = llm_out.get('model'). The route response top-level uses `model` from llm_out.mode but `model_id` from llm_out.model — naming is internally consistent but worth a comment; iter53 review request asserts on model_id which matches.",
+    "minutes_to_cycle: idempotency keys on (context_id, source='minutes:<doc_id>', text=what). If an executive lightly edits an action's wording in minutes_meta and re-runs to_cycle, a near-duplicate question will be seeded. Acceptable for v1; a 90% similarity check would tighten this.",
+    "minutes_narrative: writes minutes_narrative on the document, returns it on the next list_minutes call. No 'regenerate' affordance in API (POST always overwrites silently) — fine, but the client should warn users their previous narrative is replaced.",
+    "llm_quota router exposes peek as a Dict[str, Any]; when surface=None it mixes per-surface dicts with a top-level 'reset_at' string at the same level. Mild schema inconsistency — clients must know to pop 'reset_at' before iterating. Documented behaviour; tests pass."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter53_deep_tier_minutes.py"],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "smoke OK on Brief deep-mode UI + Minutes list"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026!",
+  "seed_data_creation": "test_400_when_no_actions creates+removes a TEST_no_actions_doc_iter53 documents row inside the test. Quota rows touched/reset for surfaces brief and minutes during the run (cleaned up at end). One real Opus brief, one real Opus minutes-narrative LLM call were made (~$0.20 budget impact).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Verified contract: GET /api/llm/quota returns {brief:{...},blog:{...},deck:{...},chat:{...},validate:{...},minutes:{...},reset_at}. Default limits: brief=10, blog=5, deck=3, chat=30, validate=20, minutes=5. POST /briefs with deep:true returns tier='deep', model_id='claude-opus-4-6', quota.{requested_tier, served_tier, downgraded, used, limit, remaining, reset_at, surface, allowed}. Quota exhaustion (count>=limit on llm_deep_usage row) downgrades transparently with downgraded=true, served_tier='standard', tier='standard' on the response — no 5xx. Minutes->Cycle is idempotent on (context_id, source='minutes:<doc_id>', text). Minutes narrative persists at doc.minutes_narrative.{body,model,tier,generated_at} and surfaces in list_minutes payload. To exhaust quota cheaply: db.llm_deep_usage.update_one({account_id,surface,day_utc=YYYY-MM-DD}, {$set:{count:LIMIT}}, upsert=True).",
+  "rca of the issue": "n/a — no bugs surfaced. All 6 review-request assertions confirmed live."
+}

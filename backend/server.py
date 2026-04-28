@@ -63,6 +63,7 @@ from routers import admin_signal_kpi as admin_signal_kpi_router  # noqa: E402
 from routers import prepare as prepare_router  # noqa: E402
 from routers import inbound_email as inbound_email_router  # noqa: E402
 from routers import enterprise as enterprise_router  # noqa: E402
+from routers import llm_quota as llm_quota_router  # noqa: E402
 
 
 logger = logging.getLogger("akki")
@@ -110,6 +111,7 @@ app.include_router(admin_signal_kpi_router.router)
 app.include_router(prepare_router.router)
 app.include_router(inbound_email_router.router)
 app.include_router(enterprise_router.router)
+app.include_router(llm_quota_router.router)
 
 
 # -----------------------------------------------------------------------------

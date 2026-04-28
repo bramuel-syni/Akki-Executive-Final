@@ -200,10 +200,15 @@ async def call_llm(
     data_trust: Optional[Dict[str, Any]] = None,
     system_override: Optional[str] = None,
     response_format: str = "text",   # "text" or "json"
+    tier: str = "standard",          # "fast" | "standard" | "deep"
 ) -> Dict[str, Any]:
-    """Shielded call. Returns {layers, response, mode, sources, shielding, synisense_verified}.
+    """Shielded call. Returns {layers, response, mode, model, tier, sources, shielding, synisense_verified}.
 
-    response_format="json" instructs Claude to return valid JSON only.
+    tier="fast"     → Gemini 2.5 Flash (cheap, validation/extraction)
+    tier="standard" → Claude Sonnet 4.5 (default — briefs, signals, chat)
+    tier="deep"     → Claude Opus (long-form narrative, decks, ExCo blogs)
+
+    response_format="json" instructs the model to return valid JSON only.
     """
     layers = build_prompt_layers(
         module=module, user_query=user_query,
@@ -222,9 +227,24 @@ async def call_llm(
             "no markdown. Just the JSON object."
         )
 
+    # Resolve tier → (provider, model). Model ids are env-driven so we can swap
+    # in newer model versions (e.g. Opus 4.7) without a code change.
+    if tier == "fast":
+        provider = "gemini"
+        model_id = os.environ.get("LLM_MODEL_FAST", "gemini-2.5-flash")
+    elif tier == "deep":
+        provider = "anthropic"
+        # Opus 4.7 is too new for the Emergent key catalogue today; we ship on
+        # 4.6 and flip via env when the catalogue catches up.
+        model_id = os.environ.get("LLM_MODEL_DEEP", "claude-opus-4-6")
+    else:
+        provider = "anthropic"
+        model_id = os.environ.get("LLM_MODEL_STANDARD", "claude-sonnet-4-5-20250929")
+
     if not emergent_key:
         return {
             "layers": layers, "mode": "no-key-fallback",
+            "model": model_id, "tier": tier,
             "response": "[LLM unavailable — no key configured]",
             "sources": [],
             "shielding": shield_report,
@@ -239,13 +259,14 @@ async def call_llm(
             api_key=emergent_key,
             session_id=session_id,
             system_message=system_msg,
-        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        ).with_model(provider, model_id)
         msg = UserMessage(text=shielded_prompt)
         raw = await chat.send_message(msg)
         raw_text = raw if isinstance(raw, str) else str(raw)
         rehydrated = rehydrate(raw_text, shield_map)
         return {
             "layers": layers, "mode": "live",
+            "model": model_id, "tier": tier,
             "response": rehydrated,
             "sources": [],
             "shielding": shield_report,
@@ -256,6 +277,7 @@ async def call_llm(
         logger.exception("LLM call failed")
         return {
             "layers": layers, "mode": "error",
+            "model": model_id, "tier": tier,
             "response": f"[LLM error: {type(e).__name__}: {e}]",
             "sources": [],
             "shielding": shield_report,
