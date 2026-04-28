@@ -1,31 +1,63 @@
 /**
- * RecentActivity — single editorial timeline that replaces the four-tab
- * "Top signals · Top briefings · New documents · Shared with you" block
- * the user said was duplicating the In-Summary tiles above.
+ * RecentActivity — categorised hook on Home.
  *
- * Apr-2026 user feedback: "Below the workflow dock we are repeating the
- * summary, can you recommend something that will be a good hook?"
+ * Apr-2026 feedback iter48: "Don't list everything. Group events by type
+ * — meetings had, questions answered, etc. Pick 4 to 5 categories. User
+ * clicks → goes to a timeline page with more details."
  *
- * What this is: a chronological "what's happened since you last looked"
- * feed. We merge signals + briefings + documents + shared items into one
- * timeline, dedup by timestamp, and present them with a typed chip + a
- * verb-led headline. Items click through to their respective surfaces.
+ * Five categories:
+ *   1. Briefings & meetings      ← meetings the user is preparing for
+ *   2. Questions answered        ← briefs generated (answers to prompts)
+ *   3. Signals surfaced          ← risks / opportunities / gaps
+ *   4. Documents added           ← new uploads
+ *   5. Sent your way             ← shared items + mentions
  *
- * Why it's not "summary": each row is an EVENT, not a count. Numbers live
- * in the InSummary tiles. Verbs and headlines live here.
+ * Each card shows: kicker, count, most-recent item title, "View timeline →".
+ * Click takes the user to /app/activity?cat={key}.
  */
 import React, { useMemo } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
-  Sparkles, ScrollText, FileText, Mail, ArrowRight, Globe,
+  Sparkles, ScrollText, FileText, Mail, MessageCircle, ArrowRight, Globe,
 } from "lucide-react";
 
-const TYPE_META = {
-  signal: { icon: Sparkles, label: "Signal", verb: "surfaced", to: "/app/prepare", tone: "text-[var(--accent)]" },
-  briefing: { icon: ScrollText, label: "Briefing", verb: "drafted", to: "/app/prepare", tone: "text-[var(--deep)]" },
-  document: { icon: FileText, label: "Document", verb: "added", to: null, tone: "text-[var(--deep)]" },
-  shared: { icon: Mail, label: "Shared", verb: "sent your way", to: "/app/prepare", tone: "text-[var(--accent)]" },
-};
+const CATEGORIES = [
+  {
+    key: "meetings",
+    label: "Briefings & meetings",
+    verb: "drafted for you",
+    icon: ScrollText,
+    tone: "text-[var(--deep)]",
+  },
+  {
+    key: "answers",
+    label: "Questions answered",
+    verb: "drafted",
+    icon: MessageCircle,
+    tone: "text-[var(--accent)]",
+  },
+  {
+    key: "signals",
+    label: "Signals surfaced",
+    verb: "to react to",
+    icon: Sparkles,
+    tone: "text-[var(--accent)]",
+  },
+  {
+    key: "documents",
+    label: "Documents added",
+    verb: "to read",
+    icon: FileText,
+    tone: "text-[var(--deep)]",
+  },
+  {
+    key: "shared",
+    label: "Sent your way",
+    verb: "from your team",
+    icon: Mail,
+    tone: "text-[var(--accent)]",
+  },
+];
 
 function relTime(iso) {
   if (!iso) return "—";
@@ -38,80 +70,44 @@ function relTime(iso) {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export default function RecentActivity({ signals, briefings, documents, shared, contexts, hasMultipleContexts, scope, onScopeChange }) {
-  const ctxName = (id) => (contexts || []).find((c) => c.id === id)?.name;
+export default function RecentActivity({
+  signals = [], briefings = [], documents = [], shared = [], briefs = [],
+  contexts, hasMultipleContexts, scope, onScopeChange,
+}) {
+  const navigate = useNavigate();
 
-  const events = useMemo(() => {
-    const arr = [];
-    (signals || []).forEach((s) =>
-      arr.push({
-        id: `sg-${s.id}`,
-        kind: "signal",
-        title: s.headline || s.title,
-        ts: s.created_at,
-        context_id: s.context_id,
-        context_name: s.context_name,
-        meta: s.type || s.tone,
-        to: "/app/prepare",
-      })
-    );
-    (briefings || []).forEach((b) =>
-      arr.push({
-        id: `br-${b.id}`,
-        kind: "briefing",
-        title: b.title,
-        ts: b.created_at || b.published_at,
-        context_id: b.context_id,
-        context_name: b.context_name,
-        to: "/app/prepare",
-      })
-    );
-    (documents || []).forEach((d) =>
-      arr.push({
-        id: `dc-${d.id}`,
-        kind: "document",
-        title: d.name || d.original_filename,
-        ts: d.created_at,
-        context_id: d.context_id,
-        context_name: d.context_name,
-        to: `/app/documents/${d.id}`,
-      })
-    );
-    (shared || []).forEach((sh) =>
-      arr.push({
-        id: `sh-${sh.id}`,
-        kind: "shared",
-        title: sh.item_preview || sh.subject || "(no preview)",
-        ts: sh.created_at,
-        context_id: sh.context_id,
-        context_name: sh.context_name,
-        meta: `from ${(sh.shared_by_name || sh.shared_by_email || "someone").split(" ")[0]}`,
-        to: "/app/prepare",
-      })
-    );
-    return arr
-      .filter((e) => e.title && e.ts)
-      .sort((a, b) => new Date(b.ts) - new Date(a.ts));
-  }, [signals, briefings, documents, shared]);
+  const groups = useMemo(() => {
+    const byKey = {
+      meetings:  briefings.slice().sort((a, b) => new Date(b.created_at || b.published_at) - new Date(a.created_at || a.published_at)),
+      answers:   briefs.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
+      signals:   signals.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
+      documents: documents.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
+      shared:    shared.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
+    };
+    const titleOf = (key, it) =>
+      key === "signals"  ? (it.headline || it.title)
+      : key === "documents" ? (it.name || it.original_filename)
+      : key === "shared" ? (it.item_preview || it.subject || "(no preview)")
+      : it.title;
+    return CATEGORIES.map((c) => {
+      const items = byKey[c.key] || [];
+      const latest = items[0];
+      return {
+        ...c,
+        count: items.length,
+        latestTitle: latest ? titleOf(c.key, latest) : null,
+        latestTs: latest ? (latest.created_at || latest.published_at) : null,
+      };
+    });
+  }, [signals, briefings, documents, shared, briefs]);
 
-  const visible = events.slice(0, 8);
-
-  if (visible.length === 0) {
-    return (
-      <section className="border-t border-[var(--rule)] pt-6 pb-12" data-testid="home-recent-activity">
-        <p className="akki-overline mb-2">Activity since you last looked</p>
-        <p className="text-[13px] text-[var(--muted)] italic">
-          Nothing new yet. Once AKKI has something to surface, it will line up here in time order.
-        </p>
-      </section>
-    );
-  }
+  const totalCount = groups.reduce((acc, g) => acc + g.count, 0);
 
   return (
     <section className="border-t border-[var(--rule)] pt-6 pb-12" data-testid="home-recent-activity">
       <div className="flex items-center mb-4 gap-3">
         <p className="akki-overline">Activity since you last looked</p>
-        <span className="text-[11px] text-[var(--muted)] tabular-nums">{visible.length} events</span>
+        <span className="text-[11px] text-[var(--muted)] tabular-nums">{totalCount} events</span>
         {hasMultipleContexts && (
           <div
             className="ml-auto inline-flex items-center rounded-sm border border-[var(--rule)] bg-white p-[3px]"
@@ -143,49 +139,60 @@ export default function RecentActivity({ signals, briefings, documents, shared, 
         )}
       </div>
 
-      <ul className="bg-white border border-[var(--rule)] rounded-md divide-y divide-[var(--rule)]" data-testid="recent-activity-list">
-        {visible.map((e) => {
-          const m = TYPE_META[e.kind];
-          const Icon = m.icon;
-          const ctx = e.context_name || ctxName(e.context_id);
-          const showCtx = scope === "all" && hasMultipleContexts;
-          const Inner = (
-            <div className="flex items-start gap-3 px-5 py-3.5 hover:bg-[var(--cream-deep)]/30 transition-colors group">
-              <Icon className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${m.tone}`} strokeWidth={1.8} />
-              <div className="flex-1 min-w-0">
-                <p className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--muted)] mb-0.5 flex items-center gap-2">
-                  <span className={m.tone}>{m.label} {m.verb}</span>
-                  {e.meta && <span className="italic normal-case tracking-normal">· {e.meta}</span>}
-                  {showCtx && ctx && (
-                    <span className="ml-auto akki-overline text-[var(--muted)]/80">{ctx}</span>
+      {totalCount === 0 ? (
+        <div className="bg-white border border-[var(--rule)] rounded-md px-5 py-8 text-center">
+          <p className="text-[13px] text-[var(--muted)] italic">
+            Nothing new yet. Once AKKI has something to surface — a briefing, a signal, a fresh document — it will line up here in time order.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          {groups.map((g) => {
+            const Icon = g.icon;
+            const empty = g.count === 0;
+            return (
+              <button
+                key={g.key}
+                onClick={() => navigate(`/app/activity?cat=${g.key}`)}
+                disabled={empty}
+                className={`text-left bg-white border rounded-lg p-4 transition-colors flex flex-col h-full group ${
+                  empty
+                    ? "border-[var(--rule)] opacity-50 cursor-default"
+                    : "border-[var(--rule)] hover:border-[var(--accent)]/40 hover:shadow-sm cursor-pointer"
+                }`}
+                data-testid={`activity-cat-${g.key}`}
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <p className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--accent)] font-mono leading-tight">
+                    {g.label}
+                  </p>
+                  <Icon className={`w-3.5 h-3.5 ${g.tone} shrink-0`} strokeWidth={1.6} />
+                </div>
+                <p className="akki-serif text-[28px] text-[var(--ink)] leading-none tabular-nums mb-1">
+                  {g.count}
+                </p>
+                <p className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] mb-3">
+                  {g.verb}
+                </p>
+                <div className="mt-auto">
+                  {g.latestTitle ? (
+                    <>
+                      <p className="text-[11.5px] text-[var(--muted)] line-clamp-2 italic mb-2 leading-snug">
+                        Latest: {g.latestTitle}
+                      </p>
+                      <p className="text-[11px] text-[var(--accent)] inline-flex items-center gap-1 group-hover:underline">
+                        View timeline <ArrowRight className="w-3 h-3" />
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-[var(--muted)] italic">Nothing yet</p>
                   )}
-                </p>
-                <p className="akki-serif text-[14.5px] text-[var(--ink)] leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition-colors">
-                  {e.title}
-                </p>
-              </div>
-              <span className="text-[11px] text-[var(--muted)] tabular-nums shrink-0 mt-1">
-                {relTime(e.ts)}
-              </span>
-            </div>
-          );
-          return (
-            <li key={e.id}>
-              {e.to ? (
-                <Link to={e.to} className="block" data-testid={`recent-event-${e.kind}-${e.id}`}>{Inner}</Link>
-              ) : (
-                <div data-testid={`recent-event-${e.kind}-${e.id}`}>{Inner}</div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-
-      <div className="flex justify-end mt-3">
-        <Link to="/app/prepare" className="akki-gesture text-[12.5px]" data-testid="recent-view-all">
-          See more in Prepare <ArrowRight className="w-3 h-3 inline ml-1" />
-        </Link>
-      </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }

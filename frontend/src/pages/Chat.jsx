@@ -82,16 +82,39 @@ export default function Chat() {
   }, [activeChat?.messages?.length, sending]);
 
   // Pre-fill the composer when arriving with ?prompt=… (e.g. from the
-  // sandbox tutorial card). One-shot: we strip the param after consuming it.
+  // sandbox tutorial card or the "Continue in Chat" chip on a saved
+  // brief). One-shot: we strip the param after consuming it. With
+  // ?new=1 we also create a fresh conversation first so the seed
+  // doesn't pollute whichever chat happened to be active.
   useEffect(() => {
     const p = searchParams.get("prompt");
-    if (p) {
-      setInput(p);
+    const wantNew = searchParams.get("new") === "1";
+    const seedTitle = searchParams.get("seed_title");
+    if (!p && !seedTitle) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (wantNew) {
+          const { data } = await api.post("/chats", {
+            title: seedTitle || "Continued from a brief",
+            model_id: defaultModel,
+            shielding_policy: "auto",
+          });
+          if (cancelled) return;
+          setChats((prev) => [data, ...prev]);
+          setActiveId(data.id);
+        }
+        if (p) setInput(p);
+      } catch { /* swallow — just leave the composer empty */ }
       const next = new URLSearchParams(searchParams);
       next.delete("prompt");
+      next.delete("new");
+      next.delete("seed_title");
       setSearchParams(next, { replace: true });
-    }
-  }, [searchParams, setSearchParams]);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams.toString()]);
 
   const onNewChat = async () => {
     try {

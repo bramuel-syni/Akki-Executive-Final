@@ -450,6 +450,19 @@ function SignalsTab({ contextId, contextName, onCreated }) {
 function BriefDetailModal({ brief, contextId, onClose, onDelete }) {
   const open = Boolean(brief);
   const [shareOpen, setShareOpen] = useState(false);
+  const continueInChat = () => {
+    if (!brief?.body) return;
+    // Seed the chat composer with the brief body so the executive can
+    // pressure-test it conversationally — full Synisense shielding still
+    // applies because the chat surface owns the policy.
+    const seed = `Continuing from a saved brief — "${brief.title}". The brief read:\n\n${brief.body}\n\nMy follow-up: `;
+    const params = new URLSearchParams({
+      prompt: seed,
+      new: "1",
+      seed_title: `Brief: ${brief.title}`.slice(0, 110),
+    });
+    window.location.assign(`/app/chat?${params.toString()}`);
+  };
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose?.(); }}>
       <DialogContent className="max-w-2xl bg-[var(--cream)]" data-testid="prepare-brief-detail">
@@ -479,6 +492,17 @@ function BriefDetailModal({ brief, contextId, onClose, onDelete }) {
                 data-testid="prepare-brief-delete"
               >
                 Delete
+              </Button>
+            )}
+            {brief?.id && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={continueInChat}
+                className="h-8 text-[12.5px] border-[var(--rule)] hover:border-[var(--accent)] text-[var(--ink)]"
+                data-testid="prepare-brief-continue-chat"
+              >
+                Continue in Chat
               </Button>
             )}
             {brief?.id && (

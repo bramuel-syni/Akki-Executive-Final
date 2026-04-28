@@ -12,6 +12,7 @@ import Onboarding from "@/pages/Onboarding";
 import AppHome from "@/pages/AppHome";
 import Workspace from "@/pages/Workspace";
 import Prepare from "@/pages/Prepare";
+import Activity from "@/pages/Activity";
 import DocumentViewer from "@/pages/DocumentViewer";
 import Learn from "@/pages/Learn";
 import TenantSettings from "@/pages/TenantSettings";
@@ -88,6 +89,7 @@ function App() {
           <Route path="/app/blog-admin" element={<ProtectedRoute><BlogAdmin /></ProtectedRoute>} />
           <Route path="/app/workspace" element={<ProtectedRoute><Workspace /></ProtectedRoute>} />
           <Route path="/app/prepare" element={<ProtectedRoute><Prepare /></ProtectedRoute>} />
+          <Route path="/app/activity" element={<ProtectedRoute><Activity /></ProtectedRoute>} />
           {/* Apr-2026: Signals + Briefings consolidated into /app/prepare. Old
               routes redirect — keeps email/bookmark links alive without a 404. */}
           <Route path="/app/highlights" element={<Navigate to="/app/prepare" replace />} />

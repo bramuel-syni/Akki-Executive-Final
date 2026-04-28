@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import ShareModal from "@/components/share/ShareModal";
 import SandboxPackDrop from "@/components/sandbox/SandboxPackDrop";
+import SandboxSampleDoc from "@/components/sandbox/SandboxSampleDoc";
 import SandboxTutorial from "@/components/sandbox/SandboxTutorial";
 import ObjectiveCheck from "@/components/sandbox/ObjectiveCheck";
 import ReviewInboxCard from "@/components/cycle/ReviewInboxCard";
@@ -44,6 +45,7 @@ export default function AppHome() {
   const [briefings, setBriefings] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [shared, setShared] = useState([]);
+  const [briefs, setBriefs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [shareOn, setShareOn] = useState(null);  // signal currently being shared
 
@@ -65,18 +67,20 @@ export default function AppHome() {
         setDocuments([]); // documents are intentionally scoped to one context
         setShared(sh.data || []);
       } else if (contextId) {
-        const [s, b, d, sh] = await Promise.all([
+        const [s, b, d, sh, bf] = await Promise.all([
           api.get(`/contexts/${contextId}/signals`),
           api.get(`/contexts/${contextId}/briefings`),
           api.get(`/contexts/${contextId}/documents`),
           sharedPromise,
+          api.get(`/contexts/${contextId}/briefs?limit=50`).catch(() => ({ data: { items: [] } })),
         ]);
         setSignals(s.data || []);
         setBriefings(b.data || []);
         setDocuments(d.data || []);
         setShared(sh.data || []);
+        setBriefs(bf.data?.items || []);
       } else {
-        setSignals([]); setBriefings([]); setDocuments([]);
+        setSignals([]); setBriefings([]); setDocuments([]); setBriefs([]);
         const sh = await sharedPromise;
         setShared(sh.data || []);
       }
@@ -183,6 +187,12 @@ export default function AppHome() {
                 window has elapsed AND the user captured a Q5 objective. */}
             <ObjectiveCheck contextId={contextId} />
 
+            {/* Sandbox-only: AKKI proactively prepares a sample board pack
+                the prospect can accept with one click. Sits ABOVE the
+                drop-your-own affordance — most prospects won't have a
+                real pack handy on first visit. (Apr-2026 user request.) */}
+            <SandboxSampleDoc onAccepted={load} />
+
             {/* Sandbox-only: a discreet drop-your-own-pack affordance.
                 Pinned — not draggable. */}
             <SandboxPackDrop onSignalsReady={load} />
@@ -201,6 +211,7 @@ export default function AppHome() {
               briefings={briefings}
               documents={documents}
               shared={shared}
+              briefs={briefs}
               contexts={contexts}
               hasMultipleContexts={hasMultipleContexts}
               scope={scope}

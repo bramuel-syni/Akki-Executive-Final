@@ -519,6 +519,122 @@ async def dismiss_tutorial(
 
 
 # -----------------------------------------------------------------------------
+# Sandbox sample doc — AKKI offers a synthesised "this could be your board
+# pack" preview the prospect can accept with one click. Smoother first-touch
+# than asking them to find and drop a real PDF.
+# -----------------------------------------------------------------------------
+@router.get("/contexts/{context_id}/sample-doc")
+async def sandbox_sample_doc(
+    context_id: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Return a tailored sample document the prospect can accept-upload."""
+    ctx = await db.contexts.find_one(
+        {"id": context_id, "owner_account_id": current["id"]},
+        {"_id": 0},
+    )
+    if not ctx or ctx.get("type") != "sandbox":
+        raise HTTPException(status_code=404, detail="Sandbox context not found")
+    if (ctx.get("sandbox_metadata") or {}).get("sample_doc_accepted"):
+        return {"already_accepted": True}
+
+    meta = ctx.get("sandbox_metadata") or {}
+    sector = meta.get("sector") or "financial_services"
+    sector_label = (meta.get("other_sector_name") or sector or "").replace("_", " ").title()
+    objective = (meta.get("objective") or "").strip() or "operational performance"
+
+    title = f"Q2 {datetime.now(timezone.utc).year} Board Pack — {ctx.get('name') or 'Sample Co'}"
+    preview = (
+        f"# {title}\n\n"
+        f"**Sector**: {sector_label}\n"
+        f"**Reporting period**: Q2, this fiscal year\n\n"
+        f"## 1. CEO summary\n\n"
+        f"Trading was steady through the period. The headline movement is on "
+        f"{objective} — see Section 3 for management's read. Cash conversion "
+        f"held above the rolling four-quarter average; receivables are tighter.\n\n"
+        f"## 2. Operating performance\n\n"
+        f"- Revenue: in line with budget, +6% year-on-year.\n"
+        f"- Margin: 90 bps below plan, attributed to one-off legal accruals.\n"
+        f"- Cash & equivalents: comfortable; covenant headroom unchanged.\n\n"
+        f"## 3. {objective.capitalize()} — management view\n\n"
+        f"This quarter's drift is consistent with the trajectory flagged in Q1. "
+        f"Mitigation actions are in flight; we expect to be back inside band by "
+        f"end of next quarter. Risk register updated accordingly (Item 11).\n\n"
+        f"## 4. People & governance\n\n"
+        f"No changes to senior management. Audit committee met twice; no "
+        f"reportable items. Whistleblower channel: zero submissions.\n\n"
+        f"## 5. Forward look\n\n"
+        f"Order book is healthy. Two strategic decisions are on this board's "
+        f"plate this quarter — see appendices A and B. Management requests an "
+        f"in-camera item for Section 5b.\n"
+    )
+    return {
+        "context_id": context_id,
+        "title": title,
+        "filename": f"{title.replace(' ', '-')}.md",
+        "preview": preview,
+        "word_count": len(preview.split()),
+        "already_accepted": False,
+    }
+
+
+class SandboxSampleAccept(BaseModel):
+    title: str = Field(..., min_length=4, max_length=200)
+    filename: str = Field(..., min_length=4, max_length=200)
+    preview: str = Field(..., min_length=80, max_length=20000)
+
+
+@router.post("/contexts/{context_id}/sample-doc/accept")
+async def sandbox_sample_doc_accept(
+    context_id: str,
+    body: SandboxSampleAccept,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Materialise the sample as a real document in the sandbox context."""
+    ctx = await db.contexts.find_one(
+        {"id": context_id, "owner_account_id": current["id"]},
+        {"_id": 0},
+    )
+    if not ctx or ctx.get("type") != "sandbox":
+        raise HTTPException(status_code=404, detail="Sandbox context not found")
+
+    doc_id = str(uuid.uuid4())
+    now_iso = _iso(_now())
+    doc = {
+        "id": doc_id,
+        "context_id": context_id,
+        "account_id": current["id"],
+        "name": body.title,
+        "original_filename": body.filename,
+        "size_bytes": len(body.preview.encode("utf-8")),
+        "content_type": "text/markdown",
+        "extracted_text": body.preview,
+        "status": "ready",
+        "trust_level": "trusted",
+        "akki_summary": {
+            "tldr": body.preview.split("\n\n", 2)[1][:280] if "\n\n" in body.preview else None,
+            "source": "sandbox_sample",
+        },
+        "sandbox_artefact": True,
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+    await db.documents.insert_one(doc.copy())
+    # Stamp the metadata so the card disappears from the home canvas.
+    await db.contexts.update_one(
+        {"id": context_id},
+        {"$set": {"sandbox_metadata.sample_doc_accepted": True,
+                  "sandbox_metadata.sample_doc_id": doc_id,
+                  "sandbox_metadata.sample_doc_accepted_at": now_iso}},
+    )
+    await write_audit(
+        context_id, current["id"], "sandbox.sample_doc.accept",
+        "document", doc_id, {"title": body.title},
+    )
+    return {"ok": True, "doc_id": doc_id, "title": body.title}
+
+
+# -----------------------------------------------------------------------------
 # Objective-delivery follow-up — surfaces ~24h after the sandbox/seeded
 # context was generated. Asks the user "Did AKKI deliver on your objective?"
 # and stores the answer as a per-sector conversion KPI (the doc's exact ask:

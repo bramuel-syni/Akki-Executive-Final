@@ -153,7 +153,17 @@ export default function InSummaryTiles() {
     const outstandingChecklists = data.checklists.filter(
       (c) => c.status === "dispatched" && !submittedNames.has(c.reportee_name)
     ).length;
-    const pendingActions = outstandingChecklists + briefUnread + reportsPending;
+    // Apr-2026: aggregate pending actions across the role-scoped portfolio
+    // when context.pending_actions is populated by /auth/me. Falls back to
+    // the active-context number when not available.
+    const portfolioPending = (allActive || []).reduce(
+      (acc, c) => acc + (c.my_role === activeRole ? (c.pending_actions || 0) : 0),
+      0,
+    );
+    const pendingActions = Math.max(
+      portfolioPending,
+      outstandingChecklists + briefUnread + reportsPending,
+    );
 
     return [
       {

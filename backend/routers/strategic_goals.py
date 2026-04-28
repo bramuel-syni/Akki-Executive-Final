@@ -105,7 +105,38 @@ async def list_goals(
     q: Dict[str, Any] = {"context_id": context_id}
     if department:
         q["department"] = department
-    goals = await db.strategic_goals.find(q, {"_id": 0}).sort("target_date", 1).to_list(200)
+    goals = await db.strategic_goals.find(q, {"_id": 0}).to_list(200)
+
+    # Normalise target_date to a sortable ISO key. Inputs vary widely
+    # ("2026-12", "Q4 2026", "Dec 2026", "end of FY26", None) — we coerce
+    # to a YYYY-MM-DD lexicographic key with a stable fallback so the
+    # editorial sort order on the Strategic Goals card is deterministic.
+    import re as _re
+    def _sort_key(raw: Optional[str]) -> str:
+        if not raw:
+            return "9999-99-99"
+        s = str(raw).strip().lower()
+        # YYYY-MM-DD or YYYY-MM
+        m = _re.match(r"^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$", s)
+        if m:
+            y, mo, d = m.group(1), m.group(2).zfill(2), (m.group(3) or "01").zfill(2)
+            return f"{y}-{mo}-{d}"
+        # Q1..Q4 YYYY
+        m = _re.match(r"^q([1-4])\s+(\d{4})$", s)
+        if m:
+            q_num = int(m.group(1))
+            return f"{m.group(2)}-{q_num*3:02d}-30"
+        # MMM YYYY
+        months = {"jan": "01", "feb": "02", "mar": "03", "apr": "04", "may": "05",
+                  "jun": "06", "jul": "07", "aug": "08", "sep": "09", "oct": "10",
+                  "nov": "11", "dec": "12"}
+        for short, num in months.items():
+            mm = _re.match(rf"^{short}[a-z]*\s+(\d{{4}})$", s)
+            if mm:
+                return f"{mm.group(1)}-{num}-15"
+        return "9999-99-99"
+
+    goals.sort(key=lambda g: (_sort_key(g.get("target_date")), g.get("title", "")))
     return {"goals": [sanitize(g) for g in goals]}
 
 
