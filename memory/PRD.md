@@ -1471,6 +1471,66 @@ verified by testing agent (`/app/test_reports/iteration_33.json`):
   Consolidate · Send up." reinforces the spine.
 
 
+## §UX iter47 — Prepare 2-col rail + Dynamic Workflow dock + Recent activity (2026-04-28)
+
+### Why
+Targeted user feedback after iter46 acceptance:
+  1. Move Document Journal up in the sidebar (was last).
+  2. Drop the word "consumed" from the Reports InSummary attribute.
+  3. Make the Workflow dock dynamic — surface most popular / unused / new
+     features / "Monitor your performance" by relevance, not statically.
+  4. The bottom four-tab block on Home was duplicating the InSummary
+     above — propose a better hook.
+  5. Restore the visual stats dock from the old standalone Signals page
+     onto Prepare → Signals.
+  6. Add a right-side list rail to Prepare with topic + timeline filters
+     that swaps brief↔signal based on the active tab.
+
+### What shipped
+- **Sidebar reordered** — Home → Document Journal → Chat → Prepare → …
+- **Reports tile** — first attribute now reads "submissions" (not "submissions consumed").
+- **Dynamic Workflow dock (`QuickActions.jsx`)** — every tile carries a
+  `priority(state)` function. We compute scores from the user's actual
+  data (unread briefings, pending reports, in-progress plays, recent
+  docs, signal count) and surface the top 3. New tiles: "Monitor your
+  performance" (steady mid-priority, links /app/monitor), "Catch up on
+  briefings" (only when unread > 0), "Surface signals on something"
+  (boosted when totalSignals = 0; opens /app/prepare?tab=signals).
+- **RecentActivity (`components/home/RecentActivity.jsx`)** — single
+  chronological feed merging signals + briefings + documents + shared
+  items into one editorial timeline ("DOCUMENT ADDED · 3d ago"). All-
+  boards / This-company toggle is now wired to AppHome's existing scope
+  state (was label-only — now genuinely behaviour-changing). Replaced
+  the four-tab summary repeater entirely.
+- **Prepare 2-col layout** — main column (form + tab section header) at
+  left; new `PrepareSideRail` at right with topic search + 7d/30d/All
+  timeline chips. Rail tab swaps brief↔signal based on active tab. Lifted
+  briefs/signals fetch state to the page so the rail can refresh after
+  a generate event.
+- **Brief / Signal detail modals** kept inline (no extra route). New
+  Delete affordance added to BriefDetailModal next to Send-to-colleague.
+- **HighlightsStats restored** — the standalone-Signals visual the user
+  remembered (sparkline + risk/opportunity/gap breakdown bars +
+  confidence summary) is now mounted on Prepare → Signals when at
+  least one signal exists. Brief tab keeps the calmer PrepareStatsDock
+  with the three progress-bar cards.
+- **Prepare deep-link** — `/app/prepare?tab=signals` lands directly on
+  the Signals tab (used by the new Quick Action tile).
+
+### Tests
+- iteration_47.json — 11/11 frontend acceptance items pass at 100%.
+  Two minor reviewer nits addressed in the same iteration (scope toggle
+  no longer label-only; try_signals tile lands on Signals tab via deep
+  link).
+
+### Open / deferred
+- Tier-C: Minutes as first-class entity (will plug into Prepare's right
+  rail as a third tab).
+- Tier-C: Personal vs Enterprise tier split.
+- Tier-C: Inbound email parsing.
+- Real second-LLM ValidatedBadge pass.
+
+
 ## §UX iter46 — Role isolation + InSummary redesign + Sidebar reorder (2026-04-28)
 
 ### Why

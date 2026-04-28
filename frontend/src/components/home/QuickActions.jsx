@@ -68,7 +68,7 @@ const TILE_DEFS = [
   },
   {
     key: "try_signals",
-    role: "any", customRoute: "/app/prepare",
+    role: "any", customRoute: "/app/prepare?tab=signals",
     label: "Surface signals on something",
     body: "Risks, opportunities, gaps — generated against a focus you choose.",
     icon: Sparkles,

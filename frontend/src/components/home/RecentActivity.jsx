@@ -14,7 +14,7 @@
  * Why it's not "summary": each row is an EVENT, not a count. Numbers live
  * in the InSummary tiles. Verbs and headlines live here.
  */
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   Sparkles, ScrollText, FileText, Mail, ArrowRight, Globe,
@@ -38,8 +38,7 @@ function relTime(iso) {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export default function RecentActivity({ signals, briefings, documents, shared, contexts, hasMultipleContexts }) {
-  const [scope, setScope] = useState("current"); // "current" | "all"
+export default function RecentActivity({ signals, briefings, documents, shared, contexts, hasMultipleContexts, scope, onScopeChange }) {
   const ctxName = (id) => (contexts || []).find((c) => c.id === id)?.name;
 
   const events = useMemo(() => {
@@ -119,7 +118,7 @@ export default function RecentActivity({ signals, briefings, documents, shared, 
             data-testid="recent-scope-toggle"
           >
             <button
-              onClick={() => setScope("current")}
+              onClick={() => onScopeChange?.("current")}
               className={`px-2.5 py-1 text-[11px] uppercase tracking-wider rounded-[3px] transition-colors ${
                 scope === "current"
                   ? "bg-[var(--cream-deep)] text-[var(--ink)]"
@@ -130,7 +129,7 @@ export default function RecentActivity({ signals, briefings, documents, shared, 
               This company
             </button>
             <button
-              onClick={() => setScope("all")}
+              onClick={() => onScopeChange?.("all")}
               className={`px-2.5 py-1 text-[11px] uppercase tracking-wider rounded-[3px] inline-flex items-center gap-1 transition-colors ${
                 scope === "all"
                   ? "bg-[var(--accent)] text-white"

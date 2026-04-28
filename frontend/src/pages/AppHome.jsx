@@ -203,6 +203,8 @@ export default function AppHome() {
               shared={shared}
               contexts={contexts}
               hasMultipleContexts={hasMultipleContexts}
+              scope={scope}
+              onScopeChange={setScope}
             />
           </div>
         </div>

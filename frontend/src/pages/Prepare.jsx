@@ -68,7 +68,14 @@ const TAB_INTRO = {
 export default function Prepare() {
   const { activeContext } = useAuth();
   const cid = activeContext?.id;
-  const [tab, setTab] = useState("brief");
+  // Honour ?tab=signals deep-link so the Quick Actions "Surface signals
+  // on something" tile lands on the Signals tab instead of Brief.
+  const initialTab = (() => {
+    if (typeof window === "undefined") return "brief";
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return t === "signals" ? "signals" : "brief";
+  })();
+  const [tab, setTab] = useState(initialTab);
 
   // Shared rail data — hoisted so the right rail can refresh after a
   // generate happens inside a tab.
