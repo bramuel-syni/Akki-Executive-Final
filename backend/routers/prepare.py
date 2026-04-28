@@ -113,14 +113,20 @@ async def create_brief(
 
     # Real second-LLM countercheck — independent of the drafter (Claude →
     # Gemini). Soft-fails to a "qualified" verdict on validator outage so
-    # this never blocks a happy-path brief from saving.
+    # this never blocks a happy-path brief from saving. Iter50: we now
+    # issue the validator concurrently with the insert + audit-write so
+    # validate latency is masked behind those two writes.
     from llm_service import validate_independent
-    validation = await validate_independent(
-        kind=body.kind, content=md_body, objective=body.objective.strip(),
-    )
+    import asyncio as _asyncio
 
+    brief_id = str(uuid.uuid4())
+    placeholder_validation = {
+        "verdict": "pending", "confidence": 0,
+        "notes": ["Validating with an independent model…"],
+        "validator_provider": "n/a", "validator_model": "n/a",
+    }
     doc = {
-        "id": str(uuid.uuid4()),
+        "id": brief_id,
         "context_id": ctx["context"]["id"],
         "account_id": ctx["account"]["id"],
         "kind": body.kind,
@@ -128,19 +134,28 @@ async def create_brief(
         "title": title[:120],
         "body": md_body,
         "model": llm_out.get("mode"),
-        # Real second-LLM countercheck; the boolean `validated` flag was
-        # deprecated iter49 — readers should consult validation.verdict.
-        "validation": validation,
+        "validation": placeholder_validation,
         "created_at": iso(now()),
     }
-    await db.briefs.insert_one(doc)
-    doc.pop("_id", None)
 
-    await write_audit(
+    # Fan-out: insert + audit + validate in parallel.
+    insert_task = db.briefs.insert_one(doc.copy())
+    audit_task = write_audit(
         ctx["context"]["id"], ctx["account"]["id"],
-        "brief.created", "brief", doc["id"],
+        "brief.created", "brief", brief_id,
         {"kind": body.kind, "objective_chars": len(body.objective)},
     )
+    validate_task = validate_independent(
+        kind=body.kind, content=md_body, objective=body.objective.strip(),
+    )
+    _, _, validation = await _asyncio.gather(insert_task, audit_task, validate_task)
+
+    # Stamp the live verdict back onto the saved document.
+    await db.briefs.update_one(
+        {"id": brief_id}, {"$set": {"validation": validation}}
+    )
+    doc["validation"] = validation
+    doc.pop("_id", None)
     return doc
 
 
@@ -188,3 +203,50 @@ async def delete_brief(
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Brief not found")
     return {"ok": True}
+
+
+
+# -----------------------------------------------------------------------------
+# Minutes — first-class meeting-minutes surface (iter50 v1).
+#
+# Shape: minutes are documents with `doc_type == "minutes"` plus a small
+# `minutes_meta` block we materialise on demand:
+#   {meeting_date, attendees[], decisions[], actions[], questions[]}
+#
+# v1 listing only — actual structured-extraction is deferred to a follow-up
+# session along with the action-item↔Cycle linkage. This endpoint already
+# treats any document tagged `doc_type=minutes` (or whose filename contains
+# "minutes") as a minute, so existing uploads are surfaced immediately.
+# -----------------------------------------------------------------------------
+@router.get("/contexts/{context_id}/minutes")
+async def list_minutes(
+    context_id: str,
+    limit: int = 50,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    # Match either explicit doc_type or filename heuristic. We deliberately
+    # avoid a regex on extracted_text — that would be expensive and noisy.
+    or_clause: List[Dict[str, Any]] = [
+        {"doc_type": "minutes"},
+        {"name": {"$regex": "minutes", "$options": "i"}},
+        {"original_filename": {"$regex": "minutes", "$options": "i"}},
+    ]
+    docs = await db.documents.find(
+        {"context_id": context_id, "$or": or_clause},
+        {"_id": 0, "id": 1, "name": 1, "original_filename": 1,
+         "created_at": 1, "doc_type": 1, "minutes_meta": 1, "trust_level": 1},
+    ).sort("created_at", -1).to_list(max(1, min(limit, 200)))
+
+    out = []
+    for d in docs:
+        out.append({
+            "id": d.get("id"),
+            "title": d.get("name") or d.get("original_filename") or "Minutes",
+            "filename": d.get("original_filename"),
+            "created_at": d.get("created_at"),
+            "doc_type": d.get("doc_type") or "minutes",
+            "trust_level": d.get("trust_level"),
+            "extracted": bool(d.get("minutes_meta")),
+            "minutes_meta": d.get("minutes_meta") or None,
+        })
+    return {"items": out, "count": len(out)}

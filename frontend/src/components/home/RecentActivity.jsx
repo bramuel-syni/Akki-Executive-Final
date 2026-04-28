@@ -89,6 +89,13 @@ export default function RecentActivity({
       : key === "documents" ? (it.name || it.original_filename)
       : key === "shared" ? (it.item_preview || it.subject || "(no preview)")
       : it.title;
+    // Iter50: count "qualified" or "flagged" briefs so the Questions
+    // answered tile can surface a small triage pip when at least one of
+    // the executive's saved briefs deserves a second read.
+    const flaggedAnswers = briefs.filter((b) => {
+      const v = b.validation?.verdict;
+      return v === "qualified" || v === "flagged";
+    }).length;
     return CATEGORIES.map((c) => {
       const items = byKey[c.key] || [];
       const latest = items[0];
@@ -97,6 +104,7 @@ export default function RecentActivity({
         count: items.length,
         latestTitle: latest ? titleOf(c.key, latest) : null,
         latestTs: latest ? (latest.created_at || latest.published_at) : null,
+        flagged: c.key === "answers" ? flaggedAnswers : 0,
       };
     });
   }, [signals, briefings, documents, shared, briefs]);
@@ -168,8 +176,18 @@ export default function RecentActivity({
                   </p>
                   <Icon className={`w-3.5 h-3.5 ${g.tone} shrink-0`} strokeWidth={1.6} />
                 </div>
-                <p className="akki-serif text-[28px] text-[var(--ink)] leading-none tabular-nums mb-1">
+                <p className="akki-serif text-[28px] text-[var(--ink)] leading-none tabular-nums mb-1 inline-flex items-baseline gap-1.5">
                   {g.count}
+                  {g.flagged > 0 && (
+                    <span
+                      className="inline-flex items-center gap-1 align-middle px-1.5 py-0.5 rounded-sm bg-amber-50 border border-amber-200 text-amber-800 text-[9.5px] uppercase tracking-wider font-mono not-italic"
+                      title={`${g.flagged} brief${g.flagged === 1 ? "" : "s"} flagged by independent validator — read with care`}
+                      data-testid={`activity-cat-${g.key}-flagged-pip`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      {g.flagged} to re-read
+                    </span>
+                  )}
                 </p>
                 <p className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] mb-3">
                   {g.verb}

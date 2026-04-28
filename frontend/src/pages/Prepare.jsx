@@ -42,12 +42,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import {
-  Sparkles, Loader2, ScrollText, Activity, ArrowRight,
+  Sparkles, Loader2, ScrollText, Activity, FileText, ArrowRight,
 } from "lucide-react";
 
 const TABS = [
   { id: "brief",    label: "Brief",    icon: ScrollText },
   { id: "signals",  label: "Signals",  icon: Activity },
+  { id: "minutes",  label: "Minutes",  icon: FileText },
 ];
 
 const TAB_INTRO = {
@@ -63,6 +64,13 @@ const TAB_INTRO = {
       "What the board needs to notice — risks, opportunities, gaps. " +
       "Generated on demand against a focus you choose.",
   },
+  minutes: {
+    kicker: "Meeting Minutes",
+    blurb:
+      "Past meeting minutes uploaded to this company. AKKI lists them here " +
+      "so you can read in, recall decisions, and spot open actions. " +
+      "(Structured extraction — participants, decisions, actions — is on the way.)",
+  },
 };
 
 export default function Prepare() {
@@ -73,7 +81,8 @@ export default function Prepare() {
   const initialTab = (() => {
     if (typeof window === "undefined") return "brief";
     const t = new URLSearchParams(window.location.search).get("tab");
-    return t === "signals" ? "signals" : "brief";
+    if (t === "signals" || t === "minutes" || t === "brief") return t;
+    return "brief";
   })();
   const [tab, setTab] = useState(initialTab);
 
@@ -81,8 +90,10 @@ export default function Prepare() {
   // generate happens inside a tab.
   const [briefs, setBriefs] = useState([]);
   const [signals, setSignals] = useState([]);
+  const [minutes, setMinutes] = useState([]);
   const [loadingBriefs, setLoadingBriefs] = useState(true);
   const [loadingSignals, setLoadingSignals] = useState(true);
+  const [loadingMinutes, setLoadingMinutes] = useState(true);
   const [openBrief, setOpenBrief] = useState(null);
   const [openSignal, setOpenSignal] = useState(null);
 
@@ -106,7 +117,17 @@ export default function Prepare() {
     finally { setLoadingSignals(false); }
   }, [cid]);
 
-  useEffect(() => { loadBriefs(); loadSignals(); }, [loadBriefs, loadSignals]);
+  const loadMinutes = useCallback(async () => {
+    if (!cid) return;
+    setLoadingMinutes(true);
+    try {
+      const { data } = await api.get(`/contexts/${cid}/minutes?limit=50`);
+      setMinutes(data?.items || []);
+    } catch { /* silent */ }
+    finally { setLoadingMinutes(false); }
+  }, [cid]);
+
+  useEffect(() => { loadBriefs(); loadSignals(); loadMinutes(); }, [loadBriefs, loadSignals, loadMinutes]);
 
   const openBriefById = useCallback(async (idOrItem) => {
     const id = typeof idOrItem === "string" ? idOrItem : idOrItem?.id;
@@ -206,14 +227,19 @@ export default function Prepare() {
                 onCreated={() => loadSignals()}
               />
             )}
+            {tab === "minutes" && (
+              <MinutesTab minutes={minutes} loading={loadingMinutes} />
+            )}
           </div>
 
           <PrepareSideRail
             tab={tab}
             briefs={briefs}
             signals={signals}
+            minutes={minutes}
             loadingBriefs={loadingBriefs}
             loadingSignals={loadingSignals}
+            loadingMinutes={loadingMinutes}
             onOpenBrief={openBriefById}
             onOpenSignal={(s) => setOpenSignal(s)}
           />
@@ -439,6 +465,67 @@ function SignalsTab({ contextId, contextName, onCreated }) {
           </Button>
         </div>
       </form>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// MinutesTab — listing v1. Surfaces past meeting minutes uploaded to this
+// company. Click a row to open the source document. Structured extraction
+// (participants, decisions, actions) lands in a follow-up session.
+// ---------------------------------------------------------------------------
+function MinutesTab({ minutes, loading }) {
+  if (loading) {
+    return (
+      <div className="px-5 py-10 text-center text-[12.5px] text-[var(--muted)] italic" data-testid="prepare-minutes-tab">
+        Loading meeting minutes…
+      </div>
+    );
+  }
+  if (!minutes || minutes.length === 0) {
+    return (
+      <div
+        className="bg-white border border-[var(--rule)] rounded-md px-6 py-10 text-center"
+        data-testid="prepare-minutes-tab"
+      >
+        <FileText className="w-6 h-6 text-[var(--muted)] mx-auto mb-3" strokeWidth={1.5} />
+        <p className="akki-serif text-[15px] text-[var(--ink)] mb-1.5">
+          No meeting minutes yet.
+        </p>
+        <p className="text-[12.5px] text-[var(--muted)] italic max-w-sm mx-auto leading-snug">
+          Upload a minutes document in the Document Journal — name it
+          something with "minutes" in it and AKKI will list it here for
+          quick recall before your next meeting.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="bg-white border border-[var(--rule)] rounded-md overflow-hidden" data-testid="prepare-minutes-tab">
+      <ul className="divide-y divide-[var(--rule)]">
+        {minutes.map((m) => (
+          <li key={m.id}>
+            <a
+              href={`/app/documents/${m.id}`}
+              className="flex items-start gap-3 px-5 py-3.5 hover:bg-[var(--cream-deep)]/30 transition-colors group"
+              data-testid={`prepare-minutes-item-${m.id}`}
+            >
+              <FileText className="w-3.5 h-3.5 mt-0.5 text-[var(--muted)] shrink-0" strokeWidth={1.7} />
+              <div className="flex-1 min-w-0">
+                <p className="akki-serif text-[14.5px] text-[var(--ink)] leading-snug truncate group-hover:text-[var(--accent)] transition-colors">
+                  {m.title}
+                </p>
+                <p className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] mt-0.5">
+                  {m.created_at ? new Date(m.created_at).toLocaleDateString() : "—"}
+                  {m.trust_level && ` · ${m.trust_level}`}
+                  {m.extracted && " · extracted"}
+                </p>
+              </div>
+              <ArrowRight className="w-3 h-3 mt-1.5 text-[var(--muted)] shrink-0 group-hover:text-[var(--accent)]" />
+            </a>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

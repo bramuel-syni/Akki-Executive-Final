@@ -39,7 +39,7 @@ function formatDate(d) {
   });
 }
 
-export default function PrepareSideRail({ tab, briefs, signals, loadingBriefs, loadingSignals, onOpenBrief, onOpenSignal }) {
+export default function PrepareSideRail({ tab, briefs, signals, minutes = [], loadingBriefs, loadingSignals, loadingMinutes = false, onOpenBrief, onOpenSignal }) {
   const [topic, setTopic] = useState("");
   const [timeline, setTimeline] = useState("30d");
 
@@ -76,14 +76,24 @@ export default function PrepareSideRail({ tab, briefs, signals, loadingBriefs, l
     return {
       title: "Past minutes",
       icon: FileText,
-      items: [],
-      loading: false,
-      onOpen: () => {},
-      emptyText: "Minutes are coming soon. They'll be a first-class doc type so AKKI can anchor cycles and decisions to them.",
-      renderItem: () => ({ title: "", kicker: "", ts: null, raw: null }),
-      searchHay: () => "",
+      items: minutes,
+      loading: loadingMinutes,
+      // Open the source document in a new tab — minutes are docs.
+      onOpen: (it) => {
+        if (typeof window !== "undefined" && it?.id) {
+          window.location.assign(`/app/documents/${it.id}`);
+        }
+      },
+      emptyText: "No meeting minutes yet. Upload one with 'minutes' in the filename.",
+      renderItem: (it) => ({
+        title: it.title,
+        kicker: it.extracted ? "extracted" : "minutes",
+        ts: it.created_at,
+        raw: it,
+      }),
+      searchHay: (it) => `${it.title || ""} ${it.filename || ""}`.toLowerCase(),
     };
-  }, [tab, briefs, signals, loadingBriefs, loadingSignals, onOpenBrief, onOpenSignal]);
+  }, [tab, briefs, signals, minutes, loadingBriefs, loadingSignals, loadingMinutes, onOpenBrief, onOpenSignal]);
 
   const filtered = useMemo(() => {
     const tl = TIMELINE_OPTS.find((t) => t.id === timeline);

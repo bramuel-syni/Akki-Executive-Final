@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+// Note: framer-motion was removed from this file iter50 — the staggered
+// nav entrance caused a first-paint flash and added zero value after the
+// initial visit. Plain divs render instantly.
 import { useAuth } from "@/contexts/AuthContext";
 import Logo from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
@@ -291,12 +293,7 @@ export default function AppShell({ children }) {
               );
             }
             return (
-              <motion.div
-                key={item.to}
-                initial={{ opacity: 0, x: -6 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.04 + idx * 0.025, duration: 0.25, ease: "easeOut" }}
-              >
+              <div key={item.to}>
                 <NavLink
                   to={item.to}
                   end={item.end}
@@ -321,7 +318,7 @@ export default function AppShell({ children }) {
                     </>
                   )}
                 </NavLink>
-              </motion.div>
+              </div>
             );
           })}
 
@@ -335,12 +332,7 @@ export default function AppShell({ children }) {
           {MANAGE_NAV.map((item, idx) => {
             const Icon = item.icon;
             return (
-              <motion.div
-                key={item.to}
-                initial={{ opacity: 0, x: -6 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.22 + idx * 0.03, duration: 0.25, ease: "easeOut" }}
-              >
+              <div key={item.to}>
                 <NavLink
                   to={item.to}
                   className={({ isActive }) => {
@@ -371,7 +363,7 @@ export default function AppShell({ children }) {
                     );
                   }}
                 </NavLink>
-              </motion.div>
+              </div>
             );
           })}
 
