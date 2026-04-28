@@ -22,6 +22,7 @@ import {
 import DocumentJournalStats from "@/components/documents/DocumentJournalStats";
 import DocumentSummaryPanel from "@/components/documents/DocumentSummaryPanel";
 import DocumentEvolutionPanel from "@/components/documents/DocumentEvolutionPanel";
+import DocumentPlayContext from "@/components/documents/DocumentPlayContext";
 
 const TRUST_STYLE = {
   trusted: { label: "Trusted", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
@@ -482,6 +483,10 @@ function DocumentPane({ contextId, docId, onBack, onArchive, accountEmail, isAdm
               document={doc}
               onLinkChange={loadDoc}
             />
+            {/* Apr-2026: Workflow context — light-touch link to active
+                plays in this company. Helps the reader see the bigger
+                picture without leaving the document. */}
+            <DocumentPlayContext contextId={contextId} />
           </div>
         </aside>
       </div>

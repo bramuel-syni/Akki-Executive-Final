@@ -111,6 +111,14 @@ async def create_brief(
     if not md_body:
         raise HTTPException(status_code=502, detail="AKKI couldn't draft this brief — try again.")
 
+    # Real second-LLM countercheck — independent of the drafter (Claude →
+    # Gemini). Soft-fails to a "qualified" verdict on validator outage so
+    # this never blocks a happy-path brief from saving.
+    from llm_service import validate_independent
+    validation = await validate_independent(
+        kind=body.kind, content=md_body, objective=body.objective.strip(),
+    )
+
     doc = {
         "id": str(uuid.uuid4()),
         "context_id": ctx["context"]["id"],
@@ -121,6 +129,7 @@ async def create_brief(
         "body": md_body,
         "model": llm_out.get("mode"),
         "validated": True,  # stamps the shielded pass for the chip
+        "validation": validation,  # NEW: real second-model verdict
         "created_at": iso(now()),
     }
     await db.briefs.insert_one(doc)

@@ -478,7 +478,7 @@ function BriefDetailModal({ brief, contextId, onClose, onDelete }) {
           </DialogDescription>
         </DialogHeader>
         <div className="mt-2 flex items-center justify-between gap-3">
-          <ValidatedBadge size="compact" />
+          <ValidatedBadge size="compact" validation={brief?.validation} />
           <div className="flex items-center gap-2">
             {brief?.id && onDelete && (
               <Button

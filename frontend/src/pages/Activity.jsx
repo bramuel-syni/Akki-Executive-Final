@@ -71,6 +71,38 @@ export default function Activity() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Read-state stripe — per-user, per-item, persisted in localStorage so
+  // the timeline reads like a "since I last looked" inbox the executive
+  // can sweep through with confidence. Keyed by category + item id so a
+  // doc opened from Documents stays read in the Documents timeline but
+  // is independent of (say) a signal with the same id.
+  const READ_KEY = `akki.activity.read.${cid || "_"}`;
+  const [readSet, setReadSet] = useState(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = window.localStorage.getItem(READ_KEY);
+      return new Set(raw ? JSON.parse(raw) : []);
+    } catch { return new Set(); }
+  });
+  // Refresh read-set when context changes (different localStorage key).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(READ_KEY);
+      setReadSet(new Set(raw ? JSON.parse(raw) : []));
+    } catch { setReadSet(new Set()); }
+  }, [READ_KEY]);
+  const markRead = (id) => {
+    setReadSet((prev) => {
+      if (prev.has(`${cat}:${id}`)) return prev;
+      const next = new Set(prev);
+      next.add(`${cat}:${id}`);
+      try { window.localStorage.setItem(READ_KEY, JSON.stringify([...next])); } catch { /* no-op */ }
+      return next;
+    });
+  };
+  const isRead = (id) => readSet.has(`${cat}:${id}`);
+
   const load = useCallback(async () => {
     if (!cid) return;
     setLoading(true);
@@ -151,8 +183,8 @@ export default function Activity() {
         </div>
         <p className="akki-meta max-w-2xl mb-8">{meta.intro}</p>
 
-        {/* Category switcher */}
-        <div className="flex flex-wrap gap-2 mb-8" data-testid="activity-cat-switcher">
+        {/* Category switcher + mark-all-read */}
+        <div className="flex flex-wrap items-center gap-2 mb-8" data-testid="activity-cat-switcher">
           {Object.entries(CATEGORIES).map(([key, v]) => {
             const active = key === cat;
             return (
@@ -170,6 +202,21 @@ export default function Activity() {
               </Link>
             );
           })}
+          {items.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                const next = new Set(readSet);
+                items.forEach((it) => next.add(`${cat}:${it.id}`));
+                setReadSet(next);
+                try { window.localStorage.setItem(READ_KEY, JSON.stringify([...next])); } catch { /* no-op */ }
+              }}
+              className="ml-auto akki-gesture text-[12px] text-[var(--muted)] hover:text-[var(--ink)]"
+              data-testid="activity-mark-all-read"
+            >
+              Mark all read
+            </button>
+          )}
         </div>
 
         {loading ? (
@@ -191,18 +238,32 @@ export default function Activity() {
                 <li key={row.id}>
                   <Link
                     to={row.to}
-                    className="block px-5 py-3.5 hover:bg-[var(--cream-deep)]/30 transition-colors group"
-                    data-testid={`activity-item-${row.id}`}
+                    onClick={() => markRead(row.id)}
+                    className={`block px-5 py-3.5 hover:bg-[var(--cream-deep)]/30 transition-colors group ${
+                      isRead(row.id) ? "bg-[var(--cream-deep)]/15" : ""
+                    }`}
+                    data-testid={`activity-item-${row.id}${isRead(row.id) ? "-read" : ""}`}
                   >
                     <div className="flex items-baseline gap-3 mb-0.5">
-                      <span className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--accent)] font-mono">
+                      {!isRead(row.id) && (
+                        <span
+                          className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] inline-block shrink-0"
+                          aria-label="unread"
+                          data-testid={`activity-item-${row.id}-unread-dot`}
+                        />
+                      )}
+                      <span className={`text-[10.5px] uppercase tracking-[0.18em] font-mono ${
+                        isRead(row.id) ? "text-[var(--muted)]" : "text-[var(--accent)]"
+                      }`}>
                         {row.meta}
                       </span>
                       <span className="ml-auto text-[11px] text-[var(--muted)] tabular-nums">
                         {fmtDate(row.ts)}
                       </span>
                     </div>
-                    <p className="akki-serif text-[15px] text-[var(--ink)] leading-snug group-hover:text-[var(--accent)] transition-colors">
+                    <p className={`akki-serif text-[15px] leading-snug group-hover:text-[var(--accent)] transition-colors ${
+                      isRead(row.id) ? "text-[var(--muted)] italic" : "text-[var(--ink)]"
+                    }`}>
                       {row.title}
                     </p>
                   </Link>

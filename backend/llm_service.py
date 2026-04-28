@@ -287,3 +287,90 @@ def parse_json_response(text: str) -> Optional[Any]:
         except Exception:
             return None
     return None
+
+
+# -----------------------------------------------------------------------------
+# Independent-model validator — a real second-LLM pass that countersigns
+# a piece of generated content. We deliberately route the validator to a
+# DIFFERENT provider family from the drafter (drafter = Claude Sonnet 4.5
+# → validator = Gemini 2.5 Flash) so the verdict isn't just one model
+# nodding at itself.
+#
+# Returns a small structured verdict the UI can present alongside the
+# ValidatedBadge. Soft-fails closed (verdict="qualified", note="validator
+# unavailable") rather than blowing up the parent endpoint — the pass is
+# additive, never gating.
+# -----------------------------------------------------------------------------
+async def validate_independent(
+    *, kind: str, content: str,
+    objective: Optional[str] = None,
+    timeout_seconds: float = 12.0,
+) -> Dict[str, Any]:
+    """Run a second-LLM countercheck on `content`. Returns:
+
+        {
+          "verdict": "validated" | "qualified" | "flagged",
+          "confidence": 0..100,         # validator's confidence
+          "notes": [str, ...],          # ≤3 short notes
+          "validator_provider": "gemini",
+          "validator_model":    "gemini-2.5-flash",
+        }
+    """
+    fallback = {
+        "verdict": "qualified", "confidence": 60,
+        "notes": ["Validator unavailable; treat with normal scrutiny."],
+        "validator_provider": "n/a", "validator_model": "n/a",
+    }
+    emergent_key = os.environ.get("EMERGENT_LLM_KEY")
+    if not emergent_key or not content or len(content.strip()) < 40:
+        return fallback
+
+    instruction = (
+        "You are an independent verifier — a different model from the one "
+        "that drafted the content below. Read the draft carefully and judge: "
+        "(a) Does it overreach beyond what it could reasonably ground? "
+        "(b) Are claims internally consistent? (c) Is the tone calm, "
+        "specific, and useful for an executive? Be honest, not polite.\n\n"
+        f"Kind: {kind}\n"
+        + (f"Drafter's objective: {objective}\n" if objective else "")
+        + "\nDRAFT TO VERIFY:\n"
+        + content[:6000]
+        + "\n\nReturn STRICT JSON ONLY: "
+          "{\"verdict\": \"validated\"|\"qualified\"|\"flagged\","
+          "\"confidence\": 0..100,"
+          "\"notes\": [\"<<≤3 short notes (≤14 words each)>>\"]}"
+    )
+
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(
+            api_key=emergent_key,
+            session_id=f"validator-{uuid.uuid4().hex[:10]}",
+            system_message=(
+                "You are AKKI's second-pass validator. Independent of the drafter. "
+                "Be terse. JSON only. Never invent facts. If the draft is fine, say so."
+            ),
+        ).with_model("gemini", "gemini-2.5-flash")
+        msg = UserMessage(text=instruction)
+        import asyncio as _asyncio
+        raw = await _asyncio.wait_for(chat.send_message(msg), timeout=timeout_seconds)
+        parsed = parse_json_response(raw if isinstance(raw, str) else str(raw)) or {}
+        verdict = str(parsed.get("verdict") or "qualified").lower()
+        if verdict not in {"validated", "qualified", "flagged"}:
+            verdict = "qualified"
+        try:
+            confidence = max(0, min(100, int(parsed.get("confidence") or 70)))
+        except (TypeError, ValueError):
+            confidence = 70
+        notes = [str(n).strip()[:140] for n in (parsed.get("notes") or []) if str(n).strip()][:3]
+        return {
+            "verdict": verdict, "confidence": confidence,
+            "notes": notes or ["No issues flagged."],
+            "validator_provider": "gemini",
+            "validator_model": "gemini-2.5-flash",
+        }
+    except Exception as e:  # noqa: BLE001
+        if e.__class__.__name__ == "TimeoutError":
+            return {**fallback, "notes": ["Validator timed out; pass treated as qualified."]}
+        logger.warning("validator failed: %s", e)
+        return fallback

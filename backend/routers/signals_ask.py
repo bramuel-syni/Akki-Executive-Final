@@ -212,12 +212,41 @@ async def ask(
             persona_bits.append(f"  · {v}")
     persona_block = ("\n".join(persona_bits)) if persona_bits else "  · (no context object — respond generally, still grounded)"
 
+    # Plays-aware Ask (Apr-2026): if the executive has an active play
+    # running in this company, include a one-line nudge so the answer
+    # frames itself in the context the user is actively working in
+    # ("you're in the middle of a Q2 board pack"). Keep it light — we
+    # don't change retrieval ranking, just persona framing.
+    active_plays = await db.plays.find(
+        {"context_id": context_id, "status": "active"},
+        {"_id": 0, "id": 1, "play_type": 1, "title": 1, "current_stage": 1, "updated_at": 1},
+    ).sort("updated_at", -1).limit(3).to_list(3)
+    plays_block = ""
+    if active_plays:
+        items = []
+        for p in active_plays:
+            stage_label = (
+                ["inbox", "compose", "review", "send-up"][p.get("current_stage", 0)]
+                if p.get("play_type") == "board_pack"
+                else ["read", "brief", "question"][p.get("current_stage", 0)]
+                if p.get("play_type") == "pre_board"
+                else f"stage {p.get('current_stage', 0) + 1}"
+            )
+            label = (p.get("title") or p.get("play_type", "")).replace("_", " ")
+            items.append(f"  · {label} (currently on {stage_label})")
+        plays_block = (
+            "\n[ACTIVE WORKFLOWS — frame your answer with these in mind]\n"
+            + "\n".join(items)
+            + "\n"
+        )
+
     user_query = (
         f"The director / executive has just asked you this:\n\n"
         f"    « {body.question} »\n\n"
         f"Answer them directly — as a colleague, not a form response. Give them "
         f"the insight first, then the evidence. Keep it tight. Use the numbers.\n\n"
-        f"[WHAT THIS PERSON CARES ABOUT]\n{persona_block}\n\n"
+        f"[WHAT THIS PERSON CARES ABOUT]\n{persona_block}\n"
+        f"{plays_block}\n"
         f"[THEIR DOCUMENTS — all citations MUST be to doc_ids in this list]\n"
         f"{grounding}\n\n"
         f"If the answer genuinely isn't in these documents, say so in one sentence "
