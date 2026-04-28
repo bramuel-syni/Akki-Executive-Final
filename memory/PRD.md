@@ -1943,3 +1943,47 @@ Read-only; returns today's deep-tier usage so the UI can render an accurate
 - Decks surface — quota slot already reserved (`deck=3/day`). Build the
   generator when the design is ready.
 - Optional: 'Regenerate narrative' affordance with a confirm-overwrite UX.
+
+### 2026-04-28 — iter54 · Admin LLM-spend dashboard + race-safe quota + ops audit polish
+**Admin · LLM Spend (`/admin/llm-spend`, superadmin-only)**
+- New backend `routers/admin_llm_spend.py`. `GET /api/admin/llm/spend?days=N`
+  rolls up `llm_deep_usage` into:
+  - tiles: total calls / est cost / active accounts / window
+  - by-surface bars (calls + accounts + default cap)
+  - 14-day daily sparkline
+  - top 20 accounts (email · top surface · calls · est cost)
+- Unit cost configurable via env `AKKI_DEEP_UNIT_COST_USD` (default $0.045).
+- Frontend `pages/admin/LLMSpend.jsx` with the same cream/oxblood editorial
+  pattern as `/admin/health`, `/admin/sandbox-kpi`, `/admin/signal-kpi`.
+
+**Race-safe deep quota**
+- Added unique index on `llm_deep_usage(account_id, surface, day_utc)`.
+- `check_and_consume()` reworked to two-pass atomic flow:
+  1. `find_one_and_update({key, count<limit})` — if matched, $inc; allowed.
+  2. Otherwise `insert_one({key, count:1})` — duplicate-key error means
+     row already exists at cap → deny.
+- iter54 verified: 5 parallel calls at cap=10 → count stays exactly 10.
+  (Was overflowing by 1 in iter53.)
+
+**Ops audit polish**
+- `inbound_email.rejected` audit rows now written on Postmark soft-fails
+  (`bad_attachment` / `virus_scan`). EICAR test-file path verified.
+- Sparse indexes on `accounts.inbound_token` and `contexts.inbound_token`.
+
+**Frontend polish**
+- Enterprise page: 'Update my note →' affordance on the thanks state
+  (testid `enterprise-update-note-btn`) returns to the form.
+- Minutes narrative regenerate now `confirm()`s before overwriting.
+
+### Tests
+- iteration_54: backend 10/10 + frontend 100% + 4 admin screenshots captured
+  (`/app/test_reports/screenshots_iter54/admin_*.jpg`). No regressions on
+  iter51/52/53.
+
+### Open / deferred
+- LLMSpend "by surface" bar uses `pctOfTotal` so the top surface is always
+  100%; consider switching to `max-of-window` for more legible distribution.
+- For >100k seeded accounts, paginate `by_account_top` and pre-aggregate
+  rather than scanning all rows.
+- Inbound rejections without a MessageID share the literal `(no-id)` as
+  audit resource_id — could collide; consider a uuid fallback.
