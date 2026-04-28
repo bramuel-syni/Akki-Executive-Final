@@ -16,6 +16,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 import logging  # noqa: E402
+from typing import Any, Dict  # noqa: E402
 import os  # noqa: E402
 import uuid  # noqa: E402
 
@@ -119,23 +120,65 @@ app.include_router(decks_router.router)
 
 
 # -----------------------------------------------------------------------------
-# CORS
+# CORS — robust to operator misconfiguration. The two failure modes we've hit:
+#   (a) CORS_ORIGINS unset → defaults to "*" → combined with allow_credentials
+#       True, Starlette's CORSMiddleware can 400 the preflight (the spec
+#       forbids `Access-Control-Allow-Origin: *` with credentials). Symptom on
+#       the deployed app: `OPTIONS /api/auth/login → 400` and the browser
+#       shows "Failed to fetch" on login.
+#   (b) Operator forgot to add the deployed origin to CORS_ORIGINS — same
+#       symptom.
+# Fix: when wildcard is requested OR no explicit list is provided, fall back
+# to `allow_origin_regex=".*"` which lets Starlette echo the actual origin
+# back (compatible with credentials per spec). When an explicit list is
+# given, prefer that for tighter security.
 # -----------------------------------------------------------------------------
-cors_origins_env = os.environ.get("CORS_ORIGINS", "*")
+cors_origins_env = os.environ.get("CORS_ORIGINS", "").strip()
 frontend_url = os.environ.get("FRONTEND_URL", "").strip()
-if cors_origins_env.strip() == "*" and frontend_url:
-    allow_origins = [frontend_url, "http://localhost:3000"]
-else:
-    allow_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
-    if frontend_url and frontend_url not in allow_origins:
-        allow_origins.append(frontend_url)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allow_origins or ["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+explicit_origins: list[str] = []
+wildcard_requested = False
+
+if cors_origins_env:
+    raw = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+    if "*" in raw or not raw:
+        wildcard_requested = True
+        # Keep any non-wildcard entries as a hint — they still get added.
+        explicit_origins = [o for o in raw if o != "*"]
+    else:
+        explicit_origins = raw
+else:
+    # No CORS_ORIGINS set at all — be permissive so a fresh deploy doesn't
+    # block login. Operator can tighten by setting CORS_ORIGINS later.
+    wildcard_requested = True
+
+if frontend_url and frontend_url not in explicit_origins:
+    explicit_origins.append(frontend_url)
+
+# Local dev origin should always be allowed regardless of env config.
+for default in ("http://localhost:3000", "http://127.0.0.1:3000"):
+    if default not in explicit_origins:
+        explicit_origins.append(default)
+
+cors_kwargs: Dict[str, Any] = {
+    "allow_credentials": True,
+    "allow_methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+    "allow_headers": ["*"],
+    "expose_headers": ["*"],
+    "max_age": 600,
+}
+if wildcard_requested:
+    # Regex form is credentials-compatible because Starlette echoes the
+    # request's Origin into Access-Control-Allow-Origin instead of using "*".
+    cors_kwargs["allow_origin_regex"] = ".*"
+    cors_kwargs["allow_origins"] = explicit_origins  # also accept explicit
+else:
+    cors_kwargs["allow_origins"] = explicit_origins
+
+app.add_middleware(CORSMiddleware, **cors_kwargs)
+logger.info(
+    "CORS configured: wildcard=%s, explicit_origins=%s",
+    wildcard_requested, explicit_origins,
 )
 
 
