@@ -1,0 +1,32 @@
+{
+  "summary": "Iter52 frontend-only E2E for Tier-C wiring. 5/5 surfaces verified: trust badge centred + ordered + correct colours; Settings → Integrations unlocked and InboundEmailPanel renders both addresses with copy buttons; /app/enterprise page renders (interest form contract verified — already-submitted thanks state surfaced from iter51 seed); Prepare → Minutes shows per-row Extract / Show-extract buttons; Enterprise upsell pill correctly rendered on personal contexts and navigates to /app/enterprise on click. Sign-in + home regression spot-check both clean. NOTE: All 11 of Bramuel's contexts are now `*_personal` (DB has changed since the iter51 review request which expected ned_sponsored/executive_enterprise) — pill therefore appears across all of his contexts; the JSX condition `type === 'ned_personal' || type === 'executive_personal'` is correct by code review, but the *hide-on-sponsored* branch could not be exercised live because no sponsored context exists for this user.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "INFO ONLY (not a bug): Bramuel's contexts in the live DB are all `ned_personal` / `executive_personal` — review request assumed Tuli NED was `ned_sponsored` and Tuli CFO was `executive_enterprise`. If the test harness needs to verify the pill HIDES on sponsored contexts, seed at least one sponsored ctx (e.g. flip Tuli NED to `ned_sponsored`) or sign in as a different user.",
+    "INFO ONLY: /app/enterprise interest form was already submitted (iter51 seeded a TEST_iter51 lead row), so the page renders straight to `[data-testid=enterprise-interest-thanks]` and the form fields/select/textarea/submit could not be exercised fresh in this run. The form testids and contract are correct by code review (`enterprise-size-select`, `enterprise-timing-select`, `enterprise-usecase-input`, `enterprise-submit-btn`). To re-test the form path live, wipe the latest enterprise_interest row for Bramuel."
+  ],
+  "critical_code_review_comments": [
+    "AppShell.jsx (line 376–394): enterprise upsell pill is rendered inside `{(() => { … })()}` IIFE with `mt-auto px-5 pt-8`, which means when the pill is hidden the parent block still adds the spacer + Administration label correctly. Logic is sound. No change.",
+    "InboundEmailPanel.jsx: handles loading / err / `data && !data.configured` / data states cleanly. Defensively renders the context address only when `data.context_address` is truthy. Toast on copy success/failure is correct. Minor: clipboard fallback for non-secure contexts (older browsers) is absent — acceptable since the app is always served over HTTPS.",
+    "Enterprise.jsx (line 33–39): GET /enterprise/interest/me on mount sets submitted=true if any prior submission exists. Because iter51 seeded a TEST_iter51 lead, the form is hidden for Bramuel forever once submitted (no edit / re-submit affordance). Acceptable for lead-gen MVP, but if the product wants to allow updating a lead, surface an 'Update my note' affordance in the thanks state.",
+    "Prepare.jsx MinutesTab (line 525–578): per-row toggle key uses `m.id` and stores in local `open[m.id]`; conditional rendering `{meta && isOpen && <MinutesExtractDetail/>}` correctly gates the detail block. Extract button disabled while busy is wired to `busy === m.id`. No issues.",
+    "AppShell.jsx trust badge: uses `var(--accent)` for Internal, default muted body colour for Secure/Confidential, `opacity-40` separators. Computed colours verified live: rgb(139,46,43) for Internal, rgb(111,106,93) for the rest — matches design intent."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "not retested (iter51 already 16/16 + 6/6 regression)",
+    "frontend": "100% on all 5 in-scope surfaces (5/5)"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026!",
+  "seed_data_creation": "None this iteration. (Iter51's TEST_iter51 enterprise_interest row caused the /app/enterprise page to short-circuit to the thanks state for Bramuel.)",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All Tier-C frontend surfaces wired correctly. Live verification matrix: (1) trust badge — `[data-testid=trust-badge]` centred via `absolute left-1/2 -translate-x-1/2`, spans render as 'Internal · Secure · Confidential' (uppercase via `tracking-[0.2em] uppercase` parent class); only the Internal span carries `text-[var(--accent)]` (rgb(139,46,43)). (2) Settings — `/app/settings?tab=integrations` opens with `[data-testid=settings-tab-integrations]` enabled; InboundEmailPanel mints both `inbound-personal-address` (account-scoped) and `inbound-context-address` (ctx-scoped) with `*-copy` buttons; Bramuel's live tokens: o0yiyp88 (account) / fydwr6nm (ctx). (3) Enterprise page — already in thanks state for Bramuel. To re-test form, delete the enterprise_interest row first. (4) Prepare → Minutes on Tuli NED ctx fb4df969 — currently shows 2 rows with `[data-testid^=prepare-minutes-extract-]` (no minutes_meta yet); after Extract is invoked, the row flips to `[data-testid^=prepare-minutes-toggle-]` and reveals `[data-testid=prepare-minutes-detail-<id>]`. (5) Pill — visible on every Bramuel context because the DB now has only personal types; click navigates to /app/enterprise.",
+  "rca of the issue": "n/a — no bugs surfaced in this iteration. Two info-only callouts about test-data state (all-personal contexts, pre-submitted enterprise lead) are documented under action_items."
+}
