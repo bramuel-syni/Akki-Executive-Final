@@ -273,7 +273,7 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
             logger.error("Postmark inbound: base64 decode failed: %s", e)
             await write_audit(
                 context["id"], account["id"],
-                "inbound_email.rejected", "inbound", message_id or "(no-id)",
+                "inbound_email.rejected", "inbound", message_id or f"no-id-{uuid.uuid4().hex[:10]}",
                 {"reason": "bad_attachment", "from": from_email, "subject": subject},
             )
             return {"ok": False, "error": "bad_attachment"}
@@ -283,7 +283,7 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
             logger.warning("Postmark inbound: rejected attachment (%s) — %s", filename, reason)
             await write_audit(
                 context["id"], account["id"],
-                "inbound_email.rejected", "inbound", message_id or "(no-id)",
+                "inbound_email.rejected", "inbound", message_id or f"no-id-{uuid.uuid4().hex[:10]}",
                 {"reason": "virus_scan", "scan_reason": reason,
                  "from": from_email, "subject": subject, "filename": filename},
             )

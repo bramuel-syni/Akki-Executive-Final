@@ -28,9 +28,11 @@ import HealthDashboard from "@/pages/admin/HealthDashboard";
 import SandboxKPI from "@/pages/admin/SandboxKPI";
 import SignalKPI from "@/pages/admin/SignalKPI";
 import LLMSpend from "@/pages/admin/LLMSpend";
+import AdminIndex from "@/pages/admin/AdminIndex";
 import QuickResults from "@/pages/QuickResults";
 import Manage from "@/pages/Manage";
 import Enterprise from "@/pages/Enterprise";
+import Decks from "@/pages/Decks";
 import Sandbox from "@/pages/Sandbox";
 import SandboxGenerating from "@/pages/SandboxGenerating";
 import Cycle from "@/pages/Cycle";
@@ -106,11 +108,13 @@ function App() {
           <Route path="/admin/sandbox-kpi" element={<ProtectedRoute><SandboxKPI /></ProtectedRoute>} />
           <Route path="/admin/signal-kpi" element={<ProtectedRoute><SignalKPI /></ProtectedRoute>} />
           <Route path="/admin/llm-spend" element={<ProtectedRoute><LLMSpend /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute><AdminIndex /></ProtectedRoute>} />
           <Route path="/app/quick-results/:contextId/:docId" element={<ProtectedRoute><QuickResults /></ProtectedRoute>} />
           <Route path="/app/learn" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
           <Route path="/app/learn/:id" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
           <Route path="/app/manage" element={<ProtectedRoute><Manage /></ProtectedRoute>} />
           <Route path="/app/enterprise" element={<ProtectedRoute><Enterprise /></ProtectedRoute>} />
+          <Route path="/app/decks" element={<ProtectedRoute><Decks /></ProtectedRoute>} />
           <Route path="/app/documents/:id" element={<ProtectedRoute><DocumentViewer /></ProtectedRoute>} />
           <Route path="/app/contexts" element={<ProtectedRoute><ContextPortfolio /></ProtectedRoute>} />
           <Route path="/app/contexts/new" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />

@@ -65,6 +65,7 @@ from routers import inbound_email as inbound_email_router  # noqa: E402
 from routers import enterprise as enterprise_router  # noqa: E402
 from routers import llm_quota as llm_quota_router  # noqa: E402
 from routers import admin_llm_spend as admin_llm_spend_router  # noqa: E402
+from routers import decks as decks_router  # noqa: E402
 
 
 logger = logging.getLogger("akki")
@@ -114,6 +115,7 @@ app.include_router(inbound_email_router.router)
 app.include_router(enterprise_router.router)
 app.include_router(llm_quota_router.router)
 app.include_router(admin_llm_spend_router.router)
+app.include_router(decks_router.router)
 
 
 # -----------------------------------------------------------------------------

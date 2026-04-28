@@ -151,3 +151,77 @@ async def llm_spend(
         "unit_cost_usd": unit_cost,
         "default_quotas": dict(DEFAULT_QUOTAS),
     }
+
+
+@router.get("/decks/quality")
+async def deck_quality(
+    days: int = Query(30, ge=1, le=365),
+    account: Dict[str, Any] = Depends(_require_superadmin),
+):
+    """Behaviour-monitoring view: how good are the decks AKKI is producing?
+
+    Returns aggregate signals over the window so the team can spot
+    deteriorating prompt quality or rising regen counts BEFORE budget gets
+    burned.
+    """
+    cutoff_dt = datetime.now(timezone.utc) - timedelta(days=days - 1)
+    cutoff_iso = cutoff_dt.isoformat()
+
+    rows: List[Dict[str, Any]] = await db.deck_telemetry.find(
+        {"created_at": {"$gte": cutoff_iso}},
+        {"_id": 0},
+    ).to_list(length=5000)
+
+    decks_count = len(rows)
+    quality_scored = [r for r in rows if r.get("quality_score") is not None]
+    avg_score = (
+        round(sum(r["quality_score"] for r in quality_scored) / len(quality_scored), 1)
+        if quality_scored else None
+    )
+    rated = [r for r in rows if r.get("user_rating")]
+    thumbs_up = sum(1 for r in rated if r["user_rating"] == "up")
+    thumbs_down = sum(1 for r in rated if r["user_rating"] == "down")
+    satisfaction = (
+        round(thumbs_up * 100 / len(rated), 0) if rated else None
+    )
+
+    # Outline approval rate — outlines created vs decks generated. A high
+    # ratio means users are iterating outlines (good — saving deep budget).
+    outline_total = await db.deck_outlines.count_documents(
+        {"created_at": {"$gte": cutoff_iso}}
+    )
+    outline_approved = await db.deck_outlines.count_documents(
+        {"created_at": {"$gte": cutoff_iso}, "approved": True}
+    )
+    iterations = [r.get("outline_iterations", 1) for r in rows]
+    avg_iterations = (
+        round(sum(iterations) / len(iterations), 2) if iterations else None
+    )
+
+    will_regen = sum(1 for r in rows if r.get("user_will_regenerate"))
+    quality_recommends_regen = sum(1 for r in rows if r.get("quality_recommends_regen"))
+    insufficient_ctx = sum(
+        1 for r in rows if r.get("context_sufficiency") == "insufficient"
+    )
+    partial_ctx = sum(
+        1 for r in rows if r.get("context_sufficiency") == "partial"
+    )
+
+    return {
+        "window_days": days,
+        "decks_generated": decks_count,
+        "outlines_drafted": outline_total,
+        "outline_to_deck_ratio": (
+            round(outline_total / decks_count, 2) if decks_count else None
+        ),
+        "outlines_approved": outline_approved,
+        "avg_outline_iterations": avg_iterations,
+        "avg_quality_score": avg_score,
+        "thumbs_up": thumbs_up,
+        "thumbs_down": thumbs_down,
+        "satisfaction_pct": satisfaction,
+        "user_will_regenerate_count": will_regen,
+        "quality_recommends_regen_count": quality_recommends_regen,
+        "insufficient_context_count": insufficient_ctx,
+        "partial_context_count": partial_ctx,
+    }

@@ -35,14 +35,19 @@ function fmtUSD(n) {
 export default function LLMSpend() {
   const { account, loading: authLoading } = useAuth();
   const [data, setData] = useState(null);
+  const [deckQuality, setDeckQuality] = useState(null);
   const [loading, setLoading] = useState(true);
   const [windowDays, setWindowDays] = useState("30");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get(`/admin/llm/spend?days=${windowDays}`);
+      const [{ data }, { data: dq }] = await Promise.all([
+        api.get(`/admin/llm/spend?days=${windowDays}`),
+        api.get(`/admin/llm/decks/quality?days=${windowDays}`).catch(() => ({ data: null })),
+      ]);
       setData(data);
+      setDeckQuality(dq);
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setLoading(false); }
   }, [windowDays]);
@@ -140,6 +145,8 @@ export default function LLMSpend() {
           ) : (
             <ul className="divide-y divide-[var(--rule)]">
               {data.by_surface.map((s) => {
+                const maxCalls = Math.max(1, ...data.by_surface.map((x) => x.calls));
+                const pctOfMax = Math.round((s.calls / maxCalls) * 100);
                 const pctOfTotal = t?.calls ? Math.round((s.calls / t.calls) * 100) : 0;
                 return (
                   <li
@@ -159,7 +166,7 @@ export default function LLMSpend() {
                       <div className="h-2 bg-[var(--cream-deep)]/50 rounded-sm overflow-hidden">
                         <div
                           className="h-full bg-[var(--accent)] transition-all"
-                          style={{ width: `${pctOfTotal}%` }}
+                          style={{ width: `${pctOfMax}%` }}
                         />
                       </div>
                       <p className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)] mt-1.5 tabular-nums">
@@ -208,6 +215,48 @@ export default function LLMSpend() {
             <div className="px-5 pb-3 flex justify-between text-[10px] uppercase tracking-[0.14em] text-[var(--muted)] tabular-nums">
               <span>{data.by_day[0]?.day}</span>
               <span>{data.by_day[data.by_day.length - 1]?.day}</span>
+            </div>
+          </section>
+        )}
+
+        {/* Deck quality panel — behaviour monitoring */}
+        {deckQuality && deckQuality.outlines_drafted > 0 && (
+          <section
+            className="bg-white border border-[var(--rule)] rounded-sm mb-8"
+            data-testid="llm-spend-deck-quality"
+          >
+            <header className="px-5 py-3.5 border-b border-[var(--rule)] flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.7} />
+                <h2 className="akki-serif text-[17px] text-[var(--ink)]">Deck quality · behaviour</h2>
+              </div>
+              <p className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)]">
+                Are we burning Opus on weak prompts?
+              </p>
+            </header>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-0 divide-x divide-[var(--rule)]">
+              <DeckMetric
+                label="Avg quality"
+                value={deckQuality.avg_quality_score != null ? `${deckQuality.avg_quality_score}/100` : "—"}
+                accent={(deckQuality.avg_quality_score || 0) >= 70}
+                hint={`${deckQuality.decks_generated} decks scored`}
+              />
+              <DeckMetric
+                label="Outline → deck"
+                value={deckQuality.outline_to_deck_ratio != null ? `${deckQuality.outline_to_deck_ratio}×` : "—"}
+                hint={`${deckQuality.outlines_drafted} outlines, ${deckQuality.decks_generated} generated`}
+              />
+              <DeckMetric
+                label="Satisfaction"
+                value={deckQuality.satisfaction_pct != null ? `${deckQuality.satisfaction_pct}%` : "—"}
+                hint={`${deckQuality.thumbs_up} 👍 · ${deckQuality.thumbs_down} 👎`}
+              />
+              <DeckMetric
+                label="Insufficient ctx"
+                value={`${deckQuality.insufficient_context_count}`}
+                warn={deckQuality.insufficient_context_count > 2}
+                hint={`partial ${deckQuality.partial_context_count} · regen rec ${deckQuality.quality_recommends_regen_count}`}
+              />
             </div>
           </section>
         )}
@@ -276,6 +325,20 @@ function Tile({ label, value, subline, accent = false }) {
       {subline && (
         <p className="text-[11px] text-[var(--muted)] mt-1">{subline}</p>
       )}
+    </div>
+  );
+}
+
+function DeckMetric({ label, value, hint, accent = false, warn = false }) {
+  return (
+    <div className="px-5 py-4" data-testid={`llm-spend-deck-${label.toLowerCase().replace(/\s+/g, "-")}`}>
+      <p className="text-[10.5px] uppercase tracking-[0.16em] text-[var(--muted)]">{label}</p>
+      <p className={`akki-serif text-[22px] mt-1 tabular-nums ${
+        warn ? "text-amber-700" : accent ? "text-[var(--accent)]" : "text-[var(--ink)]"
+      }`}>
+        {value}
+      </p>
+      {hint && <p className="text-[11px] text-[var(--muted)] mt-0.5">{hint}</p>}
     </div>
   );
 }

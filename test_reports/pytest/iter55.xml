@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="5" failures="0" skipped="0" tests="11" time="344.739" timestamp="2026-04-28T14:03:07.571760+00:00" hostname="agent-env-b743e357-5d4a-4174-b930-e8155d2812c7"><testcase classname="backend.tests.test_iter55_decks" name="test_outline_does_not_consume_deck_quota" time="34.732" /><testcase classname="backend.tests.test_iter55_decks" name="test_generate_requires_confirmation" time="0.068" /><testcase classname="backend.tests.test_iter55_decks" name="test_generate_409_on_already_consumed_outline" time="204.402"><error message="failed on setup with &quot;AssertionError: generate: 502 The preview environment is not responding. It may be starting up.&#10;  &#10;assert (&lt;Response [502]&gt; is not None and 502 == 200)&#10; +  where 502 = &lt;Response [502]&gt;.status_code&quot;">backend/tests/test_iter55_decks.py:113: in deck
+    assert r is not None and r.status_code == 200, f"generate: {getattr(r,'status_code',None)} {getattr(r,'text','')[:500]}"
+E   AssertionError: generate: 502 The preview environment is not responding. It may be starting up.
+E     
+E   assert (&lt;Response [502]&gt; is not None and 502 == 200)
+E    +  where 502 = &lt;Response [502]&gt;.status_code</error></testcase><testcase classname="backend.tests.test_iter55_decks" name="test_outline_marked_approved_and_consumed" time="0.000"><error message="failed on setup with &quot;AssertionError: generate: 502 The preview environment is not responding. It may be starting up.&#10;  &#10;assert (&lt;Response [502]&gt; is not None and 502 == 200)&#10; +  where 502 = &lt;Response [502]&gt;.status_code&quot;">backend/tests/test_iter55_decks.py:113: in deck
+    assert r is not None and r.status_code == 200, f"generate: {getattr(r,'status_code',None)} {getattr(r,'text','')[:500]}"
+E   AssertionError: generate: 502 The preview environment is not responding. It may be starting up.
+E     
+E   assert (&lt;Response [502]&gt; is not None and 502 == 200)
+E    +  where 502 = &lt;Response [502]&gt;.status_code</error></testcase><testcase classname="backend.tests.test_iter55_decks" name="test_get_deck_full" time="0.000"><error message="failed on setup with &quot;AssertionError: generate: 502 The preview environment is not responding. It may be starting up.&#10;  &#10;assert (&lt;Response [502]&gt; is not None and 502 == 200)&#10; +  where 502 = &lt;Response [502]&gt;.status_code&quot;">backend/tests/test_iter55_decks.py:113: in deck
+    assert r is not None and r.status_code == 200, f"generate: {getattr(r,'status_code',None)} {getattr(r,'text','')[:500]}"
+E   AssertionError: generate: 502 The preview environment is not responding. It may be starting up.
+E     
+E   assert (&lt;Response [502]&gt; is not None and 502 == 200)
+E    +  where 502 = &lt;Response [502]&gt;.status_code</error></testcase><testcase classname="backend.tests.test_iter55_decks" name="test_quality_check_persists" time="0.000"><error message="failed on setup with &quot;AssertionError: generate: 502 The preview environment is not responding. It may be starting up.&#10;  &#10;assert (&lt;Response [502]&gt; is not None and 502 == 200)&#10; +  where 502 = &lt;Response [502]&gt;.status_code&quot;">backend/tests/test_iter55_decks.py:113: in deck
+    assert r is not None and r.status_code == 200, f"generate: {getattr(r,'status_code',None)} {getattr(r,'text','')[:500]}"
+E   AssertionError: generate: 502 The preview environment is not responding. It may be starting up.
+E     
+E   assert (&lt;Response [502]&gt; is not None and 502 == 200)
+E    +  where 502 = &lt;Response [502]&gt;.status_code</error></testcase><testcase classname="backend.tests.test_iter55_decks" name="test_feedback_persists" time="0.000"><error message="failed on setup with &quot;AssertionError: generate: 502 The preview environment is not responding. It may be starting up.&#10;  &#10;assert (&lt;Response [502]&gt; is not None and 502 == 200)&#10; +  where 502 = &lt;Response [502]&gt;.status_code&quot;">backend/tests/test_iter55_decks.py:113: in deck
+    assert r is not None and r.status_code == 200, f"generate: {getattr(r,'status_code',None)} {getattr(r,'text','')[:500]}"
+E   AssertionError: generate: 502 The preview environment is not responding. It may be starting up.
+E     
+E   assert (&lt;Response [502]&gt; is not None and 502 == 200)
+E    +  where 502 = &lt;Response [502]&gt;.status_code</error></testcase><testcase classname="backend.tests.test_iter55_decks" name="test_outline_iteration" time="103.972" /><testcase classname="backend.tests.test_iter55_decks" name="test_admin_deck_quality_superadmin" time="0.087" /><testcase classname="backend.tests.test_iter55_decks" name="test_admin_deck_quality_forbidden_for_user" time="0.089" /><testcase classname="backend.tests.test_iter55_decks" name="test_inbound_no_message_id_uses_uuid_resource_id" time="1.252" /></testsuite></testsuites>
