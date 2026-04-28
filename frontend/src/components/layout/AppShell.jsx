@@ -37,6 +37,7 @@ import ContinueWithPill from "@/components/layout/ContinueWithPill";
 // the user's explicit list but high-usage).
 const NAV = [
   { to: "/app", label: "Home", icon: Home, end: true, ready: true },
+  { to: "/app/workspace", label: "Document Journal", icon: BookOpenCheck, module: "M3", ready: true },
   { to: "/app/chat", label: "Chat", icon: MessageCircle, module: "§15", ready: true },
   { to: "/app/prepare", label: "Prepare", icon: Sparkles, module: "M5+M12", ready: true },
   { to: "/app/plays", label: "Workflows", icon: Compass, module: "§13", ready: true,
@@ -48,7 +49,6 @@ const NAV = [
   { to: "/app/monitor", label: "Monitor", icon: Activity, module: "§4", ready: true },
   { to: "/app/learn", label: "Learn", icon: GraduationCap, module: "M9", ready: true },
   { to: "/app/influence", label: "Influence Map", icon: Compass, module: "§16", ready: true },
-  { to: "/app/workspace", label: "Document Journal", icon: BookOpenCheck, module: "M3", ready: true },
 ];
 
 // Housekeeping shortcuts — surfaced just below Learn for low-ceremony access.

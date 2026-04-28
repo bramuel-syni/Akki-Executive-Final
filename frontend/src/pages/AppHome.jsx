@@ -17,6 +17,7 @@ import ObjectiveCheck from "@/components/sandbox/ObjectiveCheck";
 import ReviewInboxCard from "@/components/cycle/ReviewInboxCard";
 import WorkflowsHub from "@/components/home/WorkflowsHub";
 import InSummaryTiles from "@/components/home/InSummaryTiles";
+import RecentActivity from "@/components/home/RecentActivity";
 import useDraggableSections from "@/hooks/useDraggableSections";
 import { GripVertical, RotateCcw } from "lucide-react";
 
@@ -44,7 +45,6 @@ export default function AppHome() {
   const [documents, setDocuments] = useState([]);
   const [shared, setShared] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("signals");
   const [shareOn, setShareOn] = useState(null);  // signal currently being shared
 
   const hasMultipleContexts = (contexts?.length || 0) >= 2;
@@ -193,279 +193,17 @@ export default function AppHome() {
                 Pinned to the bottom of the home so the user always
                 lands on what's new without having to scroll past it.*/}
 
-            {/* Tab strip with a quiet scope toggle on the right.
-                The 'All boards' toggle only appears when the user has 2+ contexts. */}
-            <div className="shrink-0 flex items-center border-b border-[var(--rule)] mb-5 gap-4">
-              <div className="flex items-center gap-0" data-testid="home-tabs">
-                {HOME_TABS.map((t) => {
-                  const Icon = t.icon;
-                  const active = activeTab === t.key;
-                  const count = t.key === "signals" ? signals.length
-                              : t.key === "briefings" ? briefings.length
-                              : t.key === "shared" ? shared.length
-                              : documents.length;
-                  return (
-                    <button
-                      key={t.key}
-                      onClick={() => setActiveTab(t.key)}
-                      className={`relative flex items-center gap-2 px-4 py-2.5 text-[13.5px] transition-colors ${
-                        active
-                          ? "text-[var(--ink)] font-medium"
-                          : "text-[var(--muted)] hover:text-[var(--deep)]"
-                      }`}
-                      data-testid={`home-tab-${t.key}`}
-                    >
-                      <Icon className={`w-3.5 h-3.5 ${active ? "text-[var(--accent)]" : ""}`} strokeWidth={1.8} />
-                      <span>{t.label}</span>
-                      <span className={`text-[11px] ${active ? "text-[var(--accent)]" : "text-[var(--muted)]/70"}`}>
-                        {count}
-                      </span>
-                      {active && (
-                        <span className="absolute left-0 right-0 -bottom-px h-[2px] bg-[var(--accent)]" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {hasMultipleContexts && activeTab !== "shared" && (
-                <div
-                  className="ml-auto inline-flex items-center rounded-sm border border-[var(--rule)] bg-white p-[3px] shrink-0"
-                  data-testid="home-scope-toggle"
-                >
-                  <button
-                    onClick={() => setScope("current")}
-                    className={`px-2.5 py-1 text-[11.5px] uppercase tracking-wider rounded-[3px] transition-colors ${
-                      scope === "current"
-                        ? "bg-[var(--cream-deep)] text-[var(--ink)]"
-                        : "text-[var(--muted)] hover:text-[var(--ink)]"
-                    }`}
-                    data-testid="home-scope-current"
-                    title={`Show only ${activeContext?.name || "this company"}`}
-                  >
-                    This company
-                  </button>
-                  <button
-                    onClick={() => setScope("all")}
-                    className={`px-2.5 py-1 text-[11.5px] uppercase tracking-wider rounded-[3px] inline-flex items-center gap-1 transition-colors ${
-                      scope === "all"
-                        ? "bg-[var(--accent)] text-white"
-                        : "text-[var(--muted)] hover:text-[var(--ink)]"
-                    }`}
-                    data-testid="home-scope-all"
-                    title="Aggregate across every board and context you're a member of"
-                  >
-                    <Globe className="w-3 h-3" strokeWidth={2} /> All boards
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Scrolling panel — only one active stream visible */}
-            <div className="flex-1 min-h-0 overflow-y-auto pr-2 -mr-2 pb-8" data-testid="home-scroll">
-              {(() => {
-                const currentTab = HOME_TABS.find((t) => t.key === activeTab);
-                const hasItems =
-                  (activeTab === "signals"   && topSignals.length > 0) ||
-                  (activeTab === "briefings" && topBriefings.length > 0) ||
-                  (activeTab === "documents" && newDocs.length > 0) ||
-                  (activeTab === "shared"    && shared.length > 0);
-                const totalCount =
-                  activeTab === "signals"   ? signals.length
-                  : activeTab === "briefings" ? briefings.length
-                  : activeTab === "shared"    ? shared.length
-                  : documents.length;
-                const aggregated = scope === "all" && hasMultipleContexts;
-                return (
-                  <>
-                    {activeTab === "signals" && (
-                      <section data-testid="section-top-signals">
-                        {loading ? (
-                          <div className="h-24 flex items-center text-[12px] uppercase tracking-widest text-[var(--muted)]">Loading…</div>
-                        ) : topSignals.length === 0 ? (
-                          aggregated ? (
-                            <EmptySlot
-                              icon={Sparkles}
-                              copy="No signals across any of your boards yet."
-                              cta={{ label: "Upload pack", to: "/app/workspace" }}
-                            />
-                          ) : (
-                            <NextBestActionCard />
-                          )
-                        ) : (
-                          <motion.div
-                            className="space-y-3"
-                            initial="hidden" animate="show"
-                            variants={{
-                              hidden: {},
-                              show: { transition: { staggerChildren: 0.06 } },
-                            }}
-                          >
-                            {topSignals.map((s) => (
-                              <motion.div
-                                key={s.id}
-                                variants={{
-                                  hidden: { opacity: 0, y: 6 },
-                                  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-                                }}
-                              >
-                                <StreamCard
-                                  type={s.type}
-                                  lead={s.headline}
-                                  timestamp={s.created_at}
-                                  source={aggregated && s.context_name ? {
-                                    label: s.context_name.split(" ")[0].toUpperCase().slice(0, 12),
-                                    title: s.context_name,
-                                    tone: "context",
-                                  } : null}
-                                  chips={[
-                                    { label: CONFIDENCE_LABEL[s.confidence] || "Medium confidence" },
-                                    { label: (s.data_trust || "unrated") + " data" },
-                                  ]}
-                                  to="/app/prepare"
-                                  gesture={{ label: "Open signal", to: "/app/prepare" }}
-                                  secondary={[
-                                    { label: "Share →", onClick: () => setShareOn(s) },
-                                  ]}
-                                  data-testid={`home-signal-${s.id}`}
-                                />
-                              </motion.div>
-                            ))}
-                          </motion.div>
-                        )}
-                      </section>
-                    )}
-
-                    {activeTab === "briefings" && (
-                      <section data-testid="section-top-briefings">
-                        {loading ? null : topBriefings.length === 0 ? (
-                          <EmptySlot
-                            icon={ScrollText}
-                            copy={signals.length === 0
-                              ? "Briefings bundle your signals into a printable page. Generate signals first."
-                              : "No briefings yet — compose your first for the next meeting."}
-                            cta={signals.length === 0
-                              ? { label: "Generate signals", to: "/app/prepare" }
-                              : { label: "Compose briefing", to: "/app/prepare" }}
-                          />
-                        ) : (
-                          <div className="space-y-3">
-                            {topBriefings.map((b) => (
-                              <StreamCard
-                                key={b.id}
-                                type="briefing"
-                                lead={b.title}
-                                timestamp={b.created_at}
-                                source={aggregated && b.context_name ? {
-                                  label: b.context_name.split(" ")[0].toUpperCase().slice(0, 12),
-                                  title: b.context_name,
-                                  tone: "context",
-                                } : null}
-                                chips={[
-                                  { label: `v${b.version}` },
-                                  { label: `${b.items?.length || 0} items` },
-                                ]}
-                                to="/app/prepare"
-                                gesture={{ label: "Open briefing", to: "/app/prepare" }}
-                                data-testid={`home-briefing-${b.id}`}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </section>
-                    )}
-
-                    {activeTab === "documents" && (
-                      <section data-testid="section-new-documents">
-                        {loading ? null : newDocs.length === 0 ? (
-                          <EmptySlot
-                            icon={FileText}
-                            copy={aggregated
-                              ? "Switch to a single context to browse its documents."
-                              : "Drop a board pack, minute, or report in Workspace to get started."}
-                            cta={aggregated
-                              ? { label: "Choose a context", to: "/app/manage?tab=companies" }
-                              : { label: "Open Workspace", to: "/app/workspace" }}
-                          />
-                        ) : (
-                          <div className="space-y-3">
-                            {newDocs.map((d) => (
-                              <StreamCard
-                                key={d.id}
-                                type="document"
-                                lead={d.name}
-                                timestamp={d.created_at}
-                                chips={[
-                                  { label: d.data_trust || "unrated" },
-                                  ...(d.extracted_chars ? [{ label: `${(d.extracted_chars / 1000).toFixed(1)}k chars` }] : []),
-                                ]}
-                                to={`/app/documents/${d.id}`}
-                                gesture={{ label: "Open document", to: `/app/documents/${d.id}` }}
-                                data-testid={`home-doc-${d.id}`}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </section>
-                    )}
-
-                    {activeTab === "shared" && (
-                      <section data-testid="section-shared-with-you">
-                        {loading ? null : shared.length === 0 ? (
-                          <EmptySlot
-                            icon={Mail}
-                            copy="Nothing shared with you yet. When a colleague shares a signal or briefing, it lands here."
-                            cta={null}
-                          />
-                        ) : (
-                          <div className="space-y-3" data-testid="shared-with-you-list">
-                            {shared.map((sh) => (
-                              <StreamCard
-                                key={sh.id}
-                                type={sh.item_type === "briefing" ? "briefing" : "signal"}
-                                lead={sh.item_preview || sh.subject || "(no preview)"}
-                                timestamp={sh.created_at}
-                                source={{
-                                  label: `SHARED BY ${(sh.shared_by_name || sh.shared_by_email || "someone").split(" ")[0].toUpperCase()}`,
-                                  title: sh.shared_by_email,
-                                  tone: "share",
-                                }}
-                                chips={[
-                                  { label: `From ${sh.context_name || "a context"}` },
-                                  ...(sh.message ? [{ label: "with a note" }] : []),
-                                ]}
-                                to={sh.item_type === "briefing" ? "/app/prepare" : "/app/prepare"}
-                                gesture={{ label: "Look at this", to: sh.item_type === "briefing" ? "/app/prepare" : "/app/prepare" }}
-                                data-testid={`shared-card-${sh.id}`}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </section>
-                    )}
-
-                    {/* Footer "View all" — appears AFTER the cards, inside the scroll box */}
-                    {hasItems && currentTab && currentTab.viewAllTo && (
-                      <div className="pt-6 mt-6 border-t border-[var(--rule)] flex items-center justify-between">
-                        <span className="text-[12px] text-[var(--muted)]">
-                          Showing {activeTab === "signals" ? topSignals.length
-                                  : activeTab === "briefings" ? topBriefings.length
-                                  : activeTab === "shared" ? shared.length
-                                  : newDocs.length} of {totalCount}
-                        </span>
-                        <Link
-                          to={currentTab.viewAllTo}
-                          className="akki-gesture text-[13px]"
-                          data-testid="home-view-all"
-                        >
-                          View all {currentTab.label.toLowerCase()} <ArrowRight className="w-3.5 h-3.5" />
-                        </Link>
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
+            {/* Recent activity hook — a single chronological feed that
+                replaces the old four-tab summary repeater. Pulls from the
+                same fetched lists; no extra API calls. */}
+            <RecentActivity
+              signals={signals}
+              briefings={briefings}
+              documents={documents}
+              shared={shared}
+              contexts={contexts}
+              hasMultipleContexts={hasMultipleContexts}
+            />
           </div>
         </div>
 

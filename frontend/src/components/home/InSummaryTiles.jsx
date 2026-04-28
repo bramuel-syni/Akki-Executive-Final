@@ -191,7 +191,7 @@ export default function InSummaryTiles() {
         kicker: "Reports",
         hero: reportsTotal, heroLabel: "processed",
         attrs: [
-          { n: submissionsConsumed, label: "submissions consumed", tone: "text-[var(--deep)]" },
+          { n: submissionsConsumed, label: "submissions",            tone: "text-[var(--deep)]" },
           { n: sourcesCount,        label: "sources cited",        tone: "text-[var(--deep)]" },
           { n: reportsPending,      label: "pending review",       tone: reportsPending > 0 ? "text-amber-700" : "text-[var(--muted)]" },
         ],

@@ -1,0 +1,26 @@
+{
+  "summary": "Frontend-only verification of iter47 user-feedback batch (sidebar reorder, InSummary wording, dynamic Quick Actions, RecentActivity feed replacing old tabs, Prepare 2-col layout with right rail, HighlightsStats on Signals tab, BriefDetail Delete/Share buttons). Executed with Bramuel executive credentials on Tuli Financial Group context. All 11 acceptance items observed as expected. Only the Delete-button flow could not be exercised because Bramuel's context has 0 past Prepare-briefs (has briefings, which are a different entity) — code path is wired (testid present, handlers in place); data-level gap, not a bug.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional: seed one Prepare-brief for Bramuel's Tuli Financial Group context in the test fixture so future regressions can click through BriefDetailModal → Delete end-to-end."
+  ],
+  "critical_code_review_comments": [
+    "QuickActions.jsx: 'try_signals' and 'catch_up_briefings' both hard-code customRoute='/app/prepare' — they will land on the Brief tab by default. If product expects the Signals tab landing for 'try_signals', consider passing a query or hash (e.g., /app/prepare?tab=signals).",
+    "RecentActivity.jsx: `scope` toggle state is tracked but events are NOT filtered by scope — switching 'This company' ↔ 'All boards' only affects the context label rendering, not the underlying list. If the intent was to scope the feed, add a filter step on `e.context_id` vs activeContext.id. Currently 'All boards' is labelling-only.",
+    "AppShell NAV: animation stagger (framer-motion delay) means left-nav items are not in DOM immediately on first paint, which can confuse e2e runners that query right after navigation. Consider removing the stagger or using animate from visible so nav items are queryable from SSR/initial render."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "skipped", "frontend": "100%"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (Executive, Tuli Financial Group context)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter47 shipped cleanly. Sidebar order verified (Home→Document Journal→Chat→Prepare→Workflows→Lens→Test Hypothesis→Reporting Cycle→Monitor→Learn→Influence Map). 'consumed' removed from Reports tile attr. Dynamic Quick Actions with priority-scored top-3 surfaces monitor_performance + try_signals; catch_up_briefings correctly hidden when unreadBriefings=0. RecentActivity shows 8 chronological events with scope toggle (6 contexts ≥2). Prepare right rail renders Past briefs/Past signals headers based on active tab; topic filter + 7d/30d/All chips present. HighlightsStats appears on Signals tab with sparkline + risk/opp/gap breakdown bars. PrepareStatsDock on Brief tab. Delete/Share testids present in BriefDetailModal but not exercised (0 past briefs in seed). Two minor code-review nits noted above (scope toggle is label-only, and try_signals lands on Brief tab by default).",
+  "rca of the issue": "N/A — no issues found."
+}

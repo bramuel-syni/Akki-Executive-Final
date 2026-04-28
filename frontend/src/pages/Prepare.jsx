@@ -36,12 +36,13 @@ import {
 } from "@/components/ui/dialog";
 import ShareModal from "@/components/share/ShareModal";
 import PrepareStatsDock from "@/components/prepare/PrepareStatsDock";
+import PrepareSideRail from "@/components/prepare/PrepareSideRail";
+import HighlightsStats from "@/components/highlights/HighlightsStats";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import {
-  Sparkles, Loader2, ScrollText, Activity, FileText, Clock, Trash2,
-  ArrowRight,
+  Sparkles, Loader2, ScrollText, Activity, ArrowRight,
 } from "lucide-react";
 
 const TABS = [
@@ -69,6 +70,53 @@ export default function Prepare() {
   const cid = activeContext?.id;
   const [tab, setTab] = useState("brief");
 
+  // Shared rail data — hoisted so the right rail can refresh after a
+  // generate happens inside a tab.
+  const [briefs, setBriefs] = useState([]);
+  const [signals, setSignals] = useState([]);
+  const [loadingBriefs, setLoadingBriefs] = useState(true);
+  const [loadingSignals, setLoadingSignals] = useState(true);
+  const [openBrief, setOpenBrief] = useState(null);
+  const [openSignal, setOpenSignal] = useState(null);
+
+  const loadBriefs = useCallback(async () => {
+    if (!cid) return;
+    setLoadingBriefs(true);
+    try {
+      const { data } = await api.get(`/contexts/${cid}/briefs?limit=50`);
+      setBriefs(data?.items || []);
+    } catch { /* silent */ }
+    finally { setLoadingBriefs(false); }
+  }, [cid]);
+
+  const loadSignals = useCallback(async () => {
+    if (!cid) return;
+    setLoadingSignals(true);
+    try {
+      const { data } = await api.get(`/contexts/${cid}/signals`);
+      setSignals(Array.isArray(data) ? data : (data?.signals || []));
+    } catch { /* silent */ }
+    finally { setLoadingSignals(false); }
+  }, [cid]);
+
+  useEffect(() => { loadBriefs(); loadSignals(); }, [loadBriefs, loadSignals]);
+
+  const openBriefById = useCallback(async (idOrItem) => {
+    const id = typeof idOrItem === "string" ? idOrItem : idOrItem?.id;
+    if (!id || !cid) return;
+    try {
+      const { data } = await api.get(`/contexts/${cid}/briefs/${id}`);
+      setOpenBrief(data);
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  }, [cid]);
+
+  const removeBrief = useCallback(async (id) => {
+    try {
+      await api.delete(`/contexts/${cid}/briefs/${id}`);
+      setBriefs((xs) => xs.filter((x) => x.id !== id));
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  }, [cid]);
+
   if (!cid) {
     return (
       <AppShell>
@@ -81,7 +129,7 @@ export default function Prepare() {
 
   return (
     <AppShell>
-      <div className="max-w-[920px] mx-auto px-6 py-10">
+      <div className="max-w-[1280px] mx-auto px-6 py-10">
         <p className="akki-overline mb-2 flex items-center gap-2">
           <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Prepare · {activeContext.name}
         </p>
@@ -90,47 +138,87 @@ export default function Prepare() {
           Short, focused, on-demand. Tell AKKI what you want to be ready for, and AKKI drafts it.
         </p>
 
-        {/* Stats dock — at-a-glance posture for this context. Three cards
-            with progress bars: brief coverage, signal pulse, briefing
-            rhythm. (Apr-2026 — restored after user feedback that the
-            page felt undifferentiated without the visual lift.) */}
-        <PrepareStatsDock contextId={cid} />
+        {/* Stats dock — Signals tab gets the richer signal-specific
+            HighlightsStats (sparkline + breakdown bars + confidence
+            footer); Brief tab keeps the calmer three-card progress dock.
+            Apr-2026: brought back the standalone-Signals visual the user
+            asked for. */}
+        {tab === "signals" && signals.length > 0 ? (
+          <div className="mt-6">
+            <HighlightsStats signals={signals} />
+          </div>
+        ) : (
+          <PrepareStatsDock contextId={cid} />
+        )}
 
-        {/* Line tabs — labels only. Description moves below into a section
-            header so it has room to breathe. */}
-        <div className="mt-8 border-b border-[var(--rule)] flex items-stretch gap-0" data-testid="prepare-line-tabs">
-          {TABS.map((t) => {
-            const Icon = t.icon;
-            const active = tab === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`px-5 py-3 text-[13.5px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
-                  active
-                    ? "border-[var(--accent)] text-[var(--ink)] font-medium"
-                    : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
-                }`}
-                data-testid={`prepare-tab-${t.id}${active ? "-active" : ""}`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {t.label}
-              </button>
-            );
-          })}
+        {/* 2-column layout: form column (left) + history side rail (right) */}
+        <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-8">
+          <div className="min-w-0">
+            {/* Line tabs — labels only. Description moves below into a section
+                header so it has room to breathe. */}
+            <div className="border-b border-[var(--rule)] flex items-stretch gap-0" data-testid="prepare-line-tabs">
+              {TABS.map((t) => {
+                const Icon = t.icon;
+                const active = tab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setTab(t.id)}
+                    className={`px-5 py-3 text-[13.5px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
+                      active
+                        ? "border-[var(--accent)] text-[var(--ink)] font-medium"
+                        : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
+                    }`}
+                    data-testid={`prepare-tab-${t.id}${active ? "-active" : ""}`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Section header for the active tab */}
+            <div className="mt-8 mb-5" data-testid={`prepare-section-${tab}`}>
+              <p className="akki-overline mb-1.5">{TAB_INTRO[tab].kicker}</p>
+              <p className="akki-serif text-[15.5px] text-[var(--ink)] leading-[1.55] max-w-2xl">
+                {TAB_INTRO[tab].blurb}
+              </p>
+            </div>
+
+            {tab === "brief" && (
+              <BriefTab
+                contextId={cid}
+                onCreated={(b) => { setOpenBrief(b); loadBriefs(); }}
+              />
+            )}
+            {tab === "signals" && (
+              <SignalsTab
+                contextId={cid}
+                contextName={activeContext.name}
+                onCreated={() => loadSignals()}
+              />
+            )}
+          </div>
+
+          <PrepareSideRail
+            tab={tab}
+            briefs={briefs}
+            signals={signals}
+            loadingBriefs={loadingBriefs}
+            loadingSignals={loadingSignals}
+            onOpenBrief={openBriefById}
+            onOpenSignal={(s) => setOpenSignal(s)}
+          />
         </div>
 
-        {/* Section header for the active tab — the description lives here,
-            with room to read, instead of being squeezed into the tab label. */}
-        <div className="mt-8 mb-5" data-testid={`prepare-section-${tab}`}>
-          <p className="akki-overline mb-1.5">{TAB_INTRO[tab].kicker}</p>
-          <p className="akki-serif text-[15.5px] text-[var(--ink)] leading-[1.55] max-w-2xl">
-            {TAB_INTRO[tab].blurb}
-          </p>
-        </div>
-
-        {tab === "brief"   && <BriefTab   contextId={cid} />}
-        {tab === "signals" && <SignalsTab contextId={cid} contextName={activeContext.name} />}
+        <BriefDetailModal
+          brief={openBrief}
+          contextId={cid}
+          onClose={() => setOpenBrief(null)}
+          onDelete={removeBrief}
+        />
+        <SignalDetailModal signal={openSignal} onClose={() => setOpenSignal(null)} />
       </div>
     </AppShell>
   );
@@ -138,15 +226,14 @@ export default function Prepare() {
 
 // ---------------------------------------------------------------------------
 // Brief tab — Brief me on [kind] · objective → generate → save with title.
+// Self-fetched history was lifted to the page level; this tab now owns
+// just the form + onCreated callback to its parent.
 // ---------------------------------------------------------------------------
-function BriefTab({ contextId }) {
+function BriefTab({ contextId, onCreated }) {
   const [kinds, setKinds] = useState([]);
   const [kind, setKind] = useState("topic");
   const [objective, setObjective] = useState("");
   const [busy, setBusy] = useState(false);
-  const [items, setItems] = useState([]);
-  const [loadingItems, setLoadingItems] = useState(true);
-  const [openBrief, setOpenBrief] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -156,16 +243,6 @@ function BriefTab({ contextId }) {
       } catch { /* silent */ }
     })();
   }, []);
-
-  const loadHistory = useCallback(async () => {
-    setLoadingItems(true);
-    try {
-      const { data } = await api.get(`/contexts/${contextId}/briefs?limit=20`);
-      setItems(data?.items || []);
-    } catch { /* silent — empty history is the empty state */ }
-    finally { setLoadingItems(false); }
-  }, [contextId]);
-  useEffect(() => { loadHistory(); }, [loadHistory]);
 
   const generate = async (e) => {
     e?.preventDefault?.();
@@ -177,24 +254,9 @@ function BriefTab({ contextId }) {
       });
       toast.success("Brief saved.");
       setObjective("");
-      setOpenBrief(data);
-      loadHistory();
+      onCreated?.(data);
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setBusy(false); }
-  };
-
-  const openItem = async (it) => {
-    try {
-      const { data } = await api.get(`/contexts/${contextId}/briefs/${it.id}`);
-      setOpenBrief(data);
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-  };
-
-  const remove = async (id) => {
-    try {
-      await api.delete(`/contexts/${contextId}/briefs/${id}`);
-      setItems((xs) => xs.filter((x) => x.id !== id));
-    } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
   return (
@@ -271,22 +333,6 @@ function BriefTab({ contextId }) {
           </Button>
         </div>
       </form>
-
-      <SavedHistory
-        items={items}
-        loading={loadingItems}
-        emptyText="Nothing yet. Generate your first brief above — it will appear here for next time."
-        labelTotal="briefs"
-        onOpen={openItem}
-        onRemove={remove}
-        testId="prepare-brief-history"
-      />
-
-      <BriefDetailModal
-        brief={openBrief}
-        contextId={contextId}
-        onClose={() => setOpenBrief(null)}
-      />
     </div>
   );
 }
@@ -304,24 +350,10 @@ const SIGNAL_FILTERS = [
   { id: "risk",     label: "Risks the board should notice" },
 ];
 
-function SignalsTab({ contextId, contextName }) {
+function SignalsTab({ contextId, contextName, onCreated }) {
   const [filter, setFilter] = useState("general");
   const [objective, setObjective] = useState("");
   const [busy, setBusy] = useState(false);
-  const [recent, setRecent] = useState([]);
-  const [loadingRecent, setLoadingRecent] = useState(true);
-
-  // We load recent signals — but only as a HISTORY rail (not stream). The
-  // primary action is "Generate signals based on what you want to look at".
-  const loadHistory = useCallback(async () => {
-    setLoadingRecent(true);
-    try {
-      const { data } = await api.get(`/contexts/${contextId}/signals?limit=20`);
-      setRecent(Array.isArray(data) ? data : (data?.signals || []));
-    } catch { /* silent */ }
-    finally { setLoadingRecent(false); }
-  }, [contextId]);
-  useEffect(() => { loadHistory(); }, [loadHistory]);
 
   const generate = async (e) => {
     e?.preventDefault?.();
@@ -333,12 +365,10 @@ function SignalsTab({ contextId, contextName }) {
       await api.post(`/contexts/${contextId}/signals/generate`, { focus });
       toast.success("Signals surfaced.");
       setObjective("");
-      loadHistory();
+      onCreated?.();
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setBusy(false); }
   };
-
-  const [openSignal, setOpenSignal] = useState(null);
 
   return (
     <div data-testid="prepare-signals-tab">
@@ -402,80 +432,7 @@ function SignalsTab({ contextId, contextName }) {
           </Button>
         </div>
       </form>
-
-      <SavedHistory
-        items={recent.map((s) => ({
-          id: s.id,
-          title: s.headline || s.title,
-          kind: s.type || s.tone,
-          created_at: s.created_at,
-          _raw: s,
-        }))}
-        loading={loadingRecent}
-        emptyText="No signals yet. Tell AKKI what to look at and they will appear here."
-        labelTotal="signals"
-        onOpen={(it) => setOpenSignal(it._raw)}
-        testId="prepare-signals-history"
-      />
-
-      <SignalDetailModal signal={openSignal} onClose={() => setOpenSignal(null)} />
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// SavedHistory — shared list block under both tabs.
-// ---------------------------------------------------------------------------
-function SavedHistory({ items, loading, emptyText, labelTotal, onOpen, onRemove, testId }) {
-  return (
-    <section data-testid={testId}>
-      <div className="flex items-baseline justify-between mb-3 pb-2 border-b border-[var(--rule)]">
-        <p className="akki-overline flex items-center gap-2">
-          <Clock className="w-3 h-3 text-[var(--accent)]" />
-          Recent {labelTotal}
-        </p>
-        <p className="text-[11px] text-[var(--muted)] tabular-nums">
-          {loading ? "—" : `${items.length} saved`}
-        </p>
-      </div>
-      <div className="bg-white border border-[var(--rule)] rounded-md overflow-hidden">
-        {loading ? (
-          <p className="px-5 py-6 text-center text-[12.5px] text-[var(--muted)] italic">
-            Loading…
-          </p>
-        ) : items.length === 0 ? (
-          <p className="px-5 py-8 text-center text-[13px] text-[var(--muted)] italic">
-            {emptyText}
-          </p>
-        ) : (
-          items.map((it) => (
-            <div
-              key={it.id}
-              className="border-b border-[var(--rule)] last:border-b-0 px-5 py-3 flex items-center gap-3 hover:bg-[var(--cream-deep)]/30 cursor-pointer"
-              onClick={() => onOpen?.(it)}
-              data-testid={`prepare-history-item-${it.id}`}
-            >
-              <FileText className="w-3.5 h-3.5 text-[var(--muted)] shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="akki-serif text-[14px] text-[var(--ink)] truncate">{it.title}</p>
-                <p className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] mt-0.5">
-                  {it.kind} {it.created_at && `· ${new Date(it.created_at).toLocaleDateString()}`}
-                </p>
-              </div>
-              {onRemove && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); onRemove(it.id); }}
-                  className="text-[var(--muted)] hover:text-red-700 shrink-0"
-                  aria-label="Delete"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          ))
-        )}
-      </div>
-    </section>
   );
 }
 
@@ -483,7 +440,7 @@ function SavedHistory({ items, loading, emptyText, labelTotal, onOpen, onRemove,
 // BriefDetailModal — read the saved brief in place. Markdown rendered as
 // pre-wrap text (calm, editorial) so we don't pull in another dependency.
 // ---------------------------------------------------------------------------
-function BriefDetailModal({ brief, contextId, onClose }) {
+function BriefDetailModal({ brief, contextId, onClose, onDelete }) {
   const open = Boolean(brief);
   const [shareOpen, setShareOpen] = useState(false);
   return (
@@ -502,17 +459,33 @@ function BriefDetailModal({ brief, contextId, onClose }) {
         </DialogHeader>
         <div className="mt-2 flex items-center justify-between gap-3">
           <ValidatedBadge size="compact" />
-          {brief?.id && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShareOpen(true)}
-              className="h-8 text-[12.5px] border-[var(--rule)] hover:border-[var(--accent)] text-[var(--ink)]"
-              data-testid="prepare-brief-share"
-            >
-              Send to a colleague
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {brief?.id && onDelete && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  onDelete(brief.id);
+                  onClose?.();
+                }}
+                className="h-8 text-[12.5px] border-[var(--rule)] hover:border-red-700 hover:text-red-700 text-[var(--muted)]"
+                data-testid="prepare-brief-delete"
+              >
+                Delete
+              </Button>
+            )}
+            {brief?.id && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShareOpen(true)}
+                className="h-8 text-[12.5px] border-[var(--rule)] hover:border-[var(--accent)] text-[var(--ink)]"
+                data-testid="prepare-brief-share"
+              >
+                Send to a colleague
+              </Button>
+            )}
+          </div>
         </div>
         <div className="mt-3 max-h-[60vh] overflow-y-auto akki-serif text-[15px] leading-[1.7] text-[var(--ink)] whitespace-pre-wrap">
           {brief?.body}
