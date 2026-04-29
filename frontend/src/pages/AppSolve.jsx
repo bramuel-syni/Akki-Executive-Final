@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   ArrowRight, ArrowLeft, Sparkles, Loader2, Layers,
-  RotateCw, Check, Pause,
+  RotateCw, Check, Pause, Download,
 } from "lucide-react";
 
 const PHASE_ORDER = ["surface", "depth", "synthesis", "lockin"];
@@ -38,6 +38,7 @@ export default function AppSolve() {
   const [recent, setRecent] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [proStatus, setProStatus] = useState(null);
 
   useEffect(() => {
     let live = true;
@@ -45,11 +46,13 @@ export default function AppSolve() {
     Promise.all([
       api.get("/solve/clusters").catch(() => ({ data: { clusters: [] } })),
       api.get("/solve/sessions").catch(() => ({ data: { items: [] } })),
+      api.get("/solve/pro-status").catch(() => ({ data: null })),
     ])
-      .then(([c, s]) => {
+      .then(([c, s, p]) => {
         if (!live) return;
         setClusters(c.data?.clusters || []);
         setRecent(s.data?.items || []);
+        setProStatus(p.data || null);
       })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
@@ -145,6 +148,7 @@ export default function AppSolve() {
             onBack={() => { setActiveCluster(null); setView("picker"); }}
             onStart={startSession}
             busy={busy}
+            proStatus={proStatus}
           />
         )}
         {view === "session" && session && (
@@ -153,6 +157,7 @@ export default function AppSolve() {
             cluster={activeCluster}
             onUpdate={onSessionUpdate}
             onExit={exitToPicker}
+            proStatus={proStatus}
           />
         )}
       </div>
@@ -285,8 +290,10 @@ function PickerView({ clusters, recent, loading, onPick, onResume, onRestart }) 
 }
 
 // ─── Intent ───────────────────────────────────────────────────────────
-function IntentView({ cluster, intent, onIntentChange, proTier, onProTierChange, onBack, onStart, busy }) {
+function IntentView({ cluster, intent, onIntentChange, proTier, onProTierChange, onBack, onStart, busy, proStatus }) {
   const useExample = () => onIntentChange(cluster.example_question || "");
+  const isPro = !!proStatus?.is_pro;
+  const grantClaimed = !!proStatus?.free_grant?.claimed_this_month;
   return (
     <>
       <button
@@ -335,15 +342,43 @@ function IntentView({ cluster, intent, onIntentChange, proTier, onProTierChange,
             className="accent-[var(--accent)] w-3.5 h-3.5 mt-0.5"
             data-testid="solve-intent-pro-toggle"
           />
-          <label htmlFor="solve-pro" className="text-[12.5px] text-[var(--deep)] cursor-pointer leading-relaxed">
+          <label htmlFor="solve-pro" className="text-[12.5px] text-[var(--deep)] cursor-pointer leading-relaxed flex-1">
             <span className="block">Pro synthesis (deep tier · Opus)</span>
-            <span className="block text-[11px] text-[var(--muted)] mt-0.5">
-              Pro plan gets unlimited deep synthesis; on the free plan you get
-              <span className="text-[var(--accent)]"> 1 free deep synthesis per month</span>.
-              Other phases always use the standard tier.
-            </span>
+            {isPro ? (
+              <span className="block text-[11px] text-[var(--accent)] mt-0.5" data-testid="solve-pro-state-pro">
+                Pro account — unlimited deep synthesis.
+              </span>
+            ) : grantClaimed ? (
+              <span className="block text-[11px] text-[var(--muted)] mt-0.5" data-testid="solve-pro-state-locked">
+                You've used your free deep synthesis this month. Pro accounts get unlimited deep synthesis on every Solve.
+              </span>
+            ) : (
+              <span className="block text-[11px] text-[var(--muted)] mt-0.5" data-testid="solve-pro-state-free">
+                <span className="text-[var(--accent)]">1 free deep synthesis</span> available this month. Pro plan gets unlimited.
+              </span>
+            )}
           </label>
         </div>
+        {!isPro && grantClaimed && proTier && (
+          <div className="mt-3 bg-[var(--cream-deep)]/50 border border-[var(--accent)]/30 rounded-sm px-4 py-3 flex items-start gap-3" data-testid="solve-pro-upgrade-cta">
+            <Sparkles className="w-4 h-4 text-[var(--accent)] mt-0.5" />
+            <div className="flex-1">
+              <p className="akki-serif text-[14px] text-[var(--ink)] mb-1">
+                Subscribe to Pro for unlimited deep synthesis.
+              </p>
+              <p className="text-[11.5px] text-[var(--muted)] mb-2">
+                $29/mo gets you unlimited Opus-tier diagnoses across every Solve session you run, plus the rest of AKKI Pro. You'll still get the standard tier on this session at no charge.
+              </p>
+              <a
+                href="/app/settings?tab=billing"
+                className="inline-block text-[11.5px] uppercase tracking-[0.14em] text-[var(--accent)] hover:underline"
+                data-testid="solve-pro-upgrade-link"
+              >
+                Open billing →
+              </a>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex justify-end gap-3">
@@ -405,6 +440,28 @@ function SessionView({ session, cluster, onUpdate, onExit }) {
     }
   };
 
+  const hasSynthesis = !!(session.synthesis?.body);
+  const downloadPdf = () => {
+    const url = `${process.env.REACT_APP_BACKEND_URL}/api/solve/sessions/${session.id}/export.pdf`;
+    const tok = localStorage.getItem("akki_access_token");
+    fetch(url, { headers: tok ? { Authorization: `Bearer ${tok}` } : {}, credentials: "include" })
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to export PDF");
+        return r.blob();
+      })
+      .then((blob) => {
+        const u = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = u;
+        a.download = `akki_solve_${session.id.slice(0, 8)}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(u);
+      })
+      .catch((e) => toast.error(e.message || "Couldn't export PDF."));
+  };
+
   return (
     <div data-testid="solve-session">
       <header className="mb-7 flex items-start justify-between gap-3 flex-wrap">
@@ -430,6 +487,16 @@ function SessionView({ session, cluster, onUpdate, onExit }) {
           >
             Back
           </Button>
+          {hasSynthesis && (
+            <Button
+              size="sm" variant="outline"
+              onClick={downloadPdf}
+              className="border-[var(--rule)]"
+              data-testid="solve-session-pdf"
+            >
+              <Download className="w-3 h-3 mr-1.5" /> PDF
+            </Button>
+          )}
           {!completed && (
             <Button
               size="sm" variant="outline"
@@ -575,6 +642,7 @@ function HandoffStrip({ session, onUpdate }) {
   });
   const [contextId, setContextId] = useState(session.context_id || "");
   const [contexts, setContexts] = useState([]);
+  const [recommended, setRecommended] = useState(null);
   const [err, setErr] = useState("");
 
   useEffect(() => {
@@ -588,6 +656,28 @@ function HandoffStrip({ session, onUpdate }) {
       })
       .catch(() => {});
   }, []); // eslint-disable-line
+
+  // Smart suggestion: NED contexts → cycle (board-room follow-up);
+  // executive_personal contexts where a question bank already exists → cycle;
+  // else → brief (the safe default that captures the diagnosis as a one-pager).
+  useEffect(() => {
+    if (!contextId || done.brief || done.decks || done.cycle) return;
+    const ctx = contexts.find((c) => c.id === contextId);
+    if (!ctx) return;
+    const isNed = (ctx.type || "").startsWith("ned");
+    if (isNed) {
+      setRecommended("cycle");
+      return;
+    }
+    // Probe questions bank size — if user has an active reporting cycle already,
+    // suggest cycle; else suggest brief.
+    api.get(`/contexts/${contextId}/questions?status=open`)
+      .then((r) => {
+        const count = (r.data?.questions || []).length;
+        setRecommended(count > 0 ? "cycle" : "brief");
+      })
+      .catch(() => setRecommended("brief"));
+  }, [contextId, contexts, done.brief, done.decks, done.cycle]);
 
   const fire = async (target) => {
     setErr("");
@@ -625,15 +715,23 @@ function HandoffStrip({ session, onUpdate }) {
     { id: "decks",  label: "Seed a Decks outline",  sub: "Editable outline, ready for deep render" },
     { id: "cycle",  label: "Push to Question Bank", sub: "1–3 board questions for the next cycle" },
   ];
+  const recommendedLabel = recommended && targets.find((t) => t.id === recommended)?.label;
 
   return (
     <div
       className="mt-4 bg-white border border-[var(--rule)] rounded-sm p-5"
       data-testid="solve-handoff-strip"
     >
-      <p className="akki-overline text-[var(--accent)] mb-3">
-        Hand off the diagnosis
-      </p>
+      <div className="flex items-baseline justify-between mb-3">
+        <p className="akki-overline text-[var(--accent)]">
+          Hand off the diagnosis
+        </p>
+        {recommendedLabel && !done[recommended] && (
+          <p className="text-[10.5px] uppercase tracking-[0.16em] text-[var(--muted)]" data-testid="solve-handoff-recommendation">
+            Recommended for this context: <span className="text-[var(--accent)]">{recommendedLabel}</span>
+          </p>
+        )}
+      </div>
       {contexts.length > 1 && (
         <div className="mb-4">
           <label className="block text-[10.5px] uppercase tracking-[0.16em] text-[var(--muted)] mb-1.5">
@@ -655,30 +753,36 @@ function HandoffStrip({ session, onUpdate }) {
         </div>
       )}
       <ul className="grid sm:grid-cols-3 gap-3">
-        {targets.map((t) => (
-          <li key={t.id}>
-            <button
-              type="button"
-              onClick={() => fire(t.id)}
-              disabled={busy !== null}
-              className={`w-full text-left p-4 rounded-sm border transition-colors ${
-                done[t.id]
-                  ? "bg-emerald-50 border-emerald-200"
-                  : "bg-[var(--cream-deep)]/30 border-[var(--rule)] hover:border-[var(--accent)]"
-              }`}
-              data-testid={`solve-handoff-${t.id}`}
-            >
-              <div className="flex items-center gap-1.5 mb-1">
-                {done[t.id] ? <Check className="w-3 h-3 text-emerald-700" /> : null}
-                {busy === t.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-                <p className="akki-serif text-[14px] text-[var(--ink)]">{t.label}</p>
-              </div>
-              <p className="text-[11.5px] text-[var(--muted)] leading-snug">
-                {done[t.id] ? "Created — click to view" : t.sub}
-              </p>
-            </button>
-          </li>
-        ))}
+        {targets.map((t) => {
+          const isRecommended = recommended === t.id && !done[t.id];
+          return (
+            <li key={t.id}>
+              <button
+                type="button"
+                onClick={() => fire(t.id)}
+                disabled={busy !== null}
+                className={`w-full text-left p-4 rounded-sm border transition-colors ${
+                  done[t.id]
+                    ? "bg-emerald-50 border-emerald-200"
+                    : isRecommended
+                      ? "bg-[var(--cream-deep)]/60 border-[var(--accent)] ring-1 ring-[var(--accent)]/40"
+                      : "bg-[var(--cream-deep)]/30 border-[var(--rule)] hover:border-[var(--accent)]"
+                }`}
+                data-testid={`solve-handoff-${t.id}`}
+              >
+                <div className="flex items-center gap-1.5 mb-1">
+                  {done[t.id] ? <Check className="w-3 h-3 text-emerald-700" /> : null}
+                  {busy === t.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                  {isRecommended ? <Sparkles className="w-3 h-3 text-[var(--accent)]" /> : null}
+                  <p className="akki-serif text-[14px] text-[var(--ink)]">{t.label}</p>
+                </div>
+                <p className="text-[11.5px] text-[var(--muted)] leading-snug">
+                  {done[t.id] ? "Created — click to view" : t.sub}
+                </p>
+              </button>
+            </li>
+          );
+        })}
       </ul>
       {err && (
         <p className="mt-3 text-[11.5px] text-red-700" data-testid="solve-handoff-error">

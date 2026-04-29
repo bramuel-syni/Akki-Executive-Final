@@ -45,6 +45,13 @@ export default function Decks() {
 
   useEffect(() => {
     if (!cid) return;
+    // Iter62 fix — context switch must clear stale outline/deck/view from
+    // the previously-active context. Otherwise a deck belonging to ctx A
+    // would briefly render under ctx B's name during the switch.
+    setView("intent");
+    setOutline(null);
+    setDeck(null);
+    setHistory([]);
     refreshState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cid]);

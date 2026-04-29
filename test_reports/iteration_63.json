@@ -1,0 +1,39 @@
+{
+  "summary": "Iter63 backend: 11/11 pytest passed (~62s) — pro-status endpoint, PDF export (200 valid PDF / 404 unknown / 409 incomplete), LLM-polished cycle handoff (no verbatim 'How do we hold ourselves to:' prefix on all questions, idempotent on re-call), free-grant race-safety (8 concurrent _consume_free_grant calls converge to exactly 1 allowed=True, 7 denied, 1 doc, post-increment count=8), iter62 regression endpoints OK. Frontend: Decks page context-switch state-reset confirmed visually (textarea/intent view persists across PortfolioRail context switches). Pro upgrade CTA + PDF button + recommended pill: data-testid attributes present in code with correct conditional logic, but full UI interaction couldn't fully exercise the Pro toggle path within the time budget — main agent can self-verify these visually.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter63_solve_p1p2_followon.py",
+    "/app/test_reports/pytest/iter63_full.xml"
+  ],
+  "action_items": [
+    "Main agent: visually verify (a) /app/solve intent screen shows the oxblood-bordered solve-pro-upgrade-cta when Pro toggle is enabled by Bramuel (free user with claimed grant); (b) PDF download button renders with data-testid='solve-session-pdf' on a completed-session SessionView (open from the 'Completed — hand off ready' picker); (c) the 'Recommended for this context: Push to Question Bank' pill renders at data-testid='solve-handoff-recommendation' on a Tuli NED session — these are coded correctly per code review but were not interactively exercised end-to-end."
+  ],
+  "critical_code_review_comments": [
+    "_consume_free_grant rewritten in iter63 from insert+catch-DuplicateKey to atomic find_one_and_update($inc count, $setOnInsert first_used_at, upsert=True) with return_document=True. Verified race-safe under 8-way asyncio.gather: exactly 1 allowed, 7 denied, 1 doc, count converges to 8. Defence-in-depth recommendation from iter62 is now satisfied — no longer relies on the unique compound index alone.",
+    "PDF export at /api/solve/sessions/{sid}/export.pdf uses StreamingResponse with iter([pdf_bytes]). For very large PDFs this loads everything in memory before streaming — fine for current 4-10KB session output but flag for future if briefings PDFs grow. Content-Disposition uses 'inline' — correct for browser preview UX.",
+    "_draft_cycle_questions falls back gracefully to the deterministic _to_question() chain when LLM fails. JSON parsing only accepts dict with 'questions' key — if LLM returns a bare array the fallback kicks in. Acceptable, but a tiny bit defensive coding (accepting List[str] OR {questions: [...]}) would survive prompt drift.",
+    "GET /api/solve/pro-status correctly does NOT consume the grant — uses find_one (read-only), unlike _consume_free_grant. Good separation. is_pro reads plan from account doc — make sure billing webhook updates account.plan when subscription activates (out-of-scope for this test pass).",
+    "solve_engine.py is now 1046 lines (up from 931 in iter62) — the maintainability suggestion to split into solve_handoffs.py + solve_export.py still stands; not blocking but increasing tech debt with each iter."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter63_solve_p1p2_followon.py"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11 passed)",
+    "frontend": "Partial — Decks context-switch reset visually confirmed; Pro upgrade CTA + PDF button + recommended pill have correct data-testid attributes and conditional rendering in code but were not interactively triggered end-to-end. No bugs detected; main agent should visually self-verify."
+  },
+  "test_credentials": "User: bramuel@syni.ai / TestBramuel2026!  |  Tuli NED ctx: fb4df969-3f17-4279-bf78-f07bb9e29650  |  Pre-existing completed session w/ handoffs: caf60a32-ea4a-419c-bba7-164178b8ad30",
+  "seed_data_creation": "Created TEST_iter63 solve_sessions during pytest runs (one walked through all 4 phases for cycle-polish testing — has handoff/cycle questions inserted into Tuli NED ctx; one started+abandoned for the 409 test). Used a synthetic account_id 'TEST_iter63_race_<ts>' for race-safety probe — fully cleaned up post-test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter63 backend coverage in /app/backend/tests/test_iter63_solve_p1p2_followon.py — full suite ~62s (one full Surface→Lockin walkthrough for the LLM-polished cycle test). Race-safety test creates and cleans up a synthetic account_id for direct _consume_free_grant probing. PDF export test reuses pre-existing iter62 completed session caf60a32-ea4a-419c-bba7-164178b8ad30. Bramuel's free grant for current UTC month (2026-04) is consumed; tests for pro-status assert claimed_this_month=true. PRE_EXISTING_SID has Brief + Cycle handoffs (no Decks — iter62 testing didn't create a Decks handoff for this specific session, just the other completed sessions). Frontend AppSolve session URL pattern: SessionView appears to open via picker click ('Open' button) rather than ?session=<id> query param — for next agent visually testing, click the 'Open' button on a completed-session row in the 'Completed — hand off ready' section.",
+  "rca of the issue": "n/a — no defects found. All 9 features in the review request verified at the backend layer (pro-status shape + Bramuel's claimed grant; PDF 200/404/409; LLM-polished cycle handoff; race-safety; iter62 regression). Frontend Decks context-switch state-reset confirmed visually. Pro CTA + PDF button + recommended pill verified at the code/data-testid layer; main agent has self-test coverage for visual confirmation."
+}

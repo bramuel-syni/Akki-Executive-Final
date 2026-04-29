@@ -79,17 +79,27 @@ async def _user_is_pro(account: Dict[str, Any]) -> bool:
 async def _consume_free_grant(account_id: str) -> Dict[str, Any]:
     """Atomically claim this user's monthly free deep-synthesis grant.
     Returns {"allowed": bool, "remaining_this_month": 0|1}. Each free user
-    gets exactly 1 deep synthesis per month (cheap taste-test)."""
+    gets exactly 1 deep synthesis per month (cheap taste-test).
+
+    Uses atomic find_one_and_update with $inc + upsert. The post-increment
+    count is 1 on first call (allow), 2+ on subsequent calls (deny).
+    Race-safe even if the uniqueness index ever regresses.
+    """
     month = _now_month_utc()
-    key = {"account_id": account_id, "month_utc": month}
     iso_now = iso(now())
-    try:
-        await db.solve_free_grants.insert_one({
-            **key, "count": 1, "first_used_at": iso_now, "last_used_at": iso_now,
-        })
+    res = await db.solve_free_grants.find_one_and_update(
+        {"account_id": account_id, "month_utc": month},
+        {"$inc": {"count": 1},
+         "$setOnInsert": {"first_used_at": iso_now},
+         "$set": {"last_used_at": iso_now}},
+        upsert=True,
+        return_document=True,
+        projection={"_id": 0, "count": 1},
+    )
+    count = (res or {}).get("count", 0)
+    if count <= 1:
         return {"allowed": True, "remaining_this_month": 0}
-    except Exception:  # noqa: BLE001 — duplicate key = already claimed
-        return {"allowed": False, "remaining_this_month": 0}
+    return {"allowed": False, "remaining_this_month": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +109,29 @@ async def _consume_free_grant(account_id: str) -> Dict[str, Any]:
 async def list_clusters(account: Dict[str, Any] = Depends(get_current_account)):
     rows = await db.solve_clusters.find({}, {"_id": 0}).to_list(length=50)
     return {"clusters": rows, "count": len(rows)}
+
+
+@router.get("/pro-status")
+async def get_pro_status(account: Dict[str, Any] = Depends(get_current_account)):
+    """UI nudge — tells the Pro toggle whether to render as 'unlock with free
+    grant' (free user, no claim this month), 'all yours' (Pro plan), or
+    'upgrade to keep going' (free user, grant already claimed this month)."""
+    is_pro = await _user_is_pro(account)
+    month = _now_month_utc()
+    grant = await db.solve_free_grants.find_one(
+        {"account_id": account["id"], "month_utc": month},
+        {"_id": 0, "count": 1},
+    )
+    grant_used = bool(grant and (grant.get("count") or 0) >= 1)
+    return {
+        "is_pro": is_pro,
+        "plan": (account.get("plan") or "free").lower(),
+        "free_grant": {
+            "claimed_this_month": grant_used,
+            "month_utc": month,
+            "remaining": 0 if grant_used or is_pro else 1,
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -629,18 +662,27 @@ async def handoff_cycle(
     lockin_body = (rec.get("lockin") or {}).get("body") or ""
     parsed = _parse_lockin_lines(lockin_body)
 
-    # Compose 1-3 questions: the "Walk in with" line as the lead question,
-    # plus optionally a Watch follow-up and a synthesis-derived probe.
-    candidates: List[str] = []
-    if parsed["walk_in"]:
-        candidates.append(_to_question(parsed["walk_in"]))
-    if parsed["watch"]:
-        candidates.append(f"What would tell us the watch item is moving? Specifically: {parsed['watch']}")
-    if parsed["decide"]:
-        candidates.append(f"Have we decided: {parsed['decide']}? If not, what's blocking?")
+    # Iter62 polish — instead of echoing the lock-in line verbatim, we
+    # ask the LLM to phrase 1-3 sharp board questions derived from the
+    # diagnosis + commitments. Falls back to the verbatim derivation if
+    # the LLM is unavailable.
+    candidates: List[str] = await _draft_cycle_questions(
+        cluster_label=rec.get("cluster_label", ""),
+        intent=rec.get("intent", ""),
+        synthesis_body=synthesis_body,
+        lockin=parsed,
+    )
 
     if not candidates:
-        # Fall back to a generic probe derived from the synthesis lead sentence.
+        # Deterministic fallback — preserves the iter62 baseline if the
+        # LLM call returned nothing usable.
+        if parsed["walk_in"]:
+            candidates.append(_to_question(parsed["walk_in"]))
+        if parsed["watch"]:
+            candidates.append(f"What would tell us the watch item is moving? Specifically: {parsed['watch']}")
+        if parsed["decide"]:
+            candidates.append(f"Have we decided: {parsed['decide']}? If not, what's blocking?")
+    if not candidates:
         first_sentence = next((s.strip() for s in synthesis_body.split(".") if s.strip()), rec.get("intent",""))
         candidates.append(f"Solve diagnosis: {first_sentence[:300]} — what's the board's next move?")
 
@@ -676,6 +718,51 @@ async def handoff_cycle(
             "handoff_id": (h or {}).get("id")}
 
 
+async def _draft_cycle_questions(
+    cluster_label: str,
+    intent: str,
+    synthesis_body: str,
+    lockin: Dict[str, str],
+) -> List[str]:
+    """Use a single STANDARD-tier LLM call to phrase 1-3 sharp board
+    questions from a Solve session's lock-in commitments. Returns the
+    list of question strings; empty list on any failure (caller falls
+    back to the deterministic derivation)."""
+    try:
+        from llm_service import call_llm, parse_json_response
+    except Exception:  # noqa: BLE001
+        return []
+
+    user_query = (
+        "You are turning a board-level diagnosis into questions that the "
+        "executive can take into the room. Output exactly 1-3 questions, "
+        "in order of bluntness (the sharpest first). Each question must "
+        "be answerable yes/no/with-a-number — not a soft prompt. Do not "
+        "preamble. Return JSON: {\"questions\": [string, ...]}.\n\n"
+        f"Solve cluster: {cluster_label}\n"
+        f"Original intent: {intent}\n\n"
+        f"Synthesis (the diagnosis):\n{synthesis_body[:1400]}\n\n"
+        "Lock-in commitments:\n"
+        f"  Decide: {lockin.get('decide','—')}\n"
+        f"  Watch:  {lockin.get('watch','—')}\n"
+        f"  Walk-in: {lockin.get('walk_in','—')}\n"
+    )
+    try:
+        out = await call_llm(
+            module="solve.cycle_handoff",
+            user_query=user_query,
+            response_format="json",
+            tier="standard",
+        )
+        parsed = parse_json_response(out.get("response", ""))
+        if isinstance(parsed, dict):
+            qs = parsed.get("questions") or []
+            return [str(q).strip()[:400] for q in qs if str(q).strip()][:3]
+    except Exception:  # noqa: BLE001
+        return []
+    return []
+
+
 def _to_question(line: str) -> str:
     """Normalise a lock-in line into a question form, gently."""
     line = line.strip().rstrip(".").rstrip(":")
@@ -700,6 +787,35 @@ async def list_session_handoffs(
         {"session_id": sid}, {"_id": 0}
     ).sort("created_at", -1).to_list(length=20)
     return {"items": rows, "count": len(rows)}
+
+
+# ---------------------------------------------------------------------------
+# Wave 4 — PDF export of a completed Solve session.
+# ---------------------------------------------------------------------------
+@router.get("/sessions/{sid}/export.pdf")
+async def export_session_pdf(
+    sid: str,
+    account: Dict[str, Any] = Depends(get_current_account),
+):
+    from fastapi.responses import StreamingResponse
+    rec = await db.solve_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0}
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if not rec.get("synthesis") and not rec.get("lockin"):
+        raise HTTPException(
+            status_code=409,
+            detail="Solve session has no synthesis to export — finish at least one phase first.",
+        )
+    from solve_pdf import render_solve_pdf
+    pdf_bytes = render_solve_pdf(rec)
+    safe_name = "".join(ch for ch in (rec.get("intent") or "solve")[:60] if ch.isalnum() or ch in (" -_")).strip().replace(" ", "_") or "solve"
+    return StreamingResponse(
+        iter([pdf_bytes]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="akki_solve_{safe_name}.pdf"'},
+    )
 
 
 # ---------------------------------------------------------------------------
