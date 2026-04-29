@@ -140,6 +140,12 @@ async def create_briefing(
         "created_at": created_at,
         "status": "active",
     }
+    # Iter64 — Studio sensitivity score, identical pattern to decks.
+    try:
+        from studio_sensitivity import score_sensitivity
+        doc["sensitivity"] = score_sensitivity(doc)
+    except Exception:  # noqa: BLE001
+        doc["sensitivity"] = None
     await db.briefings.insert_one(doc)
     await write_audit(
         context_id, ctx["account"]["id"], "briefing.created", "briefing", briefing_id,

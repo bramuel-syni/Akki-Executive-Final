@@ -42,6 +42,7 @@ export default function Decks() {
   const [deck, setDeck] = useState(null);
   const [quota, setQuota] = useState(null);
   const [history, setHistory] = useState([]);
+  const [studioHistory, setStudioHistory] = useState([]);
 
   useEffect(() => {
     if (!cid) return;
@@ -52,6 +53,7 @@ export default function Decks() {
     setOutline(null);
     setDeck(null);
     setHistory([]);
+    setStudioHistory([]);
     refreshState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cid]);
@@ -70,12 +72,14 @@ export default function Decks() {
 
   const refreshState = async () => {
     try {
-      const [{ data: q }, { data: list }] = await Promise.all([
+      const [{ data: q }, { data: list }, { data: studio }] = await Promise.all([
         api.get(`/llm/quota?surface=deck`),
         api.get(`/contexts/${cid}/decks?limit=10`),
+        api.get(`/contexts/${cid}/studio/history?limit=20`).catch(() => ({ data: { items: [] } })),
       ]);
       setQuota(q);
       setHistory(list?.items || []);
+      setStudioHistory(studio?.items || []);
     } catch (e) { /* silent */ }
   };
 
@@ -94,15 +98,18 @@ export default function Decks() {
       <div className="max-w-4xl mx-auto px-6 py-10" data-testid="decks-page">
         <header className="mb-8">
           <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--accent)] mb-2">
-            Decks · narrative
+            Decks + Reports · Studio
           </p>
           <h1 className="akki-serif text-4xl text-[var(--ink)] tracking-tight leading-[1.05]">
-            Plan first. Generate once.
+            Produce board-grade material with your own data.
           </h1>
           <p className="text-[14px] text-slate-600 mt-3 leading-relaxed max-w-2xl">
-            Decks use the deep model — one of {quota?.limit ?? 3} a day. We draft
-            a free outline first so you can sharpen the question and confirm the
-            sources before we commit a slot.
+            Decks + Reports is the secure place you draft material that
+            leaves your hands. Every saved artefact is auto-classified —
+            Public · Internal · Confidential · Restricted — and tracks
+            who's read it so you know your information exposure before
+            you share. Decks consume one of {quota?.limit ?? 3} deep
+            slots a day; outlines stay free.
           </p>
           {quota && (
             <div className="mt-4 flex items-center gap-3 text-[11px] uppercase tracking-[0.16em] text-[var(--muted)] tabular-nums">
@@ -118,12 +125,21 @@ export default function Decks() {
         <Stepper view={view} />
 
         {view === "intent" && (
-          <IntentStep
-            contextId={cid}
-            onDrafted={(o) => { setOutline(o); setView("outline"); }}
-            history={history}
-            onResume={(deckId) => loadDeck(cid, deckId, setDeck, setView)}
-          />
+          <>
+            <IntentStep
+              contextId={cid}
+              onDrafted={(o) => { setOutline(o); setView("outline"); }}
+              history={history}
+              onResume={(deckId) => loadDeck(cid, deckId, setDeck, setView)}
+            />
+            {studioHistory.length > 0 && (
+              <StudioHistoryStrip
+                items={studioHistory}
+                contextId={cid}
+                onOpenDeck={(deckId) => loadDeck(cid, deckId, setDeck, setView)}
+              />
+            )}
+          </>
         )}
 
         {view === "outline" && outline && (
@@ -539,8 +555,21 @@ function OutlineStep({ outline, contextId, onIterate, onGenerated, onCancel }) {
 function DeckStep({ deck, contextId, onUpdated, onNew }) {
   const [busy, setBusy] = useState(null);
   const [showReasonChips, setShowReasonChips] = useState(false);
+  const [engagement, setEngagement] = useState(null);
   const qc = deck.quality_check;
   const fb = deck.user_feedback;
+
+  // iter64 — record-view + fetch engagement once per mount. Owner views get
+  // tracked too but don't count toward unique_readers (the engine de-dups).
+  React.useEffect(() => {
+    if (!deck?.id || !contextId) return;
+    let live = true;
+    api.post(`/contexts/${contextId}/studio/deck/${deck.id}/view`).catch(() => {});
+    api.get(`/contexts/${contextId}/studio/deck/${deck.id}/engagement`)
+      .then((r) => { if (live) setEngagement(r.data); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [deck?.id, contextId]);
 
   const runQuality = async () => {
     setBusy("quality");
@@ -586,10 +615,16 @@ function DeckStep({ deck, contextId, onUpdated, onNew }) {
         </div>
       )}
       <div className="bg-white border border-[var(--rule)] rounded-sm p-6">
-        <p className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--muted)] mb-1">
-          {deck.tier === "deep" ? "Deep tier · " : "Standard tier · "}
-          {deck.slides?.length || 0} slides
-        </p>
+        <div className="flex items-start justify-between gap-4 mb-2">
+          <p className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--muted)]">
+            {deck.tier === "deep" ? "Deep tier · " : "Standard tier · "}
+            {deck.slides?.length || 0} slides
+          </p>
+          <div className="flex flex-wrap gap-1.5 shrink-0">
+            <SensitivityChip sensitivity={deck.sensitivity} />
+            <ExposurePill exposure={engagement?.exposure} />
+          </div>
+        </div>
         <h2 className="akki-serif text-[28px] text-[var(--ink)] leading-tight mb-1.5" data-testid="decks-title">
           {deck.title}
         </h2>
@@ -599,6 +634,23 @@ function DeckStep({ deck, contextId, onUpdated, onNew }) {
         <p className="text-[12px] text-[var(--muted)] italic mt-3">
           Research question: {deck.research_question}
         </p>
+        {engagement?.readers?.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-[var(--rule)]" data-testid="decks-readers">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)] mb-2">
+              Read by
+            </p>
+            <ul className="flex flex-wrap gap-2 text-[11.5px]">
+              {engagement.readers.slice(0, 6).map((r) => (
+                <li key={r.account_id} className="bg-[var(--cream-deep)]/30 border border-[var(--rule)] rounded-sm px-2 py-1">
+                  {r.name} <span className="text-[var(--muted)]">· {new Date(r.last_viewed_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                </li>
+              ))}
+              {engagement.readers.length > 6 && (
+                <li className="text-[var(--muted)] italic">+{engagement.readers.length - 6} more</li>
+              )}
+            </ul>
+          </div>
+        )}
       </div>
 
       {/* Quality check */}
@@ -765,5 +817,135 @@ function Pill({ label, value }) {
       <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">{label}</p>
       <p className="text-[var(--ink)] mt-0.5">{value || "—"}</p>
     </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Studio history strip — Decks + Reports merged history with sensitivity
+// chip + exposure score per row. iter64.
+// ---------------------------------------------------------------------------
+const SENS_TONE = {
+  public:       { bg: "bg-emerald-50",   border: "border-emerald-200",   text: "text-emerald-800" },
+  internal:     { bg: "bg-amber-50",     border: "border-amber-200",     text: "text-amber-900" },
+  confidential: { bg: "bg-orange-50",    border: "border-orange-200",    text: "text-orange-900" },
+  restricted:   { bg: "bg-red-50",       border: "border-red-200",       text: "text-red-900" },
+};
+
+export function SensitivityChip({ sensitivity }) {
+  if (!sensitivity) return null;
+  const tone = SENS_TONE[sensitivity.classification] || SENS_TONE.internal;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm border text-[10px] uppercase tracking-[0.14em] ${tone.bg} ${tone.border} ${tone.text}`}
+      title={(sensitivity.reasons || []).join(" · ") || "No specific signals"}
+      data-testid={`studio-sensitivity-${sensitivity.classification}`}
+    >
+      {sensitivity.label}
+    </span>
+  );
+}
+
+export function ExposurePill({ exposure }) {
+  if (!exposure) return null;
+  const band = exposure.band || "low";
+  const tone =
+    band === "high"     ? "text-red-900 bg-red-50 border-red-200" :
+    band === "moderate" ? "text-amber-900 bg-amber-50 border-amber-200" :
+                          "text-[var(--muted)] bg-white border-[var(--rule)]";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm border text-[10px] uppercase tracking-[0.14em] ${tone}`}
+      title={`Unique readers: ${exposure.inputs?.unique_readers ?? 0} · Shares: ${exposure.inputs?.share_count ?? 0}`}
+      data-testid={`studio-exposure-${band}`}
+    >
+      Exposure {exposure.score}
+    </span>
+  );
+}
+
+function StudioHistoryStrip({ items, contextId, onOpenDeck }) {
+  const [busy, setBusy] = useState(false);
+  const [list, setList] = useState(items);
+
+  React.useEffect(() => { setList(items); }, [items]);
+
+  const rescore = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/contexts/${contextId}/studio/backfill_sensitivity`);
+      const { data } = await api.get(`/contexts/${contextId}/studio/history?limit=20`);
+      setList(data.items || []);
+      toast.success("Studio history re-scored.");
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="mt-12" data-testid="studio-history">
+      <div className="flex items-baseline justify-between mb-4">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]">
+            Studio history
+          </p>
+          <p className="akki-serif text-2xl text-[var(--ink)] mt-1">
+            What you've produced
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={rescore}
+          disabled={busy}
+          className="text-[11px] uppercase tracking-[0.16em] text-[var(--muted)] hover:text-[var(--accent)] disabled:opacity-50"
+          data-testid="studio-rescore-btn"
+        >
+          {busy ? "Re-scoring…" : "Re-score sensitivity"}
+        </button>
+      </div>
+      <p className="text-[12.5px] text-slate-600 leading-relaxed mb-6 max-w-[64ch]">
+        Every artefact is auto-classified for confidentiality and tracks reader engagement so
+        you know your information exposure before sharing. Higher exposure scores mean
+        more eyes have seen it.
+      </p>
+      <ul className="bg-white border border-[var(--rule)] rounded-sm divide-y divide-[var(--rule)]" data-testid="studio-history-list">
+        {list.map((it) => (
+          <li
+            key={`${it.kind}-${it.id}`}
+            className="px-5 py-4 hover:bg-[var(--cream-deep)]/30 cursor-pointer transition-colors"
+            data-testid={`studio-history-row-${it.kind}-${it.id}`}
+            onClick={() => it.kind === "deck" && onOpenDeck?.(it.id)}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
+                    {it.kind === "deck" ? "Deck" : "Brief / Report"}
+                  </span>
+                  <span className="opacity-30">·</span>
+                  <span className="text-[10.5px] text-[var(--muted)] tabular-nums">
+                    {new Date(it.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                  </span>
+                </div>
+                <p className="akki-serif text-[15px] text-[var(--ink)] leading-snug truncate">
+                  {it.title || it.intent || "(Untitled)"}
+                </p>
+                {it.subtitle && (
+                  <p className="text-[12px] text-[var(--muted)] mt-1 line-clamp-1">
+                    {it.subtitle}
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5 shrink-0">
+                <SensitivityChip sensitivity={it.sensitivity} />
+                <ExposurePill exposure={it.exposure} />
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

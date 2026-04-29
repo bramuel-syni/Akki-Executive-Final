@@ -357,6 +357,14 @@ async def generate_deck(
         "regen_count": 0,
         "created_at": iso(now()),
     }
+    # Iter64 — auto-score sensitivity on every saved artefact (Studio
+    # surface contract). Deterministic regex-based scoring; no LLM call.
+    try:
+        from studio_sensitivity import score_sensitivity
+        rec["sensitivity"] = score_sensitivity(rec)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Sensitivity scoring failed for deck %s: %s", deck_id, e)
+        rec["sensitivity"] = None
     await db.decks.insert_one(rec)
     rec.pop("_id", None)
 

@@ -1,0 +1,34 @@
+{
+  "summary": "Iter64 Studio (Decks + Reports) — 14/14 backend pytest passed (~1.8s, no LLM in scorer tests). Verified: studio/history merges decks+briefings desc by created_at with sensitivity{score,classification,label,reasons}+exposure{score,band,inputs} on every row; backfill_sensitivity idempotent (second call returns scored.decks=0, scored.briefings=0); /studio/deck/{id}/view records + dedupes same-day (deduped=true on 2nd call, is_owner flag returned, 404 on unknown deck); engagement endpoint returns full shape (view_count, unique_readers, readers[], share_count, external_share_count, exposure, sensitivity); share endpoint increments share_count + tracks external_share_count separately; rescore returns updated sensitivity; scorer module deterministically: benign→public/internal, M&A+£85m+pre-announcement strictly higher than benign (45 — internal band with correct reasons), whistleblower+allegation+£45m+restructure+CEO-transition→restricted 75+ with ≥3 reasons; exposure_score math verified (2r+1s+1ext=64 moderate; 5r+3s+2ext+30d caps at 100 high). Frontend visually verified: sidebar shows Catch-up + Decks + Reports, Workflows removed from primary nav, /app/plays deep link still loads full Workflows content, /app/prepare header reads 'Catch-up · {context}' with 'Catch up on what's next.' tagline, /app/decks header reads 'Decks + Reports · Studio' with studio-history strip + data-testid='studio-sensitivity-public' chip rendered, Studio's 'Produce board-grade material with your own data' tagline present.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter64_studio.py",
+    "/app/test_reports/pytest/iter64_full.xml"
+  ],
+  "action_items": [
+    "Main agent can self-verify visually: (a) open a generated deck inside /app/decks DeckStep — confirm sensitivity chip + exposure pill render top-right and POST /view fires on mount (backend view endpoint is verified, chip code-verified at frontend lint level); (b) confirm Readers strip below deck (when views exist) — our engagement endpoint returns readers[] correctly, the UI rendering is code-level verified only."
+  ],
+  "critical_code_review_comments": [
+    "studio_sensitivity.score_sensitivity: the M&A-only case (no HR/litigation triggers) lands at 45 (internal band), not confidential — this is the iter63 spec saying 'higher than benign' and is intentional by the rule weights, but the user may expect pure M&A to auto-tag confidential. Flag for product review: consider bumping M&A weight from 20 → 30 OR lowering confidential band threshold from 50 → 45 if 'M&A alone = confidential' is the desired policy. Verified restricted trigger path still hits 75+ correctly.",
+    "studio.py record_view uses find_one_and_update upsert with compound unique index — race-safe, identical pattern to iter63 _consume_free_grant. Good.",
+    "studio.py /engagement .to_list(length=500) caps views at 500 per artefact — fine today, flag if a deck starts accruing >500 views (unlikely for board artefacts).",
+    "studio_history aggregates views/shares in one pipeline per collection — efficient. Sort key uses string-compare on ISO timestamps — works because all created_at are same tz and format.",
+    "briefings.py line 143-148 and decks.py line 360-367 both try/except the sensitivity scoring — on failure they set sensitivity=None. Good defensive coding but it silently swallows real bugs; consider a single-line logger.warning in the except branch for observability.",
+    "server.py index on (artefact_kind, artefact_id, account_id, day_utc) unique — exactly right for the dedup contract.",
+    "Frontend Decks.jsx is now 900+ lines (StudioHistoryStrip + SensitivityChip + ExposurePill + DeckStep + all earlier pieces). Start considering a split into /components/studio/{HistoryStrip, SensitivityChip, ExposurePill, ReadersStrip}.jsx — maintainability flag, not blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter64_studio.py"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14)",
+    "frontend": "100% of assertions made (sidebar rename + Studio header + history strip + sensitivity chip + /app/plays deep link + Catch-up page header)"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026!  |  Tuli NED ctx fb4df969-3f17-4279-bf78-f07bb9e29650",
+  "seed_data_creation": "Two TEST_iter64 studio_shares rows inserted on Tuli NED ctx first deck (one internal + one external) — low-noise footprint. No orphan TEST_ briefings created (scorer tests hit the module directly, not the briefings LLM endpoint, which avoids 30-60s LLM latency).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter64 backend coverage in /app/backend/tests/test_iter64_studio.py — full suite ~1.8s (scorer tests are pure module calls — no HTTP/LLM). Existing Tuli NED ctx already has decks/briefings backfilled to carry sensitivity (main agent smoke + our backfill verification). Our test adds 2 studio_shares rows on the first deck, so share_count on that deck is now +2 from baseline. Frontend /app/decks page uses testid 'studio-sensitivity-{classification}' where classification ∈ {public, internal, confidential, restricted} — next agent can rely on these selectors. Briefings POST /api/contexts/{cid}/briefings is LLM-backed and takes 30-90s; prefer unit-testing the scorer module directly at /app/backend/studio_sensitivity.py for fast iteration.",
+  "rca of the issue": "n/a — all 13 review-request bullets verified green. One policy question flagged for product: should M&A-only content auto-tag confidential? Currently lands at 45 (internal) — strictly higher than benign as the spec requires, but below the 50 confidential threshold."
+}

@@ -545,6 +545,12 @@ async def handoff_brief(
         "status": "active",
         "solve_session_id": sid,
     }
+    # Iter64 — Studio sensitivity score for Solve handoff briefings too.
+    try:
+        from studio_sensitivity import score_sensitivity
+        briefing["sensitivity"] = score_sensitivity(briefing)
+    except Exception:  # noqa: BLE001
+        briefing["sensitivity"] = None
     await db.briefings.insert_one(briefing)
     await _record_handoff(sid, account["id"], "brief", briefing_id,
                           {"context_id": body.context_id})

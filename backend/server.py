@@ -71,6 +71,7 @@ from routers import solve as solve_router  # noqa: E402
 from routers import walkin as walkin_router  # noqa: E402
 from routers import admin_auth_events as admin_auth_events_router  # noqa: E402
 from routers import solve_engine as solve_engine_router  # noqa: E402
+from routers import studio as studio_router  # noqa: E402
 
 
 logger = logging.getLogger("akki")
@@ -125,6 +126,7 @@ app.include_router(solve_router.router)
 app.include_router(walkin_router.router)
 app.include_router(admin_auth_events_router.router)
 app.include_router(solve_engine_router.router)
+app.include_router(studio_router.router)
 
 
 # -----------------------------------------------------------------------------
@@ -279,6 +281,19 @@ async def on_startup():
     await db.solve_free_grants.create_index(
         [("account_id", 1), ("month_utc", 1)], unique=True
     )
+
+    # Iter64 — Studio surface (Decks + Reports + Briefings unified).
+    # Read-receipt tracking is keyed on (artefact_kind, artefact_id, account_id, day_utc).
+    # Compound unique index gives idempotent dedup at the upsert site.
+    await db.studio_views.create_index(
+        [("artefact_kind", 1), ("artefact_id", 1), ("account_id", 1), ("day_utc", 1)],
+        unique=True,
+    )
+    await db.studio_views.create_index([("context_id", 1), ("artefact_kind", 1)])
+    await db.studio_shares.create_index([("artefact_kind", 1), ("artefact_id", 1)])
+    await db.studio_shares.create_index([("context_id", 1), ("created_at", -1)])
+    await db.decks.create_index([("context_id", 1), ("created_at", -1)])
+    await db.briefings.create_index([("context_id", 1), ("status", 1), ("created_at", -1)])
 
     # Inbound-email idempotency
     await db.accounts.create_index("inbound_token", sparse=True)
