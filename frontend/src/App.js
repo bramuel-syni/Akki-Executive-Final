@@ -6,6 +6,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import { Toaster } from "@/components/ui/sonner";
 
 import Landing from "@/pages/Landing";
+import SolveLanding from "@/pages/SolveLanding";
 import SignIn from "@/pages/SignIn";
 import SignUp from "@/pages/SignUp";
 import Onboarding from "@/pages/Onboarding";
@@ -33,6 +34,7 @@ import QuickResults from "@/pages/QuickResults";
 import Manage from "@/pages/Manage";
 import Enterprise from "@/pages/Enterprise";
 import Decks from "@/pages/Decks";
+import AppSolve from "@/pages/AppSolve";
 import Sandbox from "@/pages/Sandbox";
 import SandboxGenerating from "@/pages/SandboxGenerating";
 import Cycle from "@/pages/Cycle";
@@ -62,6 +64,7 @@ function App() {
         <Toaster position="top-right" richColors />
         <Routes>
           <Route path="/" element={<Landing />} />
+          <Route path="/solve" element={<SolveLanding />} />
           <Route path="/about" element={<About />} />
           <Route path="/features" element={<Features />} />
           <Route path="/security" element={<Security />} />
@@ -115,6 +118,7 @@ function App() {
           <Route path="/app/manage" element={<ProtectedRoute><Manage /></ProtectedRoute>} />
           <Route path="/app/enterprise" element={<ProtectedRoute><Enterprise /></ProtectedRoute>} />
           <Route path="/app/decks" element={<ProtectedRoute><Decks /></ProtectedRoute>} />
+          <Route path="/app/solve" element={<ProtectedRoute><AppSolve /></ProtectedRoute>} />
           <Route path="/app/documents/:id" element={<ProtectedRoute><DocumentViewer /></ProtectedRoute>} />
           <Route path="/app/contexts" element={<ProtectedRoute><ContextPortfolio /></ProtectedRoute>} />
           <Route path="/app/contexts/new" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />

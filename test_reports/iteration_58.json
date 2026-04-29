@@ -1,0 +1,39 @@
+{
+  "summary": "Iter58 — Tested walkin + solve features. Backend (12/12 pytest passes) for /api/walkin (all kinds, cache, regenerate, validation 422/404/403/auth, persistence on deck) and /api/solve/interest (POST + GET /me + auth). CRITICAL frontend compile bug found and FIXED: /app/frontend/src/components/layout/AppShell.jsx had duplicate `Layers` identifier on line 13 — frontend was failing to compile (white-screen 'Compiled with problems' overlay across the entire app). After the fix, public surfaces all PASS: landing-nav-solve + section + stages + 2 CTAs; /solve marketing page (solve-landing, h1 'For the board problems...', 4 phases, vs-chat, cta-final); AppShell sidebar Solve item with Preview badge; /app/solve placeholder + phases. Bramuel already-submitted case correctly renders the 'Noted' thanks state (notify button hidden as designed). Activity timeline currently shows weekday headers (TUESDAY APR 28, FRIDAY APR 24) which is correct because the available data only spans 4 days — the ≥7-day weekly-grouping branch could not be exercised with current seed data. WalkInCard testids (deck/brief/minutes) and decks-outline-iteration-chip could NOT be exercised in the live UI: deep-linking /app/decks/4fde929d-... redirects to /; reaching the deck-review surface needs in-app navigation flow (not URL routing). Backend persistence confirms walkin_question IS attached to the deck doc.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AppShell.jsx", "issue": "Duplicate `Layers` identifier in the lucide-react import block (line 13) — caused 'Identifier Layers has already been declared' SyntaxError → entire frontend stopped compiling and rendered the babel error overlay on every route. FIXED by the testing agent (removed the second Layers occurrence).", "selector": "n/a (compile-time)", "priority": "CRITICAL"},
+      {"component": "Decks routing", "issue": "Deep-link /app/decks/<deck_id> 302/redirects to /. Deck-review surface (where walkin-card-deck renders) appears to be reachable only via in-app flow, not via URL. Blocks testability and link-sharing.", "selector": "[data-testid='walkin-card-deck']", "priority": "MEDIUM"},
+      {"component": "AppSolve.jsx (thanks state)", "issue": "Spec asks for an 'app-solve-thanks' testid for the post-submit thanks state, but the rendered DOM only exposes 'app-solve-notify' (the section wrapper). The 'Noted.' card itself has no dedicated testid, making automated verification of the thanks state harder.", "selector": "[data-testid='app-solve-thanks']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter58_walkin_solve.py",
+    "/app/test_reports/pytest/iter58_results.xml"
+  ],
+  "action_items": [
+    "Restore deck deep-link routing so /app/decks/<deck_id> opens the deck-review surface directly (currently redirects to /). This is required for shareable links AND for automated testing of walkin-card-deck.",
+    "Add a dedicated data-testid='app-solve-thanks' on the 'Noted.' card in AppSolve.jsx so the post-submit state can be asserted independently of the notify button.",
+    "(Optional) Seed deck/brief data so a future testing pass can exercise WalkInCard on all three artefact kinds end-to-end via the live UI.",
+    "(Optional) Activity weekly-grouping branch (≥7-day spans) is unverified in this iteration because the documents-cat timeline only spans 4 days for Tuli context. Either seed older docs or accept current verification as 'logic in source, not exercised live'."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/routers/solve.py POST /interest is NOT idempotent — every call inserts a new row in solve_interest. The review_request docstring claims 'Idempotent insert'. For a pre-launch interest collector this may be acceptable (you keep audit history), but if the intent was true idempotency, switch to update_one with upsert=True keyed on account_id.",
+    "/app/backend/routers/walkin.py uses isinstance check on cached walkin_question — solid. But the LLM JSON re-parser only catches the JSONDecodeError (Exception); if Sonnet returns no text at all (response='') the second regex search will silently set parsed=None and raise a 502, which is correct, just worth a log line for ops.",
+    "AppShell.jsx import block was edited but the duplicate Layers slipped past lint — recommend a pre-commit eslint hook or at minimum CI lint gate on /app/frontend/src to catch identifier-already-declared in PRs."
+  ],
+  "updated_files": [
+    "/app/frontend/src/components/layout/AppShell.jsx",
+    "/app/backend/tests/test_iter58_walkin_solve.py"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "70% (public + sidebar + /app/solve verified live; walkin cards on deck/brief/minutes + outline iteration chip + activity weekly grouping not exercised in live UI — code present per file review)"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026!",
+  "seed_data_creation": "Created one TEST_iter58 solve_interest record via POST /api/solve/interest as part of CRUD test. Bramuel already had a prior interest record (per main agent).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test file /app/backend/tests/test_iter58_walkin_solve.py is comprehensive — re-run with `pytest backend/tests/test_iter58_walkin_solve.py -v` after main agent ships fixes. To exercise walkin-card-deck live, you'll need either (a) a deck-review-page route that accepts /app/decks/<id> directly, or (b) a navigation flow through the Decks Plan→Outline→Deck steps to land on the existing deck. The AppShell duplicate-Layers compile bug was fatal — always smoke-test the landing page first to catch this class of regression. /app/solve thanks state is correctly rendering for already-submitted users (verified via 'Noted.' copy + checkmark), just lacks a dedicated testid.",
+  "rca of the issue": "AppShell.jsx duplicate Layers RCA: when the Solve nav item was added, a single `Layers,` line was inserted at line 12 but the original Layers import on line 13 was not removed, producing two declarations in the same import block. Babel/Flow scope-handler raised 'Identifier Layers has already been declared' which crashed the dev server compile and rendered the red error overlay on every route. Reproduction: visit any URL on the app — overlay appears. Mitigation applied: removed the second `Layers` occurrence from line 13. Add eslint no-duplicate-imports/no-redeclare rule to CI to prevent recurrence."
+}

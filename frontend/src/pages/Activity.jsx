@@ -151,16 +151,42 @@ export default function Activity() {
   const Icon = meta.icon;
 
   const grouped = useMemo(() => {
-    // Group by day for editorial rhythm.
+    // Iter58 — group by day for ≤7-day spans; by ISO week for longer
+    // spans. Saves the user from scrolling 30 day-headers on a month view.
+    if (items.length === 0) return [];
+    const oldest = items[items.length - 1]?.ts;
+    const newest = items[0]?.ts;
+    const spanDays =
+      oldest && newest
+        ? Math.max(0, (new Date(newest) - new Date(oldest)) / 86400000)
+        : 0;
+    const groupByWeek = spanDays >= 7;
+
+    const weekKey = (d) => {
+      // ISO week start (Monday) — produce a stable label like "Week of 21 Apr".
+      const dt = new Date(d);
+      const day = dt.getDay() || 7; // Sun → 7
+      const monday = new Date(dt);
+      monday.setDate(dt.getDate() - day + 1);
+      monday.setHours(0, 0, 0, 0);
+      return {
+        key: monday.toISOString().slice(0, 10),
+        label: `Week of ${monday.toLocaleDateString(undefined, { day: "numeric", month: "short" })}`,
+      };
+    };
+
     const out = [];
     const seen = new Set();
     for (const it of items) {
-      const day = new Date(it.ts).toLocaleDateString(undefined, {
-        weekday: "long", month: "short", day: "numeric",
-      });
-      if (!seen.has(day)) {
-        out.push({ kind: "day", label: day });
-        seen.add(day);
+      const header = groupByWeek
+        ? weekKey(it.ts)
+        : { key: new Date(it.ts).toDateString(),
+            label: new Date(it.ts).toLocaleDateString(undefined, {
+              weekday: "long", month: "short", day: "numeric",
+            }) };
+      if (!seen.has(header.key)) {
+        out.push({ kind: "day", label: header.label });
+        seen.add(header.key);
       }
       out.push({ kind: "item", ...it });
     }

@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
   Home, FileText, Sparkles, GraduationCap,
-  Settings, LogOut, ChevronDown, Layers, CheckCircle2, Lock,
+  Layers,
+  Settings, LogOut, ChevronDown, CheckCircle2, Lock,
   Briefcase, Landmark, Search, ScrollText, Target, Eye, Plus, BookOpenCheck,
   Users, Building2, ShieldCheck, Send, Compass, Activity, MessageCircle,
   Presentation,
@@ -42,6 +43,8 @@ const NAV = [
   { to: "/app", label: "Home", icon: Home, end: true, ready: true },
   { to: "/app/workspace", label: "Document Journal", icon: BookOpenCheck, module: "M3", ready: true },
   { to: "/app/chat", label: "Chat", icon: MessageCircle, module: "§15", ready: true },
+  { to: "/app/solve", label: "Solve", icon: Layers, module: "§18", ready: true,
+    badge: "Preview" },
   { to: "/app/prepare", label: "Prepare", icon: Sparkles, module: "M5+M12", ready: true },
   { to: "/app/decks", label: "Decks", icon: Presentation, module: "§17", ready: true },
   { to: "/app/plays", label: "Workflows", icon: Compass, module: "§13", ready: true,
@@ -326,6 +329,14 @@ export default function AppShell({ children }) {
                       />
                       <Icon className="w-4 h-4" strokeWidth={1.8} />
                       <span>{item.label}</span>
+                      {item.badge && (
+                        <span
+                          className="ml-auto text-[9px] uppercase tracking-[0.16em] px-1.5 py-0.5 rounded-sm bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/25"
+                          data-testid={`nav-${item.label.toLowerCase()}-badge`}
+                        >
+                          {item.badge}
+                        </span>
+                      )}
                     </>
                   )}
                 </NavLink>

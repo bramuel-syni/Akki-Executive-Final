@@ -14,6 +14,7 @@ import {
   Sparkles, FileText, Check, AlertTriangle, Loader2, ThumbsUp, ThumbsDown,
   ChevronRight, RefreshCw, Pencil, ArrowRight,
 } from "lucide-react";
+import WalkInCard from "@/components/walkin/WalkInCard";
 
 /**
  * Decks — three-step flow that keeps the user from burning Opus on weak prompts.
@@ -365,6 +366,19 @@ function OutlineStep({ outline, contextId, onIterate, onGenerated, onCancel }) {
 
   return (
     <section className="space-y-6" data-testid="decks-outline-card">
+      {outline.iteration && outline.iteration > 1 && (
+        <div className="bg-[var(--cream-deep)]/30 border border-[var(--rule)] rounded-sm px-4 py-2.5 flex items-center justify-between gap-3" data-testid="decks-outline-iteration-chip">
+          <p className="text-[11.5px] uppercase tracking-[0.16em] text-[var(--muted)]">
+            Iteration <span className="text-[var(--accent)] font-medium tabular-nums">{outline.iteration}</span> ·
+            still no deep slot used
+          </p>
+          {outline.learning_hint_used && (
+            <p className="text-[11px] italic text-[var(--accent)] truncate max-w-[60%]" title={outline.learning_hint_used}>
+              Tightened from your last feedback
+            </p>
+          )}
+        </div>
+      )}
       <div className={`border rounded-sm px-5 py-3 ${sufficiencyTone.bg}`}>
         <p className={`text-[12.5px] tracking-[0.04em] ${sufficiencyTone.color}`} data-testid="decks-sufficiency-banner">
           {sufficiency === "insufficient" && <AlertTriangle className="w-3.5 h-3.5 inline mr-1.5" />}
@@ -643,6 +657,8 @@ function DeckStep({ deck, contextId, onUpdated, onNew }) {
           </div>
         ))}
       </div>
+
+      <WalkInCard kind="deck" contextId={contextId} artefactId={deck.id} initial={deck.walkin_question} />
 
       {/* Feedback + new */}
       <div className="space-y-3 pt-2">

@@ -37,6 +37,7 @@ import {
 import ShareModal from "@/components/share/ShareModal";
 import PrepareStatsDock from "@/components/prepare/PrepareStatsDock";
 import PrepareSideRail from "@/components/prepare/PrepareSideRail";
+import WalkInCard from "@/components/walkin/WalkInCard";
 import HighlightsStats from "@/components/highlights/HighlightsStats";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
@@ -742,6 +743,9 @@ function MinutesExtractDetail({ meta, narrative: narrativeProp, docId, contextId
           <div className="akki-serif text-[14.5px] text-[var(--ink)] leading-relaxed whitespace-pre-wrap">
             {narrative.body}
           </div>
+          <div className="mt-4">
+            <WalkInCard kind="minutes" contextId={contextId} artefactId={docId} />
+          </div>
         </div>
       )}
     </div>
@@ -844,6 +848,17 @@ function BriefDetailModal({ brief, contextId, onClose, onDelete }) {
         <div className="mt-3 max-h-[60vh] overflow-y-auto akki-serif text-[15px] leading-[1.7] text-[var(--ink)] whitespace-pre-wrap">
           {brief?.body}
         </div>
+
+        {brief?.id && contextId && brief?.body && brief.body.length > 80 && (
+          <div className="mt-5">
+            <WalkInCard
+              kind="brief"
+              contextId={contextId}
+              artefactId={brief.id}
+              initial={brief.walkin_question}
+            />
+          </div>
+        )}
 
         {brief?.id && contextId && (
           <ShareModal

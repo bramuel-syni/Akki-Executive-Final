@@ -164,6 +164,13 @@ export default function Landing() {
             <Link to="/blog" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors" data-testid="landing-nav-blog">
               Exco360
             </Link>
+            <a
+              href="#solve"
+              className="hidden md:inline-flex items-center gap-1.5 text-[var(--accent)] hover:text-[var(--accent)]/80 transition-colors px-2.5 py-1 border border-[var(--accent)]/30 rounded-sm text-[12px] tracking-wide"
+              data-testid="landing-nav-solve"
+            >
+              <Sparkles className="w-3 h-3" /> Akki Solve
+            </a>
             {user ? (
               <Link to="/app">
                 <Button className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-9 px-4 text-[13px] font-medium" data-testid="landing-go-to-app">
@@ -310,6 +317,94 @@ export default function Landing() {
               <p className="text-[13px] text-[var(--muted)] leading-relaxed">{s}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* ─── AKKI Solve · the acquisition surface ─────────────────────────
+          Iter58 — User feedback: AKKI Solve is the acquisition driver and
+          should be discoverable on the landing page. Anchored between the
+          three-guarantees rubric and the photo strip so a returning user
+          who's already absorbed the value pillars meets Solve next; also
+          accessible via the eyebrow CTA at the top of the page. */}
+      <section
+        id="solve"
+        className="border-b border-[var(--rule)] bg-[var(--ink)] text-[var(--cream)]"
+        data-testid="landing-solve-section"
+      >
+        <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-16 md:py-24 grid md:grid-cols-12 gap-10 md:gap-14 items-start">
+          <div className="md:col-span-7">
+            <p className="akki-overline mb-4 text-[var(--accent)]">
+              <Sparkles className="w-3 h-3 inline mr-1.5 -mt-0.5" />
+              Akki Solve · in private preview
+            </p>
+            <h2 className="akki-serif text-[36px] md:text-[52px] leading-[1.06] tracking-[-0.015em] font-normal mb-5 max-w-[22ch]">
+              For the board problems that don't have tidy answers.
+            </h2>
+            <p className="akki-serif text-[17px] md:text-[19px] leading-[1.65] text-[var(--cream)]/85 max-w-[52ch] mb-7">
+              Some sessions don't yield to research, and a chat thread won't
+              get you there. AKKI Solve gives you a structured pause —
+              surface, depth, synthesis, lock-in — until the room moves
+              from confusion to a diagnosis you can act on.
+            </p>
+            <ul className="space-y-2 mb-8 text-[14.5px] text-[var(--cream)]/80 max-w-[58ch]">
+              <li className="flex gap-3">
+                <span className="text-[var(--accent)] mt-0.5">·</span>
+                <span>Walks you through the question, not at it.</span>
+              </li>
+              <li className="flex gap-3">
+                <span className="text-[var(--accent)] mt-0.5">·</span>
+                <span>Triangulates against comparable diagnoses across boards and sectors.</span>
+              </li>
+              <li className="flex gap-3">
+                <span className="text-[var(--accent)] mt-0.5">·</span>
+                <span>Hands the synthesis back as a brief, deck, or follow-up cycle — your call.</span>
+              </li>
+            </ul>
+            <div className="flex flex-wrap gap-3">
+              <Link to="/signup?from=solve">
+                <Button
+                  className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-11 px-6 text-[13.5px] tracking-wide"
+                  data-testid="landing-solve-cta-primary"
+                >
+                  Try Akki Solve <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </Link>
+              <Link to="/solve">
+                <Button
+                  variant="outline"
+                  className="bg-transparent border-[var(--cream)]/30 text-[var(--cream)] hover:bg-[var(--cream)]/10 rounded-sm h-11 px-6 text-[13.5px]"
+                  data-testid="landing-solve-cta-learn"
+                >
+                  How it works
+                </Button>
+              </Link>
+            </div>
+          </div>
+
+          <div
+            className="md:col-span-5 bg-[var(--cream)]/[0.04] border border-[var(--cream)]/15 rounded-md p-6 md:p-7"
+            data-testid="landing-solve-stages"
+          >
+            <p className="akki-overline mb-5 text-[var(--cream)]/60">The four phases</p>
+            <ol className="space-y-4">
+              {[
+                ["Surface", "Name the problem the way a board chair would. No jargon. One sentence."],
+                ["Depth",   "Pressure-test the framing. AKKI asks the questions a sharp counterpart would."],
+                ["Synthesis","A diagnosis grounded in evidence and triangulation — not opinion."],
+                ["Lock-in", "Decide what you'll do, what you'll watch, and what you'll walk in with."],
+              ].map(([title, body], i) => (
+                <li key={title} className="flex gap-4">
+                  <span className="font-mono text-[10.5px] uppercase tracking-[0.2em] text-[var(--accent)] mt-1 min-w-[24px]">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <div>
+                    <p className="akki-serif text-[16px] text-[var(--cream)]">{title}</p>
+                    <p className="text-[12.5px] text-[var(--cream)]/65 leading-relaxed mt-0.5">{body}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
         </div>
       </section>
 
