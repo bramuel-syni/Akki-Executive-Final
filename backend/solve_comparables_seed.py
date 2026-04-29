@@ -176,6 +176,16 @@ COMPARABLES_V1: List[Dict[str, Any]] = [
         "what_didnt": "First 4 days lost debating whether to engage external counsel at all.",
         "source_type": "curated",
     },
+    {
+        "id": "cmp_cond_002",
+        "cluster_id": "people_conduct",
+        "sector_tag": "financial_services",
+        "scale_tag": "mid_cap",
+        "diagnosis_summary": "Pattern of three exits from a single team in 14 months. HR explained each separately; no one had stitched them. NED audit flagged the cluster.",
+        "what_worked": "Chair commissioned a confidential listening exercise with the remaining team; surfaced a manager-conduct theme HR had under-weighted.",
+        "what_didnt": "HR's quarterly people deck never showed clustered exits per manager. The dashboard hid the signal.",
+        "source_type": "curated",
+    },
     # ─── ma_thesis ─────────────────────────────────────────────────────
     {
         "id": "cmp_ma_001",
@@ -185,6 +195,16 @@ COMPARABLES_V1: List[Dict[str, Any]] = [
         "diagnosis_summary": "$300m acquisition on the table. Thesis sound. Two NEDs uneasy without being able to articulate why. Diagnosis (in retrospect): the firm had no integration capacity left after two prior deals.",
         "what_worked": "Chair postponed approval and asked for an integration capacity audit. Audit found bandwidth was the binding constraint. Deal restructured to a 9-month delay.",
         "what_didnt": "If the chair had not pushed back, the deal would have closed and integration would have failed publicly.",
+        "source_type": "curated",
+    },
+    {
+        "id": "cmp_ma_002",
+        "cluster_id": "ma_thesis",
+        "sector_tag": "tech_saas",
+        "scale_tag": "growth",
+        "diagnosis_summary": "Bolt-on acquisition pitched as a customer-base play; deal team argued cross-sell math. Two NEDs asked what the target's churn looked like at month 13 (post-typical contract roll-off). Nobody knew.",
+        "what_worked": "Board paused 6 weeks for a churn deep-dive on the target's actual cohorts; revealed mid-30% churn at renewal — the cross-sell math collapsed.",
+        "what_didnt": "Target had been on the table for 11 months and the question was never asked until it was almost too late.",
         "source_type": "curated",
     },
     # ─── board_dynamics ────────────────────────────────────────────────
@@ -198,6 +218,16 @@ COMPARABLES_V1: List[Dict[str, Any]] = [
         "what_didnt": "Pattern had been visible for 18 months. Last evaluation flagged it; no one had standing to enforce.",
         "source_type": "curated",
     },
+    {
+        "id": "cmp_dyn_002",
+        "cluster_id": "board_dynamics",
+        "sector_tag": "any",
+        "scale_tag": "any",
+        "diagnosis_summary": "New chair, three years in, had quietly let the audit chair drift into running risk discussions too. Risk committee chair was technically still in role but had no air time. Board was running on two committees instead of three.",
+        "what_worked": "Annual evaluation was structured to ask each committee chair what they actually owned in the room; gap surfaced; chair re-assigned risk floor time within a quarter.",
+        "what_didnt": "The evaluation the prior year had been process-only ('did we hold the meetings?') and missed the substance.",
+        "source_type": "curated",
+    },
     # ─── founder_transition ────────────────────────────────────────────
     {
         "id": "cmp_fnd_001",
@@ -207,6 +237,71 @@ COMPARABLES_V1: List[Dict[str, Any]] = [
         "diagnosis_summary": "Founder-chair stepped back 14 months ago. Three of last six material decisions re-litigated by them. Professional CEO patient but eroded.",
         "what_worked": "External NED + SID drafted a written 'role contract' specifying when the founder may re-engage and when not. Founder signed; CEO regained authority within 90 days.",
         "what_didnt": "Founder wasn't malicious — they hadn't realised the pattern. Earlier intervention would have spared 14 months.",
+        "source_type": "curated",
+    },
+    {
+        "id": "cmp_fnd_002",
+        "cluster_id": "founder_transition",
+        "sector_tag": "consumer_goods",
+        "scale_tag": "mid_cap",
+        "diagnosis_summary": "Family-firm founder transitioning to non-family CEO after 30 years. Family shareholders kept calling individual board members between meetings to lobby on operating questions. CEO unable to set direction.",
+        "what_worked": "Chair instituted a 'one channel' rule: family questions go through the chair, not individual NEDs. Took 6 months to enforce socially but the CEO got the runway.",
+        "what_didnt": "First 9 months post-transition were chaos because the rule was implicit, not written.",
+        "source_type": "curated",
+    },
+    # ─── performance_management — second comparable ────────────────────
+    {
+        "id": "cmp_perf_002",
+        "cluster_id": "performance_management",
+        "sector_tag": "tech_saas",
+        "scale_tag": "growth",
+        "diagnosis_summary": "Head of Engineering 18 months in; technically competent; team morale eroding. CEO kept describing them as 'finding their stride'. Two QBRs in a row missed delivery commitments by ~30%.",
+        "what_worked": "Chair asked the CEO to write a one-page assessment against the role's two non-negotiables (shipping cadence + retention). Writing it forced clarity. Transition agreed within the quarter.",
+        "what_didnt": "Pattern had been clear at month 9. Polite deferral cost the org 9 months of execution.",
+        "source_type": "curated",
+    },
+    # ─── capital_allocation — second comparable ────────────────────────
+    {
+        "id": "cmp_cap_002",
+        "cluster_id": "capital_allocation",
+        "sector_tag": "financial_services",
+        "scale_tag": "mid_cap",
+        "diagnosis_summary": "Board approved a buyback at the same meeting it approved a fresh capex programme. Each defensible standalone; together they over-committed the balance sheet.",
+        "what_worked": "CFO required, in subsequent quarters, that any capital-deployment paper carry a one-page 'cumulative posture' summary. Forced the board to see total commitment before approving the next slice.",
+        "what_didnt": "The first two quarters post-discovery, the cumulative summary was prepared but not actually read in the room. Discipline lagged the policy by 6 months.",
+        "source_type": "curated",
+    },
+    # ─── regulatory_change — second comparable ─────────────────────────
+    {
+        "id": "cmp_reg_002",
+        "cluster_id": "regulatory_change",
+        "sector_tag": "tech_saas",
+        "scale_tag": "growth",
+        "diagnosis_summary": "EU AI Act compliance treated as a legal box-tick by the management team. Two NEDs (one ex-regulator) flagged that the obligations actually changed how the product worked, not just how it was documented.",
+        "what_worked": "Audit chair commissioned a product-team walk-through showing each obligation mapped to a code path. Half the obligations had no owner. Mapping forced a real engineering plan.",
+        "what_didnt": "Initial 'compliance dashboard' was green across the board. Green meant 'we have a policy', not 'the product behaves correctly'. Distinction is everything.",
+        "source_type": "curated",
+    },
+    # ─── tech_debt_or_outage — second comparable ───────────────────────
+    {
+        "id": "cmp_tech_002",
+        "cluster_id": "tech_debt_or_outage",
+        "sector_tag": "financial_services",
+        "scale_tag": "mid_cap",
+        "diagnosis_summary": "Core banking platform 11 years old; CTO had asked for a modernisation programme three years running and been deferred. Two unrelated outages in one quarter forced the conversation.",
+        "what_worked": "Audit chair re-framed the ask as a 'risk paper' rather than 'IT spend' — which moved the conversation from CFO budget gating to board risk gating. Programme approved within two cycles.",
+        "what_didnt": "The CTO had been making the case in operational language to financial decision-makers. The translation was missing.",
+        "source_type": "curated",
+    },
+    # ─── strategy_drift — third comparable ─────────────────────────────
+    {
+        "id": "cmp_drift_003",
+        "cluster_id": "strategy_drift",
+        "sector_tag": "tech_saas",
+        "scale_tag": "growth",
+        "diagnosis_summary": "Series-C SaaS firm pivoted strategy at every board meeting based on the loudest customer story; no through-line; team fatigue rising; sales cycle lengthening.",
+        "what_worked": "Chair imposed a 'no new strategic direction without a written 4-page memo' rule. Memos surfaced the pattern; reduced pivots to one per year; sales cycle re-stabilised in 9 months.",
+        "what_didnt": "The pivot pattern had been visible to mid-management for 18 months. Board only noticed when revenue lagged.",
         "source_type": "curated",
     },
 ]

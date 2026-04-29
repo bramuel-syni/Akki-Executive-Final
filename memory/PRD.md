@@ -2272,3 +2272,103 @@ P2: Decks UI E2E retest after midnight; max-of-window label phrasing on
 - Pro account UI: subscription affordance to flip `solve_pro=true`.
   Today the flag is set manually in Mongo for testing.
 - Walk-in card test for admin-side render in panel `prepare-minutes-narrative-body-<id>`.
+
+
+## §AKKI Solve — Wave 2 (Handoff Trio) + Wave 3 (Triangulation v2) + Pricing (2026-04-29, iter62)
+
+### Wave 3 — Triangulation v2 corpus
+- New `/app/backend/solve_comparables_seed.py` — **27 curated anonymised
+  comparables** across all 12 clusters (≥2 per cluster after the iter62
+  top-up). Each carries `cluster_id`, `sector_tag`, `scale_tag`,
+  `diagnosis_summary`, `what_worked`, `what_didnt`, `source_type`. Strict
+  rule: no real company names; every comparable closes with a verdict
+  (worked/didn't) so the LLM grounds the diagnosis in lived board
+  experience rather than abstractions.
+- `db.solve_comparables` indexed on `id` (unique) +
+  `(cluster_id, sector_tag)`. Idempotent seeding on startup.
+- Engine helper `_pick_comparables(cluster_id, sector_tag)` picks closest
+  3 with preference order: same cluster + matching sector → same cluster
+  + 'any' sector → same cluster + any sector. Sector pulled from session
+  context's `sector` or `industry` field.
+- Synthesis prompt now embeds the picked comparables under a
+  `CURATED COMPARABLES` block instructing the LLM to reference at most
+  one or two inline ('A comparable mid-cap bank…', 'In one industrials
+  case…') without naming companies.
+- Persisted to `synthesis.comparables[]` for the UI side panel.
+
+### Wave 2 — Handoff Trio (Solve → Brief, Decks, Cycle)
+- Three new endpoints on completed Solve sessions
+  (`require_completed_session` gate — must have synthesis AND lock-in):
+  - `POST /api/solve/sessions/{sid}/handoff/brief` — creates a
+    `db.briefings` row with synthesis as `opening_paragraph` and lock-in
+    parsed into Decide / Watch / Walk-in items. Tagged with
+    `solve_session_id` + `mode='solve_handoff'`.
+  - `POST /api/solve/sessions/{sid}/handoff/decks` — seeds a
+    `db.deck_outlines` row with intent = synthesis + lock-in summary,
+    research_question = original Solve intent, and 5 starter slides
+    (Diagnosis · Comparables · Decide · Watch · Walk in with). User
+    refines and commits the deep-tier render via the existing decks
+    pipeline — Solve handoff does NOT consume deck quota.
+  - `POST /api/solve/sessions/{sid}/handoff/cycle` — inserts 1-3 questions
+    into `db.questions` derived from lock-in lines (Walk-in → lead
+    question, Watch → trigger probe, Decide → block check). Source field
+    set to `AKKI Solve · <cluster_label>`.
+- All three are **idempotent within a session** — second call returns
+  `already_exists: true` with the original artefact id. Recorded in
+  `db.solve_handoffs` (compound natural key on `session_id + target`)
+  AND denormalised into `solve_sessions.handoffs[]` for fast list reads.
+- `_parse_lockin_lines` tolerates markdown bold and bullet prefixes
+  (`**Decide:**`, `- Decide:` all parse cleanly).
+- Membership gate: Solve handoffs require active membership of the
+  destination context (`_ensure_membership`).
+- New `GET /api/solve/sessions/{sid}/handoffs` for inspection.
+
+### Pricing — Solve Pro bundled into existing Pro plan
+- Per user direction ("less friction, high stickiness"):
+  - Pro plan ($29/mo) and Team plan unlock unlimited deep synthesis
+    (gated by existing `solve` daily quota of 4 in `llm_tier_quota`).
+  - **Free users get 1 free deep synthesis per UTC month** via
+    `db.solve_free_grants` (compound unique index on
+    `(account_id, month_utc)`). First click of the Pro toggle as a free
+    user atomically claims the grant; subsequent calls in the same
+    month fall through to the standard tier (transparent downgrade —
+    `synthesis.free_grant_used: true`).
+- New `_user_is_pro()` checks `account.plan in (pro, team)` OR explicit
+  `account.solve_pro=true` flag (legacy / manual override).
+- Frontend Pro toggle copy now communicates: "Pro plan gets unlimited
+  deep synthesis; on the free plan you get 1 free deep synthesis per
+  month".
+
+### Frontend — AppSolve UX
+- `HandoffStrip` component on completed sessions: 3 tile buttons (Brief
+  / Decks / Question Bank), context picker (auto-selected when user has
+  one context), per-target emerald-state when handoff already exists.
+  Toasts on success; inline error rendering.
+- `ComparablesPanel` rewritten to render the new corpus shape: sector +
+  scale tag overline, serif diagnosis line, accent-tagged Worked / muted
+  Didn't lines. Backwards-compatible string fallback.
+- Picker adds a second list — **'Completed — hand off ready'** — so
+  users can return to the handoff strip after navigating away.
+- `solve_sessions.handoffs[]` denormalised array consumed by
+  HandoffStrip for first-render emerald state.
+
+### Tests
+- iter62: backend **11/11 pytest pass** against live LLM
+  (~3:26 wall-time). Frontend 100% verified end-to-end.
+- Pytest file: `/app/backend/tests/test_iter62_solve_wave2_wave3.py`.
+- Report: `/app/test_reports/iteration_62.json`.
+
+### Open / deferred (post-Wave 2/3)
+- Pro billing surface: Stripe checkout flow specifically for Solve Pro
+  upgrade (currently piggybacks on existing Settings → Billing tab).
+- Wave 4: Solve session export as PDF (briefing-style narrative).
+- Comparable corpus expansion (currently 27; aim for 40+ across
+  English / European / US board cases as adoption broadens).
+- `/app/decks` context-switch quirk (orthogonal pre-existing P1 — may
+  not be reproducible now after the role-isolation work in iter46).
+- Defence-in-depth: `_consume_free_grant` race-safe via duplicate-key;
+  consider promoting to `find_one_and_update` upsert pattern.
+- Cycle handoff: question text currently echoes the lock-in line
+  verbatim (with "How do we hold ourselves to:" prefix). A short LLM
+  pass to phrase as a sharp board question would polish further.
+
