@@ -105,7 +105,7 @@ async def start_generation(body: SandboxIntakeIn):
 # GET /generate/{session_id}/status — progress poll
 # -----------------------------------------------------------------------------
 @router.get("/generate/{session_id}/status")
-async def generation_status(session_id: str):
+async def generation_status(session_id: str, response: Response):
     s = _sessions.get(session_id)
     if not s:
         raise HTTPException(status_code=404, detail="Sandbox session not found or expired")
@@ -118,6 +118,16 @@ async def generation_status(session_id: str):
         "access_token": s.get("access_token") if s["status"] == "ready" else None,
         "error": s.get("error"),
     }
+    # Iter60 follow-up — when the sandbox is ready we ALSO write the
+    # access/refresh cookies on the response. This proactively replaces
+    # any stale session cookie a returning visitor still had in their
+    # browser, so the app heals itself before the next /api/auth/me roundtrip
+    # rather than relying on Bearer-first ordering as the only safety net.
+    if s["status"] == "ready" and s.get("access_token") and s.get("refresh_token"):
+        try:
+            set_auth_cookies(response, s["access_token"], s["refresh_token"])
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[sandbox] failed to set auth cookies on ready response: %s", e)
     # Schedule session expiry 90s after we first report ready — keeps the
     # in-memory dict bounded under heavy sandbox traffic.
     if s["status"] == "ready" and "expire_task" not in s:

@@ -2176,3 +2176,36 @@ P2: Decks UI E2E retest after midnight; max-of-window label phrasing on
   of duplicate-import regression iter58 hit.
 - `/admin/llm-spend?panel=decks` deep-link routing (admin-side analog
   of the deck deep-link we just added).
+
+### 2026-04-29 — iter59/60 · Sandbox cookie-poisoning bug fixed
+**RCA**
+- `get_current_account()` in `core.py` checked the `access_token` cookie
+  *before* the Authorization header, then short-circuited 401 on the
+  first credential that failed to decode. A returning visitor with an
+  expired session cookie would land on /sandbox, complete the form,
+  receive a fresh Bearer JWT in the handoff — and still get 401'd on
+  /api/auth/me because the stale cookie was inspected first. AuthContext
+  caught the 401, wiped the localStorage Bearer, set account=false →
+  ProtectedRoute on /app bounced them to /signin. Symptom user
+  reported: "after the sandbox relationship is set, it goes to /signin".
+
+**Fix (two layers, belt-and-braces)**
+1. `core.py::get_current_account` — now tries every credential the
+   request carries (Bearer first, then cookie), accepting the first
+   that decodes valid. Self-heals against any client with mixed credentials.
+2. `routers/sandbox.py::generation_status` — when the sandbox is ready,
+   `Set-Cookie: access_token` and `refresh_token` are written on the
+   /status response itself. The fresh cookies overwrite any stale ones
+   in the browser before the next request goes out.
+3. `AuthContext.bootstrap` catch — also POSTs `/auth/logout` (best
+   effort) on failure so a poisoned cookie clears server-side too.
+
+**Verified end-to-end (browser repro):**
+- Phase A (clean sandbox flow) ✅
+- Phase B (stale `access_token` cookie planted before /sandbox) ✅
+- Phase C (post-handoff /app/settings?tab=account navigation) ✅
+- iter60 testing-agent report: 3/3 phases pass; bug closed.
+
+**Tests / reports:**
+- `/app/test_reports/iteration_59.json` — RCA + repro
+- `/app/test_reports/iteration_60.json` — fix verified
