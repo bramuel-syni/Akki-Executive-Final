@@ -2209,3 +2209,66 @@ P2: Decks UI E2E retest after midnight; max-of-window label phrasing on
 **Tests / reports:**
 - `/app/test_reports/iteration_59.json` — RCA + repro
 - `/app/test_reports/iteration_60.json` — fix verified
+
+### 2026-04-29 — iter61 · AKKI Solve Wave 1 + auth observability + walk-in context hint
+**AKKI Solve · Wave 1 SHIPPED**
+- 12-cluster taxonomy seeded into `solve_clusters` (idempotent — operator
+  edits survive redeploy). Clusters: revenue_underperformance,
+  ceo_succession, strategy_drift, risk_blindspot, performance_management,
+  capital_allocation, regulatory_change, tech_debt_or_outage,
+  people_conduct, ma_thesis, board_dynamics, founder_transition.
+- 4-phase state machine engine (`routers/solve_engine.py`):
+  Surface → Depth → Synthesis → Lock-in → completed. Each phase: one
+  user turn + one Solve turn; phase advances on each turn submission.
+  Synthesis and Lock-in bodies persisted on `session.synthesis` /
+  `session.lockin` for fast re-render.
+- Pro-tier deep synthesis: when `account.solve_pro=true` AND user opts
+  in via `pro_tier:true`, synthesis routes to Opus (tier=deep) and
+  consumes a slot from the new `solve` quota surface (4/day default,
+  isolated from decks/brief budgets).
+- Save/resume: continue OR start-over (per iter58 user direction).
+  Restart abandons old session and clones cluster+intent.
+- Endpoints: GET /api/solve/clusters, POST/GET /api/solve/sessions,
+  GET /api/solve/sessions/{sid}, POST /api/solve/sessions/{sid}/turn,
+  POST .../restart, POST .../abandon.
+- Frontend: `/app/solve` rebuilt as 3-view module — PickerView (12
+  clusters + resume list), IntentView (textarea + Pro toggle + use-example),
+  SessionView (phase stepper + turns + composer + completed banner).
+
+**Walk-in card "in this context" hint (iter58 improvement)**
+- `/api/walkin` now folds the active context name + 3 most recent
+  un-archived signals into the prompt. Same Sonnet tier — questions
+  feel like they come from someone who sits on this board, not a
+  generic helper.
+
+**Admin · Auth observability (iter60 improvement)**
+- `core.py::get_current_account` now records sampled auth events
+  (failures always; successes at AKKI_AUTH_OBSERVE_RATE, default 0.01).
+  Captures: timestamp, ok/fail, reason, credentials carried, dual_mismatch,
+  authed_via, path, method.
+- New endpoint `GET /api/admin/auth/events?hours=N` (superadmin) rolls
+  up failure rate, by_failure_reason, by_credential, top_paths,
+  dual_credentials_seen/mismatched, recent 50 events.
+- New page `/admin/auth-events` with 4 tiles + 3 panels + recent table.
+  6th admin-tile added to /admin index.
+
+**ESLint regression guard**
+- Added `/app/frontend/.eslintrc.js` with explicit no-redeclare,
+  no-dupe-keys, no-dupe-class-members, no-duplicate-imports rules.
+  Catches the iter58 duplicate-Layers-import class of regression at
+  lint time.
+
+### Tests
+- iter61: backend 12/12 pass + frontend Solve picker→intent→session→
+  phase-advance verified end-to-end with real LLM (~100s).
+- Pytest file: `/app/backend/tests/test_iter61_solve_engine.py`.
+- Report: `/app/test_reports/iteration_61.json`.
+
+### Open / deferred (post-Wave 1)
+- Wave 2: Solve→Brief / Solve→Deck / Solve→Cycle handoff (per iter58
+  pushback 1). Synthesis lock-in commitments seed Cycle questions.
+- Wave 3: triangulation v2 — curated comparable corpus with sector +
+  scale matching (currently uses cluster-level placeholders).
+- Pro account UI: subscription affordance to flip `solve_pro=true`.
+  Today the flag is set manually in Mongo for testing.
+- Walk-in card test for admin-side render in panel `prepare-minutes-narrative-body-<id>`.
