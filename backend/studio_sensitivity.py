@@ -134,6 +134,79 @@ def score_sensitivity(artefact: Dict[str, Any]) -> Dict[str, Any]:
     return _classify(score, reasons)
 
 
+async def score_sensitivity_with_llm_tiebreaker(
+    artefact: Dict[str, Any],
+    *,
+    fallback_only: bool = True,
+) -> Dict[str, Any]:
+    """Iter66 — opt-in LLM tiebreaker. Calls the regex scorer first; if the
+    result lands in the ambiguous "internal" band (25-49) AND the artefact
+    text is long enough to warrant a second look, escalates to a single
+    standard-tier LLM call asking for one of the four classifications +
+    a one-line reason. The LLM result is folded into the regex result
+    only if it bumps to a HIGHER band (LLM downgrades are ignored — the
+    regex floor is conservative on purpose).
+
+    `fallback_only=True` (default) means: never escalate if the regex
+    already returned a confident band (public / confidential / restricted).
+    Set to False to force-call the LLM on every artefact (e.g. for
+    investigative re-scoring).
+    """
+    base = score_sensitivity(artefact)
+    if fallback_only and base["classification"] != "internal":
+        return base
+
+    text = _extract_text(artefact)
+    if len(text) < 200:
+        # Short content rarely benefits from LLM disambiguation.
+        return base
+
+    try:
+        from llm_service import call_llm, parse_json_response
+    except Exception:
+        return base
+
+    user_query = (
+        "Classify the following business text for board-room confidentiality. "
+        "Pick exactly one of: public, internal, confidential, restricted. "
+        "Use 'restricted' only if the text would compromise market position, "
+        "harm individuals, or breach disclosure rules if leaked. Use 'public' "
+        "if it could appear unredacted in a published report. Return JSON: "
+        "{\"classification\":\"<one>\", \"reason\":\"<one short line>\"}.\n\n"
+        f"Text:\n{text[:3000]}"
+    )
+    try:
+        out = await call_llm(
+            module="studio.sensitivity_tiebreaker",
+            user_query=user_query,
+            response_format="json",
+            tier="standard",
+        )
+        parsed = parse_json_response(out.get("response", ""))
+    except Exception:
+        return base
+
+    if not isinstance(parsed, dict):
+        return base
+
+    llm_class = (parsed.get("classification") or "").lower().strip()
+    llm_reason = (parsed.get("reason") or "").strip()
+    band_order = {"public": 0, "internal": 1, "confidential": 2, "restricted": 3}
+    if llm_class not in band_order:
+        return base
+    if band_order[llm_class] <= band_order.get(base["classification"], 0):
+        # LLM agrees or wants to downgrade — preserve the regex result.
+        return base
+
+    # LLM bumped to a higher band. Promote, but mark the source.
+    new_score_floor = {"confidential": 50, "restricted": 75}.get(llm_class, base["score"])
+    new_score = max(base["score"], new_score_floor)
+    new_reasons = list(base["reasons"]) + [f"LLM tiebreaker · {llm_reason or llm_class}"]
+    bumped = _classify(min(new_score, 100), new_reasons)
+    bumped["llm_tiebreaker_used"] = True
+    return bumped
+
+
 def _classify(score: int, reasons: List[str]) -> Dict[str, Any]:
     for lo, hi, key, label in CLASSIFICATION_BANDS:
         if lo <= score <= hi:

@@ -43,6 +43,7 @@ export default function Decks() {
   const [quota, setQuota] = useState(null);
   const [history, setHistory] = useState([]);
   const [studioHistory, setStudioHistory] = useState([]);
+  const [activePlays, setActivePlays] = useState([]);
 
   useEffect(() => {
     if (!cid) return;
@@ -58,6 +59,7 @@ export default function Decks() {
     setDeck(null);
     setHistory([]);
     setStudioHistory([]);
+    setActivePlays([]);
     refreshState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cid, deepLinkDeckId]);
@@ -85,14 +87,16 @@ export default function Decks() {
 
   const refreshState = async () => {
     try {
-      const [{ data: q }, { data: list }, { data: studio }] = await Promise.all([
+      const [{ data: q }, { data: list }, { data: studio }, { data: plays }] = await Promise.all([
         api.get(`/llm/quota?surface=deck`),
         api.get(`/contexts/${cid}/decks?limit=10`),
         api.get(`/contexts/${cid}/studio/history?limit=20`).catch(() => ({ data: { items: [] } })),
+        api.get(`/contexts/${cid}/plays`).catch(() => ({ data: { plays: [] } })),
       ]);
       setQuota(q);
       setHistory(list?.items || []);
       setStudioHistory(studio?.items || []);
+      setActivePlays((plays?.plays || []).filter((p) => ["active", "paused"].includes(p.status)));
     } catch (e) { /* silent */ }
   };
 
@@ -145,6 +149,9 @@ export default function Decks() {
               history={history}
               onResume={(deckId) => loadDeck(cid, deckId, setDeck, setView)}
             />
+            {activePlays.length > 0 && (
+              <ActiveWorkflowsRail plays={activePlays} />
+            )}
             {studioHistory.length > 0 && (
               <StudioHistoryStrip
                 items={studioHistory}
@@ -664,6 +671,20 @@ function DeckStep({ deck, contextId, onUpdated, onNew }) {
             </ul>
           </div>
         )}
+        {engagement?.readers_locked && engagement?.unique_readers > 0 && (
+          <div className="mt-4 pt-4 border-t border-[var(--rule)]" data-testid="decks-readers-locked">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)] mb-1.5">
+              Read by
+            </p>
+            <p className="text-[12.5px] text-[var(--deep)] leading-relaxed">
+              <span className="text-[var(--accent)] tabular-nums font-medium">{engagement.unique_readers}</span>
+              {" "}unique reader{engagement.unique_readers === 1 ? "" : "s"} so far ·{" "}
+              <a href="/app/settings?tab=billing" className="text-[var(--accent)] hover:underline" data-testid="decks-readers-upgrade-link">
+                Upgrade to Pro to see who
+              </a>
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Quality check */}
@@ -966,6 +987,70 @@ function StudioHistoryStrip({ items, contextId, onOpenDeck }) {
                 <ExposurePill exposure={it.exposure} />
               </div>
             </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// ActiveWorkflowsRail — iter66 workflows-as-journeys fold-in.
+// Surfaces in-progress Plays (Board Pack journey, etc.) on the Studio
+// surface so users see their active production workflows alongside
+// finished artefacts. Click → /app/plays/{play_id} deep link.
+// ---------------------------------------------------------------------------
+function ActiveWorkflowsRail({ plays }) {
+  return (
+    <section className="mt-12 mb-2" data-testid="studio-active-workflows">
+      <div className="flex items-baseline justify-between mb-4">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]">
+            Active workflows
+          </p>
+          <p className="akki-serif text-2xl text-[var(--ink)] mt-1">
+            Journeys in progress
+          </p>
+        </div>
+        <a
+          href="/app/plays"
+          className="text-[11px] uppercase tracking-[0.16em] text-[var(--muted)] hover:text-[var(--accent)]"
+          data-testid="studio-active-workflows-all"
+        >
+          View all
+        </a>
+      </div>
+      <ul className="grid sm:grid-cols-2 gap-3" data-testid="studio-active-workflows-list">
+        {plays.slice(0, 4).map((p) => (
+          <li
+            key={p.id}
+            className="bg-white border border-[var(--rule)] rounded-sm px-5 py-4 hover:border-[var(--accent)] cursor-pointer transition-colors"
+            data-testid={`studio-active-play-${p.id}`}
+            onClick={() => window.location.assign(`/app/plays/${p.id}`)}
+          >
+            <div className="flex items-center justify-between gap-3 mb-1.5">
+              <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">
+                {p.play_type?.replace(/_/g, " ") || "Workflow"}
+              </span>
+              <span
+                className={`text-[10px] uppercase tracking-[0.14em] px-1.5 py-0.5 rounded-sm ${
+                  p.status === "paused"
+                    ? "bg-amber-50 text-amber-900 border border-amber-200"
+                    : "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                }`}
+              >
+                {p.status}
+              </span>
+            </div>
+            <p className="akki-serif text-[15px] text-[var(--ink)] leading-snug truncate">
+              {p.title || p.name || "(Untitled play)"}
+            </p>
+            {p.current_step_label && (
+              <p className="text-[11.5px] text-[var(--muted)] mt-1 line-clamp-1">
+                Currently: {p.current_step_label}
+              </p>
+            )}
           </li>
         ))}
       </ul>

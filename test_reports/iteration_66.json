@@ -1,0 +1,44 @@
+{
+  "summary": "Iter66 testing — 9/9 backend pytest GREEN (~6s) covering plan-gated readers (free → readers_locked=true + readers=[] + plan='free' + unique_readers count populated; pro → readers_locked=false + full PII readers[] with name/email/first/last_viewed/view_count) and the LLM tiebreaker (regex-only path, fallback_only short-circuit on confident bands, short-text short-circuit, no-downgrade preservation, restricted-bump with llm_tiebreaker_used=true + 'LLM tiebreaker · ' reason prefix, endpoint accepts ?use_llm=true). Plays endpoint listing also confirmed (2 active plays for fb4df969 — Board Pack + Pre-Board). Frontend: decks readers-locked card renders correctly on free plan with text '1 unique reader so far · Upgrade to Pro to see who' and link href /app/settings?tab=billing — VERIFIED. Active Workflows rail renders on /app/decks intent step with 2 tiles (Board Pack ACTIVE, Pre-Board ACTIVE), positioned ABOVE studio-history (rail_y=1436 vs history_y=1634), tile click handled by onClick→window.location.assign('/app/plays/{id}') (not <a>, but functionally equivalent). Iter64 regression: 20 studio-history rows still render. Iter65 regression: deep-link /app/decks/{deckId} cross-context resolver still works (auto-switched from default Tuli CFO ctx to Tuli NED fb4df969). CRITICAL BUG FOUND: /app/prepare#brief-{id} hash handler is broken — Prepare component throws 'ReferenceError: Cannot access openBriefById before initialization' (TDZ violation). The iter66 useEffect at lines 136-146 references openBriefById in its dependency array AND body, but openBriefById is declared with const at line 148 (AFTER the useEffect). Page crash blocks the entire Catch-up surface when navigated with the hash; without the hash the page also hard-crashes on load because the useEffect itself runs on every cid-mount. Hash is NOT stripped (replaceState never executes). Brief tab does NOT switch. Briefing modal does NOT open. This is a showstopper for the iter66 hash anchor feature AND breaks the entire /app/prepare route.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Prepare.jsx",
+        "issue": "ReferenceError: Cannot access 'openBriefById' before initialization. The iter66 hash-handler useEffect (lines 136-146) is declared BEFORE the useCallback that defines openBriefById (line 148). Since the useEffect dependency array `[cid, openBriefById]` and the body both read openBriefById synchronously, React throws a TDZ error on every render of Prepare — not just when the hash is present. This crashes the entire /app/prepare route.",
+        "selector": "/app/prepare and /app/prepare#brief-{id}",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Catch-up briefing deep-link from Studio history",
+        "issue": "Hash handler never runs (Prepare crashes before useEffect fires). Hash is not stripped from URL, brief tab does not switch, briefing modal does not open.",
+        "affected_selectors": ["[data-testid=\"prepare-brief-tab\"]", "[data-testid=\"prepare-brief-detail\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter66_studio_engagement.py",
+    "/app/test_reports/pytest/iter66.xml"
+  ],
+  "action_items": [
+    "FIX (CRITICAL): Move the `const openBriefById = useCallback(async (idOrItem) => {...}, [cid]);` block (currently at Prepare.jsx line 148) ABOVE the iter66 hash-handler useEffect (currently at line 136). This resolves the TDZ ReferenceError and unblocks both the hash deep-link AND the rest of the Prepare route. Recommended order: declare openBriefById first → then the hash useEffect. After the fix, retest /app/prepare#brief-{id} for: (a) auto-switch to Brief tab, (b) modal opens, (c) hash stripped via replaceState, (d) silent no-op when briefId doesn't exist."
+  ],
+  "critical_code_review_comments": [
+    "Prepare.jsx 136-155: Classic JS hoisting trap with const + useCallback. const declarations are hoisted but in TDZ until the line is evaluated; the useEffect at line 136 captures `openBriefById` via its dep array which is evaluated when the function component body runs, BEFORE line 148 is reached. Result: every render of Prepare throws. Move the useCallback above the useEffect (or convert openBriefById to a regular async function declared before the effect — both fix TDZ).",
+    "ActiveWorkflowsRail tile clickability uses `onClick + window.location.assign` instead of a proper <Link to=...> from react-router-dom. Functionally works but bypasses SPA routing (causes a full page reload, loses scroll/state, defeats router prefetch). Consider switching to `<Link to={`/app/plays/${p.id}`}>` for consistency with the rest of the surface.",
+    "studio.py engagement endpoint correctly defaults plan to 'free' when account.plan is missing. Plan check normalises to lowercase and accepts only 'pro'/'team' for unlocking — clean.",
+    "studio_sensitivity.score_sensitivity_with_llm_tiebreaker: fallback_only short-circuit + 200-char minimum + no-downgrade rule are all defensible defaults. Good belt-and-braces: even if call_llm raises, the fn falls back to the regex result. The band_order map encodes the ladder once — easy to extend.",
+    "Decks.jsx 152: `activePlays.length > 0` gates the rail, but the parent already filters to active/paused on line 99. Consider using a single derived value to avoid double-source-of-truth confusion if statuses ever drift."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter66_studio_engagement.py"],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "75% (3 of 4 review-request bullets verified — readers nudge ✓, active-workflows rail ✓, deep-link cross-ctx regression ✓; hash anchor handler BROKEN by TDZ crash)"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (free plan, plan field unset)",
+  "seed_data_creation": "Backend tests seed/cleanup their own studio_views row + dummy reader account (TEST- prefix, _test_seed=true marker). Frontend test seeded one extra non-owner view on deck 4e3c01df-... in fb4df969 ctx — CLEANED UP at end (deleted 1 view + 1 account). Plan flips on bramuel restored to unset.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "After main agent fixes the Prepare.jsx TDZ (move openBriefById useCallback above the hash useEffect at line 136), retest by: (1) navigating to https://vigilant-kalam-4.preview.emergentagent.com/app/prepare#brief-23d4d509-b080-4ad3-a894-28eefec12088 (a real briefing in fb4df969 ctx — but the active ctx must first be switched there; do this by visiting /app/decks/4e3c01df-7244-45a8-ba7e-deb8b93381a7 first to trigger the cross-ctx resolver). After fix, expect: page does NOT crash, brief tab is active (data-testid=\"prepare-brief-tab\" present), brief modal opens (data-testid=\"prepare-brief-detail\"), URL hash is stripped after one fire. (2) Also retest with a non-existent brief id e.g. #brief-deadbeef — should silently no-op with a toast, NOT crash. Backend tests already cover everything else and pass cleanly. Active plays in fb4df969 ctx: b896c7a2-1244-4c6a-9110-59f0991ac851 + a01b1216-62ba-4a23-a297-ff3da35a6cf0 (both status=active).",
+  "rca of the issue": "Prepare.jsx hash handler crash · ROOT CAUSE: ReferenceError 'Cannot access openBriefById before initialization' caused by a JavaScript Temporal Dead Zone violation. const + useCallback declarations are hoisted but inaccessible until the line where they're assigned. The iter66 useEffect at line 136 lists `openBriefById` in its dependency array (line 146) and calls it in the body (line 143); both run during the function component's render pass, but `openBriefById` isn't assigned until line 148. RESULT: render throws on every mount of /app/prepare, blowing up the entire Catch-up route — not only the hash flow. REPRO: Visit /app/prepare while logged in (with or without #brief- hash). REPLAYS: 100% deterministic. MITIGATION: Move lines 148-155 (the openBriefById useCallback block) ABOVE the iter66 useEffect block (currently lines 133-146). One-line reordering. After the fix, the page renders, the hash handler fires when present, the modal opens, and the hash is stripped via history.replaceState."
+}

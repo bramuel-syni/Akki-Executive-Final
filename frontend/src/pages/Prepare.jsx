@@ -130,6 +130,21 @@ export default function Prepare() {
 
   useEffect(() => { loadBriefs(); loadSignals(); loadMinutes(); }, [loadBriefs, loadSignals, loadMinutes]);
 
+  // Iter66 — hash anchor handler: /app/prepare#brief-{id} (set by Studio
+  // history strip when user clicks a briefing row) auto-switches to the
+  // Brief tab and opens the briefing in its modal.
+  useEffect(() => {
+    if (typeof window === "undefined" || !cid) return;
+    const hash = window.location.hash || "";
+    const m = hash.match(/^#brief-([\w-]+)$/);
+    if (!m) return;
+    const briefId = m[1];
+    setTab("brief");
+    openBriefById(briefId);
+    // Strip the hash so reloads don't re-trigger the modal.
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  }, [cid, openBriefById]);
+
   const openBriefById = useCallback(async (idOrItem) => {
     const id = typeof idOrItem === "string" ? idOrItem : idOrItem?.id;
     if (!id || !cid) return;

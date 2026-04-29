@@ -162,25 +162,32 @@ async def get_engagement(
     unique_readers = len({v["account_id"] for v in non_owner_views})
     total_view_count = sum((v.get("view_count") or 1) for v in views)
 
-    # Pull reader display names (best-effort, public-safe fields only).
-    reader_account_ids = list({v["account_id"] for v in non_owner_views})
-    reader_docs = await db.accounts.find(
-        {"id": {"$in": reader_account_ids}},
-        {"_id": 0, "id": 1, "name": 1, "email": 1},
-    ).to_list(length=200) if reader_account_ids else []
-    reader_map = {a["id"]: a for a in reader_docs}
-    readers = []
-    for v in non_owner_views:
-        a = reader_map.get(v["account_id"], {})
-        readers.append({
-            "account_id": v["account_id"],
-            "name": a.get("name") or "—",
-            "email": a.get("email") or "—",
-            "first_viewed_at": v.get("first_viewed_at"),
-            "last_viewed_at": v.get("last_viewed_at"),
-            "view_count": v.get("view_count", 1),
-        })
-    readers.sort(key=lambda r: r.get("last_viewed_at") or "", reverse=True)
+    # iter66 — plan gating. Free users see the COUNT of unique readers
+    # (so they understand exposure) but not the full PII list.
+    # Pro/Team accounts see the full readers[] with names + emails.
+    plan = (ctx["account"].get("plan") or "free").lower()
+    show_full_readers = plan in ("pro", "team")
+
+    readers: List[Dict[str, Any]] = []
+    if show_full_readers:
+        # Pull reader display names (best-effort, public-safe fields only).
+        reader_account_ids = list({v["account_id"] for v in non_owner_views})
+        reader_docs = await db.accounts.find(
+            {"id": {"$in": reader_account_ids}},
+            {"_id": 0, "id": 1, "name": 1, "email": 1},
+        ).to_list(length=200) if reader_account_ids else []
+        reader_map = {a["id"]: a for a in reader_docs}
+        for v in non_owner_views:
+            a = reader_map.get(v["account_id"], {})
+            readers.append({
+                "account_id": v["account_id"],
+                "name": a.get("name") or "—",
+                "email": a.get("email") or "—",
+                "first_viewed_at": v.get("first_viewed_at"),
+                "last_viewed_at": v.get("last_viewed_at"),
+                "view_count": v.get("view_count", 1),
+            })
+        readers.sort(key=lambda r: r.get("last_viewed_at") or "", reverse=True)
 
     # Shares: reuse existing shares collection for briefings; for decks
     # we look at studio_shares (recorded explicitly when a user shares a
@@ -208,6 +215,8 @@ async def get_engagement(
         "view_count": total_view_count,
         "unique_readers": unique_readers,
         "readers": readers,
+        "readers_locked": not show_full_readers,
+        "plan": plan,
         "share_count": shares,
         "external_share_count": external_shares,
         "exposure": expo,
@@ -260,11 +269,20 @@ async def rescore_sensitivity(
     context_id: str,
     kind: str,
     artefact_id: str,
+    use_llm: bool = False,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
+    """Re-score an artefact's sensitivity. `use_llm=true` invokes the LLM
+    tiebreaker (iter66) — only escalates when regex returns the ambiguous
+    'internal' band; never downgrades. Costs one standard-tier LLM call
+    when triggered."""
     artefact = await _resolve_artefact(context_id, kind, artefact_id)
-    from studio_sensitivity import score_sensitivity
-    sensitivity = score_sensitivity(artefact)
+    if use_llm:
+        from studio_sensitivity import score_sensitivity_with_llm_tiebreaker
+        sensitivity = await score_sensitivity_with_llm_tiebreaker(artefact)
+    else:
+        from studio_sensitivity import score_sensitivity
+        sensitivity = score_sensitivity(artefact)
     coll = db.decks if kind == "deck" else db.briefings
     await coll.update_one(
         {"id": artefact_id, "context_id": context_id},
