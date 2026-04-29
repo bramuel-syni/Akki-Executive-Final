@@ -118,6 +118,7 @@ function App() {
           <Route path="/app/manage" element={<ProtectedRoute><Manage /></ProtectedRoute>} />
           <Route path="/app/enterprise" element={<ProtectedRoute><Enterprise /></ProtectedRoute>} />
           <Route path="/app/decks" element={<ProtectedRoute><Decks /></ProtectedRoute>} />
+          <Route path="/app/decks/:deckId" element={<ProtectedRoute><Decks /></ProtectedRoute>} />
           <Route path="/app/solve" element={<ProtectedRoute><AppSolve /></ProtectedRoute>} />
           <Route path="/app/documents/:id" element={<ProtectedRoute><DocumentViewer /></ProtectedRoute>} />
           <Route path="/app/contexts" element={<ProtectedRoute><ContextPortfolio /></ProtectedRoute>} />

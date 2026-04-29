@@ -2109,3 +2109,70 @@ P2: Decks UI E2E retest after midnight; max-of-window label phrasing on
 - **Per-account quality-score threshold env-override**: hard-coded as
   `QUALITY_ALERT_THRESHOLD=55, WINDOW=5, MIN_HITS=3`. Promote to env vars
   (`AKKI_QUALITY_ALERT_*`) when ops want to tune.
+
+### 2026-04-29 — iter58 · AKKI Solve surfacing + Walk-in card + backlog clear
+**Branding & positioning**
+- "Solve" → **"AKKI Solve"** everywhere. Tagline locked:
+  *"For the board problems that don't have tidy answers."*
+- Public landing page (`/`) now has a dedicated dark-themed Solve section
+  (`landing-solve-section`) anchored after the three-guarantees rubric;
+  eyebrow nav button (`landing-nav-solve`) makes it the first thing a
+  returning visitor sees.
+- New public marketing page **`/solve`** (SolveLanding.jsx): hero, 4-phase
+  framework explainer, vs-Chat comparison, two CTAs.
+- New in-app placeholder **`/app/solve`** (AppSolve.jsx) with
+  notify-when-ready interest capture. Sidebar nav item placed between Chat
+  and Workflows with a "Preview" pill.
+
+**Walk-in question card (the iter57 improvement, shipped)**
+- New backend endpoint `POST /api/walkin {kind,artefact_id,context_id}`.
+  Sonnet-tier (free of deep budget). Cached on the artefact under
+  `walkin_question`. Idempotent: subsequent calls return `cached:true`.
+- `POST /api/walkin/regenerate` clears cache and re-runs.
+- Supports `kind ∈ {brief, minutes, deck}`. Membership-gated.
+- Frontend `<WalkInCard>` component wired into:
+  - `/app/decks` (after slides),
+  - `/app/prepare → BriefDetailModal` (under brief body),
+  - `/app/prepare → MinutesExtractDetail` (under narrative).
+- Each card shows: "Walk in with this question" (oxblood overline) →
+  the question in serif italics → a why-line → "New" + "Continue in Chat" actions.
+- Verified live: deck question came back as
+  *"If our highest-risk AI model failed silently today, how many days
+  until someone in this room would know — and who would tell us?"*
+
+**Backlog cleared**
+- **Decks outline iteration chip**: when `outline.iteration ≥ 2`, surface
+  "Iteration N · still no deep slot used" + "Tightened from your last
+  feedback" if learning_hint_used is set (`decks-outline-iteration-chip`).
+- **Activity weekly grouping**: when timeline span ≥ 7 days, day headers
+  collapse to "Week of <Mon date>" instead of `Friday, 28 April`. Span <7
+  keeps day-of-week labels.
+- **Deck deep-link routing**: `/app/decks/:deckId` opens the deck review
+  surface directly. Falls back silently to intent if not found.
+- **`app-solve-thanks` testid** added to AppSolve.jsx thanks state.
+
+### Tests
+- iter58: backend 12/12 + frontend 5/5 (after testing-agent fixed a
+  duplicate `Layers` import that crashed the whole app — caught early,
+  fixed in the same iteration).
+- Reports: `/app/test_reports/iteration_58.json`,
+  `/app/test_reports/screenshots_iter58_*.jpg`.
+
+### Open / deferred
+- AKKI Solve full module build (waves 1-3) — APPROVED with these
+  refinements:
+  - Pushback 1 (integrations): all approved.
+  - Pushback 2 (cost): build a **Pro tier budget model** — paid users
+    get the highest-quality model, free users get Sonnet-streamed
+    synthesis with Opus opt-in via existing deep quota.
+  - Pushback 3 (triangulation): MUST be in v1 scope; user OK with
+    evolutionary build (start simple, sharpen).
+  - Pushback 4 (cluster expansion at 200+ sessions): approved.
+  - Q2 (save/resume): users get BOTH continue-where-they-were AND
+    start-over options.
+  - Q3 (MVP-of-MVP): ship full framework with all clusters, optimize
+    around the model.
+- ESLint `no-redeclare` rule should be added to CI to prevent the kind
+  of duplicate-import regression iter58 hit.
+- `/admin/llm-spend?panel=decks` deep-link routing (admin-side analog
+  of the deck deep-link we just added).

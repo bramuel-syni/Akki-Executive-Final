@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
@@ -34,6 +35,7 @@ const REGEN_REASON_LABEL = {
 export default function Decks() {
   const { activeContext } = useAuth();
   const cid = activeContext?.id;
+  const { deckId: deepLinkDeckId } = useParams();
 
   const [view, setView] = useState("intent"); // intent | outline | deck
   const [outline, setOutline] = useState(null);
@@ -46,6 +48,18 @@ export default function Decks() {
     refreshState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cid]);
+
+  // Iter58 — deep-link support: /app/decks/:deckId opens that deck's review
+  // surface directly. Required for shareable links AND for QA. Falls back
+  // silently to the intent screen if the deck isn't accessible.
+  useEffect(() => {
+    if (!cid || !deepLinkDeckId) return;
+    let live = true;
+    api.get(`/contexts/${cid}/decks/${deepLinkDeckId}`)
+      .then((r) => { if (live) { setDeck(r.data); setView("deck"); } })
+      .catch(() => { /* silent — leaves user on intent screen */ });
+    return () => { live = false; };
+  }, [cid, deepLinkDeckId]);
 
   const refreshState = async () => {
     try {

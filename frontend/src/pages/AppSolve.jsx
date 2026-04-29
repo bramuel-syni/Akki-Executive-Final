@@ -80,7 +80,7 @@ export default function AppSolve() {
 
         <section className="bg-[var(--cream-deep)]/40 border border-[var(--rule)] rounded-sm p-7" data-testid="app-solve-notify">
           {notified ? (
-            <div className="flex items-start gap-4">
+            <div className="flex items-start gap-4" data-testid="app-solve-thanks">
               <Check className="w-6 h-6 text-[var(--accent)] mt-1" strokeWidth={1.7} />
               <div>
                 <h3 className="akki-serif text-[20px] text-[var(--ink)] mb-1">Noted.</h3>

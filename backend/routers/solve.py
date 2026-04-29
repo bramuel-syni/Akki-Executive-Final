@@ -1,7 +1,9 @@
 """AKKI Solve · interest registration (pre-launch).
 
 Captures early-access expressions from inside the app and via the public
-landing page. Same idempotency pattern as the Enterprise lead-gen surface.
+landing page. Uses an append-only audit pattern (every submission is a new
+row) — same as the Enterprise lead-gen surface — so we keep the full
+intent timeline. /me returns the latest record.
 """
 from __future__ import annotations
 
