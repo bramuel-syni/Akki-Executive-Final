@@ -1,0 +1,22 @@
+{
+  "summary": "Iter60 RETEST — cookie-poisoning fix VERIFIED end-to-end in browser. Phase A (clean), Phase B (stale-cookie planted before /sandbox), and Phase C (post-handoff /app/settings?tab=account navigation) all PASS. Stale-cookie sandbox flow now lands on /app?tutorial=1 (previously bounced to /signin). Subsequent /app/settings?tab=account navigation stays put — every authenticated /api/* call returns 200, including /api/contexts/{id}/members, /audit-log, /invitations, /accounts/me/consent-decisions. The Bearer-first ordering in core.py::get_current_account is doing the heavy lifting: even though the planted GARBAGE cookie (153-char invalid JWT) is still present in browser cookies after the flow completes, the backend ignores it because the valid Bearer header decodes first. AuthContext.bootstrap's logout fallback didn't need to fire because /auth/me succeeded on the first try via Bearer.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "Live Playwright run via mcp_browser_automation against https://vigilant-kalam-4.preview.emergentagent.com — see iteration_60 inline trace (sessionIds: aqbn6RDQzpa97Dq7 clean run, TPJ8QQ1XAt4Eko6t stale-cookie run)"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "core.py::get_current_account fix is clean and minimal — tries Bearer first, falls back to cookie, attempts each candidate fully (decode + type check + account lookup) before giving up. last_error tracking gives useful 401 reasons. Idempotent and safe to call concurrently.",
+    "Side note (NOT blocking): in Phase B/C the stale GARBAGE access_token cookie is STILL present in the browser after the flow completes (len=153 vs the real 271-char JWT in localStorage). Because the Bearer header always decoded first, AuthContext.bootstrap's catch-and-logout never fired, so the bad cookie was never actively cleared. This is functionally fine (Bearer-first ordering ensures auth succeeds), but if a user ever lands in a browser with the cookie present AND no Bearer (e.g., a fresh tab where localStorage was cleared but cookies persisted), they'd 401. Optional improvement: have set_auth_cookies be called proactively on the sandbox handoff response, OR have AuthContext.afterAuth issue a /auth/logout-then-bootstrap dance when it detects an account_id mismatch between localStorage Bearer and the cookie. Not required to close this ticket.",
+    "AuthContext.bootstrap catch handler now correctly clears both credentials (localStorage Bearer + best-effort POST /auth/logout). The try/catch around the logout call is correct — failing logout shouldn't break the catch flow."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (no API tests this iteration)", "frontend": "100% — 3/3 phases pass"},
+  "test_credentials": "No login required — anonymous sandbox flow",
+  "seed_data_creation": "Two transient sandbox accounts created via /api/sandbox/generate (sids: aqbn6RDQzpa97Dq7, TPJ8QQ1XAt4Eko6t). Self-expire per the 14-day sandbox window.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter60 closes the cookie-poisoning bug from iter59. Phase A (clean), Phase B (stale-cookie planted before sandbox handoff), Phase C (post-handoff settings nav) all green. The fix lives in /app/backend/core.py lines 72-126 (Bearer-first try-then-fallback) and /app/frontend/src/contexts/AuthContext.jsx lines 68-79 (bootstrap catch now also POSTs /auth/logout). Note for future regressions: the stale cookie isn't actively scrubbed when Bearer-first auth succeeds — see critical_code_review_comments[1] for an optional follow-up.",
+  "rca of the issue": "Iter59 RCA still authoritative. Iter60 retest confirms the fix lands the bug. Reproduction steps (verified live): (1) page.context.add_cookies([{name:'access_token', value:<garbage JWT>, domain, path:'/', secure:true, sameSite:'None', httpOnly:true}]); (2) POST /api/sandbox/generate to create a session; (3) navigate to /sandbox/generating/{sid}; (4) wait for handoff. Pre-fix: bounced to /signin because backend's cookie-first lookup decoded the garbage cookie and 401'd. Post-fix: lands on /app?tutorial=1 because backend tries the Bearer header first, decodes successfully, returns the sandbox account."
+}

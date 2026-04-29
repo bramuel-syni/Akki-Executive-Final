@@ -68,11 +68,14 @@ export function AuthProvider({ children }) {
     } catch {
       setAccount(false);
       setContexts([]);
-      // If /auth/me failed, the stored Bearer token (if any) is stale or
-      // invalid. Drop it so the next successful login isn't shadowed by
-      // a poisoned header. The active-context preference is preserved —
-      // it's harmless to keep and helps re-routing after a new login.
+      // If /auth/me failed, BOTH credentials (Bearer + cookie) are
+      // suspect — the iter59 bug taught us that just clearing one leaves
+      // the other to keep poisoning future requests. Drop the localStorage
+      // Bearer AND best-effort POST /auth/logout so the server-side cookie
+      // is cleared too. Errors on logout are ignored on purpose: it's a
+      // self-healing courtesy, not a hard requirement.
       try { window.localStorage.removeItem("akki_access_token"); } catch { /* noop */ }
+      try { await api.post("/auth/logout"); } catch { /* noop — best effort */ }
     }
   }, [activeContextId, activeRole]);
 

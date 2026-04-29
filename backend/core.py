@@ -70,25 +70,60 @@ async def write_audit(
 # Auth dependencies
 # -----------------------------------------------------------------------------
 async def get_current_account(request: Request) -> Dict[str, Any]:
-    token = request.cookies.get("access_token")
-    if not token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-    if not token:
+    """Authenticate the request.
+
+    Tries every credential the request carries and accepts the first one
+    that decodes to a valid access token. Order tried:
+      1) Authorization: Bearer header (used by the anonymous sandbox flow
+         and any client that prefers explicit auth).
+      2) access_token cookie (the regular signed-in session).
+
+    Iter59 — fixed cookie-first ordering bug. Previously a stale or
+    expired access_token cookie from a prior session would short-circuit
+    the lookup with a 401, even when the request also carried a perfectly
+    valid Bearer JWT (sandbox handoff). The user would then be bounced
+    to /signin and stuck because the bad cookie continued to poison
+    every subsequent request. Trying every token until one works makes
+    the auth path self-healing for clients with mixed credentials.
+    """
+    candidates: list[tuple[str, str]] = []
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        bearer = auth_header[7:].strip()
+        if bearer:
+            candidates.append(("bearer", bearer))
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token:
+        candidates.append(("cookie", cookie_token))
+
+    if not candidates:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    if payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Invalid token type")
-    account = await db.accounts.find_one({"id": payload["sub"]}, {"_id": 0})
-    if not account:
-        raise HTTPException(status_code=401, detail="Account not found")
-    return account
+
+    last_error: HTTPException | None = None
+    for source, token in candidates:
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+        except jwt.ExpiredSignatureError:
+            last_error = HTTPException(status_code=401, detail="Token expired")
+            continue
+        except jwt.InvalidTokenError:
+            last_error = HTTPException(status_code=401, detail="Invalid token")
+            continue
+        if payload.get("type") != "access":
+            last_error = HTTPException(status_code=401, detail="Invalid token type")
+            continue
+        account = await db.accounts.find_one({"id": payload["sub"]}, {"_id": 0})
+        if not account:
+            last_error = HTTPException(status_code=401, detail="Account not found")
+            continue
+        # First credential that fully validates wins. We deliberately
+        # don't track which source authenticated the request — both are
+        # equally trusted once the JWT signature checks out.
+        return account
+
+    # All candidates failed; bubble up the last error so logs are useful.
+    assert last_error is not None
+    raise last_error
 
 
 def require_context_membership(owner_only: bool = False):
