@@ -69,6 +69,8 @@ from routers import admin_llm_spend as admin_llm_spend_router  # noqa: E402
 from routers import decks as decks_router  # noqa: E402
 from routers import solve as solve_router  # noqa: E402
 from routers import walkin as walkin_router  # noqa: E402
+from routers import admin_auth_events as admin_auth_events_router  # noqa: E402
+from routers import solve_engine as solve_engine_router  # noqa: E402
 
 
 logger = logging.getLogger("akki")
@@ -121,6 +123,8 @@ app.include_router(admin_llm_spend_router.router)
 app.include_router(decks_router.router)
 app.include_router(solve_router.router)
 app.include_router(walkin_router.router)
+app.include_router(admin_auth_events_router.router)
+app.include_router(solve_engine_router.router)
 
 
 # -----------------------------------------------------------------------------
@@ -226,6 +230,28 @@ async def on_startup():
         [("account_id", 1), ("surface", 1), ("day_utc", 1)], unique=True,
     )
     await db.llm_deep_usage.create_index([("day_utc", 1)])
+
+    # Iter61 — auth observability. Sampled events for the
+    # /admin/auth/events panel. Time-ordered queries are the only access
+    # pattern, so a single descending index on `at` is enough.
+    await db.auth_events.create_index([("at", -1)])
+
+    # Iter61 — Solve sessions. Resume queries are scoped per account and
+    # ordered by recency; admin views by cluster. Two indexes is enough.
+    await db.solve_sessions.create_index([("account_id", 1), ("updated_at", -1)])
+    await db.solve_sessions.create_index([("cluster_id", 1), ("started_at", -1)])
+    await db.solve_clusters.create_index("id", unique=True)
+
+    # Iter61 — seed the cluster taxonomy. Idempotent; operator edits in
+    # Mongo survive redeploys.
+    try:
+        from solve_clusters_seed import seed_solve_clusters
+        seed_result = await seed_solve_clusters(db)
+        if seed_result["seeded_count"]:
+            logger.info("Seeded %d Solve clusters: %s",
+                        seed_result["seeded_count"], seed_result["ids"])
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Solve cluster seeding skipped: %s", e)
 
     # Inbound-email idempotency
     await db.accounts.create_index("inbound_token", sparse=True)

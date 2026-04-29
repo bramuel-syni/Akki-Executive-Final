@@ -29,6 +29,7 @@ import HealthDashboard from "@/pages/admin/HealthDashboard";
 import SandboxKPI from "@/pages/admin/SandboxKPI";
 import SignalKPI from "@/pages/admin/SignalKPI";
 import LLMSpend from "@/pages/admin/LLMSpend";
+import AuthEvents from "@/pages/admin/AuthEvents";
 import AdminIndex from "@/pages/admin/AdminIndex";
 import QuickResults from "@/pages/QuickResults";
 import Manage from "@/pages/Manage";
@@ -111,6 +112,7 @@ function App() {
           <Route path="/admin/sandbox-kpi" element={<ProtectedRoute><SandboxKPI /></ProtectedRoute>} />
           <Route path="/admin/signal-kpi" element={<ProtectedRoute><SignalKPI /></ProtectedRoute>} />
           <Route path="/admin/llm-spend" element={<ProtectedRoute><LLMSpend /></ProtectedRoute>} />
+          <Route path="/admin/auth-events" element={<ProtectedRoute><AuthEvents /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute><AdminIndex /></ProtectedRoute>} />
           <Route path="/app/quick-results/:contextId/:docId" element={<ProtectedRoute><QuickResults /></ProtectedRoute>} />
           <Route path="/app/learn" element={<ProtectedRoute><Learn /></ProtectedRoute>} />

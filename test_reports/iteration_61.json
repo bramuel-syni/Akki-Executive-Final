@@ -1,0 +1,40 @@
+{
+  "summary": "Iter61 backend + frontend regression — AKKI Solve Wave 1 (4-phase engine, 12 clusters, restart/abandon, list/sort) + Walk-in context hint + /admin/auth/events. 12/12 backend pytest pass against live LLM (Sonnet) and live MongoDB. Frontend: /app/solve picker → IntentView → SessionView → Surface→Depth phase advance verified end-to-end in browser with real LLM responses (~100s total).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/admin/auth/events", "issue": "Endpoint path is /api/admin/auth/events (not /api/admin/auth-events as described in the review request prose). Frontend route /admin/auth-events is correct; backend just lives at /api/admin/auth/events. No bug — flagging for clarity."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter61_solve_engine.py",
+    "/app/test_reports/pytest/iter61_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "solve_engine.py is clean — 4-phase state machine is straight-line, idempotent appends, persists turns on every step. _generate_phase_response correctly switches tier=deep only when phase==synthesis AND session.pro_tier; other phases stay on Sonnet so synthesis is the only deep slot consumed.",
+    "solve_clusters_seed.py seeder is idempotent (find_one then insert if missing) — operator MongoDB edits survive a redeploy as documented.",
+    "AppSolve.jsx properly surfaces all required testids (solve-cluster-grid, solve-cluster-{id}, solve-intent-card/use-example/pro-toggle/start, solve-session/turns/composer/input/send, solve-phase-stepper, solve-completed-banner, solve-resume-list/btn/restart-btn). Phase stepper renders all 4 phases, click→intent→session navigation works.",
+    "restart_session reuses start_session's primer path — clean DRY.",
+    "Pro tier path in solve_engine.py:401 uses call_llm_with_tier with surface='solve' — correctly isolated from decks/brief budgets per llm_tier_quota DEFAULT_QUOTAS['solve']=4.",
+    "Note (not blocking): list_my_sessions projection at solve_engine.py:139-144 is fine but could include `synthesis`/`lockin` body counts if the picker ever wants to show 'completed with diagnosis' badges in resume list. Wave 2 concern."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter61_solve_engine.py"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12 passed)",
+    "frontend": "100% on Solve module (picker→intent→session→phase advance verified). Admin auth-events dashboard render not visually verified due to second-login timeout in same session — API verified via backend tests."
+  },
+  "test_credentials": "User: bramuel@syni.ai / TestBramuel2026!  |  Admin: admin@akki.ai / AkkiAdmin2026!",
+  "seed_data_creation": "Created several TEST_iter61 solve sessions during pytest runs — abandoned after testing. Bramuel now has additional completed/abandoned solve_sessions rows.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter61 Solve engine fully covered by /app/backend/tests/test_iter61_solve_engine.py. Reuses BASE_URL via dotenv from /app/frontend/.env. The full 4-phase walkthrough (test_start_advance_complete) takes ~50s of real LLM calls — keep timeout >= 180s. /api/walkin requires {kind, artefact_id, context_id} (live integration covered by main agent's curl). /api/admin/auth/events is the actual backend path; frontend dashboard at /admin/auth-events. Frontend test sample: cluster grid renders 12 tiles, click solve-cluster-revenue_underperformance → intent card → solve-intent-use-example populates 124 chars → solve-intent-start → wait for solve-session (up to 90s) → solve-phase-stepper has 4 li children → send 30+ char reply → wait for turn count >= +2.",
+  "rca of the issue": "n/a — no bugs. All described iter61 features work as specified."
+}

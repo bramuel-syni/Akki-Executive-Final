@@ -12,21 +12,22 @@ import { Activity, Sparkles, BarChart3, Target, ArrowRight, ShieldCheck } from "
 export default function AdminIndex() {
   const { account, loading } = useAuth();
   const [signals, setSignals] = useState({
-    health: null, llm: null, deck: null, sandbox: null, signalKpi: null,
+    health: null, llm: null, deck: null, sandbox: null, signalKpi: null, auth: null,
   });
 
   useEffect(() => {
     if (!account?.is_superadmin) return;
     (async () => {
       const safe = (p) => p.then((r) => r.data).catch(() => null);
-      const [health, llm, deck, sandbox, signalKpi] = await Promise.all([
+      const [health, llm, deck, sandbox, signalKpi, auth] = await Promise.all([
         safe(api.get("/admin/health")),
         safe(api.get("/admin/llm/spend?days=7")),
         safe(api.get("/admin/llm/decks/quality?days=30")),
         safe(api.get("/admin/sandbox/kpi")),
         safe(api.get("/admin/signals/kpi")),
+        safe(api.get("/admin/auth/events?hours=24")),
       ]);
-      setSignals({ health, llm, deck, sandbox, signalKpi });
+      setSignals({ health, llm, deck, sandbox, signalKpi, auth });
     })();
   }, [account]);
 
@@ -94,6 +95,20 @@ export default function AdminIndex() {
             text: `${signals.signalKpi.totals?.acted ?? 0} acts` }
         : null,
       testid: "admin-tile-signals",
+    },
+    {
+      to: "/admin/auth-events",
+      icon: ShieldCheck,
+      title: "Auth events",
+      desc: "Sampled login/auth attempts, failure trends, dual-credential mismatches.",
+      pill: signals.auth
+        ? {
+            tone: signals.auth.failure_rate_pct >= 10 ? "warn" :
+                  signals.auth.dual_credentials_mismatched > 0 ? "warn" : "ok",
+            text: `${signals.auth.failure}/${signals.auth.sampled_events} fail · 24h`,
+          }
+        : null,
+      testid: "admin-tile-auth",
     },
   ];
 

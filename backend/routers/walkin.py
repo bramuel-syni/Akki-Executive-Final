@@ -117,12 +117,38 @@ async def walkin_question(
             detail="Artefact content too short to extract a meaningful walk-in question.",
         )
 
+    # Iter61 — context hint: pull the active context's name + 3 most recent
+    # un-archived signals so the question feels like it's coming from
+    # someone who actually sits on this board, not a generic helper. Same
+    # tier (Sonnet, free of deep budget) — we just give the planner more
+    # to work with.
+    ctx = await db.contexts.find_one(
+        {"id": body.context_id}, {"_id": 0, "name": 1}
+    )
+    ctx_name = (ctx or {}).get("name") or "the company"
+    recent_signals = await db.signals.find(
+        {"context_id": body.context_id, "status": {"$ne": "archived"}},
+        {"_id": 0, "title": 1, "kind": 1},
+    ).sort("created_at", -1).to_list(length=3)
+    signal_lines = "\n".join(
+        f"  · {s.get('title','(untitled)')} ({s.get('kind') or 'signal'})"
+        for s in recent_signals
+    )
+    context_hint = (
+        f"\nCONTEXT: {ctx_name}\n"
+        + (f"RECENT SIGNALS in this room:\n{signal_lines}\n" if signal_lines else "")
+        + "\nThe question should feel like it's coming from someone who sits "
+        "on this board and remembers what's actually been discussed lately, "
+        "not a generic helper. Where natural, lean into the room's specifics.\n"
+    )
+
     prompt = (
         "Read the artefact below. Return ONE crystalline question the user "
         "should walk into their next conversation with — the kind that "
         "earns a sharper answer than the artefact itself contains. Calm, "
-        "specific, no jargon. AKKI editorial voice. Maximum 30 words.\n\n"
-        f"ARTEFACT TITLE: {title}\n\n"
+        "specific, no jargon. AKKI editorial voice. Maximum 30 words.\n"
+        + context_hint
+        + f"\nARTEFACT TITLE: {title}\n\n"
         f"ARTEFACT CONTENT:\n{content[:10000]}\n\n"
         "Return STRICT JSON: {\"question\": \"<the question>\", \"why\": \"<one short line on why this question>\"}"
     )

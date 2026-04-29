@@ -85,6 +85,12 @@ async def get_current_account(request: Request) -> Dict[str, Any]:
     to /signin and stuck because the bad cookie continued to poison
     every subsequent request. Trying every token until one works makes
     the auth path self-healing for clients with mixed credentials.
+
+    Iter61 — sampled observability. The iter59 bug existed in plain sight
+    because the auth dependency had no signal. We now sample 1% of
+    attempts (configurable via AKKI_AUTH_OBSERVE_RATE) and write a row
+    to `auth_events` so /admin/auth/events can surface failure trends
+    before a user reports them.
     """
     candidates: list[tuple[str, str]] = []
     auth_header = request.headers.get("Authorization", "")
@@ -97,33 +103,95 @@ async def get_current_account(request: Request) -> Dict[str, Any]:
         candidates.append(("cookie", cookie_token))
 
     if not candidates:
+        await _record_auth_event(request, ok=False, reason="no_credentials",
+                                 credentials=[], dual_mismatch=False)
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     last_error: HTTPException | None = None
+    failed_sources: list[str] = []
     for source, token in candidates:
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
         except jwt.ExpiredSignatureError:
             last_error = HTTPException(status_code=401, detail="Token expired")
+            failed_sources.append(f"{source}:expired")
             continue
         except jwt.InvalidTokenError:
             last_error = HTTPException(status_code=401, detail="Invalid token")
+            failed_sources.append(f"{source}:invalid")
             continue
         if payload.get("type") != "access":
             last_error = HTTPException(status_code=401, detail="Invalid token type")
+            failed_sources.append(f"{source}:wrong_type")
             continue
         account = await db.accounts.find_one({"id": payload["sub"]}, {"_id": 0})
         if not account:
             last_error = HTTPException(status_code=401, detail="Account not found")
+            failed_sources.append(f"{source}:no_account")
             continue
         # First credential that fully validates wins. We deliberately
         # don't track which source authenticated the request — both are
         # equally trusted once the JWT signature checks out.
+        creds_seen = [s for s, _ in candidates]
+        # Dual-mismatch = both credentials present but they disagreed on
+        # auth outcome (one valid, the other not). Useful early signal
+        # that a user has a stale cookie poisoning their session.
+        dual_mismatch = len(candidates) >= 2 and len(failed_sources) >= 1
+        await _record_auth_event(
+            request, ok=True, reason=None,
+            credentials=creds_seen,
+            dual_mismatch=dual_mismatch,
+            authed_via=source,
+        )
         return account
 
     # All candidates failed; bubble up the last error so logs are useful.
     assert last_error is not None
+    await _record_auth_event(
+        request, ok=False, reason=last_error.detail,
+        credentials=[s for s, _ in candidates],
+        dual_mismatch=False,
+    )
     raise last_error
+
+
+async def _record_auth_event(
+    request: Request,
+    *,
+    ok: bool,
+    reason: str | None,
+    credentials: list[str],
+    dual_mismatch: bool,
+    authed_via: str | None = None,
+) -> None:
+    """Sampled write — best effort. Errors here MUST never leak to the request."""
+    try:
+        rate_str = os.environ.get("AKKI_AUTH_OBSERVE_RATE", "0.01")
+        try:
+            rate = float(rate_str)
+        except ValueError:
+            rate = 0.01
+        # Always sample failures (we want every 401 in the log); sample
+        # successes at the configured rate.
+        if ok and rate < 1.0:
+            import random
+            if random.random() > rate:
+                return
+        from datetime import datetime as _dt, timezone as _tz
+        await db.auth_events.insert_one({
+            "at": _dt.now(_tz.utc).isoformat(),
+            "ok": ok,
+            "reason": reason,
+            "credentials": credentials,
+            "authed_via": authed_via,
+            "dual_mismatch": dual_mismatch,
+            "path": str(request.url.path),
+            "method": request.method,
+        })
+    except Exception:  # noqa: BLE001
+        # Observability MUST be best-effort. A logging failure here would
+        # cascade into request failures and is unacceptable.
+        pass
 
 
 def require_context_membership(owner_only: bool = False):

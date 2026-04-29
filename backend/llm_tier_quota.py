@@ -30,6 +30,7 @@ DEFAULT_QUOTAS: Dict[str, int] = {
     "chat":      30,   # Chat with Opus selected
     "validate":  20,   # High-stakes second-pass validation
     "minutes":    5,   # Minutes → narrative summary / Cycle dispatch
+    "solve":      4,   # AKKI Solve · Pro tier deep synthesis (per session)
 }
 
 
