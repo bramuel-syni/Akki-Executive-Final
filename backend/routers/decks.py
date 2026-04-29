@@ -36,7 +36,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core import db, iso, now, write_audit, require_context_membership
+from core import db, iso, now, write_audit, require_context_membership, get_current_account
 
 logger = logging.getLogger("akki.decks")
 
@@ -588,3 +588,28 @@ def _safe_json(text: str) -> Optional[Dict[str, Any]]:
             return json.loads(m.group(0))
         except Exception:  # noqa: BLE001
             return None
+
+
+
+# ---------------------------------------------------------------------------
+# Context resolver — iter65 deep-link helper.
+# Given just a deck_id, returns the context_id the deck belongs to (only if
+# the calling user is a member of that context). Used by the frontend to
+# auto-switch active context when a /app/decks/{deck_id} deep link points
+# to a deck in a context different from the user's currently-active one.
+# ---------------------------------------------------------------------------
+@router.get("/api/decks/{deck_id}/context")
+async def resolve_deck_context(
+    deck_id: str,
+    account: Dict[str, Any] = Depends(get_current_account),
+):
+    deck = await db.decks.find_one({"id": deck_id}, {"_id": 0, "id": 1, "context_id": 1})
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found.")
+    member = await db.memberships.find_one(
+        {"context_id": deck["context_id"], "account_id": account["id"], "status": "active"},
+        {"_id": 0, "role": 1},
+    )
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a member of this deck's context.")
+    return {"deck_id": deck["id"], "context_id": deck["context_id"]}

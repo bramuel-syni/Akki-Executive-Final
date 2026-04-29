@@ -33,7 +33,7 @@ const REGEN_REASON_LABEL = {
 };
 
 export default function Decks() {
-  const { activeContext } = useAuth();
+  const { activeContext, switchContext } = useAuth();
   const cid = activeContext?.id;
   const { deckId: deepLinkDeckId } = useParams();
 
@@ -62,15 +62,24 @@ export default function Decks() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cid, deepLinkDeckId]);
 
-  // Iter58 — deep-link support: /app/decks/:deckId opens that deck's review
-  // surface directly. Required for shareable links AND for QA. Falls back
-  // silently to the intent screen if the deck isn't accessible.
+  // Iter58/iter65 — deep-link support: /app/decks/:deckId opens that deck's
+  // review surface directly. iter65 fix: if the deck belongs to a context
+  // OTHER than the active one, resolve and switch active context first.
   useEffect(() => {
     if (!cid || !deepLinkDeckId) return;
     let live = true;
     api.get(`/contexts/${cid}/decks/${deepLinkDeckId}`)
       .then((r) => { if (live) { setDeck(r.data); setView("deck"); } })
-      .catch(() => { /* silent — leaves user on intent screen */ });
+      .catch(async () => {
+        // Deck not in active context — try resolving its real context and
+        // switch active context if the user has membership.
+        try {
+          const { data } = await api.get(`/decks/${deepLinkDeckId}/context`);
+          if (!live || !data?.context_id || data.context_id === cid) return;
+          switchContext(data.context_id);
+          // After switching, the cid will change and this effect re-fires.
+        } catch (_) { /* silent — leaves user on intent screen */ }
+      });
     return () => { live = false; };
   }, [cid, deepLinkDeckId]);
 

@@ -2624,3 +2624,115 @@ P2: Decks UI E2E retest after midnight; max-of-window label phrasing on
   visible to everyone; landing-page copy claims it as an Enterprise
   feature so we should soft-gate the readers list (count visible
   free; full readers list locked behind plan check).
+
+
+
+## §iter65 — Marketing landing redesign + live sensitivity demo + deep-link fixes (2026-04-29)
+
+### A · Marketing/landing site redesign
+- Per `/app/design_guidelines.json` (delivered by design_agent_full_stack
+  in iter64). Cream/oxblood preserved; executive navy `#0A1F44`
+  introduced as the third accent on conversion-driving CTAs.
+- New components:
+  - `HeroSection.jsx` — tightened value-promise that lands within the
+    first viewport. "AKKI reads the pack so you can read the room."
+    Subhead aimed at "executives and directors who grow and preserve
+    shareholder value". Single dominant navy CTA: "Try AKKI in 60
+    seconds" → /sandbox. Right-rail pull quote with navy attribution.
+  - `ThreePillars.jsx` — bento grid: **Solve as the dominant card**
+    (8/12 cols, dark, books photo) with the four phases and a
+    "Start a Solve session" CTA. **Cross Board Pulse** sidebar (4/12,
+    library photo) targeted at multi-board NEDs. **Decks + Reports
+    preview row** (12/12) inviting a jump to the Enterprise band.
+  - `EnterpriseFeature.jsx` — full-bleed navy band positioning the
+    Decks + Reports Studio as the enterprise differentiator. Three
+    bullets (auto-sensitivity, read-tracking, exposure score) + cream
+    "Request a team workspace" CTA + outline "Security design" link.
+    Hosts the LIVE SENSITIVITY DEMO.
+- Removed long-winded sections per user feedback:
+  - "Five surfaces / propositions" list — too verbose, replaced by
+    Trust Strip (3 condensed guarantees).
+  - Standalone "Closing call" section — folded into the final inline
+    CTA block.
+  - Dark "Assurance" block — folded into the Trust Strip.
+  - Three-photo strip — one image now lives in Hero pull-quote rail.
+- Editorial pull-quote rewritten: "Adopting tools that preserve value
+  isn't operational — it is a fiduciary duty." Attribution chip uses
+  Exco360 brand mark in navy.
+- Audience cards (NED + Exec) condensed and tightened.
+- Header masthead: Solve nav link routes to `#solve-pillar` anchor;
+  "Request access" button uses navy.
+
+### B · Live sensitivity demo on landing
+- New public endpoint `POST /api/public/studio/sensitivity-demo` —
+  no auth required. Accepts `{text: 4-4000 chars}`, returns the
+  full sensitivity record `{score, classification, label, reasons[]}`
+  plus `input_chars`. No DB write, no LLM call (regex scorer is
+  microsecond-cost).
+- Per-IP rate limit (1.5s window) using `X-Forwarded-For` first hop
+  for k8s ingress-aware throttling (iter65 hardening from testing
+  agent's RCA note). `request.client.host` fallback when XFF absent.
+- Frontend `LiveSensitivityDemo` block inside EnterpriseFeature:
+  textarea with `data-testid="enterprise-demo-input"`, "Use sample"
+  button (`enterprise-demo-sample`), result panel
+  (`enterprise-demo-result`) with classification chip, reasons list.
+  Debounced 800ms after typing; immediate fire on sample. Shows
+  "Slow down a moment…" on 429.
+- Sample content: "Q3 board pack draft… framed customer-concentration
+  story as macro-driven … £45m bolt-on acquisition." Scores
+  Confidential · 50 with M&A / financial-figures / regulator triggers.
+
+### C · Decks deep-link fix (cross-context)
+- New endpoint `GET /api/decks/{deck_id}/context` — given just a
+  deck_id, returns the context_id the deck belongs to (only if the
+  caller has active membership). Powers cross-context deep-link
+  resolution.
+- `Decks.jsx` deep-link effect now fetches the deck under the active
+  `cid` first; if the request fails (deck belongs to a different
+  context), it calls `/decks/{id}/context` and `switchContext()` from
+  AuthContext to pivot the user's active context. Subsequent re-render
+  loads the deck cleanly.
+- Race fix: when `deepLinkDeckId` is present, the [cid] effect skips
+  resetting `view/outline/deck` so the deep-link can win the load
+  race. Verified end-to-end: navigating to /app/decks/{id} from a
+  fresh browser auto-switches context AND loads the DeckStep with
+  sensitivity chip + exposure pill rendered.
+
+### D · Briefings deep-link from Studio history
+- Clicking a briefing row in StudioHistoryStrip now navigates to
+  `/app/prepare#brief-{id}` (Catch-up surface). Brief routes lived
+  there pre-iter64; the hash anchor lets that page scroll/select
+  the specific briefing once iter66 wires the anchor handler.
+
+### Tests
+- iter65: testing agent v3 — backend **7/7 pytest pass** (~14s).
+  Frontend **100% of assertions**: landing page + hero + pillars +
+  enterprise + live demo (sample button + typed input both fire
+  the API + render result), final CTA, trust strip, audience cards,
+  /app/decks Studio regression, /app/prepare Catch-up regression,
+  briefings deep-link navigation.
+- Pytest file: `/app/backend/tests/test_iter65_landing_demo.py`.
+- Report: `/app/test_reports/iteration_65.json`.
+- Decks deep-link cross-context resolution verified manually after
+  testing agent's run (the test account had no decks in active ctx).
+
+### Open / iter66 backlog
+- Catch-up page (`/app/prepare`) needs to handle the
+  `#brief-{id}` hash anchor — scroll to and select the specific
+  briefing. Today the navigation works but the briefing isn't
+  highlighted on arrival.
+- `Workflows`-as-journeys home widget could migrate inside Studio
+  as an "active workflows" rail (deferred from iter64).
+- Sensitivity scorer LLM tiebreaker for ambiguous text (today: pure
+  regex, intentionally conservative — false-negatives on creative
+  phrasings are the main miss).
+- `/api/public/studio/sensitivity-demo` could be promoted to a
+  fully-featured "Try the Studio" page with classification
+  comparisons (Public vs Restricted side-by-side) and a "Save
+  result as PDF" affordance.
+- Plan-gated readers-list on engagement endpoint — currently
+  readers[] visible to all members; gate full PII behind Enterprise
+  plan with a count-only fallback for free.
+- Exco360 Blog → Subscribe primary capture: the "Read the Exco360
+  Blog" link should grow into a more conversion-shaped block once
+  newsletter ESP is wired.

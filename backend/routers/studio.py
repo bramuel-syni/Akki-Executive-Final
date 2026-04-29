@@ -55,7 +55,13 @@ async def public_sensitivity_demo(body: DemoSensitivityIn, request: Request):
     # Rate limit per IP — best-effort, single-process. Sufficient for a
     # marketing-page demo; the scorer itself is regex-only so the cost is
     # microseconds, but we don't want one curl loop hammering it.
-    ip = (request.client.host if request.client else "anon") or "anon"
+    # iter65 — k8s ingress can present multiple proxy nodes; we prefer the
+    # X-Forwarded-For first hop when available so the bucket maps to the
+    # original caller rather than the changing proxy IP.
+    xff = request.headers.get("x-forwarded-for", "") or ""
+    ip = xff.split(",")[0].strip() if xff else ""
+    if not ip:
+        ip = (request.client.host if request.client else "anon") or "anon"
     now_s = time.time()
     last = _DEMO_LAST_CALL.get(ip, 0)
     if now_s - last < _DEMO_RATE_WINDOW_S:
