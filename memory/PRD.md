@@ -2736,3 +2736,92 @@ P2: Decks UI E2E retest after midnight; max-of-window label phrasing on
 - Exco360 Blog → Subscribe primary capture: the "Read the Exco360
   Blog" link should grow into a more conversion-shaped block once
   newsletter ESP is wired.
+
+
+
+## §iter66/67 — Studio backlog clean-up: plan-gated readers, LLM tiebreaker, workflows rail, hash handler (2026-04-29)
+
+### A · Plan-gated readers PII (Decks + Reports engagement)
+- `/api/contexts/{cid}/studio/{kind}/{id}/engagement` now returns
+  `plan` (free/pro/team) and `readers_locked` (boolean).
+- For free accounts: `readers[] = []`, `readers_locked = true`,
+  `unique_readers` count still populated (so users see the *number*
+  of readers but not who).
+- For Pro/Team accounts: `readers[]` carries the full PII (name,
+  email, first_viewed_at, last_viewed_at, view_count). Same shape
+  as before — Pro upgrade is invisible from the data side.
+- Frontend DeckStep renders a `decks-readers-locked` block when
+  `readers_locked && unique_readers > 0`: "X unique reader(s) so
+  far · Upgrade to Pro to see who" with an oxblood "Upgrade to Pro"
+  link to `/app/settings?tab=billing`.
+
+### B · Sensitivity scorer LLM tiebreaker
+- New `score_sensitivity_with_llm_tiebreaker(artefact, fallback_only=True)`
+  in `studio_sensitivity.py`. Calls the regex scorer first; only
+  escalates to a single STANDARD-tier LLM call when the regex result
+  lands in the ambiguous "internal" band (25-49) AND the artefact
+  text is ≥200 chars.
+- LLM may bump to a HIGHER band (confidential/restricted) — never
+  downgrades. Bumps are tagged with `llm_tiebreaker_used: true` and
+  the reasons[] list gains an "LLM tiebreaker · <one-line>" entry.
+- Endpoint: `POST /api/contexts/{cid}/studio/{kind}/{id}/rescore?use_llm=true`
+  triggers the tiebreaker. Default (`use_llm=false`) keeps the
+  cheap regex behavior. Verified on the live test deck — bumped
+  from Internal (25) → Restricted (75) with NPL + control deficiency
+  reasons.
+
+### C · Workflows-as-journeys rail in Studio
+- New `ActiveWorkflowsRail` component in Decks.jsx — renders above
+  StudioHistoryStrip when the context has any active or paused
+  Plays. Shows up to 4 tiles with play_type label, status chip
+  (emerald=active / amber=paused), title + current step. Each tile
+  click navigates to `/app/plays/{id}`.
+- Pulls from existing `GET /api/contexts/{cid}/plays` endpoint; no
+  new backend route. Fold-in keeps the legacy /app/plays page intact
+  while surfacing in-progress journeys on the Studio surface where
+  users actually produce material.
+
+### D · Catch-up hash anchor handler (`#brief-{id}`)
+- New useEffect in Prepare.jsx — when /app/prepare loads with a
+  `#brief-{id}` hash, auto-switches to the Brief tab and opens the
+  brief modal via `openBriefById`. Strips the hash via
+  `history.replaceState` so reloads don't re-trigger.
+- Iter66 first attempt had a TDZ (Temporal Dead Zone) ReferenceError
+  because the hash effect referenced `openBriefById` before its
+  `useCallback` declaration. Fixed in iter67 by reordering the
+  declarations AND adding a `hashHandledRef` to prevent re-fire
+  flakiness.
+- Iter67 hardening: also listens for `hashchange` events on the
+  window so client-side `<a href="#brief-x">` links work even when
+  the user is already on /app/prepare.
+
+### E · Briefings row → PDF export
+- StudioHistoryStrip briefing-row click was originally routed to
+  `/app/prepare#brief-{id}` but db.briefings (formal briefings) ≠
+  db.briefs (orientation briefs that the Catch-up Brief tab shows).
+- iter67 fix: briefing rows now open the briefing's PDF export
+  directly in a new tab via authenticated blob fetch +
+  `window.open(blob:url)`. Closes the loop on the Studio history
+  strip so every artefact (deck OR briefing) lands in the right
+  reader surface in one click.
+
+### Tests
+- iter66: 9/9 backend pytest GREEN; one frontend TDZ ReferenceError
+  on hash route (FIXED).
+- iter67: 15/15 backend pytest GREEN; 100% of frontend assertions
+  GREEN: /app/prepare loads clean, invalid-hash no crash + stripped,
+  valid-hash modal opens, briefing row opens blob PDF (verified on
+  briefing 238b9d1e via window.open stub).
+- Reports: `/app/test_reports/iteration_66.json` and
+  `/app/test_reports/iteration_67.json`.
+
+### Open / iter68 backlog
+- Workflows-as-journeys rail tile testid migration to use
+  `<Link>` instead of `window.location.assign` for SPA prefetch
+  consistency (low-priority).
+- Sensitivity scorer rule expansion as new content patterns surface.
+- /try-studio standalone page (Public vs Restricted side-by-side
+  comparisons + "Save result as PDF" affordance for the live demo).
+- Exco360 newsletter ESP wiring + a real subscribe block.
+- A/B test the navy primary CTA against oxblood — 2-week click-through
+  count to settle which lands more conversions.

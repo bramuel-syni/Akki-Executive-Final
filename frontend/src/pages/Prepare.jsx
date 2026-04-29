@@ -145,19 +145,32 @@ export default function Prepare() {
   // reloads don't re-trigger.
   // We capture the hash on first cid-aware render using a ref so the
   // effect runs reliably even if React's effect timing skips a beat.
+  // iter67 — also listen for in-page hashchange events so client-side
+  // <a href="#brief-x"> links work even when already on /app/prepare.
   const hashHandledRef = useRef(false);
-  useEffect(() => {
-    if (typeof window === "undefined" || !cid || hashHandledRef.current) return;
+  const tryConsumeHash = useCallback(() => {
+    if (typeof window === "undefined" || !cid) return;
     const hash = window.location.hash || "";
     const m = hash.match(/^#brief-([\w-]+)$/);
     if (!m) return;
-    hashHandledRef.current = true;
     const briefId = m[1];
     setTab("brief");
     openBriefById(briefId);
-    // Strip the hash so reloads don't re-trigger the modal.
     window.history.replaceState(null, "", window.location.pathname + window.location.search);
   }, [cid, openBriefById]);
+
+  useEffect(() => {
+    if (hashHandledRef.current) return;
+    if (!cid) return;
+    hashHandledRef.current = true;
+    tryConsumeHash();
+  }, [cid, tryConsumeHash]);
+
+  useEffect(() => {
+    const onHashChange = () => tryConsumeHash();
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [tryConsumeHash]);
 
   const removeBrief = useCallback(async (id) => {
     try {
