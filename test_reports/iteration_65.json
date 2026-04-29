@@ -1,0 +1,42 @@
+{
+  "summary": "Iter65 landing redesign + sensitivity-demo + decks/briefings deep-links — 7/7 backend pytest passed (~14s) and full frontend Playwright pass on landing + authenticated regression. Verified: POST /api/public/studio/sensitivity-demo (no auth) returns {sensitivity:{score,classification,label,reasons[]},input_chars}; benign text → public/score 0; M&A+£85m+regulator+whistleblower+CEO-transition+restructure → restricted/score>=75 with >=3 reasons; payload <4 chars → 422; payload >4000 chars → 422; rapid burst from same IP yields 429 (best-effort, see RCA note). Iter64 regression: studio/history endpoint still auth-gated (401 unauth), Bramuel login still works. Frontend visually verified: landing-page renders without console errors (only benign 401s from /api/auth/me); hero-headline contains 'AKKI reads the pack' + 'read the room'; primary-sandbox-cta visible w/ navy bg rgb(10,31,68) + 'Try AKKI in 60 seconds' label; hero-quote-attribution navy color; landing-three-pillars renders with pillar-solve (4 phases, 'Diagnose board-grade problems in one structured pause', solve-session-start CTA) + pillar-pulse (3 NED bullets, pillar-pulse-link); landing-enterprise-section navy bg, 'Produce board-grade reports securely' headline, 3 enterprise-bullet-N items, enterprise-demo-request CTA; live demo: enterprise-demo-sample populates textarea + fires API → enterprise-demo-result with classification chip 'Confidential · score 50'; typing in enterprise-demo-input debounces 800ms then fires API → result renders with reasons; cta-final-sandbox navy, cta-final-signup outline; trust-strip-0/1/2 + audience-ned + audience-exec all visible. Authenticated regression: /app/decks header reads 'Decks + Reports · Studio' with studio-history strip + sensitivity chips + exposure pills; /app/prepare reads 'Catch-up · Tuli Financial Group (CFO)' with 'Catch up on what's next.' tagline; clicking briefing row in studio-history navigates to /app/prepare#brief-{id} (verified for briefing 846f5105-4392-4b9d-b929-1e897882f787).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/public/studio/sensitivity-demo", "issue": "Per-IP rate limit uses request.client.host but k8s ingress can route via multiple proxy nodes giving different IPs per connection — burst limit can be partially defeated. In a 5-shot curl burst we observed 429 only after the 3rd hit. Acceptable for marketing demo but flag for hardening if abuse becomes a concern."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter65_landing.py",
+    "/app/test_reports/pytest/iter65.xml"
+  ],
+  "action_items": [
+    "Decks deep-link race fix (/app/decks/{id}) could NOT be exercised end-to-end by the test agent because Bramuel's active context (Tuli CFO executive) had 0 decks in studio_history at test time — only briefings present. Code-level review on Decks.jsx 46-66 confirms the [cid, deepLinkDeckId] effect skips reset when deepLinkDeckId is present. Main agent: please open /app/decks/{deck_id} directly while logged in (use deck 4e3c01df-7244-45a8-ba7e-deb8b93381a7 inside its owning ctx) to confirm DeckStep view loads and not the intent step.",
+    "Optional: harden public/studio/sensitivity-demo rate limit by hashing on X-Forwarded-For first hop instead of request.client.host (current behaviour partially defeated by multi-node ingress)."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/routers/studio.py line 58: ip = request.client.host fallback won't dedup correctly behind a multi-node k8s ingress. Recommend: ip = (request.headers.get('x-forwarded-for') or request.client.host or 'anon').split(',')[0].strip() — first proxy hop. Same single-process in-memory dict still won't survive --reload but that's only a dev concern.",
+    "/app/backend/routers/studio.py line 44: _DEMO_LAST_CALL is an unbounded dict — every unique IP forever. For a low-traffic marketing route this is fine; flag if ever promoted to a heavily-hit surface (TTL eviction or LRU cap of e.g. 10k entries).",
+    "Landing.jsx is already 343 lines with FAKE_SIGNALS + FirstRunDemo inlined. ThreePillars + EnterpriseFeature + HeroSection now externalised — good split. FirstRunDemo could move to /components/marketing/FirstRunDemo.jsx for parity.",
+    "EnterpriseFeature live demo: typed-input debounces 800ms (good UX), but the same component fires immediately on 'Use sample' click — confirmed working. Note that if a user types AND clicks sample within 800ms, two API calls will fire (debounce timer not cleared on sample click). Minor; not breaking.",
+    "data-testid coverage on landing is excellent — every section has a stable test hook and chips include classification suffix (e.g. enterprise-demo-classification-confidential). Maintain this pattern."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter65_landing.py"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7)",
+    "frontend": "100% of assertions made (landing render + hero + pillars + enterprise + sample + typed-input demo + final CTA + trust + audience + /app/decks header + studio-history + sensitivity chips + /app/prepare Catch-up + briefings deep-link)"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026!  |  Active ctx after login resolved to Tuli Financial Group (CFO) executive (different from Tuli NED ctx fb4df969). Briefings deep-link confirmed with briefing 846f5105-4392-4b9d-b929-1e897882f787 from that ctx.",
+  "seed_data_creation": "None — all tests are read-only against the public sensitivity-demo endpoint and existing studio_history rows. The 5-shot rate-limit burst leaves 5 entries in the in-memory _DEMO_LAST_CALL dict; trivial.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest suite at /app/backend/tests/test_iter65_landing.py. Frontend test selectors all use stable data-testid; the live demo result renders inside [data-testid='enterprise-demo-result'] with [data-testid^='enterprise-demo-classification-']. Note for next agent: when signing in as Bramuel the default landed context is Tuli (CFO) executive; to test against the Tuli NED ctx (fb4df969) you'll need to switch context via the sidebar or pre-set local storage. The Decks deep-link race fix was NOT end-to-end verified because the active ctx had 0 decks in studio_history — main agent should exercise this manually with deck 4e3c01df-7244-45a8-ba7e-deb8b93381a7. Briefings deep-link was confirmed working.",
+  "rca of the issue": "n/a — all 13 review-request bullets pass. One backend hardening note logged for the public sensitivity-demo per-IP rate limit (uses request.client.host which varies behind k8s ingress nodes). Reproduction: 5x rapid curl POST to /api/public/studio/sensitivity-demo from the same client → observed 200,200,429,200,429 pattern (rate limit fires inconsistently). Mitigation: switch to first hop of X-Forwarded-For, see code review comment."
+}

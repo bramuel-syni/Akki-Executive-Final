@@ -23,7 +23,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from core import db, iso, now, require_context_membership
@@ -33,6 +33,39 @@ logger = logging.getLogger("akki.studio")
 router = APIRouter(tags=["studio"])
 
 ARTEFACT_KINDS = {"deck", "briefing"}
+
+
+# ---------------------------------------------------------------------------
+# Public sensitivity demo — no auth, no DB write. Powers the landing-page
+# "paste a snippet to see how AKKI classifies it" demo.
+# Throttled by a tiny in-memory rate limit; not a security boundary, just
+# a courtesy so the marketing surface doesn't melt under load.
+# ---------------------------------------------------------------------------
+_DEMO_LAST_CALL: Dict[str, float] = {}
+_DEMO_RATE_WINDOW_S = 1.5  # one call per 1.5s per IP
+
+
+class DemoSensitivityIn(BaseModel):
+    text: str = Field(min_length=4, max_length=4000)
+
+
+@router.post("/api/public/studio/sensitivity-demo")
+async def public_sensitivity_demo(body: DemoSensitivityIn, request: Request):
+    import time
+    # Rate limit per IP — best-effort, single-process. Sufficient for a
+    # marketing-page demo; the scorer itself is regex-only so the cost is
+    # microseconds, but we don't want one curl loop hammering it.
+    ip = (request.client.host if request.client else "anon") or "anon"
+    now_s = time.time()
+    last = _DEMO_LAST_CALL.get(ip, 0)
+    if now_s - last < _DEMO_RATE_WINDOW_S:
+        raise HTTPException(status_code=429, detail="Slow down a moment.")
+    _DEMO_LAST_CALL[ip] = now_s
+
+    from studio_sensitivity import score_sensitivity
+    fake_artefact = {"intent": body.text, "title": "Demo"}
+    result = score_sensitivity(fake_artefact)
+    return {"sensitivity": result, "input_chars": len(body.text)}
 
 
 # ---------------------------------------------------------------------------

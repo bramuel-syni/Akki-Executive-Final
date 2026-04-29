@@ -47,8 +47,12 @@ export default function Decks() {
   useEffect(() => {
     if (!cid) return;
     // Iter62 fix — context switch must clear stale outline/deck/view from
-    // the previously-active context. Otherwise a deck belonging to ctx A
-    // would briefly render under ctx B's name during the switch.
+    // the previously-active context. iter65: skip the reset when a deep-link
+    // deckId is present so the [cid, deepLinkDeckId] effect can win the race.
+    if (deepLinkDeckId) {
+      refreshState();
+      return;
+    }
     setView("intent");
     setOutline(null);
     setDeck(null);
@@ -56,7 +60,7 @@ export default function Decks() {
     setStudioHistory([]);
     refreshState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cid]);
+  }, [cid, deepLinkDeckId]);
 
   // Iter58 — deep-link support: /app/decks/:deckId opens that deck's review
   // surface directly. Required for shareable links AND for QA. Falls back
@@ -870,6 +874,16 @@ function StudioHistoryStrip({ items, contextId, onOpenDeck }) {
 
   React.useEffect(() => { setList(items); }, [items]);
 
+  const handleRowClick = (it) => {
+    if (it.kind === "deck") {
+      onOpenDeck?.(it.id);
+    } else if (it.kind === "briefing") {
+      // Briefings live on the Catch-up surface (/app/prepare). Open with
+      // the briefing id as a hash so the page can scroll/select it.
+      window.location.assign(`/app/prepare#brief-${it.id}`);
+    }
+  };
+
   const rescore = async () => {
     setBusy(true);
     try {
@@ -916,7 +930,7 @@ function StudioHistoryStrip({ items, contextId, onOpenDeck }) {
             key={`${it.kind}-${it.id}`}
             className="px-5 py-4 hover:bg-[var(--cream-deep)]/30 cursor-pointer transition-colors"
             data-testid={`studio-history-row-${it.kind}-${it.id}`}
-            onClick={() => it.kind === "deck" && onOpenDeck?.(it.id)}
+            onClick={() => handleRowClick(it)}
           >
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
