@@ -2470,3 +2470,157 @@ P2: Decks UI E2E retest after midnight; max-of-window label phrasing on
 - Stripe-driven Solve Pro upgrade CTA could route through a dedicated
   `/api/solve/upgrade` flow (today it deep-links into the existing
   Settings → Billing tab).
+
+
+
+## §iter64 — Studio (Decks + Reports merge) + Catch-up rename + Marketing redesign brief (2026-04-29)
+
+### User feedback that drove this iteration
+> "Combine Decks and Workflow — this is where the user comes to produce
+> reports and presentation. Workflow keeps a record of generated reports
+> and decks and scores their confidentiality and sensitivity for awareness
+> once it's generated or saved. Enterprise version - Documents generated
+> from this section have some type of electronic marker that can track
+> who has read it to track information exposure score."
+>
+> "Change 'Prepare' to 'Catch-up'."
+>
+> "Akki is so powerful and needed but the website is not doing it justice.
+> A lot of the conversion driving features are not surfaced, and there
+> is long-winded copy that takes long to land the value promise. Tone
+> should target seasoned and emerging executives and non-executive
+> directors interested in tools, frameworks or mindsets that grow or
+> preserve value for their shareholders. People love the look and feel."
+
+### A · "Prepare" → "Catch-up" rename
+- Sidebar entry (AppShell.jsx) renamed from "Prepare" to "Catch-up".
+- /app/prepare page header rewritten: "Catch-up · {context}" /
+  "Catch up on what's next."
+- QuickActions home surface: "Read & catch-up for tomorrow".
+- Route URL kept as /app/prepare for back-compat — only labels changed.
+
+### B · Decks + Workflows merge → "Decks + Reports" Studio
+- Sidebar primary nav: "Decks" → "Decks + Reports". "Workflows"
+  removed from primary nav (deep link /app/plays still works for
+  in-flight Board Pack journeys; the home WorkflowsHub widget keeps
+  the tabbed in-progress view).
+- /app/decks header rewritten to position the Studio surface as the
+  unified place to produce material:
+    Decks + Reports · Studio
+    Produce board-grade material with your own data.
+    Decks + Reports is the secure place you draft material that
+    leaves your hands. Every saved artefact is auto-classified —
+    Public · Internal · Confidential · Restricted — and tracks
+    who's read it so you know your information exposure before
+    you share.
+
+### C · Auto-sensitivity scoring on every saved artefact (decks + briefings)
+- New `/app/backend/studio_sensitivity.py` — deterministic regex
+  scorer with 9 rules covering M&A, conduct/HR, litigation, financial
+  figures, restructure, MNPI/insider, customer concentration,
+  pre-announcement, leadership succession. Score 0-100 mapped to
+  4-tier classification:
+    0-24 → Public · 25-49 → Internal · 50-74 → Confidential ·
+    75-100 → Restricted
+- Reasons[] array surfaces what triggered each bump so users can
+  sanity-check the classification.
+- Hooks into:
+  - `routers/decks.py` line ~365 — auto-score on `decks/{outline_id}/generate`
+  - `routers/briefings.py` line ~143 — auto-score on briefing create
+  - `routers/solve_engine.py` line ~554 — auto-score on Solve →
+    brief handoff
+- Idempotent backfill endpoint
+  `POST /api/contexts/{cid}/studio/backfill_sensitivity` for
+  pre-iter64 artefacts. Backfilled 14 existing decks + briefings
+  for Tuli NED context on first call.
+- Frontend `SensitivityChip` component (Decks.jsx) — emerald for
+  public, amber for internal, orange for confidential, red for
+  restricted. Tooltip surfaces reasons. Rendered top-right of every
+  history row + DeckStep header.
+
+### D · Real read-receipt tracking + exposure score
+- New `routers/studio.py` — Studio cross-artefact endpoints:
+  - `POST /studio/{kind}/{id}/view` — atomic upsert keyed on
+    `(artefact_kind, artefact_id, account_id, day_utc)`. Same-day
+    repeat views return `deduped: true`. Owner views tracked but
+    excluded from `unique_readers`.
+  - `GET  /studio/{kind}/{id}/engagement` — full engagement summary
+    with `view_count`, `unique_readers`, `readers[]` (with display
+    names / emails / first/last viewed), `share_count`,
+    `external_share_count`, `exposure {score, band, inputs}`.
+  - `POST /studio/{kind}/{id}/share` — records a share with
+    `to_email`, `to_name`, `external` flag.
+  - `POST /studio/{kind}/{id}/rescore` — re-runs the scorer.
+  - `GET  /studio/history` — merged decks + briefings desc by
+    created_at with sensitivity + exposure folded in (single round-trip).
+- `kind` enum: `deck` | `briefing`.
+- Exposure score (0-100):
+    raw = unique_readers·12 + share_count·18 + external_shares·22
+    raw += 10 if days_since_creation > 14
+    capped at 100; bands low/moderate/high.
+- Frontend `ExposurePill` — muted/amber/red by band. Rendered
+  alongside SensitivityChip on history rows + DeckStep header.
+- DeckStep auto-fires `POST /view` on mount + fetches engagement
+  to render the readers strip.
+- New collections + indexes:
+  - `db.studio_views`: unique compound on
+    `(artefact_kind, artefact_id, account_id, day_utc)`, plus
+    `(context_id, artefact_kind)`.
+  - `db.studio_shares`: indexes on `(artefact_kind, artefact_id)`
+    and `(context_id, created_at)`.
+  - Top-up indexes on `db.decks` and `db.briefings` for the history
+    sort.
+
+### E · Studio history strip on /app/decks
+- `StudioHistoryStrip` component renders below the IntentStep when
+  the user has any prior artefacts. Shows merged decks + briefings
+  desc by created_at with sensitivity chip + exposure pill per row.
+- "Re-score sensitivity" button hits the backfill endpoint —
+  idempotent, useful when the scorer rules evolve.
+- Click a deck row → opens the DeckStep view (loadDeck pattern).
+- Briefings rows currently view-only in this strip — Wave 5 will
+  add briefing deep-link.
+
+### F · Marketing/landing redesign — design brief shipped
+- Called `design_agent_full_stack` with the user's exact constraints:
+  cream/oxblood preserved, executive navy `#0A1F44` accent spots
+  added, audience = seasoned + emerging executives and NEDs, three
+  pillars to lead with (Solve, Cross Board Pulse, Decks + Reports),
+  punchy editorial copy.
+- Output: `/app/design_guidelines.json` — section-by-section
+  architecture, copy library, three-pillar visual system, navy
+  placement strategy, component-level recommendations, mobile
+  considerations, data-testid pattern.
+- IMPLEMENTATION DEFERRED to iter65 (next user message) — this
+  iteration covered backend/frontend Studio + rename only.
+
+### Tests
+- iter64: testing agent v3 — backend **14/14 pytest pass** (~1.8s,
+  no LLM calls in scorer tests). Frontend **100% of assertions**:
+  sidebar rename, /app/plays deep link still works, /app/prepare
+  Catch-up header, /app/decks Studio header, studio-history strip,
+  data-testid="studio-sensitivity-public" chip rendered, "Produce
+  board-grade material with your own data" tagline.
+- Pytest file: `/app/backend/tests/test_iter64_studio_sensitivity.py`.
+- Report: `/app/test_reports/iteration_64.json`.
+
+### Open / iter65 backlog
+- **Marketing/landing implementation** (per the design_guidelines.json
+  brief) — biggest remaining item; will materially lift conversion.
+- Briefings deep-link from Studio history strip.
+- Decks deep-link race condition (when navigating directly to
+  /app/decks/:deckId, the [cid] effect's reset can race with the
+  [cid, deepLinkDeckId] fetch — observed but not blocking).
+- Workflows-as-journeys: when iter65's design-led IA settles, the
+  home WorkflowsHub may migrate inside Studio as an "active workflows"
+  rail.
+- Sensitivity scorer accuracy could improve with an LLM tiebreaker
+  pass for ambiguous text (today the rule list is intentionally
+  deterministic and conservative).
+- Add `/api/contexts/{cid}/studio/share` outbound email integration
+  via existing Resend adapter so a share record actually emails the
+  recipient with a tracked link.
+- "Information exposure score" gating per plan tier — currently
+  visible to everyone; landing-page copy claims it as an Enterprise
+  feature so we should soft-gate the readers list (count visible
+  free; full readers list locked behind plan check).
