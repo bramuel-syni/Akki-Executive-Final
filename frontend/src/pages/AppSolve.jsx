@@ -163,6 +163,7 @@ export default function AppSolve() {
 // ─── Picker ────────────────────────────────────────────────────────────
 function PickerView({ clusters, recent, loading, onPick, onResume, onRestart }) {
   const active = recent.filter((r) => r.status === "active");
+  const completed = recent.filter((r) => r.status === "completed").slice(0, 3);
   return (
     <>
       <header className="mb-10">
@@ -212,6 +213,39 @@ function PickerView({ clusters, recent, loading, onPick, onResume, onRestart }) 
                     data-testid={`solve-restart-btn-${s.id}`}
                   >
                     <RotateCw className="w-3 h-3 mr-1.5" /> Start over
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {completed.length > 0 && (
+        <section className="mb-10" data-testid="solve-completed-list">
+          <p className="akki-overline mb-3">Completed — hand off ready</p>
+          <ul className="bg-white border border-[var(--rule)] rounded-sm divide-y divide-[var(--rule)]">
+            {completed.map((s) => (
+              <li
+                key={s.id}
+                className="px-5 py-3 flex items-center justify-between gap-3"
+                data-testid={`solve-completed-${s.id}`}
+              >
+                <div className="min-w-0">
+                  <p className="akki-serif text-[15px] text-[var(--ink)] truncate">
+                    {s.cluster_label}
+                  </p>
+                  <p className="text-[11px] text-[var(--muted)] mt-0.5">
+                    Completed · {new Date(s.completed_at || s.updated_at).toLocaleString()}
+                  </p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <Button
+                    size="sm" variant="outline" className="border-[var(--rule)]"
+                    onClick={() => onResume(s.id)}
+                    data-testid={`solve-completed-open-${s.id}`}
+                  >
+                    Open <ArrowRight className="w-3 h-3 ml-1.5" />
                   </Button>
                 </div>
               </li>
@@ -292,19 +326,21 @@ function IntentView({ cluster, intent, onIntentChange, proTier, onProTierChange,
             Use the example
           </button>
         )}
-        <div className="mt-5 pt-4 border-t border-[var(--rule)] flex items-center gap-3">
+        <div className="mt-5 pt-4 border-t border-[var(--rule)] flex items-start gap-3">
           <input
             type="checkbox"
             id="solve-pro"
             checked={proTier}
             onChange={(e) => onProTierChange(e.target.checked)}
-            className="accent-[var(--accent)] w-3.5 h-3.5"
+            className="accent-[var(--accent)] w-3.5 h-3.5 mt-0.5"
             data-testid="solve-intent-pro-toggle"
           />
-          <label htmlFor="solve-pro" className="text-[12.5px] text-[var(--deep)] cursor-pointer">
-            Pro synthesis (deep tier · Opus)
-            <span className="ml-2 text-[10.5px] uppercase tracking-[0.16em] text-[var(--muted)]">
-              requires Pro account
+          <label htmlFor="solve-pro" className="text-[12.5px] text-[var(--deep)] cursor-pointer leading-relaxed">
+            <span className="block">Pro synthesis (deep tier · Opus)</span>
+            <span className="block text-[11px] text-[var(--muted)] mt-0.5">
+              Pro plan gets unlimited deep synthesis; on the free plan you get
+              <span className="text-[var(--accent)]"> 1 free deep synthesis per month</span>.
+              Other phases always use the standard tier.
             </span>
           </label>
         </div>
@@ -426,6 +462,10 @@ function SessionView({ session, cluster, onUpdate, onExit }) {
         )}
       </div>
 
+      {completed && session.lockin && (
+        <HandoffStrip session={session} onUpdate={onUpdate} />
+      )}
+
       {!completed && (
         <div className="bg-white border border-[var(--rule)] rounded-sm p-4" data-testid="solve-session-composer">
           <Textarea
@@ -485,10 +525,27 @@ function ComparablesPanel({ comparables }) {
       <p className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--accent)] mb-2">
         Comparables · triangulation
       </p>
-      <ul className="space-y-2 text-[13px] text-[var(--deep)] leading-relaxed">
+      <ul className="space-y-3 text-[13px] text-[var(--deep)] leading-relaxed">
         {comparables.map((c, i) => (
-          <li key={i} data-testid={`solve-comparable-${i}`}>
-            {typeof c === "string" ? c : (c.summary || JSON.stringify(c))}
+          <li key={c.id || i} data-testid={`solve-comparable-${i}`}>
+            {typeof c === "string" ? (
+              c
+            ) : (
+              <>
+                <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)] mb-1">
+                  {(c.sector_tag || "any").replace(/_/g, " ")} · {(c.scale_tag || "—").replace(/_/g, " ")}
+                </p>
+                <p className="akki-serif text-[13.5px] text-[var(--ink)] mb-1">
+                  {c.diagnosis_summary || c.summary || JSON.stringify(c)}
+                </p>
+                {c.what_worked && (
+                  <p className="text-[12px]"><span className="text-[var(--accent)]">Worked:</span> {c.what_worked}</p>
+                )}
+                {c.what_didnt && (
+                  <p className="text-[12px]"><span className="text-[var(--muted)]">Didn't:</span> {c.what_didnt}</p>
+                )}
+              </>
+            )}
           </li>
         ))}
       </ul>
@@ -502,9 +559,132 @@ function CompletedBanner() {
       <Check className="w-4 h-4 text-emerald-700 mt-0.5" />
       <p className="text-[13px] text-emerald-900 leading-relaxed">
         Session complete. Your diagnosis and lock-in commitments are saved.
-        Come back to it from the picker, or generate a brief / deck from
-        the synthesis (coming in Wave 2).
+        Use the handoff strip below to push them into a Brief, a Decks
+        outline, or your context's question bank.
       </p>
+    </div>
+  );
+}
+
+function HandoffStrip({ session, onUpdate }) {
+  const [busy, setBusy] = useState(null); // 'brief' | 'decks' | 'cycle' | null
+  const [done, setDone] = useState(() => {
+    const map = {};
+    for (const h of (session.handoffs || [])) map[h.target] = h.artefact_id;
+    return map;
+  });
+  const [contextId, setContextId] = useState(session.context_id || "");
+  const [contexts, setContexts] = useState([]);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    api.get("/auth/me")
+      .then((r) => {
+        const list = (r.data?.contexts || []).filter(
+          (c) => c.status !== "archived" && c.type !== "sandbox"
+        );
+        setContexts(list);
+        if (!contextId && list.length === 1) setContextId(list[0].id);
+      })
+      .catch(() => {});
+  }, []); // eslint-disable-line
+
+  const fire = async (target) => {
+    setErr("");
+    if (!contextId) {
+      setErr("Pick a context to push the handoff into.");
+      return;
+    }
+    setBusy(target);
+    try {
+      const path = target === "decks" ? "/handoff/decks" : `/handoff/${target}`;
+      const payload = target === "decks"
+        ? { context_id: contextId, audience: "Board" }
+        : { context_id: contextId };
+      const { data } = await api.post(`/solve/sessions/${session.id}${path}`, payload);
+      const id = (data.briefing || data.outline || data.questions?.[0])?.id;
+      if (id) setDone((d) => ({ ...d, [target]: id }));
+      toast.success(target === "brief"
+        ? data.already_exists ? "Brief already created — opened existing." : "Brief created."
+        : target === "decks"
+          ? data.already_exists ? "Decks outline already exists." : "Decks outline seeded — refine and render."
+          : data.already_exists ? "Cycle questions already seeded." : `Seeded ${data.questions?.length || 0} cycle question${data.questions?.length===1?"":"s"}.`
+      );
+      // Refetch so handoffs[] stays in sync
+      const fresh = await api.get(`/solve/sessions/${session.id}`).catch(() => null);
+      if (fresh?.data) onUpdate?.(fresh.data);
+    } catch (e) {
+      setErr(apiErrorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const targets = [
+    { id: "brief",  label: "Create a Brief",        sub: "Synthesis as opening + lockin as items" },
+    { id: "decks",  label: "Seed a Decks outline",  sub: "Editable outline, ready for deep render" },
+    { id: "cycle",  label: "Push to Question Bank", sub: "1–3 board questions for the next cycle" },
+  ];
+
+  return (
+    <div
+      className="mt-4 bg-white border border-[var(--rule)] rounded-sm p-5"
+      data-testid="solve-handoff-strip"
+    >
+      <p className="akki-overline text-[var(--accent)] mb-3">
+        Hand off the diagnosis
+      </p>
+      {contexts.length > 1 && (
+        <div className="mb-4">
+          <label className="block text-[10.5px] uppercase tracking-[0.16em] text-[var(--muted)] mb-1.5">
+            Push to context
+          </label>
+          <select
+            value={contextId}
+            onChange={(e) => setContextId(e.target.value)}
+            className="w-full bg-white border border-[var(--rule)] rounded-sm px-3 py-2 text-[13px]"
+            data-testid="solve-handoff-context-select"
+          >
+            <option value="">— pick a context —</option>
+            {contexts.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <ul className="grid sm:grid-cols-3 gap-3">
+        {targets.map((t) => (
+          <li key={t.id}>
+            <button
+              type="button"
+              onClick={() => fire(t.id)}
+              disabled={busy !== null}
+              className={`w-full text-left p-4 rounded-sm border transition-colors ${
+                done[t.id]
+                  ? "bg-emerald-50 border-emerald-200"
+                  : "bg-[var(--cream-deep)]/30 border-[var(--rule)] hover:border-[var(--accent)]"
+              }`}
+              data-testid={`solve-handoff-${t.id}`}
+            >
+              <div className="flex items-center gap-1.5 mb-1">
+                {done[t.id] ? <Check className="w-3 h-3 text-emerald-700" /> : null}
+                {busy === t.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                <p className="akki-serif text-[14px] text-[var(--ink)]">{t.label}</p>
+              </div>
+              <p className="text-[11.5px] text-[var(--muted)] leading-snug">
+                {done[t.id] ? "Created — click to view" : t.sub}
+              </p>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {err && (
+        <p className="mt-3 text-[11.5px] text-red-700" data-testid="solve-handoff-error">
+          {err}
+        </p>
+      )}
     </div>
   );
 }

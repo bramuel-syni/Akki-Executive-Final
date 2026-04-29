@@ -253,6 +253,33 @@ async def on_startup():
     except Exception as e:  # noqa: BLE001
         logger.warning("Solve cluster seeding skipped: %s", e)
 
+    # Iter62 Wave 3 — curated comparables corpus for Triangulation v2.
+    # Indexed on cluster_id + sector_tag so the engine can pick the closest
+    # 2-3 anonymised diagnoses per Pro Synthesis call.
+    await db.solve_comparables.create_index("id", unique=True)
+    await db.solve_comparables.create_index([("cluster_id", 1), ("sector_tag", 1)])
+    try:
+        from solve_comparables_seed import seed_solve_comparables
+        cmp_result = await seed_solve_comparables(db)
+        if cmp_result["seeded_count"]:
+            logger.info("Seeded %d Solve comparables: %s",
+                        cmp_result["seeded_count"], cmp_result["ids"])
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Solve comparables seeding skipped: %s", e)
+
+    # Iter62 Wave 2 — Solve handoff artefacts created from completed sessions
+    # (briefings, decks, cycle questions). One row per handoff; idempotent
+    # within a session via natural key on (session_id, target).
+    await db.solve_handoffs.create_index([("account_id", 1), ("created_at", -1)])
+    await db.solve_handoffs.create_index([("session_id", 1), ("target", 1)])
+
+    # Iter62 — monthly free-tier deep-synthesis grant for non-Pro users.
+    # One row per (account_id, month_utc); the engine increments at first
+    # use and decisions whether to allow further free deep calls.
+    await db.solve_free_grants.create_index(
+        [("account_id", 1), ("month_utc", 1)], unique=True
+    )
+
     # Inbound-email idempotency
     await db.accounts.create_index("inbound_token", sparse=True)
     await db.contexts.create_index("inbound_token", sparse=True)
