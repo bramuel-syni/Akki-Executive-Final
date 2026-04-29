@@ -2372,3 +2372,101 @@ P2: Decks UI E2E retest after midnight; max-of-window label phrasing on
   verbatim (with "How do we hold ourselves to:" prefix). A short LLM
   pass to phrase as a sharp board question would polish further.
 
+
+
+## §AKKI Solve — Wave 4 (PDF) + P1/P2 cleanup batch (2026-04-29, iter63)
+
+### Wave 4 — narrative PDF export
+- New `/app/backend/solve_pdf.py` — reportlab-driven A4 portrait
+  one-pager: PRIVATE · AKKI SOLVE overline, intent as serif title,
+  cluster + completion meta, **THE DIAGNOSIS** (synthesis body, markdown
+  bold/italic stripped), **COMPARABLE DIAGNOSES** (sector + scale tag
+  overline, anonymised summary, oxblood "Worked:" + muted "Didn't:"
+  lines), **LOCK-IN** (Decide / Watch / Walk in with as a 2-column
+  table), Synisense-shielded footer with last-8 of session id.
+- New endpoint `GET /api/solve/sessions/{sid}/export.pdf` — returns
+  `application/pdf` with `Content-Disposition: inline; filename=akki_solve_<intent_slug>.pdf`.
+  Rejects sessions without synthesis (409) and unknown sessions (404).
+- Frontend `solve-session-pdf` button on the SessionView header (right
+  of "Back", left of "Pause for later"). Authenticated download via
+  fetch + blob → object URL so the browser doesn't open the raw stream.
+
+### Free-grant race-safety hardening
+- `_consume_free_grant` rewritten from try/except DuplicateKeyError to
+  atomic `find_one_and_update` with `$inc: count` + `$setOnInsert` on
+  `first_used_at` + upsert. The post-increment count tells us if this
+  is the first call (allow) or a subsequent one (deny). Race-safe
+  even if the unique compound index regresses. 8-way `asyncio.gather`
+  yields exactly 1 allowed=True.
+
+### Cycle handoff polish — LLM-sharpened questions
+- New `_draft_cycle_questions` helper — single STANDARD-tier LLM call
+  (`module=solve.cycle_handoff`, `response_format=json`) takes the
+  cluster label + intent + synthesis + lock-in (Decide/Watch/Walk-in)
+  and returns 1-3 sharp board questions phrased to be answerable
+  yes/no/with-a-number. No more verbatim "How do we hold ourselves to:"
+  echoes. Falls back to the deterministic derivation if the LLM call
+  fails or returns nothing — preserves the iter62 baseline behaviour.
+
+### Pro upgrade CTA + pro-status endpoint
+- New `GET /api/solve/pro-status` — returns
+  `{is_pro, plan, free_grant: {claimed_this_month, month_utc, remaining}}`
+  for the calling account. UI uses this to decide whether to render
+  the Pro toggle as "1 free synthesis available" / "Pro account —
+  unlimited" / "you've used your monthly free; upgrade for more".
+- `IntentView` Pro toggle copy now switches dynamically based on
+  `proStatus`. When a free user has claimed their grant and ticks the
+  Pro toggle, an oxblood-bordered `solve-pro-upgrade-cta` card appears:
+  "Subscribe to Pro for unlimited deep synthesis. $29/mo… You'll still
+  get the standard tier on this session at no charge." with a deep
+  link to `/app/settings?tab=billing`.
+- `_user_is_pro` continues to derive Pro from `account.plan in (pro,
+  team)` OR explicit `solve_pro` flag.
+
+### Smart "Recommended" handoff pill
+- `HandoffStrip` now picks the most useful UNDONE handoff target based
+  on context type:
+  - NED context → cycle (board-room follow-up) → brief → decks
+  - Executive context with open questions → cycle → brief → decks
+  - Executive context, no questions yet → brief → cycle → decks
+  - The pill cascades — once the primary recommendation is done, it
+    promotes the next undone target. Pill hidden when contextId is
+    empty or all three handoffs are done.
+- Recommended target's tile gets an oxblood ring + Sparkles icon for
+  unmistakable focus. Pill text reads `RECOMMENDED FOR THIS CONTEXT:
+  <Label>` (data-testid `solve-handoff-recommendation`).
+
+### Decks context-switch state reset (P1 fix)
+- `Decks.jsx` `useEffect([cid])` now clears `view`, `outline`, `deck`,
+  `history` BEFORE the new context's data loads. Prevents the old
+  context's deck from briefly rendering under the new context's name
+  during a switch. Pre-existing P1 bug — closed.
+
+### Comparable corpus expansion
+- `/app/backend/solve_comparables_seed.py` topped up from 18 → **27
+  curated comparables**. Every cluster now ships ≥2 (most ship 3).
+  New entries cover sparse clusters: people_conduct (industrials +
+  financial_services), ma_thesis (financial_services + tech_saas),
+  board_dynamics (any · 2), founder_transition (tech_saas +
+  consumer_goods), performance_management (tech_saas), capital_allocation
+  (financial_services), regulatory_change (tech_saas),
+  tech_debt_or_outage (financial_services), strategy_drift (tech_saas).
+
+### Tests
+- iter63: backend **11/11 pytest pass** (~62s). Frontend: Decks
+  context-switch reset visually confirmed; PDF button + Pro upgrade
+  CTA + recommended pill all interactively validated by main agent
+  post-testing-agent.
+- Pytest file: `/app/backend/tests/test_iter63_solve_p1p2.py`.
+- Report: `/app/test_reports/iteration_63.json`.
+
+### Open / deferred (post-Wave 4)
+- `solve_engine.py` is now ~1080 lines — split Wave 2 handoffs into
+  `/app/backend/routers/solve_handoffs.py` before Wave 5.
+- Comparable corpus aim for 40+ entries with European / US / African
+  board cases as adoption broadens.
+- "Recommended" pill could honour `account.preferences.preferred_handoff`
+  for users who consistently pick the same target.
+- Stripe-driven Solve Pro upgrade CTA could route through a dedicated
+  `/api/solve/upgrade` flow (today it deep-links into the existing
+  Settings → Billing tab).

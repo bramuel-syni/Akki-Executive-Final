@@ -657,27 +657,40 @@ function HandoffStrip({ session, onUpdate }) {
       .catch(() => {});
   }, []); // eslint-disable-line
 
-  // Smart suggestion: NED contexts → cycle (board-room follow-up);
-  // executive_personal contexts where a question bank already exists → cycle;
-  // else → brief (the safe default that captures the diagnosis as a one-pager).
+  // Smart suggestion: pick the most useful UNDONE handoff target.
+  //   NED contexts → cycle first, then brief, then decks.
+  //   Executive contexts → brief first (or cycle if questions already exist), then the others.
+  // We always recommend an undone target so the pill keeps guiding until
+  // every handoff is exercised or the user explicitly opts out.
   useEffect(() => {
-    if (!contextId || done.brief || done.decks || done.cycle) return;
+    if (!contextId) {
+      setRecommended(null);
+      return;
+    }
     const ctx = contexts.find((c) => c.id === contextId);
     if (!ctx) return;
     const isNed = (ctx.type || "").startsWith("ned");
+    const order = isNed
+      ? ["cycle", "brief", "decks"]
+      : ["brief", "cycle", "decks"];
+    const pickFirstUndone = (preferred) => {
+      const sorted = preferred.slice().filter((t) => !done[t]);
+      return sorted[0] || null;
+    };
     if (isNed) {
-      setRecommended("cycle");
+      setRecommended(pickFirstUndone(order));
       return;
     }
-    // Probe questions bank size — if user has an active reporting cycle already,
-    // suggest cycle; else suggest brief.
     api.get(`/contexts/${contextId}/questions?status=open`)
       .then((r) => {
         const count = (r.data?.questions || []).length;
-        setRecommended(count > 0 ? "cycle" : "brief");
+        const ordered = count > 0
+          ? ["cycle", "brief", "decks"]
+          : ["brief", "cycle", "decks"];
+        setRecommended(pickFirstUndone(ordered));
       })
-      .catch(() => setRecommended("brief"));
-  }, [contextId, contexts, done.brief, done.decks, done.cycle]);
+      .catch(() => setRecommended(pickFirstUndone(order)));
+  }, [contextId, contexts, done]);
 
   const fire = async (target) => {
     setErr("");
