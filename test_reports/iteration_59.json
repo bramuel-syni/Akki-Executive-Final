@@ -1,0 +1,38 @@
+{
+  "summary": "Iter59 — Reproduced and root-caused the sandbox→/signin redirect bug. Hypothesis confirmed: the bug ONLY occurs when the browser has a stale/invalid access_token cookie from a prior session. In a clean browser the sandbox handoff works perfectly (verified live: end-to-end Acme Test Bank → /app?tutorial=1 with sandbox active). With a planted stale access_token cookie the bug reproduces 100% — handoff sets the new JWT in localStorage, /api/auth/me returns 401 (because backend prefers the cookie over the Bearer header), bootstrap()'s catch wipes the localStorage token, navigate fires, ProtectedRoute sees account=false, redirects to /signin. Subsequent manual /app and /app/settings?tab=account navigation ALSO bounce to /signin because the stale cookie is still being sent on every request.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "/api/auth/me (and every authenticated endpoint via get_current_account)", "issue": "core.py:73-77 reads cookie['access_token'] FIRST and only falls back to Authorization Bearer if cookie is absent. If a stale/expired/invalid cookie exists, the fresh Bearer JWT minted by the sandbox flow is ignored and the request 401s. There is no try-decode-then-fallback path.", "priority": "CRITICAL"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Sandbox anonymous handoff → /app", "issue": "AuthContext.bootstrap() catch handler (lines 68-76) wipes only localStorage akki_access_token on 401 — it does NOT call /api/auth/logout to clear the server-side access_token cookie. Once a stale cookie is planted (any prior session), the user is stuck on /signin until they manually clear cookies, because the cookie continues to poison every /auth/me call regardless of which login path they try.", "affected_selectors": ["/sandbox/generating/:sessionId handoff effect", "ProtectedRoute"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "Live Playwright reproductions executed against https://vigilant-kalam-4.preview.emergentagent.com — see iteration_59 inline reproduction trace"
+  ],
+  "action_items": [
+    "PRIMARY FIX (backend): In /app/backend/core.py get_current_account, change the precedence so the Authorization Bearer header is tried FIRST and the cookie is the fallback. Or, more defensively, attempt to decode whichever token is present; if the cookie token fails (jwt.InvalidTokenError / ExpiredSignatureError) AND a Bearer header is present, decode the Bearer token instead. Either approach kills the bug because the sandbox flow always sends a valid Bearer.",
+    "SECONDARY FIX (frontend, optional but recommended): In AuthContext.bootstrap() catch handler, also POST /api/auth/logout (best-effort, ignore errors) to clear the stale server-side cookie when /auth/me 401s. This makes the app self-healing for users whose cookies expired between sessions.",
+    "OPTIONAL FIX (sandbox UX): On the sandbox /generate status 'ready' response, also Set-Cookie access_token=<jwt> (httpOnly, secure, sameSite=Lax, same path as the auth router) so the fresh token overwrites any stale cookie at the browser level — belt-and-braces alongside the localStorage Bearer.",
+    "Add a regression test that plants a stale access_token cookie before /sandbox and asserts the handoff still lands on /app?tutorial=1."
+  ],
+  "critical_code_review_comments": [
+    "core.py get_current_account: cookie-first ordering is brittle. Stale-cookie regressions are silent because the request looks authenticated (cookie present) but jwt.decode throws → 401 → frontend bootstrap catch wipes the wrong credential (localStorage Bearer) and never even attempts the valid one.",
+    "AuthContext.bootstrap catch: removes localStorage 'akki_access_token' on any 401 but leaves the access_token cookie untouched. This asymmetry is exactly what makes the bug self-perpetuating after one bad bootstrap.",
+    "Sandbox.py never sets the access_token as a cookie (only returns it in JSON body), so the SPA has no way to overwrite a pre-existing cookie via the network layer — the Bearer-only handoff was a deliberate design choice that does not hold up against cookie precedence on the backend."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (bug isolated, no code changes)", "frontend": "100% repro (clean browser passes; stale-cookie browser fails 100%)"},
+  "test_credentials": "No login needed — anonymous sandbox flow",
+  "seed_data_creation": "Two transient sandbox sessions were created via /api/sandbox/generate (sessionIds: 1Y2fSFsFDaIy0Aw2 — clean run, gEwaVJ3PjGYzeQkP — bug-repro run). They self-expire per the 14-day sandbox window.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "After the backend ordering fix lands, retest with: (a) clean browser sandbox flow (should still land on /app?tutorial=1), (b) browser with a stale access_token cookie planted before /sandbox (should now also land on /app?tutorial=1 because backend will fall back to the Bearer). Use the live Playwright pattern in this iteration: page.context.add_cookies([{name:'access_token', value:'eyJ...STALE...', domain:'<host>', path:'/', secure:True, sameSite:'Lax'}]) before navigating to /sandbox.",
+  "rca of the issue": "RCA: Backend `core.py::get_current_account` (lines 73-77) reads `request.cookies.get('access_token')` first and only falls back to the `Authorization: Bearer` header if no cookie is present. Anonymous sandbox handoff stores its freshly-minted JWT in `localStorage` and the api.js axios interceptor sends it as a Bearer header. But the axios client also has `withCredentials: true`, so any pre-existing `access_token` cookie (stale from a prior signed-in session, or any expired token) is ALSO sent. Backend uses the stale cookie, jwt.decode raises InvalidTokenError, returns 401. Frontend `AuthContext.bootstrap()` catches → setAccount(false) + `localStorage.removeItem('akki_access_token')`, but does NOT clear the stale server-side cookie. SandboxGenerating's handoff then calls navigate('/app?tutorial=1') → ProtectedRoute sees account===false → Navigate to /signin. The user is stuck because the cookie still poisons every subsequent request. REPRODUCTION (verified live): plant {name:'access_token', value:<garbage JWT>} cookie on the host, run the sandbox flow — handoff lands on /signin, manual /app and /app/settings?tab=account also redirect to /signin. CLEAN-BROWSER CONTROL (verified live): same flow with no pre-existing cookie lands cleanly on /app?tutorial=1 with the sandbox account active. MITIGATION: see action_items — primary fix is to change cookie-first to Bearer-first (or try-cookie-fallback-to-Bearer) in get_current_account."
+}
