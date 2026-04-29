@@ -160,9 +160,9 @@ export default function Prepare() {
     <AppShell>
       <div className="max-w-[1280px] mx-auto px-6 py-10">
         <p className="akki-overline mb-2 flex items-center gap-2">
-          <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Prepare · {activeContext.name}
+          <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Catch-up · {activeContext.name}
         </p>
-        <h1 className="akki-greeting">Prepare for what's next.</h1>
+        <h1 className="akki-greeting">Catch up on what's next.</h1>
         <p className="akki-meta mt-2 max-w-xl">
           Short, focused, on-demand. Tell AKKI what you want to be ready for, and AKKI drafts it.
         </p>

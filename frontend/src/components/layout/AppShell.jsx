@@ -45,10 +45,13 @@ const NAV = [
   { to: "/app/chat", label: "Chat", icon: MessageCircle, module: "§15", ready: true },
   { to: "/app/solve", label: "Solve", icon: Layers, module: "§18", ready: true,
     badge: "Preview" },
-  { to: "/app/prepare", label: "Prepare", icon: Sparkles, module: "M5+M12", ready: true },
-  { to: "/app/decks", label: "Decks", icon: Presentation, module: "§17", ready: true },
-  { to: "/app/plays", label: "Workflows", icon: Compass, module: "§13", ready: true,
-    roles: ["executive"] },
+  { to: "/app/prepare", label: "Catch-up", icon: Sparkles, module: "M5+M12", ready: true },
+  { to: "/app/decks", label: "Decks + Reports", icon: Presentation, module: "§17", ready: true },
+  // Iter64 — Workflows entry deprecated/folded into Decks + Reports per
+  // user direction ("Combine Decks and Workflow"). Workflows page still
+  // accessible via deep link for completed/in-flight Board Pack runs but
+  // no longer in primary nav. The unified Studio surface is the single
+  // place users come to produce reports + decks with sensitivity scoring.
   { to: "/app/lens", label: "The Lens (POV)", icon: Eye, module: "M14", ready: true },
   { to: "/app/simulate", label: "Test Hypothesis", icon: Target, module: "M14", ready: true },
   { to: "/app/cycle", label: "Reporting Cycle", icon: Send, module: "§12", ready: true,

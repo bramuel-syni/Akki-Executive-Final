@@ -1,124 +1,162 @@
 {
-  "theme": "Light with Dark Chrome Header",
-  "archetype": "Archetype 5 (Jewel & Luxury) infused with Archetype 4 (Swiss & High-Contrast)",
-  "aesthetic_vibe": "Bloomberg Terminal × Stripe Dashboard × Linear. Weighty, trustworthy, executive, data-dense but never cluttered.",
-  "colors": {
-    "primary": "#0A1F44",
-    "primary_hover": "#0E2958",
-    "accent_gold": "#C9A961",
-    "accent_gold_hover": "#B39556",
-    "background_canvas": "#FAFBFC",
-    "surface": "#FFFFFF",
-    "border": "#E1E6ED",
-    "text_main": "#0A1F44",
-    "text_muted": "#64748B",
-    "danger_bg": "#FEF2F2",
-    "danger_text": "#DC2626",
-    "danger_border": "#F87171",
-    "success_bg": "#ECFDF5",
-    "success_text": "#059669"
+  "theme_and_archetype": {
+    "theme": "light",
+    "archetype": "Editorial / Old Money Tech (Custom variant based on user constraints)",
+    "description": "The tone, direction and style target seasoned/emerging executives and NEDs. Look and feel: editorial cream/oxblood/serif aesthetic. Direct, confident, NACD/IoD/FT register. No SaaS fluff."
+  },
+  "color_palette": {
+    "background": {
+      "cream": "#F7F3EA",
+      "usage": "Primary page background, cards, header background"
+    },
+    "accents": {
+      "oxblood": "#8B2E2B",
+      "oxblood_usage": "Secondary CTAs, subtle active states, subtle borders, high-impact numbers/rubrics",
+      "executive_navy": "#0A1F44",
+      "executive_navy_usage": "Primary CTA buttons, quote attribution chips, Enterprise 'Decks + Reports' section full-width background"
+    },
+    "text": {
+      "primary": "#111827",
+      "secondary": "#4B5563",
+      "cream_on_navy": "#F7F3EA",
+      "navy_on_cream": "#0A1F44"
+    }
   },
   "typography": {
-    "font_family_primary": "\"Inter\", sans-serif",
-    "font_family_secondary": "\"Inter\", sans-serif",
-    "rules": {
-      "h1": "text-3xl font-light tracking-tight text-[#0A1F44] mb-6",
-      "h2": "text-2xl font-medium tracking-tight text-[#0A1F44] mb-4",
-      "h3": "text-lg font-medium tracking-tight text-[#0A1F44] mb-3",
-      "body": "text-sm text-slate-700 leading-relaxed",
-      "overline": "text-[10px] font-bold uppercase tracking-[0.2em] text-[#C9A961]",
-      "table_header": "text-xs font-semibold uppercase tracking-wider text-slate-500 bg-slate-50",
-      "data_number": "font-medium tracking-tight text-[#0A1F44]"
+    "headlines": {
+      "font": "Georgia, serif",
+      "weight": "normal to semi-bold",
+      "tracking": "tracking-tight",
+      "usage": "Hero H1, Section H2, Pull Quotes, Feature Titles. Sentence case, left-aligned."
+    },
+    "body_and_chrome": {
+      "font": "Inter, sans-serif",
+      "weight": "normal",
+      "tracking": "tracking-normal",
+      "usage": "Body text, small captions, top navigation, button text, labels."
     }
   },
-  "spacing_and_layout": {
-    "container_padding": "p-8",
-    "card_padding": "p-6",
-    "border_radius": "rounded-sm",
-    "shadows": {
-      "card": "shadow-sm",
-      "dropdown": "shadow-lg shadow-black/5"
-    },
-    "grid_strategy": "Control Room Grid: Dense, compact spacing (gap-4 or gap-6). Heavy reliance on pure HTML/Tailwind HTML table tags for data density, avoiding overly padded Shadcn Card components for raw data."
+  "navy_accent_placement_strategy": {
+    "primary_ctas": "All 'Try AKKI in 60 seconds' (Sandbox) buttons must have bg-[#0A1F44] text-[#F7F3EA].",
+    "quote_attribution": "Author names and titles in pull quotes should be rendered in the navy #0A1F44 to pop against the cream background without fighting the oxblood.",
+    "enterprise_section": "The 'Decks + Reports' section should use a full-width #0A1F44 background. Text inside this section should be cream #F7F3EA. This breaks up the page and signals 'Enterprise/Secure' heavily."
   },
-  "components": {
-    "app_shell": {
-      "header": "bg-[#0A1F44] text-white border-b border-[#0A1F44]/90 h-16 sticky top-0 z-50 flex items-center px-6 justify-between",
-      "sidebar": "bg-[#0A1F44] text-white/80 w-64 min-h-screen border-r border-[#193262] pt-6 flex flex-col gap-2",
-      "sidebar_link_active": "bg-[#193262] text-white border-l-2 border-[#C9A961]",
-      "sidebar_link_inactive": "hover:bg-[#193262]/50 hover:text-white transition-colors border-l-2 border-transparent"
+  "three_pillar_visual_system": {
+    "layout": "Bento-style or asymmetrical grid. Avoid repetitive identical cards. Direct the eye to the strongest feature (Solve).",
+    "solve_pillar": "The Hero Feature. Takes up 2 columns or is prominent at the top of the grid. Uses the desk/ledgers image. Clear 'Start Session' CTA.",
+    "pulse_pillar": "Secondary focus. Emphasize aggregation and 'Cross-board' patterns. Uses the library/books image. Focus on data points.",
+    "decks_reports_pillar": "Enterprise focus. Extracted to its own full-width navy band below the grid, or as a dense, high-contrast block within the bento. Uses columns architecture image."
+  },
+  "section_architecture": [
+    {
+      "section_id": "hero",
+      "purpose": "Land the value promise FAST",
+      "copy": {
+        "headline": "AKKI reads the pack so you can read the room.",
+        "subhead": "The unified workspace for seasoned and emerging executives to grow and preserve shareholder value.",
+        "primary_cta": "Try AKKI in 60 seconds",
+        "secondary_cta": "Sign in"
+      },
+      "visual_treatment": "Left-aligned Georgia headline (text-5xl or 6xl). Right side or background: sepia-duotone boardroom image with cream overlay blending.",
+      "components": "Rewrite HeroSection"
     },
-    "buttons": {
-      "primary": "bg-[#C9A961] text-white hover:bg-[#B39556] rounded-sm font-medium px-4 py-2 transition-colors",
-      "secondary": "bg-white border border-[#E1E6ED] text-[#0A1F44] hover:bg-slate-50 rounded-sm font-medium px-4 py-2 transition-colors shadow-sm",
-      "danger": "bg-white border border-red-500 text-red-600 hover:bg-red-50 rounded-sm px-4 py-2 font-medium transition-colors"
+    {
+      "section_id": "three_pillars_showcase",
+      "purpose": "Surface the conversion drivers",
+      "features": ["AKKI Solve", "Cross Board Pulse"],
+      "copy": {
+        "solve_headline": "Diagnose board-grade problems in one structured pause.",
+        "solve_bullets": ["Surface, Depth, Synthesis, Lock-in", "Grounded in 27 anonymised comparable diagnoses", "Export to Brief or PDF in one click"],
+        "pulse_headline": "The Cross Board Pulse",
+        "pulse_bullets": ["For NEDs serving multiple boards", "Aggregate signals, themes, and risk patterns", "Catch systemic risks before the audit chair"]
+      },
+      "visual_treatment": "Asymmetrical layout. Large Solve section with 'Start Session' secondary CTA. Smaller Pulse section.",
+      "components": "Create new ThreePillars component"
     },
-    "cards": {
-      "base": "bg-white border border-[#E1E6ED] rounded-sm shadow-sm overflow-hidden",
-      "header": "px-6 py-4 border-b border-[#E1E6ED] bg-white flex justify-between items-center",
-      "body": "p-6"
+    {
+      "section_id": "enterprise_decks_reports",
+      "purpose": "Highlight studio/workflow features (formerly Decks + Workflows)",
+      "copy": {
+        "headline": "Produce board-grade reports securely.",
+        "bullets": ["Auto-sensitivity-scoring on every artifact", "Electronic read-tracking marker", "Information exposure score"],
+        "primary_cta": "Request an Enterprise demo"
+      },
+      "visual_treatment": "Full-bleed Navy (#0A1F44) background. Cream text. High contrast, signaling enterprise security.",
+      "components": "Create new EnterpriseFeature component"
     },
-    "tables": {
-      "wrapper": "w-full overflow-hidden rounded-sm border border-[#E1E6ED] bg-white",
-      "header_row": "bg-slate-50 border-b border-[#E1E6ED]",
-      "row": "border-b border-[#E1E6ED] hover:bg-slate-50/50 transition-colors",
-      "cell": "px-6 py-4 text-sm text-slate-700"
+    {
+      "section_id": "editorial_proof",
+      "purpose": "Provide trust via FT-style editorial tone",
+      "copy": {
+        "quote": "Adopting tools that preserve value isn't just operational—it is a fiduciary duty.",
+        "attribution": "Exco360",
+        "cta": "Read the Exco360 Blog"
+      },
+      "visual_treatment": "Massive Georgia serif pull-quote. Attribution chip in Navy. Accent line in Oxblood.",
+      "components": "Update existing Testimonial/RubricStrip component"
     },
-    "badges": {
-      "role": "inline-flex items-center px-2 py-1 rounded-sm text-xs font-medium bg-slate-100 text-slate-800 border border-slate-200",
-      "trust_chip": "inline-flex items-center px-2 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-[#C9A961] border border-[#C9A961]/30",
-      "verification_stamp": "inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-[#C9A961]"
-    },
-    "forms": {
-      "input": "flex h-10 w-full rounded-sm border border-[#E1E6ED] bg-white px-3 py-2 text-sm text-[#0A1F44] file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#C9A961] focus-visible:border-[#C9A961] disabled:cursor-not-allowed disabled:opacity-50"
+    {
+      "section_id": "footer",
+      "purpose": "Final conversion and navigation",
+      "copy": {
+        "newsletter_cta": "Subscribe to Exco360"
+      },
+      "visual_treatment": "4-column standard footer, cream background.",
+      "components": "MarketingShell footer"
     }
-  },
-  "icons": {
-    "library": "lucide-react",
-    "stroke_width": 1.5,
-    "size": "w-5 h-5"
-  },
-  "media": {
-    "auth_background": {
-      "url": "https://static.prod-images.emergentagent.com/jobs/0441d610-5908-43db-b746-3ec05187ba11/images/708daea7b9b446b2eb96ba8c62c926559162b8b148c9d38a052037a00298cfbb.png",
-      "description": "Abstract architectural background, dark navy blue and subtle gold accents for Sign-in/Sign-up split screen"
+  ],
+  "copy_library": {
+    "ctas": {
+      "primary_conversion": "Try AKKI in 60 seconds",
+      "feature_solve": "Start a Solve session",
+      "enterprise": "Request a team workspace",
+      "newsletter": "Subscribe to Exco360",
+      "login": "Sign in"
     },
-    "onboarding_art": {
-      "url": "https://static.prod-images.emergentagent.com/jobs/0441d610-5908-43db-b746-3ec05187ba11/images/45ea328e6111fa06c7b3530f0bd66291c809bf1519364c126f09302bc02b65f2.png",
-      "description": "Abstract glowing gold nodes on a deep navy blue background, representing a 'Data Trust Map'. Use this in the onboarding stub landing page."
-    },
-    "avatars": [
-      {
-        "url": "https://images.unsplash.com/photo-1642257834579-eee89ff3e9fd?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDF8MHwxfHNlYXJjaHwxfHxhZnJpY2FuJTIwYnVzaW5lc3MlMjBleGVjdXRpdmUlMjBwb3J0cmFpdHxlbnwwfHx8fDE3NzY1MzA5MTl8MA&ixlib=rb-4.1.0&q=85",
-        "description": "African business executive portrait (use in member list table)"
-      },
-      {
-        "url": "https://images.unsplash.com/photo-1637684666587-91e51b10a555?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDF8MHwxfHNlYXJjaHwyfHxhZnJpY2FuJTIwYnVzaW5lc3MlMjBleGVjdXRpdmUlMjBwb3J0cmFpdHxlbnwwfHx8fDE3NzY1MzA5MTl8MA&ixlib=rb-4.1.0&q=85",
-        "description": "African business executive portrait (use in member list table)"
-      },
-      {
-        "url": "https://images.unsplash.com/photo-1686628269082-c92c3189903f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDF8MHwxfHNlYXJjaHwzfHxhZnJpY2FuJTIwYnVzaW5lc3MlMjBleGVjdXRpdmUlMjBwb3J0cmFpdHxlbnwwfHx8fDE3NzY1MzA5MTl8MA&ixlib=rb-4.1.0&q=85",
-        "description": "African business executive portrait (use in member list table)"
-      }
+    "bullet_style": "Short, punchy, active verbs. No paragraphs longer than 2 sentences."
+  },
+  "component_level_recommendations": {
+    "keep": [
+      "/app/frontend/src/components/marketing/MarketingShell.jsx",
+      "/app/frontend/src/components/marketing/RubricStrip.jsx"
+    ],
+    "rewrite_or_create": [
+      "/app/frontend/src/pages/Landing.jsx",
+      "/app/frontend/src/components/marketing/HeroSection.jsx",
+      "/app/frontend/src/components/marketing/ThreePillars.jsx",
+      "/app/frontend/src/components/marketing/EnterpriseFeature.jsx"
     ]
   },
-  "interactions_and_motion": {
-    "hover_states": "Crisp and immediate. Buttons lift -translate-y-[1px] and gain a shadow-md. Links transition color in 150ms ease-in-out.",
-    "focus_states": "High contrast focus rings. focus-visible:ring-2 focus-visible:ring-[#C9A961] focus-visible:outline-none.",
-    "dialogs": "Fade in with a slight scale up (95% -> 100%). Backdrop blur is highly recommended (backdrop-blur-sm bg-[#0A1F44]/40) for executive gravitas.",
-    "data_testid": "MANDATORY. All interactive elements (buttons, links, form inputs, dialog triggers, list items) MUST include data-testid attributes formatted in kebab-case (e.g. data-testid='tenant-settings-export-btn')."
+  "mobile_responsive_considerations": {
+    "hero": "Stack text above image on mobile. Ensure headline scales down nicely (text-4xl).",
+    "bento_grid": "Collapse to 1 column on mobile. Keep order: Solve -> Pulse -> Decks.",
+    "padding": "Maintain generous padding (py-16 md:py-24) to keep the luxurious editorial feel."
   },
-  "instructions_to_main_agent": [
-    "Use Shadcn UI components heavily but customize their default Vercel radii from rounded-md to rounded-sm to match the linear/stripe 'Bloomberg' aesthetic.",
-    "The App Shell should feature a deep Navy (#0A1F44) top header and left navigation bar, framing a light gray/white content canvas.",
-    "Ensure 'Generous whitespace' is applied via large padding (p-8) on page layouts, but keep data tables tight and information-dense.",
-    "For the Onboarding stub, use the `onboarding_art` image as a hero or split-screen visual to create a premium first impression.",
-    "When creating the Settings table, use the provided avatar images for the member list.",
-    "The 'Danger Zone' for archiving a tenant should clearly stand out with red borders and text, visually distinct from the rest of the settings.",
-    "Use the Gold accent (#C9A961) sparingly but deliberately: active navigation markers, primary CTAs, and trust/verification icons.",
-    "Include an Audit Log panel in the settings or dashboard with a clean, timestamped timeline view.",
-    "Ensure the application strictly follows WCAG 2.1 AA baseline. Use high-contrast text against the light canvas and legible typography sizes.",
-    "In the future gates, you will implement Data Trust Maps, Signals, and LLM Chat. Set up the foundational structure in this MVP (empty states, placeholders, basic layouts) to support these modules.",
-    "Build standard JWT email/password auth screens using the `auth_background` image."
+  "testing_attributes": {
+    "pattern": "kebab-case, role-based",
+    "examples": [
+      "data-testid='primary-sandbox-cta'",
+      "data-testid='solve-session-start'",
+      "data-testid='enterprise-demo-request'",
+      "data-testid='newsletter-subscribe'",
+      "data-testid='login-link'"
+    ]
+  },
+  "media_urls": [
+    {
+      "category": "boardroom_hero",
+      "url": "https://images.unsplash.com/photo-1723002312141-027f132f62de?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNDR8MHwxfHNlYXJjaHwxfHxlbXB0eSUyMGJvYXJkcm9vbSUyMGxlYXRoZXIlMjBjaGFpcnN8ZW58MHx8fHwxNzc3NDg4MTQ5fDA&ixlib=rb-4.1.0&q=85",
+      "description": "Empty boardroom with leather chairs. Apply CSS sepia duotone filter (e.g. mix-blend-multiply with #8B2E2B, or grayscale sepia filters)."
+    },
+    {
+      "category": "solve_desk_books",
+      "url": "https://images.unsplash.com/photo-1643970118347-e11ad4d48a51?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NjZ8MHwxfHNlYXJjaHwxfHxvbGQlMjBib29rcyUyMGxpYnJhcnl8ZW58MHx8fHwxNzc3NDg4MTQ5fDA&ixlib=rb-4.1.0&q=85",
+      "description": "Old books library. Apply CSS sepia duotone treatment."
+    },
+    {
+      "category": "decks_columns",
+      "url": "https://images.unsplash.com/photo-1676517243531-69e3b27276e9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODF8MHwxfHNlYXJjaHwxfHxuZW9jbGFzc2ljYWwlMjBjb2x1bW5zJTIwYXJjaGl0ZWN0dXJlfGVufDB8fHx8MTc3NzQ4ODE0OXww&ixlib=rb-4.1.0&q=85",
+      "description": "Neoclassical columns architecture. Apply CSS sepia duotone treatment."
+    }
   ]
 }

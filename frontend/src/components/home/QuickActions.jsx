@@ -43,7 +43,7 @@ const TILE_DEFS = [
   {
     key: "prepare_meeting",
     role: "any", playType: "pre_board", stageHint: 0,
-    label: "Read & prepare for tomorrow",
+    label: "Read & catch-up for tomorrow",
     body: "Pull in a freshly-arrived board pack. Walk in with a one-page brief.",
     icon: FileText,
     priority: (s) => 60 + (s.unreadBriefings * 6) + (s.recentDocs * 2),
