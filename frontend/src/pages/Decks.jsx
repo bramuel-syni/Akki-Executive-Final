@@ -908,9 +908,28 @@ function StudioHistoryStrip({ items, contextId, onOpenDeck }) {
     if (it.kind === "deck") {
       onOpenDeck?.(it.id);
     } else if (it.kind === "briefing") {
-      // Briefings live on the Catch-up surface (/app/prepare). Open with
-      // the briefing id as a hash so the page can scroll/select it.
-      window.location.assign(`/app/prepare#brief-${it.id}`);
+      // Briefings (formal, db.briefings) are exported as PDF/DOCX. Open
+      // the PDF export in a new tab — it carries the same shielding,
+      // citations and sensitivity record the Studio history strip already
+      // shows.
+      const url = `${process.env.REACT_APP_BACKEND_URL}/api/contexts/${contextId}/briefings/${it.id}/export?format=pdf`;
+      const tok = localStorage.getItem("akki_access_token");
+      // Authenticated download in a new tab — fetch as blob, open via object URL.
+      fetch(url, {
+        headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+        credentials: "include",
+      })
+        .then((r) => {
+          if (!r.ok) throw new Error("Couldn't open the briefing.");
+          return r.blob();
+        })
+        .then((blob) => {
+          const u = URL.createObjectURL(blob);
+          window.open(u, "_blank", "noopener,noreferrer");
+          // Don't revoke immediately — the new tab needs the URL alive.
+          setTimeout(() => URL.revokeObjectURL(u), 60_000);
+        })
+        .catch((e) => toast.error(e.message || "Couldn't open the briefing."));
     }
   };
 

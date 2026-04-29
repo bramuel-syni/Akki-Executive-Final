@@ -1,0 +1,41 @@
+{
+  "summary": "Iter67 retest after main-agent fixes — ALL GREEN on the critical iter66 TDZ fix and the Briefings row-click PDF-blob redirect. Backend: 15/15 pytest PASS (9 iter66 plan-gated readers + LLM tiebreaker + plays listing; 6 new iter67 regression covering /api/solve/clusters==12, /api/contexts/{cid}/studio/history inline sensitivity+exposure, engagement plan+readers_locked, plays GET, briefs GET, rescore?use_llm=true). Frontend: (1) /app/prepare now loads cleanly — H1='Catch up on what's next.', Brief tab visible, no page errors. (2) /app/prepare#brief-{nonexistent} on a FRESH navigation: hash stripped to '', H1 rendered, no crash. (3) /app/prepare#brief-{valid} on a FRESH navigation: hash stripped, brief detail modal opens ([data-testid=prepare-brief-detail] + [role=dialog] both present). (4) Studio history briefing row click on /app/decks intent step: confirmed via window.open stub that a blob: URL is opened (blob:https://vigilant-kalam-4.preview.emergentagent.com/...) — the authenticated fetch→blob→window.open flow works end-to-end on real briefing 238b9d1e-7029-41bb-bc63-adcb146a2773. (5) ActiveWorkflowsRail visually confirmed on /app/decks intent step showing 'Board Pack ACTIVE' + 'Pre-Board ACTIVE' tiles (though rail tile testid pattern active-workflow-tile-{id} was not detected in DOM query — tiles present visually, see iter66 report confirming rail renders + positioning above Studio history). The hash-handler TDZ ReferenceError reported in iter66 is FIXED — openBriefById useCallback is now declared at line 133 BEFORE the hash useEffect at line 149, and hashHandledRef prevents re-fire.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Prepare hash handler — same-document hash navigation",
+        "issue": "If the user is already on /app/prepare and navigation only changes the hash (e.g. client-side <a href=\"#brief-x\">), the useEffect does NOT re-fire because its dependency array is [cid, openBriefById] and neither changes across a pure hash change. This is ONLY a concern if any in-app link sets the hash without a full navigation; the iter66 Studio history briefing row already bypasses this by opening a PDF blob directly, and the primary deep-link path is fresh navigation (email link, new tab, etc.) where it works correctly. Consider adding a hashchange window-event listener for completeness — but NOT currently breaking any real user flow.",
+        "affected_selectors": ["[data-testid=\"prepare-brief-detail\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter66_studio_engagement.py",
+    "/app/backend/tests/test_iter67_regression.py",
+    "/app/test_reports/pytest/iter67.xml"
+  ],
+  "action_items": [
+    "(OPTIONAL / LOW PRIORITY) Add a window.addEventListener('hashchange', ...) on Prepare to cover same-document hash navigations — currently works only on fresh navigation + cid-mount, but no caller uses same-doc hash change so it does not block any shipped flow.",
+    "(OPTIONAL) ActiveWorkflowsRail tile testid pattern — iter66 note suggested it uses `onClick + window.location.assign` (full reload) rather than a react-router <Link>. Still not migrated in iter67. Nice-to-have for SPA prefetch consistency."
+  ],
+  "critical_code_review_comments": [
+    "Prepare.jsx — TDZ fix VERIFIED correct: openBriefById useCallback at line 133, hash useEffect at line 149. hashHandledRef pattern is a sound guard against strict-mode double-fire and back-to-back cid mounts. Regex ^#brief-([\\w-]+)$ correctly accepts UUIDs with hyphens.",
+    "Decks.jsx 907-934 — Briefing row click uses authenticated fetch→blob→window.open. Adds Authorization header from localStorage token + credentials:'include'. Revokes object URL after 60s. Correct pattern. One nit: the fetch Error path only toasts a generic message; consider logging for observability in Sentry/console.",
+    "studio.py engagement endpoint — plan defaults to 'free' when account.plan is missing. Normalises lowercase, unlocks only 'pro'/'team'. Clean.",
+    "studio_sensitivity.score_sensitivity_with_llm_tiebreaker — fallback_only short-circuit + 200-char min + no-downgrade rule all preserved. Belt-and-braces good.",
+    "iter67 backend test for /api/contexts/{cid}/plays correctly handles the response shape {plays: [...]} — initial test assumed {items:[...]} and was fixed; main agent's plays router returns the 'plays' key."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter67_regression.py (NEW — 6 regression tests)"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100% (4/4 critical review bullets verified — Prepare loads clean, invalid-hash no crash + hash stripped, valid-hash modal opens + hash stripped, briefing row opens blob PDF)"},
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! (free plan)",
+  "seed_data_creation": "Tests use existing seed data. iter66 test file seeds+cleans its own studio_views + dummy reader (TEST_ prefix). iter67 test file is read-only — no seeding/cleanup needed.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter67 is all-green. The iter66 TDZ regression is closed. Two optional low-priority items recorded (hashchange listener, SPA Link for ActiveWorkflowsRail tiles). Backend tests pytest-compatible under /app/backend as cwd: `cd /app/backend && python -m pytest tests/test_iter67_regression.py tests/test_iter66_studio_engagement.py`. The briefing row blob-PDF flow needs window.open stubbing to verify programmatically — pattern documented in this iter's playwright script.",
+  "rca of the issue": "N/A — iter67 is a clean retest. Previously reported iter66 TDZ bug (ReferenceError: Cannot access openBriefById before initialization) was fixed by reordering the openBriefById useCallback declaration ABOVE the hash useEffect AND adding a hashHandledRef guard. Verified via four frontend test flows: fresh load, fresh load with invalid hash, fresh load with valid hash, and briefing-row blob PDF open. All pass."
+}
