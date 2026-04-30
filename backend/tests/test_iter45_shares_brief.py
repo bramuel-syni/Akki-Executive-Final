@@ -16,7 +16,7 @@ import requests
 
 BASE_URL = os.environ.get(
     "REACT_APP_BACKEND_URL",
-    "https://vigilant-kalam-4.preview.emergentagent.com",
+    "https://akki-executive.preview.emergentagent.com",
 ).rstrip("/")
 EMAIL = "bramuel@syni.ai"
 PASSWORD = "TestBramuel2026!"

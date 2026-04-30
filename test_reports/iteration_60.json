@@ -3,7 +3,7 @@
   "backend_issues": {"critical": [], "minor": []},
   "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
   "test_report_links": [
-    "Live Playwright run via mcp_browser_automation against https://vigilant-kalam-4.preview.emergentagent.com — see iteration_60 inline trace (sessionIds: aqbn6RDQzpa97Dq7 clean run, TPJ8QQ1XAt4Eko6t stale-cookie run)"
+    "Live Playwright run via mcp_browser_automation against https://akki-executive.preview.emergentagent.com — see iteration_60 inline trace (sessionIds: aqbn6RDQzpa97Dq7 clean run, TPJ8QQ1XAt4Eko6t stale-cookie run)"
   ],
   "action_items": [],
   "critical_code_review_comments": [

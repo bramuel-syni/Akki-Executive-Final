@@ -3,7 +3,7 @@
   "backend_issues": {"critical": [], "minor": []},
   "frontend_issues": {
     "ui_bugs": [
-      {"component": "Chat.jsx (?doc handler)", "issue": "Clicking 'Continue in Chat' navigates to /app/chat?doc=<id> but (a) the doc query param is NOT stripped from the URL after consume, and (b) no fresh chat thread titled 'Re: <doc name>' is created and no composer pre-fill appears — page shows generic empty state ('Your private AI workspace · Start a conversation'). Verified with docId b31ec1b1-10d0-4a70-a762-c7374a6394f9 (doc 'Weekly update'). Final URL stayed: /app/chat?doc=b31ec1b1-10d0-4a70-a762-c7374a6394f9", "selector": "[data-testid='doc-summary-continue-chat']", "priority": "HIGH"}
+      {"component": "Chat.jsx (?doc handler)", "issue": "Clicking 'Continue in Chat' navigates to /app/chat?doc=<id> but (a) the doc query param is NOT stripped from the URL after consume, and (b) no fresh chat thread titled 'Re: <doc name>' is created and no composer pre-fill appears — page shows generic empty state ('Your private AI workspace · Start a conversation'). Verified with docId b31ec1b1-10d0-4a70-a762-c7374a6394f9 (doc 'Weekly update'). Final URL stayed: /app/chat?doc=akki-executive", "selector": "[data-testid='doc-summary-continue-chat']", "priority": "HIGH"}
     ],
     "integration_issues": [
       {"flow": "DocumentSummaryCard → Chat handoff", "issue": "Navigate works, but the Chat page never picks up the ?doc query param to spin a new thread / pre-fill composer / strip the param. Either useEffect on Chat.jsx is gated on something that isn't ready (e.g. contexts not loaded yet) or the param-consumption code is missing.", "affected_selectors": ["[data-testid='doc-summary-continue-chat']", "Chat composer textarea"]}

@@ -14,7 +14,7 @@
     "design_issues": []
   },
   "test_report_links": [
-    "Live Playwright reproductions executed against https://vigilant-kalam-4.preview.emergentagent.com — see iteration_59 inline reproduction trace"
+    "Live Playwright reproductions executed against https://akki-executive.preview.emergentagent.com — see iteration_59 inline reproduction trace"
   ],
   "action_items": [
     "PRIMARY FIX (backend): In /app/backend/core.py get_current_account, change the precedence so the Authorization Bearer header is tried FIRST and the cookie is the fallback. Or, more defensively, attempt to decode whichever token is present; if the cookie token fails (jwt.InvalidTokenError / ExpiredSignatureError) AND a Bearer header is present, decode the Bearer token instead. Either approach kills the bug because the sandbox flow always sends a valid Bearer.",

@@ -4,7 +4,7 @@ import time
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://vigilant-kalam-4.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://akki-executive.preview.emergentagent.com").rstrip("/")
 EMAIL = "bramuel@syni.ai"
 PASSWORD = "TestBramuel2026!"
 CTX_ID = "fb4df969-3f17-4279-bf78-f07bb9e29650"
