@@ -2885,3 +2885,67 @@ P2: Decks UI E2E retest after midnight; max-of-window label phrasing on
   entry points for the same thing).
 - Promote sensitivity LLM tiebreaker to default-on (today: opt-in).
 
+
+
+## §iter69 — Public read-only share viewer (closes iter68's friction loop) (2026-04-30)
+
+### Why
+Iter68 shipped "Share with the Chair" — the share email sends a tracked
+link, and when the recipient clicks, their view bumps the artefact's
+exposure score. But the redirect target was `/app/decks/:id` or
+`/app/prepare#brief-:id`, which bounced non-AKKI directors (most
+external recipients) straight into `/signin`. The iter68 audit flagged
+this as the highest-impact friction to close.
+
+### What shipped
+- **Public read-only viewer page** (`/shared/:token`, new
+  `pages/SharedArtefact.jsx`). Editorial cream/oxblood chrome (AKKI
+  logo + "Shared with you · Synisense-shielded" in the topbar). Renders
+  the artefact (deck slides OR briefing opening + items) as read-only
+  with the sensitivity chip inline. Footer: "Your read has been
+  recorded" + contextual CTA (authed: `Open in AKKI →`; anonymous:
+  `Try AKKI in 60 seconds →` to `/sandbox`).
+- **New backend endpoint** `GET /api/public/studio/read/{token}` (no
+  auth). Decodes the share token, records an idempotent per-day view
+  row under `account_id = external:<sha256(email)>`, marks the share
+  record as opened, and returns public-safe content (title, slides
+  for decks; title + opening_paragraph + items for briefings — we
+  deliberately drop audience, missing_context, internal production
+  metadata).
+- **Legacy track endpoint updated**: `GET /api/public/studio/track/{token}`
+  still 302-redirects, but now always to `/shared/:token` instead of
+  the app deep links. Back-compat preserved for any shares sent during
+  iter68.
+- **Email template URL swapped** to `{FRONTEND_URL}/shared/{token}` so
+  new shares land directly on the public viewer.
+
+### Error states
+- Expired token → 410 ("This share link has expired.")
+- Invalid token → 400 ("Invalid share link.")
+- Deleted artefact → 404 ("This document is no longer available.")
+- All three surface as an editorial `<ErrorPanel>` on the viewer with
+  a "reply to sender" nudge.
+
+### Tests
+- iter69: `tests/test_iter68_share_chair.py` — **8/8 GREEN** (end-to-end
+  share-email + public-track redirect + public-read happy path + 410
+  expired + 400 invalid + 404 missing + unique_readers increment with
+  same-day dedupe).
+- iter64/66/67 regression: **29/29 GREEN**, zero regressions.
+- Frontend: programmatic smoke pass in Playwright confirmed title,
+  "Restricted" sensitivity chip, 6 briefing items, footer, and the
+  non-authed "Try AKKI" CTA all render on `/shared/:token` with a valid
+  token.
+
+### Files touched
+- `/app/backend/routers/studio.py` — new `/api/public/studio/read/{token}`,
+  track endpoint redirect updated, email template URL swapped.
+- `/app/frontend/src/pages/SharedArtefact.jsx` — new file.
+- `/app/frontend/src/App.js` — route `/shared/:token` registered (public).
+- `/app/backend/tests/test_iter68_share_chair.py` — 8 regression cases.
+
+### Still-open P1 (carry forward to iter70)
+- Real Stripe → `solve_pro` state flip via the existing webhook.
+- Real validator (Gemini 2.5 Flash) fan-out to decks, reports, Solve
+  syntheses (briefs already covered from iter49).
+- Cross-Board Pulse as a dedicated surface OR soften landing copy.

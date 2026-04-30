@@ -49,6 +49,7 @@ import Security from "@/pages/marketing/Security";
 import Blog from "@/pages/marketing/Blog";
 import BlogPost from "@/pages/marketing/BlogPost";
 import BlogAdmin from "@/pages/marketing/BlogAdmin";
+import SharedArtefact from "@/pages/SharedArtefact";
 
 function PublicOnlyRoute({ children, allowSandbox = false }) {
   const { account } = useAuth();
@@ -72,6 +73,7 @@ function App() {
           <Route path="/blog" element={<Blog />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
           <Route path="/respond/:token" element={<RespondToChecklist />} />
+          <Route path="/shared/:token" element={<SharedArtefact />} />
           <Route path="/signin" element={<PublicOnlyRoute><SignIn /></PublicOnlyRoute>} />
           {/* URL aliases for muscle-memory / external-bookmark variants. The
               app's internal links use /signin, but users (and search engines,

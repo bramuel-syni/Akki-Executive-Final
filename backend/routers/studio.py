@@ -579,7 +579,10 @@ async def share_artefact_by_email(
     })
 
     frontend_url = (os.environ.get("FRONTEND_URL") or "").rstrip("/")
-    tracked_url = f"{frontend_url}/api/public/studio/track/{token}"
+    # Public read-only viewer route — no auth required. Non-AKKI directors
+    # can read the artefact inline; the viewer records the view via
+    # /api/public/studio/read/{token} on mount.
+    tracked_url = f"{frontend_url}/shared/{token}"
 
     # Resolve title + context label for the email body.
     artefact_title = artefact.get("title") or artefact.get("intent") or "Your shared document"
@@ -686,17 +689,112 @@ async def public_track_share(token: str, request: Request):
          "$inc": {"open_count": 1}},
     )
 
-    # Redirect to the in-app artefact surface. Decks deep-link to the
-    # studio surface; briefings currently don't have a dedicated public
-    # read surface, so we fall back to the PDF export (auth-gated — the
-    # external recipient will hit signin and the app's cross-context
-    # resolver will land them correctly if they have an AKKI account).
+    # Redirect to the public read-only viewer. Both AKKI users and
+    # non-AKKI directors land on the same surface — no signin wall.
+    # AKKI users see an additional "Open in AKKI" affordance on the
+    # viewer to jump into the full app surface if they want it.
     frontend_url = (os.environ.get("FRONTEND_URL") or "").rstrip("/")
-    if kind == "deck":
-        redirect = f"{frontend_url}/app/decks/{aid}"
-    else:
-        # Briefings land on the Catch-up hash handler (iter67) so an AKKI
-        # recipient sees the briefing inline. Non-AKKI users will be
-        # prompted to sign up — acceptable friction for distribution.
-        redirect = f"{frontend_url}/app/prepare#brief-{aid}"
+    redirect = f"{frontend_url}/shared/{token}"
     return RedirectResponse(url=redirect, status_code=302)
+
+
+# ---------------------------------------------------------------------------
+# Public read-only artefact viewer — GET /api/public/studio/read/{token}
+# No auth. Records an external-reader view (idempotent per day) AND returns
+# the public-safe artefact content so the /shared/:token page can render.
+# This removes the signin-wall friction introduced by iter68's share flow.
+# ---------------------------------------------------------------------------
+@router.get("/api/public/studio/read/{token}")
+async def public_read_share(token: str, request: Request):
+    payload = _decode_share_token(token)
+    kind = payload.get("kind")
+    aid = payload.get("aid")
+    cid = payload.get("cid")
+    email = (payload.get("email") or "").lower()
+    sid = payload.get("sid")
+    if kind not in ARTEFACT_KINDS or not aid or not cid or not email:
+        raise HTTPException(status_code=400, detail="Invalid share link.")
+
+    # Pull the full artefact (we only return public-safe fields below).
+    coll = db.decks if kind == "deck" else db.briefings
+    artefact = await coll.find_one({"id": aid, "context_id": cid}, {"_id": 0})
+    if not artefact:
+        raise HTTPException(status_code=404, detail="This document is no longer available.")
+
+    # Record the view (idempotent per day per synthetic account).
+    today = _utc_today()
+    account_id = _external_account_id(email)
+    await db.studio_views.find_one_and_update(
+        {"artefact_kind": kind, "artefact_id": aid,
+         "context_id": cid, "account_id": account_id, "day_utc": today},
+        {"$inc": {"view_count": 1},
+         "$setOnInsert": {
+             "id": str(uuid.uuid4()),
+             "first_viewed_at": iso(now()),
+             "is_owner": False,
+             "is_external": True,
+             "external_email": email,
+         },
+         "$set": {"last_viewed_at": iso(now())}},
+        upsert=True,
+    )
+
+    # Mark the share record as opened.
+    if sid:
+        await db.studio_shares.update_one(
+            {"id": sid, "first_opened_at": {"$exists": False}},
+            {"$set": {"first_opened_at": iso(now())}},
+        )
+        await db.studio_shares.update_one(
+            {"id": sid},
+            {"$set": {"last_opened_at": iso(now())},
+             "$inc": {"open_count": 1}},
+        )
+
+    # Resolve sharer + context display fields.
+    share_rec = await db.studio_shares.find_one({"id": sid}, {"_id": 0}) if sid else None
+    sharer_name = None
+    if share_rec:
+        sharer = await db.accounts.find_one(
+            {"id": share_rec.get("shared_by")}, {"_id": 0, "name": 1, "email": 1}
+        ) or {}
+        sharer_name = sharer.get("name") or sharer.get("email")
+    ctx_doc = await db.contexts.find_one({"id": cid}, {"_id": 0, "name": 1}) or {}
+    context_name = ctx_doc.get("name") or "AKKI"
+
+    # Public-safe content projection. We deliberately do NOT leak
+    # audience, missing_context, or other internal production metadata.
+    if kind == "deck":
+        content = {
+            "title": artefact.get("title") or "Shared deck",
+            "subtitle": artefact.get("subtitle"),
+            "research_question": artefact.get("research_question"),
+            "slides": [
+                {"n": s.get("n"), "title": s.get("title"), "body_md": s.get("body_md")}
+                for s in (artefact.get("slides") or [])
+            ],
+        }
+    else:
+        content = {
+            "title": artefact.get("title") or "Shared briefing",
+            "opening_paragraph": artefact.get("opening_paragraph"),
+            "items": [
+                {"title": it.get("title"), "body": it.get("body"),
+                 "why_it_matters": it.get("why_it_matters"),
+                 "questions_for_management": it.get("questions_for_management")}
+                for it in (artefact.get("items") or [])
+            ],
+        }
+
+    return {
+        "kind": kind,
+        "artefact_id": aid,
+        "context_id": cid,
+        "context_name": context_name,
+        "shared_with_email": email,
+        "shared_by_name": sharer_name,
+        "share_message": (share_rec or {}).get("message"),
+        "created_at": artefact.get("created_at"),
+        "sensitivity": artefact.get("sensitivity"),
+        "content": content,
+    }
