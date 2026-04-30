@@ -2825,3 +2825,63 @@ P2: Decks UI E2E retest after midnight; max-of-window label phrasing on
 - Exco360 newsletter ESP wiring + a real subscribe block.
 - A/B test the navy primary CTA against oxblood — 2-week click-through
   count to settle which lands more conversions.
+
+
+## §iter68 — Share with the Chair + Progress audit (2026-04-30)
+
+### A · Share with the Chair (closes the Studio distribution loop)
+- New backend endpoint `POST /api/contexts/{cid}/studio/{kind}/{aid}/share-email`
+  (auth): records a `studio_shares` row with `external=true`, mints a
+  JWT-signed tracking token (14-day TTL, algorithm HS256, purpose
+  `studio_share`), and emails via Resend using a new editorial template
+  (`_render_share_artefact_email_html`) that carries the sensitivity
+  label chip and a cream/oxblood palette consistent with the checklist
+  email.
+- Public click tracker: `GET /api/public/studio/track/{token}` (no auth).
+  Decodes the token, records a `studio_views` row keyed on a synthetic
+  `account_id = external:<sha256(email)>` so repeat opens dedupe per
+  recipient, marks `first_opened_at` / `last_opened_at` on the share
+  record, and 302-redirects to the in-app deep link
+  (`/app/decks/{id}` or `/app/prepare#brief-{id}`).
+- Net effect: **external readers feed straight into the exposure score**.
+  Smoke-tested live on Tuli NED briefing `238b9d1e`: share email sent
+  via Resend (`mode=sent`), then a crafted token-click bumped
+  `unique_readers` 0 → 1 and `exposure.score` 0 → 52 with
+  `band=moderate`.
+- Frontend:
+  - New `components/studio/ShareArtefactModal.jsx` — recipient
+    name/email/note fields, editorial register, success state with
+    send-another affordance.
+  - `DeckStep` header gets a `deck-share-btn` next to the Sensitivity
+    + Exposure chips; opens the modal with `onShared` → refresh
+    engagement.
+  - `StudioHistoryStrip` rows get a `studio-history-share-{kind}-{id}`
+    button (stopPropagation so it doesn't fire the row open); shared
+    modal state at strip level.
+- Cookie-sensitive endpoints are untouched — the tracker is cookie-less
+  on purpose (non-AKKI recipients don't need an account to record a
+  read).
+
+### B · Progress audit + journey guide
+- New doc: `/app/AUDIT_iter68.md` — honest walk through:
+  11 experience rules (10 holding, 1 drift — validator not fanned out
+  to decks/reports/solve), BRD v4.0 module coverage (14/18 live, 4
+  deferred per Path A), canonical journeys (Sandbox→Signup→Solve→Studio
+  and NED→Catch-up→Solve→Handoff→Share), and the P1/P2/P3 priority list
+  for iter69.
+
+### Open / iter69 backlog (P1 — real loops to close)
+- Real Stripe → `solve_pro` state flip via the existing webhook.
+- Real validator (Gemini 2.5 Flash) fan-out to decks, reports, Solve
+  syntheses (briefs already covered from iter49).
+- Cross-Board Pulse as a dedicated surface OR soften landing copy.
+- Public read-only artefact view for non-AKKI share recipients
+  (introduced as friction by iter68's Share with the Chair feature).
+
+### Open / iter69 backlog (P2 — cosmetic)
+- Rename "Briefings" → "Reports" in Studio history strip (avoid the
+  briefs vs briefings collection collision).
+- Collapse `/app/plays` into Studio's ActiveWorkflowsRail (today: 3
+  entry points for the same thing).
+- Promote sensitivity LLM tiebreaker to default-on (today: opt-in).
+

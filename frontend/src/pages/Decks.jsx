@@ -13,9 +13,10 @@ import {
 import { toast } from "sonner";
 import {
   Sparkles, FileText, Check, AlertTriangle, Loader2, ThumbsUp, ThumbsDown,
-  ChevronRight, RefreshCw, Pencil, ArrowRight,
+  ChevronRight, RefreshCw, Pencil, ArrowRight, Send,
 } from "lucide-react";
 import WalkInCard from "@/components/walkin/WalkInCard";
+import ShareArtefactModal from "@/components/studio/ShareArtefactModal";
 
 /**
  * Decks — three-step flow that keeps the user from burning Opus on weak prompts.
@@ -576,6 +577,7 @@ function DeckStep({ deck, contextId, onUpdated, onNew }) {
   const [busy, setBusy] = useState(null);
   const [showReasonChips, setShowReasonChips] = useState(false);
   const [engagement, setEngagement] = useState(null);
+  const [shareOpen, setShareOpen] = useState(false);
   const qc = deck.quality_check;
   const fb = deck.user_feedback;
 
@@ -590,6 +592,13 @@ function DeckStep({ deck, contextId, onUpdated, onNew }) {
       .catch(() => {});
     return () => { live = false; };
   }, [deck?.id, contextId]);
+
+  const refreshEngagement = async () => {
+    try {
+      const { data } = await api.get(`/contexts/${contextId}/studio/deck/${deck.id}/engagement`);
+      setEngagement(data);
+    } catch (_) { /* silent */ }
+  };
 
   const runQuality = async () => {
     setBusy("quality");
@@ -640,9 +649,17 @@ function DeckStep({ deck, contextId, onUpdated, onNew }) {
             {deck.tier === "deep" ? "Deep tier · " : "Standard tier · "}
             {deck.slides?.length || 0} slides
           </p>
-          <div className="flex flex-wrap gap-1.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
             <SensitivityChip sensitivity={deck.sensitivity} />
             <ExposurePill exposure={engagement?.exposure} />
+            <button
+              type="button"
+              onClick={() => setShareOpen(true)}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm border border-[var(--accent)] text-[10px] uppercase tracking-[0.14em] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white transition-colors"
+              data-testid="deck-share-btn"
+            >
+              <Send className="w-3 h-3" /> Share
+            </button>
           </div>
         </div>
         <h2 className="akki-serif text-[28px] text-[var(--ink)] leading-tight mb-1.5" data-testid="decks-title">
@@ -841,6 +858,17 @@ function DeckStep({ deck, contextId, onUpdated, onNew }) {
           </div>
         )}
       </div>
+
+      <ShareArtefactModal
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        contextId={contextId}
+        kind="deck"
+        artefactId={deck.id}
+        artefactTitle={deck.title}
+        sensitivityLabel={deck.sensitivity?.label}
+        onShared={refreshEngagement}
+      />
     </section>
   );
 }
@@ -901,6 +929,7 @@ export function ExposurePill({ exposure }) {
 function StudioHistoryStrip({ items, contextId, onOpenDeck }) {
   const [busy, setBusy] = useState(false);
   const [list, setList] = useState(items);
+  const [shareTarget, setShareTarget] = useState(null); // { kind, id, title, sensitivity_label }
 
   React.useEffect(() => { setList(items); }, [items]);
 
@@ -1001,14 +1030,41 @@ function StudioHistoryStrip({ items, contextId, onOpenDeck }) {
                   </p>
                 )}
               </div>
-              <div className="flex flex-wrap gap-1.5 shrink-0">
+              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                 <SensitivityChip sensitivity={it.sensitivity} />
                 <ExposurePill exposure={it.exposure} />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShareTarget({
+                      kind: it.kind,
+                      id: it.id,
+                      title: it.title || it.intent || "(Untitled)",
+                      sensitivity_label: it.sensitivity?.label,
+                    });
+                  }}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm border border-[var(--rule)] text-[10px] uppercase tracking-[0.14em] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                  data-testid={`studio-history-share-${it.kind}-${it.id}`}
+                >
+                  Share
+                </button>
               </div>
             </div>
           </li>
         ))}
       </ul>
+      {shareTarget && (
+        <ShareArtefactModal
+          open={!!shareTarget}
+          onOpenChange={(v) => { if (!v) setShareTarget(null); }}
+          contextId={contextId}
+          kind={shareTarget.kind}
+          artefactId={shareTarget.id}
+          artefactTitle={shareTarget.title}
+          sensitivityLabel={shareTarget.sensitivity_label}
+        />
+      )}
     </section>
   );
 }

@@ -18,15 +18,19 @@ mechanism + visible exposure score on each generated artifact".)
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, EmailStr, Field
 
-from core import db, iso, now, require_context_membership
+from core import JWT_SECRET, db, iso, now, require_context_membership
 
 logger = logging.getLogger("akki.studio")
 
@@ -419,3 +423,280 @@ async def studio_history(
             it["unique_readers"] = uniq
 
     return {"items": items, "count": len(items)}
+
+
+# ---------------------------------------------------------------------------
+# Share with the chair — email a Studio artefact with a tracked deep-link.
+# POST /api/contexts/{cid}/studio/{kind}/{aid}/share-email
+#
+# Pattern:
+#   1. Auth caller records a studio_shares row (external=true).
+#   2. We sign a JWT { kind, aid, cid, email, sid } with 14-day TTL.
+#   3. Email via Resend carries a tracked link:
+#        {FRONTEND_URL}/api/public/studio/track/{token}
+#      which, on click, records a studio_views row keyed on
+#      account_id = 'external:<sha256(email)>' (synthetic) so the same
+#      recipient opening multiple times still counts once in unique_readers.
+#      Then redirects to the in-app deep link (decks or briefings).
+#
+# Exposure score picks up the new reader automatically via the existing
+# aggregation — no scorer changes needed.
+# ---------------------------------------------------------------------------
+_SHARE_TOKEN_TTL_DAYS = 14
+_SHARE_TOKEN_ALGO = "HS256"
+
+
+def _external_account_id(email: str) -> str:
+    h = hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()[:24]
+    return f"external:{h}"
+
+
+def _sign_share_token(payload: Dict[str, Any]) -> str:
+    exp = datetime.now(timezone.utc) + timedelta(days=_SHARE_TOKEN_TTL_DAYS)
+    body = {**payload, "exp": int(exp.timestamp()), "purpose": "studio_share"}
+    return jwt.encode(body, JWT_SECRET, algorithm=_SHARE_TOKEN_ALGO)
+
+
+def _decode_share_token(token: str) -> Dict[str, Any]:
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[_SHARE_TOKEN_ALGO])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=410, detail="This share link has expired.")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=400, detail="Invalid share link.")
+    if payload.get("purpose") != "studio_share":
+        raise HTTPException(status_code=400, detail="Invalid share link.")
+    return payload
+
+
+def _render_share_artefact_email_html(
+    *,
+    recipient_name: Optional[str],
+    sender_name: str,
+    context_name: str,
+    artefact_kind: str,
+    artefact_title: str,
+    sensitivity_label: Optional[str],
+    message: Optional[str],
+    tracked_url: str,
+) -> str:
+    kind_label = "deck" if artefact_kind == "deck" else "briefing"
+    greet = f"Hi {recipient_name}," if recipient_name else "Hi,"
+    msg_html = ""
+    if message and message.strip():
+        safe = message.strip().replace("\n", "<br>")
+        msg_html = (
+            '<tr><td style="padding:0 36px 12px 36px;">'
+            f'<p style="margin:0 0 4px 0;font-size:11px;text-transform:uppercase;letter-spacing:0.12em;color:#8b6f47;font-weight:600;">A note from {sender_name}</p>'
+            f'<p style="margin:0 0 4px 0;font-size:15px;line-height:1.55;color:#2A2622;font-style:italic;">“{safe}”</p>'
+            '</td></tr>'
+        )
+    sens_chip = ""
+    if sensitivity_label:
+        sens_chip = (
+            f'<span style="display:inline-block;margin-left:6px;padding:2px 8px;border:1px solid #E8E0D0;'
+            f'font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:#8B2E2B;">'
+            f'{sensitivity_label}</span>'
+        )
+    return f"""
+<!doctype html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#F7F3EA;font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#2A2622;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F7F3EA;padding:40px 20px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border:1px solid #E8E0D0;">
+        <tr><td style="padding:32px 36px 16px 36px;border-bottom:3px solid #8B2E2B;">
+          <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:0.18em;color:#8B2E2B;font-weight:600;">AKKI · Studio share{sens_chip}</p>
+          <h1 style="margin:10px 0 0 0;font-family:Georgia,serif;font-size:24px;line-height:1.25;color:#1a1a1a;font-weight:normal;">{artefact_title}</h1>
+          <p style="margin:6px 0 0 0;font-size:12.5px;color:#8b6f47;">{context_name} · {kind_label}</p>
+        </td></tr>
+        <tr><td style="padding:22px 36px 4px 36px;font-size:15px;line-height:1.6;color:#2A2622;">
+          <p style="margin:0 0 12px 0;">{greet}</p>
+          <p style="margin:0 0 12px 0;"><strong>{sender_name}</strong> has shared this {kind_label} with you through AKKI. Follow the link below to read it — your visit will be recorded so {sender_name} knows you've seen it.</p>
+        </td></tr>
+        {msg_html}
+        <tr><td style="padding:12px 36px 28px 36px;">
+          <a href="{tracked_url}" style="display:inline-block;padding:12px 22px;background:#8B2E2B;color:#ffffff;text-decoration:none;font-size:14px;font-weight:500;letter-spacing:0.02em;border-radius:4px;">Open the {kind_label}</a>
+          <p style="margin:14px 0 0 0;font-size:11.5px;color:#8b6f47;line-height:1.55;">This link is valid for 14 days. Do not forward — it's tagged to you.</p>
+        </td></tr>
+        <tr><td style="padding:18px 36px;border-top:1px solid #E8E0D0;background:#F9F6EE;">
+          <p style="margin:0;font-size:11px;color:#8b6f47;line-height:1.5;">
+            AKKI is the third party in this conversation. {sender_name} reviewed this before it was sent.
+            AKKI doesn't read the content on your behalf — it only records that you opened it.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>
+"""
+
+
+class ShareEmailIn(BaseModel):
+    to_email: EmailStr
+    to_name: Optional[str] = Field(default=None, max_length=120)
+    message: Optional[str] = Field(default=None, max_length=600)
+
+
+@router.post("/api/contexts/{context_id}/studio/{kind}/{artefact_id}/share-email")
+async def share_artefact_by_email(
+    context_id: str,
+    kind: str,
+    artefact_id: str,
+    body: ShareEmailIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Email an artefact with a tracked deep link. Recipient clicks →
+    records a view (external reader) + redirects to the in-app surface.
+    External readers increment unique_readers and feed into exposure score."""
+    artefact = await _resolve_artefact(context_id, kind, artefact_id)
+
+    # Record the share first — source of truth even if email send fails.
+    share_id = str(uuid.uuid4())
+    share_rec = {
+        "id": share_id,
+        "artefact_kind": kind,
+        "artefact_id": artefact_id,
+        "context_id": context_id,
+        "shared_by": ctx["account"]["id"],
+        "to_email": body.to_email.lower(),
+        "to_name": body.to_name,
+        "message": body.message,
+        "external": True,
+        "delivery": "email",
+        "created_at": iso(now()),
+        "email_status": "pending",
+    }
+    await db.studio_shares.insert_one(share_rec)
+
+    # Sign the tracking token.
+    token = _sign_share_token({
+        "kind": kind,
+        "aid": artefact_id,
+        "cid": context_id,
+        "email": body.to_email.lower(),
+        "sid": share_id,
+    })
+
+    frontend_url = (os.environ.get("FRONTEND_URL") or "").rstrip("/")
+    tracked_url = f"{frontend_url}/api/public/studio/track/{token}"
+
+    # Resolve title + context label for the email body.
+    artefact_title = artefact.get("title") or artefact.get("intent") or "Your shared document"
+    ctx_doc = await db.contexts.find_one({"id": context_id}, {"_id": 0, "name": 1}) or {}
+    context_name = ctx_doc.get("name") or "AKKI"
+    sensitivity_label = (artefact.get("sensitivity") or {}).get("label")
+    sender_name = ctx["account"].get("name") or ctx["account"].get("email") or "A colleague"
+    sender_email = ctx["account"].get("email")
+
+    # Fire email (Resend). email_service never raises.
+    from email_service import send_email, configured as email_configured
+    html = _render_share_artefact_email_html(
+        recipient_name=body.to_name,
+        sender_name=sender_name,
+        context_name=context_name,
+        artefact_kind=kind,
+        artefact_title=artefact_title,
+        sensitivity_label=sensitivity_label,
+        message=body.message,
+        tracked_url=tracked_url,
+    )
+    subject = f"{sender_name} shared a {kind} with you: {artefact_title}"
+    send_res = await send_email(
+        to=[body.to_email],
+        subject=subject,
+        html=html,
+        reply_to=sender_email,
+        from_executive_name=sender_name,
+        tags=[{"name": "surface", "value": "studio_share"},
+              {"name": "kind", "value": kind}],
+    )
+
+    # Persist outcome on the share record.
+    await db.studio_shares.update_one(
+        {"id": share_id},
+        {"$set": {
+            "email_status": send_res.get("mode") or "unknown",
+            "email_send_id": send_res.get("id"),
+            "email_error": send_res.get("error"),
+            "email_configured": email_configured(),
+        }},
+    )
+
+    return {
+        "ok": bool(send_res.get("ok")) or send_res.get("mode") == "noop",
+        "share_id": share_id,
+        "email_mode": send_res.get("mode"),
+        "email_configured": email_configured(),
+        "tracked_url": tracked_url if not email_configured() else None,
+        "to_email": body.to_email.lower(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public click tracker — GET /api/public/studio/track/{token}
+# No auth. Records an external-reader view, redirects to in-app surface.
+# ---------------------------------------------------------------------------
+@router.get("/api/public/studio/track/{token}")
+async def public_track_share(token: str, request: Request):
+    payload = _decode_share_token(token)
+    kind = payload.get("kind")
+    aid = payload.get("aid")
+    cid = payload.get("cid")
+    email = (payload.get("email") or "").lower()
+    if kind not in ARTEFACT_KINDS or not aid or not cid or not email:
+        raise HTTPException(status_code=400, detail="Invalid share link.")
+
+    # Artefact may have been deleted since the share was sent.
+    artefact = await db.decks.find_one({"id": aid, "context_id": cid}, {"_id": 0, "id": 1}) \
+        if kind == "deck" \
+        else await db.briefings.find_one({"id": aid, "context_id": cid}, {"_id": 0, "id": 1})
+    if not artefact:
+        raise HTTPException(status_code=404, detail="This document is no longer available.")
+
+    # Record the view. External readers collapse to one synthetic account_id
+    # derived from the email hash, so re-opens dedupe just like logged-in users.
+    today = _utc_today()
+    account_id = _external_account_id(email)
+    await db.studio_views.find_one_and_update(
+        {"artefact_kind": kind, "artefact_id": aid,
+         "context_id": cid, "account_id": account_id, "day_utc": today},
+        {"$inc": {"view_count": 1},
+         "$setOnInsert": {
+             "id": str(uuid.uuid4()),
+             "first_viewed_at": iso(now()),
+             "is_owner": False,
+             "is_external": True,
+             "external_email": email,
+         },
+         "$set": {"last_viewed_at": iso(now())}},
+        upsert=True,
+    )
+
+    # Mark the share as opened (first-open only).
+    sid = payload.get("sid")
+    if sid:
+        await db.studio_shares.update_one(
+            {"id": sid, "first_opened_at": {"$exists": False}},
+            {"$set": {"first_opened_at": iso(now())}},
+        )
+    await db.studio_shares.update_one(
+        {"id": sid} if sid else {"artefact_kind": kind, "artefact_id": aid, "to_email": email},
+        {"$set": {"last_opened_at": iso(now())},
+         "$inc": {"open_count": 1}},
+    )
+
+    # Redirect to the in-app artefact surface. Decks deep-link to the
+    # studio surface; briefings currently don't have a dedicated public
+    # read surface, so we fall back to the PDF export (auth-gated — the
+    # external recipient will hit signin and the app's cross-context
+    # resolver will land them correctly if they have an AKKI account).
+    frontend_url = (os.environ.get("FRONTEND_URL") or "").rstrip("/")
+    if kind == "deck":
+        redirect = f"{frontend_url}/app/decks/{aid}"
+    else:
+        # Briefings land on the Catch-up hash handler (iter67) so an AKKI
+        # recipient sees the briefing inline. Non-AKKI users will be
+        # prompted to sign up — acceptable friction for distribution.
+        redirect = f"{frontend_url}/app/prepare#brief-{aid}"
+    return RedirectResponse(url=redirect, status_code=302)
