@@ -28,7 +28,8 @@ export default function InboundQueue() {
   const { activeContext, contexts } = useAuth();
   const defaultCid = activeContext?.id;
   const [selectedCid, setSelectedCid] = useState(defaultCid);
-  useEffect(() => { setSelectedCid(defaultCid); }, [defaultCid]);
+  const [userPickedCid, setUserPickedCid] = useState(false);
+  useEffect(() => { if (!userPickedCid) setSelectedCid(defaultCid); }, [defaultCid, userPickedCid]);
 
   const [counts, setCounts] = useState({ total_pending: 0, by_context: [] });
   const [items, setItems] = useState([]);
@@ -45,8 +46,23 @@ export default function InboundQueue() {
     try {
       const { data } = await api.get("/me/inbound-queue/counts");
       setCounts(data);
+      // iter70 UX polish — if the active workspace has no pending items but
+      // another workspace does, auto-select the busiest one on first load
+      // only. Once the user picks a workspace explicitly, we respect that.
+      if (!userPickedCid) {
+        const byCtx = data.by_context || [];
+        const activeHasPending = byCtx.some(
+          (c) => c.context_id === defaultCid && c.pending > 0,
+        );
+        if (!activeHasPending && byCtx.length > 0) {
+          const busiest = [...byCtx].sort((a, b) => b.pending - a.pending)[0];
+          if (busiest?.context_id && busiest.context_id !== defaultCid) {
+            setSelectedCid(busiest.context_id);
+          }
+        }
+      }
     } catch { /* noop */ }
-  }, []);
+  }, [defaultCid, userPickedCid]);
 
   const loadItems = useCallback(async () => {
     if (!selectedCid) { setItems([]); setLoading(false); return; }
@@ -178,7 +194,7 @@ export default function InboundQueue() {
             return (
               <button
                 key={c.id}
-                onClick={() => setSelectedCid(c.id)}
+                onClick={() => { setUserPickedCid(true); setSelectedCid(c.id); }}
                 data-testid={`inbound-queue-ctx-${c.id}`}
                 className={`text-[12px] px-3 py-1.5 rounded-sm border transition-colors ${
                   active

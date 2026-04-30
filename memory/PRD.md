@@ -2949,3 +2949,108 @@ this as the highest-impact friction to close.
 - Real validator (Gemini 2.5 Flash) fan-out to decks, reports, Solve
   syntheses (briefs already covered from iter49).
 - Cross-Board Pulse as a dedicated surface OR soften landing copy.
+
+## §iter70 — Trust-tiered inbound email triage (2026-04-30)
+
+### Why
+Iter51 shipped Postmark inbound: a user gets a unique
+`inbound+<token>.<ctx>@inbound.akki.ai` address; any email forwarded
+there gets extracted and filed. But the pipeline ingested **anything**
+that reached the mailbox — owner, reportee, or random spammer — with
+no trust differentiation. Three journeys asked by the user:
+  1. owner forwards → auto-ingest (was live)
+  2. known reportee CCs → auto-ingest (worked mechanically, no trust stamp)
+  3. unknown sender → queue for review (NOT built)
+
+### What shipped
+**Sender-tier classifier** in `routers/inbound_email.py` — exact email
+match only (user direction 1a):
+- `_classify_sender_tier(from_email, account, context)` → returns one
+  of `owner`, `reportee` (with full reportee record), or `unknown`.
+- **Tier A (owner)** → auto-ingest as before, now stamped with
+  `inbound_trust_tier='owner'`.
+- **Tier B (reportee)** → auto-ingest with `inbound_trust_tier='reportee'`,
+  `inbound_reportee_id`, `inbound_reportee_name`, `inbound_reportee_title`.
+- **Tier C (unknown)** → payload quarantined into new
+  `db.inbound_queue` collection with `status='pending_review'`. Raw
+  payload (base64 attachment + bodies) stored separately in
+  `db.inbound_queue_raw` so list queries stay light.
+
+**New router** `routers/inbound_queue.py`:
+- `GET /api/contexts/{cid}/inbound-queue?status=all|pending_review|accepted|rejected`
+- `GET /api/me/inbound-queue/counts` — aggregated across every workspace
+  the caller is a member of. Powers the Home card.
+- `GET /api/contexts/{cid}/inbound-queue/{qid}` — detail + decoded body
+  preview + virus-scanned attachment-extract preview.
+- `POST /api/contexts/{cid}/inbound-queue/{qid}/accept` — virus-scans,
+  extracts, writes to storage, inserts a `documents` row with
+  `inbound_trust_tier='unknown_promoted'` + `inbound_queue_id` pointing
+  back to the queue row for full audit chain. Marks queue row as
+  `accepted`. 409 on double-accept.
+- `POST /api/contexts/{cid}/inbound-queue/{qid}/reject` — archives
+  queue row with `reject_reason`. **No email sent to sender** per user
+  direction 3c. 409 on double-reject.
+
+**Frontend**:
+- `pages/InboundQueue.jsx` — editorial review surface (cream/oxblood).
+  Workspace switcher auto-selects the busiest pending workspace on
+  first load (iter70 UX polish after the testing agent flagged this
+  — landing on an empty workspace when another has pending items
+  was friction). Detail modal → Accept (with note) or Reject (with
+  reason) dialogs. All rows, modals, and confirm buttons carry
+  data-testids.
+- `components/home/InboundQueueCard.jsx` — Home card with both
+  populated state (by-context breakdown + "Review" CTA) and quiet
+  empty state ("Emails from you and your reportees file themselves…").
+- `WorkflowsHub.jsx` — new `Inbound review` tab with count pill;
+  defaults to this tab when `inboundCount > 0`.
+
+**Document sanitisation**: `routers/documents.py::sanitize_doc` now
+includes `source`, `inbound_from_email/name`, `inbound_subject`,
+`inbound_trust_tier`, `inbound_reportee_*`, `inbound_queue_id`,
+`inbound_promoted_*` fields so the frontend document viewer can
+render the trust chain.
+
+### Tests
+- **15/15 backend pytest GREEN** (baseline 6 + 9 edge cases written
+  by the testing agent). Covers all three tiers, accept/reject/double-
+  accept/double-reject, idempotent replays, empty body + attachment-
+  only ingests, multi-attachment summaries, count-shape validation.
+- **52/52 regression GREEN** — iter64 through iter70 all pass together.
+- **Frontend** — 100% green via `testing_agent_v3_fork/iter68.json`
+  after a null-guard bug fix the testing agent authored directly
+  (Dialog children rendered even when `open={false}`; detail
+  comparisons now guard with `detail && detail.status !==` not
+  `detail?.status !==`).
+
+### Non-trivial behaviours (read before changing)
+- External-reader dedup on Share-with-Chair (iter68) and queue-item
+  dedup on Tier-C inbound both use synthetic IDs derived from the
+  sender email. Replaying a Postmark MessageID does NOT create a
+  second queue row — we dedupe on both `(context_id, message_id)`
+  against documents AND against inbound_queue.
+- Reject intentionally sends NO reply (user direction 3c). Ops audit
+  log captures the decision instead. If we later want sender
+  notifications, they should be opt-in per-workspace, not per-decision.
+- Tier-B (reportee) matching is exact email only. If a reportee emails
+  from a slightly different alias (e.g. `s.kamau@` vs `sarah.kamau@`),
+  they fall to Tier C. The testing agent recommended considering
+  domain-match fallback as a follow-up; we deferred that decision.
+
+### Files touched
+- `/app/backend/routers/inbound_email.py` — classifier + Tier-C branch
+- `/app/backend/routers/inbound_queue.py` — new file
+- `/app/backend/routers/documents.py` — sanitize_doc extended
+- `/app/backend/server.py` — router include + 4 new indexes
+- `/app/frontend/src/pages/InboundQueue.jsx` — new file
+- `/app/frontend/src/components/home/InboundQueueCard.jsx` — new file
+- `/app/frontend/src/components/home/WorkflowsHub.jsx` — Inbound tab
+- `/app/frontend/src/App.js` — route registered
+- `/app/backend/tests/test_iter70_inbound_triage.py` — 6 cases (main agent)
+- `/app/backend/tests/test_iter70_inbound_edge.py` — 9 cases (testing agent)
+
+### Still-open (carried forward from iter68/69 audit)
+- Real Stripe → `solve_pro` webhook state flip
+- Real validator (Gemini 2.5 Flash) fan-out to decks, reports, Solve
+- Cross-Board Pulse as dedicated surface OR soften landing copy
+
