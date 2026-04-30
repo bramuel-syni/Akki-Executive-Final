@@ -73,6 +73,7 @@ from routers import walkin as walkin_router  # noqa: E402
 from routers import admin_auth_events as admin_auth_events_router  # noqa: E402
 from routers import solve_engine as solve_engine_router  # noqa: E402
 from routers import studio as studio_router  # noqa: E402
+from routers import product_features as product_features_router  # noqa: E402
 
 
 logger = logging.getLogger("akki")
@@ -129,6 +130,7 @@ app.include_router(walkin_router.router)
 app.include_router(admin_auth_events_router.router)
 app.include_router(solve_engine_router.router)
 app.include_router(studio_router.router)
+app.include_router(product_features_router.router)
 
 
 # -----------------------------------------------------------------------------
