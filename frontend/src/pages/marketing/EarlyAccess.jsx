@@ -11,8 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { ArrowRight, Loader2, Check } from "lucide-react";
-
-const API_BASE = `${process.env.REACT_APP_BACKEND_URL}/api`;
+import { api, apiErrorMessage } from "@/lib/api";
 
 const ROLES = [
   { value: "executive", label: "Executive" },
@@ -38,35 +37,28 @@ export default function EarlyAccess() {
     setSubmitting(true);
     setError("");
     try {
-      const r = await fetch(`${API_BASE}/early-access/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email.trim(),
-          full_name: fullName.trim() || null,
-          company: company.trim() || null,
-          role: role || null,
-          board_count: boardCount === "" ? null : Number(boardCount),
-          message: message.trim() || null,
-        }),
+      const r = await api.post("/early-access/register", {
+        email: email.trim(),
+        full_name: fullName.trim() || null,
+        company: company.trim() || null,
+        role: role || null,
+        board_count: boardCount === "" ? null : Number(boardCount),
+        message: message.trim() || null,
       });
       if (r.status === 201 || r.status === 200) {
         setSubmitted(true);
-      } else if (r.status === 429) {
-        setError("You have made several requests already. Please try again in an hour.");
       } else {
-        const data = await r.json().catch(() => ({}));
-        const detail = data?.detail;
-        const msg =
-          typeof detail === "string"
-            ? detail
-            : Array.isArray(detail) && detail[0]?.msg
-              ? detail[0].msg
-              : "We could not register your request. Please check your details and try again.";
-        setError(msg);
+        setError("We could not register your request. Please check your details and try again.");
       }
     } catch (err) {
-      setError("We could not reach the server. Please try again.");
+      const status = err?.response?.status;
+      if (status === 429) {
+        setError("You have made several requests already. Please try again in an hour.");
+      } else if (status === 422 || status === 400) {
+        setError(apiErrorMessage(err, "Please check your details and try again."));
+      } else {
+        setError(apiErrorMessage(err, "We could not reach the server. Please try again."));
+      }
     } finally {
       setSubmitting(false);
     }
