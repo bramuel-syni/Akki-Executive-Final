@@ -20,12 +20,12 @@
  */
 import React from "react";
 import { Link } from "react-router-dom";
-import Logo from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/contexts/AuthContext";
 import HeroSection from "@/components/marketing/HeroSection";
 import ThreePillars from "@/components/marketing/ThreePillars";
 import EnterpriseFeature from "@/components/marketing/EnterpriseFeature";
+import MarketingNav from "@/components/marketing/MarketingNav";
+import MarketingFooter from "@/components/marketing/MarketingFooter";
 import {
   ArrowRight, Sparkles, Quote, Check, Upload, Loader2, AlertTriangle, TrendingUp,
 } from "lucide-react";
@@ -112,58 +112,10 @@ function FirstRunDemo() {
 
 
 export default function Landing() {
-  const { user } = useAuth();
-
   return (
     <div className="min-h-screen bg-[var(--cream)] text-[var(--ink)] flex flex-col" data-testid="landing-page">
-      {/* ─── Masthead ─────────────────────────────────────────── */}
-      <header className="border-b border-[var(--rule)] bg-[var(--cream)]">
-        <div className="max-w-[1280px] mx-auto px-6 md:px-12 h-16 flex items-center justify-between">
-          <Logo />
-          <nav className="flex items-center gap-1 md:gap-4 text-[13px]">
-            <Link to="/about" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors" data-testid="landing-nav-about">
-              About
-            </Link>
-            <Link to="/features" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors" data-testid="landing-nav-features">
-              Features
-            </Link>
-            <Link to="/security" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors" data-testid="landing-nav-security">
-              Security Design
-            </Link>
-            <Link to="/blog" className="hidden md:inline text-[var(--muted)] hover:text-[var(--ink)] transition-colors" data-testid="landing-nav-blog">
-              Exco360
-            </Link>
-            <a
-              href="#solve-pillar"
-              className="hidden md:inline-flex items-center gap-1.5 text-[var(--accent)] hover:text-[var(--accent)]/80 transition-colors px-2.5 py-1 border border-[var(--accent)]/30 rounded-sm text-[12px] tracking-wide"
-              data-testid="landing-nav-solve"
-            >
-              <Sparkles className="w-3 h-3" /> Akki Solve
-            </a>
-            {user ? (
-              <Link to="/app">
-                <Button className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-9 px-4 text-[13px] font-medium" data-testid="landing-go-to-app">
-                  Go to workspace <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-                </Button>
-              </Link>
-            ) : (
-              <>
-                <Link to="/signin" className="text-[var(--deep)] hover:text-[var(--ink)] px-3 py-1.5" data-testid="login-link">
-                  Sign in
-                </Link>
-                <Link to="/signup">
-                  <Button
-                    className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-9 px-4 text-[13px] font-medium"
-                    data-testid="landing-signup-btn"
-                  >
-                    Request access <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-                  </Button>
-                </Link>
-              </>
-            )}
-          </nav>
-        </div>
-      </header>
+      {/* ─── Masthead (shared MarketingNav) ─────────────────────── */}
+      <MarketingNav />
 
       {/* ─── Hero — tightened value-promise + navy primary CTA ─── */}
       <HeroSection />
@@ -322,19 +274,8 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ─── Colophon ─── */}
-      <footer className="bg-[var(--cream)] px-6 md:px-12 py-8 flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-6 text-[11px] uppercase tracking-[0.2em] text-[var(--muted)]">
-          <span>© 2026 Syni.ai</span>
-          <span className="hidden md:inline">·</span>
-          <span>AKKI</span>
-          <span className="hidden md:inline">·</span>
-          <span>v1.0</span>
-        </div>
-        <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--accent)] flex items-center gap-1.5">
-          <Sparkles className="w-3 h-3" /> Confidential · by invitation
-        </p>
-      </footer>
+      {/* ─── Footer (shared MarketingFooter) ─── */}
+      <MarketingFooter />
     </div>
   );
 }

@@ -10,9 +10,9 @@
  */
 import React from "react";
 import { Link } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
-import Logo from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
+import MarketingNav from "@/components/marketing/MarketingNav";
+import MarketingFooter from "@/components/marketing/MarketingFooter";
 import {
   ArrowRight, Sparkles, MessageCircle, Layers, ShieldCheck, GitBranch,
 } from "lucide-react";
@@ -80,36 +80,10 @@ const VS_CHAT = [
 ];
 
 export default function SolveLanding() {
-  const { user } = useAuth() || {};
   return (
     <div className="min-h-screen bg-[var(--cream)] text-[var(--ink)]" data-testid="solve-landing">
-      {/* Header */}
-      <header className="border-b border-[var(--rule)] bg-[var(--cream)] sticky top-0 z-30">
-        <div className="max-w-[1280px] mx-auto px-6 md:px-12 h-14 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2 group">
-            <Logo size={20} />
-            <span className="akki-serif text-[20px] tracking-tight text-[var(--ink)]">AKKI</span>
-          </Link>
-          <nav className="flex items-center gap-6 text-[13px]">
-            <Link to="/" className="text-[var(--muted)] hover:text-[var(--ink)]" data-testid="solve-nav-home">
-              Home
-            </Link>
-            {user ? (
-              <Link to="/app">
-                <Button className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-9 px-4 text-[13px]">
-                  Go to workspace <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-                </Button>
-              </Link>
-            ) : (
-              <Link to="/signup?from=solve">
-                <Button className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-9 px-4 text-[13px]" data-testid="solve-nav-cta">
-                  Try Akki Solve <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-                </Button>
-              </Link>
-            )}
-          </nav>
-        </div>
-      </header>
+      {/* Header — shared MarketingNav */}
+      <MarketingNav />
 
       {/* Hero */}
       <section className="border-b border-[var(--rule)]">
@@ -227,14 +201,7 @@ export default function SolveLanding() {
         </div>
       </section>
 
-      <footer className="bg-[var(--cream)] px-6 md:px-12 py-8 flex items-center justify-between gap-4 flex-wrap">
-        <div className="text-[11px] uppercase tracking-[0.2em] text-[var(--muted)]">
-          © 2026 Syni.ai · AKKI · Solve preview
-        </div>
-        <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--accent)] flex items-center gap-1.5">
-          <Sparkles className="w-3 h-3" /> Confidential · by invitation
-        </p>
-      </footer>
+      <MarketingFooter />
     </div>
   );
 }

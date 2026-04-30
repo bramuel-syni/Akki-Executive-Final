@@ -74,6 +74,7 @@ from routers import admin_auth_events as admin_auth_events_router  # noqa: E402
 from routers import solve_engine as solve_engine_router  # noqa: E402
 from routers import studio as studio_router  # noqa: E402
 from routers import product_features as product_features_router  # noqa: E402
+from routers import early_access as early_access_router  # noqa: E402
 
 
 logger = logging.getLogger("akki")
@@ -131,6 +132,7 @@ app.include_router(admin_auth_events_router.router)
 app.include_router(solve_engine_router.router)
 app.include_router(studio_router.router)
 app.include_router(product_features_router.router)
+app.include_router(early_access_router.router)
 
 
 # -----------------------------------------------------------------------------
@@ -222,6 +224,10 @@ async def on_startup():
     await db.shares.create_index("id", unique=True)
     await db.shares.create_index([("shared_with_account_id", 1), ("created_at", -1)])
     await db.shares.create_index([("shared_by_account_id", 1), ("created_at", -1)])
+
+    # Early-access registrations (public marketing intake)
+    await db.early_access_registrations.create_index("email", unique=True)
+    await db.early_access_registrations.create_index([("created_at", -1)])
 
     # Document engagement indexes
     await db.document_views.create_index(

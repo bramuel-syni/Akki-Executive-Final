@@ -46,6 +46,9 @@ import RespondToChecklist from "@/pages/RespondToChecklist";
 import About from "@/pages/marketing/About";
 import Features from "@/pages/marketing/Features";
 import Security from "@/pages/marketing/Security";
+import Plans from "@/pages/marketing/Plans";
+import EnterpriseMarketing from "@/pages/marketing/Enterprise";
+import EarlyAccess from "@/pages/marketing/EarlyAccess";
 import Blog from "@/pages/marketing/Blog";
 import BlogPost from "@/pages/marketing/BlogPost";
 import BlogAdmin from "@/pages/marketing/BlogAdmin";
@@ -71,6 +74,10 @@ function App() {
           <Route path="/about" element={<About />} />
           <Route path="/features" element={<Features />} />
           <Route path="/security" element={<Security />} />
+          <Route path="/plans" element={<Plans />} />
+          <Route path="/enterprise" element={<EnterpriseMarketing />} />
+          <Route path="/early-access" element={<EarlyAccess />} />
+          <Route path="/methodology" element={<Navigate to="/about#methodology" replace />} />
           <Route path="/blog" element={<Blog />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
           <Route path="/respond/:token" element={<RespondToChecklist />} />
