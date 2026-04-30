@@ -50,6 +50,7 @@ import Blog from "@/pages/marketing/Blog";
 import BlogPost from "@/pages/marketing/BlogPost";
 import BlogAdmin from "@/pages/marketing/BlogAdmin";
 import SharedArtefact from "@/pages/SharedArtefact";
+import InboundQueue from "@/pages/InboundQueue";
 
 function PublicOnlyRoute({ children, allowSandbox = false }) {
   const { account } = useAuth();
@@ -99,6 +100,7 @@ function App() {
           <Route path="/app/blog-admin" element={<ProtectedRoute><BlogAdmin /></ProtectedRoute>} />
           <Route path="/app/workspace" element={<ProtectedRoute><Workspace /></ProtectedRoute>} />
           <Route path="/app/prepare" element={<ProtectedRoute><Prepare /></ProtectedRoute>} />
+          <Route path="/app/inbound-queue" element={<ProtectedRoute><InboundQueue /></ProtectedRoute>} />
           <Route path="/app/activity" element={<ProtectedRoute><Activity /></ProtectedRoute>} />
           {/* Apr-2026: Signals + Briefings consolidated into /app/prepare. Old
               routes redirect — keeps email/bookmark links alive without a 404. */}

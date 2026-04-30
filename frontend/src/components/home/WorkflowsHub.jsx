@@ -19,13 +19,15 @@ import PlayReadyCards from "@/components/home/PlayReadyCards";
 import AgendaEvolutionCard from "@/components/home/AgendaEvolutionCard";
 import PlaysInProgressStrip from "@/components/home/PlaysInProgressStrip";
 import QuickActions from "@/components/home/QuickActions";
-import { Sparkles, Calendar, Layers, Zap } from "lucide-react";
+import InboundQueueCard from "@/components/home/InboundQueueCard";
+import { Sparkles, Calendar, Layers, Zap, Inbox } from "lucide-react";
 
 export default function WorkflowsHub() {
   const { activeContext } = useAuth();
   const cid = activeContext?.id;
   const [readyCount, setReadyCount] = useState(0);
   const [activeCount, setActiveCount] = useState(0);
+  const [inboundCount, setInboundCount] = useState(0);
 
   const load = useCallback(async () => {
     if (!cid) return;
@@ -35,20 +37,30 @@ export default function WorkflowsHub() {
       setReadyCount(plays.filter((p) => p.auto_launched && !p.auto_launch_seen && ["active", "paused"].includes(p.status)).length);
       setActiveCount(plays.filter((p) => ["active", "paused"].includes(p.status)).length);
     } catch { /* noop */ }
+    try {
+      const { data } = await api.get("/me/inbound-queue/counts");
+      setInboundCount(data.total_pending || 0);
+    } catch { /* noop */ }
   }, [cid]);
   useEffect(() => { load(); }, [load]);
 
   const tabs = useMemo(() => ([
-    { key: "actions", label: "Quick actions", icon: Zap,      count: null },
-    { key: "ready",   label: "Ready for you", icon: Sparkles, count: readyCount },
-    { key: "agenda",  label: "Since last meeting", icon: Calendar, count: null },
-    { key: "active",  label: "In progress",   icon: Layers,   count: activeCount },
-  ]), [readyCount, activeCount]);
+    { key: "actions", label: "Quick actions",       icon: Zap,      count: null },
+    { key: "ready",   label: "Ready for you",       icon: Sparkles, count: readyCount },
+    { key: "agenda",  label: "Since last meeting",  icon: Calendar, count: null },
+    { key: "active",  label: "In progress",         icon: Layers,   count: activeCount },
+    { key: "inbound", label: "Inbound review",      icon: Inbox,    count: inboundCount },
+  ]), [readyCount, activeCount, inboundCount]);
 
-  // Default to the most urgent tab.
-  const initialTab = readyCount > 0 ? "ready" : "actions";
-  const [tab, setTab] = useState(initialTab);
-  useEffect(() => { setTab(readyCount > 0 ? "ready" : "actions"); }, [readyCount]);
+  // Default to the most urgent tab: inbound quarantine > play ready > actions.
+  const pickInitial = () => {
+    if (inboundCount > 0) return "inbound";
+    if (readyCount > 0) return "ready";
+    return "actions";
+  };
+  const [tab, setTab] = useState(pickInitial);
+  useEffect(() => { setTab(pickInitial()); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readyCount, inboundCount]);
 
   return (
     <section className="bg-white border border-[var(--rule)] rounded-lg mb-5 shrink-0" data-testid="home-workflows-hub">
@@ -85,6 +97,7 @@ export default function WorkflowsHub() {
         {tab === "ready" && <PlayReadyCards />}
         {tab === "agenda" && <AgendaEvolutionCard />}
         {tab === "active" && <PlaysInProgressStrip />}
+        {tab === "inbound" && <InboundQueueCard />}
       </div>
     </section>
   );

@@ -1,0 +1,39 @@
+{
+  "summary": "iter70 trust-tiered inbound triage — backend + frontend reviewed end-to-end. All 6 baseline tests + 9 new edge-case tests pass on the API layer (15/15 green). Frontend had a critical render bug in InboundQueue.jsx that blocked the page entirely with 'Cannot read properties of null (reading status)'; root-caused and fixed in place. After fix, full UX flow verified: sign in -> /app/inbound-queue -> workspace switch to Tuli NED -> 10 pending rows render -> detail modal opens -> reject decrements counts (10->9) with toast -> accept decrements counts (9->8) with toast and routes to documents -> Home WorkflowsHub 'Inbound review' tab pill updates -> back nav works.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter70_inbound_triage.py",
+    "/app/backend/tests/test_iter70_inbound_edge.py",
+    "/app/test_reports/pytest/iter70_edge.xml"
+  ],
+  "action_items": [
+    "[FIXED in this iteration] InboundQueue.jsx line 302: changed `detail?.status !== 'pending_review'` guard to `detail && detail.status !== 'pending_review'`. The optional-chained inequality returned true when detail was null, then the inner block dereferenced detail.status without the chain and crashed the page on first render. Main agent: please review and consider applying the same defensive pattern elsewhere in the file (similar shapes around detail?.status comparisons) and to any future modal-driven detail panels."
+  ],
+  "critical_code_review_comments": [
+    "InboundQueue.jsx — the detail-modal Dialog renders its child tree even when `open={!!detailId}` is false, so any expression inside can crash on initial mount when state is still null. This is what caused the iter70 page to white-screen for every user. The pattern `cond ? expr : null` with an unguarded null deref inside is fragile; prefer `detail && detail.status !== 'X'` (explicit non-null) over `detail?.status !== 'X'` whenever the inner block dereferences without optional chaining.",
+    "inbound_queue.py accept handler (line ~190): silent catch of base64 decode error then 400. OK as-is, but the queue row status is not transitioned on this failure — the row stays pending_review, allowing retry. Consider adding a 'corrupt' state if this is a recurring failure mode.",
+    "Default selected context on the InboundQueue page is the user's `activeContext`, which for Bramuel is 'Tuli Financial Group (CFO)' (executive). All seeded pending items live on the NED context. The workspace switcher works, but UX-wise this means a user landing on /app/inbound-queue from the Home card with pending items will land on an empty workspace and have to manually switch — even though the Home card was triggered by counts on a different workspace. Consider auto-selecting the first workspace with pending > 0 when the user navigates from the Home card or on initial mount with no items in the active context."
+  ],
+  "updated_files": [
+    "/app/frontend/src/pages/InboundQueue.jsx",
+    "/app/backend/tests/test_iter70_inbound_edge.py"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15)",
+    "frontend": "100% after the InboundQueue null-guard fix"
+  },
+  "test_credentials": "bramuel@syni.ai / TestBramuel2026! — Tuli NED ctx fb4df969-3f17-4279-bf78-f07bb9e29650",
+  "seed_data_creation": "Seeded 3 unknown-sender Tier-C inbound payloads via /api/inbound/postmark to get the home count above zero for FE testing. Pytest edge tests also create+process additional rows; all use sender prefixes prefixed for traceability (fe_seed_*, empty_*, attonly_*, multi_*, listrej_*, countshape_*, acceptidem_*).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter70 backend is rock-solid: tier classifier, accept-with-extraction-pipeline, reject-no-reply, and idempotency are all confirmed at the API layer (test_iter70_inbound_triage.py + test_iter70_inbound_edge.py). The FE crash in InboundQueue.jsx has been patched; if you need to retest, sign in as Bramuel, go to /app/inbound-queue, click the 'Tuli Financial Group' workspace pill (NED — it shows the count badge), and the rows will render. The Home card and WorkflowsHub tab pill both correctly reflect /api/me/inbound-queue/counts.",
+  "rca_of_the_issue": "Symptom: /app/inbound-queue white-screened with 'Uncaught runtime errors: Cannot read properties of null (reading status)'. Cause: InboundQueue.jsx line 302 used `{detail?.status !== 'pending_review' && (...inner block accesses detail.status without chaining...)}`. When detail is null on initial render, `detail?.status` is undefined, and `undefined !== 'pending_review'` is true, so the inner block executes and the unchained `detail.status` access throws. Fix: change the guard to `{detail && detail.status !== 'pending_review' && (...)}` to ensure detail is non-null before entering the block. Verified: page now renders, modal opens, accept and reject flows complete with toasts, counts update."
+}

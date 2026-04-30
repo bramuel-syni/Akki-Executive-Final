@@ -212,6 +212,41 @@ def _pick_primary_attachment(attachments: List[Dict[str, Any]]) -> Optional[Dict
     return attachments[0]
 
 
+# ---------------------------------------------------------------------------
+# Sender-tier classifier — iter70 trust-tiered inbound triage.
+#
+#   Tier A · owner     → sender email == account.email (exact)
+#                         → auto-ingest into db.documents.
+#   Tier B · reportee  → sender matches db.reportees for this context (exact email)
+#                         → auto-ingest with trust_tier='reportee' stamp +
+#                            reportee name/title chip on the doc.
+#   Tier C · unknown   → neither the owner nor a known reportee for this ctx
+#                         → write to db.inbound_queue (NOT db.documents)
+#                            with status='pending_review'. Owner reviews +
+#                            accepts/rejects on /app/inbound-queue.
+#
+# Exact match only per user direction (1a). Domain-match relaxation is a
+# follow-up if false-negatives show up in ops.
+# ---------------------------------------------------------------------------
+async def _classify_sender_tier(
+    from_email: str,
+    account: Dict[str, Any],
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+    em = (from_email or "").strip().lower()
+    if not em:
+        return {"tier": "unknown", "reason": "missing_sender", "reportee": None}
+    if em == (account.get("email") or "").strip().lower():
+        return {"tier": "owner", "reason": "owner_email_match", "reportee": None}
+    reportee = await db.reportees.find_one(
+        {"context_id": context["id"], "email": em, "archived_at": {"$exists": False}},
+        {"_id": 0},
+    )
+    if reportee:
+        return {"tier": "reportee", "reason": "reportee_email_match", "reportee": reportee}
+    return {"tier": "unknown", "reason": "sender_not_recognised", "reportee": None}
+
+
 @router.post("/postmark")
 async def receive_postmark_inbound(request: Request, secret: Optional[str] = Query(None)):
     _verify_secret(secret)
@@ -251,6 +286,13 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
     account = resolved["account"]
     context = resolved["context"]
 
+    # iter70 — classify the sender tier. Unknown senders get quarantined
+    # into db.inbound_queue for the owner to review; known senders
+    # (owner or reportee) continue to the live ingest path as before.
+    tier_info = await _classify_sender_tier(from_email, account, context)
+    tier = tier_info["tier"]
+    reportee = tier_info.get("reportee")
+
     # Idempotency — if we've already ingested this MessageID, return early.
     if message_id:
         existing = await db.documents.find_one(
@@ -258,7 +300,83 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
             {"_id": 0, "id": 1},
         )
         if existing:
-            return {"ok": True, "duplicate": True, "doc_id": existing["id"]}
+            return {"ok": True, "duplicate": True, "doc_id": existing["id"],
+                    "trust_tier": "pre_iter70"}
+        # Also dedupe quarantined payloads so a replay doesn't double-queue.
+        existing_q = await db.inbound_queue.find_one(
+            {"context_id": context["id"], "inbound_message_id": message_id},
+            {"_id": 0, "id": 1, "status": 1},
+        )
+        if existing_q:
+            return {"ok": True, "duplicate": True, "queue_id": existing_q["id"],
+                    "status": existing_q.get("status")}
+
+    # ───────────────────────────────────────────────────────────────────────
+    # TIER C · unknown sender — quarantine into db.inbound_queue and return
+    # early. We persist the base64 content WITHOUT writing to disk so a
+    # rejected ingest leaves no storage trace. The quarantine record carries
+    # enough provenance to render a review card.
+    # ───────────────────────────────────────────────────────────────────────
+    if tier == "unknown":
+        queue_id = str(uuid.uuid4())
+        primary = _pick_primary_attachment(attachments_raw)
+        queue_rec = {
+            "id": queue_id,
+            "context_id": context["id"],
+            "account_id": account["id"],
+            "status": "pending_review",
+            "review_reason": tier_info.get("reason") or "sender_not_recognised",
+            "inbound_message_id": message_id or None,
+            "inbound_from_email": from_email or None,
+            "inbound_from_name": from_name or None,
+            "inbound_subject": subject,
+            "inbound_text_preview": (text_body or html_body or "")[:800],
+            "inbound_attachment_count": len(attachments_raw),
+            "inbound_attachment_summary": [
+                {"name": (a.get("Name") or "")[:160],
+                 "content_type": a.get("ContentType") or "",
+                 "size_bytes": len((a.get("Content") or ""))}
+                for a in attachments_raw[:10]
+            ],
+            # Raw payload lives in a separate collection keyed on queue_id
+            # so inbound_queue stays light for list queries.
+            "has_raw_payload": True,
+            "created_at": iso(now()),
+        }
+        await db.inbound_queue.insert_one(queue_rec)
+        # Stash the raw attachment base64 + body separately. Only consulted
+        # during a review-accept promotion.
+        await db.inbound_queue_raw.insert_one({
+            "id": str(uuid.uuid4()),
+            "queue_id": queue_id,
+            "context_id": context["id"],
+            "text_body": text_body,
+            "html_body": html_body,
+            "primary_attachment": primary,  # base64 intact
+            "created_at": iso(now()),
+        })
+        await write_audit(
+            context["id"], account["id"],
+            "inbound_email.quarantined", "inbound_queue", queue_id,
+            {"from": from_email, "subject": subject,
+             "reason": queue_rec["review_reason"],
+             "attachments": len(attachments_raw)},
+        )
+        logger.info(
+            "Postmark inbound: QUARANTINED msg=%s from %s into ctx=%s queue=%s",
+            message_id, from_email, context["id"], queue_id,
+        )
+        return {
+            "ok": True,
+            "quarantined": True,
+            "queue_id": queue_id,
+            "trust_tier": "unknown",
+            "review_reason": queue_rec["review_reason"],
+        }
+
+    # ───────────────────────────────────────────────────────────────────────
+    # TIER A / B · trusted sender (owner or known reportee) — auto-ingest.
+    # ───────────────────────────────────────────────────────────────────────
 
     # Materialise the document. If there's a primary attachment we use that
     # as the body; otherwise we fall back to the email text itself.
@@ -339,6 +457,12 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
         "inbound_subject": subject,
         "inbound_attachment_count": len(attachments_raw),
         "doc_type": "minutes" if is_minutes else None,
+        # iter70 — trust tiering provenance
+        "inbound_trust_tier": tier,  # 'owner' | 'reportee'
+        "inbound_trust_reason": tier_info.get("reason"),
+        "inbound_reportee_id": (reportee or {}).get("id") if reportee else None,
+        "inbound_reportee_name": (reportee or {}).get("name") if reportee else None,
+        "inbound_reportee_title": (reportee or {}).get("title") if reportee else None,
     }
     await db.documents.insert_one(doc)
 
@@ -350,12 +474,14 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
             "subject": subject,
             "attachments": len(attachments_raw),
             "minutes": is_minutes,
+            "trust_tier": tier,
+            "reportee_id": (reportee or {}).get("id") if reportee else None,
         },
     )
 
     logger.info(
-        "Postmark inbound: ingested message %s from %s into ctx=%s as doc=%s",
-        message_id, from_email, context["id"], doc_id,
+        "Postmark inbound: ingested (tier=%s) message %s from %s into ctx=%s as doc=%s",
+        tier, message_id, from_email, context["id"], doc_id,
     )
 
     return {
@@ -364,4 +490,6 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
         "context_id": context["id"],
         "account_id": account["id"],
         "minutes": is_minutes,
+        "trust_tier": tier,
+        "reportee_id": (reportee or {}).get("id") if reportee else None,
     }

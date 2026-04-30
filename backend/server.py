@@ -63,6 +63,7 @@ from routers import signal_actions as signal_actions_router  # noqa: E402
 from routers import admin_signal_kpi as admin_signal_kpi_router  # noqa: E402
 from routers import prepare as prepare_router  # noqa: E402
 from routers import inbound_email as inbound_email_router  # noqa: E402
+from routers import inbound_queue as inbound_queue_router  # noqa: E402
 from routers import enterprise as enterprise_router  # noqa: E402
 from routers import llm_quota as llm_quota_router  # noqa: E402
 from routers import admin_llm_spend as admin_llm_spend_router  # noqa: E402
@@ -118,6 +119,7 @@ app.include_router(signal_actions_router.router)
 app.include_router(admin_signal_kpi_router.router)
 app.include_router(prepare_router.router)
 app.include_router(inbound_email_router.router)
+app.include_router(inbound_queue_router.router)
 app.include_router(enterprise_router.router)
 app.include_router(llm_quota_router.router)
 app.include_router(admin_llm_spend_router.router)
@@ -298,6 +300,15 @@ async def on_startup():
     # Inbound-email idempotency
     await db.accounts.create_index("inbound_token", sparse=True)
     await db.contexts.create_index("inbound_token", sparse=True)
+
+    # iter70 — inbound-queue triage (trust-tiered review)
+    await db.inbound_queue.create_index("id", unique=True)
+    await db.inbound_queue.create_index([("context_id", 1), ("status", 1), ("created_at", -1)])
+    await db.inbound_queue.create_index(
+        [("context_id", 1), ("inbound_message_id", 1)],
+        sparse=True,
+    )
+    await db.inbound_queue_raw.create_index("queue_id", unique=True)
 
     # Backfill: ensure every committee on every context has a stable id.
     async for c in db.contexts.find(

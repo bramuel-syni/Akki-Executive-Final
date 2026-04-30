@@ -46,6 +46,21 @@ def sanitize_doc(d: Dict[str, Any]) -> Dict[str, Any]:
         "relation_type": d.get("relation_type"),
         "error": d.get("error"),
         "created_at": d.get("created_at"),
+        "doc_type": d.get("doc_type"),
+        # Inbound email provenance (iter51) + trust tier (iter70)
+        "source": d.get("source"),
+        "inbound_from_email": d.get("inbound_from_email"),
+        "inbound_from_name": d.get("inbound_from_name"),
+        "inbound_subject": d.get("inbound_subject"),
+        "inbound_trust_tier": d.get("inbound_trust_tier"),
+        "inbound_trust_reason": d.get("inbound_trust_reason"),
+        "inbound_reportee_id": d.get("inbound_reportee_id"),
+        "inbound_reportee_name": d.get("inbound_reportee_name"),
+        "inbound_reportee_title": d.get("inbound_reportee_title"),
+        "inbound_queue_id": d.get("inbound_queue_id"),
+        "inbound_promoted_by": d.get("inbound_promoted_by"),
+        "inbound_promoted_at": d.get("inbound_promoted_at"),
+        "inbound_promoted_note": d.get("inbound_promoted_note"),
     }
 
 
