@@ -49,8 +49,7 @@ export default function HeroSection() {
           <div className="flex flex-col items-start gap-5 max-w-md" data-testid="hero-cta">
             <Link to="/sandbox" className="group" data-testid="primary-sandbox-cta">
               <Button
-                className="rounded-sm h-14 px-8 text-[15px] font-medium tracking-wide shadow-sm hover:opacity-90"
-                style={{ backgroundColor: NAVY, color: "#F7F3EA" }}
+                className="rounded-sm h-14 px-8 text-[15px] font-medium tracking-wide shadow-sm bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white"
               >
                 Try AKKI in 60 seconds <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-0.5 transition-transform" />
               </Button>

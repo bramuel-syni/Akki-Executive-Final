@@ -153,8 +153,7 @@ export default function Landing() {
                 </Link>
                 <Link to="/signup">
                   <Button
-                    className="rounded-sm h-9 px-4 text-[13px] font-medium hover:opacity-90"
-                    style={{ backgroundColor: NAVY, color: "#F7F3EA" }}
+                    className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-9 px-4 text-[13px] font-medium"
                     data-testid="landing-signup-btn"
                   >
                     Request access <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
@@ -304,8 +303,7 @@ export default function Landing() {
           <div className="flex flex-wrap justify-center gap-3" data-testid="cta-final">
             <Link to="/sandbox">
               <Button
-                className="rounded-sm h-12 px-7 text-[14px] font-medium tracking-wide hover:opacity-90"
-                style={{ backgroundColor: NAVY, color: "#F7F3EA" }}
+                className="rounded-sm h-12 px-7 text-[14px] font-medium tracking-wide bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white"
                 data-testid="cta-final-sandbox"
               >
                 Try AKKI in 60 seconds <ArrowRight className="w-4 h-4 ml-2" />
