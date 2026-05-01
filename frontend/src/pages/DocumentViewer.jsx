@@ -149,6 +149,16 @@ export default function DocumentViewer() {
             )}
           </div>
           {doc && (
+            <Link
+              to={`/app/documents/${doc.id}?v=2`}
+              className="hidden md:inline-flex items-center gap-1 text-[11px] text-[var(--accent)] hover:underline underline-offset-2 mr-2"
+              data-testid="doc-try-new-reader"
+              title="Reading Viewer v2 (Phase 1 preview)"
+            >
+              Try the new reader →
+            </Link>
+          )}
+          {doc && (
             <a
               href={`${API_BASE}/contexts/${contextId}/documents/${doc.id}/download`}
               target="_blank" rel="noreferrer"

@@ -1,6 +1,6 @@
 import React from "react";
 import "@/App.css";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { Toaster } from "@/components/ui/sonner";
@@ -15,6 +15,7 @@ import Workspace from "@/pages/Workspace";
 import Prepare from "@/pages/Prepare";
 import Activity from "@/pages/Activity";
 import DocumentViewer from "@/pages/DocumentViewer";
+import ReadingView from "@/pages/ReadingView";
 import Learn from "@/pages/Learn";
 import TenantSettings from "@/pages/TenantSettings";
 import AccountSecurity from "@/pages/AccountSecurity";
@@ -61,6 +62,18 @@ function PublicOnlyRoute({ children, allowSandbox = false }) {
   // Sandbox users must be allowed through to /signup so they can convert.
   if (account && !(allowSandbox && account.is_sandbox)) return <Navigate to="/app" replace />;
   return children;
+}
+
+/** Reading Viewer feature flag — `?v=2` selects the new ReadingView, every
+ *  other value (including missing) falls back to the legacy DocumentViewer.
+ *  After 7 days the default flips to v=2 and the legacy viewer becomes
+ *  `?v=1`. See /app/docs/ux-advisories-v1.md (Phase 1 changelog).
+ */
+function DocumentRouteSwitch() {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  const variant = params.get("v");
+  return variant === "2" ? <ReadingView /> : <DocumentViewer />;
 }
 
 function App() {
@@ -133,7 +146,7 @@ function App() {
           <Route path="/app/decks" element={<ProtectedRoute><Decks /></ProtectedRoute>} />
           <Route path="/app/decks/:deckId" element={<ProtectedRoute><Decks /></ProtectedRoute>} />
           <Route path="/app/solve" element={<ProtectedRoute><AppSolve /></ProtectedRoute>} />
-          <Route path="/app/documents/:id" element={<ProtectedRoute><DocumentViewer /></ProtectedRoute>} />
+          <Route path="/app/documents/:id" element={<ProtectedRoute><DocumentRouteSwitch /></ProtectedRoute>} />
           <Route path="/app/contexts" element={<ProtectedRoute><ContextPortfolio /></ProtectedRoute>} />
           <Route path="/app/contexts/new" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />
           <Route path="/app/new-workspace" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />

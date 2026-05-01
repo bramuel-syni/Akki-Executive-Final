@@ -418,9 +418,33 @@ async def on_startup():
                 replace_existing=True,
             )
 
+            # ── Daily 03:00 UTC — Paragraph anchors sweep (Reading Viewer
+            # Phase 1, Advisory 2). Computes paragraph[] for any docs that
+            # are missing anchors or have stale anchors_version. Lazy-on-read
+            # also fills the same shape; the cron is the catch-all for docs
+            # that haven't been opened yet.
+            async def _fire_paragraph_anchors_sweep():
+                try:
+                    async with httpx.AsyncClient(timeout=600.0) as ac:
+                        resp = await ac.post(
+                            "http://localhost:8001/api/cron/paragraph-anchors-sweep",
+                            headers={"X-Cron-Secret": cron_secret},
+                        )
+                    logger.info("Paragraph anchors sweep cron: status=%s body=%s",
+                                resp.status_code, (resp.text or "")[:200])
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("Paragraph anchors sweep cron failed: %s", e)
+
+            scheduler.add_job(
+                _fire_paragraph_anchors_sweep,
+                CronTrigger(hour=3, minute=0),
+                id="paragraph_anchors_daily",
+                replace_existing=True,
+            )
+
             scheduler.start()
             app.state.scheduler = scheduler
-            logger.info("Schedulers armed: Exco360 (Tue 10:00) + Influence Digest (Mon 08:00) UTC.")
+            logger.info("Schedulers armed: Exco360 (Tue 10:00) + Influence Digest (Mon 08:00) + Paragraph Anchors (daily 03:00) UTC.")
         except Exception as e:  # noqa: BLE001
             logger.warning("Could not arm weekly scheduler: %s", e)
     else:

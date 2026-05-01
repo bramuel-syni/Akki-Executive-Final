@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from llm_service import call_llm as llm_call_llm, parse_json_response
 from bm25 import chunk_documents, score_bm25, ranked_chunks_as_grounding_block
+from citation_refs import build_references
 from core import (
     db, now, iso, write_audit, require_context_membership,
     gather_context_object, gather_documents_for_grounding,
@@ -132,6 +133,10 @@ async def generate_signals(
             "summary": summary_text[:2000],
             "confidence": s.get("confidence") if s.get("confidence") in ("high", "medium", "low") else "medium",
             "sources": sources,
+            # Reading Viewer Phase 1: additive `references[]` alongside the
+            # existing `[doc:xxx]` inline tokens. Page/paragraph fields
+            # are nullable until LLM prompts are tightened in a later pass.
+            "references": build_references(sources, doc_by_id),
             "data_trust": docs_overall_trust([doc_by_id[i] for i in merged_ids]) if merged_ids else "unrated",
             "generated_by": ctx["account"]["id"],
             "focus": body.focus,
@@ -161,6 +166,12 @@ async def list_signals(
     if committee_id:
         q["committee_id"] = committee_id
     sigs = await db.signals.find(q, {"_id": 0}).sort("created_at", -1).to_list(min(limit, 500))
+    # Backfill `references[]` for legacy signals that pre-date Reading Viewer
+    # Phase 1. Stored `sources[]` is the source of truth; references is a
+    # view over it. No mutation — read-time projection only.
+    for s in sigs:
+        if "references" not in s:
+            s["references"] = build_references(s.get("sources") or [])
     return sigs
 
 
@@ -273,6 +284,8 @@ async def ask(
         "question": body.question,
         "answer": llm_out.get("response", ""),
         "sources": sources,
+        # Reading Viewer Phase 1: additive `references[]` for citation chips.
+        "references": build_references(sources, doc_by_id),
         "mode": llm_out.get("mode"),
         "retrieval_mode": retrieval_mode,
         "shielding_masked": llm_out.get("shielding", {}).get("identifiers_masked", 0),
@@ -298,4 +311,7 @@ async def list_ask_history(
     msgs = await db.ask_messages.find(
         {"context_id": ctx["context"]["id"]}, {"_id": 0}
     ).sort("created_at", -1).to_list(min(limit, 200))
+    for m in msgs:
+        if "references" not in m:
+            m["references"] = build_references(m.get("sources") or [])
     return msgs

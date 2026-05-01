@@ -583,3 +583,178 @@ async def download_document(
         media_type=d.get("mime_type", "application/octet-stream"),
         headers={"Content-Disposition": f'attachment; filename="{d.get("original_filename", "download")}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Paragraph anchors (Reading Viewer · Phase 1, Advisory 2)
+#
+# Lazy-on-read endpoint + nightly cron sweep. Schema additions on `db.documents`:
+#   - paragraphs: [{id, page, paragraph_number, text, char_start, char_end}]
+#   - paragraphs_computed_at: iso str | null
+#   - paragraphs_version: int (bumps if algorithm changes)
+# Existing docs continue to work; anchors materialise on first read or on the
+# nightly sweep, whichever comes first.
+# ---------------------------------------------------------------------------
+import os as _os
+from fastapi import Header
+
+from paragraph_anchors import compute_paragraphs, PARAGRAPH_ANCHOR_VERSION
+
+
+async def _materialise_paragraphs(d: Dict[str, Any]) -> Dict[str, Any]:
+    """Compute + persist paragraphs[] for a document. Idempotent.
+
+    Returns the paragraph payload. Raises ValueError if the doc has no
+    extracted_text yet (caller decides whether that's a 409 or a skip)."""
+    text = (d.get("extracted_text") or "").strip()
+    if not text:
+        raise ValueError("Document has no extracted text yet.")
+    payload = compute_paragraphs(d["id"], d["extracted_text"])
+    await db.documents.update_one(
+        {"id": d["id"]},
+        {"$set": {
+            "paragraphs": payload["paragraphs"],
+            "paragraphs_computed_at": payload["computed_at"],
+            "paragraphs_version": payload["version"],
+            "paragraphs_page_count": payload["page_count"],
+        }},
+    )
+    return payload
+
+
+@router.get("/contexts/{context_id}/documents/{doc_id}/paragraphs")
+async def get_document_paragraphs(
+    context_id: str, doc_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Return the paragraph anchors for this document. Lazy-computes on
+    first read; subsequent reads return the cached array. The doc row is
+    updated in-place with `paragraphs[]`, `paragraphs_computed_at`, and
+    `paragraphs_version`.
+
+    Response shape:
+        {
+          "doc_id": str,
+          "paragraphs": [...],
+          "page_count": int,
+          "computed_at": str (iso),
+          "version": int
+        }
+    """
+    d = await db.documents.find_one(
+        {"id": doc_id, "context_id": context_id},
+        {"_id": 0},
+    )
+    if not d or d.get("status") == "archived":
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    cached = (
+        d.get("paragraphs")
+        and d.get("paragraphs_computed_at")
+        and (d.get("paragraphs_version") or 0) >= PARAGRAPH_ANCHOR_VERSION
+    )
+    if cached:
+        return {
+            "doc_id": doc_id,
+            "paragraphs": d["paragraphs"],
+            "page_count": d.get("paragraphs_page_count", 1),
+            "computed_at": d["paragraphs_computed_at"],
+            "version": d["paragraphs_version"],
+        }
+
+    # Lazy compute.
+    if not (d.get("extracted_text") or "").strip():
+        raise HTTPException(
+            status_code=409,
+            detail="Document extraction is incomplete; paragraphs not yet computable.",
+        )
+    try:
+        payload = await _materialise_paragraphs(d)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return {
+        "doc_id": doc_id,
+        "paragraphs": payload["paragraphs"],
+        "page_count": payload["page_count"],
+        "computed_at": payload["computed_at"],
+        "version": payload["version"],
+    }
+
+
+@router.post("/cron/paragraph-anchors-sweep")
+async def cron_paragraph_anchors_sweep(
+    x_cron_secret: Optional[str] = Header(default=None, alias="X-Cron-Secret"),
+    limit: int = 100,
+):
+    """Nightly batch sweep — compute paragraphs[] for any docs that are
+    missing them or have stale `paragraphs_version`. Designed for the
+    APScheduler entry registered in server.py @ 03:00 UTC.
+
+    Gated by `X-Cron-Secret` matching the `AKKI_CRON_SECRET` env var.
+    Anonymous callers get 401; missing env var fails closed with 503.
+    Per-doc timeout is enforced by an asyncio.wait_for at the caller."""
+    expected = _os.environ.get("AKKI_CRON_SECRET")
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="Cron disabled — AKKI_CRON_SECRET not configured.",
+        )
+    if not x_cron_secret or x_cron_secret != expected:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-Cron-Secret header.")
+
+    cap = max(1, min(limit, 500))
+    # Pick docs where anchors are missing OR stale.
+    cursor = db.documents.find(
+        {
+            "$or": [
+                {"paragraphs_computed_at": {"$exists": False}},
+                {"paragraphs_computed_at": None},
+                {"paragraphs_version": {"$lt": PARAGRAPH_ANCHOR_VERSION}},
+            ],
+            "status": {"$ne": "archived"},
+            "extracted_text": {"$exists": True, "$ne": ""},
+        },
+        {"_id": 0},
+    ).limit(cap)
+
+    swept = 0
+    failed = 0
+    skipped_no_text = 0
+
+    import asyncio
+    async for d in cursor:
+        if not (d.get("extracted_text") or "").strip():
+            skipped_no_text += 1
+            continue
+        try:
+            await asyncio.wait_for(_materialise_paragraphs(d), timeout=30.0)
+            swept += 1
+            await write_audit(
+                d.get("context_id", ""), "system", "paragraphs.batch_compute",
+                "document", d["id"],
+                {"version": PARAGRAPH_ANCHOR_VERSION, "outcome": "ok"},
+            )
+        except asyncio.TimeoutError:
+            failed += 1
+            logger.warning("paragraph-anchors-sweep: timeout for doc %s", d["id"])
+            await write_audit(
+                d.get("context_id", ""), "system", "paragraphs.batch_compute",
+                "document", d["id"],
+                {"version": PARAGRAPH_ANCHOR_VERSION, "outcome": "timeout"},
+            )
+        except Exception as e:  # noqa: BLE001
+            failed += 1
+            logger.warning("paragraph-anchors-sweep: failed for doc %s: %s", d["id"], e)
+            await write_audit(
+                d.get("context_id", ""), "system", "paragraphs.batch_compute",
+                "document", d["id"],
+                {"version": PARAGRAPH_ANCHOR_VERSION, "outcome": "error", "error": str(e)[:200]},
+            )
+
+    return {
+        "swept": swept,
+        "skipped_no_text": skipped_no_text,
+        "failed": failed,
+        "version": PARAGRAPH_ANCHOR_VERSION,
+        "limit": cap,
+    }

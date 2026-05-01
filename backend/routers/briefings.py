@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from briefings_service import build_briefing_prompt, render_pdf, render_docx, render_board_deck_pdf
 from llm_service import call_llm as llm_call_llm, parse_json_response
+from citation_refs import build_references
 
 from core import (
     db, now, iso, write_audit, require_context_membership,
@@ -28,6 +29,19 @@ class BriefingCreateIn(BaseModel):
 def _serialise_briefing(doc: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(doc)
     out.pop("_id", None)
+    # Reading Viewer Phase 1: per-item `references[]` rolls each item's
+    # `sources[]` into the new shape, plus a top-level union of all refs.
+    items = out.get("items") or []
+    union: List[Dict[str, Any]] = []
+    seen_doc_ids: set = set()
+    for it in items:
+        item_refs = build_references(it.get("sources") or [])
+        it["references"] = item_refs
+        for r in item_refs:
+            if r["doc_id"] not in seen_doc_ids:
+                seen_doc_ids.add(r["doc_id"])
+                union.append(r)
+    out["references"] = union
     return out
 
 
@@ -184,7 +198,7 @@ async def list_briefings(
             r["is_read"] = bool(rd)
             r["read_at"] = (rd or {}).get("read_at")
             r["read_via"] = (rd or {}).get("read_via")
-    return rows
+    return [_serialise_briefing(r) for r in rows]
 
 
 class MarkReadIn(BaseModel):
@@ -241,7 +255,7 @@ async def get_briefing(
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Briefing not found")
-    return doc
+    return _serialise_briefing(doc)
 
 
 @router.delete("/contexts/{context_id}/briefings/{briefing_id}")

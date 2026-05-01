@@ -111,3 +111,14 @@ A modality is correct when:
 - Chat-history sidebar — competes with Home.
 - Feature tours and tooltip chains — the first session ends with one artefact, not a tour.
 - Per-surface primary nav (Lens, Simulate, etc.) — depth disclosed, not flaunted.
+
+## Changelog
+
+### v1.1 — Phase 1: Reading Viewer
+- Schema: `db.documents.paragraphs[]` added with stable hash IDs.
+- Endpoint: `GET /api/contexts/{cid}/documents/{doc_id}/paragraphs` (lazy-compute).
+- Cron: `POST /api/cron/paragraph-anchors-sweep` (daily 03:00 UTC).
+- UI: `ReadingView.jsx` shipped behind `?v=2`. Old DocumentViewer stays at default until the v2 default flip in next release.
+- Citation contract: signals / ask / briefings now include `references[]` with optional paragraph_id.
+- Mobile: Reading is mobile-shippable. Bottom drawer for commentary.
+- Deferred: validator-confirmed signal in rail (still only running on Briefings); paragraph-level LLM prompts (next pass).
