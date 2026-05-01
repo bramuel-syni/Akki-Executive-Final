@@ -10,6 +10,7 @@ import SolveLanding from "@/pages/SolveLanding";
 import SignIn from "@/pages/SignIn";
 import SignUp from "@/pages/SignUp";
 import FirstSession from "@/pages/FirstSession";
+import UpgradeModal from "@/components/depth/UpgradeModal";
 import AppHome from "@/pages/AppHome";
 import Workspace from "@/pages/Workspace";
 import Prepare from "@/pages/Prepare";
@@ -121,6 +122,7 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <Toaster position="top-right" richColors />
+        <UpgradeModal />
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/solve" element={<SolveLanding />} />

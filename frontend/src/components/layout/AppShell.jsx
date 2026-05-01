@@ -29,6 +29,9 @@ import ReviewBadge from "@/components/layout/ReviewBadge";
 import UploadModal from "@/components/upload/UploadModal";
 import PortfolioRail from "@/components/layout/PortfolioRail";
 import ContinueWithPill from "@/components/layout/ContinueWithPill";
+import ProPill from "@/components/depth/ProPill";
+import { openUpgradeModal } from "@/components/depth/UpgradeModal";
+import useDepthStatus from "@/hooks/useDepthStatus";
 
 // v3.0 — surfaces (BRD §13). The `roles` field scopes a nav entry
 // to the role(s) that actually use it. Omit `roles` for surfaces both
@@ -40,6 +43,11 @@ import ContinueWithPill from "@/components/layout/ContinueWithPill";
 //   Cycle → "Reporting Cycle"
 // Document Journal kept in primary nav as the doc surface (omitted from
 // the user's explicit list but high-usage).
+//
+// Phase 6 / v1.6 — Lens / Simulate / Monitor / Influence Map pulled out
+// into DEPTH_NAV and rendered beneath the base nav, only when the user's
+// corpus threshold is met (see `useDepthStatus`). Routes stay URL-
+// accessible regardless.
 const NAV = [
   { to: "/app", label: "Home", icon: Home, end: true, ready: true },
   { to: "/app/workspace", label: "Document Journal", icon: BookOpenCheck, module: "M3", ready: true },
@@ -48,18 +56,20 @@ const NAV = [
     badge: "Preview" },
   { to: "/app/prepare", label: "Catch-up", icon: Sparkles, module: "M5+M12", ready: true },
   { to: "/app/decks", label: "Decks + Reports", icon: Presentation, module: "§17", ready: true },
-  // Iter64 — Workflows entry deprecated/folded into Decks + Reports per
-  // user direction ("Combine Decks and Workflow"). Workflows page still
-  // accessible via deep link for completed/in-flight Board Pack runs but
-  // no longer in primary nav. The unified Studio surface is the single
-  // place users come to produce reports + decks with sensitivity scoring.
-  { to: "/app/lens", label: "The Lens (POV)", icon: Eye, module: "M14", ready: true },
-  { to: "/app/simulate", label: "Test Hypothesis", icon: Target, module: "M14", ready: true },
   { to: "/app/cycle", label: "Reporting Cycle", icon: Send, module: "§12", ready: true,
     roles: ["executive"] },
-  { to: "/app/monitor", label: "Monitor", icon: Activity, module: "§4", ready: true },
   { to: "/app/learn", label: "Learn", icon: GraduationCap, module: "M9", ready: true },
-  { to: "/app/influence", label: "Influence Map", icon: Compass, module: "§16", ready: true },
+];
+
+// Depth surfaces — hidden until corpus threshold (3 docs OR 1 briefing)
+// is crossed. The `pro` flag tells the shell to render a ProPill next to
+// the nav label for free-plan users. URL routes stay accessible either
+// way (bookmarks don't break).
+const DEPTH_NAV = [
+  { to: "/app/lens", label: "The Lens (POV)", icon: Eye, module: "M14", pro: true },
+  { to: "/app/simulate", label: "Test Hypothesis", icon: Target, module: "M14", pro: true },
+  { to: "/app/monitor", label: "Monitor", icon: Activity, module: "§4" },
+  { to: "/app/influence", label: "Influence Map", icon: Compass, module: "§16" },
 ];
 
 // Housekeeping shortcuts — surfaced just below Learn for low-ceremony access.
@@ -91,6 +101,9 @@ export default function AppShell({ children }) {
     activeRole, availableRoles, switchRole,
   } = useAuth();
   const navigate = useNavigate();
+  const { status: depthStatus } = useDepthStatus();
+  const depthEligible = !!depthStatus?.eligible;
+  const isProPlan = (account?.plan || "free") !== "free";
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -352,6 +365,62 @@ export default function AppShell({ children }) {
               </div>
             );
           })}
+
+          {/* Phase 6 / v1.6 — Depth disclosure. Lens / Simulate / Monitor /
+              Influence Map hidden until the user crosses the corpus
+              threshold (3 docs OR 1 briefing). Once eligible, the four
+              items appear under a "DEPTH" divider. Pro-gated items (Lens,
+              Simulate) render a ProPill to the right of the label for
+              free-plan users; clicking the link for a Pro item on the
+              free plan intercepts the navigation and opens the upgrade
+              modal instead. Routes remain URL-accessible regardless. */}
+          {depthEligible && (
+            <>
+              <div className="px-5 pt-6 pb-2" data-testid="nav-depth-section">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">Depth</p>
+              </div>
+              {DEPTH_NAV.map((item) => {
+                const Icon = item.icon;
+                const proBlocked = item.pro && !isProPlan;
+                return (
+                  <div key={item.to}>
+                    <NavLink
+                      to={item.to}
+                      onClick={(e) => {
+                        if (proBlocked) {
+                          e.preventDefault();
+                          openUpgradeModal(`nav-${item.label}`);
+                        }
+                      }}
+                      className={({ isActive }) =>
+                        `group mx-2 relative flex items-center gap-3 px-3 py-2.5 text-[14px] transition-colors rounded-sm ${
+                          isActive
+                            ? "bg-[var(--cream-deep)] text-[var(--ink)] font-medium"
+                            : "text-[var(--deep)] hover:bg-[var(--cream-deep)] hover:text-[var(--ink)]"
+                        }`
+                      }
+                      data-testid={`nav-depth-${item.label.toLowerCase()}`}
+                    >
+                      {({ isActive }) => (
+                        <>
+                          <span
+                            className={`absolute left-0 top-1 bottom-1 w-[3px] rounded-r transition-opacity ${
+                              isActive ? "bg-[var(--chrome)] opacity-100" : "opacity-0"
+                            }`}
+                          />
+                          <Icon className="w-4 h-4" strokeWidth={1.8} />
+                          <span>{item.label}</span>
+                          {item.pro && !isProPlan && (
+                            <ProPill className="ml-auto" />
+                          )}
+                        </>
+                      )}
+                    </NavLink>
+                  </div>
+                );
+              })}
+            </>
+          )}
 
           {/* Housekeeping — sits below Learn, same accent treatment, labelled
               as a secondary block so it doesn't compete with the six core

@@ -23,6 +23,8 @@ import { Link } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import CycleStrip from "@/components/cycle/CycleStrip";
 import useIsMobile from "@/hooks/useIsMobile";
+import useDepthStatus from "@/hooks/useDepthStatus";
+import DepthOfferCard from "@/components/depth/DepthOfferCard";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import {
@@ -355,6 +357,8 @@ function EmptyState() {
 export default function HomeV2() {
   const { account, activeContext, activeContextId, switchContext } = useAuth();
   const isMobile = useIsMobile();
+  const { status: depthStatus, refresh: refreshDepth } = useDepthStatus();
+  const [offerHidden, setOfferHidden] = useState(false);
   const [data, setData] = useState({
     signals: [], briefings: [], documents: [], approvals: [], contexts: [], next_cursor: null,
   });
@@ -488,17 +492,31 @@ export default function HomeV2() {
                 >
                   Reading the river…
                 </p>
-              ) : river.length === 0 ? (
-                <EmptyState />
               ) : (
-                <div
-                  className="flex flex-col divide-y divide-[var(--border,#e2d9cf)]/60"
-                  data-testid="homev2-river-list"
-                >
-                  {river.map((e, i) => (
-                    <RiverCard key={`${e.kind}-${e.created_at}-${i}`} entry={e} />
-                  ))}
-                </div>
+                <>
+                  {/* Depth disclosure offer (Phase 6) — single card above
+                      the river, hidden when the user has dismissed it or
+                      is below threshold. See /app/memory/HOME_AUDIT.md §A5
+                      for why we don't surface this on v1. */}
+                  {!offerHidden && depthStatus ? (
+                    <DepthOfferCard
+                      status={depthStatus}
+                      onDismiss={() => { setOfferHidden(true); refreshDepth(); }}
+                    />
+                  ) : null}
+                  {river.length === 0 ? (
+                    <EmptyState />
+                  ) : (
+                    <div
+                      className="flex flex-col divide-y divide-[var(--border,#e2d9cf)]/60"
+                      data-testid="homev2-river-list"
+                    >
+                      {river.map((e, i) => (
+                        <RiverCard key={`${e.kind}-${e.created_at}-${i}`} entry={e} />
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
 
               {/* Mentions inlined as a tail block — one-line each, only if

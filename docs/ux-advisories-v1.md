@@ -163,3 +163,13 @@ A modality is correct when:
 - Top bar + left nav: hands-off this phase (horizontal-nav rework deferred).
 - LegacyAppHome.jsx extracted byte-identical from the old AppHome.jsx; new AppHome.jsx is a 30-line flag-reader wrapper.
 - Default flip from v1 → v2 scheduled one week post-ship.
+
+### v1.6 — Phase 6: Depth disclosure (Advisory 8)
+- New endpoint `GET /api/me/depth-status` returns `{eligible, threshold, suggested_offer, offer_dismissed, pro_features}`. Eligibility = ≥3 documents OR ≥1 briefing across the user's active contexts (briefings preferred as `threshold_met_via` when both apply).
+- New endpoint `POST /api/me/depth-status/dismiss` sets `db.accounts.{id}.depth_offer_dismissed_at = now()`. Sticky until manually cleared.
+- Sector → lens mapping: Banking/FS/Fintech→Risk · SaaS/Tech→Growth · Healthcare/Pharma→Compliance · everything else→Audit Committee. Read from the user's primary (oldest-active) context's `sector`.
+- AppShell left rail: Lens / Simulate / Monitor / Influence Map pulled out of base NAV and rendered under a "DEPTH" divider only when `eligible === true`. Routes stay URL-accessible regardless (bookmarks don't break).
+- Pro-gated features (Lens, Simulate) render an inline ProPill next to the nav label for free-plan users. Clicking a gated nav item intercepts navigation and opens the UpgradeModal.
+- Home v2: single `DepthOfferCard` above the river. One sector-correct lens offered, two CTAs (Run or Not now). Dismissal persists server-side + invalidates the session cache.
+- UpgradeModal: Radix Dialog, Georgia-serif heading, 3-line body, two CTAs (mailto enterprise, /plans). No fake pricing, no comparison table.
+- Depth cache is per-session (`useDepthStatus`), keyed on `account.id`. Eligibility is sticky; a minute of staleness on nav gating is harmless.
