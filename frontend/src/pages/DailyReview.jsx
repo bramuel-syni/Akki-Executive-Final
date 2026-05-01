@@ -38,8 +38,12 @@ import ReviewQueueStrip from "@/components/review/ReviewQueueStrip";
 function isTypingTarget(target) {
   if (!target) return false;
   const tag = (target.tagName || "").toUpperCase();
-  if (tag === "INPUT" || tag === "TEXTAREA") return true;
-  if (target.isContentEditable) return true;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (target.isContentEditable === true) return true;
+  // `[contenteditable=true]` is also covered by isContentEditable, but
+  // some Radix portals set the attribute without isContentEditable until
+  // the next tick — belt-and-braces.
+  if (typeof target.getAttribute === "function" && target.getAttribute("contenteditable") === "true") return true;
   return false;
 }
 
@@ -56,6 +60,44 @@ export default function DailyReview() {
   const [editPayload, setEditPayload] = useState(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const editIframeRef = useRef(null);
+  const pageRef = useRef(null);
+
+  // Ref-backed mirrors of the overlay flags so our global keydown handler
+  // can always read the latest value — React's effect cleanup/re-register
+  // cycle can lag behind a rapidly opened Radix overlay, which leaves the
+  // closure with stale `editSheetOpen=false` at the moment the user
+  // presses Escape. Refs sidestep that race.
+  const rejectOpenRef = useRef(false);
+  const editSheetOpenRef = useRef(false);
+  const shortcutsOpenRef = useRef(false);
+  useEffect(() => { rejectOpenRef.current = rejectOpen; }, [rejectOpen]);
+  useEffect(() => { editSheetOpenRef.current = editSheetOpen; }, [editSheetOpen]);
+  useEffect(() => { shortcutsOpenRef.current = shortcutsOpen; }, [shortcutsOpen]);
+
+  // Auto-focus the page container on mount so global keyboard shortcuts
+  // fire even before the user has clicked anywhere. This was the v1.3
+  // FAIL — focus landed on Radix trigger buttons which captured Enter
+  // natively, re-opening popovers instead of approving.
+  useEffect(() => {
+    if (pageRef.current) {
+      try { pageRef.current.focus({ preventScroll: true }); } catch (_) { /* noop */ }
+    }
+  }, []);
+
+  // Refocus the page container whenever an overlay closes so subsequent
+  // keystrokes don't get swallowed by the trigger button that opened it.
+  useEffect(() => {
+    if (!rejectOpen && !editSheetOpen && !shortcutsOpen) {
+      // Defer one tick so Radix has finished its own focus restoration.
+      const t = window.setTimeout(() => {
+        if (pageRef.current) {
+          try { pageRef.current.focus({ preventScroll: true }); } catch (_) { /* noop */ }
+        }
+      }, 0);
+      return () => window.clearTimeout(t);
+    }
+    return undefined;
+  }, [rejectOpen, editSheetOpen, shortcutsOpen]);
 
   const current = items[currentIndex] || null;
 
@@ -127,12 +169,30 @@ export default function DailyReview() {
   // Keyboard shortcuts.
   useEffect(() => {
     const onKey = (e) => {
-      if (rejectOpen || editSheetOpen || shortcutsOpen) return;
       if (isTypingTarget(e.target)) return;
-      if (!current) {
-        if (e.key === "Escape") navigate("/app");
+      // Read overlay state from refs — state closures can lag behind a
+      // Radix overlay that has just opened on the same key-press cycle.
+      const anyOverlayOpen =
+        rejectOpenRef.current || editSheetOpenRef.current || shortcutsOpenRef.current;
+
+      // Esc always takes precedence. If an overlay is open, let Radix close
+      // it (its DismissableLayer listens for Esc natively) — we swallow the
+      // event here so we don't also navigate. If nothing is open, navigate
+      // home.
+      if (e.key === "Escape") {
+        if (anyOverlayOpen) return;
+        e.preventDefault();
+        navigate("/app");
         return;
       }
+
+      // Every other shortcut is disabled while an overlay is open so that
+      // keystrokes inside the edit/reject UI (typing, tabbing) aren't
+      // hijacked.
+      if (anyOverlayOpen) return;
+
+      if (!current) return;
+
       switch (e.key) {
         case "Enter":
           e.preventDefault();
@@ -156,17 +216,13 @@ export default function DailyReview() {
           e.preventDefault();
           setCurrentIndex((i) => Math.max(0, i - 1));
           break;
-        case "Escape":
-          e.preventDefault();
-          navigate("/app");
-          break;
         default:
           break;
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [current, items.length, handleApprove, handleEdit, navigate, rejectOpen, editSheetOpen, shortcutsOpen]);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [current, items.length, handleApprove, handleEdit, navigate]);
 
   const headline = useMemo(() => {
     if (loading) return null;
@@ -241,7 +297,9 @@ export default function DailyReview() {
   return (
     <AppShell>
       <div
-        className="min-h-[calc(100vh-4rem)] bg-[var(--cream)] px-4 md:px-8 py-6 md:py-10"
+        ref={pageRef}
+        tabIndex={-1}
+        className="min-h-[calc(100vh-4rem)] bg-[var(--cream)] px-4 md:px-8 py-6 md:py-10 outline-none focus:outline-none"
         data-testid="daily-review-page"
       >
         <div className="max-w-[1200px] mx-auto">
