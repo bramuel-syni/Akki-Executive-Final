@@ -79,6 +79,7 @@ from routers import cycle_config as cycle_config_router  # noqa: E402
 from routers import daily_review as daily_review_router  # noqa: E402
 from routers import first_session as first_session_router  # noqa: E402
 from routers import depth as depth_router  # noqa: E402
+from routers import governance as governance_router  # noqa: E402
 
 
 logger = logging.getLogger("akki")
@@ -141,6 +142,7 @@ app.include_router(cycle_config_router.router)
 app.include_router(daily_review_router.router)
 app.include_router(first_session_router.router)
 app.include_router(depth_router.router)
+app.include_router(governance_router.router)
 
 
 # -----------------------------------------------------------------------------

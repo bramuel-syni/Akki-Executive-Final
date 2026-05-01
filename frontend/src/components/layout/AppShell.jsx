@@ -32,6 +32,7 @@ import ContinueWithPill from "@/components/layout/ContinueWithPill";
 import ProPill from "@/components/depth/ProPill";
 import { openUpgradeModal } from "@/components/depth/UpgradeModal";
 import useDepthStatus from "@/hooks/useDepthStatus";
+import TrustPanel from "@/components/governance/TrustPanel";
 
 // v3.0 — surfaces (BRD §13). The `roles` field scopes a nav entry
 // to the role(s) that actually use it. Omit `roles` for surfaces both
@@ -104,6 +105,7 @@ export default function AppShell({ children }) {
   const { status: depthStatus } = useDepthStatus();
   const depthEligible = !!depthStatus?.eligible;
   const isProPlan = (account?.plan || "free") !== "free";
+  const [trustOpen, setTrustOpen] = useState(false);
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -261,6 +263,15 @@ export default function AppShell({ children }) {
                 data-testid="nav-security-menu"
               >
                 <Lock className="w-4 h-4 mr-2" /> Account security
+              </DropdownMenuItem>
+              {/* Phase 7 / v1.7 — Trust panel entrypoint. Lives in the user
+                  menu only (never the left rail) — system-utility feel. */}
+              <DropdownMenuItem
+                onClick={() => setTrustOpen(true)}
+                className="cursor-pointer"
+                data-testid="nav-trust-menu"
+              >
+                <ShieldCheck className="w-4 h-4 mr-2" /> Trust
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -665,6 +676,10 @@ export default function AppShell({ children }) {
           window.dispatchEvent(new CustomEvent("akki:document-uploaded"));
         }}
       />
+
+      {/* Phase 7 / v1.7 — Trust panel. Mounted once at the shell level so
+          it persists across menu opens/closes. */}
+      <TrustPanel open={trustOpen} onOpenChange={setTrustOpen} />
     </div>
   );
 }

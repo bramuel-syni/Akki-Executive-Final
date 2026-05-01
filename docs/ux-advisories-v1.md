@@ -173,3 +173,16 @@ A modality is correct when:
 - Home v2: single `DepthOfferCard` above the river. One sector-correct lens offered, two CTAs (Run or Not now). Dismissal persists server-side + invalidates the session cache.
 - UpgradeModal: Radix Dialog, Georgia-serif heading, 3-line body, two CTAs (mailto enterprise, /plans). No fake pricing, no comparison table.
 - Depth cache is per-session (`useDepthStatus`), keyed on `account.id`. Eligibility is sticky; a minute of staleness on nav gating is harmless.
+
+### v1.7 — Phase 7: Governance panel (Advisory 7)
+- New "Trust" item in top-right user menu opens a Sheet (right side on desktop ~520 px, bottom sheet on mobile). NOT in primary nav — system-utility feel.
+- 5 sections inside the panel:
+  1. **Audit log** — total entries, most-recent 10, filterable by action/date, ZIP export (CSV + manifest.txt).
+  2. **De-identification** — static "SHIELDED · REGEX" chip + italic note that the live Synisense badge ships later.
+  3. **Inbound email** — monospace address with copy button (mints the token lazily if absent, same pattern as `/api/inbound/address`).
+  4. **Connected models** — reads `SUPPORTED_MODELS` from `routers/chat.py` so the list never drifts; decorated with "used in" surfaces.
+  5. **Sensitivity at a glance** — 4 tiles (Public / Internal / Confidential / Restricted), last-classified timestamp. Honest zeros when the classifier hasn't run yet.
+- New endpoints: `GET /api/me/governance`, `GET /api/me/governance/audit?action=&since=&until=&cursor=&limit=`, `POST /api/me/governance/audit/export`. No new collections, no new schema.
+- Export format: ZIP containing `audit_log.csv` + `manifest.txt` (actor email, filter window, row count). Same pattern as `/chats/{id}/audit/export.zip`.
+- Quiet-system register: no oxblood emphasis, no spinners, no emojis. Editorial loading copy ("Reading your trust ledger…").
+- Live de-identification badge in the top bar deferred to v2 (waits for Synisense live service URL).
