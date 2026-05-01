@@ -213,7 +213,11 @@ class PhaseIn(BaseModel):
 
 
 class CycleConfigUpdate(BaseModel):
-    phases: List[PhaseIn]
+    # `phases` is Optional at the schema level so the handler can return a
+    # consistent 400-with-clean-message rather than FastAPI's auto-422 when
+    # callers PUT only `{current_phase_id: "..."}`. The handler enforces
+    # presence + validates contents below.
+    phases: Optional[List[PhaseIn]] = None
     current_phase_id: str = Field(min_length=1, max_length=80)
 
 
@@ -242,6 +246,11 @@ async def update_cycle_config(
     cid = ctx["context"]["id"]
     existing = await _load_or_create_default(cid)
 
+    if body.phases is None:
+        raise HTTPException(
+            status_code=400,
+            detail="`phases` is required. Send the full phases array, even if you’re only changing current_phase_id.",
+        )
     new_phases = _validate_phases([p.model_dump() for p in body.phases])
     new_ids = {p["id"] for p in new_phases}
     if body.current_phase_id not in new_ids:
