@@ -1,0 +1,5 @@
+Test paragraph one. This is the first paragraph of a fresh document.
+
+Test paragraph two. This is a second paragraph for anchor testing.
+
+Third paragraph here just to ensure multiple anchors exist for the lazy compute path.
