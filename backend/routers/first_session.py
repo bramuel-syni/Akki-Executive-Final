@@ -104,6 +104,7 @@ def _default_state() -> Dict[str, Any]:
         "door_taken": None,
         "artefact": None,
         "intake": None,
+        "grandfathered": False,
     }
 
 
@@ -282,11 +283,35 @@ async def choose_door(
     state = _sanitize_state(current.get("first_session"))
     if state["status"] in ("completed", "skipped"):
         return {"state": state}
+    ctx_id = await _get_or_provision_context_id(current)
+
+    # Solve is a one-way exit: the Solve session IS the artefact-creation
+    # flow. Flip to `completed` immediately so the FirstSessionGuard stops
+    # redirecting `/app/solve` back to `/app/first-session`. We don't pin
+    # an artefact id here — the user hasn't run Solve yet; when they do,
+    # the session lives in `db.solve_sessions` under their account_id and
+    # there's nothing for us to backwire to first_session.
+    if body.door == "solve":
+        state["door_taken"] = "solve"
+        state["current_step"] = "done"
+        state["status"] = "completed"
+        state["completed_at"] = _iso(_now())
+        await _persist_state(current["id"], state)
+        await write_audit(
+            ctx_id, current["id"], "first_session.door_solve",
+            "account", current["id"], {"door": "solve"},
+        )
+        await write_audit(
+            ctx_id, current["id"], "first_session.completed",
+            "account", current["id"], {"door": "solve", "exit": "solve_door"},
+        )
+        return {"state": state}
+
+    # email / upload — normal working-step flow.
     state["status"] = "in_progress"
     state["door_taken"] = body.door
     state["current_step"] = "working"
     await _persist_state(current["id"], state)
-    ctx_id = await _get_or_provision_context_id(current)
     await write_audit(
         ctx_id, current["id"], f"first_session.door_{body.door}",
         "account", current["id"], {"door": body.door},

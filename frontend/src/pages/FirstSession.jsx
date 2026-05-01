@@ -291,7 +291,7 @@ function DoorCard({ testId, icon, heading, body, cta, children, onClick, disable
   );
 }
 
-function FirstSessionDoor({ intake, onDoorChosen, onSkip }) {
+function FirstSessionDoor({ intake, onDoorChosen, onSkip, refreshAuth }) {
   const navigate = useNavigate();
   const [picking, setPicking] = useState(null); // which door is in-flight
 
@@ -301,7 +301,10 @@ function FirstSessionDoor({ intake, onDoorChosen, onSkip }) {
     try {
       await api.post("/me/first-session/choose-door", { door });
       if (door === "solve") {
-        // Jump directly into Solve with the user's top_of_mind as prefilled intent.
+        // Backend flipped status → completed. Refresh AuthContext BEFORE
+        // navigating so `FirstSessionGuard` on `/app/solve` sees the new
+        // state and doesn't bounce us back here (Phase 4.1 fix).
+        try { if (refreshAuth) await refreshAuth(); } catch { /* noop */ }
         const intent = intake?.top_of_mind || "";
         const q = intent ? `?intent=${encodeURIComponent(intent)}` : "";
         navigate(`/app/solve${q}`);
@@ -312,7 +315,7 @@ function FirstSessionDoor({ intake, onDoorChosen, onSkip }) {
       toast.error(apiErrorMessage(e, "Couldn't register your choice — please retry."));
       setPicking(null);
     }
-  }, [picking, intake, navigate, onDoorChosen]);
+  }, [picking, intake, navigate, onDoorChosen, refreshAuth]);
 
   const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
 
@@ -652,6 +655,7 @@ export default function FirstSession() {
           intake={state.intake}
           onDoorChosen={onDoorChosen}
           onSkip={onSkip}
+          refreshAuth={refreshContexts}
         />
       )}
       {step === "working" && (
