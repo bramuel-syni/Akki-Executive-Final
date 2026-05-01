@@ -16,7 +16,7 @@ import uuid
 import logging
 from typing import Any, Dict, List, Optional, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field
 
 from core import (
@@ -404,10 +404,28 @@ async def revoke_share(share_id: str, current: Dict[str, Any] = Depends(get_curr
 async def aggregated_stream(
     current: Dict[str, Any] = Depends(get_current_account),
     limit: int = 30,
+    cursor: Optional[str] = Query(
+        None,
+        description=(
+            "ISO-8601 datetime string. When present, only items with "
+            "`created_at < cursor` are returned. Used for Home v2 'Load older' "
+            "pagination. When absent, behaves as v1 (most-recent first)."
+        ),
+    ),
 ):
-    """Return a merged, weighted stream of signals + recent briefings across
-    every active context the user is a member of. Each card carries
+    """Return a merged, weighted stream of recent changes across every
+    active context the user is a member of. Each item carries
     `context_id` + `context_name` so the UI can render the context badge.
+
+    Response shape (additive — v1 callers still work):
+        {
+          "signals": [...],     # v1
+          "briefings": [...],   # v1
+          "contexts": [...],    # v1
+          "documents": [...],   # Home v2 — recent uploads
+          "approvals": [...],   # Home v2 — items awaiting review (cap 5)
+          "next_cursor": str | None,  # pass to ?cursor= to fetch older
+        }
     """
     memberships = await db.memberships.find(
         {"account_id": current["id"], "status": "active"},
@@ -415,7 +433,10 @@ async def aggregated_stream(
     ).to_list(500)
     ctx_ids = [m["context_id"] for m in memberships]
     if not ctx_ids:
-        return {"signals": [], "briefings": [], "contexts": []}
+        return {
+            "signals": [], "briefings": [], "contexts": [],
+            "documents": [], "approvals": [], "next_cursor": None,
+        }
 
     contexts = await db.contexts.find(
         {"id": {"$in": ctx_ids}, "status": {"$ne": "archived"}},
@@ -424,31 +445,129 @@ async def aggregated_stream(
     ctx_by_id = {c["id"]: c for c in contexts}
     active_ctx_ids = [c["id"] for c in contexts]
 
-    # Pull recent signals + briefings from every context in one go
-    signals_cursor = db.signals.find(
-        {"context_id": {"$in": active_ctx_ids}, "status": {"$ne": "archived"}},
-        {"_id": 0},
-    ).sort("created_at", -1).limit(min(limit, 100))
-    signals = [s async for s in signals_cursor]
+    per_kind_cap = max(1, min(limit, 100))
 
-    briefings_cursor = db.briefings.find(
-        {"context_id": {"$in": active_ctx_ids}, "status": "active"},
-        {"_id": 0},
-    ).sort("created_at", -1).limit(min(limit, 100))
-    briefings = [b async for b in briefings_cursor]
+    # Common filter — cursor narrows created_at strictly older.
+    def _with_cursor(base: Dict[str, Any]) -> Dict[str, Any]:
+        if cursor:
+            return {**base, "created_at": {"$lt": cursor}}
+        return base
 
-    # Attach context metadata to each card (for the UI badge)
-    for s in signals:
-        c = ctx_by_id.get(s.get("context_id"))
-        if c:
-            s["context_name"] = c.get("name")
-    for b in briefings:
-        c = ctx_by_id.get(b.get("context_id"))
-        if c:
-            b["context_name"] = c.get("name")
+    signals_q = _with_cursor({
+        "context_id": {"$in": active_ctx_ids},
+        "status": {"$ne": "archived"},
+    })
+    briefings_q = _with_cursor({
+        "context_id": {"$in": active_ctx_ids},
+        "status": "active",
+    })
+    documents_q = _with_cursor({
+        "context_id": {"$in": active_ctx_ids},
+    })
+
+    signals = await db.signals.find(signals_q, {"_id": 0}) \
+        .sort("created_at", -1).limit(per_kind_cap).to_list(per_kind_cap)
+    briefings = await db.briefings.find(briefings_q, {"_id": 0}) \
+        .sort("created_at", -1).limit(per_kind_cap).to_list(per_kind_cap)
+    # Keep the documents projection light — the heaviest fields (paragraphs,
+    # raw_text) aren't needed for the river card.
+    documents = await db.documents.find(
+        documents_q,
+        {
+            "_id": 0, "id": 1, "name": 1, "context_id": 1,
+            "created_at": 1, "updated_at": 1, "kind": 1,
+            "trust_score": 1, "trust_tier": 1, "page_count": 1,
+        },
+    ).sort("created_at", -1).limit(per_kind_cap).to_list(per_kind_cap)
+
+    # Attach context metadata (for the UI badge)
+    for coll in (signals, briefings, documents):
+        for item in coll:
+            c = ctx_by_id.get(item.get("context_id"))
+            if c:
+                item["context_name"] = c.get("name")
+
+    # ----- approvals (mirrors /me/review-queue?limit=5) -----
+    # We inline the minimal logic rather than call the daily_review router
+    # so a) we don't couple the two endpoints, b) we don't pay the cost of
+    # re-building its full schema for a 5-item summary card. The shape
+    # matches daily_review's `items` so the frontend can reuse its
+    # rendering helpers.
+    approvals_cap = 5
+    approvals: List[Dict[str, Any]] = []
+    try:
+        read_ids = set()
+        async for r in db.briefing_reads.find(
+            {"account_id": current["id"]}, {"_id": 0, "briefing_id": 1},
+        ):
+            if r.get("briefing_id"):
+                read_ids.add(r["briefing_id"])
+
+        pending_briefings = await db.briefings.find(
+            {
+                "context_id": {"$in": active_ctx_ids},
+                "status": "active",
+                "id": {"$nin": list(read_ids)} if read_ids else {"$exists": True},
+            },
+            {"_id": 0, "id": 1, "title": 1, "subject": 1, "context_id": 1, "created_at": 1},
+        ).sort("created_at", -1).limit(approvals_cap).to_list(approvals_cap)
+
+        pending_inbound = await db.inbound_queue.find(
+            {"context_id": {"$in": active_ctx_ids}, "status": "pending_review"},
+            {"_id": 0, "id": 1, "subject": 1, "context_id": 1, "created_at": 1, "sender": 1},
+        ).sort("created_at", -1).limit(approvals_cap).to_list(approvals_cap)
+
+        for b in pending_briefings:
+            c = ctx_by_id.get(b.get("context_id"))
+            approvals.append({
+                "kind": "briefing",
+                "id": b["id"],
+                "headline": b.get("title") or b.get("subject") or "Untitled briefing",
+                "context_id": b.get("context_id"),
+                "context_name": c.get("name") if c else None,
+                "created_at": b.get("created_at"),
+            })
+        for q in pending_inbound:
+            c = ctx_by_id.get(q.get("context_id"))
+            approvals.append({
+                "kind": "inbound_doc",
+                "id": q["id"],
+                "headline": q.get("subject") or "Inbound document",
+                "context_id": q.get("context_id"),
+                "context_name": c.get("name") if c else None,
+                "created_at": q.get("created_at"),
+                "sender": q.get("sender"),
+            })
+        approvals.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+        approvals = approvals[:approvals_cap]
+    except Exception as e:  # pragma: no cover — non-fatal for the river
+        logger.warning("home/stream approvals aggregation failed: %s", e)
+        approvals = []
+
+    # ----- next_cursor — oldest created_at across signals/briefings/documents -----
+    def _oldest(rows: List[Dict[str, Any]]) -> Optional[str]:
+        if not rows:
+            return None
+        return rows[-1].get("created_at")
+
+    candidates = [_oldest(signals), _oldest(briefings), _oldest(documents)]
+    candidates = [c for c in candidates if c]
+    # Only emit a cursor when at least one aggregation was at its cap —
+    # i.e. there might be older items to page into.
+    any_at_cap = (
+        len(signals) >= per_kind_cap
+        or len(briefings) >= per_kind_cap
+        or len(documents) >= per_kind_cap
+    )
+    # Take the newest of the three oldest values so any of the three
+    # aggregations still has one more page's worth of items past cursor.
+    next_cursor = max(candidates) if (candidates and any_at_cap) else None
 
     return {
         "signals": signals,
         "briefings": briefings,
         "contexts": [{"id": c["id"], "name": c["name"], "type": c.get("type")} for c in contexts],
+        "documents": documents,
+        "approvals": approvals,
+        "next_cursor": next_cursor,
     }

@@ -151,3 +151,15 @@ A modality is correct when:
 - Frontend route `/app/first-session` (protected); `FirstSessionGuard` in `App.js` forces redirect from any `/app/*` route until completed or skipped. Exceptions: `/app/first-session` itself, `/app/settings/*`, `/app/security`, `/app/review`.
 - Legacy `/onboarding` → 301-style redirect to `/app/first-session`. Files removed: `pages/Onboarding.jsx`, `lib/onboardingQuestions.js`.
 - Post-signup redirect changed: `/signup` → `/app/first-session` (was `/onboarding`).
+
+### v1.5 — Phase 5 Part B: Home v2 (river of changes)
+- Behind `?home=v2` flag (no-op for sandbox accounts which keep v1).
+- 3-column desktop layout: 240 px context rail · main river · 320 px awaiting-you rail (auto-hides when empty).
+- Reverse-chronological stream of document/signal/briefing/mention cards, dense typography-led, no thumbnails.
+- Empty state: single editorial line + inbound-address CTA, no checklists.
+- `/api/me/home/stream` extended additively with `documents[]`, `approvals[]` (cap 5), optional `cursor` param + `next_cursor` response field.
+- Phase 2 CycleStrip pinned at top (preserved). Phase 3 ReviewBadge in AppShell (untouched).
+- Removed from v2 Home: InSummaryTiles, WorkflowsHub, ReviewInboxCard, DraggableHomeBoard, NextBestActionCard, first-time-user fallback, scope toggle. Sandbox flow on v1 untouched.
+- Top bar + left nav: hands-off this phase (horizontal-nav rework deferred).
+- LegacyAppHome.jsx extracted byte-identical from the old AppHome.jsx; new AppHome.jsx is a 30-line flag-reader wrapper.
+- Default flip from v1 → v2 scheduled one week post-ship.
