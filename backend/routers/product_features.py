@@ -16,14 +16,15 @@ from fastapi.responses import Response
 
 router = APIRouter(prefix="/api", tags=["docs"])
 
-_DOC_PATH = Path("/app/memory/PRODUCT_FEATURES.md")
+_PRODUCT_DOC_PATH = Path("/app/memory/PRODUCT_FEATURES.md")
+_UX_AUDIT_DOC_PATH = Path("/app/memory/UX_ADVISORIES_AUDIT.md")
 
 
-def _read_doc() -> str:
-    if not _DOC_PATH.exists():
-        raise HTTPException(status_code=404, detail="PRODUCT_FEATURES.md not found")
+def _read_doc(path: Path, label: str) -> str:
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"{label} not found")
     try:
-        return _DOC_PATH.read_text(encoding="utf-8")
+        return path.read_text(encoding="utf-8")
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Read failed: {e}")
 
@@ -31,7 +32,7 @@ def _read_doc() -> str:
 @router.get("/product-features")
 async def product_features_inline():
     """Return markdown inline (browser will preview as text)."""
-    body = _read_doc()
+    body = _read_doc(_PRODUCT_DOC_PATH, "PRODUCT_FEATURES.md")
     return Response(
         content=body,
         media_type="text/markdown; charset=utf-8",
@@ -45,12 +46,41 @@ async def product_features_inline():
 @router.get("/product-features.md")
 async def product_features_download():
     """Return markdown as a download (Content-Disposition: attachment)."""
-    body = _read_doc()
+    body = _read_doc(_PRODUCT_DOC_PATH, "PRODUCT_FEATURES.md")
     return Response(
         content=body,
         media_type="text/markdown; charset=utf-8",
         headers={
             "Content-Disposition": 'attachment; filename="PRODUCT_FEATURES.md"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get("/ux-audit")
+async def ux_audit_inline():
+    """Return UX_ADVISORIES_AUDIT.md inline (browser will preview as text)."""
+    body = _read_doc(_UX_AUDIT_DOC_PATH, "UX_ADVISORIES_AUDIT.md")
+    return Response(
+        content=body,
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get("/ux-audit.md")
+async def ux_audit_download():
+    """Return UX_ADVISORIES_AUDIT.md as a download."""
+    body = _read_doc(_UX_AUDIT_DOC_PATH, "UX_ADVISORIES_AUDIT.md")
+    return Response(
+        content=body,
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="UX_ADVISORIES_AUDIT.md"',
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
         },
