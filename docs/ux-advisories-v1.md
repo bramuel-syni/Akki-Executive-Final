@@ -139,3 +139,15 @@ A modality is correct when:
 - Top-bar badge polls counts every 60s; click → /app/review.
 - Keyboard-first: ⏎ approve, e edit, x reject, ↑↓ navigate, esc exit.
 - Phase B (drafted emails, extracted cycle questions) still deferred — backend pipelines stubbed.
+
+### v1.4 — Phase 4: First Session rewrite
+- Legacy 7-question Onboarding replaced by First Session: 3-question intake + 3 doors + one AKKI-generated artefact + rhythm explanation.
+- New endpoints: `GET /api/me/first-session`, `POST .../start`, `.../intake`, `.../choose-door`, `.../complete`, `.../skip`.
+- Account schema: new `first_session` sub-doc tracks state (`status`, `current_step`, `door_taken`, `artefact`, `intake`).
+- Existing onboarded users (legacy `context_object.completed=true` OR any context with `progress_state.onboarding_completed=true` OR superadmin) are auto-marked `status: "skipped"` on first `/auth/me` call — grandfathered, no UI change for them.
+- `POST /sandbox/convert` now returns a `prefill_first_session` map so sandbox-converted users see role + company name + objective already filled in (editable).
+- Deferred questions (jurisdiction / board_count / sector_depth / industry_depth) now surface as on-demand prompts after first document upload (hook in place; triggering logic to be wired in the next pass).
+- Door step: email card emphasised on mobile (shows inbound address + copy button), upload de-emphasised ("Easier from desktop."), Solve card redirects to `/app/solve?intent=<top_of_mind>`.
+- Frontend route `/app/first-session` (protected); `FirstSessionGuard` in `App.js` forces redirect from any `/app/*` route until completed or skipped. Exceptions: `/app/first-session` itself, `/app/settings/*`, `/app/security`, `/app/review`.
+- Legacy `/onboarding` → 301-style redirect to `/app/first-session`. Files removed: `pages/Onboarding.jsx`, `lib/onboardingQuestions.js`.
+- Post-signup redirect changed: `/signup` → `/app/first-session` (was `/onboarding`).

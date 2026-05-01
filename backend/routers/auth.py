@@ -165,6 +165,48 @@ async def me(current: Dict[str, Any] = Depends(get_current_account)):
     ).to_list(200)
     context_ids = [m["context_id"] for m in memberships]
     contexts = await db.contexts.find({"id": {"$in": context_ids}}, {"_id": 0}).to_list(200)
+
+    # Phase 4 — auto-grandfather users who completed the legacy 7-question
+    # Onboarding into First Session status=`skipped`. Only applies if the
+    # account has no first_session state yet. The trigger is any of:
+    #   a) superadmin (seeded admin accounts)
+    #   b) at least one context_object with completed=True in any of their
+    #      contexts
+    #   c) at least one context with progress_state.onboarding_completed==true
+    #   d) is_sandbox (sandbox users are handled by the conversion path)
+    fs = current.get("first_session") or {}
+    if not fs.get("status") or fs.get("status") == "not_started":
+        should_skip = False
+        if current.get("is_superadmin"):
+            should_skip = True
+        elif any(
+            (c.get("progress_state") or {}).get("onboarding_completed")
+            for c in contexts
+        ):
+            should_skip = True
+        elif context_ids:
+            legacy_done = await db.context_objects.find_one(
+                {"context_id": {"$in": context_ids}, "completed": True},
+                {"_id": 0, "id": 1},
+            )
+            if legacy_done:
+                should_skip = True
+        if should_skip:
+            new_fs = {
+                "status": "skipped",
+                "started_at": None,
+                "completed_at": _iso(_now()),
+                "current_step": "done",
+                "door_taken": None,
+                "artefact": None,
+                "intake": None,
+                "grandfathered": True,
+            }
+            await db.accounts.update_one(
+                {"id": current["id"]}, {"$set": {"first_session": new_fs}}
+            )
+            current["first_session"] = new_fs
+
     mem_by_ctx = {m["context_id"]: m for m in memberships}
     decorated: List[Dict[str, Any]] = []
     for c in contexts:

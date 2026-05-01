@@ -837,10 +837,37 @@ async def convert_sandbox(
          "contexts_migrated": len(my_ctx_ids)},
     )
     refreshed_acc = await db.accounts.find_one({"id": current["id"]}, {"_id": 0})
+
+    # Phase 4 — Surface a pre-fill payload so the First Session intake form
+    # can be hydrated with what the user already told us during the sandbox
+    # intake (role + objective + company name). The user can still edit
+    # before submitting; we just save them three keystrokes.
+    prefill_first_session: Optional[Dict[str, Any]] = None
+    if my_ctx_ids:
+        src_ctx = await db.contexts.find_one(
+            {"id": {"$in": my_ctx_ids}},
+            {"_id": 0, "name": 1, "sandbox_metadata": 1},
+        )
+        if src_ctx:
+            meta = src_ctx.get("sandbox_metadata") or {}
+            intake_inputs = meta.get("intake_inputs") or {}
+            sandbox_role = (intake_inputs.get("role") or "").lower()
+            role_map = {
+                "ned": "ned",
+                "executive": "executive",
+                "both": "dual",
+            }
+            prefill_first_session = {
+                "role": role_map.get(sandbox_role, "executive"),
+                "primary_context_name": (src_ctx.get("name") or "")[:80],
+                "top_of_mind": (meta.get("objective") or "")[:240],
+            }
+
     return {
         "account": sanitize_account(refreshed_acc),
         "contexts_kept": len(my_ctx_ids) if body.keep_sandbox else 0,
         "access_token": access,
+        "prefill_first_session": prefill_first_session,
     }
 
 

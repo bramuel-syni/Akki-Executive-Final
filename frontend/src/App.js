@@ -1,6 +1,6 @@
 import React from "react";
 import "@/App.css";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { Toaster } from "@/components/ui/sonner";
@@ -9,7 +9,7 @@ import Landing from "@/pages/Landing";
 import SolveLanding from "@/pages/SolveLanding";
 import SignIn from "@/pages/SignIn";
 import SignUp from "@/pages/SignUp";
-import Onboarding from "@/pages/Onboarding";
+import FirstSession from "@/pages/FirstSession";
 import AppHome from "@/pages/AppHome";
 import Workspace from "@/pages/Workspace";
 import Prepare from "@/pages/Prepare";
@@ -65,6 +65,40 @@ function PublicOnlyRoute({ children, allowSandbox = false }) {
   return children;
 }
 
+/**
+ * FirstSessionGuard — Phase 4 / Advisory 5.
+ *
+ * When a signed-in user hasn't completed (or skipped) First Session, every
+ * /app/* route is short-circuited to /app/first-session. Three exceptions:
+ *   · /app/first-session itself (the destination).
+ *   · /app/settings/* (so users can fix email/password/MFA mid-flow).
+ *   · /app/review (so the Daily Review badge remains clickable — though for
+ *     a brand-new user the badge is unlikely to appear anyway).
+ *
+ * Grandfathered users (account.first_session.status === "skipped" applied on
+ * first `/auth/me` for any account with a completed legacy context_object)
+ * never hit the redirect.
+ */
+function FirstSessionGuard({ children }) {
+  const { account } = useAuth();
+  const location = useLocation();
+  if (!account) return children; // unauth / loading — let ProtectedRoute handle
+  const fs = account.first_session || { status: "not_started" };
+  const done = fs.status === "completed" || fs.status === "skipped";
+  if (done) return children;
+  const path = location.pathname || "";
+  const allowed =
+    path === "/app/first-session" ||
+    path.startsWith("/app/first-session/") ||
+    path.startsWith("/app/settings") ||
+    path === "/app/review" ||
+    path === "/app/security";
+  if (!allowed) {
+    return <Navigate to="/app/first-session" replace />;
+  }
+  return children;
+}
+
 /** Document route — always renders ReadingView. The `?v=*` switch from
  *  the Phase 1 default-flip transition was retired in Phase 3 along with
  *  the legacy DocumentViewer. Any `?v=` param is now ignored.
@@ -72,6 +106,14 @@ function PublicOnlyRoute({ children, allowSandbox = false }) {
  */
 function DocumentRouteSwitch() {
   return <ReadingView />;
+}
+
+function Gated({ children }) {
+  return (
+    <ProtectedRoute>
+      <FirstSessionGuard>{children}</FirstSessionGuard>
+    </ProtectedRoute>
+  );
 }
 
 function App() {
@@ -109,50 +151,51 @@ function App() {
           <Route path="/sandbox" element={<Sandbox />} />
           <Route path="/sandbox/generating/:sessionId" element={<SandboxGenerating />} />
 
-          <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
-          <Route path="/app" element={<ProtectedRoute><AppHome /></ProtectedRoute>} />
-          <Route path="/app/cycle" element={<ProtectedRoute><Cycle /></ProtectedRoute>} />
-          <Route path="/app/monitor" element={<ProtectedRoute><Monitor /></ProtectedRoute>} />
-          <Route path="/app/plays" element={<ProtectedRoute><PlaysLibrary /></ProtectedRoute>} />
-          <Route path="/app/plays/:playId" element={<ProtectedRoute><PlayView /></ProtectedRoute>} />
-          <Route path="/app/blog-admin" element={<ProtectedRoute><BlogAdmin /></ProtectedRoute>} />
-          <Route path="/app/workspace" element={<ProtectedRoute><Workspace /></ProtectedRoute>} />
-          <Route path="/app/prepare" element={<ProtectedRoute><Prepare /></ProtectedRoute>} />
-          <Route path="/app/inbound-queue" element={<ProtectedRoute><InboundQueue /></ProtectedRoute>} />
-          <Route path="/app/activity" element={<ProtectedRoute><Activity /></ProtectedRoute>} />
+          <Route path="/app/first-session" element={<ProtectedRoute><FirstSession /></ProtectedRoute>} />
+          <Route path="/onboarding" element={<Navigate to="/app/first-session" replace />} />
+          <Route path="/app" element={<Gated><AppHome /></Gated>} />
+          <Route path="/app/cycle" element={<Gated><Cycle /></Gated>} />
+          <Route path="/app/monitor" element={<Gated><Monitor /></Gated>} />
+          <Route path="/app/plays" element={<Gated><PlaysLibrary /></Gated>} />
+          <Route path="/app/plays/:playId" element={<Gated><PlayView /></Gated>} />
+          <Route path="/app/blog-admin" element={<Gated><BlogAdmin /></Gated>} />
+          <Route path="/app/workspace" element={<Gated><Workspace /></Gated>} />
+          <Route path="/app/prepare" element={<Gated><Prepare /></Gated>} />
+          <Route path="/app/inbound-queue" element={<Gated><InboundQueue /></Gated>} />
+          <Route path="/app/activity" element={<Gated><Activity /></Gated>} />
           {/* Apr-2026: Signals + Briefings consolidated into /app/prepare. Old
               routes redirect — keeps email/bookmark links alive without a 404. */}
           <Route path="/app/highlights" element={<Navigate to="/app/prepare" replace />} />
           <Route path="/app/briefings" element={<Navigate to="/app/prepare" replace />} />
           {/* v4.2: Ask merges into Workspace; any /app/ask redirects there */}
           <Route path="/app/ask" element={<Navigate to="/app/workspace" replace />} />
-          <Route path="/app/simulate" element={<ProtectedRoute><Simulate /></ProtectedRoute>} />
-          <Route path="/app/lens" element={<ProtectedRoute><LensRoom /></ProtectedRoute>} />
-          <Route path="/app/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
-          <Route path="/app/influence" element={<ProtectedRoute><InfluenceMap /></ProtectedRoute>} />
+          <Route path="/app/simulate" element={<Gated><Simulate /></Gated>} />
+          <Route path="/app/lens" element={<Gated><LensRoom /></Gated>} />
+          <Route path="/app/chat" element={<Gated><Chat /></Gated>} />
+          <Route path="/app/influence" element={<Gated><InfluenceMap /></Gated>} />
           <Route path="/admin/health" element={<ProtectedRoute><HealthDashboard /></ProtectedRoute>} />
           <Route path="/admin/sandbox-kpi" element={<ProtectedRoute><SandboxKPI /></ProtectedRoute>} />
           <Route path="/admin/signal-kpi" element={<ProtectedRoute><SignalKPI /></ProtectedRoute>} />
           <Route path="/admin/llm-spend" element={<ProtectedRoute><LLMSpend /></ProtectedRoute>} />
           <Route path="/admin/auth-events" element={<ProtectedRoute><AuthEvents /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute><AdminIndex /></ProtectedRoute>} />
-          <Route path="/app/quick-results/:contextId/:docId" element={<ProtectedRoute><QuickResults /></ProtectedRoute>} />
-          <Route path="/app/learn" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
-          <Route path="/app/learn/:id" element={<ProtectedRoute><Learn /></ProtectedRoute>} />
-          <Route path="/app/manage" element={<ProtectedRoute><Manage /></ProtectedRoute>} />
-          <Route path="/app/enterprise" element={<ProtectedRoute><Enterprise /></ProtectedRoute>} />
-          <Route path="/app/decks" element={<ProtectedRoute><Decks /></ProtectedRoute>} />
-          <Route path="/app/decks/:deckId" element={<ProtectedRoute><Decks /></ProtectedRoute>} />
-          <Route path="/app/solve" element={<ProtectedRoute><AppSolve /></ProtectedRoute>} />
-          <Route path="/app/documents/:id" element={<ProtectedRoute><DocumentRouteSwitch /></ProtectedRoute>} />
-          <Route path="/app/contexts" element={<ProtectedRoute><ContextPortfolio /></ProtectedRoute>} />
-          <Route path="/app/contexts/new" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />
-          <Route path="/app/new-workspace" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />
-          <Route path="/app/settings" element={<ProtectedRoute><TenantSettings /></ProtectedRoute>} />
-          <Route path="/app/settings/cycle" element={<ProtectedRoute><CycleSettings /></ProtectedRoute>} />
-          <Route path="/app/review" element={<ProtectedRoute><DailyReview /></ProtectedRoute>} />
-          <Route path="/app/settings/billing" element={<ProtectedRoute><TenantSettings /></ProtectedRoute>} />
-          <Route path="/app/security" element={<ProtectedRoute><AccountSecurity /></ProtectedRoute>} />
+          <Route path="/app/quick-results/:contextId/:docId" element={<Gated><QuickResults /></Gated>} />
+          <Route path="/app/learn" element={<Gated><Learn /></Gated>} />
+          <Route path="/app/learn/:id" element={<Gated><Learn /></Gated>} />
+          <Route path="/app/manage" element={<Gated><Manage /></Gated>} />
+          <Route path="/app/enterprise" element={<Gated><Enterprise /></Gated>} />
+          <Route path="/app/decks" element={<Gated><Decks /></Gated>} />
+          <Route path="/app/decks/:deckId" element={<Gated><Decks /></Gated>} />
+          <Route path="/app/solve" element={<Gated><AppSolve /></Gated>} />
+          <Route path="/app/documents/:id" element={<Gated><DocumentRouteSwitch /></Gated>} />
+          <Route path="/app/contexts" element={<Gated><ContextPortfolio /></Gated>} />
+          <Route path="/app/contexts/new" element={<Gated><NewContext /></Gated>} />
+          <Route path="/app/new-workspace" element={<Gated><NewContext /></Gated>} />
+          <Route path="/app/settings" element={<Gated><TenantSettings /></Gated>} />
+          <Route path="/app/settings/cycle" element={<Gated><CycleSettings /></Gated>} />
+          <Route path="/app/review" element={<Gated><DailyReview /></Gated>} />
+          <Route path="/app/settings/billing" element={<Gated><TenantSettings /></Gated>} />
+          <Route path="/app/security" element={<Gated><AccountSecurity /></Gated>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

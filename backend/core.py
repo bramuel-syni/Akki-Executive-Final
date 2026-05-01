@@ -335,6 +335,7 @@ def sanitize_account(a: Dict[str, Any]) -> Dict[str, Any]:
         "default_context_id": a.get("default_context_id"),
         "preferences": a.get("preferences") or {},
         "created_at": a.get("created_at"),
+        "first_session": a.get("first_session") or {"status": "not_started"},
     }
     # Surface sandbox markers only when present — non-sandbox accounts stay
     # lean. Lets the frontend key off account.is_sandbox if it wants to.

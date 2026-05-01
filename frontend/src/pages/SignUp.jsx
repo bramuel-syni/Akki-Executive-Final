@@ -50,7 +50,12 @@ export default function SignUp() {
         try { window.localStorage.removeItem("akki_access_token"); } catch { /* noop */ }
         afterAuth({ account: data.account, contexts: activeContext ? [activeContext] : [] });
         if (refreshContexts) await refreshContexts();
-        navigate("/app");
+        // Phase 4 — sandbox users still run the 3-question First Session but
+        // with role + top_of_mind prefilled from their sandbox intake. The
+        // prefill is passed via location.state; the FirstSession page reads it
+        // on mount and hydrates the intake form.
+        const sandboxPrefill = data.prefill_first_session || null;
+        navigate("/app/first-session", { state: { prefill: sandboxPrefill } });
         return;
       }
       const { data } = await api.post("/auth/register", {
@@ -60,7 +65,7 @@ export default function SignUp() {
         context_name: form.tenant_name || undefined,
       });
       afterAuth(data);
-      navigate("/onboarding");
+      navigate("/app/first-session");
     } catch (err) {
       setError(apiErrorMessage(err, "Unable to create workspace"));
     } finally {

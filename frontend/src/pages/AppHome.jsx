@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import {
   ArrowRight, FileText, Sparkles, ScrollText, Landmark, Briefcase,
   Layers, Globe, Mail, Clock,
+  GripVertical, RotateCcw,
 } from "lucide-react";
 import ShareModal from "@/components/share/ShareModal";
 import SandboxPackDrop from "@/components/sandbox/SandboxPackDrop";
@@ -22,7 +23,6 @@ import WorkflowsHub from "@/components/home/WorkflowsHub";
 import InSummaryTiles from "@/components/home/InSummaryTiles";
 import RecentActivity from "@/components/home/RecentActivity";
 import useDraggableSections from "@/hooks/useDraggableSections";
-import { GripVertical, RotateCcw } from "lucide-react";
 
 const CONFIDENCE_LABEL = { high: "High confidence", medium: "Medium confidence", low: "Low confidence" };
 
@@ -136,7 +136,7 @@ export default function AppHome() {
             <p className="akki-serif text-[15px] text-[var(--deep)] leading-relaxed mb-8 max-w-xl">
               Seven role-specific questions establish your Context Object — the foundation for every signal, briefing, and lens session.
             </p>
-            <Link to="/onboarding">
+            <Link to="/app/first-session">
               <Button className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-md h-10 px-5 font-medium" data-testid="start-onboarding-btn">
                 {!isDeclared ? "Begin audit" : "Resume audit"} <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
