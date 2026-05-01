@@ -131,3 +131,11 @@ A modality is correct when:
 - Tenant settings: `/app/settings/cycle` — owner/admin can rename, reorder, change durations, reset.
 - Mobile: strip is horizontally scroll-snap; side-panel becomes bottom Sheet.
 - Deferred to v2: previous-cycle history (cycle_offset < 0), full filtered Workspace view from phase summary.
+
+### v1.3 — Phase 3: Daily Review (Phase A) + DocumentViewer cleanup
+- Legacy DocumentViewer removed. ReadingView is the only document viewing surface.
+- New unified `/app/review` queue across inbound docs + briefings awaiting review.
+- Endpoints: `GET /api/me/review-queue`, `GET .../counts`, `POST .../items/{kind}/{id}/{approve|reject|edit}`.
+- Top-bar badge polls counts every 60s; click → /app/review.
+- Keyboard-first: ⏎ approve, e edit, x reject, ↑↓ navigate, esc exit.
+- Phase B (drafted emails, extracted cycle questions) still deferred — backend pipelines stubbed.

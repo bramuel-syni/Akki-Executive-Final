@@ -1,6 +1,6 @@
 import React from "react";
 import "@/App.css";
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { Toaster } from "@/components/ui/sonner";
@@ -14,9 +14,9 @@ import AppHome from "@/pages/AppHome";
 import Workspace from "@/pages/Workspace";
 import Prepare from "@/pages/Prepare";
 import Activity from "@/pages/Activity";
-import DocumentViewer from "@/pages/DocumentViewer";
 import ReadingView from "@/pages/ReadingView";
 import CycleSettings from "@/pages/CycleSettings";
+import DailyReview from "@/pages/DailyReview";
 import Learn from "@/pages/Learn";
 import TenantSettings from "@/pages/TenantSettings";
 import AccountSecurity from "@/pages/AccountSecurity";
@@ -65,18 +65,13 @@ function PublicOnlyRoute({ children, allowSandbox = false }) {
   return children;
 }
 
-/** Reading Viewer · default-flip transition window.
- *  - No `v` param           → ReadingView (new default)
- *  - `?v=1`                 → DocumentViewer (legacy, kept for one week)
- *  - `?v=2`                 → ReadingView (alias of default; remove with the
- *                             legacy viewer in the follow-up cleanup PR)
- *  See /app/docs/ux-advisories-v1.md (Phase 2 changelog).
+/** Document route — always renders ReadingView. The `?v=*` switch from
+ *  the Phase 1 default-flip transition was retired in Phase 3 along with
+ *  the legacy DocumentViewer. Any `?v=` param is now ignored.
+ *  See /app/docs/ux-advisories-v1.md (Phase 3 changelog).
  */
 function DocumentRouteSwitch() {
-  const location = useLocation();
-  const params = new URLSearchParams(location.search);
-  const variant = params.get("v");
-  return variant === "1" ? <DocumentViewer /> : <ReadingView />;
+  return <ReadingView />;
 }
 
 function App() {
@@ -155,6 +150,7 @@ function App() {
           <Route path="/app/new-workspace" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />
           <Route path="/app/settings" element={<ProtectedRoute><TenantSettings /></ProtectedRoute>} />
           <Route path="/app/settings/cycle" element={<ProtectedRoute><CycleSettings /></ProtectedRoute>} />
+          <Route path="/app/review" element={<ProtectedRoute><DailyReview /></ProtectedRoute>} />
           <Route path="/app/settings/billing" element={<ProtectedRoute><TenantSettings /></ProtectedRoute>} />
           <Route path="/app/security" element={<ProtectedRoute><AccountSecurity /></ProtectedRoute>} />
 

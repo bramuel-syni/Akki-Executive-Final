@@ -76,6 +76,7 @@ from routers import studio as studio_router  # noqa: E402
 from routers import product_features as product_features_router  # noqa: E402
 from routers import early_access as early_access_router  # noqa: E402
 from routers import cycle_config as cycle_config_router  # noqa: E402
+from routers import daily_review as daily_review_router  # noqa: E402
 
 
 logger = logging.getLogger("akki")
@@ -135,6 +136,7 @@ app.include_router(studio_router.router)
 app.include_router(product_features_router.router)
 app.include_router(early_access_router.router)
 app.include_router(cycle_config_router.router)
+app.include_router(daily_review_router.router)
 
 
 # -----------------------------------------------------------------------------

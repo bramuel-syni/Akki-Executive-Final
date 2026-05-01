@@ -25,6 +25,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import MentionInbox from "@/components/collab/MentionInbox";
+import ReviewBadge from "@/components/layout/ReviewBadge";
 import UploadModal from "@/components/upload/UploadModal";
 import PortfolioRail from "@/components/layout/PortfolioRail";
 import ContinueWithPill from "@/components/layout/ContinueWithPill";
@@ -197,6 +198,11 @@ export default function AppShell({ children }) {
 
           {/* Mentions bell — pulls from /mentions endpoint */}
           <MentionInbox />
+
+          {/* Daily Review badge — Phase 3 (Advisory 4). Hidden when the
+              queue is empty or we're already on /app/review. Polls every
+              60s + on tab focus. */}
+          <ReviewBadge />
 
           {/* Role + context have moved to the permanent right-side
               PortfolioRail (more discoverable, indicates active context

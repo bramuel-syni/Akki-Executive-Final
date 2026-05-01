@@ -3,16 +3,14 @@
  *
  * Slots:
  *   - Document title (truncate, full title in tooltip)
- *   - Sensitivity badge (re-uses the trust band styles already present in
- *     DocumentViewer.jsx; deliberately NOT a new design token)
- *   - Primary action: "Generate brief" — calls into the existing brief
- *     creation flow against the current doc. Per the rules doc, this is
- *     the single primary action.
- *   - Secondary icon-only actions: download original, open in legacy
- *     viewer (?v=1), close (back to /app/workspace).
+ *   - Sensitivity badge (trust band styles, no new tokens)
+ *   - Primary action: "Generate brief" — single primary action per the
+ *     rules doc.
+ *   - Secondary icon-only actions: download original, close (back to
+ *     /app/workspace).
  */
 import React from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Download, FileText, Loader2, ShieldCheck, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -123,14 +121,6 @@ export default function ReadingTopBar({
           >
             <Download className="w-4 h-4" />
           </a>
-          <Link
-            to={`/app/documents/${doc.id}?v=1`}
-            title="Open in legacy reader"
-            className="inline-flex items-center px-2 h-8 rounded-sm text-[11px] italic text-[var(--muted)] hover:text-[var(--ink)] hover:underline underline-offset-2"
-            data-testid="reading-legacy-link"
-          >
-            Open in legacy reader
-          </Link>
           <button
             type="button"
             onClick={() => navigate("/app/workspace")}

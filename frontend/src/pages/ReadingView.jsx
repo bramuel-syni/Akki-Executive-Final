@@ -1,9 +1,9 @@
 /**
- * ReadingView — Reading Viewer v2 (Advisory 2, Phase 1).
+ * ReadingView — Reading Viewer (Advisory 2, default since Phase 2).
  *
- * Shipped behind `?v=2` on `/app/documents/:id`. The classic
- * DocumentViewer remains the default until the v2 flip in the next
- * release. See `/app/docs/ux-advisories-v1.md` for the binding rules.
+ * Canonical document surface at `/app/documents/:id`. The legacy
+ * DocumentViewer was retired in Phase 3. See
+ * `/app/docs/ux-advisories-v1.md` for the binding rules.
  *
  * Composition:
  *   AppShell (auth + nav)
