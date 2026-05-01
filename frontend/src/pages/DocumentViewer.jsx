@@ -149,14 +149,18 @@ export default function DocumentViewer() {
             )}
           </div>
           {doc && (
-            <Link
-              to={`/app/documents/${doc.id}?v=2`}
-              className="hidden md:inline-flex items-center gap-1 text-[11px] text-[var(--accent)] hover:underline underline-offset-2 mr-2"
-              data-testid="doc-try-new-reader"
-              title="Reading Viewer v2 (Phase 1 preview)"
-            >
-              Try the new reader →
-            </Link>
+            <div className="hidden md:flex items-center gap-2 mr-2 text-[11px]">
+              <span className="text-[var(--muted)] italic">
+                You’re viewing the legacy reader. New default loads without ?v=1.
+              </span>
+              <Link
+                to={`/app/documents/${doc.id}`}
+                className="text-[var(--accent)] hover:underline underline-offset-2"
+                data-testid="doc-switch-to-default"
+              >
+                Switch to default →
+              </Link>
+            </div>
           )}
           {doc && (
             <a

@@ -4,6 +4,8 @@ import { motion } from "framer-motion";
 import AppShell from "@/components/layout/AppShell";
 import StreamCard from "@/components/stream/StreamCard";
 import { useAuth } from "@/contexts/AuthContext";
+import CycleStrip from "@/components/cycle/CycleStrip";
+import useIsMobile from "@/hooks/useIsMobile";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,6 +42,7 @@ const HOME_TABS = [
 export default function AppHome() {
   const { account, activeContext, activeRole, contexts, availableRoles } = useAuth();
   const contextId = activeContext?.id;
+  const isMobile = useIsMobile();
   const [scope, setScope] = useState("current"); // "current" | "all"
   const [signals, setSignals] = useState([]);
   const [briefings, setBriefings] = useState([]);
@@ -172,6 +175,13 @@ export default function AppHome() {
               activeRole={activeRole}
               availableRoles={availableRoles}
             />
+            {/* Cycle strip — Phase 2, Advisory 6. Pinned below the
+                greeting/chooser, above the section board. */}
+            {contextId ? (
+              <div className="mt-6">
+                <CycleStrip contextId={contextId} isMobile={isMobile} />
+              </div>
+            ) : null}
           </div>
 
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden" data-testid="home-sections">

@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
+import CycleStrip from "@/components/cycle/CycleStrip";
+import useIsMobile from "@/hooks/useIsMobile";
 import { api, apiErrorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -832,6 +834,7 @@ function SubmissionsInbox({ contextId }) {
 export default function Cycle() {
   const { activeContext, account } = useAuth();
   const cid = activeContext?.id;
+  const isMobile = useIsMobile();
   const [cycleNames, setCycleNames] = useState([]);
   // Iter42 — moved above the early return so useState is unconditional and
   // the React-hooks rule isn't violated.
@@ -882,6 +885,10 @@ export default function Cycle() {
             email, you gate every step — all for <strong className="text-[var(--ink)]">{activeContext.name}</strong>.
           </p>
         </div>
+
+        {/* Cycle strip — Phase 2, Advisory 6. Sits above the existing
+            reporting-cycle spine, both coexist (different surfaces). */}
+        {cid ? <CycleStrip contextId={cid} isMobile={isMobile} /> : null}
 
         {/* SPINE STRIP — 4 stages with the active tab's stage highlighted */}
         <div className="mb-6 bg-white border border-[var(--rule)] rounded-md p-3" data-testid="cycle-spine-strip">

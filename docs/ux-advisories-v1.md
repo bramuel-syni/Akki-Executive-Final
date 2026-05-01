@@ -122,3 +122,12 @@ A modality is correct when:
 - Citation contract: signals / ask / briefings now include `references[]` with optional paragraph_id.
 - Mobile: Reading is mobile-shippable. Bottom drawer for commentary.
 - Deferred: validator-confirmed signal in rail (still only running on Briefings); paragraph-level LLM prompts (next pass).
+
+### v1.2 — Phase 2: Cycle strip + cycle_configs schema
+- Reading Viewer is now the default at `/app/documents/:id`. Legacy at `?v=1` for one week.
+- Schema: new `db.cycle_configs` collection per context, with 6-phase default.
+- Endpoints: `GET/PUT /api/contexts/{cid}/cycle-config`, `POST .../advance`, `POST .../reset`, `GET .../phases/{phase_id}/summary`.
+- UI: Horizontal `CycleStrip.jsx` component pinned at top of Home + `/app/cycle`. Click a phase → Sheet with artefact summary.
+- Tenant settings: `/app/settings/cycle` — owner/admin can rename, reorder, change durations, reset.
+- Mobile: strip is horizontally scroll-snap; side-panel becomes bottom Sheet.
+- Deferred to v2: previous-cycle history (cycle_offset < 0), full filtered Workspace view from phase summary.

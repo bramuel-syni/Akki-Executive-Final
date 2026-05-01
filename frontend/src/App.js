@@ -16,6 +16,7 @@ import Prepare from "@/pages/Prepare";
 import Activity from "@/pages/Activity";
 import DocumentViewer from "@/pages/DocumentViewer";
 import ReadingView from "@/pages/ReadingView";
+import CycleSettings from "@/pages/CycleSettings";
 import Learn from "@/pages/Learn";
 import TenantSettings from "@/pages/TenantSettings";
 import AccountSecurity from "@/pages/AccountSecurity";
@@ -64,16 +65,18 @@ function PublicOnlyRoute({ children, allowSandbox = false }) {
   return children;
 }
 
-/** Reading Viewer feature flag — `?v=2` selects the new ReadingView, every
- *  other value (including missing) falls back to the legacy DocumentViewer.
- *  After 7 days the default flips to v=2 and the legacy viewer becomes
- *  `?v=1`. See /app/docs/ux-advisories-v1.md (Phase 1 changelog).
+/** Reading Viewer · default-flip transition window.
+ *  - No `v` param           → ReadingView (new default)
+ *  - `?v=1`                 → DocumentViewer (legacy, kept for one week)
+ *  - `?v=2`                 → ReadingView (alias of default; remove with the
+ *                             legacy viewer in the follow-up cleanup PR)
+ *  See /app/docs/ux-advisories-v1.md (Phase 2 changelog).
  */
 function DocumentRouteSwitch() {
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   const variant = params.get("v");
-  return variant === "2" ? <ReadingView /> : <DocumentViewer />;
+  return variant === "1" ? <DocumentViewer /> : <ReadingView />;
 }
 
 function App() {
@@ -151,6 +154,7 @@ function App() {
           <Route path="/app/contexts/new" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />
           <Route path="/app/new-workspace" element={<ProtectedRoute><NewContext /></ProtectedRoute>} />
           <Route path="/app/settings" element={<ProtectedRoute><TenantSettings /></ProtectedRoute>} />
+          <Route path="/app/settings/cycle" element={<ProtectedRoute><CycleSettings /></ProtectedRoute>} />
           <Route path="/app/settings/billing" element={<ProtectedRoute><TenantSettings /></ProtectedRoute>} />
           <Route path="/app/security" element={<ProtectedRoute><AccountSecurity /></ProtectedRoute>} />
 

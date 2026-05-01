@@ -125,11 +125,11 @@ export default function ReadingTopBar({
           </a>
           <Link
             to={`/app/documents/${doc.id}?v=1`}
-            title="Open in legacy viewer"
-            className="inline-flex items-center justify-center px-2 h-8 rounded-sm text-[10px] text-slate-500 hover:text-[var(--ink)] hover:bg-white border border-transparent hover:border-[var(--rule)] uppercase tracking-wider"
+            title="Open in legacy reader"
+            className="inline-flex items-center px-2 h-8 rounded-sm text-[11px] italic text-[var(--muted)] hover:text-[var(--ink)] hover:underline underline-offset-2"
             data-testid="reading-legacy-link"
           >
-            v1
+            Open in legacy reader
           </Link>
           <button
             type="button"
