@@ -39,18 +39,30 @@ export default function CommentaryItem({
   onJump,
   paragraphLookup,
   isActive = false,
+  isFlashing = false,
 }) {
   if (!item) return null;
   const tone = item.tone || "note";
   const borderClass = BORDER_BY_TONE[tone] || BORDER_BY_TONE.note;
   const toneClass = TONE_WORD_CLASS[tone] || TONE_WORD_CLASS.note;
 
+  // Flash visuals: tint + ring + shadow + subtle scale so it actually
+  // reads as a flash, not a near-invisible border accent. Driven by the
+  // React `isFlashing` prop (lifted from useReadingScrollSync). The
+  // `data-flash` attribute is also set as a fallback for any consumer
+  // that prefers attribute selectors.
+  const flashClass =
+    "bg-[var(--accent)]/20 ring-2 ring-[var(--accent)] ring-offset-2 ring-offset-white shadow-[0_6px_24px_-4px_rgba(165,42,42,0.5)] scale-[1.015]";
+
   return (
     <li
       data-rail-paragraph-id={item.paragraphId || ""}
       data-active={isActive ? "true" : undefined}
+      data-flash={isFlashing ? "true" : undefined}
       data-testid={`commentary-item-${item.kind}-${item.id}`}
-      className={`group relative pl-4 pr-3 py-3.5 bg-white ${borderClass} hover:bg-[var(--cream-deep)]/30 transition-colors data-[active=true]:bg-[var(--cream-deep)]/40 data-[flash=true]:ring-2 data-[flash=true]:ring-[var(--accent)] data-[flash=true]:ring-offset-1 rounded-r-sm`}
+      className={`group relative pl-4 pr-3 py-3.5 ${borderClass} hover:bg-[var(--cream-deep)]/30 transition-all duration-200 data-[active=true]:bg-[var(--cream-deep)]/40 rounded-r-sm ${
+        isFlashing ? flashClass : "bg-white"
+      }`}
     >
       <div className="flex items-baseline justify-between gap-2 mb-1">
         <span className={`akki-overline text-[10px] tracking-[0.18em] ${toneClass}`}>

@@ -12,6 +12,7 @@ export default function ReadingRail({
   items,
   loading = false,
   activeParagraphId,
+  flashedRailIds = new Set(),
   onJump,
   paragraphLookup,
   onGenerateSignals,
@@ -72,6 +73,7 @@ export default function ReadingRail({
                     item.paragraphId &&
                     activeParagraphId === item.paragraphId,
                 )}
+                isFlashing={Boolean(item.paragraphId && flashedRailIds.has(item.paragraphId))}
               />
             ))}
           </ul>

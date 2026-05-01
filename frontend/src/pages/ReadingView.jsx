@@ -81,7 +81,13 @@ export default function ReadingView() {
   const bodyRef = useRef(null);
   const { paragraphs, loading: paragraphsLoading, error: paragraphsError, unavailable: paragraphsUnavailable } =
     useDocumentParagraphs(contextId, docId);
-  const { activeParagraphId, scrollBodyTo, scrollRailTo } = useReadingScrollSync(bodyRef);
+  const {
+    activeParagraphId,
+    flashedBodyId,
+    flashedRailIds,
+    scrollBodyTo,
+    scrollRailTo,
+  } = useReadingScrollSync(bodyRef);
 
   // Fetch doc.
   const loadDoc = useCallback(async () => {
@@ -361,6 +367,7 @@ export default function ReadingView() {
               items={commentaryItems}
               loading={commentaryLoading}
               activeParagraphId={activeParagraphId}
+              flashedRailIds={flashedRailIds}
               onJump={handleJumpToParagraph}
               paragraphLookup={paragraphLookup}
               onGenerateSignals={handleGenerateSignals}
@@ -372,6 +379,7 @@ export default function ReadingView() {
         {/* Mobile drawer (always rendered, hidden on md+ via the trigger). */}
         <CommentaryDrawer
           items={commentaryItems}
+          flashedRailIds={flashedRailIds}
           onJump={handleJumpToParagraph}
           paragraphLookup={paragraphLookup}
           onGenerateSignals={handleGenerateSignals}

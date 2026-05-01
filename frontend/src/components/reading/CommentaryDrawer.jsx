@@ -13,6 +13,7 @@ import CommentaryItem from "@/components/reading/CommentaryItem";
 
 export default function CommentaryDrawer({
   items,
+  flashedRailIds = new Set(),
   onJump,
   paragraphLookup,
   onGenerateSignals,
@@ -74,6 +75,7 @@ export default function CommentaryDrawer({
                   item={item}
                   onJump={handleJump}
                   paragraphLookup={paragraphLookup}
+                  isFlashing={Boolean(item.paragraphId && flashedRailIds.has(item.paragraphId))}
                 />
               ))}
             </ul>
