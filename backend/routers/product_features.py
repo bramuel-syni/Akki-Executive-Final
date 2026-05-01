@@ -18,6 +18,7 @@ router = APIRouter(prefix="/api", tags=["docs"])
 
 _PRODUCT_DOC_PATH = Path("/app/memory/PRODUCT_FEATURES.md")
 _UX_AUDIT_DOC_PATH = Path("/app/memory/UX_ADVISORIES_AUDIT.md")
+_UX_ADVISORIES_DOC_PATH = Path("/app/docs/ux-advisories-v1.md")
 
 
 def _read_doc(path: Path, label: str) -> str:
@@ -81,6 +82,35 @@ async def ux_audit_download():
         media_type="text/markdown; charset=utf-8",
         headers={
             "Content-Disposition": 'attachment; filename="UX_ADVISORIES_AUDIT.md"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get("/ux-advisories")
+async def ux_advisories_inline():
+    """Return ux-advisories-v1.md inline (rules doc; mirror of homepage-positioning-v1)."""
+    body = _read_doc(_UX_ADVISORIES_DOC_PATH, "ux-advisories-v1.md")
+    return Response(
+        content=body,
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get("/ux-advisories.md")
+async def ux_advisories_download():
+    """Return ux-advisories-v1.md as a download."""
+    body = _read_doc(_UX_ADVISORIES_DOC_PATH, "ux-advisories-v1.md")
+    return Response(
+        content=body,
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="ux-advisories-v1.md"',
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
         },
