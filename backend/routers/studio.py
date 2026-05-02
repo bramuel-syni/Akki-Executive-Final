@@ -442,7 +442,7 @@ async def studio_history(
 # Exposure score picks up the new reader automatically via the existing
 # aggregation — no scorer changes needed.
 # ---------------------------------------------------------------------------
-_SHARE_TOKEN_TTL_DAYS = 14
+_SHARE_TOKEN_TTL_DAYS = 30
 _SHARE_TOKEN_ALGO = "HS256"
 
 
