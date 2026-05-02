@@ -18,7 +18,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import AppShell from "@/components/layout/AppShell";
-import ValidatedBadge from "@/components/trust/ValidatedBadge";
+// ValidatedBadge import removed in Advisory 9 — sandbox/quick-results
+// does not run the second-LLM countercheck. Re-introduce only when
+// that pass is wired and the response carries a `validation` payload.
 import { Button } from "@/components/ui/button";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
@@ -151,9 +153,11 @@ export default function QuickResults() {
             <p className="text-[14.5px] text-[var(--muted)] leading-relaxed mb-2 max-w-[640px]">
               No navigation. No setup. Three concrete things AKKI can do with this exact document right now.
             </p>
-            <div className="mb-10">
-              <ValidatedBadge size="compact" />
-            </div>
+            {/* ValidatedBadge removed in Advisory 9: the sandbox/quick-
+                results LLM call does not run the second-model
+                countercheck. Cosmetic-only chips were retired across
+                the product. */}
+            <div className="mb-10" />
 
             <div className="space-y-4" data-testid="quick-results-cards">
               {USE_CASES.map((uc) => {

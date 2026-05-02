@@ -410,10 +410,14 @@ function BriefTab({ contextId, onCreated }) {
           </div>
         </div>
 
-        {/* ACTION — validated badge + deep toggle + submit. */}
+        {/* ACTION — deep toggle + submit. The independent-validator
+            chip was removed in Advisory 9: this surface generates a
+            briefing draft, the second-LLM pass runs server-side and
+            attaches a `validation` payload to the saved briefing. The
+            badge re-appears below at the briefing detail render where
+            that payload exists. */}
         <div className="px-6 py-4 bg-[var(--cream-deep)]/30 border-t border-[var(--rule)]/60 flex items-center justify-between gap-3">
           <div className="flex items-center gap-4">
-            <ValidatedBadge size="compact" />
             <label
               className="flex items-center gap-2 cursor-pointer select-none"
               data-testid="prepare-brief-deep-toggle"
@@ -540,9 +544,9 @@ function SignalsTab({ contextId, contextName, onCreated }) {
           </p>
         </div>
 
-        {/* ACTION — validated badge + submit. */}
-        <div className="px-6 py-4 bg-[var(--cream-deep)]/30 border-t border-[var(--rule)]/60 flex items-center justify-between gap-3">
-          <ValidatedBadge size="compact" />
+        {/* ACTION — submit only. ValidatedBadge removed in Advisory 9:
+            signal generation does not run a per-call validator pass. */}
+        <div className="px-6 py-4 bg-[var(--cream-deep)]/30 border-t border-[var(--rule)]/60 flex items-center justify-end gap-3">
           <Button
             type="submit"
             disabled={objective.trim().length < 4 || busy}
@@ -926,9 +930,10 @@ function SignalDetailModal({ signal, onClose }) {
             {signal.headline || signal.title}
           </DialogTitle>
         </DialogHeader>
-        <div className="mt-2">
-          <ValidatedBadge size="compact" />
-        </div>
+        {/* The Advisory 9 honesty fix removed the unconditional
+            ValidatedBadge from the signal-detail dialog. Signals do
+            not currently carry a `validation` payload — when they do,
+            re-introduce the chip with `validation={signal.validation}`. */}
         {signal.summary && (
           <p className="mt-3 akki-serif text-[15px] leading-[1.7] text-[var(--ink)]">
             {signal.summary}

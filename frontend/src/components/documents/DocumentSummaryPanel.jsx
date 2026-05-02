@@ -15,7 +15,9 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Sparkles, Loader2, RotateCw, BookOpen, AlertCircle, Send } from "lucide-react";
 import ShareModal from "@/components/share/ShareModal";
-import ValidatedBadge from "@/components/trust/ValidatedBadge";
+// ValidatedBadge import removed in Advisory 9: this surface does not run
+// the independent-validator second-pass. Per the honesty rule the badge
+// must not render where the call doesn't run.
 
 export default function DocumentSummaryPanel({ contextId, document: doc }) {
   const [summary, setSummary] = useState(doc?.akki_summary || null);
@@ -127,10 +129,11 @@ export default function DocumentSummaryPanel({ contextId, document: doc }) {
 
       {summary && (
         <div className="space-y-4" data-testid="doc-summary-content">
-          {/* §4.2/§5 — surface the validation pass on every output. */}
-          <div data-testid="doc-summary-validated">
-            <ValidatedBadge size="compact" />
-          </div>
+          {/* The independent-validator chip used to render here
+              unconditionally. It was retired in Advisory 9 because the
+              document-summary endpoint does not run the second-LLM
+              countercheck — showing the chip without the call was
+              cosmetic-only. Re-introduce only if/when the call lands. */}
           {summary.tldr && (
             <section>
               <p className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--muted)] font-mono mb-1.5">TL;DR</p>

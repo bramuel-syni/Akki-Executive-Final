@@ -97,28 +97,60 @@ export default function DocumentSummaryCard({ contextId, docId }) {
         )}
         {!loading && !err && doc && (
           <>
-            <Section
-              kind="summary"
-              icon={Sparkles}
-              body={doc.akki_summary || doc.preview || null}
-              fallback="No summary yet — click 'Continue in Chat' to ask AKKI to read it."
-            />
-            {doc.akki_key_points?.length > 0 && (
-              <Section
-                kind="key_points"
-                icon={ArrowRight}
-                body={null}
-                items={doc.akki_key_points}
-              />
-            )}
-            {doc.akki_questions?.length > 0 && (
-              <Section
-                kind="questions"
-                icon={MessageCircle}
-                body={null}
-                items={doc.akki_questions}
-              />
-            )}
+            {/* `akki_summary` on the document record is a STRUCTURED
+                OBJECT — { tldr, highlights[], questions[],
+                generated_at, mode } — not a string. The earlier
+                implementation passed the whole object as `body={...}`,
+                which made React render `{<object>}` as a JSX child and
+                crashed the workspace right pane with "Objects are not
+                valid as a React child". Fix: unpack the fields and
+                feed each to its own Section.
+
+                Manual repro before the fix:
+                  1. Sign in as admin@akki.ai
+                  2. Open /app/workspace
+                  3. Click the seeded "Mobile test inbound" doc — its
+                     akki_summary is a populated dict in Mongo
+                  4. The right pane crashes; React dev tools shows
+                     "Objects are not valid as a React child (found
+                     object with keys {tldr, highlights, questions,
+                     mode, generated_at})". */}
+            {(() => {
+              const sObj = doc.akki_summary;
+              const isStructured = sObj && typeof sObj === "object" && !Array.isArray(sObj);
+              const tldr = isStructured ? sObj.tldr : (typeof sObj === "string" ? sObj : null);
+              const highlights = (isStructured ? sObj.highlights : doc.akki_key_points) || [];
+              const questions = (isStructured ? sObj.questions : doc.akki_questions) || [];
+              const fallbackBody = !tldr && !highlights.length && !questions.length
+                ? (doc.preview || null)
+                : null;
+              return (
+                <>
+                  <Section
+                    kind="summary"
+                    icon={Sparkles}
+                    body={tldr || fallbackBody}
+                    fallback="No summary yet — click 'Continue in Chat' to ask AKKI to read it."
+                  />
+                  {highlights.length > 0 && (
+                    <Section
+                      kind="key_points"
+                      icon={ArrowRight}
+                      body={null}
+                      items={highlights}
+                    />
+                  )}
+                  {questions.length > 0 && (
+                    <Section
+                      kind="questions"
+                      icon={MessageCircle}
+                      body={null}
+                      items={questions}
+                    />
+                  )}
+                </>
+              );
+            })()}
           </>
         )}
       </div>
@@ -142,23 +174,42 @@ export default function DocumentSummaryCard({ contextId, docId }) {
 }
 
 function Section({ kind, icon: Icon, body, items, fallback }) {
+  // Defensive: only string bodies are renderable. If a caller hands us
+  // an object/array, surface the JSON shape so the failure is loud at
+  // dev time instead of crashing the whole pane. This is the second
+  // half of the fix for the "Objects are not valid as a React child"
+  // crash in the doc-detail right pane.
+  let bodyText = null;
+  if (typeof body === "string") {
+    bodyText = body;
+  } else if (typeof body === "number") {
+    bodyText = String(body);
+  } else if (body != null) {
+    if (typeof console !== "undefined") {
+      // eslint-disable-next-line no-console
+      console.warn("[DocumentSummaryCard.Section] non-string body coerced", { kind, body });
+    }
+    try { bodyText = JSON.stringify(body); } catch { bodyText = "[unrenderable summary payload]"; }
+  }
   return (
     <section data-testid={`doc-summary-section-${kind}`}>
       <p className="text-[10.5px] uppercase tracking-[0.16em] text-[var(--muted)] mb-2 flex items-center gap-1.5">
         <Icon className="w-3 h-3 text-[var(--accent)]" strokeWidth={1.7} />
         {SUMMARY_KIND_LABEL[kind]}
       </p>
-      {body && (
+      {bodyText && (
         <p className="text-[14px] text-[var(--ink)] leading-relaxed whitespace-pre-wrap">
-          {body}
+          {bodyText}
         </p>
       )}
       {items && items.length > 0 && (
         <ul className="space-y-1.5 text-[13.5px] text-[var(--ink)] list-disc list-inside marker:text-[var(--accent)]">
-          {items.map((it, i) => <li key={i}>{it}</li>)}
+          {items.map((it, i) => (
+            <li key={i}>{typeof it === "string" ? it : JSON.stringify(it)}</li>
+          ))}
         </ul>
       )}
-      {!body && (!items || items.length === 0) && fallback && (
+      {!bodyText && (!items || items.length === 0) && fallback && (
         <p className="text-[12.5px] italic text-[var(--muted)]">{fallback}</p>
       )}
     </section>
