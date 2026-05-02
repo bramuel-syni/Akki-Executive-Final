@@ -30,6 +30,40 @@ logger = logging.getLogger("akki.billing")
 
 router = APIRouter(prefix="/api")
 
+
+def _check_test_mode_key_leak() -> None:
+    """Phase 10 closeout guard.
+
+    Called once at router-import time. Logs a structured WARN (never an
+    ERROR, never a boot failure) when a test-mode Stripe key is present
+    in the env but billing is disabled. This is the "confused deputy"
+    signal — the key isn't reachable because BILLING_ENABLED is false,
+    but its presence means something on the platform side is still
+    shipping it. The operator sees the warning in logs and removes the
+    pod-spec line. See docs/RUNBOOKS/PRODUCTION_ENV.md.
+    """
+    billing_on = (os.environ.get("BILLING_ENABLED") or "").lower() in ("1", "true", "yes")
+    if billing_on:
+        return
+    leaked: Dict[str, str] = {}
+    for var in ("STRIPE_API_KEY", "STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY", "STRIPE_PK"):
+        val = os.environ.get(var) or ""
+        if val.startswith(("sk_test_", "pk_test_", "rk_test_", "whsec_test_")):
+            leaked[var] = val[:12] + "…"  # prefix only, never log the full key
+    if leaked:
+        logger.warning(
+            "Stripe test-mode key detected in non-billing env — ignored, but should be removed",
+            extra={
+                "event": "billing.test_key_leaked",
+                "billing_enabled": False,
+                "leaked_vars": sorted(leaked.keys()),
+                "leaked_prefixes": leaked,
+            },
+        )
+
+
+_check_test_mode_key_leak()
+
 # ---------------------------------------------------------------------------
 # Plan catalog — server-side source of truth.
 # ---------------------------------------------------------------------------

@@ -266,6 +266,11 @@ def _validate_content(kind: str, content: Dict[str, Any]) -> Dict[str, Any]:  # 
     if kind == "image":
         if not c.get("storage_key"):
             raise HTTPException(status_code=400, detail="image.storage_key is required.")
+        scan = c.get("scan")
+        if scan is not None:
+            scan = str(scan)[:32].lower()
+            if scan not in ("clamav", "unknown"):
+                scan = None
         return {
             "storage_key": str(c["storage_key"])[:300],
             "alt": (c.get("alt") or "")[:240],
@@ -273,6 +278,8 @@ def _validate_content(kind: str, content: Dict[str, Any]) -> Dict[str, Any]:  # 
             "mime_type": (c.get("mime_type") or "")[:80],
             "width": int(c.get("width") or 0) or None,
             "height": int(c.get("height") or 0) or None,
+            # Scanner provenance — the UI reads this, not a literal.
+            "scan": scan,
         }
 
     raise HTTPException(status_code=400, detail=f"Unhandled kind: {kind}")

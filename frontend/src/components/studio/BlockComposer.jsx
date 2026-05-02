@@ -49,7 +49,7 @@ const PALETTE = [
   { kind: "signal_card",              label: "Signal / metric", desc: "Reference a signal · optional metric.",     Icon: BarChart3 },
   { kind: "divider",                  label: "Divider",       desc: "Horizontal rule.",                             Icon: Minus },
   { kind: "table",                    label: "Table",         desc: "Headers + rows, plain text cells.",            Icon: TableIcon },
-  { kind: "image",                    label: "Image",         desc: "Upload an image (≤ 6 MB · stub virus scan).",  Icon: ImageIcon },
+  { kind: "image",                    label: "Image",         desc: "Upload an image (≤ 6 MB · scanned by ClamAV).",  Icon: ImageIcon },
 ];
 
 const CLASS_COLORS = {
@@ -475,6 +475,11 @@ function ImageBlock({ content, onChange, readOnly, onUpload }) {
         storage_key: result.storage_key,
         mime_type: result.mime_type,
         alt: result.alt || content?.alt || "",
+        // Persist the scanner provenance so the UI badge reads from
+        // the API's `scan` field rather than a hard-coded literal. The
+        // backend returns "clamav" on success; the UI never exposes
+        // that raw value — it maps known clean values to "Scanned".
+        scan: result.scan || null,
       });
     } catch (err) {
       // Advisory 9 honesty rule: the toast reflects what actually
@@ -500,9 +505,14 @@ function ImageBlock({ content, onChange, readOnly, onUpload }) {
         <div className="flex flex-col gap-2">
           <p className="text-[11px] uppercase tracking-[0.14em] text-[#7C6A4F]">
             Image attached · {content.storage_key.split("/").pop()}
-            <span className="ml-2 inline-flex items-center gap-1 normal-case tracking-normal text-[10.5px] text-emerald-800">
-              · Scanned
-            </span>
+            {/* Scanner provenance: the API returns {scan: "clamav"} on
+                success. We map known clean values to "Scanned" and
+                never surface the raw scanner name to the user. */}
+            {["clamav"].includes((content.scan || "").toString().toLowerCase()) && (
+              <span className="ml-2 inline-flex items-center gap-1 normal-case tracking-normal text-[10.5px] text-emerald-800">
+                · Scanned
+              </span>
+            )}
           </p>
           {!readOnly && (
             <input
