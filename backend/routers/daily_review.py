@@ -41,6 +41,9 @@ logger = logging.getLogger("akki.daily_review")
 
 INBOUND_KIND = "inbound_doc"
 BRIEFING_KIND = "briefing"
+STUDIO_KIND = "studio_artefact"  # composed briefings / decks / reports awaiting review (Phase 8)
+STUDIO_SUBKINDS = ("briefing", "deck", "report")
+STUDIO_COLLECTIONS = {"briefing": "briefings", "deck": "decks", "report": "reports"}
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +136,27 @@ def _briefing_payload(b: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _studio_payload(a: Dict[str, Any], subkind: str) -> Dict[str, Any]:
+    """Payload for a composed-artefact awaiting review (Phase 8)."""
+    classification = a.get("classification") or {}
+    if isinstance(classification, str):
+        cls_label = classification
+        cls_key = classification.lower()
+    else:
+        cls_label = classification.get("label") or "Internal"
+        cls_key = (classification.get("classification") or "internal").lower()
+    body_preview = (a.get("opening_paragraph") or a.get("body") or "")[:600]
+    return {
+        "subkind": subkind,
+        "title": a.get("title") or f"{subkind.capitalize()} draft",
+        "submitted_at": a.get("submitted_at"),
+        "submission_note": (a.get("submission_note") or "")[:240],
+        "classification": cls_key,
+        "classification_label": cls_label,
+        "preview": body_preview,
+    }
+
+
 # ---------------------------------------------------------------------------
 # GET /api/me/review-queue
 # ---------------------------------------------------------------------------
@@ -177,6 +201,18 @@ async def list_review_queue(
         briefing_q, {"_id": 0},
     ).sort("created_at", -1).to_list(over)
 
+    # Studio-composed artefacts awaiting review (Phase 8). Scan all three
+    # kinds; volume is small. Ordered by submitted_at fallback created_at.
+    studio_rows: List[Dict[str, Any]] = []
+    for sub in STUDIO_SUBKINDS:
+        coll = db[STUDIO_COLLECTIONS[sub]]
+        async for a in coll.find(
+            {"context_id": {"$in": cids}, "block_status": "in_review"},
+            {"_id": 0},
+        ).sort("submitted_at", -1).limit(over):
+            a["__subkind"] = sub
+            studio_rows.append(a)
+
     items: List[Dict[str, Any]] = []
     for row in inbound_rows:
         items.append({
@@ -196,6 +232,20 @@ async def list_review_queue(
             "context_name": name_map.get(b.get("context_id"), "(unknown)"),
             "payload": _briefing_payload(b),
         })
+    for s in studio_rows:
+        sub = s.pop("__subkind", "briefing")
+        # Composed-artefact items use a sub-prefix so the UID encodes both
+        # the queue-kind (studio_artefact) and the underlying artefact kind
+        # (briefing/deck/report). Format: "studio_artefact:<sub>:<id>".
+        items.append({
+            "id": f"{STUDIO_KIND}:{sub}:{s['id']}",
+            "kind": STUDIO_KIND,
+            "subkind": sub,
+            "created_at": s.get("submitted_at") or s.get("created_at"),
+            "context_id": s.get("context_id"),
+            "context_name": name_map.get(s.get("context_id"), "(unknown)"),
+            "payload": _studio_payload(s, sub),
+        })
 
     items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
     page = items[:cap]
@@ -209,7 +259,12 @@ async def list_review_queue(
         "context_id": {"$in": cids}, "status": "active",
         "id": {"$nin": list(read_ids)} if read_ids else {"$exists": True},
     })
-    total_pending = total_inbound + total_briefing
+    total_studio = 0
+    for sub in STUDIO_SUBKINDS:
+        total_studio += await db[STUDIO_COLLECTIONS[sub]].count_documents({
+            "context_id": {"$in": cids}, "block_status": "in_review",
+        })
+    total_pending = total_inbound + total_briefing + total_studio
 
     return {"items": page, "next_cursor": next_cursor, "total_pending": total_pending}
 
@@ -235,6 +290,11 @@ async def review_queue_counts(
         "context_id": {"$in": cids}, "status": "active",
         "id": {"$nin": list(read_ids)} if read_ids else {"$exists": True},
     })
+    studio_total = 0
+    for sub in STUDIO_SUBKINDS:
+        studio_total += await db[STUDIO_COLLECTIONS[sub]].count_documents({
+            "context_id": {"$in": cids}, "block_status": "in_review",
+        })
 
     # by_context aggregation — one round-trip per kind.
     by_ctx: Dict[str, int] = {cid: 0 for cid in cids}
@@ -257,8 +317,12 @@ async def review_queue_counts(
     by_context.sort(key=lambda r: r["count"], reverse=True)
 
     return {
-        "total": inbound_total + briefing_total,
-        "by_kind": {INBOUND_KIND: inbound_total, BRIEFING_KIND: briefing_total},
+        "total": inbound_total + briefing_total + studio_total,
+        "by_kind": {
+            INBOUND_KIND: inbound_total,
+            BRIEFING_KIND: briefing_total,
+            STUDIO_KIND: studio_total,
+        },
         "by_context": by_context,
     }
 
@@ -508,6 +572,74 @@ def _split_uid(kind: str, item_id: str) -> str:
     return item_id
 
 
+async def _resolve_studio_artefact(subkind: str, aid: str, account: Dict[str, Any]) -> Dict[str, Any]:
+    if subkind not in STUDIO_SUBKINDS:
+        raise HTTPException(status_code=400, detail=f"Unknown studio subkind: {subkind}")
+    coll = db[STUDIO_COLLECTIONS[subkind]]
+    a = await coll.find_one({"id": aid}, {"_id": 0})
+    if not a:
+        raise HTTPException(status_code=404, detail=f"{subkind} not found")
+    if not await _is_member(a["context_id"], account["id"]):
+        raise HTTPException(status_code=403, detail="Not a member of this context.")
+    return a
+
+
+async def _approve_studio(uid_payload: str, account: Dict[str, Any], note: Optional[str]) -> Dict[str, Any]:
+    """uid_payload is '<subkind>:<artefact_id>'."""
+    parts = uid_payload.split(":", 1)
+    if len(parts) != 2:
+        raise HTTPException(status_code=400, detail="Studio item id must be '<subkind>:<artefact_id>'.")
+    subkind, aid = parts
+    a = await _resolve_studio_artefact(subkind, aid, account)
+    if (a.get("block_status") or "draft") != "in_review":
+        raise HTTPException(status_code=409, detail={"prior_decision": a.get("block_status") or "draft"})
+    coll = db[STUDIO_COLLECTIONS[subkind]]
+    now_iso = iso(now())
+    await coll.update_one(
+        {"id": aid},
+        {"$set": {
+            "block_status": "approved",
+            "approved_at": now_iso,
+            "approved_by": account["id"],
+            "approval_note": (note or "")[:600],
+        }},
+    )
+    await write_audit(
+        a["context_id"], account["id"],
+        "review.studio.approve", subkind, aid,
+        {"via": "daily_review", "note": (note or "")[:200]},
+    )
+    return {"subkind": subkind, "approved_at": now_iso}
+
+
+async def _reject_studio(uid_payload: str, account: Dict[str, Any], reason: Optional[str]) -> Dict[str, Any]:
+    parts = uid_payload.split(":", 1)
+    if len(parts) != 2:
+        raise HTTPException(status_code=400, detail="Studio item id must be '<subkind>:<artefact_id>'.")
+    subkind, aid = parts
+    a = await _resolve_studio_artefact(subkind, aid, account)
+    if (a.get("block_status") or "draft") != "in_review":
+        raise HTTPException(status_code=409, detail={"prior_decision": a.get("block_status") or "draft"})
+    coll = db[STUDIO_COLLECTIONS[subkind]]
+    now_iso = iso(now())
+    reason_clean = (reason or "needs_revision")[:200]
+    await coll.update_one(
+        {"id": aid},
+        {"$set": {
+            "block_status": "draft",
+            "rejected_at": now_iso,
+            "rejected_by": account["id"],
+            "reject_reason": reason_clean,
+        }},
+    )
+    await write_audit(
+        a["context_id"], account["id"],
+        "review.studio.reject", subkind, aid,
+        {"via": "daily_review", "reason": reason_clean},
+    )
+    return {"subkind": subkind, "reason": reason_clean}
+
+
 @router.post("/items/{kind}/{item_id}/approve")
 async def approve_review_item(
     kind: str, item_id: str,
@@ -520,6 +652,8 @@ async def approve_review_item(
         result = await _approve_inbound(iid, account, note)
     elif kind == BRIEFING_KIND:
         result = await _approve_briefing(iid, account)
+    elif kind == STUDIO_KIND:
+        result = await _approve_studio(iid, account, note)
     else:
         raise HTTPException(status_code=400, detail=f"Unknown kind '{kind}'.")
     next_id = await _next_pending_item_id(account["id"], exclude_uid=f"{kind}:{iid}")
@@ -538,6 +672,8 @@ async def reject_review_item(
         result = await _reject_inbound(iid, account, reason)
     elif kind == BRIEFING_KIND:
         result = await _reject_briefing(iid, account, reason)
+    elif kind == STUDIO_KIND:
+        result = await _reject_studio(iid, account, reason)
     else:
         raise HTTPException(status_code=400, detail=f"Unknown kind '{kind}'.")
     next_id = await _next_pending_item_id(account["id"], exclude_uid=f"{kind}:{iid}")
@@ -574,5 +710,19 @@ async def edit_review_item(
             "ok": True, "kind": kind, "id": iid,
             "edit_url": f"/app/prepare?briefing={iid}",
             "inline": False,
+        }
+    if kind == STUDIO_KIND:
+        # Studio edit deep-links to the block composer for the underlying
+        # artefact kind. iid format: '<subkind>:<artefact_id>'.
+        parts = iid.split(":", 1)
+        if len(parts) != 2:
+            raise HTTPException(status_code=400, detail="Studio item id must be '<subkind>:<artefact_id>'.")
+        subkind, aid = parts
+        a = await _resolve_studio_artefact(subkind, aid, account)
+        return {
+            "ok": True, "kind": kind, "id": iid,
+            "edit_url": f"/app/studio/composer/{subkind}/{aid}",
+            "inline": False,
+            "context_id": a["context_id"],
         }
     raise HTTPException(status_code=400, detail=f"Unknown kind '{kind}'.")

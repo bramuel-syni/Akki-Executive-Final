@@ -1033,6 +1033,14 @@ function StudioHistoryStrip({ items, contextId, onOpenDeck }) {
               <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                 <SensitivityChip sensitivity={it.sensitivity} />
                 <ExposurePill exposure={it.exposure} />
+                <a
+                  href={`/app/studio/composer/${it.kind}/${it.id}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm border border-[var(--rule)] text-[10px] uppercase tracking-[0.14em] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                  data-testid={`studio-history-compose-${it.kind}-${it.id}`}
+                >
+                  Compose
+                </a>
                 <button
                   type="button"
                   onClick={(e) => {

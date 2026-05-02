@@ -57,6 +57,7 @@ import BlogPost from "@/pages/marketing/BlogPost";
 import BlogAdmin from "@/pages/marketing/BlogAdmin";
 import SharedArtefact from "@/pages/SharedArtefact";
 import InboundQueue from "@/pages/InboundQueue";
+import StudioComposerPage from "@/pages/StudioComposerPage";
 
 function PublicOnlyRoute({ children, allowSandbox = false }) {
   const { account } = useAuth();
@@ -188,6 +189,7 @@ function App() {
           <Route path="/app/enterprise" element={<Gated><Enterprise /></Gated>} />
           <Route path="/app/decks" element={<Gated><Decks /></Gated>} />
           <Route path="/app/decks/:deckId" element={<Gated><Decks /></Gated>} />
+          <Route path="/app/studio/composer/:kind/:artefactId" element={<Gated><StudioComposerPage /></Gated>} />
           <Route path="/app/solve" element={<Gated><AppSolve /></Gated>} />
           <Route path="/app/documents/:id" element={<Gated><DocumentRouteSwitch /></Gated>} />
           <Route path="/app/contexts" element={<Gated><ContextPortfolio /></Gated>} />
