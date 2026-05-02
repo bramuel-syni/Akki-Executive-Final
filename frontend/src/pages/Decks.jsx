@@ -346,7 +346,7 @@ function IntentStep({ contextId, onDrafted, history, onResume }) {
                 onClick={() => onResume(d.id)}
                 data-testid={`decks-history-item-${d.id}`}
               >
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="akki-serif text-[14.5px] text-[var(--ink)] truncate">
                     {d.title}
                   </p>
@@ -358,7 +358,15 @@ function IntentStep({ contextId, onDrafted, history, onResume }) {
                     {d.user_feedback?.rating === "down" && " · 👎"}
                   </p>
                 </div>
-                <ChevronRight className="w-4 h-4 text-[var(--muted)]" />
+                {/* Phase 11 ITEM B — independent-validator badge on the
+                    Recent Decks row. Rendered ONLY when a real validation
+                    payload (with a non-null verdict) is present on the
+                    list response — preserves the ValidatedBadge invariant
+                    (zero unconditional renders). */}
+                {d.validation && d.validation.verdict && (
+                  <ValidatedBadge size="compact" validation={d.validation} />
+                )}
+                <ChevronRight className="w-4 h-4 text-[var(--muted)] shrink-0" />
               </li>
             ))}
           </ul>

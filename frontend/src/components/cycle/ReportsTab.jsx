@@ -220,9 +220,25 @@ function ComposeModal({ open, onClose, contextId, cycleNames, onCreated }) {
 
 // ---------------- Chain visualizer ----------------
 function ChainStrip({ chain }) {
+  // Defensive boundary: legacy / hand-seeded reports can persist with
+  // `chain: null` (the schema is a list of tier descriptors but pre-iter34
+  // records and direct-DB seeds may omit it). Calling `.map()` on null
+  // crashes the entire tab. Render an honest empty placeholder so the
+  // report row still surfaces — the absence of a chain is information.
+  const tiers = Array.isArray(chain) ? chain : [];
+  if (tiers.length === 0) {
+    return (
+      <p
+        className="text-[11px] italic text-[var(--muted)] py-1"
+        data-testid="chain-strip-empty"
+      >
+        No review chain recorded.
+      </p>
+    );
+  }
   return (
     <ol className="flex items-stretch gap-1 overflow-x-auto py-2" data-testid="chain-strip">
-      {chain.map((entry, i) => {
+      {tiers.map((entry, i) => {
         const isCurrent = entry.status === "pending";
         const isApproved = entry.status === "approved";
         const isSentBack = entry.status === "sent_back";
@@ -537,7 +553,57 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
 }
 
 // ---------------- Reports tab (default export) ----------------
-export default function ReportsTab({ contextId, currentEmail, cycleNames }) {
+//
+// The exported component is wrapped in an error boundary so that a single
+// malformed report record (e.g. a legacy seed with `chain: null`, a
+// future-shape `validation` payload from a newer build, or any other
+// unexpected shape) cannot blank the entire Cycle page. The boundary
+// renders an honest "something went wrong on this report" panel and
+// surfaces a reload action — the user keeps access to every other tab.
+class ReportsTabErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    // Best-effort console trace — Sentry will pick this up once Phase 13 wires it.
+    // eslint-disable-next-line no-console
+    console.error("ReportsTab crashed:", error, info?.componentStack);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div
+          className="bg-white border border-red-200 rounded-md p-5 text-[13px] text-[var(--ink)]"
+          data-testid="reports-tab-error"
+        >
+          <p className="akki-overline text-red-700 mb-2">Reports view error</p>
+          <p className="mb-3 text-[var(--muted)]">
+            One of the records in this cycle's report list is in an
+            unexpected shape. The rest of AKKI is unaffected.
+          </p>
+          <p className="font-mono text-[11.5px] text-red-700/80 break-all mb-3">
+            {(this.state.error && (this.state.error.message || String(this.state.error))) || "Unknown error"}
+          </p>
+          <button
+            type="button"
+            onClick={() => this.setState({ error: null })}
+            className="text-[12px] underline text-[var(--accent)] hover:text-[var(--accent)]/80"
+            data-testid="reports-tab-error-retry"
+          >
+            Reset and try again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function ReportsTabInner({ contextId, currentEmail, cycleNames }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [composeOpen, setComposeOpen] = useState(false);
@@ -667,3 +733,15 @@ export default function ReportsTab({ contextId, currentEmail, cycleNames }) {
     </div>
   );
 }
+
+// Boundary-wrapped default export. Keeps the contract with the Cycle page
+// identical (`<ReportsTab contextId=… currentEmail=… cycleNames=… />`) — the
+// boundary is invisible until something throws.
+export default function ReportsTab(props) {
+  return (
+    <ReportsTabErrorBoundary>
+      <ReportsTabInner {...props} />
+    </ReportsTabErrorBoundary>
+  );
+}
+

@@ -590,9 +590,17 @@ async def list_decks(
 ):
     items = await db.decks.find(
         {"context_id": context_id},
+        # Phase 11 ITEM B closeout — the list serializer must include
+        # `validation` (the badge on `/app/decks` is rendered straight
+        # from the list response, not the detail endpoint) and
+        # `sensitivity` (the SensitivityChip on each row reads it from
+        # here too). Both fields are full sub-documents — boto3-shape
+        # projection inclusion lets Mongo return the entire nested
+        # object without us having to enumerate sub-keys.
         {"_id": 0, "id": 1, "title": 1, "subtitle": 1, "research_question": 1,
          "audience": 1, "tier": 1, "model_id": 1,
-         "created_at": 1, "quality_check.score": 1, "user_feedback.rating": 1},
+         "created_at": 1, "quality_check.score": 1, "user_feedback.rating": 1,
+         "validation": 1, "sensitivity": 1},
     ).sort("created_at", -1).to_list(length=max(1, min(limit, 100)))
     return {"items": items, "count": len(items)}
 
