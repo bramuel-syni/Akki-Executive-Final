@@ -296,7 +296,15 @@ async def post_turn(
             "free_grant_used": response.get("free_grant_used", False),
             "generated_at": iso(now()),
         }
-        # Phase 11 ITEM B — validator on the synthesis body. Non-blocking.
+        # Phase 11 ITEM B — validator on the synthesis body. The helper
+        # always returns a dict; we only fall back here if the wrapper
+        # itself fails. Persisted state is honest about why we couldn't
+        # get a real verdict — never silently null.
+        synthesis_record["validation"] = {
+            "verdict": "qualified", "confidence": 0,
+            "notes": ["Validator wrapper failed before call; treat with normal scrutiny."],
+            "validator_provider": "n/a", "validator_model": "n/a",
+        }
         try:
             from llm_service import validate_independent
             synthesis_record["validation"] = await validate_independent(
@@ -306,8 +314,24 @@ async def post_turn(
                 surface="solve",
                 account_id=account["id"],
             )
+            logger.info(
+                "solve validator persisted event=persisted surface=solve session_id=%s "
+                "verdict=%s provider=%s",
+                sid,
+                synthesis_record["validation"].get("verdict"),
+                synthesis_record["validation"].get("validator_provider"),
+            )
         except Exception as e:  # noqa: BLE001
-            logger.warning("Solve synthesis validator failed for %s: %s", sid, e)
+            logger.warning(
+                "solve validator wrapper failed event=wrapper_exception surface=solve "
+                "session_id=%s exc=%s reason=%s",
+                sid, e.__class__.__name__, str(e)[:200],
+            )
+            synthesis_record["validation"] = {
+                "verdict": "qualified", "confidence": 0,
+                "notes": [f"Validator wrapper error ({e.__class__.__name__}); treat with normal scrutiny."],
+                "validator_provider": "n/a", "validator_model": "n/a",
+            }
         update_fields["synthesis"] = synthesis_record
         rec["synthesis"] = update_fields["synthesis"]
     elif current_phase == "lockin":

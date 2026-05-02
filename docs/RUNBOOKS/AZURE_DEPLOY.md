@@ -589,9 +589,10 @@ traffic threshold that justifies the SKU jump.
    confirm the backup target.
 4. **No `SUBPROCESSORS.md` yet.** Listed as a compliance dependency
    in § Step 10. Stub it before first enterprise signature.
-5. **`backend/Dockerfile` and `deploy/blob-gw.Dockerfile` do not
-   exist in the repo today.** They are referenced by Step 3 and need
-   to be authored as part of the Phase 12 cutover ticket.
+5. **Dev-container sidecars provisioned natively (Phase 11 closeout).**
+   ClamAV (`apt-get install clamav-daemon` + `freshclam` on first boot)
+   and MinIO (`/usr/local/bin/minio` binary) now run under supervisor in
+   the dev preview, matching production posture for upload paths.
 
 ---
 

@@ -367,11 +367,17 @@ async def generate_deck(
         rec["sensitivity"] = None
 
     # Phase 11 ITEM B — independent-model validator. Best-effort and
-    # non-blocking: we persist the deck first, then overwrite
-    # `validation` once the second-pass returns. The ValidatedBadge is
-    # rendered client-side only when `validation.verdict` is present, so
-    # a cap-tripped fallback gracefully reads as "Qualified".
-    validation_payload = None
+    # non-blocking. The validator helper is contracted to ALWAYS return a
+    # dict (even on cap, timeout, no-key, or exception) — null here would
+    # mean we lost the diagnostic trail entirely. We therefore default to
+    # a "qualified-with-reason" fallback when the import or call site
+    # itself raises, so the persisted state is honest about why we
+    # couldn't get a real verdict.
+    validation_payload = {
+        "verdict": "qualified", "confidence": 0,
+        "notes": ["Validator wrapper failed before call; treat with normal scrutiny."],
+        "validator_provider": "n/a", "validator_model": "n/a",
+    }
     try:
         from llm_service import validate_independent
         slide_concat = "\n\n".join(
@@ -385,8 +391,24 @@ async def generate_deck(
             surface="deck",
             account_id=ctx["account"]["id"],
         )
+        logger.info(
+            "deck validator persisted event=persisted surface=deck deck_id=%s "
+            "verdict=%s provider=%s",
+            deck_id,
+            validation_payload.get("verdict"),
+            validation_payload.get("validator_provider"),
+        )
     except Exception as e:  # noqa: BLE001
-        logger.warning("Deck validator failed for %s: %s", deck_id, e)
+        logger.warning(
+            "deck validator wrapper failed event=wrapper_exception surface=deck "
+            "deck_id=%s exc=%s reason=%s",
+            deck_id, e.__class__.__name__, str(e)[:200],
+        )
+        validation_payload = {
+            "verdict": "qualified", "confidence": 0,
+            "notes": [f"Validator wrapper error ({e.__class__.__name__}); treat with normal scrutiny."],
+            "validator_provider": "n/a", "validator_model": "n/a",
+        }
     rec["validation"] = validation_payload
     await db.decks.insert_one(rec)
     rec.pop("_id", None)

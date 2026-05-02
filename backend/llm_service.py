@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import re
+import time as _time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -353,9 +354,23 @@ async def validate_independent(
         "notes": ["Validator unavailable; treat with normal scrutiny."],
         "validator_provider": "n/a", "validator_model": "n/a",
     }
+    started_at = _time.monotonic()
     emergent_key = os.environ.get("EMERGENT_LLM_KEY")
-    if not emergent_key or not content or len(content.strip()) < 40:
-        return fallback
+    if not emergent_key:
+        logger.warning(
+            "validator skipped event=skipped surface=%s reason=no_emergent_key "
+            "provider=n/a elapsed_ms=%d account=%s",
+            surface, int((_time.monotonic() - started_at) * 1000), account_id,
+        )
+        return {**fallback, "notes": ["Validator key not configured; treat with normal scrutiny."]}
+    if not content or len(content.strip()) < 40:
+        logger.warning(
+            "validator skipped event=skipped surface=%s reason=content_too_short "
+            "len=%d provider=n/a elapsed_ms=%d account=%s",
+            surface, len((content or "").strip()),
+            int((_time.monotonic() - started_at) * 1000), account_id,
+        )
+        return {**fallback, "notes": ["Content too short for second-pass review."]}
 
     # Phase 11 ITEM B — daily soft cap. Persisted counter per UTC day.
     # When the cap is tripped we short-circuit to the fallback and log.
@@ -367,8 +382,9 @@ async def validate_independent(
         cap_ok = await _validator_soft_cap_ok(surface=surface)
         if not cap_ok:
             logger.warning(
-                "validator soft cap tripped for surface=%s account=%s; returning fallback",
-                surface, account_id,
+                "validator skipped event=cap_tripped surface=%s reason=daily_soft_cap "
+                "provider=n/a elapsed_ms=%d account=%s",
+                surface, int((_time.monotonic() - started_at) * 1000), account_id,
             )
             return {
                 **fallback,
@@ -405,6 +421,17 @@ async def validate_independent(
         import asyncio as _asyncio
         raw = await _asyncio.wait_for(chat.send_message(msg), timeout=timeout_seconds)
         parsed = parse_json_response(raw if isinstance(raw, str) else str(raw)) or {}
+        if not parsed:
+            logger.warning(
+                "validator empty event=empty_response surface=%s reason=parse_failed "
+                "provider=gemini elapsed_ms=%d account=%s",
+                surface, int((_time.monotonic() - started_at) * 1000), account_id,
+            )
+            return {
+                **fallback,
+                "validator_provider": "gemini", "validator_model": "gemini-2.5-flash",
+                "notes": ["Validator returned an unparseable response; treat with normal scrutiny."],
+            }
         verdict = str(parsed.get("verdict") or "qualified").lower()
         if verdict not in {"validated", "qualified", "flagged"}:
             verdict = "qualified"
@@ -413,6 +440,12 @@ async def validate_independent(
         except (TypeError, ValueError):
             confidence = 70
         notes = [str(n).strip()[:140] for n in (parsed.get("notes") or []) if str(n).strip()][:3]
+        elapsed = int((_time.monotonic() - started_at) * 1000)
+        logger.info(
+            "validator ok event=ok surface=%s verdict=%s confidence=%d "
+            "provider=gemini elapsed_ms=%d account=%s",
+            surface, verdict, confidence, elapsed, account_id,
+        )
         return {
             "verdict": verdict, "confidence": confidence,
             "notes": notes or ["No issues flagged."],
@@ -420,10 +453,20 @@ async def validate_independent(
             "validator_model": "gemini-2.5-flash",
         }
     except Exception as e:  # noqa: BLE001
+        elapsed = int((_time.monotonic() - started_at) * 1000)
         if e.__class__.__name__ == "TimeoutError":
+            logger.warning(
+                "validator timeout event=timeout surface=%s reason=%ss "
+                "provider=gemini elapsed_ms=%d account=%s",
+                surface, timeout_seconds, elapsed, account_id,
+            )
             return {**fallback, "notes": ["Validator timed out; pass treated as qualified."]}
-        logger.warning("validator failed: %s", e)
-        return fallback
+        logger.warning(
+            "validator failed event=exception surface=%s reason=%s "
+            "exc=%s provider=gemini elapsed_ms=%d account=%s",
+            surface, e.__class__.__name__, str(e)[:200], elapsed, account_id,
+        )
+        return {**fallback, "notes": [f"Validator error ({e.__class__.__name__}); treat with normal scrutiny."]}
 
 
 # -----------------------------------------------------------------------------

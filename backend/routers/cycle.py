@@ -1012,8 +1012,15 @@ async def send_report_up(
     # first draft → in_review transition. A report that has already
     # been through review carries the original validation result; we
     # don't overwrite it on subsequent passes up the chain because the
-    # verdict is about the drafted content, not the routing.
+    # verdict is about the drafted content, not the routing. The
+    # validator helper always returns a dict — we only fall back here if
+    # the wrapper itself raises before/around the call.
     if rec["status"] == "draft" and not rec.get("validation"):
+        validation_payload = {
+            "verdict": "qualified", "confidence": 0,
+            "notes": ["Validator wrapper failed before call; treat with normal scrutiny."],
+            "validator_provider": "n/a", "validator_model": "n/a",
+        }
         try:
             from llm_service import validate_independent
             validation_payload = await validate_independent(
@@ -1023,9 +1030,25 @@ async def send_report_up(
                 surface="report",
                 account_id=current["id"],
             )
-            update_fields["validation"] = validation_payload
+            logger.info(
+                "report validator persisted event=persisted surface=report report_id=%s "
+                "verdict=%s provider=%s",
+                rid,
+                validation_payload.get("verdict"),
+                validation_payload.get("validator_provider"),
+            )
         except Exception as e:  # noqa: BLE001
-            logger.warning("Report validator failed for %s: %s", rid, e)
+            logger.warning(
+                "report validator wrapper failed event=wrapper_exception surface=report "
+                "report_id=%s exc=%s reason=%s",
+                rid, e.__class__.__name__, str(e)[:200],
+            )
+            validation_payload = {
+                "verdict": "qualified", "confidence": 0,
+                "notes": [f"Validator wrapper error ({e.__class__.__name__}); treat with normal scrutiny."],
+                "validator_provider": "n/a", "validator_model": "n/a",
+            }
+        update_fields["validation"] = validation_payload
 
     await db.reports.update_one(
         {"id": rid},

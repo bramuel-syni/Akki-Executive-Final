@@ -108,8 +108,13 @@ function Watermark({ recipient, label, expiresAt }) {
   // Diagonal repeating watermark. pointer-events:none so it never blocks
   // clicks on the underlying article; mix-blend so it reads on both cream
   // and white cards. Recipient email is in every tile so a screenshot
-  // carries provenance.
-  const tile = `${label || "AKKI · read-only"} · ${recipient || ""}`;
+  // carries provenance. The copy here is editorial-voice locked:
+  // "Confidential — shared with <email>" — not "AKKI share / read-only".
+  // The server-side `watermark.label` is preserved on the wire for any
+  // future surface that wants to render it differently, but the
+  // production UI uses the fixed prefix below.
+  void label; // keep prop on the contract; intentionally unused in render
+  const tile = `Confidential — shared with ${recipient || ""}`;
   const tiles = new Array(24).fill(0);
   return (
     <div
