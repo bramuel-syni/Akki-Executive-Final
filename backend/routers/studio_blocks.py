@@ -812,7 +812,7 @@ async def reorder_blocks(
 # ---------------------------------------------------------------------------
 # Image upload — Phase 10 wires real ClamAV scanning (services.clamav_service).
 # Scanner-unreachable returns 503; signature match returns 422; neither
-# branch persists the file. The virus-scan stub is retired.
+# branch persists the file.
 # ---------------------------------------------------------------------------
 @router.post("/{kind}/{artefact_id}/upload-image")
 async def upload_image(

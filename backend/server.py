@@ -335,6 +335,12 @@ async def on_startup():
     await db.decks.create_index([("context_id", 1), ("created_at", -1)])
     await db.briefings.create_index([("context_id", 1), ("status", 1), ("created_at", -1)])
 
+    # Phase 11 ITEM B — validator soft-cap counter. Unique compound on
+    # (day_utc, surface) makes concurrent increments race-safe.
+    await db.llm_validator_usage.create_index(
+        [("day_utc", 1), ("surface", 1)], unique=True,
+    )
+
     # Inbound-email idempotency
     await db.accounts.create_index("inbound_token", sparse=True)
     await db.contexts.create_index("inbound_token", sparse=True)

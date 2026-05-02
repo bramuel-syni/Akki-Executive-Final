@@ -109,11 +109,24 @@ Each section below covers a canonical feature. Routes refer to the running app; 
 
 ### 6. Studio — briefings, decks, reports + sensitivity scoring
 
+> **Phase 10 / Phase 11 update — 2026-05-02.** The Phase 8 block composer
+> is now wired and reachable. `routers/studio_blocks.py` is registered
+> at `server.py:76,140`; the frontend editor lives at
+> `frontend/src/components/studio/BlockComposer.jsx`; the host page is
+> `frontend/src/pages/StudioComposerPage.jsx`; the route
+> `/app/studio/composer/:kind/:artefactId` is live in `App.js:192`.
+> Phase 11 adds: hard public-read redaction assertion
+> (`_assert_public_safe` in `studio.py`), watermarked `/share/:token`
+> alias, and an independent-validator pass on Decks (`generate_deck`)
+> and Reports (`send_report_up`) and Solve syntheses (`post_turn`),
+> persisted as a `validation` payload that gates `<ValidatedBadge />`
+> rendering on each surface.
+
 - **What it is.** The composition surface for board-grade artefacts. Three artefact kinds — Briefing, Deck, Report — each with a flat-text editor, sensitivity auto-classification on save, read-receipt tracking, and a tracked share email loop.
 - **User value.** A defensible, sensitivity-tagged board pack with end-to-end visibility on who has read what. The exposure pill on every artefact moves in real time as readers open it.
 - **How it works today.** Three backend routers carry it: `routers/briefings.py` (briefing lifecycle + speaking notes + export), `routers/decks.py` (outline → generate → quality_check → feedback), `routers/cycle.py` for reports (composed from cycle submissions, polished, sent up, exported as PDF or deck-style PDF). The unifying surface is `routers/studio.py`: `POST .../view` (logs read, dedupes per (artefact, account, day)), `GET .../engagement`, `POST .../share`, `POST .../rescore` (re-runs the sensitivity classifier), `POST .../backfill_sensitivity`, `GET /api/contexts/{cid}/studio/history`, `POST .../share-email` (Resend), `GET /api/public/studio/track/{token}` (signed JWT, 14-day TTL, redirects to deep link), `GET /api/public/studio/read/{token}`. The classifier itself lives in `studio_sensitivity.py` — deterministic regex ladder (PUBLIC 0–24 / INTERNAL 25–49 / CONFIDENTIAL 50–74 / RESTRICTED 75–100) with reason codes, plus an opt-in LLM tiebreaker for the ambiguous internal band. Public sensitivity demo for the marketing site at `POST /api/public/studio/sensitivity-demo`. Mongo collections: `briefings`, `decks`, `reports` (under `cycle.py`), `studio_views`, `studio_shares`. Frontend: `pages/Decks.jsx`, `pages/Prepare.jsx` (briefings tab), `components/studio/ShareArtefactModal.jsx`.
-- **State.** Partial. Composition (the editing surface itself) is still a flat-text editor. The block composer for Phase 8 / Advisory 9 is in flight.
-- **Gaps / risks.** The Phase 8 backend file `routers/studio_blocks.py` exists at 528 lines and exposes `GET/POST/PATCH/DELETE` plus `move` and `reorder` on `/api/studio/{kind}/{artefact_id}/blocks`, but **the router is not registered in `server.py` and there is no frontend `BlockComposer.jsx`**. It is dead code from the user's perspective. Validator badge on Decks and Reports is cosmetic — no real second-LLM pass runs on those surfaces (only on Briefings via `routers/prepare.py`). The public read-only view for non-AKKI Chair recipients lands them on `/app/decks/:id`, which bounces unauthenticated visitors to `/signin` (P1 friction noted in `AUDIT_iter68.md`).
+- **State.** Shipped. The Phase 8 block composer (paragraph / heading_2 / heading_3 / callout / citation / signal_card / divider) ships behind `/app/studio/composer/:kind/:artefactId`; image blocks upload through the ClamAV + S3/MinIO pipeline introduced in Phase 10.
+- **Gaps / risks.** Validator coverage on Decks, Reports and Solve syntheses landed in Phase 11 (an independent Gemini 2.5 Flash pass with a per-surface daily soft cap). The public read-only Chair view now lands non-AKKI directors on `/share/:token` (alias of `/shared/:token`) with a watermarked, redacted, read-only render — no signin wall. Outstanding: the Stripe → Solve Pro entitlement flip (latent while `BILLING_ENABLED=false`).
 - **Open decisions.** **Studio composer scope.** Should v1 of the block composer be briefings-only behind `?composer=v2` for seven days and then default-on, or should it ship straight to all three artefact kinds? See _Open Questions_.
 
 ### 7. Sandbox — 60-second pre-auth fictional workspace
@@ -210,16 +223,25 @@ The trust contract is consistent across surfaces:
 
 ## Known Mocks & Stubs
 
+> **Phase 10 / Phase 11 update — 2026-05-02.** Three rows previously
+> listed here were retired: virus scanning is now real (ClamAV sidecar,
+> `backend/services/clamav_service.py`); local-disk storage is replaced
+> by an S3/MinIO-compatible backend (`backend/services/storage_service.py`,
+> `STORAGE_BACKEND=s3|minio` in prod); the Stripe `sk_test_emergent`
+> default is gone — billing is gated by `BILLING_ENABLED` with a boot
+> guard (`server.py:219-227`). The Phase 8 block-composer "drafted but
+> not exposed" row is also retired — it is wired and reachable.
+
 | Item | File path(s) | Why it's a stub | Risk |
 |---|---|---|---|
-| Virus scan on uploads | `/app/backend/documents_service.py` (`virus_scan_stub`); used by `routers/documents.py:214` and `routers/inbound_email.py` | No AV vendor integrated | Med — a malicious attachment uploaded by a member could reach storage |
+| Virus scan on uploads | ~~`/app/backend/documents_service.py` (`virus_scan_stub`)~~ — **retired Phase 10**: real ClamAV sidecar via `services/clamav_service.py` (INSTREAM TCP socket, scanner-unreachable → 503, signature match → 422) | n/a — no longer a stub | n/a |
 | Live Synisense de-identification | `/app/backend/routers/synisense.py`, `/app/backend/llm_service.py` | Live service URL swap deferred to v2 | Low — regex ladder is sufficient for shielding the LLM call; surface chip is honest ("REGEX") |
-| Public read-only Chair view | `/app/backend/routers/studio.py:707` (`GET /api/public/studio/read/{token}` exists but the redirect target is the in-app surface) | External recipient on no AKKI account hits `/signin` | Med — friction on the share-with-Chair journey |
-| Independent validator on Decks, Reports, Solve | `/app/backend/routers/decks.py`, `/app/backend/routers/cycle.py`, `/app/backend/routers/solve_engine.py` | Validator badge cosmetic; only `routers/prepare.py:124` calls the second model | Med — the marketing claim "Validated by an independent model" is partially true |
+| Public read-only Chair view | ~~`/app/backend/routers/studio.py:707`~~ — **retired Phase 11 ITEM A**: `/share/:token` alias + watermarked + denylist-asserted public read | n/a — no longer a stub | n/a |
+| Independent validator on Decks, Reports, Solve | ~~`/app/backend/routers/decks.py`, `/app/backend/routers/cycle.py`, `/app/backend/routers/solve_engine.py`~~ — **retired Phase 11 ITEM B**: real Gemini 2.5 Flash second-pass; `validation` payload persisted on each artefact; `<ValidatedBadge />` gated on real verdict; daily soft cap counter (`db.llm_validator_usage`) | n/a — no longer a stub | n/a |
 | Stripe → Solve Pro entitlement flip | `/app/backend/routers/billing.py`, plus solve_pro gating in `routers/solve_engine.py` | Webhook receives, plan flips, but solve-pro toggle on the affordance does not | High if monetisation push happens before fix |
-| Phase 8 block composer | `/app/backend/routers/studio_blocks.py` (528 lines, exists but **not registered in `server.py`**); `/app/frontend/src/components/studio/` (no `BlockComposer.jsx`) | Backend was drafted; wiring + frontend never landed | High for the active phase; user-invisible today |
+| ~~Phase 8 block composer~~ | ~~`/app/backend/routers/studio_blocks.py`~~ — **retired Phase 8 / Phase 11 update**: router registered (`server.py:76,140`), `BlockComposer.jsx` live, route `/app/studio/composer/:kind/:artefactId` reachable | n/a — no longer a stub | n/a |
 | Cross-Board Pulse as a dedicated surface | Today implemented as a toggle on Home v2 (`/app/frontend/src/pages/HomeV2.jsx`) | Surface not built; landing copy implies it | Low — copy can be softened |
-| Cloud object storage (S3 / GCS) | `/app/backend/documents_service.py` (`save_to_storage` writes locally to `/app/backend/uploads/`) | Local disk only | Med — no off-host backup |
+| Cloud object storage (S3 / GCS) | ~~`/app/backend/documents_service.py` (`save_to_storage` writes locally to `/app/backend/uploads/`)~~ — **retired Phase 10**: `backend/services/storage_service.py` switches on `STORAGE_BACKEND=local\|s3\|minio`; prod runs MinIO gateway over Azure Blob (`STORAGE_MIGRATION.md`) | n/a — no longer a stub | n/a |
 | Vector DB | `/app/backend/bm25.py` | BM25 only | Low until ~50 docs per context |
 | `db.briefings` vs `db.briefs` collision | `/app/backend/routers/briefings.py` (formal artefact) vs `/app/backend/routers/prepare.py` (Catch-up brief) | Two collections, two UX paths, similar names | Low but confusing — rename "Briefings" to "Reports" in Studio history is on the P2 list |
 | Plays route duplication | `/app/frontend/src/pages/PlaysLibrary.jsx`, `pages/PlayView.jsx`, plus Home `PlayReadyCards.jsx`, plus Studio `ActiveWorkflowsRail` | Three entry points to the same workflow | Low — cosmetic |

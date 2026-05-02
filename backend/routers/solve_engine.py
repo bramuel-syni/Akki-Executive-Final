@@ -288,7 +288,7 @@ async def post_turn(
 
     # If we just produced synthesis or lockin output, persist a structured copy.
     if current_phase == "synthesis":
-        update_fields["synthesis"] = {
+        synthesis_record = {
             "body": response["text"],
             "model": response.get("model"),
             "tier": response.get("tier"),
@@ -296,6 +296,19 @@ async def post_turn(
             "free_grant_used": response.get("free_grant_used", False),
             "generated_at": iso(now()),
         }
+        # Phase 11 ITEM B — validator on the synthesis body. Non-blocking.
+        try:
+            from llm_service import validate_independent
+            synthesis_record["validation"] = await validate_independent(
+                kind="solve_synthesis",
+                content=response["text"],
+                objective=rec.get("intent") or "",
+                surface="solve",
+                account_id=account["id"],
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Solve synthesis validator failed for %s: %s", sid, e)
+        update_fields["synthesis"] = synthesis_record
         rec["synthesis"] = update_fields["synthesis"]
     elif current_phase == "lockin":
         update_fields["lockin"] = {

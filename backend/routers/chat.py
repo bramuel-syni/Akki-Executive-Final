@@ -74,12 +74,21 @@ class ChatCreateIn(BaseModel):
     title: Optional[str] = Field(default=None, max_length=120)
     model_id: str = Field(default=DEFAULT_MODEL_ID)
     shielding_policy: ShieldingPolicy = "auto"
+    # Phase 11 ITEM C — optional grounding. When provided, the chat is
+    # tethered to a context's corpus and every assistant message gets a
+    # BM25-grounded paragraph block injected into the prompt so the
+    # model can cite stable paragraph anchors. Hallucinated citations
+    # (markers that don't resolve to a known anchor) are dropped before
+    # the response is returned to the client. When None, the chat
+    # behaves exactly as it did pre-Phase-11 — untethered, no citations.
+    context_id: Optional[str] = Field(default=None, max_length=120)
 
 
 class ChatPatchIn(BaseModel):
     title: Optional[str] = Field(default=None, max_length=120)
     model_id: Optional[str] = None
     shielding_policy: Optional[ShieldingPolicy] = None
+    context_id: Optional[str] = None  # set/clear grounding
 
 
 class MessageSendIn(BaseModel):
@@ -168,6 +177,7 @@ async def create_chat(
         "title": (body.title or "New conversation").strip()[:120],
         "model_id": body.model_id,
         "shielding_policy": body.shielding_policy,
+        "context_id": body.context_id,  # Phase 11 ITEM C — optional grounding
         "status": "active",
         "message_count": 0,
         "last_message_preview": "",
@@ -179,7 +189,8 @@ async def create_chat(
     await _append_audit(
         account_id=current["id"], chat_id=cid, action="chat.created",
         request=request,
-        payload={"model_id": body.model_id, "shielding_policy": body.shielding_policy},
+        payload={"model_id": body.model_id, "shielding_policy": body.shielding_policy,
+                 "context_id": body.context_id},
     )
     return _sanitize(rec)
 
@@ -233,6 +244,12 @@ async def patch_chat(
     if body.shielding_policy is not None:
         update["shielding_policy"] = body.shielding_policy
         audit_payload["shielding_policy"] = body.shielding_policy
+    if body.context_id is not None:
+        # Phase 11 ITEM C — allow setting/clearing the grounding context.
+        # Empty string explicitly clears; any other value sets.
+        ctx_val = body.context_id.strip() or None
+        update["context_id"] = ctx_val
+        audit_payload["context_id"] = ctx_val
     if len(update) == 1:
         raise HTTPException(status_code=400, detail="Send at least one field.")
     res = await db.chats.update_one(
@@ -265,6 +282,192 @@ async def archive_chat(
         request=request, payload={},
     )
     return {"ok": True}
+
+
+# -----------------------------------------------------------------------------
+# Phase 11 ITEM C — chat citation grounding.
+#
+# When a chat is tethered to a context (chat.context_id is set), we run a
+# BM25 retrieval over the context's documents BEFORE the LLM call, build a
+# grounding block keyed on stable paragraph anchor ids, and ask the model
+# to cite using a `[[cite:<anchor_id>]]` marker. After the model replies,
+# we extract every marker, validate each against the allowlist of
+# anchors we actually retrieved, and DROP any that don't match — those
+# are hallucinations. The remaining markers are renumbered into `[n]`
+# chips and a structured `citations[]` array travels alongside the
+# message text so the frontend can render click-through pills.
+# -----------------------------------------------------------------------------
+import re as _re  # noqa: E402
+
+_CITE_TOKEN_RE = _re.compile(r"\[\[cite:([a-f0-9]{6,16})\]\]")
+
+
+async def _retrieve_grounding_paragraphs(
+    *, context_id: str, account_id: str, query: str, top_k: int = 5,
+) -> List[Dict[str, Any]]:
+    """Return up to top_k paragraphs from the context's documents that
+    BM25-best-match the query. Each result is shaped:
+
+        {"anchor_id", "doc_id", "doc_name", "page",
+         "paragraph_number", "text"}
+
+    Falls back to the empty list if retrieval fails — chat continues as
+    an untethered conversation rather than raising.
+    """
+    try:
+        # Verify the caller actually has access to the context.
+        membership = await db.memberships.find_one(
+            {"account_id": account_id, "context_id": context_id, "status": "active"},
+            {"_id": 0, "role": 1},
+        )
+        if not membership:
+            return []
+        # Fetch up to 50 docs in this context — chat retrieval should be
+        # bounded; deeper corpora hit the bm25 ceiling per Path A.
+        cursor = db.documents.find(
+            {"context_id": context_id},
+            {"_id": 0, "id": 1, "name": 1, "extracted_text": 1,
+             "data_trust": 1, "paragraphs": 1, "anchors_version": 1},
+        ).sort("created_at", -1).limit(50)
+        docs = await cursor.to_list(50)
+        if not docs:
+            return []
+
+        # Build a flat list of {anchor_id, doc_id, doc_name, page, ¶, text}.
+        # We prefer pre-computed paragraphs; for docs without anchors we
+        # lazily compute them inline so the citation chip still resolves.
+        from paragraph_anchors import compute_paragraphs
+        paragraphs: List[Dict[str, Any]] = []
+        for d in docs:
+            ps = d.get("paragraphs") or []
+            if not ps and d.get("extracted_text"):
+                # Lazy compute — the cron sweep is the catch-all but a
+                # freshly uploaded doc may not have anchors yet.
+                computed = compute_paragraphs(d["id"], d["extracted_text"])
+                ps = computed.get("paragraphs") or []
+                if ps:
+                    # Persist so subsequent calls hit the cache.
+                    await db.documents.update_one(
+                        {"id": d["id"]},
+                        {"$set": {
+                            "paragraphs": ps,
+                            "page_count": computed.get("page_count"),
+                            "anchors_version": computed.get("version"),
+                            "anchors_computed_at": computed.get("computed_at"),
+                        }},
+                    )
+            for p in ps:
+                if not (p.get("text") or "").strip():
+                    continue
+                paragraphs.append({
+                    "anchor_id": p.get("id"),
+                    "doc_id": d["id"],
+                    "doc_name": d.get("name") or "Untitled document",
+                    "page": p.get("page"),
+                    "paragraph_number": p.get("paragraph_number"),
+                    "text": p.get("text") or "",
+                })
+        if not paragraphs:
+            return []
+
+        # BM25 over paragraph texts. We adapt the bm25 helper which
+        # expects a "text" field on each chunk — it already does.
+        from bm25 import score_bm25
+        # bm25 expects keys text/doc_id/name/trust/chunk_idx — adapter:
+        chunks = [
+            {**p, "text": p["text"], "name": p["doc_name"],
+             "trust": "mixed", "chunk_idx": p["paragraph_number"]}
+            for p in paragraphs
+        ]
+        ranked = score_bm25(query, chunks, k=top_k)
+        out: List[Dict[str, Any]] = []
+        for _, ch in ranked:
+            out.append({
+                "anchor_id": ch["anchor_id"],
+                "doc_id": ch["doc_id"],
+                "doc_name": ch["doc_name"],
+                "page": ch.get("page"),
+                "paragraph_number": ch.get("paragraph_number"),
+                "text": ch["text"],
+            })
+        return out
+    except Exception as e:  # noqa: BLE001
+        logger.warning("chat retrieval failed (untethered fallback): %s", e)
+        return []
+
+
+def _format_grounding_block(paras: List[Dict[str, Any]]) -> str:
+    """Build a deterministic grounding block the LLM can quote from.
+    Each paragraph is announced with its anchor id so the model knows
+    exactly what to put in the `[[cite:<id>]]` marker."""
+    if not paras:
+        return ""
+    lines = [
+        "[GROUNDING — only cite from these paragraphs. Use the marker "
+        "format [[cite:<anchor_id>]] inline AT MOST ONCE per claim. "
+        "Do NOT invent anchor ids; use only the ids listed below.]"
+    ]
+    for p in paras:
+        head = (
+            f"\n--- anchor:{p['anchor_id']}  doc:'{p['doc_name']}'"
+            f"  p.{p.get('page','?')}¶{p.get('paragraph_number','?')} ---"
+        )
+        lines.append(head)
+        lines.append((p["text"] or "").strip()[:1200])
+    return "\n".join(lines)
+
+
+def _process_citations(
+    reply_text: str, allowed: List[Dict[str, Any]]
+) -> Tuple[str, List[Dict[str, Any]]]:
+    """Extract `[[cite:<id>]]` markers from `reply_text`. Drop any whose
+    anchor isn't in `allowed`. Replace the surviving markers with
+    sequential `[n]` chips and return (cleaned_text, citations[]).
+
+    Each citation is shaped:
+        {"n": int, "anchor_id", "doc_id", "doc_name",
+         "page", "paragraph_number", "snippet"}
+    """
+    if not reply_text:
+        return reply_text, []
+    by_id = {p["anchor_id"]: p for p in allowed if p.get("anchor_id")}
+    seen: List[str] = []          # ordered list of unique anchor ids cited
+    dropped = 0
+
+    def _replace(m):
+        nonlocal dropped
+        aid = m.group(1)
+        if aid not in by_id:
+            dropped += 1
+            return ""  # drop hallucinated marker entirely
+        if aid not in seen:
+            seen.append(aid)
+        n = seen.index(aid) + 1
+        return f"[{n}]"
+
+    cleaned = _CITE_TOKEN_RE.sub(_replace, reply_text)
+    citations: List[Dict[str, Any]] = []
+    for n, aid in enumerate(seen, start=1):
+        p = by_id[aid]
+        snippet = (p["text"] or "").strip()
+        if len(snippet) > 220:
+            snippet = snippet[:217] + "…"
+        citations.append({
+            "n": n,
+            "anchor_id": aid,
+            "doc_id": p["doc_id"],
+            "doc_name": p["doc_name"],
+            "page": p.get("page"),
+            "paragraph_number": p.get("paragraph_number"),
+            "snippet": snippet,
+        })
+    if dropped:
+        logger.info("dropped %d hallucinated chat citations", dropped)
+    return cleaned, citations
+
+
+from typing import Tuple  # noqa: E402  (only needed for the helper above)
+
 
 
 @router.post("/chats/{chat_id}/messages")
@@ -381,6 +584,20 @@ async def send_message(
 
     sent_to_llm = shielded_text if will_shield else text
 
+    # Phase 11 ITEM C — fetch grounding paragraphs when this chat is
+    # tethered to a context. The retrieval allowlist is what we'll
+    # validate citations against post-reply; hallucinations get dropped.
+    grounding_paragraphs: List[Dict[str, Any]] = []
+    grounding_block = ""
+    if chat.get("context_id"):
+        grounding_paragraphs = await _retrieve_grounding_paragraphs(
+            context_id=chat["context_id"],
+            account_id=current["id"],
+            query=text,
+            top_k=5,
+        )
+        grounding_block = _format_grounding_block(grounding_paragraphs)
+
     system_msg = (
         "You are AKKI, a calm, editorial intelligence partner for executives "
         "and non-executive directors. Tone: precise, neutral, no hype, "
@@ -389,11 +606,26 @@ async def send_message(
         "asking the user what it means; the system will rehydrate the "
         "real value before the user reads your reply."
     )
+    if grounding_paragraphs:
+        # Tighten the system message so the model uses ONLY the supplied
+        # anchor ids. The post-processor still validates and drops any
+        # hallucinated marker, but a stronger system rail meaningfully
+        # cuts the rate of hallucinated citations in practice.
+        system_msg += (
+            " A [GROUNDING] block follows containing extracted paragraphs "
+            "from the user's documents. Cite ONLY using the inline marker "
+            "[[cite:<anchor_id>]] where <anchor_id> appears in the block. "
+            "Never invent anchor ids. If the answer is not in the grounding "
+            "block, say so plainly rather than guessing."
+        )
 
-    full_prompt = (
-        (history_block + "\n\n" if history_block else "")
-        + f"USER: {sent_to_llm}"
-    )
+    full_prompt_parts: List[str] = []
+    if grounding_block:
+        full_prompt_parts.append(grounding_block)
+    if history_block:
+        full_prompt_parts.append(history_block)
+    full_prompt_parts.append(f"USER: {sent_to_llm}")
+    full_prompt = "\n\n".join(full_prompt_parts)
 
     # ── LLM call. Using the EMERGENT_LLM_KEY playbook directly so we can
     # pick the model per chat (the global call_llm hardcodes claude).
@@ -421,6 +653,13 @@ async def send_message(
     latency_ms = int((time.monotonic() - started_ms) * 1000)
 
     # ── Persist the assistant message.
+    # Phase 11 ITEM C — extract & validate citation markers. Hallucinated
+    # markers (those not in the retrieval allowlist) are dropped before
+    # the reply ever reaches the client; surviving markers become
+    # numbered chips with structured citation entries that the frontend
+    # renders as click-through pills into the Reading Viewer.
+    cleaned_reply, citations = _process_citations(reply_text, grounding_paragraphs)
+
     reply_id = str(uuid.uuid4())
     reply_at = _iso(_now())
     assistant_msg = {
@@ -428,12 +667,14 @@ async def send_message(
         "chat_id": chat_id,
         "account_id": current["id"],
         "role": "assistant",
-        "content": reply_text,
+        "content": cleaned_reply,
         "model_id": chat["model_id"],
         "model_label": model_def["label"],
         "mode": mode,
         "latency_ms": latency_ms,
         "created_at": reply_at,
+        "citations": citations,
+        "grounded_context_id": chat.get("context_id") if grounding_paragraphs else None,
     }
     await db.chat_messages.insert_one(assistant_msg)
     await _append_audit(
@@ -442,7 +683,12 @@ async def send_message(
         payload={
             "user_message_id": msg_id, "reply_id": reply_id,
             "model_id": chat["model_id"], "mode": mode,
-            "latency_ms": latency_ms, "char_len_reply": len(reply_text),
+            "latency_ms": latency_ms, "char_len_reply": len(cleaned_reply),
+            "citations_kept": len(citations),
+            "citations_dropped": (
+                reply_text.count("[[cite:") - len(_CITE_TOKEN_RE.findall(cleaned_reply or ""))
+                - len(citations)
+            ) if grounding_paragraphs else 0,
         },
     )
 
@@ -452,7 +698,7 @@ async def send_message(
         {
             "$set": {
                 "last_message_at": reply_at,
-                "last_message_preview": reply_text[:200],
+                "last_message_preview": cleaned_reply[:200],
                 "updated_at": reply_at,
             },
             "$inc": {"message_count": 2},

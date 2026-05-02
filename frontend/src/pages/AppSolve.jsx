@@ -15,6 +15,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import ValidatedBadge from "@/components/trust/ValidatedBadge";
 import {
   ArrowRight, ArrowLeft, Sparkles, Loader2, Layers,
   RotateCw, Check, Pause, Download,
@@ -521,6 +522,11 @@ function SessionView({ session, cluster, onUpdate, onExit }) {
         {(session.turns || []).map((t) => (
           <Turn key={t.id} turn={t} />
         ))}
+        {session.synthesis?.validation && (
+          <div className="flex justify-end" data-testid="solve-synthesis-validation">
+            <ValidatedBadge size="compact" validation={session.synthesis.validation} />
+          </div>
+        )}
         {session.synthesis?.comparables?.length > 0 && (
           <ComparablesPanel comparables={session.synthesis.comparables} />
         )}

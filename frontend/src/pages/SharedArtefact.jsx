@@ -65,8 +65,18 @@ export default function SharedArtefact() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[var(--cream)] text-[var(--ink)]">
-      <header className="border-b border-[var(--rule)]">
+    <div className="min-h-screen bg-[var(--cream)] text-[var(--ink)] relative overflow-hidden">
+      {/* Phase 11 ITEM A — diagonal watermark. Fixed-position, pointer-
+          events-none so it never intercepts clicks. Recipient email is
+          baked in so screenshot-lift leaves the trail.  */}
+      {state.data?.watermark && (
+        <Watermark
+          recipient={state.data.watermark.recipient}
+          label={state.data.watermark.label}
+          expiresAt={state.data.watermark.expires_at}
+        />
+      )}
+      <header className="border-b border-[var(--rule)] relative z-10">
         <div className="max-w-[800px] mx-auto px-6 md:px-8 py-5 flex items-center justify-between">
           <Logo />
           <span className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--accent)] flex items-center gap-1.5">
@@ -75,7 +85,7 @@ export default function SharedArtefact() {
         </div>
       </header>
 
-      <main className="max-w-[800px] mx-auto px-6 md:px-8 py-10 md:py-14" data-testid="shared-artefact-page">
+      <main className="max-w-[800px] mx-auto px-6 md:px-8 py-10 md:py-14 relative z-10" data-testid="shared-artefact-page">
         {state.loading && (
           <div className="flex items-center gap-2 text-[13px] text-[var(--muted)] italic" data-testid="shared-loading">
             <Loader2 className="w-4 h-4 animate-spin" /> Opening the document…
@@ -90,6 +100,45 @@ export default function SharedArtefact() {
           <ArtefactBody data={state.data} authed={authed} />
         )}
       </main>
+    </div>
+  );
+}
+
+function Watermark({ recipient, label, expiresAt }) {
+  // Diagonal repeating watermark. pointer-events:none so it never blocks
+  // clicks on the underlying article; mix-blend so it reads on both cream
+  // and white cards. Recipient email is in every tile so a screenshot
+  // carries provenance.
+  const tile = `${label || "AKKI · read-only"} · ${recipient || ""}`;
+  const tiles = new Array(24).fill(0);
+  return (
+    <div
+      className="pointer-events-none fixed inset-0 z-[5] select-none overflow-hidden"
+      aria-hidden="true"
+      data-testid="shared-watermark"
+    >
+      <div
+        className="absolute inset-0 flex flex-wrap items-start gap-10"
+        style={{
+          transform: "rotate(-22deg) translateY(-8%) translateX(-8%)",
+          width: "140%",
+          opacity: 0.08,
+        }}
+      >
+        {tiles.map((_, i) => (
+          <span
+            key={i}
+            className="text-[13px] font-mono uppercase tracking-[0.22em] text-[var(--ink)] whitespace-nowrap"
+          >
+            {tile}
+          </span>
+        ))}
+      </div>
+      {expiresAt && (
+        <span className="absolute bottom-3 right-4 text-[9.5px] font-mono uppercase tracking-[0.2em] text-[var(--muted)]/80">
+          Link expires {new Date(expiresAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+        </span>
+      )}
     </div>
   );
 }
@@ -127,7 +176,7 @@ function ArtefactBody({ data, authed }) {
     : null;
 
   return (
-    <article data-testid="shared-artefact-body">
+    <article data-testid="shared-artefact-body" className="relative z-10">
       <header className="mb-8">
         <p className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--accent)] mb-3">
           {data.shared_by_name ? `Shared by ${data.shared_by_name}` : "Shared with you"}

@@ -138,6 +138,12 @@ function App() {
           <Route path="/blog/:slug" element={<BlogPost />} />
           <Route path="/respond/:token" element={<RespondToChecklist />} />
           <Route path="/shared/:token" element={<SharedArtefact />} />
+          {/* Phase 11 ITEM A — /share/:token alias. The Chair invitation
+              emails out of studio.py currently use /shared/:token; this
+              alias keeps newer communications (and muscle-memory typing)
+              on the shorter URL without breaking older emails. Same
+              component, same read-only surface. */}
+          <Route path="/share/:token" element={<SharedArtefact />} />
           <Route path="/signin" element={<PublicOnlyRoute><SignIn /></PublicOnlyRoute>} />
           {/* URL aliases for muscle-memory / external-bookmark variants. The
               app's internal links use /signin, but users (and search engines,

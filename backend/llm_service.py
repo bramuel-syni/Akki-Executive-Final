@@ -327,6 +327,8 @@ async def validate_independent(
     *, kind: str, content: str,
     objective: Optional[str] = None,
     timeout_seconds: float = 12.0,
+    surface: Optional[str] = None,
+    account_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run a second-LLM countercheck on `content`. Returns:
 
@@ -337,6 +339,14 @@ async def validate_independent(
           "validator_provider": "gemini",
           "validator_model":    "gemini-2.5-flash",
         }
+
+    Phase 11 ITEM B — `surface` and `account_id` are advisory only,
+    consumed by `_validator_soft_cap_ok()` to enforce a daily soft cap
+    on validator calls. The cap is intentionally a *soft* one: when the
+    cap is tripped we return the `fallback` verdict and log the skip,
+    never block the parent endpoint. This preserves the invariant that
+    validation is additive, never gating — even under cap pressure, the
+    drafter output still reaches the user.
     """
     fallback = {
         "verdict": "qualified", "confidence": 60,
@@ -346,6 +356,24 @@ async def validate_independent(
     emergent_key = os.environ.get("EMERGENT_LLM_KEY")
     if not emergent_key or not content or len(content.strip()) < 40:
         return fallback
+
+    # Phase 11 ITEM B — daily soft cap. Persisted counter per UTC day.
+    # When the cap is tripped we short-circuit to the fallback and log.
+    # Cap bypass is intentional on surface == "briefing" because
+    # briefings are the highest-trust surface and have shipped with a
+    # real validator since iter50; we don't want a noisy cap to start
+    # qualifying previously-validated briefings.
+    if surface and surface != "briefing":
+        cap_ok = await _validator_soft_cap_ok(surface=surface)
+        if not cap_ok:
+            logger.warning(
+                "validator soft cap tripped for surface=%s account=%s; returning fallback",
+                surface, account_id,
+            )
+            return {
+                **fallback,
+                "notes": ["Daily validator cap reached; read with normal scrutiny."],
+            }
 
     instruction = (
         "You are an independent verifier — a different model from the one "
@@ -396,3 +424,52 @@ async def validate_independent(
             return {**fallback, "notes": ["Validator timed out; pass treated as qualified."]}
         logger.warning("validator failed: %s", e)
         return fallback
+
+
+# -----------------------------------------------------------------------------
+# Phase 11 ITEM B — validator soft-cap. Persisted counter per UTC day so we
+# never accidentally rack up a six-figure Gemini bill if one surface loops.
+# The cap is advisory only: `validate_independent()` short-circuits to the
+# `qualified` fallback when tripped, and the drafter's output still ships.
+# -----------------------------------------------------------------------------
+_VALIDATOR_DEFAULT_DAILY_CAP = 200
+
+
+async def _validator_soft_cap_ok(*, surface: str) -> bool:
+    """Return True if the validator may run for `surface` today. Increments
+    the counter before the call so the cap is strictly enforced even under
+    concurrency — the unique compound index on (day_utc, surface) means
+    two parallel increments don't double-count."""
+    try:
+        from core import db
+        from datetime import datetime as _dt, timezone as _tz
+        day = _dt.now(_tz.utc).strftime("%Y-%m-%d")
+        cap = int(os.environ.get("VALIDATOR_DAILY_SOFT_CAP", _VALIDATOR_DEFAULT_DAILY_CAP))
+        # Atomically increment + read. `find_one_and_update` with upsert
+        # returns the POST-update doc when `return_document=AFTER`.
+        from pymongo import ReturnDocument
+        doc = await db.llm_validator_usage.find_one_and_update(
+            {"day_utc": day, "surface": surface},
+            {"$inc": {"count": 1},
+             "$setOnInsert": {"day_utc": day, "surface": surface,
+                              "created_at": _dt.now(_tz.utc).isoformat()}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        current = int((doc or {}).get("count") or 1)
+        if current > cap:
+            # Roll the increment back so the counter doesn't run away
+            # across retries once we're over cap. Best-effort; if it
+            # fails we still return False.
+            try:
+                await db.llm_validator_usage.update_one(
+                    {"day_utc": day, "surface": surface},
+                    {"$inc": {"count": -1}},
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            return False
+        return True
+    except Exception as e:  # noqa: BLE001
+        logger.warning("validator soft-cap check failed (allowing call): %s", e)
+        return True

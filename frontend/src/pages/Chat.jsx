@@ -541,11 +541,73 @@ function Message({ m, activeModel, models }) {
             ? "bg-[var(--cream-deep)]/50 border border-[var(--rule)] rounded-sm px-3 py-2 text-[var(--ink)]"
             : "text-[var(--ink)]"
         }`}>
-          {m.content}
+          {!isUser && Array.isArray(m.citations) && m.citations.length > 0
+            ? renderInlineCitations(m.content, m.citations)
+            : m.content}
         </div>
+        {/* Phase 11 ITEM C — citation chips travel as a structured array
+            beneath the assistant reply, click-through into the Reading
+            Viewer at the cited paragraph anchor. We dropped any
+            hallucinated marker server-side, so every chip rendered here
+            resolves to a real paragraph. */}
+        {!isUser && Array.isArray(m.citations) && m.citations.length > 0 && (
+          <ul
+            className="mt-2 flex flex-wrap gap-1.5"
+            data-testid="chat-citations"
+          >
+            {m.citations.map((c) => (
+              <li key={c.n}>
+                <a
+                  href={`/app/documents/${c.doc_id}#p=${c.anchor_id}`}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm border border-[var(--rule)] bg-[var(--cream-deep)]/50 hover:bg-[var(--accent)] hover:text-white hover:border-[var(--accent)] text-[11px] text-[var(--deep)] transition-colors"
+                  title={`${c.doc_name || "Document"} · p.${c.page ?? "?"}¶${c.paragraph_number ?? "?"}\n\n${c.snippet || ""}`}
+                  data-testid={`chat-citation-${c.n}`}
+                >
+                  <span className="font-mono tabular-nums text-[10px] text-[var(--accent)]">[{c.n}]</span>
+                  <span className="truncate max-w-[280px]">
+                    {c.doc_name || "Document"}
+                    {c.page ? ` · p.${c.page}` : ""}
+                    {c.paragraph_number ? `¶${c.paragraph_number}` : ""}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );
+}
+
+/**
+ * Render an assistant message's text with inline `[n]` markers replaced
+ * by superscript pills that link to the nth citation. Server-side has
+ * already validated and dropped hallucinated markers, so we trust the
+ * `[n]` numbering matches `citations[n-1]`.
+ */
+function renderInlineCitations(text, citations) {
+  if (!text) return text;
+  const byN = new Map(citations.map((c) => [c.n, c]));
+  // Match `[1]`, `[12]` etc — non-greedy 1-2 digit, surrounded by brackets.
+  const parts = text.split(/(\[\d{1,2}\])/g);
+  return parts.map((seg, idx) => {
+    const m = seg.match(/^\[(\d{1,2})\]$/);
+    if (!m) return <React.Fragment key={idx}>{seg}</React.Fragment>;
+    const n = Number(m[1]);
+    const c = byN.get(n);
+    if (!c) return <React.Fragment key={idx}>{seg}</React.Fragment>;
+    return (
+      <a
+        key={idx}
+        href={`/app/documents/${c.doc_id}#p=${c.anchor_id}`}
+        className="align-super text-[10px] font-mono text-[var(--accent)] hover:underline mx-0.5"
+        title={`${c.doc_name || "Document"} · p.${c.page ?? "?"}¶${c.paragraph_number ?? "?"}`}
+        data-testid={`chat-citation-inline-${n}`}
+      >
+        [{n}]
+      </a>
+    );
+  });
 }
 
 function Composer({ value, onChange, onSubmit, sending, policy }) {

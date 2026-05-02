@@ -365,6 +365,29 @@ async def generate_deck(
     except Exception as e:  # noqa: BLE001
         logger.warning("Sensitivity scoring failed for deck %s: %s", deck_id, e)
         rec["sensitivity"] = None
+
+    # Phase 11 ITEM B — independent-model validator. Best-effort and
+    # non-blocking: we persist the deck first, then overwrite
+    # `validation` once the second-pass returns. The ValidatedBadge is
+    # rendered client-side only when `validation.verdict` is present, so
+    # a cap-tripped fallback gracefully reads as "Qualified".
+    validation_payload = None
+    try:
+        from llm_service import validate_independent
+        slide_concat = "\n\n".join(
+            f"{s.get('title','')}\n{s.get('body_md','')}"
+            for s in (rec.get("slides") or [])
+        )
+        validation_payload = await validate_independent(
+            kind="deck",
+            content=slide_concat,
+            objective=rec.get("research_question") or rec.get("intent"),
+            surface="deck",
+            account_id=ctx["account"]["id"],
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Deck validator failed for %s: %s", deck_id, e)
+    rec["validation"] = validation_payload
     await db.decks.insert_one(rec)
     rec.pop("_id", None)
 

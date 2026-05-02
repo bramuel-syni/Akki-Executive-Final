@@ -1001,14 +1001,35 @@ async def send_report_up(
         "to_name": target["name"],
         "note": None,
     })
+    update_fields: Dict[str, Any] = {
+        "status": "in_review",
+        "events": new_events,
+        "updated_at": _iso(_now()),
+        "current_reviewer_email": target["email"],
+    }
+
+    # Phase 11 ITEM B — run the independent validator ONCE, on the
+    # first draft → in_review transition. A report that has already
+    # been through review carries the original validation result; we
+    # don't overwrite it on subsequent passes up the chain because the
+    # verdict is about the drafted content, not the routing.
+    if rec["status"] == "draft" and not rec.get("validation"):
+        try:
+            from llm_service import validate_independent
+            validation_payload = await validate_independent(
+                kind="report",
+                content=rec.get("body") or "",
+                objective=rec.get("description") or rec.get("title"),
+                surface="report",
+                account_id=current["id"],
+            )
+            update_fields["validation"] = validation_payload
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Report validator failed for %s: %s", rid, e)
+
     await db.reports.update_one(
         {"id": rid},
-        {"$set": {
-            "status": "in_review",
-            "events": new_events,
-            "updated_at": _iso(_now()),
-            "current_reviewer_email": target["email"],
-        }},
+        {"$set": update_fields},
     )
     await write_audit(context_id, current["id"], "report.sent_up", "report", rid,
                       {"to": target["email"], "tier": target["tier"]})

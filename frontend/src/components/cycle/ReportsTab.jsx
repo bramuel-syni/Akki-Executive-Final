@@ -7,6 +7,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import ValidatedBadge from "@/components/trust/ValidatedBadge";
 import {
   FileText, Send, Loader2, Plus, Trash2, ArrowRight, CheckCircle2,
   Clock, Users, RotateCcw, ShieldCheck, Sparkles, Download, Layers,
@@ -394,8 +395,9 @@ function ReportEditor({ open, onClose, report, contextId, currentEmail, onUpdate
       <DialogContent className="max-w-4xl max-h-[90vh] bg-[var(--cream)] border border-[var(--rule)] overflow-hidden flex flex-col" data-testid="report-editor-modal">
         <DialogHeader>
           <DialogTitle className="akki-serif text-[22px] font-normal">{title || report.title}</DialogTitle>
-          <DialogDescription className="text-[12px] text-[var(--muted)]">
-            {report.cycle_name} · author <strong className="text-[var(--ink)]">{report.author_name}</strong> · {STATUS_PILL[report.status]?.label}
+          <DialogDescription className="text-[12px] text-[var(--muted)] flex flex-wrap items-center gap-2">
+            <span>{report.cycle_name} · author <strong className="text-[var(--ink)]">{report.author_name}</strong> · {STATUS_PILL[report.status]?.label}</span>
+            {report.validation && <ValidatedBadge size="compact" validation={report.validation} />}
           </DialogDescription>
         </DialogHeader>
 

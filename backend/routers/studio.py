@@ -786,7 +786,13 @@ async def public_read_share(token: str, request: Request):
             ],
         }
 
-    return {
+    payload_jwt_exp = payload.get("exp")
+    expires_at_iso = (
+        datetime.fromtimestamp(int(payload_jwt_exp), tz=timezone.utc).isoformat()
+        if payload_jwt_exp else None
+    )
+
+    response_payload = {
         "kind": kind,
         "artefact_id": aid,
         "context_id": cid,
@@ -797,4 +803,69 @@ async def public_read_share(token: str, request: Request):
         "created_at": artefact.get("created_at"),
         "sensitivity": artefact.get("sensitivity"),
         "content": content,
+        "watermark": {
+            "label": "AKKI share · read-only",
+            "recipient": email,
+            "expires_at": expires_at_iso,
+        },
     }
+
+    # ── Phase 11 ITEM A — hard assertion that the response never leaks
+    # un-redacted internal production metadata. This fires as a 500 (not
+    # a 4xx) because leaking un-redacted content past this boundary is a
+    # server-side contract violation, not a client mistake. Denylist is
+    # exhaustive against the fields we know carry internal context
+    # (audience, speaker notes, model telemetry, account ids, review
+    # chains, validator payloads, quota state, etc.). If we ever add a
+    # new internal field, this assertion must be updated in tandem.
+    _assert_public_safe(response_payload)
+    return response_payload
+
+
+# Keys that must NEVER appear (at any depth) in a public read response.
+# Centralised here so the set is auditable. Keep alphabetised.
+_PUBLIC_READ_DENYLIST = frozenset({
+    "account_id",
+    "audience",
+    "audience_assumed",
+    "chain",
+    "events",
+    "inbound_token",
+    "missing_context",
+    "model",
+    "model_id",
+    "outline_id",
+    "password_hash",
+    "quality_check",
+    "quota",
+    "speaker_notes",
+    "synisense_key",
+    "tier",
+    "user_feedback",
+    "validation",
+    "validator_model",
+    "validator_provider",
+})
+
+
+def _assert_public_safe(obj: Any, *, path: str = "$") -> None:
+    """Walk the response object and raise 500 if any key at any depth
+    matches the denylist. This is a hard boundary check — we do not want
+    a silent leak of internal production metadata through the public
+    Chair view. The fast-path is a single recursive walk; the cost is
+    negligible compared to the DB reads upstream."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k in _PUBLIC_READ_DENYLIST:
+                logger.error(
+                    "public read would leak denylisted key %s at %s — refusing",
+                    k, path,
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail="Shared view redaction contract violated. Refusing to leak internal metadata.",
+                )
+            _assert_public_safe(v, path=f"{path}.{k}")
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            _assert_public_safe(v, path=f"{path}[{i}]")

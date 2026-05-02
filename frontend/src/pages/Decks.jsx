@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import WalkInCard from "@/components/walkin/WalkInCard";
 import ShareArtefactModal from "@/components/studio/ShareArtefactModal";
+import ValidatedBadge from "@/components/trust/ValidatedBadge";
 
 /**
  * Decks — three-step flow that keeps the user from burning Opus on weak prompts.
@@ -651,6 +652,7 @@ function DeckStep({ deck, contextId, onUpdated, onNew }) {
           </p>
           <div className="flex flex-wrap items-center gap-1.5 shrink-0">
             <SensitivityChip sensitivity={deck.sensitivity} />
+            {deck.validation && <ValidatedBadge size="compact" validation={deck.validation} />}
             <ExposurePill exposure={engagement?.exposure} />
             <button
               type="button"
