@@ -477,7 +477,19 @@ function ImageBlock({ content, onChange, readOnly, onUpload }) {
         alt: result.alt || content?.alt || "",
       });
     } catch (err) {
-      toast.error(apiErrorMessage(err, "Image upload failed."));
+      // Advisory 9 honesty rule: the toast reflects what actually
+      // happened. A 422 means ClamAV flagged the upload; a 503 means
+      // the scanner is offline and the upload is refused. We do not
+      // pretend-scan.
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      if (status === 422 && detail?.reason === "malware_suspected") {
+        toast.error(`Blocked — suspected malware${detail.signature ? ` (${detail.signature})` : ""}`);
+      } else if (status === 503 && detail?.error === "scanner_unavailable") {
+        toast.error("Virus scanner offline — upload refused. Try again shortly.");
+      } else {
+        toast.error(apiErrorMessage(err, "Image upload failed."));
+      }
     } finally {
       setBusy(false);
     }
@@ -488,7 +500,9 @@ function ImageBlock({ content, onChange, readOnly, onUpload }) {
         <div className="flex flex-col gap-2">
           <p className="text-[11px] uppercase tracking-[0.14em] text-[#7C6A4F]">
             Image attached · {content.storage_key.split("/").pop()}
-            <span className="ml-2 italic normal-case text-[10px]">virus scan: STUB · operator must wire ClamAV before prod</span>
+            <span className="ml-2 inline-flex items-center gap-1 normal-case tracking-normal text-[10.5px] text-emerald-800">
+              · Scanned
+            </span>
           </p>
           {!readOnly && (
             <input
@@ -514,7 +528,7 @@ function ImageBlock({ content, onChange, readOnly, onUpload }) {
             <>
               <input ref={fileRef} type="file" accept="image/*" onChange={handlePick} className="hidden" data-testid="image-file-input" />
               <button type="button" disabled={busy} onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2 py-1 border border-[#0A1F44] text-[#0A1F44] hover:bg-[#0A1F44] hover:text-[#F7F3EA] disabled:opacity-50">
-                <ImageIcon className="w-3.5 h-3.5" /> {busy ? "Uploading…" : "Upload image"}
+                <ImageIcon className="w-3.5 h-3.5" /> {busy ? "Scanning…" : "Upload image"}
               </button>
             </>
           )}

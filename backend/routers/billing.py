@@ -89,14 +89,25 @@ class CheckoutIn(BaseModel):
                             description="window.location.origin from the browser")
 
 
+def _billing_enabled() -> bool:
+    return (os.environ.get("BILLING_ENABLED") or "").lower() in ("1", "true", "yes")
+
+
 def _stripe() -> Any:
-    """Lazy import + guard. Returns a configured StripeCheckout or raises 503."""
-    api_key = os.environ.get("STRIPE_API_KEY")
+    """Lazy import + guard. Returns a configured StripeCheckout or raises 503.
+
+    Phase 10 change: the ``sk_test_emergent`` default is gone. If
+    ``BILLING_ENABLED=true`` is set and ``STRIPE_SECRET_KEY`` is unset,
+    the process refuses to boot (see ``server.py`` startup check).
+    When BILLING_ENABLED is off, this raises 503 so the caller never
+    reaches a partially-real Stripe path.
+    """
+    if not _billing_enabled():
+        raise HTTPException(status_code=503, detail="Billing is disabled in this environment.")
+    api_key = os.environ.get("STRIPE_SECRET_KEY") or os.environ.get("STRIPE_API_KEY")
     if not api_key:
-        raise HTTPException(status_code=503, detail="Stripe not configured.")
+        raise HTTPException(status_code=503, detail="STRIPE_SECRET_KEY is not configured.")
     from emergentintegrations.payments.stripe.checkout import StripeCheckout  # noqa: WPS433
-    # The webhook URL is filled by Stripe; emergentintegrations expects it
-    # at construction time but the same SDK call is used for both create + status.
     return StripeCheckout(api_key=api_key, webhook_url="")
 
 
@@ -242,45 +253,105 @@ async def get_checkout_status(
 
 
 # ---------------------------------------------------------------------------
-# Webhook (also catches checkout.session.completed + subscription.deleted)
+# Webhook (Phase 10 hardening).
+#
+#   - ``Stripe-Signature`` header verified against ``STRIPE_WEBHOOK_SECRET``.
+#     Unset or invalid → 400.
+#   - Idempotency via ``db.stripe_events`` (TTL 30 d). Replays are no-ops.
+#   - Unhandled event types are persisted to ``db.stripe_dead_letter``
+#     (TTL 90 d) with the full event so an operator can inspect + replay.
 # ---------------------------------------------------------------------------
+_HANDLED_EVENT_TYPES = {
+    "checkout.session.completed",
+    "checkout.session.async_payment_succeeded",
+    "checkout.session.async_payment_failed",
+    "customer.subscription.deleted",
+    "customer.subscription.updated",
+}
+
+
 @router.post("/webhook/stripe")
 async def stripe_webhook(request: Request):
-    sc = _stripe()
-    payload = await request.body()
+    from services import stripe_webhook as sw
+
+    raw = await request.body()
     sig = request.headers.get("Stripe-Signature")
     try:
-        evt = await sc.handle_webhook(payload, sig)
-    except Exception as e:  # noqa: BLE001
-        logger.exception("Stripe webhook verify failed: %s", e)
+        event = sw.verify_and_parse_event(raw, sig)
+    except sw.SignatureInvalid as e:
+        logger.warning("stripe webhook rejected: %s", e)
         raise HTTPException(status_code=400, detail="Invalid Stripe signature.")
 
-    sid = getattr(evt, "session_id", None)
-    if not sid:
-        return {"ok": True, "ignored": True, "reason": "no session_id"}
+    # Stripe's SDK returns a StripeObject — normalise to a dict for storage.
+    event_dict = dict(event) if not isinstance(event, dict) else event
+    event_id = event_dict.get("id") or ""
+    event_type = event_dict.get("type") or ""
 
-    txn = await db.payment_transactions.find_one({"session_id": sid}, {"_id": 0})
-    if not txn:
-        logger.warning("Stripe webhook for unknown session %s", sid)
-        return {"ok": True, "ignored": True, "reason": "no_txn"}
+    if await sw.is_replay(db, event_id):
+        return {"ok": True, "replay": True, "event_id": event_id}
+    await sw.record_event(db, event_id, event_type)
 
-    payment_status = (getattr(evt, "payment_status", "") or "").lower()
-    if payment_status == "paid" and txn.get("payment_status") != "paid":
-        await db.accounts.update_one(
-            {"id": txn["account_id"]},
+    if event_type not in _HANDLED_EVENT_TYPES:
+        await sw.dead_letter(db, event_dict, reason=f"unhandled_event_type:{event_type}")
+        return {"ok": True, "dead_lettered": True, "event_id": event_id, "type": event_type}
+
+    # Apply the state change. All supported types carry the session id
+    # on ``data.object``; subscription events carry a customer id.
+    data_obj = (event_dict.get("data") or {}).get("object") or {}
+    session_id = data_obj.get("id") if event_type.startswith("checkout.session.") else None
+    customer_id = data_obj.get("customer") if event_type.startswith("customer.subscription.") else None
+
+    if session_id:
+        txn = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+        if not txn:
+            await sw.dead_letter(db, event_dict, reason="no_matching_transaction")
+            return {"ok": True, "dead_lettered": True, "event_id": event_id, "reason": "no_txn"}
+        payment_status = (data_obj.get("payment_status") or "").lower() or "paid"
+        if event_type == "checkout.session.async_payment_failed":
+            payment_status = "failed"
+        if payment_status == "paid" and txn.get("payment_status") != "paid":
+            await db.accounts.update_one(
+                {"id": txn["account_id"]},
+                {"$set": {
+                    "plan": txn["plan_id"],
+                    "subscription_status": "active",
+                    "plan_updated_at": _iso(_now()),
+                }},
+            )
+            await write_audit(
+                None, txn["account_id"], "billing.upgraded", "plan",
+                txn["plan_id"], {"session_id": session_id, "event_id": event_id},
+            )
+        await db.payment_transactions.update_one(
+            {"session_id": session_id},
             {"$set": {
-                "plan": txn["plan_id"],
-                "subscription_status": "active",
-                "plan_updated_at": _iso(_now()),
+                "payment_status": payment_status,
+                "webhook_event_type": event_type,
+                "webhook_event_id": event_id,
+                "updated_at": _iso(_now()),
             }},
         )
-    await db.payment_transactions.update_one(
-        {"session_id": sid},
-        {"$set": {
-            "payment_status": payment_status or txn.get("payment_status"),
-            "webhook_event_type": getattr(evt, "event_type", None),
-            "webhook_event_id": getattr(evt, "event_id", None),
-            "updated_at": _iso(_now()),
-        }},
-    )
-    return {"ok": True}
+        return {"ok": True, "event_id": event_id, "payment_status": payment_status}
+
+    if customer_id and event_type == "customer.subscription.deleted":
+        # Downgrade: flip the account's plan back to "free". We look the
+        # account up by stripe_customer_id (populated on the upgrade path).
+        account = await db.accounts.find_one({"stripe_customer_id": customer_id}, {"_id": 0, "id": 1})
+        if account:
+            await db.accounts.update_one(
+                {"id": account["id"]},
+                {"$set": {
+                    "plan": "free",
+                    "subscription_status": "canceled",
+                    "plan_updated_at": _iso(_now()),
+                }},
+            )
+            await write_audit(
+                None, account["id"], "billing.downgraded", "plan",
+                "free", {"stripe_customer_id": customer_id, "event_id": event_id},
+            )
+        return {"ok": True, "event_id": event_id, "downgraded": bool(account)}
+
+    # A handled type we recognised but didn't find a target for.
+    await sw.dead_letter(db, event_dict, reason=f"handled_but_no_target:{event_type}")
+    return {"ok": True, "dead_lettered": True, "event_id": event_id}

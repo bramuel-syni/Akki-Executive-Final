@@ -1,54 +1,40 @@
-"""Document extraction + storage pipeline (M3).
+"""Document extraction + storage pipeline.
 
-Current implementation:
-- Local disk storage (shaped like S3 — swap via STORAGE_BACKEND env later)
-- pypdf for PDFs, python-docx for .docx, raw text for .txt/.md
-- Virus scan is a stub (ClamAV integration in M4)
-- Returns extracted text (truncated to ~200KB) and a preview snippet
+Phase 10 changes:
+  * ``virus_scan_stub`` is gone. Callers should invoke
+    ``services.clamav_service.scan`` directly and translate
+    :class:`ClamAVUnreachable` to a 503 with an audit row.
+  * ``save_to_storage`` / ``read_from_storage`` / ``delete_from_storage``
+    delegate to ``services.storage_service`` which swaps between
+    local disk (tests) and S3/MinIO (prod) by the ``STORAGE_BACKEND``
+    env var. The DB column continues to store the opaque key.
 """
 from __future__ import annotations
 
 import io
-import os
 import re
-import uuid
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 
-STORAGE_ROOT = Path(os.environ.get("UPLOADS_DIR", "/app/backend/uploads"))
-STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
+from services import storage_service
 
 ACCEPT_EXT = {".pdf", ".docx", ".txt", ".md", ".rtf"}
 MAX_BYTES = 25 * 1024 * 1024  # 25 MB
 MAX_EXTRACT_CHARS = 200_000
 
 
-def virus_scan_stub(data: bytes, filename: str) -> Tuple[bool, Optional[str]]:
-    """Returns (clean, reason_if_unclean). Real ClamAV wires in M4."""
-    if b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE" in data[:8192]:
-        return False, "EICAR test signature detected"
-    return True, None
-
-
-def save_to_storage(context_id: str, doc_id: str, filename: str, data: bytes) -> str:
-    """Store bytes on disk; return storage key."""
-    safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "_", filename)[:200]
-    ext = Path(safe_name).suffix.lower()
-    context_dir = STORAGE_ROOT / context_id
-    context_dir.mkdir(parents=True, exist_ok=True)
-    path = context_dir / f"{doc_id}{ext}"
-    path.write_bytes(data)
-    return str(path.relative_to(STORAGE_ROOT))
+def save_to_storage(context_id: str, doc_id: str, filename: str, data: bytes,
+                    content_type: Optional[str] = None) -> str:
+    """Store bytes through the configured storage backend; return key."""
+    return storage_service.save(context_id, doc_id, filename, data, content_type=content_type)
 
 
 def read_from_storage(key: str) -> bytes:
-    return (STORAGE_ROOT / key).read_bytes()
+    return storage_service.read(key)
 
 
 def delete_from_storage(key: str) -> None:
-    path = STORAGE_ROOT / key
-    if path.exists():
-        path.unlink()
+    storage_service.delete(key)
 
 
 def extract_text(data: bytes, filename: str, mime_type: str) -> Tuple[str, Optional[str]]:

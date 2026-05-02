@@ -33,8 +33,10 @@ from pydantic import BaseModel, Field
 
 from core import db, get_current_account, iso, now, write_audit
 from documents_service import (
-    extract_text, make_preview, save_to_storage, virus_scan_stub,
+    extract_text, make_preview, save_to_storage,
 )
+from services import clamav_service
+from services.clamav_service import ClamAVUnreachable
 
 router = APIRouter(prefix="/api/me/review-queue", tags=["daily_review"])
 logger = logging.getLogger("akki.daily_review")
@@ -410,13 +412,34 @@ async def _approve_inbound(qid: str, account: Dict[str, Any], note: Optional[str
         except Exception:  # noqa: BLE001
             raise HTTPException(status_code=400, detail="Attachment payload corrupt.") from None
         filename = primary.get("Name") or "attachment"
-        clean, reason = virus_scan_stub(data, filename)
-        if not clean:
+        # Real virus scan (Phase 10). Unreachable → 503 + audit; block on match.
+        try:
+            scan_result = clamav_service.scan(data, filename)
+        except ClamAVUnreachable as e:
+            await write_audit(
+                row["context_id"], account["id"],
+                "upload.virus_scan.unreachable",
+                "inbound_queue", qid, {"error": str(e)[:200]},
+            )
+            raise HTTPException(
+                status_code=503,
+                detail={"error": "scanner_unavailable", "reason": "virus scanner offline"},
+            )
+        if not scan_result.clean:
             await db.inbound_queue.update_one({"id": qid}, {"$set": {
                 "status": "rejected", "rejected_by": account["id"],
-                "rejected_at": iso(now()), "reject_reason": f"virus_scan · {reason}",
+                "rejected_at": iso(now()), "reject_reason": f"virus_scan · {scan_result.signature}",
             }})
-            raise HTTPException(status_code=400, detail=f"Virus scan rejected: {reason}")
+            await write_audit(
+                row["context_id"], account["id"],
+                "upload.virus_scan.blocked",
+                "inbound_queue", qid,
+                {"signature": scan_result.signature, "size_bytes": len(data)},
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "blocked", "reason": "malware_suspected", "signature": scan_result.signature},
+            )
         storage_key = save_to_storage(row["context_id"], doc_id, filename, data)
         text, err = extract_text(data, filename, primary.get("ContentType") or "")
         size = len(data)

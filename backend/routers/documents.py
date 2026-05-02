@@ -13,9 +13,11 @@ from pydantic import BaseModel, Field
 
 from llm_service import call_llm as llm_call_llm, parse_json_response
 from documents_service import (
-    ACCEPT_EXT, MAX_BYTES, virus_scan_stub, save_to_storage, read_from_storage,
+    ACCEPT_EXT, MAX_BYTES, save_to_storage, read_from_storage,
     delete_from_storage, extract_text, make_preview,
 )
+from services import clamav_service
+from services.clamav_service import ClamAVUnreachable
 from core import (
     db, now as _now, iso as _iso, write_audit, require_context_membership,
 )
@@ -211,9 +213,38 @@ async def upload_document(
     if len(data) > MAX_BYTES:
         raise HTTPException(status_code=413, detail=f"File too large. Max {MAX_BYTES // 1024 // 1024}MB.")
 
-    clean, reason = virus_scan_stub(data, filename)
-    if not clean:
-        raise HTTPException(status_code=400, detail=f"Rejected by virus scan: {reason}")
+    # Real virus scanning (Phase 10). clamd unreachable → 503 + audit.
+    # Signature match → 422 + audit. Neither branch persists the file.
+    try:
+        scan_result = clamav_service.scan(data, filename)
+    except ClamAVUnreachable as e:
+        await write_audit(
+            context_id, ctx["account"]["id"],
+            "upload.virus_scan.unreachable",
+            "document", None,
+            {"filename_hash": __import__("hashlib").sha256((filename or "").encode()).hexdigest()[:16],
+             "error": str(e)[:200]},
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "scanner_unavailable", "reason": "virus scanner offline"},
+        )
+    if not scan_result.clean:
+        await write_audit(
+            context_id, ctx["account"]["id"],
+            "upload.virus_scan.blocked",
+            "document", None,
+            {
+                "filename_hash": __import__("hashlib").sha256((filename or "").encode()).hexdigest()[:16],
+                "signature": scan_result.signature,
+                "size_bytes": len(data),
+                "scan_ms": scan_result.scan_ms,
+            },
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "blocked", "reason": "malware_suspected", "signature": scan_result.signature},
+        )
 
     if related_doc_id:
         if relation_type not in ("update", "follow_up", "additional_context", "correction"):
@@ -574,6 +605,21 @@ async def download_document(
     d = await db.documents.find_one({"id": doc_id, "context_id": context_id})
     if not d or d.get("status") == "archived":
         raise HTTPException(status_code=404, detail="Document not found")
+    # Phase 10: S3 backend → 302 to a presigned URL. Local backend →
+    # keep the streaming response for dev / tests (no presign target).
+    from services import storage_service
+    backend = storage_service.get_storage()
+    if backend.backend == "s3":
+        try:
+            url = backend.get_presigned_url(
+                d["storage_key"],
+                ttl_seconds=300,
+                response_content_disposition=f'attachment; filename="{d.get("original_filename", "download")}"',
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"presign failed: {e}")
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=url, status_code=302)
     try:
         data = read_from_storage(d["storage_key"])
     except FileNotFoundError:

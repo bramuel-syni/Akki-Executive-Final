@@ -34,8 +34,9 @@ from documents_service import (
     extract_text,
     make_preview,
     save_to_storage,
-    virus_scan_stub,
 )
+from services import clamav_service
+from services.clamav_service import ClamAVUnreachable
 
 logger = logging.getLogger("akki.inbound_queue")
 
@@ -135,11 +136,18 @@ async def get_inbound_queue_item(
             try:
                 data = base64.b64decode(primary.get("Content") or "")
                 filename = primary.get("Name") or "attachment"
-                clean, reason = virus_scan_stub(data, filename)
-                if clean:
-                    text, _err = extract_text(data, filename, primary.get("ContentType") or "")
-                    if text:
-                        extracted_preview = make_preview(text, max_chars=800)
+                # Preview-only scan. If the scanner is unreachable or
+                # the payload is flagged, we still show the row but
+                # suppress the preview. The accept path performs the
+                # blocking scan with audit rows.
+                try:
+                    scan_result = clamav_service.scan(data, filename)
+                    if scan_result.clean:
+                        text, _err = extract_text(data, filename, primary.get("ContentType") or "")
+                        if text:
+                            extracted_preview = make_preview(text, max_chars=800)
+                except ClamAVUnreachable:
+                    logger.warning("inbound_queue preview skipped: clamd unreachable")
             except Exception as e:  # noqa: BLE001
                 logger.warning("inbound_queue preview extract failed: %s", e)
     return {
@@ -193,14 +201,34 @@ async def accept_inbound_queue_item(
         except Exception:  # noqa: BLE001
             raise HTTPException(status_code=400, detail="Attachment payload corrupt.") from None
         filename = primary.get("Name") or "attachment"
-        clean, reason = virus_scan_stub(data, filename)
-        if not clean:
+        try:
+            scan_result = clamav_service.scan(data, filename)
+        except ClamAVUnreachable as e:
+            await write_audit(
+                context_id, ctx["account"]["id"],
+                "upload.virus_scan.unreachable",
+                "inbound_queue", queue_id, {"error": str(e)[:200]},
+            )
+            raise HTTPException(
+                status_code=503,
+                detail={"error": "scanner_unavailable", "reason": "virus scanner offline"},
+            )
+        if not scan_result.clean:
             await db.inbound_queue.update_one(
                 {"id": queue_id},
                 {"$set": {"status": "rejected", "rejected_by": ctx["account"]["id"],
-                          "rejected_at": iso(now()), "reject_reason": f"virus_scan · {reason}"}},
+                          "rejected_at": iso(now()), "reject_reason": f"virus_scan · {scan_result.signature}"}},
             )
-            raise HTTPException(status_code=400, detail=f"Virus scan rejected: {reason}")
+            await write_audit(
+                context_id, ctx["account"]["id"],
+                "upload.virus_scan.blocked",
+                "inbound_queue", queue_id,
+                {"signature": scan_result.signature, "size_bytes": len(data)},
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "blocked", "reason": "malware_suspected", "signature": scan_result.signature},
+            )
         storage_key = save_to_storage(context_id, doc_id, filename, data)
         text, err = extract_text(data, filename, primary.get("ContentType") or "")
         size = len(data)

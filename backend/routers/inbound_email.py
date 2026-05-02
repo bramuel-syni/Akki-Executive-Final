@@ -32,8 +32,9 @@ from documents_service import (
     extract_text,
     make_preview,
     save_to_storage,
-    virus_scan_stub,
 )
+from services import clamav_service
+from services.clamav_service import ClamAVUnreachable
 
 logger = logging.getLogger("akki.inbound")
 
@@ -396,16 +397,31 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
             )
             return {"ok": False, "error": "bad_attachment"}
         filename = primary_att.get("Name") or "attachment"
-        clean, reason = virus_scan_stub(data, filename)
-        if not clean:
-            logger.warning("Postmark inbound: rejected attachment (%s) — %s", filename, reason)
+        try:
+            scan_result = clamav_service.scan(data, filename)
+        except ClamAVUnreachable as e:
+            # For the Postmark webhook we must return 200 (Postmark retries
+            # on non-2xx and we don't want infinite replays) but we record
+            # the block in the audit ledger so an operator can find and
+            # replay the payload once the scanner is back.
+            logger.warning("Postmark inbound: clamd unreachable — %s", e)
             await write_audit(
                 context["id"], account["id"],
                 "inbound_email.rejected", "inbound", message_id or f"no-id-{uuid.uuid4().hex[:10]}",
-                {"reason": "virus_scan", "scan_reason": reason,
+                {"reason": "scanner_unavailable", "error": str(e)[:200],
                  "from": from_email, "subject": subject, "filename": filename},
             )
-            return {"ok": False, "error": "virus_scan", "reason": reason}
+            return {"ok": False, "error": "scanner_unavailable"}
+        if not scan_result.clean:
+            logger.warning("Postmark inbound: rejected attachment (%s) — %s", filename, scan_result.signature)
+            await write_audit(
+                context["id"], account["id"],
+                "inbound_email.rejected", "inbound", message_id or f"no-id-{uuid.uuid4().hex[:10]}",
+                {"reason": "virus_scan", "signature": scan_result.signature,
+                 "from": from_email, "subject": subject, "filename": filename,
+                 "size_bytes": len(data), "scan_ms": scan_result.scan_ms},
+            )
+            return {"ok": False, "error": "virus_scan", "signature": scan_result.signature}
         storage_key = save_to_storage(context["id"], doc_id, filename, data)
         text, err = extract_text(data, filename, primary_att.get("ContentType") or "")
         size = len(data)

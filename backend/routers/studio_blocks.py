@@ -803,9 +803,9 @@ async def reorder_blocks(
 
 
 # ---------------------------------------------------------------------------
-# Image upload — note this routes through documents_service.virus_scan_stub.
-# That virus scanner is a STUB. We do NOT pretend it scans. Operator must
-# wire ClamAV before going to production.
+# Image upload — Phase 10 wires real ClamAV scanning (services.clamav_service).
+# Scanner-unreachable returns 503; signature match returns 422; neither
+# branch persists the file. The virus-scan stub is retired.
 # ---------------------------------------------------------------------------
 @router.post("/{kind}/{artefact_id}/upload-image")
 async def upload_image(
@@ -826,14 +826,36 @@ async def upload_image(
     if len(raw) > 6 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Image exceeds 6 MB limit.")
 
-    from documents_service import save_to_storage, virus_scan_stub
-    clean, reason = virus_scan_stub(raw, body.filename)
-    if not clean:
-        raise HTTPException(status_code=400, detail=f"Rejected by virus scan stub: {reason}")
+    from documents_service import save_to_storage
+    from services import clamav_service
+    from services.clamav_service import ClamAVUnreachable
+    try:
+        scan_result = clamav_service.scan(raw, body.filename)
+    except ClamAVUnreachable as e:
+        await write_audit(
+            artefact["context_id"], current["id"],
+            "upload.virus_scan.unreachable",
+            kind, artefact_id, {"error": str(e)[:200]},
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "scanner_unavailable", "reason": "virus scanner offline"},
+        )
+    if not scan_result.clean:
+        await write_audit(
+            artefact["context_id"], current["id"],
+            "upload.virus_scan.blocked",
+            kind, artefact_id,
+            {"signature": scan_result.signature, "size_bytes": len(raw)},
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "blocked", "reason": "malware_suspected", "signature": scan_result.signature},
+        )
 
     image_id = str(uuid.uuid4())
     storage_key = save_to_storage(
-        artefact["context_id"], image_id, body.filename, raw,
+        artefact["context_id"], image_id, body.filename, raw, content_type=body.mime_type,
     )
     # Persist a lightweight record so /uploads/* GET routes can resolve it.
     await db.studio_images.insert_one({
@@ -848,20 +870,23 @@ async def upload_image(
         "size_bytes": len(raw),
         "uploaded_by": current["id"],
         "created_at": _iso(_now()),
-        "scan": "stub",  # honest — see module docstring
+        "scan": "clamav",
+        "scan_signature": scan_result.signature,
+        "scan_ms": scan_result.scan_ms,
     })
     await write_audit(
         artefact["context_id"], current["id"],
         "studio_blocks.image.uploaded",
         kind, artefact_id,
-        {"image_id": image_id, "size_bytes": len(raw), "scan": "stub"},
+        {"image_id": image_id, "size_bytes": len(raw), "scan": "clamav"},
     )
     return {
         "id": image_id,
         "storage_key": storage_key,
         "mime_type": body.mime_type,
         "alt": body.alt or "",
-        "scan": "stub",
+        "scan": "clamav",
+        "scan_ms": scan_result.scan_ms,
     }
 
 

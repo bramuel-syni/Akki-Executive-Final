@@ -72,8 +72,25 @@ def _now_month_utc() -> str:
 
 
 async def _user_is_pro(account: Dict[str, Any]) -> bool:
-    plan = (account.get("plan") or "free").lower()
-    return plan in ("pro", "team") or bool(account.get("solve_pro"))
+    """Phase 10 — read the plan LIVE from the DB. The product review
+    flagged that a cached `account` dict can hold a stale plan when a
+    webhook has just upgraded/downgraded mid-session. Every Solve
+    entry-point that makes a tier decision goes through this helper."""
+    aid = account.get("id") if isinstance(account, dict) else None
+    if aid:
+        fresh = await db.accounts.find_one(
+            {"id": aid}, {"_id": 0, "plan": 1, "solve_pro": 1, "subscription_status": 1},
+        )
+    else:
+        fresh = None
+    src = fresh if fresh is not None else account
+    plan = (src.get("plan") or "free").lower()
+    sub_status = (src.get("subscription_status") or "").lower()
+    # A plan is only honoured when subscription is active (or unset —
+    # the DB row for legacy admin accounts carries no subscription).
+    if plan in ("pro", "team") and sub_status in ("", "active", "trialing"):
+        return True
+    return bool(src.get("solve_pro"))
 
 
 async def _consume_free_grant(account_id: str) -> Dict[str, Any]:

@@ -215,6 +215,24 @@ logger.info(
 # -----------------------------------------------------------------------------
 @app.on_event("startup")
 async def on_startup():
+    # ─── Phase 10 boot-level guards ─────────────────────────────────────
+    billing_enabled = (os.environ.get("BILLING_ENABLED") or "").lower() in ("1", "true", "yes")
+    if billing_enabled and not (os.environ.get("STRIPE_SECRET_KEY") or os.environ.get("STRIPE_API_KEY")):
+        # Fail loud and fail at boot — a half-configured billing surface
+        # is worse than a disabled one. The operator flips BILLING_ENABLED
+        # to false or supplies STRIPE_SECRET_KEY.
+        raise RuntimeError(
+            "BILLING_ENABLED=true but STRIPE_SECRET_KEY is unset. "
+            "Set STRIPE_SECRET_KEY or disable billing before boot."
+        )
+    # Stripe webhook idempotency + dead-letter indexes (additive).
+    try:
+        from services.stripe_webhook import ensure_indexes as _stripe_ensure
+        await _stripe_ensure(db)
+    except Exception as e:  # noqa: BLE001
+        import logging as _lg
+        _lg.getLogger("akki.startup").warning("stripe idempotency indexes: %s", e)
+
     await db.accounts.create_index("email", unique=True)
     await db.accounts.create_index("id", unique=True)
     await db.contexts.create_index("id", unique=True)
