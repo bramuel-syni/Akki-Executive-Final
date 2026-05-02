@@ -64,6 +64,37 @@ SENSITIVITY_RULES: List[Tuple[str, int, str]] = [
      10, "Leadership succession"),
 ]
 
+# Floor mechanism (Phase 8 calibration fix).
+#
+# A pattern that matches here imposes a MINIMUM classification band on
+# the artefact, regardless of the additive numeric score. M&A language
+# was previously worth +20, which left the artefact in PUBLIC because
+# the INTERNAL band starts at 25 — quietly under-classifying material
+# that a board would never share publicly. The floor is the honest
+# fix: the additive score remains for transparency, but the final band
+# is `max(band_from_score, highest_floor_matched)`.
+#
+# Order is irrelevant; the highest floor wins.
+SENSITIVITY_FLOORS: List[Tuple[str, str, str]] = [
+    # Restricted-only patterns are deliberately conservative — we let the
+    # citation-source floor (Restricted source ⇒ confidential) and the
+    # additive scoring above push into RESTRICTED rather than do it on
+    # keyword alone.
+    (r"\b(material non.?public|MNPI|board.?confidential|chair.?eyes.?only|insider information|undisclosed material|not yet disclosed)\b",
+     "confidential", "Board-confidential / non-public material information"),
+    (r"\b(under embargo|pre-?announce(d|ment)?|price.?sensitive)\b",
+     "confidential", "Embargoed / price-sensitive disclosure"),
+    (r"\b(acquisition|acquir(e|ing)|merger|m[&\.]?a|takeover|target company|tender offer|due diligence|definitive agreement)\b",
+     "internal", "M&A / deal language"),
+    (r"\b(litigation|lawsuit|subpoena|regulator(y)?|enforcement|investigation)\b",
+     "internal", "Litigation or regulatory exposure"),
+    (r"\b(misconduct|harassment|disciplinary|allegation|whistleblow|whistle.?blower)\b",
+     "internal", "Conduct or HR sensitivity"),
+]
+
+BAND_ORDER = {"public": 0, "internal": 1, "confidential": 2, "restricted": 3}
+BAND_KEYS_BY_RANK = ["public", "internal", "confidential", "restricted"]
+
 CLASSIFICATION_BANDS = [
     (0,  24, "public",       "Public"),
     (25, 49, "internal",     "Internal"),
@@ -131,7 +162,38 @@ def score_sensitivity(artefact: Dict[str, Any]) -> Dict[str, Any]:
     score = min(score, 100)
     seen = set()
     reasons = [r for r in reasons if not (r in seen or seen.add(r))]
-    return _classify(score, reasons)
+    verdict = _classify(score, reasons)
+
+    # ── Floor mechanism (Phase 8 calibration fix) ──────────────────────
+    # The additive score is honest about what was matched, but it can
+    # under-classify when a single canonical pattern (M&A, MNPI, embargo)
+    # appears alone. Lift the band to the highest matching floor so the
+    # trust badge is never quieter than the content it labels.
+    floor_rank = -1
+    floor_reason: str | None = None
+    for pattern, floor_band, why in SENSITIVITY_FLOORS:
+        try:
+            if re.search(pattern, text, flags=re.IGNORECASE):
+                rank = BAND_ORDER.get(floor_band, -1)
+                if rank > floor_rank:
+                    floor_rank = rank
+                    floor_reason = why
+        except re.error:
+            continue
+    if floor_rank >= 0:
+        current_rank = BAND_ORDER.get(verdict["classification"], 0)
+        if floor_rank > current_rank:
+            new_band = BAND_KEYS_BY_RANK[floor_rank]
+            # Pin the score to the band's lower bound so downstream UIs
+            # render a coherent number alongside the lifted label.
+            band_floor_score = {"public": 0, "internal": 25, "confidential": 50, "restricted": 75}[new_band]
+            verdict["classification"] = new_band
+            verdict["label"] = new_band.capitalize()
+            verdict["score"] = max(verdict.get("score", 0), band_floor_score)
+            if floor_reason:
+                verdict.setdefault("reasons", []).append(f"Floor: {floor_reason}")
+            verdict["floor_applied"] = floor_reason
+    return verdict
 
 
 async def score_sensitivity_with_llm_tiebreaker(

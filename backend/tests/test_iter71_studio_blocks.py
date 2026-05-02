@@ -222,6 +222,42 @@ class TestSensitivity:
         reasons = " ".join(cls.get("reasons") or [])
         assert "M&A" in reasons or "deal" in reasons.lower(), reasons
 
+    def test_canonical_ma_phrase_floors_at_internal(self, context_id, client):
+        """The exact phrase the calibration audit flagged: it MUST land
+        at Internal or higher. M&A language is a band floor, not a
+        nudge."""
+        import sys
+        sys.path.insert(0, "/app/backend")
+        from studio_sensitivity import score_sensitivity
+        # Pure-Python check first — this is the calibration contract.
+        verdict = score_sensitivity({
+            "opening_paragraph":
+                "Project Atlas — proposed acquisition of TargetCo, "
+                "exclusivity agreed, M&A confidential.",
+        })
+        assert verdict["classification"] in {"internal", "confidential", "restricted"}, verdict
+        assert verdict.get("floor_applied"), f"floor_applied missing: {verdict}"
+        # Now end-to-end: insert this phrase as a block and confirm the
+        # /lifecycle endpoint returns the same band.
+        bid = _insert_briefing(context_id)
+        client.get(f"{BASE_URL}/api/studio/briefing/{bid}/blocks", timeout=20)
+        r = client.post(
+            f"{BASE_URL}/api/studio/briefing/{bid}/blocks",
+            json={"kind": "paragraph", "content": {
+                "text": "Project Atlas — proposed acquisition of TargetCo, "
+                        "exclusivity agreed, M&A confidential.",
+            }},
+            timeout=20,
+        )
+        assert r.status_code == 200, r.text
+        cls = r.json().get("classification") or {}
+        assert cls.get("classification") in {"internal", "confidential", "restricted"}, cls
+        # And the /lifecycle endpoint sees the same.
+        l = client.get(f"{BASE_URL}/api/studio/briefing/{bid}/lifecycle", timeout=20)
+        assert l.status_code == 200
+        lifecycle_cls = (l.json().get("classification") or {}).get("classification")
+        assert lifecycle_cls in {"internal", "confidential", "restricted"}, l.json()
+
 
 # ---------------------------------------------------------------------------
 # Lifecycle: submit-review → approve → send (Resend in noop is fine)

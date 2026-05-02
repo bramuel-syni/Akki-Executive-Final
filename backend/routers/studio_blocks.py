@@ -496,7 +496,8 @@ async def _hydrate_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 async def _classification_floor_from_citations(blocks: List[Dict[str, Any]]) -> Optional[str]:
     """If any citation block references a doc classified Restricted, we
-    floor the artefact at Confidential. Returns the floor key, or None.
+    floor the artefact at Confidential. A Confidential-source citation
+    floors the artefact at Internal. Returns the floor key, or None.
 
     Implemented server-side per the product rule — the UI does not get
     to override this.
@@ -521,6 +522,9 @@ async def _classification_floor_from_citations(blocks: List[Dict[str, Any]]) -> 
     # Restricted source ⇒ at least Confidential.
     if highest_seen >= band_order["restricted"]:
         return "confidential"
+    # Confidential source ⇒ at least Internal.
+    if highest_seen >= band_order["confidential"]:
+        return "internal"
     return None
 
 
