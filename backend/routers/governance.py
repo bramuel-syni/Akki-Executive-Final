@@ -75,18 +75,37 @@ def _decorate_audit_row(row: Dict[str, Any], ctx_names: Dict[str, str], actor_em
 async def _build_synisense_block(
     current: Dict[str, Any], ctx_ids: List[str],
 ) -> Dict[str, Any]:
-    """Aggregate from `db.synisense_runs` over the user's contexts.
-    Counts only — span-level detail and text never come back here.
-    Falls back to honest-empty when no runs exist yet so the
-    TrustPanel can render an empty state without a special branch."""
+    """Aggregate from `db.synisense_runs` over the user's contexts AND
+    their account-scoped runs (chat hooks on UNGROUNDED chats persist
+    with `context_id=""` so they would be invisible to a pure
+    context-id filter — the brief explicitly calls out that those
+    runs must still be counted under the user). Counts only — span
+    detail and text never come back here. Falls back to honest-empty
+    when no runs exist yet so the TrustPanel can render an empty
+    state without a special branch.
+
+    Filter shape (locked in Phase 12.2 closeout BUG 1 fix):
+        $or:
+          - context_id ∈ ctx_ids       (grounded runs in user's contexts)
+          - account_id == current.id   (ungrounded runs the user owns)
+    """
     from datetime import datetime, timedelta, timezone
     from services.synisense import get_status_snapshot
 
     status = get_status_snapshot()
+    account_id = current.get("id")
 
-    # Empty state: the user has no contexts at all (rare — admin-only
-    # accounts can hit this). Honest empty without a DB query.
-    if not ctx_ids:
+    # Filter shared by every aggregation. Built once here so the four
+    # pipelines below stay in lock-step.
+    user_filter: Dict[str, Any] = {
+        "$or": [
+            {"context_id": {"$in": ctx_ids}} if ctx_ids else {"_never": True},
+            {"account_id": account_id} if account_id else {"_never": True},
+        ]
+    }
+
+    # Empty state: no contexts AND no account_id (rare). Honest empty.
+    if not ctx_ids and not account_id:
         return {
             "status": "live",
             "active": False,
@@ -108,7 +127,7 @@ async def _build_synisense_block(
 
     # 7-day window: spans + entity histogram + llm fallback calls.
     pipeline_7d = [
-        {"$match": {"context_id": {"$in": ctx_ids}, "ts": {"$gte": cutoff_7d}}},
+        {"$match": {**user_filter, "ts": {"$gte": cutoff_7d}}},
         {"$group": {
             "_id": None,
             "runs": {"$sum": 1},
@@ -120,7 +139,7 @@ async def _build_synisense_block(
     agg_7d = rows_7d[0] if rows_7d else {"runs": 0, "spans_total": 0, "llm_calls": 0}
 
     pipeline_hist = [
-        {"$match": {"context_id": {"$in": ctx_ids}, "ts": {"$gte": cutoff_7d}}},
+        {"$match": {**user_filter, "ts": {"$gte": cutoff_7d}}},
         {"$unwind": "$spans"},
         {"$group": {"_id": "$spans.entity_type", "n": {"$sum": 1}}},
         {"$sort": {"n": -1}},
@@ -130,13 +149,13 @@ async def _build_synisense_block(
     histogram = {r["_id"]: int(r["n"]) for r in hist_rows if r.get("_id")}
 
     spans_30d_doc = await db.synisense_runs.aggregate([
-        {"$match": {"context_id": {"$in": ctx_ids}, "ts": {"$gte": cutoff_30d}}},
+        {"$match": {**user_filter, "ts": {"$gte": cutoff_30d}}},
         {"$group": {"_id": None, "n": {"$sum": {"$size": {"$ifNull": ["$spans", []]}}}}},
     ]).to_list(1)
     spans_30d = int(spans_30d_doc[0]["n"]) if spans_30d_doc else 0
 
     last_doc = await db.synisense_runs.find_one(
-        {"context_id": {"$in": ctx_ids}},
+        user_filter,
         sort=[("ts", -1)],
         projection={"_id": 0, "ts": 1},
     )
@@ -146,6 +165,8 @@ async def _build_synisense_block(
 
     return {
         "status": "live",
+        # `active` reflects "any run in the last 7 days for this user"
+        # — this is what the TrustPanel renders the badge from.
         "active": agg_7d.get("runs", 0) > 0,
         "last_run_at": last_run_at,
         "spans_redacted_7d": int(agg_7d.get("spans_total", 0)),

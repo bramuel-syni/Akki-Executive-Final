@@ -497,6 +497,7 @@ async def send_message(
     syn_stats: Dict[str, Any] = {"spans_redacted": 0, "by_type": {}, "elapsed_ms": 0}
     try:
         from services.synisense import run as syn_run
+        from services.synisense.pipeline import current_version as _syn_version
         syn_out = await syn_run(
             text=text,
             context_id=chat.get("context_id") or "",
@@ -515,7 +516,10 @@ async def send_message(
             "spans_redacted": len(spans),
             "by_type": by_type,
             "elapsed_ms": int(syn_out.get("stats", {}).get("elapsed_ms") or 0),
-            "version": syn_out.get("stats", {}).get("synisense_version"),
+            # Phase 12.2 closeout BUG 3 — engine version was being read
+            # from a non-existent field on the response stats; the engine
+            # exposes it via `current_version()` at module level.
+            "version": _syn_version(),
         }
         # Audit row per turn (no text, no spans, just counts + types).
         try:

@@ -1187,11 +1187,19 @@ async def accept_synisense_preview(
     coll = _artefact_collection(kind)
     cur = await coll.find_one(
         {"id": artefact_id},
-        {"_id": 0, "synisense": 1, "synisense_first_accept_at": 1},
+        {"_id": 0, "synisense": 1, "synisense_first_accept_at": 1,
+         "synisense_version": 1},
     ) or {}
     syn = cur.get("synisense") or {}
     histogram = syn.get("histogram") or {}
     now_iso = _iso(_now())
+    # Phase 12.2 closeout BUG 2 — defensive bump of synisense_version
+    # on accept. Normally `_persist_and_project` has already set it on
+    # the most recent save, but if the artefact was created via a
+    # non-block-composer path (e.g. decks.generate_deck) and only later
+    # accepted via the drawer, this is the place to ensure the public
+    # read assertion never trips on a 'forgot to bump' edge case.
+    new_version = max(int(cur.get("synisense_version") or 0), 1)
     await coll.update_one(
         {"id": artefact_id},
         {"$set": {
@@ -1199,6 +1207,7 @@ async def accept_synisense_preview(
             "synisense_last_accepted_at": now_iso,
             "synisense_last_accepted_histogram": histogram,
             "synisense_last_accepted_by": current["id"],
+            "synisense_version": new_version,
         }},
     )
     await write_audit(
