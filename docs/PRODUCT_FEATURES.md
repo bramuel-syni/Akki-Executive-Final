@@ -1,6 +1,6 @@
 # AKKI — Product Features & Functionality
 
-Internal product status, as built. May 2026.
+Internal product status, as built. Last reviewed: 4 May 2026 · branch `main` · commit `332a423`.
 
 AKKI is an intelligence layer for corporate governance. It serves two primary personas — non-executive directors (NEDs) who sit on multiple boards, and C-suite executives who run reporting cycles into those boards — and one secondary persona, the reportee, a line executive who feeds information upward through AKKI. The product is built around three editorial principles: privacy by default (anything leaving a surface is de-identified first), grounded output (nothing asserted without a traceable source), and a dry, specific voice closer to the Financial Times than to a productivity app.
 
@@ -28,19 +28,21 @@ Anything marked Pending or Placeholder must not be described to prospects as a c
 | Cycle Manager | Shipped | Briefs, Signals, Minutes, Actions and Reports under one surface | 13.2 |
 | Akki Pulse | Placeholder | Holding page only; aggregator and Privacy Wall unbuilt | 14 |
 | Privacy Wall | Pending | No metadata-only projection guard in cross-context reads | 14 |
-| Daily Review | Shipped | Batched approval queue for AKKI-generated artefacts | 1–13 |
+| Daily Review | Shipped | Batched approval queue for AKKI-generated artefacts | pre-Phase-12 (iter-level) |
 | Reportee Accounts (tokenised contacts) | Shipped | Email-token reportees with public reply endpoint | 13.2 |
 | Reportee Accounts (sub-accounts with login) | Pending | Full schema, reduced surface, billing | 16 |
-| Contexts model | Shipped | Four board-seat types with embedded committees | 1–13 |
+| Contexts model | Shipped | Four board-seat types with embedded committees | pre-Phase-12 (iter-level) |
 | Redacted Read-Only / Share-with-the-Chair | Shipped | Public token routes with hard 500-guard on redaction contract | 11 / 12.2 |
 | Chat & LLM routing | Shipped | Tiered Claude / Gemini / GPT via Emergent Universal Key | 11 |
-| Auth, MFA, RBAC | Shipped | JWT + refresh, TOTP MFA, context-membership RBAC | 1–13 |
+| Auth, MFA, RBAC | Shipped | JWT + refresh, TOTP MFA, context-membership RBAC | pre-Phase-12 (iter-level) |
 | Billing (Stripe) | Partial | Wired end-to-end; disabled via `BILLING_ENABLED=false` | 16 |
 | Outbound email (Resend) | Partial | Integrated; noop mode because key unset | 18 |
 | Inbound email (Postmark) | Shipped | Per-context tokens, webhook ingestion, triage queue | 9–10 |
 | File storage + ClamAV | Shipped | S3/MinIO via boto3; ClamAV scan is a hard precondition | 10 |
 | Observability (Sentry) | Pending | DSN commented out; no SDK initialisation | 18 |
 | Scheduling | Shipped | APScheduler in-process; single-replica caveat | 18 leader election |
+
+"pre-Phase-12 (iter-level)" denotes work completed across the iter-numbered history before the current 12→19 phasing was adopted.
 
 ## Synisense Shield
 
@@ -243,7 +245,7 @@ Wired end-to-end and currently disabled. `/api/billing/{plans, me, checkout, sta
 
 Integrated and currently noop. `backend/email_service.py` wraps `resend` with an `{ok, id, mode}` envelope. When `RESEND_API_KEY` is absent, `send_email` returns `{ok: false, mode: "noop"}` and every caller inspects `mode` and degrades gracefully. The current `.env` carries no Resend key, so all outbound from Cycle dispatch, Studio share-email, Lens coach, and checklists is logged but not delivered. Tests explicitly accept `mode in {"sent", "noop", "error"}`.
 
-Invitation emails are a narrower case: `routers/contexts.py` does not call `email_service.send_email` at all for invites. It logs `[invite-email-stub] to=... link=...` and relies on the invite link being passed out of band. `/invite/:token` acceptance works, so invites are functional — the invitee simply will not receive an automatic email.
+Invitation emails are a narrower case: the invitation flow is broken end-to-end for any invitee not already on the same channel as the executive. `routers/contexts.py` only logs `[invite-email-stub]` and never calls `email_service.send_email`; the `/invite/:token` acceptance path is fully functional, but the recipient must receive the link out-of-band (Slack, manual paste, etc.). This is a Phase 16 dependency, not a deferrable polish item.
 
 ### Inbound email (Postmark)
 
@@ -289,7 +291,7 @@ The "accent, maximum two uses per screen" rule is an editorial constraint enforc
 
 ### Typography
 
-Georgia for editorial copy, Inter for interface copy, JetBrains Mono for code and audit dumps — all loaded from Google Fonts. This is an honest deviation from `docs/ROADMAP.md`, which specifies "Calibri (interface)". Inter was substituted during build; the roadmap has not yet been amended. The discrepancy is known and should be resolved one way or the other in Phase 17 when the website rewrite hard-locks the type stack.
+Georgia for editorial copy, Inter for interface copy, JetBrains Mono for code and audit dumps — all loaded from Google Fonts. This is an honest deviation from `docs/ROADMAP.md`, which specifies "Calibri (interface)". Inter was substituted during build; the roadmap has not yet been amended. The decision is binary and cheap: either update `frontend/src/index.css` to import Calibri (or a permitted fallback) and align with `docs/ROADMAP.md:51`, or amend the roadmap to lock Inter as the shipped interface face. Leaving the two out of sync erodes the design-system contract.
 
 ### Top navigation
 
@@ -338,7 +340,7 @@ Target is WCAG 2.2 AA. `@axe-core/react` is lazy-imported in `frontend/src/index
 | `.env.example` | Missing at repo root and in `backend/` | Violates agent workflow rule in `docs/ROADMAP.md`; env changes are manually coordinated | 18 |
 | Scheduling | APScheduler in-process; no leader election | Correct on single replica; multi-replica would fire jobs multiply | 18 |
 | Data naming | Mongo collections remain `solve_*` after Solva rename | Deliberate; avoids a data migration for zero user benefit. Disclose externally | permanent |
-| Typography | Code ships Inter; roadmap locks Calibri | Brand drift between doc and build; must converge | 17 |
+| Typography | Code ships Inter; roadmap locks Calibri | Brand drift between doc and build; must converge | Doc-hygiene — immediate |
 | Swagger UI | `FastAPI()` default exposes `/docs`, `/redoc`, `/openapi.json` at bare paths | If ingress routes only `/api/*`, these are not externally reachable; confirm and set `docs_url=None` in prod | 18 |
 | Command palette | `⌘K` is a context switcher; placeholder reads "universal search unlocks at M7" | Shortcut discoverable but under-delivers vs user expectation | M7 |
 
