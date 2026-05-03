@@ -29,7 +29,7 @@ from . import regex_recognisers
 logger = logging.getLogger("akki.synisense.pipeline")
 
 _VALID_SURFACES = {"chat", "ingest", "briefing", "deck", "report",
-                   "solve", "public_read"}
+                   "solve", "solve_v2", "public_read"}
 _VALID_MODES = {"redact", "shield_reversible", "passthrough_classify"}
 
 _LOW_CONFIDENCE_THRESHOLD = 0.55

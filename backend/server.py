@@ -82,6 +82,7 @@ from routers import daily_review as daily_review_router  # noqa: E402
 from routers import first_session as first_session_router  # noqa: E402
 from routers import depth as depth_router  # noqa: E402
 from routers import governance as governance_router  # noqa: E402
+from routers import solva_v2 as solva_v2_router  # noqa: E402  Phase 15.0 — Solva v2 POC (feature-flagged)
 
 
 logger = logging.getLogger("akki")
@@ -150,6 +151,12 @@ app.include_router(daily_review_router.router)
 app.include_router(first_session_router.router)
 app.include_router(depth_router.router)
 app.include_router(governance_router.router)
+
+# Phase 15.0 — Solva v2 POC. Feature-flagged (account.solva_v2_poc=true).
+# v1 Solva remains active for all accounts; v2 is a parallel surface that
+# 403s without the flag. Registered AFTER all v1 routers so nothing is shadowed.
+app.include_router(solva_v2_router.router)
+app.include_router(solva_v2_router.admin_router)
 
 
 # -----------------------------------------------------------------------------
@@ -345,7 +352,6 @@ async def on_startup():
     # /admin/auth/events panel. Time-ordered queries are the only access
     # pattern, so a single descending index on `at` is enough.
     await db.auth_events.create_index([("at", -1)])
-
     # Iter61 — Solve sessions. Resume queries are scoped per account and
     # ordered by recency; admin views by cluster. Two indexes is enough.
     await db.solve_sessions.create_index([("account_id", 1), ("updated_at", -1)])
@@ -431,6 +437,14 @@ async def on_startup():
     await db.accounts.create_index("inbound_token", sparse=True)
     await db.contexts.create_index("inbound_token", sparse=True)
 
+    # Phase 15.0 — Solva v2 POC. Separate collection from v1 solve_sessions;
+    # v1 data is never migrated or touched. Indexes mirror the access
+    # patterns in routers/solva_v2.py (list-my-sessions, get-by-id-and-account).
+    await db.solva_v2_sessions.create_index("id", unique=True)
+    await db.solva_v2_sessions.create_index([("account_id", 1), ("started_at", -1)])
+    await db.solva_v2_sessions.create_index([("account_id", 1), ("status", 1)])
+    await db.solva_v2_sessions.create_index([("account_id", 1), ("version", 1)])
+
     # iter70 — inbound-queue triage (trust-tiered review)
     await db.inbound_queue.create_index("id", unique=True)
     await db.inbound_queue.create_index([("context_id", 1), ("status", 1), ("created_at", -1)])
@@ -485,6 +499,14 @@ async def on_startup():
             {"$set": {"password_hash": hash_password(admin_password)}},
         )
         logger.info("Admin password rotated from .env")
+
+    # Phase 15.0 — ensure admin carries the Solva v2 POC flag. Idempotent.
+    # Other accounts stay default-off; use POST /api/admin/solva-v2/flag to
+    # flip additional accounts (superadmin-gated).
+    await db.accounts.update_one(
+        {"email": admin_email},
+        {"$set": {"solva_v2_poc": True}},
+    )
 
     # ── Tuesday 10am scheduler — auto-drafts the weekly Exco360 article.
     # In-process APScheduler. Single-replica deploys only; for HA, route

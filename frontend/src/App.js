@@ -39,6 +39,7 @@ import Manage from "@/pages/Manage";
 import Enterprise from "@/pages/Enterprise";
 import Decks from "@/pages/Decks";
 import AppSolva from "@/pages/AppSolva";
+import SolvaV2Poc from "@/pages/SolvaV2Poc";
 import Sandbox from "@/pages/Sandbox";
 import SandboxGenerating from "@/pages/SandboxGenerating";
 import Cycle from "@/pages/Cycle";
@@ -223,6 +224,8 @@ function App() {
           <Route path="/app/pulse" element={<Gated><PulsePlaceholder /></Gated>} />
           <Route path="/app/studio/composer/:kind/:artefactId" element={<Gated><StudioComposerPage /></Gated>} />
           <Route path="/app/solva" element={<Gated><AppSolva /></Gated>} />
+          {/* Phase 15.0 POC — direct URL only, gated by account.solva_v2_poc */}
+          <Route path="/app/solva/v2-poc" element={<Gated><SolvaV2Poc /></Gated>} />
           {/* Phase 13.1 — legacy /app/solve alias for muscle memory and
               external bookmarks. Plan to retire in Phase 14. */}
           <Route path="/app/solve" element={<Navigate to="/app/solva" replace />} />

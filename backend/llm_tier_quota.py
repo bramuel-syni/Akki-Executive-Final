@@ -31,6 +31,8 @@ DEFAULT_QUOTAS: Dict[str, int] = {
     "validate":  20,   # High-stakes second-pass validation
     "minutes":    5,   # Minutes → narrative summary / Cycle dispatch
     "solve":      4,   # AKKI Solve · Pro tier deep synthesis (per session)
+    "solve_v2":   4,   # Phase 15.0 POC — mirrors solve budget; aliases to
+                       # AKKI_DEEP_QUOTA_SOLVE so no new env var is introduced.
 }
 
 
@@ -39,7 +41,12 @@ def _today_utc() -> str:
 
 
 def quota_for(surface: str) -> int:
-    """Look up the daily limit for a surface, env-overridable."""
+    """Look up the daily limit for a surface, env-overridable.
+
+    Phase 15.0 aliasing: when surface=='solve_v2' and no explicit
+    AKKI_DEEP_QUOTA_SOLVE_V2 is set, fall back to AKKI_DEEP_QUOTA_SOLVE so
+    operators do not need a new env key for the POC.
+    """
     key = f"AKKI_DEEP_QUOTA_{surface.upper()}"
     env = os.environ.get(key)
     if env:
@@ -47,6 +54,14 @@ def quota_for(surface: str) -> int:
             return max(0, int(env))
         except ValueError:
             pass
+    # Phase 15.0 alias: solve_v2 falls back to solve env key
+    if surface == "solve_v2":
+        alias = os.environ.get("AKKI_DEEP_QUOTA_SOLVE")
+        if alias:
+            try:
+                return max(0, int(alias))
+            except ValueError:
+                pass
     return DEFAULT_QUOTAS.get(surface, 5)
 
 

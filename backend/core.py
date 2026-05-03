@@ -343,6 +343,9 @@ def sanitize_account(a: Dict[str, Any]) -> Dict[str, Any]:
         out["is_sandbox"] = True
         if a.get("sandbox_session_id"):
             out["sandbox_session_id"] = a["sandbox_session_id"]
+    # Phase 15.0 — surface the Solva v2 POC flag to the client only when true.
+    if a.get("solva_v2_poc"):
+        out["solva_v2_poc"] = True
     return out
 
 
