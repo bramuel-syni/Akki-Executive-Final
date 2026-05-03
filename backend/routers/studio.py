@@ -762,28 +762,60 @@ async def public_read_share(token: str, request: Request):
     ctx_doc = await db.contexts.find_one({"id": cid}, {"_id": 0, "name": 1}) or {}
     context_name = ctx_doc.get("name") or "AKKI"
 
+    # ── Phase 12.2 ITEM E — assert the artefact has been Synisense-screened
+    # BEFORE we project content. A snapshot without `synisense_version` predates
+    # Phase 12 and was never run through the in-house de-id pipeline — refuse
+    # to serve it externally. The author must re-save in Studio (which now runs
+    # the pipeline silently post-first-accept) before the share works. 410
+    # (Gone) rather than 404 because the link IS valid; the snapshot is not
+    # yet ready. This check sits BEFORE projection so we never even build a
+    # response that could leak the original body.
+    if not (artefact.get("synisense_version") or 0) >= 1:
+        raise HTTPException(
+            status_code=410,
+            detail="Pending review — the author has not yet completed security screening for this share.",
+        )
+
+    # Phase 12.2 closeout BUG 2 — public-read MUST project from the redacted
+    # projection (`body_redacted`), never from the original `opening_paragraph`
+    # / `items[].body` / `slides[].body_md` fields. Those carry the editable
+    # original; the redacted version is the authoritative external surface.
+    # If `body_redacted` is somehow missing despite `synisense_version >= 1`,
+    # we refuse rather than fall back to the original. Belt-and-braces.
+    redacted_body = (artefact.get("body_redacted") or "").strip()
+    if not redacted_body:
+        raise HTTPException(
+            status_code=410,
+            detail="Pending review — redacted projection missing for this snapshot.",
+        )
+
     # Public-safe content projection. We deliberately do NOT leak
-    # audience, missing_context, or other internal production metadata.
+    # audience, missing_context, or other internal production metadata,
+    # AND we never serve the original (un-redacted) body fields.
     if kind == "deck":
         content = {
             "title": artefact.get("title") or "Shared deck",
             "subtitle": artefact.get("subtitle"),
             "research_question": artefact.get("research_question"),
+            # Phase 12.2 closeout BUG 2 — slides body_md projected from the
+            # flat redacted concatenation. Per-slide redaction is not persisted
+            # today; serving the flat redacted body in a single slide preserves
+            # the public reader's render shape without leaking originals.
             "slides": [
-                {"n": s.get("n"), "title": s.get("title"), "body_md": s.get("body_md")}
-                for s in (artefact.get("slides") or [])
+                {"n": 1,
+                 "title": artefact.get("title") or "Shared deck",
+                 "body_md": redacted_body},
             ],
         }
     else:
         content = {
             "title": artefact.get("title") or "Shared briefing",
-            "opening_paragraph": artefact.get("opening_paragraph"),
-            "items": [
-                {"title": it.get("title"), "body": it.get("body"),
-                 "why_it_matters": it.get("why_it_matters"),
-                 "questions_for_management": it.get("questions_for_management")}
-                for it in (artefact.get("items") or [])
-            ],
+            # Phase 12.2 closeout BUG 2 — opening_paragraph is now the redacted
+            # flat projection. items[] is intentionally empty in the public
+            # surface because per-item redaction is not persisted; the redacted
+            # concatenation already covers the same ground in the same order.
+            "opening_paragraph": redacted_body,
+            "items": [],
         }
 
     payload_jwt_exp = payload.get("exp")
@@ -820,17 +852,6 @@ async def public_read_share(token: str, request: Request):
     # new internal field, this assertion must be updated in tandem.
     _assert_public_safe(response_payload)
 
-    # ── Phase 12.2 ITEM E — assert the artefact has been Synisense-screened.
-    # A snapshot without `synisense_version` predates Phase 12 and was never
-    # run through the in-house de-id pipeline — refuse to serve it externally.
-    # The author must re-save in Studio (which now runs the pipeline silently
-    # post-first-accept) before the share works. 410 (Gone) rather than 404
-    # because the link IS valid; the snapshot is not yet ready.
-    if not (artefact.get("synisense_version") or 0) >= 1:
-        raise HTTPException(
-            status_code=410,
-            detail="Pending review — the author has not yet completed security screening for this share.",
-        )
     return response_payload
 
 
