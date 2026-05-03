@@ -51,7 +51,7 @@ export default function MarketingFooter() {
                 </Link>
               )}
               {i < LINKS.length - 1 && (
-                <span className="text-[var(--rule)]" aria-hidden="true">·</span>
+                <span className="text-[var(--muted)]" aria-hidden="true">·</span>
               )}
             </React.Fragment>
           ))}

@@ -133,7 +133,7 @@ export default function Exco360Voice() {
                         <span className="akki-overline text-[var(--muted)]">{p.kicker}</span>
                       )}
                       {p.kicker && p.published_at && (
-                        <span aria-hidden="true" className="text-[var(--rule)]">·</span>
+                        <span aria-hidden="true" className="text-[var(--muted)]">·</span>
                       )}
                       {p.published_at && (
                         <span className="akki-overline text-[var(--muted)]">

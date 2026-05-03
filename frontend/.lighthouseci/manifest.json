@@ -1,0 +1,38 @@
+[
+  {
+    "url": "https://akki-executive.preview.emergentagent.com/",
+    "isRepresentativeRun": true,
+    "htmlPath": "/app/frontend/.lighthouseci/-2026_05_03_17_47_07-report.html",
+    "jsonPath": "/app/frontend/.lighthouseci/-2026_05_03_17_47_07-report.json",
+    "summary": {
+      "performance": 0.68,
+      "accessibility": 1,
+      "best-practices": 0.78,
+      "seo": 0.58
+    }
+  },
+  {
+    "url": "https://akki-executive.preview.emergentagent.com/solva",
+    "isRepresentativeRun": true,
+    "htmlPath": "/app/frontend/.lighthouseci/solva-2026_05_03_17_47_22-report.html",
+    "jsonPath": "/app/frontend/.lighthouseci/solva-2026_05_03_17_47_22-report.json",
+    "summary": {
+      "performance": 0.68,
+      "accessibility": 0.95,
+      "best-practices": 0.78,
+      "seo": 0.54
+    }
+  },
+  {
+    "url": "https://akki-executive.preview.emergentagent.com/security",
+    "isRepresentativeRun": true,
+    "htmlPath": "/app/frontend/.lighthouseci/security-2026_05_03_17_47_35-report.html",
+    "jsonPath": "/app/frontend/.lighthouseci/security-2026_05_03_17_47_35-report.json",
+    "summary": {
+      "performance": 0.78,
+      "accessibility": 1,
+      "best-practices": 0.78,
+      "seo": 0.54
+    }
+  }
+]

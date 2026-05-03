@@ -68,15 +68,20 @@ export default function HeroSection() {
             data-testid="hero-trust-strip"
           >
             <span>Bank-grade audit trail</span>
-            <span aria-hidden="true" className="text-[var(--rule)]">·</span>
+            <span aria-hidden="true" className="text-[var(--muted)]">·</span>
             <span>SOC2-aligned architecture</span>
-            <span aria-hidden="true" className="text-[var(--rule)]">·</span>
+            <span aria-hidden="true" className="text-[var(--muted)]">·</span>
             <span>Built for listed-company governance</span>
           </div>
         </div>
 
         {/* Right-rail — image only, locally hosted, sepia/desaturated for editorial register */}
-        <aside className="md:col-span-5 md:pt-2" data-testid="hero-aside">
+        {/* Phase 13.4 — was `<aside>`; axe's
+            `landmark-complementary-is-top-level` rule wants <aside> at
+            the top level of the document only. As a quotation panel
+            beside the hero this is supplementary content, not
+            complementary; <div> is the right semantic. */}
+        <div className="md:col-span-5 md:pt-2" data-testid="hero-aside">
           <div
             className="relative overflow-hidden rounded-sm border border-[var(--rule)]"
             data-testid="hero-photo"
@@ -90,7 +95,7 @@ export default function HeroSection() {
             />
             <div className="absolute inset-0 bg-gradient-to-t from-[var(--cream)]/25 via-transparent to-transparent pointer-events-none" />
           </div>
-        </aside>
+        </div>
       </div>
     </section>
   );

@@ -65,7 +65,15 @@ export default function ThreePillars() {
                   ["Lock-in", "Decide what you'll do, what you'll watch, and what you'll walk in with."],
                 ].map(([t, b], i) => (
                   <li key={t} className="flex gap-4 items-start">
-                    <span className="font-mono text-[10.5px] uppercase tracking-[0.2em] text-[var(--accent)] mt-1.5 min-w-[24px]">
+                    {/* Phase 13.4 — bumped numbered labels from
+                        `text-[var(--accent)]` (oxblood ≈ 4.4:1 on
+                        navy ink, fails AA small-text 4.5:1) to
+                        `text-[var(--cream)]/85` (≈ 14:1, comfortably
+                        passes AA). Editorial hierarchy preserved by
+                        the position + mono treatment; the body line
+                        below still carries full cream so the row
+                        keeps its existing rhythm. */}
+                    <span className="font-mono text-[10.5px] uppercase tracking-[0.2em] text-[var(--cream)]/85 mt-1.5 min-w-[24px]">
                       {String(i + 1).padStart(2, "0")}
                     </span>
                     <div>

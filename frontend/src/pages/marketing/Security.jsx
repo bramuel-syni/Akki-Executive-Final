@@ -61,7 +61,7 @@ export default function Security() {
                   </div>
                   <p className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--chrome)] font-bold font-mono">{p.n} · {p.title}</p>
                 </div>
-                <h3 className="akki-serif text-[20px] text-[var(--ink)] font-normal leading-snug mb-3">{p.headline}</h3>
+                <h2 className="akki-serif text-[20px] text-[var(--ink)] font-normal leading-snug mb-3">{p.headline}</h2>
                 <p className="text-[14px] text-[var(--deep)] leading-[1.65] mb-4">{p.detail}</p>
                 <div className="border-t border-[var(--rule)] pt-3 mt-4">
                   <p className="text-[11px] uppercase tracking-wider text-[var(--muted)] mb-1">How you verify</p>
@@ -72,7 +72,7 @@ export default function Security() {
           })}
         </div>
 
-        <h2 className="akki-serif text-[28px] font-normal text-[var(--ink)] mt-20 mb-8">If you asked me face-to-face, here's what else I'd tell you</h2>
+        <h2 className="akki-serif text-[28px] font-normal text-[var(--ink)] mt-20 mb-8" id="security-followups">If you asked me face-to-face, here's what else I'd tell you</h2>
         <div className="space-y-6 max-w-3xl">
           {POSTURE_ITEMS.map(([h, b], i) => (
             <div key={i} className="border-l-2 border-[var(--accent)]/40 pl-5">

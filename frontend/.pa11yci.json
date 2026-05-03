@@ -1,0 +1,44 @@
+{
+  "defaults": {
+    "timeout": 60000,
+    "wait": 1500,
+    "chromeLaunchConfig": {
+      "executablePath": "/usr/bin/google-chrome",
+      "args": ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+      "ignoreHTTPSErrors": true
+    },
+    "standard": "WCAG2AA",
+    "runners": ["axe"],
+    "hideElements": "#webpack-dev-server-client-overlay, #webpack-dev-server-client-overlay-div, #emergent-badge, .__cypress-recorder, [data-pa11y-ignore]",
+    "reporters": ["cli"],
+    "includeNotices": false,
+    "includeWarnings": true,
+    "threshold": 9999,
+    "viewport": {
+      "width": 1280,
+      "height": 900
+    }
+  },
+  "_comment": [
+    "Phase 13.4 — WCAG 2.2 AA scan config.",
+    "Public marketing routes are scanned without auth. Authenticated",
+    "app routes (/app/*) are NOT in this baseline run because pa11y-ci",
+    "would need full Studio login automation; the public surfaces",
+    "already exercise the same shared chrome (top nav, AppShell, footer)",
+    "so violations there cover the structural a11y baseline.",
+    "Threshold left high (9999) so the gate WARNS but never blocks merge",
+    "on the first run — honest posture per the brief; tighten in 13.x+1."
+  ],
+  "urls": [
+    "https://akki-executive.preview.emergentagent.com/",
+    "https://akki-executive.preview.emergentagent.com/about",
+    "https://akki-executive.preview.emergentagent.com/features",
+    "https://akki-executive.preview.emergentagent.com/security",
+    "https://akki-executive.preview.emergentagent.com/plans",
+    "https://akki-executive.preview.emergentagent.com/enterprise",
+    "https://akki-executive.preview.emergentagent.com/early-access",
+    "https://akki-executive.preview.emergentagent.com/blog",
+    "https://akki-executive.preview.emergentagent.com/solva",
+    "https://akki-executive.preview.emergentagent.com/signin"
+  ]
+}

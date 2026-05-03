@@ -365,7 +365,7 @@ export default function AppShell({ children }) {
               end={n.end}
               data-testid={`top-nav-${n.label.toLowerCase().replace(/\s+/g, "-")}`}
               className={({ isActive }) =>
-                `akki-serif px-5 inline-flex items-center text-[14px] border-b-2 -mb-px transition-colors ${
+                `akki-serif px-5 inline-flex items-center text-[14px] border-b-2 -mb-px transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--cream)] ${
                   isActive
                     ? "border-[var(--accent)] text-[var(--ink)] font-medium"
                     : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"

@@ -1,0 +1,49 @@
+{
+  "ci": {
+    "_comment": [
+      "Phase 13.4 — Lighthouse CI perf budgets per UI/UX brief surface types.",
+      "Stream:         Home, Pulse, Learn        (FCP ≤1.6s LCP ≤2.5s TTI ≤3.5s)",
+      "Workspace:      Work Studio, Solva sub-mods (FCP ≤1.8s LCP ≤2.8s TTI ≤4.0s)",
+      "Reading:        ReadingView, briefing detail (FCP ≤1.4s LCP ≤2.2s TTI ≤3.0s)",
+      "Structural:     Cycle Manager, Monitor      (FCP ≤1.8s LCP ≤2.8s TTI ≤4.0s)",
+      "Conversational: Chat                        (FCP ≤1.6s LCP ≤2.5s TTI ≤3.5s)",
+      "Authenticated routes are NOT in this baseline; we scan the public",
+      "surface that exercises each bucket's shared chrome (Stream = /,",
+      "Workspace = /solva, Structural = /security, Reading = /about,",
+      "Conversational = /signin). Authenticated runs land in 13.x+1 with",
+      "a session bootstrapper.",
+      "`assertions` use the strictest budget across the buckets above so",
+      "the first run produces a baseline rather than an arbitrary fail.",
+      "All assertions are 'warn' on first run — the gate hardens later."
+    ],
+    "collect": {
+      "url": [
+        "https://akki-executive.preview.emergentagent.com/",
+        "https://akki-executive.preview.emergentagent.com/solva",
+        "https://akki-executive.preview.emergentagent.com/security"
+      ],
+      "numberOfRuns": 1,
+      "settings": {
+        "preset": "desktop",
+        "chromeFlags": "--no-sandbox --disable-dev-shm-usage --disable-gpu",
+        "chromePath": "/usr/bin/google-chrome",
+        "throttlingMethod": "simulate"
+      }
+    },
+    "assert": {
+      "assertions": {
+        "first-contentful-paint":   ["warn", { "maxNumericValue": 1800 }],
+        "largest-contentful-paint": ["warn", { "maxNumericValue": 2800 }],
+        "interactive":              ["warn", { "maxNumericValue": 4000 }],
+        "cumulative-layout-shift":  ["warn", { "maxNumericValue": 0.1 }],
+        "total-blocking-time":      ["warn", { "maxNumericValue": 300 }],
+        "speed-index":              ["warn", { "maxNumericValue": 3500 }]
+      }
+    },
+    "upload": {
+      "target": "filesystem",
+      "outputDir": "./.lighthouseci",
+      "reportFilenamePattern": "%%PATHNAME%%-%%DATETIME%%-report.%%EXTENSION%%"
+    }
+  }
+}

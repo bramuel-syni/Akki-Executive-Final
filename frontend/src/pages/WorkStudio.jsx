@@ -83,7 +83,7 @@ function ArtefactRow({ kind, item }) {
           {item.synisense_version >= 1 && (
             <span className="text-[10px] uppercase tracking-[0.14em] font-mono text-[var(--accent)]">shielded</span>
           )}
-          {item.validation && <ValidatedBadge result={item.validation} />}
+          {item.validation && <ValidatedBadge size="compact" validation={item.validation} />}
         </div>
       </div>
       <span className="text-[11.5px] text-[var(--muted)] shrink-0 sm:ml-2" title={updated || ""}>

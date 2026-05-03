@@ -45,53 +45,61 @@ export default function Landing() {
       {/* Shared masthead */}
       <MarketingNav />
 
-      {/* §1 Hero */}
-      <HeroSection />
+      {/* Phase 13.4 — wrap all hero+content sections in a single <main>
+          landmark so axe's "region" rule passes (every section now sits
+          inside a named landmark) and the document carries the required
+          single <main>. */}
+      <main>
+        {/* §1 Hero */}
+        <HeroSection />
 
-      {/* §2 60-second proof */}
-      <SixtySecondProof />
+        {/* §2 60-second proof */}
+        <SixtySecondProof />
 
-      {/* §3 Sharpest use case */}
-      <SharpestUseCase />
+        {/* §3 Sharpest use case */}
+        <SharpestUseCase />
 
-      {/* §4 Trust — reused 3-up layout, replaced copy */}
-      <section
-        className="border-b border-[var(--rule)] bg-[var(--cream)]"
-        data-testid="trust-section"
-      >
-        <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-16 md:py-24">
-          <p className="akki-overline mb-3">The conditions of trust</p>
-          <h2 className="akki-serif text-[28px] md:text-[40px] leading-[1.1] tracking-[-0.015em] text-[var(--ink)] font-normal mb-12 max-w-[24ch]">
-            What listed-company governance requires
-          </h2>
-          <div className="grid md:grid-cols-3 gap-8 md:gap-0 md:divide-x divide-[var(--rule)]">
-            {TRUST_ITEMS.map((item, i) => (
-              <div
-                key={item.h}
-                className="md:px-8 first:md:pl-0 last:md:pr-0"
-                data-testid={`trust-strip-${i}`}
-              >
-                <Check
-                  className="w-4 h-4 text-[var(--accent)] mb-3"
-                  strokeWidth={2.2}
-                />
-                <p className="akki-serif text-[19px] leading-snug text-[var(--ink)] mb-2 max-w-[28ch]">
-                  {item.h}
-                </p>
-                <p className="text-[13.5px] text-[var(--deep)] leading-[1.7]">
-                  {item.b}
-                </p>
-              </div>
-            ))}
+        {/* §4 Trust — reused 3-up layout, replaced copy */}
+        <section
+          className="border-b border-[var(--rule)] bg-[var(--cream)]"
+          aria-labelledby="trust-heading"
+          data-testid="trust-section"
+        >
+          <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-16 md:py-24">
+            <p className="akki-overline mb-3">The conditions of trust</p>
+            <h2 id="trust-heading" className="akki-serif text-[28px] md:text-[40px] leading-[1.1] tracking-[-0.015em] text-[var(--ink)] font-normal mb-12 max-w-[24ch]">
+              What listed-company governance requires
+            </h2>
+            <div className="grid md:grid-cols-3 gap-8 md:gap-0 md:divide-x divide-[var(--rule)]">
+              {TRUST_ITEMS.map((item, i) => (
+                <div
+                  key={item.h}
+                  className="md:px-8 first:md:pl-0 last:md:pr-0"
+                  data-testid={`trust-strip-${i}`}
+                >
+                  <Check
+                    className="w-4 h-4 text-[var(--accent)] mb-3"
+                    strokeWidth={2.2}
+                    aria-hidden="true"
+                  />
+                  <p className="akki-serif text-[19px] leading-snug text-[var(--ink)] mb-2 max-w-[28ch]">
+                    {item.h}
+                  </p>
+                  <p className="text-[13.5px] text-[var(--deep)] leading-[1.7]">
+                    {item.b}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* §5 Voice */}
-      <Exco360Voice />
+        {/* §5 Voice */}
+        <Exco360Voice />
 
-      {/* §7 Closing CTA (no §6) */}
-      <ClosingCTA />
+        {/* §7 Closing CTA (no §6) */}
+        <ClosingCTA />
+      </main>
 
       {/* Shared footer */}
       <MarketingFooter />

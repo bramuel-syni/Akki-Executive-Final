@@ -88,14 +88,18 @@ export default function SolvaLanding() {
       {/* Header — shared MarketingNav */}
       <MarketingNav />
 
-      {/* Hero */}
-      <section className="border-b border-[var(--rule)]">
+      {/* Phase 13.4 — wrap all sections in a <main> landmark so axe's
+          region rule passes and the doc carries the required single
+          <main>. */}
+      <main>
+        {/* Hero */}
+        <section className="border-b border-[var(--rule)]" aria-labelledby="solva-hero-h1">
         <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-20 md:py-28 grid md:grid-cols-12 gap-10 items-end">
           <div className="md:col-span-8">
             <p className="akki-overline mb-6 text-[var(--accent)] flex items-center gap-1.5">
               <Sparkles className="w-3 h-3" /> Akki Solva · structured pause for board-grade problems
             </p>
-            <h1 className="akki-serif text-[44px] md:text-[64px] leading-[1.04] tracking-[-0.018em] font-normal text-[var(--ink)] max-w-[18ch]">
+            <h1 id="solva-hero-h1" className="akki-serif text-[44px] md:text-[64px] leading-[1.04] tracking-[-0.018em] font-normal text-[var(--ink)] max-w-[18ch]">
               For the board problems that don't have tidy answers.
             </h1>
             <p className="akki-serif text-[18px] md:text-[20px] leading-[1.65] text-[var(--deep)] mt-7 max-w-[58ch]">
@@ -159,7 +163,10 @@ export default function SolvaLanding() {
       <section className="border-b border-[var(--rule)] bg-[var(--ink)] text-[var(--cream)]">
         <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-20">
           <div className="max-w-[60ch] mb-14">
-            <p className="akki-overline mb-3 text-[var(--accent)]">Why not just chat</p>
+            {/* Phase 13.4 — `text-[var(--accent)]` on navy ink lands at
+                ≈ 4.4:1, fails AA small-text 4.5:1. Replaced with the
+                lightened cream/85 used elsewhere in the dark band. */}
+            <p className="akki-overline mb-3 text-[var(--cream)]/85">Why not just chat</p>
             <h2 className="akki-serif text-[32px] md:text-[44px] leading-[1.08] tracking-[-0.012em] font-normal">
               Chat is brilliant for clarity. Solva is built for decision.
             </h2>
@@ -167,10 +174,14 @@ export default function SolvaLanding() {
           <div className="grid md:grid-cols-2 gap-8" data-testid="solve-vs-chat">
             {VS_CHAT.map((row) => (
               <div key={row.solve} className="bg-[var(--cream)]/[0.05] border border-[var(--cream)]/15 rounded-sm p-6">
-                <row.icon className="w-4 h-4 text-[var(--accent)] mb-3" strokeWidth={1.7} />
+                {/* Icon stays accent — large enough (16px) and on dark
+                    via aria-hidden gets a contrast pass at the
+                    non-text-element 3:1 threshold. */}
+                <row.icon className="w-4 h-4 text-[var(--accent)] mb-3" strokeWidth={1.7} aria-hidden="true" />
                 <p className="text-[12.5px] uppercase tracking-[0.16em] text-[var(--cream)]/50 mb-1.5">A chat thread</p>
                 <p className="text-[14.5px] text-[var(--cream)]/80 mb-4">{row.chat}</p>
-                <p className="text-[12.5px] uppercase tracking-[0.16em] text-[var(--accent)] mb-1.5">Akki Solva</p>
+                {/* Same Phase 13.4 contrast bump as the section overline. */}
+                <p className="text-[12.5px] uppercase tracking-[0.16em] text-[var(--cream)]/85 mb-1.5">Akki Solva</p>
                 <p className="text-[14.5px] text-[var(--cream)]">{row.solve}</p>
               </div>
             ))}
@@ -203,6 +214,7 @@ export default function SolvaLanding() {
           </div>
         </div>
       </section>
+      </main>
 
       <MarketingFooter />
     </div>

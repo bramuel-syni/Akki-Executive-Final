@@ -90,7 +90,7 @@ export default function SignIn() {
             <h2 className="akki-serif text-[36px] font-normal text-[var(--ink)] mb-2 leading-tight">Sign in.</h2>
             <p className="text-[13.5px] text-[var(--muted)] mb-9">
               Don't have an account?{" "}
-              <Link to="/sandbox" className="text-[var(--accent)] hover:underline" data-testid="go-to-sandbox-link">
+              <Link to="/sandbox" className="text-[var(--accent)] underline underline-offset-4 hover:text-[var(--ink)]" data-testid="go-to-sandbox-link">
                 Try AKKI in 60 seconds
               </Link>
               {" "}— no signup needed.
