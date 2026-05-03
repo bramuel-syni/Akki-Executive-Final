@@ -485,9 +485,63 @@ async def send_message(
     model_def = _model_def(chat["model_id"]) or _model_def(DEFAULT_MODEL_ID)
     policy: ShieldingPolicy = chat.get("shielding_policy", "auto")
 
-    # ── Detect identifiers ALWAYS — this drives both the auto policy and
-    # the pre-send confirmation surface. We do NOT log the raw content.
+    # ── Phase 12.2 ITEM A — Synisense pre-LLM hook. The user's text is
+    # the first thing to flow through the shield: regex + Presidio NER +
+    # selective LLM fallback. Everything downstream (legacy regex
+    # `shield_payload`, retrieval, grounding block, the LLM prompt
+    # itself) sees the redacted version. The legacy `shield_payload`
+    # path is preserved as a defence-in-depth second pass — anything
+    # Synisense missed (or chose to keep) still gets caught by the
+    # 9-pattern regex ladder.
     text = body.content.strip()
+    syn_stats: Dict[str, Any] = {"spans_redacted": 0, "by_type": {}, "elapsed_ms": 0}
+    try:
+        from services.synisense import run as syn_run
+        syn_out = await syn_run(
+            text=text,
+            context_id=chat.get("context_id") or "",
+            surface="chat",
+            mode="redact",
+            account_id=current["id"],
+        )
+        text = syn_out["redacted_text"]
+        spans = syn_out.get("spans") or []
+        # Build a stats summary safe to persist on the message record.
+        by_type: Dict[str, int] = {}
+        for s in spans:
+            t = s.get("entity_type") or "UNKNOWN"
+            by_type[t] = by_type.get(t, 0) + 1
+        syn_stats = {
+            "spans_redacted": len(spans),
+            "by_type": by_type,
+            "elapsed_ms": int(syn_out.get("stats", {}).get("elapsed_ms") or 0),
+            "version": syn_out.get("stats", {}).get("synisense_version"),
+        }
+        # Audit row per turn (no text, no spans, just counts + types).
+        try:
+            from core import write_audit
+            await write_audit(
+                context_id=chat.get("context_id"),
+                account_id=current["id"],
+                action="synisense.chat.ran",
+                resource_type="chat_message",
+                resource_id=None,
+                metadata={
+                    "surface": "chat",
+                    "spans_redacted": len(spans),
+                    "entity_types": list(by_type.keys()),
+                    "elapsed_ms": syn_stats["elapsed_ms"],
+                },
+            )
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "synisense chat hook failed (degraded — proceeding with legacy "
+            "regex shield): %s", e.__class__.__name__,
+        )
+
+    # Legacy regex shield as defence-in-depth on the (already-redacted) text.
     shielded_text, shield_map = shield_payload(text)
     detected = shielding_report(shield_map)
     has_identifiers = detected["identifiers_masked"] > 0
@@ -543,6 +597,10 @@ async def send_message(
         "shielding_policy": policy,
         "bypass_reason": bypass_reason,
         "shielding": detected,
+        # Phase 12.2 ITEM A — record that the message went through Synisense.
+        # Detail (spans, replacements) is in db.synisense_runs; here we
+        # carry only the counts the UI needs to render the inline icon.
+        "synisense_stats": syn_stats,
     }
     await db.chat_messages.insert_one(user_msg)
 
@@ -675,6 +733,11 @@ async def send_message(
         "created_at": reply_at,
         "citations": citations,
         "grounded_context_id": chat.get("context_id") if grounding_paragraphs else None,
+        # Phase 12.2 ITEM A — mirror the user-turn synisense stats on the
+        # assistant message so the inline icon can render from a single
+        # row without an extra fetch. Counts only — never the original
+        # text or replacement tokens.
+        "synisense_stats": syn_stats,
     }
     await db.chat_messages.insert_one(assistant_msg)
     await _append_audit(

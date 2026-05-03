@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
+import PreviewDrawer from "@/components/synisense/PreviewDrawer";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Block palette — the 9 Standard types. Order is the user-visible order
@@ -571,6 +572,24 @@ export default function BlockComposer({ kind, artefactId }) {
   const [slashQuery, setSlashQuery] = useState("");
   const slashAfterRef = useRef(null);
   const [savingId, setSavingId] = useState(null);
+  // Phase 12.2 ITEM C — Synisense preview-drawer state. The drawer
+  // opens once on first non-empty save (server tells us via
+  // synisense_first_accept_pending=true), and again on later saves
+  // ONLY when synisense_drawer_reopen=true (a new entity type was
+  // detected since the user's last accept).
+  const [synPreview, setSynPreview] = useState(null); // {spans, stats, kind}
+  const [synDrawerReopen, setSynDrawerReopen] = useState(false);
+
+  const handleSynisenseResponse = useCallback((data) => {
+    if (!data) return;
+    if (data.synisense_first_accept_pending && data.synisense) {
+      setSynPreview(data.synisense);
+      setSynDrawerReopen(false);
+    } else if (data.synisense_drawer_reopen && data.synisense) {
+      setSynPreview(data.synisense);
+      setSynDrawerReopen(true);
+    }
+  }, []);
 
   // Load blocks + lifecycle on mount.
   const refresh = useCallback(async () => {
@@ -629,6 +648,8 @@ export default function BlockComposer({ kind, artefactId }) {
         return next;
       });
       if (data.classification) setArtefact((a) => ({ ...(a || {}), classification: data.classification }));
+      // Phase 12.2 ITEM C — preview drawer state.
+      handleSynisenseResponse(data);
     } catch (e) {
       toast.error(apiErrorMessage(e, "Could not insert block."));
     }
@@ -649,6 +670,8 @@ export default function BlockComposer({ kind, artefactId }) {
           content: target.content,
         });
         if (data.classification) setArtefact((a) => ({ ...(a || {}), classification: data.classification }));
+        // Phase 12.2 ITEM C — preview drawer state on patch.
+        handleSynisenseResponse(data);
       } catch (e) {
         toast.error(apiErrorMessage(e, "Save failed."));
       } finally {
@@ -898,6 +921,28 @@ export default function BlockComposer({ kind, artefactId }) {
           onClose={() => setSlashOpen(false)}
         />
       </div>
+      {/* Phase 12.2 ITEM C — Synisense preview drawer. Mounted at the
+          top level so it overlays the composer regardless of inner
+          state. Renders the original concatenated block text with
+          highlighted spans. */}
+      <PreviewDrawer
+        open={!!synPreview}
+        kind={kind}
+        artefactId={artefactId}
+        originalText={(blocks || []).map((b) => (b?.content?.text ?? b?.content?.markdown ?? b?.content?.body ?? "")).filter(Boolean).join("\n\n")}
+        spans={synPreview?.spans || []}
+        stats={synPreview?.stats || {}}
+        hasNewSensitiveContent={synDrawerReopen}
+        onAccepted={() => {
+          setSynPreview(null);
+          setSynDrawerReopen(false);
+          toast.success("Screening accepted. Subsequent saves are silent.");
+        }}
+        onCancel={() => {
+          setSynPreview(null);
+          setSynDrawerReopen(false);
+        }}
+      />
     </div>
   );
 }

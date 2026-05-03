@@ -650,21 +650,64 @@ from paragraph_anchors import compute_paragraphs, PARAGRAPH_ANCHOR_VERSION
 async def _materialise_paragraphs(d: Dict[str, Any]) -> Dict[str, Any]:
     """Compute + persist paragraphs[] for a document. Idempotent.
 
+    Phase 12.2 ITEM B — paragraphs are computed FIRST (anchor IDs are
+    content hashes of the *original* text, so they stay stable across
+    redaction). Synisense then runs per-paragraph in `shield_reversible`
+    mode; we replace `paragraphs[i].text` with the redacted version and
+    persist `shield_map_id` next to it so context members can reverse
+    server-side via `/paragraphs/{pid}/original`. The TTL on the shield
+    map (24h default) means originals reclaim themselves automatically.
+
     Returns the paragraph payload. Raises ValueError if the doc has no
     extracted_text yet (caller decides whether that's a 409 or a skip)."""
     text = (d.get("extracted_text") or "").strip()
     if not text:
         raise ValueError("Document has no extracted text yet.")
     payload = compute_paragraphs(d["id"], d["extracted_text"])
-    await db.documents.update_one(
-        {"id": d["id"]},
-        {"$set": {
-            "paragraphs": payload["paragraphs"],
-            "paragraphs_computed_at": payload["computed_at"],
-            "paragraphs_version": payload["version"],
-            "paragraphs_page_count": payload["page_count"],
-        }},
-    )
+
+    # Run Synisense per paragraph. We do this AFTER the anchor compute
+    # because anchor IDs are content hashes of the original — running
+    # before would change every anchor ID on every reupload.
+    redacted_paragraphs: List[Dict[str, Any]] = []
+    syn_total_spans = 0
+    syn_failed = False
+    try:
+        from services.synisense import run as syn_run
+        for p in payload["paragraphs"]:
+            try:
+                out = await syn_run(
+                    text=p.get("text") or "",
+                    context_id=d.get("context_id") or "",
+                    surface="ingest",
+                    mode="shield_reversible",
+                    account_id=None,
+                )
+                p_redacted = dict(p)
+                p_redacted["text"] = out["redacted_text"]
+                p_redacted["text_redacted"] = True
+                if out.get("shield_map_id"):
+                    p_redacted["shield_map_id"] = out["shield_map_id"]
+                p_redacted["synisense_span_count"] = len(out.get("spans") or [])
+                syn_total_spans += len(out.get("spans") or [])
+                redacted_paragraphs.append(p_redacted)
+            except Exception:  # noqa: BLE001 — degrade per-paragraph
+                redacted_paragraphs.append(dict(p))
+    except Exception:  # noqa: BLE001 — module-level degrade
+        syn_failed = True
+        redacted_paragraphs = list(payload["paragraphs"])
+
+    update = {
+        "paragraphs": redacted_paragraphs,
+        "paragraphs_computed_at": payload["computed_at"],
+        "paragraphs_version": payload["version"],
+        "paragraphs_page_count": payload["page_count"],
+        "synisense_version": 0 if syn_failed else 1,
+        "synisense_paragraph_spans_total": syn_total_spans,
+    }
+    await db.documents.update_one({"id": d["id"]}, {"$set": update})
+    payload["paragraphs"] = redacted_paragraphs
+    payload["synisense_version"] = update["synisense_version"]
+    payload["synisense_paragraph_spans_total"] = syn_total_spans
     return payload
 
 
@@ -724,6 +767,58 @@ async def get_document_paragraphs(
         "page_count": payload["page_count"],
         "computed_at": payload["computed_at"],
         "version": payload["version"],
+    }
+
+
+@router.get("/contexts/{context_id}/documents/{doc_id}/paragraphs/{pid}/original")
+async def get_paragraph_original(
+    context_id: str, doc_id: str, pid: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Phase 12.2 ITEM B — server-side shield_map reversal for a single
+    paragraph. Members of the context can read the un-redacted original
+    via this endpoint as long as the per-paragraph shield map hasn't
+    expired (24h default TTL). Never returns the shield_map itself or
+    any encrypted bytes — only the plain-text reversal. Per-request
+    audit row written via `synisense.unshield`. After TTL expiry, the
+    shield_map is gone and the endpoint returns 410.
+    """
+    d = await db.documents.find_one(
+        {"id": doc_id, "context_id": context_id},
+        {"_id": 0, "paragraphs": 1},
+    )
+    if not d:
+        raise HTTPException(status_code=404, detail="Document not found")
+    paragraph = next(
+        (p for p in (d.get("paragraphs") or []) if p.get("id") == pid), None,
+    )
+    if not paragraph:
+        raise HTTPException(status_code=404, detail="Paragraph not found")
+    smid = paragraph.get("shield_map_id")
+    if not smid:
+        # Paragraph had no redactions — original equals current text.
+        return {"id": pid, "original_text": paragraph.get("text") or "",
+                "had_redactions": False}
+    # Reverse server-side. unshield writes its own audit row.
+    from services.synisense import unshield
+    mapping = await unshield(
+        smid, surface="ingest", account_id=ctx["account"]["id"],
+    )
+    if not mapping:
+        raise HTTPException(
+            status_code=410,
+            detail="Paragraph original is no longer available — shield map expired (24h TTL).",
+        )
+    # Apply the reverse mapping to reconstruct the original text from the
+    # redacted text. Replacement tokens are deterministic so this is exact.
+    text = paragraph.get("text") or ""
+    for replacement, original in mapping.items():
+        text = text.replace(replacement, original)
+    return {
+        "id": pid,
+        "original_text": text,
+        "had_redactions": True,
+        "span_count": paragraph.get("synisense_span_count", 0),
     }
 
 

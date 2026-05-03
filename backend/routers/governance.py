@@ -68,6 +68,100 @@ def _decorate_audit_row(row: Dict[str, Any], ctx_names: Dict[str, str], actor_em
     }
 
 
+
+# ---------------------------------------------------------------------------
+# Phase 12.2 ITEM F — Synisense roll-up for the TrustPanel.
+# ---------------------------------------------------------------------------
+async def _build_synisense_block(
+    current: Dict[str, Any], ctx_ids: List[str],
+) -> Dict[str, Any]:
+    """Aggregate from `db.synisense_runs` over the user's contexts.
+    Counts only — span-level detail and text never come back here.
+    Falls back to honest-empty when no runs exist yet so the
+    TrustPanel can render an empty state without a special branch."""
+    from datetime import datetime, timedelta, timezone
+    from services.synisense import get_status_snapshot
+
+    status = get_status_snapshot()
+
+    # Empty state: the user has no contexts at all (rare — admin-only
+    # accounts can hit this). Honest empty without a DB query.
+    if not ctx_ids:
+        return {
+            "status": "live",
+            "active": False,
+            "last_run_at": None,
+            "spans_redacted_7d": 0,
+            "spans_redacted_30d": 0,
+            "entity_histogram_7d": {},
+            "llm_fallback_calls_7d": 0,
+            "llm_fallback_cap": status.get("llm_fallback", {}).get("cap_per_doc", 20),
+            "key_version": status.get("key_version"),
+            "model": status.get("model"),
+            "insecure_fallback": bool(status.get("insecure_fallback")),
+            "version": status.get("version"),
+        }
+
+    now = datetime.now(timezone.utc)
+    cutoff_7d = now - timedelta(days=7)
+    cutoff_30d = now - timedelta(days=30)
+
+    # 7-day window: spans + entity histogram + llm fallback calls.
+    pipeline_7d = [
+        {"$match": {"context_id": {"$in": ctx_ids}, "ts": {"$gte": cutoff_7d}}},
+        {"$group": {
+            "_id": None,
+            "runs": {"$sum": 1},
+            "spans_total": {"$sum": {"$size": {"$ifNull": ["$spans", []]}}},
+            "llm_calls": {"$sum": {"$ifNull": ["$stats.llm_calls", 0]}},
+        }},
+    ]
+    rows_7d = await db.synisense_runs.aggregate(pipeline_7d).to_list(1)
+    agg_7d = rows_7d[0] if rows_7d else {"runs": 0, "spans_total": 0, "llm_calls": 0}
+
+    pipeline_hist = [
+        {"$match": {"context_id": {"$in": ctx_ids}, "ts": {"$gte": cutoff_7d}}},
+        {"$unwind": "$spans"},
+        {"$group": {"_id": "$spans.entity_type", "n": {"$sum": 1}}},
+        {"$sort": {"n": -1}},
+        {"$limit": 30},
+    ]
+    hist_rows = await db.synisense_runs.aggregate(pipeline_hist).to_list(30)
+    histogram = {r["_id"]: int(r["n"]) for r in hist_rows if r.get("_id")}
+
+    spans_30d_doc = await db.synisense_runs.aggregate([
+        {"$match": {"context_id": {"$in": ctx_ids}, "ts": {"$gte": cutoff_30d}}},
+        {"$group": {"_id": None, "n": {"$sum": {"$size": {"$ifNull": ["$spans", []]}}}}},
+    ]).to_list(1)
+    spans_30d = int(spans_30d_doc[0]["n"]) if spans_30d_doc else 0
+
+    last_doc = await db.synisense_runs.find_one(
+        {"context_id": {"$in": ctx_ids}},
+        sort=[("ts", -1)],
+        projection={"_id": 0, "ts": 1},
+    )
+    last_run_at = last_doc.get("ts") if last_doc else None
+    if isinstance(last_run_at, datetime):
+        last_run_at = last_run_at.isoformat()
+
+    return {
+        "status": "live",
+        "active": agg_7d.get("runs", 0) > 0,
+        "last_run_at": last_run_at,
+        "spans_redacted_7d": int(agg_7d.get("spans_total", 0)),
+        "spans_redacted_30d": spans_30d,
+        "entity_histogram_7d": histogram,
+        "llm_fallback_calls_7d": int(agg_7d.get("llm_calls", 0)),
+        "llm_fallback_cap": status.get("llm_fallback", {}).get("cap_per_doc", 20),
+        "key_version": status.get("key_version"),
+        "model": status.get("model"),
+        "insecure_fallback": bool(status.get("insecure_fallback")),
+        "version": status.get("version"),
+    }
+
+
+
+
 # ---------------------------------------------------------------------------
 # GET /api/me/governance  (the main panel)
 # ---------------------------------------------------------------------------
@@ -152,6 +246,14 @@ async def governance_panel(current: Dict[str, Any] = Depends(get_current_account
                     last_classified_at = ts
     auto_classify = bool((current.get("preferences") or {}).get("auto_classify", True))
 
+    # ── Phase 12.2 ITEM F — Synisense roll-up. Aggregates from
+    # `db.synisense_runs` over the user's currently-active context (or
+    # all of their contexts if no active one). Counts only — never
+    # individual span detail, never any text. The TrustPanel reads from
+    # this block to render real status and retire the
+    # `mock_scaffolding_note` from the shielding block.
+    syn_block = await _build_synisense_block(current, ctx_ids)
+
     return {
         "audit_log": {
             "total_entries": total_entries,
@@ -159,12 +261,12 @@ async def governance_panel(current: Dict[str, Any] = Depends(get_current_account
             "available_actions": distinct_actions,
         },
         "shielding": {
-            "mode": "regex",
+            "mode": "synisense",
             "masker_status": "live",
-            "mock_scaffolding_note": (
-                "Live Synisense de-identification service replaces the local "
-                "masker in a future release."
-            ),
+            # `mock_scaffolding_note` retired in Phase 12.2 — the
+            # in-house Synisense pipeline ships and is consumed by all
+            # six surfaces. The trust panel renders the new
+            # `synisense` block below for live status.
         },
         "inbound": {
             "address": inbound_address,
@@ -176,6 +278,7 @@ async def governance_panel(current: Dict[str, Any] = Depends(get_current_account
             "last_classified_at": last_classified_at,
             "classification_breakdown": classification_breakdown,
         },
+        "synisense": syn_block,
     }
 
 

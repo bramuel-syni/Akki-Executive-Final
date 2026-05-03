@@ -574,9 +574,43 @@ function Message({ m, activeModel, models }) {
             ))}
           </ul>
         )}
+        {/* Phase 12.2 ITEM A — Synisense screening icon. Renders only on
+            assistant messages whose synisense_stats reports > 0
+            redacted spans. Tooltip shows entity-type breakdown. NEVER
+            shows original text or replacement tokens. Keyboard
+            accessible: button with aria-label + title.  */}
+        {!isUser && m.synisense_stats?.spans_redacted > 0 && (
+          <div
+            className="mt-2 inline-flex items-center gap-1 text-[10.5px] text-[var(--muted)]"
+            data-testid="chat-synisense-icon"
+          >
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm border border-[var(--rule)] bg-[var(--cream-deep)]/40 hover:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] cursor-help"
+              aria-label={`Content screened. ${m.synisense_stats.spans_redacted} ${m.synisense_stats.spans_redacted === 1 ? "span" : "spans"} redacted. ${formatSyniBreakdown(m.synisense_stats.by_type)}`}
+              title={`Content screened. ${m.synisense_stats.spans_redacted} ${m.synisense_stats.spans_redacted === 1 ? "span" : "spans"} redacted.\n\n${formatSyniBreakdown(m.synisense_stats.by_type)}`}
+            >
+              <FileLock2 className="w-3 h-3 text-[var(--accent)]" aria-hidden="true" />
+              <span>Content screened · {m.synisense_stats.spans_redacted}</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
+}
+
+/**
+ * Render the Synisense entity-type breakdown for a tooltip. Counts only —
+ * the original text and replacement tokens never reach the client.
+ */
+function formatSyniBreakdown(byType) {
+  if (!byType || typeof byType !== "object") return "";
+  const parts = Object.entries(byType)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([t, n]) => `${t} ×${n}`);
+  return parts.join(", ");
 }
 
 /**

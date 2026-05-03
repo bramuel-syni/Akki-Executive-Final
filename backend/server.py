@@ -255,6 +255,37 @@ async def on_startup():
                     )
                     await _asyncio.sleep(60)
             _asyncio.create_task(_syn_nag_loop())
+
+        # Phase 12.2 — warm the spaCy model at boot so first-request
+        # latency is close to the warm p50 (~7ms) rather than the
+        # cold load (~2s). We run the warmup in a thread so the boot
+        # path doesn't block on the model load. Logs `synisense
+        # warmup ready event=ready surface=boot elapsed_ms=N` when
+        # done.
+        import asyncio as _asyncio
+        import logging as _lg
+        import time as _time
+
+        async def _syn_warmup():
+            _log = _lg.getLogger("akki.synisense")
+            t0 = _time.monotonic()
+            try:
+                from services.synisense import presidio_engine as _pe
+                # Run model load in a thread \u2014 it's CPU-bound and
+                # blocking, but we don't care if it takes 2s as long
+                # as it doesn't block the event loop.
+                await _asyncio.to_thread(_pe.get_analyzer)
+                # Tiny dummy analyse to lock in the JIT paths.
+                await _asyncio.to_thread(_pe.analyze, "Warmup John at john@example.com")
+                elapsed = int((_time.monotonic() - t0) * 1000)
+                _log.info(
+                    "synisense warmup ready event=ready surface=boot elapsed_ms=%d",
+                    elapsed,
+                )
+            except Exception as e:  # noqa: BLE001
+                _log.warning("synisense warmup failed: %s", e)
+
+        _asyncio.create_task(_syn_warmup())
     except Exception as e:  # noqa: BLE001
         # If the production guard in init_keys() raised MasterKeyMissing
         # we re-raise to refuse boot. Anything else is a non-fatal load

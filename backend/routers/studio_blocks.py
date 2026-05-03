@@ -577,7 +577,24 @@ async def _recompute_sensitivity(
 async def _persist_and_project(
     kind: str, artefact_id: str, context_id: str, blocks: List[Dict[str, Any]],
 ) -> Optional[Dict[str, Any]]:
-    """Write blocks doc + write-through to legacy text + sensitivity."""
+    """Write blocks doc + write-through to legacy text + sensitivity.
+    Phase 12.2 ITEM C — also runs Synisense on the concatenated block
+    text and persists a parallel `synisense` projection on the artefact
+    so the PreviewDrawer can render the spans on first save and the
+    public-read endpoint can assert `synisense_version >= 1` before
+    serving externally.
+
+    Returns a dict shaped:
+        {
+          "classification": <legacy sensitivity payload>,
+          "synisense": <preview payload or None>,
+          "synisense_first_accept_pending": bool,
+          "synisense_drawer_reopen": bool,  # set when new sensitive
+                                            # content appears since
+                                            # the last user accept.
+        }
+    Callers persist this verbatim into their endpoint response.
+    """
     now_iso = _iso(_now())
     for idx, b in enumerate(blocks):
         b["order"] = idx
@@ -600,6 +617,36 @@ async def _persist_and_project(
 
     flat = _project_to_text(blocks)
     coll = _artefact_collection(kind)
+
+    # ── Phase 12.2 ITEM C — Synisense screening on the flat text. We
+    # store the redacted projection alongside the original because the
+    # blocks themselves remain the editable source of truth; downstream
+    # surfaces (public read, share email, validator) read the redacted
+    # version, while the editor reads the original.
+    syn_preview: Optional[Dict[str, Any]] = None
+    redacted_flat = flat
+    if (flat or "").strip():
+        try:
+            from services.synisense import run as syn_run
+            out = await syn_run(
+                text=flat, context_id=context_id,
+                surface=kind if kind in {"briefing", "deck", "report"} else "report",
+                mode="redact",
+            )
+            redacted_flat = out["redacted_text"]
+            syn_preview = {
+                "spans": out.get("spans") or [],
+                "stats": out.get("stats") or {},
+                "version": 1,
+                "histogram": _entity_histogram(out.get("spans") or []),
+                "computed_at": now_iso,
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "synisense studio hook failed (degraded — original "
+                "persisted): %s", e.__class__.__name__,
+            )
+
     update_set: Dict[str, Any] = {"updated_at": now_iso}
     if kind == "briefing":
         update_set["opening_paragraph"] = flat
@@ -608,9 +655,47 @@ async def _persist_and_project(
         update_set["body"] = flat
     else:
         update_set["body"] = flat
+
+    if syn_preview is not None:
+        update_set["body_redacted"] = redacted_flat
+        update_set["synisense"] = syn_preview
+        update_set["synisense_version"] = 1
+
     await coll.update_one({"id": artefact_id}, {"$set": update_set})
 
-    return await _recompute_sensitivity(coll, artefact_id, blocks, flat)
+    classification = await _recompute_sensitivity(coll, artefact_id, blocks, flat)
+
+    # Drawer state: first save (no first_accept_at yet) → pending.
+    # Subsequent save with strictly NEW entity types → reopen once.
+    artefact_now = await coll.find_one(
+        {"id": artefact_id},
+        {"_id": 0, "synisense_first_accept_at": 1,
+         "synisense_last_accepted_histogram": 1},
+    ) or {}
+    first_accept_at = artefact_now.get("synisense_first_accept_at")
+    pending = (syn_preview is not None) and (not first_accept_at)
+    drawer_reopen = False
+    if first_accept_at and syn_preview:
+        prev = artefact_now.get("synisense_last_accepted_histogram") or {}
+        cur = syn_preview.get("histogram") or {}
+        new_types = set(cur) - set(prev)
+        if new_types:
+            drawer_reopen = True
+
+    return {
+        "classification": classification,
+        "synisense": syn_preview,
+        "synisense_first_accept_pending": pending,
+        "synisense_drawer_reopen": drawer_reopen,
+    }
+
+
+def _entity_histogram(spans: List[Dict[str, Any]]) -> Dict[str, int]:
+    h: Dict[str, int] = {}
+    for s in spans:
+        t = s.get("entity_type") or "UNKNOWN"
+        h[t] = h.get(t, 0) + 1
+    return h
 
 
 # ---------------------------------------------------------------------------
@@ -689,13 +774,19 @@ async def create_block(
     else:
         blocks.append(new_block)
 
-    classification = await _persist_and_project(kind, artefact_id, artefact["context_id"], blocks)
+    proj = await _persist_and_project(kind, artefact_id, artefact["context_id"], blocks)
     await write_audit(
         artefact["context_id"], current["id"],
         "studio_blocks.created", kind, artefact_id,
         {"block_id": new_block["id"], "kind": canonical},
     )
-    return {"block": new_block, "block_count": len(blocks), "classification": classification}
+    return {
+        "block": new_block, "block_count": len(blocks),
+        "classification": proj.get("classification"),
+        "synisense": proj.get("synisense"),
+        "synisense_first_accept_pending": proj.get("synisense_first_accept_pending", False),
+        "synisense_drawer_reopen": proj.get("synisense_drawer_reopen", False),
+    }
 
 
 @router.patch("/{kind}/{artefact_id}/blocks/{block_id}")
@@ -719,13 +810,19 @@ async def patch_block(
     target = blocks[target_idx]
     target["content"] = _validate_content(target["kind"], body.content)
     target["updated_at"] = _iso(_now())
-    classification = await _persist_and_project(kind, artefact_id, artefact["context_id"], blocks)
+    proj = await _persist_and_project(kind, artefact_id, artefact["context_id"], blocks)
     await write_audit(
         artefact["context_id"], current["id"],
         "studio_blocks.patched", kind, artefact_id,
         {"block_id": block_id, "kind": target["kind"]},
     )
-    return {"block": target, "classification": classification}
+    return {
+        "block": target,
+        "classification": proj.get("classification"),
+        "synisense": proj.get("synisense"),
+        "synisense_first_accept_pending": proj.get("synisense_first_accept_pending", False),
+        "synisense_drawer_reopen": proj.get("synisense_drawer_reopen", False),
+    }
 
 
 @router.post("/{kind}/{artefact_id}/blocks/{block_id}/move")
@@ -1063,4 +1160,55 @@ async def send_composed(
         "block_status": LIFECYCLE_SENT,
         "sent_at": now_iso,
         "send_result": {"ok": result.get("ok"), "mode": result.get("mode"), "id": result.get("id")},
+    }
+
+
+
+# ---------------------------------------------------------------------------
+# Phase 12.2 ITEM C — Synisense first-save preview accept
+# ---------------------------------------------------------------------------
+@router.post("/{kind}/{artefact_id}/synisense-accept")
+async def accept_synisense_preview(
+    kind: str = Path(...),
+    artefact_id: str = Path(...),
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Persist the user's first-save acceptance of the Synisense
+    preview. After this call, subsequent saves redact silently and the
+    PreviewDrawer only reopens when *new* entity types are detected
+    (see `synisense_drawer_reopen` on `_persist_and_project`).
+
+    The accept is a state-transition only — the redacted projection
+    has already been persisted by the most recent save. We mark the
+    transition timestamp and snapshot the entity histogram the user
+    accepted so we know what 'new sensitive content' means next time.
+    """
+    artefact = await _resolve_artefact(kind, artefact_id, current)
+    coll = _artefact_collection(kind)
+    cur = await coll.find_one(
+        {"id": artefact_id},
+        {"_id": 0, "synisense": 1, "synisense_first_accept_at": 1},
+    ) or {}
+    syn = cur.get("synisense") or {}
+    histogram = syn.get("histogram") or {}
+    now_iso = _iso(_now())
+    await coll.update_one(
+        {"id": artefact_id},
+        {"$set": {
+            "synisense_first_accept_at": cur.get("synisense_first_accept_at") or now_iso,
+            "synisense_last_accepted_at": now_iso,
+            "synisense_last_accepted_histogram": histogram,
+            "synisense_last_accepted_by": current["id"],
+        }},
+    )
+    await write_audit(
+        artefact["context_id"], current["id"],
+        "synisense.studio.accepted", kind, artefact_id,
+        {"histogram": histogram, "spans": (syn.get("stats") or {}).get("regex_hits", 0)
+         + (syn.get("stats") or {}).get("presidio_hits", 0)},
+    )
+    return {
+        "ok": True,
+        "synisense_first_accept_at": now_iso,
+        "histogram_accepted": histogram,
     }

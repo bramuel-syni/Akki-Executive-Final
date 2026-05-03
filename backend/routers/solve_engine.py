@@ -288,13 +288,37 @@ async def post_turn(
 
     # If we just produced synthesis or lockin output, persist a structured copy.
     if current_phase == "synthesis":
+        # Phase 12.2 ITEM D — run Synisense on the synthesis body BEFORE the
+        # validator and BEFORE persistence. Validation runs on the redacted
+        # body so the second-pass model never sees raw PII either; this is
+        # consistent with the "LLM never sees original" promise.
+        synthesis_text = response["text"]
+        syn_run_id_solve: Optional[str] = None
+        try:
+            from services.synisense import run as syn_run
+            syn_out = await syn_run(
+                text=synthesis_text,
+                context_id=rec.get("context_id") or "",
+                surface="solve",
+                mode="redact",
+                account_id=account["id"],
+            )
+            synthesis_text = syn_out["redacted_text"]
+            syn_run_id_solve = "recorded"  # full record in db.synisense_runs
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "synisense solve hook failed (degraded — using original "
+                "synthesis): %s", e.__class__.__name__,
+            )
+
         synthesis_record = {
-            "body": response["text"],
+            "body": synthesis_text,
             "model": response.get("model"),
             "tier": response.get("tier"),
             "comparables": response.get("comparables", []),
             "free_grant_used": response.get("free_grant_used", False),
             "generated_at": iso(now()),
+            "synisense_run_recorded": syn_run_id_solve is not None,
         }
         # Phase 11 ITEM B — validator on the synthesis body. The helper
         # always returns a dict; we only fall back here if the wrapper
@@ -305,11 +329,12 @@ async def post_turn(
             "notes": ["Validator wrapper failed before call; treat with normal scrutiny."],
             "validator_provider": "n/a", "validator_model": "n/a",
         }
+        # Phase 12.2 ITEM D — validator runs on the REDACTED body, never the original.
         try:
             from llm_service import validate_independent
             synthesis_record["validation"] = await validate_independent(
                 kind="solve_synthesis",
-                content=response["text"],
+                content=synthesis_text,
                 objective=rec.get("intent") or "",
                 surface="solve",
                 account_id=account["id"],

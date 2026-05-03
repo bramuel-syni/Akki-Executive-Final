@@ -243,33 +243,107 @@ function AuditLogSection({ data, refreshRecent }) {
 }
 
 // ---------------------------------------------------------------------------
-// Section 2 — De-identification
+// Section 2 — De-identification (Phase 12.2 ITEM F: real Synisense status)
 // ---------------------------------------------------------------------------
-function DeidentSection({ shielding, sensitivity }) {
+function DeidentSection({ shielding, sensitivity, synisense }) {
+  const active = !!synisense?.active;
+  const histogram = synisense?.entity_histogram_7d || {};
+  const histogramTop = Object.entries(histogram)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6);
   return (
     <section data-testid="trust-section-deident" className="mb-8">
       <SectionHeader
         label="DE-IDENTIFICATION"
-        subtitle="Identifying data (emails, names, account numbers) is masked from the model before any LLM call."
+        subtitle="Regex + Presidio NER + selective LLM pipeline. Identifying data (emails, names, account numbers, deal codenames, large financials) is masked before any LLM call."
       />
-      <div className="flex items-center gap-3 mb-3">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
         <span
           className="akki-overline tracking-[0.16em] text-[10.5px] bg-[var(--cream-deep)] text-[var(--ink)] px-2.5 py-1 border border-[var(--border,#e2d9cf)]"
           data-testid="trust-shielding-chip"
         >
-          SHIELDED · {shielding?.mode?.toUpperCase() || "REGEX"}
+          SHIELDED · {(shielding?.mode || "synisense").toUpperCase()}
         </span>
-        <span className="text-[11px] text-[var(--muted)] italic">
-          Live status badge ships when the Synisense service replaces the local masker.
+        {synisense?.insecure_fallback ? (
+          <span
+            className="akki-overline tracking-[0.16em] text-[10.5px] bg-amber-100 text-amber-900 px-2.5 py-1 border border-amber-300"
+            title="No master key configured. Set SYNISENSE_MASTER_KEY before production."
+          >
+            DEV KEY
+          </span>
+        ) : (
+          <span
+            className="akki-overline tracking-[0.16em] text-[10.5px] bg-emerald-50 text-emerald-900 px-2.5 py-1 border border-emerald-200"
+            title={`Master key v${synisense?.key_version ?? 1}`}
+          >
+            KEY v{synisense?.key_version ?? 1}
+          </span>
+        )}
+        <span className="akki-overline text-[10px] tracking-[0.16em] text-[var(--muted)]">
+          {synisense?.model || "en_core_web_sm"}
         </span>
       </div>
-      <div className="text-[12.5px] text-[var(--ink)] flex items-center gap-2">
+
+      {active ? (
+        <div data-testid="trust-synisense-stats" className="space-y-3">
+          <div className="grid grid-cols-3 gap-3 text-[12.5px]">
+            <Stat label="REDACTED · 7D" value={synisense.spans_redacted_7d} />
+            <Stat label="REDACTED · 30D" value={synisense.spans_redacted_30d} />
+            <Stat
+              label="LLM FALLBACK · 7D"
+              value={`${synisense.llm_fallback_calls_7d} / ${synisense.llm_fallback_cap}`}
+            />
+          </div>
+          {histogramTop.length > 0 && (
+            <div>
+              <Overline className="mb-1.5">ENTITIES · LAST 7 DAYS</Overline>
+              <ul className="flex flex-wrap gap-1.5" data-testid="trust-entity-histogram">
+                {histogramTop.map(([t, n]) => (
+                  <li
+                    key={t}
+                    className="akki-overline text-[10px] tracking-[0.16em] bg-[var(--cream-deep)] text-[var(--ink)] px-2 py-0.5 border border-[var(--border,#e2d9cf)]"
+                  >
+                    {t} · {n}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {synisense.last_run_at && (
+            <p className="text-[11px] text-[var(--muted)] italic">
+              Last screening: {formatStamp(synisense.last_run_at)}.
+            </p>
+          )}
+        </div>
+      ) : (
+        <p
+          className="text-[12px] text-[var(--muted)] italic"
+          data-testid="trust-synisense-empty"
+        >
+          No content has been screened in this context yet. Screening runs
+          automatically on every save.
+        </p>
+      )}
+
+      <div className="text-[12.5px] text-[var(--ink)] flex items-center gap-2 mt-4">
         <span className="text-[var(--muted)]">Auto-classify on save:</span>
         <span className="akki-overline text-[10px] tracking-[0.18em] text-[var(--ink)]">
           {sensitivity?.auto_classify ? "ON" : "OFF"}
         </span>
       </div>
     </section>
+  );
+}
+
+function Stat({ label, value }) {
+  return (
+    <div className="bg-[var(--cream-deep)] border border-[var(--border,#e2d9cf)] px-3 py-2">
+      <p className="akki-overline text-[9.5px] tracking-[0.18em] text-[var(--muted)] mb-0.5">
+        {label}
+      </p>
+      <p className="font-mono text-[15px] text-[var(--ink)] tabular-nums">{value}</p>
+    </div>
   );
 }
 
@@ -450,7 +524,11 @@ export default function TrustPanel({ open, onOpenChange }) {
           ) : (
             <>
               <AuditLogSection data={data.audit_log} refreshRecent={refreshRecent} />
-              <DeidentSection shielding={data.shielding} sensitivity={data.sensitivity} />
+              <DeidentSection
+                shielding={data.shielding}
+                sensitivity={data.sensitivity}
+                synisense={data.synisense}
+              />
               <InboundSection inbound={data.inbound} />
               <ModelsSection models={data.connected_models} />
               <SensitivitySection sensitivity={data.sensitivity} />

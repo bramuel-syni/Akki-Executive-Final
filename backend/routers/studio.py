@@ -819,6 +819,18 @@ async def public_read_share(token: str, request: Request):
     # chains, validator payloads, quota state, etc.). If we ever add a
     # new internal field, this assertion must be updated in tandem.
     _assert_public_safe(response_payload)
+
+    # ── Phase 12.2 ITEM E — assert the artefact has been Synisense-screened.
+    # A snapshot without `synisense_version` predates Phase 12 and was never
+    # run through the in-house de-id pipeline — refuse to serve it externally.
+    # The author must re-save in Studio (which now runs the pipeline silently
+    # post-first-accept) before the share works. 410 (Gone) rather than 404
+    # because the link IS valid; the snapshot is not yet ready.
+    if not (artefact.get("synisense_version") or 0) >= 1:
+        raise HTTPException(
+            status_code=410,
+            detail="Pending review — the author has not yet completed security screening for this share.",
+        )
     return response_payload
 
 
@@ -829,15 +841,25 @@ _PUBLIC_READ_DENYLIST = frozenset({
     "audience",
     "audience_assumed",
     "chain",
+    # Phase 12.2 ITEM E — shield-map cryptographic envelope keys. These
+    # MUST never appear in any public response, at any depth, regardless
+    # of how the artefact got into the snapshot. Each key alone is
+    # enough to compromise the de-id contract.
+    "dek_nonce",
+    "dek_wrapped",
+    "encrypted_original",
     "events",
+    "envelope",
     "inbound_token",
     "missing_context",
     "model",
     "model_id",
+    "original_payload",
     "outline_id",
     "password_hash",
     "quality_check",
     "quota",
+    "shield_map",
     "speaker_notes",
     "synisense_key",
     "tier",
