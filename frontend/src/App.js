@@ -58,6 +58,9 @@ import BlogAdmin from "@/pages/marketing/BlogAdmin";
 import SharedArtefact from "@/pages/SharedArtefact";
 import InboundQueue from "@/pages/InboundQueue";
 import StudioComposerPage from "@/pages/StudioComposerPage";
+// Phase 13.3 — new top-level surfaces
+import WorkStudio from "@/pages/WorkStudio";
+import PulsePlaceholder from "@/pages/PulsePlaceholder";
 
 function PublicOnlyRoute({ children, allowSandbox = false }) {
   const { account } = useAuth();
@@ -205,8 +208,19 @@ function App() {
           <Route path="/app/learn/:id" element={<Gated><Learn /></Gated>} />
           <Route path="/app/manage" element={<Gated><Manage /></Gated>} />
           <Route path="/app/enterprise" element={<Gated><Enterprise /></Gated>} />
-          <Route path="/app/decks" element={<Gated><Decks /></Gated>} />
+          {/* Phase 13.3 — Work Studio is the new unified entry hub for
+              in-flight briefings/decks/reports across the active context.
+              `/app/decks` listing redirects here with the Decks tab
+              pre-selected; the per-deck detail page (`/app/decks/:id`)
+              still routes to the existing `<Decks />` component because
+              the deck detail UI has not moved. */}
+          <Route path="/app/work-studio" element={<Gated><WorkStudio /></Gated>} />
+          <Route path="/app/decks" element={<Navigate to="/app/work-studio?view=decks" replace />} />
           <Route path="/app/decks/:deckId" element={<Gated><Decks /></Gated>} />
+          {/* Phase 13.3 — Pulse holding page. Real Pulse module ships in
+              Phase 14. The link in the primary top nav points here so
+              users discover the feature ahead of build. */}
+          <Route path="/app/pulse" element={<Gated><PulsePlaceholder /></Gated>} />
           <Route path="/app/studio/composer/:kind/:artefactId" element={<Gated><StudioComposerPage /></Gated>} />
           <Route path="/app/solva" element={<Gated><AppSolva /></Gated>} />
           {/* Phase 13.1 — legacy /app/solve alias for muscle memory and

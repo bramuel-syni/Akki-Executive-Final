@@ -13,7 +13,7 @@ import {
   Settings, LogOut, ChevronDown, CheckCircle2, Lock,
   Briefcase, Landmark, Search, ScrollText, Target, Eye, Plus, BookOpenCheck,
   Users, Building2, ShieldCheck, Send, Compass, Activity, MessageCircle,
-  Presentation,
+  Presentation, Menu, X, Keyboard,
 } from "lucide-react";
 import SandboxBanner from "@/components/sandbox/SandboxBanner";
 import SandboxEmailCapture from "@/components/sandbox/SandboxEmailCapture";
@@ -33,7 +33,34 @@ import ProPill from "@/components/depth/ProPill";
 import { openUpgradeModal } from "@/components/depth/UpgradeModal";
 import useDepthStatus from "@/hooks/useDepthStatus";
 import TrustPanel from "@/components/governance/TrustPanel";
+// Phase 13.3 — primary 8-item top nav, cycle context indicator, keyboard
+// shortcuts. The legacy left-rail nav is no longer rendered (the brief
+// said "Replace current nav with..."). Routes still exist; users land on
+// them via the top nav, the command palette (⌘K), or direct URL.
+import CycleContextIndicator from "@/components/layout/CycleContextIndicator";
+import useKeyboardShortcuts from "@/hooks/useKeyboardShortcuts";
+import KeyboardHelp from "@/components/layout/KeyboardHelp";
 
+
+// Phase 13.3 — primary 8-item top nav. Order locked per UI/UX brief.
+// "Pulse" is the Phase 14 surface; Phase 13.3 ships an honest holding
+// page so users discover it during 13.x without 404'ing. "Work Studio"
+// is a new unified entry hub, not a rebuild — it lists in-flight
+// briefings/decks/reports across the active context.
+const TOP_NAV = [
+  { to: "/app",               label: "Home",          end: true },
+  { to: "/app/chat",          label: "Chat" },
+  { to: "/app/solva",         label: "Solva" },
+  { to: "/app/work-studio",   label: "Work Studio" },
+  { to: "/app/cycle",         label: "Cycle Manager" },
+  { to: "/app/monitor",       label: "Monitor" },
+  { to: "/app/pulse",         label: "Pulse" },
+  { to: "/app/learn",         label: "Learn" },
+];
+
+// Legacy left-rail surfaces. The arrays are retained because some
+// existing code paths (depth gating, lookup helpers) still reference
+// them; the rendering of the left aside has been removed in Phase 13.3.
 // v3.0 — surfaces (BRD §13). The `roles` field scopes a nav entry
 // to the role(s) that actually use it. Omit `roles` for surfaces both
 // roles share. NEDs don't run reporting cycles on boards they sit on;
@@ -111,17 +138,18 @@ export default function AppShell({ children }) {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
   const paletteInputRef = useRef(null);
+  // Phase 13.3 — keyboard help overlay + mobile drawer state.
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  // Cmd/Ctrl+K opens the palette
+  // Phase 13.3 — global keyboard shortcuts hook (⌘K / ⌘J / ⌘S / ?).
+  // Cmd+K dispatches `akki:open-palette` so AppShell stays the single
+  // source of truth for the palette dialog state.
+  useKeyboardShortcuts({ openHelp: () => setHelpOpen(true) });
   useEffect(() => {
-    const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setPaletteOpen((v) => !v);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const onPaletteOpen = () => setPaletteOpen((v) => !v);
+    window.addEventListener("akki:open-palette", onPaletteOpen);
+    return () => window.removeEventListener("akki:open-palette", onPaletteOpen);
   }, []);
 
   useEffect(() => {
@@ -219,6 +247,39 @@ export default function AppShell({ children }) {
               60s + on tab focus. */}
           <ReviewBadge />
 
+          {/* Phase 13.3 — Cycle context indicator. Shows the active
+              context + role; click opens a dropdown of all the user's
+              contexts and switches scope. Hidden below md to keep the
+              mobile header tidy; the mobile drawer surfaces it via the
+              avatar menu instead. */}
+          <CycleContextIndicator />
+
+          {/* Phase 13.3 — discoverable shortcut overlay trigger. Press ?
+              keyboard-side achieves the same; this gives mouse users a
+              way to find the shortcuts list without trying random keys. */}
+          <button
+            type="button"
+            onClick={() => setHelpOpen(true)}
+            className="hidden md:inline-flex items-center justify-center w-8 h-8 text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
+            aria-label="Keyboard shortcuts"
+            data-testid="keyboard-help-btn"
+            title="Keyboard shortcuts (?)"
+          >
+            <Keyboard className="w-4 h-4" strokeWidth={1.7} />
+          </button>
+
+          {/* Phase 13.3 — mobile hamburger. Opens the slide-out drawer
+              with the same 8 nav items below 1024px. */}
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            className="lg:hidden inline-flex items-center justify-center w-9 h-9 text-[var(--ink)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
+            aria-label="Open navigation"
+            data-testid="mobile-nav-trigger"
+          >
+            <Menu className="w-5 h-5" strokeWidth={1.7} />
+          </button>
+
           {/* Role + context have moved to the permanent right-side
               PortfolioRail (more discoverable, indicates active context
               with a green dot). The top bar now stays minimal. */}
@@ -286,18 +347,96 @@ export default function AppShell({ children }) {
         </div>
       </header>
 
+      {/* Phase 13.3 — primary 8-item top nav row. Sits directly under
+          the existing 64px header. 64px tall, accent underline on
+          active (never background fill), Georgia for labels per UI/UX
+          brief. Hidden below 1024px (lg:flex) — mobile uses the
+          hamburger drawer instead. */}
+      <nav
+        className="hidden lg:flex items-stretch h-[64px] bg-[var(--cream)] border-b border-[var(--rule)] sticky top-[64px] z-40"
+        data-testid="primary-top-nav"
+        aria-label="Primary"
+      >
+        <div className="max-w-[1400px] w-full mx-auto px-6 flex items-stretch gap-0">
+          {TOP_NAV.map((n) => (
+            <NavLink
+              key={n.to}
+              to={n.to}
+              end={n.end}
+              data-testid={`top-nav-${n.label.toLowerCase().replace(/\s+/g, "-")}`}
+              className={({ isActive }) =>
+                `akki-serif px-5 inline-flex items-center text-[14px] border-b-2 -mb-px transition-colors ${
+                  isActive
+                    ? "border-[var(--accent)] text-[var(--ink)] font-medium"
+                    : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
+                }`
+              }
+            >
+              {n.label}
+            </NavLink>
+          ))}
+        </div>
+      </nav>
+
+      {/* Phase 13.3 — mobile slide-out drawer. Same 8 items, full-height
+          on the right. Backdrop closes on click outside. */}
+      {mobileNavOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden" data-testid="mobile-nav-drawer">
+          <div
+            className="absolute inset-0 bg-[var(--ink)]/30"
+            onClick={() => setMobileNavOpen(false)}
+          />
+          <aside className="absolute right-0 top-0 bottom-0 w-[280px] bg-[var(--cream)] border-l border-[var(--rule)] py-4 px-2 flex flex-col">
+            <div className="flex items-center justify-between px-3 pb-2 mb-2 border-b border-[var(--rule)]">
+              <p className="akki-overline">Navigation</p>
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(false)}
+                aria-label="Close navigation"
+                className="w-8 h-8 inline-flex items-center justify-center text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)] rounded-md"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {TOP_NAV.map((n) => (
+              <NavLink
+                key={n.to}
+                to={n.to}
+                end={n.end}
+                onClick={() => setMobileNavOpen(false)}
+                className={({ isActive }) =>
+                  `akki-serif px-4 py-3 text-[15px] rounded-md mx-1 transition-colors border-l-2 ${
+                    isActive
+                      ? "border-[var(--accent)] text-[var(--ink)] bg-[var(--cream-deep)]/40 font-medium"
+                      : "border-transparent text-[var(--deep)] hover:bg-[var(--cream-deep)]/40 hover:text-[var(--ink)]"
+                  }`
+                }
+              >
+                {n.label}
+              </NavLink>
+            ))}
+          </aside>
+        </div>
+      )}
+
       {/* Permanent right-side portfolio rail — visible on every /app page,
           shows the user's contexts with a green active dot, and exposes
           role switcher inline. Self-positions via fixed; we add right
           padding to the main content below to keep the rail clear. */}
       <PortfolioRail />
 
-      {/* Iter57 — Portfolio rail now defaults collapsed (12px sliver).
-          Reclaiming ~250px of horizontal canvas for the main content
-          column. The rail still self-positions via fixed; main column
-          only reserves 48px (the collapsed sliver), expandable on click. */}
+      {/* Phase 13.3 — left nav rail removed in favour of the new
+          horizontal primary nav above. Main content now flows full-
+          width (minus the 48px collapsed PortfolioRail sliver). Routes
+          previously surfaced only in the left rail (Lens, Simulate,
+          Influence Map, Document Journal, Manage shortcuts) remain
+          URL-accessible and discoverable via ⌘K palette + the surfaces
+          they belong to (Monitor / Cycle Manager / Settings). */}
       <div className="flex flex-1 min-h-0 lg:pr-[48px]">
-        {/* Left nav rail — cream, 220px, oxblood accent on selected */}
+        {/* (Phase 13.3) Left nav rail intentionally not rendered. The
+            <aside> tree below stays for code-archaeology reference but
+            is now wrapped in a `false` guard. */}
+        {false && (
         <aside
           className="hidden md:flex flex-col bg-[var(--cream)] text-[var(--deep)] w-[220px] border-r border-[var(--rule)] pt-6 pb-8 gap-0.5"
           data-testid="left-sidebar"
@@ -520,6 +659,7 @@ export default function AppShell({ children }) {
             </NavLink>
           </div>
         </aside>
+        )}
 
         {/* Main content */}
         <main className="flex-1 min-w-0 flex flex-col min-h-[calc(100vh-4rem)]">
@@ -680,6 +820,11 @@ export default function AppShell({ children }) {
       {/* Phase 7 / v1.7 — Trust panel. Mounted once at the shell level so
           it persists across menu opens/closes. */}
       <TrustPanel open={trustOpen} onOpenChange={setTrustOpen} />
+
+      {/* Phase 13.3 — keyboard shortcut help overlay. Toggled via ? key
+          (handled by useKeyboardShortcuts) and the inline keyboard
+          button in the header (mouse path). */}
+      <KeyboardHelp open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
   );
 }

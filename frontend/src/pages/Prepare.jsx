@@ -41,6 +41,7 @@ import PrepareStatsDock from "@/components/prepare/PrepareStatsDock";
 import PrepareSideRail from "@/components/prepare/PrepareSideRail";
 import WalkInCard from "@/components/walkin/WalkInCard";
 import HighlightsStats from "@/components/highlights/HighlightsStats";
+import HandoffActions from "@/components/shell/HandoffActions";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
@@ -911,6 +912,23 @@ function BriefDetailModal({ brief, contextId, onClose, onDelete }) {
           {brief?.body}
         </div>
 
+        {/* Phase 13.3 — cross-module handoff buttons. Take into Solva /
+            Send to Work Studio / Add to Cycle. The data-solva-seed lives
+            on this row so ⌘J also picks the brief up automatically. */}
+        {brief?.id && contextId && (
+          <div className="mt-4 pt-4 border-t border-[var(--rule)]">
+            <p className="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[var(--muted)] mb-2">
+              Hand this off
+            </p>
+            <HandoffActions
+              kind="brief"
+              id={brief.id}
+              contextId={contextId}
+              title={brief.title}
+            />
+          </div>
+        )}
+
         {brief?.id && contextId && brief?.body && brief.body.length > 80 && (
           <div className="mt-5">
             <WalkInCard
@@ -943,6 +961,9 @@ function BriefDetailModal({ brief, contextId, onClose, onDelete }) {
 // ---------------------------------------------------------------------------
 function SignalDetailModal({ signal, onClose }) {
   const open = Boolean(signal);
+  // Hook used unconditionally to satisfy React rules — ignored on the
+  // null-signal early return below.
+  const { activeContext } = useAuth();
   if (!signal) return null;
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose?.(); }}>
@@ -972,6 +993,21 @@ function SignalDetailModal({ signal, onClose }) {
                 <li key={i}>{typeof e === "string" ? e : (e.text || e.quote || JSON.stringify(e))}</li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {/* Phase 13.3 — cross-module handoffs from a signal. */}
+        {signal.id && activeContext?.id && (
+          <div className="mt-4 pt-4 border-t border-[var(--rule)]">
+            <p className="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[var(--muted)] mb-2">
+              Hand this off
+            </p>
+            <HandoffActions
+              kind="signal"
+              id={signal.id}
+              contextId={activeContext.id}
+              title={signal.headline || signal.title}
+            />
           </div>
         )}
       </DialogContent>

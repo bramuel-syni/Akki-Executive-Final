@@ -18,6 +18,7 @@ import {
 import WalkInCard from "@/components/walkin/WalkInCard";
 import ShareArtefactModal from "@/components/studio/ShareArtefactModal";
 import ValidatedBadge from "@/components/trust/ValidatedBadge";
+import HandoffActions from "@/components/shell/HandoffActions";
 
 /**
  * Decks — three-step flow that keeps the user from burning Opus on weak prompts.
@@ -793,6 +794,19 @@ function DeckStep({ deck, contextId, onUpdated, onNew }) {
       </div>
 
       <WalkInCard kind="deck" contextId={contextId} artefactId={deck.id} initial={deck.walkin_question} />
+
+      {/* Phase 13.3 — cross-module handoff buttons on a deck. Take the
+          deck into Solva for a structured pause, send it to Work
+          Studio (lands the user there with the deck in scope), or
+          drop a follow-up question into the Cycle question bank. */}
+      {deck?.id && contextId && (
+        <div className="pt-3 border-t border-[var(--rule)]">
+          <p className="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[var(--muted)] mb-2">
+            Hand this off
+          </p>
+          <HandoffActions kind="deck" id={deck.id} contextId={contextId} title={deck.title} />
+        </div>
+      )}
 
       {/* Feedback + new */}
       <div className="space-y-3 pt-2">

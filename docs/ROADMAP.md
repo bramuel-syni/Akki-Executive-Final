@@ -124,12 +124,75 @@ Active item: 2px accent underline (never background fill). Collapses to hamburge
     (48 total now).
   - Nav-label rename "Cycle" → "Cycle Manager" and keyboard shortcuts
     are deliberately deferred to Phase 13.3 (the nav rebuild).
-- **13.3 Navigation + shortcuts + role-aware Home + handoffs (~2d)** —
-  pending. 8-item top nav (Home · Chat · Solva · Work Studio · Cycle
-  Manager · Monitor · Pulse · Learn). 64px fixed. Accent underline active
-  state. Hamburger below 1024px. Cycle context indicator top-right.
-  Cmd-K / Cmd-J / Cmd-S. Handoff primitives. Role-aware Home by
-  `declared_role`.
+- **13.3 Navigation + shortcuts + role-aware Home + handoffs (~2d)** ✅ **DONE 2026-05-04.**
+  - **8-item primary top nav** rebuilt in `components/layout/AppShell.jsx`:
+    `Home · Chat · Solva · Work Studio · Cycle Manager · Monitor · Pulse · Learn`.
+    64px fixed row directly under the existing 64px brand header. Active
+    state = 2px `var(--accent)` underline only (never background fill).
+    Below 1024px the row hides and a hamburger drawer with the same 8
+    items takes its place. Legacy left-rail nav removed (the `<aside>`
+    tree is wrapped in a `false` guard and left in source for code
+    archaeology, not rendered). Routes that were only surfaced in the
+    left rail (Lens, Simulate, Influence Map, Manage shortcuts) remain
+    URL-accessible and discoverable via the ⌘K palette.
+  - **Cycle context indicator** in `components/layout/CycleContextIndicator.jsx`
+    (top-right of the brand header). Shows the active context name +
+    role (Executive / NED / Member). Click → dropdown of all the user's
+    contexts; click a row → `switchContext(id)` (existing AuthContext
+    method) → all scoped surfaces (Cycle Manager, Monitor, Work Studio)
+    re-fetch automatically.
+  - **Keyboard shortcuts** in `hooks/useKeyboardShortcuts.js` mounted
+    once at the AppShell level. ⌘/Ctrl-K dispatches `akki:open-palette`
+    (AppShell listens, toggles the existing palette dialog). ⌘/Ctrl-J
+    looks up the focused page's `[data-solva-seed="kind:id"]` element
+    and navigates to `/app/solva?seed_kind=&seed_id=`; falls through to
+    the Solva landing if no seed is on screen. ⌘/Ctrl-S preventDefault
+    + dispatches `akki:save` for context-sensitive editor saves. `?`
+    key opens a discoverable help overlay (`components/layout/KeyboardHelp.jsx`)
+    listing every shortcut. Mouse path: a Keyboard icon button in the
+    header opens the same overlay.
+  - **Cross-module handoffs** in `components/shell/HandoffActions.jsx`.
+    Three buttons — Take into Solva / Send to Work Studio / Add to
+    Cycle. Mounted in: brief detail modal (`pages/Prepare.jsx`), signal
+    detail modal (same file), deck detail (`pages/Decks.jsx`), document
+    detail (`pages/ReadingView.jsx`). Each row also stamps a
+    `data-solva-seed="kind:id"` attribute so ⌘J picks the artefact up
+    automatically. "Add to Cycle" calls
+    `POST /api/contexts/{cid}/questions` and lands the user on the
+    Cycle Manager Overview tab.
+  - **Work Studio landing hub** in `pages/WorkStudio.jsx` at
+    `/app/work-studio`. Aggregates in-flight briefings + decks +
+    reports across the active context. Inner tabs: All / Briefings /
+    Decks / Reports with counts; sort by `updated_at desc`. Each row
+    carries title, sensitivity chip, Synisense `shielded` flag,
+    validator badge (Phase 11 honesty), last-edit. "Start a briefing /
+    deck / report" buttons up top. Reads `?view=` deep-link, so
+    `/app/decks` (legacy listing) `<Navigate replace />`s to
+    `/app/work-studio?view=decks`. Per-deck detail (`/app/decks/:id`)
+    still routes to the existing `<Decks />` component.
+  - **Pulse placeholder** in `pages/PulsePlaceholder.jsx` at
+    `/app/pulse`. Honest editorial holding copy describing what Phase
+    14 ships; deep-link to per-board signals at `/app/cycle?tab=signals`.
+  - **Role-aware Home** in `pages/AppHome.jsx`:
+    - `declared_role === "ned"` → `<HomeNed />`
+      (`pages/home/HomeNed.jsx`) — Pulse cross-board card, latest
+      minutes, signals awaiting action, agenda evolution.
+    - `declared_role === "executive"` → `<HomeExecutive />`
+      (`pages/home/HomeExecutive.jsx`) — Work Studio in-flight
+      preview band on top, then the existing executive home wholesale
+      from `LegacyAppHome` (telemetry preserved).
+    - `declared_role === "dual"` → `<HomeDual />`
+      (`pages/home/HomeDual.jsx`) — split layout, executive cards on
+      the left, NED cards on the right.
+    - `declared_role === "undeclared"` → `<HomeUndeclared />`
+      (`pages/home/HomeUndeclared.jsx`) — three-button picker with a
+      link to `/app/first-session` for the full intake.
+    - Sandbox accounts pinned to LegacyAppHome (frozen single-context).
+    - `?home=v2` / `?home=legacy` URL overrides preserved.
+  - No backend changes. 48 existing tests stay green; no new tests
+    added (the brief explicitly noted "the project has no Jest/RTL setup;
+    skip component tests"). Live evidence captured for all eight
+    deliverables on the preview environment.
 - **13.4 WCAG 2.2 AA + perf budgets (~1.5d)** — pending. `@axe-core/react`
   dev-time + `pa11y-ci` CI gate. Fix top-20 hits. Lighthouse CI perf
   budget gates per surface.

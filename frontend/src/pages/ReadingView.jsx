@@ -32,6 +32,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 
 import ReadingTopBar from "@/components/reading/ReadingTopBar";
 import ReadingBody from "@/components/reading/ReadingBody";
+import HandoffActions from "@/components/shell/HandoffActions";
 import ReadingRail from "@/components/reading/ReadingRail";
 import CommentaryDrawer from "@/components/reading/CommentaryDrawer";
 import useDocumentParagraphs from "@/hooks/useDocumentParagraphs";
@@ -324,6 +325,21 @@ export default function ReadingView() {
           onGenerateBrief={handleGenerateBrief}
           generatingBrief={generatingBrief}
         />
+
+        {/* Phase 13.3 — cross-module handoffs from a document detail
+            view. Lives directly under the topbar so it's always
+            visible without scrolling, and so ⌘J finds the
+            data-solva-seed without having to scroll the body. */}
+        {doc?.id && contextId && (
+          <div className="px-6 md:px-8 pt-3 pb-2 max-w-[1100px] mx-auto w-full">
+            <HandoffActions
+              kind="document"
+              id={doc.id}
+              contextId={contextId}
+              title={doc.title || doc.filename}
+            />
+          </div>
+        )}
 
         {paragraphsLoading ? (
           <div className="px-6 md:px-8 pt-8">
