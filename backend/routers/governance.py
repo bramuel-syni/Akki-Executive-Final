@@ -115,8 +115,15 @@ async def governance_panel(current: Dict[str, Any] = Depends(get_current_account
     ]
 
     # Sensitivity at a glance — across the user's artefact-ish collections.
-    # `classification` field may not be populated on every row yet; we
-    # count honestly (zeros are zeros) rather than invent values.
+    # `classification` may be EITHER a string tier ("internal", "confidential"...)
+    # — written by `studio_sensitivity.score_sensitivity()` and the daily-review
+    # path — OR a full verdict dict `{score, classification, label, reasons}` —
+    # written by `studio_blocks.py:569` on the Phase 8 composer rescore path.
+    # The dict case went undetected for several sessions because the governance
+    # endpoint wasn't exercised against composer-rescored artefacts; it trips
+    # `AttributeError: 'dict' object has no attribute 'lower'` the moment it is.
+    # We handle both shapes honestly via isinstance dispatch rather than a
+    # defensive `.get()` chain that would hide the underlying shape drift.
     buckets = ["public", "internal", "confidential", "restricted"]
     classification_breakdown = {b: 0 for b in buckets}
     last_classified_at: Optional[str] = None
@@ -127,9 +134,19 @@ async def governance_panel(current: Dict[str, Any] = Depends(get_current_account
                 {"_id": 0, "classification": 1, "updated_at": 1, "created_at": 1},
             )
             async for row in cur:
-                c = (row.get("classification") or "").lower()
-                if c in classification_breakdown:
-                    classification_breakdown[c] += 1
+                raw = row.get("classification")
+                if isinstance(raw, dict):
+                    # Composer rescore verdict; the string tier lives nested
+                    # under the same key name.
+                    tier = str(raw.get("classification") or "").lower()
+                elif isinstance(raw, str):
+                    tier = raw.lower()
+                else:
+                    # Anything else (None, list, int) is honestly unknown —
+                    # drop rather than invent a bucket.
+                    continue
+                if tier in classification_breakdown:
+                    classification_breakdown[tier] += 1
                 ts = row.get("updated_at") or row.get("created_at")
                 if ts and (last_classified_at is None or ts > last_classified_at):
                     last_classified_at = ts
