@@ -110,3 +110,66 @@ def test_perf_buffer_populated():
     _run()
     snap = get_perf_snapshot()
     assert snap["count"] > 0
+
+
+
+# ---------------------------------------------------------------------------
+# Phase 12.3 ITEM A — DEAL_CODENAME wins over PERSON / ORGANIZATION.
+#
+# Stock spaCy NER (en_core_web_sm) confidently labels "Project Falcon" as
+# PERSON when it sits before a real name, and as ORGANIZATION when it
+# sits before a corporate-acquisition phrase. The previous Presidio
+# PatternRecognizer for DEAL_CODENAME tied or lost on score, leaving the
+# histogram label wrong (redaction still happened, just under the wrong
+# category). DEAL_CODENAME has now been promoted to the regex pre-pass;
+# the pipeline's `_merge_spans()` gives regex precedence over Presidio,
+# so any overlapping PERSON / ORGANIZATION span from spaCy is dropped.
+# Both tests below assert (a) DEAL_CODENAME is present in the result,
+# and (b) it covers the "Project <X>" / "Operation <X>" surface form.
+# ---------------------------------------------------------------------------
+
+def _spans_for(text: str):
+    return asyncio.run(
+        dryrun(text, context_id="test-ctx", surface="chat", mode="redact")
+    )["spans"]
+
+
+def test_deal_codename_wins_over_person():
+    text = "Project Falcon briefed by Sarah Chen yesterday."
+    spans = _spans_for(text)
+    deal_spans = [s for s in spans if s["entity_type"] == "DEAL_CODENAME"]
+    assert deal_spans, [
+        (s["entity_type"], text[s["start"]:s["end"]]) for s in spans
+    ]
+    # The DEAL_CODENAME span must cover "Project Falcon" exactly (no over-
+    # reach into the trailing real name, no Presidio PERSON span swallowing
+    # the codename).
+    found = [text[s["start"]:s["end"]] for s in deal_spans]
+    assert any(f == "Project Falcon" for f in found), found
+    # And the real PERSON ("Sarah Chen") still gets its own non-overlapping
+    # span — the codename win must not cost us downstream PII detection.
+    person_spans = [s for s in spans if s["entity_type"] == "PERSON"]
+    assert person_spans, [
+        (s["entity_type"], text[s["start"]:s["end"]]) for s in spans
+    ]
+
+
+def test_deal_codename_wins_over_organization():
+    text = "Project Atlas acquisition of TargetCo closed last quarter."
+    spans = _spans_for(text)
+    deal_spans = [s for s in spans if s["entity_type"] == "DEAL_CODENAME"]
+    assert deal_spans, [
+        (s["entity_type"], text[s["start"]:s["end"]]) for s in spans
+    ]
+    found = [text[s["start"]:s["end"]] for s in deal_spans]
+    assert any(f == "Project Atlas" for f in found), found
+    # Belt-and-braces: there must be NO span whose entity_type is PERSON
+    # or ORGANIZATION that overlaps "Project Atlas" — that was the
+    # original miscategorisation. We allow ORGANIZATION on "TargetCo".
+    p_a_start = text.index("Project Atlas")
+    p_a_end = p_a_start + len("Project Atlas")
+    for s in spans:
+        if s["entity_type"] in {"PERSON", "ORGANIZATION"}:
+            assert s["end"] <= p_a_start or s["start"] >= p_a_end, (
+                s, text[s["start"]:s["end"]]
+            )

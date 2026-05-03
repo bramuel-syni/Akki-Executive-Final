@@ -6,10 +6,18 @@ reloader-watched process trips fork issues; tracked as a known gap).
 Lazy-loaded module-singleton on first call.
 
 Custom recognisers added on top of stock English PII pack:
-  - DEAL_CODENAME       — "Project <PascalCase>" / "Operation <PascalCase>"
   - EXECUTIVE_TITLE     — common C-suite + chair / board-level titles
   - CHAIR_NAME          — names seeded from contexts.people (per-call)
   - FINANCIAL_FIGURE_LARGE — £/$/€ amounts >=7 figures
+
+Phase 12.3 ITEM A — DEAL_CODENAME ("Project Falcon", "Operation Magpie")
+moved to the regex pre-pass in `regex_recognisers.py`. Stock spaCy NER
+inside Presidio kept beating the previous PatternRecognizer's score
+during Presidio's internal merge, so the histogram label landed wrong
+even though redaction itself happened. Putting DEAL_CODENAME in the
+regex layer lets the pipeline's `_merge_spans()` give it deterministic
+precedence over any Presidio NER call on the same text — the merge
+rule is regex-wins-on-overlap, by design.
 
 Presidio is configured to use `en_core_web_sm` (locked per Phase 12.1).
 Flip the env var `SYNISENSE_SPACY_MODEL` to override without code change.
@@ -42,15 +50,10 @@ def _build_analyzer():  # noqa: ANN202 — Presidio types are heavy
     registry = RecognizerRegistry()
     registry.load_predefined_recognizers(nlp_engine=nlp_engine, languages=["en"])
 
-    # ── DEAL_CODENAME — "Project Falcon", "Operation Magpie".
-    registry.add_recognizer(PatternRecognizer(
-        supported_entity="DEAL_CODENAME",
-        patterns=[Pattern(
-            name="deal_codename",
-            regex=r"\b(?:Project|Operation)\s+[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2}\b",
-            score=0.85,
-        )],
-    ))
+    # ── DEAL_CODENAME has moved to the regex pre-pass — see
+    # `regex_recognisers.py`. Removed from Presidio in Phase 12.3 ITEM A
+    # to keep the taxonomy single-sourced and avoid the score-tie merge
+    # bug that mislabelled "Project Falcon" as PERSON / ORGANIZATION.
 
     # ── EXECUTIVE_TITLE — surfaced job-titles that often sit beside names.
     registry.add_recognizer(PatternRecognizer(

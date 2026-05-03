@@ -243,3 +243,88 @@ Phase 12.2 closed the **surface wiring + UI** deliverables. Marketing copy is Ph
 **Carried to 12.3:**
 - Marketing copy honesty pass on `/plans` and `/security` pages — both currently say "Synisense de-identification — coming soon" or similar; should now read "Synisense de-identification — live".
 - "Actually shipped" final diff in `SYNISENSE_SCOPE.md`.
+
+
+---
+
+## Actually shipped — Phase 12.3 (2026-05-04)
+
+Phase 12.3 was the small honesty pass: a single entity-priority fine-tune,
+the marketing copy rewrite, and the consolidated record. No new surfaces,
+no new env vars, no new routes.
+
+**Delivered in 12.3:**
+- **ITEM A — DEAL_CODENAME entity priority.** "Project Falcon" / "Project Atlas"
+  consistently lost the Presidio internal merge to stock spaCy NER's
+  PERSON / ORGANIZATION labels (redaction worked, the histogram label was
+  wrong). Promoted DEAL_CODENAME from a Presidio `PatternRecognizer` to a
+  regex pre-pass entry in `services/synisense/regex_recognisers.py`. The
+  pipeline's `_merge_spans()` already gives regex precedence over Presidio,
+  so the codename now wins deterministically, no matter what spaCy says.
+  Removed the duplicate Presidio `PatternRecognizer` from
+  `services/synisense/presidio_engine.py` to keep the taxonomy
+  single-sourced. Two new regression tests
+  (`test_deal_codename_wins_over_person`,
+  `test_deal_codename_wins_over_organization`) lock the behaviour. Existing
+  22 synisense tests untouched and still green (now 24 total).
+- **ITEM B — Marketing copy honesty.** `pages/marketing/Security.jsx`
+  Promise #02 ("Identities are scrubbed") rewritten to describe what
+  actually ships: regex fast-path → Presidio NER on `en_core_web_sm` with
+  custom recognisers → Gemini 2.5 Flash low-confidence fallback (capped,
+  timeout-bounded). Names AES-GCM envelope encryption, per-record DEKs,
+  key version pinning. Six live surfaces explicitly enumerated. Public
+  HTTP 410 refusal documented as a verifiable artefact. `pages/marketing/Plans.jsx`
+  unchanged — it carries no feature bullets and its "pricing will be
+  published when general availability opens" stance is the right one
+  pre-Phase-16. FT-voice grep on the diff showed zero banned words.
+- **ITEM C — `SYNISENSE_SCOPE.md` consolidation (this section).** 12.1 and
+  12.2 sections preserved verbatim as historical record. New 12.3 entry
+  + the consolidated table below. No previous content rewritten.
+- **ITEM D — Production readiness paragraph appended to
+  `RUNBOOKS/PRODUCTION_ENV.md`** describing the `SYNISENSE_USE_POOL` flip
+  procedure post-cutover.
+
+**Consolidated 12.1 + 12.2 + 12.3 — what landed across the three phases**
+
+| Layer | Phase | What shipped |
+| --- | --- | --- |
+| AES-GCM envelope encryption, per-record DEK, key version | 12.1 | `services/synisense/encryption.py` |
+| Three-tier pipeline (regex → Presidio → LLM fallback) | 12.1 | `services/synisense/pipeline.py` |
+| Presidio NER + custom recognisers (EXECUTIVE_TITLE, CHAIR_NAME, FIN_FIGURE_LARGE) | 12.1 | `services/synisense/presidio_engine.py` |
+| 9-pattern regex fast-path | 12.1 | `services/synisense/regex_recognisers.py` |
+| Capped, concurrency-bounded Gemini 2.5 Flash fallback | 12.1 | `services/synisense/llm_fallback.py` |
+| TTL-indexed shield maps (1h public_read, 24h default, 7d hard max) | 12.1 | `services/synisense/pipeline.py`, `server.py` indexes |
+| Admin endpoints (`/synisense/status`, `/dryrun`, `/admin/synisense/perf`) | 12.1 | `routers/synisense.py` |
+| In-memory ring-buffer perf snapshot (p50/p95/p99) | 12.1 | `services/synisense/pipeline.py` |
+| Boot guard (refuse prod start without master key) | 12.1 | `server.py` startup |
+| spaCy warmup thread on boot | 12.2 | `server.py` startup hook |
+| Chat pre-LLM redact + per-message `synisense_stats` | 12.2 | `routers/chat.py` |
+| Document ingest per-paragraph `shield_reversible` (24h TTL) | 12.2 | `routers/documents.py` |
+| Reversible-paragraph endpoint (per-context-member, audited) | 12.2 | `routers/documents.py` |
+| Studio block-save hook + `synisense_first_accept` flow | 12.2 | `routers/studio_blocks.py` |
+| Studio first-accept persistence (`synisense_version >= 1`) | 12.2 | `routers/studio_blocks.py` |
+| `PreviewDrawer.jsx` (first-save preview, drawer-reopen on new entity types) | 12.2 | `frontend/src/components/synisense/PreviewDrawer.jsx` |
+| Solve synthesis pre-validator redact | 12.2 | `routers/solve_engine.py` |
+| Public-read 410-gate (asserts `synisense_version >= 1` BEFORE projection) | 12.2 closeout | `routers/studio.py` |
+| Public-read content sourced from `body_redacted` (no original-body leak) | 12.2 closeout | `routers/studio.py` |
+| Denylist extended with shield-map cryptographic keys | 12.2 | `routers/studio.py` |
+| Governance synisense rollup (`$or` on context_id ∪ account_id) | 12.2 closeout | `routers/governance.py` |
+| TrustPanel rewrite + `ValidatedBadge` honesty invariant | 12.2 | `frontend/src/components/governance/TrustPanel.jsx` |
+| Chat inline "N spans redacted" chip | 12.2 | `frontend/src/pages/Chat.jsx` |
+| Chat `synisense_stats.version` engine-version threading | 12.2 closeout | `routers/chat.py` |
+| Backfill migration for legacy artefacts (`body_redacted`, `synisense_version=1`) | 12.2 closeout | `backend/scripts/backfill_synisense_version.py` |
+| DEAL_CODENAME promoted to regex pre-pass (deterministic over spaCy NER) | 12.3 | `services/synisense/regex_recognisers.py` (+ removed from `presidio_engine.py`) |
+| Marketing copy describes the engine truthfully | 12.3 | `frontend/src/pages/marketing/Security.jsx` |
+| Production readiness note for `SYNISENSE_USE_POOL` | 12.3 | `docs/RUNBOOKS/PRODUCTION_ENV.md` |
+
+**Honest deviations carried forward (expected, stay):**
+- **Process pool stays disabled in dev** (`SYNISENSE_USE_POOL=false`). uvicorn
+  `--reload` is hostile to `multiprocessing.Pool` fork (zombie children). With
+  perf comfortably under budget (p50 ≈ 7ms, p95 ≈ 10ms vs. the 20ms / 60ms
+  scope target), there is no operational pressure to flip the pool until
+  the production cutover to a non-reloading runtime. Procedure is documented
+  in `RUNBOOKS/PRODUCTION_ENV.md`. Status endpoint surfaces `mode: in_process`
+  honestly today.
+
+**Remaining open items:** _none._ The Synisense Shield (Phases 12.1 → 12.3)
+is closed. Future work belongs in Phase 13+ per `docs/ROADMAP.md`.

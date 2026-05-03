@@ -209,6 +209,23 @@ record carries `key_version`.
 | `SYNISENSE_SHIELD_MAP_TTL_HOURS` | OPTIONAL | `24` | Default TTL for `shield_reversible` envelopes. Hard max 168h (7 days). `public_read` surface is fixed at 1h regardless. |
 | `AKKI_ENV` | OPTIONAL | `production` | Set to `production` to activate the Synisense master-key boot guard independent of `BILLING_ENABLED`. Useful for staging environments that aren't selling tier yet. |
 
+
+**Production checklist — `SYNISENSE_USE_POOL` flip after cutover.** The
+process pool stays `false` in dev because uvicorn `--reload` is hostile
+to `multiprocessing.Pool` fork (zombie children) and the in-process p50
+already sits ≈ 7ms (well under the 20ms / 60ms scope target). Once the
+production runtime is live without the reloader, set
+`SYNISENSE_USE_POOL=true`, restart the Container App, and confirm no
+zombie children are accumulating: `ps -ef | grep python | grep
+'<defunct>'` should return nothing during steady-state traffic. If
+stable for a full traffic day, leave it on — Presidio's first-call cost
+no longer blocks the request loop. If you see zombies, pool-worker
+crashes in the logs, or any p99 spike, flip back to `false` — the
+in-process path is comfortably under budget and is the safe default.
+The `mode` field on `GET /api/synisense/status` will read
+`pool_workers=N` instead of `in_process` once the flip takes effect.
+
+
 ---
 
 ## 12. How to use in Azure Container Apps

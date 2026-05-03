@@ -1,9 +1,23 @@
 """Regex fast-path recognisers for the Synisense pipeline.
 
 Promoted from `llm_service.py`'s 9-pattern shield ladder. Keep behaviour
-identical — Phase 12.1 explicitly avoids changing what the regex layer
-flags. New entity types belong in `presidio_engine.py` (custom
+identical for the legacy 9 — Phase 12.1 explicitly avoided changing what
+that layer flags. New entity types belong in `presidio_engine.py` (custom
 recognisers) so we keep the regex layer narrow and fast.
+
+Phase 12.3 ITEM A — DEAL_CODENAME promoted from a Presidio
+PatternRecognizer to a regex pre-pass. Stock Presidio NER consistently
+labelled "Project Falcon" / "Project Atlas" as PERSON or ORGANIZATION
+because spaCy's `en_core_web_sm` returns those with confidence ≥ 0.85,
+which beat the custom DEAL_CODENAME PatternRecognizer's tied score
+inside Presidio's internal merge. Redaction still happened, but the
+histogram label was wrong, polluting the TrustPanel narrative. The
+pipeline's `_merge_spans()` already gives regex precedence over
+Presidio (regex hits added first; overlapping Presidio spans skipped),
+so detecting "Project <X>" in the regex layer is the deterministic fix
+without monkey-patching Presidio internals. The Presidio
+PatternRecognizer for DEAL_CODENAME is removed in tandem to keep the
+taxonomy single-sourced.
 
 Each pattern returns (start, end, entity_type, replacement_template).
 Replacements are deterministic per-document via a counter so the same
@@ -14,7 +28,11 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Tuple
 
-# 9 patterns, in priority order (most specific first to avoid overlap).
+# Patterns, in priority order (most specific first to avoid overlap).
+# DEAL_CODENAME is broader than the legacy 9 — it deliberately sits last
+# so it never accidentally swallows a more specific pattern that begins
+# with a capital word (it doesn't, today, but the ordering is the
+# defensive choice).
 _PATTERNS: List[Tuple[str, str, str]] = [
     # entity_type, label_short, regex
     ("EMAIL_ADDRESS", "EMAIL", r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
@@ -26,6 +44,12 @@ _PATTERNS: List[Tuple[str, str, str]] = [
     ("IP_ADDRESS", "IP", r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
     ("URL", "URL", r"\bhttps?://[^\s)]+"),
     ("DATE_TIME_EXACT", "DATE", r"\b\d{4}-\d{2}-\d{2}\b"),
+    # Phase 12.3 ITEM A — board codename detection. Matches "Project Foo"
+    # and "Operation Foo Bar" with up to two trailing PascalCase tokens.
+    # Word-boundary anchors keep accidental contamination off when the
+    # phrase appears mid-sentence.
+    ("DEAL_CODENAME", "DEAL",
+     r"\b(?:Project|Operation)\s+[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2}\b"),
 ]
 
 _COMPILED = [(et, lbl, re.compile(pat)) for et, lbl, pat in _PATTERNS]
