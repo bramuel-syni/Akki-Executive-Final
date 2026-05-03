@@ -29,8 +29,9 @@ in.
 8. Billing
 9. Observability (Phase 13)
 10. Backup
-11. How to use in Azure Container Apps
-12. Copy-paste template
+11. **Synisense Shield (Phase 12)**
+12. How to use in Azure Container Apps
+13. Copy-paste template
 
 ---
 
@@ -186,7 +187,31 @@ Mongo dumps are scripted in `scripts/backup_mongo.sh` and
 
 ---
 
-## 11. How to use in Azure Container Apps
+## 11. Synisense Shield (Phase 12)
+
+The in-house de-identification pipeline. Regex fast-path → Presidio NER
+→ LLM fallback on low-confidence spans. All persisted envelopes are
+AES-GCM encrypted under a master key; DEKs are per-record and wrapped
+under that master key. Key rotation is safe because every persisted
+record carries `key_version`.
+
+| Var | Required | Example | How to source |
+|---|---|---|---|
+| `SYNISENSE_MASTER_KEY` | **REQUIRED** in prod | `<64 hex chars>` | Generate: `python -c "import secrets; print(secrets.token_hex(32))"`. **PRODUCTION:** source from Azure Key Vault secret `akki-synisense-master-key` (created by the foundation runbook). Boot guard in `server.py` refuses start if `AKKI_ENV=production` OR `BILLING_ENABLED=true` AND this is unset AND `SYNISENSE_ALLOW_INSECURE` is not `true`. **Rotation protocol:** to rotate, (a) generate a new key, (b) keep the old key registered as `SYNISENSE_MASTER_KEY_V1`, (c) set the new key as `SYNISENSE_MASTER_KEY`, (d) bounce the Container App. Old records decrypt via their persisted `key_version`; new records encrypt with the new key. No re-encryption migration required. |
+| `SYNISENSE_MASTER_KEY_V<N>` | OPTIONAL | `<64 hex chars>` | Historical key versions. Register each prior master key under its own numbered env var to keep old shield-map records decryptable after rotation. Remove only after the TTL on the last record written under that version has elapsed (default 24h, max 7d). |
+| `SYNISENSE_ALLOW_INSECURE` | OPTIONAL | `false` | Dev-only escape hatch. When `true` and no master key is set, the pipeline uses a constant fallback key and logs a warning every 60 seconds. **MUST be `false` (or unset) in production** — the boot guard does not enforce this, operators do. |
+| `SYNISENSE_POOL_SIZE` | OPTIONAL | `max(2, cpu_count - 1)` | Process-pool worker count for Presidio. Currently scaffolding only (Presidio runs in-process in 12.1; pool wiring lands in 12.2). Value is surfaced in `/api/synisense/status` so operators can tune without a code change. |
+| `SYNISENSE_USE_POOL` | OPTIONAL | `false` | Flip to `true` in 12.2 to enable the process pool. Default `false` today. |
+| `SYNISENSE_SPACY_MODEL` | OPTIONAL | `en_core_web_sm` | spaCy model Presidio loads. Locked to `en_core_web_sm` for Phase 12; flip to `en_core_web_lg` if accuracy in real corpora is insufficient. No code change required. |
+| `SYNISENSE_LLM_FALLBACK_CAP` | OPTIONAL | `20` | Max LLM fallback classifications per document. Remaining low-confidence spans are treated as not-PII (conservative default — Presidio already flagged them sub-threshold). |
+| `SYNISENSE_LLM_FALLBACK_CONCURRENCY` | OPTIONAL | `5` | Max concurrent Gemini 2.5 Flash calls for fallback classification per document. |
+| `SYNISENSE_LLM_FALLBACK_TIMEOUT_MS` | OPTIONAL | `2000` | Per-call timeout for the fallback classifier. On timeout the span is marked `uncertain` and conservatively redacted. |
+| `SYNISENSE_SHIELD_MAP_TTL_HOURS` | OPTIONAL | `24` | Default TTL for `shield_reversible` envelopes. Hard max 168h (7 days). `public_read` surface is fixed at 1h regardless. |
+| `AKKI_ENV` | OPTIONAL | `production` | Set to `production` to activate the Synisense master-key boot guard independent of `BILLING_ENABLED`. Useful for staging environments that aren't selling tier yet. |
+
+---
+
+## 12. How to use in Azure Container Apps
 
 Every secret above is stored as an Azure Key Vault secret and mounted
 into the Container App as a **secret reference**. Plain env vars (the
@@ -219,7 +244,7 @@ rules and managed identity binding to Key Vault), see
 
 ---
 
-## 12. Copy-paste template
+## 13. Copy-paste template
 
 Copy the block below to a local `.env` file. **Never commit.**
 
@@ -288,6 +313,19 @@ SENTRY_TRACES_SAMPLE_RATE=0.1
 # ── 10. Backup
 BACKUP_DIR=/var/backups/akki
 BACKUP_S3_PATH=s3://akki-prod-backups/mongo/
+
+# ── 11. Synisense Shield (Phase 12)
+SYNISENSE_MASTER_KEY=
+# SYNISENSE_MASTER_KEY_V1=            # set once you rotate; see §11 rotation notes
+SYNISENSE_ALLOW_INSECURE=false
+SYNISENSE_POOL_SIZE=
+SYNISENSE_USE_POOL=false
+SYNISENSE_SPACY_MODEL=en_core_web_sm
+SYNISENSE_LLM_FALLBACK_CAP=20
+SYNISENSE_LLM_FALLBACK_CONCURRENCY=5
+SYNISENSE_LLM_FALLBACK_TIMEOUT_MS=2000
+SYNISENSE_SHIELD_MAP_TTL_HOURS=24
+AKKI_ENV=production
 ```
 
 _End of production environment template. Pair with `AZURE_DEPLOY.md` for the deployment topology._

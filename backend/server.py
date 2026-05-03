@@ -233,6 +233,38 @@ async def on_startup():
         import logging as _lg
         _lg.getLogger("akki.startup").warning("stripe idempotency indexes: %s", e)
 
+    # ─── Phase 12.1 Synisense boot guard ────────────────────────────────
+    # Master key required in production. Dev escape hatch:
+    # SYNISENSE_ALLOW_INSECURE=true falls back to a constant key with a
+    # 60-second stderr warning loop. Production is detected as
+    # BILLING_ENABLED=true OR AKKI_ENV=production.
+    try:
+        from services.synisense.encryption import init_keys as _syn_init, is_insecure_fallback
+        _syn_init()
+        if is_insecure_fallback():
+            # Arm the periodic warning loop so the noise stays loud.
+            import asyncio as _asyncio
+            import logging as _lg
+
+            async def _syn_nag_loop():
+                _log = _lg.getLogger("akki.synisense")
+                while True:
+                    _log.warning(
+                        "SYNISENSE running with INSECURE dev fallback key. "
+                        "Set SYNISENSE_MASTER_KEY before production boot."
+                    )
+                    await _asyncio.sleep(60)
+            _asyncio.create_task(_syn_nag_loop())
+    except Exception as e:  # noqa: BLE001
+        # If the production guard in init_keys() raised MasterKeyMissing
+        # we re-raise to refuse boot. Anything else is a non-fatal load
+        # issue — log and continue so the rest of the app is still up.
+        from services.synisense.encryption import MasterKeyMissing as _MKM
+        if isinstance(e, _MKM):
+            raise RuntimeError(str(e)) from e
+        import logging as _lg
+        _lg.getLogger("akki.startup").error("synisense init failed: %s", e)
+
     await db.accounts.create_index("email", unique=True)
     await db.accounts.create_index("id", unique=True)
     await db.contexts.create_index("id", unique=True)
@@ -340,6 +372,24 @@ async def on_startup():
     await db.llm_validator_usage.create_index(
         [("day_utc", 1), ("surface", 1)], unique=True,
     )
+
+    # Phase 12.1 — Synisense runs + shield maps.
+    # `synisense_runs` carries per-execution audit-lite records (no
+    # original text, SHA-256 of input instead). Index by context +
+    # surface + time so the governance TrustPanel can cheaply roll up
+    # spans-per-week histograms in 12.2.
+    await db.synisense_runs.create_index([("context_id", 1), ("ts", -1)])
+    await db.synisense_runs.create_index([("surface", 1), ("ts", -1)])
+    await db.synisense_runs.create_index("input_sha256")
+    # `synisense_shield_maps` carries AES-GCM envelope-encrypted originals.
+    # TTL index on `expires_at` reclaims entries automatically; the
+    # application sets `expires_at` per-surface (1h public_read, 24h
+    # default, 7d hard max). Mongo's TTL monitor checks hourly.
+    await db.synisense_shield_maps.create_index("id", unique=True)
+    await db.synisense_shield_maps.create_index(
+        "expires_at", expireAfterSeconds=0,
+    )
+    await db.synisense_shield_maps.create_index([("context_id", 1), ("created_at", -1)])
 
     # Inbound-email idempotency
     await db.accounts.create_index("inbound_token", sparse=True)

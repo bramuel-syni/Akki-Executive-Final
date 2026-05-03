@@ -186,3 +186,36 @@ Phasing recommendation: ship tier 1 + tier 2 to chat + ingest (≈ 4 days) behin
 ---
 
 _End of scope. Phase 11 takes this document as its input; the lift above is the shape of that phase._
+
+---
+
+## Actually shipped — Phase 12.1 (2026-05-03)
+
+Phase 12.1 closed the **engine** deliverables. Surface wiring, UI, and marketing copy are Phase 12.2 / 12.3.
+
+**Delivered in 12.1:**
+- `backend/services/synisense/` package: `regex_recognisers.py`, `presidio_engine.py` (with custom `DEAL_CODENAME`, `EXECUTIVE_TITLE`, `CHAIR_NAME`, `FINANCIAL_FIGURE_LARGE` recognisers), `llm_fallback.py` (Gemini 2.5 Flash, concurrency-capped, timeout-bounded), `encryption.py` (AES-GCM envelope, per-record DEK, `key_version` rotation), `pool.py` (sizing + health surface), `pipeline.py` (public entry, deterministic replacement tokens, perf ring buffer, audit writer).
+- `db.synisense_runs` (context/surface/time indexes) + `db.synisense_shield_maps` (TTL index on `expires_at`, per-surface defaults 1h/24h, hard max 7d).
+- `routers/synisense.py` rewritten: real `GET /api/synisense/status` (pool/model/key_version/perf snapshot), real `POST /api/synisense/dryrun` executing the pipeline without persisting.
+- New `GET /api/admin/synisense/perf` — superadmin-gated, p50/p95/p99 over a 10k-entry ring buffer.
+- Boot guard in `server.py on_startup`: refuses start in production (`AKKI_ENV=production` or `BILLING_ENABLED=true`) without `SYNISENSE_MASTER_KEY`; dev fallback warns every 60 seconds.
+- Full test pack: **22 tests pass** (7 regex + 5 encryption + 6 integration + 4 security). Phase 11 regression pack (studio blocks, decks validation, chat context) still green.
+- Perf benchmark: **p50 7ms, p95 10ms, p99 10ms, mean 7.5ms** over 50 governance samples — well inside the 20ms/60ms scope-doc target. Cold start (first call) is ~2s (spaCy model load); subsequent calls warm.
+- `requirements.txt` + `.env` + `PRODUCTION_ENV.md` § 11 updated with 9 new env vars.
+
+**Intentional drift from original scope:**
+- Process pool is scaffolding only (sizing + health surface are live; actual pool wiring behind `SYNISENSE_USE_POOL=true`, disabled by default). Presidio runs in-process today because forking from the uvicorn dev-reloader process creates zombie children. Production container (non-reloading) is fork-safe; pool wiring lands in 12.2 alongside surface integration.
+- Merge policy tightened from the brief's "score-based" to "regex wins on any overlap". In testing, Presidio was greedily labelling regex-detectable patterns plus surrounding context (e.g. `IBAN GB33BUKB...` → ORGANIZATION). Giving regex priority keeps the label taxonomy accurate on the hard cases the legacy shield ladder already knew how to catch.
+- Spans below the low-confidence threshold that get dropped by the LLM fallback (`llm_verdict = 'not_pii'`) are removed from the output entirely, not kept with a "not PII" tag. Cleaner output; honest about what's redacted.
+
+**Not in 12.1 (confirmed carry to 12.2):**
+- Chat pre-LLM redaction hook.
+- Ingest path redaction on `documents.extracted_text` and each `paragraphs[i].text`.
+- Studio block-save hook + `PreviewDrawer.jsx` state machine.
+- Solve synthesis hook.
+- Public-read `synisense_version` assertion.
+- TrustPanel rewrite (`mock_scaffolding_note` still in place).
+- Chat inline "N spans redacted" icon.
+
+**Not in 12.1 (confirmed carry to 12.3):**
+- Marketing copy honesty pass on `/plans` and `/security`.
