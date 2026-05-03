@@ -66,16 +66,58 @@ Active item: 2px accent underline (never background fill). Collapses to hamburge
 - 12.2 six-surface wiring (chat, ingest, Studio, Solva, public-read) + PreviewDrawer + TrustPanel rewrite + chat inline icon
 - 12.3 marketing copy honesty pass + "Actually shipped" diff in SYNISENSE_SCOPE.md
 
-### Phase 13 — Nomenclature & Navigation Rebuild (~3 days)
-- Rename: Solve→Solva (routes, components, copy, files), Studio→Work Studio, Signals→contributes to Pulse
-- Merge Prepare/Catch-up features into Cycle Manager (briefs + cycle signals + minutes + action items)
-- Top nav rebuild to 8 items per UI brief. 64px fixed. Accent underline active state.
-- Cycle context indicator top-right (operating vs NED contexts)
-- Keyboard shortcuts: Cmd-K global search, Cmd-J take into Solva, Cmd-S save
-- Cross-module handoff primitives: "Take into Solva", "Send to Work Studio", "Add to Cycle"
-- Role-aware Home by `declared_role` (NED / Executive / Dual / Undeclared)
-- WCAG 2.2 AA automated audit in CI (`@axe-core/react`, `pa11y-ci`), fix top-20 hits
-- Performance budgets wired as CI gates: FCP/TTI/LCP per surface
+### Phase 13 — Nomenclature & Navigation Rebuild (~7-8 days, split into 4 sub-phases)
+
+**Status:** 13.1 done · 13.2-13.4 pending fresh-session dispatch.
+
+- **13.1 Nomenclature rename (~1.5d)** ✅ **DONE 2026-05-04.**
+  - Solve → Solva: backend routers `solve.py` → `solva.py`, `solve_engine.py` →
+    `solva_engine.py`. API canonicalised on `/api/solva/*`. Legacy `/api/solve/*`
+    served by `routers/solva_aliases.py` returning HTTP 308 with `Location:
+    /api/solva/...` (preserves method + body). Frontend pages renamed
+    (`SolveLanding.jsx` → `SolvaLanding.jsx`, `AppSolve.jsx` → `AppSolva.jsx`).
+    `/solve` and `/app/solve` aliased via `<Navigate replace />` in `App.js`.
+  - Studio → Work Studio: user-visible copy only (StudioComposerPage,
+    Decks, Features, EnterpriseFeature, ThreePillars). Backend route
+    surface and file names retained for internal stability.
+  - Mongo collection names retain the `solve_` prefix (`solve_sessions`,
+    `solve_clusters`, etc.) — renaming is a data-migration risk for zero
+    user benefit. Stored data values like `role: "solve"` and
+    `surface: "solve"` (in `llm_deep_usage`) follow the same logic.
+  - Marketing copy refreshed: SolvaLanding, ThreePillars,
+    EnterpriseFeature, Security, FirstSession.
+  - 4 new alias regression tests in `test_solva_route_aliases.py`. Existing
+    39 Phase 12 tests still green (43 total now).
+  - Aliases scheduled for retirement in **Phase 14** (three sessions out)
+    — see "Migration notes — `/api/solve` → `/api/solva` aliases" below.
+- **13.2 Cycle Manager merger (~2d)** — pending. Absorb Prepare features
+  into Cycle. Unified surface (briefs + cycle signals + minutes + action
+  items). `/app/prepare` redirects to `/app/cycle` with deep-linked tabs.
+  `briefs` vs `briefings` collection split preserved (intentional dual
+  store).
+- **13.3 Navigation + shortcuts + role-aware Home + handoffs (~2d)** —
+  pending. 8-item top nav (Home · Chat · Solva · Work Studio · Cycle
+  Manager · Monitor · Pulse · Learn). 64px fixed. Accent underline active
+  state. Hamburger below 1024px. Cycle context indicator top-right.
+  Cmd-K / Cmd-J / Cmd-S. Handoff primitives. Role-aware Home by
+  `declared_role`.
+- **13.4 WCAG 2.2 AA + perf budgets (~1.5d)** — pending. `@axe-core/react`
+  dev-time + `pa11y-ci` CI gate. Fix top-20 hits. Lighthouse CI perf
+  budget gates per surface.
+
+#### Phase 13.1 migration notes — `/api/solve` → `/api/solva` aliases
+- Legacy paths return HTTP 308 (Permanent Redirect, preserves method +
+  body). Implemented in `backend/routers/solva_aliases.py` as a
+  catch-all path-converter route mounted at `/api/solve` and registered
+  AFTER the canonical Solva routers. Query strings carry across.
+- Frontend route aliases (`/solve` → `/solva`, `/app/solve` →
+  `/app/solva`) live in `App.js` as `<Navigate to="..." replace />`
+  entries. The `replace` flag means the legacy URL never lands in
+  history — clean back-button behaviour.
+- The aliases are observable on the wire (308 in access logs, no body)
+  so we can decide when to retire them. Plan: **retire in Phase 14**
+  once Pulse landing surfaces have migrated and external bookmarks have
+  had three sessions to bake in.
 
 ### Phase 14 — Akki Pulse (~4 days)
 - Cross-account Pulse aggregator across all context memberships a user holds

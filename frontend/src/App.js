@@ -6,7 +6,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import { Toaster } from "@/components/ui/sonner";
 
 import Landing from "@/pages/Landing";
-import SolveLanding from "@/pages/SolveLanding";
+import SolvaLanding from "@/pages/SolvaLanding";
 import SignIn from "@/pages/SignIn";
 import SignUp from "@/pages/SignUp";
 import FirstSession from "@/pages/FirstSession";
@@ -38,7 +38,7 @@ import QuickResults from "@/pages/QuickResults";
 import Manage from "@/pages/Manage";
 import Enterprise from "@/pages/Enterprise";
 import Decks from "@/pages/Decks";
-import AppSolve from "@/pages/AppSolve";
+import AppSolva from "@/pages/AppSolva";
 import Sandbox from "@/pages/Sandbox";
 import SandboxGenerating from "@/pages/SandboxGenerating";
 import Cycle from "@/pages/Cycle";
@@ -126,7 +126,12 @@ function App() {
         <UpgradeModal />
         <Routes>
           <Route path="/" element={<Landing />} />
-          <Route path="/solve" element={<SolveLanding />} />
+          <Route path="/solva" element={<SolvaLanding />} />
+          {/* Phase 13.1 — legacy /solve URL alias. Solve was renamed to
+              Solva in Phase 13.1; the alias keeps any external link
+              (bookmarks, old emails, search-engine results) working
+              silently. Plan to retire in Phase 14. */}
+          <Route path="/solve" element={<Navigate to="/solva" replace />} />
           <Route path="/about" element={<About />} />
           <Route path="/features" element={<Features />} />
           <Route path="/security" element={<Security />} />
@@ -196,7 +201,10 @@ function App() {
           <Route path="/app/decks" element={<Gated><Decks /></Gated>} />
           <Route path="/app/decks/:deckId" element={<Gated><Decks /></Gated>} />
           <Route path="/app/studio/composer/:kind/:artefactId" element={<Gated><StudioComposerPage /></Gated>} />
-          <Route path="/app/solve" element={<Gated><AppSolve /></Gated>} />
+          <Route path="/app/solva" element={<Gated><AppSolva /></Gated>} />
+          {/* Phase 13.1 — legacy /app/solve alias for muscle memory and
+              external bookmarks. Plan to retire in Phase 14. */}
+          <Route path="/app/solve" element={<Navigate to="/app/solva" replace />} />
           <Route path="/app/documents/:id" element={<Gated><DocumentRouteSwitch /></Gated>} />
           <Route path="/app/contexts" element={<Gated><ContextPortfolio /></Gated>} />
           <Route path="/app/contexts/new" element={<Gated><NewContext /></Gated>} />

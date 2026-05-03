@@ -1,7 +1,7 @@
 /*
- * Features page — the homepage's three-pillar structure (Solve, Cross-Board
- * Pulse, Studio) lives here, alongside the live sensitivity demo. Per the
- * homepage rules doc, three pillars are not homepage real estate at v1.
+ * Features page — the homepage's three-pillar structure (Solva, Cross-Board
+ * Pulse, Work Studio) lives here, alongside the live sensitivity demo. Per
+ * the homepage rules doc, three pillars are not homepage real estate at v1.
  */
 import React from "react";
 import MarketingShell from "@/components/marketing/MarketingShell";
@@ -24,14 +24,14 @@ export default function Features() {
             What AKKI is, in three pieces
           </h1>
           <p className="akki-serif text-[18px] leading-[1.7] text-[var(--deep)] max-w-[64ch]">
-            AKKI organises around three working surfaces — Solve, Cross-Board
-            Pulse, and the Studio for decks and reports. Each is editorially
+            AKKI organises around three working surfaces — Solva, Cross-Board
+            Pulse, and the Work Studio for decks and reports. Each is editorially
             distinct. Together they are how AKKI fits into a board cycle.
           </p>
         </div>
       </section>
 
-      {/* Three pillars (Solve / Pulse / Studio) */}
+      {/* Three pillars (Solva / Pulse / Work Studio) */}
       <ThreePillars />
 
       {/* Enterprise feature — live sensitivity demo */}

@@ -172,7 +172,7 @@ through redaction.
   TTL-indexed `synisense_shield_maps` (1h public_read, 24h default, 7d max).
   Entity-stable replacement tokens. In-memory ring-buffer perf.
 - **Surfaces wired**: Chat (`routers/chat.py`), Ingest (`documents.py`), Studio
-  block-save (`studio_blocks.py`), Solve synthesis (`solve_engine.py`),
+  block-save (`studio_blocks.py`), Solva synthesis (`solva_engine.py`),
   Public-read assertion (`studio.py` — `synisense_version >= 1` 410-gate),
   Governance TrustPanel (`governance.py`).
 - **Endpoints**: `GET /api/synisense/status`, `POST /api/synisense/dryrun`,
@@ -279,7 +279,7 @@ Auth-gated (`<ProtectedRoute>` + `<FirstSessionGuard>`): `/app/first-session`,
 `/app/prepare`, `/app/inbound-queue`, `/app/activity`, `/app/simulate`,
 `/app/lens`, `/app/chat`, `/app/influence`, `/app/quick-results/:cid/:docId`,
 `/app/learn[/:id]`, `/app/manage`, `/app/enterprise`, `/app/decks[/:deckId]`,
-`/app/studio/composer/:kind/:artefactId`, `/app/solve`, `/app/documents/:id`,
+`/app/studio/composer/:kind/:artefactId`, `/app/solva` _(legacy `/app/solve` aliased via Navigate)_, `/app/documents/:id`,
 `/app/contexts[/new]`, `/app/settings[/cycle,/billing]`, `/app/review`,
 `/app/security`. Redirects: `/app/{highlights,briefings,ask}` → consolidated
 surfaces.

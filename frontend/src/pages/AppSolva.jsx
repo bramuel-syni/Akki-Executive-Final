@@ -1,13 +1,18 @@
 /**
- * AppSolve — `/app/solve`. Real AKKI Solve module (iter61 Wave 1).
+ * AppSolva — `/app/solva`. Real AKKI Solva module (iter61 Wave 1, renamed
+ * Phase 13.1 from "Solve" to "Solva"). The legacy `/app/solve` URL still
+ * works via a `<Navigate replace />` alias in `App.js`; backend route
+ * aliases (`/api/solve/*` → 308 → `/api/solva/*`) live in
+ * `routers/solva_aliases.py`. Mongo collections retain the `solve_`
+ * prefix for historical stability.
  *
- * Replaces the iter58 placeholder. Renders three views:
+ * Renders three views:
  *
  *   1. Picker     — list of clusters + resume your last session
  *   2. Intent     — capture the user's framing, start a session
  *   3. Session    — 4-phase walk (Surface → Depth → Synthesis → Lock-in)
  *
- * Backend at /api/solve/{clusters,sessions,sessions/:id/{turn,restart,abandon}}.
+ * Backend at /api/solva/{clusters,sessions,sessions/:id/{turn,restart,abandon}}.
  */
 import React, { useEffect, useRef, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
@@ -29,7 +34,7 @@ const PHASE_LABEL = {
   lockin:    "Lock-in",
 };
 
-export default function AppSolve() {
+export default function AppSolva() {
   const [view, setView] = useState("picker");      // picker | intent | session
   const [clusters, setClusters] = useState([]);
   const [activeCluster, setActiveCluster] = useState(null);
@@ -45,9 +50,9 @@ export default function AppSolve() {
     let live = true;
     setLoading(true);
     Promise.all([
-      api.get("/solve/clusters").catch(() => ({ data: { clusters: [] } })),
-      api.get("/solve/sessions").catch(() => ({ data: { items: [] } })),
-      api.get("/solve/pro-status").catch(() => ({ data: null })),
+      api.get("/solva/clusters").catch(() => ({ data: { clusters: [] } })),
+      api.get("/solva/sessions").catch(() => ({ data: { items: [] } })),
+      api.get("/solva/pro-status").catch(() => ({ data: null })),
     ])
       .then(([c, s, p]) => {
         if (!live) return;
@@ -68,7 +73,7 @@ export default function AppSolve() {
   const resume = async (sid) => {
     setBusy(true);
     try {
-      const { data } = await api.get(`/solve/sessions/${sid}`);
+      const { data } = await api.get(`/solva/sessions/${sid}`);
       setSession(data);
       setActiveCluster(clusters.find((c) => c.id === data.cluster_id) || null);
       setView("session");
@@ -83,10 +88,10 @@ export default function AppSolve() {
     if (!window.confirm("Start over with the same cluster + intent? Your old session is preserved as 'abandoned'.")) return;
     setBusy(true);
     try {
-      const { data } = await api.post(`/solve/sessions/${sid}/restart`);
+      const { data } = await api.post(`/solva/sessions/${sid}/restart`);
       setSession(data);
       setView("session");
-      const list = await api.get("/solve/sessions").catch(() => ({ data: { items: [] } }));
+      const list = await api.get("/solva/sessions").catch(() => ({ data: { items: [] } }));
       setRecent(list.data?.items || []);
     } catch (e) {
       toast.error(apiErrorMessage(e));
@@ -99,14 +104,14 @@ export default function AppSolve() {
     if (!activeCluster || intent.trim().length < 20) return;
     setBusy(true);
     try {
-      const { data } = await api.post("/solve/sessions", {
+      const { data } = await api.post("/solva/sessions", {
         cluster_id: activeCluster.id,
         intent: intent.trim(),
         pro_tier: proTier,
       });
       setSession(data);
       setView("session");
-      const list = await api.get("/solve/sessions").catch(() => ({ data: { items: [] } }));
+      const list = await api.get("/solva/sessions").catch(() => ({ data: { items: [] } }));
       setRecent(list.data?.items || []);
     } catch (e) {
       toast.error(apiErrorMessage(e));
@@ -123,7 +128,7 @@ export default function AppSolve() {
     setActiveCluster(null);
     setIntent("");
     setView("picker");
-    api.get("/solve/sessions").then((r) => setRecent(r.data?.items || [])).catch(() => {});
+    api.get("/solva/sessions").then((r) => setRecent(r.data?.items || [])).catch(() => {});
   };
 
   return (
@@ -174,13 +179,13 @@ function PickerView({ clusters, recent, loading, onPick, onResume, onRestart }) 
     <>
       <header className="mb-10">
         <p className="akki-overline mb-2 flex items-center gap-1.5 text-[var(--accent)]">
-          <Layers className="w-3 h-3" /> Akki Solve · structured pause
+          <Layers className="w-3 h-3" /> Akki Solva · structured pause
         </p>
         <h1 className="akki-serif text-4xl text-[var(--ink)] tracking-tight leading-[1.05] mb-4">
           What's the problem you've been carrying?
         </h1>
         <p className="text-[15px] text-[var(--deep)] leading-relaxed max-w-[58ch]">
-          Pick the archetype closest to what you're sitting with. Solve will
+          Pick the archetype closest to what you're sitting with. Solva will
           walk you through Surface → Depth → Synthesis → Lock-in. Free
           accounts get a Sonnet-streamed synthesis; Pro accounts get the
           deep-tier (Opus) synthesis.
@@ -309,10 +314,10 @@ function IntentView({ cluster, intent, onIntentChange, proTier, onProTierChange,
         <Layers className="w-3 h-3 inline mr-1.5" /> {cluster.label}
       </p>
       <h1 className="akki-serif text-4xl text-[var(--ink)] tracking-tight leading-[1.05] mb-4 max-w-[24ch]">
-        Tell Solve, in your own words.
+        Tell Solva, in your own words.
       </h1>
       <p className="text-[14px] text-[var(--deep)] leading-relaxed mb-7 max-w-[58ch]">
-        Don't polish. Two or three sentences is fine. Solve uses this to
+        Don't polish. Two or three sentences is fine. Solva uses this to
         anchor the rest of the session — Surface, Depth, Synthesis, Lock-in.
       </p>
 
@@ -351,7 +356,7 @@ function IntentView({ cluster, intent, onIntentChange, proTier, onProTierChange,
               </span>
             ) : grantClaimed ? (
               <span className="block text-[11px] text-[var(--muted)] mt-0.5" data-testid="solve-pro-state-locked">
-                You've used your free deep synthesis this month. Pro accounts get unlimited deep synthesis on every Solve.
+                You've used your free deep synthesis this month. Pro accounts get unlimited deep synthesis on every Solva.
               </span>
             ) : (
               <span className="block text-[11px] text-[var(--muted)] mt-0.5" data-testid="solve-pro-state-free">
@@ -368,7 +373,7 @@ function IntentView({ cluster, intent, onIntentChange, proTier, onProTierChange,
                 Subscribe to Pro for unlimited deep synthesis.
               </p>
               <p className="text-[11.5px] text-[var(--muted)] mb-2">
-                $29/mo gets you unlimited Opus-tier diagnoses across every Solve session you run, plus the rest of AKKI Pro. You'll still get the standard tier on this session at no charge.
+                $29/mo gets you unlimited Opus-tier diagnoses across every Solva session you run, plus the rest of AKKI Pro. You'll still get the standard tier on this session at no charge.
               </p>
               <a
                 href="/app/settings?tab=billing"
@@ -390,7 +395,7 @@ function IntentView({ cluster, intent, onIntentChange, proTier, onProTierChange,
           data-testid="solve-intent-start"
         >
           {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-          Begin Solve session <ArrowRight className="w-4 h-4 ml-2" />
+          Begin Solva session <ArrowRight className="w-4 h-4 ml-2" />
         </Button>
       </div>
     </>
@@ -416,7 +421,7 @@ function SessionView({ session, cluster, onUpdate, onExit }) {
     if (draft.trim().length < 2 || busy) return;
     setBusy(true);
     try {
-      const { data } = await api.post(`/solve/sessions/${session.id}/turn`, {
+      const { data } = await api.post(`/solva/sessions/${session.id}/turn`, {
         user_text: draft.trim(),
       });
       onUpdate(data);
@@ -432,7 +437,7 @@ function SessionView({ session, cluster, onUpdate, onExit }) {
     if (!window.confirm("Pause and leave this session for later? You can resume from the picker.")) return;
     setBusy(true);
     try {
-      await api.post(`/solve/sessions/${session.id}/abandon`);
+      await api.post(`/solva/sessions/${session.id}/abandon`);
       onExit();
     } catch (e) {
       toast.error(apiErrorMessage(e));
@@ -443,7 +448,7 @@ function SessionView({ session, cluster, onUpdate, onExit }) {
 
   const hasSynthesis = !!(session.synthesis?.body);
   const downloadPdf = () => {
-    const url = `${process.env.REACT_APP_BACKEND_URL}/api/solve/sessions/${session.id}/export.pdf`;
+    const url = `${process.env.REACT_APP_BACKEND_URL}/api/solva/sessions/${session.id}/export.pdf`;
     const tok = localStorage.getItem("akki_access_token");
     fetch(url, { headers: tok ? { Authorization: `Bearer ${tok}` } : {}, credentials: "include" })
       .then((r) => {
@@ -565,7 +570,7 @@ function SessionView({ session, cluster, onUpdate, onExit }) {
               data-testid="solve-session-send"
             >
               {busy ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5 mr-1.5" />}
-              {busy ? "Solve is thinking…" : `Send · advance to ${PHASE_LABEL[PHASE_ORDER[phaseIdx + 1]] || "complete"}`}
+              {busy ? "Solva is thinking…" : `Send · advance to ${PHASE_LABEL[PHASE_ORDER[phaseIdx + 1]] || "complete"}`}
             </Button>
           </div>
         </div>
@@ -579,7 +584,7 @@ function Turn({ turn }) {
   return (
     <div data-testid={`solve-turn-${turn.id}`}>
       <p className={`text-[10.5px] uppercase tracking-[0.18em] mb-1.5 ${isUser ? "text-[var(--muted)]" : "text-[var(--accent)]"}`}>
-        {isUser ? "You" : "Solve"} · {PHASE_LABEL[turn.phase] || turn.phase}
+        {isUser ? "You" : "Solva"} · {PHASE_LABEL[turn.phase] || turn.phase}
         {turn.tier === "deep" && " · deep"}
       </p>
       <div className={`akki-serif text-[14.5px] leading-[1.7] whitespace-pre-wrap ${isUser ? "text-[var(--deep)]" : "text-[var(--ink)]"}`}>
@@ -710,7 +715,7 @@ function HandoffStrip({ session, onUpdate }) {
       const payload = target === "decks"
         ? { context_id: contextId, audience: "Board" }
         : { context_id: contextId };
-      const { data } = await api.post(`/solve/sessions/${session.id}${path}`, payload);
+      const { data } = await api.post(`/solva/sessions/${session.id}${path}`, payload);
       const id = (data.briefing || data.outline || data.questions?.[0])?.id;
       if (id) setDone((d) => ({ ...d, [target]: id }));
       toast.success(target === "brief"
@@ -720,7 +725,7 @@ function HandoffStrip({ session, onUpdate }) {
           : data.already_exists ? "Cycle questions already seeded." : `Seeded ${data.questions?.length || 0} cycle question${data.questions?.length===1?"":"s"}.`
       );
       // Refetch so handoffs[] stays in sync
-      const fresh = await api.get(`/solve/sessions/${session.id}`).catch(() => null);
+      const fresh = await api.get(`/solva/sessions/${session.id}`).catch(() => null);
       if (fresh?.data) onUpdate?.(fresh.data);
     } catch (e) {
       setErr(apiErrorMessage(e));

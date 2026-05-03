@@ -1,6 +1,6 @@
 /**
  * EnterpriseFeature — full-bleed navy band positioning the Decks + Reports
- * Studio surface as the enterprise differentiator.
+ * Work Studio surface as the enterprise differentiator.
  *
  * Includes a live sensitivity demo: paste any board-pack snippet and the
  * regex scorer returns a classification + reasons in real time. Powered by
@@ -8,6 +8,8 @@
  *
  * iter65 — design brief specifies full-bleed #0A1F44 background with cream
  * text and high-contrast layout to signal Enterprise security visually.
+ *
+ * Phase 13.1 — "Studio" rebadged as "Work Studio" in user-visible copy.
  */
 import React, { useState, useRef } from "react";
 import { Link } from "react-router-dom";
@@ -92,7 +94,7 @@ export default function EnterpriseFeature() {
         <div className="md:col-span-5">
           <p className="akki-overline mb-4" style={{ color: OXBLOOD }}>
             <ShieldCheck className="w-3 h-3 inline mr-1.5 -mt-0.5" />
-            Decks + Reports Studio · Enterprise
+            Decks + Reports · Work Studio · Enterprise
           </p>
           <h2
             className="akki-serif text-[36px] md:text-[48px] leading-[1.06] tracking-[-0.015em] font-normal mb-5 max-w-[18ch]"
@@ -238,7 +240,7 @@ export default function EnterpriseFeature() {
           {!result && !scoring && (
             <p className="mt-5 text-[12.5px] italic" style={{ color: `${CREAM}77` }}>
               Type or paste anything board-related — names, deal sizes, succession,
-              regulator notes — and we'll classify it the way the Studio would
+              regulator notes — and we'll classify it the way the Work Studio would
               when you save it.
             </p>
           )}

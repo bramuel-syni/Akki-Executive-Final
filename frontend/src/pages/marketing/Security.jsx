@@ -14,7 +14,7 @@ const PROMISES = [
     n: "02", icon: ShieldCheck, title: "Identities are scrubbed",
     headline: "The model never sees your CEO's name. Or yours.",
     detail: "Before any prompt leaves the AKKI backend, the in-house Synisense engine walks the text through a regex fast-path (emails, phone numbers, IBAN, card numbers, SSNs, NHS numbers, IPs, URLs, dates, and board codenames like \"Project Falcon\"), then a Presidio NER pass on a locally-loaded spaCy model with custom recognisers for executive titles, chair names, and financial figures, then — for the narrow band of spans the first two layers can't classify confidently — a capped, timeout-bounded Gemini 2.5 Flash classifier. The model reasons over masked text. The mapping back to the originals is encrypted at rest (AES-GCM, per-record data key, key version pinned) and never leaves the backend. If the LLM provider is breached tomorrow, the breach isn't yours.",
-    proof: "Settings → Trust panel logs every run: span count, entity types, engine version. The shielding sits across six surfaces today (chat, document ingest, briefings, decks, reports, Solve synthesis). Any document shared externally is refused with HTTP 410 until it has passed through the engine.",
+    proof: "Settings → Trust panel logs every run: span count, entity types, engine version. The shielding sits across six surfaces today (chat, document ingest, briefings, decks, reports, Solva synthesis). Any document shared externally is refused with HTTP 410 until it has passed through the engine.",
   },
   {
     n: "03", icon: FileCheck, title: "Receipts on every claim",

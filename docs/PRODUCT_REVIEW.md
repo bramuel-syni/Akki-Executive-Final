@@ -66,7 +66,7 @@ Each section below covers a canonical feature. Routes refer to the running app; 
 
 - **What it is.** A guided diagnostic for one nagging board-grade problem, run as a four-phase state machine: Surface → Depth → Synthesis → Lock-in.
 - **User value.** The NED or executive sitting with one ticking concern ("our top-3 credit concentration keeps creeping") gets a structured 25-minute pause, three anonymised comparables, and three handoff artefacts (brief, deck outline, cycle questions) ready to dispatch. Replaces the back-of-envelope.
-- **How it works today.** Backend `routers/solve_engine.py` exposes `POST /api/solve/sessions`, `.../turn`, `.../restart`, `.../abandon`, `.../handoff/{brief|decks|cycle}`, `.../export.pdf`. Mongo collections: `solve_sessions`, `solve_clusters` (taxonomy seeded from `solve_clusters_seed.py`), `solve_comparables` (27 curated diagnoses keyed on cluster + sector tag), `solve_handoffs`, `solve_free_grants` (one row per (account, month) for the free-tier monthly deep-synthesis grant). LLM calls go through the deep tier (Claude Opus by default, configurable via `LLM_MODEL_DEEP`). Frontend at `/app/solve` (`pages/AppSolve.jsx`) and the marketing landing `/solve` (`pages/SolveLanding.jsx`).
+- **How it works today.** Backend `routers/solva_engine.py` (renamed from `solve_engine.py` in Phase 13.1) exposes `POST /api/solva/sessions`, `.../turn`, `.../restart`, `.../abandon`, `.../handoff/{brief|decks|cycle}`, `.../export.pdf`. Legacy `/api/solve/*` URLs return HTTP 308 to the canonical Solva path (preserves method + body). Mongo collections retain the `solve_` prefix for historical stability: `solve_sessions`, `solve_clusters` (taxonomy seeded from `solve_clusters_seed.py`), `solve_comparables` (27 curated diagnoses keyed on cluster + sector tag), `solve_handoffs`, `solve_free_grants` (one row per (account, month) for the free-tier monthly deep-synthesis grant). LLM calls go through the deep tier (Claude Opus by default, configurable via `LLM_MODEL_DEEP`). Frontend at `/app/solva` (`pages/AppSolva.jsx`) and the marketing landing `/solva` (`pages/SolvaLanding.jsx`); legacy `/app/solve` and `/solve` are `<Navigate replace />` aliases.
 - **State.** Shipped.
 - **Gaps / risks.** Stripe → Solve Pro entitlement flip is incomplete (per `AUDIT_iter68.md`, P1). Validator badge appears on Synthesis but no real second-model pass runs there; only Briefings get a real validator call. PDF export is real (`solve_pdf.py`) but is not signed or hash-chained.
 - **Open decisions.** —
@@ -298,7 +298,7 @@ All routes share an `/api` prefix unless noted. Routes are grouped by router fil
 | `strategic_goals.py` | GET/POST/PATCH/DELETE `.../strategic-goals[/{id}]` · POST `.../strategic-goals/extract` | Strategic goals |
 | `influence_map.py` | GET `.../influence-map` · POST `.../influence-map/digest` · POST `/cron/weekly-digest` | Influence map + Monday digest |
 | `plays.py` | GET `/plays/library` · GET/POST `.../plays[/{id}]` · POST `.../plays/{id}/{advance,jump,pause,resume,seen,exit,pre_board/read}` · PATCH `.../plays/{id}/state` | Plays / workflows |
-| `solve.py` | POST `/api/solve/interest` · GET `/api/solve/interest/me` | Solve early-access |
+| `solva.py` | POST `/api/solva/interest` · GET `/api/solva/interest/me` · _(legacy `/api/solve/*` 308-aliased)_ | Solva early-access |
 | `solve_engine.py` | GET `.../clusters` · GET `.../pro-status` · POST/GET `.../sessions[/{sid}]` · POST `.../{turn,restart,abandon}` · POST `.../handoff/{brief,decks,cycle}` · GET `.../handoffs` · GET `.../export.pdf` | Four-phase Solve engine |
 | `studio.py` | POST `/api/public/studio/sensitivity-demo` · POST `.../{kind}/{aid}/{view,share,rescore,share-email}` · POST `.../backfill_sensitivity` · GET `.../studio/history[/{kind}/{aid}/engagement]` · GET `/api/public/studio/{track,read}/{token}` | Studio: views, shares, sensitivity, public tracking |
 | `studio_blocks.py` | GET/POST/PATCH/DELETE `/api/studio/{kind}/{aid}/blocks[/{block_id}]` · POST `.../move` · POST `.../reorder` | **NOT WIRED.** Phase 8 block composer in `server.py` `include_router` list — absent |
@@ -366,7 +366,7 @@ All routes resolved in `/app/frontend/src/App.js`. Every `/app/*` route is doubl
 | `/app/manage` | `Manage.jsx` | |
 | `/app/enterprise` | `Enterprise.jsx` | |
 | `/app/decks`, `/app/decks/:deckId` | `Decks.jsx` | |
-| `/app/solve` | `AppSolve.jsx` | |
+| `/app/solva` _(legacy `/app/solve` aliased)_ | `AppSolva.jsx` | |
 | `/app/documents/:id` | `ReadingView.jsx` | Canonical reading |
 | `/app/contexts`, `/app/contexts/new`, `/app/new-workspace` | `ContextPortfolio.jsx`, `NewWorkspace.jsx` | |
 | `/app/settings`, `/app/settings/billing` | `TenantSettings.jsx` | |

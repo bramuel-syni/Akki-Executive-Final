@@ -4,7 +4,7 @@
  * Replaces three previous nav implementations:
  *   - inline nav in pages/Landing.jsx (lines 120-166 pre-PR)
  *   - MarketingHeader inside components/marketing/MarketingShell.jsx
- *   - inline nav in pages/SolveLanding.jsx (lines 87-112 pre-PR)
+ *   - inline nav in pages/SolvaLanding.jsx (lines 87-112 pre-PR)
  *
  * Logged-out CTA: "Apply for early access" -> /early-access
  * Logged-in: replaces Sign in + CTA with "Go to workspace" -> /app

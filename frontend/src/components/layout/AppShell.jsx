@@ -53,7 +53,7 @@ const NAV = [
   { to: "/app", label: "Home", icon: Home, end: true, ready: true },
   { to: "/app/workspace", label: "Document Journal", icon: BookOpenCheck, module: "M3", ready: true },
   { to: "/app/chat", label: "Chat", icon: MessageCircle, module: "§15", ready: true },
-  { to: "/app/solve", label: "Solve", icon: Layers, module: "§18", ready: true,
+  { to: "/app/solva", label: "Solva", icon: Layers, module: "§18", ready: true,
     badge: "Preview" },
   { to: "/app/prepare", label: "Catch-up", icon: Sparkles, module: "M5+M12", ready: true },
   { to: "/app/decks", label: "Decks + Reports", icon: Presentation, module: "§17", ready: true },

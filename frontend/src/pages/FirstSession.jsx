@@ -302,12 +302,15 @@ function FirstSessionDoor({ intake, onDoorChosen, onSkip, refreshAuth }) {
       await api.post("/me/first-session/choose-door", { door });
       if (door === "solve") {
         // Backend flipped status → completed. Refresh AuthContext BEFORE
-        // navigating so `FirstSessionGuard` on `/app/solve` sees the new
-        // state and doesn't bounce us back here (Phase 4.1 fix).
+        // navigating so `FirstSessionGuard` on `/app/solva` sees the new
+        // state and doesn't bounce us back here (Phase 4.1 fix). Note:
+        // the door key remains "solve" to keep prior intake records
+        // matchable; only the navigation target reflects the Phase 13.1
+        // rename.
         try { if (refreshAuth) await refreshAuth(); } catch { /* noop */ }
         const intent = intake?.top_of_mind || "";
         const q = intent ? `?intent=${encodeURIComponent(intent)}` : "";
-        navigate(`/app/solve${q}`);
+        navigate(`/app/solva${q}`);
         return;
       }
       onDoorChosen(door);
@@ -355,13 +358,13 @@ function FirstSessionDoor({ intake, onDoorChosen, onSkip, refreshAuth }) {
           note={isMobile ? "Easier from desktop." : null}
         />
 
-        {/* Solve */}
+        {/* Solva */}
         <DoorCard
           testId="first-session-door-solve"
           icon={SolveIcon}
-          heading="Run Solve on what's on your mind."
-          body="Take the sentence you just gave us into a 4-phase Solve session. AKKI surfaces, deepens, synthesises, locks in."
-          cta="Start a Solve session"
+          heading="Run Solva on what's on your mind."
+          body="Take the sentence you just gave us into a 4-phase Solva session. AKKI surfaces, deepens, synthesises, locks in."
+          cta="Start a Solva session"
           onClick={() => choose("solve")}
           disabled={picking && picking !== "solve"}
         />
@@ -490,10 +493,10 @@ function FirstSessionDone({ artefact }) {
     })();
   }, []);
 
-  const artefactLabel = artefact?.kind === "solve_session" ? "Solve session" : "briefing";
+  const artefactLabel = artefact?.kind === "solve_session" ? "Solva session" : "briefing";
   const artefactHref =
     artefact?.kind === "solve_session"
-      ? `/app/solve?session=${artefact.id}`
+      ? `/app/solva?session=${artefact.id}`
       : `/app/prepare?briefing=${artefact?.id || ""}`;
 
   return (

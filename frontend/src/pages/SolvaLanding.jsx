@@ -1,12 +1,15 @@
 /**
- * SolveLanding — public marketing landing page for AKKI Solve.
+ * SolvaLanding — public marketing landing page for AKKI Solva.
  *
- * Iter58 — first surface. Reachable at /solve from the main landing page
- * "How it works" CTA. Until the full module ships, this page does the
- * heavy lifting of explaining what Solve is, the four-phase framework,
- * and the differentiation vs. a chat thread.
+ * Iter58 — first surface. Reachable at /solva from the main landing
+ * page "How it works" CTA. Phase 13.1 renamed the product module from
+ * "Solve" to "Solva"; the legacy `/solve` URL still routes here via a
+ * `<Navigate to="/solva" replace />` alias in `App.js`. `data-testid`
+ * attributes retain the `solve-` prefix for screenshot/test fixture
+ * stability, identical to the rationale for keeping the `solve_`
+ * collection names — internal identifiers, not user-facing copy.
  *
- * The actual Solve module (in-app, behind auth) will be at /app/solve.
+ * The actual Solva module (in-app, behind auth) is at /app/solva.
  */
 import React from "react";
 import { Link } from "react-router-dom";
@@ -24,7 +27,7 @@ const PHASES = [
     headline: "Name the problem the way a board chair would.",
     body:
       "Most board problems arrive tangled — half-symptom, half-strategy, half-politics. " +
-      "Solve starts by asking you to state it in one sentence. Plain. Specific. The " +
+      "Solva starts by asking you to state it in one sentence. Plain. Specific. The " +
       "kind of sentence that earns a follow-up question.",
   },
   {
@@ -32,7 +35,7 @@ const PHASES = [
     title: "Depth",
     headline: "Pressure-test the framing.",
     body:
-      "Solve walks the question, not at it. It asks the questions a sharp counterpart " +
+      "Solva walks the question, not at it. It asks the questions a sharp counterpart " +
       "would — challenging assumptions, surfacing what's missing, separating cause from " +
       "consequence. You leave depth knowing what you actually need to decide.",
   },
@@ -41,7 +44,7 @@ const PHASES = [
     title: "Synthesis",
     headline: "A diagnosis grounded in evidence.",
     body:
-      "Solve triangulates against comparable diagnoses — across boards, sectors, and " +
+      "Solva triangulates against comparable diagnoses — across boards, sectors, and " +
       "scale — and writes the diagnosis you can hold up to scrutiny. No bullet stuffing. " +
       "No false confidence. Cited, calm, and short enough to read on a phone.",
   },
@@ -51,7 +54,7 @@ const PHASES = [
     headline: "Decide what changes Monday.",
     body:
       "Three commitments: what you'll do, what you'll watch, and what you'll walk into the " +
-      "next conversation with. Solve hands the synthesis back as a brief, a deck, or a " +
+      "next conversation with. Solva hands the synthesis back as a brief, a deck, or a " +
       "follow-up cycle for the executives who'll deliver it.",
   },
 ];
@@ -60,7 +63,7 @@ const VS_CHAT = [
   {
     icon: MessageCircle,
     chat: "A chat thread answers the question you ask.",
-    solve: "AKKI Solve helps you find the question worth asking.",
+    solve: "AKKI Solva helps you find the question worth asking.",
   },
   {
     icon: Layers,
@@ -79,7 +82,7 @@ const VS_CHAT = [
   },
 ];
 
-export default function SolveLanding() {
+export default function SolvaLanding() {
   return (
     <div className="min-h-screen bg-[var(--cream)] text-[var(--ink)]" data-testid="solve-landing">
       {/* Header — shared MarketingNav */}
@@ -90,7 +93,7 @@ export default function SolveLanding() {
         <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-20 md:py-28 grid md:grid-cols-12 gap-10 items-end">
           <div className="md:col-span-8">
             <p className="akki-overline mb-6 text-[var(--accent)] flex items-center gap-1.5">
-              <Sparkles className="w-3 h-3" /> Akki Solve · structured pause for board-grade problems
+              <Sparkles className="w-3 h-3" /> Akki Solva · structured pause for board-grade problems
             </p>
             <h1 className="akki-serif text-[44px] md:text-[64px] leading-[1.04] tracking-[-0.018em] font-normal text-[var(--ink)] max-w-[18ch]">
               For the board problems that don't have tidy answers.
@@ -99,12 +102,12 @@ export default function SolveLanding() {
               The cost of moving without a diagnosis is rarely on the dashboard. It shows up
               quietly — a CEO who can't be told the board is uncertain, a strategy refresh
               that lands six months late, a succession plan that becomes an emergency.
-              Solve gives you the structured pause those decisions actually deserve.
+              Solva gives you the structured pause those decisions actually deserve.
             </p>
             <div className="flex flex-wrap gap-3 mt-9">
-              <Link to="/signup?from=solve">
+              <Link to="/signup?from=solva">
                 <Button className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-12 px-7 text-[14px]" data-testid="solve-hero-cta">
-                  Try Akki Solve <ArrowRight className="w-4 h-4 ml-2" />
+                  Try Akki Solva <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               </Link>
               <a href="#how" className="inline-flex items-center text-[14px] text-[var(--deep)] hover:text-[var(--accent)] underline-offset-4 hover:underline">
@@ -158,7 +161,7 @@ export default function SolveLanding() {
           <div className="max-w-[60ch] mb-14">
             <p className="akki-overline mb-3 text-[var(--accent)]">Why not just chat</p>
             <h2 className="akki-serif text-[32px] md:text-[44px] leading-[1.08] tracking-[-0.012em] font-normal">
-              Chat is brilliant for clarity. Solve is built for decision.
+              Chat is brilliant for clarity. Solva is built for decision.
             </h2>
           </div>
           <div className="grid md:grid-cols-2 gap-8" data-testid="solve-vs-chat">
@@ -167,7 +170,7 @@ export default function SolveLanding() {
                 <row.icon className="w-4 h-4 text-[var(--accent)] mb-3" strokeWidth={1.7} />
                 <p className="text-[12.5px] uppercase tracking-[0.16em] text-[var(--cream)]/50 mb-1.5">A chat thread</p>
                 <p className="text-[14.5px] text-[var(--cream)]/80 mb-4">{row.chat}</p>
-                <p className="text-[12.5px] uppercase tracking-[0.16em] text-[var(--accent)] mb-1.5">Akki Solve</p>
+                <p className="text-[12.5px] uppercase tracking-[0.16em] text-[var(--accent)] mb-1.5">Akki Solva</p>
                 <p className="text-[14.5px] text-[var(--cream)]">{row.solve}</p>
               </div>
             ))}
@@ -180,14 +183,14 @@ export default function SolveLanding() {
         <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-20 md:py-28 text-center">
           <p className="akki-overline mb-6">Try it</p>
           <h2 className="akki-serif text-[36px] md:text-[56px] leading-[1.08] tracking-[-0.015em] font-normal mb-6 max-w-[28ch] mx-auto">
-            Bring Solve a problem you've been carrying.
+            Bring Solva a problem you've been carrying.
           </h2>
           <p className="akki-serif text-[17px] leading-[1.7] text-[var(--muted)] max-w-[56ch] mx-auto mb-10">
             One session is fifteen to thirty minutes. The diagnosis is yours to keep.
             We'll be in your inbox the moment a slot opens.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
-            <Link to="/signup?from=solve">
+            <Link to="/signup?from=solva">
               <Button className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-sm h-12 px-7 text-[14px]" data-testid="solve-cta-final">
                 Request access <ArrowRight className="w-4 h-4 ml-2" />
               </Button>

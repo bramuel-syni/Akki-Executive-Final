@@ -5,7 +5,7 @@
  * STRICTLY honest: we render it only when a real second-LLM
  * countercheck has actually run and produced a verdict. Static / "trust
  * marker" rendering was retired in Phase 8 to avoid the cosmetic-only
- * failure mode the iter68 audit flagged on Decks, Reports and Solve
+ * failure mode the iter68 audit flagged on Decks, Reports and Solva
  * syntheses.
  *
  *   - validation = null / undefined  → renders nothing.
@@ -45,7 +45,7 @@ export default function ValidatedBadge({ size = "default", className = "", valid
 
   // Honest render: no real validation result, no badge. This is the
   // intentional fix for the cosmetic-only badge problem on Decks /
-  // Reports / Solve syntheses where the second-LLM call does not run.
+  // Reports / Solva syntheses where the second-LLM call does not run.
   if (!style) return null;
 
   const isCompact = size === "compact";

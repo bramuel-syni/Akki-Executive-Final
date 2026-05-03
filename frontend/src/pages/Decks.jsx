@@ -117,7 +117,7 @@ export default function Decks() {
       <div className="max-w-4xl mx-auto px-6 py-10" data-testid="decks-page">
         <header className="mb-8">
           <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--accent)] mb-2">
-            Decks + Reports · Studio
+            Decks + Reports · Work Studio
           </p>
           <h1 className="akki-serif text-4xl text-[var(--ink)] tracking-tight leading-[1.05]">
             Produce board-grade material with your own data.
@@ -978,7 +978,7 @@ function StudioHistoryStrip({ items, contextId, onOpenDeck }) {
       await api.post(`/contexts/${contextId}/studio/backfill_sensitivity`);
       const { data } = await api.get(`/contexts/${contextId}/studio/history?limit=20`);
       setList(data.items || []);
-      toast.success("Studio history re-scored.");
+      toast.success("Work Studio history re-scored.");
     } catch (e) {
       toast.error(apiErrorMessage(e));
     } finally {
@@ -991,7 +991,7 @@ function StudioHistoryStrip({ items, contextId, onOpenDeck }) {
       <div className="flex items-baseline justify-between mb-4">
         <div>
           <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]">
-            Studio history
+            Work Studio history
           </p>
           <p className="akki-serif text-2xl text-[var(--ink)] mt-1">
             What you've produced

@@ -26,10 +26,7 @@ import { ShieldCheck, X, FileLock2 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 
-const BACKEND_URL =
-  import.meta?.env?.REACT_APP_BACKEND_URL ||
-  process.env.REACT_APP_BACKEND_URL ||
-  "";
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "";
 
 /**
  * Render the original text with `<mark>` highlights at every span

@@ -1,10 +1,15 @@
 /**
- * ThreePillars — Solve as the dominant feature card, Cross Board Pulse as
+ * ThreePillars — Solva as the dominant feature card, Cross Board Pulse as
  * the secondary. Decks + Reports lives in its own full-width navy band
  * (EnterpriseFeature) below.
  *
- * iter65 design brief: bento-style asymmetric grid. Direct the eye to Solve.
- * Pulse uses the library/books image. Solve uses the desk/ledgers image.
+ * iter65 design brief: bento-style asymmetric grid. Direct the eye to Solva.
+ * Pulse uses the library/books image. Solva uses the desk/ledgers image.
+ *
+ * Phase 13.1 — "Solve" renamed to "Solva" in user-visible copy. The
+ * Studio module is now styled "Work Studio". `data-testid` attributes
+ * retain the `solve-`/`pillar-solve` prefix for fixture stability —
+ * internal identifiers, not user copy.
  */
 import React from "react";
 import { Link } from "react-router-dom";
@@ -44,7 +49,7 @@ export default function ThreePillars() {
               <div className="absolute inset-0 bg-gradient-to-t from-[var(--ink)] via-[var(--ink)]/60 to-transparent" />
               <div className="absolute bottom-5 left-7 right-7">
                 <p className="akki-overline mb-2 text-[var(--accent)] flex items-center gap-1.5">
-                  <Sparkles className="w-3 h-3" /> Akki Solve · the strongest feature
+                  <Sparkles className="w-3 h-3" /> Akki Solva · the strongest feature
                 </p>
                 <h3 className="akki-serif text-[26px] md:text-[34px] leading-[1.08] tracking-[-0.01em] max-w-[24ch]">
                   Diagnose board-grade problems in one structured pause.
@@ -71,15 +76,15 @@ export default function ThreePillars() {
                 ))}
               </ol>
               <div className="flex flex-wrap gap-3 pt-2 border-t border-[var(--cream)]/15">
-                <Link to="/signup?from=solve">
+                <Link to="/signup?from=solva">
                   <Button
                     className="rounded-sm h-11 px-6 text-[13.5px] tracking-wide bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white"
                     data-testid="solve-session-start"
                   >
-                    Start a Solve session <ArrowRight className="w-4 h-4 ml-2" />
+                    Start a Solva session <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
                 </Link>
-                <Link to="/solve">
+                <Link to="/solva">
                   <Button
                     variant="outline"
                     className="rounded-sm h-11 px-6 text-[13.5px] bg-transparent hover:bg-[var(--cream)]/10 border-[var(--cream)]/30 text-[var(--cream)]"
@@ -139,7 +144,7 @@ export default function ThreePillars() {
             </div>
             <div className="flex-1 min-w-[260px] max-w-[58ch]">
               <p className="akki-overline mb-1.5 text-[var(--accent)]">
-                And the third — Decks + Reports Studio
+                And the third — Decks + Reports · Work Studio
               </p>
               <p className="akki-serif text-[18px] md:text-[20px] leading-[1.35] text-[var(--ink)]">
                 Produce board-grade material with your own data — auto-classified,

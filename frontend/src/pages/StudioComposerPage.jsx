@@ -52,7 +52,7 @@ export default function StudioComposerPage() {
           </button>
           <span className="text-[11px] uppercase tracking-[0.16em] text-[#7C6A4F]">·</span>
           <span className="text-[11px] uppercase tracking-[0.16em] text-[#0A1F44]">
-            Studio composer · {KIND_LABEL[kind]}
+            Work Studio composer · {KIND_LABEL[kind]}
           </span>
         </div>
 

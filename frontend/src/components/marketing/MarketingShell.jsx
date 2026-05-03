@@ -5,7 +5,7 @@
  *
  * Pre-PR this file held its own MarketingHeader / MarketingFooter named
  * exports. They are now consolidated into dedicated components so Landing
- * and SolveLanding can use them too.
+ * and SolvaLanding can use them too.
  */
 import React from "react";
 import MarketingNav from "@/components/marketing/MarketingNav";

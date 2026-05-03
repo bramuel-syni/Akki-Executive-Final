@@ -1,9 +1,15 @@
-"""AKKI Solve · interest registration (pre-launch).
+"""AKKI Solva · interest registration (pre-launch).
 
 Captures early-access expressions from inside the app and via the public
 landing page. Uses an append-only audit pattern (every submission is a new
 row) — same as the Enterprise lead-gen surface — so we keep the full
 intent timeline. /me returns the latest record.
+
+Phase 13.1 — module renamed from `solve` to `solva`. Mongo collections
+retain the `solve_` prefix (e.g. `solve_interest`) for historical
+stability; renaming collections is a data-migration risk for zero user
+benefit. Product name is "Solva". The legacy `/api/solve/*` URL surface
+is kept alive by `solva_aliases.py` (HTTP 308) until Phase 14.
 """
 from __future__ import annotations
 
@@ -15,17 +21,17 @@ from pydantic import BaseModel, Field
 
 from core import db, get_current_account, iso, now
 
-router = APIRouter(prefix="/api/solve", tags=["solve"])
+router = APIRouter(prefix="/api/solva", tags=["solva"])
 
 
-class SolveInterestIn(BaseModel):
+class SolvaInterestIn(BaseModel):
     use_case: Optional[str] = Field(None, max_length=600)
     role: Optional[str] = Field(None, max_length=80)
 
 
 @router.post("/interest")
 async def register_interest(
-    payload: SolveInterestIn,
+    payload: SolvaInterestIn,
     account: Dict[str, Any] = Depends(get_current_account),
 ):
     rec = {

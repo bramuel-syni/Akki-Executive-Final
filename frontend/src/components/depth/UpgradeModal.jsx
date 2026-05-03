@@ -62,7 +62,7 @@ export default function UpgradeModal({ controlledOpen, onOpenChange }) {
         <div className="mt-2">
           <p className="text-[14px] text-[var(--muted)] leading-[1.65] mb-5 max-w-[56ch]">
             Run depth analyses, generate decks with the deeper model, get
-            longer Solve sessions. Pricing is on request — talk to us.
+            longer Solva sessions. Pricing is on request — talk to us.
           </p>
           {source ? (
             <p className="text-[11px] text-[var(--muted)]/80 mb-4 akki-overline tracking-[0.18em]" data-testid="upgrade-modal-source">

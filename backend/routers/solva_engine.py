@@ -1,14 +1,22 @@
-"""AKKI Solve · 4-phase session engine.
+"""AKKI Solva · 4-phase session engine.
 
-Iter61 Wave 1 — the framework execution. Each Solve session walks the user
+Phase 13.1 — module renamed from `solve_engine` to `solva_engine`. Mongo
+collections (`solve_sessions`, `solve_clusters`, `solve_comparables`,
+`solve_handoffs`, `solve_free_grants`) retain the `solve_` prefix for
+historical stability; renaming collections is a data-migration risk for
+zero user benefit. Product name is "Solva". The legacy `/api/solve/*`
+URL surface is kept alive by `solva_aliases.py` (HTTP 308) until
+Phase 14.
+
+Iter61 Wave 1 — the framework execution. Each Solva session walks the user
 through Surface → Depth → Synthesis → Lock-in, posting one user turn and
-one Solve turn per phase. The session is persisted on every turn so save &
+one Solva turn per phase. The session is persisted on every turn so save &
 resume is trivial.
 
 Tiering (per iter58 user direction):
   - FREE accounts get Sonnet (`tier=standard`) for synthesis.
   - PRO accounts get Opus (`tier=deep`) for synthesis, charged against
-    a SEPARATE per-day budget surface (`solve` in llm_deep_usage) so it
+    a SEPARATE per-day budget surface (`solva` in llm_deep_usage) so it
     doesn't compete with Decks/Brief budgets.
 
 Triangulation v1 — evolutionary build (per iter58). At Synthesis we look
@@ -16,15 +24,15 @@ up the active cluster's `comparable_diagnoses` from the cluster doc; if
 absent, we ask the LLM to surface 2 plausible comparables in-prompt. The
 real curated comparable corpus lands in Wave 3.
 
-Endpoints:
-  GET  /api/solve/clusters
-  POST /api/solve/sessions                                start a session
-  GET  /api/solve/sessions                                list user's sessions
-  GET  /api/solve/sessions/{sid}                          fetch one
-  POST /api/solve/sessions/{sid}/turn                     post user input + advance phase
-  POST /api/solve/sessions/{sid}/regenerate-current       redo current phase reply
-  POST /api/solve/sessions/{sid}/restart                  start fresh session (clones cluster + intent)
-  POST /api/solve/sessions/{sid}/abandon                  mark abandoned (won't show in resume)
+Endpoints (canonical post-Phase-13.1):
+  GET  /api/solva/clusters
+  POST /api/solva/sessions                                start a session
+  GET  /api/solva/sessions                                list user's sessions
+  GET  /api/solva/sessions/{sid}                          fetch one
+  POST /api/solva/sessions/{sid}/turn                     post user input + advance phase
+  POST /api/solva/sessions/{sid}/regenerate-current       redo current phase reply
+  POST /api/solva/sessions/{sid}/restart                  start fresh session (clones cluster + intent)
+  POST /api/solva/sessions/{sid}/abandon                  mark abandoned (won't show in resume)
 """
 from __future__ import annotations
 
@@ -38,9 +46,9 @@ from pydantic import BaseModel, Field
 
 from core import db, get_current_account, iso, now
 
-logger = logging.getLogger("akki.solve.engine")
+logger = logging.getLogger("akki.solva.engine")
 
-router = APIRouter(prefix="/api/solve", tags=["solve"])
+router = APIRouter(prefix="/api/solva", tags=["solva"])
 
 
 PHASES: List[str] = ["surface", "depth", "synthesis", "lockin"]
@@ -891,15 +899,15 @@ async def export_session_pdf(
     if not rec.get("synthesis") and not rec.get("lockin"):
         raise HTTPException(
             status_code=409,
-            detail="Solve session has no synthesis to export — finish at least one phase first.",
+            detail="Solva session has no synthesis to export — finish at least one phase first.",
         )
     from solve_pdf import render_solve_pdf
     pdf_bytes = render_solve_pdf(rec)
-    safe_name = "".join(ch for ch in (rec.get("intent") or "solve")[:60] if ch.isalnum() or ch in (" -_")).strip().replace(" ", "_") or "solve"
+    safe_name = "".join(ch for ch in (rec.get("intent") or "solva")[:60] if ch.isalnum() or ch in (" -_")).strip().replace(" ", "_") or "solva"
     return StreamingResponse(
         iter([pdf_bytes]),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="akki_solve_{safe_name}.pdf"'},
+        headers={"Content-Disposition": f'inline; filename="akki_solva_{safe_name}.pdf"'},
     )
 
 
