@@ -90,11 +90,40 @@ Active item: 2px accent underline (never background fill). Collapses to hamburge
     39 Phase 12 tests still green (43 total now).
   - Aliases scheduled for retirement in **Phase 14** (three sessions out)
     — see "Migration notes — `/api/solve` → `/api/solva` aliases" below.
-- **13.2 Cycle Manager merger (~2d)** — pending. Absorb Prepare features
-  into Cycle. Unified surface (briefs + cycle signals + minutes + action
-  items). `/app/prepare` redirects to `/app/cycle` with deep-linked tabs.
-  `briefs` vs `briefings` collection split preserved (intentional dual
-  store).
+- **13.2 Cycle Manager merger (~2d)** ✅ **DONE 2026-05-04.**
+  - Outer tab shell on `/app/cycle`: 5 tabs (Overview · Briefs · Signals ·
+    Minutes · Actions). Deep-linked via `?tab=<id>` query string so URLs
+    pasted into chat / email land on the right tab. Accent underline on
+    active (per UI/UX brief; never background fill).
+  - **Overview tab** retains the existing reporting-cycle workflow
+    verbatim (Receive → Consolidate → Generate → Submit spine + 6 inner
+    sub-tabs: tracker / reportees / bank / checklists / inbox / reports).
+    Lifted into `OverviewTab` inside `pages/Cycle.jsx`.
+  - **Briefs / Signals / Minutes** absorb `/app/prepare`. New thin wrappers
+    in `frontend/src/components/cycle/tabs/{BriefsTab,SignalsTab,MinutesTab}.jsx`
+    render `<Prepare embedded forceTab="..." />`. `Prepare.jsx` was
+    refactored to accept `embedded` (skip AppShell + page H1) and
+    `forceTab` (skip the inner line-tab nav). All existing Prepare
+    functionality preserved: stats dock, brief generation form with
+    deep-tier toggle + quota meter, validator badge, history side rail,
+    brief-detail modal, signal-detail modal, minutes UI.
+  - **Actions tab** ("Action Items progress") is a new aggregator
+    surface: signal_actions (acted) + in-flight plays (active/paused) +
+    pending checklists (pending_approval/dispatched). Backed by the new
+    read-only endpoint `GET /api/contexts/{cid}/cycle/actions` in
+    `routers/cycle.py`. No new collections, no new write paths.
+  - **`/app/prepare` → `/app/cycle?tab=briefs`** as a `<Navigate replace />`
+    alias in `App.js`. `/app/highlights` now chains to
+    `/app/cycle?tab=signals`; `/app/briefings` chains to
+    `/app/cycle?tab=briefs`. Bookmarks and external email deep-links keep
+    working silently.
+  - `briefs` vs `briefings` collection split intentionally preserved
+    (informal vs formal, different surfaces, different endpoints).
+  - 5 new tests in `test_cycle_manager_actions_tab.py` (3) and
+    `test_prepare_redirect_alias.py` (2). Existing 43 still green
+    (48 total now).
+  - Nav-label rename "Cycle" → "Cycle Manager" and keyboard shortcuts
+    are deliberately deferred to Phase 13.3 (the nav rebuild).
 - **13.3 Navigation + shortcuts + role-aware Home + handoffs (~2d)** —
   pending. 8-item top nav (Home · Chat · Solva · Work Studio · Cycle
   Manager · Monitor · Pulse · Learn). 64px fixed. Accent underline active

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams, Link } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import CycleStrip from "@/components/cycle/CycleStrip";
@@ -17,11 +18,14 @@ import { toast } from "sonner";
 import {
   Users, MessageCircleQuestion, Send, Inbox, Plus, Trash2, Sparkles,
   Loader2, ArrowRight, Clock, CheckCircle2, Mail, Copy, ExternalLink, Edit3,
-  FileText, CalendarClock,
+  FileText, CalendarClock, ScrollText, Activity, ListChecks, Eye,
 } from "lucide-react";
 import ReportsTab from "@/components/cycle/ReportsTab";
 import CycleTracker from "@/components/cycle/CycleTracker";
-import { Eye } from "lucide-react";
+import BriefsTab from "@/components/cycle/tabs/BriefsTab";
+import SignalsTab from "@/components/cycle/tabs/SignalsTab";
+import MinutesTab from "@/components/cycle/tabs/MinutesTab";
+import ActionsTab from "@/components/cycle/tabs/ActionsTab";
 
 const CATS = [
   "audit", "risk", "operational", "strategic",
@@ -831,13 +835,18 @@ function SubmissionsInbox({ contextId }) {
 }
 
 // ---------- Page ----------
-export default function Cycle() {
-  const { activeContext, account } = useAuth();
-  const cid = activeContext?.id;
-  const isMobile = useIsMobile();
+// ---------------------------------------------------------------------------
+// OverviewTab — Phase 13.2
+//
+// The existing reporting-cycle workflow (Receive → Consolidate → Generate →
+// Submit, with 6 inner sub-tabs: tracker / reportees / bank / checklists /
+// inbox / reports) is preserved verbatim under the new outer "Overview" tab.
+// Lifted from the previous Cycle() body unchanged so behaviour, telemetry
+// keys (`cycle-tabs-list`, `cycle-spine-strip`, `cycle-tab-*`), and
+// keyboard navigation all remain stable.
+// ---------------------------------------------------------------------------
+function OverviewTab({ cid, account, activeContext, isMobile }) {
   const [cycleNames, setCycleNames] = useState([]);
-  // Iter42 — moved above the early return so useState is unconditional and
-  // the React-hooks rule isn't violated.
   const [activeTab, setActiveTab] = useState("tracker");
   useEffect(() => {
     (async () => {
@@ -849,7 +858,6 @@ export default function Cycle() {
       } catch { /* silent */ }
     })();
   }, [cid]);
-  if (!cid) return <AppShell><div className="p-12 text-center text-[var(--muted)] text-sm">No context selected.</div></AppShell>;
   // Iter42 — 4-step workflow spine. Each tab maps onto exactly one stage
   // of Receive → Consolidate → Generate → Submit. Used to drive the
   // SpineStrip indicator above the tab row so the user always knows where
@@ -873,92 +881,183 @@ export default function Cycle() {
   const activeStage = TAB_STAGE[activeTab] || "monitor";
 
   return (
+    <div>
+      {/* Cycle strip — Phase 2, Advisory 6. Sits above the existing
+          reporting-cycle spine, both coexist (different surfaces). */}
+      {cid ? <CycleStrip contextId={cid} isMobile={isMobile} /> : null}
+
+      {/* SPINE STRIP — 4 stages with the active tab's stage highlighted */}
+      <div className="mb-6 bg-white border border-[var(--rule)] rounded-md p-3" data-testid="cycle-spine-strip">
+        <div className="flex flex-wrap items-stretch gap-0">
+          {SPINE.map((stage, idx) => {
+            const isActive = stage.id === activeStage;
+            const isPast = SPINE.findIndex((s) => s.id === activeStage) > idx;
+            return (
+              <div
+                key={stage.id}
+                className={`flex-1 min-w-[140px] px-3 py-2 border-l first:border-l-0 border-[var(--rule)] transition-colors ${
+                  isActive ? "bg-[var(--accent-soft)]" : ""
+                }`}
+                data-testid={`cycle-spine-${stage.id}${isActive ? "-active" : ""}`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-mono font-medium ${
+                    isActive
+                      ? "bg-[var(--accent)] text-white"
+                      : isPast
+                        ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                        : "bg-[var(--cream-deep)] text-[var(--muted)] border border-[var(--rule)]"
+                  }`}>
+                    {idx + 1}
+                  </span>
+                  <p className={`text-[11px] uppercase tracking-[0.18em] font-medium ${
+                    isActive ? "text-[var(--accent)]" : "text-[var(--muted)]"
+                  }`}>
+                    {stage.label}
+                  </p>
+                </div>
+                <p className={`text-[11.5px] leading-snug ${isActive ? "text-[var(--ink)]" : "text-[var(--muted)]"}`}>
+                  {stage.blurb}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        {/* April 2026 — switched from overflow-x-auto to flex-wrap so the
+            tab row wraps cleanly on tablet widths instead of sliding the
+            rightmost tab under the right portfolio rail. The wrapped row
+            still reads as one menu thanks to the shared bottom border. */}
+        <TabsList className="bg-transparent border-b border-[var(--rule)] w-full justify-start h-auto p-0 rounded-none mb-8 flex-wrap" data-testid="cycle-tabs-list">
+          {[
+            ["tracker",    "Overview",          Eye],
+            ["reportees",  "1 · Your team",     Users],
+            ["bank",       "2 · Question bank", MessageCircleQuestion],
+            ["checklists", "3 · Send checklists", Send],
+            ["inbox",      "4 · Receive submissions", Inbox],
+            ["reports",    "5 · Consolidate & send up", FileText],
+          ].map(([v, l, I]) => (
+            <TabsTrigger
+              key={v} value={v}
+              className="bg-transparent data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none text-sm text-[var(--muted)] data-[state=active]:text-[var(--ink)] py-3 px-5 border-b-2 border-transparent data-[state=active]:border-[var(--accent)] data-[state=active]:font-medium"
+              data-testid={`cycle-tab-${v}`}
+            >
+              <I className="w-4 h-4 mr-2" strokeWidth={1.7} /> {l}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent value="tracker"><CycleTracker contextId={cid} /></TabsContent>
+        <TabsContent value="checklists"><Checklists contextId={cid} /></TabsContent>
+        <TabsContent value="bank"><QuestionBank contextId={cid} /></TabsContent>
+        <TabsContent value="reportees"><Reportees contextId={cid} /></TabsContent>
+        <TabsContent value="inbox"><SubmissionsInbox contextId={cid} /></TabsContent>
+        <TabsContent value="reports"><ReportsTab contextId={cid} currentEmail={account?.email} cycleNames={cycleNames} /></TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Cycle Manager — Phase 13.2 outer shell.
+//
+// Five top-level tabs: Overview · Briefs · Signals · Minutes · Actions.
+// Deep-linked via the `?tab=<id>` query param so a URL pasted into chat
+// or email lands on the right tab. Accent underline on active tab (per
+// UI/UX brief; never background fill).
+//
+// - Overview surfaces the existing Receive → Consolidate → Generate →
+//   Submit reporting workflow (the previous /app/cycle behaviour).
+// - Briefs / Signals / Minutes are absorbed from the legacy /app/prepare
+//   page; `<Prepare embedded forceTab="..." />` is the underlying impl,
+//   wrapped by thin tab components in `components/cycle/tabs/`.
+// - Actions aggregates signal_actions + in-flight plays + pending cycle
+//   submissions via the new `/api/contexts/{cid}/cycle/actions`
+//   aggregator endpoint.
+//
+// The nav-label rename from "Cycle" to "Cycle Manager" and the keyboard
+// shortcuts are scoped to Phase 13.3, NOT this phase.
+// ---------------------------------------------------------------------------
+const OUTER_TABS = [
+  { id: "overview", label: "Overview", icon: Eye },
+  { id: "briefs",   label: "Briefs",   icon: ScrollText },
+  { id: "signals",  label: "Signals",  icon: Activity },
+  { id: "minutes",  label: "Minutes",  icon: FileText },
+  { id: "actions",  label: "Actions",  icon: ListChecks },
+];
+
+const VALID_TAB_IDS = new Set(OUTER_TABS.map((t) => t.id));
+
+export default function Cycle() {
+  const { activeContext, account } = useAuth();
+  const cid = activeContext?.id;
+  const isMobile = useIsMobile();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryTab = searchParams.get("tab");
+  const activeTab = VALID_TAB_IDS.has(queryTab) ? queryTab : "overview";
+
+  const onTabChange = useCallback((next) => {
+    const sp = new URLSearchParams(searchParams);
+    if (next === "overview") {
+      sp.delete("tab"); // clean URL on the default tab
+    } else {
+      sp.set("tab", next);
+    }
+    setSearchParams(sp, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  if (!cid) return <AppShell><div className="p-12 text-center text-[var(--muted)] text-sm">No context selected.</div></AppShell>;
+
+  return (
     <AppShell>
       <div className="max-w-[1200px] mx-auto px-8 py-10">
         <div className="mb-6 akki-fade-up">
           <p className="akki-overline mb-2 flex items-center gap-2">
-            <Send className="w-3 h-3 text-[var(--accent)]" /> Reporting cycle · §12 · {activeContext.name}
+            <Send className="w-3 h-3 text-[var(--accent)]" /> Cycle Manager · §12 · {activeContext.name}
           </p>
           <h1 className="akki-greeting mb-2">Receive · Consolidate · Generate · Submit.</h1>
           <p className="akki-meta max-w-2xl">
-            The reporting cycle, on a single spine. Each tab below sits in one of the four stages — AKKI handles the
-            email, you gate every step — all for <strong className="text-[var(--ink)]">{activeContext.name}</strong>.
+            One workspace for the reporting cycle, the catch-up briefs, the signals on
+            the board, the minutes you've taken, and the action items still open — all for{" "}
+            <strong className="text-[var(--ink)]">{activeContext.name}</strong>.
           </p>
         </div>
 
-        {/* Cycle strip — Phase 2, Advisory 6. Sits above the existing
-            reporting-cycle spine, both coexist (different surfaces). */}
-        {cid ? <CycleStrip contextId={cid} isMobile={isMobile} /> : null}
-
-        {/* SPINE STRIP — 4 stages with the active tab's stage highlighted */}
-        <div className="mb-6 bg-white border border-[var(--rule)] rounded-md p-3" data-testid="cycle-spine-strip">
-          <div className="flex flex-wrap items-stretch gap-0">
-            {SPINE.map((stage, idx) => {
-              const isActive = stage.id === activeStage;
-              const isPast = SPINE.findIndex((s) => s.id === activeStage) > idx;
-              return (
-                <div
-                  key={stage.id}
-                  className={`flex-1 min-w-[140px] px-3 py-2 border-l first:border-l-0 border-[var(--rule)] transition-colors ${
-                    isActive ? "bg-[var(--accent-soft)]" : ""
-                  }`}
-                  data-testid={`cycle-spine-${stage.id}${isActive ? "-active" : ""}`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-mono font-medium ${
-                      isActive
-                        ? "bg-[var(--accent)] text-white"
-                        : isPast
-                          ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                          : "bg-[var(--cream-deep)] text-[var(--muted)] border border-[var(--rule)]"
-                    }`}>
-                      {idx + 1}
-                    </span>
-                    <p className={`text-[11px] uppercase tracking-[0.18em] font-medium ${
-                      isActive ? "text-[var(--accent)]" : "text-[var(--muted)]"
-                    }`}>
-                      {stage.label}
-                    </p>
-                  </div>
-                  <p className={`text-[11.5px] leading-snug ${isActive ? "text-[var(--ink)]" : "text-[var(--muted)]"}`}>
-                    {stage.blurb}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
+        {/* Outer tab nav — Phase 13.2 5-tab shell. Accent underline on
+            active, no background fill (per UI/UX brief). The `?tab=`
+            query param is the source of truth so URLs are shareable. */}
+        <div className="border-b border-[var(--rule)] flex items-stretch gap-0 mb-8 flex-wrap" data-testid="cycle-manager-outer-tabs">
+          {OUTER_TABS.map((t) => {
+            const Icon = t.icon;
+            const active = activeTab === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => onTabChange(t.id)}
+                className={`px-5 py-3 text-[14px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
+                  active
+                    ? "border-[var(--accent)] text-[var(--ink)] font-medium"
+                    : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
+                }`}
+                data-testid={`cycle-manager-tab-${t.id}${active ? "-active" : ""}`}
+                aria-current={active ? "page" : undefined}
+              >
+                <Icon className="w-4 h-4" strokeWidth={1.7} />
+                {t.label}
+              </button>
+            );
+          })}
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          {/* April 2026 — switched from overflow-x-auto to flex-wrap so the
-              tab row wraps cleanly on tablet widths instead of sliding the
-              rightmost tab under the right portfolio rail. The wrapped row
-              still reads as one menu thanks to the shared bottom border. */}
-          <TabsList className="bg-transparent border-b border-[var(--rule)] w-full justify-start h-auto p-0 rounded-none mb-8 flex-wrap" data-testid="cycle-tabs-list">
-            {[
-              ["tracker",    "Overview",          Eye],
-              ["reportees",  "1 · Your team",     Users],
-              ["bank",       "2 · Question bank", MessageCircleQuestion],
-              ["checklists", "3 · Send checklists", Send],
-              ["inbox",      "4 · Receive submissions", Inbox],
-              ["reports",    "5 · Consolidate & send up", FileText],
-            ].map(([v, l, I]) => (
-              <TabsTrigger
-                key={v} value={v}
-                className="bg-transparent data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none text-sm text-[var(--muted)] data-[state=active]:text-[var(--ink)] py-3 px-5 border-b-2 border-transparent data-[state=active]:border-[var(--accent)] data-[state=active]:font-medium"
-                data-testid={`cycle-tab-${v}`}
-              >
-                <I className="w-4 h-4 mr-2" strokeWidth={1.7} /> {l}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          <TabsContent value="tracker"><CycleTracker contextId={cid} /></TabsContent>
-          <TabsContent value="checklists"><Checklists contextId={cid} /></TabsContent>
-          <TabsContent value="bank"><QuestionBank contextId={cid} /></TabsContent>
-          <TabsContent value="reportees"><Reportees contextId={cid} /></TabsContent>
-          <TabsContent value="inbox"><SubmissionsInbox contextId={cid} /></TabsContent>
-          <TabsContent value="reports"><ReportsTab contextId={cid} currentEmail={account?.email} cycleNames={cycleNames} /></TabsContent>
-        </Tabs>
+        {activeTab === "overview" && (
+          <OverviewTab cid={cid} account={account} activeContext={activeContext} isMobile={isMobile} />
+        )}
+        {activeTab === "briefs"   && <BriefsTab />}
+        {activeTab === "signals"  && <SignalsTab />}
+        {activeTab === "minutes"  && <MinutesTab />}
+        {activeTab === "actions"  && <ActionsTab contextId={cid} />}
       </div>
     </AppShell>
   );

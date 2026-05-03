@@ -174,13 +174,20 @@ function App() {
           <Route path="/app/plays/:playId" element={<Gated><PlayView /></Gated>} />
           <Route path="/app/blog-admin" element={<Gated><BlogAdmin /></Gated>} />
           <Route path="/app/workspace" element={<Gated><Workspace /></Gated>} />
-          <Route path="/app/prepare" element={<Gated><Prepare /></Gated>} />
+          {/* Phase 13.2 — /app/prepare absorbed into Cycle Manager's Briefs
+              tab. Bookmarks and email deep-links keep working silently;
+              the legacy <Prepare /> page component is still exported but
+              now serves the Cycle tabs (`embedded` mode). Plan to retire
+              the redirect in Phase 14 once outbound emails have rotated. */}
+          <Route path="/app/prepare" element={<Navigate to="/app/cycle?tab=briefs" replace />} />
           <Route path="/app/inbound-queue" element={<Gated><InboundQueue /></Gated>} />
           <Route path="/app/activity" element={<Gated><Activity /></Gated>} />
-          {/* Apr-2026: Signals + Briefings consolidated into /app/prepare. Old
-              routes redirect — keeps email/bookmark links alive without a 404. */}
-          <Route path="/app/highlights" element={<Navigate to="/app/prepare" replace />} />
-          <Route path="/app/briefings" element={<Navigate to="/app/prepare" replace />} />
+          {/* Apr-2026: Signals + Briefings consolidated into /app/prepare,
+              now further consolidated by Phase 13.2 into Cycle Manager.
+              The chain is: /app/highlights → /app/prepare → /app/cycle?tab=briefs.
+              Each hop is a Navigate replace so history stays clean. */}
+          <Route path="/app/highlights" element={<Navigate to="/app/cycle?tab=signals" replace />} />
+          <Route path="/app/briefings" element={<Navigate to="/app/cycle?tab=briefs" replace />} />
           {/* v4.2: Ask merges into Workspace; any /app/ask redirects there */}
           <Route path="/app/ask" element={<Navigate to="/app/workspace" replace />} />
           <Route path="/app/simulate" element={<Gated><Simulate /></Gated>} />

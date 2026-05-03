@@ -1619,3 +1619,140 @@ async def cron_run_schedules(
         )
         ran.append(result)
     return {"ran": len(ran), "results": ran}
+
+
+
+# ---------------------------------------------------------------------------
+# Phase 13.2 — Cycle Manager Actions tab aggregator.
+#
+# Aggregates three existing data sources for the new "Actions" tab in
+# the unified Cycle Manager surface:
+#
+#   1. signal_actions  — `action_type == "acted"` rows on this context's
+#                        signals. Each row represents an action a user
+#                        committed to taking against a board signal. We
+#                        surface the most recent action per signal so a
+#                        single signal acted-on twice still counts once.
+#   2. plays           — Workflow instances with `status ∈ {active, paused}`.
+#                        These are the in-flight Plays a user has started
+#                        but not yet completed or exited.
+#   3. cycle_pending   — Checklists with `status ∈ {pending_approval,
+#                        dispatched}` — i.e. briefs sent out (or about
+#                        to go out) that have not yet received a
+#                        complete response.
+#
+# No new collections, no new write paths. This endpoint is read-only
+# and assembles `href` deep-links so the frontend ActionsTab can
+# route the user back to the source artefact in one click.
+# ---------------------------------------------------------------------------
+@router.get("/contexts/{context_id}/cycle/actions")
+async def cycle_manager_actions(
+    context_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    cid = ctx["context"]["id"]
+    cname = ctx["context"].get("name") or ""
+
+    # ── 1. Signal actions — latest "acted" per signal ───────────────────
+    signal_action_items: List[Dict[str, Any]] = []
+    seen_signal_ids: set = set()
+    cursor = db.signal_actions.find(
+        {"context_id": cid, "action_type": "acted"},
+        {"_id": 0},
+    ).sort("created_at", -1).limit(200)
+    async for row in cursor:
+        sid = row.get("signal_id")
+        if not sid or sid in seen_signal_ids:
+            continue
+        seen_signal_ids.add(sid)
+        sig = await db.signals.find_one(
+            {"id": sid, "context_id": cid},
+            {"_id": 0, "headline": 1, "title": 1, "type": 1},
+        )
+        if not sig:
+            continue
+        title = (
+            row.get("recommendation_label")
+            or sig.get("headline")
+            or sig.get("title")
+            or "Action on a signal"
+        )
+        signal_action_items.append({
+            "id": row.get("id"),
+            "title": title,
+            "context_name": cname,
+            "context_id": cid,
+            "owner_email": row.get("actor_email"),
+            "status": "acted",
+            "due_at": None,
+            "created_at": row.get("created_at"),
+            "source_kind": "signal_action",
+            "signal_id": sid,
+            # Phase 13.3 will add a focused signal-detail view; for now
+            # deep-link to the Cycle Manager Signals tab with the signal
+            # id pre-selected (handled by the Phase 13.2 SignalsTab).
+            "href": f"/app/cycle?tab=signals&signal={sid}",
+        })
+
+    # ── 2. Plays in-flight (active or paused) ───────────────────────────
+    play_items: List[Dict[str, Any]] = []
+    cursor = db.plays.find(
+        {"context_id": cid, "status": {"$in": ["active", "paused"]}},
+        {"_id": 0},
+    ).sort("last_activity_at", -1).limit(50)
+    async for p in cursor:
+        play_items.append({
+            "id": p.get("id"),
+            "title": p.get("title") or p.get("play_type") or "In-flight play",
+            "context_name": cname,
+            "context_id": cid,
+            "owner_email": (ctx["account"].get("email") or "").lower() or None,
+            "status": p.get("status") or "active",
+            "due_at": None,
+            "created_at": p.get("created_at"),
+            "source_kind": "play",
+            "play_id": p.get("id"),
+            "href": f"/app/plays/{p.get('id')}",
+        })
+
+    # ── 3. Cycle pending — checklists not yet fully responded ───────────
+    cycle_pending: List[Dict[str, Any]] = []
+    cursor = db.checklists.find(
+        {"context_id": cid, "status": {"$in": ["pending_approval", "dispatched"]}},
+        {"_id": 0},
+    ).sort("created_at", -1).limit(50)
+    async for cl in cursor:
+        rep_email = cl.get("reportee_email") or cl.get("recipient_email")
+        rep_name = cl.get("reportee_name") or rep_email or "Reportee"
+        cycle_pending.append({
+            "id": cl.get("id"),
+            "title": (
+                f"{cl.get('cycle_name') or 'Reporting cycle'} · {rep_name}"
+            ),
+            "context_name": cname,
+            "context_id": cid,
+            "owner_email": rep_email,
+            "status": cl.get("status") or "dispatched",
+            "due_at": cl.get("due_at"),
+            "created_at": cl.get("created_at"),
+            "source_kind": "checklist",
+            "checklist_id": cl.get("id"),
+            # Deep-link back to Overview's checklists sub-tab.
+            "href": "/app/cycle",
+        })
+
+    counts = {
+        "signal_actions": len(signal_action_items),
+        "plays": len(play_items),
+        "cycle_pending": len(cycle_pending),
+    }
+    return {
+        "context_id": cid,
+        "counts": counts,
+        "sections": {
+            "signal_actions": signal_action_items,
+            "plays": play_items,
+            "cycle_pending": cycle_pending,
+        },
+        "as_of": _iso(_now()),
+    }

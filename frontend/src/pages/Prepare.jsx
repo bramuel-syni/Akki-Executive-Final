@@ -1,29 +1,31 @@
 /**
- * Prepare — combined Signals + Brief at /app/prepare with line tabs.
+ * Prepare — Briefs / Signals / Minutes (legacy `/app/prepare`).
  *
- * Per Apr-2026 user feedback:
+ * Phase 13.2 (Cycle Manager merger) — this component now serves two
+ * masters:
+ *
+ *   1. Standalone page — when rendered as a route at `/app/prepare`,
+ *      keeps the AppShell + page H1 + line tabs (legacy behaviour).
+ *      Note: `/app/prepare` itself is now a `<Navigate />` redirect to
+ *      `/app/cycle?tab=briefs` in `App.js`, so this code path is only
+ *      reached if the redirect is bypassed (e.g. tooling).
+ *   2. Embedded — when rendered inside Cycle Manager's tabs (Briefs /
+ *      Signals / Minutes), accepts `embedded={true}` to drop the
+ *      AppShell + page H1 (the parent already provides them) and
+ *      `forceTab="brief|signals|minutes"` to render exactly one tab
+ *      body without the inner line-tab nav.
+ *
+ * The two thin wrappers in `frontend/src/components/cycle/tabs/`
+ * (`BriefsTab.jsx`, `SignalsTab.jsx`, `MinutesTab.jsx`) are how Cycle
+ * Manager invokes this surface. We deliberately did NOT split the
+ * BriefTab/SignalsTab/MinutesTab inner components out into separate
+ * files for Phase 13.2 — they share state and modals here, and a split
+ * would have been a 600+ line refactor for zero behaviour change.
+ *
+ * Per Apr-2026 user feedback (and preserved Phase 13.2):
  *   "Combine Signal and Briefing into one section. Use line tabs to
  *   separate the two. When loading these pages, do NOT pre-populate
  *   them with data. Prompt the user to generate."
- *
- * Structure:
- *   ┌────────────────────────────────────────────────────────────┐
- *   │ Prepare — short, focused, on-demand                         │
- *   ├────────────────────────────────────────────────────────────┤
- *   │  [ Brief ]    Signals                                       │
- *   │ ──────                                                      │
- *   │                                                              │
- *   │  Brief me on:  ( Claim · Proposal · Topic · Period · Report )│
- *   │  Objective:    [────────────────────────]                    │
- *   │                                  [ Generate brief →]         │
- *   │                                                              │
- *   │  Recent briefs · 3                                           │
- *   │   - Underwriting margin in Q2 — Apr 24                       │
- *   │   - …                                                        │
- *   └────────────────────────────────────────────────────────────┘
- *
- * Signals tab follows the same pattern: filter + objective → generate
- * → save. No pre-population.
  */
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
@@ -74,18 +76,31 @@ const TAB_INTRO = {
   },
 };
 
-export default function Prepare() {
+export default function Prepare({ embedded = false, forceTab = null }) {
   const { activeContext } = useAuth();
   const cid = activeContext?.id;
-  // Honour ?tab=signals deep-link so the Quick Actions "Surface signals
+  // When embedded inside Cycle Manager, the parent already chose the tab
+  // (forceTab) and we never expose the inner line-tab nav. When standalone,
+  // honour ?tab=signals deep-link so the Quick Actions "Surface signals
   // on something" tile lands on the Signals tab instead of Brief.
   const initialTab = (() => {
+    if (forceTab && ["brief", "signals", "minutes"].includes(forceTab)) {
+      return forceTab;
+    }
     if (typeof window === "undefined") return "brief";
     const t = new URLSearchParams(window.location.search).get("tab");
     if (t === "signals" || t === "minutes" || t === "brief") return t;
     return "brief";
   })();
   const [tab, setTab] = useState(initialTab);
+  // Embedded clients pass forceTab — sync into local state when the parent
+  // switches between tabs, otherwise the second view of Prepare would still
+  // show the first tab requested.
+  useEffect(() => {
+    if (forceTab && ["brief", "signals", "minutes"].includes(forceTab)) {
+      setTab(forceTab);
+    }
+  }, [forceTab]);
 
   // Shared rail data — hoisted so the right rail can refresh after a
   // generate happens inside a tab.
@@ -180,25 +195,31 @@ export default function Prepare() {
   }, [cid]);
 
   if (!cid) {
-    return (
-      <AppShell>
-        <div className="p-12 text-center text-[var(--muted)] text-sm">
-          No context selected. Pick one from the rail to start preparing.
-        </div>
-      </AppShell>
+    const empty = (
+      <div className="p-12 text-center text-[var(--muted)] text-sm">
+        No context selected. Pick one from the rail to start preparing.
+      </div>
     );
+    return embedded ? empty : <AppShell>{empty}</AppShell>;
   }
 
-  return (
-    <AppShell>
-      <div className="max-w-[1280px] mx-auto px-6 py-10">
-        <p className="akki-overline mb-2 flex items-center gap-2">
-          <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Catch-up · {activeContext.name}
-        </p>
-        <h1 className="akki-greeting">Catch up on what's next.</h1>
-        <p className="akki-meta mt-2 max-w-xl">
-          Short, focused, on-demand. Tell AKKI what you want to be ready for, and AKKI drafts it.
-        </p>
+  // ── Phase 13.2 — body factored out so we can render with or without
+  // the AppShell wrapper depending on `embedded`. The inner line-tab
+  // nav also disappears in embedded mode (the Cycle Manager outer tabs
+  // already give the user a tab nav — two tab rows would be noise).
+  const inner = (
+      <div className={embedded ? "" : "max-w-[1280px] mx-auto px-6 py-10"}>
+        {!embedded && (
+          <>
+            <p className="akki-overline mb-2 flex items-center gap-2">
+              <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Catch-up · {activeContext.name}
+            </p>
+            <h1 className="akki-greeting">Catch up on what's next.</h1>
+            <p className="akki-meta mt-2 max-w-xl">
+              Short, focused, on-demand. Tell AKKI what you want to be ready for, and AKKI drafts it.
+            </p>
+          </>
+        )}
 
         {/* Stats dock — Signals tab gets the richer signal-specific
             HighlightsStats (sparkline + breakdown bars + confidence
@@ -206,7 +227,7 @@ export default function Prepare() {
             Apr-2026: brought back the standalone-Signals visual the user
             asked for. */}
         {tab === "signals" && signals.length > 0 ? (
-          <div className="mt-6">
+          <div className={embedded ? "" : "mt-6"}>
             <HighlightsStats signals={signals} />
           </div>
         ) : (
@@ -214,34 +235,37 @@ export default function Prepare() {
         )}
 
         {/* 2-column layout: form column (left) + history side rail (right) */}
-        <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-8">
+        <div className={`${embedded ? "mt-4" : "mt-6"} grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-8`}>
           <div className="min-w-0">
             {/* Line tabs — labels only. Description moves below into a section
-                header so it has room to breathe. */}
-            <div className="border-b border-[var(--rule)] flex items-stretch gap-0" data-testid="prepare-line-tabs">
-              {TABS.map((t) => {
-                const Icon = t.icon;
-                const active = tab === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => setTab(t.id)}
-                    className={`px-5 py-3 text-[13.5px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
-                      active
-                        ? "border-[var(--accent)] text-[var(--ink)] font-medium"
-                        : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
-                    }`}
-                    data-testid={`prepare-tab-${t.id}${active ? "-active" : ""}`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    {t.label}
-                  </button>
-                );
-              })}
-            </div>
+                header so it has room to breathe. Hidden when embedded since
+                the Cycle Manager outer tabs already provide a tab nav. */}
+            {!embedded && (
+              <div className="border-b border-[var(--rule)] flex items-stretch gap-0" data-testid="prepare-line-tabs">
+                {TABS.map((t) => {
+                  const Icon = t.icon;
+                  const active = tab === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => setTab(t.id)}
+                      className={`px-5 py-3 text-[13.5px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
+                        active
+                          ? "border-[var(--accent)] text-[var(--ink)] font-medium"
+                          : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
+                      }`}
+                      data-testid={`prepare-tab-${t.id}${active ? "-active" : ""}`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Section header for the active tab */}
-            <div className="mt-8 mb-5" data-testid={`prepare-section-${tab}`}>
+            <div className={`${embedded ? "mb-5" : "mt-8 mb-5"}`} data-testid={`prepare-section-${tab}`}>
               <p className="akki-overline mb-1.5">{TAB_INTRO[tab].kicker}</p>
               <p className="akki-serif text-[15.5px] text-[var(--ink)] leading-[1.55] max-w-2xl">
                 {TAB_INTRO[tab].blurb}
@@ -292,8 +316,9 @@ export default function Prepare() {
         />
         <SignalDetailModal signal={openSignal} onClose={() => setOpenSignal(null)} />
       </div>
-    </AppShell>
   );
+
+  return embedded ? inner : <AppShell>{inner}</AppShell>;
 }
 
 // ---------------------------------------------------------------------------
