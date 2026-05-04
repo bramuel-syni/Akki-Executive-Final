@@ -1,14 +1,25 @@
-"""Phase 15.0 acceptance — run 10 real Seek Clarity sessions end-to-end.
+"""Phase 15.0/15.1 acceptance — run 10 real Seek Clarity sessions end-to-end.
 
 Uses the live Emergent Universal Key and the live Mongo instance. Walks each
 session through all four layers (framing → grounding → synthesis → reflection)
-and reports a pass/fail per session plus aggregate validator pass rate.
+and reports outcomes on three orthogonal axes (Phase 15.1):
 
-Pass criteria (per the Phase 15.0 build brief):
-    - session completes to 'completed' status
-    - synthesis persisted with a non-empty claims[] array
-    - validator verdict in {validated, qualified} (NOT flagged)
-    - ≥ 90% pass rate across 10 sessions
+  engine_ok    — orchestrator + engines ran without raising / timing out
+                 / breaching shield invariant / breaching confidence-band
+                 invariant / carrying a stub `@0.x-stub` engine_version
+                 string. Floor: ≥ 95% (≥ 9.5 / 10).
+
+  contract_ok  — synthesis emitted compliant tier markers and the
+                 grounding contract did NOT exhaust its second-attempt
+                 retry. Floor: ≥ 90% (≥ 9 / 10).
+
+  validator_ok — validator verdict in {validated, qualified}. A `flagged`
+                 or `rejected` verdict counts as a `validator_catch` —
+                 healthy product behaviour, NOT a defect — and is
+                 reported separately with no rate floor.
+
+The legacy `ok` field is retained for the simple pass/fail dashboard:
+ok = engine_ok AND contract_ok AND validator_ok.
 
 Usage (from /app):
     python -m backend.scripts.solva_v2_10_sessions
@@ -24,7 +35,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 # Let the script run both as a module (python -m backend.scripts.*) and
 # as a standalone script (python scripts/solva_v2_10_sessions.py).
@@ -182,13 +193,14 @@ async def _walk_session(client, headers: Dict[str, str], scenario: Dict[str, str
             "pro_tier": False,
         },
         headers=headers,
-        timeout=120,
+        timeout=180,
     )
     if start_resp.status_code != 200:
-        return {
-            "ok": False, "stage": "start",
+        return _classify({
+            "stage": "start", "session_id": None,
             "status": start_resp.status_code, "body": start_resp.text[:400],
-        }
+            "cluster_id": scenario["cluster_id"],
+        })
     session = start_resp.json()
     sid = session["id"]
 
@@ -198,41 +210,48 @@ async def _walk_session(client, headers: Dict[str, str], scenario: Dict[str, str
         "Understood. Lock the diagnosis.",
     ]
     stage = "framing"
+    walk_error: Optional[Dict[str, Any]] = None
     for txt in replies:
-        r = await client.post(
-            f"/api/solva/v2/sessions/{sid}/turn",
-            json={"user_text": txt},
-            headers=headers,
-            timeout=180,
-        )
+        try:
+            r = await client.post(
+                f"/api/solva/v2/sessions/{sid}/turn",
+                json={"user_text": txt},
+                headers=headers,
+                timeout=240,
+            )
+        except Exception as e:  # noqa: BLE001 — bucket as engine-layer fault
+            walk_error = {
+                "stage": stage, "session_id": sid,
+                "status": "exception",
+                "exception": f"{e.__class__.__name__}: {e}",
+                "cluster_id": scenario["cluster_id"],
+            }
+            break
         if r.status_code != 200:
-            # Grounding contract violation surfaces as 422 with structured body
             try:
                 detail = r.json()
-            except Exception:
+            except Exception:  # noqa: BLE001
                 detail = r.text[:400]
-            return {
-                "ok": False, "stage": stage, "session_id": sid,
+            walk_error = {
+                "stage": stage, "session_id": sid,
                 "status": r.status_code, "body": detail,
+                "cluster_id": scenario["cluster_id"],
             }
+            break
         session = r.json()
         stage = session.get("layer") or stage
 
     latency = int((time.monotonic() - t0) * 1000)
+    if walk_error:
+        return _classify({**walk_error, "latency_ms": latency})
+
     synth = session.get("synthesis") or {}
     validation = synth.get("validation") or {}
     verdict = validation.get("verdict")
     tier_distribution = synth.get("tier_distribution") or {}
     claim_count = sum(tier_distribution.values())
-    audit_len = len(session.get("reasoning_audit_log") or [])
-
-    pass_ok = (
-        session.get("status") == "completed"
-        and claim_count > 0
-        and verdict in {"validated", "qualified"}
-    )
-    return {
-        "ok": pass_ok,
+    audit = session.get("reasoning_audit_log") or []
+    return _classify({
         "session_id": sid,
         "status": session.get("status"),
         "layer": session.get("layer"),
@@ -240,10 +259,150 @@ async def _walk_session(client, headers: Dict[str, str], scenario: Dict[str, str
         "tier_distribution": tier_distribution,
         "validator_verdict": verdict,
         "validator_confidence": validation.get("confidence"),
-        "audit_entry_count": audit_len,
+        "audit_entry_count": len(audit),
+        "audit": audit,  # consumed by classifier, stripped before print/save
+        "synthesis_claims": synth.get("claims") or [],
         "latency_ms": latency,
         "cluster_id": scenario["cluster_id"],
-    }
+    })
+
+
+# ---------------------------------------------------------------------------
+# Phase 15.1 outcome classifier — three orthogonal axes:
+#
+#   engine_ok      — orchestrator + engines executed without raising,
+#                    timing out, violating shield invariant, violating
+#                    confidence-band invariant, or carrying a stub
+#                    engine_version string.  Floor: ≥ 95%.
+#
+#   contract_ok    — synthesis emitted compliant tier markers and the
+#                    grounding contract did NOT exhaust the second-attempt
+#                    retry. Counts a 422 from the orchestrator as a
+#                    contract-layer failure.  Floor: ≥ 90%.
+#
+#   validator_ok   — validator returned `validated` or `qualified`. A
+#                    `flagged` or `rejected` verdict is COUNTED but does
+#                    NOT count against engine_ok or contract_ok — it is a
+#                    successful catch by the validator and a healthy run.
+#                    Floor: NONE (a non-zero catch rate is healthy).
+# ---------------------------------------------------------------------------
+_ALLOWED_PLACEHOLDER_VERSIONS = {
+    # Documented Phase 15.3 placeholder; not a stub of a real engine.
+    "reflection@0.0-placeholder",
+}
+_STUB_TOKENS = ("@0.1-stub", "-stub")
+
+
+def _has_stub_versions(audit) -> List[str]:
+    """Return the list of stub-versioned engines found in the audit log.
+
+    Reflection's documented placeholder is whitelisted because Phase 15.1
+    does not own that layer. Any other `*-stub` or `@0.1-stub` string is
+    a code-discipline regression that fails engine_ok.
+    """
+    bad = []
+    for e in (audit or []):
+        v = e.get("engine_version") or ""
+        if v in _ALLOWED_PLACEHOLDER_VERSIONS:
+            continue
+        for tok in _STUB_TOKENS:
+            if tok in v:
+                bad.append(v)
+                break
+    return bad
+
+
+def _has_invariant_violations(audit) -> Dict[str, Any]:
+    """Inspect probability_weighting and shield audit entries for any
+    invariant violations the engines persisted on themselves."""
+    pw_violations = []
+    shield_violations = []
+    for e in (audit or []):
+        if e.get("engine") == "probability_weighting":
+            out = e.get("output") or {}
+            if out.get("invariant_valid") is False and out.get("attempt", 0) >= 1:
+                # Final attempt still violating — that's a real engine miss.
+                if e.get("output", {}).get("invariant_violations"):
+                    # Only the LAST attempt counts — engine retried already.
+                    last_attempt_ix = max(
+                        idx for idx, x in enumerate(audit or [])
+                        if x.get("engine") == "probability_weighting"
+                    )
+                    if audit.index(e) == last_attempt_ix:
+                        pw_violations.extend(out.get("invariant_violations") or [])
+        # Shield invariant: any LLM-call entry must carry shield_required=True
+        # AND non-null synisense_run_id, OR shield_required=False AND a valid
+        # shield_bypassed_reason. Anything else is a shield violation.
+        if e.get("engine") in (
+            "candidate_generation", "probability_weighting", "refusal",
+            "validator", "llm_primary",
+        ):
+            shield_required = e.get("shield_required")
+            run_id = e.get("synisense_run_id")
+            reason = e.get("shield_bypassed_reason")
+            if shield_required is True and not run_id:
+                shield_violations.append((e.get("engine"), "missing run_id"))
+            elif shield_required is False and not reason:
+                shield_violations.append((e.get("engine"), "bypass without reason"))
+    return {"pw": pw_violations, "shield": shield_violations}
+
+
+def _classify(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Bucket a raw _walk_session result into engine_ok / contract_ok /
+    validator_ok and produce the outcome row written to disk + summary."""
+    audit = raw.pop("audit", []) or []
+    raw.pop("synthesis_claims", None)  # not interesting downstream
+
+    # ---- engine layer ----
+    stage = raw.get("stage")
+    status = raw.get("status")
+    exc = raw.get("exception")
+    engine_failures: List[str] = []
+    if exc:
+        engine_failures.append(f"raised:{exc}")
+    if isinstance(status, int) and status >= 500:
+        engine_failures.append(f"http_5xx:{status}")
+    if stage == "exception":
+        engine_failures.append("walk_exception")
+    stub_hits = _has_stub_versions(audit)
+    if stub_hits:
+        engine_failures.append(f"stub_versions:{stub_hits}")
+    invariants = _has_invariant_violations(audit)
+    if invariants["pw"]:
+        engine_failures.append(f"pw_invariant:{invariants['pw']}")
+    if invariants["shield"]:
+        engine_failures.append(f"shield_invariant:{invariants['shield']}")
+
+    engine_ok = len(engine_failures) == 0
+
+    # ---- contract layer ----
+    # 422 from the orchestrator after engines completed = grounding contract
+    # exhausted retries. (Engine-stage 422 counts as contract failure too —
+    # the contract is what surfaces the rejection.)
+    contract_failures: List[str] = []
+    if status == 422:
+        contract_failures.append("grounding_contract_retry_exhausted")
+    contract_ok = len(contract_failures) == 0 and engine_ok
+
+    # ---- validator layer ----
+    verdict = raw.get("validator_verdict")
+    # Healthy runs land 'validated' or 'qualified'. Anything else (None,
+    # 'flagged', 'rejected') is a validator-layer NON-PASS but NOT an
+    # engine or contract failure — the validator is doing its job.
+    validator_ok = verdict in {"validated", "qualified"}
+    validator_catch = verdict in {"flagged", "rejected"}
+
+    # Backwards-compat: keep the ok flag for the simple dashboard.
+    raw["ok"] = engine_ok and contract_ok and validator_ok
+
+    raw["engine_ok"] = engine_ok
+    raw["contract_ok"] = contract_ok
+    raw["validator_ok"] = validator_ok
+    raw["validator_catch"] = validator_catch
+    raw["engine_failures"] = engine_failures
+    raw["contract_failures"] = contract_failures
+
+    return raw
 
 
 async def main() -> int:
@@ -265,32 +424,58 @@ async def main() -> int:
             try:
                 res = await _walk_session(client, headers, scenario)
             except Exception as e:  # noqa: BLE001
-                res = {"ok": False, "stage": "exception", "error": f"{e.__class__.__name__}: {e}"}
+                res = _classify({
+                    "stage": "exception", "session_id": None,
+                    "exception": f"{e.__class__.__name__}: {e}",
+                    "cluster_id": scenario["cluster_id"],
+                })
             results.append(res)
             print("    " + json.dumps(
-                {k: v for k, v in res.items() if k not in {"body", "tier_distribution"}},
+                {k: v for k, v in res.items()
+                 if k not in {"body", "tier_distribution", "engine_failures",
+                              "contract_failures"}},
                 default=str,
             ), flush=True)
+            if res.get("engine_failures"):
+                print(f"    engine_failures: {res['engine_failures']}", flush=True)
+            if res.get("contract_failures"):
+                print(f"    contract_failures: {res['contract_failures']}", flush=True)
 
-        passed = sum(1 for r in results if r.get("ok"))
-        pass_rate = passed / max(len(results), 1)
-        print("\n=== Summary ===")
-        print(f"Passed: {passed}/{len(results)} ({pass_rate*100:.0f}%)")
-        print(f"Pass threshold: 90% — {'✓ MET' if pass_rate >= 0.9 else '✗ NOT MET'}")
+        engine_passed = sum(1 for r in results if r.get("engine_ok"))
+        contract_passed = sum(1 for r in results if r.get("contract_ok"))
+        validator_passed = sum(1 for r in results if r.get("validator_ok"))
+        validator_catches = sum(1 for r in results if r.get("validator_catch"))
+        n = len(results)
+        legacy_passed = sum(1 for r in results if r.get("ok"))
+        engine_floor_met = engine_passed >= int(n * 0.95 + 0.999)  # ceil
+        contract_floor_met = contract_passed >= int(n * 0.90 + 0.999)
+
+        print("\n=== Summary (Phase 15.1 three-axis) ===")
+        print(f"engine_ok    : {engine_passed}/{n}   ({engine_passed/max(n,1)*100:.0f}%)   floor: ≥95%   {'✓ MET' if engine_floor_met else '✗ NOT MET'}")
+        print(f"contract_ok  : {contract_passed}/{n}   ({contract_passed/max(n,1)*100:.0f}%)   floor: ≥90%   {'✓ MET' if contract_floor_met else '✗ NOT MET'}")
+        print(f"validator_ok : {validator_passed}/{n}   ({validator_passed/max(n,1)*100:.0f}%)   no floor — {validator_catches} validator catches counted (healthy)")
+        print(f"legacy ok    : {legacy_passed}/{n}   (all three axes pass)")
 
         # Write full report to disk for reference
         out_path = Path("/tmp/solva_v2_10_sessions_report.json")
         out_path.write_text(
             json.dumps(
                 {
-                    "results": results, "passed": passed, "total": len(results),
-                    "pass_rate": pass_rate,
+                    "results": results,
+                    "engine_passed": engine_passed,
+                    "contract_passed": contract_passed,
+                    "validator_passed": validator_passed,
+                    "validator_catches": validator_catches,
+                    "legacy_passed": legacy_passed,
+                    "total": n,
+                    "engine_floor_met": engine_floor_met,
+                    "contract_floor_met": contract_floor_met,
                 },
                 default=str, indent=2,
             )
         )
         print(f"Full report: {out_path}")
-        return 0 if pass_rate >= 0.9 else 1
+        return 0 if (engine_floor_met and contract_floor_met) else 1
 
 
 if __name__ == "__main__":

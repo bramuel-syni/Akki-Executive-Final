@@ -209,7 +209,22 @@ GROUNDING_CONTRACT_PROMPT = (
     "  be avoiding the pricing question [T:speculation]. What does the\n"
     "  activation-rate dashboard show?\n\n"
     "Do NOT omit markers. Do NOT invent new tier names. Do NOT place markers\n"
-    "mid-sentence. Do NOT tag questions.\n"
+    "mid-sentence. Do NOT tag questions.\n\n"
+    "MANDATORY SELF-CHECK before you return:\n"
+    "  1. Re-read your draft sentence-by-sentence. For every assertive\n"
+    "     sentence (any sentence not ending with a question mark and not in\n"
+    "     the imperative voice), verify it ends with exactly one tier\n"
+    "     marker from the five tiers above. If any assertive sentence\n"
+    "     lacks a tier marker, ADD the best-fit marker inline before\n"
+    "     returning. If any sentence has more than one tier marker, KEEP\n"
+    "     only the most specific one.\n"
+    "  2. Verify your synthesis spans at least three distinct tier types\n"
+    "     across all claims — a grounded diagnosis must mix at least one\n"
+    "     of {corpus, comparable, user_assertion} with at least one of\n"
+    "     {domain_prior, speculation}. If your draft uses fewer than three\n"
+    "     distinct tier types, expand it to add the missing tier breadth\n"
+    "     before returning.\n"
+    "  3. Only return when both checks pass.\n"
 )
 
 
