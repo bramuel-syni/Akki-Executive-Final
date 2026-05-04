@@ -13,53 +13,64 @@ import { Link } from "react-router-dom";
 import AppShell from "../components/layout/AppShell";
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../lib/api";
+import TierChip from "../components/reading/TierChip";
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
+} from "@/components/ui/sheet";
 
 const LAYER_LABELS = {
   framing: "Framing",
   grounding: "Grounding",
+  hypothesis: "Hypothesis",
   synthesis: "Synthesis",
   reflection: "Reflection",
 };
 
 const TIER_COLOURS = {
   corpus: "#0F1E3A",
-  comparable: "#3D6F3D",
+  comparable: "#8B2E2B",
   domain_prior: "#6F6A5D",
   user_assertion: "#A67C00",
-  speculation: "#8B2E2B",
+  speculation: "#6F6A5D",
 };
 
 const TIER_MARKER_RE = /\[T:(corpus|comparable|domain_prior|user_assertion|speculation)\]/g;
 
-function renderSynthesisWithTierChips(body) {
+// Phase 15.3 — turn this synthesis body into:
+//   * inline text with all `[T:tier]` markers stripped
+//   * inline TierChip elements at sentence boundaries, fed by the parsed
+//     `claims[]` so every chip carries band + pct + interval + source.
+//
+// Falls back to a plain (no-band) chip when the claim list is empty
+// (shouldn't happen post 15.1 but is defensive).
+function renderSynthesisWithTierChips(body, claims) {
   if (!body) return null;
   const out = [];
   let last = 0;
   let match;
   let i = 0;
+  // Build a quick lookup of claims by their stripped sentence text. The
+  // parser produced claims in document order, so we also pop from the
+  // head as we encounter markers — that's more robust than text-matching.
+  const claimQueue = Array.isArray(claims) ? [...claims] : [];
+
   TIER_MARKER_RE.lastIndex = 0;
   while ((match = TIER_MARKER_RE.exec(body)) !== null) {
     if (match.index > last) {
       out.push(<span key={`t-${i}`}>{body.slice(last, match.index)}</span>);
     }
     const tier = match[1];
+    const claim = claimQueue.shift();
     out.push(
-      <span
+      <TierChip
         key={`m-${i}`}
-        style={{
-          background: TIER_COLOURS[tier] || "#6F6A5D",
-          color: "white",
-          padding: "1px 6px",
-          borderRadius: 2,
-          fontSize: 10,
-          textTransform: "uppercase",
-          letterSpacing: 0.4,
-          margin: "0 3px",
-        }}
-        title={tier}
-      >
-        {tier.replace("_", " ")}
-      </span>
+        tier={tier}
+        band={claim?.confidence_band}
+        confidence={claim?.confidence_pct}
+        ciLow={claim?.confidence_low}
+        ciHigh={claim?.confidence_high}
+        source={claim?.comparable_title || claim?.source}
+      />
     );
     last = match.index + match[0].length;
     i += 1;
@@ -284,6 +295,28 @@ export default function SolvaV2Poc() {
     setActiveCluster(null);
     setError(null);
     setShowAllAudit(false);
+    setReasoningOpen(false);
+    setReasoningSummary(null);
+  };
+
+  // Phase 15.3 — reasoning drawer state. Lazy-loads the compressed summary
+  // from /reasoning-log/summary on open. Read-only; no raw prompts.
+  const [reasoningOpen, setReasoningOpen] = useState(false);
+  const [reasoningSummary, setReasoningSummary] = useState(null);
+  const [reasoningLoading, setReasoningLoading] = useState(false);
+  const openReasoning = async () => {
+    setReasoningOpen(true);
+    if (reasoningSummary && session && reasoningSummary.session_id === session.id) return;
+    if (!session) return;
+    setReasoningLoading(true);
+    try {
+      const { data } = await api.get(`/solva/v2/sessions/${session.id}/reasoning-log/summary`);
+      setReasoningSummary(data);
+    } catch (_e) {
+      setReasoningSummary({ error: "Could not load reasoning summary." });
+    } finally {
+      setReasoningLoading(false);
+    }
   };
 
   if (!enabled) {
@@ -525,6 +558,92 @@ export default function SolvaV2Poc() {
             )}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <Sheet open={reasoningOpen} onOpenChange={setReasoningOpen}>
+              <SheetTrigger asChild>
+                <button
+                  onClick={openReasoning}
+                  data-testid="v2poc-reasoning-drawer"
+                  style={{ fontSize: 12, color: "var(--ink)", background: "var(--cream)", border: "1px solid var(--rule)", padding: "6px 12px", borderRadius: 3, cursor: "pointer", whiteSpace: "nowrap" }}
+                >
+                  Show reasoning
+                </button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-[420px] sm:w-[480px] overflow-y-auto">
+                <SheetHeader>
+                  <SheetTitle className="font-serif text-[20px]">Reasoning summary</SheetTitle>
+                </SheetHeader>
+                <div className="mt-4 text-[13px] leading-[1.55] text-[var(--ink)]">
+                  {reasoningLoading && <p className="text-[var(--muted)]">Loading…</p>}
+                  {!reasoningLoading && reasoningSummary?.error && (
+                    <p className="text-[var(--risk)]">{reasoningSummary.error}</p>
+                  )}
+                  {!reasoningLoading && reasoningSummary && !reasoningSummary.error && (
+                    <>
+                      <div className="mb-4 text-[12px] text-[var(--muted)]">
+                        Compressed view of the per-turn reasoning audit log.
+                        Read-only. No raw prompts, no internal identifiers.
+                      </div>
+                      <div className="mb-4 grid grid-cols-2 gap-3 text-[12px]">
+                        <div>
+                          <div className="akki-overline mb-1">Layer</div>
+                          <div>{LAYER_LABELS[reasoningSummary.current_layer] || reasoningSummary.current_layer || "—"}</div>
+                        </div>
+                        <div>
+                          <div className="akki-overline mb-1">Status</div>
+                          <div>{reasoningSummary.status}</div>
+                        </div>
+                        <div>
+                          <div className="akki-overline mb-1">Turns</div>
+                          <div>{reasoningSummary.turn_count}</div>
+                        </div>
+                        <div>
+                          <div className="akki-overline mb-1">Validator</div>
+                          <div>{reasoningSummary.validator_verdict || "—"}</div>
+                        </div>
+                      </div>
+                      <div className="akki-overline mb-1.5">Confidence distribution</div>
+                      <div className="mb-4 text-[12px] text-[var(--muted)]">
+                        {Object.entries(reasoningSummary.confidence_distribution || {})
+                          .map(([k, v]) => `${k}: ${v}`).join(" · ")}
+                      </div>
+                      <div className="akki-overline mb-1.5">Tier distribution</div>
+                      <div className="mb-4 text-[12px] text-[var(--muted)]">
+                        {Object.keys(reasoningSummary.tier_distribution || {}).length === 0
+                          ? "—"
+                          : Object.entries(reasoningSummary.tier_distribution || {})
+                              .map(([k, v]) => `${k}: ${v}`).join(" · ")}
+                      </div>
+                      <div className="akki-overline mb-1.5">Per-turn detail</div>
+                      <div className="space-y-2">
+                        {(reasoningSummary.turns || []).map((t, idx) => (
+                          <div key={t.turn_id} className="border border-[var(--rule)] rounded-sm p-2.5 bg-[var(--warm-white)]">
+                            <div className="text-[11px] text-[var(--muted)] mb-1">
+                              Turn {idx + 1} · {(t.layers || []).join(" → ")}
+                            </div>
+                            <div className="text-[12px]">
+                              <span className="text-[var(--muted)]">Engines: </span>
+                              {(t.engines || []).join(", ") || "—"}
+                            </div>
+                            {t.tiers_cited?.length > 0 && (
+                              <div className="text-[12px]">
+                                <span className="text-[var(--muted)]">Tiers: </span>
+                                {t.tiers_cited.join(", ")}
+                              </div>
+                            )}
+                            <div className="text-[11px] text-[var(--muted)] mt-1">
+                              Validator: <span className="text-[var(--ink)]">{t.validator_verdict || "—"}</span>
+                              {" · "}Retries: {t.retry_count}
+                              {" · "}Shield runs: {t.shield_runs}
+                              {" · "}Bypassed: {t.shield_bypassed_runs}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </SheetContent>
+            </Sheet>
             <button
               onClick={startNewSession}
               data-testid="v2poc-start-new"
@@ -578,8 +697,19 @@ export default function SolvaV2Poc() {
               </div>
               <div style={{ fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
                 {t.role === "solva" && t.layer === "synthesis"
-                  ? renderSynthesisWithTierChips(t.text)
+                  ? renderSynthesisWithTierChips(t.text, synthesis?.claims)
                   : t.text}
+                {t.guardrail_action && (
+                  <div
+                    data-testid={`v2poc-guardrail-${t.guardrail_action}`}
+                    style={{ marginTop: 8, padding: "8px 10px", background: "#fff8f0", border: "1px solid #e0c8b0", borderRadius: 3, fontSize: 12, color: "#704020" }}
+                  >
+                    Guardrail · {t.guardrail_action.replace(/_/g, " ")}
+                    {t.learn_link && (
+                      <span> · <Link to={t.learn_link} style={{ color: "var(--accent)", textDecoration: "underline" }}>read more</Link></span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -659,7 +789,44 @@ export default function SolvaV2Poc() {
           </div>
         )}
 
-        {error && <p style={{ color: "var(--risk)", marginBottom: 12, fontSize: 13 }}>{error}</p>}
+        {error && <p style={{ color: "var(--risk)", marginBottom: 12, fontSize: 13 }}>{typeof error === "string" ? error : JSON.stringify(error)}</p>}
+
+        {/* Phase 15.3 — reflection panel (3 locked questions) when present */}
+        {session.reflection?.responses?.length > 0 && (
+          <div data-testid="v2poc-reflection-panel" style={{ background: "var(--warm-white)", border: "1px solid var(--rule)", padding: 16, marginBottom: 16 }}>
+            <p className="akki-overline" style={{ marginBottom: 8 }}>Reflection (3 locked questions)</p>
+            {session.reflection.responses.map((r, idx) => (
+              <div key={idx} style={{ marginBottom: 16, paddingBottom: 12, borderBottom: idx < session.reflection.responses.length - 1 ? "1px solid var(--rule)" : "none" }}>
+                <p style={{ fontFamily: "Georgia, serif", fontSize: 14, fontWeight: 600, marginBottom: 6, color: "var(--ink)" }}>
+                  {idx + 1}. {r.question}
+                </p>
+                <div style={{ fontSize: 13, lineHeight: 1.55 }}>
+                  {renderSynthesisWithTierChips(r.raw_text || r.stripped_text, r.claims)}
+                </div>
+                {!r.grounding_accepted && (
+                  <p style={{ fontSize: 11, color: "var(--risk)", marginTop: 4, fontStyle: "italic" }}>
+                    Grounding contract not satisfied; recorded in audit.
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Phase 15.3 — hard-block banner */}
+        {session.status === "blocked_hard" && (
+          <div data-testid="v2poc-blocked-hard" style={{ padding: 14, background: "#fff0f0", border: "1px solid #c98080", borderRadius: 3, marginBottom: 16 }}>
+            <p style={{ fontFamily: "Georgia, serif", fontSize: 16, fontWeight: 600, color: "#7a1212", marginBottom: 6 }}>
+              Session hard-blocked
+            </p>
+            <p style={{ fontSize: 13, color: "#601020", lineHeight: 1.5 }}>
+              The refusal ladder locked this session as terminal. No further turns are accepted.{" "}
+              <Link to="/app/learn/guardrails-and-shield" style={{ color: "var(--accent)", textDecoration: "underline" }}>
+                Why did this happen?
+              </Link>
+            </p>
+          </div>
+        )}
 
         {session.status === "active" && (
           <div style={{ marginBottom: 16 }}>
@@ -684,7 +851,7 @@ export default function SolvaV2Poc() {
 
         {session.status === "completed" && (
           <div style={{ padding: 12, background: "var(--cream)", border: "1px solid var(--rule)", fontSize: 13, color: "var(--muted)" }}>
-            Session complete. POC flow ends at the Reflection placeholder.
+            Session complete.
           </div>
         )}
       </div>

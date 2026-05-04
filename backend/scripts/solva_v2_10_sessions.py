@@ -203,6 +203,25 @@ async def _login(client, email: str, password: str) -> str:
 
 async def _walk_session(client, headers: Dict[str, str], scenario: Dict[str, str]) -> Dict[str, Any]:
     t0 = time.monotonic()
+    # Phase 15.3: 3-concurrent-active limit means the script must abandon
+    # any leftover actives from a prior session before starting a new one.
+    # Idempotent — does nothing on the first iteration.
+    try:
+        list_resp = await client.get(
+            "/api/solva/v2/sessions",
+            params={"status": "active"},
+            headers=headers,
+            timeout=30,
+        )
+        if list_resp.status_code == 200:
+            for s in (list_resp.json().get("items") or []):
+                await client.post(
+                    f"/api/solva/v2/sessions/{s['id']}/abandon",
+                    headers=headers, timeout=30,
+                )
+    except Exception:  # noqa: BLE001 — best-effort cleanup
+        pass
+
     body = {
         "cluster_id": scenario["cluster_id"],
         "intent": scenario["intent"],

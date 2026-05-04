@@ -34,10 +34,12 @@ ENGINE_VERSIONS: Dict[str, str] = {
     "llm_primary": "llm_primary@1.0",
     "validator": "validator@phase11",
     "triangulation": "triangulation@1.0",
-    "candidate_generation": "candidate_generation@0.1-stub",
-    "probability_weighting": "probability_weighting@0.1-stub",
-    "refusal": "refusal@0.1-stub",
-    "placeholder": "placeholder@1.0",
+    "candidate_generation": "candidate_generation@1.0",
+    "probability_weighting": "probability_weighting@1.0",
+    "refusal": "refusal@1.1",
+    "tension_detector": "tension_detector@1.0",
+    "guardrail": "guardrail@1.0",          # Phase 15.3
+    "reflection": "reflection@1.0",        # Phase 15.3 — replaces placeholder
 }
 
 

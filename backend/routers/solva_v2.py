@@ -58,8 +58,10 @@ from services.solva_v2.engines import (
     probability_weighting,
     refusal,
     tension_detector,
+    reflection,
 )
 from services.solva_v2.engines.tension_detector import CrossSessionTensionInputError
+from services.solva_v2 import guardrails
 from services.solva_v2.submodules import (
     SUBMODULE_NAMES,
     voice_for as submodule_voice_for,
@@ -84,6 +86,11 @@ MAX_GROUNDING_RETRIES = 2  # => 3 total attempts on synthesis
 SCHEMA_VERSION = 2  # 15.1+ sessions carry this; 15.0 sessions implicitly 1
 SYNTHESIS_SURFACE = "solve_v2.synthesis"
 HYPOTHESIS_SURFACE = "solve_v2.hypothesis"
+
+# Phase 15.3 — session limits (decision #11)
+MAX_TURNS_PER_SESSION = 20             # user turns; hard 422 once reached
+MAX_CONCURRENT_ACTIVE = 3              # active+blocked_hard sessions per account at create
+STALE_SESSION_AGE_DAYS = 30            # cron auto-abandons after this
 
 
 # -----------------------------------------------------------------------------
@@ -604,27 +611,31 @@ async def _run_synthesis(
 async def _run_reflection(
     session: Dict[str, Any],
     turn_id: str,
+    account_id: str,
 ) -> Dict[str, Any]:
-    """Layer 4 placeholder — Phase 15.3 replaces this with three locked questions."""
-    # Phase 15.0 hardening Item 4: this entry is renamed from engine='llm_primary'
-    # to engine='placeholder' because no LLM call is made. Phase 15.3 replaces
-    # this with the three-locked-questions exchange.
-    entry = await synthetic_audit_entry(
-        engine="placeholder",
-        layer="reflection",
+    """Phase 15.3 — Layer 4 Reflection.
+
+    Three locked questions (LOCKED_QUESTIONS), each answered by a
+    shielded LLM call at sub-surface `solve_v2.reflection`, tier=fast.
+    Each response is tier-marked per the grounding contract and emitted
+    as its own audit entry under engine='reflection'. The session's
+    `reflection` field is populated with the question/answer triplet.
+    """
+    intent = (session.get("intent") or "").strip()
+    synthesis_body = ((session.get("synthesis") or {}).get("body") or "").strip()
+    out = await reflection.run(
+        session=session,
         turn_id=turn_id,
-        output={"placeholder": True, "phase": "15.3"},
-        tier_labels=[],
-        engine_version="reflection@0.0-placeholder",
-        latency_ms=0,
-        shield_required=False,
-        shield_bypassed_reason="placeholder_stub",
+        intent=intent,
+        synthesis_body=synthesis_body,
+        account_id=account_id,
     )
     return {
-        "text": "Reflection layer arrives in Phase 15.3. Session complete.",
-        "model": None,
-        "tier": None,
-        "audit_entries": [entry],
+        "text": out["body"],
+        "model": out["model"],
+        "tier": out["tier"],
+        "audit_entries": out["audit_entries"],
+        "responses": out["responses"],
     }
 
 
@@ -654,6 +665,24 @@ async def start_session(
     if not cluster:
         raise HTTPException(status_code=404, detail="Unknown cluster.")
 
+    # Phase 15.3 — concurrent active session limit (decision #11).
+    active_count = await db.solva_v2_sessions.count_documents(
+        {"account_id": account["id"], "status": "active"},
+    )
+    if active_count >= MAX_CONCURRENT_ACTIVE:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "too_many_active_sessions",
+                "message": (
+                    "Too many active Solva v2 sessions. Abandon one before "
+                    "starting another."
+                ),
+                "limit": MAX_CONCURRENT_ACTIVE,
+                "active_count": active_count,
+            },
+        )
+
     session_id = str(uuid.uuid4())
     is_pro_account = await _is_pro(account)
     rec = {
@@ -676,7 +705,9 @@ async def start_session(
         "turns": [],
         "reasoning_audit_log": [],
         "synthesis": None,
+        "reflection": None,             # Phase 15.3 — three-question record
         "lockin": None,
+        "jailbreak_soft_count": 0,      # Phase 15.3 — refusal ladder counter
         "started_at": iso(now()),
         "updated_at": iso(now()),
         "completed_at": None,
@@ -686,11 +717,59 @@ async def start_session(
     # Prime framing turn immediately (mirrors v1 posture)
     solve_turn_id = str(uuid.uuid4())
     # Refusal classifier (real LLM call in 15.1) at turn boundary.
-    # For session start the user_text is the intent itself; refusal still
-    # returns block=False under 15.1 contract.
+    # Phase 15.3: also runs the guardrail ladder. If the intent itself
+    # triggers therapy_redirect / soft_block / hard_block, we do NOT prime
+    # the framing layer — we return the locked guardrail message instead.
     ref = await refusal.run(
         session=rec, turn_id=solve_turn_id, layer="framing", user_text=body.intent,
     )
+    decision = guardrails.evaluate(session=rec, refusal_output=ref["output"])
+    if decision.action != "continue":
+        guard_audit = await synthetic_audit_entry(
+            engine=guardrails.ENGINE,
+            engine_version=guardrails.ENGINE_VERSION,
+            layer="framing",
+            turn_id=solve_turn_id,
+            output=decision.audit_output,
+            tier_labels=[],
+            shield_required=False,
+            shield_bypassed_reason="deterministic_only",
+            latency_ms=0,
+        )
+        guard_solve_turn = {
+            "id": solve_turn_id,
+            "role": "solva",
+            "layer": "framing",
+            "text": decision.user_visible_message,
+            "model": None,
+            "tier": None,
+            "guardrail_action": decision.action,
+            "learn_link": decision.learn_link,
+            "created_at": iso(now()),
+        }
+        guard_update: Dict[str, Any] = {"updated_at": iso(now())}
+        if decision.increment_soft_count:
+            guard_update["jailbreak_soft_count"] = 1
+        if decision.new_status:
+            guard_update["status"] = decision.new_status
+            guard_update["blocked_at"] = iso(now())
+        await db.solva_v2_sessions.update_one(
+            {"id": session_id},
+            {"$push": {
+                "turns": guard_solve_turn,
+                "reasoning_audit_log": {"$each": [ref["audit_entry"], guard_audit]},
+            },
+             "$set": guard_update},
+        )
+        rec["turns"].append(guard_solve_turn)
+        rec["reasoning_audit_log"].extend([ref["audit_entry"], guard_audit])
+        if decision.increment_soft_count:
+            rec["jailbreak_soft_count"] = 1
+        if decision.new_status:
+            rec["status"] = decision.new_status
+        rec.pop("_id", None)
+        return rec
+
     out = await _run_framing(rec, cluster, account["id"], solve_turn_id, transcript="")
     audits = [ref["audit_entry"]] + out["audit_entries"]
 
@@ -863,11 +942,15 @@ async def classify_intent(
     )
     try:
         llm_resp, _meta = await call_llm_with_tier(
-            system=sys,
-            user=f"Intent:\n{body.intent.strip()}",
-            requested_tier="fast",
-            account_id=account["id"],
             surface="solve_v2.intent_classify",
+            account_id=account["id"],
+            requested_tier="fast",
+            call_args={
+                "module": "solve_v2.intent_classify",
+                "user_query": f"Intent:\n{body.intent.strip()}",
+                "system_override": sys,
+                "response_format": "json",
+            },
         )
         raw = (llm_resp or {}).get("response") or ""
     except Exception as exc:  # noqa: BLE001
@@ -938,6 +1021,48 @@ async def abandon_session(
     return {"ok": True}
 
 
+# -----------------------------------------------------------------------------
+# Phase 15.3 — stale-session cron. APScheduler hits this daily at 04:00 UTC.
+# Marks active sessions with updated_at older than STALE_SESSION_AGE_DAYS as
+# abandoned, with a recorded `abandoned_reason="stale_30d"`. Intended to be
+# idempotent — running twice in the same day produces the same DB state.
+# -----------------------------------------------------------------------------
+from fastapi import Header  # noqa: E402  (used only here for cron-secret header)
+
+
+@router.post("/cron/stale-session-sweep")
+async def stale_session_sweep(
+    x_cron_secret: Optional[str] = Header(default=None, alias="X-Cron-Secret"),
+):
+    import os as _os
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    expected = _os.environ.get("AKKI_CRON_SECRET")
+    if not expected or x_cron_secret != expected:
+        raise HTTPException(status_code=403, detail="Cron secret missing or invalid.")
+
+    cutoff = _dt.now(_tz.utc) - _td(days=STALE_SESSION_AGE_DAYS)
+    cutoff_iso = cutoff.isoformat().replace("+00:00", "Z")
+    result = await db.solva_v2_sessions.update_many(
+        {"status": "active", "updated_at": {"$lt": cutoff_iso}},
+        {"$set": {
+            "status": "abandoned",
+            "abandoned_reason": "stale_30d",
+            "abandoned_at": iso(now()),
+            "updated_at": iso(now()),
+        }},
+    )
+    logger.info(
+        "solva_v2 stale_session_sweep cutoff=%s matched=%s modified=%s",
+        cutoff_iso, result.matched_count, result.modified_count,
+    )
+    return {
+        "ok": True,
+        "cutoff": cutoff_iso,
+        "matched": result.matched_count,
+        "modified": result.modified_count,
+    }
+
+
 @router.post("/sessions/{sid}/turn")
 async def post_turn(
     sid: str,
@@ -949,6 +1074,29 @@ async def post_turn(
     )
     if not rec:
         raise HTTPException(status_code=404, detail="Session not found.")
+
+    # Phase 15.3 — hard-block sessions are terminal: 409 immediately.
+    if rec.get("status") == "blocked_hard":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This Solva v2 session has been hard-blocked by the refusal "
+                "ladder and cannot accept further turns."
+            ),
+        )
+
+    # Phase 15.3 — 20-turn ceiling (decision #11). Count user turns only.
+    user_turn_total = sum(1 for t in (rec.get("turns") or []) if t.get("role") == "user")
+    if user_turn_total >= MAX_TURNS_PER_SESSION:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "session_turn_limit",
+                "message": "Session turn limit reached",
+                "limit": MAX_TURNS_PER_SESSION,
+            },
+        )
+
     # Phase 15.1: state machine owns transition legality.
     try:
         assert_can_post_turn(rec)
@@ -978,12 +1126,71 @@ async def post_turn(
     )
     rec["turns"].append(user_turn)
 
-    # Refusal stub at every turn boundary
+    # Phase 15.1: refusal classifier. Phase 15.3: feeds the ladder.
     ref = await refusal.run(
         session=rec, turn_id=user_turn_id, layer=current_layer,
         user_text=body.user_text,
     )
     all_audits: List[Dict[str, Any]] = [ref["audit_entry"]]
+
+    # Phase 15.3 — guardrail ladder. Pure-deterministic decision off the
+    # refusal output + session counters. Three possible interceptions:
+    #   * therapy_redirect — locked sentence + Learn link, session active
+    #   * soft_block       — locked reframe sentence, session active,
+    #                        jailbreak_soft_count++, layer NOT advanced
+    #   * hard_block       — locked refusal, session flips to blocked_hard,
+    #                        layer NOT advanced
+    decision = guardrails.evaluate(session=rec, refusal_output=ref["output"])
+    if decision.action != "continue":
+        guard_audit = await synthetic_audit_entry(
+            engine=guardrails.ENGINE,
+            engine_version=guardrails.ENGINE_VERSION,
+            layer=current_layer,
+            turn_id=user_turn_id,
+            output=decision.audit_output,
+            tier_labels=[],
+            shield_required=False,
+            shield_bypassed_reason="deterministic_only",
+            latency_ms=0,
+        )
+        all_audits.append(guard_audit)
+
+        guard_solve_turn_id = str(uuid.uuid4())
+        guard_solve_turn = {
+            "id": guard_solve_turn_id,
+            "role": "solva",
+            "layer": current_layer,
+            "text": decision.user_visible_message,
+            "model": None,
+            "tier": None,
+            "guardrail_action": decision.action,
+            "learn_link": decision.learn_link,
+            "created_at": iso(now()),
+        }
+        guard_update: Dict[str, Any] = {"updated_at": iso(now())}
+        if decision.increment_soft_count:
+            guard_update["jailbreak_soft_count"] = int(
+                rec.get("jailbreak_soft_count") or 0
+            ) + 1
+        if decision.new_status:
+            guard_update["status"] = decision.new_status
+            guard_update["blocked_at"] = iso(now())
+        await db.solva_v2_sessions.update_one(
+            {"id": sid, "account_id": account["id"]},
+            {"$push": {
+                "turns": guard_solve_turn,
+                "reasoning_audit_log": {"$each": all_audits},
+            },
+             "$set": guard_update},
+        )
+        rec.setdefault("turns", []).append(guard_solve_turn)
+        rec.setdefault("reasoning_audit_log", []).extend(all_audits)
+        if decision.increment_soft_count:
+            rec["jailbreak_soft_count"] = guard_update["jailbreak_soft_count"]
+        if decision.new_status:
+            rec["status"] = decision.new_status
+        rec.pop("_id", None)
+        return rec
 
     # Build transcript once
     transcript_lines = []
@@ -1142,26 +1349,28 @@ async def post_turn(
         solve_tier = out["tier"]
 
     elif current_layer == "synthesis":
-        # User gave feedback on synthesis; reflection is terminal in 15.0
-        # (Phase 15.3 turns this into a three-question exchange). Emit the
-        # placeholder and flip to completed in the same write so the client
-        # need not post a no-op turn to close.
-        out = await _run_reflection(rec, solve_turn_id)
+        # Phase 15.3 — Layer 4 Reflection. Three locked questions, each
+        # answered by a tier-marked, validator-checked LLM call. Replaces
+        # the 15.0/15.1/15.2 placeholder.
+        out = await _run_reflection(rec, solve_turn_id, account["id"])
         all_audits.extend(out["audit_entries"])
         solve_text = out["text"]
-        lockin_record = {
-            "body": out["text"],
+        solve_model = out["model"]
+        solve_tier = out["tier"]
+        reflection_record = {
+            "questions": reflection.LOCKED_QUESTIONS,
+            "responses": out["responses"],
+            "engine_version": reflection.ENGINE_VERSION,
             "model": out["model"],
             "tier": out["tier"],
             "generated_at": iso(now()),
-            "placeholder": True,
         }
-        update_fields["lockin"] = lockin_record
+        update_fields["reflection"] = reflection_record
         update_fields["status"] = "completed"
         update_fields["completed_at"] = iso(now())
         update_fields["layer"] = "reflection"
         update_fields["layer_index"] = LAYERS.index("reflection")
-        rec["lockin"] = lockin_record
+        rec["reflection"] = reflection_record
         rec["status"] = "completed"
         rec["layer"] = "reflection"
         rec["layer_index"] = update_fields["layer_index"]

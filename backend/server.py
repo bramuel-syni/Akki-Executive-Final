@@ -599,9 +599,31 @@ async def on_startup():
                 replace_existing=True,
             )
 
+            # ── Daily 04:00 UTC — Solva v2 stale-session sweep (Phase 15.3
+            # decision #11). Marks active v2 sessions idle > 30 days as
+            # abandoned with abandoned_reason="stale_30d". Idempotent.
+            async def _fire_solva_v2_stale_sweep():
+                try:
+                    async with httpx.AsyncClient(timeout=120.0) as ac:
+                        resp = await ac.post(
+                            "http://localhost:8001/api/solva/v2/cron/stale-session-sweep",
+                            headers={"X-Cron-Secret": cron_secret},
+                        )
+                    logger.info("Solva v2 stale-session sweep: status=%s body=%s",
+                                resp.status_code, (resp.text or "")[:200])
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("Solva v2 stale-session sweep failed: %s", e)
+
+            scheduler.add_job(
+                _fire_solva_v2_stale_sweep,
+                CronTrigger(hour=4, minute=0),
+                id="solva_v2_stale_session_daily",
+                replace_existing=True,
+            )
+
             scheduler.start()
             app.state.scheduler = scheduler
-            logger.info("Schedulers armed: Exco360 (Tue 10:00) + Influence Digest (Mon 08:00) + Paragraph Anchors (daily 03:00) UTC.")
+            logger.info("Schedulers armed: Exco360 (Tue 10:00) + Influence Digest (Mon 08:00) + Paragraph Anchors (daily 03:00) + Solva v2 Stale (daily 04:00) UTC.")
         except Exception as e:  # noqa: BLE001
             logger.warning("Could not arm weekly scheduler: %s", e)
     else:

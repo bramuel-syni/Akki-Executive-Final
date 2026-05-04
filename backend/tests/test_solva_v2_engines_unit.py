@@ -395,15 +395,21 @@ class TestProbabilityWeighting:
 # ===========================================================================
 class TestRefusal:
     @pytest.mark.asyncio
-    async def test_real_engine_version_is_1_0(self):
-        assert rf.ENGINE_VERSION == "refusal@1.0"
+    async def test_real_engine_version_is_15_3(self):
+        # Phase 15.3 — bumped from refusal@1.0 to refusal@1.1 when
+        # distress_flag + extraction_marker_hit were added.
+        assert rf.ENGINE_VERSION == "refusal@1.1"
         assert rf.SURFACE == "solve_v2.refusal"
 
     def test_parser_clean_classification(self):
         out = rf._parse_classification(
             '{"category": "clean", "confidence": 0.92, "reason": "normal question"}'
         )
-        assert out == {"category": "clean", "confidence": 0.92, "reason": "normal question"}
+        # Phase 15.3 — distress_flag is part of the schema; clean inputs have it False.
+        assert out == {
+            "category": "clean", "confidence": 0.92,
+            "reason": "normal question", "distress_flag": False,
+        }
 
     def test_parser_jailbreak_high_conf(self):
         out = rf._parse_classification(
@@ -454,10 +460,13 @@ class TestRefusal:
         assert result["output"]["block"] is False
         assert result["output"]["category"] == "clean"
         assert result["output"]["confidence"] == 0.88
-        assert result["output"]["ladder_level"] is None  # 15.3 work
+        # Phase 15.3 — schema replaced `ladder_level` (never used) with
+        # `distress_flag` + `extraction_marker_hit`.
+        assert result["output"]["distress_flag"] is False
+        assert result["output"]["extraction_marker_hit"] is None
         ae = result["audit_entry"]
         assert ae["engine"] == "refusal"
-        assert ae["engine_version"] == "refusal@1.0"
+        assert ae["engine_version"] == "refusal@1.1"
         assert ae["output"]["category"] == "clean"
         assert ae["output"]["block"] is False
 

@@ -394,6 +394,44 @@ async def governance_audit_export(
         .sort("created_at", -1).to_list(10000)
     decorated = [_decorate_audit_row(r, ctx_names, actor_email) for r in rows]
 
+    # Phase 15.3 — Solva v2 reasoning logs (decision #12). Pull every
+    # solva_v2 session for accessible contexts OR owned by this account,
+    # plus their full reasoning_audit_log. Same date filter when present.
+    solva_q: Dict[str, Any] = {
+        "$or": [
+            {"context_id": {"$in": ctx_ids}},
+            {"account_id": current["id"]},
+        ]
+    } if ctx_ids else {"account_id": current["id"]}
+    if created_filter:
+        solva_q["started_at"] = created_filter
+    solva_sessions = await db.solva_v2_sessions.find(
+        solva_q,
+        {"_id": 0, "id": 1, "account_id": 1, "context_id": 1, "submodule": 1,
+         "persona": 1, "cluster_id": 1, "cluster_label": 1, "intent": 1,
+         "layer": 1, "status": 1, "version": 1, "schema_version": 1,
+         "started_at": 1, "updated_at": 1, "completed_at": 1,
+         "abandoned_reason": 1, "jailbreak_soft_count": 1,
+         "synthesis": 1, "reflection": 1, "parent_session_id": 1},
+    ).sort("started_at", -1).to_list(2000)
+    # Reasoning log rows are extracted as a separate flat list so the export
+    # consumer (auditor) can ingest them without nesting.
+    reasoning_rows: List[Dict[str, Any]] = []
+    full_logs = await db.solva_v2_sessions.find(
+        solva_q,
+        {"_id": 0, "id": 1, "account_id": 1, "context_id": 1,
+         "reasoning_audit_log": 1},
+    ).to_list(2000)
+    for s in full_logs:
+        for entry in s.get("reasoning_audit_log") or []:
+            row = {
+                "session_id": s["id"],
+                "account_id": s.get("account_id"),
+                "context_id": s.get("context_id"),
+            }
+            row.update(entry)
+            reasoning_rows.append(row)
+
     # Build CSV in-memory, wrap in a zip.
     csv_buf = io.StringIO()
     writer = csv.writer(csv_buf)
@@ -417,6 +455,16 @@ async def governance_audit_export(
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("audit_log.csv", csv_buf.getvalue())
+        # Phase 15.3 — Solva v2 sessions + reasoning logs (decision #12).
+        import json as _json
+        zf.writestr(
+            "solva_v2_sessions.json",
+            _json.dumps(solva_sessions, ensure_ascii=False, indent=2, default=str),
+        )
+        zf.writestr(
+            "solva_v2_reasoning_log.json",
+            _json.dumps(reasoning_rows, ensure_ascii=False, indent=2, default=str),
+        )
         manifest = (
             "# AKKI governance audit export\n"
             f"# generated_at: {_iso(_now())}\n"
@@ -425,9 +473,19 @@ async def governance_audit_export(
             f"# filter.since:  {body.since or '(beginning)'}\n"
             f"# filter.until:  {body.until or '(now)'}\n"
             f"# row_count: {len(decorated)}\n"
+            f"# solva_v2_sessions: {len(solva_sessions)}\n"
+            f"# solva_v2_reasoning_log: {len(reasoning_rows)}\n"
+            "#\n"
+            "# Files:\n"
+            "#   audit_log.csv               Server-side action log (existing).\n"
+            "#   solva_v2_sessions.json      Phase 15.3 — Solva v2 session\n"
+            "#                               metadata + synthesis + reflection.\n"
+            "#   solva_v2_reasoning_log.json Phase 15.3 — every engine audit\n"
+            "#                               entry from every Solva v2 turn,\n"
+            "#                               flattened with session+context FK.\n"
             "#\n"
             "# Every row is an immutable record of a server-side action.\n"
-            "# Fields: timestamp, action, context_id, context_name,\n"
+            "# audit_log.csv fields: timestamp, action, context_id, context_name,\n"
             "# actor_email, resource_type, resource_id, metadata_json.\n"
         )
         zf.writestr("manifest.txt", manifest)

@@ -252,11 +252,14 @@ async def test_invariant_holds_across_full_session(monkeypatch):
                 _check_invariant(e)
                 engines_seen.add(e["engine"])
 
-            # Phase 15.0 hardening: ensure the placeholder rename for reflection
-            # took effect and that the validator entry now declares
-            # shield_required=True with a real run_id.
-            assert "placeholder" in engines_seen, (
-                f"reflection placeholder not renamed; engines seen: {engines_seen}"
+            # Phase 15.3: the reflection layer is real. Audit must include
+            # `engine='reflection'` (replacing the 15.0 `placeholder`) and a
+            # validator entry with shield_required=True + run_id.
+            assert "reflection" in engines_seen, (
+                f"reflection engine not present in audit; engines seen: {engines_seen}"
+            )
+            assert "placeholder" not in engines_seen, (
+                f"placeholder engine still present after 15.3; engines seen: {engines_seen}"
             )
             assert "validator" in engines_seen
             validator_entry = next(e for e in entries if e["engine"] == "validator")

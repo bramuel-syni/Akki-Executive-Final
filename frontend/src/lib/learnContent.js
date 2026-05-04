@@ -233,6 +233,75 @@ The governance heuristic: if you cannot list the AI features enabled across your
       "Do our vendor incident-notification clocks match our own regulatory obligations?",
     ],
   },
+  // ── Phase 15.3 — Solva v2 guardrail link targets ────────────────────────
+  {
+    id: "board-room-stress",
+    title: "When the board-room is the source of stress, not the audience",
+    kicker: "Leadership · 5 min read",
+    content_type: "tl_article",
+    topic: "leadership",
+    audience: ["ned", "executive"],
+    source_name: "AKKI editorial · curated from IoD, NACD, Stanford GSB",
+    source_url: "https://www.iod.com/resources/governance/health-and-wellbeing-in-the-boardroom/",
+    summary: "Solva is a board-level decision tool, not a wellbeing service. If you have arrived here from a Solva session, this is a short, honest piece about board-room stress and where to take it next.",
+    body: `If you've arrived here from inside a Solva session, it's because Solva detected language that sounded less like a strategic question and more like personal distress. That detection is rough — it can be wrong, and it can be right. Either way, what follows is a short, board-grade piece on the topic, and a clear pointer to where this kind of conversation belongs.
+
+What the literature actually says.
+
+Board-level work concentrates a particular kind of strain. The decisions are infrequent but heavy. The accountability is asymmetric — slow when things go right, sudden when they don't. The peer set is small. Most of the executives you work with cannot be your confidants on the questions that keep you up at night, because the answer to those questions is partly about them.
+
+The Institute of Directors' wellbeing guidance is unusually plainspoken on this. Burnout in directors looks different from burnout in operators. It tends to present as decisional drift — meetings start to feel rehearsed, papers start to feel skim-read, and the sharp edge that makes a director useful starts to dull. By the time it shows up as missed signals, it has been there for some time.
+
+The three honest interventions.
+
+First — name it inside an existing relationship. A chair, a senior independent director, an executive coach, a previous chief executive who knows the board's history. The signal that something is off is more useful than the explanation of what it is.
+
+Second — separate the question. There are usually two: a strategic question (which Solva is built for) and a personal question (which Solva is not built for). Decoupling them makes both more tractable.
+
+Third — speak to a clinician if the language is recurring. The IoD's directory of board-care providers is one starting point; your private medical insurer almost certainly has a confidential 24/7 line. Mental Health UK's Burnout Report is freely available and frames the patterns clearly.
+
+What Solva will and will not do.
+
+Solva will: surface comparable diagnoses, weigh probabilities, name what's grounded versus what's speculation, refuse to flatter you, and write a board-grade synthesis.
+
+Solva will not: be a counsellor, a confessor, or a friend. It does not retain personal disclosures across sessions. It is a deliberately narrow tool. The narrowness is the safety.
+
+If, having read this, the question is still mostly strategic, return to your Solva session and reframe. If it is mostly personal, the IoD link above and your own GP or coach are the right next stops.`,
+    questions_to_ask: [
+      "When did I last separate the strategic question from the personal one in writing?",
+      "Who in my professional circle could I tell I was tired, today, before the next board meeting?",
+      "Do I have a confidential clinical contact — and have I tested it in the last twelve months?",
+    ],
+  },
+  {
+    id: "guardrails-and-shield",
+    title: "Why Solva refuses some prompts: the guardrail and shield contract",
+    kicker: "Governance · 4 min read",
+    content_type: "tl_article",
+    topic: "governance",
+    audience: ["ned", "executive"],
+    source_name: "AKKI engineering — Phase 12 Synisense Shield + Phase 15 Solva v2",
+    source_url: "/security",
+    summary: "If Solva has just refused your turn or hard-blocked your session, this short piece explains the two layers that triggered it: the Synisense Shield and the refusal ladder.",
+    body: `Solva has a deliberately narrow remit: board-level diagnosis, strategy, simulation, and perspective-taking. Two layers enforce that remit.
+
+The Synisense Shield runs before any text leaves your tenant. Names, deal codenames, financial figures, and other identifiers are masked, sent to the model in shielded form, and re-hydrated only on return. This is the layer that makes it safe to put a real board pack in front of a frontier model. The shield is on, always, and is independent of any guardrail decision.
+
+The refusal ladder runs at every turn boundary, before any other reasoning engine. It classifies your message into one of three buckets: clean, jailbreak_attempt, or out_of_scope. Most of the time the answer is "clean" and you never see this layer at work.
+
+When the classifier flags jailbreak_attempt — a message asking Solva to ignore prior instructions, reveal its system prompt, override the shield, or role-play around guardrails — the ladder responds twice. The first attempt produces a soft block: Solva names the deflection, asks you to reframe, and the session continues. The second attempt, or any attempt that contains explicit extraction phrasing, produces a hard block: the session locks and accepts no further turns.
+
+Hard-blocking is recorded in the reasoning audit log so the governance export shows it. It is not punitive — it exists so a single conversation can never become the place where a guardrail wears down. If you have a legitimate question that triggered a hard block by accident, start a new session and reframe.
+
+When the classifier flags out_of_scope with a personal-distress sub-flag, Solva does not refuse. It returns one sentence pointing you to a short piece on board-room stress, and the session stays active for you to pivot the question.
+
+None of this is dismissable. It is the safety boundary that lets us put a board-room-grade reasoning tool in front of you without gambling on the model's good judgement alone.`,
+    questions_to_ask: [
+      "Have we tested our refusal-ladder thresholds against our own adversarial prompts?",
+      "Does our governance export include the reasoning audit log for completed Solva v2 sessions?",
+      "When was the last time a hard-blocked session was reviewed by a human?",
+    ],
+  },
 ];
 
 export const TOPIC_LABEL = {
