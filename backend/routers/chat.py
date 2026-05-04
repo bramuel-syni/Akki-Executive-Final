@@ -32,7 +32,11 @@ from pydantic import BaseModel, Field
 
 from core import db, get_current_account  # noqa: E402
 from core import now as _now, iso as _iso  # noqa: E402
-from llm_service import shield_payload, shielding_report, rehydrate
+from services.synisense import (
+    shield_payload_async as _syn_shield,
+    shielding_report as _syn_report,
+    rehydrate as _syn_rehydrate,
+)
 
 logger = logging.getLogger("akki.chat")
 router = APIRouter(prefix="/api")
@@ -485,16 +489,18 @@ async def send_message(
     model_def = _model_def(chat["model_id"]) or _model_def(DEFAULT_MODEL_ID)
     policy: ShieldingPolicy = chat.get("shielding_policy", "auto")
 
-    # ── Phase 12.2 ITEM A — Synisense pre-LLM hook. The user's text is
-    # the first thing to flow through the shield: regex + Presidio NER +
-    # selective LLM fallback. Everything downstream (legacy regex
-    # `shield_payload`, retrieval, grounding block, the LLM prompt
-    # itself) sees the redacted version. The legacy `shield_payload`
-    # path is preserved as a defence-in-depth second pass — anything
-    # Synisense missed (or chose to keep) still gets caught by the
-    # 9-pattern regex ladder.
+    # ── Phase 12.2 / Phase A — Synisense pre-LLM hook (the only shield
+    # path on this surface). The user's text flows through the
+    # three-layer pipeline (regex → Presidio → LLM fallback) which
+    # produces a redacted projection AND a span list we can use to
+    # rebuild a process-local `{token: original}` map for rehydration
+    # of the model's reply. The legacy in-process regex shield was
+    # retired in Phase A.
     text = body.content.strip()
+    original_text_for_shield = text
     syn_stats: Dict[str, Any] = {"spans_redacted": 0, "by_type": {}, "elapsed_ms": 0}
+    shield_map: Dict[str, str] = {}
+    shielded_text = text
     try:
         from services.synisense import run as syn_run
         from services.synisense.pipeline import current_version as _syn_version
@@ -505,8 +511,24 @@ async def send_message(
             mode="redact",
             account_id=current["id"],
         )
-        text = syn_out["redacted_text"]
+        shielded_text = syn_out["redacted_text"]
+        # Phase A — chat keeps the redacted projection in `text` for
+        # downstream prompt assembly (history block, system prompt) but
+        # also retains an explicit `shielded_text` so the policy gate
+        # logic below can decide whether to send the redacted or raw
+        # version to the LLM. The shield_map reconstructed here lets
+        # rehydrate(...) restore real values in the reply post-call.
+        text = shielded_text
         spans = syn_out.get("spans") or []
+        for s in spans:
+            token = s.get("replacement")
+            if not token:
+                continue
+            try:
+                original = original_text_for_shield[int(s["start"]):int(s["end"])]
+            except (KeyError, ValueError, TypeError):
+                continue
+            shield_map[token] = original
         # Build a stats summary safe to persist on the message record.
         by_type: Dict[str, int] = {}
         for s in spans:
@@ -540,14 +562,19 @@ async def send_message(
         except Exception:  # noqa: BLE001
             pass
     except Exception as e:  # noqa: BLE001
+        # Phase A — chat preserves the historical degradation contract:
+        # if Synisense fails, the message still goes through unshielded
+        # (with a loud warn). Solva v2 surfaces use the strict adapter
+        # at services.solva_v2.llm_adapter.shielded_call which DOES
+        # refuse on the same condition. Future hardening could promote
+        # chat to the strict path if ops sees zero degraded calls in
+        # production.
         logger.warning(
-            "synisense chat hook failed (degraded — proceeding with legacy "
-            "regex shield): %s", e.__class__.__name__,
+            "synisense chat hook failed (degraded — proceeding with raw "
+            "input as shield_map=empty): %s", e.__class__.__name__,
         )
 
-    # Legacy regex shield as defence-in-depth on the (already-redacted) text.
-    shielded_text, shield_map = shield_payload(text)
-    detected = shielding_report(shield_map)
+    detected = _syn_report(shield_map)
     has_identifiers = detected["identifiers_masked"] > 0
 
     # ── Decide whether THIS message goes shielded.
@@ -636,9 +663,18 @@ async def send_message(
         role = "USER" if m.get("role") == "user" else "AKKI"
         # Re-shield prior user messages defensively — we don't want to
         # reveal earlier identifiers to the LLM if shielding was on then.
+        # Phase A — historical messages are already stored as the
+        # redacted projection (`text = syn_out["redacted_text"]` at
+        # message-send time), so this re-shield is a belt-and-braces
+        # second pass through the Synisense pipeline. If the historical
+        # row pre-dates Phase A and contains raw PII, this catches it.
         c = m.get("content") or ""
         if m.get("role") == "user":
-            c_shielded, _ = shield_payload(c)
+            try:
+                c_shielded, _ = await _syn_shield(c, surface="chat",
+                                                  context_id=chat.get("context_id") or "")
+            except Exception:  # noqa: BLE001
+                c_shielded = c
             history_lines.append(f"{role}: {c_shielded}")
         else:
             history_lines.append(f"{role}: {c}")
@@ -706,7 +742,7 @@ async def send_message(
             ).with_model(model_def["provider"], model_def["model"])
             raw = await chat_session.send_message(UserMessage(text=full_prompt))
             raw_text = raw if isinstance(raw, str) else str(raw)
-            reply_text = rehydrate(raw_text, shield_map) if will_shield else raw_text
+            reply_text = _syn_rehydrate(raw_text, shield_map) if will_shield else raw_text
             mode = "live"
         except Exception as e:
             logger.exception("Chat LLM call failed")

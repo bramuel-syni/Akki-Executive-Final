@@ -351,19 +351,19 @@ async def _walk_session(client, headers: Dict[str, str], scenario: Dict[str, str
 #                    successful catch by the validator and a healthy run.
 #                    Floor: NONE (a non-zero catch rate is healthy).
 # ---------------------------------------------------------------------------
-_ALLOWED_PLACEHOLDER_VERSIONS = {
-    # Documented Phase 15.3 placeholder; not a stub of a real engine.
-    "reflection@0.0-placeholder",
-}
+_ALLOWED_PLACEHOLDER_VERSIONS: set = set()
+# Phase A — Reflection is now @1.0 (real). The legacy
+# `reflection@0.0-placeholder` whitelist has been removed; any future
+# stub version string in the audit log is a code-discipline regression
+# and fails engine_ok.
 _STUB_TOKENS = ("@0.1-stub", "-stub")
 
 
 def _has_stub_versions(audit) -> List[str]:
     """Return the list of stub-versioned engines found in the audit log.
 
-    Reflection's documented placeholder is whitelisted because Phase 15.1
-    does not own that layer. Any other `*-stub` or `@0.1-stub` string is
-    a code-discipline regression that fails engine_ok.
+    Phase A — every engine is real. Any `*-stub` or `@0.1-stub` string
+    is a code-discipline regression and fails engine_ok.
     """
     bad = []
     for e in (audit or []):

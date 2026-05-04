@@ -1,6 +1,9 @@
-# AKKI Production Roadmap — Phases 12 through 19
+# AKKI Production Roadmap — Phases 12 through 19 (Phase A cleanup applied)
 
 **Status:** Approved by product owner. Single-approval execution. Each phase closes cleanly before the next. Decision points are flagged; all other scope is locked.
+
+**Phase A (post 15.3.5) — Cleanup & 12.3 close — applied 2026-05-04+.**
+Deletes `_legacy/` archive, retires v1 Solva POSTs (read-only GETs preserved), drops the `/api/solve` 308 alias and the `solva_v2_poc` feature flag, renames `SolvaV2Poc → SolvaApp`, unifies PII shielding onto `services/synisense`, flips typography from Inter to Calibri (system stack), and closes Phase 12.3 doc drift.
 
 **Source-of-truth documents:**
 - `AKKI_Objectives_Discovery_Rewrite.docx` — product vision, persona tiers, 4 modules + 2 surfaces
@@ -61,10 +64,10 @@ Active item: 2px accent underline (never background fill). Collapses to hamburge
 
 ## Approved phases
 
-### Phase 12 — Synisense Shield (IN FLIGHT)
+### Phase 12 — Synisense Shield ✅ CLOSED (12.3 closed in Phase A)
 - 12.1 engine + AES-GCM envelope encryption + `/api/synisense/status` + `/dryrun` + `/api/admin/synisense/perf` + tests
 - 12.2 six-surface wiring (chat, ingest, Studio, Solva, public-read) + PreviewDrawer + TrustPanel rewrite + chat inline icon
-- 12.3 marketing copy honesty pass + "Actually shipped" diff in SYNISENSE_SCOPE.md
+- 12.3 marketing copy honesty pass + "Actually shipped" diff in SYNISENSE_SCOPE.md (closed in Phase A — chat surface unified onto Synisense, legacy regex shield retired, see SYNISENSE_SCOPE.md "Actually shipped" diff)
 
 ### Phase 13 — Nomenclature & Navigation Rebuild (~7-8 days, split into 4 sub-phases)
 
@@ -88,6 +91,12 @@ Active item: 2px accent underline (never background fill). Collapses to hamburge
     EnterpriseFeature, Security, FirstSession.
   - 4 new alias regression tests in `test_solva_route_aliases.py`. Existing
     39 Phase 12 tests still green (43 total now).
+  - **Aliases retired in Phase A (2026-05-04+).** `routers/solva_aliases.py`
+    deleted, `/api/solve/*` now 404. Test corpus at
+    `tests/test_solva_route_aliases.py`, `tests/test_iter61_solve_engine.py`,
+    `tests/test_iter63_solve_p1p2_followon.py` deleted with the alias.
+    `test_iter67_regression.py::test_solve_clusters_returns_12` migrated to
+    `/api/solva/clusters`.
   - Aliases scheduled for retirement in **Phase 14** (three sessions out)
     — see "Migration notes — `/api/solve` → `/api/solva` aliases" below.
 - **13.2 Cycle Manager merger (~2d)** ✅ **DONE 2026-05-04.**
@@ -342,3 +351,20 @@ on Synisense, Phase 11 ValidatedBadge, Resend / Stripe / Sentry stubs.
 - No silent un-stubbing across phase boundaries.
 - Every new env var → `.env.example` + `PRODUCTION_ENV.md`.
 - Mocks/stubs always explicitly labelled in code comments and UI copy.
+
+
+## Phase A — Cleanup & 12.3 close (applied 2026-05-04+)
+
+Single-shot cleanup pass between 15.3.5 and 16. Scope was tight:
+delete the `_legacy/` archive, finish v1 retirement, unify PII shielding,
+flip typography, close 12.3 doc drift. **Closed.**
+
+- `_legacy/` directory deleted from the live tree (forensic comm history retained in git).
+- `routers/solva_engine.py` rewritten as **read-only forensic surface**: every POST handler removed, helper `_v1_decommissioned()` deleted, six GETs preserved (`/clusters`, `/pro-status`, `/sessions[/{sid}/...]`, `/export.pdf`).
+- `routers/solva_aliases.py` deleted; `/api/solve/*` now 404 (no 308 alias).
+- `account.solva_v2_poc` flag residue cleared from live code: `require_solva_v2_flag()` deleted (every callsite now uses `Depends(get_current_account)`), `core.sanitize_account` no longer surfaces the flag, `POST/GET /api/admin/solva-v2/flag` removed, `admin_router` unmounted from `server.py`. Field stays in MongoDB on existing accounts (no migration).
+- `frontend/src/pages/SolvaV2Poc.jsx` renamed to `SolvaApp.jsx`; `App.js` rewires `/app/solva` to `SolvaApp`. `frontend/src/pages/AppSolva.jsx` (the 17-line `<Navigate>` stub) deleted.
+- PII shielding unified on `services/synisense`. `services/synisense/adapter.py` exposes a `shield_payload_async / shielding_report / rehydrate` trio with the legacy tuple shape so existing callsites migrate without refactoring their rehydrate flow. `llm_service.shield_payload`, `shielding_report`, `rehydrate` and the regex constants deleted. `chat.py` migrated end-to-end (legacy second-pass regex shield removed; reply rehydration now uses pipeline-derived `shield_map`).
+- Typography: Inter retired. Calibri ships from the system stack `Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif`. Google Fonts Inter import removed from `index.css` and `public/index.html` (the platform-injected "Made with Emergent" badge keeps its own Inter ref — out of scope).
+- `services/solva_v2/__init__.py` package docstring rewritten to reflect the post-15.3.5 / Phase A reality (real engines, four sub-modules, guardrail ladder, Calibri stack — no stub language).
+- Phase 15.3.5 cutover items 1, 2, 4, 8, 10 (no-opinion prompt audit, Solva landing redesign, Home divergence collapse, chat soft-delete + 30-day cron, streaming chat SSE) are NOT in Phase A — moved forward to **Phase B**.

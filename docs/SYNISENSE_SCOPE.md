@@ -316,6 +316,10 @@ no new env vars, no new routes.
 | DEAL_CODENAME promoted to regex pre-pass (deterministic over spaCy NER) | 12.3 | `services/synisense/regex_recognisers.py` (+ removed from `presidio_engine.py`) |
 | Marketing copy describes the engine truthfully | 12.3 | `frontend/src/pages/marketing/Security.jsx` |
 | Production readiness note for `SYNISENSE_USE_POOL` | 12.3 | `docs/RUNBOOKS/PRODUCTION_ENV.md` |
+| Chat surface unified onto Synisense (legacy regex shield in `llm_service.py` retired) | A | `routers/chat.py`, `llm_service.py` |
+| `services/synisense/adapter.py` — legacy `(text, shield_map)` shape adapter so all LLM-touching call sites flow through `pipeline.dryrun` | A | `backend/services/synisense/adapter.py` |
+| `llm_service.shield_payload` / `shielding_report` / `rehydrate` deleted; `call_llm` now consumes the Synisense adapter | A | `backend/llm_service.py` |
+| `module → surface` mapper added so the perf ring buffer groups results per product surface | A | `backend/llm_service.py:_surface_for_module` |
 
 **Honest deviations carried forward (expected, stay):**
 - **Process pool stays disabled in dev** (`SYNISENSE_USE_POOL=false`). uvicorn
@@ -326,5 +330,10 @@ no new env vars, no new routes.
   in `RUNBOOKS/PRODUCTION_ENV.md`. Status endpoint surfaces `mode: in_process`
   honestly today.
 
-**Remaining open items:** _none._ The Synisense Shield (Phases 12.1 → 12.3)
-is closed. Future work belongs in Phase 13+ per `docs/ROADMAP.md`.
+**Remaining open items:** _none._ The Synisense Shield (Phases 12.1 → 12.3,
+extended through Phase A unification) is closed. Every LLM call across
+chat, briefings, decks, reports, signals, simulate, lens, prepare,
+plays, walkin, blog, learn, document ingestion, studio sensitivity,
+strategic_goals, and the Solva v2 strict adapter routes its prompt
+through the three-layer pipeline (regex → Presidio → LLM fallback).
+Future work belongs in Phase B+ per `docs/ROADMAP.md`.

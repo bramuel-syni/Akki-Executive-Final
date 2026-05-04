@@ -1,12 +1,11 @@
 /**
- * Solva v2 POC page (Phase 15.0).
+ * Solva — production reasoning surface (post Phase 15.3.5 cutover).
  *
- * Gated by `account.solva_v2_poc === true`. Users without the flag see a
- * plain "not enabled for your account" card. No AppShell changes, no nav
- * entry; direct URL only: /app/solva/v2-poc.
+ * Open to every authenticated account; the legacy `account.solva_v2_poc`
+ * flag was retired in Phase A. Mounted at `/app/solva`.
  *
- * UI intentionally minimal — the surface here is the architecture, not the
- * design. Polish lands in Phase 15.3.
+ * UI is deliberately editorial and dense; engine work lives in
+ * `backend/services/solva_v2/*`. Landing redesign tracked under Phase B.
  */
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -81,9 +80,9 @@ function renderSynthesisWithTierChips(body, claims) {
   return out;
 }
 
-export default function SolvaV2Poc() {
+export default function SolvaApp() {
   const { account } = useAuth();
-  const enabled = !!(account && account.solva_v2_poc);
+  const _hasAccount = !!account;
 
   const [clusters, setClusters] = useState([]);
   const [loadingClusters, setLoadingClusters] = useState(true);
@@ -109,7 +108,7 @@ export default function SolvaV2Poc() {
   // only fires when the user pauses typing for 800ms AND the intent is
   // long enough for the classifier to be useful.
   useEffect(() => {
-    if (!enabled || session) return;
+    if (!_hasAccount || session) return;
     const t = setTimeout(async () => {
       const trimmed = intent.trim();
       if (trimmed.length < 30) {
@@ -131,7 +130,7 @@ export default function SolvaV2Poc() {
       }
     }, 800);
     return () => clearTimeout(t);
-  }, [intent, enabled, session]);
+  }, [intent, _hasAccount, session]);
 
   const SUBMODULE_TILES = [
     {
@@ -157,7 +156,7 @@ export default function SolvaV2Poc() {
   ];
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!_hasAccount) return;
     let cancelled = false;
     Promise.all([
       api.get("/solva/clusters").catch(() => ({ data: { clusters: [] } })),
@@ -188,7 +187,7 @@ export default function SolvaV2Poc() {
       }
     });
     return () => { cancelled = true; };
-  }, [enabled]);
+  }, [_hasAccount]);
 
   const start = async () => {
     if (!activeCluster || intent.trim().length < 20) return;
@@ -318,24 +317,6 @@ export default function SolvaV2Poc() {
       setReasoningLoading(false);
     }
   };
-
-  if (!enabled) {
-    return (
-      <AppShell>
-        <div style={{ maxWidth: 640, margin: "60px auto", padding: 24, background: "var(--warm-white)", border: "1px solid var(--rule)", borderRadius: 4 }}>
-          <p className="akki-overline" style={{ marginBottom: 8 }}>Solva v2 · Phase 15.0 POC</p>
-          <h1 style={{ fontFamily: "Georgia, serif", fontSize: 22, marginBottom: 12 }}>Not enabled for this account</h1>
-          <p style={{ color: "var(--muted)", fontSize: 14, lineHeight: 1.5 }}>
-            The Solva v2 POC is gated behind an account flag. Ask the admin to
-            run <code>POST /api/admin/solva-v2/flag</code> with your email.
-          </p>
-          <Link to="/app/solva" style={{ display: "inline-block", marginTop: 16, color: "var(--chrome)", fontSize: 13 }}>
-            ← Back to Solva v1
-          </Link>
-        </div>
-      </AppShell>
-    );
-  }
 
   // Bootstrapping — brief loading splash while we check whether the user
   // has a previous completed session to replay before falling through to
@@ -546,7 +527,7 @@ export default function SolvaV2Poc() {
             <h1 style={{ fontFamily: "Georgia, serif", fontSize: 20, margin: "0 0 6px 0" }}>
               Layer: {LAYER_LABELS[session.layer] || session.layer} · Status: {session.status}
               {isCompletedReplay && (
-                <span style={{ marginLeft: 10, fontSize: 11, padding: "2px 8px", background: "var(--cream)", border: "1px solid var(--rule)", color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.6, fontFamily: "Inter, sans-serif", verticalAlign: "middle" }}>
+                <span style={{ marginLeft: 10, fontSize: 11, padding: "2px 8px", background: "var(--cream)", border: "1px solid var(--rule)", color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.6, fontFamily: 'Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif', verticalAlign: "middle" }}>
                   Replay · most recent completed
                 </span>
               )}

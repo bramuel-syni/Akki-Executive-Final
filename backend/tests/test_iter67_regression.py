@@ -42,9 +42,9 @@ def headers(token):
     return {"Authorization": f"Bearer {token}"}
 
 
-# ── Solve clusters ──────────────────────────────────────────────────────────
+# ── Solva clusters (v1 read-only surface) ───────────────────────────────────
 def test_solve_clusters_returns_12(headers):
-    r = requests.get(f"{BASE_URL}/api/solve/clusters", headers=headers)
+    r = requests.get(f"{BASE_URL}/api/solva/clusters", headers=headers)
     assert r.status_code == 200, r.text
     data = r.json()
     clusters = data.get("clusters") if isinstance(data, dict) else data

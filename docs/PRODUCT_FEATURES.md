@@ -22,8 +22,8 @@ Anything marked Pending or Placeholder must not be described to prospects as a c
 | Feature | Status | One-line summary | Phase |
 |---|---|---|---|
 | Synisense Shield | Shipped | Three-layer PII de-identification with AES-GCM shield maps and surface-scoped TTLs | 12 |
-| Solva v1 (4-phase engine) | Shipped | Surface → Depth → Synthesis → Lock-in sessions with handoffs to briefings, decks, cycle | 11 |
-| Solva v2 | Pending | Reasoning tier, sub-modules, tension detector, grounding contract | 15 |
+| Solva v1 (4-phase engine) | Read-only forensic | POSTs retired in Phase A; six GETs preserved at `/api/solva/*` for historical session inspection | 11 / Phase A |
+| Solva v2 | Shipped | Reasoning tier, four sub-modules, tension detector, grounding contract, guardrail ladder, reflection layer; production surface at `/app/solva` | 15.0–15.3.5 |
 | Work Studio | Shipped | Block editor with deterministic sensitivity and exposure scoring | 13.3 |
 | Cycle Manager | Shipped | Briefs, Signals, Minutes, Actions and Reports under one surface | 13.2 |
 | Akki Pulse | Placeholder | Holding page only; aggregator and Privacy Wall unbuilt | 14 |

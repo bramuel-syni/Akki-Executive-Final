@@ -72,7 +72,6 @@ from routers import solva as solva_router  # noqa: E402
 from routers import walkin as walkin_router  # noqa: E402
 from routers import admin_auth_events as admin_auth_events_router  # noqa: E402
 from routers import solva_engine as solva_engine_router  # noqa: E402
-from routers import solva_aliases as solva_aliases_router  # noqa: E402  Phase 13.1 — /api/solve → /api/solva 308 alias
 from routers import studio as studio_router  # noqa: E402
 from routers import studio_blocks as studio_blocks_router  # noqa: E402
 from routers import product_features as product_features_router  # noqa: E402
@@ -138,10 +137,6 @@ app.include_router(solva_router.router)
 app.include_router(walkin_router.router)
 app.include_router(admin_auth_events_router.router)
 app.include_router(solva_engine_router.router)
-# Phase 13.1 — legacy /api/solve/* aliases. MUST be registered AFTER the
-# canonical solva routers so the alias router never shadows live routes.
-# Retire in Phase 14 once all callers have migrated.
-app.include_router(solva_aliases_router.router)
 app.include_router(studio_router.router)
 app.include_router(studio_blocks_router.router)
 app.include_router(product_features_router.router)
@@ -152,11 +147,9 @@ app.include_router(first_session_router.router)
 app.include_router(depth_router.router)
 app.include_router(governance_router.router)
 
-# Phase 15.0 — Solva v2 POC. Feature-flagged (account.solva_v2_poc=true).
-# v1 Solva remains active for all accounts; v2 is a parallel surface that
-# 403s without the flag. Registered AFTER all v1 routers so nothing is shadowed.
+# Solva v2 — production reasoning surface. Open to every authenticated
+# account. Registered AFTER all v1 routers so nothing is shadowed.
 app.include_router(solva_v2_router.router)
-app.include_router(solva_v2_router.admin_router)
 
 
 # -----------------------------------------------------------------------------

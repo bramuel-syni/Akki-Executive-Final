@@ -38,8 +38,7 @@ import QuickResults from "@/pages/QuickResults";
 import Manage from "@/pages/Manage";
 import Enterprise from "@/pages/Enterprise";
 import Decks from "@/pages/Decks";
-import AppSolva from "@/pages/AppSolva";
-import SolvaV2Poc from "@/pages/SolvaV2Poc";
+import SolvaApp from "@/pages/SolvaApp";
 import Sandbox from "@/pages/Sandbox";
 import SandboxGenerating from "@/pages/SandboxGenerating";
 import Cycle from "@/pages/Cycle";
@@ -223,12 +222,10 @@ function App() {
               users discover the feature ahead of build. */}
           <Route path="/app/pulse" element={<Gated><PulsePlaceholder /></Gated>} />
           <Route path="/app/studio/composer/:kind/:artefactId" element={<Gated><StudioComposerPage /></Gated>} />
-          {/* Phase 15.3.5 cutover — Solva v2 is the production surface
-              and the canonical /app/solva. The v1 AppSolva component is
-              now a thin redirect (legacy module body archived under
-              _legacy/). The v2-poc URL stays as a 308 alias for any
-              external bookmarks that still target it. */}
-          <Route path="/app/solva" element={<Gated><SolvaV2Poc /></Gated>} />
+          {/* Phase A — Solva is now a single production surface mounted
+              directly at /app/solva. The legacy AppSolva stub and the
+              v2-poc URL alias have both been retired. */}
+          <Route path="/app/solva" element={<Gated><SolvaApp /></Gated>} />
           <Route path="/app/solva/v2-poc" element={<Navigate to="/app/solva" replace />} />
           {/* Legacy /app/solve alias for muscle memory and external
               bookmarks. Redirects to the v2 surface. */}

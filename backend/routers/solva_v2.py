@@ -130,24 +130,6 @@ class IntentClassifyIn(BaseModel):
 
 
 # -----------------------------------------------------------------------------
-# Phase 15.3.5 cutover — flag dropped. Solva v2 is now the only Solva and
-# is open to every authenticated account. The legacy `account.solva_v2_poc`
-# field is left intact in MongoDB for forensic parity but no longer gates
-# any code path. The dependency below is retained as a thin alias so the
-# Depends(...) wiring across the router doesn't churn — it now just
-# enforces authentication.
-# -----------------------------------------------------------------------------
-async def require_solva_v2_flag(
-    account: Dict[str, Any] = Depends(get_current_account),
-) -> Dict[str, Any]:
-    """Phase 15.3.5: pass-through. Solva v2 is the production surface."""
-    aid = account.get("id") if isinstance(account, dict) else None
-    if not aid:
-        raise HTTPException(status_code=401, detail="Authentication required.")
-    return account
-
-
-# -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
 async def _is_pro(account: Dict[str, Any]) -> bool:
@@ -689,7 +671,7 @@ async def _run_reflection(
 @router.post("/sessions")
 async def start_session(
     body: StartV2In,
-    account: Dict[str, Any] = Depends(require_solva_v2_flag),
+    account: Dict[str, Any] = Depends(get_current_account),
 ):
     if body.submodule not in SUBMODULES:
         raise HTTPException(
@@ -853,7 +835,7 @@ async def start_session(
 @router.get("/sessions")
 async def list_sessions(
     status: Optional[str] = None,
-    account: Dict[str, Any] = Depends(require_solva_v2_flag),
+    account: Dict[str, Any] = Depends(get_current_account),
 ):
     q: Dict[str, Any] = {"account_id": account["id"], "version": 2}
     if status:
@@ -870,7 +852,7 @@ async def list_sessions(
 @router.get("/sessions/{sid}")
 async def get_session(
     sid: str,
-    account: Dict[str, Any] = Depends(require_solva_v2_flag),
+    account: Dict[str, Any] = Depends(get_current_account),
 ):
     rec = await db.solva_v2_sessions.find_one(
         {"id": sid, "account_id": account["id"]}, {"_id": 0}
@@ -889,7 +871,7 @@ async def get_session(
 async def fork_session(
     sid: str,
     body: ForkV2In,
-    account: Dict[str, Any] = Depends(require_solva_v2_flag),
+    account: Dict[str, Any] = Depends(get_current_account),
 ):
     """Phase 15.2 — fork a session into a new sub-module.
 
@@ -968,7 +950,7 @@ async def fork_session(
 @router.post("/intent/classify")
 async def classify_intent(
     body: IntentClassifyIn,
-    account: Dict[str, Any] = Depends(require_solva_v2_flag),
+    account: Dict[str, Any] = Depends(get_current_account),
 ):
     """Phase 15.2 — soft-suggest the most-fitting sub-module for a user's
     intent. Single tier=fast LLM call. Returns
@@ -1041,7 +1023,7 @@ async def classify_intent(
 @router.get("/sessions/{sid}/reasoning-log")
 async def get_reasoning_log(
     sid: str,
-    account: Dict[str, Any] = Depends(require_solva_v2_flag),
+    account: Dict[str, Any] = Depends(get_current_account),
 ):
     rec = await db.solva_v2_sessions.find_one(
         {"id": sid, "account_id": account["id"]},
@@ -1061,7 +1043,7 @@ async def get_reasoning_log(
 @router.post("/sessions/{sid}/abandon")
 async def abandon_session(
     sid: str,
-    account: Dict[str, Any] = Depends(require_solva_v2_flag),
+    account: Dict[str, Any] = Depends(get_current_account),
 ):
     rec = await db.solva_v2_sessions.find_one(
         {"id": sid, "account_id": account["id"]}, {"_id": 0, "id": 1}
@@ -1121,7 +1103,7 @@ async def stale_session_sweep(
 async def post_turn(
     sid: str,
     body: TurnV2In,
-    account: Dict[str, Any] = Depends(require_solva_v2_flag),
+    account: Dict[str, Any] = Depends(get_current_account),
 ):
     rec = await db.solva_v2_sessions.find_one(
         {"id": sid, "account_id": account["id"]}, {"_id": 0}
@@ -1558,7 +1540,7 @@ class HandoffCycleIn(BaseModel):
 async def handoff_cycle_via_review(
     sid: str,
     body: HandoffCycleIn,
-    account: Dict[str, Any] = Depends(require_solva_v2_flag),
+    account: Dict[str, Any] = Depends(get_current_account),
 ):
     rec = await db.solva_v2_sessions.find_one(
         {"id": sid, "account_id": account["id"]}, {"_id": 0}
@@ -1625,7 +1607,7 @@ async def handoff_cycle_via_review(
 @router.get("/sessions/{sid}/reasoning-log/summary")
 async def reasoning_log_summary(
     sid: str,
-    account: Dict[str, Any] = Depends(require_solva_v2_flag),
+    account: Dict[str, Any] = Depends(get_current_account),
 ):
     rec = await db.solva_v2_sessions.find_one(
         {"id": sid, "account_id": account["id"]},
@@ -1701,51 +1683,3 @@ async def reasoning_log_summary(
     }
 
     return rec
-
-
-# -----------------------------------------------------------------------------
-# Admin endpoint (superadmin-only) — flip the POC flag on an account by email.
-# -----------------------------------------------------------------------------
-class FlagFlipIn(BaseModel):
-    email: str = Field(min_length=3, max_length=240)
-    enabled: bool = True
-
-
-admin_router = APIRouter(prefix="/api/admin/solva-v2", tags=["solva_v2_admin"])
-
-
-@admin_router.post("/flag")
-async def flip_flag(
-    body: FlagFlipIn,
-    account: Dict[str, Any] = Depends(get_current_account),
-):
-    if not account.get("is_superadmin"):
-        raise HTTPException(status_code=403, detail="Superadmin required.")
-    target = await db.accounts.find_one(
-        {"email": body.email.lower().strip()}, {"_id": 0, "id": 1, "email": 1}
-    )
-    if not target:
-        raise HTTPException(status_code=404, detail="Account not found.")
-    await db.accounts.update_one(
-        {"id": target["id"]},
-        {"$set": {"solva_v2_poc": bool(body.enabled)}},
-    )
-    return {"ok": True, "email": target["email"], "solva_v2_poc": bool(body.enabled)}
-
-
-@admin_router.get("/flag")
-async def read_flag(
-    email: str,
-    account: Dict[str, Any] = Depends(get_current_account),
-):
-    if not account.get("is_superadmin"):
-        raise HTTPException(status_code=403, detail="Superadmin required.")
-    target = await db.accounts.find_one(
-        {"email": email.lower().strip()}, {"_id": 0, "email": 1, "solva_v2_poc": 1}
-    )
-    if not target:
-        raise HTTPException(status_code=404, detail="Account not found.")
-    return {
-        "email": target["email"],
-        "solva_v2_poc": bool(target.get("solva_v2_poc", False)),
-    }

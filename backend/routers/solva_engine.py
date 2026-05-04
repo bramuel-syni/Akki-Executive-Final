@@ -1,48 +1,35 @@
-"""AKKI Solva · 4-phase session engine.
+"""AKKI Solva v1 — read-only forensic surface; POSTs retired in Phase A cleanup.
 
-Phase 13.1 — module renamed from `solve_engine` to `solva_engine`. Mongo
-collections (`solve_sessions`, `solve_clusters`, `solve_comparables`,
-`solve_handoffs`, `solve_free_grants`) retain the `solve_` prefix for
-historical stability; renaming collections is a data-migration risk for
-zero user benefit. Product name is "Solva". The legacy `/api/solve/*`
-URL surface is kept alive by `solva_aliases.py` (HTTP 308) until
-Phase 14.
+Phase A (post-15.3.5) closes the v1 retirement: every write/turn/handoff
+endpoint has been removed. Only GET endpoints survive, and only because
+historical v1 sessions still need to be inspectable for governance and
+forensic comparison:
 
-Iter61 Wave 1 — the framework execution. Each Solva session walks the user
-through Surface → Depth → Synthesis → Lock-in, posting one user turn and
-one Solva turn per phase. The session is persisted on every turn so save &
-resume is trivial.
+  GET /api/solva/clusters                         cluster taxonomy (shared with v2)
+  GET /api/solva/pro-status                       legacy plan-affordance probe
+  GET /api/solva/sessions                         list user's v1 sessions
+  GET /api/solva/sessions/{sid}                   read one v1 session
+  GET /api/solva/sessions/{sid}/handoffs          list v1 handoffs
+  GET /api/solva/sessions/{sid}/export.pdf        v1 session PDF export
 
-Tiering (per iter58 user direction):
-  - FREE accounts get Sonnet (`tier=standard`) for synthesis.
-  - PRO accounts get Opus (`tier=deep`) for synthesis, charged against
-    a SEPARATE per-day budget surface (`solva` in llm_deep_usage) so it
-    doesn't compete with Decks/Brief budgets.
+Mongo collections (`solve_sessions`, `solve_clusters`, `solve_comparables`,
+`solve_handoffs`, `solve_free_grants`) retain their `solve_` names by
+design — renaming a collection is a data-migration risk for zero user
+benefit. New work lives under `routers/solva_v2.py`.
 
-Triangulation v1 — evolutionary build (per iter58). At Synthesis we look
-up the active cluster's `comparable_diagnoses` from the cluster doc; if
-absent, we ask the LLM to surface 2 plausible comparables in-prompt. The
-real curated comparable corpus lands in Wave 3.
-
-Endpoints (canonical post-Phase-13.1):
-  GET  /api/solva/clusters
-  POST /api/solva/sessions                                start a session
-  GET  /api/solva/sessions                                list user's sessions
-  GET  /api/solva/sessions/{sid}                          fetch one
-  POST /api/solva/sessions/{sid}/turn                     post user input + advance phase
-  POST /api/solva/sessions/{sid}/regenerate-current       redo current phase reply
-  POST /api/solva/sessions/{sid}/restart                  start fresh session (clones cluster + intent)
-  POST /api/solva/sessions/{sid}/abandon                  mark abandoned (won't show in resume)
+The v1 POST surface (start, turn, restart, abandon, handoff/{brief|
+decks|cycle}) was decommissioned with HTTP 410 in Phase 15.3.5 and
+fully removed in Phase A. Routes now 404 for any v1 POST. Callers must
+target `/api/solva/v2/*`.
 """
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 
 from core import db, get_current_account, iso, now
 
@@ -51,28 +38,8 @@ logger = logging.getLogger("akki.solva.engine")
 router = APIRouter(prefix="/api/solva", tags=["solva"])
 
 
-PHASES: List[str] = ["surface", "depth", "synthesis", "lockin"]
-
-
 # ---------------------------------------------------------------------------
-# Pydantic
-# ---------------------------------------------------------------------------
-class StartIn(BaseModel):
-    cluster_id: str = Field(min_length=2, max_length=80)
-    intent: str = Field(min_length=20, max_length=1200)
-    context_id: Optional[str] = None  # optional: link to a NED/Exec context
-    pro_tier: bool = False  # client requests deep synthesis (Opus)
-
-
-class TurnIn(BaseModel):
-    user_text: str = Field(min_length=2, max_length=4000)
-
-
-# ---------------------------------------------------------------------------
-# Tiering helper — Solve Pro is bundled into the existing Pro plan so users
-# get one decision (subscribe to Pro $29) rather than a separate Solve fee.
-# Legacy/manual `solve_pro` flag still honoured. Free users get one deep
-# Synthesis grant per UTC month so they can taste it before subscribing.
+# Tiering helper — preserved because GET /pro-status still answers it.
 # ---------------------------------------------------------------------------
 def _now_month_utc() -> str:
     from datetime import datetime, timezone
@@ -80,10 +47,13 @@ def _now_month_utc() -> str:
 
 
 async def _user_is_pro(account: Dict[str, Any]) -> bool:
-    """Phase 10 — read the plan LIVE from the DB. The product review
-    flagged that a cached `account` dict can hold a stale plan when a
-    webhook has just upgraded/downgraded mid-session. Every Solve
-    entry-point that makes a tier decision goes through this helper."""
+    """Phase 10 — read the plan LIVE from the DB.
+
+    The product review flagged that a cached `account` dict can hold a
+    stale plan when a webhook has just upgraded/downgraded mid-session.
+    Every Solva entry-point that makes a tier decision goes through this
+    helper.
+    """
     aid = account.get("id") if isinstance(account, dict) else None
     if aid:
         fresh = await db.accounts.find_one(
@@ -94,70 +64,13 @@ async def _user_is_pro(account: Dict[str, Any]) -> bool:
     src = fresh if fresh is not None else account
     plan = (src.get("plan") or "free").lower()
     sub_status = (src.get("subscription_status") or "").lower()
-    # A plan is only honoured when subscription is active (or unset —
-    # the DB row for legacy admin accounts carries no subscription).
     if plan in ("pro", "team") and sub_status in ("", "active", "trialing"):
         return True
     return bool(src.get("solve_pro"))
 
 
-async def _consume_free_grant(account_id: str) -> Dict[str, Any]:
-    """Atomically claim this user's monthly free deep-synthesis grant.
-    Returns {"allowed": bool, "remaining_this_month": 0|1}. Each free user
-    gets exactly 1 deep synthesis per month (cheap taste-test).
-
-    Uses atomic find_one_and_update with $inc + upsert. The post-increment
-    count is 1 on first call (allow), 2+ on subsequent calls (deny).
-    Race-safe even if the uniqueness index ever regresses.
-    """
-    month = _now_month_utc()
-    iso_now = iso(now())
-    res = await db.solve_free_grants.find_one_and_update(
-        {"account_id": account_id, "month_utc": month},
-        {"$inc": {"count": 1},
-         "$setOnInsert": {"first_used_at": iso_now},
-         "$set": {"last_used_at": iso_now}},
-        upsert=True,
-        return_document=True,
-        projection={"_id": 0, "count": 1},
-    )
-    count = (res or {}).get("count", 0)
-    if count <= 1:
-        return {"allowed": True, "remaining_this_month": 0}
-    return {"allowed": False, "remaining_this_month": 0}
-
-
 # ---------------------------------------------------------------------------
-# Phase 15.3.5 cutover — v1 write endpoints retired (410 Gone)
-# ---------------------------------------------------------------------------
-# Solva v2 (`/api/solva/v2/*`) is now the single production surface. The v1
-# write endpoints below (start, turn, restart, abandon, handoff/{brief|
-# decks|cycle}) are decommissioned. Each handler short-circuits to 410
-# with `X-Replaced-By` pointing at the v2 equivalent so legacy callers
-# can migrate.
-#
-# Read-only endpoints (`GET /clusters`, `GET /pro-status`, `GET /sessions`,
-# `GET /sessions/{sid}`, `GET /sessions/{sid}/handoffs`, `GET /sessions/
-# {sid}/export.pdf`) are intentionally KEPT so existing v1 sessions remain
-# inspectable — the locked-spec carve-out per Phase 15.3.5 Track A.3.
-def _v1_decommissioned(replaced_by: str = "/api/solva/v2/") -> "HTTPException":
-    """Raise this from a v1 POST handler to return 410 + X-Replaced-By."""
-    return HTTPException(
-        status_code=410,
-        detail={
-            "error": "v1_endpoint_retired",
-            "message": (
-                "The Solva v1 write endpoint has been retired. Use the "
-                f"corresponding endpoint under {replaced_by} instead."
-            ),
-            "replaced_by": replaced_by,
-        },
-        headers={"X-Replaced-By": replaced_by},
-    )
-
-
-# ---------------------------------------------------------------------------
-# Cluster lookup
+# Cluster lookup (read-only)
 # ---------------------------------------------------------------------------
 @router.get("/clusters")
 async def list_clusters(account: Dict[str, Any] = Depends(get_current_account)):
@@ -167,9 +80,8 @@ async def list_clusters(account: Dict[str, Any] = Depends(get_current_account)):
 
 @router.get("/pro-status")
 async def get_pro_status(account: Dict[str, Any] = Depends(get_current_account)):
-    """UI nudge — tells the Pro toggle whether to render as 'unlock with free
-    grant' (free user, no claim this month), 'all yours' (Pro plan), or
-    'upgrade to keep going' (free user, grant already claimed this month)."""
+    """Live plan-affordance probe. Solva v2 reads the same values via
+    its own helper; this endpoint exists for legacy clients."""
     is_pro = await _user_is_pro(account)
     month = _now_month_utc()
     grant = await db.solve_free_grants.find_one(
@@ -189,13 +101,8 @@ async def get_pro_status(account: Dict[str, Any] = Depends(get_current_account))
 
 
 # ---------------------------------------------------------------------------
-# Session CRUD
+# Session reads — forensic only. Writes live under /api/solva/v2.
 # ---------------------------------------------------------------------------
-@router.post("/sessions")
-async def start_session(request: Request, account: Dict[str, Any] = Depends(get_current_account)):
-    raise _v1_decommissioned("/api/solva/v2/sessions")
-
-
 @router.get("/sessions")
 async def list_my_sessions(
     status: Optional[str] = None,
@@ -223,232 +130,6 @@ async def get_session(sid: str, account: Dict[str, Any] = Depends(get_current_ac
     return rec
 
 
-@router.post("/sessions/{sid}/turn")
-async def post_turn(
-    sid: str,
-    request: Request,
-    account: Dict[str, Any] = Depends(get_current_account),
-):
-    raise _v1_decommissioned(f"/api/solva/v2/sessions/{sid}/turn")
-
-
-@router.post("/sessions/{sid}/restart")
-async def restart_session(
-    sid: str,
-    account: Dict[str, Any] = Depends(get_current_account),
-):
-    raise _v1_decommissioned("/api/solva/v2/sessions")
-
-
-@router.post("/sessions/{sid}/abandon")
-async def abandon_session(
-    sid: str,
-    account: Dict[str, Any] = Depends(get_current_account),
-):
-    raise _v1_decommissioned(f"/api/solva/v2/sessions/{sid}/abandon")
-    rec = await db.solve_sessions.find_one(
-        {"id": sid, "account_id": account["id"]}, {"_id": 0, "id": 1}
-    )
-    if not rec:
-        raise HTTPException(status_code=404, detail="Session not found.")
-    await db.solve_sessions.update_one(
-        {"id": sid, "account_id": account["id"]},
-        {"$set": {"status": "abandoned", "updated_at": iso(now())}},
-    )
-    return {"ok": True}
-
-
-# ---------------------------------------------------------------------------
-# Wave 2 — Handoff trio. From a completed Solve session, push the synthesis
-# + lock-in into the user's existing artefacts:
-#
-#   1. Brief    — creates a briefing-shaped doc whose opening_paragraph is the
-#                  synthesis and whose items[] are the lock-in commitments.
-#   2. Decks    — seeds a Decks outline with intent = synthesis + lock-in.
-#                  The user then commits the deep-tier render via the existing
-#                  decks pipeline.
-#   3. Cycle    — seeds the synthesis into the Question Bank as 1-3 questions
-#                  derived from the lock-in's "Walk in with" line, so the
-#                  diagnosis becomes a board-room follow-up.
-#
-# All three are idempotent within a session — subsequent calls return the
-# previously-created artefact_id rather than spawning duplicates.
-# ---------------------------------------------------------------------------
-class HandoffBriefIn(BaseModel):
-    context_id: str = Field(min_length=8, max_length=80)
-    title: Optional[str] = Field(default=None, max_length=120)
-
-
-class HandoffDecksIn(BaseModel):
-    context_id: str = Field(min_length=8, max_length=80)
-    audience: Optional[str] = Field(default=None, max_length=120)
-
-
-class HandoffCycleIn(BaseModel):
-    context_id: str = Field(min_length=8, max_length=80)
-
-
-def _require_completed_session(rec: Dict[str, Any]) -> None:
-    if not rec.get("synthesis") or not rec.get("lockin"):
-        raise HTTPException(
-            status_code=409,
-            detail="Solve session must reach Synthesis and Lock-in before handoff.",
-        )
-
-
-def _parse_lockin_lines(lockin_body: str) -> Dict[str, str]:
-    """Best-effort split of the lock-in body into Decide/Watch/Walk-in lines.
-    Tolerates markdown bold (**Decide:** ...) and bullet prefixes."""
-    out = {"decide": "", "watch": "", "walk_in": ""}
-    if not lockin_body:
-        return out
-    for raw in lockin_body.splitlines():
-        # strip leading bullet/markdown markers and trailing whitespace
-        line = raw.strip()
-        # peel off leading bullet markers
-        line = line.lstrip(" \t-•·*")
-        # peel off markdown bold marker
-        if line.startswith("**"):
-            line = line[2:]
-        if not line:
-            continue
-        # find label vs body separator (colon or asterisks-then-colon)
-        body = line
-        label = ""
-        if ":" in line:
-            label, body = line.split(":", 1)
-            # strip trailing markdown bold from label and leading from body
-            label = label.rstrip("* ").strip().lower()
-            body = body.lstrip("* ").strip()
-        else:
-            label = line[:20].lower()
-            body = line
-        if label.startswith("decide"):
-            out["decide"] = body
-        elif label.startswith("watch"):
-            out["watch"] = body
-        elif label.startswith("walk in") or label.startswith("walk-in"):
-            out["walk_in"] = body
-    return out
-
-
-async def _record_handoff(sid: str, account_id: str, target: str,
-                          artefact_id: str, extra: Optional[Dict[str, Any]] = None) -> None:
-    rec = {
-        "id": str(uuid.uuid4()),
-        "session_id": sid,
-        "account_id": account_id,
-        "target": target,
-        "artefact_id": artefact_id,
-        "created_at": iso(now()),
-        **(extra or {}),
-    }
-    await db.solve_handoffs.insert_one(rec)
-    await db.solve_sessions.update_one(
-        {"id": sid, "account_id": account_id},
-        {"$push": {"handoffs": {"target": target, "artefact_id": artefact_id,
-                                 "created_at": rec["created_at"]}},
-         "$set": {"updated_at": iso(now())}},
-    )
-
-
-async def _ensure_membership(context_id: str, account_id: str) -> Dict[str, Any]:
-    """Lightweight membership check — Solve handoffs require the user to be
-    a member of the destination context."""
-    ctx = await db.contexts.find_one({"id": context_id, "status": {"$ne": "archived"}}, {"_id": 0})
-    if not ctx:
-        raise HTTPException(status_code=404, detail="Destination context not found.")
-    m = await db.memberships.find_one(
-        {"context_id": context_id, "account_id": account_id, "status": "active"},
-        {"_id": 0, "role": 1},
-    )
-    if not m:
-        raise HTTPException(status_code=403, detail="You are not a member of that context.")
-    return ctx
-
-
-@router.post("/sessions/{sid}/handoff/brief")
-async def handoff_brief(
-    sid: str,
-    request: Request,
-    account: Dict[str, Any] = Depends(get_current_account),
-):
-    raise _v1_decommissioned(f"/api/solva/v2/sessions/{sid}/handoff/cycle")
-
-
-@router.post("/sessions/{sid}/handoff/decks")
-async def handoff_decks(
-    sid: str,
-    request: Request,
-    account: Dict[str, Any] = Depends(get_current_account),
-):
-    raise _v1_decommissioned(f"/api/solva/v2/sessions/{sid}/handoff/cycle")
-
-
-@router.post("/sessions/{sid}/handoff/cycle")
-async def handoff_cycle(
-    sid: str,
-    request: Request,
-    account: Dict[str, Any] = Depends(get_current_account),
-):
-    raise _v1_decommissioned(f"/api/solva/v2/sessions/{sid}/handoff/cycle")
-
-
-async def _draft_cycle_questions(
-    cluster_label: str,
-    intent: str,
-    synthesis_body: str,
-    lockin: Dict[str, str],
-) -> List[str]:
-    """Use a single STANDARD-tier LLM call to phrase 1-3 sharp board
-    questions from a Solve session's lock-in commitments. Returns the
-    list of question strings; empty list on any failure (caller falls
-    back to the deterministic derivation)."""
-    try:
-        from llm_service import call_llm, parse_json_response
-    except Exception:  # noqa: BLE001
-        return []
-
-    user_query = (
-        "You are turning a board-level diagnosis into questions that the "
-        "executive can take into the room. Output exactly 1-3 questions, "
-        "in order of bluntness (the sharpest first). Each question must "
-        "be answerable yes/no/with-a-number — not a soft prompt. Do not "
-        "preamble. Return JSON: {\"questions\": [string, ...]}.\n\n"
-        f"Solve cluster: {cluster_label}\n"
-        f"Original intent: {intent}\n\n"
-        f"Synthesis (the diagnosis):\n{synthesis_body[:1400]}\n\n"
-        "Lock-in commitments:\n"
-        f"  Decide: {lockin.get('decide','—')}\n"
-        f"  Watch:  {lockin.get('watch','—')}\n"
-        f"  Walk-in: {lockin.get('walk_in','—')}\n"
-    )
-    try:
-        out = await call_llm(
-            module="solve.cycle_handoff",
-            user_query=user_query,
-            response_format="json",
-            tier="standard",
-        )
-        parsed = parse_json_response(out.get("response", ""))
-        if isinstance(parsed, dict):
-            qs = parsed.get("questions") or []
-            return [str(q).strip()[:400] for q in qs if str(q).strip()][:3]
-    except Exception:  # noqa: BLE001
-        return []
-    return []
-
-
-def _to_question(line: str) -> str:
-    """Normalise a lock-in line into a question form, gently."""
-    line = line.strip().rstrip(".").rstrip(":")
-    if line.endswith("?"):
-        return line
-    if line.lower().startswith(("how", "what", "why", "when", "who", "should", "is ", "are ", "do ", "does ")):
-        return line + "?"
-    return f"How do we hold ourselves to: {line}?"
-
-
 @router.get("/sessions/{sid}/handoffs")
 async def list_session_handoffs(
     sid: str,
@@ -465,15 +146,11 @@ async def list_session_handoffs(
     return {"items": rows, "count": len(rows)}
 
 
-# ---------------------------------------------------------------------------
-# Wave 4 — PDF export of a completed Solve session.
-# ---------------------------------------------------------------------------
 @router.get("/sessions/{sid}/export.pdf")
 async def export_session_pdf(
     sid: str,
     account: Dict[str, Any] = Depends(get_current_account),
 ):
-    from fastapi.responses import StreamingResponse
     rec = await db.solve_sessions.find_one(
         {"id": sid, "account_id": account["id"]}, {"_id": 0}
     )
@@ -486,237 +163,12 @@ async def export_session_pdf(
         )
     from solve_pdf import render_solve_pdf
     pdf_bytes = render_solve_pdf(rec)
-    safe_name = "".join(ch for ch in (rec.get("intent") or "solva")[:60] if ch.isalnum() or ch in (" -_")).strip().replace(" ", "_") or "solva"
+    safe_name = "".join(
+        ch for ch in (rec.get("intent") or "solva")[:60]
+        if ch.isalnum() or ch in (" -_")
+    ).strip().replace(" ", "_") or "solva"
     return StreamingResponse(
         iter([pdf_bytes]),
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="akki_solva_{safe_name}.pdf"'},
     )
-
-
-# ---------------------------------------------------------------------------
-# Phase response generator
-# ---------------------------------------------------------------------------
-def _next_phase(current: str) -> Optional[str]:
-    try:
-        i = PHASES.index(current)
-    except ValueError:
-        return None
-    if i >= len(PHASES) - 1:
-        return None
-    return PHASES[i + 1]
-
-
-async def _append_turn(sid: str, *, role: str, text: str, phase: str,
-                       model: Optional[str] = None, tier: Optional[str] = None) -> None:
-    turn = {
-        "id": str(uuid.uuid4()),
-        "role": role,
-        "phase": phase,
-        "text": text,
-        "model": model,
-        "tier": tier,
-        "created_at": iso(now()),
-    }
-    await db.solve_sessions.update_one(
-        {"id": sid},
-        {"$push": {"turns": turn}, "$set": {"updated_at": iso(now())}},
-    )
-
-
-async def _pick_comparables(cluster_id: str, sector_tag: Optional[str], limit: int = 3) -> List[Dict[str, Any]]:
-    """Triangulation v2 — pick the closest comparables for a given cluster.
-
-    Order of preference:
-      1. Same cluster + matching sector_tag.
-      2. Same cluster + sector_tag='any'.
-      3. Same cluster + any sector.
-
-    Curated comparables are anonymised (no real company names) and carry a
-    'verdict' field (what worked / what didn't) so the prompt can ground the
-    diagnosis in lived board experience rather than abstractions.
-    """
-    out: List[Dict[str, Any]] = []
-    seen: set = set()
-
-    async def _take(filter_q: Dict[str, Any]) -> None:
-        async for c in db.solve_comparables.find(
-            filter_q,
-            {"_id": 0, "id": 1, "cluster_id": 1, "sector_tag": 1, "scale_tag": 1,
-             "diagnosis_summary": 1, "what_worked": 1, "what_didnt": 1},
-        ):
-            if c["id"] in seen:
-                continue
-            seen.add(c["id"])
-            out.append(c)
-            if len(out) >= limit:
-                return
-
-    if sector_tag:
-        await _take({"cluster_id": cluster_id, "sector_tag": sector_tag})
-    if len(out) < limit:
-        await _take({"cluster_id": cluster_id, "sector_tag": "any"})
-    if len(out) < limit:
-        await _take({"cluster_id": cluster_id})
-    return out[:limit]
-
-
-def _phase_system_prompt(cluster: Dict[str, Any], phase: str, intent: str,
-                         comparables: Optional[List[Dict[str, Any]]] = None) -> str:
-    hint = (cluster.get("phase_hints") or {}).get(phase, "")
-    banned = (cluster.get("banned_terms") or [])
-    banned_block = ", ".join(banned) if banned else "(none specified)"
-
-    comparable_block = ""
-    if phase == "synthesis" and comparables:
-        lines = []
-        for c in comparables:
-            lines.append(
-                f"- {c.get('diagnosis_summary','').strip()}\n"
-                f"  Worked: {c.get('what_worked','').strip()}\n"
-                f"  Didn't: {c.get('what_didnt','').strip()}"
-            )
-        comparable_block = (
-            "\n\nCURATED COMPARABLES (anonymised, real boards). When useful, "
-            "reference them inline as 'A comparable mid-cap bank…' or "
-            "'In one industrials case…'. Do NOT name companies. Do not list "
-            "all of them — pick at most one or two that genuinely sharpen "
-            "the diagnosis. If none apply, ignore.\n"
-            + "\n".join(lines)
-        )
-
-    return (
-        "You are AKKI Solve — a structured-pause facilitator for board-grade "
-        "problems. You walk users through four phases (Surface → Depth → "
-        "Synthesis → Lock-in), one phase at a time. You do NOT lecture. You "
-        "ask the questions a sharp counterpart would ask, and you do not move "
-        "the user to the next phase prematurely.\n\n"
-        f"CURRENT PHASE: {phase.upper()}.\n"
-        f"PHASE INSTRUCTION: {hint}\n"
-        f"USER INTENT: {intent}\n"
-        f"CLUSTER: {cluster.get('label')}\n"
-        f"BANNED TERMS (never use these): {banned_block}\n\n"
-        "TONE: Calm, editorial, AKKI house style. Serif voice if you were "
-        "speaking. No bullet stuffing unless the phase warrants it. No "
-        "marketing language. No false certainty. Acknowledge the user's "
-        "framing before pressing it.\n\n"
-        "OUTPUT FORMAT:\n"
-        "  - Surface phase: 2–3 short sentences asking the user to name "
-        "the problem precisely. End with one specific question.\n"
-        "  - Depth phase: 4–6 sentences pressure-testing the framing. "
-        "Surface 1–2 contradictions or missing pieces. End with one "
-        "question worth 10 minutes of the user's time.\n"
-        "  - Synthesis phase: A 250–350 word diagnosis. Open with one "
-        "orientation sentence. Two short paragraphs of analysis. Close "
-        "with the diagnosis named in one sentence. If you reference "
-        "comparable diagnoses, cite them as 'Comparable: <one line>'.\n"
-        "  - Lock-in phase: Three commitments labelled 'Decide / Watch / "
-        "Walk in with'. Each is one short sentence. End with one closing "
-        "line."
-        + comparable_block
-    )
-
-
-async def _generate_phase_response(
-    session: Dict[str, Any],
-    cluster: Dict[str, Any],
-    phase: str,
-    is_first: bool = False,
-) -> Dict[str, Any]:
-    """Calls the LLM with the right tier for the user. Returns
-    {text, model, tier, comparables, free_grant_used?, quota?}."""
-    # Wave 3 — at synthesis, pick curated comparables for triangulation. We
-    # use the session's context sector if available; otherwise we fall back
-    # to cluster-level matches.
-    comparables: List[Dict[str, Any]] = []
-    sector_tag: Optional[str] = None
-    if phase == "synthesis":
-        ctx_id = session.get("context_id")
-        if ctx_id:
-            ctx_doc = await db.contexts.find_one(
-                {"id": ctx_id}, {"_id": 0, "sector": 1, "industry": 1}
-            )
-            if ctx_doc:
-                sector_tag = (ctx_doc.get("sector") or ctx_doc.get("industry") or "").lower() or None
-        comparables = await _pick_comparables(cluster["id"], sector_tag, limit=3)
-
-    system_msg = _phase_system_prompt(cluster, phase, session["intent"], comparables=comparables)
-
-    transcript_lines: List[str] = []
-    for t in session.get("turns", []):
-        prefix = "User" if t["role"] == "user" else "Solve"
-        transcript_lines.append(f"{prefix} ({t.get('phase','?')}): {t.get('text','')}")
-    transcript = "\n".join(transcript_lines) if transcript_lines else "(no prior turns)"
-
-    if is_first:
-        user_query = (
-            f"The user just opened a Solve session.\n\n"
-            f"Their intent: {session['intent']}\n\n"
-            f"Open the SURFACE phase. Greet calmly, acknowledge what "
-            f"they've named, then ask the first sharpening question."
-        )
-    else:
-        user_query = (
-            f"Conversation so far:\n{transcript}\n\n"
-            f"Generate the {phase.upper()} response. Follow the OUTPUT "
-            f"FORMAT for this phase precisely."
-        )
-
-    # Tier resolution. Only synthesis can be deep. Pro accounts use the
-    # paid `solve` quota; free accounts who requested Pro tier are granted
-    # one deep synthesis per UTC month so they can taste it.
-    tier = "standard"
-    free_grant_used = False
-    quota_state: Optional[Dict[str, Any]] = None
-
-    if phase == "synthesis" and session.get("pro_tier"):
-        if session.get("pro_account"):
-            tier = "deep"
-        else:
-            grant = await _consume_free_grant(session["account_id"])
-            if grant.get("allowed"):
-                tier = "deep"
-                free_grant_used = True
-
-    if tier == "deep":
-        from llm_tier_quota import call_llm_with_tier
-        llm_out, quota_state = await call_llm_with_tier(
-            surface="solve",
-            account_id=session["account_id"],
-            requested_tier="deep",
-            call_args={
-                "module": f"solve.{phase}",
-                "user_query": user_query,
-                "system_override": system_msg,
-                "response_format": "text",
-            },
-        )
-        body_text = (llm_out.get("response") or "").strip()
-        model_id = llm_out.get("model")
-        served_tier = llm_out.get("tier") or "standard"
-        if quota_state.get("downgraded"):
-            served_tier = "standard"
-    else:
-        from llm_service import call_llm
-        llm_out = await call_llm(
-            module=f"solve.{phase}",
-            user_query=user_query,
-            system_override=system_msg,
-            response_format="text",
-            tier="standard",
-        )
-        body_text = (llm_out.get("response") or "").strip()
-        model_id = llm_out.get("model")
-        served_tier = llm_out.get("tier") or "standard"
-
-    if not body_text:
-        body_text = "(Solve returned an empty response — please try again.)"
-
-    return {
-        "text": body_text,
-        "model": model_id,
-        "tier": served_tier,
-        "comparables": comparables,
-        "free_grant_used": free_grant_used,
-        "quota": quota_state,
-    }

@@ -2,7 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Georgia&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Phase A — Calibri ships from the system font stack. Georgia (editorial
+ * serif) is universally available on macOS / Windows / iOS / Android and
+ * needs no @import. JetBrains Mono is brought in for code surfaces. */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
   /* AKKI v4.2 tokens — cream + oxblood + warm neutrals */
@@ -39,7 +42,7 @@ html, body, #root {
 }
 
 body {
-  font-family: 'Inter', -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  font-family: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   background: var(--cream);
   color: var(--ink);
   font-feature-settings: "ss01", "cv11";
@@ -47,7 +50,7 @@ body {
 
 /* Typography utilities */
 .akki-serif { font-family: Georgia, Cambria, 'Times New Roman', serif; }
-.akki-sans  { font-family: 'Inter', -apple-system, 'Helvetica Neue', Arial, sans-serif; }
+.akki-sans  { font-family: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif; }
 .akki-mono  { font-family: 'JetBrains Mono', ui-monospace, monospace; }
 
 ::selection {
@@ -94,7 +97,7 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.16em;
   color: var(--muted);
-  font-family: 'Inter', sans-serif;
+  font-family: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
 }
 
 .akki-greeting {
@@ -122,13 +125,13 @@ body {
 }
 
 .akki-meta {
-  font-family: 'Inter', sans-serif;
+  font-family: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   font-size: 13px;
   color: var(--muted);
 }
 
 .akki-gesture {
-  font-family: 'Inter', sans-serif;
+  font-family: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
   font-weight: 500;
   color: var(--accent);
@@ -141,7 +144,7 @@ body {
 .akki-gesture:hover { border-bottom-color: var(--accent); }
 
 .akki-context-chip {
-  font-family: 'Inter', sans-serif;
+  font-family: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   font-size: 12px;
   background: var(--cream-deep);
   color: var(--deep);
@@ -154,7 +157,7 @@ body {
 }
 
 .akki-scope-chip {
-  font-family: 'Inter', sans-serif;
+  font-family: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
   padding: 4px 2px;
   color: var(--muted);
@@ -198,7 +201,7 @@ body {
 .akki-stream-card:hover::before { width: 4px; }
 
 .akki-type-badge {
-  font-family: 'Inter', sans-serif;
+  font-family: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;

@@ -8,9 +8,9 @@
  *   - `undeclared` → <HomeUndeclared />
  *   - anything else (defensive) → <HomeUndeclared />
  *
- * Phase 15.3.5 retired:
+ * Phase 15.3.5 / Phase A retired:
  *   - `?home=v2` and `?home=v1|legacy` URL switches (single production
- *     surface; archived under /app/_legacy/).
+ *     surface; archived files removed in Phase A).
  *   - LegacyAppHome.jsx and HomeV2.jsx components.
  *
  * Sandbox accounts now route through HomeExecutive (the closest legacy
