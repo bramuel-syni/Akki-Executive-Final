@@ -46,6 +46,13 @@ BRIEFING_KIND = "briefing"
 STUDIO_KIND = "studio_artefact"  # composed briefings / decks / reports awaiting review (Phase 8)
 STUDIO_SUBKINDS = ("briefing", "deck", "report")
 STUDIO_COLLECTIONS = {"briefing": "briefings", "deck": "decks", "report": "reports"}
+# Phase 15.1 — Solva v2 cycle handoff queue items. `_handoff_cycle_via_review`
+# in routers/solva_v2.py writes one row per session into
+# db.solva_cycle_handoff_queue with status='pending_review' and surfaces it
+# here. Approve = write each question into db.questions and flip status to
+# 'approved'. Reject / edit follow the same three-state contract used by the
+# other kinds.
+SOLVA_CYCLE_KIND = "solva_cycle_action"
 
 
 # ---------------------------------------------------------------------------
@@ -306,8 +313,24 @@ async def review_queue_counts(
     account: Dict[str, Any] = Depends(get_current_account),
 ):
     cids = await _user_context_ids(account["id"])
+    # Solva-cycle items are scoped to account_id (not context_id), so a
+    # brand-new account with Solva v2 sessions but no contexts can still
+    # have queue items. Compute that count first, then short-circuit only
+    # if every kind is empty.
+    solva_cycle_total = await db.solva_cycle_handoff_queue.count_documents({
+        "account_id": account["id"], "status": "pending_review",
+    })
     if not cids:
-        return {"total": 0, "by_kind": {INBOUND_KIND: 0, BRIEFING_KIND: 0}, "by_context": []}
+        return {
+            "total": solva_cycle_total,
+            "by_kind": {
+                INBOUND_KIND: 0,
+                BRIEFING_KIND: 0,
+                STUDIO_KIND: 0,
+                SOLVA_CYCLE_KIND: solva_cycle_total,
+            },
+            "by_context": [],
+        }
 
     read_ids = await _read_briefing_ids(account["id"])
     name_map = await _context_name_map(cids)
@@ -346,11 +369,12 @@ async def review_queue_counts(
     by_context.sort(key=lambda r: r["count"], reverse=True)
 
     return {
-        "total": inbound_total + briefing_total + studio_total,
+        "total": inbound_total + briefing_total + studio_total + solva_cycle_total,
         "by_kind": {
             INBOUND_KIND: inbound_total,
             BRIEFING_KIND: briefing_total,
             STUDIO_KIND: studio_total,
+            SOLVA_CYCLE_KIND: solva_cycle_total,
         },
         "by_context": by_context,
     }
@@ -371,25 +395,34 @@ async def _next_pending_item_id(account_id: str, exclude_uid: str) -> Optional[s
     """Cheap "what's next" probe — pick the most-recent pending item that
     isn't the one we just acted on. Used by the UI to advance the queue."""
     cids = await _user_context_ids(account_id)
-    if not cids:
-        return None
-    read_ids = await _read_briefing_ids(account_id)
-    next_ib = await db.inbound_queue.find_one(
-        {"context_id": {"$in": cids}, "status": "pending_review"},
-        sort=[("created_at", -1)],
-    )
-    next_br = await db.briefings.find_one(
-        {"context_id": {"$in": cids}, "status": "active",
-         "id": {"$nin": list(read_ids)} if read_ids else {"$exists": True}},
-        sort=[("created_at", -1)],
-    )
     candidates: List[Dict[str, Any]] = []
-    if next_ib:
-        candidates.append({"id": f"{INBOUND_KIND}:{next_ib['id']}",
-                           "created_at": next_ib.get("created_at") or ""})
-    if next_br:
-        candidates.append({"id": f"{BRIEFING_KIND}:{next_br['id']}",
-                           "created_at": next_br.get("created_at") or ""})
+    if cids:
+        read_ids = await _read_briefing_ids(account_id)
+        next_ib = await db.inbound_queue.find_one(
+            {"context_id": {"$in": cids}, "status": "pending_review"},
+            sort=[("created_at", -1)],
+        )
+        next_br = await db.briefings.find_one(
+            {"context_id": {"$in": cids}, "status": "active",
+             "id": {"$nin": list(read_ids)} if read_ids else {"$exists": True}},
+            sort=[("created_at", -1)],
+        )
+        if next_ib:
+            candidates.append({"id": f"{INBOUND_KIND}:{next_ib['id']}",
+                               "created_at": next_ib.get("created_at") or ""})
+        if next_br:
+            candidates.append({"id": f"{BRIEFING_KIND}:{next_br['id']}",
+                               "created_at": next_br.get("created_at") or ""})
+    # Phase 15.1 — Solva-cycle items are scoped to account_id, not
+    # context_id, so they always need to be considered (even when the
+    # user has no contexts yet).
+    next_sc = await db.solva_cycle_handoff_queue.find_one(
+        {"account_id": account_id, "status": "pending_review"},
+        sort=[("created_at", -1)],
+    )
+    if next_sc:
+        candidates.append({"id": f"{SOLVA_CYCLE_KIND}:{next_sc['id']}",
+                           "created_at": next_sc.get("created_at") or ""})
     candidates = [c for c in candidates if c["id"] != exclude_uid]
     if not candidates:
         return None
