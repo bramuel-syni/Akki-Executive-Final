@@ -310,3 +310,114 @@ async def synthetic_audit_entry(
         "shield_required": shield_required,
         "shield_bypassed_reason": shield_bypassed_reason,
     }
+
+
+
+# -----------------------------------------------------------------------------
+# Phase 15.1 — validator_call: fresh Synisense pass on validator input.
+# -----------------------------------------------------------------------------
+async def validator_call(
+    *,
+    content: str,
+    objective: Optional[str],
+    layer: str,
+    turn_id: str,
+    account_id: Optional[str],
+    context_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Independent-family validator with its OWN Synisense pass.
+
+    Phase 15.0 reused the upstream synthesis run_id on the validator audit
+    entry. Phase 15.1 closes that audit ambiguity: the validator gets a
+    fresh shield pass under sub-surface `solve_v2.validator`, producing its
+    own run_id. This catches any model-introduced PII in the synthesis
+    output before it crosses the validator boundary (Gemini Flash).
+
+    Returns {validation, audit_entry}.
+    """
+    from services.synisense import run as syn_run
+    from llm_service import validate_independent
+
+    surface = "solve_v2.validator"
+    t0 = _time.monotonic()
+
+    # 1. Shield the synthesis content (not the original user input — the LLM's
+    #    OUTPUT, which may carry hallucinated PII).
+    try:
+        syn_out = await syn_run(
+            text=content,
+            context_id=context_id or "",
+            surface=surface,
+            mode="redact",
+            account_id=account_id,
+        )
+    except Exception as exc:
+        logger.error("solva_v2 validator: synisense failed err=%s", exc)
+        raise RuntimeError(f"Synisense unavailable for validator; refusing call") from exc
+
+    shielded_content = syn_out.get("redacted_text") or content
+    ihash = hashlib.sha256((content or "").encode("utf-8")).hexdigest()
+    syn_run_id = await _lookup_synisense_run_id(ihash, surface, account_id)
+
+    # 2. Validator LLM call on shielded content
+    try:
+        validation = await validate_independent(
+            kind="solve_v2_synthesis",
+            content=shielded_content,
+            objective=objective,
+            surface=surface,
+            account_id=account_id,
+        )
+    except Exception as exc:
+        logger.warning("solva_v2 validator wrapper failed: %s", exc)
+        validation = {
+            "verdict": "qualified",
+            "confidence": 0,
+            "notes": [f"Validator wrapper error ({exc.__class__.__name__})."],
+            "validator_provider": "n/a",
+            "validator_model": "n/a",
+        }
+
+    latency_ms = int((_time.monotonic() - t0) * 1000)
+
+    # 3. Audit entry — fresh run_id, shield_required=True
+    audit_entry = await synthetic_audit_entry(
+        engine="validator",
+        layer=layer,
+        turn_id=turn_id,
+        output={
+            "validator_verdict": validation.get("verdict"),
+            "validator_confidence": validation.get("confidence"),
+            "validator_provider": validation.get("validator_provider"),
+            "validator_model": validation.get("validator_model"),
+            "content_length": len(content or ""),
+        },
+        tier_labels=[],
+        engine_version="validator@phase11",
+        latency_ms=latency_ms,
+        shield_required=True,
+        synisense_run_id=syn_run_id,
+    )
+    return {"validation": validation, "audit_entry": audit_entry}
+
+
+# -----------------------------------------------------------------------------
+# Phase 15.1 — retry log: track per-surface retry counts for the admin dashboard.
+# -----------------------------------------------------------------------------
+async def record_retry(*, surface: str, account_id: Optional[str], reason: str) -> None:
+    """Append a retry event to db.llm_retry_log. TTL'd at 30 days via the
+    boot-time index in server.py. The admin spend dashboard aggregates the
+    last 24 hours grouped by surface.
+    """
+    from core import db
+    try:
+        await db.llm_retry_log.insert_one({
+            "id": str(uuid.uuid4()),
+            "surface": surface,
+            "account_id": account_id or "",
+            "reason": reason,
+            "created_at": iso(now()),
+        })
+    except Exception as exc:  # noqa: BLE001
+        # Retry tracking is observability only — never fail the user request.
+        logger.warning("solva_v2: record_retry failed surface=%s err=%s", surface, exc)

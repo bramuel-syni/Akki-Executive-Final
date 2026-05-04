@@ -1,17 +1,30 @@
-"""Solva v2 orchestrator (Phase 15.0 POC).
+"""Solva v2 orchestrator (Phase 15.1).
 
-Single sub-module scope: Seek Clarity. Layer flow:
-    framing -> grounding -> synthesis -> reflection
+Seek Clarity sub-module. Layer flow: framing -> grounding -> synthesis ->
+reflection, governed by services/solva_v2/state_machine.py.
 
-Gated behind `account.solva_v2_poc=true`. v1 Solva (routers/solva_engine.py)
-is untouched and continues to serve all accounts.
+15.1 lifts the scaffolding into the production orchestration tier:
+  - All four reasoning engines are real (candidate_generation, triangulation,
+    probability_weighting, refusal). Stubs are gone.
+  - Each engine call is shielded under its own sub-surface
+    (`solve_v2.<engine>`) so the perf ring buffer and the admin LLM spend
+    dashboard can attribute latency and spend per engine.
+  - Validator gets a fresh Synisense pass on its input under
+    `solve_v2.validator` (closes hardening friction item 2).
+  - Probability weighting runs between synthesis and validator and writes
+    confidence_pct + confidence_band onto every claim.
+  - Cycle handoff routes through Daily Review (`solva_cycle_action` queue
+    items) instead of v1's direct write into db.questions.
+  - New sessions carry schema_version=2; old POC sessions remain readable
+    via the same GET handler.
 
-Out of scope for 15.0 (delivered later per docs/ROADMAP.md):
+Out of scope for 15.1 (delivered later per docs/ROADMAP.md):
   - Sub-module picker / 4-tile intake               Phase 15.2
-  - Real candidate_generation/probability_weighting Phase 15.1
-  - Layer 4 Reflection three locked questions       Phase 15.3
-  - Tension detector / cross-module invocation      Phase 15.2
+  - Other three sub-modules                         Phase 15.2
+  - Tension detector                                Phase 15.2
   - Refusal ladder thresholds / therapy redirect    Phase 15.3
+  - Layer 4 Reflection three locked questions      Phase 15.3
+  - Citation chips / probability interval polish    Phase 15.3
 """
 from __future__ import annotations
 
@@ -27,9 +40,17 @@ from services.solva_v2 import (
     GROUNDING_CONTRACT_PROMPT,
     parse,
     summarise_tier_distribution,
+    LAYERS,
+    next_layer,
+    assert_can_post_turn,
+    InvalidLayerTransition,
+    TERMINAL_LAYER,
+    record_retry,
+    validator_call,
+    shielded_call,
+    synthetic_audit_entry,
 )
 from services.solva_v2.grounding_contract import GROUNDING_RETRY_PROMPT, TIER_NAMES
-from services.solva_v2.llm_adapter import shielded_call, synthetic_audit_entry
 from services.solva_v2.engines import (
     triangulation,
     candidate_generation,
@@ -45,10 +66,10 @@ router = APIRouter(prefix="/api/solva/v2", tags=["solva_v2"])
 # -----------------------------------------------------------------------------
 # Constants
 # -----------------------------------------------------------------------------
-LAYERS: List[str] = ["framing", "grounding", "synthesis", "reflection"]
-SUBMODULES = ["seek_clarity"]  # 15.0 ships exactly one
-
+SUBMODULES = ["seek_clarity"]  # 15.1 still ships exactly one; 15.2 adds three
 MAX_GROUNDING_RETRIES = 2  # => 3 total attempts on synthesis
+SCHEMA_VERSION = 2  # 15.1+ sessions carry this; 15.0 sessions implicitly 1
+SYNTHESIS_SURFACE = "solve_v2.synthesis"
 
 
 # -----------------------------------------------------------------------------
@@ -91,16 +112,6 @@ async def require_solva_v2_flag(
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
-def _next_layer(current: str) -> Optional[str]:
-    try:
-        i = LAYERS.index(current)
-    except ValueError:
-        return None
-    if i >= len(LAYERS) - 1:
-        return None
-    return LAYERS[i + 1]
-
-
 async def _is_pro(account: Dict[str, Any]) -> bool:
     """LIVE read of account plan (mirrors v1 posture — stale cache guard)."""
     aid = account.get("id") if isinstance(account, dict) else None
@@ -224,7 +235,11 @@ async def _run_grounding(
     account_id: str,
     turn_id: str,
 ) -> Dict[str, Any]:
-    # sector_tag comes from the linked context if any
+    """Run triangulation (real, deterministic) + candidate_generation (real LLM).
+
+    Returns either {violation: False, ...} on success or {violation: True, ...}
+    if candidate_generation could not satisfy its validator after one retry.
+    """
     sector_tag: Optional[str] = None
     ctx_id = session.get("context_id")
     if ctx_id:
@@ -234,28 +249,51 @@ async def _run_grounding(
         if ctx_doc:
             sector_tag = (ctx_doc.get("sector") or ctx_doc.get("industry") or "").lower() or None
 
+    audit_entries: List[Dict[str, Any]] = []
+
     tri = await triangulation.run(
         session=session, turn_id=turn_id, layer="grounding",
         cluster_id=cluster["id"], sector_tag=sector_tag, limit=3,
     )
+    audit_entries.append(tri["audit_entry"])
+
     cands = await candidate_generation.run(
         session=session, turn_id=turn_id, layer="grounding",
         intent=session["intent"], cluster=cluster,
         comparables=tri["output"]["comparables"],
     )
+    audit_entries.extend(cands["audit_entries"])
+    # Record retry events for the admin dashboard.
+    if len(cands["audit_entries"]) > 1:
+        for _ in range(len(cands["audit_entries"]) - 1):
+            await record_retry(
+                surface="solve_v2.candidate_generation",
+                account_id=account_id,
+                reason="validator_rejected",
+            )
+
+    if cands.get("violation"):
+        return {
+            "violation": True,
+            "reason": cands.get("reason", "candidate_generation_failed"),
+            "audit_entries": audit_entries,
+        }
+
+    candidates = cands["output"]["candidates"]
     summary_text = (
         f"Grounding picked {tri['output']['comparable_count']} comparables "
         f"(cluster={cluster['id']}, sector={sector_tag or 'any'}) and "
-        f"{cands['output']['candidate_count']} candidate framing(s) "
-        f"(stub \u2014 real in 15.1). Proceeding to Synthesis."
+        f"{len(candidates)} candidate framing(s). Proceeding to Synthesis."
     )
     return {
+        "violation": False,
         "text": summary_text,
         "model": None,
         "tier": None,
         "comparables": tri["output"]["comparables"],
-        "candidates": cands["output"]["candidates"],
-        "audit_entries": [tri["audit_entry"], cands["audit_entry"]],
+        "comparable_empty_reason": tri["output"].get("empty_reason"),
+        "candidates": candidates,
+        "audit_entries": audit_entries,
     }
 
 
@@ -269,20 +307,25 @@ async def _run_synthesis(
     candidates: List[Dict[str, Any]],
     requested_tier: str,
 ) -> Dict[str, Any]:
-    """Synthesis runs the LLM, enforces the grounding contract, and runs the
-    independent-family validator on the final accepted body."""
+    """Synthesis runs the LLM (sub-surface solve_v2.synthesis), enforces the
+    grounding contract via retry loop, runs probability_weighting on the
+    parsed claims, and runs the independent-family validator with its OWN
+    fresh Synisense pass under sub-surface solve_v2.validator.
+    """
     audit_entries: List[Dict[str, Any]] = []
 
-    # Build system prompt: base + format + grounding contract + comparables
+    # Build system prompt: base + format + comparables + candidate framings + grounding contract
     comparable_block = triangulation.format_for_prompt(comparables)
     candidate_block = ""
     if candidates:
         cand_lines = "\n".join(
-            f"  - {c.get('text','')}" for c in candidates if isinstance(c, dict)
+            f"  - [{c.get('tentative_tier_hint','?')}] {c.get('hypothesis','')}"
+            for c in candidates if isinstance(c, dict)
         )
         candidate_block = (
             "\n\nCANDIDATE FRAMINGS (from the Grounding layer; weigh before "
-            "writing the diagnosis):\n" + cand_lines
+            "writing the diagnosis. The tier hint indicates where each "
+            "framing's grounding is expected to come from.):\n" + cand_lines
         )
 
     system_base = _base_system_prompt(cluster, "synthesis", session["intent"]) + (
@@ -298,7 +341,7 @@ async def _run_synthesis(
         "exactly, and tag every assertive sentence with exactly one tier marker."
     )
 
-    # Iterative enforcement loop
+    # Iterative grounding-contract enforcement loop
     current_user_query = base_user_query
     last_result = None
     last_parse = None
@@ -310,11 +353,11 @@ async def _run_synthesis(
             prompt=current_user_query,
             system_override=system_msg,
             tier=requested_tier,
-            surface="solve_v2",
+            surface=SYNTHESIS_SURFACE,  # Phase 15.1: solve_v2.synthesis
             account_id=account_id,
             session_id=session["id"],
             context_id=session.get("context_id"),
-            run_validator=False,  # validator runs once on the ACCEPTED body below
+            run_validator=False,  # validator runs once on the ACCEPTED body via validator_call
             extra_output={"grounding_attempt": attempt + 1},
         )
         audit_entries.append(result.reasoning_audit_entry)
@@ -322,16 +365,19 @@ async def _run_synthesis(
         last_result = result
         last_parse = parse_res
         if parse_res.valid:
-            # Annotate the winning audit entry with tier_labels observed
             audit_entries[-1]["tier_labels"] = sorted({c.tier for c in parse_res.claims})
             audit_entries[-1]["output"]["grounding_accepted"] = True
             audit_entries[-1]["output"]["claim_count"] = len(parse_res.claims)
             break
-        # Mark this attempt as a rejected violation
         audit_entries[-1]["output"]["grounding_accepted"] = False
         audit_entries[-1]["output"]["untagged_count"] = len(parse_res.untagged_sentences)
         audit_entries[-1]["output"]["malformed_count"] = len(parse_res.malformed_markers)
-        # Prepare retry prompt
+        # Record retry
+        await record_retry(
+            surface=SYNTHESIS_SURFACE,
+            account_id=account_id,
+            reason="grounding_contract_violation",
+        )
         retry_body = GROUNDING_RETRY_PROMPT.format(
             untagged=parse_res.untagged_sentences[:5],
             malformed=[m.get("bad_tier") for m in parse_res.malformed_markers[:5]],
@@ -340,7 +386,6 @@ async def _run_synthesis(
         current_user_query = base_user_query + retry_body
 
     if not last_parse or not last_parse.valid:
-        # Hard failure — surface structured error to caller
         return {
             "grounding_violation": True,
             "audit_entries": audit_entries,
@@ -349,79 +394,43 @@ async def _run_synthesis(
             "raw_text": last_result.text if last_result else "",
         }
 
-    # Valid body — run probability_weighting stub (pass-through)
+    # Phase 15.1: probability_weighting is a REAL engine that assigns
+    # confidence_pct + confidence_band to every claim before the validator.
+    raw_claims = [c.to_dict() for c in last_parse.claims]
     pw = await probability_weighting.run(
         session=session, turn_id=turn_id, layer="synthesis",
-        claims=[c.to_dict() for c in last_parse.claims],
+        claims=raw_claims, comparables=comparables,
     )
-    audit_entries.append(pw["audit_entry"])
-
-    # Run independent-family validator on the stripped synthesis text.
-    # Use shielded_call-style bookkeeping: synisense hook already ran on the
-    # prompt; validator operates on the LLM's output.
-    from llm_service import validate_independent
-    try:
-        validation = await validate_independent(
-            kind="solve_v2_synthesis",
-            content=last_parse.stripped_text,
-            objective=session.get("intent"),
-            surface="solve_v2",
+    audit_entries.extend(pw["audit_entries"])
+    if not pw["output"].get("invariant_valid", False) and len(pw["audit_entries"]) > 1:
+        await record_retry(
+            surface="solve_v2.probability_weighting",
             account_id=account_id,
+            reason="invariant_violation",
         )
-    except Exception as exc:
-        logger.warning("solva_v2 validator wrapper failed: %s", exc)
-        validation = {
-            "verdict": "qualified", "confidence": 0,
-            "notes": [f"Validator wrapper error ({exc.__class__.__name__})."],
-            "validator_provider": "n/a", "validator_model": "n/a",
-        }
-    # Phase 15.0 hardening: the validator does send content (stripped_text)
-    # to an external LLM (Gemini Flash, via llm_service.validate_independent),
-    # so this audit entry has shield_required=True. The content is derivative
-    # of the synthesis call's already-shielded input; we therefore reference
-    # the same synisense_run_id captured by the accepted llm_primary entry.
-    upstream_run_id: Optional[str] = None
-    for prior in reversed(audit_entries):
-        if prior.get("engine") == "llm_primary" and prior.get("synisense_run_id"):
-            upstream_run_id = prior["synisense_run_id"]
-            break
-    validator_kwargs = dict(
-        engine="validator",
+    weighted_claims = pw["output"]["claims"]
+    pw_violations = pw["output"]["violations"]
+
+    # Phase 15.1: validator_call runs FRESH Synisense pass under
+    # sub-surface solve_v2.validator. No more upstream run_id reuse.
+    val = await validator_call(
+        content=last_parse.stripped_text,
+        objective=session.get("intent"),
         layer="synthesis",
         turn_id=turn_id,
-        output={
-            "validator_verdict": validation.get("verdict"),
-            "validator_confidence": validation.get("confidence"),
-            "validator_provider": validation.get("validator_provider"),
-            "validator_model": validation.get("validator_model"),
-            "content_length": len(last_parse.stripped_text),
-        },
-        tier_labels=[],
-        engine_version="validator@phase11",
-        latency_ms=0,
+        account_id=account_id,
+        context_id=session.get("context_id"),
     )
-    if upstream_run_id:
-        validator_entry = await synthetic_audit_entry(
-            **validator_kwargs,
-            shield_required=True,
-            synisense_run_id=upstream_run_id,
-        )
-    else:
-        # Defensive fallback — should not happen, but if the synthesis loop
-        # somehow lost its shield run id, log honestly rather than fabricate.
-        validator_entry = await synthetic_audit_entry(
-            **validator_kwargs,
-            shield_required=False,
-            shield_bypassed_reason="engine_does_not_call_llm",
-        )
-    audit_entries.append(validator_entry)
+    validation = val["validation"]
+    audit_entries.append(val["audit_entry"])
 
     return {
         "grounding_violation": False,
-        "text": last_result.text,  # raw body with markers; stripped version below
+        "text": last_result.text,
         "stripped_text": last_parse.stripped_text,
-        "claims": [c.to_dict() for c in last_parse.claims],
+        "claims": weighted_claims,  # carries confidence_pct / confidence_band
         "tier_distribution": summarise_tier_distribution(last_parse.claims),
+        "probability_weighting_violations": pw_violations,
         "model": last_result.model,
         "tier": last_result.tier_served,
         "validation": validation,
@@ -480,6 +489,7 @@ async def start_session(
         "account_id": account["id"],
         "context_id": body.context_id,
         "version": 2,
+        "schema_version": SCHEMA_VERSION,  # Phase 15.1: forensic clarity for old vs new
         "submodule": "seek_clarity",
         "cluster_id": body.cluster_id,
         "cluster_label": cluster.get("label"),
@@ -501,7 +511,9 @@ async def start_session(
 
     # Prime framing turn immediately (mirrors v1 posture)
     solve_turn_id = str(uuid.uuid4())
-    # Refusal stub at turn boundary
+    # Refusal classifier (real LLM call in 15.1) at turn boundary.
+    # For session start the user_text is the intent itself; refusal still
+    # returns block=False under 15.1 contract.
     ref = await refusal.run(
         session=rec, turn_id=solve_turn_id, layer="framing", user_text=body.intent,
     )
@@ -609,8 +621,11 @@ async def post_turn(
     )
     if not rec:
         raise HTTPException(status_code=404, detail="Session not found.")
-    if rec.get("status") != "active":
-        raise HTTPException(status_code=409, detail=f"Session is {rec['status']}.")
+    # Phase 15.1: state machine owns transition legality.
+    try:
+        assert_can_post_turn(rec)
+    except InvalidLayerTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
     cluster = await db.solve_clusters.find_one({"id": rec["cluster_id"]}, {"_id": 0})
     if not cluster:
@@ -657,12 +672,28 @@ async def post_turn(
     grounding_violation_payload: Optional[Dict[str, Any]] = None
 
     if current_layer == "framing":
-        # Advance from framing -> grounding happens here: we generate the
-        # grounding summary (engines run) and that becomes the Solva turn.
-        # Note: framing layer ALREADY had a primed reply at session start; the
-        # first user turn at `framing` layer triggers grounding engines.
+        # Advance from framing -> grounding: triangulation + candidate_generation
+        # run here; their summary becomes the Solva turn. Phase 15.1: real
+        # candidate_generation can fail validator; surface 422 if so.
         out = await _run_grounding(rec, cluster, account["id"], solve_turn_id)
         all_audits.extend(out["audit_entries"])
+        if out.get("violation"):
+            await _append_audit(sid, all_audits)
+            logger.warning(
+                "solva_v2 candidate_generation violation sid=%s account=%s reason=%s",
+                sid, account["id"], out.get("reason"),
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "candidate_generation_failed",
+                    "message": (
+                        "Candidate-generation engine could not satisfy its "
+                        "validator after one retry."
+                    ),
+                    "reason": out.get("reason"),
+                },
+            )
         solve_text = out["text"]
         # Park comparables + candidates in temp field for synthesis use
         rec["_grounding_comparables"] = out["comparables"]
@@ -701,8 +732,9 @@ async def post_turn(
         synthesis_record = {
             "body": out["text"],  # raw body with inline markers preserved
             "stripped_text": out["stripped_text"],
-            "claims": out["claims"],
+            "claims": out["claims"],  # Phase 15.1: claims now carry confidence_pct/band
             "tier_distribution": out["tier_distribution"],
+            "probability_weighting_violations": out.get("probability_weighting_violations", []),
             "model": out["model"],
             "tier": out["tier"],
             "generated_at": iso(now()),
@@ -777,6 +809,201 @@ async def post_turn(
          "$set": update_fields},
     )
     rec.pop("_id", None)
+
+
+# -----------------------------------------------------------------------------
+# Phase 15.1 — Cycle handoff via Daily Review queue.
+# v1's /api/solva/sessions/{sid}/handoff/cycle wrote db.questions directly.
+# v2 first writes a Daily Review queue item of kind "solva_cycle_action";
+# the user approves/rejects/edits via Daily Review's existing handlers.
+# Briefing and Decks handoffs are out of scope for 15.1 — they stay v1-style.
+# -----------------------------------------------------------------------------
+async def _draft_cycle_questions_from_session(rec: Dict[str, Any]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    synth = rec.get("synthesis") or {}
+    claims = synth.get("claims") or []
+    seed_claims = [
+        c for c in claims
+        if isinstance(c, dict) and c.get("tier") in {"corpus", "comparable"}
+    ][:3]
+    for i, c in enumerate(seed_claims, start=1):
+        text = (c.get("text") or "").strip()
+        if not text:
+            continue
+        if not text.endswith("?"):
+            text = f"What does the evidence say about: {text.rstrip('.')}? "
+        out.append({
+            "id": str(uuid.uuid4()),
+            "ordinal": i,
+            "text": text,
+            "category": "strategic",
+            "source_tier": c.get("tier"),
+            "confidence_band": c.get("confidence_band"),
+        })
+    if not out:
+        body = (synth.get("stripped_text") or "").strip()[:280]
+        if body:
+            out.append({
+                "id": str(uuid.uuid4()),
+                "ordinal": 1,
+                "text": f"Press the executive on: {body}",
+                "category": "strategic",
+                "source_tier": "domain_prior",
+                "confidence_band": None,
+            })
+    return out
+
+
+class HandoffCycleIn(BaseModel):
+    note: Optional[str] = Field(default=None, max_length=400)
+
+
+@router.post("/sessions/{sid}/handoff/cycle")
+async def handoff_cycle_via_review(
+    sid: str,
+    body: HandoffCycleIn,
+    account: Dict[str, Any] = Depends(require_solva_v2_flag),
+):
+    rec = await db.solva_v2_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0}
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if rec.get("status") != "completed":
+        raise HTTPException(
+            status_code=409,
+            detail="Session must reach Reflection before cycle handoff.",
+        )
+    existing = await db.solve_handoffs.find_one(
+        {"session_id": sid, "target": "cycle"}, {"_id": 0, "id": 1, "review_queue_id": 1}
+    )
+    if existing:
+        return {
+            "ok": True,
+            "review_queue_id": existing.get("review_queue_id"),
+            "idempotent": True,
+        }
+
+    questions = await _draft_cycle_questions_from_session(rec)
+    if not questions:
+        raise HTTPException(
+            status_code=422,
+            detail="Session synthesis carries no claims fit for cycle questions.",
+        )
+
+    queue_id = str(uuid.uuid4())
+    handoff_id = str(uuid.uuid4())
+    review_item = {
+        "id": queue_id,
+        "kind": "solva_cycle_action",
+        "account_id": account["id"],
+        "context_id": rec.get("context_id"),
+        "session_id": sid,
+        "cluster_id": rec.get("cluster_id"),
+        "cluster_label": rec.get("cluster_label"),
+        "questions": questions,
+        "status": "pending_review",
+        "note": (body.note or "").strip(),
+        "audit_entry_count": len(rec.get("reasoning_audit_log") or []),
+        "created_at": iso(now()),
+        "reviewed_at": None,
+    }
+    await db.solva_cycle_handoff_queue.insert_one(review_item)
+
+    await db.solve_handoffs.insert_one({
+        "id": handoff_id,
+        "session_id": sid,
+        "account_id": account["id"],
+        "target": "cycle",
+        "status": "pending_review",
+        "review_queue_id": queue_id,
+        "created_at": iso(now()),
+    })
+    return {"ok": True, "review_queue_id": queue_id, "idempotent": False, "questions": questions}
+
+
+# -----------------------------------------------------------------------------
+# Phase 15.1 — reasoning-log/summary projection (compressed view per turn).
+# 15.3 drawer renders this. No raw prompts, no internal identifiers.
+# -----------------------------------------------------------------------------
+@router.get("/sessions/{sid}/reasoning-log/summary")
+async def reasoning_log_summary(
+    sid: str,
+    account: Dict[str, Any] = Depends(require_solva_v2_flag),
+):
+    rec = await db.solva_v2_sessions.find_one(
+        {"id": sid, "account_id": account["id"]},
+        {
+            "_id": 0,
+            "id": 1, "layer": 1, "status": 1, "submodule": 1,
+            "reasoning_audit_log": 1, "synthesis": 1, "turns": 1,
+        },
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    audit = rec.get("reasoning_audit_log") or []
+    turns: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
+    retry_counts: Dict[str, int] = {}
+    for e in audit:
+        tid = e.get("turn_id")
+        if not tid:
+            continue
+        if tid not in turns:
+            order.append(tid)
+            turns[tid] = {
+                "turn_id": tid,
+                "layers": [],
+                "engines": [],
+                "tiers_cited": set(),
+                "validator_verdict": None,
+                "retry_count": 0,
+                "shield_runs": 0,
+                "shield_bypassed_runs": 0,
+            }
+        bucket = turns[tid]
+        layer = e.get("layer")
+        if layer and layer not in bucket["layers"]:
+            bucket["layers"].append(layer)
+        engine = e.get("engine")
+        if engine and engine not in bucket["engines"]:
+            bucket["engines"].append(engine)
+        for t in (e.get("tier_labels") or []):
+            bucket["tiers_cited"].add(t)
+        key = f"{tid}:{engine}"
+        retry_counts[key] = retry_counts.get(key, 0) + 1
+        if e.get("shield_required"):
+            bucket["shield_runs"] += 1
+        else:
+            bucket["shield_bypassed_runs"] += 1
+        if engine == "validator":
+            bucket["validator_verdict"] = (e.get("output") or {}).get("validator_verdict")
+
+    for tid, bucket in turns.items():
+        retries = sum(max(0, retry_counts.get(f"{tid}:{eng}", 1) - 1) for eng in bucket["engines"])
+        bucket["retry_count"] = retries
+        bucket["tiers_cited"] = sorted(bucket["tiers_cited"])
+
+    synth = rec.get("synthesis") or {}
+    claims = synth.get("claims") or []
+    confidence_bands = {"Unlikely": 0, "Possible": 0, "Likely": 0, "High-conviction": 0}
+    for c in claims:
+        band = (c or {}).get("confidence_band")
+        if band in confidence_bands:
+            confidence_bands[band] += 1
+
+    return {
+        "session_id": rec["id"],
+        "current_layer": rec.get("layer"),
+        "status": rec.get("status"),
+        "turn_count": len(order),
+        "turns": [turns[t] for t in order],
+        "confidence_distribution": confidence_bands,
+        "tier_distribution": synth.get("tier_distribution") or {},
+        "validator_verdict": (synth.get("validation") or {}).get("verdict"),
+    }
+
     return rec
 
 

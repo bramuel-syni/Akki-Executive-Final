@@ -249,11 +249,35 @@ async def list_review_queue(
             "payload": _studio_payload(s, sub),
         })
 
+    # Phase 15.1 — Solva v2 cycle handoff queue items.
+    solva_cycle_q: Dict[str, Any] = {
+        "account_id": account["id"],
+        "status": "pending_review",
+    }
+    if cursor:
+        solva_cycle_q["created_at"] = {"$lt": cursor}
+    solva_cycle_rows = await db.solva_cycle_handoff_queue.find(
+        solva_cycle_q, {"_id": 0},
+    ).sort("created_at", -1).to_list(over)
+    for row in solva_cycle_rows:
+        items.append({
+            "id": f"{SOLVA_CYCLE_KIND}:{row['id']}",
+            "kind": SOLVA_CYCLE_KIND,
+            "created_at": row.get("created_at"),
+            "context_id": row.get("context_id"),
+            "context_name": name_map.get(row.get("context_id"), "(unknown)"),
+            "payload": {
+                "cluster_label": row.get("cluster_label"),
+                "session_id": row.get("session_id"),
+                "question_count": len(row.get("questions") or []),
+                "questions": row.get("questions") or [],
+                "note": row.get("note") or "",
+            },
+        })
+
     items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
     page = items[:cap]
     next_cursor = page[-1]["created_at"] if len(items) > cap else None
-
-    # Total count is cheap — count documents on each filter.
     total_inbound = await db.inbound_queue.count_documents({
         "context_id": {"$in": cids}, "status": "pending_review",
     })
@@ -266,7 +290,10 @@ async def list_review_queue(
         total_studio += await db[STUDIO_COLLECTIONS[sub]].count_documents({
             "context_id": {"$in": cids}, "block_status": "in_review",
         })
-    total_pending = total_inbound + total_briefing + total_studio
+    total_solva_cycle = await db.solva_cycle_handoff_queue.count_documents({
+        "account_id": account["id"], "status": "pending_review",
+    })
+    total_pending = total_inbound + total_briefing + total_studio + total_solva_cycle
 
     return {"items": page, "next_cursor": next_cursor, "total_pending": total_pending}
 
@@ -663,6 +690,152 @@ async def _reject_studio(uid_payload: str, account: Dict[str, Any], reason: Opti
     return {"subkind": subkind, "reason": reason_clean}
 
 
+
+# ---------------------------------------------------------------------------
+# Phase 15.1 — Solva v2 cycle handoff queue handlers
+# ---------------------------------------------------------------------------
+class SolvaCycleEditIn(BaseModel):
+    """Optional payload on the edit endpoint: when present for the
+    solva_cycle_action kind, the questions list replaces the queue item's
+    questions and the handler immediately calls approve."""
+    questions: Optional[List[Dict[str, Any]]] = None
+    note: Optional[str] = None
+
+
+async def _approve_solva_cycle(
+    iid: str, account: Dict[str, Any], note: Optional[str] = None,
+    questions_override: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Approve a solva_cycle_action queue item: write each question into
+    db.questions, mark the queue item approved, mark solve_handoffs approved.
+    Idempotent: a second approve returns ok=True without re-writing."""
+    item = await db.solva_cycle_handoff_queue.find_one(
+        {"id": iid, "account_id": account["id"]}, {"_id": 0}
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Queue item not found.")
+    if item.get("status") == "approved":
+        return {"ok": True, "idempotent": True, "questions_inserted": 0}
+    if item.get("status") == "rejected":
+        raise HTTPException(status_code=409, detail="Queue item was already rejected.")
+
+    questions = questions_override or item.get("questions") or []
+    if not questions:
+        raise HTTPException(status_code=422, detail="No questions to approve.")
+
+    # Insert into db.questions one row per question, mirroring v1's shape.
+    inserted_ids: List[str] = []
+    for q in questions:
+        qid = q.get("id") or str(uuid.uuid4())
+        doc = {
+            "id": qid,
+            "context_id": item.get("context_id"),
+            "text": (q.get("text") or "").strip(),
+            "category": q.get("category") or "strategic",
+            "source": f"AKKI Solva v2 · {item.get('cluster_label') or item.get('cluster_id') or 'session'}",
+            "source_session_id": item.get("session_id"),
+            "ordinal": q.get("ordinal"),
+            "created_at": iso(now()),
+            "created_by": account["id"],
+        }
+        if not doc["text"]:
+            continue
+        await db.questions.insert_one(doc)
+        inserted_ids.append(qid)
+
+    await db.solva_cycle_handoff_queue.update_one(
+        {"id": iid},
+        {"$set": {
+            "status": "approved",
+            "reviewed_at": iso(now()),
+            "questions": questions,
+            "approve_note": (note or "").strip(),
+            "inserted_question_ids": inserted_ids,
+        }},
+    )
+    await db.solve_handoffs.update_many(
+        {"review_queue_id": iid},
+        {"$set": {"status": "approved", "approved_at": iso(now())}},
+    )
+    return {"ok": True, "idempotent": False, "questions_inserted": len(inserted_ids)}
+
+
+async def _reject_solva_cycle(
+    iid: str, account: Dict[str, Any], reason: Optional[str] = None,
+) -> Dict[str, Any]:
+    item = await db.solva_cycle_handoff_queue.find_one(
+        {"id": iid, "account_id": account["id"]}, {"_id": 0, "id": 1, "status": 1}
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Queue item not found.")
+    if item.get("status") == "rejected":
+        return {"ok": True, "idempotent": True}
+    if item.get("status") == "approved":
+        raise HTTPException(status_code=409, detail="Queue item was already approved.")
+
+    await db.solva_cycle_handoff_queue.update_one(
+        {"id": iid},
+        {"$set": {
+            "status": "rejected",
+            "reviewed_at": iso(now()),
+            "reject_reason": (reason or "").strip(),
+        }},
+    )
+    await db.solve_handoffs.update_many(
+        {"review_queue_id": iid},
+        {"$set": {"status": "rejected", "rejected_at": iso(now())}},
+    )
+    return {"ok": True, "idempotent": False}
+
+
+async def _edit_solva_cycle(
+    iid: str, account: Dict[str, Any], body: Optional[SolvaCycleEditIn],
+) -> Dict[str, Any]:
+    """Persist edited questions (if provided) then immediately approve.
+
+    If no questions[] is provided in the body, this returns the existing
+    queue item so the UI can offer an inline editor and call edit again
+    with the edited list. The contract from the brief is:
+        'Daily Review's edit handler persists the edited question(s) and
+         then approves.'
+    """
+    item = await db.solva_cycle_handoff_queue.find_one(
+        {"id": iid, "account_id": account["id"]}, {"_id": 0}
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Queue item not found.")
+    questions = body.questions if body else None
+    note = body.note if body else None
+    if questions is None:
+        # Provide the current questions so the UI can offer an editor.
+        return {
+            "ok": True,
+            "kind": SOLVA_CYCLE_KIND,
+            "id": iid,
+            "inline": True,
+            "edit_url": None,
+            "current_questions": item.get("questions") or [],
+        }
+    # Sanitise edited questions.
+    cleaned: List[Dict[str, Any]] = []
+    for i, q in enumerate(questions, start=1):
+        text = (q.get("text") if isinstance(q, dict) else "") or ""
+        text = text.strip()
+        if not text:
+            continue
+        cleaned.append({
+            "id": (q.get("id") if isinstance(q, dict) else None) or str(uuid.uuid4()),
+            "ordinal": i,
+            "text": text,
+            "category": (q.get("category") if isinstance(q, dict) else None) or "strategic",
+            "source_tier": (q.get("source_tier") if isinstance(q, dict) else None),
+            "confidence_band": (q.get("confidence_band") if isinstance(q, dict) else None),
+        })
+    if not cleaned:
+        raise HTTPException(status_code=422, detail="Edited list contained no usable questions.")
+    return await _approve_solva_cycle(iid, account, note=note, questions_override=cleaned)
+
+
 @router.post("/items/{kind}/{item_id}/approve")
 async def approve_review_item(
     kind: str, item_id: str,
@@ -677,6 +850,8 @@ async def approve_review_item(
         result = await _approve_briefing(iid, account)
     elif kind == STUDIO_KIND:
         result = await _approve_studio(iid, account, note)
+    elif kind == SOLVA_CYCLE_KIND:
+        result = await _approve_solva_cycle(iid, account, note)
     else:
         raise HTTPException(status_code=400, detail=f"Unknown kind '{kind}'.")
     next_id = await _next_pending_item_id(account["id"], exclude_uid=f"{kind}:{iid}")
@@ -697,6 +872,8 @@ async def reject_review_item(
         result = await _reject_briefing(iid, account, reason)
     elif kind == STUDIO_KIND:
         result = await _reject_studio(iid, account, reason)
+    elif kind == SOLVA_CYCLE_KIND:
+        result = await _reject_solva_cycle(iid, account, reason)
     else:
         raise HTTPException(status_code=400, detail=f"Unknown kind '{kind}'.")
     next_id = await _next_pending_item_id(account["id"], exclude_uid=f"{kind}:{iid}")
@@ -706,11 +883,18 @@ async def reject_review_item(
 @router.post("/items/{kind}/{item_id}/edit")
 async def edit_review_item(
     kind: str, item_id: str,
+    body: Optional[SolvaCycleEditIn] = None,
     account: Dict[str, Any] = Depends(get_current_account),
 ):
     """Returns a deep-link to the existing edit surface for this kind.
-    The UI navigates there in-place (or opens it in an overlay)."""
+    The UI navigates there in-place (or opens it in an overlay).
+
+    Phase 15.1: solva_cycle_action accepts an optional body with
+    `questions: [...]` to persist edits and then approve in one step
+    (per build brief decision #5)."""
     iid = _split_uid(kind, item_id)
+    if kind == SOLVA_CYCLE_KIND:
+        return await _edit_solva_cycle(iid, account, body)
     if kind == INBOUND_KIND:
         row = await db.inbound_queue.find_one({"id": iid}, {"_id": 0, "id": 1, "context_id": 1, "status": 1})
         if not row:

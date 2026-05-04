@@ -38,6 +38,23 @@ from .grounding_contract import (
     ParseResult,
     Claim,
 )
+from .llm_adapter import (
+    shielded_call,
+    synthetic_audit_entry,
+    validator_call,
+    record_retry,
+    SHIELD_BYPASS_REASONS,
+)
+from .state_machine import (
+    LAYERS,
+    next_layer,
+    can_post_turn,
+    assert_can_post_turn,
+    is_terminal,
+    InvalidLayerTransition,
+    GROUNDING_REQUIRED_ENGINES,
+    TERMINAL_LAYER,
+)
 
 __all__ = [
     "TIER_NAMES",
@@ -48,4 +65,17 @@ __all__ = [
     "input_hash",
     "ParseResult",
     "Claim",
+    "shielded_call",
+    "synthetic_audit_entry",
+    "validator_call",
+    "record_retry",
+    "SHIELD_BYPASS_REASONS",
+    "LAYERS",
+    "next_layer",
+    "can_post_turn",
+    "assert_can_post_turn",
+    "is_terminal",
+    "InvalidLayerTransition",
+    "GROUNDING_REQUIRED_ENGINES",
+    "TERMINAL_LAYER",
 ]

@@ -271,3 +271,46 @@ async def deck_quality(
         "alert_min_hits": QUALITY_ALERT_HITS,
         "top_regen_reasons": top_regen_reasons,
     }
+
+
+
+# ---------------------------------------------------------------------------
+# Phase 15.1 — retries roll-up for the last 24 hours, grouped by surface.
+# Surfaces the impact of grounding-contract retries, candidate-generation
+# validator rejections, and probability-weighting invariant retries.
+# ---------------------------------------------------------------------------
+@router.get("/retries_24h")
+async def llm_retries_24h(
+    account: Dict[str, Any] = Depends(_require_superadmin),
+):
+    """Aggregate db.llm_retry_log over the last 24h, grouped by surface.
+
+    Returns:
+        {
+          window_hours: 24,
+          generated_at: ISO,
+          total: int,
+          by_surface: [{surface, count, sample_reasons: {reason: count}}],
+        }
+    """
+    cutoff_dt = datetime.now(timezone.utc) - timedelta(hours=24)
+    cutoff_iso = cutoff_dt.isoformat().replace("+00:00", "Z")
+    rows = await db.llm_retry_log.find(
+        {"created_at": {"$gte": cutoff_iso}}, {"_id": 0, "surface": 1, "reason": 1}
+    ).to_list(length=10000)
+
+    by_surface: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        s = r.get("surface") or "unknown"
+        bucket = by_surface.setdefault(s, {"surface": s, "count": 0, "sample_reasons": {}})
+        bucket["count"] += 1
+        reason = r.get("reason") or "unspecified"
+        bucket["sample_reasons"][reason] = bucket["sample_reasons"].get(reason, 0) + 1
+
+    out = sorted(by_surface.values(), key=lambda r: r["count"], reverse=True)
+    return {
+        "window_hours": 24,
+        "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "total": len(rows),
+        "by_surface": out,
+    }

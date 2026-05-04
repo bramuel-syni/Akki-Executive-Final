@@ -445,6 +445,19 @@ async def on_startup():
     await db.solva_v2_sessions.create_index([("account_id", 1), ("status", 1)])
     await db.solva_v2_sessions.create_index([("account_id", 1), ("version", 1)])
 
+    # Phase 15.1 — Solva v2 cycle handoff queue (Daily Review feeder).
+    await db.solva_cycle_handoff_queue.create_index("id", unique=True)
+    await db.solva_cycle_handoff_queue.create_index([("account_id", 1), ("status", 1), ("created_at", -1)])
+    await db.solva_cycle_handoff_queue.create_index("session_id")
+    # Idempotency-by-session is enforced in routers/solva_v2.py via the
+    # solve_handoffs lookup; index that by session+target for fast read.
+    await db.solve_handoffs.create_index([("session_id", 1), ("target", 1)])
+
+    # Phase 15.1 — retry telemetry. TTL 30 days; aggregated 24h on the
+    # admin LLM spend dashboard, grouped by surface.
+    await db.llm_retry_log.create_index("created_at", expireAfterSeconds=30 * 24 * 3600)
+    await db.llm_retry_log.create_index([("surface", 1), ("created_at", -1)])
+
     # iter70 — inbound-queue triage (trust-tiered review)
     await db.inbound_queue.create_index("id", unique=True)
     await db.inbound_queue.create_index([("context_id", 1), ("status", 1), ("created_at", -1)])

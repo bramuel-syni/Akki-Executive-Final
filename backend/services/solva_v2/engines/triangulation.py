@@ -1,13 +1,20 @@
-"""Solva v2 — triangulation engine (REAL, Phase 15.0).
+"""Solva v2 — triangulation engine (REAL, Phase 15.1).
 
-Reads db.solve_comparables. Selection order (same logic as v1
-_pick_comparables in routers/solva_engine.py:944): same cluster + sector_tag
-match -> same cluster + sector_tag='any' -> same cluster + any sector. Caps at
-limit=3 to keep the synthesis prompt sharp.
+Reads db.solve_comparables. Selection priority:
+    1. cluster_id + sector_tag exact match    -> priority_match='sector_match'
+    2. cluster_id + sector_tag='any'          -> priority_match='cluster_any'
+    3. cluster_id + any sector                -> priority_match='cluster'
 
-The engine itself does NOT call an LLM. It is a DB query + structured output.
-It still writes a reasoning_audit_log entry because every engine invocation is
-audited.
+Each returned comparable carries `priority_match` so the synthesis prompt
+can weight tighter matches more heavily. Caps at limit=3.
+
+No LLM call; no Synisense (the only inputs are cluster_id + sector_tag,
+not user content). Audit entry is shield_required=False, deterministic_only.
+
+When zero comparables match (the cluster has no curated entries OR the seed
+is empty), the engine returns an empty list with output.empty_reason='no_match'
+and the synthesis layer must handle the zero-comparable case gracefully
+(tier-label heavier on domain_prior and speculation).
 """
 from __future__ import annotations
 
@@ -21,6 +28,7 @@ logger = logging.getLogger("akki.solva_v2.triangulation")
 
 ENGINE = "triangulation"
 ENGINE_VERSION = "triangulation@1.0"
+SURFACE = "solve_v2.triangulation"  # used in the audit input_hash basis
 
 
 async def run(
@@ -32,15 +40,13 @@ async def run(
     sector_tag: Optional[str] = None,
     limit: int = 3,
 ) -> Dict[str, Any]:
-    """Return `{output, audit_entry}` where output.comparables is the
-    anonymised list of diagnoses to feed into synthesis prompts."""
-    from .llm_adapter_proxy import synthetic_audit_entry  # local alias
+    from .llm_adapter_proxy import synthetic_audit_entry
 
     t0 = _time.monotonic()
     comparables: List[Dict[str, Any]] = []
     seen: set = set()
 
-    async def _take(filter_q: Dict[str, Any]) -> None:
+    async def _take(filter_q: Dict[str, Any], priority_match: str) -> None:
         async for c in db.solve_comparables.find(
             filter_q,
             {
@@ -57,19 +63,21 @@ async def run(
             if c["id"] in seen:
                 continue
             seen.add(c["id"])
+            c["priority_match"] = priority_match
             comparables.append(c)
             if len(comparables) >= limit:
                 return
 
     if sector_tag:
-        await _take({"cluster_id": cluster_id, "sector_tag": sector_tag})
+        await _take({"cluster_id": cluster_id, "sector_tag": sector_tag}, "sector_match")
     if len(comparables) < limit:
-        await _take({"cluster_id": cluster_id, "sector_tag": "any"})
+        await _take({"cluster_id": cluster_id, "sector_tag": "any"}, "cluster_any")
     if len(comparables) < limit:
-        await _take({"cluster_id": cluster_id})
+        await _take({"cluster_id": cluster_id}, "cluster")
     comparables = comparables[:limit]
 
     latency_ms = int((_time.monotonic() - t0) * 1000)
+    empty_reason = "no_match" if not comparables else None
 
     output = {
         "cluster_id": cluster_id,
@@ -77,13 +85,14 @@ async def run(
         "comparable_count": len(comparables),
         "comparable_ids": [c["id"] for c in comparables],
         "comparables": comparables,
+        "empty_reason": empty_reason,
     }
     audit_entry = await synthetic_audit_entry(
         engine=ENGINE,
         layer=layer,
         turn_id=turn_id,
         output={k: v for k, v in output.items() if k != "comparables"},
-        tier_labels=["comparable"],
+        tier_labels=["comparable"] if comparables else [],
         engine_version=ENGINE_VERSION,
         latency_ms=latency_ms,
         shield_required=False,
@@ -93,22 +102,34 @@ async def run(
 
 
 def format_for_prompt(comparables: List[Dict[str, Any]]) -> str:
-    """Format comparables into the block fed into the synthesis system prompt.
-    Mirrors v1 phrasing so behavioural continuity with Solva v1 is preserved."""
+    """Format comparables for inclusion in the synthesis system prompt.
+
+    Phase 15.1: include priority_match so the model can weight tight
+    sector-matches more heavily than cluster-only matches.
+    """
     if not comparables:
-        return ""
+        return (
+            "\n\nNO CURATED COMPARABLES match this cluster + sector. Lean on "
+            "domain_prior / speculation tier labels and acknowledge the "
+            "absence of comparable evidence in your diagnosis.\n"
+        )
     lines: List[str] = []
     for c in comparables:
+        weight = {
+            "sector_match": "strong",
+            "cluster_any": "medium",
+            "cluster": "loose",
+        }.get(c.get("priority_match", "cluster"), "loose")
         lines.append(
-            f"- {c.get('diagnosis_summary','').strip()}\n"
-            f"  Worked: {c.get('what_worked','').strip()}\n"
-            f"  Didn't: {c.get('what_didnt','').strip()}"
+            f"- [{weight} match] {(c.get('diagnosis_summary') or '').strip()}\n"
+            f"  Worked: {(c.get('what_worked') or '').strip()}\n"
+            f"  Didn't: {(c.get('what_didnt') or '').strip()}"
         )
     return (
-        "\n\nCURATED COMPARABLES (anonymised, real boards). When useful, "
-        "reference them inline as 'A comparable mid-cap bank\u2026' or "
-        "'In one industrials case\u2026'. Do NOT name companies. Do not list "
-        "all of them \u2014 pick at most one or two that genuinely sharpen "
-        "the diagnosis. If none apply, ignore.\n"
+        "\n\nCURATED COMPARABLES (anonymised, real boards). Reference inline "
+        "as 'A comparable mid-cap bank\u2026' or 'In one industrials case\u2026'. "
+        "Do NOT name companies. Pick at most one or two that genuinely "
+        "sharpen the diagnosis. Strong matches are worth more weight than "
+        "loose ones; if all matches are loose, lean on domain_prior tier.\n"
         + "\n".join(lines)
     )
