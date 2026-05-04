@@ -777,7 +777,10 @@ async def post_turn(
 
     # Advance layer pointer (skip for synthesis which already set completed)
     if current_layer not in ("synthesis", "reflection"):
-        advance_to = _next_layer(current_layer)
+        # Phase 15.1: route through the formal state machine. `rec` already
+        # carries the new user turn + this turn's audit entries, which is
+        # the post-turn snapshot the state machine inspects.
+        advance_to = next_layer(rec)
         if advance_to is None:
             update_fields["status"] = "completed"
             update_fields["completed_at"] = iso(now())
@@ -809,6 +812,10 @@ async def post_turn(
          "$set": update_fields},
     )
     rec.pop("_id", None)
+    # Strip private grounding scratchpad fields before returning to client.
+    rec.pop("_grounding_comparables", None)
+    rec.pop("_grounding_candidates", None)
+    return rec
 
 
 # -----------------------------------------------------------------------------

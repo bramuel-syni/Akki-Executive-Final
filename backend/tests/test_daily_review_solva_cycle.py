@@ -34,12 +34,20 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
+import sys
+
 import pytest
 import requests
 from dotenv import load_dotenv
 
-# Read the same environment the running backend reads.
+# Read the same environment the running backend reads. Backend env first so
+# the `from routers import daily_review` import in test 1 finds MONGO_URL.
+load_dotenv("/app/backend/.env")
 load_dotenv("/app/frontend/.env")
+BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+
 BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 ADMIN_EMAIL = "admin@akki.ai"
 ADMIN_PASSWORD = "AkkiAdmin2026!"
@@ -417,10 +425,11 @@ def test_edit_with_questions_payload_persists_and_approves(client, admin_account
                 "source_tier": "corpus",
                 "confidence_band": "Likely",
             },
-            # Empty / whitespace-only entries should be silently dropped.
+            # Empty / whitespace-only entries should be silently dropped by
+            # the handler's defensive filter. (Pydantic rejects non-dicts at
+            # request time with 422, so we don't test that path here.)
             {"id": str(uuid.uuid4()), "ordinal": 2, "text": "   "},
-            # Non-dict entries must not crash the handler.
-            "garbage entry — should be skipped",
+            {"id": str(uuid.uuid4()), "ordinal": 3, "text": ""},
         ]
         r = client.post(
             f"{BASE_URL}/api/me/review-queue/items/solva_cycle_action/{queue_id}/edit",
@@ -466,7 +475,7 @@ def test_edit_rejects_empty_question_list(client, admin_account):
             json={"questions": [
                 {"text": ""},
                 {"text": "   "},
-                "still rubbish",
+                {"text": "\t\n"},
             ]},
             timeout=20,
         )

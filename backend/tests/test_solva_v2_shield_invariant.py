@@ -139,9 +139,47 @@ async def test_invariant_holds_across_full_session(monkeypatch):
     )
     framing_reply = "What is the timeframe? Was pricing changed in the window?"
 
+    # Phase 15.1 — surface-aware mock. Each new engine routes through its own
+    # sub-surface (`solve_v2.refusal` / `.candidate_generation` /
+    # `.probability_weighting`) and parses strict JSON. The framing reply
+    # surface is bare `solve_v2`; synthesis is `solve_v2.synthesis`.
+    REFUSAL_JSON = (
+        '{"category": "clean", "confidence": 0.92, "reason": "ordinary board question"}'
+    )
+    CANDIDATES_JSON = (
+        '{"candidates": ['
+        '{"hypothesis": "Pricing pressure across the complete enterprise revenue base", '
+        '"tentative_tier_hint": "comparable"},'
+        '{"hypothesis": "Macro headwinds explain this quarter session revenue gap", '
+        '"tentative_tier_hint": "domain_prior"},'
+        '{"hypothesis": "Customer onboarding friction distorted complete quarterly revenue", '
+        '"tentative_tier_hint": "speculation"}'
+        ']}'
+    )
+    RATINGS_JSON_5 = (
+        '{"ratings": ['
+        '{"confidence_pct": 78, "rationale": "corpus on books"},'
+        '{"confidence_pct": 65, "rationale": "comparable bank"},'
+        '{"confidence_pct": 50, "rationale": "domain prior"},'
+        '{"confidence_pct": 60, "rationale": "user assertion confirmed"},'
+        '{"confidence_pct": 55, "rationale": "speculation bounded"}'
+        ']}'
+    )
+
     async def fake_call(**kwargs):
         call_counter["n"] += 1
-        body = framing_reply if call_counter["n"] == 1 else valid_synth
+        surface = kwargs.get("surface") or ""
+        if surface == "solve_v2.refusal":
+            body = REFUSAL_JSON
+        elif surface == "solve_v2.candidate_generation":
+            body = CANDIDATES_JSON
+        elif surface == "solve_v2.probability_weighting":
+            body = RATINGS_JSON_5
+        elif surface == "solve_v2.synthesis":
+            body = valid_synth
+        else:
+            # Plain `solve_v2` is the framing reply surface.
+            body = framing_reply
         return (
             {"response": body, "model": "claude-sonnet-4-5-20250929",
              "tier": "standard", "mode": "live"},

@@ -18,8 +18,24 @@ fixture entirely.
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 
 import pytest
+from dotenv import load_dotenv
+
+# Load backend env once for every collected test. Without this, any test
+# whose imports reach `core.py` (which reads MONGO_URL at import time) fails
+# at collection unless an earlier test file already called load_dotenv.
+# Phase 15.1: services/solva_v2/__init__.py now re-exports the llm_adapter
+# (which imports core), so the implicit-ordering hack the older tests relied
+# on is no longer safe. Frontend env is loaded too because the
+# request-driven smoke tests read REACT_APP_BACKEND_URL.
+load_dotenv("/app/backend/.env")
+load_dotenv("/app/frontend/.env")
+BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
 
 
 @pytest.fixture(scope="session")

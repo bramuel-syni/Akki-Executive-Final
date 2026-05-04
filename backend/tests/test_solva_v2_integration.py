@@ -43,9 +43,46 @@ async def test_full_seek_clarity_session_end_to_end(monkeypatch):
     """Full v2 flow under pytest-asyncio. One event loop for the whole test."""
     call_counter = {"n": 0}
 
+    # Phase 15.1 — surface-aware mock. New engines (refusal / candidate
+    # generation / probability weighting) parse strict JSON; the old
+    # call-counter pattern returned plain text and crashed those parsers.
+    REFUSAL_JSON = (
+        '{"category": "clean", "confidence": 0.9, "reason": "ordinary question"}'
+    )
+    CANDIDATES_JSON = (
+        '{"candidates": ['
+        '{"hypothesis": "Pricing change drove the revenue miss this quarter", '
+        '"tentative_tier_hint": "comparable"},'
+        '{"hypothesis": "Macro headwinds account for the quarterly revenue gap", '
+        '"tentative_tier_hint": "domain_prior"},'
+        '{"hypothesis": "Customer onboarding friction reduced revenue conversion", '
+        '"tentative_tier_hint": "speculation"}'
+        ']}'
+    )
+    RATINGS_JSON_6 = (
+        '{"ratings": ['
+        '{"confidence_pct": 80, "rationale": "corpus"},'
+        '{"confidence_pct": 65, "rationale": "comparable"},'
+        '{"confidence_pct": 55, "rationale": "speculation bounded"},'
+        '{"confidence_pct": 60, "rationale": "user assertion"},'
+        '{"confidence_pct": 55, "rationale": "domain prior"},'
+        '{"confidence_pct": 50, "rationale": "open question"}'
+        ']}'
+    )
+
     async def fake_call_llm_with_tier(**kwargs):
         call_counter["n"] += 1
-        body = FRAMING_REPLY if call_counter["n"] == 1 else VALID_SYNTH_BODY
+        surface = kwargs.get("surface") or ""
+        if surface == "solve_v2.refusal":
+            body = REFUSAL_JSON
+        elif surface == "solve_v2.candidate_generation":
+            body = CANDIDATES_JSON
+        elif surface == "solve_v2.probability_weighting":
+            body = RATINGS_JSON_6
+        elif surface == "solve_v2.synthesis":
+            body = VALID_SYNTH_BODY
+        else:
+            body = FRAMING_REPLY
         return (
             {
                 "response": body,
