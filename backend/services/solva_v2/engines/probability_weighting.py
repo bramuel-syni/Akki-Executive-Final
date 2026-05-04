@@ -49,5 +49,7 @@ async def run(
         tier_labels=sorted({c.get("tier") for c in weighted if isinstance(c, dict) and c.get("tier")}),
         engine_version=ENGINE_VERSION,
         latency_ms=latency_ms,
+        shield_required=False,
+        shield_bypassed_reason="placeholder_stub",
     )
     return {"output": output, "audit_entry": audit_entry}

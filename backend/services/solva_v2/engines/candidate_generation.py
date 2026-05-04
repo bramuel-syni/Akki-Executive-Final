@@ -58,5 +58,7 @@ async def run(
         tier_labels=["domain_prior"],
         engine_version=ENGINE_VERSION,
         latency_ms=latency_ms,
+        shield_required=False,
+        shield_bypassed_reason="placeholder_stub",
     )
     return {"output": output, "audit_entry": audit_entry}

@@ -86,6 +86,8 @@ async def run(
         tier_labels=["comparable"],
         engine_version=ENGINE_VERSION,
         latency_ms=latency_ms,
+        shield_required=False,
+        shield_bypassed_reason="deterministic_only",
     )
     return {"output": output, "audit_entry": audit_entry}
 

@@ -375,7 +375,17 @@ async def _run_synthesis(
             "notes": [f"Validator wrapper error ({exc.__class__.__name__})."],
             "validator_provider": "n/a", "validator_model": "n/a",
         }
-    validator_entry = await synthetic_audit_entry(
+    # Phase 15.0 hardening: the validator does send content (stripped_text)
+    # to an external LLM (Gemini Flash, via llm_service.validate_independent),
+    # so this audit entry has shield_required=True. The content is derivative
+    # of the synthesis call's already-shielded input; we therefore reference
+    # the same synisense_run_id captured by the accepted llm_primary entry.
+    upstream_run_id: Optional[str] = None
+    for prior in reversed(audit_entries):
+        if prior.get("engine") == "llm_primary" and prior.get("synisense_run_id"):
+            upstream_run_id = prior["synisense_run_id"]
+            break
+    validator_kwargs = dict(
         engine="validator",
         layer="synthesis",
         turn_id=turn_id,
@@ -390,6 +400,20 @@ async def _run_synthesis(
         engine_version="validator@phase11",
         latency_ms=0,
     )
+    if upstream_run_id:
+        validator_entry = await synthetic_audit_entry(
+            **validator_kwargs,
+            shield_required=True,
+            synisense_run_id=upstream_run_id,
+        )
+    else:
+        # Defensive fallback — should not happen, but if the synthesis loop
+        # somehow lost its shield run id, log honestly rather than fabricate.
+        validator_entry = await synthetic_audit_entry(
+            **validator_kwargs,
+            shield_required=False,
+            shield_bypassed_reason="engine_does_not_call_llm",
+        )
     audit_entries.append(validator_entry)
 
     return {
@@ -410,14 +434,19 @@ async def _run_reflection(
     turn_id: str,
 ) -> Dict[str, Any]:
     """Layer 4 placeholder — Phase 15.3 replaces this with three locked questions."""
+    # Phase 15.0 hardening Item 4: this entry is renamed from engine='llm_primary'
+    # to engine='placeholder' because no LLM call is made. Phase 15.3 replaces
+    # this with the three-locked-questions exchange.
     entry = await synthetic_audit_entry(
-        engine="llm_primary",
+        engine="placeholder",
         layer="reflection",
         turn_id=turn_id,
         output={"placeholder": True, "phase": "15.3"},
         tier_labels=[],
         engine_version="reflection@0.0-placeholder",
         latency_ms=0,
+        shield_required=False,
+        shield_bypassed_reason="placeholder_stub",
     )
     return {
         "text": "Reflection layer arrives in Phase 15.3. Session complete.",

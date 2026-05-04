@@ -331,21 +331,26 @@ export default function SolvaV2Poc() {
                 </tr>
               </thead>
               <tbody>
-                {latestAudit.map((e) => (
-                  <tr key={e.id} style={{ borderTop: "1px solid var(--rule)" }}>
-                    <td style={{ padding: "4px 6px" }}>{e.layer}</td>
-                    <td style={{ padding: "4px 6px" }}>{e.engine}</td>
-                    <td style={{ padding: "4px 6px" }}>{e.engine_version}</td>
-                    <td style={{ padding: "4px 6px" }}>{(e.tier_labels || []).join(",") || "—"}</td>
-                    <td style={{ padding: "4px 6px" }}>{e.latency_ms}ms</td>
-                    <td style={{ padding: "4px 6px" }}>{e.model || "—"}</td>
-                    <td style={{ padding: "4px 6px" }}>
-                      {e.synisense_run_id
-                        ? <span title={e.synisense_run_id} style={{ color: "var(--opportunity)" }}>ok</span>
-                        : <span style={{ color: "var(--muted)" }}>—</span>}
-                    </td>
-                  </tr>
-                ))}
+                {latestAudit.map((e) => {
+                  const muted = e.engine === "placeholder";
+                  return (
+                    <tr key={e.id} style={{ borderTop: "1px solid var(--rule)", opacity: muted ? 0.55 : 1 }}>
+                      <td style={{ padding: "4px 6px" }}>{e.layer}</td>
+                      <td style={{ padding: "4px 6px", fontStyle: muted ? "italic" : "normal" }}>{e.engine}</td>
+                      <td style={{ padding: "4px 6px" }}>{e.engine_version}</td>
+                      <td style={{ padding: "4px 6px" }}>{(e.tier_labels || []).join(",") || "—"}</td>
+                      <td style={{ padding: "4px 6px" }}>{e.latency_ms}ms</td>
+                      <td style={{ padding: "4px 6px" }}>{e.model || "—"}</td>
+                      <td style={{ padding: "4px 6px" }}>
+                        {e.synisense_run_id
+                          ? <span title={e.synisense_run_id} style={{ color: "var(--opportunity)" }}>ok</span>
+                          : <span title={e.shield_bypassed_reason || ""} style={{ color: "var(--muted)" }}>
+                              {e.shield_bypassed_reason ? "bypass" : "—"}
+                            </span>}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -30,6 +30,21 @@ logger = logging.getLogger("akki.synisense.pipeline")
 
 _VALID_SURFACES = {"chat", "ingest", "briefing", "deck", "report",
                    "solve", "solve_v2", "public_read"}
+
+# Phase 15.1 anticipates per-engine sub-surfaces under solve_v2 so the perf
+# ring buffer can separate (e.g.) triangulation latency from synthesis
+# latency. Allow any surface of the form "solve_v2.<segment>" where segment
+# is non-empty lowercase [a-z0-9_]. Hyphens and capitals are rejected
+# deliberately so engine names stay snake_case.
+_SOLVE_V2_SUB_RE = __import__("re").compile(r"^solve_v2\.[a-z0-9_]+$")
+
+
+def _is_valid_surface(surface: str) -> bool:
+    """Return True iff `surface` is in the explicit allow-list OR is a
+    well-formed solve_v2 sub-surface."""
+    if surface in _VALID_SURFACES:
+        return True
+    return bool(_SOLVE_V2_SUB_RE.match(surface or ""))
 _VALID_MODES = {"redact", "shield_reversible", "passthrough_classify"}
 
 _LOW_CONFIDENCE_THRESHOLD = 0.55
@@ -252,7 +267,7 @@ async def dryrun(
     """Execute the pipeline WITHOUT persisting anything. Returns the
     locked contract output plus internal debug fields. Writes to the
     perf ring buffer so admins can benchmark via real traffic."""
-    if surface not in _VALID_SURFACES:
+    if not _is_valid_surface(surface):
         raise ValueError(f"invalid surface: {surface}")
     if mode not in _VALID_MODES:
         raise ValueError(f"invalid mode: {mode}")
@@ -277,7 +292,7 @@ async def run(
     output including `shield_map_id` if mode=="shield_reversible".
     Writes `synisense_runs` (always) and `synisense_shield_maps`
     (only for shield_reversible). Audits every run."""
-    if surface not in _VALID_SURFACES:
+    if not _is_valid_surface(surface):
         raise ValueError(f"invalid surface: {surface}")
     if mode not in _VALID_MODES:
         raise ValueError(f"invalid mode: {mode}")

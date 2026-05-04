@@ -37,7 +37,19 @@ ENGINE_VERSIONS: Dict[str, str] = {
     "candidate_generation": "candidate_generation@0.1-stub",
     "probability_weighting": "probability_weighting@0.1-stub",
     "refusal": "refusal@0.1-stub",
+    "placeholder": "placeholder@1.0",
 }
+
+
+# Phase 15.0 hardening — locked vocabulary for shield_bypassed_reason.
+# Every audit entry with shield_required=False MUST carry exactly one of
+# these reasons, so the audit log never has to be interpreted to know why
+# Synisense was not invoked.
+SHIELD_BYPASS_REASONS = frozenset({
+    "engine_does_not_call_llm",  # generic — engine is not an LLM call site
+    "placeholder_stub",          # stub returning canned content for 15.0
+    "deterministic_only",        # pure DB / arithmetic / parser; no model
+})
 
 
 @dataclass
@@ -181,6 +193,8 @@ async def shielded_call(
     latency_ms = int((_time.monotonic() - t0) * 1000)
 
     # 4. Assemble audit entry.
+    # Phase 15.0 hardening: shielded_call ALWAYS represents a real LLM egress
+    # so shield_required is always True and synisense_run_id is non-null.
     audit_entry: Dict[str, Any] = {
         "id": str(uuid.uuid4()),
         "turn_id": turn_id,
@@ -202,6 +216,8 @@ async def shielded_call(
         "provider": provider,
         "created_at": iso(now()),
         "synisense_run_id": syn_run_id,
+        "shield_required": True,
+        "shield_bypassed_reason": None,
     }
     if validation is not None:
         audit_entry["output"]["validator_verdict"] = validation.get("verdict")
@@ -234,10 +250,45 @@ async def synthetic_audit_entry(
     engine_version: Optional[str] = None,
     synisense_run_id: Optional[str] = None,
     latency_ms: int = 0,
+    shield_required: bool = False,
+    shield_bypassed_reason: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Emit an audit entry for engines that do NOT call the LLM (triangulation,
-    stubs). input_hash covers the textual inputs that went into the engine so
-    a reviewer can tell two calls apart."""
+    """Emit an audit entry for engine calls that do NOT go through the
+    `shielded_call` adapter directly.
+
+    Phase 15.0 hardening contract:
+        - shield_required=False  -> synisense_run_id MUST be None,
+                                    shield_bypassed_reason MUST be one of
+                                    SHIELD_BYPASS_REASONS.
+        - shield_required=True   -> synisense_run_id MUST be non-None,
+                                    shield_bypassed_reason MUST be None.
+                                    Used by callers (e.g. the validator)
+                                    that send content to an external LLM
+                                    out-of-band but ride on a prior shielded
+                                    input; they pass the upstream run_id.
+
+    Violations raise ValueError so the audit log can never become ambiguous.
+    """
+    if shield_required:
+        if not synisense_run_id:
+            raise ValueError(
+                "shield_required=True audit entries must carry synisense_run_id"
+            )
+        if shield_bypassed_reason is not None:
+            raise ValueError(
+                "shield_required=True must not carry shield_bypassed_reason"
+            )
+    else:
+        if synisense_run_id is not None:
+            raise ValueError(
+                "shield_required=False audit entries must NOT carry synisense_run_id"
+            )
+        if shield_bypassed_reason not in SHIELD_BYPASS_REASONS:
+            raise ValueError(
+                f"shield_bypassed_reason must be one of {sorted(SHIELD_BYPASS_REASONS)}; "
+                f"got {shield_bypassed_reason!r}"
+            )
+
     ihash_basis = f"{engine}:{layer}:{turn_id}:" + ":".join(
         f"{k}={output.get(k)}" for k in sorted(output.keys()) if isinstance(output.get(k), (str, int, float))
     )
@@ -256,4 +307,6 @@ async def synthetic_audit_entry(
         "provider": None,
         "created_at": iso(now()),
         "synisense_run_id": synisense_run_id,
+        "shield_required": shield_required,
+        "shield_bypassed_reason": shield_bypassed_reason,
     }
