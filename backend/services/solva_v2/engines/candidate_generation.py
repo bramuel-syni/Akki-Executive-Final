@@ -114,14 +114,21 @@ async def run(
     intent: str,
     cluster: Dict[str, Any],
     comparables: Optional[List[Dict[str, Any]]] = None,
+    relax_responsiveness: bool = False,
 ) -> Dict[str, Any]:
     """Generate candidate framings via shielded LLM call. Validator pass.
+
+    `relax_responsiveness=True` is set by the orchestrator on the turn
+    immediately following a Phase 15.3 therapy_redirect — the user is
+    expected to pivot, so demanding word-overlap with the original
+    intent on every candidate would falsely fail. Distinctness +
+    count-bounds checks still apply.
 
     Returns {output: {candidates: [...]}, audit_entry: {...}, audit_extras: [...]}
     where audit_extras carries any retry attempts so the orchestrator can
     append the full picture.
     """
-    from .llm_adapter_proxy import shielded_call, synthetic_audit_entry
+    from .llm_adapter_proxy import shielded_call, synthetic_audit_entry  # noqa: F401
 
     user_query = (
         f"User intent:\n{intent}\n\n"
@@ -146,23 +153,28 @@ async def run(
             session_id=session["id"],
             context_id=session.get("context_id"),
             engine_version=ENGINE_VERSION,
-            extra_output={"attempt": attempt + 1},
+            extra_output={
+                "attempt": attempt + 1,
+                "redirect_recovery": bool(relax_responsiveness),
+            },
         )
         audit_entries.append(result.reasoning_audit_entry)
 
         candidates = _parse_candidates(result.text)
         # Lightweight validator: distinctness + count bounds + responsiveness
-        # via word overlap with the intent.
+        # via word overlap with the intent. Phase 15.3 — responsiveness check
+        # is suppressed on the post-therapy-redirect turn.
         distinct = _candidates_distinct(candidates)
         in_bounds = 2 <= len(candidates) <= 4
-        intent_words = {w.lower() for w in re.findall(r"\w+", intent or "") if len(w) > 3}
         responsive = True
-        if intent_words:
-            for c in candidates:
-                cand_words = {w.lower() for w in re.findall(r"\w+", c["hypothesis"]) if len(w) > 3}
-                if not (cand_words & intent_words):
-                    responsive = False
-                    break
+        if not relax_responsiveness:
+            intent_words = {w.lower() for w in re.findall(r"\w+", intent or "") if len(w) > 3}
+            if intent_words:
+                for c in candidates:
+                    cand_words = {w.lower() for w in re.findall(r"\w+", c["hypothesis"]) if len(w) > 3}
+                    if not (cand_words & intent_words):
+                        responsive = False
+                        break
 
         verdict = "accepted" if (distinct and in_bounds and responsive) else "rejected"
         last_validator_verdict = verdict

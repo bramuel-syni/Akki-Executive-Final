@@ -329,6 +329,7 @@ async def _run_grounding(
         session=session, turn_id=turn_id, layer="grounding",
         intent=session["intent"], cluster=cluster,
         comparables=tri["output"]["comparables"],
+        relax_responsiveness=bool(session.get("redirect_recovery")),
     )
     audit_entries.extend(cands["audit_entries"])
     # Record retry events for the admin dashboard.
@@ -753,6 +754,14 @@ async def start_session(
         if decision.new_status:
             guard_update["status"] = decision.new_status
             guard_update["blocked_at"] = iso(now())
+        # Phase 15.3 fix — therapy_redirect leaves the session active,
+        # so the next user turn drives the same layer's engines. The
+        # candidate_generation engine's responsiveness validator is
+        # fragile against context drift introduced by the redirect+pivot;
+        # set a one-shot flag the orchestrator consumes on the very next
+        # turn to relax the validator.
+        if decision.action == "therapy_redirect":
+            guard_update["redirect_recovery"] = True
         await db.solva_v2_sessions.update_one(
             {"id": session_id},
             {"$push": {
@@ -767,6 +776,8 @@ async def start_session(
             rec["jailbreak_soft_count"] = 1
         if decision.new_status:
             rec["status"] = decision.new_status
+        if decision.action == "therapy_redirect":
+            rec["redirect_recovery"] = True
         rec.pop("_id", None)
         return rec
 
@@ -1175,6 +1186,14 @@ async def post_turn(
         if decision.new_status:
             guard_update["status"] = decision.new_status
             guard_update["blocked_at"] = iso(now())
+        # Phase 15.3 fix — therapy_redirect leaves the session active and
+        # the user is expected to pivot. The next turn re-runs whatever
+        # layer's engines were dispatched. Set a one-shot recovery flag
+        # so the candidate_generation engine relaxes its responsiveness
+        # validator on that follow-on turn (the redirect+pivot sequence
+        # legitimately introduces vocabulary drift).
+        if decision.action == "therapy_redirect":
+            guard_update["redirect_recovery"] = True
         await db.solva_v2_sessions.update_one(
             {"id": sid, "account_id": account["id"]},
             {"$push": {
@@ -1189,6 +1208,8 @@ async def post_turn(
             rec["jailbreak_soft_count"] = guard_update["jailbreak_soft_count"]
         if decision.new_status:
             rec["status"] = decision.new_status
+        if decision.action == "therapy_redirect":
+            rec["redirect_recovery"] = True
         rec.pop("_id", None)
         return rec
 
@@ -1201,6 +1222,13 @@ async def post_turn(
 
     solve_turn_id = str(uuid.uuid4())
     update_fields: Dict[str, Any] = {"updated_at": iso(now())}
+    # Phase 15.3 fix — consume the one-shot redirect_recovery flag set by
+    # the prior therapy_redirect turn. Engines read it from `rec` before
+    # we write back, so they get the True value; the DB write clears it,
+    # and we mirror that on the in-memory rec so the response is accurate.
+    consumed_redirect_recovery = bool(rec.get("redirect_recovery"))
+    if consumed_redirect_recovery:
+        update_fields["redirect_recovery"] = False
     solve_text = ""
     solve_model: Optional[str] = None
     solve_tier: Optional[str] = None
@@ -1415,6 +1443,11 @@ async def post_turn(
         },
          "$set": update_fields},
     )
+    # Phase 15.3 fix — mirror the DB-side redirect_recovery clear on the
+    # in-memory rec we're about to return so the API response accurately
+    # reflects post-turn state.
+    if consumed_redirect_recovery:
+        rec["redirect_recovery"] = False
     rec.pop("_id", None)
     # Strip private grounding scratchpad fields before returning to client.
     rec.pop("_grounding_comparables", None)
