@@ -105,12 +105,17 @@ async function loadAll(cid) {
   const out = { briefings: [], decks: [], reports: [], errors: [] };
   try {
     const { data } = await api.get(`/contexts/${cid}/briefings`);
-    const items = (data?.items || data?.briefings || []).filter((b) => (b.status || "draft") !== "sent");
+    // Backend GET /api/contexts/{cid}/briefings returns a bare list, NOT an
+    // {items:[...]} envelope (decks/reports do envelope it). Accept both
+    // shapes so a future schema unification doesn't break this surface.
+    const raw = Array.isArray(data) ? data : (data?.items || data?.briefings || []);
+    const items = raw.filter((b) => (b.status || "draft") !== "sent");
     out.briefings = items.map((b) => ({ ...b, href: `/app/studio/composer/briefing/${b.id}` }));
   } catch (e) { out.errors.push(["briefings", apiErrorMessage(e)]); }
   try {
     const { data } = await api.get(`/contexts/${cid}/decks`);
-    const items = (data?.items || data?.decks || []).filter((d) => (d.status || "draft") !== "sent");
+    const raw = Array.isArray(data) ? data : (data?.items || data?.decks || []);
+    const items = raw.filter((d) => (d.status || "draft") !== "sent");
     out.decks = items.map((d) => ({ ...d, href: `/app/decks/${d.id}` }));
   } catch (e) { out.errors.push(["decks", apiErrorMessage(e)]); }
   try {

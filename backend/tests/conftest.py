@@ -42,8 +42,10 @@ if BACKEND_DIR not in sys.path:
 def event_loop():
     """Single event loop for the entire test session.
 
-    Without this override, pytest-asyncio creates a per-function loop and
-    Motor's client latches onto a loop that closes between tests.
+    Phase 15.1: bumped pytest-asyncio to >=0.25 in requirements.txt and set
+    `asyncio_default_fixture_loop_scope = session` in pytest.ini so this
+    override is no longer deprecated. Motor's module-singleton client
+    needs a stable loop for the lifetime of the suite.
     """
     loop = asyncio.new_event_loop()
     yield loop

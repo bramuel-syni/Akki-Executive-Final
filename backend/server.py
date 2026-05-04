@@ -613,4 +613,12 @@ async def on_shutdown():
     sched = getattr(app.state, "scheduler", None)
     if sched:
         sched.shutdown(wait=False)
+    # Phase 15.1: skip closing Motor when running under pytest. Tests use
+    # httpx.ASGITransport(app=app) and exit their `async with` block per
+    # test, which fires this shutdown event. Closing the module-singleton
+    # Motor client here would kill every subsequent test that touches the
+    # DB. In production every restart is via supervisor SIGTERM where the
+    # container exits regardless, so the close is moot there too.
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return
     client.close()

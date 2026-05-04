@@ -198,12 +198,18 @@ export default function AppShell({ children }) {
     <div className="min-h-screen flex flex-col bg-[var(--cream)]">
       <SandboxBanner />
       <SandboxEmailCapture />
-      {/* Top chrome — cream, 64px, 1px rule border */}
+      {/* Top chrome — cream, 64px, 1px rule border. 3-region flex: left
+          (logo) / centre (trust badge, allowed to shrink/hide) / right
+          (palette + nav controls). Phase 15.1: switched away from
+          justify-between + absolute-centred badge — at ~1024-1280px the
+          right cluster crossed the centreline and the trust badge
+          rendered on top of the ⌘K palette pill. */}
       <header
-        className="relative bg-[var(--cream)] text-[var(--ink)] border-b border-[var(--rule)] h-16 sticky top-0 z-40 flex items-center px-6 justify-between"
+        className="bg-[var(--cream)] text-[var(--ink)] border-b border-[var(--rule)] h-16 sticky top-0 z-40 flex items-center gap-4 px-6"
         data-testid="top-header"
       >
-        <div className="flex items-center gap-8">
+        {/* LEFT — logo */}
+        <div className="flex items-center gap-8 flex-shrink-0">
           <Link to="/app" data-testid="header-home-link" className="flex items-baseline gap-2.5 leading-none">
             <span className="akki-serif text-[24px] text-[var(--navy)] tracking-tight">AKKI</span>
             <span className="hidden sm:inline akki-serif italic text-[13.5px] text-[var(--muted)] tracking-tight" data-testid="brand-subtitle">
@@ -211,8 +217,11 @@ export default function AppShell({ children }) {
             </span>
           </Link>
         </div>
+        {/* CENTRE — trust badge. Shrinks on narrow widths and disappears
+            entirely below xl (1280px) so it can never overlap the right
+            cluster's controls. Marker only — no interactive behaviour. */}
         <div
-          className="hidden md:flex absolute left-1/2 -translate-x-1/2 items-center gap-1 text-[10px] tracking-[0.2em] uppercase text-[var(--muted)] pointer-events-none"
+          className="hidden xl:flex flex-1 min-w-0 justify-center items-center gap-1 text-[10px] tracking-[0.2em] uppercase text-[var(--muted)] pointer-events-none truncate"
           data-testid="trust-badge"
         >
           <span className="text-[var(--accent)]">Internal</span>
@@ -221,8 +230,11 @@ export default function AppShell({ children }) {
           <span className="opacity-40">·</span>
           <span>Confidential</span>
         </div>
+        {/* Spacer that fills the centre region when the trust badge is
+            hidden, so the right cluster stays anchored to the right edge. */}
+        <div className="xl:hidden flex-1" aria-hidden="true" />
 
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-5 flex-shrink-0">
           {/* Continue-with-doc pill — Tier-B persistent thread back to the
               last document the executive opened in QuickResults. Hidden
               on surfaces where it would be redundant. */}
