@@ -706,7 +706,7 @@ function HandoffStrip({ session, onUpdate }) {
   const fire = async (target) => {
     setErr("");
     if (!contextId) {
-      setErr("Pick a context to push the handoff into.");
+      setErr("Pick a company to push the handoff into.");
       return;
     }
     setBusy(target);

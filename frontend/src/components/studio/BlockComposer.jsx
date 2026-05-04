@@ -46,7 +46,7 @@ const PALETTE = [
   { kind: "paragraph",                label: "Text",          desc: "Plain editorial paragraph.",                   Icon: Type },
   { kind: "bulleted_list",            label: "Bulleted list", desc: "Short list of items, one per line.",          Icon: ListIcon },
   { kind: "callout",                  label: "Callout",       desc: "Info / warn / risk callout.",                  Icon: AlertTriangle },
-  { kind: "citation",                 label: "Citation",      desc: "Quote sourced from a context document.",       Icon: Quote },
+  { kind: "citation",                 label: "Citation",      desc: "Quote sourced from a company document.",       Icon: Quote },
   { kind: "signal_card",              label: "Signal / metric", desc: "Reference a signal · optional metric.",     Icon: BarChart3 },
   { kind: "divider",                  label: "Divider",       desc: "Horizontal rule.",                             Icon: Minus },
   { kind: "table",                    label: "Table",         desc: "Headers + rows, plain text cells.",            Icon: TableIcon },

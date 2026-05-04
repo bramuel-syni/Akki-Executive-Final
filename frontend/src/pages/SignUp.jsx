@@ -96,7 +96,7 @@ export default function SignUp() {
           <div className="mt-10 space-y-3 pt-8 border-t border-white/10 text-sm">
             <div className="flex items-start gap-3">
               <span className="w-6 h-6 border border-[var(--accent)]/50 text-[var(--accent)] text-[10px] flex items-center justify-center tracking-wider">1</span>
-              <div><p className="font-medium text-white/90">Create account</p><p className="text-white/45 text-xs">Your email, your first context</p></div>
+              <div><p className="font-medium text-white/90">Create account</p><p className="text-white/45 text-xs">Your email, your first company</p></div>
             </div>
             <div className="flex items-start gap-3">
               <span className="w-6 h-6 border border-white/20 text-white/40 text-[10px] flex items-center justify-center tracking-wider">2</span>
@@ -171,7 +171,7 @@ export default function SignUp() {
                     Keep my sandbox as a working context
                   </div>
                   <p className="text-[11.5px] text-[var(--muted)] mt-0.5 leading-relaxed">
-                    {activeContext?.name ? <><span className="text-[var(--ink)]">{activeContext.name}</span>'s fictional data stays put — you can edit, annotate, or delete it any time.</> : "Keep your explored sandbox as a starting-point context."}
+                    {activeContext?.name ? <><span className="text-[var(--ink)]">{activeContext.name}</span>'s fictional data stays put — you can edit, annotate, or delete it any time.</> : "Keep your explored sandbox as a starting-point company."}
                   </p>
                 </div>
               </label>

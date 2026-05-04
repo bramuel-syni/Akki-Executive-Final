@@ -175,7 +175,7 @@ export default function AppShell({ children }) {
         toast.success(`Switched to ${match.name} for your ${r === "ned" ? "NED" : "Executive"} role`);
       } else {
         toast.message(
-          `No ${r === "ned" ? "NED" : "Executive"} context yet`,
+          `No ${r === "ned" ? "NED" : "Executive"} company yet`,
           { description: "Create or accept an invite to set one up." }
         );
       }
@@ -464,7 +464,7 @@ export default function AppShell({ children }) {
               onClick={() => setUploadOpen(true)}
               className="w-full flex items-center justify-center gap-2 bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-full h-10 px-4 shadow-sm transition-all text-[13px] font-medium"
               data-testid="sidebar-upload-btn"
-              title="Add a document to this context"
+              title="Add a document to this company"
             >
               <Plus className="w-4 h-4" strokeWidth={2.4} />
               Add document
@@ -774,7 +774,7 @@ export default function AppShell({ children }) {
             <kbd className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-sm">esc</kbd>
           </div>
           <div className="max-h-80 overflow-y-auto py-2">
-            <p className="px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-slate-400">Contexts</p>
+            <p className="px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-slate-400">Companies</p>
             {contexts
               .filter((c) => !paletteQuery || c.name.toLowerCase().includes(paletteQuery.toLowerCase()))
               .map((c) => {
@@ -807,7 +807,7 @@ export default function AppShell({ children }) {
               data-testid="palette-new-context-btn"
             >
               <Sparkles className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.6} />
-              <span className="text-sm text-[var(--ink)]">Add a context…</span>
+              <span className="text-sm text-[var(--ink)]">Add a company…</span>
             </button>
             <button
               onClick={() => { setPaletteOpen(false); navigate("/app/settings"); }}

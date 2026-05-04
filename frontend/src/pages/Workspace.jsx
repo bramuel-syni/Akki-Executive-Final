@@ -607,11 +607,11 @@ export default function Workspace() {
   const onCitationClick = (docId) => {
     const exists = docs.some((d) => d.id === docId);
     if (exists) setSelectedDocId(docId);
-    else toast.message("That document is no longer in this context.");
+    else toast.message("That document is no longer in this company.");
   };
 
   if (!contextId) {
-    return <AppShell><div className="p-12 text-center text-slate-500 text-sm">No context selected.</div></AppShell>;
+    return <AppShell><div className="p-12 text-center text-slate-500 text-sm">No company selected.</div></AppShell>;
   }
 
   const askHeader = (

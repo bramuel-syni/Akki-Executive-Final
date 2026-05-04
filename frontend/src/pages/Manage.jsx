@@ -193,7 +193,7 @@ function TeamPanel() {
     return (
       <div className="bg-white border border-[var(--rule)] rounded-lg p-12 text-center">
         <p className="akki-lead mb-2">Pick a company first.</p>
-        <p className="text-[13px] text-[var(--muted)]">Switch to the context whose team you want to manage.</p>
+        <p className="text-[13px] text-[var(--muted)]">Switch to the company whose team you want to manage.</p>
       </div>
     );
   }
@@ -404,7 +404,7 @@ function CompaniesPanel() {
           <Building2 className="w-10 h-10 text-[var(--muted)]/40 mx-auto mb-4" strokeWidth={1.3} />
           <p className="akki-lead mb-2">No companies yet.</p>
           <p className="text-[13px] text-[var(--muted)] mb-5 max-w-md mx-auto">
-            Spin up your first board or executive context to start reading with receipts.
+            Spin up your first board or executive company to start reading with receipts.
           </p>
           <Button
             onClick={() => navigate("/app/contexts/new")}

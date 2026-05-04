@@ -43,7 +43,7 @@ export default function HomeDual() {
             </h2>
             <Link to="/app/work-studio" className="block p-5 border border-[var(--rule)] bg-white rounded-md hover:bg-[var(--cream-deep)]/40 transition-colors">
               <p className="akki-overline mb-2 text-[var(--muted)]">Work Studio</p>
-              <p className="text-[14px] text-[var(--ink)] mb-1">In-flight briefings, decks, and reports for {activeContext?.name || "this context"}.</p>
+              <p className="text-[14px] text-[var(--ink)] mb-1">In-flight briefings, decks, and reports for {activeContext?.name || "this company"}.</p>
               <span className="text-[12.5px] text-[var(--accent)] inline-flex items-center gap-1">Open Work Studio <ArrowRight className="w-3 h-3" /></span>
             </Link>
             <Link to="/app/cycle?tab=overview" className="block p-5 border border-[var(--rule)] bg-white rounded-md hover:bg-[var(--cream-deep)]/40 transition-colors">

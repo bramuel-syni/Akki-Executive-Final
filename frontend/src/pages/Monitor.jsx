@@ -100,7 +100,7 @@ export default function Monitor() {
           <p className="akki-meta max-w-2xl">
             {isNED
               ? `Each expectation set for ${activeContext?.name || "this board"}, the current score, and the probability of hitting it.`
-              : `${FUNCTION_LABEL[fn] || "Executive"} view of ${activeContext?.name || "this context"} — board-tracked goals you own, plus signals and cycle items adapted to your function.`}
+              : `${FUNCTION_LABEL[fn] || "Executive"} view of ${activeContext?.name || "this company"} — board-tracked goals you own, plus signals and cycle items adapted to your function.`}
           </p>
 
           {/* Function indicator — read-only, with a small change affordance.
@@ -211,7 +211,7 @@ function SecondaryTiles({ data, fn, isNED }) {
             </Link>
           </>
         ) : (
-          <p className="text-[13px] text-[var(--muted)] italic">No signals match your function on this context.</p>
+          <p className="text-[13px] text-[var(--muted)] italic">No signals match your function on this company.</p>
         )}
       </Tile>
 

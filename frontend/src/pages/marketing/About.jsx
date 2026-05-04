@@ -31,7 +31,7 @@ const AUDIENCE_CARDS = [
     chip: "For Non-Executive Directors",
     h: "Sitting on five boards at once.",
     body:
-      "Each board gets its own sealed context. The Audit pack you read at 7am can't bleed into the Risk pack at 10am. Each pack arrives pre-read with the three things to raise in the room.",
+      "Each board gets its own sealed company workspace. The Audit pack you read at 7am can't bleed into the Risk pack at 10am. Each pack arrives pre-read with the three things to raise in the room.",
     testid: "audience-ned",
   },
   {

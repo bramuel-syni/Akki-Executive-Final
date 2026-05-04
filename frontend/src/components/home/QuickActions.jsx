@@ -52,7 +52,7 @@ const TILE_DEFS = [
     key: "monitor_performance",
     role: "any", customRoute: "/app/monitor",
     label: "Monitor your performance",
-    body: "Dials, drift, and where you're spending vs delivering — for this context.",
+    body: "Dials, drift, and where you're spending vs delivering — for this company.",
     icon: Activity,
     // Steady mid-priority — always within reach but never noisy.
     priority: () => 35,

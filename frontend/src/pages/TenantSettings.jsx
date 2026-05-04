@@ -51,9 +51,9 @@ function formatDate(iso) {
 }
 
 const ACTION_LABELS = {
-  "context.created": "Context created",
-  "context.renamed": "Context renamed",
-  "context.archived": "Context archived",
+  "context.created": "Company created",
+  "context.renamed": "Company renamed",
+  "context.archived": "Company archived",
   "context.exported": "Data exported",
   "member.invited": "Member invited",
   "member.joined": "Member joined",
@@ -178,7 +178,7 @@ export default function Settings() {
     try {
       await api.post(`/contexts/${cid}/leave`);
       await refreshContexts();
-      toast.success("You've left the context");
+      toast.success("You've left the company");
       if (cid === activeContext?.id && contexts.length > 1) {
         const next = contexts.find((c) => c.id !== cid);
         if (next) switchContext(next.id);
@@ -193,7 +193,7 @@ export default function Settings() {
     try {
       await api.patch(`/contexts/${contextId}`, { name: contextName.trim() });
       await refreshContexts(); await loadContextData();
-      toast.success("Context renamed");
+      toast.success("Company renamed");
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setRenaming(false); }
   };
@@ -246,7 +246,7 @@ export default function Settings() {
   const onArchive = async () => {
     try {
       await api.delete(`/contexts/${contextId}`);
-      toast.success("Context archived");
+      toast.success("Company archived");
       await refreshContexts(); navigate("/app");
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
@@ -269,7 +269,7 @@ export default function Settings() {
           <p className="akki-overline mb-2">Administration · Module M1</p>
           <h1 className="text-3xl font-light tracking-tight text-[var(--ink)]">Settings</h1>
           <p className="text-sm text-slate-500 mt-2">
-            Your account, your contexts, and how AKKI treats your data.
+            Your account, your companies, and how AKKI treats your data.
           </p>
         </div>
 
@@ -277,8 +277,8 @@ export default function Settings() {
           <TabsList className="bg-transparent border-b border-[#E1E6ED] w-full justify-start h-auto p-0 rounded-none mb-8 overflow-x-auto">
             {[
               ["account", "Account", UserCircle2],
-              ["contexts", "Contexts", Layers],
-              ["context", "This context", UserCog],
+              ["contexts", "Companies", Layers],
+              ["context", "This company", UserCog],
               ["members", "Members", Users],
               ["audit", "Audit log", History],
               ["privacy", "Trust", ShieldCheck],
@@ -389,9 +389,9 @@ export default function Settings() {
             <section>
               <div className="flex items-end justify-between mb-5">
                 <div>
-                  <p className="akki-overline mb-2">Your contexts</p>
+                  <p className="akki-overline mb-2">Your companies</p>
                   <h2 className="text-xl font-medium tracking-tight text-[var(--ink)]">
-                    {contexts.length} {contexts.length === 1 ? "context" : "contexts"}
+                    {contexts.length} {contexts.length === 1 ? "company" : "companies"}
                   </h2>
                 </div>
                 <Button
@@ -399,7 +399,7 @@ export default function Settings() {
                   className="bg-[var(--accent)] hover:bg-[var(--accent)] text-[var(--ink)] rounded-sm h-9 font-medium"
                   data-testid="add-context-btn"
                 >
-                  <Sparkles className="w-4 h-4 mr-2" /> Add context
+                  <Sparkles className="w-4 h-4 mr-2" /> Add company
                 </Button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -473,7 +473,7 @@ export default function Settings() {
                               <AlertDialogFooter>
                                 <AlertDialogCancel className="rounded-sm">Cancel</AlertDialogCancel>
                                 <AlertDialogAction className="bg-red-600 hover:bg-red-700 rounded-sm" onClick={() => onLeaveContext(c.id)} data-testid={`confirm-leave-${c.id}`}>
-                                  Leave context
+                                  Leave company
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
@@ -492,7 +492,7 @@ export default function Settings() {
             <section className="bg-white border border-[#E1E6ED] rounded-sm">
               <div className="px-6 py-4 border-b border-[#E1E6ED]">
                 <p className="text-sm font-medium text-[var(--ink)]">Company identity</p>
-                <p className="text-xs text-slate-500 mt-0.5">Visible to every member of this context.</p>
+                <p className="text-xs text-slate-500 mt-0.5">Visible to every member of this company.</p>
               </div>
               <form onSubmit={onRename} className="p-6 space-y-4 max-w-md" data-testid="rename-form">
                 <div className="space-y-2">
@@ -555,7 +555,7 @@ export default function Settings() {
                 <div>
                   <p className="text-sm font-medium text-[var(--ink)]">Export company data</p>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    JSON snapshot — context, members, invitations, audit, telemetry, consent decisions.
+                    JSON snapshot — company, members, invitations, audit, telemetry, consent decisions.
                   </p>
                 </div>
                 {isAdmin && (
@@ -575,7 +575,7 @@ export default function Settings() {
               <div className="px-6 py-4 border-b border-[#E1E6ED] flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-[var(--ink)]">Members <span className="text-slate-400 font-normal">({members.length})</span></p>
-                  <p className="text-xs text-slate-500 mt-0.5">Admins manage this context; members contribute.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Admins manage this company; members contribute.</p>
                 </div>
                 {isAdmin && (
                   <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
@@ -588,7 +588,7 @@ export default function Settings() {
                       <DialogHeader>
                         <DialogTitle className="font-light tracking-tight text-xl text-[var(--ink)]">Invite to {activeContext.name}</DialogTitle>
                         <DialogDescription className="text-slate-500 text-sm">
-                          The invitee will receive a context-scoped link. Invites expire in 7 days.
+                          The invitee will receive a company-scoped link. Invites expire in 7 days.
                         </DialogDescription>
                       </DialogHeader>
                       <form onSubmit={onInvite} className="space-y-4 py-2" data-testid="invite-form">
@@ -857,13 +857,13 @@ export default function Settings() {
               <div className="px-6 py-4 border-b border-[#E1E6ED]">
                 <p className="text-sm font-medium text-[var(--ink)]">Consent decisions</p>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Immutable record of consent granted/withdrawn for sponsored contexts. Populated when someone sponsors a seat for you in M4.
+                  Immutable record of consent granted/withdrawn for sponsored companies. Populated when someone sponsors a seat for you in M4.
                 </p>
               </div>
               <div className="p-6">
                 {consentLog.length === 0 ? (
                   <p className="text-sm text-slate-400 py-4 text-center italic">
-                    No consent decisions recorded yet. This ledger will populate when an organisation sponsors a context for you.
+                    No consent decisions recorded yet. This ledger will populate when an organisation sponsors a company for you.
                   </p>
                 ) : (
                   <ul className="space-y-3" data-testid="consent-log">
@@ -902,9 +902,9 @@ export default function Settings() {
               <div className="p-6 space-y-6">
                 <div className="flex items-start justify-between gap-6">
                   <div>
-                    <p className="text-sm font-medium text-[var(--ink)] mb-1">Archive this context</p>
+                    <p className="text-sm font-medium text-[var(--ink)] mb-1">Archive this company</p>
                     <p className="text-xs text-slate-600 max-w-xl leading-relaxed">
-                      Archiving marks the context inactive and schedules hard purge in 7 days.
+                      Archiving marks the company inactive and schedules hard purge in 7 days.
                       Members lose access immediately. Admins can export data first.
                     </p>
                   </div>
@@ -912,7 +912,7 @@ export default function Settings() {
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button variant="outline" className="border-red-500 text-red-600 hover:bg-red-50 rounded-sm h-9 whitespace-nowrap" data-testid="archive-context-btn">
-                          <ArchiveX className="w-4 h-4 mr-2" /> Archive context
+                          <ArchiveX className="w-4 h-4 mr-2" /> Archive company
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent className="rounded-sm">

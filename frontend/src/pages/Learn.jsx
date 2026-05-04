@@ -297,7 +297,7 @@ export default function Learn() {
       const { data } = await api.post("/learn/research", payload, { timeout: 120000 });
       setAdHocCache((prev) => [{ ...data, content_type: "tl_article" }, ...prev]);
       if (data.personalised) {
-        toast.success(`AKKI researched that, weighted to ${data.personalisation_from?.jurisdiction || "your context"}.`);
+        toast.success(`AKKI researched that, weighted to ${data.personalisation_from?.jurisdiction || "your company"}.`);
       } else {
         toast.success("AKKI researched that for you.");
       }

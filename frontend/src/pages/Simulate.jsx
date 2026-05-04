@@ -240,7 +240,7 @@ export default function Simulate() {
   }, [list, committeeId]);
 
   if (!contextId) {
-    return <AppShell><div className="p-12 text-center text-sm text-[var(--muted)]">No context selected.</div></AppShell>;
+    return <AppShell><div className="p-12 text-center text-sm text-[var(--muted)]">No company selected.</div></AppShell>;
   }
 
   return (

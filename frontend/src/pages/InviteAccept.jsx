@@ -9,8 +9,8 @@ import { ArrowRight, CheckCircle2, Mail } from "lucide-react";
 const CONTEXT_TYPE_LABEL = {
   ned_personal: "NED personal board",
   ned_sponsored: "NED sponsored board",
-  executive_personal: "Executive personal context",
-  executive_enterprise: "Executive enterprise context",
+  executive_personal: "Executive personal company",
+  executive_enterprise: "Executive enterprise company",
 };
 
 export default function InviteAccept() {
@@ -46,7 +46,7 @@ export default function InviteAccept() {
     <div className="min-h-screen flex items-center justify-center bg-[#FAFBFC] p-6">
       <div className="w-full max-w-md bg-white border border-[#E1E6ED] rounded-sm p-10 akki-fade-up" data-testid="invite-accept-card">
         <div className="mb-8"><Logo size="lg" /></div>
-        <p className="akki-overline mb-3">Context invitation</p>
+        <p className="akki-overline mb-3">Company invitation</p>
 
         {error ? (
           <>

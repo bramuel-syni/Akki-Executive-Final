@@ -92,7 +92,7 @@ function ContextCard({ c, active, metrics, onOpen }) {
       {/* Gesture */}
       <div className="flex items-center justify-between mt-4 pt-3 border-t border-[var(--rule)]/50">
         <span className="text-[11px] text-[var(--muted)]">
-          {active ? "Current context" : "Switch to this context"}
+          {active ? "Current company" : "Switch to this company"}
         </span>
         <span className="akki-gesture text-[13px]">
           Open <ArrowRight className="w-3.5 h-3.5" />

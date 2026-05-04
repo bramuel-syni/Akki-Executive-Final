@@ -74,18 +74,18 @@ export default function InboundEmailPanel({ contextId, contextName }) {
           <div className="space-y-4">
             <AddressRow
               label="Personal inbox"
-              hint="Goes to your default context."
+              hint="Goes to your default company."
               address={data.address}
               testId="inbound-personal-address"
               onCopy={() => copy(data.address, "Personal address")}
             />
             {data.context_address && (
               <AddressRow
-                label={`Direct to ${contextName || "this context"}`}
-                hint="Anything sent here lands in this context only."
+                label={`Direct to ${contextName || "this company"}`}
+                hint="Anything sent here lands in this company only."
                 address={data.context_address}
                 testId="inbound-context-address"
-                onCopy={() => copy(data.context_address, "Context address")}
+                onCopy={() => copy(data.context_address, "Company address")}
               />
             )}
           </div>

@@ -107,7 +107,7 @@ export default function Decks() {
     return (
       <AppShell>
         <div className="max-w-3xl mx-auto px-6 py-12 text-[var(--muted)] italic">
-          Select a context to start drafting decks.
+          Select a company to start drafting decks.
         </div>
       </AppShell>
     );

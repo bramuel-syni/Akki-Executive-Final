@@ -185,7 +185,7 @@ export default function WorkStudio() {
   if (!cid) {
     return (
       <AppShell>
-        <div className="p-12 text-center text-[var(--muted)] text-sm">No context selected.</div>
+        <div className="p-12 text-center text-[var(--muted)] text-sm">No company selected.</div>
       </AppShell>
     );
   }

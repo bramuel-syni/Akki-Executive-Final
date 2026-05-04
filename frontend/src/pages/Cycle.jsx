@@ -543,7 +543,7 @@ function Checklists({ contextId }) {
             onClick={() => setScopedCommitteeId("")}
             className={`px-2.5 py-1 text-[12px] rounded-full border transition-colors ${scopedCommitteeId === "" ? "bg-[var(--ink)] text-white border-[var(--ink)]" : "bg-white border-[var(--rule)] text-[var(--deep)] hover:border-[var(--accent)]/40"}`}
             data-testid="checklist-scope-all"
-          >Whole context</button>
+          >Whole company</button>
           {committees.map((c) => (
             <button
               key={c.id}
@@ -1007,7 +1007,7 @@ export default function Cycle() {
     setSearchParams(sp, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  if (!cid) return <AppShell><div className="p-12 text-center text-[var(--muted)] text-sm">No context selected.</div></AppShell>;
+  if (!cid) return <AppShell><div className="p-12 text-center text-[var(--muted)] text-sm">No company selected.</div></AppShell>;
 
   return (
     <AppShell>
