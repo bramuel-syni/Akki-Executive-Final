@@ -114,13 +114,21 @@ async function loadAll(cid) {
     out.decks = items.map((d) => ({ ...d, href: `/app/decks/${d.id}` }));
   } catch (e) { out.errors.push(["decks", apiErrorMessage(e)]); }
   try {
-    const { data } = await api.get(`/contexts/${cid}/cycle/reports/inbox`);
+    // Backend route is /api/reports/inbox (cross-context, current-reviewer
+    // scoped). The earlier /api/contexts/{cid}/cycle/reports/inbox path
+    // 404s and produced the red banner on /app/work-studio.
+    const { data } = await api.get(`/reports/inbox`);
     const items = (data?.reports || data?.items || []).filter((r) => {
+      // work-studio is single-context-scoped, so filter to active context.
+      if (r.context_id && r.context_id !== cid) return false;
       const s = (r.status || "draft").toLowerCase();
-      return s !== "sent" && s !== "finalised" && s !== "finalized" && s !== "complete";
+      return s !== "sent" && s !== "finalised" && s !== "finalized" && s !== "complete" && s !== "archived";
     });
     out.reports = items.map((r) => ({ ...r, href: `/app/cycle?tab=overview&report=${r.id}` }));
-  } catch (e) { out.errors.push(["reports", apiErrorMessage(e)]); }
+  } catch (e) {
+    // Empty inbox / unauth → empty list. NOT an error worth a red banner.
+    out.reports = [];
+  }
   return out;
 }
 

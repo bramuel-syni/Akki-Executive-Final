@@ -82,13 +82,45 @@ export default function SolvaV2Poc() {
   const [error, setError] = useState(null);
   const [session, setSession] = useState(null);
   const [reply, setReply] = useState("");
+  // Phase 15.1 demo: surface the most-recent completed session on landing
+  // so the prospect sees a finished diagnosis with reasoning log, not an
+  // empty "Start a session" form. The user can still start a new one via
+  // the "Start a new session" button which clears `session` state.
+  const [bootstrapping, setBootstrapping] = useState(true);
+  const [showAllAudit, setShowAllAudit] = useState(false);
 
   useEffect(() => {
     if (!enabled) return;
-    api.get("/solva/clusters")
-      .then((r) => setClusters(r.data?.clusters || []))
-      .catch(() => setClusters([]))
-      .finally(() => setLoadingClusters(false));
+    let cancelled = false;
+    Promise.all([
+      api.get("/solva/clusters").catch(() => ({ data: { clusters: [] } })),
+      api.get("/solva/v2/sessions", { params: { status: "completed" } })
+        .catch(() => ({ data: { items: [] } })),
+    ]).then(async ([clustersResp, sessionsResp]) => {
+      if (cancelled) return;
+      setClusters(clustersResp.data?.clusters || []);
+      const items = sessionsResp.data?.items || [];
+      // List is sorted desc by updated_at server-side, so items[0] is the
+      // most-recent completed session. Hydrate the full record (turns +
+      // reasoning_audit_log are NOT in the list response).
+      if (items.length > 0) {
+        try {
+          const full = await api.get(`/solva/v2/sessions/${items[0].id}`);
+          if (!cancelled) {
+            setSession(full.data);
+            setShowAllAudit(true); // completed sessions show the full log
+          }
+        } catch (_e) {
+          /* fall through to landing */
+        }
+      }
+    }).finally(() => {
+      if (!cancelled) {
+        setLoadingClusters(false);
+        setBootstrapping(false);
+      }
+    });
+    return () => { cancelled = true; };
   }, [enabled]);
 
   const start = async () => {
@@ -153,9 +185,22 @@ export default function SolvaV2Poc() {
     if (!session || !session.reasoning_audit_log) return [];
     const log = session.reasoning_audit_log;
     if (!log.length) return [];
+    // For completed sessions or when explicitly toggled, show the full log;
+    // for active sessions in flight, show only the latest turn so the user
+    // isn't drinking from a firehose while they reply.
+    if (showAllAudit || session.status === "completed") return log;
     const lastTurnId = log[log.length - 1].turn_id;
     return log.filter((e) => e.turn_id === lastTurnId);
-  }, [session]);
+  }, [session, showAllAudit]);
+
+  const startNewSession = () => {
+    setSession(null);
+    setIntent("");
+    setReply("");
+    setActiveCluster(null);
+    setError(null);
+    setShowAllAudit(false);
+  };
 
   if (!enabled) {
     return (
@@ -170,6 +215,20 @@ export default function SolvaV2Poc() {
           <Link to="/app/solva" style={{ display: "inline-block", marginTop: 16, color: "var(--chrome)", fontSize: 13 }}>
             ← Back to Solva v1
           </Link>
+        </div>
+      </AppShell>
+    );
+  }
+
+  // Bootstrapping — brief loading splash while we check whether the user
+  // has a previous completed session to replay before falling through to
+  // the landing form. Without this, the landing form flashes for ~300ms.
+  if (bootstrapping && !session) {
+    return (
+      <AppShell>
+        <div style={{ maxWidth: 760, margin: "60px auto", padding: 24, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+          <p className="akki-overline" style={{ marginBottom: 8 }}>Solva v2 · Seek Clarity</p>
+          Loading…
         </div>
       </AppShell>
     );
@@ -249,21 +308,45 @@ export default function SolvaV2Poc() {
     );
   }
 
-  // Session view — turns + reasoning log
+  // Session view — turns + reasoning log. Reached either (a) by completing
+  // /starting a session in this page-load, or (b) on bootstrap when the
+  // user has a previous completed session to surface (Phase 15.1 demo).
   const synthesis = session.synthesis;
+  const isCompletedReplay = session.status === "completed";
   return (
     <AppShell>
       <div style={{ maxWidth: 960, margin: "24px auto", padding: 20 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, gap: 16 }}>
+          <div style={{ flex: 1 }}>
             <p className="akki-overline">Solva v2 · Seek Clarity · {session.cluster_label}</p>
-            <h1 style={{ fontFamily: "Georgia, serif", fontSize: 20, margin: 0 }}>
+            <h1 style={{ fontFamily: "Georgia, serif", fontSize: 20, margin: "0 0 6px 0" }}>
               Layer: {LAYER_LABELS[session.layer] || session.layer} · Status: {session.status}
+              {isCompletedReplay && (
+                <span style={{ marginLeft: 10, fontSize: 11, padding: "2px 8px", background: "var(--cream)", border: "1px solid var(--rule)", color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.6, fontFamily: "Inter, sans-serif", verticalAlign: "middle" }}>
+                  Replay · most recent completed
+                </span>
+              )}
             </h1>
+            {session.intent && (
+              <p style={{ fontSize: 13, color: "var(--muted)", margin: 0, lineHeight: 1.5, fontStyle: "italic" }}>
+                Intent: {session.intent}
+              </p>
+            )}
           </div>
-          <button onClick={abandon} style={{ fontSize: 12, color: "var(--muted)", background: "none", border: "1px solid var(--rule)", padding: "6px 12px", borderRadius: 3, cursor: "pointer" }}>
-            Abandon
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <button
+              onClick={startNewSession}
+              data-testid="v2poc-start-new"
+              style={{ fontSize: 12, color: "var(--chrome)", background: "var(--warm-white)", border: "1px solid var(--chrome)", padding: "6px 12px", borderRadius: 3, cursor: "pointer", whiteSpace: "nowrap" }}
+            >
+              + Start a new session
+            </button>
+            {!isCompletedReplay && (
+              <button onClick={abandon} style={{ fontSize: 12, color: "var(--muted)", background: "none", border: "1px solid var(--rule)", padding: "6px 12px", borderRadius: 3, cursor: "pointer" }}>
+                Abandon
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Turns */}
@@ -312,11 +395,11 @@ export default function SolvaV2Poc() {
           </div>
         )}
 
-        {/* Reasoning log — latest turn only */}
+        {/* Reasoning log — full for completed sessions, latest turn while active */}
         {latestAudit.length > 0 && (
           <div style={{ background: "#fafaf5", border: "1px solid var(--rule)", padding: 16, marginBottom: 16 }}>
             <p className="akki-overline" style={{ marginBottom: 8 }}>
-              Reasoning log · latest turn ({latestAudit.length} entries)
+              Reasoning log · {(showAllAudit || isCompletedReplay) ? "full session" : "latest turn"} ({latestAudit.length} entries)
             </p>
             <table style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, width: "100%" }}>
               <thead>
