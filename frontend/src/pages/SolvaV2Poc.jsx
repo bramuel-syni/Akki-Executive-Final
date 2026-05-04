@@ -151,7 +151,7 @@ export default function SolvaV2Poc() {
     },
     {
       key: "get_perspective",
-      label: "Get Perspective",
+      label: "See Another Perspective",
       blurb: "Hear it in another voice — Chair, NED, Investor, Regulator, Auditor, or your own.",
     },
   ];
@@ -193,7 +193,7 @@ export default function SolvaV2Poc() {
   const start = async () => {
     if (!activeCluster || intent.trim().length < 20) return;
     if (submodule === "get_perspective" && !persona.trim()) {
-      setError("Get Perspective requires a persona — pick or type one.");
+      setError("See Another Perspective requires a persona — pick or type one.");
       return;
     }
     setBusy(true);
@@ -666,7 +666,7 @@ export default function SolvaV2Poc() {
                       data-testid={`v2poc-fork-${t.key}`}
                       onClick={() => {
                         if (t.key === "get_perspective") {
-                          const p = window.prompt("Persona for Get Perspective?", "Chair");
+                          const p = window.prompt("Persona for See Another Perspective?", "Chair");
                           if (!p) return;
                           fork(t.key, p);
                         } else {

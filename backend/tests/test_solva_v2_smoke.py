@@ -72,46 +72,53 @@ def _login(email: str, password: str) -> str:
     return token
 
 
-def test_unflagged_account_cannot_access_any_v2_endpoint():
+def test_v2_endpoints_open_to_any_authed_account_post_cutover():
+    """Phase 15.3.5 cutover — the `solva_v2_poc` flag was retired.
+    Solva v2 is the single production surface and is open to every
+    authenticated account. This test was previously
+    `test_unflagged_account_cannot_access_any_v2_endpoint` and asserted
+    a 403; post-cutover it asserts 200 (or domain-natural responses)
+    with NO 403."""
     email = f"solva-v2-smoke-{uuid.uuid4().hex[:8]}@solva-v2-test.ai"
     password = "Smoke2026!"
     aid = _seed_account(email, password=password, poc_flag=False)
     try:
         token = _login(email, password)
         headers = {"Authorization": f"Bearer {token}"}
-        endpoints = [
-            ("GET", "/api/solva/v2/sessions", None),
-            ("POST", "/api/solva/v2/sessions", {
-                "cluster_id": "revenue_underperformance",
-                "intent": "x" * 40,
-                "submodule": "seek_clarity",
-            }),
-            ("GET", "/api/solva/v2/sessions/nonexistent", None),
-            ("GET", "/api/solva/v2/sessions/nonexistent/reasoning-log", None),
-            ("POST", "/api/solva/v2/sessions/nonexistent/abandon", None),
-            ("POST", "/api/solva/v2/sessions/nonexistent/turn", {"user_text": "x" * 10}),
-        ]
-        for method, path, body in endpoints:
-            fn = requests.get if method == "GET" else requests.post
-            r = fn(f"{BACKEND}{path}", json=body, headers=headers, timeout=10)
-            assert r.status_code == 403, (
-                f"{method} {path} returned {r.status_code} expected 403.\nBody: {r.text[:200]}"
-            )
-            assert "POC is not enabled" in r.text, r.text[:200]
+        # Read endpoints — must not 403 anymore.
+        r = requests.get(f"{BACKEND}/api/solva/v2/sessions", headers=headers, timeout=10)
+        assert r.status_code == 200, f"GET /sessions: {r.status_code}: {r.text[:200]}"
+        # 404 on a nonexistent session id is the expected domain answer
+        # (NOT 403). Same for abandon on a nonexistent id.
+        r = requests.get(
+            f"{BACKEND}/api/solva/v2/sessions/nonexistent",
+            headers=headers, timeout=10,
+        )
+        assert r.status_code == 404, f"GET /sessions/non: {r.status_code}"
+        r = requests.post(
+            f"{BACKEND}/api/solva/v2/sessions/nonexistent/abandon",
+            headers=headers, timeout=10,
+        )
+        assert r.status_code == 404, f"POST /abandon/non: {r.status_code}"
     finally:
         _cleanup(aid)
 
 
-def test_flipping_flag_unlocks_endpoints():
+def test_legacy_flag_field_still_writable_for_forensic_parity():
+    """Phase 15.3.5 — the `solva_v2_poc` field is preserved on accounts
+    for forensic/observability parity even though no code path reads it.
+    Flipping it has no effect on access; assert this so future
+    refactors don't regress to gated behaviour."""
     email = f"solva-v2-flip-{uuid.uuid4().hex[:8]}@solva-v2-test.ai"
     password = "Flip2026!"
     aid = _seed_account(email, password=password, poc_flag=False)
     try:
         token = _login(email, password)
         headers = {"Authorization": f"Bearer {token}"}
+        # Pre-flip: must already be 200 (no gate).
         r = requests.get(f"{BACKEND}/api/solva/v2/sessions", headers=headers, timeout=10)
-        assert r.status_code == 403
-        # Flip on
+        assert r.status_code == 200, r.text
+        # Flip on — still 200 (and field is writable).
         _run_db(lambda db: db.accounts.update_one(
             {"id": aid}, {"$set": {"solva_v2_poc": True}},
         ))

@@ -513,13 +513,10 @@ async def on_startup():
         )
         logger.info("Admin password rotated from .env")
 
-    # Phase 15.0 — ensure admin carries the Solva v2 POC flag. Idempotent.
-    # Other accounts stay default-off; use POST /api/admin/solva-v2/flag to
-    # flip additional accounts (superadmin-gated).
-    await db.accounts.update_one(
-        {"email": admin_email},
-        {"$set": {"solva_v2_poc": True}},
-    )
+    # Phase 15.3.5 cutover — feature flag dropped. The boot-time admin
+    # auto-flip is no longer needed because Solva v2 is now open to every
+    # authenticated account. The `solva_v2_poc` field in `db.accounts`
+    # is left intact for forensic parity but unused.
 
     # ── Tuesday 10am scheduler — auto-drafts the weekly Exco360 article.
     # In-process APScheduler. Single-replica deploys only; for HA, route

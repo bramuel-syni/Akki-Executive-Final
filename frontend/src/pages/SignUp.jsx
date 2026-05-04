@@ -90,7 +90,7 @@ export default function SignUp() {
           <p className="text-white/65 text-base leading-relaxed max-w-md">
             One account holds many contexts — each board, each organisation.
             After signup, declare your role (NED / Executive / Both) and run the
-            board-focused audit that tunes AKKI to you.
+            short profile setup that tunes AKKI to you.
           </p>
 
           <div className="mt-10 space-y-3 pt-8 border-t border-white/10 text-sm">
@@ -104,7 +104,7 @@ export default function SignUp() {
             </div>
             <div className="flex items-start gap-3">
               <span className="w-6 h-6 border border-white/20 text-white/40 text-[10px] flex items-center justify-center tracking-wider">3</span>
-              <div><p className="text-white/60">Board-focused audit</p><p className="text-white/35 text-xs">7 questions, ships in next build</p></div>
+              <div><p className="text-white/60">Profile setup</p><p className="text-white/35 text-xs">7 questions, ships in next build</p></div>
             </div>
           </div>
         </div>

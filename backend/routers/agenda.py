@@ -105,6 +105,7 @@ async def get_agenda_evolution(
             "object": f"{n} {('answer' if n == 1 else 'answers')} on {s.get('cycle_name', 'this cycle')}",
             "at": s.get("received_at"),
             "tone": "positive",
+            "category": "inputs",  # Phase 15.3.5 — agenda 4-cluster
         })
 
     # 2. Outstanding checklists that are past deadline.
@@ -134,6 +135,7 @@ async def get_agenda_evolution(
                     "object": f"on {c.get('cycle_name', 'this cycle')} — due {deadline_str}",
                     "at": c.get("dispatched_at"),
                     "tone": "warning",
+                    "category": "overdue",  # Phase 15.3.5 — agenda 4-cluster
                 })
         except (ValueError, TypeError):
             pass
@@ -152,6 +154,7 @@ async def get_agenda_evolution(
             "object": r.get("title") or "a report from your team's submissions",
             "at": r.get("updated_at"),
             "tone": "neutral",
+            "category": "drafts",  # Phase 15.3.5 — agenda 4-cluster
         })
 
     # 4. Briefings published in the period.
@@ -167,11 +170,14 @@ async def get_agenda_evolution(
             "object": b.get("title") or "a briefing",
             "at": b.get("published_at") or b.get("created_at"),
             "tone": "neutral",
+            "category": "publications",  # Phase 15.3.5 — agenda 4-cluster
         })
 
-    # Sort the narrative most-recent-first; cap to 6 lines so the card stays calm.
+    # Phase 15.3.5 — sort most-recent-first and cap at 12 lines so the
+    # 4-cluster card (Submissions · Overdue · Drafts · Publications) has
+    # up to 3 items per category. Frontend caps each cluster to 3.
     since.sort(key=lambda x: x.get("at") or "", reverse=True)
-    since = since[:6]
+    since = since[:12]
 
     # 5. "Next up" — the active checklist or workflow with the soonest deadline.
     next_up = None

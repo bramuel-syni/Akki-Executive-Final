@@ -41,7 +41,7 @@ import os
 import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from core import db, get_current_account, iso, now
@@ -192,8 +192,57 @@ async def get_pro_status(account: Dict[str, Any] = Depends(get_current_account))
 # Session CRUD
 # ---------------------------------------------------------------------------
 @router.post("/sessions")
-async def start_session(request: Request, account: Dict[str, Any] = Depends(get_current_account)):
+async def start_session(body: StartIn, account: Dict[str, Any] = Depends(get_current_account)):
     raise _v1_decommissioned("/api/solva/v2/sessions")
+    cluster = await db.solve_clusters.find_one({"id": body.cluster_id}, {"_id": 0})
+    if not cluster:
+        raise HTTPException(status_code=404, detail="Unknown cluster.")
+
+    session_id = str(uuid.uuid4())
+    is_pro_account = await _user_is_pro(account)
+    # Record both the user's request AND whether their account is on the Pro
+    # plan. Synthesis time will decide whether to consume the Pro quota or
+    # fall back to the monthly free grant.
+    pro_tier_requested = bool(body.pro_tier)
+
+    rec = {
+        "id": session_id,
+        "account_id": account["id"],
+        "context_id": body.context_id,
+        "cluster_id": body.cluster_id,
+        "cluster_label": cluster.get("label"),
+        "intent": body.intent.strip(),
+        "phase": PHASES[0],
+        "phase_index": 0,
+        "status": "active",
+        "pro_tier": pro_tier_requested,
+        "pro_account": is_pro_account,
+        "turns": [],
+        "synthesis": None,
+        "lockin": None,
+        "handoffs": [],
+        "started_at": iso(now()),
+        "updated_at": iso(now()),
+        "completed_at": None,
+    }
+    await db.solve_sessions.insert_one(rec)
+
+    # Generate Surface phase opening immediately so user lands on a primed
+    # session, not an empty one.
+    primer = await _generate_phase_response(rec, cluster, "surface", is_first=True)
+    await _append_turn(session_id, role="solve", text=primer["text"], phase="surface",
+                       model=primer.get("model"), tier=primer.get("tier"))
+    rec["turns"].append({
+        "id": str(uuid.uuid4()),
+        "role": "solve",
+        "phase": "surface",
+        "text": primer["text"],
+        "model": primer.get("model"),
+        "tier": primer.get("tier"),
+        "created_at": iso(now()),
+    })
+    rec.pop("_id", None)
+    return rec
 
 
 @router.get("/sessions")
@@ -226,10 +275,157 @@ async def get_session(sid: str, account: Dict[str, Any] = Depends(get_current_ac
 @router.post("/sessions/{sid}/turn")
 async def post_turn(
     sid: str,
-    request: Request,
+    body: TurnIn,
     account: Dict[str, Any] = Depends(get_current_account),
 ):
     raise _v1_decommissioned(f"/api/solva/v2/sessions/{sid}/turn")
+    rec = await db.solve_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0}
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if rec.get("status") != "active":
+        raise HTTPException(status_code=409, detail=f"Session is {rec['status']}.")
+
+    cluster = await db.solve_clusters.find_one({"id": rec["cluster_id"]}, {"_id": 0})
+    if not cluster:
+        raise HTTPException(status_code=410, detail="Cluster has been removed.")
+
+    current_phase = rec["phase"]
+
+    # Append user turn
+    user_turn = {
+        "id": str(uuid.uuid4()),
+        "role": "user",
+        "phase": current_phase,
+        "text": body.user_text.strip(),
+        "created_at": iso(now()),
+    }
+    await _append_turn(sid, role="user", text=body.user_text.strip(), phase=current_phase)
+    rec["turns"].append(user_turn)
+
+    # Decide whether to advance: each phase takes one user reply then Solve
+    # responds and advances.
+    advance_to = _next_phase(current_phase)
+
+    # Generate Solve response for the current phase
+    response = await _generate_phase_response(rec, cluster, current_phase)
+    solve_turn = {
+        "id": str(uuid.uuid4()),
+        "role": "solve",
+        "phase": current_phase,
+        "text": response["text"],
+        "model": response.get("model"),
+        "tier": response.get("tier"),
+        "created_at": iso(now()),
+    }
+    await _append_turn(sid, role="solve", text=response["text"], phase=current_phase,
+                       model=response.get("model"), tier=response.get("tier"))
+    rec["turns"].append(solve_turn)
+
+    update_fields: Dict[str, Any] = {"updated_at": iso(now())}
+
+    # If we just produced synthesis or lockin output, persist a structured copy.
+    if current_phase == "synthesis":
+        # Phase 12.2 ITEM D — run Synisense on the synthesis body BEFORE the
+        # validator and BEFORE persistence. Validation runs on the redacted
+        # body so the second-pass model never sees raw PII either; this is
+        # consistent with the "LLM never sees original" promise.
+        synthesis_text = response["text"]
+        syn_run_id_solve: Optional[str] = None
+        try:
+            from services.synisense import run as syn_run
+            syn_out = await syn_run(
+                text=synthesis_text,
+                context_id=rec.get("context_id") or "",
+                surface="solve",
+                mode="redact",
+                account_id=account["id"],
+            )
+            synthesis_text = syn_out["redacted_text"]
+            syn_run_id_solve = "recorded"  # full record in db.synisense_runs
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "synisense solve hook failed (degraded — using original "
+                "synthesis): %s", e.__class__.__name__,
+            )
+
+        synthesis_record = {
+            "body": synthesis_text,
+            "model": response.get("model"),
+            "tier": response.get("tier"),
+            "comparables": response.get("comparables", []),
+            "free_grant_used": response.get("free_grant_used", False),
+            "generated_at": iso(now()),
+            "synisense_run_recorded": syn_run_id_solve is not None,
+        }
+        # Phase 11 ITEM B — validator on the synthesis body. The helper
+        # always returns a dict; we only fall back here if the wrapper
+        # itself fails. Persisted state is honest about why we couldn't
+        # get a real verdict — never silently null.
+        synthesis_record["validation"] = {
+            "verdict": "qualified", "confidence": 0,
+            "notes": ["Validator wrapper failed before call; treat with normal scrutiny."],
+            "validator_provider": "n/a", "validator_model": "n/a",
+        }
+        # Phase 12.2 ITEM D — validator runs on the REDACTED body, never the original.
+        try:
+            from llm_service import validate_independent
+            synthesis_record["validation"] = await validate_independent(
+                kind="solve_synthesis",
+                content=synthesis_text,
+                objective=rec.get("intent") or "",
+                surface="solve",
+                account_id=account["id"],
+            )
+            logger.info(
+                "solve validator persisted event=persisted surface=solve session_id=%s "
+                "verdict=%s provider=%s",
+                sid,
+                synthesis_record["validation"].get("verdict"),
+                synthesis_record["validation"].get("validator_provider"),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "solve validator wrapper failed event=wrapper_exception surface=solve "
+                "session_id=%s exc=%s reason=%s",
+                sid, e.__class__.__name__, str(e)[:200],
+            )
+            synthesis_record["validation"] = {
+                "verdict": "qualified", "confidence": 0,
+                "notes": [f"Validator wrapper error ({e.__class__.__name__}); treat with normal scrutiny."],
+                "validator_provider": "n/a", "validator_model": "n/a",
+            }
+        update_fields["synthesis"] = synthesis_record
+        rec["synthesis"] = update_fields["synthesis"]
+    elif current_phase == "lockin":
+        update_fields["lockin"] = {
+            "body": response["text"],
+            "model": response.get("model"),
+            "tier": response.get("tier"),
+            "generated_at": iso(now()),
+        }
+        rec["lockin"] = update_fields["lockin"]
+
+    if advance_to is None:
+        # We were on lockin; complete the session.
+        update_fields["status"] = "completed"
+        update_fields["completed_at"] = iso(now())
+        rec["status"] = "completed"
+        rec["completed_at"] = update_fields["completed_at"]
+    else:
+        update_fields["phase"] = advance_to
+        update_fields["phase_index"] = PHASES.index(advance_to)
+        rec["phase"] = advance_to
+        rec["phase_index"] = update_fields["phase_index"]
+
+    await db.solve_sessions.update_one(
+        {"id": sid, "account_id": account["id"]},
+        {"$set": update_fields},
+    )
+
+    rec.pop("_id", None)
+    return rec
 
 
 @router.post("/sessions/{sid}/restart")
@@ -237,7 +433,32 @@ async def restart_session(
     sid: str,
     account: Dict[str, Any] = Depends(get_current_account),
 ):
-    raise _v1_decommissioned("/api/solva/v2/sessions")
+    raise _v1_decommissioned(f"/api/solva/v2/sessions")
+    """Per iter58 user direction: users get BOTH continue-where-they-were
+    AND start-over options. Restart clones the cluster + intent into a new
+    session, abandons the old one, and primes Surface afresh."""
+    rec = await db.solve_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0}
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    await db.solve_sessions.update_one(
+        {"id": sid, "account_id": account["id"]},
+        {"$set": {"status": "abandoned",
+                  "abandoned_reason": "restarted",
+                  "updated_at": iso(now())}},
+    )
+    # Reuse the start_session path
+    new = await start_session(
+        StartIn(
+            cluster_id=rec["cluster_id"],
+            intent=rec["intent"],
+            context_id=rec.get("context_id"),
+            pro_tier=rec.get("pro_tier", False),
+        ),
+        account,
+    )
+    return new
 
 
 @router.post("/sessions/{sid}/abandon")
@@ -370,28 +591,260 @@ async def _ensure_membership(context_id: str, account_id: str) -> Dict[str, Any]
 @router.post("/sessions/{sid}/handoff/brief")
 async def handoff_brief(
     sid: str,
-    request: Request,
+    body: HandoffBriefIn,
     account: Dict[str, Any] = Depends(get_current_account),
 ):
     raise _v1_decommissioned(f"/api/solva/v2/sessions/{sid}/handoff/cycle")
+    rec = await db.solve_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0}
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    _require_completed_session(rec)
+    ctx = await _ensure_membership(body.context_id, account["id"])
+
+    # Idempotency — return the existing handoff if one was already created.
+    existing = await db.solve_handoffs.find_one(
+        {"session_id": sid, "target": "brief"}, {"_id": 0}
+    )
+    if existing:
+        prior = await db.briefings.find_one(
+            {"id": existing["artefact_id"]}, {"_id": 0}
+        )
+        if prior:
+            return {"already_exists": True, "briefing": prior, "handoff_id": existing["id"]}
+
+    synthesis_body = (rec.get("synthesis") or {}).get("body") or ""
+    lockin_body = (rec.get("lockin") or {}).get("body") or ""
+    parsed = _parse_lockin_lines(lockin_body)
+
+    items: List[Dict[str, Any]] = []
+    for label, key in (("Decide", "decide"), ("Watch", "watch"), ("Walk in with", "walk_in")):
+        text = parsed[key]
+        if not text:
+            continue
+        items.append({
+            "signal_id": f"solve-{rec['id'][:8]}-{key}",
+            "signal_type": "solve_lockin",
+            "signal_headline": label,
+            "evidence": text[:1500],
+            "question": "" if key != "walk_in" else text[:400],
+            "sources": [],
+        })
+    if not items:
+        # Lock-in didn't parse into Decide/Watch/Walk — store it verbatim
+        items.append({
+            "signal_id": f"solve-{rec['id'][:8]}-summary",
+            "signal_type": "solve_lockin",
+            "signal_headline": "Solve commitments",
+            "evidence": lockin_body[:1500],
+            "question": "",
+            "sources": [],
+        })
+
+    briefing_id = str(uuid.uuid4())
+    title = (body.title or f"Solve · {rec.get('cluster_label','Diagnosis')}")[:120]
+
+    briefing = {
+        "id": briefing_id,
+        "context_id": body.context_id,
+        "context_name": ctx.get("name"),
+        "version": 1,
+        "title": title,
+        "role": "executive",
+        "opening_paragraph": synthesis_body[:2500],
+        "items": items,
+        "closing_note": None,
+        "source_doc_ids": [],
+        "signal_ids": [],
+        "data_trust": "low",
+        "mode": "solve_handoff",
+        "shielding_masked": 0,
+        "shielding": {},
+        "created_by": account["id"],
+        "created_at": iso(now()),
+        "status": "active",
+        "solve_session_id": sid,
+    }
+    # Iter64 — Studio sensitivity score for Solve handoff briefings too.
+    try:
+        from studio_sensitivity import score_sensitivity
+        briefing["sensitivity"] = score_sensitivity(briefing)
+    except Exception:  # noqa: BLE001
+        briefing["sensitivity"] = None
+    await db.briefings.insert_one(briefing)
+    await _record_handoff(sid, account["id"], "brief", briefing_id,
+                          {"context_id": body.context_id})
+    briefing.pop("_id", None)
+    return {"already_exists": False, "briefing": briefing,
+            "handoff_id": (await db.solve_handoffs.find_one(
+                {"session_id": sid, "target": "brief"}, {"_id": 0, "id": 1}
+            ) or {}).get("id")}
 
 
 @router.post("/sessions/{sid}/handoff/decks")
 async def handoff_decks(
     sid: str,
-    request: Request,
+    body: HandoffDecksIn,
     account: Dict[str, Any] = Depends(get_current_account),
 ):
     raise _v1_decommissioned(f"/api/solva/v2/sessions/{sid}/handoff/cycle")
+    rec = await db.solve_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0}
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    _require_completed_session(rec)
+    await _ensure_membership(body.context_id, account["id"])
+
+    existing = await db.solve_handoffs.find_one(
+        {"session_id": sid, "target": "decks"}, {"_id": 0}
+    )
+    if existing:
+        prior = await db.deck_outlines.find_one(
+            {"id": existing["artefact_id"]}, {"_id": 0}
+        )
+        if prior:
+            return {"already_exists": True, "outline": prior, "handoff_id": existing["id"]}
+
+    synthesis_body = (rec.get("synthesis") or {}).get("body") or ""
+    lockin_body = (rec.get("lockin") or {}).get("body") or ""
+
+    # Compose a deck intent prompt that the existing decks pipeline will
+    # turn into an outline + research_question. We package the synthesis
+    # as the seed thesis and the lock-in as the action vector.
+    intent_seed = (
+        f"Build a board-grade deck that lands the diagnosis below as a "
+        f"presentable narrative. Source thesis (Solve synthesis):\n\n"
+        f"{synthesis_body[:1400]}\n\n"
+        f"Action vector (Solve lock-in commitments):\n{lockin_body[:600]}"
+    )[:600]  # decks Outline.intent has max_length=600
+
+    # Skip the LLM and persist a draft outline directly. The user can refine
+    # it inside Decks before committing the deep-tier render. This avoids
+    # wasting a Decks-quota call on a Solve handoff that the user might not
+    # actually render.
+    outline_id = str(uuid.uuid4())
+    outline = {
+        "id": outline_id,
+        "context_id": body.context_id,
+        "intent": intent_seed,
+        "audience": body.audience or "Board",
+        "target_slides": 8,
+        "research_question": (rec.get("intent") or "")[:400],
+        "missing_context": [],
+        "evidence_summary": {"docs": 0, "signals": 0, "briefs": 0},
+        "slides": [
+            {"title": "The diagnosis", "key_message": (synthesis_body[:300] or rec.get("intent",""))[:300]},
+            {"title": "What worked / didn't (comparables)",
+             "key_message": "Two anonymised comparable cases the diagnosis triangulates against."},
+            {"title": "Decide", "key_message": _parse_lockin_lines(lockin_body)["decide"] or "What we are committing to."},
+            {"title": "Watch", "key_message": _parse_lockin_lines(lockin_body)["watch"] or "What we are watching."},
+            {"title": "Walk in with", "key_message": _parse_lockin_lines(lockin_body)["walk_in"] or "How we walk into the room."},
+        ],
+        "model": "solve_handoff",
+        "tier": "standard",
+        "created_by": account["id"],
+        "created_at": iso(now()),
+        "status": "draft",
+        "iteration": 0,
+        "parent_outline_id": None,
+        "solve_session_id": sid,
+    }
+    await db.deck_outlines.insert_one(outline)
+    await _record_handoff(sid, account["id"], "decks", outline_id,
+                          {"context_id": body.context_id})
+    outline.pop("_id", None)
+    h = await db.solve_handoffs.find_one(
+        {"session_id": sid, "target": "decks"}, {"_id": 0, "id": 1}
+    )
+    return {"already_exists": False, "outline": outline,
+            "handoff_id": (h or {}).get("id")}
 
 
 @router.post("/sessions/{sid}/handoff/cycle")
 async def handoff_cycle(
     sid: str,
-    request: Request,
+    body: HandoffCycleIn,
     account: Dict[str, Any] = Depends(get_current_account),
 ):
     raise _v1_decommissioned(f"/api/solva/v2/sessions/{sid}/handoff/cycle")
+    rec = await db.solve_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0}
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    _require_completed_session(rec)
+    await _ensure_membership(body.context_id, account["id"])
+
+    existing = await db.solve_handoffs.find_one(
+        {"session_id": sid, "target": "cycle"}, {"_id": 0}
+    )
+    if existing:
+        ids = existing.get("question_ids") or []
+        prior_qs = await db.questions.find(
+            {"id": {"$in": ids}}, {"_id": 0}
+        ).to_list(length=10) if ids else []
+        return {"already_exists": True, "questions": prior_qs, "handoff_id": existing["id"]}
+
+    synthesis_body = (rec.get("synthesis") or {}).get("body") or ""
+    lockin_body = (rec.get("lockin") or {}).get("body") or ""
+    parsed = _parse_lockin_lines(lockin_body)
+
+    # Iter62 polish — instead of echoing the lock-in line verbatim, we
+    # ask the LLM to phrase 1-3 sharp board questions derived from the
+    # diagnosis + commitments. Falls back to the verbatim derivation if
+    # the LLM is unavailable.
+    candidates: List[str] = await _draft_cycle_questions(
+        cluster_label=rec.get("cluster_label", ""),
+        intent=rec.get("intent", ""),
+        synthesis_body=synthesis_body,
+        lockin=parsed,
+    )
+
+    if not candidates:
+        # Deterministic fallback — preserves the iter62 baseline if the
+        # LLM call returned nothing usable.
+        if parsed["walk_in"]:
+            candidates.append(_to_question(parsed["walk_in"]))
+        if parsed["watch"]:
+            candidates.append(f"What would tell us the watch item is moving? Specifically: {parsed['watch']}")
+        if parsed["decide"]:
+            candidates.append(f"Have we decided: {parsed['decide']}? If not, what's blocking?")
+    if not candidates:
+        first_sentence = next((s.strip() for s in synthesis_body.split(".") if s.strip()), rec.get("intent",""))
+        candidates.append(f"Solve diagnosis: {first_sentence[:300]} — what's the board's next move?")
+
+    questions: List[Dict[str, Any]] = []
+    new_ids: List[str] = []
+    for text in candidates[:3]:
+        qid = str(uuid.uuid4())
+        q = {
+            "id": qid,
+            "context_id": body.context_id,
+            "text": text[:400],
+            "category": "strategic",
+            "source": f"AKKI Solve · {rec.get('cluster_label','session')}",
+            "committee_id": None,
+            "status": "open",
+            "times_asked": 0,
+            "last_asked_at": None,
+            "created_by": account["id"],
+            "created_at": iso(now()),
+            "solve_session_id": sid,
+        }
+        await db.questions.insert_one(q.copy())
+        q.pop("_id", None)
+        questions.append(q)
+        new_ids.append(qid)
+
+    await _record_handoff(sid, account["id"], "cycle", new_ids[0] if new_ids else "",
+                          {"context_id": body.context_id, "question_ids": new_ids})
+    h = await db.solve_handoffs.find_one(
+        {"session_id": sid, "target": "cycle"}, {"_id": 0, "id": 1}
+    )
+    return {"already_exists": False, "questions": questions,
+            "handoff_id": (h or {}).get("id")}
 
 
 async def _draft_cycle_questions(

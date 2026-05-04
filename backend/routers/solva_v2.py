@@ -62,6 +62,12 @@ from services.solva_v2.engines import (
 )
 from services.solva_v2.engines.tension_detector import CrossSessionTensionInputError
 from services.solva_v2 import guardrails
+from services.solva_v2.opinion_filter import (
+    OPINION_FREE_DIRECTIVE,
+    enforce_opinion_free,
+    scan as scan_for_opinion_phrases,
+    retry_reminder as opinion_retry_reminder,
+)
 from services.solva_v2.submodules import (
     SUBMODULE_NAMES,
     voice_for as submodule_voice_for,
@@ -124,24 +130,20 @@ class IntentClassifyIn(BaseModel):
 
 
 # -----------------------------------------------------------------------------
-# Feature flag dependency
+# Phase 15.3.5 cutover — flag dropped. Solva v2 is now the only Solva and
+# is open to every authenticated account. The legacy `account.solva_v2_poc`
+# field is left intact in MongoDB for forensic parity but no longer gates
+# any code path. The dependency below is retained as a thin alias so the
+# Depends(...) wiring across the router doesn't churn — it now just
+# enforces authentication.
 # -----------------------------------------------------------------------------
 async def require_solva_v2_flag(
     account: Dict[str, Any] = Depends(get_current_account),
 ) -> Dict[str, Any]:
-    """Gate every /api/solva/v2/* endpoint on the POC flag."""
+    """Phase 15.3.5: pass-through. Solva v2 is the production surface."""
     aid = account.get("id") if isinstance(account, dict) else None
     if not aid:
         raise HTTPException(status_code=401, detail="Authentication required.")
-    # Read flag LIVE from DB so a fresh flip takes effect without re-login.
-    fresh = await db.accounts.find_one(
-        {"id": aid}, {"_id": 0, "solva_v2_poc": 1, "is_superadmin": 1}
-    )
-    if not fresh or not bool(fresh.get("solva_v2_poc")):
-        raise HTTPException(
-            status_code=403,
-            detail="Solva v2 POC is not enabled for this account.",
-        )
     return account
 
 
@@ -497,6 +499,14 @@ async def _run_synthesis(
         )
     system_msg = system_base + candidate_block + comparable_block + GROUNDING_CONTRACT_PROMPT
 
+    # Phase 15.3.5 — no-opinion directive prepended to every Solva v2 LLM
+    # call. The `get_perspective` synthesis layer deliberately voices a
+    # persona (Chair, NED, Investor, etc.) and the persona's first-person
+    # is intentional product behaviour — bypass the directive there only.
+    apply_opinion_filter = (submodule != "get_perspective")
+    if apply_opinion_filter:
+        system_msg = enforce_opinion_free(system_msg)
+
     base_user_query = (
         f"Conversation so far:\n{transcript or '(no prior turns)'}\n\n"
         "Generate the SYNTHESIS layer response now. Follow the OUTPUT FORMAT "
@@ -507,6 +517,7 @@ async def _run_synthesis(
     current_user_query = base_user_query
     last_result = None
     last_parse = None
+    opinion_hits: List[str] = []  # Phase 15.3.5 — populated on opinion-filter retries
     for attempt in range(MAX_GROUNDING_RETRIES + 1):
         result = await shielded_call(
             engine="llm_primary",
@@ -526,26 +537,49 @@ async def _run_synthesis(
         parse_res = parse(result.text)
         last_result = result
         last_parse = parse_res
-        if parse_res.valid:
+
+        # Phase 15.3.5 — no-opinion filter. Run on the PARSED stripped text
+        # so tier markers don't false-trigger. Only when the filter applies
+        # (i.e. NOT in get_perspective synthesis where persona-voice is
+        # deliberate). On hit, force a retry with a sharpened reminder.
+        opinion_hits = []
+        if apply_opinion_filter:
+            opinion_hits = scan_for_opinion_phrases(parse_res.stripped_text)
+            audit_entries[-1]["output"]["opinion_phrases_hit"] = list(opinion_hits)
+
+        if parse_res.valid and not opinion_hits:
             audit_entries[-1]["tier_labels"] = sorted({c.tier for c in parse_res.claims})
             audit_entries[-1]["output"]["grounding_accepted"] = True
             audit_entries[-1]["output"]["claim_count"] = len(parse_res.claims)
             break
-        audit_entries[-1]["output"]["grounding_accepted"] = False
-        audit_entries[-1]["output"]["untagged_count"] = len(parse_res.untagged_sentences)
-        audit_entries[-1]["output"]["malformed_count"] = len(parse_res.malformed_markers)
-        # Record retry
-        await record_retry(
-            surface=SYNTHESIS_SURFACE,
-            account_id=account_id,
-            reason="grounding_contract_violation",
-        )
-        retry_body = GROUNDING_RETRY_PROMPT.format(
-            untagged=parse_res.untagged_sentences[:5],
-            malformed=[m.get("bad_tier") for m in parse_res.malformed_markers[:5]],
-            valid_tiers=TIER_NAMES,
-        )
-        current_user_query = base_user_query + retry_body
+
+        # Either grounding-contract failed OR opinion filter caught a hit.
+        if not parse_res.valid:
+            audit_entries[-1]["output"]["grounding_accepted"] = False
+            audit_entries[-1]["output"]["untagged_count"] = len(parse_res.untagged_sentences)
+            audit_entries[-1]["output"]["malformed_count"] = len(parse_res.malformed_markers)
+            await record_retry(
+                surface=SYNTHESIS_SURFACE,
+                account_id=account_id,
+                reason="grounding_contract_violation",
+            )
+            retry_body = GROUNDING_RETRY_PROMPT.format(
+                untagged=parse_res.untagged_sentences[:5],
+                malformed=[m.get("bad_tier") for m in parse_res.malformed_markers[:5]],
+                valid_tiers=TIER_NAMES,
+            )
+            current_user_query = base_user_query + retry_body
+        else:
+            # Grounding passed; opinion filter caught it. Retry with a
+            # sharpened opinion-free reminder appended.
+            audit_entries[-1]["output"]["grounding_accepted"] = True
+            audit_entries[-1]["output"]["opinion_blocked"] = True
+            await record_retry(
+                surface=SYNTHESIS_SURFACE,
+                account_id=account_id,
+                reason="opinion_language_blocked",
+            )
+            current_user_query = base_user_query + "\n\n" + opinion_retry_reminder(opinion_hits)
 
     if not last_parse or not last_parse.valid:
         return {
@@ -553,6 +587,15 @@ async def _run_synthesis(
             "audit_entries": audit_entries,
             "untagged_sentences": last_parse.untagged_sentences if last_parse else [],
             "malformed_markers": last_parse.malformed_markers if last_parse else [],
+            "raw_text": last_result.text if last_result else "",
+        }
+
+    # Phase 15.3.5 — opinion-filter exhausted retries. Hard-fail with 422.
+    if apply_opinion_filter and opinion_hits:
+        return {
+            "opinion_violation": True,
+            "phrases_hit": opinion_hits,
+            "audit_entries": audit_entries,
             "raw_text": last_result.text if last_result else "",
         }
 
@@ -1096,6 +1139,13 @@ async def post_turn(
             ),
         )
 
+    # Phase 15.3 fix — capture the one-shot redirect_recovery flag at the
+    # top of the turn so it's consumed regardless of which branch fires
+    # below (continue / soft_block / hard_block / therapy_redirect_again).
+    # Engines downstream still see the True value on the in-memory `rec`;
+    # the DB write at the end of the turn always clears it.
+    consumed_redirect_recovery = bool(rec.get("redirect_recovery"))
+
     # Phase 15.3 — 20-turn ceiling (decision #11). Count user turns only.
     user_turn_total = sum(1 for t in (rec.get("turns") or []) if t.get("role") == "user")
     if user_turn_total >= MAX_TURNS_PER_SESSION:
@@ -1194,6 +1244,9 @@ async def post_turn(
         # legitimately introduces vocabulary drift).
         if decision.action == "therapy_redirect":
             guard_update["redirect_recovery"] = True
+        elif consumed_redirect_recovery:
+            # Soft/hard block on the recovery turn — still consume the flag.
+            guard_update["redirect_recovery"] = False
         await db.solva_v2_sessions.update_one(
             {"id": sid, "account_id": account["id"]},
             {"$push": {
@@ -1210,6 +1263,8 @@ async def post_turn(
             rec["status"] = decision.new_status
         if decision.action == "therapy_redirect":
             rec["redirect_recovery"] = True
+        elif consumed_redirect_recovery:
+            rec["redirect_recovery"] = False
         rec.pop("_id", None)
         return rec
 
@@ -1222,11 +1277,8 @@ async def post_turn(
 
     solve_turn_id = str(uuid.uuid4())
     update_fields: Dict[str, Any] = {"updated_at": iso(now())}
-    # Phase 15.3 fix — consume the one-shot redirect_recovery flag set by
-    # the prior therapy_redirect turn. Engines read it from `rec` before
-    # we write back, so they get the True value; the DB write clears it,
-    # and we mirror that on the in-memory rec so the response is accurate.
-    consumed_redirect_recovery = bool(rec.get("redirect_recovery"))
+    # `consumed_redirect_recovery` is captured at the top of post_turn so
+    # it's already correct here. Mirror to update_fields so DB clears.
     if consumed_redirect_recovery:
         update_fields["redirect_recovery"] = False
     solve_text = ""

@@ -437,15 +437,69 @@ to user.
 
 ---
 
-## Investigation deliverables required when 15.3.5 starts
-(captured here so the next agent doesn't lose them)
+## Investigation deliverables (COMPLETED — findings below)
 
-1. **B.5 Resume audit** — screenshot, file path, button onClick
-   target, visibility logic.
-2. **B.7 What change** — file paths of home pages and the change
-   card, current full list of items, proposed bucketing.
-3. **B.4 Sponsored vs personal home divergence** — diff list of
-   intentional vs accidental divergence between Home variants.
+### B.5 "Resume audit" — INVESTIGATION DONE
+- **Component:** `frontend/src/pages/LegacyAppHome.jsx:128–153` (the
+  legacy home — being archived under C.9 anyway)
+- **Visibility logic:** `!isDeclared || !auditComplete`  (i.e. user
+  has not declared a role OR `first_session.status !== "completed"`
+  AND not `"skipped"`)
+- **Button action:** navigates to `/app/first-session` (the 7-question
+  onboarding intake)
+- **Copy variants:** "Begin audit", "Resume audit", "Finish the
+  board-focused audit", "Run the audit to unlock your signals."
+- **Other surfaces using the same noun:** `pages/SignUp.jsx` once
+  ("board-focused audit").
+- **Resolution path:** `LegacyAppHome.jsx` is being archived under C.9,
+  so the card disappears from production. If any role-aware home
+  surfaces a similar card, rename "audit" → "profile setup" there.
+  `SignUp.jsx` copy renamed inline.
+
+### B.4 Home variant divergence — INVESTIGATION DONE
+- **Dispatcher:** `pages/AppHome.jsx` (56 lines)
+  * Honours `?home=v2` and `?home=v1|legacy` URL switches
+  * Sandbox accounts pinned to `LegacyAppHome`
+  * Otherwise dispatches by `account.declared_role`
+    {ned → HomeNed, executive → HomeExecutive, dual → HomeDual,
+    undeclared → HomeUndeclared}
+- **Active homes (kept in production):** HomeNed (159 ll),
+  HomeExecutive (78 ll), HomeDual (86 ll), HomeUndeclared (114 ll)
+- **Archive targets:** LegacyAppHome (571 ll), HomeV2 (598 ll) — per
+  C.9, both go to `_legacy/`
+- **Sponsored vs personal divergence:** sourced from the
+  data-ownership banner in `AppShell.jsx:725` (already isolated; the
+  homes themselves do not branch on sponsored-vs-personal). Means
+  B.4 collapse work is lighter than feared — investigate per-role
+  homes for inadvertent divergence and unify any.
+- **Resolution path:** archive Legacy/V2, drop the `?home=…` query
+  switch in `AppHome.jsx`, rerun a quick visual diff.
+
+### B.7 "What change" surface — INVESTIGATION DONE
+- **Component:** `components/home/AgendaEvolutionCard.jsx`
+- **API:** `GET /api/contexts/{cid}/agenda-evolution`
+  (`backend/routers/agenda.py`)
+- **Current backend bucketing:** 4 functional categories already
+  exist server-side:
+  1. **Submissions received** from reportees in the period
+  2. **Outstanding** checklists past deadline (warning tone)
+  3. **Drafts** — reports AKKI drafted from submissions
+  4. **Publications** — briefings published in the period
+- **Current frontend rendering:** flat list of 4–6 most-recent items,
+  ungrouped. The cap is 6 server-side, 4 client-side.
+- **Resolution path:** add a `category` field to each `since_then` row
+  server-side; render the card as 4 grouped sections client-side
+  (Submissions · Overdue · Drafts · Publications), each capped at 3
+  items, total card height bounded.
+
+### C.9 v1/v2 file-pair sweep — INVESTIGATION DONE
+- **Frontend candidates found:** `pages/LegacyAppHome.jsx`,
+  `pages/HomeV2.jsx`. No other `*V2/Legacy/Old/_v1` patterns.
+- **Backend:** `routers/solva_v2.py` (production keeper),
+  `routers/solva.py` + `solva_engine.py` + `solva_aliases.py` (v1
+  retiring under Track A.3). No other patterns.
+- **Resolution path:** archive the two frontend files; v1 backend
+  handled in Track A.3.
 
 ---
 
@@ -682,3 +736,108 @@ Add Track C after Track B, in this order:
 _Last touched: items C.8 (chat delete) and C.9 (single-production
 sweep) appended mid-15.3 implementation pass per user request.
 15.3 still in flight._
+
+---
+
+### C.10 — Streaming chat effect (LOCKED — fold in alongside C.8)
+
+#### What the user asked
+> Add streaming effect in chat.
+
+Token-stream LLM responses in `/app/chat`. Today the chat handler
+returns the full LLM message after generation completes; user sees a
+spinner then a blob. Replace with incremental rendering — characters
+appear as the LLM emits them.
+
+**Sequencing note:** fold in alongside the chat-delete UI changes
+(C.8) since both touch `pages/Chat.jsx` and `routers/chat.py`.
+
+#### Backend
+
+- New endpoint `POST /api/chats/{cid}/messages/stream` returning
+  `text/event-stream` (SSE). Existing
+  `POST /api/chats/{cid}/messages` stays for non-streaming clients
+  (or deprecate to 308 to the new endpoint — call at build time, but
+  do NOT break callers).
+- Wrap the LLM call in `emergentintegrations` / `litellm` streaming
+  mode. If the wrapper doesn't expose `stream=True` cleanly, fall
+  through to direct litellm with the same Universal Key.
+- **Stream events:**
+  - `event: token` `data: {"text": "<delta>"}` — per-chunk token
+    deltas.
+  - `event: rehydrated` `data: {"text": "<rehydrated_full>"}` —
+    one final replacement after Synisense rehydrates the complete
+    message.
+  - `event: done` `data: {"message_id": "...", "audit_hash": "...",
+    "synisense_run_id": "..."}` — final marker.
+  - `event: error` `data: {"reason": "..."}` — on failure.
+- **Audit chain integrity:** the SHA-256 chain in `db.chat_audit_log`
+  operates on the FULL message text. Compute the hash AFTER the
+  stream completes, write ONE audit row per message (not per chunk).
+- **Synisense:** pre-LLM redact runs ONCE before stream (same as
+  today). Post-LLM rehydrate runs ONCE on the COMPLETE response
+  after stream done — emit `event: rehydrated` so the frontend can
+  replace the streamed shielded text with rehydrated text in one
+  update.
+- **Backpressure:** if the client disconnects mid-stream, abort the
+  LLM call (litellm supports cancellation tokens) and write an
+  audit row with `truncated: true`.
+
+#### Frontend
+
+- `pages/Chat.jsx`: replace the current POST + spinner pattern with
+  a stream consumer.
+- Use a `fetch` + `ReadableStream` reader (NOT `EventSource` —
+  `EventSource` doesn't support custom headers, we need
+  `Authorization: Bearer …`).
+- Render incrementally — append each token delta to the message
+  bubble as it arrives. Smooth-scroll to bottom on each delta.
+- On `event: rehydrated`, replace the message bubble's text with
+  the rehydrated full text (single state update, not per-character).
+- On `event: done`, persist the message_id + audit_hash to the local
+  message record so the existing audit-export flow still works.
+- On `event: error`, render an inline error chip with retry.
+- Keep existing copy-to-clipboard / regenerate / cite-this
+  affordances unchanged.
+
+#### Non-scope
+
+- No streaming for Solva v2 (the layered orchestrator doesn't
+  benefit from token streaming because each layer is a complete
+  inference; surface that in a future phase if asked).
+- No streaming for Studio briefing/deck generation (structured
+  outputs; streaming would break block-by-block sensitivity
+  scoring).
+- No new model selection — stream uses whichever model the user
+  already picked.
+
+#### Tests
+
+- Backend integration: post a streaming message, consume the SSE
+  stream, assert tokens arrive incrementally, audit row written once
+  on `done`, rehydrated event includes Synisense rehydration.
+- Frontend smoke (manual or Playwright): user sees text appear
+  character-by-character, no UI freeze, scroll stays pinned.
+- Negative: client disconnect mid-stream → audit row has
+  `truncated: true`.
+
+#### Acceptance
+
+- User sees streaming text on `/app/chat` for at least one of the
+  5 supported models.
+- Audit chain still verifiable (SHA-256 chain re-validates after
+  streaming send).
+- Synisense rehydration still occurs (no shielded tokens visible
+  to user post-completion).
+- No regression to existing non-streaming endpoint OR non-streaming
+  endpoint redirected cleanly.
+
+#### Closeout report addition
+
+```
+ITEM 10 STREAMING CHAT:  ✓/✗ — endpoint + stream/done/rehydrated events + frontend consumer
+```
+
+That brings 15.3.5 to 10 items.
+
+---

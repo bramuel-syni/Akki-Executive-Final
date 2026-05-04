@@ -82,20 +82,49 @@ export default function AgendaEvolutionCard() {
         </p>
       )}
 
-      {since_then && since_then.length > 0 ? (
-        <ul className="space-y-1.5 mb-3" data-testid="agenda-since">
-          {since_then.slice(0, 4).map((e, i) => (
-            <li key={i} className="text-[12.5px] text-[var(--deep)] flex items-start gap-2 leading-snug">
-              <span className={`w-1 h-1 rounded-full mt-2 shrink-0 ${TONE_DOT[e.tone] || TONE_DOT.neutral}`} />
-              <span>
-                <strong className="text-[var(--ink)]">{e.actor}</strong>{" "}
-                <em className="text-[var(--muted)]">{e.verb}</em>{" "}
-                {e.object}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : (
+      {since_then && since_then.length > 0 ? (() => {
+        // Phase 15.3.5 — bucket events into 4 categories
+        // (Submissions · Overdue · Drafts · Publications). Each capped
+        // at 3. Empty buckets are hidden.
+        const BUCKETS = [
+          { key: "inputs",       label: "Submissions" },
+          { key: "overdue",      label: "Overdue" },
+          { key: "drafts",       label: "Drafts" },
+          { key: "publications", label: "Publications" },
+        ];
+        const grouped = {};
+        for (const e of since_then) {
+          const k = e.category || "inputs";
+          (grouped[k] = grouped[k] || []).push(e);
+        }
+        const rendered = BUCKETS.filter(b => (grouped[b.key] || []).length > 0);
+        if (rendered.length === 0) {
+          return <p className="text-[12.5px] text-[var(--muted)] italic mb-3">Nothing new since.</p>;
+        }
+        return (
+          <div className="space-y-2.5 mb-3" data-testid="agenda-since">
+            {rendered.map(b => (
+              <div key={b.key} data-testid={`agenda-bucket-${b.key}`}>
+                <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--muted)] mb-1">
+                  {b.label} · {grouped[b.key].length}
+                </p>
+                <ul className="space-y-1">
+                  {grouped[b.key].slice(0, 3).map((e, i) => (
+                    <li key={i} className="text-[12.5px] text-[var(--deep)] flex items-start gap-2 leading-snug">
+                      <span className={`w-1 h-1 rounded-full mt-2 shrink-0 ${TONE_DOT[e.tone] || TONE_DOT.neutral}`} />
+                      <span>
+                        <strong className="text-[var(--ink)]">{e.actor}</strong>{" "}
+                        <em className="text-[var(--muted)]">{e.verb}</em>{" "}
+                        {e.object}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        );
+      })() : (
         <p className="text-[12.5px] text-[var(--muted)] italic mb-3">Nothing new since.</p>
       )}
 

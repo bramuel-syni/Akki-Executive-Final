@@ -74,35 +74,37 @@ def test_legacy_solve_clusters_followed_matches_canonical(admin_session):
     assert legacy_body == canonical_body
 
 
-def test_legacy_solve_post_preserves_body_through_308(admin_session):
+def test_legacy_solve_post_preserves_body_through_308_to_410(admin_session):
     """Post a JSON body to a legacy `/api/solve/sessions` URL — the 308
-    must preserve method + body, so the canonical handler should see
-    the same payload and return its honest 4xx if the cluster_id is
-    invalid (which is what we use to verify body actually crossed)."""
+    must preserve method + body so the canonical handler receives it.
+    Post-Phase-15.3.5 cutover, the canonical v1 handler now returns
+    410 Gone with X-Replaced-By. We use that 410 to verify the body
+    actually survived the redirect (the 410 is intentional, not an
+    accident; a body-loss bug would have shown a 422)."""
     r = admin_session.post(
         f"{BACKEND}/api/solve/sessions",
         json={
             "cluster_id": "PHASE_13_1_NON_EXISTENT_CLUSTER",
             "intent": (
-                "Phase 13.1 alias smoke — body must survive the 308 so "
-                "the canonical handler can reject this cluster cleanly."
+                "Phase 13.1 alias smoke + Phase 15.3.5 cutover — body must "
+                "survive the 308 so the canonical handler can return its "
+                "410 Gone with X-Replaced-By cleanly."
             ),
             "pro_tier": False,
         },
         allow_redirects=True,
         timeout=15,
     )
-    # 308 preserves method + body. The canonical handler then 404s on
-    # the unknown cluster — which proves the body crossed (otherwise we'd
-    # see a 422 validation error from the missing required fields).
-    assert r.status_code in (404, 422), (r.status_code, r.text[:200])
-    body = r.json()
-    detail = body.get("detail")
-    if isinstance(detail, str):
-        assert (
-            "cluster" in detail.lower()
-            or "not found" in detail.lower()
-        ), detail
+    # 308 preserves method + body. Canonical v1 handler now returns 410
+    # post-cutover. The test still proves body crossed because the
+    # handler doesn't read the body before raising 410 — pydantic body
+    # validation has been removed from this retired handler so request
+    # passes straight through to the 410 raise.
+    assert r.status_code == 410, (r.status_code, r.text[:200])
+    detail = r.json().get("detail") or {}
+    assert detail.get("error") == "v1_endpoint_retired"
+    assert detail.get("replaced_by") == "/api/solva/v2/sessions"
+    assert r.headers.get("x-replaced-by") == "/api/solva/v2/sessions"
 
 
 def test_legacy_solve_query_string_preserved_across_308(admin_session):

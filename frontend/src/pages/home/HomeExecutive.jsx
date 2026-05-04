@@ -12,7 +12,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
-import LegacyAppHome from "@/pages/LegacyAppHome";
+import ExecutiveHomeShell from "@/pages/ExecutiveHomeShell";
 import { Briefcase, ScrollText, Presentation, FileText, ArrowRight } from "lucide-react";
 
 /**
@@ -69,10 +69,10 @@ export default function HomeExecutive() {
   return (
     <div data-testid="home-executive">
       <WorkStudioPreview contextId={cid} />
-      {/* Reuse the existing executive home wholesale — same telemetry,
+      {/* Reuse the existing executive home shell wholesale — same telemetry,
           same spinning-up cards, just topped by the Work Studio band
           when there's something in flight. */}
-      <LegacyAppHome />
+      <ExecutiveHomeShell />
     </div>
   );
 }
