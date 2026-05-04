@@ -52,8 +52,13 @@ from core import db, hash_password  # noqa: E402
 
 
 INTENTS: List[Dict[str, str]] = [
+    # Phase 15.2 — mixed sub-modules. 3 seek_clarity, 3 develop_strategy,
+    # 2 simulate_hypothesis, 2 get_perspective. Each session walks layers
+    # the orchestrator owns; the script asserts engine + contract floors
+    # only (validator catches are reported separately).
     {
         "cluster_id": "revenue_underperformance",
+        "submodule": "seek_clarity",
         "intent": (
             "Q3 revenue missed by 14% and the CEO's framing blames FX headwinds. "
             "Two of us on the board think it's pricing; the CFO's dashboard "
@@ -63,6 +68,7 @@ INTENTS: List[Dict[str, str]] = [
     },
     {
         "cluster_id": "ceo_succession",
+        "submodule": "seek_clarity",
         "intent": (
             "The CEO is 14 months from the nominations committee's stated target "
             "handover date. Two plausible internal candidates; the stronger one "
@@ -72,6 +78,7 @@ INTENTS: List[Dict[str, str]] = [
     },
     {
         "cluster_id": "regulatory_change",
+        "submodule": "seek_clarity",
         "intent": (
             "Our capital ratio will fall inside the regulator's intervention "
             "band by Q1 if the H2 forecast holds. Group treasurer believes a "
@@ -82,6 +89,7 @@ INTENTS: List[Dict[str, str]] = [
     },
     {
         "cluster_id": "ma_thesis",
+        "submodule": "develop_strategy",
         "intent": (
             "A sector peer half our size is privately shopped at a 12x multiple. "
             "Our own shares trade at 9x. Management wants to bid; two NEDs think "
@@ -91,6 +99,7 @@ INTENTS: List[Dict[str, str]] = [
     },
     {
         "cluster_id": "revenue_underperformance",
+        "submodule": "develop_strategy",
         "intent": (
             "Revenue is on-plan but gross margin has compressed 280bps in three "
             "quarters. The commercial director insists it is temporary input "
@@ -100,6 +109,7 @@ INTENTS: List[Dict[str, str]] = [
     },
     {
         "cluster_id": "ceo_succession",
+        "submodule": "develop_strategy",
         "intent": (
             "The founder-CEO has told the chair she will stand down within 18 "
             "months for personal reasons. No internal successor is ready. An "
@@ -109,38 +119,47 @@ INTENTS: List[Dict[str, str]] = [
     },
     {
         "cluster_id": "risk_blindspot",
+        "submodule": "simulate_hypothesis",
         "intent": (
             "The regulator has opened an informal inquiry into our pricing "
             "disclosure practice. Management says the exposure is 'contained' "
-            "but has not quantified it. Legal has advised privilege. The "
-            "upcoming board meeting sets the annual report tone."
+            "but has not quantified it. Legal has advised privilege. What if "
+            "the inquiry escalates to a formal one within 90 days \u2014 what "
+            "are the second-order effects on our annual report tone?"
         ),
     },
     {
         "cluster_id": "ma_thesis",
+        "submodule": "simulate_hypothesis",
         "intent": (
             "We received an unsolicited approach at 10% premium to 30-day VWAP. "
             "The CEO believes our fair value is 30% higher after the current "
-            "strategic plan executes. Institutional shareholders are split. "
-            "The chair wants a considered response within 10 days."
+            "strategic plan executes. What if institutional shareholders side "
+            "with the bidder \u2014 how does that play through proxy season?"
         ),
     },
     {
         "cluster_id": "revenue_underperformance",
+        "submodule": "get_perspective",
+        "persona": "Chair",
         "intent": (
             "Our largest customer (22% of revenue) has delayed their annual "
             "renewal by 60 days. Sales insists it is procurement theatre. The "
             "customer's CFO told our CFO informally they are running an RFP. "
-            "The board pack does not reflect the RFP risk."
+            "The board pack does not reflect the RFP risk. How would the "
+            "chair frame this for the next board meeting?"
         ),
     },
     {
         "cluster_id": "ceo_succession",
+        "submodule": "get_perspective",
+        "persona": "Investor",
         "intent": (
             "The CEO has a clear candidate for the COO role which the board is "
             "expected to ratify next week. Two NEDs (including me) have private "
             "concerns about the candidate's judgement under pressure. Neither "
-            "of us has yet raised them formally."
+            "of us has yet raised them formally. How would a long-only "
+            "institutional investor read this if it leaked?"
         ),
     },
 ]
@@ -184,31 +203,46 @@ async def _login(client, email: str, password: str) -> str:
 
 async def _walk_session(client, headers: Dict[str, str], scenario: Dict[str, str]) -> Dict[str, Any]:
     t0 = time.monotonic()
+    body = {
+        "cluster_id": scenario["cluster_id"],
+        "intent": scenario["intent"],
+        "submodule": scenario.get("submodule") or "seek_clarity",
+        "pro_tier": False,
+    }
+    if scenario.get("persona"):
+        body["persona"] = scenario["persona"]
     start_resp = await client.post(
-        "/api/solva/v2/sessions",
-        json={
-            "cluster_id": scenario["cluster_id"],
-            "intent": scenario["intent"],
-            "submodule": "seek_clarity",
-            "pro_tier": False,
-        },
-        headers=headers,
-        timeout=180,
+        "/api/solva/v2/sessions", json=body, headers=headers, timeout=180,
     )
     if start_resp.status_code != 200:
         return _classify({
             "stage": "start", "session_id": None,
             "status": start_resp.status_code, "body": start_resp.text[:400],
             "cluster_id": scenario["cluster_id"],
+            "submodule": body["submodule"],
         })
     session = start_resp.json()
     sid = session["id"]
 
-    replies = [
-        "The timeframe is this quarter. No pricing change in the window.",
+    # Phase 15.2 — simulate_hypothesis has 5 layers (adds `hypothesis`
+    # between grounding and synthesis), so it needs 4 user turns to walk
+    # framing -> grounding -> hypothesis -> synthesis -> reflection. Other
+    # sub-modules have 4 layers and need 3 turns. The script sends one
+    # extra reply for simulate_hypothesis.
+    base_replies = [
+        "The timeframe is this quarter. No structural change in the window.",
         "Comparables look relevant. Go deeper where they diverge.",
         "Understood. Lock the diagnosis.",
     ]
+    if body["submodule"] == "simulate_hypothesis":
+        replies = [
+            base_replies[0],
+            base_replies[1],
+            "Yes, weigh those tensions explicitly when you synthesise.",
+            base_replies[2],
+        ]
+    else:
+        replies = base_replies
     stage = "framing"
     walk_error: Optional[Dict[str, Any]] = None
     for txt in replies:
@@ -251,8 +285,18 @@ async def _walk_session(client, headers: Dict[str, str], scenario: Dict[str, str
     tier_distribution = synth.get("tier_distribution") or {}
     claim_count = sum(tier_distribution.values())
     audit = session.get("reasoning_audit_log") or []
+    # Phase 15.2 — surface tension_detector activation count for the
+    # report. Only simulate_hypothesis sessions should emit > 0; all
+    # others should be 0.
+    tension_count = 0
+    for e in audit:
+        if e.get("engine") == "tension_detector":
+            tension_count = max(tension_count, (e.get("output") or {}).get("tension_count", 0))
+    recommendations_count = len((synth.get("recommendations") or []))
     return _classify({
         "session_id": sid,
+        "submodule": session.get("submodule") or "seek_clarity",
+        "persona": session.get("persona"),
         "status": session.get("status"),
         "layer": session.get("layer"),
         "claim_count": claim_count,
@@ -260,8 +304,10 @@ async def _walk_session(client, headers: Dict[str, str], scenario: Dict[str, str
         "validator_verdict": verdict,
         "validator_confidence": validation.get("confidence"),
         "audit_entry_count": len(audit),
-        "audit": audit,  # consumed by classifier, stripped before print/save
+        "audit": audit,
         "synthesis_claims": synth.get("claims") or [],
+        "tension_count": tension_count,
+        "recommendations_count": recommendations_count,
         "latency_ms": latency,
         "cluster_id": scenario["cluster_id"],
     })

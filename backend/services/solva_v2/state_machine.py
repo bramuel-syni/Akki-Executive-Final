@@ -1,61 +1,68 @@
-"""Solva v2 — layer state machine (Phase 15.1).
+"""Solva v2 — layer state machine (Phase 15.1, extended in Phase 15.2).
 
-The v1 engine used a bare list constant for phase order. v2 needs explicit
-transition guards because each layer has preconditions on the audit log
-(e.g. synthesis cannot advance until probability_weighting and the validator
-have both run, and the grounding contract parsed cleanly).
+Phase 15.1 introduced a 4-layer flow for the Seek Clarity sub-module:
+    framing → grounding → synthesis → reflection
+
+Phase 15.2 generalises this to per-sub-module flows:
+    seek_clarity        : framing → grounding → synthesis → reflection
+    develop_strategy    : framing → grounding → synthesis → reflection
+    get_perspective     : framing → grounding → synthesis → reflection
+    simulate_hypothesis : framing → grounding → hypothesis → synthesis → reflection
+
+`hypothesis` is an additional layer where a scenario-expansion step + the
+tension detector run before synthesis. State machine treats it as a
+distinct gate: advance to synthesis only when the hypothesis layer's
+required engines have produced audit entries.
 
 The state machine is a PURE module: it inspects a session document and
-returns the next valid layer (or None) without mutating anything. The
-orchestrator owns the side effects.
+returns the next valid layer (or None) without mutating anything.
 
-Transition rules for the Seek Clarity sub-module:
-
-    framing:
-        advance to grounding when the user has posted >= 1 turn
-        (the 0th turn is the Solva-primed reply written at session start).
-
-    grounding:
-        advance to synthesis when:
-          - the triangulation engine has produced an audit entry at this layer
-          - the candidate_generation engine has produced an audit entry
-          - the user has posted >= 2 turns
-          (so the user's first turn triggered grounding engines, and their
-           second turn acknowledges/refines the framings before synthesis)
-
-    synthesis:
-        advance to reflection when:
-          - session.synthesis is non-null and carries claims[]
-          - probability_weighting has populated confidence_band on every claim
-          - validator verdict is recorded in session.synthesis.validation
-          - user has posted >= 3 turns
-
-    reflection:
-        terminal. status flips to "completed". next_layer returns None.
-
-Illegal session states (unknown layer, contradictory state) raise
-InvalidLayerTransition so callers can surface 409 to the client rather than
-degrade silently.
-
-Fuzz-tested: random walks across permutations of (layer, audit, turns) never
-reach an undefined state — see tests/test_solva_v2_state_machine.py.
+Fuzz-tested: random walks across permutations of (submodule, layer,
+audit, turns) never reach an undefined state — see
+tests/test_solva_v2_state_machine.py.
 """
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-
-LAYERS: List[str] = ["framing", "grounding", "synthesis", "reflection"]
+# All layer names in the universe.
+LAYERS: List[str] = ["framing", "grounding", "hypothesis", "synthesis", "reflection"]
 TERMINAL_LAYER = "reflection"
 
+# Per-sub-module ordered layer flow. Phase 15.2: simulate_hypothesis adds
+# the `hypothesis` layer between grounding and synthesis. The other three
+# sub-modules share the 15.1 four-layer flow.
+LAYER_ORDER_BY_SUBMODULE: Dict[str, List[str]] = {
+    "seek_clarity":        ["framing", "grounding", "synthesis", "reflection"],
+    "develop_strategy":    ["framing", "grounding", "synthesis", "reflection"],
+    "get_perspective":     ["framing", "grounding", "synthesis", "reflection"],
+    "simulate_hypothesis": ["framing", "grounding", "hypothesis", "synthesis", "reflection"],
+}
+DEFAULT_SUBMODULE = "seek_clarity"
+
 # Engine names that must be present in the grounding-layer audit log before
-# we are allowed to advance into synthesis.
+# we are allowed to advance out of grounding.
 GROUNDING_REQUIRED_ENGINES = frozenset({"triangulation", "candidate_generation"})
+
+# Engine names that must be present in the hypothesis-layer audit log
+# (simulate_hypothesis only) before we are allowed to advance into synthesis.
+HYPOTHESIS_REQUIRED_ENGINES = frozenset({"tension_detector"})
 
 
 class InvalidLayerTransition(Exception):
     """Raised when a session is in an unrecognised layer or when a transition
     is requested that the rules do not allow."""
+
+
+def _resolve_submodule(session: Dict[str, Any]) -> str:
+    """Phase 15.2: backwards compat read-time default. Sessions written
+    before 15.2 carry submodule=None / missing."""
+    sm = session.get("submodule") or DEFAULT_SUBMODULE
+    return sm if sm in LAYER_ORDER_BY_SUBMODULE else DEFAULT_SUBMODULE
+
+
+def _flow_for(session: Dict[str, Any]) -> List[str]:
+    return LAYER_ORDER_BY_SUBMODULE[_resolve_submodule(session)]
 
 
 def _user_turn_count(session: Dict[str, Any]) -> int:
@@ -71,6 +78,11 @@ def _grounding_engines_done(session: Dict[str, Any]) -> bool:
     return GROUNDING_REQUIRED_ENGINES.issubset(seen)
 
 
+def _hypothesis_engines_done(session: Dict[str, Any]) -> bool:
+    seen = {e.get("engine") for e in _audit_for_layer(session, "hypothesis")}
+    return HYPOTHESIS_REQUIRED_ENGINES.issubset(seen)
+
+
 def _synthesis_complete(session: Dict[str, Any]) -> bool:
     synth = session.get("synthesis") or {}
     if not synth.get("claims"):
@@ -84,29 +96,55 @@ def _synthesis_complete(session: Dict[str, Any]) -> bool:
     return True
 
 
+def _next_in_flow(flow: List[str], current: str) -> Optional[str]:
+    """Return the layer that comes after `current` in the given flow,
+    or None if `current` is the last layer in the flow."""
+    if current not in flow:
+        return None
+    idx = flow.index(current)
+    if idx + 1 >= len(flow):
+        return None
+    return flow[idx + 1]
+
+
 def next_layer(session: Dict[str, Any]) -> Optional[str]:
     """Return the layer this session should advance to, or None if it should stay.
 
     Pure function. No DB writes, no IO. Raises InvalidLayerTransition on an
     unrecognised current layer.
     """
+    flow = _flow_for(session)
     current = session.get("layer")
     if current not in LAYERS:
         raise InvalidLayerTransition(f"unknown current layer: {current!r}")
+    if current not in flow:
+        # Layer is valid in the universe but not in this submodule's flow
+        # (e.g. a session somehow landed at `hypothesis` while submodule
+        # is `seek_clarity`). Treat as illegal.
+        raise InvalidLayerTransition(
+            f"layer {current!r} is not part of submodule "
+            f"{_resolve_submodule(session)!r} flow"
+        )
 
     user_turns = _user_turn_count(session)
 
     if current == "framing":
-        return "grounding" if user_turns >= 1 else None
+        return _next_in_flow(flow, current) if user_turns >= 1 else None
 
     if current == "grounding":
         if _grounding_engines_done(session) and user_turns >= 2:
-            return "synthesis"
+            return _next_in_flow(flow, current)
+        return None
+
+    if current == "hypothesis":
+        # Phase 15.2 — simulate_hypothesis only.
+        if _hypothesis_engines_done(session):
+            return _next_in_flow(flow, current)
         return None
 
     if current == "synthesis":
         if _synthesis_complete(session) and user_turns >= 3:
-            return "reflection"
+            return _next_in_flow(flow, current)
         return None
 
     if current == "reflection":
@@ -116,12 +154,7 @@ def next_layer(session: Dict[str, Any]) -> Optional[str]:
 
 
 def can_post_turn(session: Dict[str, Any]) -> bool:
-    """Return True iff posting a user turn to this session is legal.
-
-    A session is closed for input when status is anything other than 'active'
-    (completed / abandoned / unknown) OR when its layer has reached the
-    terminal layer with the synthesis lifecycle already discharged.
-    """
+    """Return True iff posting a user turn to this session is legal."""
     if (session.get("status") or "").lower() != "active":
         return False
     if session.get("layer") == TERMINAL_LAYER:
@@ -130,10 +163,6 @@ def can_post_turn(session: Dict[str, Any]) -> bool:
 
 
 def assert_can_post_turn(session: Dict[str, Any]) -> None:
-    """Same as can_post_turn but raises InvalidLayerTransition on rejection.
-
-    The orchestrator catches this and returns 409.
-    """
     if not can_post_turn(session):
         raise InvalidLayerTransition(
             f"session {session.get('id')} cannot accept more turns "
@@ -143,3 +172,9 @@ def assert_can_post_turn(session: Dict[str, Any]) -> None:
 
 def is_terminal(session: Dict[str, Any]) -> bool:
     return session.get("layer") == TERMINAL_LAYER
+
+
+def submodule_of(session: Dict[str, Any]) -> str:
+    """Public helper for the orchestrator: resolve the session's submodule
+    with backwards-compat fallback."""
+    return _resolve_submodule(session)

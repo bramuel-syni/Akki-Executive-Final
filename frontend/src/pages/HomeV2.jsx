@@ -133,7 +133,7 @@ function ContextRail({ activeContextId, onSwitch, streamContexts }) {
           className="text-[12px] text-[var(--muted)] hover:text-[var(--accent)] inline-flex items-center gap-1"
           data-testid="homev2-new-context"
         >
-          <Plus size={12} /> New context
+          <Plus size={12} /> New company
         </Link>
       </div>
     </aside>

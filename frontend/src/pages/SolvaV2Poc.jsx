@@ -88,6 +88,62 @@ export default function SolvaV2Poc() {
   // the "Start a new session" button which clears `session` state.
   const [bootstrapping, setBootstrapping] = useState(true);
   const [showAllAudit, setShowAllAudit] = useState(false);
+  // Phase 15.2 — sub-module picker. Default to seek_clarity. Persona only
+  // surfaces when the chosen sub-module is get_perspective.
+  const [submodule, setSubmodule] = useState("seek_clarity");
+  const [persona, setPersona] = useState("");
+  const [intentSuggestion, setIntentSuggestion] = useState(null);  // {submodule, confidence, reason}
+
+  // Soft-suggest the most-fitting sub-module on intent input. Debounced —
+  // only fires when the user pauses typing for 800ms AND the intent is
+  // long enough for the classifier to be useful.
+  useEffect(() => {
+    if (!enabled || session) return;
+    const t = setTimeout(async () => {
+      const trimmed = intent.trim();
+      if (trimmed.length < 30) {
+        setIntentSuggestion(null);
+        return;
+      }
+      try {
+        const { data } = await api.post("/solva/v2/intent/classify", {
+          intent: trimmed,
+        });
+        // Hide low-confidence suggestions per the 15.2 brief.
+        if (data && data.confidence >= 0.6 && data.submodule) {
+          setIntentSuggestion(data);
+        } else {
+          setIntentSuggestion(null);
+        }
+      } catch (_e) {
+        setIntentSuggestion(null);
+      }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [intent, enabled, session]);
+
+  const SUBMODULE_TILES = [
+    {
+      key: "seek_clarity",
+      label: "Seek Clarity",
+      blurb: "Diagnose first. Walk a problem one layer at a time before deciding what to do.",
+    },
+    {
+      key: "develop_strategy",
+      label: "Develop Strategy",
+      blurb: "Move from diagnosis to recommendation. Specific, testable, owner-assignable.",
+    },
+    {
+      key: "simulate_hypothesis",
+      label: "Simulate Hypothesis",
+      blurb: "Explore a 'what-if?'. 2–3 scenarios, second-order effects, tension detection.",
+    },
+    {
+      key: "get_perspective",
+      label: "Get Perspective",
+      blurb: "Hear it in another voice — Chair, NED, Investor, Regulator, Auditor, or your own.",
+    },
+  ];
 
   useEffect(() => {
     if (!enabled) return;
@@ -125,18 +181,46 @@ export default function SolvaV2Poc() {
 
   const start = async () => {
     if (!activeCluster || intent.trim().length < 20) return;
+    if (submodule === "get_perspective" && !persona.trim()) {
+      setError("Get Perspective requires a persona — pick or type one.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const { data } = await api.post("/solva/v2/sessions", {
+      const body = {
         cluster_id: activeCluster.id,
         intent,
-        submodule: "seek_clarity",
+        submodule,
         pro_tier: false,
-      });
+      };
+      if (submodule === "get_perspective" && persona.trim()) {
+        body.persona = persona.trim();
+      }
+      const { data } = await api.post("/solva/v2/sessions", body);
       setSession(data);
     } catch (e) {
       setError(e?.response?.data?.detail || e.message || "Start failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const fork = async (toSubmodule, forkPersona) => {
+    if (!session) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const body = { to_submodule: toSubmodule };
+      if (forkPersona) body.persona = forkPersona;
+      const { data } = await api.post(
+        `/solva/v2/sessions/${session.id}/fork`,
+        body,
+      );
+      setSession(data);
+      setShowAllAudit(false);
+    } catch (e) {
+      setError(e?.response?.data?.detail || e.message || "Fork failed");
     } finally {
       setBusy(false);
     }
@@ -234,19 +318,84 @@ export default function SolvaV2Poc() {
     );
   }
 
-  // No session yet — show picker + intent form
+  // No session yet — show submodule picker + cluster + intent form
   if (!session) {
     return (
       <AppShell>
-        <div style={{ maxWidth: 760, margin: "40px auto", padding: 24 }}>
-          <p className="akki-overline" style={{ marginBottom: 8 }}>Solva v2 · Seek Clarity (POC)</p>
-          <h1 style={{ fontFamily: "Georgia, serif", fontSize: 28, marginBottom: 8 }}>Start a Seek Clarity session</h1>
+        <div style={{ maxWidth: 880, margin: "40px auto", padding: 24 }}>
+          <p className="akki-overline" style={{ marginBottom: 8 }}>Solva v2 · Phase 15.2</p>
+          <h1 style={{ fontFamily: "Georgia, serif", fontSize: 28, marginBottom: 8 }}>Start a Solva session</h1>
           <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 24 }}>
-            Phase 15.0 POC. One sub-module, four layers: Framing → Grounding →
-            Synthesis → Reflection. Every LLM call is audited; every synthesis
-            sentence carries a grounding-tier marker.
+            Pick a sub-module, then a cluster, then state the problem in your
+            own words. Every LLM call is audited; every assertive sentence
+            carries a grounding-tier marker.
           </p>
 
+          {/* Phase 15.2 — 4-tile sub-module picker. User picks explicitly;
+              the suggestion chip below the intent field is soft-only. */}
+          <div style={{ marginBottom: 20 }}>
+            <label className="akki-overline" style={{ display: "block", marginBottom: 8 }}>
+              Sub-module
+            </label>
+            <div
+              data-testid="v2poc-submodule-picker"
+              style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}
+            >
+              {SUBMODULE_TILES.map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setSubmodule(t.key)}
+                  data-testid={`v2poc-submodule-${t.key}`}
+                  style={{
+                    textAlign: "left", padding: 14,
+                    border: `1.5px solid ${submodule === t.key ? "var(--accent)" : "var(--rule)"}`,
+                    background: submodule === t.key ? "var(--cream)" : "var(--warm-white)",
+                    fontSize: 13, borderRadius: 4, cursor: "pointer",
+                    transition: "border-color 120ms",
+                  }}
+                >
+                  <div style={{ fontFamily: "Georgia, serif", fontSize: 15, fontWeight: 600 }}>{t.label}</div>
+                  <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4, lineHeight: 1.4 }}>{t.blurb}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Persona field — only when get_perspective is selected. */}
+          {submodule === "get_perspective" && (
+            <div style={{ marginBottom: 20 }}>
+              <label className="akki-overline" style={{ display: "block", marginBottom: 8 }}>
+                Persona
+              </label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                {["Chair", "Fellow NED", "Investor", "Regulator", "Auditor"].map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPersona(p)}
+                    data-testid={`v2poc-persona-${p.toLowerCase().replace(/\s+/g, "-")}`}
+                    style={{
+                      padding: "6px 12px", fontSize: 12, borderRadius: 16,
+                      border: `1px solid ${persona === p ? "var(--accent)" : "var(--rule)"}`,
+                      background: persona === p ? "var(--cream)" : "var(--warm-white)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <input
+                data-testid="v2poc-persona-custom"
+                type="text"
+                value={persona}
+                onChange={(e) => setPersona(e.target.value)}
+                placeholder="…or type a custom persona (e.g. 'a sceptical institutional investor')"
+                style={{ width: "100%", padding: 10, fontSize: 13, border: "1px solid var(--rule)", borderRadius: 3, fontFamily: "inherit" }}
+              />
+            </div>
+          )}
+
+          {/* Cluster picker (15.0/15.1 behaviour, unchanged). */}
           <div style={{ marginBottom: 20 }}>
             <label className="akki-overline" style={{ display: "block", marginBottom: 8 }}>
               Cluster
@@ -275,7 +424,7 @@ export default function SolvaV2Poc() {
             )}
           </div>
 
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 8 }}>
             <label className="akki-overline" style={{ display: "block", marginBottom: 8 }}>
               Intent (20–1200 chars)
             </label>
@@ -284,24 +433,57 @@ export default function SolvaV2Poc() {
               rows={6}
               value={intent}
               onChange={(e) => setIntent(e.target.value)}
-              placeholder={activeCluster?.example_question || "What’s the problem you’ve been carrying?"}
+              placeholder={activeCluster?.example_question || "What's the problem you've been carrying?"}
               style={{ width: "100%", padding: 12, fontSize: 14, border: "1px solid var(--rule)", borderRadius: 3, fontFamily: "inherit" }}
             />
           </div>
 
-          {error && <p style={{ color: "var(--risk)", marginBottom: 12, fontSize: 13 }}>{error}</p>}
+          {/* Phase 15.2 — soft classifier suggestion chip. Renders only when
+              confidence >= 0.6 and the suggestion differs from the user's
+              currently-selected sub-module. Click to switch. */}
+          {intentSuggestion && intentSuggestion.submodule !== submodule && (
+            <div
+              data-testid="v2poc-intent-suggestion"
+              style={{ marginBottom: 16, fontSize: 12, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8 }}
+            >
+              <span>Intent classifier suggests:</span>
+              <button
+                onClick={() => setSubmodule(intentSuggestion.submodule)}
+                style={{
+                  padding: "3px 9px", fontSize: 11,
+                  border: "1px solid var(--accent)", borderRadius: 12,
+                  background: "var(--warm-white)", color: "var(--accent)",
+                  cursor: "pointer", textTransform: "uppercase", letterSpacing: 0.4,
+                }}
+              >
+                {SUBMODULE_TILES.find((t) => t.key === intentSuggestion.submodule)?.label || intentSuggestion.submodule}
+                {" "}
+                <span style={{ opacity: 0.7 }}>{Math.round(intentSuggestion.confidence * 100)}%</span>
+              </button>
+              <span style={{ fontStyle: "italic", maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {intentSuggestion.reason}
+              </span>
+            </div>
+          )}
+
+          {error && <p style={{ color: "var(--risk)", marginBottom: 12, fontSize: 13 }}>{typeof error === "string" ? error : JSON.stringify(error)}</p>}
 
           <button
             data-testid="v2poc-start"
-            disabled={!activeCluster || intent.trim().length < 20 || busy}
+            disabled={
+              !activeCluster ||
+              intent.trim().length < 20 ||
+              busy ||
+              (submodule === "get_perspective" && !persona.trim())
+            }
             onClick={start}
             style={{
               padding: "10px 18px", background: "var(--chrome)", color: "white",
               border: "none", borderRadius: 3, fontSize: 14, cursor: "pointer",
-              opacity: (!activeCluster || intent.trim().length < 20 || busy) ? 0.5 : 1,
+              opacity: (!activeCluster || intent.trim().length < 20 || busy || (submodule === "get_perspective" && !persona.trim())) ? 0.5 : 1,
             }}
           >
-            {busy ? "Starting…" : "Start session"}
+            {busy ? "Starting…" : `Start ${SUBMODULE_TILES.find((t) => t.key === submodule)?.label || "session"}`}
           </button>
         </div>
       </AppShell>
@@ -318,7 +500,16 @@ export default function SolvaV2Poc() {
       <div style={{ maxWidth: 960, margin: "24px auto", padding: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, gap: 16 }}>
           <div style={{ flex: 1 }}>
-            <p className="akki-overline">Solva v2 · Seek Clarity · {session.cluster_label}</p>
+            <p className="akki-overline" style={{ marginBottom: 8 }}>
+              Solva v2 · {(session.submodule || "seek_clarity").replace(/_/g, " ")}
+              {session.persona && (
+                <span style={{ marginLeft: 8, opacity: 0.7 }}>· persona: {session.persona}</span>
+              )}
+              {session.parent_session_id && (
+                <span style={{ marginLeft: 8, opacity: 0.7 }}>· forked</span>
+              )}
+              {" · "}{session.cluster_label}
+            </p>
             <h1 style={{ fontFamily: "Georgia, serif", fontSize: 20, margin: "0 0 6px 0" }}>
               Layer: {LAYER_LABELS[session.layer] || session.layer} · Status: {session.status}
               {isCompletedReplay && (
@@ -341,6 +532,35 @@ export default function SolvaV2Poc() {
             >
               + Start a new session
             </button>
+            {/* Phase 15.2 — Take this session into another sub-module. Only
+                shown when the session is in a state that has accumulated
+                content worth carrying forward. */}
+            {(session.status === "completed" ||
+              (session.turns || []).filter((t) => t.role === "user").length >= 1) && (
+              <div data-testid="v2poc-fork-menu" style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11 }}>
+                <span className="akki-overline" style={{ fontSize: 9, marginTop: 2 }}>Take into…</span>
+                {SUBMODULE_TILES
+                  .filter((t) => t.key !== (session.submodule || "seek_clarity"))
+                  .map((t) => (
+                    <button
+                      key={t.key}
+                      data-testid={`v2poc-fork-${t.key}`}
+                      onClick={() => {
+                        if (t.key === "get_perspective") {
+                          const p = window.prompt("Persona for Get Perspective?", "Chair");
+                          if (!p) return;
+                          fork(t.key, p);
+                        } else {
+                          fork(t.key);
+                        }
+                      }}
+                      style={{ fontSize: 11, color: "var(--muted)", background: "transparent", border: "1px solid var(--rule)", padding: "3px 8px", borderRadius: 2, cursor: "pointer", textAlign: "left" }}
+                    >
+                      → {t.label}
+                    </button>
+                  ))}
+              </div>
+            )}
             {!isCompletedReplay && (
               <button onClick={abandon} style={{ fontSize: 12, color: "var(--muted)", background: "none", border: "1px solid var(--rule)", padding: "6px 12px", borderRadius: 3, cursor: "pointer" }}>
                 Abandon

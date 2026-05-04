@@ -1,20 +1,28 @@
-"""Solva v2 — four reasoning engines (Phase 15.0).
+"""Solva v2 — reasoning engines (Phase 15.0 → 15.2).
 
-One real, three stubs. All four share a common interface — async `run(...)`
-returning `{output, audit_entry}` — so 15.1 can replace the three stubs in
-place without touching the orchestrator.
+All engines share a common interface — async `run(...)` returning
+`{output, audit_entry}` (refusal returns `audit_entry`,
+candidate_generation / probability_weighting return `audit_entries[]` as
+they support a retry pass) — so the orchestrator can invoke any engine
+the same way.
 
 Engine inventory:
-    triangulation          REAL   wraps db.solve_comparables lookup
-    candidate_generation   STUB   deterministic placeholder, domain_prior tier
-    probability_weighting  STUB   pass-through (no confidence weighting)
-    refusal                STUB   always returns {block: false}
+    triangulation          REAL  wraps db.solve_comparables lookup
+    candidate_generation   REAL  Phase 15.1 — multi-candidate framings
+    probability_weighting  REAL  Phase 15.1 — confidence bands per claim
+    refusal                REAL  Phase 15.1 — clean / jailbreak / oos classifier
+    tension_detector       REAL  Phase 15.2 — single-session contradiction finder
+                                  (auto-activates inside Simulate Hypothesis)
 """
-from . import triangulation, candidate_generation, probability_weighting, refusal
+from . import (  # noqa: F401
+    triangulation, candidate_generation, probability_weighting, refusal,
+    tension_detector,
+)
 
 __all__ = [
     "triangulation",
     "candidate_generation",
     "probability_weighting",
     "refusal",
+    "tension_detector",
 ]

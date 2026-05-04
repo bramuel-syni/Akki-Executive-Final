@@ -484,3 +484,115 @@ def test_edit_rejects_empty_question_list(client, admin_account):
         assert r.status_code == 422, r.text
     finally:
         _cleanup_queue(queue_id)
+
+
+
+# ---------------------------------------------------------------------------
+# Phase 15.2 — null-context fallback
+# ---------------------------------------------------------------------------
+def test_approve_with_null_context_id_falls_back_to_default(client, admin_account):
+    """Solva v2 sessions started without an active context land here with
+    item.context_id=None. Approve must resolve from
+    accounts[account_id].default_context_id and write the questions there
+    instead of orphaning them with context_id=null."""
+    db_handle, _ = _mongo_client()
+    questions = _seed_questions()
+    queue_id = str(uuid.uuid4())
+    handoff_id = str(uuid.uuid4())
+    sid = str(uuid.uuid4())
+    db_handle.solva_cycle_handoff_queue.insert_one({
+        "id": queue_id,
+        "kind": "solva_cycle_action",
+        "account_id": admin_account["id"],
+        "context_id": None,  # the contested edge case
+        "session_id": sid,
+        "cluster_id": "cluster.fallback_test",
+        "cluster_label": "Phase 15.2 null-context fallback",
+        "questions": questions,
+        "status": "pending_review",
+        "note": "",
+        "created_at": _now_iso(),
+        "reviewed_at": None,
+    })
+    db_handle.solve_handoffs.insert_one({
+        "id": handoff_id, "session_id": sid,
+        "account_id": admin_account["id"], "target": "cycle",
+        "status": "pending_review", "review_queue_id": queue_id,
+        "created_at": _now_iso(),
+    })
+    try:
+        r = client.post(
+            f"{BASE_URL}/api/me/review-queue/items/solva_cycle_action/{queue_id}/approve",
+            json={}, timeout=30,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body.get("ok") is True
+        assert body.get("questions_inserted") == len(questions)
+
+        # All inserted questions must carry the admin's default_context_id,
+        # NOT None.
+        item = db_handle.solva_cycle_handoff_queue.find_one({"id": queue_id})
+        assert item.get("resolved_context_id") == admin_account["context_id"]
+        for qid in item.get("inserted_question_ids") or []:
+            q = db_handle.questions.find_one({"id": qid})
+            assert q is not None
+            assert q["context_id"] == admin_account["context_id"], (
+                f"question {qid} written with wrong context_id: {q['context_id']!r} "
+                f"— should be admin's default {admin_account['context_id']!r}"
+            )
+    finally:
+        _cleanup_queue(queue_id)
+
+
+def test_approve_with_null_context_and_no_default_fails_fast(client, admin_account):
+    """When both session.context_id AND account.default_context_id are
+    null, approve must 422 with a clear actionable error rather than
+    silently orphan questions."""
+    db_handle, _ = _mongo_client()
+    aid = admin_account["id"]
+    # Save admin's current default_context_id, blank it for this test, restore after.
+    saved = db_handle.accounts.find_one({"id": aid}, {"default_context_id": 1, "_id": 0})
+    db_handle.accounts.update_one({"id": aid}, {"$set": {"default_context_id": None}})
+
+    queue_id = str(uuid.uuid4())
+    sid = str(uuid.uuid4())
+    db_handle.solva_cycle_handoff_queue.insert_one({
+        "id": queue_id,
+        "kind": "solva_cycle_action",
+        "account_id": aid,
+        "context_id": None,
+        "session_id": sid,
+        "cluster_id": "cluster.no_default_fallback",
+        "cluster_label": "Phase 15.2 hard-fail edge",
+        "questions": _seed_questions(),
+        "status": "pending_review",
+        "note": "",
+        "created_at": _now_iso(),
+        "reviewed_at": None,
+    })
+    db_handle.solve_handoffs.insert_one({
+        "id": str(uuid.uuid4()), "session_id": sid,
+        "account_id": aid, "target": "cycle",
+        "status": "pending_review", "review_queue_id": queue_id,
+        "created_at": _now_iso(),
+    })
+    try:
+        r = client.post(
+            f"{BASE_URL}/api/me/review-queue/items/solva_cycle_action/{queue_id}/approve",
+            json={}, timeout=30,
+        )
+        assert r.status_code == 422, r.text
+        assert "no context" in r.text.lower() or "no default context" in r.text.lower()
+
+        # Queue item must remain in pending state — no silent orphaning.
+        item = db_handle.solva_cycle_handoff_queue.find_one({"id": queue_id})
+        assert item["status"] == "pending_review"
+        assert not item.get("inserted_question_ids")
+    finally:
+        # Restore admin default_context_id.
+        db_handle.accounts.update_one(
+            {"id": aid},
+            {"$set": {"default_context_id": (saved or {}).get("default_context_id")}},
+        )
+        _cleanup_queue(queue_id)

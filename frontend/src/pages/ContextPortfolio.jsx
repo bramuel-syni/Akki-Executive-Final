@@ -198,9 +198,9 @@ export default function ContextPortfolio() {
           </p>
           <div className="flex items-end justify-between gap-6 flex-wrap">
             <div>
-              <h1 className="akki-greeting">Your boards & operating contexts, {firstName}.</h1>
+              <h1 className="akki-greeting">Your boards & operating companies, {firstName}.</h1>
               <p className="akki-meta mt-2 max-w-2xl">
-                Every context is isolated. Data, signals, members and briefings stay within each board. Open one to work in it.
+                Every company is isolated. Data, signals, members and briefings stay within each board. Open one to work in it.
               </p>
             </div>
             <Button
@@ -208,13 +208,13 @@ export default function ContextPortfolio() {
               className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-md h-10 px-4 font-medium shrink-0"
               data-testid="portfolio-add-context-btn"
             >
-              <Plus className="w-4 h-4 mr-1.5" /> Add context
+              <Plus className="w-4 h-4 mr-1.5" /> Add company
             </Button>
           </div>
 
           {/* Portfolio summary strip */}
           <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-            <SummaryTile label="Contexts" value={contexts.length} />
+            <SummaryTile label="Companies" value={contexts.length} />
             <SummaryTile label="Signals" value={loading ? "…" : totalSignals} />
             <SummaryTile label="Briefings" value={loading ? "…" : totalBriefings} />
             <SummaryTile label="Documents" value={loading ? "…" : totalDocs} />
@@ -288,7 +288,7 @@ export default function ContextPortfolio() {
             <section data-testid="portfolio-section-executive">
               <div className="flex items-center gap-2 mb-4">
                 <Briefcase className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} />
-                <p className="akki-overline">Executive contexts · {grouped.exec.length}</p>
+                <p className="akki-overline">Executive companies · {grouped.exec.length}</p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                 {grouped.exec.map((c) => (
@@ -309,14 +309,14 @@ export default function ContextPortfolio() {
               <Layers className="w-10 h-10 text-[var(--muted)]/40 mx-auto mb-4" strokeWidth={1.3} />
               <p className="akki-lead mb-2">Your portfolio is empty.</p>
               <p className="text-[13px] text-[var(--muted)] mb-5 max-w-md mx-auto">
-                Add your first NED board or executive operating context to start surfacing signals.
+                Add your first NED board or executive company to start surfacing signals.
               </p>
               <Button
                 onClick={() => navigate("/app/contexts/new")}
                 className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-md h-10 px-5 font-medium"
                 data-testid="portfolio-empty-add-btn"
               >
-                <Plus className="w-4 h-4 mr-1.5" /> Add your first context
+                <Plus className="w-4 h-4 mr-1.5" /> Add your first company
               </Button>
             </div>
           )}

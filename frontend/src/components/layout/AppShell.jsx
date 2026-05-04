@@ -198,14 +198,15 @@ export default function AppShell({ children }) {
     <div className="min-h-screen flex flex-col bg-[var(--cream)]">
       <SandboxBanner />
       <SandboxEmailCapture />
-      {/* Top chrome — cream, 64px, 1px rule border. 3-region flex: left
-          (logo) / centre (trust badge, allowed to shrink/hide) / right
-          (palette + nav controls). Phase 15.1: switched away from
-          justify-between + absolute-centred badge — at ~1024-1280px the
-          right cluster crossed the centreline and the trust badge
-          rendered on top of the ⌘K palette pill. */}
+      {/* Top chrome — cream, 64px, 1px rule border. 2-region flex: left
+          (logo + brand subtitle) / right (palette + nav controls).
+          Phase 15.2: relocated the "Internal · Secure · Confidential"
+          trust badge OUT of the top-bar centre and into the secondary
+          nav row to the right of "Learn". The top bar centre is now
+          intentionally empty so the AKKI logo + "for Executives" sit
+          alone on the left, cleaner editorial spacing. */}
       <header
-        className="bg-[var(--cream)] text-[var(--ink)] border-b border-[var(--rule)] h-16 sticky top-0 z-40 flex items-center gap-4 px-6"
+        className="bg-[var(--cream)] text-[var(--ink)] border-b border-[var(--rule)] h-16 sticky top-0 z-40 flex items-center gap-4 px-6 justify-between"
         data-testid="top-header"
       >
         {/* LEFT — logo */}
@@ -217,22 +218,6 @@ export default function AppShell({ children }) {
             </span>
           </Link>
         </div>
-        {/* CENTRE — trust badge. Shrinks on narrow widths and disappears
-            entirely below xl (1280px) so it can never overlap the right
-            cluster's controls. Marker only — no interactive behaviour. */}
-        <div
-          className="hidden xl:flex flex-1 min-w-0 justify-center items-center gap-1 text-[10px] tracking-[0.2em] uppercase text-[var(--muted)] pointer-events-none truncate"
-          data-testid="trust-badge"
-        >
-          <span className="text-[var(--accent)]">Internal</span>
-          <span className="opacity-40">·</span>
-          <span>Secure</span>
-          <span className="opacity-40">·</span>
-          <span>Confidential</span>
-        </div>
-        {/* Spacer that fills the centre region when the trust badge is
-            hidden, so the right cluster stays anchored to the right edge. */}
-        <div className="xl:hidden flex-1" aria-hidden="true" />
 
         <div className="flex items-center gap-5 flex-shrink-0">
           {/* Continue-with-doc pill — Tier-B persistent thread back to the
@@ -387,6 +372,24 @@ export default function AppShell({ children }) {
               {n.label}
             </NavLink>
           ))}
+          {/* Phase 15.2 — classification chip relocated from the top bar
+              centre slot into the nav row, right-anchored beside Learn.
+              Now interactive: click navigates to /app/security (Trust
+              Panel). Tooltip explains what the three labels mean. */}
+          <button
+            type="button"
+            onClick={() => navigate("/app/security")}
+            className="ml-auto self-center flex items-center gap-1 text-[10px] tracking-[0.2em] uppercase text-[var(--muted)] pl-4 pr-1 hover:text-[var(--ink)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--cream)] cursor-pointer"
+            data-testid="trust-badge"
+            aria-label="Open Trust & Governance panel"
+            title="This session is classified INTERNAL. Transport is SECURE (TLS). Content is CONFIDENTIAL by default. Click for the full trust summary."
+          >
+            <span className="text-[var(--accent)]">Internal</span>
+            <span className="opacity-40">·</span>
+            <span>Secure</span>
+            <span className="opacity-40">·</span>
+            <span>Confidential</span>
+          </button>
         </div>
       </nav>
 
@@ -718,11 +721,10 @@ export default function AppShell({ children }) {
           )}
           {isSponsored && (
             <div
-              className="flex items-center gap-2 px-8 py-2 bg-[var(--ink)]/5 border-b border-[var(--accent)]/30 text-xs text-[var(--ink)]"
+              className="flex items-center gap-2 px-8 py-2 bg-[var(--ink)]/5 border-b border-[var(--accent)]/30 text-xs text-[var(--muted)]"
               data-testid="sponsored-context-banner"
             >
-              <span className="akki-overline">Sponsored context</span>
-              <span className="text-slate-500">· Data ownership determined by the sponsoring organisation.</span>
+              <span>Sponsored. Your data stays with the sponsoring company.</span>
             </div>
           )}
           {children}
@@ -757,7 +759,7 @@ export default function AppShell({ children }) {
         <DialogContent className="rounded-sm max-w-xl p-0 overflow-hidden">
           <DialogHeader className="sr-only">
             <DialogTitle>Command palette</DialogTitle>
-            <DialogDescription>Switch context or search. Universal search unlocks at M7.</DialogDescription>
+            <DialogDescription>Switch company or search. Universal search unlocks at M7.</DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-3 border-b border-[#E1E6ED] px-4 py-3">
             <Search className="w-4 h-4 text-slate-400" strokeWidth={1.8} />
@@ -765,7 +767,7 @@ export default function AppShell({ children }) {
               ref={paletteInputRef}
               value={paletteQuery}
               onChange={(e) => setPaletteQuery(e.target.value)}
-              placeholder="Switch context…  (universal search unlocks at M7)"
+              placeholder="Switch company…  (universal search unlocks at M7)"
               className="flex-1 bg-transparent outline-none text-sm placeholder:text-slate-400"
               data-testid="palette-input"
             />

@@ -231,6 +231,12 @@ function App() {
           <Route path="/app/solve" element={<Navigate to="/app/solva" replace />} />
           <Route path="/app/documents/:id" element={<Gated><DocumentRouteSwitch /></Gated>} />
           <Route path="/app/contexts" element={<Gated><ContextPortfolio /></Gated>} />
+          {/* Phase 15.2 — cosmetic alias renaming Contexts → Companies in
+              user-facing copy. Backend paths stay /api/contexts/* so we
+              keep /app/contexts functional and add /app/companies for the
+              renamed UI vocabulary + email links. */}
+          <Route path="/app/companies" element={<Gated><ContextPortfolio /></Gated>} />
+          <Route path="/app/companies/new" element={<Gated><NewContext /></Gated>} />
           <Route path="/app/contexts/new" element={<Gated><NewContext /></Gated>} />
           <Route path="/app/new-workspace" element={<Gated><NewContext /></Gated>} />
           <Route path="/app/settings" element={<Gated><TenantSettings /></Gated>} />

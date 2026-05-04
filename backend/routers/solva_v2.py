@@ -28,6 +28,7 @@ Out of scope for 15.1 (delivered later per docs/ROADMAP.md):
 """
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from typing import Any, Dict, List, Optional
@@ -56,6 +57,16 @@ from services.solva_v2.engines import (
     candidate_generation,
     probability_weighting,
     refusal,
+    tension_detector,
+)
+from services.solva_v2.engines.tension_detector import CrossSessionTensionInputError
+from services.solva_v2.submodules import (
+    SUBMODULE_NAMES,
+    voice_for as submodule_voice_for,
+    parse_recommendations_from_synthesis,
+    expects_recommendations,
+    expects_hypothesis_layer,
+    expects_persona_at_intake,
 )
 
 logger = logging.getLogger("akki.solva_v2")
@@ -66,10 +77,13 @@ router = APIRouter(prefix="/api/solva/v2", tags=["solva_v2"])
 # -----------------------------------------------------------------------------
 # Constants
 # -----------------------------------------------------------------------------
-SUBMODULES = ["seek_clarity"]  # 15.1 still ships exactly one; 15.2 adds three
+# Phase 15.2: 4 sub-modules now ship. Backwards-compat default at read time
+# remains 'seek_clarity' for any session row written before 15.2.
+SUBMODULES = list(SUBMODULE_NAMES)
 MAX_GROUNDING_RETRIES = 2  # => 3 total attempts on synthesis
 SCHEMA_VERSION = 2  # 15.1+ sessions carry this; 15.0 sessions implicitly 1
 SYNTHESIS_SURFACE = "solve_v2.synthesis"
+HYPOTHESIS_SURFACE = "solve_v2.hypothesis"
 
 
 # -----------------------------------------------------------------------------
@@ -80,11 +94,26 @@ class StartV2In(BaseModel):
     intent: str = Field(min_length=20, max_length=1200)
     context_id: Optional[str] = None
     submodule: str = Field(default="seek_clarity")
+    persona: Optional[str] = Field(default=None, max_length=200)  # Phase 15.2 — Get Perspective
     pro_tier: bool = False
 
 
 class TurnV2In(BaseModel):
     user_text: str = Field(min_length=2, max_length=4000)
+
+
+class ForkV2In(BaseModel):
+    """Phase 15.2 — fork an in-flight or completed session into a new session
+    under a different sub-module. The new session inherits intent + accumulated
+    user turns + key claims, sets parent_session_id, and starts at framing."""
+    to_submodule: str = Field(min_length=4, max_length=40)
+    persona: Optional[str] = Field(default=None, max_length=200)
+
+
+class IntentClassifyIn(BaseModel):
+    """Phase 15.2 — single tier=fast LLM classification of the user's intent
+    into one of the 4 sub-modules. Fronts the picker's suggestion chip."""
+    intent: str = Field(min_length=20, max_length=1200)
 
 
 # -----------------------------------------------------------------------------
@@ -164,26 +193,58 @@ async def _append_audit(sid: str, entries: List[Dict[str, Any]]) -> None:
     )
 
 
-def _base_system_prompt(cluster: Dict[str, Any], layer: str, intent: str) -> str:
+def _base_system_prompt(
+    cluster: Dict[str, Any],
+    layer: str,
+    intent: str,
+    submodule: str = "seek_clarity",
+    persona: Optional[str] = None,
+    tensions: Optional[List[Dict[str, Any]]] = None,
+) -> str:
+    """Build the system prompt for a (submodule, layer) pair.
+
+    Phase 15.2: voice header dispatched through services.solva_v2.submodules
+    so each sub-module gets its own framing/synthesis voice. The cluster
+    hint, banned terms, and current-layer block are unchanged across
+    sub-modules. Tensions (when present) are injected into synthesis
+    prompts so the LLM acknowledges them in its diagnosis.
+    """
     hint = (cluster.get("phase_hints") or {}).get(
         # Map v2 layer names to v1 phase_hint keys for continuity.
-        {"framing": "surface", "grounding": "depth",
+        # `hypothesis` is a 15.2-only layer with no v1 analogue; reuse depth.
+        {"framing": "surface", "grounding": "depth", "hypothesis": "depth",
          "synthesis": "synthesis", "reflection": "lockin"}.get(layer, "surface"),
         "",
     )
     banned = (cluster.get("banned_terms") or [])
     banned_block = ", ".join(banned) if banned else "(none specified)"
+
+    voice = submodule_voice_for(submodule, layer, persona=persona)
+
+    tensions_block = ""
+    if tensions:
+        sev_order = {"high": 0, "medium": 1, "low": 2}
+        sorted_t = sorted(tensions, key=lambda t: sev_order.get(t.get("severity", "low"), 9))
+        lines = "\n".join(
+            f"  - [{t.get('severity', 'medium').upper()} | "
+            f"{t.get('contradiction_source', 'unknown')}] {t.get('description', '')}"
+            for t in sorted_t[:5]
+        )
+        tensions_block = (
+            "\n\nDETECTED TENSIONS (from the hypothesis layer; acknowledge "
+            "explicitly in your diagnosis where they bear on the conclusion):\n"
+            + lines
+        )
+
     return (
-        "You are AKKI Solva \u2014 a structured-pause facilitator for board-grade "
-        "problems. Single sub-module: Seek Clarity. You walk the user one layer "
-        "at a time (Framing \u2192 Grounding \u2192 Synthesis \u2192 Reflection). "
-        "You do NOT lecture. You ask the questions a sharp counterpart would ask.\n\n"
+        voice + "\n\n"
         f"CURRENT LAYER: {layer.upper()}.\n"
         f"LAYER INSTRUCTION: {hint}\n"
         f"USER INTENT: {intent}\n"
         f"CLUSTER: {cluster.get('label')}\n"
-        f"BANNED TERMS (never use): {banned_block}\n\n"
-        "TONE: Calm, editorial. Serif voice if you were speaking. No marketing "
+        f"BANNED TERMS (never use): {banned_block}\n"
+        + tensions_block
+        + "\n\nTONE: Calm, editorial. Serif voice if you were speaking. No marketing "
         "language. No false certainty. Acknowledge the user's framing before "
         "pressing it.\n"
     )
@@ -297,6 +358,79 @@ async def _run_grounding(
     }
 
 
+async def _run_hypothesis(
+    session: Dict[str, Any],
+    cluster: Dict[str, Any],
+    account_id: str,
+    turn_id: str,
+    user_turns: List[Dict[str, Any]],
+    triangulation_output: Dict[str, Any],
+    candidates: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Phase 15.2 — Simulate Hypothesis hypothesis-layer step.
+
+    Single engine: tension_detector. Single-session by hard contract — the
+    detector asserts inputs share session_id (decision #7). If zero
+    tensions are detected the audit entry still lands with `tensions: []`
+    and synthesis proceeds normally.
+
+    Returns:
+      {
+        "text": str   — Solva-side reply summarising tensions
+        "tensions": list — passes through to synthesis prompt
+        "audit_entries": list
+      }
+    """
+    audit_entries: List[Dict[str, Any]] = []
+    try:
+        td = await tension_detector.run(
+            session=session,
+            turn_id=turn_id,
+            user_turns=user_turns,
+            triangulation_output=triangulation_output,
+            candidate_hypotheses=candidates,
+        )
+    except CrossSessionTensionInputError as exc:
+        # This must NEVER happen in production — the orchestrator only ever
+        # passes single-session inputs. Surface as 500 with an audit entry
+        # so the breach is visible.
+        logger.error(
+            "tension_detector cross-session breach sid=%s: %s",
+            session["id"], exc,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "tension_detector_cross_session_breach", "message": str(exc)},
+        ) from exc
+    audit_entries.append(td["audit_entry"])
+    tensions = td["output"]["tensions"]
+
+    if tensions:
+        # Build a one-sentence Solva turn that names the top tension.
+        bullet_lines = "\n".join(
+            f"  \u2022 [{t.get('severity','medium').upper()} | "
+            f"{t.get('contradiction_source')}] {t.get('description')}"
+            for t in tensions[:3]
+        )
+        summary_text = (
+            f"Detected {len(tensions)} tension(s) between the candidate "
+            f"hypotheses and the established grounding. Most material:\n"
+            f"{bullet_lines}\n\n"
+            "Confirm I should weigh these explicitly when I synthesise the "
+            "diagnosis, or correct any I have miscast."
+        )
+    else:
+        summary_text = (
+            "No material tensions detected between the candidate hypotheses "
+            "and the established grounding. Proceeding to Synthesis."
+        )
+    return {
+        "text": summary_text,
+        "tensions": tensions,
+        "audit_entries": audit_entries,
+    }
+
+
 async def _run_synthesis(
     session: Dict[str, Any],
     cluster: Dict[str, Any],
@@ -306,11 +440,20 @@ async def _run_synthesis(
     comparables: List[Dict[str, Any]],
     candidates: List[Dict[str, Any]],
     requested_tier: str,
+    submodule: str = "seek_clarity",
+    persona: Optional[str] = None,
+    tensions: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Synthesis runs the LLM (sub-surface solve_v2.synthesis), enforces the
     grounding contract via retry loop, runs probability_weighting on the
     parsed claims, and runs the independent-family validator with its OWN
     fresh Synisense pass under sub-surface solve_v2.validator.
+
+    Phase 15.2: submodule + persona + tensions are passed to the system
+    prompt. develop_strategy post-processes the LLM body to extract a
+    `recommendations[]` array. simulate_hypothesis injects the tension
+    detector's findings into the synthesis prompt so the LLM acknowledges
+    them.
     """
     audit_entries: List[Dict[str, Any]] = []
 
@@ -328,11 +471,22 @@ async def _run_synthesis(
             "framing's grounding is expected to come from.):\n" + cand_lines
         )
 
-    system_base = _base_system_prompt(cluster, "synthesis", session["intent"]) + (
+    system_base = _base_system_prompt(
+        cluster, "synthesis", session["intent"],
+        submodule=submodule, persona=persona, tensions=tensions,
+    ) + (
         "\n\nOUTPUT FORMAT: 250\u2013350 words. One orientation sentence. "
         "Two short analysis paragraphs. One closing diagnosis sentence. "
         "If you reference comparable diagnoses, name them inline."
     )
+    if expects_recommendations(submodule):
+        system_base += (
+            "\n\nADDITIONAL OUTPUT (Develop Strategy): after the diagnosis "
+            "paragraphs, write 2\u20134 numbered recommendations on their own "
+            "lines, each starting with 'Recommendation N:' followed by a "
+            "single-sentence concrete action with its tier marker. Each "
+            "recommendation must be testable and timeline-bounded."
+        )
     system_msg = system_base + candidate_block + comparable_block + GROUNDING_CONTRACT_PROMPT
 
     base_user_query = (
@@ -424,6 +578,14 @@ async def _run_synthesis(
     validation = val["validation"]
     audit_entries.append(val["audit_entry"])
 
+    # Phase 15.2 — develop_strategy post-processing: pull recommendations[]
+    # out of the synthesis body. The recommendations are TEXT only; their
+    # confidence bands come from the per-claim probability_weighting pass
+    # (each numbered recommendation is itself a claim with a tier marker).
+    recommendations: List[Dict[str, Any]] = []
+    if expects_recommendations(submodule):
+        recommendations = parse_recommendations_from_synthesis(last_result.text or "")
+
     return {
         "grounding_violation": False,
         "text": last_result.text,
@@ -435,6 +597,7 @@ async def _run_synthesis(
         "tier": last_result.tier_served,
         "validation": validation,
         "audit_entries": audit_entries,
+        "recommendations": recommendations,  # Phase 15.2 — develop_strategy
     }
 
 
@@ -476,7 +639,16 @@ async def start_session(
     if body.submodule not in SUBMODULES:
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown submodule. 15.0 supports only: {SUBMODULES}.",
+            detail=f"Unknown submodule. Supported: {SUBMODULES}.",
+        )
+    if expects_persona_at_intake(body.submodule) and not (body.persona or "").strip():
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "submodule 'get_perspective' requires a persona at intake "
+                "(Chair / fellow NED / Investor / Regulator / Auditor / "
+                "free text)."
+            ),
         )
     cluster = await db.solve_clusters.find_one({"id": body.cluster_id}, {"_id": 0})
     if not cluster:
@@ -489,8 +661,10 @@ async def start_session(
         "account_id": account["id"],
         "context_id": body.context_id,
         "version": 2,
-        "schema_version": SCHEMA_VERSION,  # Phase 15.1: forensic clarity for old vs new
-        "submodule": "seek_clarity",
+        "schema_version": SCHEMA_VERSION,
+        "submodule": body.submodule,  # Phase 15.2 — persisted
+        "persona": (body.persona or "").strip() or None,  # 15.2 get_perspective
+        "parent_session_id": None,  # 15.2 — set when session is forked
         "cluster_id": body.cluster_id,
         "cluster_label": cluster.get("label"),
         "intent": body.intent.strip(),
@@ -570,7 +744,161 @@ async def get_session(
     )
     if not rec:
         raise HTTPException(status_code=404, detail="Session not found.")
+    # Phase 15.2 — backwards compat: sessions written before 15.2 may not
+    # carry submodule. Default at read time so the client never has to handle
+    # a null submodule field.
+    if not rec.get("submodule"):
+        rec["submodule"] = "seek_clarity"
     return rec
+
+
+@router.post("/sessions/{sid}/fork")
+async def fork_session(
+    sid: str,
+    body: ForkV2In,
+    account: Dict[str, Any] = Depends(require_solva_v2_flag),
+):
+    """Phase 15.2 — fork a session into a new sub-module.
+
+    Inherits intent + accumulated user turns from the parent. Sets
+    parent_session_id on the child so the lineage is auditable. Starts at
+    framing layer with status=active. Does NOT abandon the parent — the
+    user can keep walking the parent if they want to.
+    """
+    parent = await db.solva_v2_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0}
+    )
+    if not parent:
+        raise HTTPException(status_code=404, detail="Parent session not found.")
+    target = (body.to_submodule or "").strip()
+    if target not in SUBMODULES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown to_submodule. Supported: {SUBMODULES}.",
+        )
+    if expects_persona_at_intake(target) and not (body.persona or "").strip():
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Forking into 'get_perspective' requires a persona. Send "
+                "{'to_submodule': 'get_perspective', 'persona': '<...>'}."
+            ),
+        )
+
+    cluster = await db.solve_clusters.find_one(
+        {"id": parent.get("cluster_id")}, {"_id": 0},
+    )
+    if not cluster:
+        raise HTTPException(status_code=409, detail="Parent cluster not found.")
+
+    new_id = str(uuid.uuid4())
+    is_pro_account = await _is_pro(account)
+    inherited_user_turns = [
+        {**t, "id": str(uuid.uuid4())} for t in (parent.get("turns") or [])
+        if t.get("role") == "user"
+    ]
+    rec = {
+        "id": new_id,
+        "account_id": account["id"],
+        "context_id": parent.get("context_id"),
+        "version": 2,
+        "schema_version": SCHEMA_VERSION,
+        "submodule": target,
+        "persona": (body.persona or "").strip() or None,
+        "parent_session_id": parent["id"],
+        "cluster_id": parent["cluster_id"],
+        "cluster_label": parent.get("cluster_label"),
+        "intent": parent["intent"],
+        "layer": LAYERS[0],
+        "layer_index": 0,
+        "status": "active",
+        "pro_tier": parent.get("pro_tier", False),
+        "pro_account": is_pro_account,
+        "turns": inherited_user_turns,
+        "reasoning_audit_log": [],
+        "synthesis": None,
+        "lockin": None,
+        "started_at": iso(now()),
+        "updated_at": iso(now()),
+        "completed_at": None,
+        "fork_metadata": {
+            "parent_submodule": parent.get("submodule") or "seek_clarity",
+            "inherited_turn_count": len(inherited_user_turns),
+            "parent_status_at_fork": parent.get("status"),
+        },
+    }
+    await db.solva_v2_sessions.insert_one(rec)
+    rec.pop("_id", None)
+    return rec
+
+
+@router.post("/intent/classify")
+async def classify_intent(
+    body: IntentClassifyIn,
+    account: Dict[str, Any] = Depends(require_solva_v2_flag),
+):
+    """Phase 15.2 — soft-suggest the most-fitting sub-module for a user's
+    intent. Single tier=fast LLM call. Returns
+        {submodule: <one of 4>, confidence: 0.0-1.0, reason: str}
+    Front-end shows the chip when confidence >= 0.6 and hides otherwise.
+    """
+    from llm_tier_quota import call_llm_with_tier
+
+    sys = (
+        "You are a 4-way classifier for AKKI Solva sub-modules. Read the "
+        "user's intent and pick the BEST sub-module. Output strict JSON.\n\n"
+        "Sub-modules:\n"
+        "  - seek_clarity        : the user wants to UNDERSTAND a problem; "
+        "diagnose first, before deciding what to do.\n"
+        "  - develop_strategy    : the user wants to DECIDE what to do; "
+        "they're past diagnosis and want a recommendation.\n"
+        "  - simulate_hypothesis : the user is asking a 'what-if?'; they want "
+        "to explore scenarios for an unsettled question.\n"
+        "  - get_perspective     : the user wants to know what a specific "
+        "STAKEHOLDER (chair / NED / investor / regulator / auditor) would think.\n\n"
+        "Output JSON: {\"submodule\": \"<name>\", \"confidence\": <0.0-1.0>, "
+        "\"reason\": \"<one sentence>\"}. "
+        "Confidence is your subjective sureness. Below 0.6, the front-end "
+        "hides the suggestion entirely \u2014 default to 0.5 if unsure."
+    )
+    try:
+        llm_resp, _meta = await call_llm_with_tier(
+            system=sys,
+            user=f"Intent:\n{body.intent.strip()}",
+            requested_tier="fast",
+            account_id=account["id"],
+            surface="solve_v2.intent_classify",
+        )
+        raw = (llm_resp or {}).get("response") or ""
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("intent_classify llm failure: %s", exc)
+        return {"submodule": "seek_clarity", "confidence": 0.0,
+                "reason": "classifier unavailable; defaulting to seek_clarity",
+                "error": str(exc)[:200]}
+
+    import re as _re
+    m = _re.search(r"\{.*\}", raw, _re.DOTALL)
+    if not m:
+        return {"submodule": "seek_clarity", "confidence": 0.0,
+                "reason": "classifier returned no parseable JSON"}
+    try:
+        parsed = json.loads(m.group(0))
+    except Exception:  # noqa: BLE001
+        return {"submodule": "seek_clarity", "confidence": 0.0,
+                "reason": "classifier JSON parse failed"}
+    submod = parsed.get("submodule") or "seek_clarity"
+    if submod not in SUBMODULES:
+        submod = "seek_clarity"
+    try:
+        conf = float(parsed.get("confidence") or 0.0)
+    except Exception:  # noqa: BLE001
+        conf = 0.0
+    conf = max(0.0, min(1.0, conf))
+    return {
+        "submodule": submod,
+        "confidence": conf,
+        "reason": (parsed.get("reason") or "").strip()[:240],
+    }
 
 
 @router.get("/sessions/{sid}/reasoning-log")
@@ -669,7 +997,6 @@ async def post_turn(
     solve_text = ""
     solve_model: Optional[str] = None
     solve_tier: Optional[str] = None
-    grounding_violation_payload: Optional[Dict[str, Any]] = None
 
     if current_layer == "framing":
         # Advance from framing -> grounding: triangulation + candidate_generation
@@ -702,23 +1029,90 @@ async def post_turn(
         update_fields["_grounding_candidates"] = out["candidates"]
 
     elif current_layer == "grounding":
-        # User gave feedback on grounding; proceed to synthesis.
+        # User gave feedback on grounding. Phase 15.2: dispatch by submodule.
+        submodule = rec.get("submodule") or "seek_clarity"
+        if expects_hypothesis_layer(submodule):
+            # simulate_hypothesis: run the tension detector + scenario step
+            # at this turn. Synthesis runs at the next turn (current_layer
+            # will then be 'hypothesis').
+            comparables = rec.get("_grounding_comparables") or []
+            candidates = rec.get("_grounding_candidates") or []
+            tri_output = {"comparables": comparables}
+            user_turns = [t for t in rec.get("turns", []) if t.get("role") == "user"]
+            out = await _run_hypothesis(
+                rec, cluster, account["id"], solve_turn_id,
+                user_turns=user_turns,
+                triangulation_output=tri_output,
+                candidates=candidates,
+            )
+            all_audits.extend(out["audit_entries"])
+            solve_text = out["text"]
+            update_fields["_hypothesis_tensions"] = out["tensions"]
+            rec["_hypothesis_tensions"] = out["tensions"]
+        else:
+            # seek_clarity / develop_strategy / get_perspective: synthesis
+            # happens at the grounding -> synthesis transition turn.
+            tier_req = "deep" if rec.get("pro_tier") and rec.get("pro_account") else "standard"
+            comparables = rec.get("_grounding_comparables") or []
+            candidates = rec.get("_grounding_candidates") or []
+            persona = rec.get("persona")
+            out = await _run_synthesis(
+                rec, cluster, account["id"], solve_turn_id, transcript,
+                comparables=comparables, candidates=candidates, requested_tier=tier_req,
+                submodule=submodule, persona=persona, tensions=None,
+            )
+            all_audits.extend(out["audit_entries"])
+            if out.get("grounding_violation"):
+                await _append_audit(sid, all_audits)
+                logger.warning(
+                    "solva_v2 grounding contract violation sid=%s account=%s",
+                    sid, account["id"],
+                )
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": "grounding_contract_violation",
+                        "message": "Model failed grounding contract after 3 attempts.",
+                        "untagged_sentences": out.get("untagged_sentences", []),
+                        "malformed_markers": out.get("malformed_markers", []),
+                    },
+                )
+            synthesis_record = {
+                "body": out["text"],
+                "stripped_text": out["stripped_text"],
+                "claims": out["claims"],
+                "tier_distribution": out["tier_distribution"],
+                "probability_weighting_violations": out.get("probability_weighting_violations", []),
+                "model": out["model"],
+                "tier": out["tier"],
+                "generated_at": iso(now()),
+                "validation": out["validation"],
+                "recommendations": out.get("recommendations", []),
+            }
+            update_fields["synthesis"] = synthesis_record
+            rec["synthesis"] = synthesis_record
+            solve_text = out["text"]
+            solve_model = out["model"]
+            solve_tier = out["tier"]
+
+    elif current_layer == "hypothesis":
+        # Phase 15.2 — simulate_hypothesis only. User has given feedback on
+        # the detected tensions; proceed to synthesis with the tensions
+        # injected into the prompt context.
+        submodule = rec.get("submodule") or "seek_clarity"
         tier_req = "deep" if rec.get("pro_tier") and rec.get("pro_account") else "standard"
         comparables = rec.get("_grounding_comparables") or []
         candidates = rec.get("_grounding_candidates") or []
+        tensions = rec.get("_hypothesis_tensions") or []
+        persona = rec.get("persona")
         out = await _run_synthesis(
             rec, cluster, account["id"], solve_turn_id, transcript,
             comparables=comparables, candidates=candidates, requested_tier=tier_req,
+            submodule=submodule, persona=persona, tensions=tensions,
         )
         all_audits.extend(out["audit_entries"])
         if out.get("grounding_violation"):
-            # Persist audit entries (even on failure) and the user turn; then
-            # surface a structured 422.
             await _append_audit(sid, all_audits)
-            logger.warning(
-                "solva_v2 grounding contract violation sid=%s account=%s",
-                sid, account["id"],
-            )
             raise HTTPException(
                 status_code=422,
                 detail={
@@ -728,17 +1122,18 @@ async def post_turn(
                     "malformed_markers": out.get("malformed_markers", []),
                 },
             )
-        # Persist synthesis record + advance pointer
         synthesis_record = {
-            "body": out["text"],  # raw body with inline markers preserved
+            "body": out["text"],
             "stripped_text": out["stripped_text"],
-            "claims": out["claims"],  # Phase 15.1: claims now carry confidence_pct/band
+            "claims": out["claims"],
             "tier_distribution": out["tier_distribution"],
             "probability_weighting_violations": out.get("probability_weighting_violations", []),
             "model": out["model"],
             "tier": out["tier"],
             "generated_at": iso(now()),
             "validation": out["validation"],
+            "tensions": tensions,
+            "recommendations": out.get("recommendations", []),
         }
         update_fields["synthesis"] = synthesis_record
         rec["synthesis"] = synthesis_record

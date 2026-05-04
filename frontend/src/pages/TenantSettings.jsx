@@ -138,7 +138,7 @@ export default function Settings() {
         api.get(`/contexts/${contextId}/audit-log`),
       ]);
       setMembers(m.data); setInvites(i.data); setAudit(a.data);
-    } catch (e) { toast.error(apiErrorMessage(e, "Failed to load context data")); }
+    } catch (e) { toast.error(apiErrorMessage(e, "Failed to load company data")); }
   }, [contextId]);
 
   const loadConsent = useCallback(async () => {
@@ -170,7 +170,7 @@ export default function Settings() {
     try {
       await api.post("/accounts/me/default-context", { context_id: cid });
       await bootstrap();
-      toast.success("Default context updated");
+      toast.success("Default company updated");
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
@@ -256,7 +256,7 @@ export default function Settings() {
   [audit]);
 
   if (!activeContext) {
-    return <AppShell><div className="p-12 text-center text-slate-500 text-sm">No context selected.</div></AppShell>;
+    return <AppShell><div className="p-12 text-center text-slate-500 text-sm">No company selected.</div></AppShell>;
   }
 
   const roleIcon = accountRole === "ned" ? Landmark : accountRole === "dual" ? Layers : Briefcase;
@@ -491,12 +491,12 @@ export default function Settings() {
           <TabsContent value="context" className="space-y-8">
             <section className="bg-white border border-[#E1E6ED] rounded-sm">
               <div className="px-6 py-4 border-b border-[#E1E6ED]">
-                <p className="text-sm font-medium text-[var(--ink)]">Context identity</p>
+                <p className="text-sm font-medium text-[var(--ink)]">Company identity</p>
                 <p className="text-xs text-slate-500 mt-0.5">Visible to every member of this context.</p>
               </div>
               <form onSubmit={onRename} className="p-6 space-y-4 max-w-md" data-testid="rename-form">
                 <div className="space-y-2">
-                  <Label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Context name</Label>
+                  <Label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Company name</Label>
                   <Input
                     value={contextName} onChange={(e) => setContextName(e.target.value)}
                     disabled={!isAdmin} className="rounded-sm h-10"
@@ -513,14 +513,14 @@ export default function Settings() {
                     {renaming ? "Saving…" : "Save changes"}
                   </Button>
                 ) : (
-                  <p className="text-xs text-slate-400">Only context admins can rename.</p>
+                  <p className="text-xs text-slate-400">Only company admins can rename.</p>
                 )}
               </form>
             </section>
 
             <section className="bg-white border border-[#E1E6ED] rounded-sm">
               <div className="px-6 py-4 border-b border-[#E1E6ED]">
-                <p className="text-sm font-medium text-[var(--ink)]">Context detail</p>
+                <p className="text-sm font-medium text-[var(--ink)]">Company detail</p>
               </div>
               <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-8 text-sm">
                 <div>
@@ -553,7 +553,7 @@ export default function Settings() {
             <section className="bg-white border border-[#E1E6ED] rounded-sm">
               <div className="px-6 py-4 border-b border-[#E1E6ED] flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-[var(--ink)]">Export context data</p>
+                  <p className="text-sm font-medium text-[var(--ink)]">Export company data</p>
                   <p className="text-xs text-slate-500 mt-0.5">
                     JSON snapshot — context, members, invitations, audit, telemetry, consent decisions.
                   </p>
@@ -660,7 +660,7 @@ export default function Settings() {
                                 <p className="text-sm font-medium text-[var(--ink)]">
                                   {m.name || m.email} {isMe && <span className="text-[10px] font-normal text-slate-400 ml-1">(you)</span>}
                                 </p>
-                                {isContextOwner && <p className="text-[10px] uppercase tracking-wider text-[var(--accent)]">Context owner</p>}
+                                {isContextOwner && <p className="text-[10px] uppercase tracking-wider text-[var(--accent)]">Company owner</p>}
                               </div>
                             </div>
                           </td>
@@ -683,7 +683,7 @@ export default function Settings() {
                                   <AlertDialogHeader>
                                     <AlertDialogTitle>Remove {m.name || m.email}?</AlertDialogTitle>
                                     <AlertDialogDescription>
-                                      They'll lose access to this context immediately. You can re-invite them later.
+                                      They'll lose access to this company immediately. You can re-invite them later.
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
@@ -794,9 +794,9 @@ export default function Settings() {
               <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 text-sm text-slate-700">
                 <div>
                   <p className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--chrome)] font-bold mb-2">01 · Residency</p>
-                  <p className="akki-serif text-[15px] text-[var(--ink)] mb-1.5">Your context never leaves this account.</p>
+                  <p className="akki-serif text-[15px] text-[var(--ink)] mb-1.5">Your company data never leaves your account.</p>
                   <p className="text-[12.5px] text-slate-600 leading-relaxed">
-                    Documents, signals, briefings, and lens outputs are scoped to your active context and visible
+                    Documents, signals, briefings, and lens outputs are scoped to your active company and visible
                     only to its members. No cross-tenant leakage by construction — enforced at query time.
                   </p>
                 </div>
@@ -819,7 +819,7 @@ export default function Settings() {
                   <p className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--chrome)] font-bold mb-2">04 · Control</p>
                   <p className="akki-serif text-[15px] text-[var(--ink)] mb-1.5">You can export or delete everything, any time.</p>
                   <p className="text-[12.5px] text-slate-600 leading-relaxed">
-                    The Audit log tab shows every action taken on this context. The Danger tab exports the full context as JSON or archives it. Sandbox data is hard-deleted on day 22 automatically.
+                    The Audit log tab shows every action taken on this company. The Danger tab exports the full company as JSON or archives it. Sandbox data is hard-deleted on day 22 automatically.
                   </p>
                 </div>
               </div>

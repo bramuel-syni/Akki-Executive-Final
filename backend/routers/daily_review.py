@@ -756,13 +756,38 @@ async def _approve_solva_cycle(
     if not questions:
         raise HTTPException(status_code=422, detail="No questions to approve.")
 
+    # Phase 15.2 — null-context fallback. Sessions started without an
+    # active context (e.g. from /app/solva/v2-poc when the picker
+    # bypassed the context selection) land here with item.context_id=
+    # None. Without a fallback the inserted db.questions rows would be
+    # orphaned (un-retrievable via GET /api/contexts/{cid}/questions
+    # because that endpoint scopes by context_id). Resolve from the
+    # owner's default_context_id; if THAT is also null fail fast with
+    # 422 so the user gets a clear actionable error instead of silent
+    # orphaning.
+    target_context_id = item.get("context_id")
+    if not target_context_id:
+        owner = await db.accounts.find_one(
+            {"id": item.get("account_id") or account["id"]},
+            {"_id": 0, "default_context_id": 1},
+        )
+        target_context_id = (owner or {}).get("default_context_id")
+    if not target_context_id:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Cannot approve Solva cycle handoff — session has no "
+                "context and account has no default context set."
+            ),
+        )
+
     # Insert into db.questions one row per question, mirroring v1's shape.
     inserted_ids: List[str] = []
     for q in questions:
         qid = q.get("id") or str(uuid.uuid4())
         doc = {
             "id": qid,
-            "context_id": item.get("context_id"),
+            "context_id": target_context_id,
             "text": (q.get("text") or "").strip(),
             "category": q.get("category") or "strategic",
             "source": f"AKKI Solva v2 · {item.get('cluster_label') or item.get('cluster_id') or 'session'}",
@@ -784,6 +809,7 @@ async def _approve_solva_cycle(
             "questions": questions,
             "approve_note": (note or "").strip(),
             "inserted_question_ids": inserted_ids,
+            "resolved_context_id": target_context_id,
         }},
     )
     await db.solve_handoffs.update_many(

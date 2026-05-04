@@ -71,7 +71,10 @@ def _synthesis_complete(claims_count=2, all_banded=True, verdict="validated"):
 # ---------------------------------------------------------------------------
 class TestTransitionTable:
     def test_layer_order_locked(self):
-        assert LAYERS == ["framing", "grounding", "synthesis", "reflection"]
+        # Phase 15.2: hypothesis layer added between grounding and synthesis
+        # (used only by simulate_hypothesis sub-module). Other sub-modules
+        # skip it via LAYER_ORDER_BY_SUBMODULE.
+        assert LAYERS == ["framing", "grounding", "hypothesis", "synthesis", "reflection"]
         assert TERMINAL_LAYER == "reflection"
 
     def test_grounding_required_engines_locked(self):
