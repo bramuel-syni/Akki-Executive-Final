@@ -301,13 +301,15 @@ on Synisense, Phase 11 ValidatedBadge, Resend / Stripe / Sentry stubs.
 - Demo form + calendar integration
 - No feature-tour pages, no vendor cadence
 
-### Phase 18 — Observability (~2 days)
+### Phase 18 — Observability (~2 days) [Phase G in current plan]
 - Sentry wired (DSNs captured: backend `a5409b...@o4511318182920192.ingest.de.sentry.io/4511318238756944`, frontend `cbd496...@o4511318182920192.ingest.de.sentry.io/4511318248456272`)
 - Structured JSON logs with request IDs through LLM calls
 - Rate limits per-user/per-account on /chat, /solva, /prepare (tunable per plan)
 - LLM circuit breakers per adapter
 - `/api/health` returns dependency status (Mongo, Resend, Postmark, Stripe, ClamAV, MinIO, Synisense)
 - APScheduler leader election via Mongo lock (unblocks multi-replica)
+- **Install `clamd` + `freshclam` in the container image; set `autostart=true` on `clamd.conf`; drop the `ALLOW_UNSAFE_UPLOADS` dev bypass.** Recreate the `clamav` system user and flip `clamd.conf` `user=root` back to `user=clamav`. (Phase B sandbox hotfix wired the dev bypass; Phase G removes it.)
+- **Install `minio` in the container image; set `autostart=true` on `minio.conf`; flip `STORAGE_BACKEND=local` back to `s3` in dev.** (Phase B sandbox hotfix wired the local-disk fallback; Phase G removes it.) See `docs/RUNBOOKS/DEV_POD_CAVEATS.md` for the current dev-pod posture.
 - Frontend React error boundary at route level
 
 ### Phase 19 — Deployment Topology (~1 day, docs only)

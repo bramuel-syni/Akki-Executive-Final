@@ -180,51 +180,168 @@ export default function Chat() {
   const sendMessage = useCallback(async (text, acknowledge_unshielded = false) => {
     if (!activeId) return;
     setSending(true);
-    // Optimistic user bubble
-    const optimistic = {
-      id: `tmp-${Date.now()}`, role: "user", content: text,
+    // Optimistic user bubble + a streaming assistant placeholder we
+    // will fill in as deltas arrive. The placeholder id is local-only
+    // and gets replaced by the real message_id once the terminal
+    // `message` event lands.
+    const optimisticUser = {
+      id: `tmp-u-${Date.now()}`, role: "user", content: text,
+      created_at: new Date().toISOString(),
+    };
+    const streamingId = `tmp-a-${Date.now()}`;
+    const streamingPlaceholder = {
+      id: streamingId, role: "assistant", content: "", streaming: true,
       created_at: new Date().toISOString(),
     };
     setActiveChat((prev) => ({
-      ...(prev || {}), messages: [...((prev || {}).messages || []), optimistic],
+      ...(prev || {}),
+      messages: [
+        ...((prev || {}).messages || []),
+        optimisticUser, streamingPlaceholder,
+      ],
     }));
     setInput("");
+
+    // Phase B.2 — SSE consumer via fetch + ReadableStream.
+    // We use fetch (not EventSource) because:
+    //   1. EventSource is GET-only; we need POST + JSON body.
+    //   2. We need to send auth cookies + Bearer header alongside the
+    //      body, which EventSource also doesn't support cleanly.
+    // The endpoint emits text/event-stream; we parse "data: <json>\n\n"
+    // frames. Server sends `delta` events (shielded text), one terminal
+    // `message` event with the rehydrated `assistant_text`, and a
+    // final `done` event. On terminal, we swap the streamed text for
+    // the rehydrated string so PII / citations resolve correctly.
+    const BACKEND = process.env.REACT_APP_BACKEND_URL || "";
+    const tok = localStorage.getItem("akki_access_token");
+    const headers = {
+      "Content-Type": "application/json", "Accept": "text/event-stream",
+    };
+    if (tok) headers.Authorization = `Bearer ${tok}`;
+
+    const applyStreamUpdate = (updater) => {
+      setActiveChat((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          messages: (prev.messages || []).map((m) =>
+            m.id === streamingId ? updater(m) : m,
+          ),
+        };
+      });
+    };
+
+    let acknowledgementErrorPayload = null;
+    let streamFailed = false;
+
     try {
-      const { data } = await api.post(
-        `/chats/${activeId}/messages`,
-        { content: text, acknowledge_unshielded },
-        { timeout: 120000 },
-      );
+      const resp = await fetch(`${BACKEND}/api/chats/${activeId}/messages/stream`, {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: JSON.stringify({ content: text, acknowledge_unshielded }),
+      });
+      if (resp.status === 409) {
+        const body = await resp.json().catch(() => ({}));
+        if (body?.detail?.code === "shielding_acknowledgement_required") {
+          acknowledgementErrorPayload = { text, detected: body.detail.detected };
+        } else {
+          throw new Error(body?.detail?.message || "shielding gate failed");
+        }
+      } else if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`);
+      } else {
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+        let finalEvent = null;
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          // Parse complete frames (separated by \n\n).
+          let sep;
+          while ((sep = buffer.indexOf("\n\n")) >= 0) {
+            const frame = buffer.slice(0, sep);
+            buffer = buffer.slice(sep + 2);
+            if (!frame.startsWith("data:")) continue;
+            const json = frame.slice(5).trim();
+            let ev;
+            try { ev = JSON.parse(json); } catch { continue; }
+            if (ev.type === "delta") {
+              applyStreamUpdate((m) => ({ ...m, content: (m.content || "") + ev.text }));
+            } else if (ev.type === "message") {
+              finalEvent = ev;
+              applyStreamUpdate((m) => ({
+                ...m,
+                id: ev.message_id,
+                content: ev.assistant_text,
+                model_id: ev.model,
+                citations: ev.citations || [],
+                streaming: false,
+              }));
+            } else if (ev.type === "error") {
+              streamFailed = true;
+              throw new Error(ev.message || "stream error");
+            }
+          }
+        }
+        if (finalEvent) {
+          // Swap the optimistic user bubble for the persisted message_id-bearing
+          // record so the audit pill matches once we re-hydrate the chat from
+          // db. Keep the message order stable.
+          setActiveChat((prev) => ({
+            ...(prev || {}),
+            messages: ((prev || {}).messages || []).map((m) =>
+              m.id === optimisticUser.id ? { ...m, id: `committed-${Date.now()}` } : m,
+            ),
+          }));
+          setChats((prev) => prev.map((c) => c.id === activeId ? {
+            ...c,
+            last_message_preview: (finalEvent.assistant_text || "").slice(0, 200),
+            last_message_at: new Date().toISOString(),
+            message_count: (c.message_count || 0) + 2,
+          } : c));
+        }
+      }
+    } catch (e) {
+      streamFailed = true;
+      // Remove the streaming placeholder; reuse the same toast contract
+      // as before so existing UX expectations hold.
       setActiveChat((prev) => ({
         ...(prev || {}),
-        messages: [
-          ...((prev || {}).messages || []).filter((m) => m.id !== optimistic.id),
-          data.user_message, data.assistant_message,
-        ],
+        messages: ((prev || {}).messages || []).filter(
+          (m) => m.id !== streamingId && m.id !== optimisticUser.id,
+        ),
       }));
-      // Refresh sidebar preview
-      setChats((prev) => prev.map((c) => c.id === activeId ? {
-        ...c,
-        last_message_preview: data.assistant_message.content?.slice(0, 200) || "",
-        last_message_at: data.assistant_message.created_at,
-        message_count: (c.message_count || 0) + 2,
-      } : c));
-    } catch (e) {
-      // 409 = sensitive content + policy=off + no acknowledgement → confirm dialog
-      if (e?.response?.status === 409 && e?.response?.data?.detail?.code === "shielding_acknowledgement_required") {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      if (acknowledgementErrorPayload) {
+        // Remove placeholders and prompt the bypass dialog.
         setActiveChat((prev) => ({
           ...(prev || {}),
-          messages: ((prev || {}).messages || []).filter((m) => m.id !== optimistic.id),
+          messages: ((prev || {}).messages || []).filter(
+            (m) => m.id !== streamingId && m.id !== optimisticUser.id,
+          ),
         }));
-        setBypassDlg({ text, detected: e.response.data.detail.detected });
-        return;
+        setBypassDlg(acknowledgementErrorPayload);
       }
-      toast.error(apiErrorMessage(e));
-      setActiveChat((prev) => ({
-        ...(prev || {}),
-        messages: ((prev || {}).messages || []).filter((m) => m.id !== optimistic.id),
-      }));
-    } finally { setSending(false); }
+      // Failsafe: if the stream silently ended without a `message`
+      // event, scrub the placeholder so the UI doesn't get stuck.
+      if (!streamFailed && !acknowledgementErrorPayload) {
+        setActiveChat((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            messages: (prev.messages || []).filter(
+              (m) => !(m.id === streamingId && m.streaming),
+            ),
+          };
+        });
+      }
+      setSending(false);
+    }
   }, [activeId]);
 
   const onSubmit = () => {

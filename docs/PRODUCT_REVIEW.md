@@ -50,7 +50,7 @@ The buyer is abstracted to a single archetype on the homepage — _operating exe
 |---|---|---|
 | **Seasoned NED / Chair** | Multi-context portfolio (`/app/contexts`); Catch-up briefs (`/app/prepare`); Cross-board Home river (`/app`) | One screen showing what changed across every board they sit on, before Tuesday |
 | **Executive (CEO / CFO / CHRO)** | Single primary context; Cycle strip; Studio for board-pack production; Solve for one-pause diagnostics | Get the cycle done without losing the thread; a defensible report; a place to think |
-| **Sandbox visitor** | `/sandbox` → `/sandbox/generating/:id` → `/app/quick-results/:cid/:docId` | A 60-second proof that AKKI handles _their_ sector |
+| **Sandbox visitor** | `/sandbox` → `/sandbox/generating/:id` → `/app?tutorial=1` (HomeExecutive). Drop-a-real-pack uploads land on `/app/quick-results/:cid/:docId` post-extraction. | A 60-second proof that AKKI handles _their_ sector, then a focused conversion moment if they upload their own document |
 | **External recipient (Chair / SID)** | Receives a tracked share email; lands on `/app/decks/:id` or `/app/prepare#brief-:id` | Read the artefact; their open is recorded |
 | **Superadmin / operator** | `/admin/*`: health, sandbox KPI, signal KPI, LLM spend, auth events, blog admin | Operational visibility; cost; abuse signals |
 
@@ -131,11 +131,11 @@ Each section below covers a canonical feature. Routes refer to the running app; 
 
 ### 7. Sandbox — 60-second pre-auth fictional workspace
 
-- **What it is.** A no-signup demo: pick a sector + role + objective on `/sandbox`, watch a 10-stage streaming narrative on `/sandbox/generating/:sessionId`, land on `/app/quick-results/:cid/:docId` with three doc-bound use-cases ready to click.
+- **What it is.** A no-signup demo: pick a sector + role + objective on `/sandbox`, watch a 10-stage streaming narrative on `/sandbox/generating/:sessionId`, land on `/app?tutorial=1` (the role-aware home) with the sandbox banner, sample-doc-drop CTA, and three quick-action cards ready to click. If the prospect drops their own pack via `SandboxPackDrop`, they then land on `/app/quick-results/:cid/:docId` once extraction completes.
 - **User value.** The marketing-to-product bridge. A buyer who is not yet ready to give an email gets to feel the product on their own sector inside one minute. Conversion is captured later via `/app/contexts/{cid}/capture-email` and `POST /api/sandbox/convert` which keeps the sandbox context alive as a working context post-signup.
 - **How it works today.** Backend `routers/sandbox.py` (~900 lines): seed + 10-stage streaming generation, six polished sector templates in `sandbox_templates.py`, sample doc swap-in (`.../sample-doc/accept`), an `objective_check` 24-hour follow-up card, conversion handoff that pre-fills First Session via `prefill_first_session`. Frontend pages `Sandbox.jsx`, `SandboxGenerating.jsx`, `QuickResults.jsx`; components in `components/sandbox/`. The `/admin/sandbox-kpi` panel watches conversion.
 - **State.** Shipped.
-- **Gaps / risks.** Sandbox accounts use a cookie + Bearer combo; iter59 fixed a stale-cookie poisoning bug there. Sandbox uploads are subject to the same `virus_scan_stub` as the rest of the product.
+- **Gaps / risks.** Sandbox accounts use a cookie + Bearer combo; iter59 fixed a stale-cookie poisoning bug there. **Sandbox uploads go through the same strict ClamAV-or-bypass precondition as the rest of the product** (`virus_scan_stub` was retired in Phase 10; live ClamAV in `services/clamav_service.py`). Dev pods without the clamd binary set `ALLOW_UNSAFE_UPLOADS=true` — see `docs/RUNBOOKS/DEV_POD_CAVEATS.md`. Phase G owns the permanent fix (clamd + freshclam in the container image).
 - **Open decisions.** —
 
 ### 8. Governance Panel — audit logs, shielding status, model usage

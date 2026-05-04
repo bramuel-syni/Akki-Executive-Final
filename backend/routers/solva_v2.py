@@ -1346,6 +1346,32 @@ async def post_turn(
                         "malformed_markers": out.get("malformed_markers", []),
                     },
                 )
+            # Phase B.3 — opinion-filter exhaustion is symmetric to a
+            # grounding-contract failure: the orchestrator MUST NOT fall
+            # through to populate `synthesis_record["body"] = out["text"]`
+            # because `out` carries `opinion_violation=True` and no
+            # `text` key. Raise 422 with the canonical detail shape so
+            # the SPA + the no-opinion adversarial test corpus can both
+            # consume the same envelope.
+            if out.get("opinion_violation"):
+                await _append_audit(sid, all_audits)
+                logger.warning(
+                    "solva_v2 opinion-filter exhaustion sid=%s account=%s phrases=%s",
+                    sid, account["id"], out.get("phrases_hit", []),
+                )
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "opinion_violation",
+                        "error": "opinion_violation",
+                        "message": (
+                            "Model produced opinion-laden output across all "
+                            "retry attempts; refusing to surface a first-person "
+                            "view per the no-opinion principle."
+                        ),
+                        "phrases_hit": out.get("phrases_hit", []),
+                    },
+                )
             synthesis_record = {
                 "body": out["text"],
                 "stripped_text": out["stripped_text"],
@@ -1389,6 +1415,23 @@ async def post_turn(
                     "message": "Model failed grounding contract after 3 attempts.",
                     "untagged_sentences": out.get("untagged_sentences", []),
                     "malformed_markers": out.get("malformed_markers", []),
+                },
+            )
+        # Phase B.3 — symmetric handling for opinion-filter exhaustion
+        # on the simulate_hypothesis -> synthesis turn.
+        if out.get("opinion_violation"):
+            await _append_audit(sid, all_audits)
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "opinion_violation",
+                    "error": "opinion_violation",
+                    "message": (
+                        "Model produced opinion-laden output across all "
+                        "retry attempts; refusing to surface a first-person "
+                        "view per the no-opinion principle."
+                    ),
+                    "phrases_hit": out.get("phrases_hit", []),
                 },
             )
         synthesis_record = {

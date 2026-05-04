@@ -22,6 +22,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Building2, ChevronDown, CheckCircle2, Plus, Briefcase, Landmark } from "lucide-react";
+import { isSponsoredContext } from "@/lib/sponsorship";
 
 const ROLE_LABEL = {
   ned: "NED",
@@ -86,7 +87,7 @@ export default function CycleContextIndicator() {
                 <p className="text-[13px] text-[var(--ink)] truncate">{c.name}</p>
                 <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)] font-mono">
                   {ROLE_LABEL[c.my_role] || c.my_role || "member"}
-                  {(c.provisioning === "sponsored" || c.type === "ned_sponsored" || c.type === "executive_enterprise") && (
+                  {isSponsoredContext(c) && (
                     <span className="ml-1.5 text-[var(--accent)]">· sponsored</span>
                   )}
                 </p>

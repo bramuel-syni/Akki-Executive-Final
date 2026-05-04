@@ -6,6 +6,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { CheckCircle2, Layers, Plus, ChevronDown, ChevronUp, Briefcase, User as UserIcon } from "lucide-react";
+import { isSponsoredContext } from "@/lib/sponsorship";
 
 const CONTEXT_TYPE_LABEL = {
   ned: "NED",
@@ -103,8 +104,7 @@ export default function PortfolioRail() {
       return role === activeRole;
     });
     for (const c of filtered) {
-      if (c.kind === "sponsored" || c.is_sponsored
-          || c.type === "ned_sponsored" || c.type === "executive_enterprise") g.sponsored.push(c);
+      if (isSponsoredContext(c)) g.sponsored.push(c);
       else g.personal.push(c);
     }
     return g;

@@ -71,7 +71,24 @@ export default function SandboxPackDrop({ onSignalsReady }) {
       onSignalsReady && onSignalsReady();
       return;
     } catch (err) {
-      toast.error(apiErrorMessage(err, "Couldn't read that one. Try another pack."));
+      // Phase B sandbox hotfix — branch the toast on HTTP status so we
+      // tell the prospect the truth rather than blaming their PDF.
+      const status = err?.response?.status;
+      let msg;
+      if (status === 503) {
+        msg = "Our virus scanner is briefly offline — try again in a moment.";
+      } else if (status === 415 || status === 413) {
+        msg = "That file type or size isn't supported. Try a PDF under 25 MB.";
+      } else if (status >= 400 && status < 500) {
+        msg = "That pack couldn't be accepted. Try another.";
+      } else if (status >= 500) {
+        msg = "Something went wrong on our side. Try again.";
+      } else {
+        // Network failure / no status — fall back to the API helper
+        // which prefers the server's `detail` text when present.
+        msg = apiErrorMessage(err, "Couldn't read that one. Try another pack.");
+      }
+      toast.error(msg);
     } finally {
       setUploading(false);
       setGenerating(false);

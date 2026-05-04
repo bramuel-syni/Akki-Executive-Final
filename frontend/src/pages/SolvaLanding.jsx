@@ -16,6 +16,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import MarketingNav from "@/components/marketing/MarketingNav";
 import MarketingFooter from "@/components/marketing/MarketingFooter";
+import SolvaLandingHero from "@/components/solva/SolvaLanding";
 import {
   ArrowRight, Sparkles, MessageCircle, Layers, ShieldCheck, GitBranch,
 } from "lucide-react";
@@ -92,6 +93,15 @@ export default function SolvaLanding() {
           region rule passes and the doc carries the required single
           <main>. */}
       <main>
+        {/* Phase B.4 — Solva landing hero. The 4-tile picker + sample
+            input mirrors the in-app surface so prospects see exactly
+            the experience they'd get post-signin. Submit button is a
+            sign-in CTA in marketing variant. */}
+        <section className="border-b border-[var(--rule)] bg-[var(--warm-white)]" aria-label="Solva landing hero">
+          <div className="max-w-[1280px] mx-auto">
+            <SolvaLandingHero variant="marketing" />
+          </div>
+        </section>
         {/* Hero */}
         <section className="border-b border-[var(--rule)]" aria-labelledby="solva-hero-h1">
         <div className="max-w-[1280px] mx-auto px-6 md:px-12 py-20 md:py-28 grid md:grid-cols-12 gap-10 items-end">

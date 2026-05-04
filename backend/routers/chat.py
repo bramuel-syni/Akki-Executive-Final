@@ -24,10 +24,11 @@ import logging
 import os
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from core import db, get_current_account  # noqa: E402
@@ -271,21 +272,119 @@ async def patch_chat(
 
 
 @router.delete("/chats/{chat_id}")
-async def archive_chat(
+async def soft_delete_chat(
     chat_id: str, request: Request,
     current: Dict[str, Any] = Depends(get_current_account),
 ):
+    """Phase B.1 — soft-delete with a 30-day retention clock.
+
+    Sets ``status='archived'`` (legacy field, kept for backward compat
+    with the existing UI listing filter) AND ``deleted_at`` (the new
+    retention clock the daily sweep keys off). The user-visible action
+    name in the audit log is still ``chat.archived`` so existing
+    audit-trail dashboards keep working; the hard-delete sweep writes
+    its own ``chat.hard_deleted`` row with the retention metadata.
+    """
+    now_iso = _iso(_now())
     res = await db.chats.update_one(
         {"id": chat_id, "account_id": current["id"]},
-        {"$set": {"status": "archived", "archived_at": _iso(_now())}},
+        {"$set": {
+            "status": "archived",
+            "archived_at": now_iso,
+            "deleted_at": now_iso,  # Phase B.1 retention clock
+        }},
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Chat not found")
     await _append_audit(
         account_id=current["id"], chat_id=chat_id, action="chat.archived",
-        request=request, payload={},
+        request=request, payload={"deleted_at": now_iso, "retention_days": 30},
     )
-    return {"ok": True}
+    return {"ok": True, "deleted_at": now_iso, "retention_days": 30}
+
+
+# -----------------------------------------------------------------------------
+# Phase B.1 — 30-day chat retention sweep.
+#
+# Soft-deleted chats (status='archived' + deleted_at set) are physically
+# removed once they cross the 30-day retention threshold. The
+# `chat_audit_log` rows are NEVER deleted — they outlive the chat itself
+# so the SHA-256 chain stays unbroken and the governance export remains
+# verifiable. One audit row per hard-deleted chat is appended with
+# `action="chat.hard_deleted"` carrying retention metadata.
+#
+# Tunables — kept as module-level so tests can monkeypatch:
+#   CHAT_RETENTION_DAYS  default 30  (locked Phase 15.3.5 Item 8 Option A)
+# -----------------------------------------------------------------------------
+CHAT_RETENTION_DAYS = 30
+
+
+async def run_chat_retention_sweep() -> Dict[str, Any]:
+    """Hard-delete chats whose `deleted_at` is older than
+    `CHAT_RETENTION_DAYS`. Returns a summary dict.
+
+    One try/except per chat so a single bad row doesn't kill the batch.
+    The sweep is idempotent — running it twice the same minute is a
+    no-op for chats already removed.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=CHAT_RETENTION_DAYS)
+    cutoff_iso = cutoff.isoformat()
+    summary = {
+        "cutoff": cutoff_iso,
+        "scanned": 0, "hard_deleted": 0, "messages_removed": 0,
+        "errors": 0, "audit_rows_written": 0,
+    }
+    cursor = db.chats.find(
+        {"status": "archived", "deleted_at": {"$lte": cutoff_iso}},
+        {"_id": 0, "id": 1, "account_id": 1},
+    )
+    async for chat in cursor:
+        summary["scanned"] += 1
+        chat_id = chat.get("id")
+        account_id = chat.get("account_id")
+        if not chat_id or not account_id:
+            summary["errors"] += 1
+            continue
+        try:
+            del_msgs = await db.chat_messages.delete_many({"chat_id": chat_id})
+            await db.chats.delete_one({"id": chat_id, "account_id": account_id})
+            summary["hard_deleted"] += 1
+            summary["messages_removed"] += int(del_msgs.deleted_count or 0)
+            # Hash-chained audit row — same chain as live chats; survives
+            # even though the chat row is gone. The chain key is
+            # (account_id), not (chat_id), so this is intentional.
+            await _append_audit(
+                account_id=account_id,
+                chat_id=chat_id,
+                action="chat.hard_deleted",
+                request=None,
+                payload={
+                    "retention_days": CHAT_RETENTION_DAYS,
+                    "messages_removed": int(del_msgs.deleted_count or 0),
+                },
+            )
+            summary["audit_rows_written"] += 1
+        except Exception as e:  # noqa: BLE001
+            summary["errors"] += 1
+            logger.error("chat retention sweep error chat_id=%s err=%s",
+                         chat_id, e.__class__.__name__)
+    logger.info(
+        "chat retention sweep complete: scanned=%d deleted=%d msgs=%d errors=%d",
+        summary["scanned"], summary["hard_deleted"],
+        summary["messages_removed"], summary["errors"],
+    )
+    return summary
+
+
+@router.post("/admin/chat-retention/sweep")
+async def admin_chat_retention_sweep(
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Manual trigger for the retention sweep — superadmin only. Same
+    function the daily 03:30 UTC cron in `server.py` calls."""
+    if not current.get("is_superadmin"):
+        raise HTTPException(status_code=403, detail="Superadmin required.")
+    return await run_chat_retention_sweep()
 
 
 # -----------------------------------------------------------------------------
@@ -815,6 +914,342 @@ async def send_message(
         "will_shield": will_shield,
         "bypass_reason": bypass_reason,
     }
+
+
+# -----------------------------------------------------------------------------
+# Phase B.2 — Streaming chat (Server-Sent Events).
+#
+# Additive surface: the sync POST /messages above stays as-is for tests
+# and any external API client; the SPA prefers /messages/stream.
+#
+# Event format (one JSON object per `data:` line, terminated by \n\n):
+#   data: {"type":"delta","text":"<token chunk>"}\n\n
+#   data: {"type":"delta","text":"<token chunk>"}\n\n
+#   ...
+#   data: {"type":"message",
+#          "message_id":"...","assistant_text":"<rehydrated>",
+#          "model":"...","audit_id":"...",
+#          "citations":[...],"shielding":{...},
+#          "will_shield":bool,"bypass_reason":null,"latency_ms":int}\n\n
+#   data: {"type":"done"}\n\n
+#
+# On error before any delta:
+#   data: {"type":"error","code":"...","message":"..."}\n\n
+#
+# Rehydrate strategy — FINAL only (not per-chunk).
+# ---------------------------------------------------
+# Per-chunk rehydration would risk splitting a Synisense token (e.g.
+# `[EMAIL_1]`) across two chunks, which a flat substring substitution
+# cannot reverse. We therefore stream the SHIELDED text to the client
+# in deltas — the live "typing" UX — and emit the rehydrated
+# `assistant_text` exactly once on the terminal `message` event. The
+# UI swaps the streamed shielded text for the rehydrated final string
+# when that event lands. This keeps the audit story honest (the model
+# only ever saw shielded tokens) and the citation post-processor
+# (`_process_citations`) only runs once on the complete reply.
+#
+# LLM streaming — `emergentintegrations.LlmChat.send_message` does not
+# expose a streaming primitive (no `astream` / generator). We fall back
+# to a one-shot call followed by chunked emit on the way out. This
+# preserves the streaming UX at the cost of perceived latency until the
+# first token. Documented in this module so the choice is explicit.
+# -----------------------------------------------------------------------------
+@router.post("/chats/{chat_id}/messages/stream")
+async def stream_message(
+    chat_id: str, body: MessageSendIn, request: Request,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    chat = await db.chats.find_one(
+        {"id": chat_id, "account_id": current["id"], "status": {"$ne": "archived"}},
+        {"_id": 0},
+    )
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    model_def = _model_def(chat["model_id"]) or _model_def(DEFAULT_MODEL_ID)
+    policy: ShieldingPolicy = chat.get("shielding_policy", "auto")
+
+    # Same Synisense pre-LLM hook as the sync path. Kept inline rather
+    # than refactored into a shared helper because the prep includes
+    # several short-circuiting decisions (acknowledgement gate, history
+    # block) that would clutter a generator signature.
+    text = body.content.strip()
+    original_text_for_shield = text
+    syn_stats: Dict[str, Any] = {"spans_redacted": 0, "by_type": {}, "elapsed_ms": 0}
+    shield_map: Dict[str, str] = {}
+    shielded_text = text
+    try:
+        from services.synisense import run as syn_run
+        from services.synisense.pipeline import current_version as _syn_version
+        syn_out = await syn_run(
+            text=text,
+            context_id=chat.get("context_id") or "",
+            surface="chat", mode="redact",
+            account_id=current["id"],
+        )
+        shielded_text = syn_out["redacted_text"]
+        text = shielded_text
+        spans = syn_out.get("spans") or []
+        for s in spans:
+            tok = s.get("replacement")
+            if not tok:
+                continue
+            try:
+                shield_map[tok] = original_text_for_shield[int(s["start"]):int(s["end"])]
+            except (KeyError, ValueError, TypeError):
+                continue
+        by_type: Dict[str, int] = {}
+        for s in spans:
+            t = s.get("entity_type") or "UNKNOWN"
+            by_type[t] = by_type.get(t, 0) + 1
+        syn_stats = {
+            "spans_redacted": len(spans),
+            "by_type": by_type,
+            "elapsed_ms": int(syn_out.get("stats", {}).get("elapsed_ms") or 0),
+            "version": _syn_version(),
+        }
+    except Exception as e:  # noqa: BLE001
+        logger.warning("synisense chat stream hook failed: %s", e.__class__.__name__)
+
+    detected = _syn_report(shield_map)
+    has_identifiers = detected["identifiers_masked"] > 0
+
+    # Policy gate (same as sync path).
+    if policy == "always":
+        will_shield, bypass_reason = True, None
+    elif policy == "off":
+        if has_identifiers and not body.acknowledge_unshielded:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "shielding_acknowledgement_required",
+                    "message": "Sensitive identifiers detected. Confirm send-as-is or enable shielding.",
+                    "detected": detected,
+                },
+            )
+        will_shield = False
+        bypass_reason = "policy_off_acknowledged" if has_identifiers else "no_identifiers"
+    else:
+        if has_identifiers:
+            if body.acknowledge_unshielded:
+                will_shield, bypass_reason = False, "user_bypass_acknowledged"
+            else:
+                will_shield, bypass_reason = True, None
+        else:
+            will_shield, bypass_reason = False, "no_identifiers"
+
+    # Persist user message + audit BEFORE streaming starts.
+    msg_id = str(uuid.uuid4())
+    user_at = _iso(_now())
+    content_sha = hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest()
+    user_msg = {
+        "id": msg_id, "chat_id": chat_id, "account_id": current["id"],
+        "role": "user", "content": text, "content_sha256": content_sha,
+        "created_at": user_at, "shielded": will_shield,
+        "shielding_policy": policy, "bypass_reason": bypass_reason,
+        "shielding": detected, "synisense_stats": syn_stats,
+    }
+    await db.chat_messages.insert_one(user_msg)
+    await _append_audit(
+        account_id=current["id"], chat_id=chat_id, action="message.sent",
+        request=request,
+        payload={
+            "message_id": msg_id, "content_sha256": content_sha,
+            "char_len": len(text), "policy": policy,
+            "shielded_for_llm": will_shield, "bypass_reason": bypass_reason,
+            "identifiers_detected": detected["identifiers_masked"],
+            "by_category": detected.get("by_category", {}),
+            "channel": "stream",
+        },
+    )
+
+    # Build prior + grounding (same as sync).
+    prior = await db.chat_messages.find(
+        {"chat_id": chat_id, "account_id": current["id"], "id": {"$ne": msg_id}},
+        {"_id": 0, "role": 1, "content": 1, "shielded": 1},
+    ).sort("created_at", 1).to_list(2000)
+    history_lines: List[str] = []
+    for m in prior:
+        role = "USER" if m.get("role") == "user" else "AKKI"
+        c = m.get("content") or ""
+        if m.get("role") == "user":
+            try:
+                c_sh, _ = await _syn_shield(c, surface="chat",
+                                            context_id=chat.get("context_id") or "")
+            except Exception:  # noqa: BLE001
+                c_sh = c
+            history_lines.append(f"{role}: {c_sh}")
+        else:
+            history_lines.append(f"{role}: {c}")
+    history_block = "\n\n".join(history_lines)
+    sent_to_llm = shielded_text if will_shield else text
+
+    grounding_paragraphs: List[Dict[str, Any]] = []
+    grounding_block = ""
+    if chat.get("context_id"):
+        grounding_paragraphs = await _retrieve_grounding_paragraphs(
+            context_id=chat["context_id"], account_id=current["id"],
+            query=text, top_k=5,
+        )
+        grounding_block = _format_grounding_block(grounding_paragraphs)
+
+    system_msg = (
+        "You are AKKI, a calm, editorial intelligence partner for executives "
+        "and non-executive directors. Tone: precise, neutral, no hype, "
+        "Economist-style cadence. When tokens like [EMAIL_1] or [PERSON_3] "
+        "appear, treat each as a stable referent — reason about it without "
+        "asking the user what it means; the system will rehydrate the "
+        "real value before the user reads your reply."
+    )
+    if grounding_paragraphs:
+        system_msg += (
+            " A [GROUNDING] block follows containing extracted paragraphs "
+            "from the user's documents. Cite ONLY using the inline marker "
+            "[[cite:<anchor_id>]] where <anchor_id> appears in the block. "
+            "Never invent anchor ids. If the answer is not in the grounding "
+            "block, say so plainly rather than guessing."
+        )
+
+    full_prompt_parts: List[str] = []
+    if grounding_block:
+        full_prompt_parts.append(grounding_block)
+    if history_block:
+        full_prompt_parts.append(history_block)
+    full_prompt_parts.append(f"USER: {sent_to_llm}")
+    full_prompt = "\n\n".join(full_prompt_parts)
+
+    request_account = current  # closures capture this at the inner scope
+    request_obj = request
+
+    async def _event_gen():
+        import asyncio as _asyncio
+        emergent_key = os.environ.get("EMERGENT_LLM_KEY")
+        started_ms = time.monotonic()
+        raw_text = ""
+        mode = "live"
+
+        # Run the LLM call in a worker thread so we don't block the event
+        # loop; the SDK is sync. Once we get the full reply, we chunk it
+        # back to the client. This is the documented "coarse-chunk
+        # fallback" — the SDK doesn't expose a streaming primitive yet.
+        if not emergent_key:
+            raw_text = "(LLM unavailable — no key configured.)"
+            mode = "no-key-fallback"
+        else:
+            try:
+                from emergentintegrations.llm.chat import LlmChat, UserMessage
+                chat_session = LlmChat(
+                    api_key=emergent_key,
+                    session_id=f"akki-chat-{chat_id}",
+                    system_message=system_msg,
+                ).with_model(model_def["provider"], model_def["model"])
+                raw = await chat_session.send_message(UserMessage(text=full_prompt))
+                raw_text = raw if isinstance(raw, str) else str(raw)
+            except Exception as e:
+                logger.exception("Chat stream LLM call failed")
+                # Emit an error event then write a failure audit row and stop.
+                yield (
+                    "data: " + json.dumps({
+                        "type": "error",
+                        "code": "llm_error",
+                        "message": f"LLM error: {type(e).__name__}",
+                    }) + "\n\n"
+                )
+                try:
+                    await _append_audit(
+                        account_id=request_account["id"], chat_id=chat_id,
+                        action="chat.message.failed", request=request_obj,
+                        payload={
+                            "user_message_id": msg_id,
+                            "error": type(e).__name__,
+                            "channel": "stream",
+                        },
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                return
+
+        # Chunk the SHIELDED reply (final-rehydrate strategy — see
+        # module-level comment). ~40-token = ~200-char chunks.
+        CHUNK_CHARS = 220
+        for i in range(0, len(raw_text), CHUNK_CHARS):
+            chunk = raw_text[i:i + CHUNK_CHARS]
+            yield (
+                "data: " + json.dumps({"type": "delta", "text": chunk}) + "\n\n"
+            )
+            # Tiny gap so the client renders progressively rather than
+            # painting all chunks in one frame.
+            await _asyncio.sleep(0.02)
+
+        latency_ms = int((time.monotonic() - started_ms) * 1000)
+        # Now do the final rehydrate + citation post-processing on the
+        # COMPLETE shielded reply, exactly once.
+        rehydrated = _syn_rehydrate(raw_text, shield_map) if will_shield else raw_text
+        cleaned_reply, citations = _process_citations(rehydrated, grounding_paragraphs)
+
+        reply_id = str(uuid.uuid4())
+        reply_at = _iso(_now())
+        assistant_msg = {
+            "id": reply_id, "chat_id": chat_id, "account_id": request_account["id"],
+            "role": "assistant", "content": cleaned_reply,
+            "model_id": chat["model_id"], "model_label": model_def["label"],
+            "mode": mode, "latency_ms": latency_ms, "created_at": reply_at,
+            "citations": citations,
+            "grounded_context_id": chat.get("context_id") if grounding_paragraphs else None,
+            "synisense_stats": syn_stats,
+            "channel": "stream",
+        }
+        await db.chat_messages.insert_one(assistant_msg)
+
+        # Single audit row at end — same shape as the sync path so the
+        # SHA-256 chain is uniform across channels.
+        audit_row = await _append_audit(
+            account_id=request_account["id"], chat_id=chat_id,
+            action="message.received", request=request_obj,
+            payload={
+                "user_message_id": msg_id, "reply_id": reply_id,
+                "model_id": chat["model_id"], "mode": mode,
+                "latency_ms": latency_ms, "char_len_reply": len(cleaned_reply),
+                "citations_kept": len(citations),
+                "channel": "stream",
+            },
+        )
+        await db.chats.update_one(
+            {"id": chat_id},
+            {
+                "$set": {
+                    "last_message_at": reply_at,
+                    "last_message_preview": cleaned_reply[:200],
+                    "updated_at": reply_at,
+                },
+                "$inc": {"message_count": 2},
+            },
+        )
+
+        yield (
+            "data: " + json.dumps({
+                "type": "message",
+                "message_id": reply_id,
+                "assistant_text": cleaned_reply,
+                "model": chat["model_id"],
+                "audit_id": audit_row["id"] if audit_row else None,
+                "citations": citations,
+                "shielding": detected,
+                "will_shield": will_shield,
+                "bypass_reason": bypass_reason,
+                "latency_ms": latency_ms,
+            }) + "\n\n"
+        )
+        yield "data: " + json.dumps({"type": "done"}) + "\n\n"
+
+    return StreamingResponse(
+        _event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.get("/chats/{chat_id}/audit")

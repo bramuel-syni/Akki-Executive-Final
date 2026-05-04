@@ -67,6 +67,11 @@ FORBIDDEN_PATTERNS: Tuple[Tuple[str, str], ...] = (
     (r"\bmy\s+(?:take|view|sense|gut|hunch|intuition|opinion)\s+is\b",
                                          "my take/view/sense/gut is"),
     (r"\bpersonally\s*[,:]\s*",         "personally,"),
+    # Phase B.3 — also catch standalone "personally" used as an
+    # opinion-marker mid-sentence (e.g. "I would personally hold off").
+    # Anchored on word boundaries so substrings like "personalised"
+    # don't false-trigger.
+    (r"\bpersonally\b",                  "personally"),
     (r"\bif\s+I\s+had\s+to\s+guess\b",  "if i had to guess"),
     (r"\bif\s+you\s+ask\s+me\b",        "if you ask me"),
     (r"\bhonestly\s*[,:]",              "honestly,"),

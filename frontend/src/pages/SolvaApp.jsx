@@ -13,6 +13,7 @@ import AppShell from "../components/layout/AppShell";
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../lib/api";
 import TierChip from "../components/reading/TierChip";
+import SolvaLanding from "../components/solva/SolvaLanding";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
 } from "@/components/ui/sheet";
@@ -86,6 +87,7 @@ export default function SolvaApp() {
 
   const [clusters, setClusters] = useState([]);
   const [loadingClusters, setLoadingClusters] = useState(true);
+  const [recentSessions, setRecentSessions] = useState([]);
   const [activeCluster, setActiveCluster] = useState(null);
   const [intent, setIntent] = useState("");
   const [busy, setBusy] = useState(false);
@@ -162,9 +164,12 @@ export default function SolvaApp() {
       api.get("/solva/clusters").catch(() => ({ data: { clusters: [] } })),
       api.get("/solva/v2/sessions", { params: { status: "completed" } })
         .catch(() => ({ data: { items: [] } })),
-    ]).then(async ([clustersResp, sessionsResp]) => {
+      // Phase B.4 — landing right-panel: top 5 recent (any status).
+      api.get("/solva/v2/sessions").catch(() => ({ data: { items: [] } })),
+    ]).then(async ([clustersResp, sessionsResp, recentResp]) => {
       if (cancelled) return;
       setClusters(clustersResp.data?.clusters || []);
+      setRecentSessions((recentResp.data?.items || []).slice(0, 5));
       const items = sessionsResp.data?.items || [];
       // List is sorted desc by updated_at server-side, so items[0] is the
       // most-recent completed session. Hydrate the full record (turns +
@@ -332,17 +337,35 @@ export default function SolvaApp() {
     );
   }
 
-  // No session yet — show submodule picker + cluster + intent form
+  // No session yet — show new SolvaLanding (Phase B.4) hero as the
+  // first impression, then keep the existing cluster/persona form
+  // below for the cluster choice + advanced fields. The landing
+  // submit handler pre-fills `intent` + `submodule` and scrolls the
+  // cluster picker into view.
   if (!session) {
     return (
       <AppShell>
+        <SolvaLanding
+          variant="auth"
+          recentSessions={recentSessions}
+          planTier={(account?.plan || "free")}
+          onSubmit={({ submodule: sm, intent: it }) => {
+            setSubmodule(sm);
+            setIntent(it);
+            // Scroll the cluster picker into view — focus stays on the
+            // input so keyboard users can keep typing after the submit.
+            setTimeout(() => {
+              const el = document.querySelector('[data-testid="v2poc-submodule-picker"]');
+              el?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }, 50);
+          }}
+        />
         <div style={{ maxWidth: 880, margin: "40px auto", padding: 24 }}>
-          <p className="akki-overline" style={{ marginBottom: 8 }}>Solva v2 · Phase 15.2</p>
-          <h1 style={{ fontFamily: "Georgia, serif", fontSize: 28, marginBottom: 8 }}>Start a Solva session</h1>
+          <p className="akki-overline" style={{ marginBottom: 8 }}>Solva · session set-up</p>
+          <h1 style={{ fontFamily: "Georgia, serif", fontSize: 22, marginBottom: 8 }}>Pick a cluster, confirm the prompt, start.</h1>
           <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 24 }}>
-            Pick a sub-module, then a cluster, then state the problem in your
-            own words. Every LLM call is audited; every assertive sentence
-            carries a grounding-tier marker.
+            Every LLM call is audited; every assertive sentence carries a
+            grounding-tier marker.
           </p>
 
           {/* Phase 15.2 — 4-tile sub-module picker. User picks explicitly;

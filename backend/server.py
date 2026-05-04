@@ -611,9 +611,31 @@ async def on_startup():
                 replace_existing=True,
             )
 
+            # ── Phase B.1 — Chat 30-day retention sweep (daily 03:30 UTC) ──
+            # Soft-deleted chats (status='archived' + deleted_at older
+            # than 30 days) get hard-removed; one chat.hard_deleted
+            # audit row per chat is appended to keep the SHA-256 chain
+            # intact. Same APScheduler/in-process caveat as the other
+            # jobs — Phase G adds Mongo-lock leader election for the
+            # multi-replica case.
+            async def _fire_chat_retention_sweep():
+                try:
+                    from routers.chat import run_chat_retention_sweep
+                    summary = await run_chat_retention_sweep()
+                    logger.info("Chat retention sweep: %s", summary)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("Chat retention sweep failed: %s", e)
+
+            scheduler.add_job(
+                _fire_chat_retention_sweep,
+                CronTrigger(hour=3, minute=30),
+                id="chat_retention_daily",
+                replace_existing=True,
+            )
+
             scheduler.start()
             app.state.scheduler = scheduler
-            logger.info("Schedulers armed: Exco360 (Tue 10:00) + Influence Digest (Mon 08:00) + Paragraph Anchors (daily 03:00) + Solva v2 Stale (daily 04:00) UTC.")
+            logger.info("Schedulers armed: Exco360 (Tue 10:00) + Influence Digest (Mon 08:00) + Paragraph Anchors (daily 03:00) + Chat Retention (daily 03:30) + Solva v2 Stale (daily 04:00) UTC.")
         except Exception as e:  # noqa: BLE001
             logger.warning("Could not arm weekly scheduler: %s", e)
     else:

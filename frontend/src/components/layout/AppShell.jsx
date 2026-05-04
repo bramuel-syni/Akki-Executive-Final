@@ -28,6 +28,7 @@ import MentionInbox from "@/components/collab/MentionInbox";
 import ReviewBadge from "@/components/layout/ReviewBadge";
 import UploadModal from "@/components/upload/UploadModal";
 import PortfolioRail from "@/components/layout/PortfolioRail";
+import { isSponsoredContext } from "@/lib/sponsorship";
 import ContinueWithPill from "@/components/layout/ContinueWithPill";
 import ProPill from "@/components/depth/ProPill";
 import { openUpgradeModal } from "@/components/depth/UpgradeModal";
@@ -117,8 +118,7 @@ const CONTEXT_TYPE_LABEL = {
 function groupContexts(contexts) {
   const groups = { personal: [], sponsored: [] };
   contexts.forEach((c) => {
-    const bucket = c.type === "ned_sponsored" || c.type === "executive_enterprise" ? "sponsored" : "personal";
-    groups[bucket].push(c);
+    groups[isSponsoredContext(c) ? "sponsored" : "personal"].push(c);
   });
   return groups;
 }
@@ -186,9 +186,7 @@ export default function AppShell({ children }) {
     activeContext && activeContext.my_sub_role === "admin";
 
   const groups = groupContexts(contexts);
-  const isSponsored = activeContext?.provisioning === "sponsored" ||
-    activeContext?.type === "ned_sponsored" ||
-    activeContext?.type === "executive_enterprise";
+  const isSponsored = isSponsoredContext(activeContext);
 
   const showRoleSwitcher = availableRoles.length > 1;
   const roleIcon = activeRole === "ned" ? Landmark : Briefcase;
@@ -792,7 +790,7 @@ export default function AppShell({ children }) {
                         <p className="text-sm text-[var(--ink)] font-medium">{c.name}</p>
                         <p className="text-[10px] uppercase tracking-wider text-slate-400">
                           {c.my_role || "member"}
-                          {c.provisioning === "sponsored" && <span className="ml-2 text-[var(--accent)]">sponsored</span>}
+                          {isSponsoredContext(c) && <span className="ml-2 text-[var(--accent)]">sponsored</span>}
                         </p>
                       </div>
                     </div>

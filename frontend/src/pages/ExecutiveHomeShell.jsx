@@ -137,14 +137,22 @@ export default function ExecutiveHomeShell() {
             <h2 className="akki-serif text-[22px] mb-4">
               {!isDeclared
                 ? <>Declare your role. Finish your profile to unlock your signals.</>
-                : <>Finish your profile setup to unlock your signals.</>}
+                : <>Finish your profile to unlock your signals.</>}
             </h2>
             <p className="akki-serif text-[15px] text-[var(--deep)] leading-relaxed mb-8 max-w-xl">
               Seven role-specific questions establish your profile — the foundation for every signal, briefing, and lens session.
             </p>
             <Link to="/app/first-session">
-              <Button className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-md h-10 px-5 font-medium" data-testid="start-onboarding-btn">
-                {!isDeclared ? "Start profile setup" : "Resume profile setup"} <ArrowRight className="w-4 h-4 ml-2" />
+              {/* Phase B.6 — copy rename per FT-voice ladder. The literal
+                  string `Resume Audit` never lived in the codebase; the
+                  closest live label was `Resume profile setup`, which is
+                  exactly the "partially-completed onboarding" rung. The
+                  button copy now reads "Continue onboarding"; first-time
+                  users see "Start onboarding". The `data-testid` is
+                  unchanged (`start-onboarding-btn`) so analytics +
+                  end-to-end tests bind by stable id, not by visible text. */}
+              <Button className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-md h-10 px-5 font-medium" data-testid="start-onboarding-btn" aria-label={!isDeclared ? "Start onboarding" : "Continue onboarding"}>
+                {!isDeclared ? "Start onboarding" : "Continue onboarding"} <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </Link>
           </div>
