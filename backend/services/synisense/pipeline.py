@@ -29,7 +29,14 @@ from . import regex_recognisers
 logger = logging.getLogger("akki.synisense.pipeline")
 
 _VALID_SURFACES = {"chat", "ingest", "briefing", "deck", "report",
-                   "solve", "solve_v2", "public_read"}
+                   "solve", "solve_v2", "public_read",
+                   # Phase 1 (2026-05-05) — added so the Document
+                   # Journal lazy-on-click endpoint and the backfill
+                   # script (`scripts/backfill_journal_commentary.py`)
+                   # can both label their Synisense runs with the
+                   # correct surface. Pre-Phase-1, the live path
+                   # mis-labelled these as "briefing".
+                   "journal_commentary"}
 
 # Phase 15.1 anticipates per-engine sub-surfaces under solve_v2 so the perf
 # ring buffer can separate (e.g.) triangulation latency from synthesis

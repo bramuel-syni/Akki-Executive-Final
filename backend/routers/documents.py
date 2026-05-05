@@ -482,6 +482,13 @@ async def journal_commentary(
 
     ~400 word target, FT-voice, dry, specific. Cached on the row;
     subsequent calls return cached unless `?refresh=true`.
+
+    Phase 1 (2026-05-05): the generation logic lives in
+    `document_commentary_service.generate_journal_commentary` so the
+    backfill script (`scripts/backfill_journal_commentary.py`) calls
+    the exact same function. The pre-Phase-1 surface mis-label
+    (`synisense_pipeline.run(... surface="briefing")`) is fixed in
+    that shared service and surfaced here through the same import.
     """
     d = await db.documents.find_one(
         {"id": doc_id, "context_id": context_id}, {"_id": 0},
@@ -489,89 +496,49 @@ async def journal_commentary(
     if not d:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    if d.get("journal_commentary") and not refresh:
-        return {
-            "doc_id": doc_id,
-            "commentary": d["journal_commentary"],
-            "commentary_redacted": d.get("journal_commentary_redacted")
-                                   or d["journal_commentary"],
-            "synisense_version": d.get("journal_commentary_synisense_version", 0),
-            "generated_at": d.get("journal_commentary_generated_at"),
-            "cached": True,
-        }
-
-    body = (d.get("extracted_text") or "")[:6000]
-    if not body.strip():
-        raise HTTPException(
-            status_code=422,
-            detail="Document has no extracted text — cannot generate commentary.",
-        )
-    title = d.get("name") or d.get("title") or "Untitled"
-
-    system = (
-        "You are Akki, an analytical co-pilot for board directors. Your "
-        "voice is Financial Times: dry, specific, plain. Never editorial. "
-        "Always grounded in the document. When evidence is thin, say so."
+    from document_commentary_service import (
+        generate_journal_commentary, CommentaryGenerationError,
     )
-    user = (
-        f"Document: {title}\n"
-        f"Type: {d.get('doc_kind') or d.get('doc_type') or 'general'}\n\n"
-        "Write a 350–450 word commentary on this document for the board. "
-        "Cover: what it claims, what is conspicuously absent, the two or "
-        "three points that warrant follow-up, and how it sits against "
-        "the strategic context. No headlines. Reference passages inline "
-        "where you cite them.\n\n"
-        f"=== DOCUMENT ===\n\n{body}\n"
-    )
-
-    from llm_service import call_llm
     try:
-        llm_resp = await call_llm(
-            module="document_journal_commentary",
-            user_query=user,
-            system_override=system,
-            session_context={
-                "context_id": context_id,
-                "account_id": ctx["account"]["id"],
-            },
-            tier="standard",
+        out = await generate_journal_commentary(
+            doc=d,
+            account_id=ctx["account"]["id"],
+            refresh=refresh,
+            record_audit=True,
         )
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"LLM commentary failed: {exc}")
-    commentary = (llm_resp.get("response") if isinstance(llm_resp, dict) else "") or ""
-    commentary = commentary.strip()
-    if not commentary:
-        raise HTTPException(status_code=502, detail="LLM returned empty commentary.")
+    except CommentaryGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
-    from services.synisense import pipeline as synisense_pipeline
-    syn_out = await synisense_pipeline.run(
-        commentary, context_id=context_id, surface="briefing",
-        mode="redact", account_id=ctx["account"]["id"],
-    )
-
-    new_version = (d.get("journal_commentary_synisense_version") or 0) + 1
-    generated_at = iso(now())
-    update = {
-        "journal_commentary": commentary,
-        "journal_commentary_redacted": syn_out.get("redacted_text") or commentary,
-        "journal_commentary_synisense_version": new_version,
-        "journal_commentary_generated_at": generated_at,
-        "updated_at": generated_at,
-    }
-    await db.documents.update_one({"id": doc_id}, {"$set": update})
-
-    await write_audit(
-        context_id, ctx["account"]["id"], "document.journal_commentary_generated",
-        "document", doc_id, {"synisense_version": new_version},
-    )
+    if out["status"] == "skipped":
+        # Map the generic skip reasons onto the HTTP responses the live
+        # endpoint historically used so existing UI code doesn't have
+        # to learn a new contract.
+        reason = out["reason"]
+        if reason == "no_extracted_text":
+            raise HTTPException(
+                status_code=422,
+                detail="Document has no extracted text — cannot generate commentary.",
+            )
+        if reason.startswith("sensitivity_band="):
+            raise HTTPException(
+                status_code=403,
+                detail="Document is restricted; commentary cannot be generated.",
+            )
+        if reason.startswith("doc_status="):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Document not ready for commentary ({reason}).",
+            )
+        # Anything else — surface as 422 with the literal reason.
+        raise HTTPException(status_code=422, detail=f"skipped:{reason}")
 
     return {
         "doc_id": doc_id,
-        "commentary": commentary,
-        "commentary_redacted": update["journal_commentary_redacted"],
-        "synisense_version": new_version,
-        "generated_at": generated_at,
-        "cached": False,
+        "commentary": out["commentary"],
+        "commentary_redacted": out["redacted"],
+        "synisense_version": out["synisense_version"],
+        "generated_at": out["generated_at"],
+        "cached": out["status"] == "cached",
     }
 
 

@@ -72,6 +72,7 @@ from routers import decks as decks_router  # noqa: E402
 # forensic GETs) deleted. Solva v2 is the only Solva surface now.
 from routers import walkin as walkin_router  # noqa: E402
 from routers import admin_auth_events as admin_auth_events_router  # noqa: E402
+from routers import admin_journal as admin_journal_router  # noqa: E402
 from routers import studio as studio_router  # noqa: E402
 from routers import studio_blocks as studio_blocks_router  # noqa: E402
 from routers import product_features as product_features_router  # noqa: E402
@@ -144,6 +145,7 @@ app.include_router(decks_router.router)
 # M.4: solva_router + solva_engine_router include_router calls removed.
 app.include_router(walkin_router.router)
 app.include_router(admin_auth_events_router.router)
+app.include_router(admin_journal_router.router)
 app.include_router(studio_router.router)
 app.include_router(studio_blocks_router.router)
 app.include_router(product_features_router.router)
