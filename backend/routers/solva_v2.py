@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -103,7 +104,13 @@ STALE_SESSION_AGE_DAYS = 30            # cron auto-abandons after this
 # Pydantic
 # -----------------------------------------------------------------------------
 class StartV2In(BaseModel):
-    cluster_id: str = Field(min_length=2, max_length=80)
+    # Phase I.2 — `cluster_id` is now optional. When omitted (or when
+    # `auto_cluster=True`), the server resolves a cluster from the
+    # framing intent via `_resolve_auto_cluster`. The cluster picker is
+    # gone from the user surface per the UX brief; clusters remain an
+    # internal engineering abstraction used by the engines.
+    cluster_id: Optional[str] = Field(default=None, max_length=80)
+    auto_cluster: bool = Field(default=True)
     intent: str = Field(min_length=20, max_length=1200)
     context_id: Optional[str] = None
     submodule: str = Field(default="seek_clarity")
@@ -132,6 +139,55 @@ class IntentClassifyIn(BaseModel):
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
+# Phase I.2 — keyword heuristic that maps intent text to one of the 12
+# Solve clusters. Deterministic (no LLM call), so tests are stable and
+# we save spend on every session start. The cluster is an internal
+# engineering hint (it shapes phase_hints + banned_terms in the engine
+# prompts); it is NOT user-visible per the v3 UX brief. Order matters
+# in `_AUTO_CLUSTER_KEYWORDS`: the first matching cluster wins, so the
+# more specific buckets are listed first.
+_AUTO_CLUSTER_KEYWORDS: List[tuple[str, tuple[str, ...]]] = [
+    ("ceo_succession",         ("succession", "successor", "ceo retire", "incoming ceo", "outgoing ceo", "next ceo")),
+    ("founder_transition",     ("founder", "founders", "founding ceo", "step back", "step down", "exit the founder")),
+    ("ma_thesis",              ("acquisition", "acquire ", "acquired", "merger", "m&a", "buyout", "target company", "deal thesis")),
+    ("regulatory_change",      ("regulator", "regulation", "regulatory", "compliance ", "licence", "license", "supervisory")),
+    ("tech_debt_or_outage",    ("outage", "downtime", "tech debt", "technical debt", "system failure", "platform incident", "cyber", "breach")),
+    ("people_conduct",         ("misconduct", "harassment", "whistleblow", "ethics", "fraud", "conduct issue", "investigation", "resignation under")),
+    ("performance_management", ("performance review", "underperforming", "performance management", "kpi miss", "missed targets", "delivery slip")),
+    ("capital_allocation",     ("capital allocation", "buyback", "dividend", "balance sheet", "leverage", "raise capital", "rights issue", "debt facility")),
+    ("risk_blindspot",         ("blind spot", "blindspot", "risk register", "risk we missed", "unhedged", "exposure", "tail risk")),
+    ("board_dynamics",         ("chair ", "chairman", "the board ", "ned ", "non-executive", "boardroom", "board pack", "board dynamics")),
+    ("strategy_drift",         ("strategy", "strategic drift", "five-year plan", "5-year plan", "lost focus", "drifted", "vision")),
+    ("revenue_underperformance", ("revenue", "topline", "top line", "sales miss", "missed", "shortfall", "guidance miss")),
+]
+_AUTO_CLUSTER_DEFAULT = "revenue_underperformance"
+
+
+async def _resolve_auto_cluster(intent: str) -> str:
+    """Return a cluster id chosen for this intent text.
+
+    Falls back to ``_AUTO_CLUSTER_DEFAULT`` when no keyword matches; if
+    that cluster does not exist in the DB (operator deleted it), the
+    next one in the seed taxonomy is picked. Never raises — start_session
+    will 404 above if every fallback fails to resolve.
+    """
+    text = (intent or "").lower()
+    candidate: Optional[str] = None
+    for cid, kws in _AUTO_CLUSTER_KEYWORDS:
+        if any(k in text for k in kws):
+            candidate = cid
+            break
+    if candidate is None:
+        candidate = _AUTO_CLUSTER_DEFAULT
+    # Confirm the chosen cluster exists; if it doesn't (custom DB), pick
+    # any active cluster as a last resort so the session can still start.
+    exists = await db.solve_clusters.find_one({"id": candidate}, {"_id": 0, "id": 1})
+    if exists:
+        return candidate
+    fallback = await db.solve_clusters.find_one({}, {"_id": 0, "id": 1})
+    return (fallback or {}).get("id") or _AUTO_CLUSTER_DEFAULT
+
+
 async def _is_pro(account: Dict[str, Any]) -> bool:
     """LIVE read of account plan (mirrors v1 posture — stale cache guard)."""
     aid = account.get("id") if isinstance(account, dict) else None
@@ -687,7 +743,25 @@ async def start_session(
                 "free text)."
             ),
         )
-    cluster = await db.solve_clusters.find_one({"id": body.cluster_id}, {"_id": 0})
+
+    # Phase I.2 — auto-resolve cluster from intent when not provided.
+    # The Solva v3 UX brief deprecates the user-facing cluster picker
+    # but the engines still rely on cluster phase_hints + banned_terms,
+    # so we resolve one server-side. `auto_cluster=True` (default) +
+    # missing `cluster_id` triggers the resolver. If both are provided
+    # we honour the explicit cluster_id (forensic / API-direct callers).
+    resolved_cluster_id = (body.cluster_id or "").strip() or None
+    if resolved_cluster_id is None and body.auto_cluster:
+        resolved_cluster_id = await _resolve_auto_cluster(body.intent)
+    if not resolved_cluster_id:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "cluster_id required when auto_cluster=False. Either pass "
+                "auto_cluster=true (default) or supply cluster_id."
+            ),
+        )
+    cluster = await db.solve_clusters.find_one({"id": resolved_cluster_id}, {"_id": 0})
     if not cluster:
         raise HTTPException(status_code=404, detail="Unknown cluster.")
 
@@ -720,8 +794,9 @@ async def start_session(
         "submodule": body.submodule,  # Phase 15.2 — persisted
         "persona": (body.persona or "").strip() or None,  # 15.2 get_perspective
         "parent_session_id": None,  # 15.2 — set when session is forked
-        "cluster_id": body.cluster_id,
+        "cluster_id": resolved_cluster_id,
         "cluster_label": cluster.get("label"),
+        "cluster_resolution": "auto" if (body.cluster_id or "").strip() == "" else "explicit",
         "intent": body.intent.strip(),
         "layer": LAYERS[0],
         "layer_index": 0,
@@ -1725,4 +1800,173 @@ async def reasoning_log_summary(
         "validator_verdict": (synth.get("validation") or {}).get("verdict"),
     }
 
-    return rec
+
+# -----------------------------------------------------------------------------
+# Phase I.3 — Artefact reasoning shaping endpoint.
+#
+# The Artefact view's "How Solva reasoned this" expandable consumes a
+# pre-shaped projection of `reasoning_audit_log`. This endpoint groups
+# audit entries by engine into the 4 sections described in brief §5.4:
+#     1. The candidates Solva considered.
+#     2. What the triangulation found.
+#     3. How the probabilities were weighted.
+#     4. The full reasoning audit log (compressed; raw prompts excluded).
+# -----------------------------------------------------------------------------
+@router.get("/sessions/{sid}/artefact-reasoning")
+async def artefact_reasoning(
+    sid: str,
+    account: Dict[str, Any] = Depends(get_current_account),
+):
+    rec = await db.solva_v2_sessions.find_one(
+        {"id": sid, "account_id": account["id"]},
+        {
+            "_id": 0,
+            "id": 1, "layer": 1, "status": 1, "submodule": 1,
+            "reasoning_audit_log": 1, "synthesis": 1,
+        },
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    audit = rec.get("reasoning_audit_log") or []
+    candidates: List[Dict[str, Any]] = []
+    triangulation_findings: List[Dict[str, Any]] = []
+    weighting: Dict[str, Any] = {}
+    log_entries: List[Dict[str, Any]] = []
+
+    for e in audit:
+        if not isinstance(e, dict):
+            continue
+        engine = (e.get("engine") or "").lower()
+        out = e.get("output") or {}
+        # 1) Candidates the engine considered
+        if engine == "candidate_generation":
+            for c in (out.get("candidates") or []):
+                if isinstance(c, dict):
+                    candidates.append({
+                        "hypothesis": c.get("hypothesis") or c.get("text") or "",
+                        "tentative_tier": c.get("tentative_tier_hint") or c.get("tier") or "",
+                        "weight": c.get("weight"),
+                    })
+        # 2) Triangulation findings (divergences + comparable signals)
+        elif engine == "triangulation":
+            divergences = out.get("divergences") or out.get("findings") or []
+            for d in divergences:
+                if isinstance(d, dict):
+                    triangulation_findings.append({
+                        "summary": d.get("summary") or d.get("description") or "",
+                        "severity": d.get("severity") or "",
+                        "source": d.get("source") or "",
+                    })
+                else:
+                    triangulation_findings.append({"summary": str(d), "severity": "", "source": ""})
+        # 3) Probability weighting breakdown
+        elif engine == "probability_weighting":
+            breakdown = out.get("aggregation_breakdown") or out.get("breakdown")
+            if breakdown:
+                weighting["breakdown"] = breakdown
+            if out.get("violations"):
+                weighting["violations"] = out["violations"]
+        # 4) Compressed audit row for the full log
+        log_entries.append({
+            "ts":     e.get("ts") or e.get("created_at") or "",
+            "engine": e.get("engine") or "",
+            "engine_version": e.get("engine_version") or "",
+            "layer":  e.get("layer") or "",
+            "tiers_cited": e.get("tier_labels") or [],
+            "verdict": (out.get("verdict") or out.get("validator_verdict") or ""),
+            "shield_required": bool(e.get("shield_required")),
+            "latency_ms": e.get("latency_ms"),
+        })
+
+    synth = rec.get("synthesis") or {}
+    return {
+        "session_id":      rec["id"],
+        "submodule":       rec.get("submodule") or "seek_clarity",
+        "status":          rec.get("status"),
+        "candidates":      candidates,
+        "triangulation":   triangulation_findings,
+        "weighting":       weighting,
+        "tier_distribution": synth.get("tier_distribution") or {},
+        "log_entries":     log_entries,
+    }
+
+
+# -----------------------------------------------------------------------------
+# Phase I.4 — PDF / DOCX export of the Solva artefact (or refusal artefact).
+# Both endpoints are auth-gated; the file is built in-process by
+# ``solva_artefact_export``. WeasyPrint + python-docx do not need any
+# external service. Refusal sessions automatically use the 4-section
+# refusal anatomy (brief §5.5).
+# -----------------------------------------------------------------------------
+def _safe_filename_part(text: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "-", text or "")
+    return cleaned.strip("-")[:60] or "session"
+
+
+@router.get("/sessions/{sid}/export.pdf")
+async def export_session_pdf(
+    sid: str,
+    account: Dict[str, Any] = Depends(get_current_account),
+):
+    from fastapi.responses import Response
+
+    rec = await db.solva_v2_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    try:
+        from solva_artefact_export import build_pdf
+        pdf_bytes = build_pdf(rec)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("solva v2 export.pdf failed sid=%s", sid)
+        raise HTTPException(
+            status_code=500,
+            detail=f"PDF export failed: {exc}",
+        ) from exc
+
+    filename = f"solva-{_safe_filename_part(rec.get('submodule') or 'session')}-{sid[:8]}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Solva-Artefact": "refusal" if rec.get("status") in {"refused", "blocked_hard", "blocked_soft"} else "standard",
+        },
+    )
+
+
+@router.get("/sessions/{sid}/export.docx")
+async def export_session_docx(
+    sid: str,
+    account: Dict[str, Any] = Depends(get_current_account),
+):
+    from fastapi.responses import Response
+
+    rec = await db.solva_v2_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    try:
+        from solva_artefact_export import build_docx
+        docx_bytes = build_docx(rec)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("solva v2 export.docx failed sid=%s", sid)
+        raise HTTPException(
+            status_code=500,
+            detail=f"DOCX export failed: {exc}",
+        ) from exc
+
+    filename = f"solva-{_safe_filename_part(rec.get('submodule') or 'session')}-{sid[:8]}.docx"
+    return Response(
+        content=docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Solva-Artefact": "refusal" if rec.get("status") in {"refused", "blocked_hard", "blocked_soft"} else "standard",
+        },
+    )

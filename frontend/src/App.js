@@ -39,6 +39,7 @@ import Manage from "@/pages/Manage";
 import Enterprise from "@/pages/Enterprise";
 import Decks from "@/pages/Decks";
 import SolvaApp from "@/pages/SolvaApp";
+import SolvaSession from "@/pages/SolvaSession";
 import Sandbox from "@/pages/Sandbox";
 import SandboxGenerating from "@/pages/SandboxGenerating";
 import Cycle from "@/pages/Cycle";
@@ -227,6 +228,9 @@ function App() {
               v2-poc URL alias have both been retired. */}
           <Route path="/app/solva" element={<Gated><SolvaApp /></Gated>} />
           <Route path="/app/solva/v2-poc" element={<Navigate to="/app/solva" replace />} />
+          {/* Phase I.2 — Solva v3 Guided Flow state-machine page. */}
+          <Route path="/app/solva/session/new" element={<Gated><SolvaSession /></Gated>} />
+          <Route path="/app/solva/session/:sessionId" element={<Gated><SolvaSession /></Gated>} />
           {/* Legacy /app/solve alias for muscle memory and external
               bookmarks. Redirects to the v2 surface. */}
           <Route path="/app/solve" element={<Navigate to="/app/solva" replace />} />

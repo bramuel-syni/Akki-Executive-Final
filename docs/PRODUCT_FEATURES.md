@@ -23,7 +23,8 @@ Anything marked Pending or Placeholder must not be described to prospects as a c
 |---|---|---|---|
 | Synisense Shield | Shipped | Three-layer PII de-identification with AES-GCM shield maps and surface-scoped TTLs | 12 |
 | Solva v1 (4-phase engine) | Read-only forensic | POSTs retired in Phase A; six GETs preserved at `/api/solva/*` for historical session inspection | 11 / Phase A |
-| Solva v2 | Shipped | Reasoning tier, four sub-modules, tension detector, grounding contract, guardrail ladder, reflection layer; production surface at `/app/solva` | 15.0–15.3.5 |
+| Solva v2 (engine) | Shipped | Reasoning tier, four sub-modules, tension detector, grounding contract, guardrail ladder, reflection layer | 15.0–15.3.5 |
+| Solva v3 (UI rebuild) | Shipped | Single-column Guided Flow at `/app/solva/session/*`, 4-card centred landing, composed artefact with animated probability bars, PDF + DOCX export, refusal artefact, WCAG AA contrast | Phase I (2026-05-05) |
 | Work Studio | Shipped | Block editor with deterministic sensitivity and exposure scoring | 13.3 |
 | Cycle Manager | Shipped | Briefs, Signals, Minutes, Actions and Reports under one surface | 13.2 |
 | Akki Pulse | Placeholder | Holding page only; aggregator and Privacy Wall unbuilt | 14 |
@@ -66,25 +67,48 @@ The engine is complete against its Phase 12.1 contract. Outstanding work: the Ph
 
 Solva is AKKI's decision-support surface. A Solva session takes an executive through a structured diagnostic on one question — a strategic knot, a risk call, a capital-allocation decision. It surfaces the question, deepens it with grounded context, synthesises a position, and locks in next steps that can be handed to a briefing, a deck, or a reporting cycle.
 
-### How it works today (v1)
+### How it works today (v3 UI on the v2 engine)
 
-The shipped engine is a four-phase session: Surface → Depth → Synthesis → Lock-in. Each turn posts one user message and one Solva message; the session is persisted on every turn so save-and-resume is trivial. The cluster taxonomy (`solve_clusters`) and the anonymised comparables corpus (`solve_comparables`) are seeded idempotently at boot. Triangulation v1 looks up comparable diagnoses from the cluster document; if none exist, the LLM surfaces two plausible comparables inline.
+The **Solva v3 UX** is shipped (Phase I, 2026-05-05). The user-facing flow is now a single-column, linear Guided Flow:
 
-Tiering follows account plan: free users get Claude Sonnet 4.5 for synthesis, Pro users get Claude Opus against a separate per-day budget that does not compete with decks or briefings. Handoffs are first-class — at lock-in, a session converts into a briefing draft, a deck outline, or a cycle question set via `POST /api/solva/sessions/{sid}/handoff/{brief|decks|cycle}`. Legacy `/api/solve/*` endpoints resolve via HTTP 308 redirects from `routers/solva_aliases.py` and retire in Phase 14.
+```
+LANDING (4 picker cards, centred, collapsible Recent Sessions)
+  → FRAMING (one prompt: "Tell me about the situation you're trying to think through.")
+  → Q1 → Q2 → Q3        (round 1 of grounding questions)
+  → DEPTH_Q1 → DEPTH_Q2 → DEPTH_Q3   (deeper round, against tinted background)
+  → PREPARING (centered "Putting this together." interstitial)
+  → ARTEFACT (the composed read)
+  → REFLECT_1 → REFLECT_2 → REFLECT_3   (opt-in side-trip from the artefact)
+  → COMPLETE (returns to artefact with "Session saved" toast)
+```
 
-### What's still pending (v2)
+The cluster picker is gone from the UI. The backend resolves a cluster from the framing intent via the new `_resolve_auto_cluster` keyword heuristic when `auto_cluster=true` (default). Card 04 user-facing label is **"See Different Perspectives"**; the backend submodule key remains `get_perspective`. Refusal sessions interrupt the flow and route to a 4-section refusal artefact (`SolvaRefusalArtefact.jsx`) in place of the standard composition.
 
-The v2 architecture is not in code. None of the following are present:
+The composed **artefact** has 5 fixed sections:
+1. **Masthead** — sub-module label, persona (when applicable), one-line framing, date · duration · cluster label, top-right Download dropdown (PDF / DOCX).
+2. **Primary diagnosis** — the synthesis paragraphs with `[T:tier]` markers stripped, rendered in Georgia 18pt.
+3. **Scenarios** — animated probability bars (600 ms ease-out, instant under `prefers-reduced-motion`) with confidence-interval extension and ARIA labels.
+4. **Sensitivity drivers** callout (CREAM background, accent rules) — what would change this read.
+5. **Surfaced tensions** callout (CREAM_DEEP background, left accent rule) — where framing and evidence diverge.
 
-- `reasoning_audit_log` on the session schema — no per-turn reasoning trace.
-- Four named sub-modules: Seek Clarity, Develop Strategy, Simulate Hypothesis, Get Perspective.
-- Tension detector with auto-activation when user and corpus disagree.
-- Five-tier grounding contract with enforced tier-labels on every claim.
-- Reasoning engines (candidate generation, triangulation, probability weighting, refusal logic) as interchangeable services behind a thin LLM adapter.
-- Guardrail ladder (soft-block, hard-block, therapy redirect) and Layer-4 Reflection.
-- Synthesis rendering of probability intervals ("45% (35–55%)") with citation chips.
+The "How Solva reasoned this" expandable below pulls a shaped projection of `reasoning_audit_log` from `GET /api/solva/v2/sessions/{sid}/artefact-reasoning` into 4 sub-sections (candidates / triangulation / weighting breakdown / full audit log table).
 
-Scheduled across Phase 15.1, 15.2, 15.3.
+### Backend engine (Solva v2 — unchanged in Phase I)
+
+The reasoning engine is the four-layer state machine `framing → grounding → [hypothesis] → synthesis → reflection`, with 4 named sub-modules (`seek_clarity`, `develop_strategy`, `simulate_hypothesis`, `get_perspective`), a 5-tier grounding contract, the tension detector, the guardrail ladder, the no-opinion filter, and the validator pass. Implementation in `backend/services/solva_v2/`. Tiering follows account plan (free: Sonnet 4.5; Pro: Opus against a separate budget). Handoffs are first-class — at completion a session can convert into a briefing draft, a deck outline, or a cycle question set via `POST /api/solva/v2/sessions/{sid}/handoff/cycle`. The session document persists `synthesis.body`, `synthesis.claims[]`, `reasoning_audit_log[]`, and `reflection.responses[]`.
+
+### Export
+
+Both the standard artefact and the refusal artefact export to PDF (WeasyPrint, ~30 KB typical) and DOCX (python-docx, ~37 KB typical) via:
+
+- `GET /api/solva/v2/sessions/{sid}/export.pdf`
+- `GET /api/solva/v2/sessions/{sid}/export.docx`
+
+Endpoints are auth-gated; refusal sessions return `X-Solva-Artefact: refusal` so downstream tooling can branch. Implementation in `backend/solva_artefact_export.py` + `backend/templates/solva_artefact.html` and `solva_refusal_artefact.html`.
+
+### Solva v1 (read-only forensic)
+
+The pre-v2 engine remains accessible read-only for historical session inspection: 6 `GET /api/solva/*` endpoints (clusters, sessions, handoffs, export.pdf). All v1 POSTs were retired in Phase A.
 
 ## Work Studio
 

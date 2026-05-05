@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>{{ title }}</title>
+<style>
+  @page { size: A4; margin: 22mm 18mm 24mm 18mm; }
+  :root {
+    --ink:    #2A1B1D;
+    --deep:   #5A4A4D;
+    --muted:  #6B6B6B;
+    --rule:   #D5C9B6;
+    --cream:  #F5EFE6;
+    --cream2: #E8DCC8;
+    --accent: #C25A38;
+    --light:  #FFFFFF;
+  }
+  body {
+    font-family: Calibri, "Calibri Light", "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    background: var(--light);
+    font-size: 11pt;
+    line-height: 1.55;
+  }
+  h1, h2, h3, .display, .kicker {
+    font-family: Georgia, "Times New Roman", serif;
+  }
+  .masthead { border-bottom: 1pt solid var(--rule); padding-bottom: 14pt; margin-bottom: 22pt; }
+  .masthead .submodule {
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 1.4pt;
+    color: var(--muted);
+    margin-bottom: 4pt;
+  }
+  .masthead h1 {
+    font-size: 26pt;
+    font-weight: bold;
+    color: var(--ink);
+    margin: 0 0 10pt 0;
+    line-height: 1.15;
+  }
+  .masthead .meta {
+    font-size: 10pt;
+    color: var(--deep);
+  }
+  .masthead .meta span + span::before { content: " · "; color: var(--rule); }
+  .section { margin: 28pt 0; page-break-inside: avoid; }
+  .section h2 {
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 1.6pt;
+    color: var(--accent);
+    margin: 0 0 10pt 0;
+    font-weight: normal;
+    font-family: Georgia, serif;
+    font-style: italic;
+  }
+  .diagnosis p {
+    font-family: Georgia, serif;
+    font-size: 13pt;
+    line-height: 1.6;
+    color: var(--ink);
+    margin: 0 0 10pt 0;
+  }
+  /* Scenario bars */
+  .scenario { margin: 14pt 0 10pt 0; }
+  .scenario .row1 { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4pt; }
+  .scenario .label {
+    font-family: Georgia, serif;
+    font-size: 11pt;
+    font-weight: bold;
+    color: var(--ink);
+    flex: 1;
+    margin-right: 12pt;
+  }
+  .scenario .pct {
+    font-family: Calibri, sans-serif;
+    font-size: 10pt;
+    color: var(--deep);
+    white-space: nowrap;
+  }
+  .scenario .desc {
+    font-family: Georgia, serif;
+    font-size: 10.5pt;
+    color: var(--deep);
+    margin-bottom: 6pt;
+    font-style: italic;
+  }
+  .barwrap {
+    position: relative;
+    height: 10pt;
+    background: var(--rule);
+    border-radius: 1pt;
+    overflow: hidden;
+  }
+  .ci {
+    position: absolute;
+    top: 0; bottom: 0;
+    background: rgba(42, 27, 29, 0.45);
+  }
+  .pt {
+    position: absolute;
+    top: 0; bottom: 0;
+    background: var(--ink);
+  }
+  /* Callouts */
+  .callout {
+    padding: 14pt 16pt;
+    margin: 18pt 0;
+    page-break-inside: avoid;
+  }
+  .callout .kicker {
+    font-style: italic;
+    font-size: 10pt;
+    color: var(--accent);
+    margin-bottom: 6pt;
+  }
+  .callout p, .callout li {
+    font-family: Georgia, serif;
+    font-size: 11pt;
+    color: var(--ink);
+    margin: 0 0 6pt 0;
+  }
+  .sensitivity {
+    background: var(--cream);
+    border-top: 1.5pt solid var(--accent);
+    border-bottom: 1.5pt solid var(--accent);
+  }
+  .tension {
+    background: var(--cream2);
+    border-left: 3pt solid var(--accent);
+    padding-left: 14pt;
+  }
+  .footer {
+    border-top: 1pt solid var(--rule);
+    padding-top: 10pt;
+    margin-top: 32pt;
+    font-size: 8.5pt;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .footer .row { display: flex; justify-content: space-between; }
+  ul.recs { margin: 0; padding-left: 18pt; }
+  ul.recs li { margin-bottom: 4pt; }
+  .empty { color: var(--muted); font-style: italic; font-size: 10.5pt; }
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <div class="submodule">{{ submodule_label }}{% if persona %} · {{ persona }}{% endif %}</div>
+  <h1>{{ framing_one_line }}</h1>
+  <div class="meta">
+    <span>{{ date_str }}</span>
+    {% if duration_label %}<span>{{ duration_label }}</span>{% endif %}
+    {% if cluster_label %}<span>{{ cluster_label }}</span>{% endif %}
+  </div>
+</div>
+
+<div class="section diagnosis">
+  <h2>Primary diagnosis</h2>
+  {% if diagnosis_paragraphs %}
+    {% for para in diagnosis_paragraphs %}
+      <p>{{ para }}</p>
+    {% endfor %}
+  {% else %}
+    <p class="empty">Diagnosis not yet available.</p>
+  {% endif %}
+</div>
+
+{% if scenarios %}
+<div class="section">
+  <h2>Scenarios</h2>
+  {% for s in scenarios %}
+    <div class="scenario">
+      <div class="row1">
+        <span class="label">{{ s.label }}</span>
+        <span class="pct">{{ s.pct }}% ({{ s.low }}–{{ s.high }}%)</span>
+      </div>
+      {% if s.desc %}<div class="desc">{{ s.desc }}</div>{% endif %}
+      <div class="barwrap">
+        <div class="ci" style="left: {{ s.low }}%; width: {{ s.high - s.low }}%;"></div>
+        <div class="pt" style="left: 0%; width: {{ s.pct }}%;"></div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if sensitivity_items %}
+<div class="callout sensitivity">
+  <div class="kicker">What would change this read</div>
+  {% if sensitivity_items|length == 1 %}
+    <p>{{ sensitivity_items[0] }}</p>
+  {% else %}
+    <ul class="recs">
+      {% for item in sensitivity_items %}
+        <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if tension_items %}
+<div class="callout tension">
+  <div class="kicker">Where your framing and the evidence diverge</div>
+  {% if tension_items|length == 1 %}
+    <p>{{ tension_items[0] }}</p>
+  {% else %}
+    <ul class="recs">
+      {% for item in tension_items %}
+        <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if recommendations %}
+<div class="section">
+  <h2>Recommendations</h2>
+  <ul class="recs">
+    {% for r in recommendations %}
+      <li><strong>{{ r.heading }}</strong> — {{ r.body }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="footer">
+  <div class="row">
+    <div>Session {{ session_id_short }} · Audit log {{ audit_count }} entries</div>
+    <div>{{ date_str }}</div>
+  </div>
+  <div>Generated by AKKI · Solva v3</div>
+</div>
+
+</body>
+</html>

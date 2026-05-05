@@ -199,6 +199,54 @@ frontend:
           -agent: "main"
           -comment: "Assistant `Message` component now renders inline `[n]` superscripts via `renderInlineCitations()` when the message carries `citations[]`, plus a chip rail beneath the body (each chip links to `/app/documents/<doc_id>#p=<anchor_id>` and shows `<doc_name> · p.<page>¶<paragraph_number>`). Server has already dropped hallucinated markers, so every chip resolves to a real paragraph. Untethered chats render as before — no chips. No frontend testing required unless user asks."
 
+  - task: "Phase I.2 — Solva v3 Guided Flow state machine + page"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/lib/solvaFlow.js, /app/frontend/src/pages/SolvaSession.jsx, /app/frontend/src/components/solva/flow/*.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+          -agent: "main"
+          -comment: "Pure reducer at /app/frontend/src/lib/solvaFlow.js with 14-state sequence + ARTEFACT_REFUSAL interrupt. 36 jest tests at /app/frontend/src/lib/__tests__/solvaFlow.test.js — all pass. New page /app/frontend/src/pages/SolvaSession.jsx mounted at /app/solva/session/:sessionId and /app/solva/session/new (App.js routes added). Picker click on /app/solva → navigates to /app/solva/session/new?submodule=<key>. SolvaApp.jsx now a tiny shim that mounts AppShell + SolvaLanding (legacy 865-line multi-panel UI removed). 5 flow components in components/solva/flow/: FramingScreen, QuestionScreen, PreparingInterstitial, ReflectionScreen, ProgressIndicator + Shell + PrimaryButton + tokens.js + usePrefersReducedMotion.js. Live walk verified: login → landing → click develop_strategy → framing → real LLM-generated Q1 → user answers → Q2. Auto-cluster path: backend resolves cluster from intent text via _resolve_auto_cluster keyword heuristic when auto_cluster=true (default in StartV2In). cluster_id now Optional. POST /api/solva/v2/sessions returns cluster_resolution: 'auto' | 'explicit'."
+
+  - task: "Phase I.3 — Solva artefact composition view"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/solva/artefact/*.jsx, /app/backend/routers/solva_v2.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+          -agent: "main"
+          -comment: "5-section composition (masthead, primary diagnosis, scenarios, sensitivity callout, tension callout) at /app/frontend/src/components/solva/artefact/SolvaArtefact.jsx. ProbabilityBar with 600ms ease-out animated fill + CI extension overlay; respects prefers-reduced-motion. ReasoningExpandable consumes new shaping endpoint GET /api/solva/v2/sessions/{sid}/artefact-reasoning that groups reasoning_audit_log into 4 sub-sections (candidates / triangulation / weighting breakdown / log entries). Refusal variant at SolvaRefusalArtefact.jsx with 4-section refusal anatomy + HONEST REFUSAL pill. Live verified with /app/backend/scripts/inject_phase_i_demo_session.py — full artefact renders correctly at /app/solva/session/<sid>; reasoning expandable opens and shows correct grouped data; download dropdown opens with PDF / DOCX entries."
+
+  - task: "Phase I.4 — Solva v2 PDF + DOCX export endpoints"
+    implemented: true
+    working: true
+    file: "/app/backend/solva_artefact_export.py, /app/backend/templates/solva_artefact.html, /app/backend/templates/solva_refusal_artefact.html, /app/backend/routers/solva_v2.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+          -agent: "main"
+          -comment: "Added `weasyprint>=60.0` to backend/requirements.txt; python-docx==1.2.0 already in requirements (reused). Two new endpoints: GET /api/solva/v2/sessions/{sid}/export.pdf (WeasyPrint, ~30 KB std / ~22 KB refusal) and GET /api/solva/v2/sessions/{sid}/export.docx (python-docx, ~37 KB). Both auth-gated, refusal sessions automatically use the refusal template and emit X-Solva-Artefact: refusal header. HTML templates use Calibri + Georgia, CSS-div probability bars (no images). DOCX uses 1-row inline tables for bars and bordered cell-shaded callouts. backend/solva_artefact_export.py exposes build_pdf, build_docx, build_artefact_context (pure shaping). 13 pytest tests at /app/backend/tests/test_phase_i_solva_export.py — all pass: standard PDF, standard DOCX, refusal PDF, refusal DOCX, 401 unauth, 404 missing, auto_cluster default, auto_cluster=false fail, explicit cluster_id, artefact-reasoning grouping. Smoke artefacts copied to /app/frontend/public/static/qa/phase-i/{std,refusal}.{pdf,docx}."
+
+  - task: "Phase I.5 — Reflection screens, A11y, docs sweep"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/solva/flow/ReflectionScreen.jsx, /app/frontend/src/components/solva/flow/usePrefersReducedMotion.js, /app/backend/scripts/contrast_audit.py, /app/docs/ROADMAP.md, /app/docs/PRODUCT_FEATURES.md"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+          -agent: "main"
+          -comment: "ReflectionScreen wires REFLECT_1..3 with the 3 verbatim brief questions plus a refusal-variant first question. Skip option present but muted. On REFLECT_3 exit returns to artefact with 1.5s 'Session saved' toast. Keyboard nav (Tab traversal, Ctrl/Cmd+Enter submit, Escape to skip). ARIA: role='img' + full label on every probability bar; aria-expanded + aria-controls on reasoning expandable. prefers-reduced-motion honoured by hook + transition: none fallback across all motion. Contrast audit at /app/backend/scripts/contrast_audit.py — 20 specific Solva v3 surface combinations all PASS (see report). Brief-conflict resolved: ACCENT=#C25A38 ratios 4.36 vs LIGHT (below AA 4.5 normal text). Introduced ACCENT_DARK=#B85230 (4.90:1) for interactive fills (buttons, refusal pill); brand ACCENT preserved for kickers / dividers (large text, 3.82:1 on CREAM). Docs sweep applied: docs/ROADMAP.md gets a Phase I sub-step matrix; docs/PRODUCT_FEATURES.md updated to mark Solva UI as v3 with the new flow + export surfaces. /docs and /openapi.json HTTP 200 after every sub-step."
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
@@ -216,3 +264,5 @@ agent_communication:
       -message: "Phase 11 (A/B/C) backend implementation complete plus two doc/cleanup items (D doc-drift fix in PRODUCT_REVIEW.md, E stale-comment removal). All Python lint passes, syntax valid (ast parse), backend boots clean. Three items need backend testing (A, B, C). Use admin credentials from /app/memory/test_credentials.md (admin@akki.ai / AkkiAdmin2026!). Hard rules: (1) ValidatedBadge invariant — every frontend render gated on real validation prop, server returns null for cap-tripped briefings only. (2) Public Chair path must NEVER leak un-redacted content — `_assert_public_safe()` is a 500. (3) Hallucinated chat citations must be dropped, not rendered. Notes for testing: ClamAV / MinIO sidecars are not installed in this dev container — uploads will 503; do NOT exercise the upload paths in tests. Test surfaces that don't touch uploads: studio public read (use existing decks/briefings or seed minimal artefacts), decks generate (LLM call against EMERGENT_LLM_KEY), reports send_up, solve session post_turn at synthesis phase, chat send_message with and without context_id."
     -agent: "testing"
       -message: "All three Phase 11 backend items PASS. backend_test.py at /app/backend_test.py covers 38 assertions across A/B/C; 38/38 PASS. ITEM A: public Chair read returns watermark + content (deck slides / briefing items) with zero denylisted keys at any depth; tamper tests (wrong-secret, malformed, expired) return 400/410, never 500. ITEM B: deck/report/solve all persist real validation payloads (verdict in {validated,qualified,flagged}, confidence 0..100, validator_provider/model populated). Soft cap: VALIDATOR_DAILY_SOFT_CAP=1 ⇒ first call validates, second call returns provider='n/a' with note 'Daily validator cap reached'. Brief surface bypass confirmed (still validates after deck cap trips). Report validation never overwritten on second send_up (admin → 403). ITEM C: tethered chat returns 5 structured citations + inline [1]..[5] chips, no [[cite: markers leak, audit log carries citations_kept/dropped counters; untethered chat returns empty citations and clean content. Backend env was modified (VALIDATOR_DAILY_SOFT_CAP added then removed) and supervisor restarted twice; final state matches starting state."
+    -agent: "main"
+      -message: "Phase I — Solva v3 UX rebuild — COMPLETE (sub-steps I.2 → I.3 → I.4 → I.5; I.1 was already shipped). Backend: 13/13 pytest tests pass (/app/backend/tests/test_phase_i_solva_export.py); /openapi.json + /docs both HTTP 200 after every sub-step; new endpoints GET /api/solva/v2/sessions/{sid}/{artefact-reasoning, export.pdf, export.docx}; auto_cluster=true default in StartV2In with cluster_id now Optional. Frontend: 36/36 jest tests pass (/app/frontend/src/lib/__tests__/solvaFlow.test.js); pure reducer in /app/frontend/src/lib/solvaFlow.js; 9 new flow / artefact components; new page /app/frontend/src/pages/SolvaSession.jsx mounted at /app/solva/session/{new|:sessionId}. Live walk verified end-to-end on the preview URL: signin → /app/solva landing → click develop_strategy card → /app/solva/session/new → framing → real-LLM Q1 → answer → Q2; injected-completed-session also verified to render the full 5-section artefact + animated bars + sensitivity callout + tension callout + reasoning expandable + download menu; injected refusal session renders the 4-section refusal artefact with HONEST REFUSAL pill. Smoke artefacts at /app/frontend/public/static/qa/phase-i/{std,refusal}.{pdf,docx}. WCAG AA contrast audit: 20/20 specific surface combinations pass; introduced ACCENT_DARK=#B85230 to keep brand ACCENT (#C25A38) on kickers while moving button + pill fills onto the AA-safe shade (4.90:1 on white). Lint clean on every touched file. Docs sweep: ROADMAP.md gets a Phase I sub-step matrix; PRODUCT_FEATURES.md marks Solva UI as v3."
