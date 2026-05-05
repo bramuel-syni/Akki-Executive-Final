@@ -116,6 +116,11 @@ class StartV2In(BaseModel):
     submodule: str = Field(default="seek_clarity")
     persona: Optional[str] = Field(default=None, max_length=200)  # Phase 15.2 — Get Perspective
     pro_tier: bool = False
+    # Phase J.2 — sandbox flag. When true, the orchestrator compresses
+    # the flow per Sandbox UX Brief §4.2: framing → 3 grounding questions
+    # → PREPARING → ARTEFACT (no Layer-2 depth round). Purely additive;
+    # in-product flow is unchanged when sandbox=false.
+    sandbox: bool = False
 
 
 class TurnV2In(BaseModel):
@@ -803,6 +808,9 @@ async def start_session(
         "status": "active",
         "pro_tier": bool(body.pro_tier),
         "pro_account": is_pro_account,
+        # Phase J.2 — sandbox flag persisted on the session doc so the
+        # orchestrator's hypothesis-layer transition can short-circuit it.
+        "sandbox": bool(body.sandbox),
         "turns": [],
         "reasoning_audit_log": [],
         "synthesis": None,

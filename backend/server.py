@@ -426,6 +426,13 @@ async def on_startup():
     )
     await db.synisense_shield_maps.create_index([("context_id", 1), ("created_at", -1)])
 
+    # Phase J — Sandbox v2 sessions (UX rebuild). 7-day TTL; the user's
+    # Welcome answers + per-step state persist for cross-tab resume.
+    # Distinct collection from `sandbox_pickups`; v2 is a different surface.
+    await db.sandbox_v2_sessions.create_index("id", unique=True)
+    await db.sandbox_v2_sessions.create_index("expires_at", expireAfterSeconds=0)
+    await db.sandbox_v2_sessions.create_index([("created_at", -1)])
+
     # Inbound-email idempotency
     await db.accounts.create_index("inbound_token", sparse=True)
     await db.contexts.create_index("inbound_token", sparse=True)

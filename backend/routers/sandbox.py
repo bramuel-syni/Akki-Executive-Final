@@ -1003,3 +1003,462 @@ async def create_seeded_context(
     new_ctx = await db.contexts.find_one({"id": context_id}, {"_id": 0})
     return {"context": sanitize_context(new_ctx) if new_ctx else None,
             "context_id": context_id}
+
+
+# =============================================================================
+# Phase J — Sandbox v2 (UX rebuild per Sandbox UX Brief §3-§10)
+#
+# A new linear, four-step pre-auth experience anchored on the Phase I Solva v3
+# flow + a Work Studio composition demo + a Cycle Manager snapshot. Step 2
+# (Pulse) is deferred to Phase D.2; STEP_1_REVEAL skips to STEP_3_STUDIO.
+#
+# This block is purely additive — the legacy `/api/sandbox/*` endpoints above
+# remain untouched and remain reachable from `/sandbox/legacy` for 30-day
+# forensic fallback. Sandbox v2 stores its session state in a brand-new
+# Mongo collection `sandbox_v2_sessions` (TTL on `expires_at`).
+# =============================================================================
+
+SANDBOX_V2_TTL_DAYS = 7
+SANDBOX_V2_STATES = [
+    "WELCOME",
+    "STEP_1_SOLVA", "STEP_1_REVEAL",
+    "STEP_2_PULSE", "STEP_2_REVEAL",     # declared, not reachable until Phase D.2
+    "STEP_3_STUDIO", "STEP_3_REVEAL",
+    "STEP_4_CYCLE", "STEP_4_REVEAL",
+    "CLOSING",
+]
+SANDBOX_V2_ROLES = [
+    "ceo", "ned", "company_secretary", "exco_member",
+    "government_executive", "regulator", "investor", "other",
+]
+SANDBOX_V2_ORG_TYPES = [
+    "bank", "healthcare", "logistics", "saas",
+    "government", "pre_ipo", "listed_corporate", "other",
+]
+
+
+class SandboxV2WelcomeIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    role: Literal[
+        "ceo", "ned", "company_secretary", "exco_member",
+        "government_executive", "regulator", "investor", "other",
+    ]
+    org_type: Literal[
+        "bank", "healthcare", "logistics", "saas",
+        "government", "pre_ipo", "listed_corporate", "other",
+    ]
+    hope: Optional[str] = Field(default=None, max_length=400)
+
+
+class SandboxV2PatchIn(BaseModel):
+    state: Optional[str] = Field(default=None, max_length=40)
+    payload: Optional[Dict[str, Any]] = None
+
+
+class SandboxV2SaveSendIn(BaseModel):
+    email: EmailStr
+
+
+def _sandbox_v2_default_record(body: SandboxV2WelcomeIn) -> Dict[str, Any]:
+    sid = str(uuid.uuid4())
+    now_dt = datetime.now(timezone.utc)
+    return {
+        "id": sid,
+        "name": body.name.strip(),
+        "role": body.role,
+        "org_type": body.org_type,
+        "hope": (body.hope or "").strip() or None,
+        "state": "WELCOME",
+        "solva_session_id": None,
+        "studio_state": {"draft_built": False, "added_sentence": None, "refused_sentence": None},
+        "cycle_state": {"viewed": False},
+        "captured_email": None,
+        "created_at": _iso(now_dt),
+        "updated_at": _iso(now_dt),
+        "expires_at": now_dt + timedelta(days=SANDBOX_V2_TTL_DAYS),
+        "exited_at": None,
+        "completed_at": None,
+        "version": 2,
+        "user_agent": None,
+    }
+
+
+def _sanitize_v2(rec: Dict[str, Any]) -> Dict[str, Any]:
+    """Drop Mongo `_id` and convert datetime fields to ISO strings."""
+    if not rec:
+        return rec
+    out = {k: v for k, v in rec.items() if k != "_id"}
+    expires_at = out.get("expires_at")
+    if isinstance(expires_at, datetime):
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        out["expires_at"] = _iso(expires_at)
+    return out
+
+
+def _ensure_aware(dt: Any) -> Any:
+    """Normalise a Mongo-returned datetime to a tz-aware UTC instant.
+    Motor / PyMongo strips tzinfo from BSON datetimes; this lets us
+    compare them safely against `datetime.now(timezone.utc)`."""
+    if isinstance(dt, datetime) and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+@router.post("/v2/sessions")
+async def sandbox_v2_create_session(body: SandboxV2WelcomeIn, response: Response):
+    """Create the Sandbox v2 session AND mint a disposable account + JWT
+    so the visitor can call the (auth-gated) Solva v2 endpoints in Step 1
+    without ever signing up.
+
+    The disposable account is flagged ``is_sandbox=True`` and tied to the
+    sandbox v2 session id via ``sandbox_v2_session_id``. It does not get a
+    Mongo `contexts` row (Sandbox v2 doesn't seed a workspace; Step 1 uses
+    the unattached Solva flow with ``context_id=None``). The TTL on
+    ``sandbox_v2_sessions.expires_at`` (7 days) is the only thing keeping
+    the session alive for resume.
+    """
+    rec = _sandbox_v2_default_record(body)
+    await db.sandbox_v2_sessions.insert_one(dict(rec))
+
+    # Disposable account + JWT so Step 1 can call /api/solva/v2/sessions.
+    account_id = str(uuid.uuid4())
+    disposable_email = f"sandbox-v2+{rec['id']}@akki.local"
+    throwaway_password = secrets.token_urlsafe(16)
+    declared_role = "ned" if body.role == "ned" else (
+        "executive" if body.role in {"ceo", "exco_member", "company_secretary"} else "dual"
+    )
+    account_doc = {
+        "id": account_id,
+        "email": disposable_email,
+        "name": f"Sandbox v2 visitor ({rec['name']})",
+        "declared_role": declared_role,
+        "password_hash": hash_password(throwaway_password),
+        "mfa_enabled": False,
+        "mfa_secret": None,
+        "default_context_id": None,
+        "is_sandbox": True,
+        "sandbox_v2_session_id": rec["id"],
+        "created_at": _iso(datetime.now(timezone.utc)),
+    }
+    await db.accounts.insert_one(account_doc)
+
+    access = create_access_token(account_id, disposable_email)
+    refresh = create_refresh_token(account_id)
+    try:
+        set_auth_cookies(response, access, refresh)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[sandbox-v2] could not set auth cookies: %s", exc)
+
+    # Stamp the disposable account on the v2 record so the resume path
+    # can re-issue cookies for a returning visitor.
+    await db.sandbox_v2_sessions.update_one(
+        {"id": rec["id"]},
+        {"$set": {"sandbox_account_id": account_id, "sandbox_email": disposable_email}},
+    )
+
+    return {
+        "session_id": rec["id"],
+        "expires_at": _iso(rec["expires_at"]),
+        "state": rec["state"],
+        "name": rec["name"],
+        "role": rec["role"],
+        "org_type": rec["org_type"],
+        "hope": rec["hope"],
+        # Bearer-fallback for environments where cookies are stripped.
+        "access_token": access,
+        "refresh_token": refresh,
+        "account_id": account_id,
+    }
+
+
+@router.get("/v2/sessions/{sid}")
+async def sandbox_v2_get_session(sid: str, response: Response):
+    rec = await db.sandbox_v2_sessions.find_one({"id": sid})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Sandbox session not found.")
+    expires_at = _ensure_aware(rec.get("expires_at"))
+    if isinstance(expires_at, datetime) and expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail="Sandbox session expired.")
+
+    # Re-mint cookies for the disposable account so a returning visitor
+    # (after closing the tab and coming back via the resume token) can
+    # keep calling the auth-gated Solva v2 endpoints.
+    sandbox_account_id = rec.get("sandbox_account_id")
+    sandbox_email = rec.get("sandbox_email")
+    out = _sanitize_v2(rec)
+    if sandbox_account_id and sandbox_email:
+        try:
+            access = create_access_token(sandbox_account_id, sandbox_email)
+            refresh = create_refresh_token(sandbox_account_id)
+            set_auth_cookies(response, access, refresh)
+            out["access_token"] = access
+            out["refresh_token"] = refresh
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[sandbox-v2] could not re-mint cookies on resume: %s", exc)
+    return out
+
+
+@router.patch("/v2/sessions/{sid}")
+async def sandbox_v2_patch_session(sid: str, body: SandboxV2PatchIn):
+    rec = await db.sandbox_v2_sessions.find_one({"id": sid})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Sandbox session not found.")
+    expires_at = _ensure_aware(rec.get("expires_at"))
+    if isinstance(expires_at, datetime) and expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail="Sandbox session expired.")
+
+    update: Dict[str, Any] = {"updated_at": _iso(datetime.now(timezone.utc))}
+    if body.state is not None:
+        if body.state not in SANDBOX_V2_STATES:
+            raise HTTPException(status_code=422, detail=f"Unknown state '{body.state}'.")
+        update["state"] = body.state
+        if body.state == "CLOSING":
+            update["completed_at"] = _iso(datetime.now(timezone.utc))
+    if body.payload:
+        # Whitelist payload keys to avoid accidental clobber.
+        for key in ("solva_session_id", "studio_state", "cycle_state", "captured_email"):
+            if key in body.payload:
+                update[key] = body.payload[key]
+    await db.sandbox_v2_sessions.update_one({"id": sid}, {"$set": update})
+    rec = await db.sandbox_v2_sessions.find_one({"id": sid})
+    return _sanitize_v2(rec)
+
+
+@router.post("/v2/sessions/{sid}/exit")
+async def sandbox_v2_exit_session(sid: str):
+    rec = await db.sandbox_v2_sessions.find_one({"id": sid})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Sandbox session not found.")
+    await db.sandbox_v2_sessions.update_one(
+        {"id": sid},
+        {"$set": {
+            "exited_at": _iso(datetime.now(timezone.utc)),
+            "updated_at": _iso(datetime.now(timezone.utc)),
+        }},
+    )
+    expires_at = _ensure_aware(rec.get("expires_at"))
+    return {
+        "ok": True,
+        "preserved_until": _iso(expires_at) if isinstance(expires_at, datetime) else rec.get("expires_at"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Phase J.5 — corpus selectors (read-only, no auth, deterministic)
+# ---------------------------------------------------------------------------
+@router.get("/v2/sessions/{sid}/opening-question")
+async def sandbox_v2_opening_question(sid: str):
+    """Return a calibrated Solva opening question for the visitor (Step 1)."""
+    from sandbox_v2_corpus import pick_opening_question, stable_seed
+    rec = await db.sandbox_v2_sessions.find_one({"id": sid})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Sandbox session not found.")
+    seed = stable_seed(rec.get("id", "") or "", rec.get("role", "") or "")
+    return {"question": pick_opening_question(rec["role"], rec["org_type"], seed=seed)}
+
+
+@router.get("/v2/sessions/{sid}/fallback-situation")
+async def sandbox_v2_fallback_situation(sid: str):
+    """Empty-framing fallback (brief §4.5)."""
+    from sandbox_v2_corpus import pick_fallback_situation
+    rec = await db.sandbox_v2_sessions.find_one({"id": sid})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Sandbox session not found.")
+    return {"situation": pick_fallback_situation(rec["role"], rec["org_type"])}
+
+
+@router.get("/v2/sessions/{sid}/studio-sources")
+async def sandbox_v2_studio_sources(sid: str):
+    """Pre-loaded Step 3 source-material chips."""
+    from sandbox_v2_corpus import pick_studio_sources
+    rec = await db.sandbox_v2_sessions.find_one({"id": sid})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Sandbox session not found.")
+    return {"sources": pick_studio_sources(rec["role"], rec["org_type"])}
+
+
+@router.get("/v2/sessions/{sid}/cycle-snapshot")
+async def sandbox_v2_cycle_snapshot(sid: str):
+    """Step 4 read-only Cycle Manager snapshot (brief §7)."""
+    from sandbox_v2_corpus import pick_cycle_snapshot
+    rec = await db.sandbox_v2_sessions.find_one({"id": sid})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Sandbox session not found.")
+    return {"snapshot": pick_cycle_snapshot(rec["role"], rec["org_type"])}
+
+
+@router.get("/v2/sessions/{sid}/pulse-signals")
+async def sandbox_v2_pulse_signals(sid: str):
+    """Step 2 Pulse signals — content ingested now per Phase D.2's
+    forthcoming UI. Pack §"Inter-connection within a context": signals'
+    citations resolve to Step 3 source documents."""
+    from sandbox_v2_corpus import pick_pulse_signals
+    rec = await db.sandbox_v2_sessions.find_one({"id": sid})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Sandbox session not found.")
+    return {"signals": pick_pulse_signals(rec["role"], rec["org_type"])}
+
+
+@router.get("/v2/sessions/{sid}/composed-draft")
+async def sandbox_v2_composed_draft(sid: str):
+    """Step 3 — the verbatim 4-paragraph composed draft for the user's
+    routed (role, org_type)."""
+    from sandbox_v2_corpus import pick_composed_draft
+    rec = await db.sandbox_v2_sessions.find_one({"id": sid})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Sandbox session not found.")
+    return {"draft": pick_composed_draft(rec["role"], rec["org_type"])}
+
+
+# ---------------------------------------------------------------------------
+# Phase J.3 — Studio "add a sentence" provenance check.
+#
+# Deterministic keyword-overlap heuristic — accepts the user-typed
+# sentence iff at least one keyword from any loaded source chip
+# appears in the typed text (case-insensitive, after light stop-word
+# trimming). No LLM call: we want sandbox latency to stay tight and
+# the demo to stay reproducible.
+# ---------------------------------------------------------------------------
+class SandboxV2AddSentenceIn(BaseModel):
+    sentence: str = Field(min_length=2, max_length=400)
+
+
+_STOPWORDS = {
+    "the", "a", "an", "and", "or", "but", "if", "then", "of", "to", "for",
+    "in", "on", "at", "by", "from", "with", "as", "is", "was", "were", "be",
+    "been", "are", "this", "that", "these", "those", "it", "its", "we", "our",
+    "they", "their", "you", "your", "i", "me", "my",
+}
+
+
+def _tokens(text: str) -> List[str]:
+    out: List[str] = []
+    buf = []
+    for ch in (text or "").lower():
+        if ch.isalnum():
+            buf.append(ch)
+        else:
+            if buf:
+                tok = "".join(buf)
+                if tok and tok not in _STOPWORDS and len(tok) > 2:
+                    out.append(tok)
+                buf = []
+    if buf:
+        tok = "".join(buf)
+        if tok and tok not in _STOPWORDS and len(tok) > 2:
+            out.append(tok)
+    return out
+
+
+@router.post("/v2/sessions/{sid}/studio/add-sentence")
+async def sandbox_v2_add_sentence(sid: str, body: SandboxV2AddSentenceIn):
+    """Accept the user-typed sentence iff its tokens overlap with the
+    keywords of any loaded source chip; refuse otherwise.
+
+    Refusal voice (verbatim per the build brief):
+        "This claim isn't sourced from anything in your materials.
+         We can't add it without a citation."
+    """
+    from sandbox_v2_corpus import pick_studio_sources
+
+    rec = await db.sandbox_v2_sessions.find_one({"id": sid})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Sandbox session not found.")
+    sources = pick_studio_sources(rec["role"], rec["org_type"])
+
+    typed_tokens = set(_tokens(body.sentence))
+    matched_sources: List[Dict[str, Any]] = []
+    for src in sources:
+        kws = {kw.lower() for kw in (src.get("keywords") or [])}
+        if typed_tokens & kws:
+            matched_sources.append({"id": src["id"], "title": src["title"], "kind": src["kind"]})
+
+    if matched_sources:
+        # Persist the accepted sentence onto the session record so the
+        # state machine reducer can rehydrate from server-side truth.
+        await db.sandbox_v2_sessions.update_one(
+            {"id": sid},
+            {"$set": {
+                "studio_state.added_sentence": body.sentence,
+                "studio_state.refused_sentence": None,
+                "updated_at": _iso(datetime.now(timezone.utc)),
+            }},
+        )
+        return {
+            "accepted": True,
+            "citation": {"sources": matched_sources[:3]},
+            "sentence": body.sentence,
+        }
+
+    await db.sandbox_v2_sessions.update_one(
+        {"id": sid},
+        {"$set": {
+            "studio_state.refused_sentence": body.sentence,
+            "studio_state.added_sentence": None,
+            "updated_at": _iso(datetime.now(timezone.utc)),
+        }},
+    )
+    return {
+        "accepted": False,
+        "reason": "no_source",
+        "message": (
+            "This claim isn't sourced from anything in your materials. "
+            "We can't add it without a citation."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Phase J.4 — Save & send (Resend in test mode; degrades to a noop log
+# when RESEND_API_KEY is absent).
+# ---------------------------------------------------------------------------
+@router.post("/v2/sessions/{sid}/save-and-send")
+async def sandbox_v2_save_and_send(sid: str, body: SandboxV2SaveSendIn):
+    rec = await db.sandbox_v2_sessions.find_one({"id": sid})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Sandbox session not found.")
+
+    await db.sandbox_v2_sessions.update_one(
+        {"id": sid},
+        {"$set": {
+            "captured_email": str(body.email),
+            "updated_at": _iso(datetime.now(timezone.utc)),
+        }},
+    )
+
+    resume_url = f"https://akki.ai/sandbox/resume?token={sid}"
+
+    # Lazy import to keep this router cheap to load.
+    try:
+        from email_service import send_email
+        from os import environ
+        if environ.get("RESEND_API_KEY"):
+            html = (
+                f"<p>Hi {rec.get('name', '')},</p>"
+                f"<p>Your Akki Sandbox session is saved for the next 7 days. "
+                f"You can pick up where you left off: <a href='{resume_url}'>{resume_url}</a>.</p>"
+                "<p>The synthesis Solva produced is attached; the architecture is real, "
+                "the data is calibrated.</p><p>— The Akki team</p>"
+            )
+            email_resp = await send_email(
+                to=[str(body.email)],
+                subject="Your Akki Sandbox session — saved.",
+                html=html,
+                tags=[{"name": "campaign", "value": "sandbox-v2-save-and-send"}],
+            )
+            mode = email_resp.get("mode", "unknown") if isinstance(email_resp, dict) else "unknown"
+        else:
+            mode = "noop"
+            logger.info("[sandbox-v2] RESEND_API_KEY missing — save-and-send logged only sid=%s", sid)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[sandbox-v2] save-and-send email failed: %s", exc)
+        mode = "error"
+
+    return {
+        "ok": True,
+        "email": str(body.email),
+        "resume_url": resume_url,
+        "delivery_mode": mode,
+    }
+

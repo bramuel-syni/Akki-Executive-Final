@@ -41,6 +41,7 @@ import Decks from "@/pages/Decks";
 import SolvaApp from "@/pages/SolvaApp";
 import SolvaSession from "@/pages/SolvaSession";
 import Sandbox from "@/pages/Sandbox";
+import SandboxV2 from "@/pages/SandboxV2";
 import SandboxGenerating from "@/pages/SandboxGenerating";
 import Cycle from "@/pages/Cycle";
 import Monitor from "@/pages/Monitor";
@@ -166,7 +167,13 @@ function App() {
           <Route path="/sign-up" element={<Navigate to="/signup" replace />} />
           <Route path="/register" element={<Navigate to="/signup" replace />} />
           <Route path="/invite/:token" element={<InviteAccept />} />
-          <Route path="/sandbox" element={<Sandbox />} />
+          {/* Phase J — Sandbox v2 lands at /sandbox; the legacy 60-second
+              narrative remains reachable at /sandbox/legacy for 30-day
+              forensic fallback. /sandbox/generating/* is the legacy
+              companion route and stays wired to SandboxGenerating. */}
+          <Route path="/sandbox" element={<SandboxV2 />} />
+          <Route path="/sandbox/legacy" element={<Sandbox />} />
+          <Route path="/sandbox/resume" element={<SandboxV2 />} />
           <Route path="/sandbox/generating/:sessionId" element={<SandboxGenerating />} />
 
           <Route path="/app/first-session" element={<ProtectedRoute><FirstSession /></ProtectedRoute>} />
