@@ -1603,6 +1603,238 @@ async def stream_message(
         {"chat_id": chat_id, "account_id": current["id"], "id": {"$ne": msg_id}},
         {"_id": 0, "role": 1, "content": 1, "shielded": 1},
     ).sort("created_at", 1).to_list(2000)
+
+    # ── Phase B.2 patch (2026-05-05) — server-side deterministic
+    # thin-input refusal. The original B.2 left the LLM to choose when
+    # to use the refusal template; on a fresh chat with a one-line
+    # decisional question and no attached docs, the LLM composed a
+    # generic "I need more context" reply in its own voice instead of
+    # the verbatim template. Per the memo, this path is "says", not
+    # "may say" — we detect deterministically and emit verbatim.
+    prior_substantive_turns = sum(
+        1 for m in prior
+        if m.get("role") == "assistant" and len(m.get("content") or "") >= 200
+    )
+    thin_input_trigger = _tp.detect_thin_input(
+        turn_class=turn_class,
+        text=body.content,
+        attached_document_ids=list(body.attached_document_ids or []),
+        prior_substantive_turns=prior_substantive_turns,
+    )
+    if thin_input_trigger is not None:
+        # Build the constrained evidence-list call. We use Gemini 2.5
+        # Flash (cheapest/fastest in the router) per the brief. The
+        # prompt is tightly constrained: 3–6 comma-separated items,
+        # no preamble, no commentary.
+        async def _stream_thin_input_refusal():
+            import asyncio as _asyncio2
+            t0 = time.monotonic()
+            evidence_phrase = _tp.THIN_INPUT_FALLBACK_EVIDENCE
+            evidence_source = "fallback_static"
+            ev_latency_ms = 0
+            ev_audit_task = None
+            emergent_key = os.environ.get("EMERGENT_LLM_KEY")
+            if emergent_key:
+                # Fire the audit-evidence Synisense run for this surface
+                # in the background so the chain has a `chat_evidence_list`
+                # row alongside the cheap LLM call.
+                ev_audit_task = _asyncio2.create_task(
+                    _record_synisense_audit_evidence(
+                        surface="chat_evidence_list",
+                        account_id=current["id"],
+                        context_id=chat.get("context_id"),
+                        text=body.content,
+                    ),
+                )
+                evidence_system = (
+                    "The user is asking a decisional question with no "
+                    "supporting material. List 3-6 specific pieces of "
+                    "evidence that, if provided, would let an analyst "
+                    "weight scenarios honestly. Output ONLY a comma-"
+                    "separated list, no preamble, no commentary, no "
+                    "closing."
+                )
+                try:
+                    from emergentintegrations.llm.chat import LlmChat, UserMessage
+                    sess = LlmChat(
+                        api_key=emergent_key,
+                        session_id=f"akki-thin-input-{uuid.uuid4().hex[:8]}",
+                        system_message=evidence_system,
+                    ).with_model("gemini", "gemini-2.5-flash")
+                    raw = await _asyncio2.wait_for(
+                        sess.send_message(UserMessage(text=body.content)),
+                        timeout=4.0,
+                    )
+                    candidate = raw if isinstance(raw, str) else str(raw)
+                    candidate, hit = _tp.sanitize_evidence_phrase(candidate)
+                    if hit and candidate:
+                        # One retry — same call with the banned-word
+                        # corrective in the system prompt.
+                        retry_sys = (
+                            evidence_system
+                            + "\n\n"
+                            + _tp.banned_word_retry_instruction(hit)
+                        )
+                        try:
+                            sess2 = LlmChat(
+                                api_key=emergent_key,
+                                session_id=f"akki-thin-input-r-{uuid.uuid4().hex[:8]}",
+                                system_message=retry_sys,
+                            ).with_model("gemini", "gemini-2.5-flash")
+                            raw2 = await _asyncio2.wait_for(
+                                sess2.send_message(UserMessage(text=body.content)),
+                                timeout=4.0,
+                            )
+                            cand2, hit2 = _tp.sanitize_evidence_phrase(
+                                raw2 if isinstance(raw2, str) else str(raw2)
+                            )
+                            if hit2 or not cand2:
+                                evidence_phrase = _tp.THIN_INPUT_FALLBACK_EVIDENCE
+                                evidence_source = "fallback_after_retry"
+                            else:
+                                evidence_phrase = cand2
+                                evidence_source = "retry_clean"
+                        except Exception as e2:  # noqa: BLE001
+                            logger.warning(
+                                "thin-input evidence retry failed: %s",
+                                e2.__class__.__name__,
+                            )
+                            evidence_phrase = _tp.THIN_INPUT_FALLBACK_EVIDENCE
+                            evidence_source = "fallback_retry_error"
+                    elif candidate:
+                        evidence_phrase = candidate
+                        evidence_source = "first_clean"
+                    else:
+                        evidence_phrase = _tp.THIN_INPUT_FALLBACK_EVIDENCE
+                        evidence_source = "fallback_empty"
+                except _asyncio2.TimeoutError:
+                    evidence_phrase = _tp.THIN_INPUT_FALLBACK_EVIDENCE
+                    evidence_source = "fallback_timeout"
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(
+                        "thin-input evidence call failed: %s; using static fallback",
+                        e.__class__.__name__,
+                    )
+                    evidence_phrase = _tp.THIN_INPUT_FALLBACK_EVIDENCE
+                    evidence_source = "fallback_call_error"
+            ev_latency_ms = int((time.monotonic() - t0) * 1000)
+
+            # Emit the verbatim template — single chunk so the user sees
+            # it land in one piece. No paraphrase. No hedge.
+            visible_reply = _tp.THIN_INPUT_REFUSAL_TEMPLATE.format(
+                evidence_phrase=evidence_phrase
+            )
+            yield (
+                "data: " + json.dumps({"type": "delta", "text": visible_reply}) + "\n\n"
+            )
+
+            # Persist the assistant message.
+            reply_id = str(uuid.uuid4())
+            reply_at = _iso(_now())
+            assistant_msg = {
+                "id": reply_id, "chat_id": chat_id,
+                "account_id": current["id"], "role": "assistant",
+                "content": visible_reply,
+                "model_id": chat["model_id"],
+                "model_label": model_def["label"],
+                "mode": "thin_input_refusal",
+                "latency_ms": ev_latency_ms,
+                "created_at": reply_at,
+                "citations": [],
+                "grounded_context_id": None,
+                "synisense_stats": {},
+                "channel": "stream",
+                "turn_class": turn_class,
+                "four_check_surfaced": None,
+                "pass_1": None, "pass_2": None,
+                "show_pass_1": False,
+                "refusal_reason": "thin_input",
+            }
+            await db.chat_messages.insert_one(assistant_msg)
+
+            # Audit row 1: the structured chat.refused row carrying the
+            # detection metadata + the evidence_phrase.
+            await _append_audit(
+                account_id=current["id"], chat_id=chat_id,
+                action="chat.refused", request=request,
+                payload={
+                    "user_message_id": msg_id,
+                    "reply_id": reply_id,
+                    "refusal_reason": "thin_input",
+                    "turn_class": turn_class,
+                    "evidence_phrase": evidence_phrase,
+                    "evidence_source": evidence_source,
+                    "evidence_latency_ms": ev_latency_ms,
+                    "detection": thin_input_trigger,
+                    "channel": "stream",
+                    "deterministic": True,
+                },
+            )
+
+            # Audit row 2: the parallel message.received row (same
+            # chained-hash shape as the normal path), so audit consumers
+            # that filter on action="message.received" still see the turn.
+            audit_row = await _append_audit(
+                account_id=current["id"], chat_id=chat_id,
+                action="message.received", request=request,
+                payload={
+                    "user_message_id": msg_id, "reply_id": reply_id,
+                    "model_id": chat["model_id"],
+                    "mode": "thin_input_refusal",
+                    "latency_ms": ev_latency_ms,
+                    "char_len_reply": len(visible_reply),
+                    "citations_kept": 0,
+                    "channel": "stream",
+                    "turn_class": turn_class,
+                    "classifier_source": classifier_source,
+                    "classifier_latency_ms": classifier_latency_ms,
+                    "four_check_surfaced": {"label": None, "ran": False},
+                    "refusal_reason": "thin_input",
+                    "two_pass": None,
+                    "voice_violation": None,
+                    "deterministic_refusal": True,
+                },
+            )
+
+            # Best-effort settle of the audit-evidence Synisense run.
+            if ev_audit_task is not None:
+                try:
+                    await _asyncio2.wait_for(ev_audit_task, timeout=2.0)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            yield (
+                "data: " + json.dumps({
+                    "type": "message",
+                    "message_id": reply_id,
+                    "assistant_text": visible_reply,
+                    "model": chat["model_id"],
+                    "audit_id": audit_row["id"] if audit_row else None,
+                    "citations": [],
+                    "shielding": detected,
+                    "will_shield": will_shield,
+                    "bypass_reason": bypass_reason,
+                    "latency_ms": ev_latency_ms,
+                    "turn_class": turn_class,
+                    "four_check_label": None,
+                    "refusal_reason": "thin_input",
+                    "pass_1": None, "pass_2": None,
+                    "show_pass_1": False,
+                    "voice_violation": None,
+                }) + "\n\n"
+            )
+            yield "data: " + json.dumps({"type": "done"}) + "\n\n"
+
+        return StreamingResponse(
+            _stream_thin_input_refusal(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+        )
+
     history_lines: List[str] = []
     for m in prior:
         role = "USER" if m.get("role") == "user" else "AKKI"

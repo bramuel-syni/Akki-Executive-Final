@@ -46,7 +46,15 @@ _VALID_SURFACES = {"chat", "ingest", "briefing", "deck", "report",
                    # evaluation that runs on every light_substantive+
                    # turn. Both surfaces redact-mode-only — the
                    # transcripts they touch are short and bounded.
-                   "chat_classifier", "chat_four_check"}
+                   "chat_classifier", "chat_four_check",
+                   # Phase B.2 patch (2026-05-05) — server-side thin-
+                   # input refusal. `chat_evidence_list` is the surface
+                   # for the constrained Gemini Flash call that fills
+                   # the `[specific evidence …]` bracket of the verbatim
+                   # thin-input refusal template. Bounded output
+                   # (3–6 comma-separated items, ≤ 200 chars after
+                   # sanitisation).
+                   "chat_evidence_list"}
 
 # Phase 15.1 anticipates per-engine sub-surfaces under solve_v2 so the perf
 # ring buffer can separate (e.g.) triangulation latency from synthesis

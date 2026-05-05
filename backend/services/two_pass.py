@@ -114,6 +114,23 @@ REFUSAL_TEMPLATES = {
     ),
 }
 
+# Phase B.2 patch (2026-05-05) — server-side deterministic emission of
+# the thin-input refusal. The LLM is no longer trusted to choose this
+# template; the server detects the trigger condition deterministically,
+# fills the bracket from a constrained evidence-list call, and emits
+# the memo's exact phrasing verbatim. The template below is the
+# substitution form — `{evidence_phrase}` replaces the memo's literal
+# bracket placeholder `[specific evidence the user could provide]`.
+THIN_INPUT_REFUSAL_TEMPLATE = (
+    "I can give you candidate framings, but I don't have enough to weight "
+    "them honestly. What would help: {evidence_phrase}."
+)
+
+# Static fallback when the constrained evidence-list call fails twice.
+THIN_INPUT_FALLBACK_EVIDENCE = (
+    "the documents, financials, or context that frames the decision"
+)
+
 
 # =============================================================================
 # Banned-word list — union of MEMO Item 8 OPERATING PREFERENCES (line 344)
@@ -250,9 +267,14 @@ def heuristic_classify(text: str) -> Optional[str]:
       1. Tight trivial regex over the whole stripped string (≤ ~25 chars
          range, but the regex is the source of truth).
       2. Strategic deliverable iff (verb AND object) match anywhere.
-      3. Light substantive iff short (≤ 80 chars) and Q-word + '?'
+      3. Substantive_analytical iff a decisional/strategy pattern fires
+         (must run BEFORE the light-substantive Q-word fallback because
+         "Should I sell my company?" and "What should I do about X?"
+         start with Q-words but are decisional, not factual — the brief
+         (Deliverable 1) lists them under substantive_analytical).
+      4. Light substantive iff short (≤ 80 chars) and Q-word + '?'
          OR very short (≤ 40 chars) regardless.
-      4. Otherwise None — caller may run an LLM fallback or default.
+      5. Otherwise None — caller may run an LLM fallback or default.
     """
     if not text:
         return None
@@ -267,6 +289,15 @@ def heuristic_classify(text: str) -> Optional[str]:
     has_obj = bool(_STRAT_OBJ_RE.search(s))
     if has_verb and has_obj:
         return "strategic_deliverable"
+
+    # Decisional / strategy intent → substantive_analytical (brief
+    # Deliverable 1 examples: "what should I do about X?", "is this
+    # strategy sound?"). We reuse the THIN_INPUT_PATTERNS regex set so
+    # the classifier and the thin-input detector agree on what counts
+    # as decisional intent.
+    for _name, rx in THIN_INPUT_PATTERNS:
+        if rx.search(s):
+            return "substantive_analytical"
 
     if len(s) <= 80:
         if _QWORD_RE.match(s) and "?" in s:
@@ -656,3 +687,112 @@ def banned_word_retry_instruction(banned_word: str) -> str:
         "but without using that word or any of its variants. Banned "
         "words: " + ", ".join(BANNED_WORDS) + "."
     )
+
+
+# =============================================================================
+# Phase B.2 patch (2026-05-05) — Server-side thin-input detection
+# =============================================================================
+# Memo Item 8 phrasing is "If the user asks for analysis on something
+# where the input is too thin, chat says: '…'" — note "says", not "may
+# say". The original B.2 implementation exposed the templates to the
+# LLM as authorised response patterns and let the model decide when to
+# use them. That's prompt-engineering hope. This block replaces it with
+# server-side deterministic detection + verbatim emission. The fix is
+# strictly scoped to the thin-input path — `unsourced_claim` and
+# `named_assumption` are noted in the report as deferred candidates.
+#
+# Trigger conditions (ALL must hold):
+#   1. turn_class ∈ {substantive_analytical, strategic_deliverable}
+#   2. attached_document_ids is empty
+#   3. No prior assistant turn carrying substantive content (defined
+#      as len(content) ≥ 200 AND action != chat.refused)
+#   4. The user message ≤ 280 chars AND matches at least one of the
+#      decision/strategy patterns below.
+THIN_INPUT_PATTERNS: List[Tuple[str, "re.Pattern"]] = [
+    ("decision_should_i",
+     re.compile(r"\b(should|do)\s+i\b", re.IGNORECASE)),
+    ("what_should",
+     re.compile(r"\bwhat\s+should\b", re.IGNORECASE)),
+    ("which_option",
+     re.compile(r"\bwhich\s+(option|path|direction)\b", re.IGNORECASE)),
+    ("is_this_good",
+     re.compile(r"\bis\s+(this|it)\s+(a\s+)?(good|sound|smart|wise|right)\b",
+                re.IGNORECASE)),
+    ("how_decide",
+     re.compile(r"\bhow\s+do\s+i\s+(decide|choose|pick)\b", re.IGNORECASE)),
+    ("analytic_verbs",
+     re.compile(r"\b(diagnose|analyse|analyze|evaluate|assess)\b",
+                re.IGNORECASE)),
+    ("strategy_nouns",
+     re.compile(r"\b(strategy|approach|move|decision)\b", re.IGNORECASE)),
+]
+
+THIN_INPUT_MAX_CHARS = 280
+
+
+def detect_thin_input(
+    *,
+    turn_class: str,
+    text: str,
+    attached_document_ids: List[str],
+    prior_substantive_turns: int,
+) -> Optional[Dict[str, Any]]:
+    """Return trigger metadata if all four conditions hold, else None.
+
+    The shape is intentionally a dict so the caller can pass it straight
+    into `payload.detection` for the audit row.
+    """
+    if turn_class not in ("substantive_analytical", "strategic_deliverable"):
+        return None
+    if attached_document_ids:
+        return None
+    if prior_substantive_turns > 0:
+        return None
+    s = (text or "").strip()
+    if not s or len(s) > THIN_INPUT_MAX_CHARS:
+        return None
+    matched: Optional[str] = None
+    for name, rx in THIN_INPUT_PATTERNS:
+        if rx.search(s):
+            matched = name
+            break
+    if not matched:
+        return None
+    return {
+        "attached_docs": 0,
+        "prior_substantive_turns": int(prior_substantive_turns),
+        "pattern_matched": matched,
+        "char_len": len(s),
+        "turn_class": turn_class,
+    }
+
+
+def sanitize_evidence_phrase(phrase: str) -> Tuple[str, Optional[str]]:
+    """Return (phrase, banned_word_hit_or_None).
+
+    Caller is expected to retry the LLM once on a hit; on a second hit,
+    drop to `THIN_INPUT_FALLBACK_EVIDENCE`. We:
+      • strip enclosing quotes/whitespace and trailing periods,
+      • collapse internal whitespace,
+      • clip to 175 chars (template wrapper is 103 chars; the
+        rendered reply must stay ≤ 280 chars per acceptance bar),
+      • when the clip happens mid-item, trim back to the last comma
+        boundary so the list reads cleanly.
+    """
+    if not phrase:
+        return "", None
+    p = phrase.strip().strip('"').strip("'").rstrip(".").strip()
+    p = re.sub(r"\s+", " ", p)
+    if len(p) > 175:
+        p = p[:175]
+        # Trim back to the last clean boundary so we don't end on a
+        # half-word like "operations or mora" or a stray space.
+        cut = max(p.rfind(", "), p.rfind("; "))
+        if cut >= 60:        # keep at least 3-4 items
+            p = p[:cut]
+        elif p.rfind(" ") >= 60:
+            p = p[: p.rfind(" ")]
+        p = p.rstrip(",;: ").rstrip()
+    hit = find_banned_word(p)
+    return p, hit
+
