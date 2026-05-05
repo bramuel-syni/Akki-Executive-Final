@@ -48,6 +48,7 @@ import {
   Sparkles,
   Clock,
 } from "lucide-react";
+import AddDocumentCard from "@/components/home/AddDocumentCard";
 
 function greeting(name) {
   const h = new Date().getHours();
@@ -188,6 +189,18 @@ export default function HomeExecutive() {
         <WorkStudioPreview contextId={cid} />
 
         {cid && <CycleStrip contextId={cid} isMobile={isMobile} />}
+
+        {/* Phase M.1 — "Running the business" Quick Actions strip. The
+            "Add a document" card is the first thing the user sees so
+            uploading a board pack is one click from Home. */}
+        <section className="mt-8" data-testid="home-exec-running-the-business">
+          <h2 className="akki-serif text-[20px] text-[var(--ink)] inline-flex items-center gap-2 mb-3">
+            <Briefcase className="w-4 h-4 text-[var(--deep)]" strokeWidth={1.7} /> Running the business
+          </h2>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <AddDocumentCard />
+          </div>
+        </section>
 
         {/* Two-column quick-link grid — every card lands on a real
             shipped surface; nothing is a placeholder. */}

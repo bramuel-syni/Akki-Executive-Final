@@ -152,6 +152,15 @@ export default function AppShell({ children }) {
     return () => window.removeEventListener("akki:open-palette", onPaletteOpen);
   }, []);
 
+  // Phase M.1 — Home Quick Action cards and any other entry point
+  // dispatches `akki:open-upload-modal` to open the shared UploadModal
+  // owned by AppShell. Single modal instance, multiple triggers.
+  useEffect(() => {
+    const onOpenUpload = () => setUploadOpen(true);
+    window.addEventListener("akki:open-upload-modal", onOpenUpload);
+    return () => window.removeEventListener("akki:open-upload-modal", onOpenUpload);
+  }, []);
+
   useEffect(() => {
     if (paletteOpen) setTimeout(() => paletteInputRef.current?.focus(), 50);
     else setPaletteQuery("");
@@ -249,6 +258,21 @@ export default function AppShell({ children }) {
               mobile header tidy; the mobile drawer surfaces it via the
               avatar menu instead. */}
           <CycleContextIndicator />
+
+          {/* Phase M.1 — persistent "Add a document" affordance, sits
+              immediately to the right of the context chip. Same modal
+              that the Home Quick Action card opens (single source of
+              truth — see `AddDocumentCard.jsx`). */}
+          <button
+            type="button"
+            onClick={() => setUploadOpen(true)}
+            className="inline-flex items-center justify-center w-8 h-8 text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
+            aria-label="Add a document"
+            data-testid="topbar-add-document-btn"
+            title="Add a document"
+          >
+            <Plus className="w-4 h-4" strokeWidth={2} />
+          </button>
 
           {/* Phase 13.3 — discoverable shortcut overlay trigger. Press ?
               keyboard-side achieves the same; this gives mouse users a
@@ -823,10 +847,16 @@ export default function AppShell({ children }) {
       <UploadModal
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
-        onUploaded={() => {
+        onUploaded={(doc) => {
           toast.success("Added to your Document Journal.");
           // Broadcast so whatever surface is open can re-fetch its doc list
           window.dispatchEvent(new CustomEvent("akki:document-uploaded"));
+          // Phase M.1 — route the user straight to the Reading Viewer
+          // for the new doc so the upload feels finished, not "where did
+          // it go?". UploadModal already calls onClose() before this.
+          if (doc?.id) {
+            navigate(`/app/documents/${doc.id}`);
+          }
         }}
       />
 

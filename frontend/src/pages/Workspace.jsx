@@ -19,11 +19,13 @@ import { toast } from "sonner";
 import {
   Upload, FileText, Trash2, Download, ShieldCheck, AlertTriangle,
   CheckCircle2, Loader2, ArrowLeft, List, GripVertical, Camera, Sparkles,
+  Eye,
 } from "lucide-react";
 import DocumentJournalStats from "@/components/documents/DocumentJournalStats";
 import DocumentSummaryPanel from "@/components/documents/DocumentSummaryPanel";
 import DocumentEvolutionPanel from "@/components/documents/DocumentEvolutionPanel";
 import DocumentPlayContext from "@/components/documents/DocumentPlayContext";
+import DocumentBodyModal from "@/components/documents/DocumentBodyModal";
 
 const TRUST_STYLE = {
   trusted: { label: "Trusted", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
@@ -126,6 +128,12 @@ function DocumentsBrowser({
   // "Add document" affordance in the stats hero. The dropzone only
   // appears when the user opts in.
   const [uploadOpen, setUploadOpen] = React.useState(false);
+
+  // Phase M.2 — clicking "Open original" on a journal row used to be
+  // an `<a target="_blank">` that yanked the user out of the listing.
+  // Spec is an in-app overlay over the journal so the user keeps
+  // their place. We track the doc whose body should be modal'd here.
+  const [bodyDoc, setBodyDoc] = React.useState(null);
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -260,15 +268,23 @@ function DocumentsBrowser({
                       <span>{d.uploaded_by_email}</span>
                     </div>
                   </div>
-                  <a
-                    href={`${API_BASE}/contexts/${d.context_id}/documents/${d.id}/download`}
-                    target="_blank" rel="noreferrer"
-                    className="text-slate-400 hover:text-[var(--ink)] shrink-0"
-                    data-testid={`doc-download-${d.id}`}
-                    title="Download"
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setBodyDoc({
+                        contextId: d.context_id,
+                        docId: d.id,
+                        docName: d.name,
+                      });
+                    }}
+                    className="text-slate-400 hover:text-[var(--ink)] shrink-0 p-1 rounded-sm hover:bg-slate-100"
+                    data-testid={`doc-open-original-${d.id}`}
+                    title="Open original"
+                    aria-label={`Open original of ${d.name}`}
                   >
-                    <Download className="w-4 h-4" />
-                  </a>
+                    <Eye className="w-4 h-4" />
+                  </button>
                   {canDelete && (
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
@@ -298,6 +314,19 @@ function DocumentsBrowser({
           </div>
         )}
       </div>
+
+      {/* Phase M.2 — Document body modal. Mounted once per browser
+          instance; opens with the doc clicked via the row's
+          "Open original" button. The journal listing stays mounted
+          underneath (Radix renders the dialog into a portal so the
+          listing scroll position is preserved). */}
+      <DocumentBodyModal
+        open={!!bodyDoc}
+        onClose={() => setBodyDoc(null)}
+        contextId={bodyDoc?.contextId}
+        docId={bodyDoc?.docId}
+        docName={bodyDoc?.docName}
+      />
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Briefcase, Landmark, ArrowRight, Activity, ScrollText, Presentation, FileText } from "lucide-react";
 import CycleStrip from "@/components/cycle/CycleStrip";
 import useIsMobile from "@/hooks/useIsMobile";
+import AddDocumentCard from "@/components/home/AddDocumentCard";
 
 export default function HomeDual() {
   const { activeContext } = useAuth();
@@ -41,6 +42,7 @@ export default function HomeDual() {
             <h2 className="akki-serif text-[22px] text-[var(--ink)] inline-flex items-center gap-2">
               <Briefcase className="w-4 h-4 text-[var(--deep)]" strokeWidth={1.7} /> Running the business
             </h2>
+            <AddDocumentCard />
             <Link to="/app/work-studio" className="block p-5 border border-[var(--rule)] bg-white rounded-md hover:bg-[var(--cream-deep)]/40 transition-colors">
               <p className="akki-overline mb-2 text-[var(--muted)]">Work Studio</p>
               <p className="text-[14px] text-[var(--ink)] mb-1">In-flight briefings, decks, and reports for {activeContext?.name || "this company"}.</p>

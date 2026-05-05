@@ -19,7 +19,8 @@ import HighlightsStats from "@/components/highlights/HighlightsStats";
 import AgendaEvolutionCard from "@/components/home/AgendaEvolutionCard";
 import CycleStrip from "@/components/cycle/CycleStrip";
 import useIsMobile from "@/hooks/useIsMobile";
-import { Activity, Landmark, ArrowRight, Clock, ScrollText } from "lucide-react";
+import { Activity, Landmark, ArrowRight, Clock, ScrollText, Briefcase } from "lucide-react";
+import AddDocumentCard from "@/components/home/AddDocumentCard";
 
 function MinutesPreview({ contextId }) {
   const [items, setItems] = useState([]);
@@ -105,6 +106,19 @@ export default function HomeNed() {
         </p>
 
         {cid && <CycleStrip contextId={cid} isMobile={isMobile} />}
+
+        {/* Phase M.1 — "Running the business" Quick Actions strip. NEDs
+            don't run reporting cycles, but they still upload minutes
+            and pre-board reading; the "Add a document" card lives here
+            so it's visible from Home. */}
+        <section className="mt-8" data-testid="home-ned-running-the-business">
+          <h2 className="akki-serif text-[20px] text-[var(--ink)] inline-flex items-center gap-2 mb-3">
+            <Briefcase className="w-4 h-4 text-[var(--deep)]" strokeWidth={1.7} /> Running the business
+          </h2>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <AddDocumentCard />
+          </div>
+        </section>
 
         <div className="grid lg:grid-cols-2 gap-8 mt-8">
           {/* Pulse cross-board card */}
