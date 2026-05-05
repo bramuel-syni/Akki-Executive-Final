@@ -24,6 +24,7 @@ import {
   Plus, Send, Loader2, Shield, ShieldOff, Trash2, MessageCircle,
   ChevronDown, FileLock2, Eye, AlertTriangle, Download,
   Search, Paperclip, X, FileText, StopCircle,
+  Brain, ChevronRight,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -87,6 +88,13 @@ export default function Chat() {
   const [searchQ, setSearchQ] = useState("");
   const [searchHits, setSearchHits] = useState(null);   // null = no search active
   const [searching, setSearching] = useState(false);
+
+  // Phase B.2 — "Think harder" toggle. Per-message state: when ON, the
+  // next send carries `force_class: "strategic_deliverable"` and
+  // `show_pass_1: true`. Resets to false after every successful send so
+  // the user has to opt in for each turn (per memo Item 8 — silent
+  // four-check is the default, visible reasoning is the exception).
+  const [thinkHarder, setThinkHarder] = useState(false);
 
   // ── Bootstrap: fetch models + chats list
   useEffect(() => {
@@ -217,6 +225,11 @@ export default function Chat() {
   const sendMessage = useCallback(async (text, acknowledge_unshielded = false) => {
     if (!activeId) return;
     setSending(true);
+    // Phase B.2 — capture Think-harder toggle BEFORE we reset it. The
+    // toggle is per-turn: reset to false on every send so the user has
+    // to opt in each time they want visible reasoning.
+    const turnThinkHarder = thinkHarder;
+    setThinkHarder(false);
     // Optimistic user bubble + a streaming assistant placeholder we
     // will fill in as deltas arrive. The placeholder id is local-only
     // and gets replaced by the real message_id once the terminal
@@ -298,6 +311,14 @@ export default function Chat() {
           content: text,
           acknowledge_unshielded,
           attached_document_ids: attachedDocIds,
+          // Phase B.2 — Think-harder forces the canonical two-pass
+          // method AND visible Pass 1. The backend also detects cue
+          // phrases ("think harder", "show your reasoning") in the
+          // text itself, so a user who types the cue gets the same
+          // outcome without the toggle.
+          ...(turnThinkHarder
+            ? { force_class: "strategic_deliverable", show_pass_1: true }
+            : {}),
         }),
       });
       if (resp.status === 409) {
@@ -339,6 +360,17 @@ export default function Chat() {
                 model_id: ev.model,
                 citations: ev.citations || [],
                 streaming: false,
+                // Phase B.2 — propagate the structured two-pass + four-
+                // check + refusal metadata to the message bubble. The
+                // <Message/> component renders Pass 1 in a collapsible
+                // panel above the deliverable when show_pass_1 is true.
+                turn_class: ev.turn_class,
+                four_check_label: ev.four_check_label,
+                refusal_reason: ev.refusal_reason,
+                pass_1: ev.pass_1,
+                pass_2: ev.pass_2,
+                show_pass_1: ev.show_pass_1,
+                voice_violation: ev.voice_violation,
               }));
             } else if (ev.type === "error") {
               streamFailed = true;
@@ -418,7 +450,7 @@ export default function Chat() {
       }
       setSending(false);
     }
-  }, [activeId, activeContext?.id, attachments]);
+  }, [activeId, activeContext?.id, attachments, thinkHarder]);
 
   const onSubmit = () => {
     const text = input.trim();
@@ -683,6 +715,8 @@ export default function Chat() {
                 attachments={attachments}
                 onAttachFile={onAttachFile}
                 onRemoveAttachment={onRemoveAttachment}
+                thinkHarder={thinkHarder}
+                onToggleThinkHarder={() => setThinkHarder((v) => !v)}
               />
             </>
           )}
@@ -861,6 +895,28 @@ function Message({ m, activeModel, models }) {
             {m.model_label || msgModel?.label} · {m.latency_ms ? `${(m.latency_ms / 1000).toFixed(1)}s` : ""}
           </p>
         )}
+        {/* Phase B.2 — collapsible Pass 1 reasoning panel. Renders only
+            when the backend included a `pass_1` AND the visibility flag
+            (set either by the "Think harder" toggle or by an explicit
+            cue in the user's text) is true. Default collapsed. */}
+        {!isUser && m.show_pass_1 && m.pass_1 && (
+          <Pass1Panel pass1={m.pass_1} />
+        )}
+        {/* Phase B.2 — small four-check label badge. Surfaces ONLY when
+            the model emitted a labelled finding at the top of the
+            reply (TENSION / CONTRADICTION / ASSUMPTION / FRAMING
+            LIMITATION). Otherwise nothing — the silent four-check
+            stays silent (memo Item 8 §"never as a performance of
+            process"). */}
+        {!isUser && m.four_check_label && (
+          <div
+            className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider mb-1 px-1.5 py-0.5 rounded-sm bg-amber-50 text-amber-800 border border-amber-200"
+            data-testid="chat-four-check-label"
+            title="Material finding from the silent four-check (tension / contradiction / load-bearing assumption / framing limitation)."
+          >
+            {m.four_check_label}
+          </div>
+        )}
         <div className={`inline-block max-w-full akki-serif text-[14.5px] leading-[1.65] ${
           isUser
             ? "bg-[var(--cream-deep)]/50 border border-[var(--rule)] rounded-sm px-3 py-2 text-[var(--ink)] whitespace-pre-wrap"
@@ -1020,7 +1076,7 @@ function renderInlineCitations(text, citations) {
   });
 }
 
-function Composer({ value, onChange, onSubmit, sending, policy, onCancel, attachments, onAttachFile, onRemoveAttachment }) {
+function Composer({ value, onChange, onSubmit, sending, policy, onCancel, attachments, onAttachFile, onRemoveAttachment, thinkHarder, onToggleThinkHarder }) {
   const ta = useRef(null);
   const fileInputRef = useRef(null);
   return (
@@ -1096,6 +1152,29 @@ function Composer({ value, onChange, onSubmit, sending, policy, onCancel, attach
                 }}
                 data-testid="chat-attach-input"
               />
+              {/* Phase B.2 — Think harder toggle. Per-turn opt-in to
+                  the canonical two-pass method with visible Pass 1.
+                  Resets after every send. */}
+              <button
+                type="button"
+                onClick={onToggleThinkHarder}
+                disabled={sending}
+                aria-pressed={thinkHarder ? "true" : "false"}
+                className={`inline-flex items-center gap-1 text-[10.5px] disabled:opacity-50 px-1.5 py-0.5 rounded-sm border transition-colors ${
+                  thinkHarder
+                    ? "bg-[var(--accent)] text-white border-[var(--accent)]"
+                    : "text-[var(--muted)] hover:text-[var(--accent)] border-transparent hover:border-[var(--rule)]"
+                }`}
+                data-testid="chat-think-harder-btn"
+                title={
+                  thinkHarder
+                    ? "Think harder is ON — the next reply will show Pass 1 reasoning above the deliverable."
+                    : "Think harder — surface Pass 1 reasoning before the deliverable for this turn."
+                }
+              >
+                <Brain className="w-3 h-3" />
+                <span>Think harder{thinkHarder ? " · ON" : ""}</span>
+              </button>
             </div>
             <span className="text-[10px] text-[var(--muted)]">
               {value.length} / 20,000
@@ -1127,6 +1206,50 @@ function Composer({ value, onChange, onSubmit, sending, policy, onCancel, attach
     </div>
   );
 }
+function Pass1Panel({ pass1 }) {
+  // Phase B.2 — Collapsible "Pass 1 — reasoning" block. Default
+  // collapsed. Click the header to toggle. Pass 1 is the canonical
+  // four-layer reasoning trail (candidate generation, triangulation,
+  // probability weighting, reflection); we render it as plain
+  // markdown so tables and code blocks land correctly.
+  const [open, setOpen] = useState(false);
+  return (
+    <div
+      className="mb-2 border border-[var(--rule)] bg-[var(--cream-deep)]/30 rounded-sm"
+      data-testid="chat-pass-1-panel"
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open ? "true" : "false"}
+        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] uppercase tracking-wider text-[var(--muted)] hover:bg-[var(--cream-deep)]/60"
+        data-testid="chat-pass-1-toggle"
+      >
+        <ChevronRight
+          className={`w-3 h-3 transition-transform ${open ? "rotate-90" : ""}`}
+          aria-hidden="true"
+        />
+        <span>Pass 1 — reasoning</span>
+      </button>
+      {open && (
+        <div
+          className="px-3 py-2 border-t border-[var(--rule)] akki-serif text-[13px] leading-[1.6] text-[var(--deep)]"
+          data-testid="chat-pass-1-body"
+        >
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            disallowedElements={["script", "iframe", "style", "form"]}
+            unwrapDisallowed
+          >
+            {pass1}
+          </ReactMarkdown>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 
 function BypassDialog({ info, onClose, onConfirm }) {
   if (!info) return null;

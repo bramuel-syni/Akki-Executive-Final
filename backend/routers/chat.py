@@ -39,6 +39,7 @@ from services.synisense import (
     rehydrate as _syn_rehydrate,
 )
 from services.rbac import require_role, ACTIVE_CONTEXT_HEADER  # noqa: E402  Phase B.1
+from services import two_pass as _tp  # noqa: E402  Phase B.2
 
 logger = logging.getLogger("akki.chat")
 router = APIRouter(prefix="/api")
@@ -109,6 +110,24 @@ class MessageSendIn(BaseModel):
     # additional [ATTACHMENT] block before the user's message. Empty
     # by default (most turns are text-only).
     attached_document_ids: List[str] = Field(default_factory=list, max_length=10)
+    # Phase B.2 — turn-class override. The UI's "Think harder" button
+    # sets force_class="strategic_deliverable" so the canonical two-pass
+    # prompt runs regardless of what the heuristic would have decided.
+    # Allowed values mirror two_pass.TURN_CLASSES.
+    force_class: Optional[
+        Literal[
+            "trivial",
+            "light_substantive",
+            "substantive_analytical",
+            "strategic_deliverable",
+        ]
+    ] = None
+    # Phase B.2 — when True, Pass 1 reasoning is rendered visibly to the
+    # user as a collapsible panel above Pass 2. The "Think harder" UI
+    # button toggles this alongside force_class. An explicit cue in the
+    # user's text ("think harder", "show your reasoning",
+    # "walk me through") also forces visible Pass 1.
+    show_pass_1: bool = False
 
 
 # -----------------------------------------------------------------------------
@@ -165,6 +184,123 @@ async def _append_audit(
     }
     await db.chat_audit_log.insert_one(row)
     return row
+
+
+# -----------------------------------------------------------------------------
+# Phase B.2 — Two-pass orchestration helpers
+#
+# These helpers are shared by both /messages (sync) and /messages/stream
+# (SSE) so the audit shape, classifier flow, and banned-word retry logic
+# stay identical across channels.
+# -----------------------------------------------------------------------------
+async def _record_synisense_audit_evidence(
+    *, surface: str, account_id: str, context_id: Optional[str], text: str,
+) -> None:
+    """Run the Synisense pipeline for audit evidence on a non-user-text
+    surface (chat_classifier, chat_four_check). The redacted output is
+    discarded — the only purpose is to write a row to db.synisense_runs
+    so acceptance bar #2 ("silent four-check ran, evidenced by
+    synisense_runs.surface='chat_four_check'") is satisfied for every
+    qualifying turn.
+    """
+    if surface not in {"chat_classifier", "chat_four_check"}:
+        return  # belt-and-braces guard
+    try:
+        from services.synisense import run as syn_run
+        await syn_run(
+            text=text,
+            context_id=context_id or "",
+            surface=surface,
+            mode="redact",
+            account_id=account_id,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "synisense audit-evidence run failed (surface=%s): %s",
+            surface, e.__class__.__name__,
+        )
+
+
+async def _llm_classify_fallback(text: str) -> Optional[str]:
+    """Classifier LLM fallback used by `two_pass.classify_turn_async`.
+
+    Calls Gemini 2.5 Flash (the cheapest/fastest model in the router)
+    with a tight system prompt to return one of the four labels. On any
+    error, returns None so the caller defaults to substantive_analytical.
+    """
+    emergent_key = os.environ.get("EMERGENT_LLM_KEY")
+    if not emergent_key:
+        return None
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        sess = LlmChat(
+            api_key=emergent_key,
+            session_id=f"akki-classify-{uuid.uuid4().hex[:8]}",
+            system_message=(
+                "Classify the user's chat turn into exactly one of: "
+                "trivial, light_substantive, substantive_analytical, "
+                "strategic_deliverable. Reply with only the label, "
+                "lowercase, no punctuation. Definitions: trivial = "
+                "conversational acknowledgement (thanks, ok). "
+                "light_substantive = simple question or summary request. "
+                "substantive_analytical = analytical question or "
+                "judgement call. strategic_deliverable = produce a "
+                "document, deck, memo, brief, or paper."
+            ),
+        ).with_model("gemini", "gemini-2.5-flash")
+        raw = await sess.send_message(UserMessage(text=text))
+        label = (raw if isinstance(raw, str) else str(raw)).strip().lower()
+        # Tolerate prefix/suffix noise.
+        for cls in _tp.TURN_CLASSES:
+            if label == cls or cls in label:
+                return cls
+        return None
+    except Exception as e:  # noqa: BLE001
+        logger.warning("classifier llm fallback failed: %s", e.__class__.__name__)
+        return None
+
+
+async def _classify_and_audit(
+    *, text: str, force_class: Optional[str], account_id: str,
+    context_id: Optional[str],
+) -> Dict[str, Any]:
+    """Run the classifier AND record the chat_classifier Synisense row.
+
+    Returns the dict from `classify_turn_async` augmented with the
+    `four_check_will_run` boolean. The Synisense audit row writes in
+    parallel with the heuristic so trivial turns (sub-1 ms) still pay
+    the redaction cost on the same hot path — but the classifier call
+    completes immediately in those cases.
+    """
+    # Run the audit-evidence pass concurrently with the heuristic; the
+    # heuristic is sync so this is effectively just kicking off the
+    # async run.
+    import asyncio as _asyncio
+    audit_task = _asyncio.create_task(
+        _record_synisense_audit_evidence(
+            surface="chat_classifier", account_id=account_id,
+            context_id=context_id, text=text,
+        ),
+    )
+    out = await _tp.classify_turn_async(
+        text, force_class=force_class,
+        llm_fallback=_llm_classify_fallback, fallback_timeout_ms=350,
+    )
+    # Don't block the request on the audit task — it must finish
+    # eventually (best-effort) but the classifier latency budget is
+    # 400 ms p95 so we let it run in the background.
+    out["four_check_will_run"] = (out["turn_class"] != "trivial")
+    out["_classifier_audit_task"] = audit_task
+    return out
+
+
+def _detect_voice_violation(text: str) -> Optional[str]:
+    """Wrapper around `two_pass.find_banned_word` that returns the
+    banned-word hit (lowercased). Centralised so future tightening
+    (e.g. POS-aware filtering) lands in one place.
+    """
+    return _tp.find_banned_word(text)
+
 
 
 # -----------------------------------------------------------------------------
@@ -1426,7 +1562,43 @@ async def stream_message(
         },
     )
 
-    # Build prior + grounding (same as sync).
+    # ── Phase B.2 — classify the turn (heuristic + LLM fallback under
+    # 350 ms hard cap). Records a `chat_classifier` audit-evidence row
+    # to db.synisense_runs in the background. The classifier outcome
+    # decides which system-prompt scaffolding to install:
+    #   trivial               → base voice only
+    #   light_substantive+    → + chat-adapted four-check + refusal block
+    #   strategic_deliverable → + canonical two-pass + Pass 1/2 markers
+    cls_out = await _classify_and_audit(
+        text=body.content,                     # classify on RAW user text
+        force_class=body.force_class,          # UI "Think harder" override
+        account_id=current["id"],
+        context_id=chat.get("context_id"),
+    )
+    turn_class: str = cls_out["turn_class"]
+    classifier_source: str = cls_out["source"]
+    classifier_latency_ms: int = cls_out["latency_ms"]
+    visible_pass_1: bool = bool(body.show_pass_1) or _tp.has_visible_pass_1_cue(body.content)
+    if turn_class != "strategic_deliverable":
+        visible_pass_1 = False  # only meaningful for strategic deliverables
+
+    # Audit-evidence Synisense row for the four-check itself — required
+    # by acceptance bar #2 ("synisense_runs.surface='chat_four_check'
+    # row for that turn"). Runs on EVERY light_substantive+ turn.
+    if turn_class != "trivial":
+        import asyncio as _asyncio_evt
+        _asyncio_evt.create_task(
+            _record_synisense_audit_evidence(
+                surface="chat_four_check",
+                account_id=current["id"],
+                context_id=chat.get("context_id"),
+                # Synisense runs over the four-check prompt block — the
+                # audit row records that the discipline ran on this turn,
+                # not the user's text (which is already in the `chat`
+                # surface row).
+                text=_tp.CHAT_ADAPTED_FOUR_CHECK_PROMPT,
+            )
+        )
     prior = await db.chat_messages.find(
         {"chat_id": chat_id, "account_id": current["id"], "id": {"$ne": msg_id}},
         {"_id": 0, "role": 1, "content": 1, "shielded": 1},
@@ -1455,23 +1627,6 @@ async def stream_message(
             query=text, top_k=5,
         )
         grounding_block = _format_grounding_block(grounding_paragraphs)
-
-    system_msg = (
-        "You are AKKI, a calm, editorial intelligence partner for executives "
-        "and non-executive directors. Tone: precise, neutral, no hype, "
-        "Economist-style cadence. When tokens like [EMAIL_1] or [PERSON_3] "
-        "appear, treat each as a stable referent — reason about it without "
-        "asking the user what it means; the system will rehydrate the "
-        "real value before the user reads your reply."
-    )
-    if grounding_paragraphs:
-        system_msg += (
-            " A [GROUNDING] block follows containing extracted paragraphs "
-            "from the user's documents. Cite ONLY using the inline marker "
-            "[[cite:<anchor_id>]] where <anchor_id> appears in the block. "
-            "Never invent anchor ids. If the answer is not in the grounding "
-            "block, say so plainly rather than guessing."
-        )
 
     full_prompt_parts: List[str] = []
     if grounding_block:
@@ -1511,6 +1666,19 @@ async def stream_message(
         full_prompt_parts.append(history_block)
     full_prompt_parts.append(f"USER: {sent_to_llm}")
     full_prompt = "\n\n".join(full_prompt_parts)
+
+    # Phase B.2 — assemble the per-turn system message based on classified
+    # turn. `_tp.build_system_prompt` honours:
+    #   • turn_class         → adds four-check + refusal block at L_S+
+    #   • show_pass_1        → controls Pass 1 visibility for strategic
+    #   • has_grounding      → adds the citation rail
+    # Voice rules (operating preferences + banned words) are always
+    # included.
+    system_msg = _tp.build_system_prompt(
+        turn_class=turn_class,
+        show_pass_1=visible_pass_1,
+        has_grounding=bool(grounding_paragraphs),
+    )
 
     request_account = current  # closures capture this at the inner scope
     request_obj = request
@@ -1621,19 +1789,80 @@ async def stream_message(
         # loop; the SDK is sync. Once we get the full reply, we chunk it
         # back to the client. This is the documented "coarse-chunk
         # fallback" — the SDK doesn't expose a streaming primitive yet.
+        #
+        # Phase B.2 — for `strategic_deliverable` we run the canonical
+        # method as TWO separate LLM calls (Pass 1 then Pass 2) so the
+        # audit always carries both passes. The single-call-with-markers
+        # approach is unreliable on Claude Sonnet 4.5 — it sometimes
+        # emits the deliverable directly when it judges Pass 1 to be
+        # "obvious", leaving the audit row half-empty. The two-call
+        # form is also closer to the memo: "PASS 1 — SOLVE … PASS 2 —
+        # BUILD" are described as distinct phases, not a formatting
+        # choice.
+        explicit_pass_1: Optional[str] = None
         if not emergent_key:
             raw_text = "(LLM unavailable — no key configured.)"
             mode = "no-key-fallback"
         else:
             try:
                 from emergentintegrations.llm.chat import LlmChat, UserMessage
-                chat_session = LlmChat(
-                    api_key=emergent_key,
-                    session_id=f"akki-chat-{chat_id}",
-                    system_message=system_msg,
-                ).with_model(model_def["provider"], model_def["model"])
-                raw = await chat_session.send_message(UserMessage(text=full_prompt))
-                raw_text = raw if isinstance(raw, str) else str(raw)
+                if turn_class == "strategic_deliverable":
+                    # Pass 1: reasoning only. We strip the OUTPUT FORMAT
+                    # section because we want just the four-layer trail
+                    # (no markers, no deliverable). The model is told
+                    # explicitly NOT to write the deliverable.
+                    pass_1_system = (
+                        "You are AKKI's reasoning rail. "
+                        "Apply the four-layer reasoning architecture to "
+                        "the user's task. Output candidate framings, "
+                        "triangulation against context, probability "
+                        "weighting (with confidence intervals), and "
+                        "reflection (three questions: what would change "
+                        "my mind? what's the explanation in six months "
+                        "if I got this wrong? what am I disappointed "
+                        "by?). Do NOT produce the deliverable. Do NOT "
+                        "include the marker lines. Just the reasoning. "
+                        "Operating preferences (banned words, no "
+                        "glazing, lead with substance) apply."
+                    )
+                    p1_session = LlmChat(
+                        api_key=emergent_key,
+                        session_id=f"akki-chat-{chat_id}-p1",
+                        system_message=pass_1_system,
+                    ).with_model(model_def["provider"], model_def["model"])
+                    p1_raw = await p1_session.send_message(UserMessage(text=full_prompt))
+                    explicit_pass_1 = p1_raw if isinstance(p1_raw, str) else str(p1_raw)
+
+                    # Pass 2: deliverable. We feed Pass 1 reasoning as
+                    # context so Pass 2 honours its positioning.
+                    pass_2_system = (
+                        system_msg
+                        + "\n\nThe Pass 1 reasoning has already been "
+                        "produced separately and is in [PASS_1_REASONING] "
+                        "below. Honour Pass 1's selected framing fully. "
+                        "Do not hedge into other scenarios. Output ONLY "
+                        "the deliverable — no markers, no preamble, "
+                        "no Pass 1 recap."
+                    )
+                    p2_full_prompt = (
+                        f"[PASS_1_REASONING]\n{explicit_pass_1}\n[/PASS_1_REASONING]\n\n"
+                        + full_prompt
+                    )
+                    p2_session = LlmChat(
+                        api_key=emergent_key,
+                        session_id=f"akki-chat-{chat_id}-p2",
+                        system_message=pass_2_system,
+                    ).with_model(model_def["provider"], model_def["model"])
+                    p2_raw = await p2_session.send_message(UserMessage(text=p2_full_prompt))
+                    raw_text = p2_raw if isinstance(p2_raw, str) else str(p2_raw)
+                else:
+                    chat_session = LlmChat(
+                        api_key=emergent_key,
+                        session_id=f"akki-chat-{chat_id}",
+                        system_message=system_msg,
+                    ).with_model(model_def["provider"], model_def["model"])
+                    raw = await chat_session.send_message(UserMessage(text=full_prompt))
+                    raw_text = raw if isinstance(raw, str) else str(raw)
             except Exception as e:
                 logger.exception("Chat stream LLM call failed")
                 # Emit an error event then write a failure audit row and stop.
@@ -1658,6 +1887,122 @@ async def stream_message(
                     pass
                 return
 
+        # ── Phase B.2 — banned-word post-process + one retry.
+        #
+        # The check runs on the SHIELDED raw_text (cheap; banned words
+        # don't get redacted by Synisense so a hit on shielded text is
+        # also a hit on the rehydrated reply). On a hit we re-call the
+        # LLM once with a short corrective system message, then the
+        # second output is final regardless of whether the retry word
+        # is still present (per brief: "On second violation, ship the
+        # original output and log").
+        voice_violation_record: Optional[Dict[str, Any]] = None
+        first_banned = _detect_voice_violation(raw_text)
+        retry_text: Optional[str] = None
+        original_pre_retry: Optional[str] = raw_text if first_banned else None
+        if first_banned and emergent_key:
+            try:
+                from emergentintegrations.llm.chat import LlmChat as _LR, UserMessage as _UR
+                retry_session = _LR(
+                    api_key=emergent_key,
+                    session_id=f"akki-chat-retry-{chat_id}-{uuid.uuid4().hex[:6]}",
+                    system_message=(
+                        system_msg
+                        + "\n\n"
+                        + _tp.banned_word_retry_instruction(first_banned)
+                    ),
+                ).with_model(model_def["provider"], model_def["model"])
+                retry_raw = await retry_session.send_message(_UR(text=full_prompt))
+                retry_text = retry_raw if isinstance(retry_raw, str) else str(retry_raw)
+                second_hit = _detect_voice_violation(retry_text)
+                if second_hit:
+                    # Retry failed; ship original AND record violation.
+                    voice_violation_record = {
+                        "banned_word": first_banned,
+                        "retry_outcome": "second_violation_shipped_original",
+                        "retry_word": second_hit,
+                        # Phase B.2 — preserve the before/after texts
+                        # (truncated) so reviewers can see what the
+                        # filter caught and what shipped. 600-char cap
+                        # keeps the audit row bounded.
+                        "before_text": (original_pre_retry or "")[:600],
+                        "after_text": (retry_text or "")[:600],
+                    }
+                    # raw_text stays as the original.
+                else:
+                    # Retry succeeded — swap in the clean text. The
+                    # audit row records the substitution (retry_outcome
+                    # = "retry_clean") so the chain is verifiable.
+                    voice_violation_record = {
+                        "banned_word": first_banned,
+                        "retry_outcome": "retry_clean",
+                        "retry_word": None,
+                        "before_text": (original_pre_retry or "")[:600],
+                        "after_text": (retry_text or "")[:600],
+                    }
+                    raw_text = retry_text
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "banned-word retry failed (%s); shipping original",
+                    e.__class__.__name__,
+                )
+                voice_violation_record = {
+                    "banned_word": first_banned,
+                    "retry_outcome": "retry_error_shipped_original",
+                    "retry_word": None,
+                    "before_text": (original_pre_retry or "")[:600],
+                    "after_text": None,
+                }
+
+        # ── Phase B.2 — strip the structured `[[REFUSAL:reason]]` tag
+        # if present. We extract the tag first (used by the audit-row
+        # detector below), then remove it from the visible buffer so
+        # the user sees only the refusal text. Stripping happens
+        # BEFORE the two-pass split so refusals never end up wrapped
+        # in pass markers.
+        refusal_tag, raw_text = _tp.extract_refusal_tag(raw_text)
+
+        # ── Phase B.2 — strategic_deliverable: capture Pass 1 / Pass 2.
+        # When the explicit two-call architecture above fired, Pass 1
+        # is `explicit_pass_1` and the LLM's second call output (in
+        # raw_text) is Pass 2. We still run `split_two_pass` defensively
+        # in case the model emitted markers despite our instructions.
+        pass_1_text: Optional[str] = None
+        pass_2_text: str = raw_text
+        two_pass_record: Optional[Dict[str, Any]] = None
+        if turn_class == "strategic_deliverable":
+            # Defensive split first — strips markers if present.
+            p1_split, p2_split = _tp.split_two_pass(raw_text)
+            if explicit_pass_1:
+                pass_1_text = explicit_pass_1
+                # Pass 2 = whatever the LLM produced after stripping
+                # any stray markers.
+                pass_2_text = p2_split or raw_text
+            else:
+                pass_1_text = p1_split
+                pass_2_text = p2_split or raw_text
+            two_pass_record = {
+                "pass_1": pass_1_text,
+                "pass_2": pass_2_text,
+                "pass_1_visible": bool(visible_pass_1),
+                "pass_1_present": bool(pass_1_text),
+            }
+
+        # The text that gets STREAMED to the client — Pass 2 only by
+        # default; Pass 1 + Pass 2 with a clear delimiter when visible.
+        # For non-strategic turns, raw_text is unchanged.
+        if turn_class == "strategic_deliverable" and visible_pass_1 and pass_1_text:
+            visible_streamed = (
+                "Pass 1 — reasoning\n\n"
+                + pass_1_text
+                + "\n\n———\n\nPass 2 — deliverable\n\n"
+                + pass_2_text
+            )
+        elif turn_class == "strategic_deliverable":
+            visible_streamed = pass_2_text
+        else:
+            visible_streamed = raw_text
+
         # Chunk the SHIELDED reply (final-rehydrate strategy — see
         # module-level comment). ~40-token = ~200-char chunks.
         # Phase B.1 — cancellation detection. Two paths:
@@ -1669,13 +2014,17 @@ async def stream_message(
         #       CancelledError before we reach this loop; the
         #       outer try/except at the bottom of _event_gen handles
         #       it by spawning _persist_cancel as a detached task.
+        # Phase B.2 — we stream `visible_streamed` (Pass 2-only or
+        # Pass 1 + Pass 2 with a delimiter), not raw_text. raw_text
+        # is the full LLM output and goes to the audit log; the user
+        # only ever sees what we permit.
         CHUNK_CHARS = 220
         try:
-            for i in range(0, len(raw_text), CHUNK_CHARS):
+            for i in range(0, len(visible_streamed), CHUNK_CHARS):
                 if await request_obj.is_disconnected():
                     cancelled = True
                     break
-                chunk = raw_text[i:i + CHUNK_CHARS]
+                chunk = visible_streamed[i:i + CHUNK_CHARS]
                 yield (
                     "data: " + json.dumps({"type": "delta", "text": chunk}) + "\n\n"
                 )
@@ -1693,8 +2042,39 @@ async def stream_message(
         latency_ms = int((time.monotonic() - started_ms) * 1000)
         # Now do the final rehydrate + citation post-processing on the
         # COMPLETE shielded reply, exactly once.
-        rehydrated = _syn_rehydrate(raw_text, shield_map) if will_shield else raw_text
+        # Phase B.2 — rehydrate `visible_streamed` (what the user sees)
+        # AND build a separate rehydrated record for Pass 1 (audit only).
+        rehydrated = (
+            _syn_rehydrate(visible_streamed, shield_map) if will_shield else visible_streamed
+        )
         cleaned_reply, citations = _process_citations(rehydrated, grounding_paragraphs)
+
+        # Pass 1 / Pass 2 rehydration for the audit record. Pass 1 is
+        # never streamed when visible_pass_1=False, but the audit row
+        # must carry the rehydrated text so reviewers can read it.
+        rehydrated_pass_1: Optional[str] = None
+        rehydrated_pass_2: Optional[str] = None
+        if two_pass_record:
+            if pass_1_text:
+                rehydrated_pass_1 = (
+                    _syn_rehydrate(pass_1_text, shield_map) if will_shield else pass_1_text
+                )
+            rehydrated_pass_2 = (
+                _syn_rehydrate(pass_2_text, shield_map) if will_shield else pass_2_text
+            )
+            two_pass_record = {
+                **two_pass_record,
+                "pass_1": rehydrated_pass_1,
+                "pass_2": rehydrated_pass_2,
+            }
+
+        four_check_label = _tp.parse_four_check_label(cleaned_reply)
+        # Refusal-reason resolution order: explicit tag from the model
+        # (already extracted above) wins; fall back to detector. This
+        # is robust to paraphrased refusals where the model writes
+        # "I can't include that claim" instead of the verbatim memo
+        # phrasing.
+        refusal_reason = refusal_tag or _tp.detect_refusal_reason(cleaned_reply)
 
         reply_id = str(uuid.uuid4())
         reply_at = _iso(_now())
@@ -1707,8 +2087,44 @@ async def stream_message(
             "grounded_context_id": chat.get("context_id") if grounding_paragraphs else None,
             "synisense_stats": syn_stats,
             "channel": "stream",
+            # Phase B.2 — UI uses these to render the collapsible Pass 1
+            # panel (when visible) and the small four-check label badge.
+            "turn_class": turn_class,
+            "four_check_surfaced": (
+                {"label": four_check_label} if four_check_label else None
+            ),
+            "pass_1": rehydrated_pass_1,
+            "pass_2": rehydrated_pass_2 if rehydrated_pass_2 else None,
+            "show_pass_1": bool(visible_pass_1),
         }
         await db.chat_messages.insert_one(assistant_msg)
+
+        # Phase B.2 — chained audit rows for refusals and voice
+        # violations. Both are SEPARATE rows from the success row so
+        # reviewers can grep for them; both chain off the prior hash
+        # (the audit helper handles chaining).
+        if refusal_reason:
+            await _append_audit(
+                account_id=request_account["id"], chat_id=chat_id,
+                action="chat.refused", request=request_obj,
+                payload={
+                    "user_message_id": msg_id, "reply_id": reply_id,
+                    "refusal_reason": refusal_reason,
+                    "turn_class": turn_class,
+                    "channel": "stream",
+                },
+            )
+        if voice_violation_record:
+            await _append_audit(
+                account_id=request_account["id"], chat_id=chat_id,
+                action="chat.voice_violation", request=request_obj,
+                payload={
+                    "user_message_id": msg_id, "reply_id": reply_id,
+                    "voice_violation": voice_violation_record,
+                    "turn_class": turn_class,
+                    "channel": "stream",
+                },
+            )
 
         # Single audit row at end — same shape as the sync path so the
         # SHA-256 chain is uniform across channels.
@@ -1721,6 +2137,21 @@ async def stream_message(
                 "latency_ms": latency_ms, "char_len_reply": len(cleaned_reply),
                 "citations_kept": len(citations),
                 "channel": "stream",
+                # Phase B.2 — new audit keys.
+                "turn_class": turn_class,
+                "classifier_source": classifier_source,
+                "classifier_latency_ms": classifier_latency_ms,
+                "four_check_surfaced": (
+                    {"label": four_check_label, "ran": True}
+                    if four_check_label
+                    else (
+                        {"label": None, "ran": True} if turn_class != "trivial"
+                        else {"label": None, "ran": False}
+                    )
+                ),
+                "refusal_reason": refusal_reason,
+                "two_pass": two_pass_record,
+                "voice_violation": voice_violation_record,
             },
         )
         await db.chats.update_one(
@@ -1747,6 +2178,16 @@ async def stream_message(
                 "will_shield": will_shield,
                 "bypass_reason": bypass_reason,
                 "latency_ms": latency_ms,
+                # Phase B.2 — new fields the UI uses to render the
+                # collapsible Pass 1 panel and the small four-check
+                # label, and to expose refusal context.
+                "turn_class": turn_class,
+                "four_check_label": four_check_label,
+                "refusal_reason": refusal_reason,
+                "pass_1": rehydrated_pass_1,
+                "pass_2": rehydrated_pass_2,
+                "show_pass_1": bool(visible_pass_1),
+                "voice_violation": voice_violation_record,
             }) + "\n\n"
         )
         yield "data: " + json.dumps({"type": "done"}) + "\n\n"

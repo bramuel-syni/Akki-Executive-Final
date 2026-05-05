@@ -36,7 +36,17 @@ _VALID_SURFACES = {"chat", "ingest", "briefing", "deck", "report",
                    # can both label their Synisense runs with the
                    # correct surface. Pre-Phase-1, the live path
                    # mis-labelled these as "briefing".
-                   "journal_commentary"}
+                   "journal_commentary",
+                   # Phase B.2 (2026-05-05) — chat two-pass method.
+                   # `chat_classifier` is the surface for the turn-
+                   # class probe (text → trivial/light_substantive/
+                   # substantive_analytical/strategic_deliverable).
+                   # `chat_four_check` is the surface for the silent
+                   # tension/contradiction/assumption/framing-limit
+                   # evaluation that runs on every light_substantive+
+                   # turn. Both surfaces redact-mode-only — the
+                   # transcripts they touch are short and bounded.
+                   "chat_classifier", "chat_four_check"}
 
 # Phase 15.1 anticipates per-engine sub-surfaces under solve_v2 so the perf
 # ring buffer can separate (e.g.) triangulation latency from synthesis

@@ -103,6 +103,64 @@ stays in place until Phase E moves it.
 
 ---
 
+## 2026-05-05 — Phase B.2 (chat two-pass) measurements
+
+### D-010 · Phase B.2 latency budgets — measured baseline (Memo Item 8)
+**Decision.** The brief's first-token budgets (trivial 500 ms,
+light_substantive 800 ms, substantive_analytical 1.2 s,
+strategic_deliverable silent 1.5 s, strategic_deliverable visible
+2 s) describe the desired UX. The current chat infrastructure is
+the **coarse-chunk fallback** documented in `routers/chat.py`
+(comment lines ~1788–1791): the LLM SDK does not expose a streaming
+primitive, so the server makes a one-shot synchronous LLM call and
+chunks the completed reply at 220-char windows. Under that
+architecture, "first-token" equals "first-chunk" equals roughly
+the LLM call latency plus the classifier latency (≤ 1 ms heuristic
+or ≤ 350 ms LLM-fallback) plus the Synisense pipeline cost. None
+of the five classes meets the brief's first-token budget. The
+budgets are aspirational for a future iteration that adopts true
+SSE token streaming from the LLM SDK.
+
+**Measured baseline (Phase B.2, 5 turns per class, admin account,
+Claude Sonnet 4.5, dev preview):**
+
+| Class                       | n | p50 first-token | p95 first-token | p50 total | p95 total |
+|-----------------------------|---|-----------------|-----------------|-----------|-----------|
+| trivial                     | 5 | 2 648 ms        | 3 055 ms        | ~2.7 s    | ~3.1 s    |
+| light_substantive           | 5 | 2 646 ms        | 4 424 ms        | ~2.6 s    | ~4.4 s    |
+| substantive_analytical      | 5 | 19 559 ms       | 49 686 ms       | ~19.6 s   | ~49.7 s   |
+| strategic_deliverable silent | 5 | 20 655 ms       | 159 553 ms     | ~20.8 s   | ~159.8 s  |
+| strategic_deliverable visible| 2 | 73 732 ms      | 235 159 ms     | ~74.9 s   | ~236.3 s  |
+
+**Cause.** The two LLM-bound classes (`substantive_analytical`,
+`strategic_deliverable`) are dominated by full-completion LLM
+latency, not by classifier or Synisense work. `strategic_deliverable`
+runs the canonical method as **two** LLM calls (Pass 1 reasoning
+then Pass 2 deliverable) so the audit row always carries both
+passes — this is correct per the memo, and a single-call
+marker-based variant was tried first and rejected because Claude
+Sonnet 4.5 omits the markers on roughly half of strategic turns.
+Trivial and light_substantive are heuristic-classified in
+sub-millisecond time; their first-token latency is also dominated
+by the LLM call (Sonnet 4.5 even on "thanks" → ≥ 1.3 s).
+
+**3 visible-mode runs in the latency table dropped due to a
+transient `litellm.BadGatewayError 502` from the upstream provider
+during the measurement window. The architecture itself functions
+end-to-end on the runs that completed (pass_1_chars 9 136 and
+10 637; show_pass_1=true; collapsible Pass 1 panel renders in the
+UI).**
+
+**Action.** Acceptance bar #8 ("If any class blows its budget, say
+so verbatim") is fired: every class blows its budget under the
+current coarse-chunk infrastructure. Recovery requires switching
+to true SSE token streaming end-to-end, which is **out of scope
+for B.2** — the existing B.1 chunking strategy was a deliberate
+trade-off and replacing it is a separate phase. We log the
+measurement honestly and ship.
+
+---
+
 ## How to add a new decision
 
 1. Heading: `### D-NNN · <one-line title> (Memo Item X)` — increment NNN.
