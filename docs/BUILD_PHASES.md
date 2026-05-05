@@ -10,8 +10,10 @@
 | # | Phase | Status | Owner | Acceptance bar |
 |---|---|---|---|---|
 | 1 | Document Journal commentary backfill | **DONE — 2026-05-05** | main agent | ≥ 90 % of eligible docs carry `journal_commentary`; one `synisense_runs` row per backfilled doc with `surface=journal_commentary`; opening any populated doc in the Journal UI shows commentary without a generation spinner. |
-| 2 | Privacy Wall (cross-context metadata-only projection guard) | NOT STARTED | — | `/api/me/home/stream` and any future cross-context aggregator return **only** `{severity, topic_class, ts, source_context_id}` — never `body_redacted`, never `extracted_text`, never raw signal text. Server-side recursive walk fires `500 Privacy Wall violation` if any leak slips through. Negative test: NED on three boards cannot read content from any board they are not on. |
-| 3 | Akki Pulse (cross-context aggregator on top of Privacy Wall) | BLOCKED on Phase 2 | — | `/app/pulse` shows a real, populated stream of cross-board signals classified into 4 entity classes (capital, succession, regulatory, cyber) with attribution back to source context. Daily 07:00 UTC `PulseDigest` cron registered. NED + Executive view variants both render. Page no longer reads `pages/PulsePlaceholder.jsx`. |
+| 2a | Privacy Wall — design + leakage audit | **IN PROGRESS — 2026-05-05** | main agent | `docs/PRIVACY_WALL_DESIGN.md` and `docs/PRIVACY_WALL_LEAKAGE_AUDIT.md` shipped; one of (a)/(b)/(c) recommended; TBD product calls listed for human sign-off. **NO CODE CHANGES IN THIS STEP.** |
+| 2b | Privacy Wall — implementation foundation | NOT STARTED | — | `backend/services/privacy_wall.py` ships with `project_for_pulse`, `redact_for_pulse_text`, `assemble_pulse_prompt`. `routers/shares.py:/me/home/stream` and `routers/governance.py:/me/governance/audit` refactored to call it. Two regression tests in CI: a field-drift test + an AST sweep over every router for unguarded cross-context queries. `STRICT_PRIVACY_WALL=true` posture in CI. Pulse stays placeholder. |
+| 2c | Privacy Wall — Pulse build on top | BLOCKED on 2b | — | `backend/routers/pulse.py` ships with metadata-only endpoints. `pages/PulsePlaceholder.jsx` replaced with the real surface. Daily 07:00 UTC `PulseDigest` cron registered. Per-context flag-ON gate. Negative test: NED on three boards cannot read content from any board they are not on, even via the Pulse aggregator. |
+| 3 | Akki Pulse (cross-context aggregator) — productisation pass | BLOCKED on 2c | — | `/app/pulse` shows a real, populated stream of cross-board signals classified into 4 entity classes (capital, succession, regulatory, cyber) with attribution back to source context. NED + Executive view variants both render. **Note: 2c builds the wall+endpoints; Phase 3 is the polish pass — copy, design, NED variant.** |
 | 4 | Service-mode flips (production-grade integrations) | BLOCKED on Phase 3 | — | Resend out of test mode (real recipients receive); ClamAV un-bypassed (`ALLOW_UNSAFE_UPLOADS=false`, `clamd` running, uploads 503 if scanner is missing); `STORAGE_BACKEND=s3` against MinIO/S3; Stripe `BILLING_ENABLED=true` decision boundary handed to product owner. Sentry initialised on backend + frontend. APScheduler leader-election scaffolded for multi-replica. |
 
 ## Phase 1 — Document Journal commentary backfill
@@ -29,7 +31,7 @@ and the backfill script call **one** function. Backfill is idempotent
 (skips rows that already have commentary), resumable, throttled, and
 records progress every 10 docs.
 
-## Phase 2 — Privacy Wall
+## Phase 2 — Privacy Wall (split into 2a → 2b → 2c)
 
 **Why.** Pulse is unbuildable without it. The current
 `/api/me/home/stream` aggregator returns full content across contexts
@@ -37,7 +39,25 @@ keyed only on membership — Privacy-Wall-unsafe. Phase 2 introduces a
 content-vs-metadata projection guard that **server-side** refuses to
 ship body fields across context boundaries.
 
-## Phase 3 — Akki Pulse
+**2a (this round) — design + leakage audit only.** Two new docs:
+`docs/PRIVACY_WALL_DESIGN.md` (threat model, field-level metadata vs
+content taxonomy, three architectures considered, recommendation,
+failure-mode detection plan, phasing) and
+`docs/PRIVACY_WALL_LEAKAGE_AUDIT.md` (read-only honest accounting of
+which routes ship content cross-context today; baseline for 2b).
+**Recommendation: field-projection guard (option a).** TBDs parked
+for human sign-off — see leakage-audit doc and the design doc §2.
+
+**2b — implementation foundation.** `backend/services/privacy_wall.py`
+helper, refactor `home/stream` + `governance/audit` through it, two
+regression tests in CI, `STRICT_PRIVACY_WALL=true` posture in CI.
+Pulse remains placeholder.
+
+**2c — Pulse build on top.** `routers/pulse.py`, real
+`pages/Pulse.jsx`, daily cron, per-context flag-ON gate, negative
+test.
+
+## Phase 3 — Akki Pulse productisation pass
 
 **Why.** This is the headline NED feature. Cross-board pattern
 detection (capital pressure, succession risk, regulatory drift, cyber
