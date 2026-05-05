@@ -16,6 +16,20 @@
  * centralises it so a future schema change (e.g. adding
  * `provisioning="sponsored_invite_pending"` or a new context type) is
  * a one-line edit, not a three-place hunt.
+ * Phase K.2 (2026-05-05) — sponsored gates audited and removed.
+ * Result: there were NO functional gates limiting sponsored contexts in
+ * the codebase. Every reference to this predicate is purely cosmetic
+ * (chrome labels, nav rail grouping, an informational "your data stays
+ * with the sponsoring company" banner). Sponsored contexts already have
+ * byte-identical feature parity with personal contexts: same nav, same
+ * Solva access, same Chat, same Work Studio, same Cycle Manager,
+ * same write permissions. RBAC checks (`require_context_membership(
+ * owner_only=True)`) apply equally to all context types.
+ *
+ * TODO(tier-limits): sponsor-specific entitlement limits may return
+ * here post-Phase 16 (Reportee Accounts + Billing) — the predicate
+ * stays so a future tier policy can branch on it cleanly. See
+ * docs/ROADMAP.md Phase K.2 entry.
  */
 
 /**
