@@ -83,7 +83,7 @@ async def _build_status(current: Dict[str, Any]) -> Dict[str, Any]:
         docs_count = await db.documents.count_documents(
             {"context_id": {"$in": ctx_ids}}
         )
-        briefings_count = await db.briefings.count_documents(
+        briefings_count = await db.boardpacks.count_documents(
             {"context_id": {"$in": ctx_ids}, "status": {"$ne": "archived"}}
         )
     else:

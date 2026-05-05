@@ -358,6 +358,18 @@ test_plan:
   test_all: false
   test_priority: "stuck_first"
 
+  - task: "Phase L — Strategic Documents Pack ingestion"
+    implemented: true
+    working: true
+    file: "/app/backend/sandbox_v2_strategic.py, /app/backend/sandbox_v2_corpus.py, /app/backend/scripts/_strategic_ingest.py, /app/backend/scripts/seed_admin_strategic_data.py, /app/backend/scripts/seed_julius_opio.py, /app/backend/routers/documents.py, /app/backend/tests/test_phase_l_strategic_pack.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+          -agent: "main"
+          -comment: "L.1: New module sandbox_v2_strategic.py carries 14 verbatim docs across 5 contexts (Bank/Healthcare/Logistics/Gov/Tech). pick_studio_sources gained include_strategic flag (default off preserves Step 3 contract); pick_cycle_snapshot now also returns additive strategic_plan_refs + strategic_baseline_source. L.2: idempotent seed_admin_strategic_data.py mints 5 demo contexts under admin and ingests every strategic doc through Synisense (surface=ingest) + studio_sensitivity (with deployment-level floor for strategic-pack docs). 14/14 docs persisted with body_redacted, synisense_version=1, sensitivity_band ∈ {internal, confidential}. L.3: seed_julius_opio.py extended with 5th context (Government Executive) and strategic mirror — Julius now owns 5 contexts, 5 memberships, 14 strategic docs. L.4: GET /api/contexts/{cid}/documents/{did} now surfaces body_redacted, synisense_version, sensitivity_score, sensitivity_band, sensitivity_label, sensitivity_reasons, doc_kind. Synisense redaction proof: 'Korogocho Logistics Group · Founder-CEO James Korogocho' → '[ORG_1] · Founder-[TITLE_1] [PERSON_1]'. Tests: 12/12 pytests pass (test_phase_l_strategic_pack.py); regression 45/45 across J+K+L. /api/health + /openapi.json + /docs all 200, pip check + ruff clean."
+
 agent_communication:
     -agent: "main"
       -message: "Phase 11 (A/B/C) backend implementation complete plus two doc/cleanup items (D doc-drift fix in PRODUCT_REVIEW.md, E stale-comment removal). All Python lint passes, syntax valid (ast parse), backend boots clean. Three items need backend testing (A, B, C). Use admin credentials from /app/memory/test_credentials.md (admin@akki.ai / AkkiAdmin2026!). Hard rules: (1) ValidatedBadge invariant — every frontend render gated on real validation prop, server returns null for cap-tripped briefings only. (2) Public Chair path must NEVER leak un-redacted content — `_assert_public_safe()` is a 500. (3) Hallucinated chat citations must be dropped, not rendered. Notes for testing: ClamAV / MinIO sidecars are not installed in this dev container — uploads will 503; do NOT exercise the upload paths in tests. Test surfaces that don't touch uploads: studio public read (use existing decks/briefings or seed minimal artefacts), decks generate (LLM call against EMERGENT_LLM_KEY), reports send_up, solve session post_turn at synthesis phase, chat send_message with and without context_id."

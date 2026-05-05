@@ -15,8 +15,6 @@ import {
   Users, Building2, ShieldCheck, Send, Compass, Activity, MessageCircle,
   Presentation, Menu, X, Keyboard,
 } from "lucide-react";
-import SandboxBanner from "@/components/sandbox/SandboxBanner";
-import SandboxEmailCapture from "@/components/sandbox/SandboxEmailCapture";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -83,8 +81,10 @@ const NAV = [
   { to: "/app/chat", label: "Chat", icon: MessageCircle, module: "§15", ready: true },
   { to: "/app/solva", label: "Solva", icon: Layers, module: "§18", ready: true,
     badge: "Preview" },
-  { to: "/app/prepare", label: "Catch-up", icon: Sparkles, module: "M5+M12", ready: true },
-  { to: "/app/decks", label: "Decks + Reports", icon: Presentation, module: "§17", ready: true },
+  // M.4: /app/prepare and /app/decks redirect-aliases retired. Direct
+  // links to the canonical surfaces (Cycle Manager + Work Studio).
+  { to: "/app/cycle?tab=briefs", label: "Boardpack", icon: ScrollText, module: "M3+M12", ready: true },
+  { to: "/app/work-studio?view=decks", label: "Decks + Reports", icon: Presentation, module: "§17", ready: true },
   { to: "/app/cycle", label: "Reporting Cycle", icon: Send, module: "§12", ready: true,
     roles: ["executive"] },
   { to: "/app/learn", label: "Learn", icon: GraduationCap, module: "M9", ready: true },
@@ -194,8 +194,9 @@ export default function AppShell({ children }) {
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--cream)]">
-      <SandboxBanner />
-      <SandboxEmailCapture />
+      {/* M.4: legacy SandboxBanner / SandboxEmailCapture removed —
+          no live context now carries type='sandbox' (Sandbox v2 is
+          pre-auth at /sandbox). */}
       {/* Top chrome — cream, 64px, 1px rule border. 2-region flex: left
           (logo + brand subtitle) / right (palette + nav controls).
           Phase 15.2: relocated the "Internal · Secure · Confidential"

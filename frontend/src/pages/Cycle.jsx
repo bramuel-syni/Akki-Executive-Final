@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import ReportsTab from "@/components/cycle/ReportsTab";
 import CycleTracker from "@/components/cycle/CycleTracker";
-import BriefsTab from "@/components/cycle/tabs/BriefsTab";
+import BoardpackTab from "@/components/cycle/tabs/BoardpackTab";
 import SignalsTab from "@/components/cycle/tabs/SignalsTab";
 import MinutesTab from "@/components/cycle/tabs/MinutesTab";
 import ActionsTab from "@/components/cycle/tabs/ActionsTab";
@@ -981,7 +981,7 @@ function OverviewTab({ cid, account, activeContext, isMobile }) {
 // ---------------------------------------------------------------------------
 const OUTER_TABS = [
   { id: "overview", label: "Overview", icon: Eye },
-  { id: "briefs",   label: "Briefs",   icon: ScrollText },
+  { id: "briefs",   label: "Boardpack", icon: ScrollText },
   { id: "signals",  label: "Signals",  icon: Activity },
   { id: "minutes",  label: "Minutes",  icon: FileText },
   { id: "actions",  label: "Actions",  icon: ListChecks },
@@ -1054,7 +1054,7 @@ export default function Cycle() {
         {activeTab === "overview" && (
           <OverviewTab cid={cid} account={account} activeContext={activeContext} isMobile={isMobile} />
         )}
-        {activeTab === "briefs"   && <BriefsTab />}
+        {activeTab === "briefs"   && <BoardpackTab />}
         {activeTab === "signals"  && <SignalsTab />}
         {activeTab === "minutes"  && <MinutesTab />}
         {activeTab === "actions"  && <ActionsTab contextId={cid} />}

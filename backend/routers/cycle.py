@@ -185,7 +185,7 @@ async def seed_questions_from_briefings(
     ).to_list(length=2000)
     existing_set = {(q.get("text") or "").strip().lower() for q in existing}
 
-    cursor = db.briefings.find({"context_id": context_id}, {"_id": 0, "id": 1, "items": 1})
+    cursor = db.boardpacks.find({"context_id": context_id}, {"_id": 0, "id": 1, "items": 1})
     added = 0
     async for b in cursor:
         for item in (b.get("items") or []):

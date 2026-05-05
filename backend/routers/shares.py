@@ -55,7 +55,7 @@ async def _load_artefact(item_type: str, item_id: str, context_id: str) -> Optio
     if item_type == "signal":
         return await db.signals.find_one({"id": item_id, "context_id": context_id}, {"_id": 0})
     if item_type == "briefing":
-        return await db.briefings.find_one({"id": item_id, "context_id": context_id}, {"_id": 0})
+        return await db.boardpacks.find_one({"id": item_id, "context_id": context_id}, {"_id": 0})
     if item_type == "brief":
         # Lightweight Prepare-tab brief (collection: briefs). Authoring-user-
         # scoped is enforced upstream via require_context_membership; the
@@ -467,7 +467,7 @@ async def aggregated_stream(
 
     signals = await db.signals.find(signals_q, {"_id": 0}) \
         .sort("created_at", -1).limit(per_kind_cap).to_list(per_kind_cap)
-    briefings = await db.briefings.find(briefings_q, {"_id": 0}) \
+    briefings = await db.boardpacks.find(briefings_q, {"_id": 0}) \
         .sort("created_at", -1).limit(per_kind_cap).to_list(per_kind_cap)
     # Keep the documents projection light — the heaviest fields (paragraphs,
     # raw_text) aren't needed for the river card.
@@ -503,7 +503,7 @@ async def aggregated_stream(
             if r.get("briefing_id"):
                 read_ids.add(r["briefing_id"])
 
-        pending_briefings = await db.briefings.find(
+        pending_briefings = await db.boardpacks.find(
             {
                 "context_id": {"$in": active_ctx_ids},
                 "status": "active",

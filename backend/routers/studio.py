@@ -98,7 +98,7 @@ def _days_between(start_iso: str, end_iso: Optional[str] = None) -> int:
 async def _resolve_artefact(context_id: str, kind: str, artefact_id: str) -> Dict[str, Any]:
     if kind not in ARTEFACT_KINDS:
         raise HTTPException(status_code=400, detail=f"Unsupported artefact kind: {kind}")
-    coll = db.decks if kind == "deck" else db.briefings
+    coll = db.decks if kind == "deck" else db.boardpacks
     doc = await coll.find_one({"id": artefact_id, "context_id": context_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail=f"{kind.title()} not found.")
@@ -287,7 +287,7 @@ async def rescore_sensitivity(
     else:
         from studio_sensitivity import score_sensitivity
         sensitivity = score_sensitivity(artefact)
-    coll = db.decks if kind == "deck" else db.briefings
+    coll = db.decks if kind == "deck" else db.boardpacks
     await coll.update_one(
         {"id": artefact_id, "context_id": context_id},
         {"$set": {"sensitivity": sensitivity, "sensitivity_rescored_at": iso(now())}},
@@ -318,12 +318,12 @@ async def backfill_sensitivity(
         )
         scored["decks"] += 1
 
-    async for b in db.briefings.find(
+    async for b in db.boardpacks.find(
         {"context_id": context_id, "sensitivity": {"$exists": False}, "status": {"$ne": "archived"}},
         {"_id": 0},
     ):
         sens = score_sensitivity(b)
-        await db.briefings.update_one(
+        await db.boardpacks.update_one(
             {"id": b["id"], "context_id": context_id},
             {"$set": {"sensitivity": sens, "sensitivity_rescored_at": iso(now())}},
         )
@@ -355,7 +355,7 @@ async def studio_history(
     async for d in decks_cursor:
         items.append({**d, "kind": "deck"})
 
-    briefings_cursor = db.briefings.find(
+    briefings_cursor = db.boardpacks.find(
         {"context_id": context_id, "status": {"$ne": "archived"}},
         {"_id": 0, "id": 1, "title": 1, "version": 1, "opening_paragraph": 1,
          "items": 1, "created_at": 1, "sensitivity": 1, "role": 1,
@@ -653,7 +653,7 @@ async def public_track_share(token: str, request: Request):
     # Artefact may have been deleted since the share was sent.
     artefact = await db.decks.find_one({"id": aid, "context_id": cid}, {"_id": 0, "id": 1}) \
         if kind == "deck" \
-        else await db.briefings.find_one({"id": aid, "context_id": cid}, {"_id": 0, "id": 1})
+        else await db.boardpacks.find_one({"id": aid, "context_id": cid}, {"_id": 0, "id": 1})
     if not artefact:
         raise HTTPException(status_code=404, detail="This document is no longer available.")
 
@@ -716,7 +716,7 @@ async def public_read_share(token: str, request: Request):
         raise HTTPException(status_code=400, detail="Invalid share link.")
 
     # Pull the full artefact (we only return public-safe fields below).
-    coll = db.decks if kind == "deck" else db.briefings
+    coll = db.decks if kind == "deck" else db.boardpacks
     artefact = await coll.find_one({"id": aid, "context_id": cid}, {"_id": 0})
     if not artefact:
         raise HTTPException(status_code=404, detail="This document is no longer available.")

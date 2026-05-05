@@ -47,7 +47,7 @@ async def run(
     seen: set = set()
 
     async def _take(filter_q: Dict[str, Any], priority_match: str) -> None:
-        async for c in db.solve_comparables.find(
+        async for c in db.solva_v1_comparables_archive.find(
             filter_q,
             {
                 "_id": 0,

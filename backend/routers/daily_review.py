@@ -3,7 +3,7 @@
 The load-bearing modality. A unified queue across the user's contexts
 that surfaces:
   - Inbound docs awaiting triage (`db.inbound_queue` status='pending_review')
-  - Briefings awaiting review (`db.briefings` status='active' with no
+  - Briefings awaiting review (`db.boardpacks` status='active' with no
     read receipt for the current account in `db.briefing_reads`)
 
 Phase B (drafted emails, extracted cycle questions) is still deferred
@@ -206,7 +206,7 @@ async def list_review_queue(
     inbound_rows = await db.inbound_queue.find(
         inbound_q, {"_id": 0},
     ).sort("created_at", -1).to_list(over)
-    briefing_rows = await db.briefings.find(
+    briefing_rows = await db.boardpacks.find(
         briefing_q, {"_id": 0},
     ).sort("created_at", -1).to_list(over)
 
@@ -288,7 +288,7 @@ async def list_review_queue(
     total_inbound = await db.inbound_queue.count_documents({
         "context_id": {"$in": cids}, "status": "pending_review",
     })
-    total_briefing = await db.briefings.count_documents({
+    total_briefing = await db.boardpacks.count_documents({
         "context_id": {"$in": cids}, "status": "active",
         "id": {"$nin": list(read_ids)} if read_ids else {"$exists": True},
     })
@@ -338,7 +338,7 @@ async def review_queue_counts(
     inbound_total = await db.inbound_queue.count_documents({
         "context_id": {"$in": cids}, "status": "pending_review",
     })
-    briefing_total = await db.briefings.count_documents({
+    briefing_total = await db.boardpacks.count_documents({
         "context_id": {"$in": cids}, "status": "active",
         "id": {"$nin": list(read_ids)} if read_ids else {"$exists": True},
     })
@@ -355,7 +355,7 @@ async def review_queue_counts(
         {"$group": {"_id": "$context_id", "n": {"$sum": 1}}},
     ]):
         by_ctx[row["_id"]] = by_ctx.get(row["_id"], 0) + row["n"]
-    async for row in db.briefings.aggregate([
+    async for row in db.boardpacks.aggregate([
         {"$match": {"context_id": {"$in": cids}, "status": "active",
                     "id": {"$nin": list(read_ids)} if read_ids else {"$exists": True}}},
         {"$group": {"_id": "$context_id", "n": {"$sum": 1}}},
@@ -402,7 +402,7 @@ async def _next_pending_item_id(account_id: str, exclude_uid: str) -> Optional[s
             {"context_id": {"$in": cids}, "status": "pending_review"},
             sort=[("created_at", -1)],
         )
-        next_br = await db.briefings.find_one(
+        next_br = await db.boardpacks.find_one(
             {"context_id": {"$in": cids}, "status": "active",
              "id": {"$nin": list(read_ids)} if read_ids else {"$exists": True}},
             sort=[("created_at", -1)],
@@ -588,7 +588,7 @@ async def _reject_inbound(qid: str, account: Dict[str, Any], reason: Optional[st
 
 async def _approve_briefing(bid: str, account: Dict[str, Any]) -> Dict[str, Any]:
     """Approve = mark-as-read for the current account."""
-    b = await db.briefings.find_one(
+    b = await db.boardpacks.find_one(
         {"id": bid, "status": "active"}, {"_id": 0, "id": 1, "context_id": 1},
     )
     if not b:
@@ -622,14 +622,14 @@ async def _approve_briefing(bid: str, account: Dict[str, Any]) -> Dict[str, Any]
 
 
 async def _reject_briefing(bid: str, account: Dict[str, Any], reason: Optional[str]) -> Dict[str, Any]:
-    b = await db.briefings.find_one(
+    b = await db.boardpacks.find_one(
         {"id": bid, "status": "active"}, {"_id": 0, "id": 1, "context_id": 1},
     )
     if not b:
         raise HTTPException(status_code=404, detail="Briefing not found.")
     if not await _is_member(b["context_id"], account["id"]):
         raise HTTPException(status_code=403, detail="Not a member of this context.")
-    res = await db.briefings.update_one(
+    res = await db.boardpacks.update_one(
         {"id": bid, "status": "active"},
         {"$set": {"status": "archived", "archived_at": iso(now()),
                   "archived_via": "daily_review",
@@ -812,7 +812,7 @@ async def _approve_solva_cycle(
             "resolved_context_id": target_context_id,
         }},
     )
-    await db.solve_handoffs.update_many(
+    await db.solva_handoffs.update_many(
         {"review_queue_id": iid},
         {"$set": {"status": "approved", "approved_at": iso(now())}},
     )
@@ -840,7 +840,7 @@ async def _reject_solva_cycle(
             "reject_reason": (reason or "").strip(),
         }},
     )
-    await db.solve_handoffs.update_many(
+    await db.solva_handoffs.update_many(
         {"review_queue_id": iid},
         {"$set": {"status": "rejected", "rejected_at": iso(now())}},
     )
@@ -967,7 +967,7 @@ async def edit_review_item(
         return {"ok": True, "kind": kind, "id": iid, "edit_url": None,
                 "inline": True}
     if kind == BRIEFING_KIND:
-        b = await db.briefings.find_one({"id": iid}, {"_id": 0, "id": 1, "context_id": 1})
+        b = await db.boardpacks.find_one({"id": iid}, {"_id": 0, "id": 1, "context_id": 1})
         if not b:
             raise HTTPException(status_code=404, detail="Briefing not found.")
         if not await _is_member(b["context_id"], account["id"]):

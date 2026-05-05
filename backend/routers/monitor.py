@@ -157,7 +157,7 @@ async def get_monitor(
                 })
 
     # ── Briefings (recent)
-    briefings = await db.briefings.find(
+    briefings = await db.boardpacks.find(
         {"context_id": context_id}, {"_id": 0, "items": 0},
     ).sort("created_at", -1).to_list(5)
 

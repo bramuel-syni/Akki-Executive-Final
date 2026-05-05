@@ -158,7 +158,7 @@ async def get_agenda_evolution(
         })
 
     # 4. Briefings published in the period.
-    br_cursor = db.briefings.find(
+    br_cursor = db.boardpacks.find(
         {"context_id": context_id, "status": {"$in": ["published", "active"]},
          "$or": [{"published_at": {"$gte": cutoff}}, {"created_at": {"$gte": cutoff}}]},
         {"_id": 0},

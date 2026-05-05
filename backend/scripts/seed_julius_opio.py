@@ -48,6 +48,11 @@ DEFAULT_COMMITTEES = [
 ]
 
 # ─── 4 contexts (one per type) ──────────────────────────────────────────
+# Phase L.3: added a 5th — "Julius Opio — Government Executive" — so
+# every strategic-pack org_type (Bank / Healthcare / Logistics /
+# Technology / Government) has a matching Julius context and the
+# strategic mirror section below can ingest all 14 pack documents into
+# Julius's tree.
 CONTEXT_SPECS = [
     {
         "name": "Julius Opio — Personal NED Seat",
@@ -57,6 +62,7 @@ CONTEXT_SPECS = [
         "sector": "Tier-1 banking · pre-IPO",
         "membership_role": "ned",
         "needs_sponsor": False,
+        "strategic_org_type": "bank",
     },
     {
         "name": "Julius Opio — Sponsored NED Seat",
@@ -66,6 +72,7 @@ CONTEXT_SPECS = [
         "sector": "Multi-site healthcare group",
         "membership_role": "ned",
         "needs_sponsor": True,
+        "strategic_org_type": "healthcare",
     },
     {
         "name": "Julius Opio — Executive Role",
@@ -75,6 +82,7 @@ CONTEXT_SPECS = [
         "sector": "Pan-African logistics",
         "membership_role": "executive",
         "needs_sponsor": False,
+        "strategic_org_type": "logistics",
     },
     {
         "name": "Julius Opio — Enterprise Executive",
@@ -84,6 +92,23 @@ CONTEXT_SPECS = [
         "sector": "B2B SaaS · listed corporate",
         "membership_role": "executive",
         "needs_sponsor": True,
+        "strategic_org_type": "technology",
+    },
+    {
+        # Phase L.3 — gov-specific context type is out of scope per brief;
+        # executive_personal keeps the data model consistent. The
+        # 6-committee set is preserved on this context too (Strategy &
+        # Audit are directly applicable; the rest are formally defined
+        # but seldom convened in a ministerial context — kept for
+        # consistency with the other four contexts).
+        "name": "Julius Opio — Government Executive",
+        "type": "executive_personal",
+        "industry": "Public Sector",
+        "jurisdiction": "Kenya",
+        "sector": "Ministry · industrial modernisation",
+        "membership_role": "executive",
+        "needs_sponsor": False,
+        "strategic_org_type": "government",
     },
 ]
 
@@ -311,6 +336,45 @@ async def main() -> int:
     print(f"  subscription_status  = {account['subscription_status']}")
     print(f"  declared_role        = {account['declared_role']}")
     print(f"  first_session.status = {account['first_session']['status']}")
+
+    # ── Phase L.3 — strategic mirror ─────────────────────────────────
+    # Ingest the full 14-doc Sandbox Strategic Documents Pack into
+    # Julius's 5 contexts (the L.3 requirement). Idempotent — existing
+    # rows skipped on re-run.
+    print("─" * 64)
+    print(" Phase L.3 — strategic mirror (14 docs across 5 contexts)")
+    print("─" * 64)
+    from scripts._strategic_ingest import ingest_strategic_documents
+
+    # Map each pack org_type to Julius's corresponding context name so
+    # the ingester writes into his existing tree rather than minting
+    # fresh "<Org> · Demo" contexts.
+    ctx_name_map = {
+        spec["strategic_org_type"]: spec["name"]
+        for spec in CONTEXT_SPECS
+        if spec.get("strategic_org_type")
+    }
+    strat_summary = await ingest_strategic_documents(
+        account=account,
+        context_name_by_org_type=ctx_name_map,
+    )
+    for org_type, s in strat_summary["by_org_type"].items():
+        created = sum(1 for d in s["docs"] if d["action"] == "created")
+        skipped = sum(1 for d in s["docs"] if d["action"] == "skipped")
+        print(f"  {org_type:12} → '{s['context_name'][:40]:40}' created={created} skipped={skipped}")
+    print(f"  docs_created          = {strat_summary['docs_created']}")
+    print(f"  docs_skipped          = {strat_summary['docs_skipped']}")
+    if strat_summary["sample_replacements"]:
+        first = strat_summary["sample_replacements"][0]
+        sp = first["span"]
+        print(f"  synisense sample      '{(sp.get('match_text') or '')[:40]}'  ({sp.get('entity_type')})")
+
+    n_docs = await db.documents.count_documents({
+        "source": "strategic_pack_v1",
+        "uploaded_by": account["id"],
+    })
+    print(f"  julius.docs (pack)    = {n_docs}")
+
     print("─" * 64)
     print("✅ Seed complete. Credentials:")
     print(f"     email:    {TARGET_EMAIL}")

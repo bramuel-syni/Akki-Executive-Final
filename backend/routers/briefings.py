@@ -126,7 +126,7 @@ async def create_briefing(
     if not items:
         raise HTTPException(status_code=502, detail="Briefing produced no usable items.")
 
-    latest = await db.briefings.find_one(
+    latest = await db.boardpacks.find_one(
         {"context_id": context_id}, {"_id": 0, "version": 1}, sort=[("version", -1)]
     )
     version = (latest or {}).get("version", 0) + 1
@@ -160,7 +160,7 @@ async def create_briefing(
         doc["sensitivity"] = score_sensitivity(doc)
     except Exception:  # noqa: BLE001
         doc["sensitivity"] = None
-    await db.briefings.insert_one(doc)
+    await db.boardpacks.insert_one(doc)
     await write_audit(
         context_id, ctx["account"]["id"], "briefing.created", "briefing", briefing_id,
         {"version": version, "items": len(items), "mode": llm_out.get("mode")},
@@ -177,7 +177,7 @@ async def list_briefings(
     q: Dict[str, Any] = {"context_id": ctx["context"]["id"], "status": "active"}
     if committee_id:
         q["committee_id"] = committee_id
-    rows = await db.briefings.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    rows = await db.boardpacks.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
     # Annotate each row with is_read for the current account so the rail can
     # show read/unread state. Read = explicit "Mark as read" OR ≥70%
     # scroll-depth (frontend stamps either via /mark-read).
@@ -220,7 +220,7 @@ async def mark_briefing_read(
       • via='scroll' — frontend reached ≥70% scroll depth
     Either is enough to flip the rail badge.
     """
-    doc = await db.briefings.find_one(
+    doc = await db.boardpacks.find_one(
         {"id": briefing_id, "context_id": ctx["context"]["id"], "status": "active"},
         {"_id": 0, "id": 1},
     )
@@ -249,7 +249,7 @@ async def get_briefing(
     briefing_id: str,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    doc = await db.briefings.find_one(
+    doc = await db.boardpacks.find_one(
         {"id": briefing_id, "context_id": ctx["context"]["id"], "status": "active"},
         {"_id": 0},
     )
@@ -263,7 +263,7 @@ async def archive_briefing(
     briefing_id: str,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    res = await db.briefings.update_one(
+    res = await db.boardpacks.update_one(
         {"id": briefing_id, "context_id": ctx["context"]["id"], "status": "active"},
         {"$set": {"status": "archived", "archived_at": iso(now())}},
     )
@@ -288,7 +288,7 @@ async def draft_speaking_notes(
     """
     context_id = ctx["context"]["id"]
     context_name = ctx["context"]["name"]
-    doc = await db.briefings.find_one(
+    doc = await db.boardpacks.find_one(
         {"id": briefing_id, "context_id": context_id, "status": "active"}, {"_id": 0},
     )
     if not doc:
@@ -370,7 +370,7 @@ async def draft_speaking_notes(
         new_it["speaking_notes"] = notes_by_item.get(i, [])
         updated_items.append(new_it)
 
-    await db.briefings.update_one(
+    await db.boardpacks.update_one(
         {"id": briefing_id, "context_id": context_id},
         {"$set": {"items": updated_items, "speaking_notes_at": iso(now()),
                   "shielding": llm_out.get("shielding", {})}},
@@ -382,7 +382,7 @@ async def draft_speaking_notes(
          "mode": llm_out.get("mode")},
     )
 
-    refreshed = await db.briefings.find_one(
+    refreshed = await db.boardpacks.find_one(
         {"id": briefing_id, "context_id": context_id}, {"_id": 0},
     )
     return {
@@ -400,7 +400,7 @@ async def export_briefing(
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
     context_id = ctx["context"]["id"]
-    doc = await db.briefings.find_one(
+    doc = await db.boardpacks.find_one(
         {"id": briefing_id, "context_id": context_id, "status": "active"}, {"_id": 0},
     )
     if not doc:
@@ -439,3 +439,173 @@ async def export_briefing(
         media_type=media,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ═════════════════════════════════════════════════════════════════════════
+#  Phase M.3 — Boardpack endpoints
+#
+#  The old "Briefing" terminology becomes "Boardpack" (semantic shift, not
+#  just a rename — boardpacks aggregate documents across one cycle and
+#  carry Akki commentary on the whole pack). We mount the new endpoints
+#  alongside the legacy `/briefings/*` URLs to keep external bookmarks +
+#  outbound emails working for 30 days. The data lives in the renamed
+#  `boardpacks` collection (Mongo migration migrate_phase_m3_boardpack.py).
+# ═════════════════════════════════════════════════════════════════════════
+
+
+def _serialise_boardpack(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """Serialise a boardpack row for the M.3 list/detail endpoints.
+
+    Adds the M.3 fields (cycle_label, document_ids, commentary excerpt)
+    to the existing serialisation. The existing legacy fields stay so
+    Daily Review and the legacy /briefings UIs keep working until the
+    30-day backward-compat window closes."""
+    out = _serialise_briefing(doc)  # carry forward references[]
+    out["cycle_label"] = doc.get("cycle_label") or "Uncycled"
+    out["cycle_id"] = doc.get("cycle_id")
+    out["document_ids"] = doc.get("document_ids") or []
+    out["commentary"] = doc.get("commentary") or doc.get("body") or ""
+    out["commentary_redacted"] = (
+        doc.get("commentary_redacted") or doc.get("body_redacted") or ""
+    )
+    out["commentary_synisense_version"] = doc.get(
+        "commentary_synisense_version", doc.get("synisense_version", 0)
+    )
+    return out
+
+
+@router.get("/contexts/{context_id}/boardpacks")
+async def list_boardpacks(
+    context_id: str,
+    cycle_id: Optional[str] = None,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """List boardpacks for the active context, optionally filtered by
+    `cycle_id`. Default sort: most recent first."""
+    q: Dict[str, Any] = {"context_id": context_id}
+    if cycle_id is not None:
+        q["cycle_id"] = cycle_id
+    rows = await db.boardpacks.find(
+        q, {"_id": 0},
+    ).sort("created_at", -1).to_list(200)
+    return {"items": [_serialise_boardpack(r) for r in rows]}
+
+
+@router.get("/contexts/{context_id}/boardpacks/{bpid}")
+async def get_boardpack(
+    bpid: str,
+    refresh: bool = False,  # noqa: ARG001 — reserved for forced regen
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    context_id = ctx["context"]["id"]
+    doc = await db.boardpacks.find_one(
+        {"id": bpid, "context_id": context_id}, {"_id": 0},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Boardpack not found.")
+    return _serialise_boardpack(doc)
+
+
+@router.post("/contexts/{context_id}/boardpacks/{bpid}/regenerate-commentary")
+async def regenerate_boardpack_commentary(
+    bpid: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership(owner_only=True)),
+):
+    """Synthesise FT-voice commentary across the documents in the
+    boardpack, run it through Synisense (surface=briefing for parity
+    with existing Daily Review approval queue), persist the result.
+
+    Real LLM call — uses the Emergent universal LLM gateway. ~600-1200
+    word target. Cached on the row; subsequent reads return cached
+    output unless this endpoint is called again or `?refresh=true` is
+    passed to GET (the refresh flag is currently advisory; explicit
+    POST is the supported path).
+    """
+    context_id = ctx["context"]["id"]
+    doc = await db.boardpacks.find_one(
+        {"id": bpid, "context_id": context_id}, {"_id": 0},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Boardpack not found.")
+
+    # Resolve referenced documents (if any document_ids are populated).
+    doc_ids = doc.get("document_ids") or []
+    src_docs: List[Dict[str, Any]] = []
+    if doc_ids:
+        cursor = db.documents.find(
+            {"context_id": context_id, "id": {"$in": doc_ids}},
+            {"_id": 0, "name": 1, "extracted_text": 1, "doc_kind": 1, "data_trust": 1},
+        )
+        src_docs = await cursor.to_list(50)
+
+    # Build the prompt — concise, FT-voice. We intentionally keep this
+    # in-router rather than another helper module: the prompt's whole
+    # job is to produce the commentary text and it's <50 ll.
+    title = doc.get("title") or doc.get("cycle_label") or "Untitled boardpack"
+    excerpts = []
+    for sd in src_docs[:8]:
+        excerpts.append(
+            f"### {sd.get('name','(untitled)')} [{sd.get('doc_kind','')}]\n"
+            + (sd.get("extracted_text") or "")[:2400]
+        )
+    materials_block = "\n\n".join(excerpts) if excerpts else "(no source documents attached to this pack)"
+
+    system = (
+        "You are Akki, an analytical co-pilot for board directors. Your "
+        "voice is Financial Times: dry, specific, plain. Never editorial, "
+        "never gushing. Always grounded in the materials. When evidence "
+        "is thin, say so. Refuse to weight scenarios you cannot ground."
+    )
+    user = (
+        f"Boardpack: {title}\n\n"
+        "Write a 600–1000 word commentary on this pack for the board's "
+        "next session. Cover: (1) what the pack tells the board that the "
+        "previous pack did not; (2) the two or three signals that warrant "
+        "discussion time; (3) anything in the pack that contradicts the "
+        "current strategic narrative; (4) what is conspicuously absent. "
+        "No headlines. No recommendations the documents do not support. "
+        "Reference document titles inline when you cite them.\n\n"
+        f"=== MATERIALS ===\n\n{materials_block}\n"
+    )
+
+    from llm_service import call_llm
+    try:
+        llm_resp = await call_llm(
+            module="boardpack_commentary",
+            user_query=user,
+            system_override=system,
+            session_context={"context_id": context_id, "account_id": ctx["account"]["id"]},
+            tier="standard",
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"LLM commentary failed: {exc}")
+    commentary = (llm_resp.get("response") if isinstance(llm_resp, dict) else "") or ""
+    commentary = commentary.strip()
+    if not commentary:
+        raise HTTPException(status_code=502, detail="LLM returned empty commentary.")
+
+    # Run through Synisense at the briefing surface — same trust profile.
+    from services.synisense import pipeline as synisense_pipeline
+    syn_out = await synisense_pipeline.run(
+        commentary, context_id=context_id, surface="briefing",
+        mode="redact", account_id=ctx["account"]["id"],
+    )
+
+    new_version = (doc.get("commentary_synisense_version") or 0) + 1
+    update = {
+        "commentary": commentary,
+        "commentary_redacted": syn_out.get("redacted_text") or commentary,
+        "commentary_synisense_version": new_version,
+        "commentary_generated_at": iso(now()),
+        "updated_at": iso(now()),
+    }
+    await db.boardpacks.update_one({"id": bpid}, {"$set": update})
+
+    await write_audit(
+        context_id, ctx["account"]["id"], "boardpack.commentary_regenerated",
+        "boardpack", bpid,
+        {"synisense_version": new_version, "doc_count": len(src_docs)},
+    )
+
+    refreshed = await db.boardpacks.find_one({"id": bpid}, {"_id": 0})
+    return _serialise_boardpack(refreshed)

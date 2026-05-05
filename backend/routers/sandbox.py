@@ -281,7 +281,7 @@ async def _seed_sandbox(session_id: str):
         if seeds["signals"]:
             await db.signals.insert_many(seeds["signals"])
         if seeds["briefings"]:
-            await db.briefings.insert_many(seeds["briefings"])
+            await db.boardpacks.insert_many(seeds["briefings"])
 
         # 5. Mint the access + refresh tokens so frontend can log the prospect in
         access = create_access_token(account_id, disposable_email)
@@ -312,7 +312,7 @@ async def _seed_sandbox(session_id: str):
             if ctx_id:
                 await db.documents.delete_many({"context_id": ctx_id})
                 await db.signals.delete_many({"context_id": ctx_id})
-                await db.briefings.delete_many({"context_id": ctx_id})
+                await db.boardpacks.delete_many({"context_id": ctx_id})
                 await db.context_objects.delete_many({"context_id": ctx_id})
                 await db.memberships.delete_many({"context_id": ctx_id})
                 await db.contexts.delete_one({"id": ctx_id})
@@ -375,7 +375,7 @@ async def cleanup_expired_sandboxes(
         cid = ctx["id"]
         await db.documents.delete_many({"context_id": cid})
         await db.signals.delete_many({"context_id": cid})
-        await db.briefings.delete_many({"context_id": cid})
+        await db.boardpacks.delete_many({"context_id": cid})
         await db.context_objects.delete_many({"context_id": cid})
         await db.memberships.delete_many({"context_id": cid})
         await db.contexts.update_one({"id": cid}, {"$set": {"status": "deleted"}})
@@ -456,7 +456,7 @@ async def sandbox_tutorial(
     dismissed = bool(meta.get("tutorial_dismissed"))
 
     # First seeded briefing (most recent).
-    brief = await db.briefings.find_one(
+    brief = await db.boardpacks.find_one(
         {"context_id": context_id, "sandbox_artefact": True},
         {"_id": 0, "id": 1, "title": 1, "opening_paragraph": 1},
         sort=[("created_at", 1)],
@@ -821,7 +821,7 @@ async def convert_sandbox(
             # Discard the explored sandbox entirely on conversion
             await db.documents.delete_many({"context_id": m["context_id"]})
             await db.signals.delete_many({"context_id": m["context_id"]})
-            await db.briefings.delete_many({"context_id": m["context_id"]})
+            await db.boardpacks.delete_many({"context_id": m["context_id"]})
             await db.context_objects.delete_many({"context_id": m["context_id"]})
             await db.memberships.delete_many({"context_id": m["context_id"]})
             await db.contexts.delete_one({"id": m["context_id"], "type": "sandbox"})
@@ -992,7 +992,7 @@ async def create_seeded_context(
         if seeds["signals"]:
             await db.signals.insert_many(seeds["signals"])
         if seeds["briefings"]:
-            await db.briefings.insert_many(seeds["briefings"])
+            await db.boardpacks.insert_many(seeds["briefings"])
 
     await write_audit(
         context_id, current["id"], "context.seeded", "context", context_id,

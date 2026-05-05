@@ -338,11 +338,13 @@ async def complete_first_session(
         )
     ]
     if body.artefact.kind == "briefing":
-        found = await db.briefings.find_one(
+        found = await db.boardpacks.find_one(
             {"id": body.artefact.id, "context_id": {"$in": ctx_ids}}, {"_id": 0, "id": 1}
         )
-    else:  # solve_session
-        found = await db.solve_sessions.find_one(
+    else:  # solve_session — Solva v2 sessions are user-scoped, not
+           # context-scoped. M.4 repointed the lookup at solva_v2_sessions
+           # (the v1 collection was archived as solva_v1_sessions_archive).
+        found = await db.solva_v2_sessions.find_one(
             {"id": body.artefact.id, "account_id": current["id"]}, {"_id": 0, "id": 1}
         )
     if not found:

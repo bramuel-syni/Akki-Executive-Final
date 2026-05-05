@@ -34,15 +34,12 @@ import SignalKPI from "@/pages/admin/SignalKPI";
 import LLMSpend from "@/pages/admin/LLMSpend";
 import AuthEvents from "@/pages/admin/AuthEvents";
 import AdminIndex from "@/pages/admin/AdminIndex";
-import QuickResults from "@/pages/QuickResults";
+import SandboxV2 from "@/pages/SandboxV2";
 import Manage from "@/pages/Manage";
 import Enterprise from "@/pages/Enterprise";
 import Decks from "@/pages/Decks";
 import SolvaApp from "@/pages/SolvaApp";
 import SolvaSession from "@/pages/SolvaSession";
-import Sandbox from "@/pages/Sandbox";
-import SandboxV2 from "@/pages/SandboxV2";
-import SandboxGenerating from "@/pages/SandboxGenerating";
 import Cycle from "@/pages/Cycle";
 import Monitor from "@/pages/Monitor";
 import PlaysLibrary from "@/pages/PlaysLibrary";
@@ -132,52 +129,27 @@ function App() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/solva" element={<SolvaLanding />} />
-          {/* Phase 13.1 — legacy /solve URL alias. Solve was renamed to
-              Solva in Phase 13.1; the alias keeps any external link
-              (bookmarks, old emails, search-engine results) working
-              silently. Plan to retire in Phase 14. */}
-          <Route path="/solve" element={<Navigate to="/solva" replace />} />
           <Route path="/about" element={<About />} />
           <Route path="/features" element={<Features />} />
           <Route path="/security" element={<Security />} />
           <Route path="/plans" element={<Plans />} />
           <Route path="/enterprise" element={<EnterpriseMarketing />} />
           <Route path="/early-access" element={<EarlyAccess />} />
-          <Route path="/methodology" element={<Navigate to="/about#methodology" replace />} />
           <Route path="/blog" element={<Blog />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
           <Route path="/respond/:token" element={<RespondToChecklist />} />
           <Route path="/shared/:token" element={<SharedArtefact />} />
-          {/* Phase 11 ITEM A — /share/:token alias. The Chair invitation
-              emails out of studio.py currently use /shared/:token; this
-              alias keeps newer communications (and muscle-memory typing)
-              on the shorter URL without breaking older emails. Same
-              component, same read-only surface. */}
           <Route path="/share/:token" element={<SharedArtefact />} />
           <Route path="/signin" element={<PublicOnlyRoute><SignIn /></PublicOnlyRoute>} />
-          {/* URL aliases for muscle-memory / external-bookmark variants. The
-              app's internal links use /signin, but users (and search engines,
-              and old emails we've sent) commonly hit /sign-in or /login. The
-              catch-all below would otherwise bounce them silently to /, which
-              looks identical to the user as 'login is broken'. */}
-          <Route path="/sign-in" element={<Navigate to="/signin" replace />} />
-          <Route path="/login" element={<Navigate to="/signin" replace />} />
-          <Route path="/log-in" element={<Navigate to="/signin" replace />} />
           <Route path="/signup" element={<PublicOnlyRoute allowSandbox><SignUp /></PublicOnlyRoute>} />
-          <Route path="/sign-up" element={<Navigate to="/signup" replace />} />
-          <Route path="/register" element={<Navigate to="/signup" replace />} />
           <Route path="/invite/:token" element={<InviteAccept />} />
-          {/* Phase J — Sandbox v2 lands at /sandbox; the legacy 60-second
-              narrative remains reachable at /sandbox/legacy for 30-day
-              forensic fallback. /sandbox/generating/* is the legacy
-              companion route and stays wired to SandboxGenerating. */}
+          {/* M.4: legacy /sandbox/legacy + /sandbox/generating + /quick-results
+              retired. Sandbox v2 is the single canonical pre-auth demo
+              surface; legacy stub components were deleted. */}
           <Route path="/sandbox" element={<SandboxV2 />} />
-          <Route path="/sandbox/legacy" element={<Sandbox />} />
           <Route path="/sandbox/resume" element={<SandboxV2 />} />
-          <Route path="/sandbox/generating/:sessionId" element={<SandboxGenerating />} />
 
           <Route path="/app/first-session" element={<ProtectedRoute><FirstSession /></ProtectedRoute>} />
-          <Route path="/onboarding" element={<Navigate to="/app/first-session" replace />} />
           <Route path="/app" element={<Gated><AppHome /></Gated>} />
           <Route path="/app/cycle" element={<Gated><Cycle /></Gated>} />
           <Route path="/app/monitor" element={<Gated><Monitor /></Gated>} />
@@ -185,22 +157,8 @@ function App() {
           <Route path="/app/plays/:playId" element={<Gated><PlayView /></Gated>} />
           <Route path="/app/blog-admin" element={<Gated><BlogAdmin /></Gated>} />
           <Route path="/app/workspace" element={<Gated><Workspace /></Gated>} />
-          {/* Phase 13.2 — /app/prepare absorbed into Cycle Manager's Briefs
-              tab. Bookmarks and email deep-links keep working silently;
-              the legacy <Prepare /> page component is still exported but
-              now serves the Cycle tabs (`embedded` mode). Plan to retire
-              the redirect in Phase 14 once outbound emails have rotated. */}
-          <Route path="/app/prepare" element={<Navigate to="/app/cycle?tab=briefs" replace />} />
           <Route path="/app/inbound-queue" element={<Gated><InboundQueue /></Gated>} />
           <Route path="/app/activity" element={<Gated><Activity /></Gated>} />
-          {/* Apr-2026: Signals + Briefings consolidated into /app/prepare,
-              now further consolidated by Phase 13.2 into Cycle Manager.
-              The chain is: /app/highlights → /app/prepare → /app/cycle?tab=briefs.
-              Each hop is a Navigate replace so history stays clean. */}
-          <Route path="/app/highlights" element={<Navigate to="/app/cycle?tab=signals" replace />} />
-          <Route path="/app/briefings" element={<Navigate to="/app/cycle?tab=briefs" replace />} />
-          {/* v4.2: Ask merges into Workspace; any /app/ask redirects there */}
-          <Route path="/app/ask" element={<Navigate to="/app/workspace" replace />} />
           <Route path="/app/simulate" element={<Gated><Simulate /></Gated>} />
           <Route path="/app/lens" element={<Gated><LensRoom /></Gated>} />
           <Route path="/app/chat" element={<Gated><Chat /></Gated>} />
@@ -211,42 +169,20 @@ function App() {
           <Route path="/admin/llm-spend" element={<ProtectedRoute><LLMSpend /></ProtectedRoute>} />
           <Route path="/admin/auth-events" element={<ProtectedRoute><AuthEvents /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute><AdminIndex /></ProtectedRoute>} />
-          <Route path="/app/quick-results/:contextId/:docId" element={<Gated><QuickResults /></Gated>} />
           <Route path="/app/learn" element={<Gated><Learn /></Gated>} />
           <Route path="/app/learn/:id" element={<Gated><Learn /></Gated>} />
           <Route path="/app/manage" element={<Gated><Manage /></Gated>} />
           <Route path="/app/enterprise" element={<Gated><Enterprise /></Gated>} />
-          {/* Phase 13.3 — Work Studio is the new unified entry hub for
-              in-flight briefings/decks/reports across the active context.
-              `/app/decks` listing redirects here with the Decks tab
-              pre-selected; the per-deck detail page (`/app/decks/:id`)
-              still routes to the existing `<Decks />` component because
-              the deck detail UI has not moved. */}
           <Route path="/app/work-studio" element={<Gated><WorkStudio /></Gated>} />
-          <Route path="/app/decks" element={<Navigate to="/app/work-studio?view=decks" replace />} />
           <Route path="/app/decks/:deckId" element={<Gated><Decks /></Gated>} />
-          {/* Phase 13.3 — Pulse holding page. Real Pulse module ships in
-              Phase 14. The link in the primary top nav points here so
-              users discover the feature ahead of build. */}
           <Route path="/app/pulse" element={<Gated><PulsePlaceholder /></Gated>} />
           <Route path="/app/studio/composer/:kind/:artefactId" element={<Gated><StudioComposerPage /></Gated>} />
-          {/* Phase A — Solva is now a single production surface mounted
-              directly at /app/solva. The legacy AppSolva stub and the
-              v2-poc URL alias have both been retired. */}
           <Route path="/app/solva" element={<Gated><SolvaApp /></Gated>} />
-          <Route path="/app/solva/v2-poc" element={<Navigate to="/app/solva" replace />} />
-          {/* Phase I.2 — Solva v3 Guided Flow state-machine page. */}
           <Route path="/app/solva/session/new" element={<Gated><SolvaSession /></Gated>} />
           <Route path="/app/solva/session/:sessionId" element={<Gated><SolvaSession /></Gated>} />
-          {/* Legacy /app/solve alias for muscle memory and external
-              bookmarks. Redirects to the v2 surface. */}
-          <Route path="/app/solve" element={<Navigate to="/app/solva" replace />} />
           <Route path="/app/documents/:id" element={<Gated><DocumentRouteSwitch /></Gated>} />
           <Route path="/app/contexts" element={<Gated><ContextPortfolio /></Gated>} />
-          {/* Phase 15.2 — cosmetic alias renaming Contexts → Companies in
-              user-facing copy. Backend paths stay /api/contexts/* so we
-              keep /app/contexts functional and add /app/companies for the
-              renamed UI vocabulary + email links. */}
+          {/* Phase 15.2 cosmetic alias: /app/companies alongside /app/contexts. */}
           <Route path="/app/companies" element={<Gated><ContextPortfolio /></Gated>} />
           <Route path="/app/companies/new" element={<Gated><NewContext /></Gated>} />
           <Route path="/app/contexts/new" element={<Gated><NewContext /></Gated>} />

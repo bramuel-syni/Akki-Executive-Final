@@ -87,7 +87,7 @@ async def delete_committee(
         {"context_id": context_id, "committee_id": committee_id},
         {"$unset": {"committee_id": ""}},
     )
-    await db.briefings.update_many(
+    await db.boardpacks.update_many(
         {"context_id": context_id, "committee_id": committee_id},
         {"$unset": {"committee_id": ""}},
     )

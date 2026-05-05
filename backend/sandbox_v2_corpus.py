@@ -1292,10 +1292,24 @@ def pick_pulse_signals(role: str, org_type: str = "") -> List[Dict[str, Any]]:
     return out
 
 
-def pick_studio_sources(role: str, org_type: str = "") -> List[Dict[str, Any]]:
+def pick_studio_sources(
+    role: str,
+    org_type: str = "",
+    include_strategic: bool = False,
+) -> List[Dict[str, Any]]:
     """Return the 3 Step 3 source documents (verbatim) plus a derived
     `keywords` list per doc — used by the provenance heuristic in
-    `routers/sandbox.py::sandbox_v2_add_sentence`."""
+    `routers/sandbox.py::sandbox_v2_add_sentence`.
+
+    Phase L.1: pass `include_strategic=True` to splice the per-context
+    strategic documents (from `sandbox_v2_strategic.STRATEGIC_DOCUMENTS`)
+    in after the tactical 3, flagged with `strategic: True`. Callers who
+    run Solva at strategic time horizons (capital_allocation,
+    market_entry, succession, strategic_transformation,
+    theory_of_change_revision) should opt in. The existing Sandbox v2
+    Step 3 demo keeps the default False so per-context content stays
+    byte-identical.
+    """
     ctx, _, _ = _ctx_and_role(role, org_type)
     docs = ctx["step_3_workstudio"]["source_documents"]
     out: List[Dict[str, Any]] = []
@@ -1306,7 +1320,21 @@ def pick_studio_sources(role: str, org_type: str = "") -> List[Dict[str, Any]]:
             "title": d["title"],
             "body": d["body"],
             "keywords": _keywords_from_text(d["body"]),
+            "strategic": False,
         })
+    if include_strategic:
+        # Local import to avoid a circular dependency at module load.
+        from sandbox_v2_strategic import pick_strategic_documents
+        routed_org = route_org_type(org_type, role)
+        for sd in pick_strategic_documents(routed_org):
+            out.append({
+                "id": sd["id"],
+                "kind": sd["kind"],
+                "title": sd["title"],
+                "body": sd["body"],
+                "keywords": _keywords_from_text(sd["body"]),
+                "strategic": True,
+            })
     return out
 
 
@@ -1324,8 +1352,58 @@ def pick_provenance_refusal(role: str, org_type: str = "") -> str:
 
 
 def pick_cycle_snapshot(role: str, org_type: str = "") -> Dict[str, Any]:
+    """Return the Step 4 Cycle Manager snapshot for the routed context.
+
+    Phase L.1 enrichment: the snapshot now carries two additional
+    fields derived from the Strategic Documents Pack so the
+    `strategic_baseline` section reads as institutional memory rather
+    than a bullet list of targets.
+
+      • `strategic_plan_refs` — list of strategic documents (id / title
+        / kind / preview / pack_section) for the routed org_type,
+        suitable for rendering as chips above the baseline bullets.
+      • `strategic_baseline_source` — the plan title surfaced as a
+        "Grounded in:" caption under the section kicker, so the viewer
+        can see which strategic document the baseline derives from.
+
+    The pre-existing `strategic_baseline` list of strings is kept
+    unchanged — both fields are additive to preserve the Step 4 UI
+    contract.
+    """
     ctx, _, _ = _ctx_and_role(role, org_type)
-    return ctx["step_4_cyclemanager"]
+    snap = dict(ctx["step_4_cyclemanager"])  # shallow copy
+
+    # Pull strategic docs for the routed org_type.
+    from sandbox_v2_strategic import (  # local import — avoid cycle at load
+        pick_strategic_documents, STRATEGIC_ORG_DISPLAY_NAMES,
+    )
+    routed_org = route_org_type(org_type, role)
+    strat_docs = pick_strategic_documents(routed_org)
+
+    snap["strategic_plan_refs"] = [
+        {
+            "id": d["id"],
+            "title": d["title"],
+            "kind": d["kind"],
+            "preview": d["preview"],
+            "pack_section": d["pack_section"],
+        }
+        for d in strat_docs
+    ]
+
+    # Prefer the actual strategic_plan document as the baseline source;
+    # fall back to the first strategic doc if none is explicitly marked.
+    plan = next((d for d in strat_docs if d["kind"] == "strategic_plan"), None)
+    if plan is None and strat_docs:
+        plan = strat_docs[0]
+    if plan:
+        org_display = STRATEGIC_ORG_DISPLAY_NAMES.get(routed_org, "")
+        caption = f"{org_display} · {plan['title']}" if org_display else plan["title"]
+        snap["strategic_baseline_source"] = caption
+    else:
+        snap["strategic_baseline_source"] = None
+
+    return snap
 
 
 # ---------------------------------------------------------------------------

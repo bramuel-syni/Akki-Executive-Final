@@ -435,7 +435,7 @@ def _seed_blocks_from_artefact(artefact: Dict[str, Any], kind: str) -> List[Dict
 # ---------------------------------------------------------------------------
 def _artefact_collection(kind: str) -> Any:
     return {
-        "briefing": db.briefings,
+        "briefing": db.boardpacks,
         "deck": db.decks,
         "report": db.reports,
     }.get(kind)

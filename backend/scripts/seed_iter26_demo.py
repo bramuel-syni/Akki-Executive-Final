@@ -220,7 +220,7 @@ async def main():
          "risk_briefing"),
     ]
     for bid, title, body, kind in UBORA_BRIEFINGS:
-        await db.briefings.update_one({"id": bid}, {"$set": {
+        await db.boardpacks.update_one({"id": bid}, {"$set": {
             "id": bid, "context_id": UBORA_CTX, "title": title,
             "body": body, "kind": kind, "status": "published",
             "created_at": now_iso, "published_at": now_iso,
@@ -293,7 +293,7 @@ async def main():
     print(f"  reportees active: {await db.reportees.count_documents({'context_id': UBORA_CTX, 'status': 'active'})}")
     print(f"  checklists: {await db.checklists.count_documents({'context_id': UBORA_CTX})}")
     print(f"  submissions: {await db.submissions.count_documents({'context_id': UBORA_CTX})}")
-    print(f"  briefings: {await db.briefings.count_documents({'context_id': UBORA_CTX})}")
+    print(f"  briefings: {await db.boardpacks.count_documents({'context_id': UBORA_CTX})}")
     print(f"  documents: {await db.documents.count_documents({'context_id': UBORA_CTX})}")
     client.close()
 

@@ -394,7 +394,185 @@ async def get_document_detail(
     out["extracted_text"] = d.get("extracted_text", "")[:MAX_EXTRACT_CHARS_OUT]
     if d.get("akki_summary"):
         out["akki_summary"] = d["akki_summary"]
+    # Phase L.4: surface the Synisense + sensitivity-scorer artefacts on
+    # the detail endpoint so the document page can render them and the
+    # Strategic-Pack ingestion can be verified end-to-end.
+    for k in (
+        "body_redacted", "synisense_version",
+        "sensitivity_score", "sensitivity_band", "sensitivity_label",
+        "sensitivity_reasons", "doc_kind",
+        # Phase M.2: surface the journal-specific fields too.
+        "source_channel", "journal_commentary",
+        "journal_commentary_generated_at", "journal_commentary_synisense_version",
+    ):
+        if k in d:
+            out[k] = d[k]
     return out
+
+
+# ═════════════════════════════════════════════════════════════════════════
+#  Phase M.2 — Document Journal endpoints
+#
+#  The Document Journal is the per-context chronological listing of every
+#  document the context has ever received (upload / inbound email /
+#  share / sandbox). The listing is mostly handled by the existing
+#  GET /api/contexts/{cid}/documents — these endpoints add the two
+#  pieces the Journal UX needs that the existing surface does not:
+#
+#    • A row-projection that joins source_channel + cached commentary
+#      flags so the listing can render markers without N+1 round trips.
+#    • An on-demand commentary generator (Akki dry FT-voice take on
+#      one specific document; cached on the row).
+# ═════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/contexts/{context_id}/document-journal")
+async def get_document_journal(
+    context_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Listing projection for the Document Journal surface.
+
+    Returns docs newest-first with the marker fields the UI renders
+    inline (sensitivity, data_trust, source_channel, has_commentary).
+    """
+    cursor = db.documents.find(
+        {"context_id": context_id},
+        {
+            "_id": 0,
+            "id": 1, "name": 1, "title": 1, "doc_kind": 1, "doc_type": 1,
+            "data_trust": 1, "sensitivity_band": 1, "sensitivity_score": 1,
+            "source_channel": 1, "source": 1, "status": 1,
+            "size_bytes": 1, "preview": 1,
+            "created_at": 1, "updated_at": 1,
+            "journal_commentary": 1, "journal_commentary_generated_at": 1,
+        },
+    ).sort("created_at", -1)
+    rows = await cursor.to_list(500)
+    items = []
+    for r in rows:
+        items.append({
+            "id": r["id"],
+            "title": r.get("name") or r.get("title") or "(untitled)",
+            "doc_kind": r.get("doc_kind"),
+            "doc_type": r.get("doc_type"),
+            "data_trust": r.get("data_trust") or "trusted",
+            "sensitivity_band": r.get("sensitivity_band") or "internal",
+            "sensitivity_score": r.get("sensitivity_score"),
+            "source_channel": r.get("source_channel") or "upload",
+            "source": r.get("source"),
+            "status": r.get("status") or "ready",
+            "size_bytes": r.get("size_bytes"),
+            "preview": (r.get("preview") or "")[:240],
+            "created_at": r.get("created_at"),
+            "updated_at": r.get("updated_at"),
+            "has_commentary": bool(r.get("journal_commentary")),
+            "commentary_generated_at": r.get("journal_commentary_generated_at"),
+        })
+    return {"items": items, "count": len(items)}
+
+
+@router.post("/contexts/{context_id}/documents/{doc_id}/journal-commentary")
+async def journal_commentary(
+    context_id: str, doc_id: str,
+    refresh: bool = False,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Generate (or return cached) Akki commentary on a single document.
+
+    ~400 word target, FT-voice, dry, specific. Cached on the row;
+    subsequent calls return cached unless `?refresh=true`.
+    """
+    d = await db.documents.find_one(
+        {"id": doc_id, "context_id": context_id}, {"_id": 0},
+    )
+    if not d:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if d.get("journal_commentary") and not refresh:
+        return {
+            "doc_id": doc_id,
+            "commentary": d["journal_commentary"],
+            "commentary_redacted": d.get("journal_commentary_redacted")
+                                   or d["journal_commentary"],
+            "synisense_version": d.get("journal_commentary_synisense_version", 0),
+            "generated_at": d.get("journal_commentary_generated_at"),
+            "cached": True,
+        }
+
+    body = (d.get("extracted_text") or "")[:6000]
+    if not body.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Document has no extracted text — cannot generate commentary.",
+        )
+    title = d.get("name") or d.get("title") or "Untitled"
+
+    system = (
+        "You are Akki, an analytical co-pilot for board directors. Your "
+        "voice is Financial Times: dry, specific, plain. Never editorial. "
+        "Always grounded in the document. When evidence is thin, say so."
+    )
+    user = (
+        f"Document: {title}\n"
+        f"Type: {d.get('doc_kind') or d.get('doc_type') or 'general'}\n\n"
+        "Write a 350–450 word commentary on this document for the board. "
+        "Cover: what it claims, what is conspicuously absent, the two or "
+        "three points that warrant follow-up, and how it sits against "
+        "the strategic context. No headlines. Reference passages inline "
+        "where you cite them.\n\n"
+        f"=== DOCUMENT ===\n\n{body}\n"
+    )
+
+    from llm_service import call_llm
+    try:
+        llm_resp = await call_llm(
+            module="document_journal_commentary",
+            user_query=user,
+            system_override=system,
+            session_context={
+                "context_id": context_id,
+                "account_id": ctx["account"]["id"],
+            },
+            tier="standard",
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"LLM commentary failed: {exc}")
+    commentary = (llm_resp.get("response") if isinstance(llm_resp, dict) else "") or ""
+    commentary = commentary.strip()
+    if not commentary:
+        raise HTTPException(status_code=502, detail="LLM returned empty commentary.")
+
+    from services.synisense import pipeline as synisense_pipeline
+    syn_out = await synisense_pipeline.run(
+        commentary, context_id=context_id, surface="briefing",
+        mode="redact", account_id=ctx["account"]["id"],
+    )
+
+    new_version = (d.get("journal_commentary_synisense_version") or 0) + 1
+    generated_at = iso(now())
+    update = {
+        "journal_commentary": commentary,
+        "journal_commentary_redacted": syn_out.get("redacted_text") or commentary,
+        "journal_commentary_synisense_version": new_version,
+        "journal_commentary_generated_at": generated_at,
+        "updated_at": generated_at,
+    }
+    await db.documents.update_one({"id": doc_id}, {"$set": update})
+
+    await write_audit(
+        context_id, ctx["account"]["id"], "document.journal_commentary_generated",
+        "document", doc_id, {"synisense_version": new_version},
+    )
+
+    return {
+        "doc_id": doc_id,
+        "commentary": commentary,
+        "commentary_redacted": update["journal_commentary_redacted"],
+        "synisense_version": new_version,
+        "generated_at": generated_at,
+        "cached": False,
+    }
 
 
 @router.patch("/contexts/{context_id}/documents/{doc_id}")

@@ -68,10 +68,10 @@ from routers import enterprise as enterprise_router  # noqa: E402
 from routers import llm_quota as llm_quota_router  # noqa: E402
 from routers import admin_llm_spend as admin_llm_spend_router  # noqa: E402
 from routers import decks as decks_router  # noqa: E402
-from routers import solva as solva_router  # noqa: E402
+# M.4: solva v1 (routers/solva.py interest stub + routers/solva_engine.py
+# forensic GETs) deleted. Solva v2 is the only Solva surface now.
 from routers import walkin as walkin_router  # noqa: E402
 from routers import admin_auth_events as admin_auth_events_router  # noqa: E402
-from routers import solva_engine as solva_engine_router  # noqa: E402
 from routers import studio as studio_router  # noqa: E402
 from routers import studio_blocks as studio_blocks_router  # noqa: E402
 from routers import product_features as product_features_router  # noqa: E402
@@ -93,7 +93,15 @@ logging.basicConfig(
 # -----------------------------------------------------------------------------
 # App bootstrap
 # -----------------------------------------------------------------------------
-app = FastAPI(title=APP_NAME)
+# M.4 #10 — FastAPI introspection mounted under /api so the K8s ingress
+# (which only forwards /api/* to backend:8001) can serve them. Production
+# disables redoc but keeps /api/docs + /api/openapi.json reachable.
+app = FastAPI(
+    title=APP_NAME,
+    docs_url="/api/docs",
+    redoc_url=None,
+    openapi_url="/api/openapi.json",
+)
 
 # Register routers (all share /api prefix internally)
 app.include_router(auth_router.router)
@@ -133,10 +141,9 @@ app.include_router(enterprise_router.router)
 app.include_router(llm_quota_router.router)
 app.include_router(admin_llm_spend_router.router)
 app.include_router(decks_router.router)
-app.include_router(solva_router.router)
+# M.4: solva_router + solva_engine_router include_router calls removed.
 app.include_router(walkin_router.router)
 app.include_router(admin_auth_events_router.router)
-app.include_router(solva_engine_router.router)
 app.include_router(studio_router.router)
 app.include_router(studio_blocks_router.router)
 app.include_router(product_features_router.router)
@@ -345,49 +352,12 @@ async def on_startup():
     # /admin/auth/events panel. Time-ordered queries are the only access
     # pattern, so a single descending index on `at` is enough.
     await db.auth_events.create_index([("at", -1)])
-    # Iter61 — Solve sessions. Resume queries are scoped per account and
-    # ordered by recency; admin views by cluster. Two indexes is enough.
-    await db.solve_sessions.create_index([("account_id", 1), ("updated_at", -1)])
-    await db.solve_sessions.create_index([("cluster_id", 1), ("started_at", -1)])
-    await db.solve_clusters.create_index("id", unique=True)
-
-    # Iter61 — seed the cluster taxonomy. Idempotent; operator edits in
-    # Mongo survive redeploys.
-    try:
-        from solve_clusters_seed import seed_solve_clusters
-        seed_result = await seed_solve_clusters(db)
-        if seed_result["seeded_count"]:
-            logger.info("Seeded %d Solve clusters: %s",
-                        seed_result["seeded_count"], seed_result["ids"])
-    except Exception as e:  # noqa: BLE001
-        logger.warning("Solve cluster seeding skipped: %s", e)
-
-    # Iter62 Wave 3 — curated comparables corpus for Triangulation v2.
-    # Indexed on cluster_id + sector_tag so the engine can pick the closest
-    # 2-3 anonymised diagnoses per Pro Synthesis call.
-    await db.solve_comparables.create_index("id", unique=True)
-    await db.solve_comparables.create_index([("cluster_id", 1), ("sector_tag", 1)])
-    try:
-        from solve_comparables_seed import seed_solve_comparables
-        cmp_result = await seed_solve_comparables(db)
-        if cmp_result["seeded_count"]:
-            logger.info("Seeded %d Solve comparables: %s",
-                        cmp_result["seeded_count"], cmp_result["ids"])
-    except Exception as e:  # noqa: BLE001
-        logger.warning("Solve comparables seeding skipped: %s", e)
-
-    # Iter62 Wave 2 — Solve handoff artefacts created from completed sessions
-    # (briefings, decks, cycle questions). One row per handoff; idempotent
-    # within a session via natural key on (session_id, target).
-    await db.solve_handoffs.create_index([("account_id", 1), ("created_at", -1)])
-    await db.solve_handoffs.create_index([("session_id", 1), ("target", 1)])
-
-    # Iter62 — monthly free-tier deep-synthesis grant for non-Pro users.
-    # One row per (account_id, month_utc); the engine increments at first
-    # use and decisions whether to allow further free deep calls.
-    await db.solve_free_grants.create_index(
-        [("account_id", 1), ("month_utc", 1)], unique=True
-    )
+    # M.4 — Solva v1 (`solve_*`) collections renamed to
+    # `solva_v1_*_archive` and treated as forensic read-only. The
+    # boot-time index creation + seed_solve_clusters / seed_solve_comparables
+    # invocations were removed: the v1 forensic GETs were retired in M.4
+    # (routers/solva.py + routers/solva_engine.py deleted), so nothing
+    # reads those collections at runtime.
 
     # Iter64 — Studio surface (Decks + Reports + Briefings unified).
     # Read-receipt tracking is keyed on (artefact_kind, artefact_id, account_id, day_utc).
@@ -400,7 +370,7 @@ async def on_startup():
     await db.studio_shares.create_index([("artefact_kind", 1), ("artefact_id", 1)])
     await db.studio_shares.create_index([("context_id", 1), ("created_at", -1)])
     await db.decks.create_index([("context_id", 1), ("created_at", -1)])
-    await db.briefings.create_index([("context_id", 1), ("status", 1), ("created_at", -1)])
+    await db.boardpacks.create_index([("context_id", 1), ("status", 1), ("created_at", -1)])
 
     # Phase 11 ITEM B — validator soft-cap counter. Unique compound on
     # (day_utc, surface) makes concurrent increments race-safe.
@@ -449,9 +419,9 @@ async def on_startup():
     await db.solva_cycle_handoff_queue.create_index("id", unique=True)
     await db.solva_cycle_handoff_queue.create_index([("account_id", 1), ("status", 1), ("created_at", -1)])
     await db.solva_cycle_handoff_queue.create_index("session_id")
-    # Idempotency-by-session is enforced in routers/solva_v2.py via the
-    # solve_handoffs lookup; index that by session+target for fast read.
-    await db.solve_handoffs.create_index([("session_id", 1), ("target", 1)])
+    # M.4 — solve_handoffs index removed. Solva v2 idempotency now lives
+    # in solva_cycle_handoff_queue; the v1 collection is archived as
+    # solva_v1_handoffs_archive.
 
     # Phase 15.1 — retry telemetry. TTL 30 days; aggregated 24h on the
     # admin LLM spend dashboard, grouped by surface.

@@ -186,10 +186,10 @@ async def _resolve_auto_cluster(intent: str) -> str:
         candidate = _AUTO_CLUSTER_DEFAULT
     # Confirm the chosen cluster exists; if it doesn't (custom DB), pick
     # any active cluster as a last resort so the session can still start.
-    exists = await db.solve_clusters.find_one({"id": candidate}, {"_id": 0, "id": 1})
+    exists = await db.solva_clusters.find_one({"id": candidate}, {"_id": 0, "id": 1})
     if exists:
         return candidate
-    fallback = await db.solve_clusters.find_one({}, {"_id": 0, "id": 1})
+    fallback = await db.solva_clusters.find_one({}, {"_id": 0, "id": 1})
     return (fallback or {}).get("id") or _AUTO_CLUSTER_DEFAULT
 
 
@@ -766,7 +766,7 @@ async def start_session(
                 "auto_cluster=true (default) or supply cluster_id."
             ),
         )
-    cluster = await db.solve_clusters.find_one({"id": resolved_cluster_id}, {"_id": 0})
+    cluster = await db.solva_clusters.find_one({"id": resolved_cluster_id}, {"_id": 0})
     if not cluster:
         raise HTTPException(status_code=404, detail="Unknown cluster.")
 
@@ -983,7 +983,7 @@ async def fork_session(
             ),
         )
 
-    cluster = await db.solve_clusters.find_one(
+    cluster = await db.solva_clusters.find_one(
         {"id": parent.get("cluster_id")}, {"_id": 0},
     )
     if not cluster:
@@ -1229,7 +1229,7 @@ async def post_turn(
     except InvalidLayerTransition as exc:
         raise HTTPException(status_code=409, detail=str(exc))
 
-    cluster = await db.solve_clusters.find_one({"id": rec["cluster_id"]}, {"_id": 0})
+    cluster = await db.solva_clusters.find_one({"id": rec["cluster_id"]}, {"_id": 0})
     if not cluster:
         raise HTTPException(status_code=410, detail="Cluster has been removed.")
 
@@ -1678,7 +1678,7 @@ async def handoff_cycle_via_review(
             status_code=409,
             detail="Session must reach Reflection before cycle handoff.",
         )
-    existing = await db.solve_handoffs.find_one(
+    existing = await db.solva_handoffs.find_one(
         {"session_id": sid, "target": "cycle"}, {"_id": 0, "id": 1, "review_queue_id": 1}
     )
     if existing:
@@ -1714,7 +1714,7 @@ async def handoff_cycle_via_review(
     }
     await db.solva_cycle_handoff_queue.insert_one(review_item)
 
-    await db.solve_handoffs.insert_one({
+    await db.solva_handoffs.insert_one({
         "id": handoff_id,
         "session_id": sid,
         "account_id": account["id"],

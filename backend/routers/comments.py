@@ -59,7 +59,7 @@ async def _assert_artefact_exists(
             {"id": artefact_id, "context_id": context_id}, {"_id": 0, "id": 1}
         )
     elif artefact_type == "briefing":
-        ok = await db.briefings.find_one(
+        ok = await db.boardpacks.find_one(
             {"id": artefact_id, "context_id": context_id, "status": "active"}, {"_id": 0, "id": 1}
         )
     elif artefact_type == "share":

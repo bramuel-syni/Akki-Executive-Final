@@ -43,34 +43,37 @@ def _run_seed() -> str:
 
 @pytest.mark.asyncio
 async def test_seed_julius_opio_creates_then_idempotent():
-    """First run creates; second run hits the ↺ updated branches."""
+    """First run creates; second run hits the ↺ updated branches.
+
+    Phase L.3 amended this contract: Julius now owns 5 contexts (the
+    original 4 plus "Government Executive") and the seed also runs the
+    strategic-pack mirror. Idempotence still holds — second run
+    creates 0 docs and reasserts all 5 contexts via the ↺ branch.
+    """
     out1 = _run_seed()
     out2 = _run_seed()
 
-    # Run 1 — at minimum the four contexts get created OR exist+reasserted
-    # (the order between this test and ad-hoc runs is non-deterministic).
-    # We only require: both runs succeed and log the four context names.
     for spec_name in (
         "Personal NED Seat",
         "Sponsored NED Seat",
         "Executive Role",
         "Enterprise Executive",
+        "Government Executive",
     ):
         assert spec_name in out1
         assert spec_name in out2
 
-    # Run 2 must hit the idempotent path — every line should be ↺,
-    # never ✚, on the second invocation.
     assert "✚ Account created" not in out2, "Re-run should not re-create the account."
-    assert out2.count("↺ Context exists") == 4
-    assert "memberships          = 4" in out2
-    assert "contexts owned       = 4" in out2
+    assert out2.count("↺ Context exists") == 5
+    assert "memberships          = 5" in out2
+    assert "contexts owned       = 5" in out2
+    # Phase L.3 strategic mirror also idempotent on re-run
+    assert "docs_created          = 0" in out2
 
 
 @pytest.mark.asyncio
 async def test_julius_login_succeeds_after_seed():
     _run_seed()
-    transport = httpx.ASGITransport  # noqa: F841 — fall back to real HTTP
     base = os.environ.get("BACKEND_URL", "http://localhost:8001")
     async with httpx.AsyncClient(base_url=base, timeout=10.0) as ac:
         r = await ac.post(
@@ -86,20 +89,18 @@ async def test_julius_login_succeeds_after_seed():
     assert data["account"]["plan"] == "enterprise"
     assert data["account"]["subscription_status"] == "active"
     assert data["account"]["first_session"]["status"] == "skipped"
-    # 4 contexts attached on login
+    # Phase L.3 — 5 contexts attached on login (added Government).
+    # `executive_personal` appears twice (Executive Role + Government
+    # Executive) — the assertion uses a multiset comparison.
     contexts = data.get("contexts") or []
     types = sorted(c["type"] for c in contexts)
     assert types == sorted([
         "executive_enterprise",
         "executive_personal",
+        "executive_personal",
         "ned_personal",
         "ned_sponsored",
     ])
-    # All 4 carry the standard 6-committee set
-    # (committee data is on the context document; the login payload
-    # may or may not surface it depending on `sanitize_context`. We
-    # don't insist on it here; the seed-side mongo cross-check in
-    # the next test asserts the committees.)
 
 
 @pytest.mark.asyncio
