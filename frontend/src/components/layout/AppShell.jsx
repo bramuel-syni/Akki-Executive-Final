@@ -37,6 +37,7 @@ import TrustPanel from "@/components/governance/TrustPanel";
 // said "Replace current nav with..."). Routes still exist; users land on
 // them via the top nav, the command palette (⌘K), or direct URL.
 import CycleContextIndicator from "@/components/layout/CycleContextIndicator";
+import ContextSwitchModal from "@/components/layout/ContextSwitchModal";
 import useKeyboardShortcuts from "@/hooks/useKeyboardShortcuts";
 import KeyboardHelp from "@/components/layout/KeyboardHelp";
 
@@ -878,6 +879,11 @@ export default function AppShell({ children }) {
           (handled by useKeyboardShortcuts) and the inline keyboard
           button in the header (mouse path). */}
       <KeyboardHelp open={helpOpen} onOpenChange={setHelpOpen} />
+
+      {/* Phase A (Memo Item 5) — verbatim memo switch-modal. Mounted
+          here so it can render over any /app surface without coupling
+          to a specific page. Driven by AuthContext.pendingSwitchModal. */}
+      <ContextSwitchModal />
     </div>
   );
 }

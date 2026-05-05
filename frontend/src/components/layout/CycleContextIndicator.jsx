@@ -78,7 +78,20 @@ export default function CycleContextIndicator() {
           return (
             <DropdownMenuItem
               key={c.id}
-              onClick={() => { if (!active) switchContext(c.id); }}
+              onClick={async () => {
+                if (active) return;
+                try {
+                  await switchContext(c.id, { fromContextId: activeContext.id });
+                  // Modal opens via AppShell; on dismiss the page reloads.
+                } catch (e) {
+                  // Defensive — server-side validation refused the
+                  // switch (e.g. membership revoked between page load
+                  // and click). The api.js interceptor has already
+                  // emitted akki:rbac-error; we just stop here.
+                  // eslint-disable-next-line no-console
+                  console.warn("[switcher] switch refused:", e?.response?.data || e);
+                }
+              }}
               className="cursor-pointer flex items-center gap-2 py-2"
               data-testid={`cycle-context-switch-${c.id}`}
             >
