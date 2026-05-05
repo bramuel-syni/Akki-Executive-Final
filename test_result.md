@@ -267,44 +267,53 @@ frontend:
 
   - task: "Phase J.3 — Sandbox v2 Step 3 Work Studio split + provenance refusal"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/src/components/sandbox/v2/Step3StudioWrapper.jsx, /app/backend/routers/sandbox.py, /app/backend/sandbox_v2_corpus.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         -working: "NA"
           -agent: "main"
           -comment: "Step3StudioWrapper.jsx 2-column split: source chips (left, click-to-expand) vs composition (right). Composition phases: 5 narration lines rotating over ~75 s under aria-busy=true, then composed-draft reveal with [Doc N]-style marker hover/keyboard tooltips, then provenance probe (textarea → POST /api/sandbox/v2/sessions/{sid}/studio/add-sentence). Backend keyword-overlap check refuses unsourced claims using pick_provenance_refusal(role, org_type) — Bank uses pack verbatim; other 4 contexts use the same FT cadence generalised. Tests: 3 new pytests (test_studio_add_sentence_refusal_voice_per_context_bank, _healthcare; test_studio_add_sentence_accepted_returns_citation) all pass. Lint clean."
+        -working: true
+          -agent: "testing"
+          -comment: "PASS desktop + mobile. Narration aria-busy verified, composed draft + [Doc N] citation pills hover-tooltips verified, kangaroo-sentence triggered the per-context Bank refusal voice, provisioning-sentence accepted with 3 corpus citations. Screenshots 05-09 + m05/m07/m08 captured."
 
   - task: "Phase J.4 — Sandbox v2 Cycle snapshot + Closing + save-and-send (Resend test-mode aware)"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/src/components/sandbox/v2/Step4CycleSnapshot.jsx, /app/frontend/src/components/sandbox/v2/ClosingStep.jsx, /app/backend/routers/sandbox.py, /app/backend/email_service.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         -working: "NA"
           -agent: "main"
           -comment: "Step4CycleSnapshot.jsx is read-only and rendered from pick_cycle_snapshot(role, org_type) via GET /api/sandbox/v2/sessions/{sid}/cycle-snapshot — Timeline / Open items (with status pills) / Strategic baseline / Pulse-derived items, with the corpus's voice field used verbatim as the top banner. ClosingStep.jsx surfaces the user's hope answer back to them, then a 3-CTA equal-weight conversion block (Demo / Early access / Save & send). Save-and-send POSTs /api/sandbox/v2/sessions/{sid}/save-and-send which persists captured email, builds a resume URL (PUBLIC_APP_URL/sandbox/resume?token=<sid>), best-effort attaches the Solva v2 PDF if a solva_session_id exists (via solva_artefact_export.build_pdf on a thread). email_service.send_email gained an `attachments` parameter and now detects Resend test-mode 403 → returns delivery_mode='test_mode_restricted' which the UI surfaces as a friendly notice rather than a hard error. Test contract update: existing test_save_and_send_persists_email_and_returns_resume_url updated to allow {sent, noop, test_mode_restricted, error} and ok=true only for {sent, noop}. New test test_cycle_snapshot_returns_full_shape verifies snapshot contract. 29/29 pytests pass for Phase J. Lint clean."
+        -working: true
+          -agent: "testing"
+          -comment: "PASS desktop + mobile. Cycle banner contains 'snapshot' + 'architecture is real'. Hope answer surfaced verbatim in quote-block. Save-and-send returned test_mode_restricted with a /sandbox/resume?token=... URL — friendly UI notice rendered, no hard error. Screenshots 10-15 + m11/m14 captured."
 
   - task: "Phase J.6 — Sandbox v2 visual register, ARIA, contrast audit"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/scripts/contrast_audit.py, /app/frontend/src/components/sandbox/v2/StepShell.jsx, /app/frontend/src/components/sandbox/v2/ProgressChrome.jsx"
     stuck_count: 0
     priority: "medium"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         -working: "NA"
           -agent: "main"
           -comment: "Visual register: Welcome PAPER / Step 1 + Reveal CREAM / Step 3 + Reveal LIGHT / Step 4 + Reveal PAPER (already wired in StepShell.jsx by J.1). Progress chrome and Exit Sandbox link visible on Steps 1/3/4 (already wired in ProgressChrome.jsx). ARIA: every reveal carries role='status' aria-live='polite' carrying full reveal text from frame 0 (visual fades are aria-hidden); Step 3 narration column is aria-busy='true' while rotating; citation pills have tabIndex=0 + role='button'. backend/scripts/contrast_audit.py extended with 21 Sandbox v2 surface combinations — all PASS WCAG AA (full report logged). Lint clean. Existing Phase A→I tests remain green."
+        -working: true
+          -agent: "testing"
+          -comment: "PASS. role=status aria-live=polite verified on every reveal. aria-busy=true verified during Step 3 narration. Mobile pass (390x844) confirms Step 3 stacks single-column."
 
 metadata:
   created_by: "main_agent"
-  version: "1.1"
-  test_sequence: 2
+  version: "1.2"
+  test_sequence: 3
   run_ui: false
 
 test_plan:
