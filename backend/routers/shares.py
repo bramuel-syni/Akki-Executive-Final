@@ -16,7 +16,7 @@ import uuid
 import logging
 from typing import Any, Dict, List, Optional, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, EmailStr, Field
 
 from core import (
@@ -24,6 +24,7 @@ from core import (
     get_current_account, require_context_membership,
 )
 from email_service import send_email
+from services.privacy_wall import project_for_pulse
 
 logger = logging.getLogger("akki.shares")
 
@@ -402,6 +403,7 @@ async def revoke_share(share_id: str, current: Dict[str, Any] = Depends(get_curr
 # -----------------------------------------------------------------------------
 @router.get("/me/home/stream")
 async def aggregated_stream(
+    response: Response,
     current: Dict[str, Any] = Depends(get_current_account),
     limit: int = 30,
     cursor: Optional[str] = Query(
@@ -417,15 +419,25 @@ async def aggregated_stream(
     active context the user is a member of. Each item carries
     `context_id` + `context_name` so the UI can render the context badge.
 
+    Phase 2b (2026-05-05) — every cross-context row is now projected
+    through `services.privacy_wall.project_for_pulse(...)` so only
+    metadata-class fields cross the boundary. Content fields (signal
+    `headline`/`summary`, boardpack `commentary`/`title`, document
+    `name`/`extracted_text`, inbound subject/sender) are dropped.
+
     Response shape (additive — v1 callers still work):
         {
-          "signals": [...],     # v1
-          "briefings": [...],   # v1
-          "contexts": [...],    # v1
-          "documents": [...],   # Home v2 — recent uploads
-          "approvals": [...],   # Home v2 — items awaiting review (cap 5)
-          "next_cursor": str | None,  # pass to ?cursor= to fetch older
+          "signals": [...],      # metadata only — id, context_id, status, type, ...
+          "briefings": [...],    # metadata only
+          "contexts": [...],
+          "documents": [...],    # metadata only
+          "approvals": [...],    # metadata only — no headline/subject/sender
+          "next_cursor": str | None,
         }
+    A `x-privacy-wall-projected-keys` debug header lists the union of
+    keys that survived projection per row-type, so a tester can
+    verify the wall is in front of this surface. The header is
+    informational only and slated for removal in Phase 4.
     """
     memberships = await db.memberships.find(
         {"account_id": current["id"], "status": "active"},
@@ -465,22 +477,23 @@ async def aggregated_stream(
         "context_id": {"$in": active_ctx_ids},
     })
 
-    signals = await db.signals.find(signals_q, {"_id": 0}) \
+    # Phase 2b — read full rows then project. The Mongo projection is
+    # NOT relied on for privacy; the wall is. We still strip `_id`
+    # because Motor returns `ObjectId` which isn't JSON-safe.
+    raw_signals = await db.signals.find(signals_q, {"_id": 0}) \
         .sort("created_at", -1).limit(per_kind_cap).to_list(per_kind_cap)
-    briefings = await db.boardpacks.find(briefings_q, {"_id": 0}) \
+    raw_briefings = await db.boardpacks.find(briefings_q, {"_id": 0}) \
         .sort("created_at", -1).limit(per_kind_cap).to_list(per_kind_cap)
-    # Keep the documents projection light — the heaviest fields (paragraphs,
-    # raw_text) aren't needed for the river card.
-    documents = await db.documents.find(
-        documents_q,
-        {
-            "_id": 0, "id": 1, "name": 1, "context_id": 1,
-            "created_at": 1, "updated_at": 1, "kind": 1,
-            "trust_score": 1, "trust_tier": 1, "page_count": 1,
-        },
-    ).sort("created_at", -1).limit(per_kind_cap).to_list(per_kind_cap)
+    raw_documents = await db.documents.find(documents_q, {"_id": 0}) \
+        .sort("created_at", -1).limit(per_kind_cap).to_list(per_kind_cap)
 
-    # Attach context metadata (for the UI badge)
+    signals = [project_for_pulse("signals", r) for r in raw_signals]
+    briefings = [project_for_pulse("boardpacks", r) for r in raw_briefings]
+    documents = [project_for_pulse("documents", r) for r in raw_documents]
+
+    # Re-attach `context_name` AFTER projection. The label belongs to a
+    # context the user has explicit membership of (from `memberships`),
+    # not to the row's content. Privacy-Wall-safe.
     for coll in (signals, briefings, documents):
         for item in coll:
             c = ctx_by_id.get(item.get("context_id"))
@@ -488,11 +501,11 @@ async def aggregated_stream(
                 item["context_name"] = c.get("name")
 
     # ----- approvals (mirrors /me/review-queue?limit=5) -----
-    # We inline the minimal logic rather than call the daily_review router
-    # so a) we don't couple the two endpoints, b) we don't pay the cost of
-    # re-building its full schema for a 5-item summary card. The shape
-    # matches daily_review's `items` so the frontend can reuse its
-    # rendering helpers.
+    # Phase 2b — approvals were the worst leak in 2a (subject + sender
+    # cross-context). We now build the approval card from the
+    # projected row + a constant kind label only — no headline, no
+    # subject, no sender. The UI can render "Briefing in <Context>
+    # · <relative time>" using the `context_name` we attached above.
     approvals_cap = 5
     approvals: List[Dict[str, Any]] = []
     try:
@@ -503,40 +516,39 @@ async def aggregated_stream(
             if r.get("briefing_id"):
                 read_ids.add(r["briefing_id"])
 
-        pending_briefings = await db.boardpacks.find(
+        raw_pending_briefings = await db.boardpacks.find(
             {
                 "context_id": {"$in": active_ctx_ids},
                 "status": "active",
                 "id": {"$nin": list(read_ids)} if read_ids else {"$exists": True},
             },
-            {"_id": 0, "id": 1, "title": 1, "subject": 1, "context_id": 1, "created_at": 1},
+            {"_id": 0},
         ).sort("created_at", -1).limit(approvals_cap).to_list(approvals_cap)
 
-        pending_inbound = await db.inbound_queue.find(
+        raw_pending_inbound = await db.inbound_queue.find(
             {"context_id": {"$in": active_ctx_ids}, "status": "pending_review"},
-            {"_id": 0, "id": 1, "subject": 1, "context_id": 1, "created_at": 1, "sender": 1},
+            {"_id": 0},
         ).sort("created_at", -1).limit(approvals_cap).to_list(approvals_cap)
 
-        for b in pending_briefings:
-            c = ctx_by_id.get(b.get("context_id"))
+        for raw in raw_pending_briefings:
+            p = project_for_pulse("boardpacks", raw)
+            c = ctx_by_id.get(p.get("context_id"))
             approvals.append({
                 "kind": "briefing",
-                "id": b["id"],
-                "headline": b.get("title") or b.get("subject") or "Untitled briefing",
-                "context_id": b.get("context_id"),
+                "id": p.get("id"),
+                "context_id": p.get("context_id"),
                 "context_name": c.get("name") if c else None,
-                "created_at": b.get("created_at"),
+                "created_at": p.get("created_at"),
             })
-        for q in pending_inbound:
-            c = ctx_by_id.get(q.get("context_id"))
+        for raw in raw_pending_inbound:
+            p = project_for_pulse("inbound_queue", raw)
+            c = ctx_by_id.get(p.get("context_id"))
             approvals.append({
                 "kind": "inbound_doc",
-                "id": q["id"],
-                "headline": q.get("subject") or "Inbound document",
-                "context_id": q.get("context_id"),
+                "id": p.get("id"),
+                "context_id": p.get("context_id"),
                 "context_name": c.get("name") if c else None,
-                "created_at": q.get("created_at"),
-                "sender": q.get("sender"),
+                "created_at": p.get("created_at"),
             })
         approvals.sort(key=lambda x: x.get("created_at") or "", reverse=True)
         approvals = approvals[:approvals_cap]
@@ -562,6 +574,20 @@ async def aggregated_stream(
     # Take the newest of the three oldest values so any of the three
     # aggregations still has one more page's worth of items past cursor.
     next_cursor = max(candidates) if (candidates and any_at_cap) else None
+
+    # Phase 2b debug header — projected keyset per row type so a
+    # tester can confirm the wall is in front of this surface. The
+    # union here mirrors what shipped in `signals/briefings/documents`
+    # (after `context_name` re-attach). Slated for removal in Phase 4.
+    projected_union: set = set()
+    for coll in (signals, briefings, documents):
+        for item in coll:
+            projected_union.update(item.keys())
+    if approvals:
+        projected_union.update(approvals[0].keys())
+    response.headers["x-privacy-wall-projected-keys"] = (
+        ",".join(sorted(projected_union)) if projected_union else "(empty)"
+    )
 
     return {
         "signals": signals,

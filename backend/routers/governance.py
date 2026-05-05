@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from core import db, get_current_account, iso as _iso, now as _now
 from routers.chat import SUPPORTED_MODELS
+from services.privacy_wall import project_audit_row
 
 router = APIRouter(prefix="/api/me/governance", tags=["governance"])
 
@@ -55,16 +56,25 @@ async def _context_name_map(ctx_ids: List[str]) -> Dict[str, str]:
 
 
 def _decorate_audit_row(row: Dict[str, Any], ctx_names: Dict[str, str], actor_email: str) -> Dict[str, Any]:
+    """Decorate an audit row for the cross-context governance feed.
+
+    Phase 2b — TBD-4: the free-form `metadata` blob is dropped here
+    (per `services.privacy_wall.project_audit_row(drop_metadata=True)`).
+    Per-context audit endpoints (`/api/contexts/{cid}/audit-log`)
+    keep the raw blob; only this cross-context surface strips it.
+    """
+    projected = project_audit_row(row, drop_metadata=True)
     return {
-        "id": row.get("id"),
+        "id": projected.get("id"),
         "timestamp": row.get("created_at"),
-        "action": row.get("action"),
-        "context_id": row.get("context_id"),
-        "context_name": ctx_names.get(row.get("context_id")),
+        "action": projected.get("action"),
+        "context_id": projected.get("context_id"),
+        "context_name": ctx_names.get(projected.get("context_id")),
         "actor_email": actor_email,
-        "resource_type": row.get("resource_type"),
-        "resource_id": row.get("resource_id"),
-        "metadata": row.get("metadata") or {},
+        "resource_type": projected.get("resource_type"),
+        "resource_id": projected.get("resource_id"),
+        # `metadata` deliberately omitted — TBD-4. Per-context audit
+        # feed retains the raw blob for tenants who need it.
     }
 
 
@@ -435,12 +445,15 @@ async def governance_audit_export(
     # Build CSV in-memory, wrap in a zip.
     csv_buf = io.StringIO()
     writer = csv.writer(csv_buf)
+    # Phase 2b — `metadata_json` column dropped per TBD-4 sign-off.
+    # The free-form audit metadata blob is no longer part of the
+    # cross-context audit feed. Per-context callers wanting that data
+    # hit `/api/contexts/{cid}/audit-log` and get the raw row.
     writer.writerow([
         "timestamp", "action", "context_id", "context_name", "actor_email",
-        "resource_type", "resource_id", "metadata_json",
+        "resource_type", "resource_id",
     ])
     for r in decorated:
-        import json as _json
         writer.writerow([
             r.get("timestamp") or "",
             r.get("action") or "",
@@ -449,7 +462,6 @@ async def governance_audit_export(
             r.get("actor_email") or "",
             r.get("resource_type") or "",
             r.get("resource_id") or "",
-            _json.dumps(r.get("metadata") or {}, ensure_ascii=False),
         ])
 
     zip_buf = io.BytesIO()
