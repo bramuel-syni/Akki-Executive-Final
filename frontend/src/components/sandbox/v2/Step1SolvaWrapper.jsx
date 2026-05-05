@@ -139,9 +139,31 @@ export default function Step1SolvaWrapper({ flow, dispatch, onComplete }) {
     setBusy(true);
     setErr(null);
     try {
-      await api.post(`/solva/v2/sessions/${solvaSession.id}/turn`, {
-        user_text: answerDraft.trim() || "(no further detail provided)",
-      });
+      try {
+        await api.post(`/solva/v2/sessions/${solvaSession.id}/turn`, {
+          user_text: answerDraft.trim() || "(no further detail provided)",
+        });
+      } catch (eTurn) {
+        // 409 = Solva v2 refusal ladder has hard-blocked further turns.
+        // 422 = orchestrator detected refusal at the current turn.
+        // BOTH are valid demo punch-lines for the Sandbox: the brief
+        // explicitly bills refusal as part of the experience ("the
+        // refusal IS the demo"). Route into ARTEFACT_REFUSAL rather
+        // than dead-ending with a raw error string.
+        const status = eTurn?.response?.status;
+        if (status === 409 || status === 422) {
+          const after = await refreshSolvaSession(solvaSession.id);
+          dispatch(SbxActions.setSolvaRefusal(true));
+          setInnerState("ARTEFACT_REFUSAL");
+          // Force a refresh of the snapshot so refusal artefact has data
+          // to render even if the server didn't promote synthesis.
+          void after;
+          return;
+        }
+        // Anything else — surface the message but keep the user on the
+        // current question so they can retry.
+        throw eTurn;
+      }
       const srv = await refreshSolvaSession(solvaSession.id);
       setAnswerDraft("");
 
@@ -158,13 +180,13 @@ export default function Step1SolvaWrapper({ flow, dispatch, onComplete }) {
             user_text: "(continue to synthesis)",
           });
         } catch (e2) {
-          // 422 = the orchestrator detected refusal. Treat as refusal.
-          if (e2?.response?.status === 422) {
+          // 409 / 422 = refusal — treat as the demo's refusal artefact.
+          const status2 = e2?.response?.status;
+          if (status2 === 409 || status2 === 422) {
             const after = await refreshSolvaSession(solvaSession.id);
-            const refusal = ["refused", "blocked_hard", "blocked_soft"].includes((after?.status || "").toLowerCase())
-              || (after?.synthesis == null);
-            dispatch(SbxActions.setSolvaRefusal(refusal));
-            setInnerState(refusal ? "ARTEFACT_REFUSAL" : "ARTEFACT");
+            dispatch(SbxActions.setSolvaRefusal(true));
+            setInnerState("ARTEFACT_REFUSAL");
+            void after;
             return;
           }
         }
