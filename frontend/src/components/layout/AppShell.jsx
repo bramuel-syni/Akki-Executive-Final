@@ -46,8 +46,18 @@ import KeyboardHelp from "@/components/layout/KeyboardHelp";
 // page so users discover it during 13.x without 404'ing. "Work Studio"
 // is a new unified entry hub, not a rebuild — it lists in-flight
 // briefings/decks/reports across the active context.
+//
+// Phase 1 (2026-05-05) — "Document Journal" added to the primary nav.
+// The page itself is `pages/Workspace.jsx` mounted at `/app/workspace`
+// and was already shipped end-to-end (lists every doc the user can
+// see, opens the M.2 in-app body modal, renders the Phase 1 backfilled
+// `journal_commentary` inline). It just had no entry in the rendered
+// top nav — only in the dead `NAV` array below — so testers couldn't
+// find it. Inserted between Home and Chat so document workflows are
+// adjacent to the home stream.
 const TOP_NAV = [
   { to: "/app",               label: "Home",          end: true },
+  { to: "/app/workspace",     label: "Document Journal" },
   { to: "/app/chat",          label: "Chat" },
   { to: "/app/solva",         label: "Solva" },
   { to: "/app/work-studio",   label: "Work Studio" },
