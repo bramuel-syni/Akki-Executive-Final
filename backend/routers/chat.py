@@ -27,7 +27,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -38,6 +38,7 @@ from services.synisense import (
     shielding_report as _syn_report,
     rehydrate as _syn_rehydrate,
 )
+from services.rbac import require_role, ACTIVE_CONTEXT_HEADER  # noqa: E402  Phase B.1
 
 logger = logging.getLogger("akki.chat")
 router = APIRouter(prefix="/api")
@@ -102,6 +103,12 @@ class MessageSendIn(BaseModel):
     # bypass shielding for this single message (rare), they set this.
     # We capture the bypass + acknowledgement in the audit log.
     acknowledge_unshielded: bool = False
+    # Phase B.1 — Document IDs attached to this turn via the
+    # /chats/{chat_id}/attach endpoint. The handler injects each
+    # attached doc's de-identified text into the LLM prompt as an
+    # additional [ATTACHMENT] block before the user's message. Empty
+    # by default (most turns are text-only).
+    attached_document_ids: List[str] = Field(default_factory=list, max_length=10)
 
 
 # -----------------------------------------------------------------------------
@@ -200,20 +207,377 @@ async def create_chat(
     return _sanitize(rec)
 
 
-@router.get("/chats")
-async def list_chats(current: Dict[str, Any] = Depends(get_current_account)):
-    rows = await db.chats.find(
-        {"account_id": current["id"], "status": {"$ne": "archived"}},
+# ─────────────────────────────────────────────────────────────────────
+# Phase B.1 — Chat attachment.
+#
+# User attaches a document (PDF / DOCX / TXT / image) in the chat
+# composer. The file goes through the document upload pipeline:
+#   1. ClamAV scan (hard precondition; 503 if scanner offline unless
+#      `ALLOW_UNSAFE_UPLOADS=true` in dev .env).
+#   2. Save to storage (S3 / MinIO / local fallback).
+#   3. Extract text (pypdf / python-docx / plain text).
+#   4. Run Synisense Shield over the extracted text — same surface
+#      label `chat` as the user-typed message path, so the audit trail
+#      is uniform.
+#   5. Run the deterministic studio_sensitivity scorer to give the UI
+#      a band (PUBLIC / INTERNAL / CONFIDENTIAL / RESTRICTED) for the
+#      attached-file chip.
+#   6. Persist as a row in `db.documents` carrying
+#      `source_channel="chat_attach"` so it appears in the active
+#      context's Document Journal alongside other docs (memo + Phase
+#      1 contract: chat attachments are journal docs).
+#
+# Returns:
+#   {document_id, name, mime_type, size_bytes, char_len,
+#    sensitivity: {score, label, classification},
+#    storage_key, created_at}
+# The chat composer stores `document_id` on a chip; on send the
+# message-stream endpoint reads `attached_document_ids` and injects
+# the de-identified text into the LLM prompt.
+# ─────────────────────────────────────────────────────────────────────
+_ATTACH_MAX_BYTES = 25 * 1024 * 1024   # 25 MB ceiling for chat
+_ATTACH_ACCEPT_EXT = {
+    ".pdf", ".docx", ".doc", ".txt", ".md",
+    ".png", ".jpg", ".jpeg", ".webp",
+}
+
+
+@router.post("/chats/{chat_id}/attach")
+async def attach_to_chat(
+    chat_id: str,
+    request: Request,
+    file: UploadFile = File(...),
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Ingest a file as a chat attachment. The file is saved as a
+    document in the chat's bound context AND its de-identified text
+    is made available to the next LLM turn via
+    `attached_document_ids` on the message-send body.
+
+    Body: multipart/form-data with one `file` part.
+    Header: `X-Active-Context` is consulted defensively — when set,
+            the chat's `context_id` MUST equal it (per-tab role
+            binding from Phase A). Mismatch → 403.
+    """
+    chat = await db.chats.find_one(
+        {"id": chat_id, "account_id": current["id"], "status": {"$ne": "archived"}},
         {"_id": 0},
-    ).sort("last_message_at", -1).to_list(200)
-    # last_message_at can be None on a freshly-created empty chat — the
-    # mongo sort puts those at the bottom of a desc sort. Re-sort with
-    # a fallback to created_at so empty chats appear above ancient ones.
+    )
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    chat_ctx_id = chat.get("context_id")
+    if not chat_ctx_id:
+        # The chat was created without a context binding (legacy
+        # un-grounded chat). Attachments without a context have
+        # nowhere sensible to live as a document — refuse.
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot attach: this chat is not bound to a company context.",
+        )
+
+    active_ctx = request.headers.get(ACTIVE_CONTEXT_HEADER)
+    if active_ctx and active_ctx != chat_ctx_id:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "ACTIVE_CONTEXT_MISMATCH",
+                "message": (
+                    "This conversation is bound to a different context "
+                    "than your active selection. Switch contexts to "
+                    "continue."
+                ),
+            },
+        )
+
+    # Verify the user has membership in the chat's context. We don't
+    # use require_role here because the dependency was wired
+    # post-creation on the chat — a chat the user owns implies the
+    # membership existed at create time. We re-check now in case
+    # membership was revoked.
+    m = await db.memberships.find_one(
+        {"account_id": current["id"], "context_id": chat_ctx_id, "status": "active"},
+        {"_id": 0},
+    )
+    if not m:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "MEMBERSHIP_REVOKED",
+                    "message": "Your membership at this chat's context was revoked."},
+        )
+
+    from pathlib import Path as _Path
+    filename = file.filename or "attachment"
+    ext = _Path(filename).suffix.lower()
+    if ext not in _ATTACH_ACCEPT_EXT:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported attachment type {ext}. "
+                   f"Accepted: {', '.join(sorted(_ATTACH_ACCEPT_EXT))}",
+        )
+
+    data = await file.read()
+    if len(data) > _ATTACH_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Attachment too large. Max {_ATTACH_MAX_BYTES // 1024 // 1024} MB.",
+        )
+
+    # ClamAV — same hard precondition as the documents flow.
+    from services import clamav_service
+    from services.clamav_service import ClamAVUnreachable
+    try:
+        scan = clamav_service.scan(data, filename)
+    except ClamAVUnreachable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "scanner_unavailable",
+                    "reason": "virus scanner offline",
+                    "details": str(exc)[:200]},
+        )
+    if not scan.clean:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "blocked", "reason": "malware_suspected",
+                    "signature": scan.signature},
+        )
+
+    from documents_service import save_to_storage, extract_text, make_preview
+    from studio_sensitivity import score_sensitivity
+
+    doc_id = str(uuid.uuid4())
+    storage_key = save_to_storage(chat_ctx_id, doc_id, filename, data)
+    text, err = extract_text(data, filename, file.content_type or "")
+    preview = make_preview(text)
+
+    # Synisense Shield — surface=chat (matches the user-typed path).
+    body_redacted: str = text
+    syn_version = 0
+    if text:
+        try:
+            shielded_text, _shield_meta = await _syn_shield(
+                text, surface="chat", context_id=chat_ctx_id, mode="redact",
+            )
+            body_redacted = shielded_text or text
+            syn_version = 1
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("synisense shielding failed on chat attach: %s", exc)
+
+    # Sensitivity band — deterministic scorer, no LLM.
+    band = score_sensitivity({"text": text}) if text else {
+        "score": 0, "classification": "PUBLIC", "label": "PUBLIC", "reasons": ["No extracted text"],
+    }
+
+    created_at = _iso(_now())
+    doc = {
+        "id": doc_id,
+        "context_id": chat_ctx_id,
+        "name": _Path(filename).stem.strip()[:200] or "Attachment",
+        "original_filename": filename,
+        "mime_type": file.content_type or "application/octet-stream",
+        "size_bytes": len(data),
+        "storage_key": storage_key,
+        "status": "extracted" if text and not err else ("failed" if err else "empty"),
+        "extracted_text": text,
+        "extracted_chars": len(text or ""),
+        "preview": preview,
+        "data_trust": "mixed",
+        "doc_type": "chat_attachment",
+        "uploaded_by": current["id"],
+        "source_channel": "chat_attach",
+        "chat_id": chat_id,
+        "synisense_version": syn_version,
+        "body_redacted": body_redacted if syn_version else None,
+        "sensitivity_band": band["classification"].lower(),
+        "sensitivity_score": band["score"],
+        "sensitivity_label": band["label"],
+        "created_at": created_at,
+        "updated_at": created_at,
+    }
+    await db.documents.insert_one(doc)
+
+    return {
+        "document_id": doc_id,
+        "chat_id": chat_id,
+        "context_id": chat_ctx_id,
+        "name": doc["name"],
+        "original_filename": filename,
+        "mime_type": doc["mime_type"],
+        "size_bytes": len(data),
+        "char_len": doc["extracted_chars"],
+        "sensitivity": {
+            "score": band["score"],
+            "classification": band["classification"],
+            "label": band["label"],
+            "reasons": band.get("reasons", []),
+        },
+        "storage_key": storage_key,
+        "created_at": created_at,
+    }
+
+
+@router.get("/chats")
+async def list_chats(
+    request: Request,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """List the caller's active conversations.
+
+    Phase B.1 — when `X-Active-Context` is set (the SPA always sets it
+    after Phase A), the list is **filtered to chats bound to that
+    context**. This satisfies Memo Item 5 + Item 8 acceptance #6 — a
+    user switching contexts immediately sees only the conversations
+    that belong to that context.
+
+    Legacy callers that don't send the header still get the
+    pre-Phase-B account-wide list (back-compat for the test_iter*
+    suite); they're allowlisted by absence of the header.
+    """
+    q: Dict[str, Any] = {"account_id": current["id"], "status": {"$ne": "archived"}}
+    active_ctx = request.headers.get(ACTIVE_CONTEXT_HEADER)
+    if active_ctx:
+        q["context_id"] = active_ctx
+    rows = await db.chats.find(q, {"_id": 0}) \
+        .sort("last_message_at", -1).to_list(200)
     rows.sort(
         key=lambda r: (r.get("last_message_at") or r.get("created_at") or ""),
         reverse=True,
     )
     return rows
+
+
+# Phase B.1 — Conversation search.
+# Substring search across chat titles AND message content for the
+# caller's chats in the **active context only** (privacy wall +
+# Phase A binding). Returns up to 50 hits; each hit carries the chat
+# row plus a single matching snippet so the UI can render context.
+# Search is case-insensitive; we use Mongo $regex on a lightly
+# escaped query to avoid catastrophic regex DoS.
+import re as _re
+
+_REGEX_META = _re.compile(r"[\\^$.|?*+()\[\]{}]")
+
+
+def _escape_regex(q: str) -> str:
+    return _REGEX_META.sub(lambda m: "\\" + m.group(0), q)
+
+
+@router.get("/chats/search")
+async def search_chats(
+    request: Request,
+    q: str = Query(..., min_length=2, max_length=200,
+                   description="Substring; case-insensitive. Min 2 chars."),
+    limit: int = Query(50, ge=1, le=200),
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Search chats by substring in title OR turn content, scoped to
+    the caller's active context (or account-wide if no header — same
+    legacy escape hatch as `/chats`).
+
+    Returns:
+        {
+          "items": [
+            {
+              "chat": <chat row>,
+              "match_in": "title" | "message",
+              "snippet": <~120 chars surrounding the hit>,
+              "matched_message_id": <str | None>,
+            },
+            ...
+          ],
+          "count": N,
+        }
+    """
+    needle = q.strip()
+    if len(needle) < 2:
+        raise HTTPException(status_code=400, detail="Query must be at least 2 characters.")
+
+    active_ctx = request.headers.get(ACTIVE_CONTEXT_HEADER)
+    chat_filter: Dict[str, Any] = {
+        "account_id": current["id"], "status": {"$ne": "archived"},
+    }
+    if active_ctx:
+        chat_filter["context_id"] = active_ctx
+
+    # Step 1 — find chats with title hits (cheap; 1 query).
+    rx = {"$regex": _escape_regex(needle), "$options": "i"}
+    title_chats = await db.chats.find(
+        {**chat_filter, "title": rx},
+        {"_id": 0},
+    ).sort("last_message_at", -1).to_list(limit)
+
+    # Step 2 — find chat_messages hits scoped to allowed chat_ids.
+    allowed_chat_ids: List[str] = []
+    if active_ctx:
+        # Restrict to chats in the active context.
+        ids_cursor = await db.chats.find(
+            {**chat_filter}, {"_id": 0, "id": 1},
+        ).to_list(2000)
+        allowed_chat_ids = [c["id"] for c in ids_cursor]
+        msg_filter: Dict[str, Any] = {
+            "account_id": current["id"],
+            "chat_id": {"$in": allowed_chat_ids},
+            "content": rx,
+        }
+    else:
+        msg_filter = {"account_id": current["id"], "content": rx}
+
+    msg_hits = await db.chat_messages.find(
+        msg_filter,
+        {"_id": 0, "id": 1, "chat_id": 1, "content": 1, "created_at": 1, "role": 1},
+    ).sort("created_at", -1).limit(limit * 2).to_list(limit * 2)
+
+    # Step 3 — assemble results, dedupe by chat_id (prefer title hit).
+    items: List[Dict[str, Any]] = []
+    seen_chats: set = set()
+
+    for c in title_chats:
+        idx = (c.get("title") or "").lower().find(needle.lower())
+        snippet = c.get("title", "") if idx < 0 else c["title"]
+        items.append({
+            "chat": c,
+            "match_in": "title",
+            "snippet": snippet,
+            "matched_message_id": None,
+        })
+        seen_chats.add(c["id"])
+        if len(items) >= limit:
+            break
+
+    if len(items) < limit:
+        # Hydrate chat rows for message hits we don't already have.
+        msg_chat_ids = list({m["chat_id"] for m in msg_hits if m["chat_id"] not in seen_chats})
+        if msg_chat_ids:
+            chat_rows = await db.chats.find(
+                {"id": {"$in": msg_chat_ids}, **chat_filter},
+                {"_id": 0},
+            ).to_list(len(msg_chat_ids))
+            chat_by_id = {c["id"]: c for c in chat_rows}
+            for m in msg_hits:
+                if m["chat_id"] in seen_chats:
+                    continue
+                chat_row = chat_by_id.get(m["chat_id"])
+                if not chat_row:
+                    continue  # filtered out (e.g. archived)
+                content = m.get("content") or ""
+                idx = content.lower().find(needle.lower())
+                if idx < 0:
+                    snippet = content[:120]
+                else:
+                    start = max(0, idx - 50)
+                    end = min(len(content), idx + len(needle) + 70)
+                    snippet = ("…" if start > 0 else "") + content[start:end] + ("…" if end < len(content) else "")
+                items.append({
+                    "chat": chat_row,
+                    "match_in": "message",
+                    "snippet": snippet,
+                    "matched_message_id": m["id"],
+                })
+                seen_chats.add(m["chat_id"])
+                if len(items) >= limit:
+                    break
+
+    return {"items": items, "count": len(items)}
 
 
 @router.get("/chats/{chat_id}")
@@ -1112,6 +1476,37 @@ async def stream_message(
     full_prompt_parts: List[str] = []
     if grounding_block:
         full_prompt_parts.append(grounding_block)
+
+    # Phase B.1 — inject attachments (de-identified at attach time).
+    attachment_meta: List[Dict[str, Any]] = []
+    if body.attached_document_ids:
+        att_docs = await db.documents.find(
+            {
+                "id": {"$in": list(body.attached_document_ids)[:10]},
+                "context_id": chat.get("context_id"),
+                "uploaded_by": current["id"],
+            },
+            {"_id": 0, "id": 1, "name": 1, "body_redacted": 1,
+             "extracted_text": 1, "sensitivity_band": 1, "size_bytes": 1,
+             "extracted_chars": 1},
+        ).to_list(10)
+        for d in att_docs:
+            ingest_text = (d.get("body_redacted") or d.get("extracted_text") or "")[:8000]
+            if not ingest_text.strip():
+                continue
+            attachment_meta.append({
+                "document_id": d["id"],
+                "name": d.get("name"),
+                "char_len": d.get("extracted_chars"),
+                "sensitivity_band": d.get("sensitivity_band"),
+            })
+            full_prompt_parts.append(
+                f"[ATTACHMENT — doc:{d.get('name', d['id'])} · "
+                f"sensitivity:{d.get('sensitivity_band','public')} · "
+                f"chars:{d.get('extracted_chars',0)}]\n"
+                f"{ingest_text}"
+            )
+
     if history_block:
         full_prompt_parts.append(history_block)
     full_prompt_parts.append(f"USER: {sent_to_llm}")
@@ -1126,6 +1521,101 @@ async def stream_message(
         started_ms = time.monotonic()
         raw_text = ""
         mode = "live"
+        # Phase B.1 — cancel handling. Tracks chars actually emitted to
+        # the client so the cancel-path persistence captures only what
+        # the user saw, not the full LLM reply that might never have
+        # streamed. `_emitted_for_cancel_box` is a one-element list
+        # used as a closure-mutable container readable by the
+        # top-level CancelledError handler at the very end.
+        emitted_chars = 0
+        cancelled = False
+        _emitted_for_cancel_box: List[int] = [0]
+
+        async def _persist_cancel(emitted_chars_at: int) -> None:
+            """All cancel-path writes for THIS turn. Spawned as a
+            detached `asyncio.create_task` so it runs to completion
+            even when the parent task is being torn down."""
+            try:
+                latency_ms = int((time.monotonic() - started_ms) * 1000)
+                partial_raw = raw_text[:emitted_chars_at] if raw_text else ""
+                # Rehydrate only if we actually emitted shielded text.
+                partial_rehydrated = (
+                    _syn_rehydrate(partial_raw, shield_map) if (will_shield and partial_raw) else partial_raw
+                )
+                cleaned_partial, citations_partial = _process_citations(
+                    partial_rehydrated, grounding_paragraphs,
+                )
+                reply_id = str(uuid.uuid4())
+                reply_at = _iso(_now())
+                await db.chat_messages.insert_one({
+                    "id": reply_id, "chat_id": chat_id,
+                    "account_id": request_account["id"],
+                    "role": "assistant", "content": cleaned_partial,
+                    "model_id": chat["model_id"],
+                    "model_label": model_def["label"],
+                    "mode": "cancelled", "latency_ms": latency_ms,
+                    "created_at": reply_at,
+                    "citations": citations_partial,
+                    "grounded_context_id": chat.get("context_id") if grounding_paragraphs else None,
+                    "synisense_stats": syn_stats,
+                    "channel": "stream",
+                    "cancelled": True,
+                    "emitted_chars": emitted_chars_at,
+                    "full_chars": len(raw_text),
+                })
+                await _append_audit(
+                    account_id=request_account["id"], chat_id=chat_id,
+                    action="message.received", request=request_obj,
+                    payload={
+                        "user_message_id": msg_id, "reply_id": reply_id,
+                        "model_id": chat["model_id"], "mode": "cancelled",
+                        "latency_ms": latency_ms,
+                        "char_len_reply": len(cleaned_partial),
+                        "citations_kept": len(citations_partial),
+                        "channel": "stream",
+                        "cancelled": True,
+                        "emitted_chars": emitted_chars_at,
+                        "full_chars": len(raw_text),
+                    },
+                )
+                await db.chats.update_one(
+                    {"id": chat_id},
+                    {
+                        "$set": {
+                            "last_message_at": reply_at,
+                            "last_message_preview": cleaned_partial[:200] or "(cancelled)",
+                            "updated_at": reply_at,
+                        },
+                        "$inc": {"message_count": 2},
+                    },
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("cancel-path persistence failed")
+
+        # Phase B.1 — disconnect watcher. Fires `_persist_cancel` as a
+        # DETACHED task the moment the client closes the TCP. Covers
+        # both "cancel during LLM call" (CancelledError raised at the
+        # `await chat_session.send_message`) and "cancel during chunk
+        # loop" (chunk-loop's own poll detects it). The watcher uses
+        # `is_disconnected()` polling because that doesn't itself
+        # consume the receive channel in a way that breaks the
+        # generator. We track success state via `_completed_box`; on
+        # success the watcher is cancelled and the persist never
+        # fires.
+        _completed_box: List[bool] = [False]
+
+        async def _disconnect_watcher() -> None:
+            try:
+                while not _completed_box[0]:
+                    if await request_obj.is_disconnected():
+                        # Detached persist — survives parent cancellation.
+                        _asyncio.create_task(_persist_cancel(_emitted_for_cancel_box[0]))
+                        return
+                    await _asyncio.sleep(0.4)
+            except _asyncio.CancelledError:
+                return  # success path cancelled us — fine.
+
+        watcher = _asyncio.create_task(_disconnect_watcher())
 
         # Run the LLM call in a worker thread so we don't block the event
         # loop; the SDK is sync. Once we get the full reply, we chunk it
@@ -1170,15 +1660,35 @@ async def stream_message(
 
         # Chunk the SHIELDED reply (final-rehydrate strategy — see
         # module-level comment). ~40-token = ~200-char chunks.
+        # Phase B.1 — cancellation detection. Two paths:
+        #   (a) Cancel during the chunk loop (after LLM call). We
+        #       poll request.is_disconnected() each iteration; if
+        #       True, we break and run _persist_cancel synchronously
+        #       in this same task.
+        #   (b) Cancel during the LLM call. The await raises
+        #       CancelledError before we reach this loop; the
+        #       outer try/except at the bottom of _event_gen handles
+        #       it by spawning _persist_cancel as a detached task.
         CHUNK_CHARS = 220
-        for i in range(0, len(raw_text), CHUNK_CHARS):
-            chunk = raw_text[i:i + CHUNK_CHARS]
-            yield (
-                "data: " + json.dumps({"type": "delta", "text": chunk}) + "\n\n"
-            )
-            # Tiny gap so the client renders progressively rather than
-            # painting all chunks in one frame.
-            await _asyncio.sleep(0.02)
+        try:
+            for i in range(0, len(raw_text), CHUNK_CHARS):
+                if await request_obj.is_disconnected():
+                    cancelled = True
+                    break
+                chunk = raw_text[i:i + CHUNK_CHARS]
+                yield (
+                    "data: " + json.dumps({"type": "delta", "text": chunk}) + "\n\n"
+                )
+                emitted_chars += len(chunk)
+                _emitted_for_cancel_box[0] = emitted_chars
+                # Tiny gap so the client renders progressively.
+                await _asyncio.sleep(0.02)
+        except _asyncio.CancelledError:
+            cancelled = True
+
+        if cancelled:
+            await _persist_cancel(emitted_chars)
+            return  # Don't fall through to the success-path persistence.
 
         latency_ms = int((time.monotonic() - started_ms) * 1000)
         # Now do the final rehydrate + citation post-processing on the
@@ -1240,6 +1750,12 @@ async def stream_message(
             }) + "\n\n"
         )
         yield "data: " + json.dumps({"type": "done"}) + "\n\n"
+
+        # Success path complete — stop the disconnect watcher so it
+        # doesn't fire a spurious cancel-persist after the fact.
+        _completed_box[0] = True
+        if not watcher.done():
+            watcher.cancel()
 
     return StreamingResponse(
         _event_gen(),

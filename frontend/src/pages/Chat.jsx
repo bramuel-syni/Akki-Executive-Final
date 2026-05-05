@@ -23,7 +23,12 @@ import { Button } from "@/components/ui/button";
 import {
   Plus, Send, Loader2, Shield, ShieldOff, Trash2, MessageCircle,
   ChevronDown, FileLock2, Eye, AlertTriangle, Download,
+  Search, Paperclip, X, FileText, StopCircle,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
+import "highlight.js/styles/github.css";
 import ModelAvatar from "@/components/chat/ModelAvatar";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
@@ -35,6 +40,20 @@ const POLICY_LABEL = {
   always: "Always shield",
   off: "Off (acknowledge per send)",
 };
+
+const BAND_COLOR = {
+  public: "bg-slate-100 text-slate-700 border-slate-200",
+  internal: "bg-amber-50 text-amber-800 border-amber-200",
+  confidential: "bg-orange-50 text-orange-800 border-orange-200",
+  restricted: "bg-red-50 text-red-800 border-red-200",
+};
+
+function _humanBytes(n) {
+  if (!n && n !== 0) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(2)} MB`;
+}
 
 export default function Chat() {
   const { activeContext } = useAuth();
@@ -50,6 +69,24 @@ export default function Chat() {
   const [bypassDlg, setBypassDlg] = useState(null); // {detected}
   const [auditOpen, setAuditOpen] = useState(false);
   const messagesEndRef = useRef(null);
+
+  // Phase B.1 — Cancel in flight via AbortController. We hold the
+  // controller in a ref so the Cancel button reads the current value
+  // without re-rendering on every keystroke.
+  const abortRef = useRef(null);
+
+  // Phase B.1 — Attachments staged for the next turn. Each entry is
+  // {document_id, name, size_bytes, sensitivity, char_len}. Cleared
+  // when the message is sent (success or cancel) or when the user
+  // removes the chip.
+  const [attachments, setAttachments] = useState([]);
+
+  // Phase B.1 — Conversation search across the active context. When
+  // searchQ is non-empty (>= 2 chars), the visible chats list is the
+  // server's /chats/search hits rather than the full list.
+  const [searchQ, setSearchQ] = useState("");
+  const [searchHits, setSearchHits] = useState(null);   // null = no search active
+  const [searching, setSearching] = useState(false);
 
   // ── Bootstrap: fetch models + chats list
   useEffect(() => {
@@ -234,12 +271,34 @@ export default function Chat() {
     let acknowledgementErrorPayload = null;
     let streamFailed = false;
 
+    // Phase B.1 — AbortController for cancel-mid-stream.
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    // Snapshot attachments for this turn — clear the chip set
+    // immediately so the user can stage new ones for the next turn
+    // without confusing the backend on a retry.
+    const turnAttachments = attachments;
+    const attachedDocIds = turnAttachments.map((a) => a.document_id);
+    setAttachments([]);
+
     try {
       const resp = await fetch(`${BACKEND}/api/chats/${activeId}/messages/stream`, {
         method: "POST",
         credentials: "include",
-        headers,
-        body: JSON.stringify({ content: text, acknowledge_unshielded }),
+        headers: {
+          ...headers,
+          // Phase A — every authenticated SPA call carries the
+          // active context; raw fetch() doesn't go through the
+          // axios interceptor in lib/api.js, so attach manually.
+          ...(activeContext?.id ? { "X-Active-Context": activeContext.id } : {}),
+        },
+        signal: ctrl.signal,
+        body: JSON.stringify({
+          content: text,
+          acknowledge_unshielded,
+          attached_document_ids: attachedDocIds,
+        }),
       });
       if (resp.status === 409) {
         const body = await resp.json().catch(() => ({}));
@@ -307,16 +366,33 @@ export default function Chat() {
       }
     } catch (e) {
       streamFailed = true;
-      // Remove the streaming placeholder; reuse the same toast contract
-      // as before so existing UX expectations hold.
-      setActiveChat((prev) => ({
-        ...(prev || {}),
-        messages: ((prev || {}).messages || []).filter(
-          (m) => m.id !== streamingId && m.id !== optimisticUser.id,
-        ),
-      }));
-      toast.error(apiErrorMessage(e));
+      // Phase B.1 — AbortError is a user-initiated cancel, not an
+      // error. The backend has already persisted whatever was
+      // streamed plus a `cancelled: true` audit row. Keep the
+      // partial assistant bubble visible (don't strip it) and toast
+      // the user softly.
+      const isAbort = e?.name === "AbortError";
+      if (isAbort) {
+        setActiveChat((prev) => ({
+          ...(prev || {}),
+          messages: ((prev || {}).messages || []).map((m) =>
+            m.id === streamingId ? { ...m, streaming: false, cancelled: true } : m,
+          ),
+        }));
+        toast("Cancelled. Partial reply kept.", { duration: 2000 });
+      } else {
+        // Remove the streaming placeholder; reuse the same toast contract
+        // as before so existing UX expectations hold.
+        setActiveChat((prev) => ({
+          ...(prev || {}),
+          messages: ((prev || {}).messages || []).filter(
+            (m) => m.id !== streamingId && m.id !== optimisticUser.id,
+          ),
+        }));
+        toast.error(apiErrorMessage(e));
+      }
     } finally {
+      abortRef.current = null;
       if (acknowledgementErrorPayload) {
         // Remove placeholders and prompt the bypass dialog.
         setActiveChat((prev) => ({
@@ -342,12 +418,84 @@ export default function Chat() {
       }
       setSending(false);
     }
-  }, [activeId]);
+  }, [activeId, activeContext?.id, attachments]);
 
   const onSubmit = () => {
     const text = input.trim();
     if (!text || sending) return;
     sendMessage(text);
+  };
+
+  const onCancel = () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+  };
+
+  // Phase B.1 — Conversation search. Debounced 250 ms.
+  useEffect(() => {
+    const q = searchQ.trim();
+    if (q.length < 2) {
+      setSearchHits(null);
+      setSearching(false);
+      return undefined;
+    }
+    let dead = false;
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await api.get(`/chats/search?q=${encodeURIComponent(q)}`);
+        if (!dead) setSearchHits(data?.items || []);
+      } catch {
+        if (!dead) setSearchHits([]);
+      } finally {
+        if (!dead) setSearching(false);
+      }
+    }, 250);
+    return () => { dead = true; clearTimeout(t); };
+  }, [searchQ]);
+
+  // Phase B.1 — wipe the visible chats list when the active context
+  // changes (Phase A switcher). The Phase A interceptor already
+  // attaches X-Active-Context to subsequent calls; we just need to
+  // re-fetch and reset transient state.
+  useEffect(() => {
+    if (!activeContext?.id) return;
+    setChats([]);
+    setActiveId(null);
+    setActiveChat(null);
+    setSearchQ("");
+    setSearchHits(null);
+    setAttachments([]);
+    let dead = false;
+    (async () => {
+      try {
+        const { data } = await api.get("/chats");
+        if (!dead) setChats(data || []);
+      } catch { /* noop */ }
+    })();
+    return () => { dead = true; };
+  }, [activeContext?.id]);
+
+  const onAttachFile = async (file) => {
+    if (!activeId || !file) return;
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post(
+        `/chats/${activeId}/attach`, fd,
+        { headers: { "Content-Type": "multipart/form-data" } },
+      );
+      setAttachments((prev) => [...prev, data]);
+      toast.success(`Attached: ${data.name}`);
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    }
+  };
+
+  const onRemoveAttachment = (docId) => {
+    setAttachments((prev) => prev.filter((a) => a.document_id !== docId));
   };
 
   const activeModel = useMemo(
@@ -374,13 +522,69 @@ export default function Chat() {
                 <Plus className="w-3 h-3 mr-1" /> New
               </Button>
             </div>
-            <p className="text-[10.5px] text-[var(--muted)] leading-relaxed">
+            <p className="text-[10.5px] text-[var(--muted)] leading-relaxed mb-3">
               Synisense-shielded · multi-model · audited
             </p>
+            {/* Phase B.1 — Conversation search across this context.
+                Substring match on title OR turn content; results
+                replace the chat list while non-empty. */}
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--muted)]" />
+              <input
+                value={searchQ}
+                onChange={(e) => setSearchQ(e.target.value)}
+                placeholder="Search conversations…"
+                className="w-full pl-7 pr-7 h-8 text-[12.5px] border border-[var(--rule)] rounded-sm bg-white focus:outline-none focus:border-[var(--accent)]/60"
+                data-testid="chat-search-input"
+              />
+              {searchQ && (
+                <button
+                  onClick={() => { setSearchQ(""); setSearchHits(null); }}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-[var(--muted)] hover:text-[var(--ink)]"
+                  data-testid="chat-search-clear"
+                  aria-label="Clear search"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-2" data-testid="chat-list">
             {loading ? (
               <p className="p-4 text-[11px] text-[var(--muted)] text-center">Loading…</p>
+            ) : searching ? (
+              <p className="p-4 text-[11px] text-[var(--muted)] text-center">Searching…</p>
+            ) : searchHits !== null ? (
+              searchHits.length === 0 ? (
+                <p className="p-4 text-[11px] text-[var(--muted)] text-center italic" data-testid="chat-search-empty">
+                  No matches in this context.
+                </p>
+              ) : (
+                searchHits.map((hit) => {
+                  const c = hit.chat;
+                  const active = c.id === activeId;
+                  return (
+                    <button
+                      key={`hit-${c.id}-${hit.matched_message_id || "title"}`}
+                      onClick={() => { setActiveId(c.id); setSearchQ(""); setSearchHits(null); }}
+                      className={`w-full text-left px-3 py-2.5 rounded-sm mb-1 transition-colors border ${
+                        active ? "bg-white border-[var(--accent)]/60" : "border-transparent hover:bg-white"
+                      }`}
+                      data-testid={`chat-search-hit-${c.id}`}
+                    >
+                      <p className="text-[12.5px] font-medium leading-snug line-clamp-1 text-[var(--ink)]">
+                        {c.title}
+                      </p>
+                      <p className="text-[10.5px] text-[var(--muted)] mt-0.5">
+                        {hit.match_in === "title" ? "Title match" : "Turn match"}
+                      </p>
+                      <p className="text-[11px] text-[var(--deep)] line-clamp-2 mt-0.5">
+                        {hit.snippet || "(no snippet)"}
+                      </p>
+                    </button>
+                  );
+                })
+              )
             ) : chats.length === 0 ? (
               <div className="p-6 text-center" data-testid="chat-empty">
                 <p className="text-[12px] text-[var(--muted)] italic mb-3">
@@ -473,8 +677,12 @@ export default function Chat() {
                 value={input}
                 onChange={setInput}
                 onSubmit={onSubmit}
+                onCancel={onCancel}
                 sending={sending}
                 policy={activeChat.shielding_policy}
+                attachments={attachments}
+                onAttachFile={onAttachFile}
+                onRemoveAttachment={onRemoveAttachment}
               />
             </>
           )}
@@ -653,14 +861,65 @@ function Message({ m, activeModel, models }) {
             {m.model_label || msgModel?.label} · {m.latency_ms ? `${(m.latency_ms / 1000).toFixed(1)}s` : ""}
           </p>
         )}
-        <div className={`inline-block max-w-full akki-serif text-[14.5px] leading-[1.65] whitespace-pre-wrap ${
+        <div className={`inline-block max-w-full akki-serif text-[14.5px] leading-[1.65] ${
           isUser
-            ? "bg-[var(--cream-deep)]/50 border border-[var(--rule)] rounded-sm px-3 py-2 text-[var(--ink)]"
+            ? "bg-[var(--cream-deep)]/50 border border-[var(--rule)] rounded-sm px-3 py-2 text-[var(--ink)] whitespace-pre-wrap"
             : "text-[var(--ink)]"
         }`}>
-          {!isUser && Array.isArray(m.citations) && m.citations.length > 0
-            ? renderInlineCitations(m.content, m.citations)
-            : m.content}
+          {/* Phase B.1 — markdown rendering for assistant bubbles
+              that have no citations. Citation-bearing replies keep
+              the existing inline-pill renderer because that returns
+              React nodes that don't mix with markdown's string
+              parser. User bubbles always plain-text (memo + voice
+              rule: never render user-supplied markdown as HTML). */}
+          {isUser ? (
+            m.content
+          ) : Array.isArray(m.citations) && m.citations.length > 0 ? (
+            <span className="whitespace-pre-wrap">
+              {renderInlineCitations(m.content, m.citations)}
+            </span>
+          ) : (
+            <div
+              className="akki-chat-md"
+              data-testid={m.streaming ? "chat-msg-assistant-streaming" : "chat-msg-assistant-md"}
+            >
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeHighlight]}
+                // Disallow raw HTML in LLM output. ReactMarkdown drops
+                // unknown HTML by default; we forbid the few tags
+                // that *would* parse so output is escaped not
+                // executed.
+                disallowedElements={["script", "iframe", "style", "form"]}
+                unwrapDisallowed
+                components={{
+                  a: ({ node, ...props }) => (
+                    <a {...props} target="_blank" rel="noreferrer noopener"
+                       className="text-[var(--accent)] underline" />
+                  ),
+                  table: ({ node, ...props }) => (
+                    <div className="my-2 overflow-x-auto">
+                      <table {...props} className="text-[13px] border-collapse [&_th]:border [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_th]:bg-[var(--cream-deep)]/40 [&_th]:text-left" />
+                    </div>
+                  ),
+                  code: ({ node, inline, ...props }) =>
+                    inline
+                      ? <code {...props} className="px-1 py-0.5 rounded-sm bg-[var(--cream-deep)]/60 text-[12.5px] font-mono" />
+                      : <code {...props} className="block whitespace-pre-wrap text-[12.5px] font-mono" />,
+                  pre: ({ node, ...props }) => (
+                    <pre {...props} className="my-2 p-3 rounded-sm bg-[var(--cream-deep)]/60 border border-[var(--rule)] overflow-x-auto text-[12.5px]" />
+                  ),
+                }}
+              >
+                {m.content || ""}
+              </ReactMarkdown>
+              {m.cancelled && (
+                <p className="mt-2 text-[11px] text-[var(--muted)] italic">
+                  Cancelled. Partial reply kept.
+                </p>
+              )}
+            </div>
+          )}
         </div>
         {/* Phase 11 ITEM C — citation chips travel as a structured array
             beneath the assistant reply, click-through into the Reading
@@ -761,10 +1020,38 @@ function renderInlineCitations(text, citations) {
   });
 }
 
-function Composer({ value, onChange, onSubmit, sending, policy }) {
+function Composer({ value, onChange, onSubmit, sending, policy, onCancel, attachments, onAttachFile, onRemoveAttachment }) {
   const ta = useRef(null);
+  const fileInputRef = useRef(null);
   return (
     <div className="border-t border-[var(--rule)] p-3 bg-white" data-testid="chat-composer">
+      {/* Phase B.1 — attached-file chips. Each chip shows name + size +
+          sensitivity band; click X to remove. The chips travel with
+          the next send and are cleared on success/cancel. */}
+      {attachments && attachments.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2" data-testid="chat-attachment-chips">
+          {attachments.map((a) => (
+            <span
+              key={a.document_id}
+              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-sm border text-[11px] ${BAND_COLOR[a.sensitivity?.classification?.toLowerCase?.() || "public"] || BAND_COLOR.public}`}
+              data-testid={`chat-attachment-chip-${a.document_id}`}
+              title={`${a.name} · ${_humanBytes(a.size_bytes)} · ${a.char_len || 0} chars · sensitivity ${a.sensitivity?.classification || "PUBLIC"}`}
+            >
+              <FileText className="w-3 h-3" />
+              <span className="max-w-[180px] truncate">{a.name}</span>
+              <span className="text-[10px] opacity-70">· {_humanBytes(a.size_bytes)} · {a.sensitivity?.classification || "PUBLIC"}</span>
+              <button
+                onClick={() => onRemoveAttachment(a.document_id)}
+                className="ml-1 hover:text-red-700"
+                aria-label={`Remove ${a.name}`}
+                data-testid={`chat-attachment-remove-${a.document_id}`}
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="flex items-end gap-2">
         <div className="flex-1 bg-[var(--cream)] border border-[var(--rule)] rounded-md p-2 focus-within:border-[var(--accent)]">
           <textarea
@@ -774,31 +1061,68 @@ function Composer({ value, onChange, onSubmit, sending, policy }) {
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSubmit(); }
             }}
-            placeholder="Message AKKI… (⌘/Ctrl+Enter to send)"
+            placeholder="Type a question, attach a document, or paste text. ⌘/Ctrl+Enter to send."
             disabled={sending}
             rows={2}
             className="w-full bg-transparent text-[14px] resize-none focus:outline-none akki-serif leading-relaxed"
             data-testid="chat-input"
           />
           <div className="flex items-center justify-between pt-1.5 border-t border-[var(--rule)]/60 mt-1">
-            <div className="flex items-center gap-1 text-[10px] text-[var(--muted)]">
-              <Shield className="w-2.5 h-2.5 text-[var(--accent)]" />
-              <span className="uppercase tracking-wider">{POLICY_LABEL[policy]}</span>
+            <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-1 text-[10px] text-[var(--muted)]">
+                <Shield className="w-2.5 h-2.5 text-[var(--accent)]" />
+                <span className="uppercase tracking-wider">{POLICY_LABEL[policy]}</span>
+              </div>
+              {/* Phase B.1 — file attach button */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={sending}
+                className="inline-flex items-center gap-1 text-[10.5px] text-[var(--muted)] hover:text-[var(--accent)] disabled:opacity-50"
+                data-testid="chat-attach-btn"
+                title="Attach a document (PDF, DOCX, TXT, or image)"
+              >
+                <Paperclip className="w-3 h-3" /> Attach
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.docx,.doc,.txt,.md,.png,.jpg,.jpeg,.webp"
+                className="hidden"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (f) await onAttachFile(f);
+                  e.target.value = "";
+                }}
+                data-testid="chat-attach-input"
+              />
             </div>
             <span className="text-[10px] text-[var(--muted)]">
               {value.length} / 20,000
             </span>
           </div>
         </div>
-        <Button
-          onClick={onSubmit}
-          disabled={sending || !value.trim()}
-          className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white h-10 w-12 p-0"
-          data-testid="chat-send-btn"
-          aria-label="Send"
-        >
-          {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-        </Button>
+        {sending ? (
+          <Button
+            onClick={onCancel}
+            className="bg-[var(--ink)]/80 hover:bg-[var(--ink)] text-white h-10 w-12 p-0"
+            data-testid="chat-cancel-btn"
+            aria-label="Cancel"
+            title="Cancel this turn"
+          >
+            <StopCircle className="w-4 h-4" />
+          </Button>
+        ) : (
+          <Button
+            onClick={onSubmit}
+            disabled={!value.trim()}
+            className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white h-10 w-12 p-0"
+            data-testid="chat-send-btn"
+            aria-label="Send"
+          >
+            <Send className="w-4 h-4" />
+          </Button>
+        )}
       </div>
     </div>
   );
