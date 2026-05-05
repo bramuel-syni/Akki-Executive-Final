@@ -48,12 +48,25 @@ async def send_email(
     reply_to: Optional[str] = None,
     from_executive_name: Optional[str] = None,
     tags: Optional[List[Dict[str, str]]] = None,
+    attachments: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Send a transactional email via Resend.
 
-    Returns `{ok, id, mode}` where mode is 'sent' on success, 'noop' if Resend
-    is not configured (caller can fall back), or 'error' on failure. Never
-    raises — email failures must not crash a UX flow."""
+    Returns `{ok, id, mode}` where mode is one of:
+      - 'sent'                 success
+      - 'noop'                 Resend not configured (caller can fall back)
+      - 'test_mode_restricted' Resend rejected because the API key is in
+                               test mode and the recipient is not the
+                               account owner's registered address. The
+                               caller MUST surface this to the user
+                               rather than treating it as a generic error.
+      - 'error'                anything else
+
+    Never raises — email failures must not crash a UX flow.
+
+    `attachments` follow the Resend SDK shape:
+      [{"filename": "session.pdf", "content": <base64 string OR bytes>}]
+    """
     if not _RESEND_KEY:
         logger.warning("Resend not configured — email to %s skipped", to)
         return {"ok": False, "id": None, "mode": "noop", "error": "RESEND_API_KEY not set"}
@@ -70,13 +83,35 @@ async def send_email(
         params["reply_to"] = reply_to
     if tags:
         params["tags"] = tags
+    if attachments:
+        params["attachments"] = attachments
 
     try:
         result = await asyncio.to_thread(resend.Emails.send, params)
         return {"ok": True, "id": result.get("id"), "mode": "sent"}
     except Exception as e:  # noqa: BLE001 — Resend wraps all errors
+        msg = str(e)
+        # Resend test-mode constraint: 403 + "you can only send testing
+        # emails to your own email address". Surface this distinctly so
+        # the UI can render the friendly notice instead of a generic
+        # error toast. See docs/RUNBOOKS/DEV_POD_CAVEATS.md §"Resend
+        # test-mode constraint".
+        low = msg.lower()
+        if (
+            "testing emails" in low
+            or "verify a domain" in low
+            or "you can only send" in low
+            or "validation_error" in low and "test" in low
+        ):
+            logger.warning("Resend test-mode restriction for to=%s: %s", to, msg[:200])
+            return {
+                "ok": False,
+                "id": None,
+                "mode": "test_mode_restricted",
+                "error": msg[:300],
+            }
         logger.exception("Resend send failed")
-        return {"ok": False, "id": None, "mode": "error", "error": str(e)[:300]}
+        return {"ok": False, "id": None, "mode": "error", "error": msg[:300]}
 
 
 def render_checklist_email_html(

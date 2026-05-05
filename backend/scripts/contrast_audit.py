@@ -77,11 +77,41 @@ checks = [
     ("Reflection heading",             "INK",    "PAPER"),
     ("Progress label (uppercase)",     "MUTED",  "PAPER"),
     ("Primary button text on accent",  "LIGHT",  "ACCENT_DARK"),
+    # ── Phase J — Sandbox v2 surface combinations ─────────────────────
+    # Welcome step (PAPER)
+    ("Sandbox Welcome heading",        "INK",    "PAPER"),
+    ("Sandbox Welcome lead",           "DEEP",   "PAPER"),
+    ("Sandbox Welcome muted footnote", "MUTED",  "PAPER"),
+    # Step 1 Solva (CREAM)
+    ("Sandbox Step1 opening question", "DEEP",   "CREAM"),
+    ("Sandbox Step1 fallback voice",   "MUTED",  "CREAM"),
+    # Step 1 Reveal (CREAM)
+    ("Sandbox reveal title",           "INK",    "CREAM"),
+    ("Sandbox reveal body",            "DEEP",   "CREAM"),
+    # Step 3 Studio (LIGHT)
+    ("Sandbox Studio source kind",     "MUTED",  "LIGHT"),
+    ("Sandbox Studio source title",    "INK",    "LIGHT"),
+    ("Sandbox Studio source body",     "DEEP",   "LIGHT"),
+    ("Sandbox Studio narration line",  "DEEP",   "LIGHT"),
+    ("Sandbox Studio composed para",   "INK",    "LIGHT"),
+    ("Sandbox Studio refusal voice",   "ACCENT_DARK", "LIGHT"),
+    # Step 3 Reveal (LIGHT)
+    ("Sandbox reveal title (LIGHT)",   "INK",    "LIGHT"),
+    ("Sandbox reveal body (LIGHT)",    "DEEP",   "LIGHT"),
+    # Step 4 Cycle snapshot (PAPER)
+    ("Sandbox Cycle banner",           "DEEP",   "CREAM_DEEP"),
+    ("Sandbox Cycle column heading",   "INK",    "PAPER"),
+    ("Sandbox Cycle row text",         "DEEP",   "PAPER"),
+    ("Sandbox Cycle status muted",     "MUTED",  "PAPER"),
+    # Closing (PAPER)
+    ("Sandbox Closing hope reflection","DEEP",   "PAPER"),
+    ("Sandbox Closing CTA secondary",  "INK",    "LIGHT"),
+    ("Sandbox Closing CTA primary",    "LIGHT",  "ACCENT_DARK"),
 ]
 print(f"\n{'surface':40} {'fg':10} {'bg':12} ratio  grade")
 for label, f, b in checks:
     r = ratio(TOKENS[f], TOKENS[b])
-    is_large = (f == "ACCENT") or label.endswith("(uppercase)") or "kicker" in label.lower() or "card heading" in label.lower() or "Q-screen heading" in label.lower() or "reflection heading" in label.lower() or "depth heading" in label.lower()
+    is_large = (f == "ACCENT") or label.endswith("(uppercase)") or "kicker" in label.lower() or "card heading" in label.lower() or "Q-screen heading" in label.lower() or "reflection heading" in label.lower() or "depth heading" in label.lower() or "reveal title" in label.lower() or "column heading" in label.lower() or "Welcome heading" in label.lower() or "banner" in label.lower()
     g = grade(r, large=is_large)
     big = "(LG)" if is_large else "    "
     print(f"{label:40} {f:10} {b:12} {r:5.2f}  {g} {big}")

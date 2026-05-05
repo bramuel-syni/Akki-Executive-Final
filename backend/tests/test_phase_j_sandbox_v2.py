@@ -426,9 +426,95 @@ async def test_save_and_send_persists_email_and_returns_resume_url(client):
     })
     assert rs.status_code == 200, rs.text
     data = rs.json()
-    assert data["ok"] is True
+    # Phase J.4 contract: `ok` is True only for clean delivery paths
+    # (`sent` and `noop`). `test_mode_restricted` and `error` are
+    # explicit failures the UI surfaces with a friendly notice.
+    assert data["delivery_mode"] in {
+        "sent", "noop", "test_mode_restricted", "error",
+    }
+    assert data["ok"] is (data["delivery_mode"] in {"sent", "noop"})
     assert data["email"] == "phasej.demo@example.com"
     assert data["resume_url"].endswith(f"token={sid}")
-    assert data["delivery_mode"] in {"sent", "noop", "error"}
+    # Persisted on the session record regardless of delivery outcome.
     rg = await client.get(f"/api/sandbox/v2/sessions/{sid}")
     assert rg.json()["captured_email"] == "phasej.demo@example.com"
+
+
+# ---------------------------------------------------------------------------
+# J.3 — Provenance refusal voice is sourced from the corpus per (role,
+# org_type) — Bank uses the verbatim pack copy; other contexts use the
+# generalisation cadence.
+# ---------------------------------------------------------------------------
+async def test_studio_add_sentence_refusal_voice_per_context_bank(client):
+    from sandbox_v2_corpus import pick_provenance_refusal
+    r = await client.post("/api/sandbox/v2/sessions", json={
+        "name": "Eka", "role": "ceo", "org_type": "bank",
+    })
+    sid = r.json()["session_id"]
+    rs = await client.post(
+        f"/api/sandbox/v2/sessions/{sid}/studio/add-sentence",
+        json={"sentence": "Quantum kangaroos run treasury operations."},
+    )
+    assert rs.status_code == 200, rs.text
+    body = rs.json()
+    assert body["accepted"] is False
+    expected = pick_provenance_refusal("ceo", "bank")
+    assert body["message"] == expected
+    # And it really is the verbatim Bank refusal voice from the pack:
+    assert "isn't sourced" in expected.lower() or "without a citation" in expected.lower()
+
+
+async def test_studio_add_sentence_refusal_voice_per_context_healthcare(client):
+    from sandbox_v2_corpus import pick_provenance_refusal
+    r = await client.post("/api/sandbox/v2/sessions", json={
+        "name": "Asha", "role": "ceo", "org_type": "healthcare",
+    })
+    sid = r.json()["session_id"]
+    rs = await client.post(
+        f"/api/sandbox/v2/sessions/{sid}/studio/add-sentence",
+        json={"sentence": "Lasers in the cafeteria solve every problem."},
+    )
+    assert rs.status_code == 200, rs.text
+    body = rs.json()
+    assert body["accepted"] is False
+    assert body["message"] == pick_provenance_refusal("ceo", "healthcare")
+
+
+async def test_studio_add_sentence_accepted_returns_citation(client):
+    from sandbox_v2_corpus import pick_studio_sources
+    r = await client.post("/api/sandbox/v2/sessions", json={
+        "name": "Lara", "role": "ned", "org_type": "bank",
+    })
+    sid = r.json()["session_id"]
+    sources = pick_studio_sources("ned", "bank")
+    # Pick a keyword guaranteed to overlap with at least one source.
+    overlap_kw = (sources[0].get("keywords") or ["provisioning"])[0]
+    rs = await client.post(
+        f"/api/sandbox/v2/sessions/{sid}/studio/add-sentence",
+        json={"sentence": f"The {overlap_kw} trajectory should be reviewed."},
+    )
+    assert rs.status_code == 200, rs.text
+    body = rs.json()
+    assert body["accepted"] is True
+    assert body["citation"]["sources"], "Accepted sentence must have at least one citation."
+    assert all("title" in s and "kind" in s for s in body["citation"]["sources"])
+
+
+# ---------------------------------------------------------------------------
+# J.4 — Cycle snapshot endpoint contract sanity check
+# ---------------------------------------------------------------------------
+async def test_cycle_snapshot_returns_full_shape(client):
+    r = await client.post("/api/sandbox/v2/sessions", json={
+        "name": "Marc", "role": "ceo", "org_type": "logistics",
+    })
+    sid = r.json()["session_id"]
+    rs = await client.get(f"/api/sandbox/v2/sessions/{sid}/cycle-snapshot")
+    assert rs.status_code == 200
+    snap = rs.json()["snapshot"]
+    for k in ("framing", "anchor_label", "timeline", "open_items",
+              "strategic_baseline", "pulse_items", "voice"):
+        assert k in snap, f"snapshot missing '{k}'"
+    assert isinstance(snap["timeline"], list) and snap["timeline"], "timeline non-empty"
+    for row in snap["timeline"]:
+        assert {"cycle", "anchor", "date", "status"} <= set(row.keys())
+    assert isinstance(snap["voice"], str) and snap["voice"].strip()

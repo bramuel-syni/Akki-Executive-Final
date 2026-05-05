@@ -1356,11 +1356,11 @@ async def sandbox_v2_add_sentence(sid: str, body: SandboxV2AddSentenceIn):
     """Accept the user-typed sentence iff its tokens overlap with the
     keywords of any loaded source chip; refuse otherwise.
 
-    Refusal voice (verbatim per the build brief):
-        "This claim isn't sourced from anything in your materials.
-         We can't add it without a citation."
+    Refusal voice is per-context: the Bank context uses the pack's
+    verbatim refusal copy; other contexts use the same FT cadence
+    parameterised in `sandbox_v2_corpus.pick_provenance_refusal`.
     """
-    from sandbox_v2_corpus import pick_studio_sources
+    from sandbox_v2_corpus import pick_studio_sources, pick_provenance_refusal
 
     rec = await db.sandbox_v2_sessions.find_one({"id": sid})
     if not rec:
@@ -1391,6 +1391,7 @@ async def sandbox_v2_add_sentence(sid: str, body: SandboxV2AddSentenceIn):
             "sentence": body.sentence,
         }
 
+    refusal_voice = pick_provenance_refusal(rec["role"], rec["org_type"])
     await db.sandbox_v2_sessions.update_one(
         {"id": sid},
         {"$set": {
@@ -1402,16 +1403,22 @@ async def sandbox_v2_add_sentence(sid: str, body: SandboxV2AddSentenceIn):
     return {
         "accepted": False,
         "reason": "no_source",
-        "message": (
-            "This claim isn't sourced from anything in your materials. "
-            "We can't add it without a citation."
-        ),
+        "message": refusal_voice,
     }
 
 
 # ---------------------------------------------------------------------------
 # Phase J.4 — Save & send (Resend in test mode; degrades to a noop log
 # when RESEND_API_KEY is absent).
+#
+# Behaviour:
+#   • Persists the captured email on the sandbox session.
+#   • Builds a resume URL (PUBLIC_APP_URL + /sandbox/resume?token=<sid>).
+#   • If a Solva session was created in Step 1, fetches the existing
+#     /api/solva/v2/sessions/{sid}/export.pdf and attaches it.
+#   • Calls email_service.send_email and surfaces the resulting `mode`
+#     verbatim — including the new `test_mode_restricted` value the
+#     UI uses to show the friendly "test-mode constraint" notice.
 # ---------------------------------------------------------------------------
 @router.post("/v2/sessions/{sid}/save-and-send")
 async def sandbox_v2_save_and_send(sid: str, body: SandboxV2SaveSendIn):
@@ -1427,9 +1434,42 @@ async def sandbox_v2_save_and_send(sid: str, body: SandboxV2SaveSendIn):
         }},
     )
 
-    resume_url = f"https://akki.ai/sandbox/resume?token={sid}"
+    import os as _os
+    public_base = (
+        _os.environ.get("PUBLIC_APP_URL")
+        or _os.environ.get("FRONTEND_URL")
+        or "https://akki.ai"
+    ).rstrip("/")
+    resume_url = f"{public_base}/sandbox/resume?token={sid}"
 
-    # Lazy import to keep this router cheap to load.
+    # Build the email body. The PDF attachment is best-effort; if the
+    # Solva export is unavailable we still send the resume link.
+    attachments: List[Dict[str, Any]] = []
+    solva_sid = rec.get("solva_session_id")
+    if solva_sid:
+        try:
+            solva_rec = await db.solva_v2_sessions.find_one(
+                {"id": solva_sid}, {"_id": 0},
+            )
+            if solva_rec:
+                from solva_artefact_export import build_pdf
+                # build_pdf is sync + CPU-bound (WeasyPrint). Push to a
+                # thread so we don't block the event loop.
+                import asyncio as _asyncio
+                pdf_bytes = await _asyncio.to_thread(build_pdf, solva_rec)
+                if pdf_bytes:
+                    import base64 as _b64
+                    attachments.append({
+                        "filename": "akki-sandbox-session.pdf",
+                        "content": _b64.b64encode(pdf_bytes).decode("ascii"),
+                    })
+        except Exception as exc:  # noqa: BLE001
+            logger.info("[sandbox-v2] could not attach Solva PDF for sid=%s: %s", sid, exc)
+
+    delivery_mode: str = "noop"
+    delivery_message: Optional[str] = None
+    delivery_id: Optional[str] = None
+
     try:
         from email_service import send_email
         from os import environ
@@ -1446,19 +1486,32 @@ async def sandbox_v2_save_and_send(sid: str, body: SandboxV2SaveSendIn):
                 subject="Your Akki Sandbox session — saved.",
                 html=html,
                 tags=[{"name": "campaign", "value": "sandbox-v2-save-and-send"}],
+                attachments=attachments or None,
             )
-            mode = email_resp.get("mode", "unknown") if isinstance(email_resp, dict) else "unknown"
+            if isinstance(email_resp, dict):
+                delivery_mode = email_resp.get("mode", "unknown")
+                delivery_id = email_resp.get("id")
+                if delivery_mode == "test_mode_restricted":
+                    delivery_message = (
+                        "Resend is in test mode in this environment, so we can only "
+                        "deliver to the registered test address. Your session is still "
+                        "saved — bookmark the resume link above."
+                    )
         else:
-            mode = "noop"
+            delivery_mode = "noop"
             logger.info("[sandbox-v2] RESEND_API_KEY missing — save-and-send logged only sid=%s", sid)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[sandbox-v2] save-and-send email failed: %s", exc)
-        mode = "error"
+        delivery_mode = "error"
+        delivery_message = "We couldn't send the email just now — your session is still saved."
 
     return {
-        "ok": True,
+        "ok": delivery_mode in {"sent", "noop"},
         "email": str(body.email),
         "resume_url": resume_url,
-        "delivery_mode": mode,
+        "delivery_mode": delivery_mode,
+        "delivery_id": delivery_id,
+        "message": delivery_message,
+        "attachment_count": len(attachments),
     }
 

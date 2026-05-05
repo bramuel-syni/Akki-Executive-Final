@@ -25,6 +25,7 @@ Anything marked Pending or Placeholder must not be described to prospects as a c
 | Solva v1 (4-phase engine) | Read-only forensic | POSTs retired in Phase A; six GETs preserved at `/api/solva/*` for historical session inspection | 11 / Phase A |
 | Solva v2 (engine) | Shipped | Reasoning tier, four sub-modules, tension detector, grounding contract, guardrail ladder, reflection layer | 15.0–15.3.5 |
 | Solva v3 (UI rebuild) | Shipped | Single-column Guided Flow at `/app/solva/session/*`, 4-card centred landing, composed artefact with animated probability bars, PDF + DOCX export, refusal artefact, WCAG AA contrast | Phase I (2026-05-05) |
+| Sandbox v2 (pre-auth demo) | Shipped | 7-state guided flow at `/sandbox` with verbatim 5-context corpus, calibrated Solva turn, source-anchored composition with provenance refusal, read-only Cycle snapshot, hope-loop closing with 3-CTA conversion + save-and-send (legacy preserved at `/sandbox/legacy`) | Phase J (2026-05-05) |
 | Work Studio | Shipped | Block editor with deterministic sensitivity and exposure scoring | 13.3 |
 | Cycle Manager | Shipped | Briefs, Signals, Minutes, Actions and Reports under one surface | 13.2 |
 | Akki Pulse | Placeholder | Holding page only; aggregator and Privacy Wall unbuilt | 14 |
@@ -109,6 +110,34 @@ Endpoints are auth-gated; refusal sessions return `X-Solva-Artefact: refusal` so
 ### Solva v1 (read-only forensic)
 
 The pre-v2 engine remains accessible read-only for historical session inspection: 6 `GET /api/solva/*` endpoints (clusters, sessions, handoffs, export.pdf). All v1 POSTs were retired in Phase A.
+
+## Sandbox v2 (pre-auth demo)
+
+### What it does
+
+Pre-authenticated 7-step guided demonstration that puts a visitor through a calibrated end-to-end Akki experience in 5–7 minutes — Welcome → Solva turn → reveal → Work Studio composition with provenance → reveal → Cycle snapshot → reveal → Closing — without ever leaving the sandbox surface or requiring a login. The legacy 10-stage streaming Sandbox is preserved at `/sandbox/legacy` for 30 days for forensic comparison.
+
+### How it works today
+
+- **Pure-reducer state machine.** `frontend/src/lib/sandboxV2Flow.js` (303 ll., 28 jest tests) drives the 7-state sequence `WELCOME → STEP_1_SOLVA → STEP_1_REVEAL → STEP_3_STUDIO → STEP_3_REVEAL → STEP_4_CYCLE → STEP_4_REVEAL → CLOSING` plus a refusal interrupt path. `STEP_2_PULSE` / `STEP_2_REVEAL` are reserved but unreachable until Phase D.2 (comment at `sandboxV2Flow.js:36`).
+- **Persistence.** `db.sandbox_v2_sessions` carries `{name, role, org_type, hope, state, payload, expires_at}` with a TTL index of 7 days. A resume URL `/sandbox/resume?token=<sid>` rehydrates server-side truth into the reducer.
+- **Calibration corpus.** `backend/sandbox_v2_corpus.py` (1,443 ll.) carries the verbatim 5-context Sandbox Content Pack (Mara Heritage Bank, Lenana Health Group, Korogocho Logistics Group, Tahidi Systems, Ministry of Industrial Modernisation) and the strict fallback routing: Pre-IPO → Bank, Listed corporate (operational role) → Logistics else Bank, Other → Technology.
+- **Step 1 — Solva.** `Step1SolvaWrapper.jsx` wraps the Phase I Guided Flow with sub-module forced to `develop_strategy`, picker hidden, `sandbox: true` flag on session creation, and 3-question compression (no depth round). Opening question and empty-framing fallback come pre-loaded from the corpus via `GET /api/sandbox/v2/sessions/{sid}/{opening-question, fallback-situation}`. Refusal is handled and surfaces a brief-locked "the refusal IS the demo" voice on `SolvaRefusalArtefact`.
+- **Step 3 — Work Studio.** `Step3StudioWrapper.jsx` is a 2-column split. The left column lists the 3 source-document chips from `pick_studio_sources`; clicking a chip expands the verbatim body. The right column rotates through 5 narration lines under `aria-busy=true` for ~75 s, then reveals the verbatim composed draft from `pick_composed_draft`. `[Doc N]`-style citation markers in the draft expose hover/keyboard tooltips that resolve back to the source. A "Try adding your own claim" probe sends the typed sentence to `POST /api/sandbox/v2/sessions/{sid}/studio/add-sentence`, which performs a deterministic keyword-overlap check against the source keyword sets — accepted sentences carry a citation back; refused sentences receive the per-context refusal voice (Bank verbatim from the pack; other contexts use the same FT cadence generalised, via `pick_provenance_refusal(role, org_type)`).
+- **Step 4 — Cycle snapshot.** `Step4CycleSnapshot.jsx` is read-only and rendered from `pick_cycle_snapshot(role, org_type)` via `GET /api/sandbox/v2/sessions/{sid}/cycle-snapshot`: timeline anchors, open items carried forward (with status pills), strategic baseline, Pulse-derived items, and the corpus's `voice` field used verbatim as the top banner ("This is a snapshot of what your Cycle Manager would look like after three cycles in Akki…").
+- **Closing.** `ClosingStep.jsx` surfaces the user's `hope` answer back to them, then offers a 3-CTA equal-weight conversion block (Demo / Early access / Save & send). Save-and-send POSTs to `/api/sandbox/v2/sessions/{sid}/save-and-send` which persists the captured email, builds a resume URL (`PUBLIC_APP_URL/sandbox/resume?token=<sid>`), best-effort attaches the Solva v2 PDF if a `solva_session_id` was minted in Step 1 (via `solva_artefact_export.build_pdf` on a thread), and returns `delivery_mode ∈ {sent, noop, test_mode_restricted, error}`. The `test_mode_restricted` mode is surfaced when Resend rejects the recipient under its test-key constraint; the UI renders a friendly "session is saved — bookmark the resume link" notice rather than a hard error.
+- **A11y.** Reveal sequences carry the full reveal text in `role="status" aria-live="polite"` from frame 0 (so AT users hear it once, intact, regardless of the visual fade choreography). The Step 3 narration column carries `aria-busy="true"` while rotating; the citation pills use `tabIndex=0` + `role="button"` and announce on focus. `prefers-reduced-motion` snaps every fade and rotation to its final state. WCAG AA contrast is verified for all 21 Sandbox v2 surface combinations in `backend/scripts/contrast_audit.py`.
+- **Visual register.** Welcome PAPER / Step 1 + Reveal CREAM / Step 3 + Reveal LIGHT / Step 4 + Reveal PAPER. Progress chrome and an Exit Sandbox link are visible on Steps 1/3/4.
+
+### Endpoints
+
+`POST /api/sandbox/v2/sessions`, `GET/PATCH /api/sandbox/v2/sessions/{sid}`, `POST /api/sandbox/v2/sessions/{sid}/exit`, `GET /api/sandbox/v2/sessions/{sid}/{opening-question | fallback-situation | studio-sources | cycle-snapshot | pulse-signals | composed-draft}`, `POST /api/sandbox/v2/sessions/{sid}/{studio/add-sentence | save-and-send}`.
+
+### What's still pending
+
+- **Step 2 (Pulse).** Deferred to Phase D.2. The reducer reserves `STEP_2_PULSE` / `STEP_2_REVEAL` and the `pulse-signals` corpus endpoint is already live; the UI integration ships when Phase 14 Privacy Wall lands.
+- **Resend production wiring.** Outbound email is currently in test mode — only the registered test-account address receives delivery. Save-and-send returns `test_mode_restricted` for any other recipient and the UI renders the friendly notice. Slated for the Phase 17 / 18 production cutover alongside `PUBLIC_APP_URL`.
+- **Solva refusal corpus passes.** The current Step 1 always succeeds against the 5 production contexts; refusal can still be triggered organically when the user types a thin framing. Future work: a deterministic "refusal demo" fallback the user can opt into.
 
 ## Work Studio
 

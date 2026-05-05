@@ -219,7 +219,15 @@ export default function SandboxV2Page() {
       break;
 
     case "STEP_4_REVEAL":
-      body = <StepReveal stepIndex={4} onAdvance={advance} advanceLabel="Finish \u2192" />;
+      body = (
+        <StepReveal
+          stepIndex={4}
+          onAdvance={advance}
+          advanceLabel={"Finish \u2192"}
+          conversionLabel={"Save \u0026 send to my email"}
+          onConversion={advance}
+        />
+      );
       break;
 
     case "CLOSING":

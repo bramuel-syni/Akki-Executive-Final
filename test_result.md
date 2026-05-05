@@ -247,17 +247,73 @@ frontend:
           -agent: "main"
           -comment: "ReflectionScreen wires REFLECT_1..3 with the 3 verbatim brief questions plus a refusal-variant first question. Skip option present but muted. On REFLECT_3 exit returns to artefact with 1.5s 'Session saved' toast. Keyboard nav (Tab traversal, Ctrl/Cmd+Enter submit, Escape to skip). ARIA: role='img' + full label on every probability bar; aria-expanded + aria-controls on reasoning expandable. prefers-reduced-motion honoured by hook + transition: none fallback across all motion. Contrast audit at /app/backend/scripts/contrast_audit.py — 20 specific Solva v3 surface combinations all PASS (see report). Brief-conflict resolved: ACCENT=#C25A38 ratios 4.36 vs LIGHT (below AA 4.5 normal text). Introduced ACCENT_DARK=#B85230 (4.90:1) for interactive fills (buttons, refusal pill); brand ACCENT preserved for kickers / dividers (large text, 3.82:1 on CREAM). Docs sweep applied: docs/ROADMAP.md gets a Phase I sub-step matrix; docs/PRODUCT_FEATURES.md updated to mark Solva UI as v3 with the new flow + export surfaces. /docs and /openapi.json HTTP 200 after every sub-step."
 
+  - task: "Phase J.2 — Sandbox v2 Step 1 Solva wrapper + reusable Reveal"
+    implemented: true
+    working: false
+    file: "/app/frontend/src/components/sandbox/v2/Step1SolvaWrapper.jsx, /app/frontend/src/components/sandbox/v2/StepReveal.jsx, /app/frontend/src/pages/SandboxV2.jsx"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+          -agent: "main"
+          -comment: "Step1SolvaWrapper.jsx wraps Phase I Guided Flow with sub-module forced to develop_strategy, picker hidden, sandbox=true on POST /api/solva/v2/sessions, 3-question compression (no depth round). Pre-loads opening question + fallback situation from /api/sandbox/v2/sessions/{sid}/{opening-question, fallback-situation}. Refusal path renders SolvaRefusalArtefact with brief-locked voice. StepReveal.jsx is a fresh reusable reveal: Georgia 28px bold title, Georgia 18px italic body, 800/400/600 ms fade timing, role='status' aria-live='polite' status region with the full reveal text from frame 0, prefers-reduced-motion snaps to final state. Accepts title/body/advanceLabel/conversionLabel/onConversion props for editorial swap-without-rebuild. Lint clean."
+        -working: false
+          -agent: "testing"
+          -comment: "CRITICAL BLOCKER. Followed walkthrough verbatim: Welcome (Sandbox Tester / NED / Bank / 'see Akki refuse a thin claim') → submitted; FRAMING rendered with bank-context opening question (referenced 'bank' explicitly) PASS; submitted vague framing 'things feel off in the bank'; Q1 rendered correctly with the LLM-generated bank/CFO-flavoured question PASS (screenshot 02 captured). Submitted brief answer 'not sure, gut feel only' as the spec instructs — backend POST /api/solva/v2/sessions/{sid}/turns hard-blocks the session via the refusal ladder and the UI then shows ONLY the raw error string 'This Solva v2 session has been hard-blocked by the refusal ladder and cannot accept further turns.' inside a red error box, with NO 'Continue →' CTA, NO ARTEFACT, NO ARTEFACT_REFUSAL — the walkthrough dead-ends in Step 1. Step1SolvaWrapper.jsx switch (innerState) has no case for the hard-blocked terminal state and the page never advances to STEP_1_REVEAL. Direct consequence: screenshots 04..15 (desktop) and m05/m07/m08/m11/m14 (mobile) cannot be captured because Steps 1-Reveal / 3 / 3-Reveal / 4 / 4-Reveal / Closing are unreachable. Repro: /sandbox → fill welcome (NED/Bank) → framing 'things feel off in the bank' → answer Q1 with anything terse like 'not sure, gut feel'. Likely fix: (a) Step1SolvaWrapper.jsx should detect the 409 (or status='blocked' on /turns response) and dispatch into ARTEFACT_REFUSAL with the locked refusal voice + 'Continue →' CTA, OR (b) the sandbox surface should configure Solva v2 with refusal_ladder.sensitivity=lenient since brief vagueness is the stated demo path ('see Akki refuse a thin claim'). Captured: 01_welcome_filled.png ✅, 02_step1_question.png ✅, 03_step1_artefact.png ❌ (shows the hard-block error, not an artefact). DESKTOP screenshots 04-15 NOT CAPTURED. MOBILE pass NOT EXECUTED. role/orgtype testid format note: it is `sandbox-v2-welcome-orgtype-bank` (no underscore), already accommodated."
+
+  - task: "Phase J.3 — Sandbox v2 Step 3 Work Studio split + provenance refusal"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/sandbox/v2/Step3StudioWrapper.jsx, /app/backend/routers/sandbox.py, /app/backend/sandbox_v2_corpus.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+          -agent: "main"
+          -comment: "Step3StudioWrapper.jsx 2-column split: source chips (left, click-to-expand) vs composition (right). Composition phases: 5 narration lines rotating over ~75 s under aria-busy=true, then composed-draft reveal with [Doc N]-style marker hover/keyboard tooltips, then provenance probe (textarea → POST /api/sandbox/v2/sessions/{sid}/studio/add-sentence). Backend keyword-overlap check refuses unsourced claims using pick_provenance_refusal(role, org_type) — Bank uses pack verbatim; other 4 contexts use the same FT cadence generalised. Tests: 3 new pytests (test_studio_add_sentence_refusal_voice_per_context_bank, _healthcare; test_studio_add_sentence_accepted_returns_citation) all pass. Lint clean."
+
+  - task: "Phase J.4 — Sandbox v2 Cycle snapshot + Closing + save-and-send (Resend test-mode aware)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/sandbox/v2/Step4CycleSnapshot.jsx, /app/frontend/src/components/sandbox/v2/ClosingStep.jsx, /app/backend/routers/sandbox.py, /app/backend/email_service.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+          -agent: "main"
+          -comment: "Step4CycleSnapshot.jsx is read-only and rendered from pick_cycle_snapshot(role, org_type) via GET /api/sandbox/v2/sessions/{sid}/cycle-snapshot — Timeline / Open items (with status pills) / Strategic baseline / Pulse-derived items, with the corpus's voice field used verbatim as the top banner. ClosingStep.jsx surfaces the user's hope answer back to them, then a 3-CTA equal-weight conversion block (Demo / Early access / Save & send). Save-and-send POSTs /api/sandbox/v2/sessions/{sid}/save-and-send which persists captured email, builds a resume URL (PUBLIC_APP_URL/sandbox/resume?token=<sid>), best-effort attaches the Solva v2 PDF if a solva_session_id exists (via solva_artefact_export.build_pdf on a thread). email_service.send_email gained an `attachments` parameter and now detects Resend test-mode 403 → returns delivery_mode='test_mode_restricted' which the UI surfaces as a friendly notice rather than a hard error. Test contract update: existing test_save_and_send_persists_email_and_returns_resume_url updated to allow {sent, noop, test_mode_restricted, error} and ok=true only for {sent, noop}. New test test_cycle_snapshot_returns_full_shape verifies snapshot contract. 29/29 pytests pass for Phase J. Lint clean."
+
+  - task: "Phase J.6 — Sandbox v2 visual register, ARIA, contrast audit"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/scripts/contrast_audit.py, /app/frontend/src/components/sandbox/v2/StepShell.jsx, /app/frontend/src/components/sandbox/v2/ProgressChrome.jsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+          -agent: "main"
+          -comment: "Visual register: Welcome PAPER / Step 1 + Reveal CREAM / Step 3 + Reveal LIGHT / Step 4 + Reveal PAPER (already wired in StepShell.jsx by J.1). Progress chrome and Exit Sandbox link visible on Steps 1/3/4 (already wired in ProgressChrome.jsx). ARIA: every reveal carries role='status' aria-live='polite' carrying full reveal text from frame 0 (visual fades are aria-hidden); Step 3 narration column is aria-busy='true' while rotating; citation pills have tabIndex=0 + role='button'. backend/scripts/contrast_audit.py extended with 21 Sandbox v2 surface combinations — all PASS WCAG AA (full report logged). Lint clean. Existing Phase A→I tests remain green."
+
 metadata:
   created_by: "main_agent"
-  version: "1.0"
-  test_sequence: 1
+  version: "1.1"
+  test_sequence: 2
   run_ui: false
 
 test_plan:
-  current_focus: []
-  stuck_tasks: []
+  current_focus:
+    - "Phase J.2 — Sandbox v2 Step 1 Solva wrapper + reusable Reveal"
+    - "Phase J.3 — Sandbox v2 Step 3 Work Studio split + provenance refusal"
+    - "Phase J.4 — Sandbox v2 Cycle snapshot + Closing + save-and-send (Resend test-mode aware)"
+    - "Phase J.6 — Sandbox v2 visual register, ARIA, contrast audit"
+  stuck_tasks:
+    - "Phase J.2 — Sandbox v2 Step 1 Solva wrapper + reusable Reveal"
   test_all: false
-  test_priority: "high_first"
+  test_priority: "stuck_first"
 
 agent_communication:
     -agent: "main"
@@ -266,3 +322,7 @@ agent_communication:
       -message: "All three Phase 11 backend items PASS. backend_test.py at /app/backend_test.py covers 38 assertions across A/B/C; 38/38 PASS. ITEM A: public Chair read returns watermark + content (deck slides / briefing items) with zero denylisted keys at any depth; tamper tests (wrong-secret, malformed, expired) return 400/410, never 500. ITEM B: deck/report/solve all persist real validation payloads (verdict in {validated,qualified,flagged}, confidence 0..100, validator_provider/model populated). Soft cap: VALIDATOR_DAILY_SOFT_CAP=1 ⇒ first call validates, second call returns provider='n/a' with note 'Daily validator cap reached'. Brief surface bypass confirmed (still validates after deck cap trips). Report validation never overwritten on second send_up (admin → 403). ITEM C: tethered chat returns 5 structured citations + inline [1]..[5] chips, no [[cite: markers leak, audit log carries citations_kept/dropped counters; untethered chat returns empty citations and clean content. Backend env was modified (VALIDATOR_DAILY_SOFT_CAP added then removed) and supervisor restarted twice; final state matches starting state."
     -agent: "main"
       -message: "Phase I — Solva v3 UX rebuild — COMPLETE (sub-steps I.2 → I.3 → I.4 → I.5; I.1 was already shipped). Backend: 13/13 pytest tests pass (/app/backend/tests/test_phase_i_solva_export.py); /openapi.json + /docs both HTTP 200 after every sub-step; new endpoints GET /api/solva/v2/sessions/{sid}/{artefact-reasoning, export.pdf, export.docx}; auto_cluster=true default in StartV2In with cluster_id now Optional. Frontend: 36/36 jest tests pass (/app/frontend/src/lib/__tests__/solvaFlow.test.js); pure reducer in /app/frontend/src/lib/solvaFlow.js; 9 new flow / artefact components; new page /app/frontend/src/pages/SolvaSession.jsx mounted at /app/solva/session/{new|:sessionId}. Live walk verified end-to-end on the preview URL: signin → /app/solva landing → click develop_strategy card → /app/solva/session/new → framing → real-LLM Q1 → answer → Q2; injected-completed-session also verified to render the full 5-section artefact + animated bars + sensitivity callout + tension callout + reasoning expandable + download menu; injected refusal session renders the 4-section refusal artefact with HONEST REFUSAL pill. Smoke artefacts at /app/frontend/public/static/qa/phase-i/{std,refusal}.{pdf,docx}. WCAG AA contrast audit: 20/20 specific surface combinations pass; introduced ACCENT_DARK=#B85230 to keep brand ACCENT (#C25A38) on kickers while moving button + pill fills onto the AA-safe shade (4.90:1 on white). Lint clean on every touched file. Docs sweep: ROADMAP.md gets a Phase I sub-step matrix; PRODUCT_FEATURES.md marks Solva UI as v3."
+    -agent: "main"
+      -message: "Phase J — Sandbox v2 rebuild — sub-steps J.2, J.3, J.4, J.6 implemented (J.1 + J.5 were already closed). NO LOGIN REQUIRED — Sandbox v2 is pre-auth at /sandbox; legacy preserved at /sandbox/legacy. Backend: 29/29 pytests pass (/app/backend/tests/test_phase_j_sandbox_v2.py) — 5 new tests added covering provenance refusal voice per (role, org_type), accepted-citation contract, cycle snapshot shape contract, and the new test_mode_restricted delivery mode. Frontend: 28/28 jest tests pass (sandboxV2Flow). New endpoints in OpenAPI: /api/sandbox/v2/sessions/{sid}/{opening-question, fallback-situation, studio-sources, composed-draft, cycle-snapshot, pulse-signals, studio/add-sentence, save-and-send, exit}. WCAG AA contrast audit extended with 21 Sandbox v2 surface combinations — all PASS. /docs + /openapi.json both 200; pip check clean; ruff + ESLint clean on every modified file. PLEASE TEST FRONTEND end-to-end: visit /sandbox (no auth), complete the Welcome step (any name; role='ned' or 'ceo'; org_type='bank' OR 'healthcare' to exercise routing; hope='see Akki refuse a thin claim'). Then walk Step 1 Solva → ARTEFACT (or ARTEFACT_REFUSAL on a deliberately thin framing) → Reveal. Then walk Step 3 — verify left source-chips are clickable, verify the right column rotates through 5 narration lines under aria-busy=true, verify the composed draft shows hover-citation tooltips on [Doc N] markers, verify the provenance probe accepts a sentence containing a corpus keyword (e.g. 'provisioning' for Bank) and refuses a kangaroo sentence with the per-context refusal voice. Then Step 3 Reveal. Then Step 4 cycle snapshot — verify the corpus banner renders verbatim, verify all 4 sections (Timeline / Open items / Strategic baseline / Pulse-derived). Then Step 4 Reveal — verify the conversion CTA also advances. Then Closing — verify the user's hope answer is surfaced verbatim, all 3 CTA cards are present, save-and-send opens the inline form, and submitting an arbitrary email returns either a 'sent / noop / test_mode_restricted' notice (Resend is in test mode in this env so test_mode_restricted is the expected default for non-test-account recipients). Capture screenshots at: Welcome filled, Step 1 mid-question, Step 1 Reveal phase=2, Step 3 mid-narration (narrationIdx > 0), Step 3 composed with citation tooltip visible, Step 3 provenance refusal pill visible, Step 4 snapshot, Step 4 Reveal, Closing with hope-loop. Test in mobile dimensions (390x844 + 360x800) too — the Step 3 split should stack."
+    -agent: "testing"
+      -message: "CRITICAL BLOCKER on Sandbox v2 walkthrough at Step 1. The walkthrough as scripted (NED/Bank, framing 'things feel off in the bank', Q1 answer 'not sure, gut feel') triggers the Solva v2 refusal ladder which hard-blocks the session. The Sandbox v2 Step1SolvaWrapper has NO handler for this terminal state — instead of routing into ARTEFACT_REFUSAL with the brief-locked voice + 'Continue →' CTA, the screen renders only the raw error string 'This Solva v2 session has been hard-blocked by the refusal ladder and cannot accept further turns.' with no path forward. The user (and the test) is dead-stuck at Step 1; Steps 1-Reveal / 3 / 3-Reveal / 4 / 4-Reveal / Closing are all unreachable. PASSES captured before the block: (1) /sandbox loads pre-auth ✅; (2) Welcome 4-question form renders, all fields fillable, submit advances to FRAMING ✅; (3) FRAMING pre-loads a bank-context italic Georgia opening question ✅; (4) Q1 renders with a real LLM-generated, bank/NED-flavoured question ✅. FAILS: (5) Q1 answer triggers a 409/blocked response that the wrapper never converts into ARTEFACT_REFUSAL. Recommended fix on Step1SolvaWrapper.jsx: when the /turns response carries status=='blocked' or HTTP 409, dispatch the reducer into ARTEFACT_REFUSAL with a sandbox-locked refusal payload (or, alternately, lower the refusal-ladder sensitivity for sandbox=true sessions on the backend so brief vague answers don't get hard-blocked — the whole demo intent is 'see Akki refuse a thin claim'). Mobile pass NOT EXECUTED. Captured screenshots: 01_welcome_filled.png ✅, 02_step1_question.png ✅, 03_step1_artefact.png (shows the hard-block error, NOT a true artefact). Steps J.3 / J.4 / J.6 could not be exercised end-to-end because Step 1 cannot be cleared. Browser-automation invocations are exhausted — main agent should fix Step1SolvaWrapper handling of the hard-blocked state (or make sandbox sessions tolerate brief vagueness) and re-run the walkthrough."
