@@ -244,6 +244,49 @@ async def mark_briefing_read(
     return {"ok": True, "read_at": now_iso, "read_via": body.via}
 
 
+@router.get("/contexts/{context_id}/briefings/aggregates")
+async def list_brief_aggregates(
+    context_id: str,
+    kind: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Phase C.1 — aggregate listing for the Workspace rewire.
+
+    Registered BEFORE the `/{briefing_id}` route below so FastAPI's
+    in-order matcher resolves `/aggregates` to this handler instead of
+    treating "aggregates" as a briefing id.
+    """
+    if kind not in _AGG_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown aggregate kind. Allowed: {', '.join(_AGG_KINDS)}.",
+        )
+    if kind == "cycle_board_pack":
+        items = await _list_cycle_board_packs(context_id)
+    elif kind == "cycle_minutes":
+        items = await _list_cycle_minutes(context_id)
+    else:
+        items = await _list_cycle_committee_packs(context_id)
+    return {"kind": kind, "items": items}
+
+
+@router.get("/contexts/{context_id}/briefings/aggregates/{aggregate_id}")
+async def get_brief_aggregate(
+    context_id: str,
+    aggregate_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Phase C.1 — aggregate detail for the Workspace drawer."""
+    parsed = _split_agg_id(aggregate_id)
+    if not parsed:
+        raise HTTPException(status_code=400, detail="Bad aggregate id.")
+    if parsed["kind"] == "cycle_board_pack":
+        return await _detail_cycle_board_pack(context_id, parsed["internal_id"])
+    if parsed["kind"] == "cycle_minutes":
+        return await _detail_cycle_minutes(context_id, parsed["internal_id"])
+    return await _detail_cycle_committee_pack(context_id, parsed["internal_id"])
+
+
 @router.get("/contexts/{context_id}/briefings/{briefing_id}")
 async def get_briefing(
     briefing_id: str,
@@ -609,3 +652,392 @@ async def regenerate_boardpack_commentary(
 
     refreshed = await db.boardpacks.find_one({"id": bpid}, {"_id": 0})
     return _serialise_boardpack(refreshed)
+
+
+# =============================================================================
+# Phase C.1 — Workspace rewire — aggregate listings (memo Item 2)
+#
+# Three aggregate kinds shown as a single tabbed listing on /app/work-studio:
+#   • cycle_board_pack        — sourced from db.boardpacks (authoritative)
+#   • cycle_minutes           — derived from db.documents matching minutes
+#                               heuristics, grouped by quarter
+#   • cycle_committee_pack    — derived from db.committees (+ associated docs)
+#
+# Each row carries the memo's required markers: meeting_date,
+# document_count, contributor_count, plus a period_start/period_end so
+# the UI can render a clean "Q1 2026 · Jan–Mar" subtitle.
+#
+# C.1 is read-only scaffolding. No new collections are created. The
+# detail endpoint is permissive on missing fields — it serialises what
+# is there and leaves blanks where the upstream data has not yet
+# settled. The UI shows an empty-state when a kind returns zero rows.
+# =============================================================================
+_AGG_KINDS = ("cycle_board_pack", "cycle_minutes", "cycle_committee_pack")
+_MINUTES_NAME_RE = None  # lazy
+_MINUTES_KINDS = {"minutes", "meeting_minutes", "minutes_main_board"}
+
+
+def _quarter_label(d: Any) -> str:
+    """Return 'Q1 2026' from a datetime / iso string. Defensive on Nones."""
+    from datetime import datetime
+    if not d:
+        return "Uncycled"
+    if isinstance(d, str):
+        try:
+            d = datetime.fromisoformat(d.replace("Z", "+00:00"))
+        except Exception:
+            return "Uncycled"
+    try:
+        q = (d.month - 1) // 3 + 1
+        return f"Q{q} {d.year}"
+    except Exception:
+        return "Uncycled"
+
+
+def _quarter_bounds(d: Any) -> Dict[str, Optional[str]]:
+    """Return iso start/end for the calendar quarter containing `d`."""
+    from datetime import datetime, timezone
+    if not d:
+        return {"period_start": None, "period_end": None}
+    if isinstance(d, str):
+        try:
+            d = datetime.fromisoformat(d.replace("Z", "+00:00"))
+        except Exception:
+            return {"period_start": None, "period_end": None}
+    try:
+        q = (d.month - 1) // 3 + 1
+        sm = (q - 1) * 3 + 1
+        em = sm + 2
+        from calendar import monthrange
+        last_day = monthrange(d.year, em)[1]
+        start = datetime(d.year, sm, 1, tzinfo=timezone.utc)
+        end = datetime(d.year, em, last_day, 23, 59, 59, tzinfo=timezone.utc)
+        return {"period_start": start.isoformat(), "period_end": end.isoformat()}
+    except Exception:
+        return {"period_start": None, "period_end": None}
+
+
+def _agg_id(kind: str, internal_id: str) -> str:
+    """Compose the URL-safe aggregate id used by the per-aggregate
+    detail endpoint. The kind prefix lets the GET handler dispatch
+    without needing a query parameter."""
+    return f"{kind}::{internal_id}"
+
+
+def _split_agg_id(aid: str) -> Optional[Dict[str, str]]:
+    if "::" not in aid:
+        return None
+    kind, _, internal = aid.partition("::")
+    if kind not in _AGG_KINDS or not internal:
+        return None
+    return {"kind": kind, "internal_id": internal}
+
+
+async def _list_cycle_board_packs(context_id: str) -> List[Dict[str, Any]]:
+    """Query db.boardpacks (post-M.3 authoritative source). The
+    `meeting_date` falls back to created_at when an explicit meeting_date
+    is absent — most boardpacks pre-date the C.1 markers."""
+    rows = await db.boardpacks.find(
+        {"context_id": context_id}, {"_id": 0},
+    ).sort("created_at", -1).to_list(200)
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        doc_ids = r.get("document_ids") or [it.get("doc_id") for it in (r.get("items") or []) if it.get("doc_id")]
+        doc_ids = [d for d in doc_ids if d]
+        contributor_count = len(r.get("contributors") or [])
+        if contributor_count == 0 and doc_ids:
+            # Derive contributor count from the documents' uploaders.
+            cursor = db.documents.find(
+                {"id": {"$in": doc_ids}, "context_id": context_id},
+                {"_id": 0, "uploaded_by": 1},
+            )
+            uploaders = {d.get("uploaded_by") for d in await cursor.to_list(500) if d.get("uploaded_by")}
+            contributor_count = len(uploaders)
+        meeting_date = r.get("meeting_date") or r.get("cycle_meeting_date") or r.get("created_at")
+        out.append({
+            "id": _agg_id("cycle_board_pack", r["id"]),
+            "kind": "cycle_board_pack",
+            "name": r.get("title") or r.get("cycle_label") or "Board Pack",
+            "meeting_date": meeting_date,
+            "document_count": len(doc_ids),
+            "contributor_count": contributor_count,
+            **_quarter_bounds(meeting_date),
+            "cycle_label": r.get("cycle_label"),
+        })
+    return out
+
+
+async def _list_cycle_minutes(context_id: str) -> List[Dict[str, Any]]:
+    """Group documents that look like minutes by quarter. Identification:
+        • doc_kind in MINUTES_KINDS, OR
+        • name contains the word 'minutes' (case-insensitive).
+    Returns one virtual aggregate per quarter that has minutes."""
+    import re as _re
+    rx = _re.compile(r"\bminutes\b", _re.IGNORECASE)
+    cursor = db.documents.find(
+        {"context_id": context_id},
+        {"_id": 0, "id": 1, "name": 1, "doc_kind": 1, "uploaded_by": 1, "created_at": 1, "updated_at": 1},
+    )
+    by_q: Dict[str, Dict[str, Any]] = {}
+    async for d in cursor:
+        kind = (d.get("doc_kind") or "").lower()
+        nm = d.get("name") or ""
+        if kind not in _MINUTES_KINDS and not rx.search(nm):
+            continue
+        when = d.get("updated_at") or d.get("created_at")
+        ql = _quarter_label(when)
+        bucket = by_q.setdefault(ql, {
+            "doc_ids": [], "uploaders": set(), "latest": when,
+            "earliest": when, **_quarter_bounds(when),
+        })
+        bucket["doc_ids"].append(d["id"])
+        if d.get("uploaded_by"):
+            bucket["uploaders"].add(d["uploaded_by"])
+        if when and (bucket["latest"] is None or str(when) > str(bucket["latest"])):
+            bucket["latest"] = when
+        if when and (bucket["earliest"] is None or str(when) < str(bucket["earliest"])):
+            bucket["earliest"] = when
+    out: List[Dict[str, Any]] = []
+    for ql, b in sorted(by_q.items(), key=lambda kv: kv[1]["latest"] or "", reverse=True):
+        out.append({
+            "id": _agg_id("cycle_minutes", ql.replace(" ", "_")),
+            "kind": "cycle_minutes",
+            "name": f"{ql} Minutes",
+            "meeting_date": b["latest"],
+            "document_count": len(b["doc_ids"]),
+            "contributor_count": len(b["uploaders"]),
+            "period_start": b.get("period_start"),
+            "period_end": b.get("period_end"),
+            "cycle_label": ql,
+        })
+    return out
+
+
+async def _list_cycle_committee_packs(context_id: str) -> List[Dict[str, Any]]:
+    """Group committee documents by (committee, quarter). Sources:
+        • db.committees (committee names per context)
+        • db.documents joined by committee_id when present.
+    Returns one virtual aggregate per (committee, quarter) tuple that
+    has at least one document."""
+    cursor = db.committees.find({"context_id": context_id}, {"_id": 0})
+    committees = await cursor.to_list(50)
+    if not committees:
+        return []
+    out: List[Dict[str, Any]] = []
+    for cm in committees:
+        cm_id = cm.get("id")
+        cm_name = cm.get("name") or "Committee"
+        if not cm_id:
+            continue
+        d_cursor = db.documents.find(
+            {"context_id": context_id, "committee_id": cm_id},
+            {"_id": 0, "id": 1, "uploaded_by": 1, "created_at": 1, "updated_at": 1},
+        )
+        by_q: Dict[str, Dict[str, Any]] = {}
+        async for d in d_cursor:
+            when = d.get("updated_at") or d.get("created_at")
+            ql = _quarter_label(when)
+            b = by_q.setdefault(ql, {"doc_ids": [], "uploaders": set(), "latest": when, **_quarter_bounds(when)})
+            b["doc_ids"].append(d["id"])
+            if d.get("uploaded_by"):
+                b["uploaders"].add(d["uploaded_by"])
+            if when and (b["latest"] is None or str(when) > str(b["latest"])):
+                b["latest"] = when
+        for ql, b in by_q.items():
+            out.append({
+                "id": _agg_id("cycle_committee_pack", f"{cm_id}::{ql.replace(' ', '_')}"),
+                "kind": "cycle_committee_pack",
+                "name": f"{cm_name} {ql}",
+                "meeting_date": b["latest"],
+                "document_count": len(b["doc_ids"]),
+                "contributor_count": len(b["uploaders"]),
+                "period_start": b.get("period_start"),
+                "period_end": b.get("period_end"),
+                "cycle_label": ql,
+                "committee_id": cm_id,
+            })
+    out.sort(key=lambda r: r.get("meeting_date") or "", reverse=True)
+    return out
+
+
+def _topic_split_commentary(text: str) -> List[Dict[str, Any]]:
+    """Split the boardpack commentary into topic notes. C.1 is a UI
+    scaffold so we use a permissive heuristic: paragraphs separated by
+    blank lines, with the first sentence taken as the topic label.
+    Future C.2 will replace this with real topic classification."""
+    if not text:
+        return []
+    paras = [p.strip() for p in text.split("\n\n") if p.strip()]
+    out: List[Dict[str, Any]] = []
+    for p in paras:
+        # Prefer markdown-style heading lines (## Heading) as topic.
+        topic = ""
+        body = p
+        if p.startswith("##"):
+            line, _, rest = p.partition("\n")
+            topic = line.lstrip("# ").strip()
+            body = rest.strip() or topic
+        elif "\n" in p and len(p.split("\n", 1)[0]) <= 80:
+            line, _, rest = p.partition("\n")
+            topic = line.strip().rstrip(":")
+            body = rest.strip() or topic
+        else:
+            # Take the first 8 words as the topic label.
+            words = p.split()
+            topic = " ".join(words[:8]).rstrip(".:;,") + ("…" if len(words) > 8 else "")
+            body = p
+        out.append({"topic": topic, "body": body, "citations": []})
+    return out
+
+
+def _attach_citations(notes: List[Dict[str, Any]], doc_meta: List[Dict[str, Any]]) -> None:
+    """Phase C.1 citations: every note carries the union of documents in
+    the aggregate so the user can see the source set immediately. C.2
+    will produce per-note resolution. We mark citations with `paragraph_anchor=None`
+    here (resolution lands in Phase E)."""
+    citations = [
+        {"doc_id": d["id"], "doc_name": d.get("name") or "Untitled", "paragraph_anchor": None}
+        for d in doc_meta
+    ]
+    for n in notes:
+        n["citations"] = citations
+
+
+async def _detail_cycle_board_pack(context_id: str, internal_id: str) -> Dict[str, Any]:
+    bp = await db.boardpacks.find_one({"id": internal_id, "context_id": context_id}, {"_id": 0})
+    if not bp:
+        raise HTTPException(status_code=404, detail="Aggregate not found.")
+    doc_ids = bp.get("document_ids") or [
+        it.get("doc_id") for it in (bp.get("items") or []) if it.get("doc_id")
+    ]
+    doc_ids = [d for d in doc_ids if d]
+    docs: List[Dict[str, Any]] = []
+    if doc_ids:
+        cursor = db.documents.find(
+            {"context_id": context_id, "id": {"$in": doc_ids}},
+            {"_id": 0, "id": 1, "name": 1, "uploaded_by": 1, "created_at": 1},
+        )
+        docs = await cursor.to_list(500)
+    contributors = {d.get("uploaded_by") for d in docs if d.get("uploaded_by")}
+    commentary = bp.get("commentary") or bp.get("body") or ""
+    notes = _topic_split_commentary(commentary)
+    _attach_citations(notes, docs)
+    meeting_date = bp.get("meeting_date") or bp.get("cycle_meeting_date") or bp.get("created_at")
+    return {
+        "id": _agg_id("cycle_board_pack", internal_id),
+        "kind": "cycle_board_pack",
+        "name": bp.get("title") or bp.get("cycle_label") or "Board Pack",
+        "topline": {
+            "doc_count": len(doc_ids),
+            "contributor_count": len(contributors),
+            "period": bp.get("cycle_label") or _quarter_label(meeting_date),
+        },
+        "meeting_date": meeting_date,
+        **_quarter_bounds(meeting_date),
+        "notes": notes,
+    }
+
+
+async def _detail_cycle_minutes(context_id: str, internal_id: str) -> Dict[str, Any]:
+    """`internal_id` is the underscored quarter label, e.g. 'Q1_2026'."""
+    import re as _re
+    rx = _re.compile(r"\bminutes\b", _re.IGNORECASE)
+    quarter_label = internal_id.replace("_", " ")
+    cursor = db.documents.find(
+        {"context_id": context_id},
+        {"_id": 0, "id": 1, "name": 1, "doc_kind": 1, "uploaded_by": 1, "created_at": 1, "updated_at": 1, "extracted_text": 1},
+    )
+    docs: List[Dict[str, Any]] = []
+    async for d in cursor:
+        kind = (d.get("doc_kind") or "").lower()
+        nm = d.get("name") or ""
+        if kind not in _MINUTES_KINDS and not rx.search(nm):
+            continue
+        when = d.get("updated_at") or d.get("created_at")
+        if _quarter_label(when) != quarter_label:
+            continue
+        docs.append(d)
+    if not docs:
+        raise HTTPException(status_code=404, detail="Aggregate not found.")
+    contributors = {d.get("uploaded_by") for d in docs if d.get("uploaded_by")}
+    notes = [
+        {
+            "topic": d.get("name") or "Minutes document",
+            "body": ((d.get("extracted_text") or "")[:600] + "…")
+            if (d.get("extracted_text") and len(d.get("extracted_text") or "") > 600)
+            else (d.get("extracted_text") or "—"),
+            "citations": [{
+                "doc_id": d["id"],
+                "doc_name": d.get("name") or "Untitled",
+                "paragraph_anchor": None,
+            }],
+        }
+        for d in docs
+    ]
+    latest = max((d.get("updated_at") or d.get("created_at") or "" for d in docs), default=None)
+    return {
+        "id": _agg_id("cycle_minutes", internal_id),
+        "kind": "cycle_minutes",
+        "name": f"{quarter_label} Minutes",
+        "topline": {
+            "doc_count": len(docs),
+            "contributor_count": len(contributors),
+            "period": quarter_label,
+        },
+        "meeting_date": latest,
+        **_quarter_bounds(latest),
+        "notes": notes,
+    }
+
+
+async def _detail_cycle_committee_pack(context_id: str, internal_id: str) -> Dict[str, Any]:
+    """`internal_id` is `<committee_id>::<Q?_YYYY>`."""
+    if "::" not in internal_id:
+        raise HTTPException(status_code=400, detail="Bad aggregate id.")
+    cm_id, _, ql = internal_id.partition("::")
+    quarter_label = ql.replace("_", " ")
+    committee = await db.committees.find_one({"context_id": context_id, "id": cm_id}, {"_id": 0})
+    if not committee:
+        raise HTTPException(status_code=404, detail="Aggregate not found.")
+    cursor = db.documents.find(
+        {"context_id": context_id, "committee_id": cm_id},
+        {"_id": 0, "id": 1, "name": 1, "uploaded_by": 1, "created_at": 1, "updated_at": 1, "extracted_text": 1},
+    )
+    docs: List[Dict[str, Any]] = []
+    async for d in cursor:
+        when = d.get("updated_at") or d.get("created_at")
+        if _quarter_label(when) != quarter_label:
+            continue
+        docs.append(d)
+    if not docs:
+        raise HTTPException(status_code=404, detail="Aggregate not found.")
+    contributors = {d.get("uploaded_by") for d in docs if d.get("uploaded_by")}
+    notes = [
+        {
+            "topic": d.get("name") or "Committee document",
+            "body": ((d.get("extracted_text") or "")[:600] + "…")
+            if (d.get("extracted_text") and len(d.get("extracted_text") or "") > 600)
+            else (d.get("extracted_text") or "—"),
+            "citations": [{
+                "doc_id": d["id"],
+                "doc_name": d.get("name") or "Untitled",
+                "paragraph_anchor": None,
+            }],
+        }
+        for d in docs
+    ]
+    latest = max((d.get("updated_at") or d.get("created_at") or "" for d in docs), default=None)
+    return {
+        "id": _agg_id("cycle_committee_pack", internal_id),
+        "kind": "cycle_committee_pack",
+        "name": f"{committee.get('name') or 'Committee'} {quarter_label}",
+        "topline": {
+            "doc_count": len(docs),
+            "contributor_count": len(contributors),
+            "period": quarter_label,
+        },
+        "meeting_date": latest,
+        **_quarter_bounds(latest),
+        "notes": notes,
+    }
+

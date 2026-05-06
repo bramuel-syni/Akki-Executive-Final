@@ -161,6 +161,45 @@ measurement honestly and ship.
 
 ---
 
+### D-012 · Phase B.3 — true SSE token streaming (Memo Item 8 "token-level, not response-level")
+**Decision.** Defer.
+
+**Why.** The Emergent universal-key proxy (the only route the EMERGENT_LLM_KEY
+is valid against) does not currently propagate token-level streaming — it
+buffers the full LLM response and flushes all chunks at the end. Empirical
+evidence: a 181-second Claude Sonnet 4.5 generation arrives as 126 chunks
+within a 97 ms window at the end of the call (p50 inter-chunk interval =
+0 ms). Direct provider routing (`litellm.acompletion(model="anthropic/...",
+api_key=EMERGENT_LLM_KEY)`) returns 401 — the key is not a passthrough.
+`emergentintegrations 0.1.0` exposes no streaming primitive. The integration
+playbook does not document a streaming surface for the universal key.
+
+**Implication.** Phase B.3's acceptance budgets (1.5 s / 2 s / 3 s p95
+first-token) are structurally unmeetable on the current platform. Shipping
+a litellm.acompletion(stream=True)-based path would replace one
+buffered code path with another buffered code path while increasing
+complexity in chat.py — the user-facing first-token latency would not
+change.
+
+**Path forward (one of):**
+1. The user provides direct Anthropic + Google API keys in `backend/.env`.
+   B.3 then becomes: keep `emergentintegrations` for non-chat surfaces,
+   route chat through `anthropic.AsyncAnthropic.messages.stream(...)` and
+   `google.generativeai.GenerativeModel.generate_content(stream=True)`
+   directly. Keys add risk surface (per-provider rotation, per-provider
+   spend visibility) but unlock real token streaming.
+2. The Emergent platform team enables incremental forwarding on the
+   `/llm` proxy. No code change on our side; we revisit this decision
+   automatically.
+
+Until either path lands, we keep the B.1 coarse-chunk fallback. The
+audit chain, the Synisense surfaces, and the deterministic refusal path
+all remain correct under the current model.
+
+Standby keys held in `/app/.secrets/B3_standby_keys.md` (gitignored). Do not activate without explicit greenlight.
+
+---
+
 ## How to add a new decision
 
 1. Heading: `### D-NNN · <one-line title> (Memo Item X)` — increment NNN.

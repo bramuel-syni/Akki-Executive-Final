@@ -1,28 +1,33 @@
 /**
- * WorkStudio — Phase 13.3 unified artefacts-in-flight landing.
+ * WorkStudio — Phase C.1 rewire (memo Item 2).
  *
- * One entry point that lists everything the user is currently drafting
- * across briefings, decks, and reports for the active context. Each
- * row links straight to the existing detail surface (Studio block
- * composer, ReportsTab, etc.) — this page is a hub, not a rebuild.
+ * The Workspace surface is reorganised around the memo's three
+ * aggregate types — Cycle Board Pack, Cycle Minutes, Cycle Board
+ * Committee Packs — listed under a single tabbed control. Clicking a
+ * row opens a side drawer (~50% page width) showing the topline strip
+ * (doc count, contributor count, period) and notes classified by
+ * topic, with citations to source documents. The drawer pattern is
+ * the same one Phase E will adopt for the Document Journal.
  *
- * Sources (read-only):
- *   - GET /api/contexts/{cid}/briefings              → status != "sent"
- *   - GET /api/contexts/{cid}/decks                  → status != "sent"
- *   - GET /api/contexts/{cid}/cycle/reports/inbox    → status != "sent"/"finalised"
+ * A horizontal action bar sits above the listing with five buttons —
+ * Export a Brief, Export a Summary Deck, Export a Report, Enhance my
+ * Deck, Enhance my Report. In C.1 they are visible but inert; they
+ * raise a toast saying the action will work in the next phase. The
+ * actual export and enhance logic ships in C.2 and C.3.
  *
- * UI:
- *   - Tabs: All / Briefings / Decks / Reports (with counts)
- *   - Sort by `updated_at desc` within each tab
- *   - Each row: title · sensitivity chip · validated badge · last-edit
- *   - "Start new" buttons up top (briefing / deck / report)
+ * The existing Decks and Reports tabs remain below the briefs listing
+ * (frozen until C.2 redesigns the output to production quality). Each
+ * tab now carries a one-line "About" caption in restraint voice.
  *
- * Phase 13.3 reads `?view=` and `?seed_kind=&seed_id=` query params:
- *   - `?view=decks` lands on the Decks tab (used by /app/decks redirect).
- *   - `?seed_kind=&seed_id=` shows a contextual banner saying the artefact
- *     is in scope (the actual seed-into-composer wiring lands in 14.x).
+ * Read endpoints (Phase C.1 — added to backend/routers/briefings.py):
+ *   GET /api/contexts/{cid}/briefings/aggregates?kind=…    listing
+ *   GET /api/contexts/{cid}/briefings/aggregates/{aid}     drawer detail
+ *
+ * Frozen surfaces NOT touched by this rewire:
+ *   /app/workspace (Document Journal — Phase E),
+ *   /app/contexts, Solva, Pulse, Cycle Manager, Chat, AppShell nav.
  */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
@@ -31,10 +36,21 @@ import { Button } from "@/components/ui/button";
 import ValidatedBadge from "@/components/trust/ValidatedBadge";
 import { toast } from "sonner";
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import {
   FileText, Presentation, ScrollText, Plus, Loader2, ArrowRight, AlertCircle,
-  Layers, Sparkles, Inbox,
+  Layers, FolderOpen, FileDown, Wand2, Calendar, Users, Files,
+  Sparkles, Inbox, X as XIcon,
 } from "lucide-react";
 
+// =============================================================================
+// Helpers
+// =============================================================================
 function shortAge(iso) {
   if (!iso) return "—";
   try {
@@ -49,6 +65,27 @@ function shortAge(iso) {
     if (days < 30) return `${days}d ago`;
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   } catch { return "—"; }
+}
+
+function formatMeetingDate(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  } catch { return "—"; }
+}
+
+function formatPeriod(period_start, period_end, fallback) {
+  if (period_start && period_end) {
+    try {
+      const a = new Date(period_start);
+      const b = new Date(period_end);
+      const monthA = a.toLocaleDateString(undefined, { month: "short" });
+      const monthB = b.toLocaleDateString(undefined, { month: "short" });
+      return `${monthA}–${monthB} ${b.getFullYear()}`;
+    } catch { /* fall through */ }
+  }
+  return fallback || "—";
 }
 
 function SensitivityChip({ s }) {
@@ -66,6 +103,234 @@ function SensitivityChip({ s }) {
   );
 }
 
+// =============================================================================
+// Three-aggregate-type briefs listing (Phase C.1 core)
+// =============================================================================
+const KIND_TABS = [
+  {
+    id: "cycle_board_pack",
+    label: "Cycle Board Pack",
+    short: "Board Pack",
+    icon: ScrollText,
+    empty: "No board packs prepared for this period yet.",
+  },
+  {
+    id: "cycle_minutes",
+    label: "Cycle Minutes",
+    short: "Minutes",
+    icon: FileText,
+    empty: "No minutes uploaded for this period.",
+  },
+  {
+    id: "cycle_committee_pack",
+    label: "Cycle Board Committee Packs",
+    short: "Committee Packs",
+    icon: FolderOpen,
+    empty: "No committee packs filed yet.",
+  },
+];
+
+function BriefRow({ row, onOpen }) {
+  const Icon = (KIND_TABS.find((k) => k.id === row.kind) || KIND_TABS[0]).icon;
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(row)}
+      className="w-full text-left border border-[var(--rule)] rounded-md bg-white px-4 py-3 flex items-start sm:items-center gap-3 flex-col sm:flex-row hover:border-[var(--accent)] hover:bg-[var(--cream-deep)]/40 transition-colors"
+      data-testid="work-studio-brief-row"
+    >
+      <Icon className="w-4 h-4 text-[var(--deep)] shrink-0 mt-1 sm:mt-0" strokeWidth={1.7} />
+      <div className="min-w-0 flex-1">
+        <p className="text-[14px] text-[var(--ink)] truncate" data-testid="work-studio-brief-row-name">
+          {row.name || "Untitled"}
+        </p>
+        <div className="flex items-center gap-3 mt-1 flex-wrap text-[11.5px] text-[var(--muted)]">
+          <span className="inline-flex items-center gap-1" data-testid="work-studio-brief-row-meeting">
+            <Calendar className="w-3 h-3" strokeWidth={1.7} />
+            {formatMeetingDate(row.meeting_date)}
+          </span>
+          <span className="inline-flex items-center gap-1" data-testid="work-studio-brief-row-docs">
+            <Files className="w-3 h-3" strokeWidth={1.7} />
+            {row.document_count} {row.document_count === 1 ? "document" : "documents"}
+          </span>
+          <span className="inline-flex items-center gap-1" data-testid="work-studio-brief-row-contribs">
+            <Users className="w-3 h-3" strokeWidth={1.7} />
+            {row.contributor_count} {row.contributor_count === 1 ? "contributor" : "contributors"}
+          </span>
+          {row.cycle_label && (
+            <span className="text-[10.5px] uppercase tracking-[0.14em] font-mono text-[var(--muted)]">
+              {row.cycle_label}
+            </span>
+          )}
+        </div>
+      </div>
+      <ArrowRight className="w-3.5 h-3.5 text-[var(--muted)] shrink-0" />
+    </button>
+  );
+}
+
+// Reusable side drawer — same shape Phase E will use for the Document
+// Journal. Keeps the page mounted underneath; user can dismiss with
+// the close button or the overlay click.
+function BriefDrawer({ open, onClose, aid, contextId }) {
+  const [loading, setLoading] = useState(false);
+  const [detail, setDetail] = useState(null);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    if (!open || !aid || !contextId) return;
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    setDetail(null);
+    api.get(`/contexts/${contextId}/briefings/aggregates/${encodeURIComponent(aid)}`)
+      .then(({ data }) => { if (!cancelled) setDetail(data); })
+      .catch((e) => { if (!cancelled) setErr(apiErrorMessage(e)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, aid, contextId]);
+
+  return (
+    <Sheet open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-[50vw] sm:w-[50vw] overflow-y-auto bg-[var(--paper)] p-0"
+        data-testid="work-studio-brief-drawer"
+      >
+        <div className="px-6 py-5 border-b border-[var(--rule)] flex items-start gap-3 sticky top-0 bg-[var(--paper)] z-10">
+          <div className="min-w-0 flex-1">
+            <SheetHeader className="text-left">
+              <SheetTitle className="akki-serif text-[20px] text-[var(--ink)] leading-snug" data-testid="work-studio-brief-drawer-title">
+                {detail?.name || "Loading…"}
+              </SheetTitle>
+              <SheetDescription className="text-[12px] text-[var(--muted)]">
+                Brief detail · close with Esc or the X
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+          <button
+            onClick={onClose}
+            type="button"
+            className="text-[var(--muted)] hover:text-[var(--ink)] p-1"
+            aria-label="Close drawer"
+            data-testid="work-studio-brief-drawer-close"
+          >
+            <XIcon className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5">
+          {loading && (
+            <div className="text-[var(--muted)] text-sm flex items-center gap-2" data-testid="work-studio-brief-drawer-loading">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading detail…
+            </div>
+          )}
+          {err && (
+            <div className="text-amber-900 bg-amber-50 border border-amber-100 rounded-sm px-3 py-2 text-[12.5px] flex items-center gap-2" data-testid="work-studio-brief-drawer-err">
+              <AlertCircle className="w-3.5 h-3.5" /> {err}
+            </div>
+          )}
+          {detail && !loading && !err && (
+            <>
+              {/* Topline strip — memo: doc count, contributors, period */}
+              <div
+                className="grid grid-cols-3 gap-3 mb-6 border border-[var(--rule)] rounded-md bg-white px-3 py-3"
+                data-testid="work-studio-brief-drawer-topline"
+              >
+                <div>
+                  <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Documents</p>
+                  <p className="text-[18px] akki-serif text-[var(--ink)]">{detail.topline?.doc_count ?? 0}</p>
+                </div>
+                <div>
+                  <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Contributors</p>
+                  <p className="text-[18px] akki-serif text-[var(--ink)]">{detail.topline?.contributor_count ?? 0}</p>
+                </div>
+                <div>
+                  <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Period</p>
+                  <p className="text-[14px] akki-serif text-[var(--ink)] truncate" title={detail.topline?.period}>
+                    {formatPeriod(detail.period_start, detail.period_end, detail.topline?.period)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Notes — classified by topic with citations */}
+              <h3 className="akki-serif text-[15px] text-[var(--ink)] mb-3">Notes</h3>
+              {(!detail.notes || detail.notes.length === 0) ? (
+                <p className="text-[12.5px] text-[var(--muted)] italic" data-testid="work-studio-brief-drawer-no-notes">
+                  No notes yet for this aggregate.
+                </p>
+              ) : (
+                <ul className="space-y-4" data-testid="work-studio-brief-drawer-notes">
+                  {detail.notes.map((n, i) => (
+                    <li key={i} className="border border-[var(--rule)] rounded-md bg-white px-4 py-3" data-testid="work-studio-brief-drawer-note">
+                      <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">{n.topic || "Note"}</p>
+                      <p className="akki-serif text-[14px] text-[var(--ink)] leading-[1.6] whitespace-pre-wrap">{n.body || "—"}</p>
+                      {n.citations && n.citations.length > 0 && (
+                        <div className="mt-3 pt-2 border-t border-[var(--rule)] flex flex-wrap gap-2" data-testid="work-studio-brief-drawer-citations">
+                          {n.citations.map((c, j) => (
+                            <Link
+                              key={`${c.doc_id}-${j}`}
+                              to={`/app/documents/${c.doc_id}`}
+                              className="inline-flex items-center gap-1 text-[11px] text-[var(--accent)] hover:text-[var(--accent-dark)] border border-[var(--rule)] rounded-sm px-1.5 py-[2px] bg-[var(--cream-deep)]/40"
+                              title={c.doc_name}
+                            >
+                              <FileText className="w-3 h-3" strokeWidth={1.7} />
+                              <span className="truncate max-w-[180px]">{c.doc_name || c.doc_id}</span>
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// Five-button action bar — visible but inert in C.1.
+function ActionBar({ onActionInProgress }) {
+  const ACTIONS = [
+    { id: "export_brief",    label: "Export a Brief",         icon: FileDown },
+    { id: "export_deck",     label: "Export a Summary Deck",  icon: FileDown },
+    { id: "export_report",   label: "Export a Report",        icon: FileDown },
+    { id: "enhance_deck",    label: "Enhance my Deck",        icon: Wand2 },
+    { id: "enhance_report",  label: "Enhance my Report",      icon: Wand2 },
+  ];
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 border border-[var(--rule)] bg-white rounded-md"
+      data-testid="work-studio-action-bar"
+      role="toolbar"
+      aria-label="Briefs actions"
+    >
+      {ACTIONS.map((a) => {
+        const Icon = a.icon;
+        return (
+          <Button
+            key={a.id}
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onActionInProgress(a.label)}
+            className="rounded-sm border-[var(--rule)] text-[12.5px] hover:border-[var(--accent)]"
+            data-testid={`work-studio-action-${a.id}`}
+          >
+            <Icon className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.7} /> {a.label}
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
+
+// =============================================================================
+// Decks + Reports — preserved Phase 13.3 listing (frozen until C.2)
+// =============================================================================
 function ArtefactRow({ kind, item }) {
   const href = item.href || "#";
   const updated = item.updated_at || item.modified_at || item.created_at;
@@ -98,20 +363,9 @@ function ArtefactRow({ kind, item }) {
   );
 }
 
-async function loadAll(cid) {
-  // Each request is independent; one failure must NOT take the page
-  // down. We collect partial results and surface a banner if any
-  // source errored.
-  const out = { briefings: [], decks: [], reports: [], errors: [] };
-  try {
-    const { data } = await api.get(`/contexts/${cid}/briefings`);
-    // Backend GET /api/contexts/{cid}/briefings returns a bare list, NOT an
-    // {items:[...]} envelope (decks/reports do envelope it). Accept both
-    // shapes so a future schema unification doesn't break this surface.
-    const raw = Array.isArray(data) ? data : (data?.items || data?.briefings || []);
-    const items = raw.filter((b) => (b.status || "draft") !== "sent");
-    out.briefings = items.map((b) => ({ ...b, href: `/app/studio/composer/briefing/${b.id}` }));
-  } catch (e) { out.errors.push(["briefings", apiErrorMessage(e)]); }
+async function loadDecksReports(cid) {
+  // Existing Phase 13.3 sources, retained for the lower section.
+  const out = { decks: [], reports: [], errors: [] };
   try {
     const { data } = await api.get(`/contexts/${cid}/decks`);
     const raw = Array.isArray(data) ? data : (data?.items || data?.decks || []);
@@ -119,68 +373,127 @@ async function loadAll(cid) {
     out.decks = items.map((d) => ({ ...d, href: `/app/decks/${d.id}` }));
   } catch (e) { out.errors.push(["decks", apiErrorMessage(e)]); }
   try {
-    // Backend route is /api/reports/inbox (cross-context, current-reviewer
-    // scoped). The earlier /api/contexts/{cid}/cycle/reports/inbox path
-    // 404s and produced the red banner on /app/work-studio.
     const { data } = await api.get(`/reports/inbox`);
     const items = (data?.reports || data?.items || []).filter((r) => {
-      // work-studio is single-context-scoped, so filter to active context.
       if (r.context_id && r.context_id !== cid) return false;
       const s = (r.status || "draft").toLowerCase();
       return s !== "sent" && s !== "finalised" && s !== "finalized" && s !== "complete" && s !== "archived";
     });
     out.reports = items.map((r) => ({ ...r, href: `/app/cycle?tab=overview&report=${r.id}` }));
-  } catch (e) {
-    // Empty inbox / unauth → empty list. NOT an error worth a red banner.
+  } catch {
     out.reports = [];
   }
   return out;
 }
 
+// =============================================================================
+// Main
+// =============================================================================
 export default function WorkStudio() {
   const { activeContext } = useAuth();
   const cid = activeContext?.id;
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Top tabs for the three aggregate kinds.
+  const initialKind = (() => {
+    const k = (searchParams.get("kind") || "cycle_board_pack").toLowerCase();
+    return KIND_TABS.find((t) => t.id === k) ? k : "cycle_board_pack";
+  })();
+  const [kind, setKind] = useState(initialKind);
+  const [aggLoading, setAggLoading] = useState(true);
+  const [aggItems, setAggItems] = useState([]);
+  const [aggErr, setAggErr] = useState(null);
+
+  // Drawer state.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerAid, setDrawerAid] = useState(null);
+
+  // Decks + reports (lower section).
+  const [drData, setDrData] = useState({ decks: [], reports: [], errors: [] });
+  const [drLoading, setDrLoading] = useState(true);
+  // Inner tab for decks/reports section.
   const initialView = (() => {
-    const v = (searchParams.get("view") || "all").toLowerCase();
-    return ["all", "briefings", "decks", "reports"].includes(v) ? v : "all";
+    const v = (searchParams.get("view") || "decks").toLowerCase();
+    return ["decks", "reports"].includes(v) ? v : "decks";
   })();
   const [view, setView] = useState(initialView);
-  const [data, setData] = useState({ briefings: [], decks: [], reports: [], errors: [] });
-  const [loading, setLoading] = useState(true);
-  const seedKind = searchParams.get("seed_kind");
-  const seedId = searchParams.get("seed_id");
+
+  const fetchAggregates = useCallback(async () => {
+    if (!cid) return;
+    setAggLoading(true);
+    setAggErr(null);
+    try {
+      const { data } = await api.get(`/contexts/${cid}/briefings/aggregates`, { params: { kind } });
+      setAggItems(data?.items || []);
+    } catch (e) {
+      setAggErr(apiErrorMessage(e));
+      setAggItems([]);
+    } finally {
+      setAggLoading(false);
+    }
+  }, [cid, kind]);
+
+  useEffect(() => { fetchAggregates(); }, [fetchAggregates]);
 
   useEffect(() => {
     if (!cid) return;
     let cancelled = false;
-    setLoading(true);
-    loadAll(cid).then((res) => {
+    setDrLoading(true);
+    loadDecksReports(cid).then((res) => {
       if (cancelled) return;
-      setData(res);
-      setLoading(false);
+      setDrData(res);
+      setDrLoading(false);
       res.errors.forEach(([k, msg]) => toast.error(`Could not load ${k}: ${msg}`));
     });
     return () => { cancelled = true; };
   }, [cid]);
 
-  const onView = (next) => {
-    setView(next);
+  const onKind = (next) => {
+    setKind(next);
     const sp = new URLSearchParams(searchParams);
-    if (next === "all") sp.delete("view"); else sp.set("view", next);
+    if (next === "cycle_board_pack") sp.delete("kind"); else sp.set("kind", next);
     setSearchParams(sp, { replace: true });
   };
 
-  const visible = useMemo(() => {
-    const sortDesc = (a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0);
-    const briefings = [...(data.briefings || [])].sort(sortDesc);
-    const decks = [...(data.decks || [])].sort(sortDesc);
-    const reports = [...(data.reports || [])].sort(sortDesc);
-    if (view === "briefings") return { briefings, decks: [], reports: [] };
-    if (view === "decks")     return { briefings: [], decks, reports: [] };
-    if (view === "reports")   return { briefings: [], decks: [], reports };
-    return { briefings, decks, reports };
-  }, [data, view]);
+  const onView = (next) => {
+    setView(next);
+    const sp = new URLSearchParams(searchParams);
+    if (next === "decks") sp.delete("view"); else sp.set("view", next);
+    setSearchParams(sp, { replace: true });
+  };
+
+  const onActionInProgress = (label) => {
+    toast(`${label} — this will work in the next phase.`, {
+      description: "Action queued for C.2 / C.3.",
+      duration: 3500,
+    });
+  };
+
+  const onOpenBrief = (row) => {
+    setDrawerAid(row.id);
+    setDrawerOpen(true);
+  };
+  const onCloseDrawer = () => {
+    setDrawerOpen(false);
+    // Keep the aid so the drawer-content state isn't immediately blanked
+    // during the close transition. Reset on next open.
+  };
+
+  // Sorted derived lists for the lower Decks/Reports section. Computed
+  // BEFORE the !cid early return so hook count stays constant across
+  // renders (rules-of-hooks).
+  const visibleDecks = useMemo(
+    () => [...(drData.decks || [])].sort(
+      (a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0),
+    ),
+    [drData],
+  );
+  const visibleReports = useMemo(
+    () => [...(drData.reports || [])].sort(
+      (a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0),
+    ),
+    [drData],
+  );
 
   if (!cid) {
     return (
@@ -190,134 +503,169 @@ export default function WorkStudio() {
     );
   }
 
-  const totalCount =
-    (data.briefings?.length || 0) + (data.decks?.length || 0) + (data.reports?.length || 0);
-
-  const TABS = [
-    { id: "all",        label: "All",        n: totalCount,                     icon: Layers },
-    { id: "briefings",  label: "Briefings",  n: data.briefings?.length || 0,    icon: ScrollText },
-    { id: "decks",      label: "Decks",      n: data.decks?.length || 0,        icon: Presentation },
-    { id: "reports",    label: "Reports",    n: data.reports?.length || 0,      icon: FileText },
-  ];
-
   return (
     <AppShell>
       <div className="max-w-[1100px] mx-auto px-8 py-10" data-testid="work-studio">
         <p className="akki-overline mb-2 flex items-center gap-2">
           <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Work Studio · {activeContext.name}
         </p>
-        <h1 className="akki-greeting mb-2">In flight.</h1>
+        <h1 className="akki-greeting mb-2">Briefs in flight.</h1>
         <p className="akki-meta max-w-2xl">
-          Everything you have open across briefings, decks, and reports for{" "}
-          <strong className="text-[var(--ink)]">{activeContext.name}</strong>. Sorted by last edit.
+          Cycle aggregates for <strong className="text-[var(--ink)]">{activeContext.name}</strong> — board packs, minutes, and committee packs. Click any row for the topline and notes.
         </p>
 
-        {seedKind && seedId && (
-          <div className="mt-5 px-4 py-3 bg-[var(--accent-soft)] border border-[var(--accent)]/20 rounded-sm text-[12.5px] text-[var(--ink)] flex items-center gap-2" data-testid="work-studio-seed-banner">
-            <Inbox className="w-3.5 h-3.5 text-[var(--accent)]" />
-            <span>
-              <strong className="font-medium">{seedKind}</strong> <span className="font-mono text-[11px] text-[var(--muted)]">{seedId}</span> is in scope. Open a draft below to wire it in (composer-seed wiring lands in 14.x).
-            </span>
-          </div>
-        )}
-
-        {/* Start new actions */}
-        <div className="flex flex-wrap items-center gap-2 mt-6 mb-6" data-testid="work-studio-new-row">
-          <Link to="/app/cycle?tab=briefs">
-            <Button variant="outline" size="sm" className="rounded-sm border-[var(--rule)] text-[12.5px]" data-testid="work-studio-new-briefing">
-              <Plus className="w-3.5 h-3.5 mr-1.5" /> Start a briefing
-            </Button>
-          </Link>
-          <Link to="/app/decks">
-            <Button variant="outline" size="sm" className="rounded-sm border-[var(--rule)] text-[12.5px]" data-testid="work-studio-new-deck">
-              <Plus className="w-3.5 h-3.5 mr-1.5" /> Start a deck
-            </Button>
-          </Link>
-          <Link to="/app/cycle?tab=overview">
-            <Button variant="outline" size="sm" className="rounded-sm border-[var(--rule)] text-[12.5px]" data-testid="work-studio-new-report">
-              <Plus className="w-3.5 h-3.5 mr-1.5" /> Start a report
-            </Button>
-          </Link>
-        </div>
-
-        {/* Inner tabs */}
-        <div className="border-b border-[var(--rule)] flex items-stretch gap-0 mb-6 flex-wrap" data-testid="work-studio-tabs">
-          {TABS.map((t) => {
+        {/* Three-tab kind selector */}
+        <div className="border-b border-[var(--rule)] flex items-stretch gap-0 mt-6 mb-4 flex-wrap" data-testid="work-studio-kind-tabs">
+          {KIND_TABS.map((t) => {
             const Icon = t.icon;
-            const active = view === t.id;
+            const active = kind === t.id;
             return (
               <button
                 key={t.id}
-                onClick={() => onView(t.id)}
+                type="button"
+                onClick={() => onKind(t.id)}
                 className={`px-5 py-3 text-[14px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
                   active
                     ? "border-[var(--accent)] text-[var(--ink)] font-medium"
                     : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
                 }`}
-                data-testid={`work-studio-tab-${t.id}${active ? "-active" : ""}`}
+                data-testid={`work-studio-kind-tab-${t.id}${active ? "-active" : ""}`}
                 aria-current={active ? "page" : undefined}
               >
                 <Icon className="w-3.5 h-3.5" strokeWidth={1.7} />
                 {t.label}
-                <span className="text-[11px] text-[var(--muted)] font-mono">· {t.n}</span>
               </button>
             );
           })}
         </div>
 
-        {loading ? (
-          <div className="p-12 text-center text-[var(--muted)] text-sm flex items-center justify-center gap-2" data-testid="work-studio-loading">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loading what's in flight…
+        {/* Action bar — five inert buttons */}
+        <ActionBar onActionInProgress={onActionInProgress} />
+
+        {/* Aggregate listing */}
+        {aggLoading ? (
+          <div className="p-12 text-center text-[var(--muted)] text-sm flex items-center justify-center gap-2" data-testid="work-studio-agg-loading">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading {KIND_TABS.find((t) => t.id === kind).short.toLowerCase()}…
           </div>
-        ) : totalCount === 0 ? (
-          <div className="p-12 text-center border border-[var(--rule)] rounded-md bg-white" data-testid="work-studio-empty">
+        ) : aggErr ? (
+          <div className="p-4 bg-amber-50 border border-amber-100 rounded-md text-[12px] text-amber-900 flex items-center gap-2" data-testid="work-studio-agg-err">
+            <AlertCircle className="w-3.5 h-3.5" /> {aggErr}
+          </div>
+        ) : aggItems.length === 0 ? (
+          <div className="p-12 text-center border border-[var(--rule)] rounded-md bg-white" data-testid="work-studio-agg-empty">
             <Layers className="w-6 h-6 text-[var(--muted)] mx-auto mb-3" />
-            <p className="text-[14px] text-[var(--ink)] font-medium">Nothing in flight.</p>
+            <p className="text-[14px] text-[var(--ink)] font-medium">{KIND_TABS.find((t) => t.id === kind).empty}</p>
             <p className="text-[12.5px] text-[var(--muted)] mt-1 max-w-md mx-auto">
-              Start a briefing, deck, or report above. Drafts you save will land here.
+              When the cycle has data for this aggregate, rows will appear here.
             </p>
           </div>
         ) : (
-          <div className="space-y-10" data-testid="work-studio-sections">
-            {visible.briefings.length > 0 && (
-              <section data-testid="work-studio-section-briefings">
-                <h2 className="akki-serif text-[18px] text-[var(--ink)] mb-3">
-                  Briefings <span className="text-[12px] text-[var(--muted)]">· {visible.briefings.length}</span>
-                </h2>
-                <ul className="space-y-2">
-                  {visible.briefings.map((b) => <ArtefactRow key={`brf-${b.id}`} kind="briefing" item={b} />)}
-                </ul>
-              </section>
-            )}
-            {visible.decks.length > 0 && (
-              <section data-testid="work-studio-section-decks">
-                <h2 className="akki-serif text-[18px] text-[var(--ink)] mb-3">
-                  Decks <span className="text-[12px] text-[var(--muted)]">· {visible.decks.length}</span>
-                </h2>
-                <ul className="space-y-2">
-                  {visible.decks.map((d) => <ArtefactRow key={`dck-${d.id}`} kind="deck" item={d} />)}
-                </ul>
-              </section>
-            )}
-            {visible.reports.length > 0 && (
-              <section data-testid="work-studio-section-reports">
-                <h2 className="akki-serif text-[18px] text-[var(--ink)] mb-3">
-                  Reports <span className="text-[12px] text-[var(--muted)]">· {visible.reports.length}</span>
-                </h2>
-                <ul className="space-y-2">
-                  {visible.reports.map((r) => <ArtefactRow key={`rpt-${r.id}`} kind="report" item={r} />)}
-                </ul>
-              </section>
-            )}
-            {data.errors.length > 0 && (
-              <div className="p-4 bg-amber-50 border border-amber-100 rounded-md text-[12px] text-amber-900 flex items-center gap-2" data-testid="work-studio-partial-banner">
-                <AlertCircle className="w-3.5 h-3.5" />
-                Some surfaces failed to load — you're seeing partial results. Refresh to retry.
-              </div>
-            )}
-          </div>
+          <ul className="space-y-2" data-testid="work-studio-agg-list">
+            {aggItems.map((row) => (
+              <BriefRow key={row.id} row={row} onOpen={onOpenBrief} />
+            ))}
+          </ul>
         )}
+
+        {/* Existing Decks / Reports section — preserved, with About lines */}
+        <div className="mt-12">
+          <div className="border-b border-[var(--rule)] flex items-stretch gap-0 mb-3 flex-wrap" data-testid="work-studio-dr-tabs">
+            <button
+              type="button"
+              onClick={() => onView("decks")}
+              className={`px-5 py-3 text-[14px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
+                view === "decks"
+                  ? "border-[var(--accent)] text-[var(--ink)] font-medium"
+                  : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
+              }`}
+              data-testid={`work-studio-dr-tab-decks${view === "decks" ? "-active" : ""}`}
+            >
+              <Presentation className="w-3.5 h-3.5" strokeWidth={1.7} />
+              Decks
+              <span className="text-[11px] text-[var(--muted)] font-mono">· {visibleDecks.length}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onView("reports")}
+              className={`px-5 py-3 text-[14px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
+                view === "reports"
+                  ? "border-[var(--accent)] text-[var(--ink)] font-medium"
+                  : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
+              }`}
+              data-testid={`work-studio-dr-tab-reports${view === "reports" ? "-active" : ""}`}
+            >
+              <FileText className="w-3.5 h-3.5" strokeWidth={1.7} />
+              Reports
+              <span className="text-[11px] text-[var(--muted)] font-mono">· {visibleReports.length}</span>
+            </button>
+          </div>
+
+          {/* About line — restraint voice. */}
+          <p className="text-[12.5px] text-[var(--muted)] mb-4 max-w-2xl" data-testid="work-studio-dr-about">
+            {view === "decks"
+              ? "Decks gather slides for board read-outs and committee briefings. Lifecycle stays draft → review → approve → send."
+              : "Reports collect cycle responses ready for review and send. The reviewer queue routes them through compose, polish, and send-up."}
+          </p>
+
+          {drLoading ? (
+            <div className="p-12 text-center text-[var(--muted)] text-sm flex items-center justify-center gap-2" data-testid="work-studio-dr-loading">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading {view}…
+            </div>
+          ) : view === "decks" ? (
+            visibleDecks.length === 0 ? (
+              <div className="p-10 text-center border border-[var(--rule)] rounded-md bg-white" data-testid="work-studio-dr-empty">
+                <Presentation className="w-6 h-6 text-[var(--muted)] mx-auto mb-3" />
+                <p className="text-[14px] text-[var(--ink)] font-medium">No decks in flight.</p>
+                <p className="text-[12.5px] text-[var(--muted)] mt-1 max-w-md mx-auto">
+                  Drafts you save will land here. Use the Decks builder to start a new one.
+                </p>
+                <Link to="/app/decks" className="mt-4 inline-block">
+                  <Button variant="outline" size="sm" className="rounded-sm border-[var(--rule)] text-[12.5px]">
+                    <Plus className="w-3.5 h-3.5 mr-1.5" /> Open the deck builder
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <ul className="space-y-2" data-testid="work-studio-dr-decks">
+                {visibleDecks.map((d) => <ArtefactRow key={`dck-${d.id}`} kind="deck" item={d} />)}
+              </ul>
+            )
+          ) : (
+            visibleReports.length === 0 ? (
+              <div className="p-10 text-center border border-[var(--rule)] rounded-md bg-white" data-testid="work-studio-dr-empty-reports">
+                <FileText className="w-6 h-6 text-[var(--muted)] mx-auto mb-3" />
+                <p className="text-[14px] text-[var(--ink)] font-medium">No reports in your reviewer queue.</p>
+                <p className="text-[12.5px] text-[var(--muted)] mt-1 max-w-md mx-auto">
+                  Reports waiting on your review will appear here.
+                </p>
+                <Link to="/app/cycle?tab=overview" className="mt-4 inline-block">
+                  <Button variant="outline" size="sm" className="rounded-sm border-[var(--rule)] text-[12.5px]">
+                    <Inbox className="w-3.5 h-3.5 mr-1.5" /> Open Cycle Manager
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <ul className="space-y-2" data-testid="work-studio-dr-reports">
+                {visibleReports.map((r) => <ArtefactRow key={`rpt-${r.id}`} kind="report" item={r} />)}
+              </ul>
+            )
+          )}
+
+          {drData.errors.length > 0 && (
+            <div className="mt-4 p-4 bg-amber-50 border border-amber-100 rounded-md text-[12px] text-amber-900 flex items-center gap-2" data-testid="work-studio-partial-banner">
+              <AlertCircle className="w-3.5 h-3.5" />
+              Some lower-section data did not load — refresh to retry.
+            </div>
+          )}
+        </div>
       </div>
+
+      <BriefDrawer
+        open={drawerOpen}
+        onClose={onCloseDrawer}
+        aid={drawerAid}
+        contextId={cid}
+      />
     </AppShell>
   );
 }
