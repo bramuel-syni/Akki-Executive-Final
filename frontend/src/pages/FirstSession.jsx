@@ -35,7 +35,7 @@ const ROLE_OPTIONS = [
 function Shell({ children }) {
   return (
     <div className="min-h-screen bg-[var(--cream)] px-4 md:px-8 py-8 md:py-14">
-      <div className="max-w-[720px] mx-auto" data-testid="first-session-shell">
+      <div className="akki-w-narrow" data-testid="first-session-shell">
         {children}
       </div>
     </div>

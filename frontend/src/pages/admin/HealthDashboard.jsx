@@ -56,7 +56,7 @@ export default function HealthDashboard() {
 
   return (
     <div className="min-h-screen bg-[var(--cream)] py-12 px-6" data-testid="health-dashboard">
-      <div className="max-w-3xl mx-auto">
+      <div className="akki-w-narrow">
         <header className="mb-6">
           <p className="akki-overline mb-2 flex items-center gap-1.5">
             <ShieldCheck className="w-3 h-3 text-[var(--accent)]" /> Platform health · superadmin

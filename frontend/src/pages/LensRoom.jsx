@@ -237,7 +237,7 @@ export default function LensRoom() {
 
   return (
     <AppShell>
-      <div className="h-[calc(100vh-4rem)] max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-[300px_1fr] overflow-hidden" data-testid="lens-room">
+      <div className="h-[calc(100vh-4rem)] akki-w-medium grid grid-cols-1 lg:grid-cols-[300px_1fr] overflow-hidden" data-testid="lens-room">
         {/* LEFT — history rail */}
         <aside className="border-r border-[var(--rule)] bg-[var(--cream)] flex flex-col min-h-0">
           <div className="px-5 py-5 border-b border-[var(--rule)] bg-white">
@@ -317,7 +317,7 @@ export default function LensRoom() {
 
         {/* RIGHT — picker + canvas */}
         <main className="overflow-y-auto bg-[var(--cream)]" data-testid="lens-detail">
-          <div className="max-w-3xl mx-auto px-8 py-8">
+          <div className="akki-w-narrow px-8 py-8">
             {/* PICKER ROW — In the Lens (lens) · Test us (kind).
                 (April 2026: Apply moved BELOW the input box per user feedback —
                 the natural flow is read → apply, not pick → apply → read.) */}

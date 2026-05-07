@@ -29,6 +29,21 @@
   --opportunity: #3D6F3D;
   --neutral:     #6F6A5D;
   --meeting:     #4A5568;
+
+  /* =====================================================================
+   * Phase H — UI width consistency tokens (MEMO Item 7).
+   * Three patterns, applied app-wide:
+   *   --w-narrow  →  760 px   single-column reading. Editorial content,
+   *                            settings forms, intake, single-column flows.
+   *   --w-medium  →  1200 px  two-column workspace. Listings + drawer,
+   *                            dashboards, multi-column homes, composers.
+   *   --w-wide    →  none     full-bleed. Data-heavy tables, scoreboards.
+   * Pages must use one of the three utility classes below to enforce the
+   * pattern; arbitrary `max-w-[Npx] mx-auto` page-frames are not allowed.
+   * ===================================================================== */
+  --w-narrow: 760px;
+  --w-medium: 1200px;
+  --w-wide:   100%;
 }
 
 * {
@@ -227,3 +242,34 @@ body {
   50%      { opacity: 1; }
 }
 .akki-pulse { animation: akki-shimmer 2.4s ease-in-out infinite; }
+
+
+/* =======================================================================
+ * Phase H — UI width consistency utility classes (MEMO Item 7).
+ * Apply one of these to the page-frame div on every authenticated page.
+ *   - akki-w-narrow  : 760 px  (single-column reading, intake, settings)
+ *   - akki-w-medium  : 1200 px (workspace, dashboards, two-column flows)
+ *   - akki-w-wide    : full    (data-heavy tables, scoreboards)
+ * Each class centres the frame and sets the max-width to the matching
+ * token. Width: 100% guards against shrink-wrap on flex parents. The
+ * classes are layout-only — they do NOT touch padding, vertical rhythm,
+ * or any other typography/colour token.
+ * ===================================================================== */
+.akki-w-narrow {
+  width: 100%;
+  max-width: var(--w-narrow);
+  margin-left: auto;
+  margin-right: auto;
+}
+.akki-w-medium {
+  width: 100%;
+  max-width: var(--w-medium);
+  margin-left: auto;
+  margin-right: auto;
+}
+.akki-w-wide {
+  width: 100%;
+  max-width: var(--w-wide);
+  margin-left: auto;
+  margin-right: auto;
+}

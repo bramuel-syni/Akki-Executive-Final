@@ -302,7 +302,7 @@ export default function DailyReview() {
         className="min-h-[calc(100vh-4rem)] bg-[var(--cream)] px-4 md:px-8 py-6 md:py-10 outline-none focus:outline-none"
         data-testid="daily-review-page"
       >
-        <div className="max-w-[1200px] mx-auto">
+        <div className="akki-w-medium">
           {/* Header */}
           <div className="flex items-center justify-between mb-4 md:mb-6">
             <p

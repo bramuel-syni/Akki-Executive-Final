@@ -48,7 +48,7 @@ export default function PlaysLibrary() {
 
   return (
     <AppShell>
-      <div className="max-w-[1200px] mx-auto px-8 py-10">
+      <div className="akki-w-medium px-8 py-10">
         <header className="mb-10 akki-fade-up">
           <p className="akki-overline mb-2 text-[var(--accent)]">Workflows · Choreography for board work</p>
           <h1 className="akki-greeting mb-2">Named journeys, not feature tours.</h1>

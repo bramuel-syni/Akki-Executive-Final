@@ -108,7 +108,7 @@ export default function NewWorkspace() {
   return (
     <AppShell>
       <div className="min-h-[calc(100vh-4rem)] bg-[var(--cream)]">
-        <div className="max-w-[600px] mx-auto px-6 py-12 md:py-16">
+        <div className="akki-w-narrow px-6 py-12 md:py-16">
           <button
             onClick={() => navigate(-1)}
             className="text-[12.5px] text-[var(--muted)] hover:text-[var(--ink)] inline-flex items-center gap-1.5 mb-6"

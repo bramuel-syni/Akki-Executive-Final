@@ -114,7 +114,7 @@ export default function AdminIndex() {
 
   return (
     <div className="min-h-screen bg-[var(--cream)] py-12 px-6" data-testid="admin-index">
-      <div className="max-w-4xl mx-auto">
+      <div className="akki-w-narrow">
         <header className="mb-10">
           <p className="akki-overline mb-2">Control room · superadmin</p>
           <h1 className="akki-greeting mb-2">The operator's home.</h1>

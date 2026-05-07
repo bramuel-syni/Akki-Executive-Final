@@ -71,7 +71,7 @@ export default function SignalKPI() {
         </Button>
       </header>
 
-      <main className="px-8 py-8 max-w-6xl mx-auto space-y-8">
+      <main className="px-8 py-8 akki-w-medium space-y-8">
         {/* Top metrics */}
         <section className="grid grid-cols-2 md:grid-cols-3 gap-4" data-testid="signal-kpi-totals">
           <Stat label="Total acted" value={t?.acted ?? "—"} icon={Zap} />

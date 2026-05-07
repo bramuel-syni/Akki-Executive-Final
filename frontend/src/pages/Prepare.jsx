@@ -209,7 +209,7 @@ export default function Prepare({ embedded = false, forceTab = null }) {
   // nav also disappears in embedded mode (the Cycle Manager outer tabs
   // already give the user a tab nav — two tab rows would be noise).
   const inner = (
-      <div className={embedded ? "" : "max-w-[1280px] mx-auto px-6 py-10"}>
+      <div className={embedded ? "" : "akki-w-medium px-6 py-10"}>
         {!embedded && (
           <>
             <p className="akki-overline mb-2 flex items-center gap-2">

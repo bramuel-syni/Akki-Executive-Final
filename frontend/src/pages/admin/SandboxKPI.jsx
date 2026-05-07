@@ -95,7 +95,7 @@ export default function SandboxKPI() {
         </Button>
       </header>
 
-      <main className="px-8 py-8 max-w-6xl mx-auto space-y-8">
+      <main className="px-8 py-8 akki-w-medium space-y-8">
         {/* Top metrics — 4 numbers, editorial strip */}
         <section
           className="grid grid-cols-2 md:grid-cols-4 gap-4"

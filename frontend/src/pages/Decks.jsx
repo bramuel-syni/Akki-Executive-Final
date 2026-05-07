@@ -106,7 +106,7 @@ export default function Decks() {
   if (!cid) {
     return (
       <AppShell>
-        <div className="max-w-3xl mx-auto px-6 py-12 text-[var(--muted)] italic">
+        <div className="akki-w-narrow px-6 py-12 text-[var(--muted)] italic">
           Select a company to start drafting decks.
         </div>
       </AppShell>
@@ -115,7 +115,7 @@ export default function Decks() {
 
   return (
     <AppShell>
-      <div className="max-w-4xl mx-auto px-6 py-10" data-testid="decks-page">
+      <div className="akki-w-medium px-6 py-10" data-testid="decks-page">
         <header className="mb-8">
           <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--accent)] mb-2">
             Decks + Reports · Work Studio

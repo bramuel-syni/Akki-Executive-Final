@@ -88,7 +88,7 @@ export default function Monitor() {
 
   return (
     <AppShell>
-      <div className="h-[calc(100vh-4rem)] max-w-[1100px] mx-auto px-8 overflow-y-auto" data-testid="monitor-page">
+      <div className="h-[calc(100vh-4rem)] akki-w-medium px-8 overflow-y-auto" data-testid="monitor-page">
         <div className="pt-10 pb-6">
           <p className="akki-overline mb-2 flex items-center gap-2">
             <Activity className="w-3 h-3 text-[var(--accent)]" />

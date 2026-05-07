@@ -61,7 +61,7 @@ export default function LLMSpend() {
 
   return (
     <div className="min-h-screen bg-[var(--cream)] py-10 px-6" data-testid="llm-spend-dashboard">
-      <div className="max-w-5xl mx-auto">
+      <div className="akki-w-medium">
         <header className="mb-8 flex items-end justify-between gap-6 flex-wrap">
           <div>
             <p className="akki-overline mb-2 flex items-center gap-1.5">

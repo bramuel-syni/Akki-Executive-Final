@@ -93,7 +93,7 @@ export default function HomeNed() {
   const isMobile = useIsMobile();
   return (
     <AppShell>
-      <div className="max-w-[1100px] mx-auto px-8 py-10" data-testid="home-ned">
+      <div className="akki-w-medium px-8 py-10" data-testid="home-ned">
         <p className="akki-overline mb-2 text-[var(--accent)] flex items-center gap-2">
           <Landmark className="w-3 h-3" /> NED home · {activeContext?.name || "—"}
         </p>

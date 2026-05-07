@@ -162,7 +162,7 @@ export default function InboundQueue() {
   const processedHere = items.filter((i) => i.status !== "pending_review").slice(0, 20);
 
   return (
-    <div className="max-w-[1000px] mx-auto px-4 md:px-6 py-6" data-testid="inbound-queue-page">
+    <div className="akki-w-medium px-4 md:px-6 py-6" data-testid="inbound-queue-page">
       <div className="mb-5">
         <Link
           to="/app"

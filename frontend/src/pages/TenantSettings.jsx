@@ -264,7 +264,7 @@ export default function Settings() {
 
   return (
     <AppShell>
-      <div className="p-8 max-w-6xl mx-auto">
+      <div className="p-8 akki-w-medium">
         <div className="mb-8">
           <p className="akki-overline mb-2">Administration · Module M1</p>
           <h1 className="text-3xl font-light tracking-tight text-[var(--ink)]">Settings</h1>

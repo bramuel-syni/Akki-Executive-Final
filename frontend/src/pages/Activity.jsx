@@ -195,7 +195,7 @@ export default function Activity() {
 
   return (
     <AppShell>
-      <div className="max-w-[920px] mx-auto px-6 py-10">
+      <div className="akki-w-narrow px-6 py-10">
         <Link to="/app" className="akki-gesture text-[12.5px] inline-flex items-center mb-6" data-testid="activity-back">
           <ArrowLeft className="w-3.5 h-3.5 mr-1.5" /> Back to Home
         </Link>

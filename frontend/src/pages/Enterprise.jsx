@@ -55,7 +55,7 @@ export default function Enterprise() {
 
   return (
     <AppShell>
-      <div className="max-w-4xl mx-auto px-6 py-12" data-testid="enterprise-page">
+      <div className="akki-w-narrow px-6 py-12" data-testid="enterprise-page">
         <div className="mb-10">
           <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--accent)] mb-2">
             Akki for Enterprise

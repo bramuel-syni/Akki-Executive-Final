@@ -28,7 +28,7 @@ export default function StudioComposerPage() {
   if (!["briefing", "deck", "report"].includes(kind)) {
     return (
       <AppShell>
-        <div className="max-w-3xl mx-auto p-6">
+        <div className="akki-w-narrow p-6">
           <p className="text-[#8B2E2B] text-sm">Unknown artefact kind: <code>{kind}</code></p>
         </div>
       </AppShell>
@@ -40,7 +40,9 @@ export default function StudioComposerPage() {
 
   return (
     <AppShell>
-      <div className={`mx-auto ${isDeck ? "max-w-5xl" : isBriefing ? "max-w-3xl" : "max-w-4xl"} px-4 lg:px-8 py-6`}>
+      {/* Phase H — composer is a two-column workspace surface; uses
+          the medium width token regardless of artefact kind. */}
+      <div className="akki-w-medium px-4 lg:px-8 py-6">
         {/* Editorial header. No marketing fluff. No emojis. */}
         <div className="flex items-center gap-2 mb-4">
           <button

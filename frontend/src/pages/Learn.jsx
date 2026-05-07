@@ -117,7 +117,7 @@ function ArticleReader({ article }) {
   const navigate = useNavigate();
   return (
     <div className="h-[calc(100vh-4rem)] overflow-y-auto">
-      <div className="max-w-3xl mx-auto px-8 py-10 akki-fade-up">
+      <div className="akki-w-narrow px-8 py-10 akki-fade-up">
         <button
           onClick={() => navigate("/app/learn")}
           className="akki-gesture text-[13px] mb-6"
@@ -318,7 +318,7 @@ export default function Learn() {
   return (
     <AppShell>
       {/* Fixed-height page: only the grid area scrolls */}
-      <div className="h-[calc(100vh-4rem)] max-w-[1280px] mx-auto px-8 grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-10 overflow-hidden">
+      <div className="h-[calc(100vh-4rem)] akki-w-medium px-8 grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-10 overflow-hidden">
         {/* Left rail — intro + topic pills for current tab */}
         <aside className="hidden lg:flex flex-col pt-10 pb-8 overflow-y-auto" data-testid="learn-rail">
           <div className="space-y-6">

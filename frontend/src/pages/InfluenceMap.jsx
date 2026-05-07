@@ -78,7 +78,7 @@ export default function InfluenceMap() {
 
   return (
     <AppShell>
-      <div className="max-w-[1400px] mx-auto px-8 py-8" data-testid="influence-map-page">
+      <div className="akki-w-medium px-8 py-8" data-testid="influence-map-page">
         <header className="mb-6 akki-fade-up">
           <p className="akki-overline mb-2 flex items-center gap-1.5">
             <Activity className="w-3 h-3 text-[var(--accent)]" /> Influence map · {activeContext?.name}

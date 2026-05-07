@@ -585,7 +585,7 @@ export default function Chat() {
 
   return (
     <AppShell>
-      <div className="h-[calc(100vh-4rem)] max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-[300px_1fr] overflow-hidden" data-testid="chat-page">
+      <div className="h-[calc(100vh-4rem)] akki-w-medium grid grid-cols-1 lg:grid-cols-[300px_1fr] overflow-hidden" data-testid="chat-page">
         {/* Sidebar */}
         <aside className="border-r border-[var(--rule)] bg-[var(--cream)] flex flex-col min-h-0" data-testid="chat-sidebar">
           <div className="p-4 border-b border-[var(--rule)] bg-white">

@@ -57,7 +57,7 @@ export default function AccountSecurity() {
 
   return (
     <AppShell>
-      <div className="p-8 max-w-3xl mx-auto">
+      <div className="p-8 akki-w-narrow">
         <div className="mb-8">
           <p className="akki-overline mb-2">Account</p>
           <h1 className="text-3xl font-light tracking-tight text-[var(--ink)]">Security</h1>

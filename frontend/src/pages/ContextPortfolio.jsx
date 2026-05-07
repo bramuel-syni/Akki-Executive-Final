@@ -190,7 +190,7 @@ export default function ContextPortfolio() {
 
   return (
     <AppShell>
-      <div className="h-[calc(100vh-4rem)] max-w-[1280px] mx-auto px-8 overflow-hidden flex flex-col">
+      <div className="h-[calc(100vh-4rem)] akki-w-medium px-8 overflow-hidden flex flex-col">
         {/* Header */}
         <div className="shrink-0 pt-10 pb-6 akki-fade-up">
           <p className="akki-overline mb-2 flex items-center gap-2">

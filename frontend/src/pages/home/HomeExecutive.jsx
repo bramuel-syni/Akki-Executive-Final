@@ -175,7 +175,7 @@ export default function HomeExecutive() {
 
   return (
     <AppShell>
-      <div className="max-w-[1100px] mx-auto px-8 py-10" data-testid="home-executive">
+      <div className="akki-w-medium px-8 py-10" data-testid="home-executive">
         <p className="akki-overline mb-2 flex items-center gap-2">
           <Briefcase className="w-3 h-3" /> Executive home · {activeContext?.name || "—"}
         </p>

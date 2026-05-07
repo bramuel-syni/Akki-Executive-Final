@@ -245,7 +245,7 @@ export default function Simulate() {
 
   return (
     <AppShell>
-      <div className="h-[calc(100vh-4rem)] max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-[320px_1fr] overflow-hidden">
+      <div className="h-[calc(100vh-4rem)] akki-w-medium grid grid-cols-1 lg:grid-cols-[320px_1fr] overflow-hidden">
         {/* LEFT — compose + list */}
         <aside className="border-r border-[var(--rule)] bg-[var(--cream)] flex flex-col min-h-0" data-testid="simulate-rail">
           <div className="px-5 py-6 border-b border-[var(--rule)] bg-white">
@@ -299,7 +299,7 @@ export default function Simulate() {
 
         {/* RIGHT — input-first journey */}
         <main className="overflow-y-auto bg-[var(--cream)]" data-testid="simulate-detail">
-          <div className="max-w-3xl mx-auto px-8 py-10">
+          <div className="akki-w-narrow px-8 py-10">
             {selected && !running ? (
               <>
                 <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">

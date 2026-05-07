@@ -40,7 +40,7 @@ export default function HomeUndeclared() {
 
   return (
     <AppShell>
-      <div className="max-w-[760px] mx-auto px-8 py-20" data-testid="home-undeclared">
+      <div className="akki-w-narrow px-8 py-20" data-testid="home-undeclared">
         <p className="akki-overline mb-3">Akki for {account?.name || "you"}</p>
         <h1 className="akki-serif text-[40px] sm:text-[52px] leading-[1.08] tracking-[-0.018em] text-[var(--ink)] mb-5 font-normal max-w-[24ch]">
           Tell AKKI whether you sit in the boardroom, run the business, or both.

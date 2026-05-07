@@ -58,7 +58,7 @@ export default function Manage() {
 
   return (
     <AppShell>
-      <div className="max-w-[1100px] mx-auto px-8 py-10">
+      <div className="akki-w-medium px-8 py-10">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}

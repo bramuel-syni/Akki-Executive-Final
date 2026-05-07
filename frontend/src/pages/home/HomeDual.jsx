@@ -22,7 +22,7 @@ export default function HomeDual() {
   const isMobile = useIsMobile();
   return (
     <AppShell>
-      <div className="max-w-[1280px] mx-auto px-8 py-10" data-testid="home-dual">
+      <div className="akki-w-medium px-8 py-10" data-testid="home-dual">
         <p className="akki-overline mb-2 flex items-center gap-2">
           <Briefcase className="w-3 h-3" /><Landmark className="w-3 h-3" /> Executive + NED home · {activeContext?.name || "—"}
         </p>
