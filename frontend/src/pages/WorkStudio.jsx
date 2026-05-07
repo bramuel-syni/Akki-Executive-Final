@@ -43,6 +43,7 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import ExportModal from "@/components/studio/ExportModal";
+import EnhanceModal from "@/components/studio/EnhanceModal";
 import {
   FileText, Presentation, ScrollText, Plus, Loader2, ArrowRight, AlertCircle,
   Layers, FolderOpen, FileDown, Wand2, Calendar, Users, Files,
@@ -293,22 +294,22 @@ function BriefDrawer({ open, onClose, aid, contextId }) {
   );
 }
 
-// Five-button action bar — three Export buttons wired (Phase C.2),
-// two Enhance buttons remain inert toasts (Phase C.3).
-function ActionBar({ onExportClick, onEnhanceInProgress }) {
+// Five-button action bar — three Export buttons (Phase C.2) and two
+// Enhance buttons (Phase C.3) wired to their respective modals.
+function ActionBar({ onExportClick, onEnhanceClick }) {
   const ACTIONS = [
-    { id: "export_brief",    label: "Export a Brief",         icon: FileDown,  exportKind: "brief"  },
-    { id: "export_deck",     label: "Export a Summary Deck",  icon: FileDown,  exportKind: "deck"   },
-    { id: "export_report",   label: "Export a Report",        icon: FileDown,  exportKind: "report" },
-    { id: "enhance_deck",    label: "Enhance my Deck",        icon: Wand2,     exportKind: null     },
-    { id: "enhance_report",  label: "Enhance my Report",      icon: Wand2,     exportKind: null     },
+    { id: "export_brief",    label: "Export a Brief",         icon: FileDown,  kind: "brief",  flow: "export"  },
+    { id: "export_deck",     label: "Export a Summary Deck",  icon: FileDown,  kind: "deck",   flow: "export"  },
+    { id: "export_report",   label: "Export a Report",        icon: FileDown,  kind: "report", flow: "export"  },
+    { id: "enhance_deck",    label: "Enhance my Deck",        icon: Wand2,     kind: "deck",   flow: "enhance" },
+    { id: "enhance_report",  label: "Enhance my Report",      icon: Wand2,     kind: "report", flow: "enhance" },
   ];
   return (
     <div
       className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 border border-[var(--rule)] bg-white rounded-md"
       data-testid="work-studio-action-bar"
       role="toolbar"
-      aria-label="Briefs actions"
+      aria-label="Work Studio actions"
     >
       {ACTIONS.map((a) => {
         const Icon = a.icon;
@@ -318,7 +319,7 @@ function ActionBar({ onExportClick, onEnhanceInProgress }) {
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => a.exportKind ? onExportClick(a.exportKind) : onEnhanceInProgress(a.label)}
+            onClick={() => a.flow === "export" ? onExportClick(a.kind) : onEnhanceClick(a.kind)}
             className="rounded-sm border-[var(--rule)] text-[12.5px] hover:border-[var(--accent)]"
             data-testid={`work-studio-action-${a.id}`}
           >
@@ -414,6 +415,10 @@ export default function WorkStudio() {
   const [exportOpen, setExportOpen] = useState(false);
   const [exportKind, setExportKind] = useState("brief");
 
+  // Phase C.3 — enhance modal state.
+  const [enhanceOpen, setEnhanceOpen] = useState(false);
+  const [enhanceKind, setEnhanceKind] = useState("deck");
+
   // Decks + reports (lower section).
   const [drData, setDrData] = useState({ decks: [], reports: [], errors: [] });
   const [drLoading, setDrLoading] = useState(true);
@@ -480,6 +485,11 @@ export default function WorkStudio() {
     setExportOpen(true);
   };
 
+  const onEnhanceClick = (kind) => {
+    setEnhanceKind(kind);
+    setEnhanceOpen(true);
+  };
+
   const onOpenBrief = (row) => {
     setDrawerAid(row.id);
     setDrawerOpen(true);
@@ -520,13 +530,29 @@ export default function WorkStudio() {
         <p className="akki-overline mb-2 flex items-center gap-2">
           <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Work Studio · {activeContext.name}
         </p>
-        <h1 className="akki-greeting mb-2">Briefs in flight.</h1>
+        <h1 className="akki-greeting mb-2">Check or review your work.</h1>
         <p className="akki-meta max-w-2xl">
           Cycle aggregates for <strong className="text-[var(--ink)]">{activeContext.name}</strong> — board packs, minutes, and committee packs. Click any row for the topline and notes.
         </p>
 
+        {/* C.4 — action bar sits directly after the intro copy and BEFORE the kind tabs */}
+        <div className="mt-6">
+          <ActionBar
+            onExportClick={onExportClick}
+            onEnhanceClick={onEnhanceClick}
+          />
+        </div>
+
+        {/* C.4 — section heading above the kind tabs */}
+        <h2
+          className="akki-serif text-[18px] text-[var(--ink)] font-medium mt-6 mb-2"
+          data-testid="work-studio-section-heading"
+        >
+          Cycle Board Pack, Briefs and Reports
+        </h2>
+
         {/* Three-tab kind selector */}
-        <div className="border-b border-[var(--rule)] flex items-stretch gap-0 mt-6 mb-4 flex-wrap" data-testid="work-studio-kind-tabs">
+        <div className="border-b border-[var(--rule)] flex items-stretch gap-0 mb-4 flex-wrap" data-testid="work-studio-kind-tabs">
           {KIND_TABS.map((t) => {
             const Icon = t.icon;
             const active = kind === t.id;
@@ -549,12 +575,6 @@ export default function WorkStudio() {
             );
           })}
         </div>
-
-        {/* Action bar — three Export wired (C.2), two Enhance still inert */}
-        <ActionBar
-          onExportClick={onExportClick}
-          onEnhanceInProgress={onActionInProgress}
-        />
 
         {/* Aggregate listing */}
         {aggLoading ? (
@@ -686,6 +706,14 @@ export default function WorkStudio() {
         open={exportOpen}
         onClose={() => setExportOpen(false)}
         kind={exportKind}
+        contextId={cid}
+      />
+
+      {/* Phase C.3 — Enhance modal (wired to the two Enhance buttons) */}
+      <EnhanceModal
+        open={enhanceOpen}
+        onClose={() => setEnhanceOpen(false)}
+        kind={enhanceKind}
         contextId={cid}
       />
     </AppShell>

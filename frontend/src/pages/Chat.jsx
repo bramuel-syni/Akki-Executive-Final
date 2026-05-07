@@ -133,25 +133,71 @@ export default function Chat() {
   // brief). One-shot: we strip the param after consuming it. With
   // ?new=1 we also create a fresh conversation first so the seed
   // doesn't pollute whichever chat happened to be active.
+  //
+  // Phase C.3 — also support ?chat_id=<id>&attach=<doc_id> arriving
+  // from "Continue in chat" buttons on Work Studio. The chat is
+  // already created server-side; we just select it and push the
+  // artefact's document onto the attachments state so the chip is
+  // visible on first paint.
   useEffect(() => {
     const p = searchParams.get("prompt");
     const wantNew = searchParams.get("new") === "1";
     const seedTitle = searchParams.get("seed_title");
     const docId = searchParams.get("doc");
-    if (!p && !seedTitle && !docId) return;
+    const continueChatId = searchParams.get("chat_id");
+    const continueAttachId = searchParams.get("attach");
+    if (!p && !seedTitle && !docId && !continueChatId && !continueAttachId) return;
     // Iter57 — when the trigger is ?doc=<id>, we *must* wait for the
     // active context to hydrate before we can resolve the doc title and
     // mint a chat. Re-firing this effect when activeContext.id changes
     // closes the race that the testing pass surfaced.
-    if (docId && !activeContext?.id) return;
+    if ((docId || continueAttachId) && !activeContext?.id) return;
     let cancelled = false;
     (async () => {
       try {
-        // Iter57 — when user clicks "Continue in Chat" from a document,
-        // we land here with ?doc=<id>. Spin up a fresh conversation
-        // titled with the doc's name (resolved client-side) and
-        // pre-fill the composer so they can ask their question.
-        if (docId && activeContext?.id) {
+        // C.3 — Continue-in-chat from Work Studio: chat already exists,
+        // and we may also have an artefact doc to attach as a chip.
+        if (continueChatId && activeContext?.id) {
+          if (!cancelled) setActiveId(continueChatId);
+          if (continueAttachId) {
+            try {
+              const { data: doc } = await api.get(
+                `/contexts/${activeContext.id}/documents/${continueAttachId}`,
+              );
+              if (!cancelled && doc) {
+                // Map the document shape to the same chip shape
+                // /chats/{cid}/attach returns, so the existing render
+                // path needs no change.
+                const chip = {
+                  document_id: doc.id || continueAttachId,
+                  chat_id: continueChatId,
+                  context_id: activeContext.id,
+                  name: doc.name || doc.original_filename || "Artefact",
+                  original_filename: doc.original_filename || doc.name,
+                  mime_type: doc.mime_type || "application/octet-stream",
+                  size_bytes: doc.size_bytes || 0,
+                  char_len: doc.extracted_chars || 0,
+                  sensitivity: {
+                    score: doc.sensitivity_score || 0,
+                    classification: (doc.sensitivity_band || "internal").toUpperCase(),
+                    label: (doc.sensitivity_label || "INTERNAL"),
+                    reasons: [],
+                  },
+                  storage_key: doc.storage_key || "",
+                  created_at: doc.created_at || "",
+                };
+                setAttachments((prev) => {
+                  if (prev.some((a) => a.document_id === chip.document_id)) return prev;
+                  return [...prev, chip];
+                });
+              }
+            } catch { /* best-effort — leave chip area empty if fetch fails */ }
+          }
+        } else if (docId && activeContext?.id) {
+          // Iter57 — when user clicks "Continue in Chat" from a document,
+          // we land here with ?doc=<id>. Spin up a fresh conversation
+          // titled with the doc's name (resolved client-side) and
+          // pre-fill the composer so they can ask their question.
           let docTitle = "this document";
           try {
             const { data } = await api.get(`/contexts/${activeContext.id}/documents/${docId}`);
@@ -186,6 +232,8 @@ export default function Chat() {
       next.delete("new");
       next.delete("seed_title");
       next.delete("doc");
+      next.delete("chat_id");
+      next.delete("attach");
       setSearchParams(next, { replace: true });
     })();
     return () => { cancelled = true; };
