@@ -99,7 +99,10 @@ function PickerCard({ card, onSelect, isFocused, onArrowKey }) {
         width: "100%",
         textAlign: "left",
         padding: 32,
-        marginBottom: 24,
+        // Phase G — 2x2 grid uses CSS gap for both axes; per-card
+        // marginBottom is dropped so vertical and horizontal spacing
+        // remain symmetric. Mobile single-column gap is identical.
+        marginBottom: 0,
         minHeight: 140,
         background: TOKEN.LIGHT,
         border: `1px solid ${hover || isFocused ? TOKEN.ACCENT : TOKEN.RULE}`,
@@ -366,7 +369,7 @@ export default function SolvaLanding({ variant = "auth" }) {
         padding: "120px 24px 80px",
       }}
     >
-      <div style={{ maxWidth: 760, margin: "0 auto" }}>
+      <div className="akki-w-medium">
         <h1
           className="solva-landing-title"
           style={{
@@ -394,7 +397,16 @@ export default function SolvaLanding({ variant = "auth" }) {
           Pick what you came to do.
         </p>
 
-        <div role="list" aria-label="Solva sub-modules">
+        {/* Phase G — 2×2 grid (1×4 → 2×2). Mobile collapses back to
+            single column via the @media rule in the <style> block
+            below. Layout-only change; copy, ordering, focus
+            behaviour, and arrow-key nav all preserved. */}
+        <div
+          className="solva-picker-grid"
+          role="list"
+          aria-label="Solva sub-modules"
+          data-testid="solva-picker-grid"
+        >
           {CARDS.map((c, i) => (
             <PickerCard
               key={c.key}
@@ -448,10 +460,18 @@ export default function SolvaLanding({ variant = "auth" }) {
         )}
       </div>
 
-      {/* Brief §7.6 responsive — title 32px on mobile. */}
+      {/* Brief §7.6 responsive — title 32px on mobile.
+          Phase G — solva-picker-grid renders 2×2 on desktop/tablet,
+          collapses to 1-column on mobile (≤640px). */}
       <style>{`
+        .solva-picker-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 24px;
+        }
         @media (max-width: 640px) {
           .solva-landing-title { font-size: 32px !important; }
+          .solva-picker-grid { grid-template-columns: 1fr; }
         }
         [data-testid^="solva-picker-"]:focus-visible {
           outline: 2px solid ${TOKEN.ACCENT};
