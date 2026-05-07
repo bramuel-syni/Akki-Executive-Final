@@ -1,711 +1,465 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+/**
+ * Workspace.jsx — Phase E rewrite (MEMO Item 1).
+ *
+ * Documents Journal listing with:
+ *   • Indexed full-text + notes + metadata search across active
+ *     context (BM25 via the new /api/contexts/{cid}/document-journal
+ *     /search endpoint).
+ *   • Single-drawer-on-row-click pattern (no navigation away from the
+ *     listing — replaces the legacy three-column /app/documents/:id
+ *     detail, which still works as a deep-link fallback).
+ *   • Title-bar Upload + Camera actions, replacing inline +Add CTAs.
+ *   • Phase H width token `akki-w-medium` for the page frame.
+ *
+ * Restraint copy throughout — banned-word grep clean.
+ */
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
-import AskPanel from "@/components/ask/AskPanel";
-import DocumentSummaryCard from "@/components/documents/DocumentSummaryCard";
 import { useAuth } from "@/contexts/AuthContext";
-import { api, apiErrorMessage, API_BASE } from "@/lib/api";
-import { Button } from "@/components/ui/button";
+import { api, apiErrorMessage } from "@/lib/api";
+import { Link } from "react-router-dom";
+import { Sparkles, Search, Upload, Camera, FileText, X, Eye, Loader2, ArrowRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
-  AlertDialogTitle, AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import {
-  Upload, FileText, Trash2, Download, ShieldCheck, AlertTriangle,
-  CheckCircle2, Loader2, ArrowLeft, List, GripVertical, Camera, Sparkles,
-  Eye,
-} from "lucide-react";
-import DocumentJournalStats from "@/components/documents/DocumentJournalStats";
-import DocumentSummaryPanel from "@/components/documents/DocumentSummaryPanel";
-import DocumentEvolutionPanel from "@/components/documents/DocumentEvolutionPanel";
-import DocumentPlayContext from "@/components/documents/DocumentPlayContext";
-import DocumentBodyModal from "@/components/documents/DocumentBodyModal";
 
-const TRUST_STYLE = {
-  trusted: { label: "Trusted", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  mixed:   { label: "Mixed",   cls: "bg-amber-50 text-amber-700 border-amber-200" },
-  weak:    { label: "Weak",    cls: "bg-red-50 text-red-700 border-red-200" },
-};
-const STATUS_STYLE = {
-  extracted: { label: "Extracted", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: CheckCircle2 },
-  empty:     { label: "Empty",     cls: "bg-slate-100 text-slate-500 border-slate-200", icon: FileText },
-  failed:    { label: "Failed",    cls: "bg-red-50 text-red-700 border-red-200", icon: AlertTriangle },
-  uploaded:  { label: "Uploaded",  cls: "bg-slate-100 text-slate-600 border-slate-200", icon: FileText },
-};
-const ACCEPT = ".pdf,.docx,.txt,.md,.rtf";
-
-function formatSize(b) {
-  if (b == null) return "—";
-  if (b < 1024) return `${b} B`;
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-  return `${(b / 1024 / 1024).toFixed(1)} MB`;
+/* ------------------------------------------------------------------ */
+/* Helpers                                                            */
+/* ------------------------------------------------------------------ */
+function formatBytes(n) {
+  if (n == null || isNaN(n)) return "—";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
-function formatDate(iso) {
-  if (!iso) return "—";
-  try { return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }); }
-  catch { return iso; }
+function formatDate(s) {
+  if (!s) return "";
+  try { return new Date(s).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
+  catch { return s; }
 }
 
-function parseOutline(text) {
-  if (!text) return [];
-  const lines = text.split(/\n/);
-  const items = [];
-  let buf = [];
-  const flushPara = () => {
-    const joined = buf.join(" ").trim();
-    if (joined) items.push({ type: "p", text: joined });
-    buf = [];
-  };
-  for (let i = 0; i < lines.length; i++) {
-    const line = (lines[i] || "").trim();
-    if (!line) { flushPara(); continue; }
-    const next = (lines[i + 1] || "").trim();
-    const isShort = line.length <= 80 && line.length > 2;
-    const isUpper = line === line.toUpperCase() && /[A-Z]/.test(line);
-    const startsNumbered = /^(\d+(\.\d+)*)\s+\S/.test(line);
-    const nextLonger = next && next.length > 80;
-    if (isShort && (isUpper || startsNumbered || nextLonger)) {
-      flushPara();
-      items.push({ type: "h", text: line, id: `h-${items.length}` });
-    } else {
-      buf.push(line);
-    }
-  }
-  flushPara();
-  return items;
-}
-
-function TrustChip({ trust, onChange, disabled }) {
-  const cfg = TRUST_STYLE[trust] || TRUST_STYLE.mixed;
-  if (disabled || !onChange) {
-    return (
-      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-medium uppercase tracking-wider border ${cfg.cls}`}>
-        <ShieldCheck className="w-3 h-3" /> {cfg.label}
-      </span>
-    );
-  }
+/* ------------------------------------------------------------------ */
+/* JournalDrawer — side drawer for a single document                  */
+/* Pattern mirrors WorkStudio.BriefDrawer (Phase C.1).                */
+/* ------------------------------------------------------------------ */
+function JournalDrawer({ doc, loading, onClose, onOpenStructuralDetail }) {
+  if (!doc && !loading) return null;
   return (
-    <Select value={trust} onValueChange={onChange}>
-      <SelectTrigger className={`h-6 w-auto rounded-sm text-[10px] uppercase tracking-wider font-medium border px-2 gap-1 ${cfg.cls}`}>
-        <ShieldCheck className="w-3 h-3" />
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent className="rounded-sm">
-        <SelectItem value="trusted">Trusted</SelectItem>
-        <SelectItem value="mixed">Mixed</SelectItem>
-        <SelectItem value="weak">Weak</SelectItem>
-      </SelectContent>
-    </Select>
-  );
-}
-
-function StatusChip({ status }) {
-  const cfg = STATUS_STYLE[status] || STATUS_STYLE.uploaded;
-  const I = cfg.icon;
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-medium uppercase tracking-wider border ${cfg.cls}`}>
-      <I className="w-3 h-3" /> {cfg.label}
-    </span>
-  );
-}
-
-/** Left pane when no document is selected: stats hero + collapsible upload + list. */
-function DocumentsBrowser({
-  docs, loading, uploading, dragging, setDragging, queued, onFiles,
-  displayName, setDisplayName, trust, setTrust, fileInput, cameraInput,
-  onSelect, onArchive, onTrustChange, accountEmail, isAdmin,
-}) {
-  // Iter44 — uploads are intentionally collapsed on this page. The user
-  // feedback was clear: "remove the upload sections; the arrangement of
-  // elements should be neat." We keep the upload mechanism — there must
-  // be a way to add a document — but it's hidden behind an explicit
-  // "Add document" affordance in the stats hero. The dropzone only
-  // appears when the user opts in.
-  const [uploadOpen, setUploadOpen] = React.useState(false);
-
-  // Phase M.2 — clicking "Open original" on a journal row used to be
-  // an `<a target="_blank">` that yanked the user out of the listing.
-  // Spec is an in-app overlay over the journal so the user keeps
-  // their place. We track the doc whose body should be modal'd here.
-  const [bodyDoc, setBodyDoc] = React.useState(null);
-
-  return (
-    <div className="flex flex-col h-full min-h-0">
-      <div className="px-6 py-4 border-b border-[#E1E6ED] bg-white">
-        <p className="akki-overline mb-1">Document journal · M3</p>
-        <h1 className="text-xl font-light tracking-tight text-[var(--ink)]">Document Journal</h1>
-        <p className="text-[11.5px] text-[var(--muted)] mt-0.5">
-          Board packs, minutes, reports. Click any document to read AKKI's summary on the right.
-        </p>
-      </div>
-
-      <DocumentJournalStats
-        docs={docs}
-        uploading={uploading}
-        onUploadClick={() => { setUploadOpen(true); setTimeout(() => fileInput.current?.click(), 50); }}
-        onCameraClick={() => { setUploadOpen(true); setTimeout(() => cameraInput.current?.click(), 50); }}
+    <div
+      className="fixed inset-0 z-40 flex"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Document detail"
+      data-testid="journal-drawer"
+    >
+      {/* Backdrop */}
+      <div
+        className="flex-1 bg-black/30 transition-opacity"
+        onClick={onClose}
+        aria-hidden="true"
       />
-
-      {uploadOpen && (
-        <div
-          className={`mx-6 mb-3 border-2 border-dashed rounded-sm transition-colors ${dragging ? "border-[var(--accent)] bg-amber-50/50" : "border-[#E1E6ED] bg-white"}`}
-          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => { e.preventDefault(); setDragging(false); if (e.dataTransfer?.files) onFiles(e.dataTransfer.files); }}
-          data-testid="upload-dropzone"
-        >
-          <div className="p-4 flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-              <Upload className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" strokeWidth={1.6} />
-              <p className="text-[12px] text-[var(--ink)]">
-                Drag & drop a file here — PDF · DOCX · TXT · MD · RTF · up to 25MB
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Input
-                value={displayName} onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Display name (optional)"
-                className="rounded-sm h-8 w-44 text-xs"
-                data-testid="upload-display-name"
-              />
-              <Select value={trust} onValueChange={setTrust}>
-                <SelectTrigger className="rounded-sm h-8 w-28 text-xs" data-testid="upload-trust-select"><SelectValue /></SelectTrigger>
-                <SelectContent className="rounded-sm">
-                  <SelectItem value="trusted">Trusted</SelectItem>
-                  <SelectItem value="mixed">Mixed</SelectItem>
-                  <SelectItem value="weak">Weak</SelectItem>
-                </SelectContent>
-              </Select>
-              {docs.length > 0 && (
-                <button
-                  onClick={() => setUploadOpen(false)}
-                  className="text-[11px] text-[var(--muted)] hover:text-[var(--ink)]"
-                  data-testid="upload-collapse-btn"
-                >
-                  Hide
-                </button>
-              )}
-              <input
-                ref={fileInput} type="file" multiple accept={ACCEPT}
-                className="hidden"
-                onChange={(e) => onFiles(e.target.files)}
-                data-testid="upload-file-input"
-              />
-              <input
-                ref={cameraInput} type="file" accept="image/*" capture="environment"
-                className="hidden"
-                onChange={(e) => onFiles(e.target.files)}
-                data-testid="upload-camera-input"
-              />
-            </div>
+      {/* Panel */}
+      <aside
+        className="
+          w-full sm:w-[640px] md:w-[760px] lg:w-[820px] max-w-[92vw]
+          bg-[var(--paper)] border-l border-[var(--rule)]
+          h-full overflow-y-auto shadow-xl flex flex-col
+        "
+        data-testid="journal-drawer-panel"
+      >
+        {/* Title bar */}
+        <header className="px-5 py-4 border-b border-[var(--rule)] bg-white sticky top-0 z-10 flex items-start gap-3">
+          <FileText className="w-4 h-4 text-[var(--accent)] mt-1 shrink-0" strokeWidth={1.7} />
+          <div className="flex-1 min-w-0">
+            {loading ? (
+              <p className="akki-meta">Loading…</p>
+            ) : (
+              <>
+                <h2 className="akki-serif text-[18px] text-[var(--ink)] leading-snug truncate" data-testid="journal-drawer-title">
+                  {doc?.name || "(untitled)"}
+                </h2>
+                <p className="akki-meta mt-0.5 text-[11.5px] text-[var(--muted)]">
+                  {[
+                    formatDate(doc?.created_at),
+                    formatBytes(doc?.size_bytes),
+                    doc?.doc_kind,
+                    (doc?.sensitivity_band || "").toLowerCase(),
+                  ].filter(Boolean).join(" · ")}
+                </p>
+              </>
+            )}
           </div>
-          {queued.length > 0 && (
-            <div className="border-t border-[#E1E6ED] px-4 py-2.5 space-y-1.5">
-              {queued.map((q, i) => (
-                <div key={i} className="flex items-center gap-2 text-[11px]">
-                  {q.error ? <AlertTriangle className="w-3.5 h-3.5 text-red-500" /> :
-                    q.progress === 100 ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> :
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--accent)]" />}
-                  <span className="text-slate-700 truncate">{q.name}</span>
-                  {q.error && <span className="text-red-600 ml-auto">{q.error}</span>}
-                </div>
-              ))}
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 hover:bg-[var(--cream-deep)] rounded-sm shrink-0"
+            aria-label="Close drawer"
+            data-testid="journal-drawer-close"
+          >
+            <X className="w-4 h-4 text-[var(--muted)]" />
+          </button>
+        </header>
+
+        {/* Body */}
+        <div className="flex-1 px-5 py-4 space-y-5">
+          {loading && (
+            <div className="py-12 text-center">
+              <Loader2 className="w-4 h-4 mx-auto animate-spin text-[var(--accent)]" />
             </div>
           )}
-        </div>
-      )}
 
-      {/* Doc list */}
-      <div className="flex-1 overflow-y-auto px-6 py-3">
-        {loading ? (
-          <div className="p-10 text-center text-xs uppercase tracking-widest text-slate-400">Loading…</div>
-        ) : docs.length === 0 ? (
-          <div className="p-12 text-center bg-white border border-[#E1E6ED] rounded-sm" data-testid="docs-empty-state">
-            <FileText className="w-8 h-8 text-slate-300 mx-auto mb-3" strokeWidth={1.3} />
-            <p className="text-sm text-slate-500 mb-1">No documents yet</p>
-            <p className="text-[11px] text-slate-400">Upload your first board pack or report to give AKKI something to work with.</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {docs.map((d) => {
-              const canDelete = d.uploaded_by_email === accountEmail || isAdmin;
-              return (
-                <div
-                  key={d.id}
-                  className="group bg-white border border-[#E1E6ED] rounded-sm p-3 hover:border-[var(--accent)]/50 hover:bg-slate-50/40 transition-colors flex items-center gap-3"
-                  data-testid={`doc-row-${d.id}`}
-                >
-                  <div
-                    onClick={() => onSelect(d.id)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(d.id); } }}
-                    role="button"
-                    tabIndex={0}
-                    className="flex-1 min-w-0 text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 rounded-sm"
-                    data-testid={`doc-open-${d.id}`}
-                  >
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <p className="text-sm font-medium text-[var(--ink)] group-hover:text-[var(--accent)] transition-colors truncate max-w-[40ch]">
-                        {d.name}
-                      </p>
-                      <StatusChip status={d.status} />
-                      <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                        <TrustChip trust={d.data_trust} onChange={(v) => onTrustChange(d, v)} disabled={!canDelete} />
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-400 font-mono truncate">{d.original_filename}</p>
-                    {d.preview && <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">{d.preview}</p>}
-                    <div className="flex items-center gap-3 text-[10px] text-slate-400 mt-1.5">
-                      <span>{formatSize(d.size_bytes)}</span>
-                      <span>·</span>
-                      <span>{formatDate(d.created_at)}</span>
-                      <span>·</span>
-                      <span>{d.uploaded_by_email}</span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setBodyDoc({
-                        contextId: d.context_id,
-                        docId: d.id,
-                        docName: d.name,
-                      });
-                    }}
-                    className="text-slate-400 hover:text-[var(--ink)] shrink-0 p-1 rounded-sm hover:bg-slate-100"
-                    data-testid={`doc-open-original-${d.id}`}
-                    title="Open original"
-                    aria-label={`Open original of ${d.name}`}
-                  >
-                    <Eye className="w-4 h-4" />
-                  </button>
-                  {canDelete && (
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <button className="text-slate-400 hover:text-red-600 shrink-0" data-testid={`doc-archive-${d.id}`} title="Archive">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent className="rounded-sm">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Archive {d.name}?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            The document will be removed from this context and its source file deleted. Audit log is preserved.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel className="rounded-sm">Cancel</AlertDialogCancel>
-                          <AlertDialogAction className="bg-red-600 hover:bg-red-700 rounded-sm" onClick={() => onArchive(d)} data-testid={`doc-confirm-archive-${d.id}`}>
-                            Archive
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+          {!loading && doc && (
+            <>
+              {/* Topline strip */}
+              <div className="border border-[var(--rule)] bg-[var(--cream-deep)]/40 rounded-sm px-4 py-3" data-testid="journal-drawer-topline">
+                <p className="akki-overline text-[var(--muted)] mb-1">Topline</p>
+                <p className="akki-serif text-[14.5px] text-[var(--ink)] leading-[1.55]">
+                  {doc.preview ||
+                    (doc.extracted_text || "").slice(0, 240).replace(/\s+/g, " ").trim() ||
+                    "—"}
+                </p>
+              </div>
 
-      {/* Phase M.2 — Document body modal. Mounted once per browser
-          instance; opens with the doc clicked via the row's
-          "Open original" button. The journal listing stays mounted
-          underneath (Radix renders the dialog into a portal so the
-          listing scroll position is preserved). */}
-      <DocumentBodyModal
-        open={!!bodyDoc}
-        onClose={() => setBodyDoc(null)}
-        contextId={bodyDoc?.contextId}
-        docId={bodyDoc?.docId}
-        docName={bodyDoc?.docName}
-      />
-    </div>
-  );
-}
-
-/** Left pane when a document is selected: viewer with outline. */
-function DocumentPane({ contextId, docId, onBack, onArchive, accountEmail, isAdmin, scrollTargetRef }) {
-  const [doc, setDoc] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [outlineOpen, setOutlineOpen] = useState(false);
-  const bodyRef = useRef(null);
-
-  const loadDoc = useCallback(() => {
-    setLoading(true);
-    api.get(`/contexts/${contextId}/documents/${docId}`)
-      .then(({ data }) => setDoc(data))
-      .catch((e) => toast.error(apiErrorMessage(e)))
-      .finally(() => setLoading(false));
-  }, [contextId, docId]);
-
-  useEffect(() => {
-    setDoc(null);
-    loadDoc();
-  }, [loadDoc]);
-
-  const items = useMemo(() => parseOutline(doc?.extracted_text), [doc]);
-  const headings = items.filter((x) => x.type === "h");
-
-  // Expose scroll target to parent (for citation click → scroll)
-  useEffect(() => {
-    if (scrollTargetRef) scrollTargetRef.current = bodyRef.current;
-  }, [scrollTargetRef, loading]);
-
-  const scrollTo = (id) => {
-    const el = bodyRef.current?.querySelector(`[data-outline-id="${id}"]`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  const canDelete = doc && (doc.uploaded_by_email === accountEmail || isAdmin);
-
-  return (
-    <div className="flex flex-col h-full min-h-0">
-      <div className="px-6 py-4 border-b border-[#E1E6ED] bg-white flex items-center gap-3">
-        <Button
-          variant="ghost" size="sm"
-          onClick={onBack}
-          className="rounded-sm h-8 px-2 text-slate-600 hover:text-[var(--ink)] shrink-0"
-          data-testid="doc-back-btn"
-        >
-          <ArrowLeft className="w-4 h-4 mr-1.5" /> Documents
-        </Button>
-        <div className="flex-1 min-w-0">
-          {loading ? (
-            <p className="text-xs text-slate-500 flex items-center gap-2">
-              <Loader2 className="w-3 h-3 animate-spin" /> Loading…
-            </p>
-          ) : doc ? (
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-base font-medium tracking-tight text-[var(--ink)] truncate max-w-[40ch]" data-testid="doc-title">
-                {doc.name}
-              </h2>
-              <StatusChip status={doc.status} />
-              <TrustChip trust={doc.data_trust} />
-              <span className="text-[10px] text-slate-400">{(doc.extracted_chars || 0).toLocaleString()} chars</span>
-            </div>
-          ) : (
-            <p className="text-sm text-slate-500">Document not found</p>
-          )}
-        </div>
-        {doc && (
-          <>
-            {/* Outline → moved out of the right rail into a header
-                affordance per Apr-2026 user feedback ("having three
-                panels in the same workspace is too crowded — two side
-                by side reads cleaner"). Right rail now carries only
-                Summary + AKKI (Evolution) — no third stacked panel. */}
-            {headings.length > 0 && (
-              <div className="relative" data-testid="doc-outline-popover-wrap">
-                <button
-                  onClick={() => setOutlineOpen((o) => !o)}
-                  className="text-slate-500 hover:text-[var(--ink)] shrink-0 inline-flex items-center gap-1 text-[11px] uppercase tracking-wider"
-                  title="Sections in this document"
-                  data-testid="doc-outline-toggle"
-                >
-                  <List className="w-4 h-4" />
-                  <span className="hidden md:inline">Sections · {headings.length}</span>
-                </button>
-                {outlineOpen && (
-                  <div
-                    className="absolute right-0 top-[28px] z-20 w-[280px] max-h-[60vh] overflow-y-auto bg-white border border-[#E1E6ED] rounded-md shadow-md p-3"
-                    data-testid="doc-outline-popover"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-semibold">Outline</p>
-                      <button
-                        onClick={() => setOutlineOpen(false)}
-                        className="text-slate-400 hover:text-[var(--ink)] text-[11px]"
-                        aria-label="Close outline"
-                      >
-                        ×
-                      </button>
-                    </div>
-                    {headings.map((h) => (
-                      <button
-                        key={h.id}
-                        onClick={() => { scrollTo(h.id); setOutlineOpen(false); }}
-                        className="w-full text-left px-2 py-1.5 text-[11px] text-slate-600 hover:bg-[var(--cream-deep)]/50 hover:text-[var(--ink)] rounded-sm transition-colors border-l-2 border-transparent hover:border-[var(--accent)]"
-                        data-testid={`outline-${h.id}`}
-                      >
-                        <span className="line-clamp-2">{h.text}</span>
-                      </button>
-                    ))}
-                  </div>
+              {/* Akki notes (journal commentary) */}
+              <div data-testid="journal-drawer-commentary">
+                <p className="akki-overline text-[var(--muted)] mb-2">From AKKI</p>
+                {doc.journal_commentary ? (
+                  <p className="akki-serif text-[14px] text-[var(--ink)] leading-[1.7] whitespace-pre-wrap">
+                    {doc.journal_commentary}
+                  </p>
+                ) : (
+                  <p className="text-[13px] text-[var(--muted)] italic">
+                    Notes are still being prepared. They appear automatically once the document finishes processing.
+                  </p>
                 )}
               </div>
-            )}
-            <a
-              href={`${API_BASE}/contexts/${contextId}/documents/${doc.id}/download`}
-              target="_blank" rel="noreferrer"
-              className="text-slate-500 hover:text-[var(--ink)] shrink-0"
-              data-testid="doc-download-btn"
-              title="Download original"
-            >
-              <Download className="w-4 h-4" />
-            </a>
-            {canDelete && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <button className="text-slate-500 hover:text-red-600 shrink-0" title="Archive" data-testid="doc-archive-btn">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </AlertDialogTrigger>
-                <AlertDialogContent className="rounded-sm">
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Archive {doc.name}?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      The document will be removed from this context and its source file deleted.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel className="rounded-sm">Cancel</AlertDialogCancel>
-                    <AlertDialogAction className="bg-red-600 hover:bg-red-700 rounded-sm" onClick={() => onArchive(doc)}>
-                      Archive
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
-          </>
-        )}
-      </div>
 
-      <div className="flex-1 min-h-0 grid grid-cols-[1fr_320px]">
-        <div ref={bodyRef} className="overflow-y-auto bg-white px-8 py-8" data-testid="doc-body">
-          {loading ? null : !doc ? null : doc.error ? (
-            <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-sm p-4 max-w-2xl mx-auto">
-              <strong>Extraction failed:</strong> {doc.error}
-            </div>
-          ) : !doc.extracted_text ? (
-            <p className="text-sm text-slate-400 italic text-center py-16">No extracted text available.</p>
-          ) : (
-            <article className="max-w-2xl mx-auto">
-              {items.map((it, i) =>
-                it.type === "h" ? (
-                  <h3 key={i} data-outline-id={it.id} className="text-base font-medium text-[var(--ink)] tracking-tight mt-6 mb-2 scroll-mt-4">
-                    {it.text}
-                  </h3>
-                ) : (
-                  <p key={i} className="text-[14px] leading-[1.7] text-slate-700 mb-3.5 whitespace-pre-wrap">
-                    {it.text}
-                  </p>
-                )
-              )}
-            </article>
+              {/* Body excerpt */}
+              <div data-testid="journal-drawer-body-excerpt">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="akki-overline text-[var(--muted)]">Body excerpt</p>
+                  <button
+                    type="button"
+                    onClick={onOpenStructuralDetail}
+                    className="text-[11.5px] text-[var(--accent)] hover:underline inline-flex items-center gap-1"
+                    data-testid="journal-drawer-open-structural"
+                  >
+                    <Eye className="w-3 h-3" /> Structural detail
+                  </button>
+                </div>
+                <p className="text-[13px] text-[var(--ink)] leading-[1.7] whitespace-pre-wrap">
+                  {(doc.extracted_text || "—").slice(0, 1800)}
+                  {((doc.extracted_text || "").length > 1800) && "…"}
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="border-t border-[var(--rule)] pt-4 flex flex-wrap gap-2">
+                <Link
+                  to={`/app/documents/${doc.id}`}
+                  className="text-[12.5px] px-3 py-1.5 border border-[var(--rule)] rounded-sm text-[var(--ink)] hover:border-[var(--accent)] no-underline inline-flex items-center gap-1"
+                  data-testid="journal-drawer-open-reader"
+                >
+                  Open full reader <ArrowRight className="w-3 h-3" />
+                </Link>
+                <Link
+                  to={`/app/chat?doc=${doc.id}`}
+                  className="text-[12.5px] px-3 py-1.5 border border-[var(--rule)] rounded-sm text-[var(--ink)] hover:border-[var(--accent)] no-underline inline-flex items-center gap-1"
+                  data-testid="journal-drawer-continue-chat"
+                >
+                  Ask in Chat
+                </Link>
+              </div>
+            </>
           )}
         </div>
-        <aside className="hidden md:block border-l border-[#E1E6ED] bg-[var(--cream)] overflow-y-auto" data-testid="doc-summary-rail">
-          <div className="px-4 py-4 space-y-4">
-            {/* Iter41 — collapsed to 2 panels (Summary + AKKI Evolution).
-                Outline moved to a header popover so the rail no longer
-                stacks 3 things competing for attention. */}
-            <DocumentSummaryPanel contextId={contextId} document={doc} />
-            <DocumentEvolutionPanel
-              contextId={contextId}
-              document={doc}
-              onLinkChange={loadDoc}
-            />
-            {/* Apr-2026: Workflow context — light-touch link to active
-                plays in this company. Helps the reader see the bigger
-                picture without leaving the document. */}
-            <DocumentPlayContext contextId={contextId} />
-          </div>
-        </aside>
-      </div>
+      </aside>
     </div>
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* Workspace page                                                     */
+/* ------------------------------------------------------------------ */
 export default function Workspace() {
-  const { account, activeContext } = useAuth();
-  const contextId = activeContext?.id;
-  const accountEmail = account?.email;
-  const isAdmin = activeContext?.my_sub_role === "admin";
+  const { activeContext } = useAuth();
+  const cid = activeContext?.id;
 
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const [q, setQ] = useState("");
+  const [searchHits, setSearchHits] = useState(null); // null = no search ran
+  const [searching, setSearching] = useState(false);
+
+  const [drawerDoc, setDrawerDoc] = useState(null);
+  const [drawerLoading, setDrawerLoading] = useState(false);
+
+  const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
-  const [dragging, setDragging] = useState(false);
-  const [displayName, setDisplayName] = useState("");
-  const [trust, setTrust] = useState("mixed");
-  const [queued, setQueued] = useState([]);
-  const fileInput = useRef(null);
-  const cameraInput = useRef(null);
 
-  const [selectedDocId, setSelectedDocId] = useState(null);
-
-  // 60/40 split with persistent Ask panel. Divider is draggable.
-  const [leftPct, setLeftPct] = useState(60);
-  const splitRef = useRef(null);
-  const draggingRef = useRef(false);
-  const onMouseDown = (e) => {
-    e.preventDefault();
-    draggingRef.current = true;
-  };
+  /* Initial listing */
   useEffect(() => {
-    const move = (e) => {
-      if (!draggingRef.current || !splitRef.current) return;
-      const rect = splitRef.current.getBoundingClientRect();
-      const pct = ((e.clientX - rect.left) / rect.width) * 100;
-      const clamped = Math.max(35, Math.min(75, pct));
-      setLeftPct(clamped);
-    };
-    const up = () => { draggingRef.current = false; };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-    return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
-  }, []);
-
-  const load = useCallback(async () => {
-    if (!contextId) return;
-    try {
-      const { data } = await api.get(`/contexts/${contextId}/documents`);
-      setDocs(data);
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-    finally { setLoading(false); }
-  }, [contextId]);
-
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    const handler = () => load();
-    window.addEventListener("akki:document-uploaded", handler);
-    return () => window.removeEventListener("akki:document-uploaded", handler);
-  }, [load]);
-
-  const uploadOne = async (file) => {
-    const fd = new FormData();
-    fd.append("file", file);
-    if (displayName) fd.append("display_name", displayName);
-    fd.append("data_trust", trust);
-    const res = await fetch(`${API_BASE}/contexts/${contextId}/documents`, {
-      method: "POST", body: fd, credentials: "include",
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || `Upload failed (${res.status})`);
-    }
-    return await res.json();
-  };
-
-  const onFiles = async (files) => {
-    const list = Array.from(files || []);
-    if (!list.length) return;
-    setUploading(true);
-    setQueued(list.map((f) => ({ name: f.name, progress: 0, error: null })));
-    for (let i = 0; i < list.length; i++) {
+    if (!cid) return;
+    let cancelled = false;
+    (async () => {
       try {
-        await uploadOne(list[i]);
-        setQueued((q) => q.map((x, idx) => idx === i ? { ...x, progress: 100 } : x));
-      } catch (err) {
-        setQueued((q) => q.map((x, idx) => idx === i ? { ...x, error: err.message } : x));
-        toast.error(`${list[i].name}: ${err.message}`);
+        setLoading(true);
+        const { data } = await api.get(`/contexts/${cid}/documents`, { params: { limit: 500 } });
+        if (cancelled) return;
+        // Newest first
+        const sorted = [...(data || [])].sort((a, b) =>
+          (b.created_at || "").localeCompare(a.created_at || "")
+        );
+        setDocs(sorted);
+        setError(null);
+      } catch (e) {
+        if (!cancelled) setError(apiErrorMessage(e));
+      } finally {
+        if (!cancelled) setLoading(false);
       }
+    })();
+    return () => { cancelled = true; };
+  }, [cid]);
+
+  /* Search-as-you-type (300 ms debounce) */
+  useEffect(() => {
+    if (!cid) return;
+    if (!q.trim()) {
+      setSearchHits(null);
+      setSearching(false);
+      return;
     }
-    setUploading(false);
-    setDisplayName("");
-    await load();
-    setTimeout(() => setQueued([]), 2500);
-  };
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await api.get(`/contexts/${cid}/document-journal/search`, {
+          params: { q: q.trim(), limit: 20 },
+        });
+        setSearchHits(data?.hits || []);
+      } catch (e) {
+        setSearchHits([]);
+        toast.error(apiErrorMessage(e));
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q, cid]);
 
-  const onArchive = async (doc) => {
+  /* Upload (title-bar) */
+  const onUploadFile = async (file) => {
+    if (!file || !cid) return;
+    setUploading(true);
     try {
-      await api.delete(`/contexts/${contextId}/documents/${doc.id}`);
-      toast.success(`${doc.name} archived`);
-      if (selectedDocId === doc.id) setSelectedDocId(null);
-      await load();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post(`/contexts/${cid}/documents`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setDocs((prev) => [data, ...prev]);
+      toast.success(`Added · ${data.name || file.name}`);
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (cameraInputRef.current) cameraInputRef.current.value = "";
+    }
   };
 
-  const onTrustChange = async (doc, newTrust) => {
+  /* Drawer open */
+  const openDrawer = async (docId) => {
+    if (!cid || !docId) return;
+    setDrawerDoc({ id: docId, name: "" });
+    setDrawerLoading(true);
     try {
-      const { data } = await api.patch(`/contexts/${contextId}/documents/${doc.id}`, { data_trust: newTrust });
-      setDocs((prev) => prev.map((d) => d.id === doc.id ? { ...d, data_trust: data.data_trust } : d));
-      toast.success("Trust updated");
-    } catch (e) { toast.error(apiErrorMessage(e)); }
+      const { data } = await api.get(`/contexts/${cid}/documents/${docId}`);
+      setDrawerDoc(data);
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+      setDrawerDoc(null);
+    } finally {
+      setDrawerLoading(false);
+    }
   };
 
-  // Clicking a [doc:xxx] chip in Ask panel → load the document on the left
-  const onCitationClick = (docId) => {
-    const exists = docs.some((d) => d.id === docId);
-    if (exists) setSelectedDocId(docId);
-    else toast.message("That document is no longer in this company.");
-  };
+  /* Listing rows: search hits OR all docs */
+  const listingRows = useMemo(() => {
+    if (searchHits !== null) {
+      return searchHits.map((h) => ({
+        id: h.doc_id,
+        name: h.doc_name,
+        created_at: h.created_at,
+        doc_kind: h.doc_kind,
+        sensitivity_band: h.sensitivity_band,
+        size_bytes: h.size_bytes,
+        snippet: h.snippet,
+        score: h.score,
+      }));
+    }
+    return docs.map((d) => ({
+      id: d.id,
+      name: d.name || "(untitled)",
+      created_at: d.created_at,
+      doc_kind: d.doc_kind,
+      sensitivity_band: d.sensitivity_band,
+      size_bytes: d.size_bytes,
+      snippet: null,
+      score: null,
+    }));
+  }, [searchHits, docs]);
 
-  if (!contextId) {
-    return <AppShell><div className="p-12 text-center text-slate-500 text-sm">No company selected.</div></AppShell>;
+  if (!cid) {
+    return (
+      <AppShell>
+        <div className="akki-w-medium px-8 py-12 text-[var(--muted)]">
+          Pick a workspace to see its documents.
+        </div>
+      </AppShell>
+    );
   }
-
-  const askHeader = (
-    <div className="border-b border-[#E1E6ED] bg-white px-4 py-3">
-      <p className="akki-overline mb-0.5">Ask · persistent</p>
-      <h2 className="text-sm font-medium text-[var(--ink)]">Grounded in your workspace</h2>
-      <p className="text-[11px] text-slate-500 mt-0.5">
-        Click any <span className="font-mono">[doc:…]</span> citation to open the document on the left.
-      </p>
-    </div>
-  );
 
   return (
     <AppShell>
-      <div
-        ref={splitRef}
-        className="h-[calc(100vh-4rem)] flex bg-[#FAFBFC] relative"
-        data-testid="workspace-split"
-      >
-        {/* Left pane */}
-        <div className="border-r border-[#E1E6ED] bg-white overflow-hidden" style={{ width: `${leftPct}%` }}>
-          {selectedDocId ? (
-            <DocumentPane
-              contextId={contextId}
-              docId={selectedDocId}
-              onBack={() => setSelectedDocId(null)}
-              onArchive={onArchive}
-              accountEmail={accountEmail}
-              isAdmin={isAdmin}
+      <div className="akki-w-medium px-8 py-10" data-testid="workspace-journal">
+        {/* Title bar */}
+        <div className="flex items-start justify-between flex-wrap gap-4 mb-6">
+          <div>
+            <p className="akki-overline mb-2 flex items-center gap-2">
+              <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Documents Journal · {activeContext.name}
+            </p>
+            <h1 className="akki-greeting mb-1">Your documents.</h1>
+            <p className="akki-meta">
+              Everything uploaded into <strong className="text-[var(--ink)]">{activeContext.name}</strong>. Click a row to open the side drawer.
+            </p>
+          </div>
+          <div className="flex items-center gap-2" data-testid="workspace-titlebar-actions">
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => onUploadFile(e.target.files?.[0])}
+              data-testid="workspace-upload-input"
             />
-          ) : (
-            <DocumentsBrowser
-              docs={docs} loading={loading} uploading={uploading}
-              dragging={dragging} setDragging={setDragging}
-              queued={queued} onFiles={onFiles}
-              displayName={displayName} setDisplayName={setDisplayName}
-              trust={trust} setTrust={setTrust}
-              fileInput={fileInput}
-              cameraInput={cameraInput}
-              onSelect={setSelectedDocId}
-              onArchive={onArchive}
-              onTrustChange={onTrustChange}
-              accountEmail={accountEmail}
-              isAdmin={isAdmin}
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => onUploadFile(e.target.files?.[0])}
+              data-testid="workspace-camera-input"
             />
-          )}
-        </div>
-
-        {/* Draggable divider */}
-        <div
-          onMouseDown={onMouseDown}
-          className="w-1.5 cursor-col-resize bg-[#E1E6ED] hover:bg-[var(--accent)] transition-colors relative group shrink-0"
-          data-testid="workspace-divider"
-          title="Drag to resize"
-        >
-          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <GripVertical className="w-3 h-3 text-white" />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={uploading}
+              onClick={() => fileInputRef.current?.click()}
+              className="rounded-sm border-[var(--rule)] hover:border-[var(--accent)] text-[12.5px]"
+              data-testid="workspace-upload-btn"
+            >
+              <Upload className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.7} /> Upload
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={uploading}
+              onClick={() => cameraInputRef.current?.click()}
+              className="rounded-sm border-[var(--rule)] hover:border-[var(--accent)] text-[12.5px]"
+              data-testid="workspace-camera-btn"
+            >
+              <Camera className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.7} /> Camera
+            </Button>
           </div>
         </div>
 
-        {/* Right pane: doc summary card (replaces persistent Ask in iter57) */}
-        <div className="flex-1 bg-[#FAFBFC] overflow-hidden" data-testid="workspace-summary-pane">
-          <DocumentSummaryCard contextId={contextId} docId={selectedDocId} />
+        {/* Search box */}
+        <div className="relative mb-5" data-testid="workspace-search">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--muted)]" />
+          <Input
+            type="search"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search documents — body, AKKI notes, file name."
+            className="pl-9 rounded-sm border-[var(--rule)] focus-visible:border-[var(--accent)]"
+            data-testid="workspace-search-input"
+            aria-label="Search documents"
+          />
+          {searching && (
+            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--muted)] animate-spin" />
+          )}
         </div>
+
+        {/* Listing */}
+        {error && (
+          <p className="text-[12.5px] text-amber-900 bg-amber-50 border border-amber-100 rounded-sm px-3 py-2 mb-3">{error}</p>
+        )}
+        {loading && (
+          <div className="py-16 text-center">
+            <Loader2 className="w-4 h-4 mx-auto animate-spin text-[var(--accent)]" />
+          </div>
+        )}
+        {!loading && listingRows.length === 0 && searchHits === null && (
+          <div className="py-16 text-center" data-testid="workspace-empty">
+            <p className="akki-serif text-[18px] text-[var(--ink)] mb-1">No documents yet.</p>
+            <p className="akki-meta text-[var(--muted)]">Use Upload or Camera in the title bar to add one.</p>
+          </div>
+        )}
+        {!loading && listingRows.length === 0 && searchHits !== null && (
+          <div className="py-12 text-center text-[var(--muted)] text-[13px]" data-testid="workspace-no-search-hits">
+            No documents match <span className="font-mono">{JSON.stringify(q)}</span> in this workspace.
+          </div>
+        )}
+        {!loading && listingRows.length > 0 && (
+          <ul className="border border-[var(--rule)] divide-y divide-[var(--rule)] rounded-md bg-white" data-testid="workspace-list">
+            {listingRows.map((row) => (
+              <li key={row.id}>
+                <button
+                  type="button"
+                  onClick={() => openDrawer(row.id)}
+                  className="w-full text-left px-4 py-3 hover:bg-[var(--cream-deep)]/30 transition-colors block"
+                  data-testid={`workspace-row-${row.id}`}
+                >
+                  <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                    <p className="akki-serif text-[14.5px] text-[var(--ink)] truncate">
+                      {row.name}
+                    </p>
+                    <p className="akki-meta text-[11px] text-[var(--muted)] font-mono shrink-0">
+                      {[formatDate(row.created_at), formatBytes(row.size_bytes), row.doc_kind, (row.sensitivity_band || "").toLowerCase()].filter(Boolean).join(" · ")}
+                    </p>
+                  </div>
+                  {row.snippet && (
+                    <p className="text-[12.5px] text-[var(--muted)] mt-1 leading-[1.55] line-clamp-2" data-testid={`workspace-row-snippet-${row.id}`}>
+                      {row.snippet}
+                    </p>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
+
+      {(drawerDoc || drawerLoading) && (
+        <JournalDrawer
+          doc={drawerDoc}
+          loading={drawerLoading}
+          onClose={() => { setDrawerDoc(null); setDrawerLoading(false); }}
+          onOpenStructuralDetail={() => {
+            // The legacy three-column reader (ReadingView.jsx) is the
+            // structural-detail view for now. Keep route working as
+            // documented in the C.3 brief.
+            if (drawerDoc?.id) {
+              window.open(`/app/documents/${drawerDoc.id}`, "_self");
+            }
+          }}
+        />
+      )}
     </AppShell>
   );
 }

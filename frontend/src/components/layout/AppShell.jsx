@@ -58,7 +58,10 @@ import KeyboardHelp from "@/components/layout/KeyboardHelp";
 // adjacent to the home stream.
 const TOP_NAV = [
   { to: "/app",               label: "Home",          end: true },
-  { to: "/app/workspace",     label: "Document Journal" },
+  // Phase E (MEMO Item 1, D-006) — "Document Journal" slot collapsed
+  // to whitespace; entry-point lives on the Home page as the
+  // `AllDocumentsButton` instead. Route /app/workspace still works
+  // and renders the new journal listing + drawer pattern.
   { to: "/app/chat",          label: "Chat" },
   { to: "/app/solva",         label: "Solva" },
   { to: "/app/work-studio",   label: "Work Studio" },

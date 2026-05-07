@@ -472,6 +472,134 @@ async def get_document_journal(
     return {"items": items, "count": len(items)}
 
 
+
+# ═════════════════════════════════════════════════════════════════════════
+#  Phase E — Documents Journal full-text search
+#
+#  Indexed full-text + notes + metadata search scoped to the active
+#  context. We reuse the BM25 helper from `bm25.py` (the same one chat
+#  uses for grounded retrieval). One chunk per document combining its
+#  name, extracted body, journal commentary, and structural metadata,
+#  then ranked top-N with a snippet around the first matching token.
+# ═════════════════════════════════════════════════════════════════════════
+_JOURNAL_SEARCH_MAX_LIMIT = 50
+_JOURNAL_SEARCH_SNIPPET_RADIUS = 80
+_JOURNAL_SEARCH_BODY_CAP = 50000  # per-doc text cap to keep BM25 bounded
+
+
+def _journal_snippet(text: str, q_tokens: List[str]) -> str:
+    """Find the first occurrence of any q-token in `text` (length ≥ 3,
+    case-insensitive) and return a ~160-char window around it."""
+    if not text:
+        return ""
+    t_lower = text.lower()
+    hit = -1
+    for tok in q_tokens:
+        if len(tok) < 3:
+            continue
+        idx = t_lower.find(tok.lower())
+        if idx >= 0 and (hit < 0 or idx < hit):
+            hit = idx
+    if hit < 0:
+        return text[:160].replace("\n", " ").strip() + ("…" if len(text) > 160 else "")
+    start = max(0, hit - _JOURNAL_SEARCH_SNIPPET_RADIUS)
+    end = min(len(text), hit + _JOURNAL_SEARCH_SNIPPET_RADIUS)
+    snippet = text[start:end].replace("\n", " ").strip()
+    if start > 0:
+        snippet = "…" + snippet
+    if end < len(text):
+        snippet = snippet + "…"
+    return snippet
+
+
+@router.get("/contexts/{context_id}/document-journal/search")
+async def search_document_journal(
+    context_id: str,
+    q: str = "",
+    limit: int = 10,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Phase E — ranked full-text search across the Document Journal.
+    Hits include doc body + journal_commentary + name + metadata
+    (doc_kind, sensitivity_band, source_channel). Scoped to the active
+    context (Privacy Wall — boundaries respected via the same
+    require_context_membership dependency every other doc endpoint
+    uses)."""
+    if not q or not q.strip():
+        return {"q": q, "hits": [], "total": 0}
+
+    cap = max(1, min(limit, _JOURNAL_SEARCH_MAX_LIMIT))
+    docs = await db.documents.find(
+        {"context_id": context_id, "status": {"$ne": "archived"}},
+        {
+            "_id": 0, "id": 1, "name": 1, "extracted_text": 1,
+            "journal_commentary": 1, "doc_kind": 1, "sensitivity_band": 1,
+            "source_channel": 1, "created_at": 1, "size_bytes": 1,
+            "data_trust": 1, "status": 1,
+        },
+    ).to_list(2000)
+
+    if not docs:
+        return {"q": q, "hits": [], "total": 0}
+
+    # One chunk per doc — combined searchable text. The BM25 helper
+    # tokenises and scores; we pass full body + commentary + name +
+    # the metadata fields the user is likely to query for.
+    chunks: List[Dict[str, Any]] = []
+    for d in docs:
+        body = (d.get("extracted_text") or "")[:_JOURNAL_SEARCH_BODY_CAP]
+        commentary = d.get("journal_commentary") or ""
+        meta_blob = " ".join(filter(None, [
+            d.get("doc_kind") or "",
+            d.get("sensitivity_band") or "",
+            d.get("source_channel") or "",
+        ]))
+        # Name doubles to give title hits a sensible weight on short bodies.
+        text = "\n".join([
+            d.get("name") or "",
+            d.get("name") or "",
+            meta_blob,
+            commentary,
+            body,
+        ])
+        chunks.append({
+            "text": text,
+            "doc_id": d["id"],
+            "doc_name": d.get("name") or "(untitled)",
+            "doc_kind": d.get("doc_kind"),
+            "sensitivity_band": d.get("sensitivity_band"),
+            "source_channel": d.get("source_channel"),
+            "created_at": d.get("created_at"),
+            "data_trust": d.get("data_trust"),
+            "size_bytes": d.get("size_bytes"),
+            "_snippet_text": "\n".join(filter(None, [commentary, body])),
+        })
+
+    # Reuse the chat path's BM25.
+    from bm25 import score_bm25, tokenize
+    ranked = score_bm25(q, chunks, k=cap)
+    q_tokens = tokenize(q)
+
+    hits: List[Dict[str, Any]] = []
+    for s, c in ranked:
+        if s <= 0:
+            continue
+        hits.append({
+            "doc_id": c["doc_id"],
+            "doc_name": c["doc_name"],
+            "snippet": _journal_snippet(c.get("_snippet_text") or "", q_tokens),
+            "score": round(float(s), 4),
+            "doc_kind": c.get("doc_kind"),
+            "sensitivity_band": c.get("sensitivity_band"),
+            "source_channel": c.get("source_channel"),
+            "created_at": c.get("created_at"),
+            "size_bytes": c.get("size_bytes"),
+            "data_trust": c.get("data_trust"),
+        })
+    return {"q": q, "hits": hits, "total": len(hits)}
+
+
+
 @router.post("/contexts/{context_id}/documents/{doc_id}/journal-commentary")
 async def journal_commentary(
     context_id: str, doc_id: str,

@@ -49,6 +49,7 @@ import {
   Clock,
 } from "lucide-react";
 import AddDocumentCard from "@/components/home/AddDocumentCard";
+import AllDocumentsButton from "@/components/home/AllDocumentsButton";
 
 function greeting(name) {
   const h = new Date().getHours();
@@ -199,6 +200,11 @@ export default function HomeExecutive() {
           </h2>
           <div className="grid sm:grid-cols-2 gap-4">
             <AddDocumentCard />
+          </div>
+          {/* Phase E (D-006) — homepage entry-point to the Document Journal,
+              replacing the retired top-nav slot. */}
+          <div className="mt-3">
+            <AllDocumentsButton />
           </div>
         </section>
 

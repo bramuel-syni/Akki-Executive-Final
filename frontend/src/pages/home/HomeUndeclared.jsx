@@ -19,6 +19,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Briefcase, Landmark, ArrowRight, Loader2 } from "lucide-react";
 import AddDocumentCard from "@/components/home/AddDocumentCard";
+import AllDocumentsButton from "@/components/home/AllDocumentsButton";
 
 export default function HomeUndeclared() {
   const { account, refreshAuth } = useAuth();
@@ -59,6 +60,10 @@ export default function HomeUndeclared() {
           </h2>
           <div className="max-w-[560px]">
             <AddDocumentCard />
+            {/* Phase E (D-006) — homepage entry-point to the Document Journal. */}
+            <div className="mt-3">
+              <AllDocumentsButton />
+            </div>
           </div>
         </section>
 

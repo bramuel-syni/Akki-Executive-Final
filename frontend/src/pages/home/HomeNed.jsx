@@ -21,6 +21,7 @@ import CycleStrip from "@/components/cycle/CycleStrip";
 import useIsMobile from "@/hooks/useIsMobile";
 import { Activity, Landmark, ArrowRight, Clock, ScrollText, Briefcase } from "lucide-react";
 import AddDocumentCard from "@/components/home/AddDocumentCard";
+import AllDocumentsButton from "@/components/home/AllDocumentsButton";
 
 function MinutesPreview({ contextId }) {
   const [items, setItems] = useState([]);
@@ -117,6 +118,10 @@ export default function HomeNed() {
           </h2>
           <div className="grid sm:grid-cols-2 gap-4">
             <AddDocumentCard />
+          </div>
+          {/* Phase E (D-006) — homepage entry-point to the Document Journal. */}
+          <div className="mt-3">
+            <AllDocumentsButton />
           </div>
         </section>
 
