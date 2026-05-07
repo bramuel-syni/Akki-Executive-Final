@@ -101,10 +101,17 @@ export default function HomeNed() {
         <h1 className="akki-greeting mb-2">
           Catch up across the boards you sit on.
         </h1>
-        <p className="akki-meta max-w-2xl mb-8">
+        <p className="akki-meta max-w-2xl mb-6">
           The five things that move quietly between meetings: minutes, signals, the next cycle
           phase, plus the cross-board Pulse view when it lands.
         </p>
+
+        {/* Phase E (D-006) — Document Journal entry-point hoisted into
+            the page-title band so it's visible above the fold at
+            1920×1100 without scrolling. */}
+        <div className="mb-8" data-testid="home-ned-all-documents-strip">
+          <AllDocumentsButton />
+        </div>
 
         {cid && <CycleStrip contextId={cid} isMobile={isMobile} />}
 
@@ -118,10 +125,6 @@ export default function HomeNed() {
           </h2>
           <div className="grid sm:grid-cols-2 gap-4">
             <AddDocumentCard />
-          </div>
-          {/* Phase E (D-006) — homepage entry-point to the Document Journal. */}
-          <div className="mt-3">
-            <AllDocumentsButton />
           </div>
         </section>
 

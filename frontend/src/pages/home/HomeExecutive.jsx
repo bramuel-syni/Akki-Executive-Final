@@ -30,7 +30,7 @@
  * page (Executive overline + Work Studio open arrow) per UI/UX brief.
  */
 import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
@@ -132,15 +132,26 @@ function WorkStudioPreview({ contextId }) {
 }
 
 /**
- * Continue-onboarding card — Phase B.6 carry-over. The FirstSessionGuard
- * sends brand-new accounts to /app/first-session, so we only render this
- * card when the user has explicitly skipped intake but the per-context
- * audit isn't marked complete on the active context.
+ * Continue-onboarding card — Phase B.6 carry-over, fixed in the
+ * post-Phase-D bugfix.
+ *
+ * Gate: account-level `first_session.status`. We only render this
+ * card when the account's first-session journey is still open
+ * (i.e. NOT "completed" and NOT "skipped"). The legacy gate on
+ * `activeContext.progress_state.onboarding_completed` is retired —
+ * it was broken (the field is rarely written) and FirstSessionGuard
+ * already covers brand-new accounts.
+ *
+ * Click handler uses `useNavigate()` directly on the button rather
+ * than wrapping a <Button> inside a <Link>. The latter renders an
+ * anchor wrapping a button, which is invalid HTML and causes some
+ * browsers to drop the navigation when the inner button claims the
+ * click — that was the "click does nothing" symptom users reported.
  */
-function ContinueOnboardingCard({ activeContext }) {
-  if (!activeContext) return null;
-  const completed = !!activeContext.progress_state?.onboarding_completed;
-  if (completed) return null;
+function ContinueOnboardingCard({ account }) {
+  const navigate = useNavigate();
+  const status = account?.first_session?.status;
+  if (status === "completed" || status === "skipped") return null;
   return (
     <div
       className="mb-8 bg-white border border-[var(--rule)] rounded-lg p-8 relative overflow-hidden"
@@ -149,21 +160,20 @@ function ContinueOnboardingCard({ activeContext }) {
       <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[var(--accent)]" />
       <p className="akki-overline mb-3">Next · 7 minutes</p>
       <h2 className="akki-serif text-[22px] mb-3 text-[var(--ink)] leading-snug">
-        Finish your profile to unlock your signals.
+        Finish your profile to start receiving signals.
       </h2>
       <p className="akki-serif text-[14.5px] text-[var(--deep)] leading-relaxed mb-6 max-w-2xl">
         Seven role-specific questions establish your profile — the foundation for every
-        signal, briefing, and lens session AKKI runs for {activeContext.name}.
+        signal, briefing, and lens session AKKI runs on your behalf.
       </p>
-      <Link to="/app/first-session">
-        <Button
-          className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-md h-10 px-5 font-medium"
-          data-testid="start-onboarding-btn"
-          aria-label="Continue onboarding"
-        >
-          Continue onboarding <ArrowRight className="w-4 h-4 ml-2" />
-        </Button>
-      </Link>
+      <Button
+        onClick={() => navigate("/app/first-session")}
+        className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-md h-10 px-5 font-medium"
+        data-testid="start-onboarding-btn"
+        aria-label="Continue onboarding"
+      >
+        Continue onboarding <ArrowRight className="w-4 h-4 ml-2" />
+      </Button>
     </div>
   );
 }
@@ -181,12 +191,19 @@ export default function HomeExecutive() {
           <Briefcase className="w-3 h-3" /> Executive home · {activeContext?.name || "—"}
         </p>
         <h1 className="akki-greeting mb-2">{greeting(firstName)}</h1>
-        <p className="akki-meta max-w-2xl mb-8">
+        <p className="akki-meta max-w-2xl mb-6">
           The five things that move between meetings: in-flight briefings and decks,
           this week's submissions, pending action items, the next cycle phase.
         </p>
 
-        <ContinueOnboardingCard activeContext={activeContext} />
+        {/* Phase E (D-006) — Document Journal entry-point hoisted into
+            the page-title band so it's visible above the fold at
+            1920×1100 without scrolling. */}
+        <div className="mb-8" data-testid="home-exec-all-documents-strip">
+          <AllDocumentsButton />
+        </div>
+
+        <ContinueOnboardingCard account={account} />
         <WorkStudioPreview contextId={cid} />
 
         {cid && <CycleStrip contextId={cid} isMobile={isMobile} />}
@@ -200,11 +217,6 @@ export default function HomeExecutive() {
           </h2>
           <div className="grid sm:grid-cols-2 gap-4">
             <AddDocumentCard />
-          </div>
-          {/* Phase E (D-006) — homepage entry-point to the Document Journal,
-              replacing the retired top-nav slot. */}
-          <div className="mt-3">
-            <AllDocumentsButton />
           </div>
         </section>
 

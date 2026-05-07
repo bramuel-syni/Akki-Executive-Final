@@ -30,10 +30,17 @@ export default function HomeDual() {
         <h1 className="akki-greeting mb-2">
           Run the business on the left. Sit on the boards on the right.
         </h1>
-        <p className="akki-meta max-w-2xl mb-8">
+        <p className="akki-meta max-w-2xl mb-6">
           AKKI splits the home so neither side gets buried. Cycle and Pulse continue to scope by
           your active context.
         </p>
+
+        {/* Phase E (D-006) — Document Journal entry-point hoisted into
+            the page-title band so it's visible above the fold at
+            1920×1100 without scrolling. */}
+        <div className="mb-8" data-testid="home-dual-all-documents-strip">
+          <AllDocumentsButton />
+        </div>
 
         {cid && <CycleStrip contextId={cid} isMobile={isMobile} />}
 
@@ -44,8 +51,6 @@ export default function HomeDual() {
               <Briefcase className="w-4 h-4 text-[var(--deep)]" strokeWidth={1.7} /> Running the business
             </h2>
             <AddDocumentCard />
-            {/* Phase E (D-006) — homepage entry-point to the Document Journal. */}
-            <AllDocumentsButton />
             <Link to="/app/work-studio" className="block p-5 border border-[var(--rule)] bg-white rounded-md hover:bg-[var(--cream-deep)]/40 transition-colors">
               <p className="akki-overline mb-2 text-[var(--muted)]">Work Studio</p>
               <p className="text-[14px] text-[var(--ink)] mb-1">In-flight briefings, decks, and reports for {activeContext?.name || "this company"}.</p>

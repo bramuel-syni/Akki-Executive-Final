@@ -46,10 +46,17 @@ export default function HomeUndeclared() {
         <h1 className="akki-serif text-[40px] sm:text-[52px] leading-[1.08] tracking-[-0.018em] text-[var(--ink)] mb-5 font-normal max-w-[24ch]">
           Tell AKKI whether you sit in the boardroom, run the business, or both.
         </h1>
-        <p className="akki-serif text-[16.5px] leading-[1.7] text-[var(--deep)] max-w-[58ch] mb-10">
+        <p className="akki-serif text-[16.5px] leading-[1.7] text-[var(--deep)] max-w-[58ch] mb-8">
           AKKI shapes the home page, default surfaces, and Cycle Manager defaults around what you
           actually do. You can change this anytime from the avatar menu → Settings.
         </p>
+
+        {/* Phase E (D-006) — Document Journal entry-point hoisted into
+            the page-title band so it's visible above the fold at
+            1920×1100 without scrolling. */}
+        <div className="mb-10" data-testid="home-undeclared-all-documents-strip">
+          <AllDocumentsButton />
+        </div>
 
         {/* Phase M.1 — "Running the business" Quick Action. Even before
             the user picks a role, uploading a board pack is a useful
@@ -60,10 +67,6 @@ export default function HomeUndeclared() {
           </h2>
           <div className="max-w-[560px]">
             <AddDocumentCard />
-            {/* Phase E (D-006) — homepage entry-point to the Document Journal. */}
-            <div className="mt-3">
-              <AllDocumentsButton />
-            </div>
           </div>
         </section>
 
