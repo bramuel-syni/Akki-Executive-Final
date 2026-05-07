@@ -1,1063 +1,623 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams, Link } from "react-router-dom";
+/**
+ * Cycle.jsx — Phase D rewire (MEMO Item 3, D-001).
+ *
+ * The Executive Cycle Manager is a six-step drafting engine:
+ *
+ *     Agenda → Team → Contributions → Scoreboard → Follow-ups → Compilation
+ *
+ * Each step is a self-contained editor inside a single-column
+ * akki-w-medium frame. Forward/back navigation is explicit; the user
+ * can jump to any step that has prerequisites met. State is server-
+ * persisted via /api/contexts/{cid}/cycle/* — refreshing the page
+ * never loses work.
+ *
+ * Restraint copy throughout — banned-word grep clean.
+ */
+import React, { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
-import CycleStrip from "@/components/cycle/CycleStrip";
-import useIsMobile from "@/hooks/useIsMobile";
 import { api, apiErrorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
-import { toast } from "sonner";
-import {
-  Users, MessageCircleQuestion, Send, Inbox, Plus, Trash2, Sparkles,
-  Loader2, ArrowRight, Clock, CheckCircle2, Mail, Copy, ExternalLink, Edit3,
-  FileText, CalendarClock, ScrollText, Activity, ListChecks, Eye,
+  Sparkles, ChevronLeft, ChevronRight, Plus, X, Loader2,
+  Mail, FileDown, Check, AlertCircle, Users, ListChecks, CheckCircle2,
+  ClipboardList, Send, Download,
 } from "lucide-react";
-import ReportsTab from "@/components/cycle/ReportsTab";
-import CycleTracker from "@/components/cycle/CycleTracker";
-import BoardpackTab from "@/components/cycle/tabs/BoardpackTab";
-import SignalsTab from "@/components/cycle/tabs/SignalsTab";
-import MinutesTab from "@/components/cycle/tabs/MinutesTab";
-import ActionsTab from "@/components/cycle/tabs/ActionsTab";
+import { toast } from "sonner";
 
-const CATS = [
-  "audit", "risk", "operational", "strategic",
-  "people", "financial", "regulatory", "general",
+const STEPS = [
+  { id: "agenda",        label: "Agenda",        icon: ClipboardList },
+  { id: "team",          label: "Team",          icon: Users },
+  { id: "contributions", label: "Contributions", icon: ListChecks },
+  { id: "scoreboard",    label: "Scoreboard",    icon: CheckCircle2 },
+  { id: "followups",     label: "Follow-ups",    icon: Mail },
+  { id: "compilation",   label: "Compilation",   icon: FileDown },
 ];
 
-function shortDate(iso) {
-  if (!iso) return "—";
-  try { return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" }); } catch { return iso; }
-}
+const STATUS_TONE = {
+  ready:    "text-emerald-800 bg-emerald-50 border-emerald-200",
+  thin:     "text-amber-900 bg-amber-50 border-amber-200",
+  weak:     "text-amber-900 bg-amber-50 border-amber-200",
+  missing:  "text-[#8B2E2B] bg-[#8B2E2B]/10 border-[#8B2E2B]/30",
+};
 
-// ---------- Question Bank ----------
-function QuestionBank({ contextId }) {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("open");
-  const [text, setText] = useState("");
-  const [cat, setCat] = useState("general");
-  const [seeding, setSeeding] = useState(false);
-
-  const load = useCallback(async () => {
-    if (!contextId) return;
-    setLoading(true);
-    try {
-      const params = filter === "all" ? "" : `?status=${filter}`;
-      const { data } = await api.get(`/contexts/${contextId}/questions${params}`);
-      setItems(data.questions || []);
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-    finally { setLoading(false); }
-  }, [contextId, filter]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const onAdd = async () => {
-    if (text.trim().length < 8) { toast.message("A question needs at least 8 characters."); return; }
-    try {
-      await api.post(`/contexts/${contextId}/questions`, { text: text.trim(), category: cat });
-      setText("");
-      toast.success("Added to the Question Bank.");
-      load();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-  };
-
-  const onSeed = async () => {
-    setSeeding(true);
-    try {
-      const { data } = await api.post(`/contexts/${contextId}/questions/seed-from-briefings`);
-      toast.success(`Seeded ${data.seeded} question${data.seeded === 1 ? "" : "s"} from past briefings.`);
-      load();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-    finally { setSeeding(false); }
-  };
-
-  const onRetire = async (qid) => {
-    try {
-      await api.patch(`/contexts/${contextId}/questions/${qid}`, { status: "retired" });
-      toast.success("Question retired.");
-      load();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-  };
-
+/* ------------------------------------------------------------------ */
+/* Step header — shared shell for each step                           */
+/* ------------------------------------------------------------------ */
+function StepShell({ activeId, onSelect, children, busy }) {
   return (
-    <div className="space-y-6">
-      <div className="bg-white border border-[var(--rule)] rounded-lg p-5" data-testid="question-bank-add">
-        <p className="akki-overline mb-2">Add a question</p>
-        <div className="flex gap-2 flex-wrap">
-          <Input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="What hasn't the board got an answer to yet?"
-            className="flex-1 min-w-[280px] h-10 bg-[var(--cream)] border-[var(--rule)] text-sm"
-            data-testid="question-input"
-          />
-          <Select value={cat} onValueChange={setCat}>
-            <SelectTrigger className="w-44 h-10 bg-[var(--cream)] border-[var(--rule)] text-sm" data-testid="question-cat">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CATS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Button onClick={onAdd} className="h-10 bg-[var(--chrome)] hover:bg-[var(--chrome)]/90 text-white" data-testid="question-add-btn">
-            <Plus className="w-3.5 h-3.5 mr-1.5" /> Add
-          </Button>
-          <Button onClick={onSeed} disabled={seeding} variant="outline" className="h-10 border-[var(--rule)]" data-testid="question-seed-btn">
-            {seeding
-              ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Seeding…</>
-              : <><Sparkles className="w-3.5 h-3.5 mr-1.5 text-[var(--accent)]" /> Seed from briefings</>}
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-1 border-b border-[var(--rule)]">
-        {["open", "answered", "retired", "all"].map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-4 py-2 text-[13px] capitalize ${filter === f ? "text-[var(--ink)] font-medium border-b-2 border-[var(--accent)]" : "text-[var(--muted)] hover:text-[var(--deep)]"}`}
-            data-testid={`question-filter-${f}`}
-          >{f}</button>
-        ))}
-      </div>
-
-      {loading ? (
-        <p className="p-8 text-center text-[12px] uppercase tracking-widest text-[var(--muted)]">Loading…</p>
-      ) : items.length === 0 ? (
-        <div className="bg-white border border-dashed border-[var(--rule)] rounded-lg p-10 text-center" data-testid="question-bank-empty">
-          <MessageCircleQuestion className="w-10 h-10 text-[var(--muted)]/40 mx-auto mb-4" strokeWidth={1.3} />
-          <p className="akki-lead mb-2">No {filter === "all" ? "" : filter} questions yet.</p>
-          <p className="text-[13px] text-[var(--muted)] max-w-md mx-auto">
-            Click <span className="text-[var(--accent)] font-medium">Seed from briefings</span> to pull every "question to take into the room" from your past briefings into the bank.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-2" data-testid="question-list">
-          {items.map((q) => (
-            <div key={q.id} className="bg-white border border-[var(--rule)] rounded-lg p-4 flex items-start gap-3" data-testid={`question-${q.id}`}>
-              <div className="flex-1 min-w-0">
-                <p className="akki-serif text-[15px] text-[var(--ink)] leading-snug mb-1.5">{q.text}</p>
-                <div className="flex flex-wrap gap-2 text-[11px] text-[var(--muted)]">
-                  <span className="akki-context-chip">{q.category}</span>
-                  {q.times_asked > 0 && <span>asked {q.times_asked}×</span>}
-                  {q.last_asked_at && <span>last {shortDate(q.last_asked_at)}</span>}
-                  <span className="text-[var(--muted)]/70">{q.source}</span>
-                </div>
-              </div>
-              {q.status === "open" && (
-                <button onClick={() => onRetire(q.id)} className="text-[12px] text-[var(--muted)] hover:text-[var(--accent)]" data-testid={`question-retire-${q.id}`}>
-                  Retire
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <>
+      <nav className="flex items-stretch gap-0 mb-6 border-b border-[var(--rule)]" data-testid="cycle-stepper" role="tablist">
+        {STEPS.map((s, i) => {
+          const Icon = s.icon;
+          const isActive = activeId === s.id;
+          return (
+            <button
+              key={s.id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => onSelect(s.id)}
+              disabled={busy}
+              className={`flex-1 px-3 py-3 text-[13px] inline-flex items-center justify-center gap-2 border-b-2 -mb-px transition-colors ${
+                isActive
+                  ? "border-[var(--accent)] text-[var(--ink)] font-medium"
+                  : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
+              }`}
+              data-testid={`cycle-step-tab-${s.id}${isActive ? "-active" : ""}`}
+            >
+              <span className="font-mono text-[10px] tracking-[0.18em] text-[var(--muted)]">0{i + 1}</span>
+              <Icon className="w-3.5 h-3.5" strokeWidth={1.7} />
+              {s.label}
+            </button>
+          );
+        })}
+      </nav>
+      {children}
+    </>
   );
 }
 
-// ---------- Reportees ----------
-function Reportees({ contextId }) {
-  const [items, setItems] = useState([]);
-  const [committees, setCommittees] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [title, setTitle] = useState("");
-  const [areas, setAreas] = useState([]);
-  const [committeeId, setCommitteeId] = useState("");
-  const [filterCommittee, setFilterCommittee] = useState("all");
-
-  const load = useCallback(async () => {
-    if (!contextId) return;
-    setLoading(true);
-    try {
-      const [r, c] = await Promise.all([
-        api.get(`/contexts/${contextId}/reportees`),
-        api.get(`/contexts/${contextId}/cycle/committees`),
-      ]);
-      setItems(r.data.reportees || []);
-      setCommittees(c.data.committees || []);
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-    finally { setLoading(false); }
-  }, [contextId]);
-  useEffect(() => { load(); }, [load]);
-
-  const onAdd = async () => {
-    if (!name.trim() || !email.trim() || !title.trim()) { toast.message("Name, email and title are required."); return; }
-    try {
-      await api.post(`/contexts/${contextId}/reportees`, {
-        name: name.trim(), email: email.trim(), title: title.trim(), areas,
-        committee_id: committeeId || null,
-      });
-      setName(""); setEmail(""); setTitle(""); setAreas([]); setCommitteeId("");
-      toast.success("Reportee added.");
-      load();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-  };
-
-  const onRemove = async (rid) => {
-    try {
-      await api.delete(`/contexts/${contextId}/reportees/${rid}`);
-      toast.success("Reportee removed.");
-      load();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-  };
-
-  const visible = items.filter((r) => {
-    if (filterCommittee === "all") return true;
-    if (filterCommittee === "none") return !r.committee_id;
-    return r.committee_id === filterCommittee;
-  });
-  const committeeName = (cid) => committees.find((c) => c.id === cid)?.name;
-
+function StepFooter({ canBack, canForward, onBack, onForward, primaryLabel, onPrimary, primaryBusy }) {
   return (
-    <div className="space-y-6">
-      <div className="bg-white border border-[var(--rule)] rounded-lg p-5" data-testid="reportee-add">
-        <p className="akki-overline mb-3">Add a reportee</p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          <Input placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} className="h-10 bg-[var(--cream)] border-[var(--rule)] text-sm" data-testid="reportee-name" />
-          <Input placeholder="email@company.com" value={email} onChange={(e) => setEmail(e.target.value)} className="h-10 bg-[var(--cream)] border-[var(--rule)] text-sm" data-testid="reportee-email" />
-          <Input placeholder="Title (e.g. Head of Credit)" value={title} onChange={(e) => setTitle(e.target.value)} className="h-10 bg-[var(--cream)] border-[var(--rule)] text-sm" data-testid="reportee-title" />
-        </div>
-        <div className="mt-3">
-          <p className="text-[11px] uppercase tracking-wider text-[var(--muted)] mb-2">Areas they own (toggle)</p>
-          <div className="flex flex-wrap gap-1.5">
-            {CATS.map((c) => {
-              const on = areas.includes(c);
-              return (
-                <button
-                  key={c}
-                  onClick={() => setAreas((prev) => prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c])}
-                  className={`px-2.5 py-1 text-[12px] rounded-full border transition-colors ${on ? "bg-[var(--accent)] text-white border-[var(--accent)]" : "bg-white border-[var(--rule)] text-[var(--deep)] hover:border-[var(--accent)]/40"}`}
-                  data-testid={`reportee-area-${c}`}
-                >{c}</button>
-              );
-            })}
-          </div>
-        </div>
-        {committees.length > 0 && (
-          <div className="mt-3">
-            <p className="text-[11px] uppercase tracking-wider text-[var(--muted)] mb-2">Committee (optional)</p>
-            <Select value={committeeId || "none"} onValueChange={(v) => setCommitteeId(v === "none" ? "" : v)}>
-              <SelectTrigger className="w-72 h-10 bg-[var(--cream)] border-[var(--rule)] text-sm" data-testid="reportee-committee-trigger">
-                <SelectValue placeholder="Not committee-scoped" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">— Not committee-scoped —</SelectItem>
-                {committees.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}{c.kind ? ` · ${c.kind}` : ""}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
+    <div className="flex items-center justify-between mt-8 pt-4 border-t border-[var(--rule)]" data-testid="cycle-step-footer">
+      <Button variant="ghost" size="sm" onClick={onBack} disabled={!canBack} className="text-[12.5px]" data-testid="cycle-step-back">
+        <ChevronLeft className="w-3.5 h-3.5 mr-1" /> Back
+      </Button>
+      <div className="flex gap-2">
+        {primaryLabel && (
+          <Button
+            size="sm" onClick={onPrimary} disabled={primaryBusy}
+            className="bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12.5px]"
+            data-testid="cycle-step-primary"
+          >
+            {primaryBusy ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
+            {primaryLabel}
+          </Button>
         )}
-        <div className="mt-4">
-          <Button onClick={onAdd} className="bg-[var(--chrome)] hover:bg-[var(--chrome)]/90 text-white" data-testid="reportee-add-btn">
-            <Plus className="w-3.5 h-3.5 mr-1.5" /> Add reportee
-          </Button>
-        </div>
+        <Button variant="outline" size="sm" onClick={onForward} disabled={!canForward} className="text-[12.5px]" data-testid="cycle-step-forward">
+          Next <ChevronRight className="w-3.5 h-3.5 ml-1" />
+        </Button>
       </div>
-
-      {committees.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap" data-testid="reportee-filter-strip">
-          <span className="text-[11px] uppercase tracking-wider text-[var(--muted)]">Filter:</span>
-          <button onClick={() => setFilterCommittee("all")} className={`px-2.5 py-1 text-[12px] rounded-full border ${filterCommittee === "all" ? "bg-[var(--ink)] text-white border-[var(--ink)]" : "bg-white border-[var(--rule)] text-[var(--deep)]"}`}>All</button>
-          <button onClick={() => setFilterCommittee("none")} className={`px-2.5 py-1 text-[12px] rounded-full border ${filterCommittee === "none" ? "bg-[var(--ink)] text-white border-[var(--ink)]" : "bg-white border-[var(--rule)] text-[var(--deep)]"}`}>Unscoped</button>
-          {committees.map((c) => (
-            <button key={c.id} onClick={() => setFilterCommittee(c.id)} className={`px-2.5 py-1 text-[12px] rounded-full border ${filterCommittee === c.id ? "bg-[var(--accent)] text-white border-[var(--accent)]" : "bg-white border-[var(--rule)] text-[var(--deep)]"}`}>{c.name}</button>
-          ))}
-        </div>
-      )}
-
-      {loading ? (
-        <p className="p-8 text-center text-[12px] uppercase tracking-widest text-[var(--muted)]">Loading…</p>
-      ) : visible.length === 0 ? (
-        <div className="bg-white border border-dashed border-[var(--rule)] rounded-lg p-10 text-center" data-testid="reportee-empty">
-          <Users className="w-10 h-10 text-[var(--muted)]/40 mx-auto mb-4" strokeWidth={1.3} />
-          <p className="akki-lead mb-2">{items.length === 0 ? "No reportees yet." : "No reportees match this filter."}</p>
-          <p className="text-[13px] text-[var(--muted)]">{items.length === 0 ? "Add the people who report into you so AKKI can run reporting cycles for them." : "Try a different filter, or add one for this committee."}</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3" data-testid="reportee-list">
-          {visible.map((r) => (
-            <div key={r.id} className="bg-white border border-[var(--rule)] rounded-lg p-4" data-testid={`reportee-${r.id}`}>
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="akki-serif text-[15px] text-[var(--ink)]">{r.name}</p>
-                  <p className="text-[12.5px] text-[var(--deep)]">{r.title}</p>
-                  <p className="text-[12px] text-[var(--muted)] mt-1 font-mono">{r.email}</p>
-                </div>
-                <button onClick={() => onRemove(r.id)} className="text-[var(--muted)] hover:text-[var(--accent)]" data-testid={`reportee-remove-${r.id}`}>
-                  <Trash2 className="w-4 h-4" strokeWidth={1.6} />
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-1 mt-2.5">
-                {r.committee_id && committeeName(r.committee_id) && (
-                  <span className="akki-context-chip bg-[var(--chrome)]/10 text-[var(--chrome)] border-[var(--chrome)]/20">
-                    {committeeName(r.committee_id)}
-                  </span>
-                )}
-                {r.areas?.map((a) => <span key={a} className="akki-context-chip">{a}</span>)}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
 
-// ---------- Schedule modal ----------
-function ScheduleModal({ open, onClose, contextId, committees, current, onSaved, onCleared }) {
-  const [cadence, setCadence] = useState(current?.cadence || "weekly");
-  const [weekday, setWeekday] = useState(current?.weekday || "mon");
-  const [tpl, setTpl] = useState(current?.cycle_name_template || "{month} report");
-  const [offset, setOffset] = useState(current?.deadline_offset_days || 10);
-  const [committeeId, setCommitteeId] = useState(current?.committee_id || "");
+/* ------------------------------------------------------------------ */
+/* Step 1 — Agenda                                                    */
+/* ------------------------------------------------------------------ */
+function AgendaStep({ cid, agenda, onSaved, onForward }) {
+  const [title, setTitle] = useState(agenda?.title || "Main board reporting cycle");
+  const [items, setItems] = useState(agenda?.items?.length ? agenda.items : [
+    { id: null, label: "", owner_label: "" },
+  ]);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      setCadence(current?.cadence || "weekly");
-      setWeekday(current?.weekday || "mon");
-      setTpl(current?.cycle_name_template || "{month} report");
-      setOffset(current?.deadline_offset_days || 10);
-      setCommitteeId(current?.committee_id || "");
-    }
-  }, [open, current]);
+    setTitle(agenda?.title || "Main board reporting cycle");
+    setItems(agenda?.items?.length ? agenda.items : [{ id: null, label: "", owner_label: "" }]);
+  }, [agenda?.id]);
+
+  const addItem = () => setItems((p) => [...p, { id: null, label: "", owner_label: "" }]);
+  const removeItem = (idx) => setItems((p) => p.filter((_, i) => i !== idx));
+  const updateItem = (idx, key, val) => setItems((p) => p.map((it, i) => i === idx ? { ...it, [key]: val } : it));
 
   const onSave = async () => {
+    if (!title.trim()) { toast.error("Title is required."); return; }
+    const itemsClean = items.map((it) => ({ id: it.id, label: it.label.trim(), owner_label: (it.owner_label || "").trim() })).filter((it) => it.label);
+    if (!itemsClean.length) { toast.error("Add at least one agenda item."); return; }
     setBusy(true);
     try {
-      const { data } = await api.put(`/contexts/${contextId}/cycle/schedule`, {
-        cadence, weekday, cycle_name_template: tpl,
-        deadline_offset_days: Number(offset) || 10,
-        committee_id: committeeId || null, enabled: true,
-      });
-      toast.success(`Scheduled — next run ${new Date(data.schedule.next_run_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}.`);
-      onSaved(data.schedule);
-      onClose();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-    finally { setBusy(false); }
+      const { data } = await api.post(`/contexts/${cid}/cycle/agenda`, { title: title.trim(), items: itemsClean });
+      toast.success("Agenda saved.");
+      onSaved(data);
+      onForward();
+    } catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
   };
 
-  const onClear = async () => {
-    if (!confirm("Stop the recurring cycle? You can re-schedule any time.")) return;
-    setBusy(true);
-    try {
-      await api.delete(`/contexts/${contextId}/cycle/schedule`);
-      toast.success("Schedule cleared.");
-      onCleared();
-      onClose();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-    finally { setBusy(false); }
-  };
-
-  const days = [["mon","Mon"],["tue","Tue"],["wed","Wed"],["thu","Thu"],["fri","Fri"],["sat","Sat"],["sun","Sun"]];
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg bg-[var(--cream)] border border-[var(--rule)]" data-testid="schedule-modal">
-        <DialogHeader>
-          <DialogTitle className="akki-serif text-[22px] font-normal">Schedule recurring cycle</DialogTitle>
-          <DialogDescription className="text-[12.5px] text-[var(--muted)]">
-            AKKI auto-drafts checklists on your cadence — they land in <em>Pending your approval</em>.
-            You still gate every dispatch.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <p className="akki-overline mb-1.5">Cadence</p>
-            <div className="flex gap-1.5">
-              {[["weekly","Weekly"],["monthly","Monthly"]].map(([v,l]) => (
-                <button key={v} onClick={() => setCadence(v)}
-                  className={`px-3 py-1.5 text-[13px] rounded-full border ${cadence === v ? "bg-[var(--ink)] text-white border-[var(--ink)]" : "bg-white border-[var(--rule)] text-[var(--deep)]"}`}
-                  data-testid={`schedule-cadence-${v}`}>{l}</button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="akki-overline mb-1.5">Day of week</p>
-            <div className="flex gap-1 flex-wrap">
-              {days.map(([v, l]) => (
-                <button key={v} onClick={() => setWeekday(v)}
-                  className={`px-2.5 py-1 text-[12px] rounded-full border min-w-[44px] ${weekday === v ? "bg-[var(--accent)] text-white border-[var(--accent)]" : "bg-white border-[var(--rule)] text-[var(--deep)]"}`}
-                  data-testid={`schedule-weekday-${v}`}>{l}</button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="akki-overline mb-1.5">Cycle name template</p>
-            <Input value={tpl} onChange={(e) => setTpl(e.target.value)}
-              placeholder="e.g. {month} report"
-              className="h-10 bg-white border-[var(--rule)] text-sm"
-              data-testid="schedule-template-input" />
-            <p className="text-[11px] text-[var(--muted)] mt-1.5">
-              Tokens: <code>{"{month}"}</code>, <code>{"{date}"}</code>, <code>{"{iso_week}"}</code>, <code>{"{year}"}</code>.
-            </p>
-          </div>
-          <div>
-            <p className="akki-overline mb-1.5">Deadline offset (days after draft)</p>
-            <Input type="number" min={2} max={60} value={offset}
-              onChange={(e) => setOffset(e.target.value)}
-              className="h-10 bg-white border-[var(--rule)] text-sm w-32"
-              data-testid="schedule-offset-input" />
-          </div>
-          {committees.length > 0 && (
-            <div>
-              <p className="akki-overline mb-1.5">Scope (optional)</p>
-              <Select value={committeeId || "none"} onValueChange={(v) => setCommitteeId(v === "none" ? "" : v)}>
-                <SelectTrigger className="h-10 bg-white border-[var(--rule)] text-sm" data-testid="schedule-committee-trigger">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">— Whole context —</SelectItem>
-                  {committees.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}{c.kind ? ` · ${c.kind}` : ""}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+    <section data-testid="cycle-step-agenda">
+      <h2 className="akki-serif text-[18px] text-[var(--ink)] mb-1">Set the reporting agenda.</h2>
+      <p className="akki-meta mb-5">Pick the items the board needs in front of them. Two to five works for most cycles.</p>
+      <div className="space-y-4">
+        <div>
+          <Label className="text-[12px]" htmlFor="cycle-agenda-title">Cycle title</Label>
+          <Input id="cycle-agenda-title" value={title} onChange={(e) => setTitle(e.target.value)} className="rounded-sm mt-1" data-testid="cycle-agenda-title" />
         </div>
-        <div className="flex justify-end gap-2 pt-3 border-t border-[var(--rule)]">
-          {current && (
-            <Button variant="outline" onClick={onClear} disabled={busy} className="border-red-200 text-red-700 hover:bg-red-50 mr-auto" data-testid="schedule-clear-btn">
-              <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Clear schedule
-            </Button>
-          )}
-          <Button variant="outline" onClick={onClose} className="border-[var(--rule)]">Cancel</Button>
-          <Button onClick={onSave} disabled={busy} className="bg-[var(--chrome)] text-white" data-testid="schedule-save-btn">
-            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save schedule"}
+        <div className="space-y-3" data-testid="cycle-agenda-items">
+          {items.map((it, i) => (
+            <div key={i} className="flex gap-2 items-start" data-testid={`cycle-agenda-item-${i}`}>
+              <Input
+                value={it.label}
+                onChange={(e) => updateItem(i, "label", e.target.value)}
+                placeholder="e.g. Covenant headroom review"
+                className="rounded-sm flex-1"
+              />
+              <Input
+                value={it.owner_label}
+                onChange={(e) => updateItem(i, "owner_label", e.target.value)}
+                placeholder="Owner (optional)"
+                className="rounded-sm w-[200px]"
+              />
+              <Button type="button" size="sm" variant="ghost" onClick={() => removeItem(i)} className="text-[var(--muted)] hover:text-[#8B2E2B]"><X className="w-3.5 h-3.5" /></Button>
+            </div>
+          ))}
+          <Button type="button" size="sm" variant="outline" onClick={addItem} className="text-[12.5px] rounded-sm" data-testid="cycle-agenda-add-item">
+            <Plus className="w-3.5 h-3.5 mr-1" /> Add item
           </Button>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+      <StepFooter canBack={false} canForward={true} onForward={onForward} primaryLabel="Save agenda" onPrimary={onSave} primaryBusy={busy} />
+    </section>
   );
 }
 
-// ---------- Checklists ----------
-function Checklists({ contextId }) {
-  const [items, setItems] = useState([]);
-  const [committees, setCommittees] = useState([]);
-  const [scopedCommitteeId, setScopedCommitteeId] = useState(""); // "" = whole context
-  const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
-  const [cycleName, setCycleName] = useState("");
-  const [deadline, setDeadline] = useState("");
-  const [skipped, setSkipped] = useState([]);
-  const [reviewing, setReviewing] = useState(null); // checklist being edited
-  const [dispatching, setDispatching] = useState(false);
-  const [dispatchResult, setDispatchResult] = useState(null);
-  const [schedule, setSchedule] = useState(null);
-  const [scheduleOpen, setScheduleOpen] = useState(false);
+/* ------------------------------------------------------------------ */
+/* Step 2 — Team                                                      */
+/* ------------------------------------------------------------------ */
+function TeamStep({ cid, agenda, members, refresh, onBack, onForward }) {
+  const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState({ name: "", email: "", role: "", contribution_description: "", owns_item_ids: [] });
+  const items = agenda?.items || [];
 
-  const load = useCallback(async () => {
-    if (!contextId) return;
-    setLoading(true);
-    try {
-      const [cl, com, sc] = await Promise.all([
-        api.get(`/contexts/${contextId}/checklists`),
-        api.get(`/contexts/${contextId}/cycle/committees`),
-        api.get(`/contexts/${contextId}/cycle/schedule`).catch(() => ({ data: { schedule: null } })),
-      ]);
-      setItems(cl.data.checklists || []);
-      setCommittees(com.data.committees || []);
-      setSchedule(sc.data.schedule || null);
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-    finally { setLoading(false); }
-  }, [contextId]);
-  useEffect(() => { load(); }, [load]);
+  const toggleItem = (id) => setDraft((p) => ({
+    ...p,
+    owns_item_ids: p.owns_item_ids.includes(id) ? p.owns_item_ids.filter((x) => x !== id) : [...p.owns_item_ids, id],
+  }));
 
-  const onGenerate = async () => {
-    if (cycleName.trim().length < 3 || deadline.trim().length < 4) {
-      toast.message("Cycle name and deadline date are required."); return;
+  const onAdd = async () => {
+    if (!draft.name.trim() || !draft.email.trim() || !draft.contribution_description.trim()) {
+      toast.error("Name, email, and contribution description are required."); return;
     }
-    // The native date picker returns YYYY-MM-DD. Convert to a human-readable
-    // form before storing so emails read "Please respond by 15 May 2026."
-    // Parse explicitly to UTC to avoid timezone-driven off-by-one near midnight.
-    let humanDeadline = deadline.trim();
-    const m = humanDeadline.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (m) {
-      const dt = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-      if (!isNaN(dt.getTime())) {
-        humanDeadline = dt.toLocaleDateString("en-GB",
-          { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
-      }
-    }
-    setGenerating(true);
+    setBusy(true);
     try {
-      const { data } = await api.post(`/contexts/${contextId}/checklists/generate`, {
-        cycle_name: cycleName.trim(), deadline_date: humanDeadline,
-        committee_id: scopedCommitteeId || null,
-      });
-      setSkipped(data.skipped || []);
-      toast.success(`Drafted ${data.drafts.length} checklist${data.drafts.length === 1 ? "" : "s"}. Review before dispatching.`);
-      load();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-    finally { setGenerating(false); }
+      await api.post(`/contexts/${cid}/cycle/team`, draft);
+      toast.success("Member added.");
+      setDraft({ name: "", email: "", role: "", contribution_description: "", owns_item_ids: [] });
+      await refresh();
+    } catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
   };
 
-  const pending = items.filter((c) => c.status === "pending_approval");
-  const dispatched = items.filter((c) => c.status === "dispatched");
-  const responded = items.filter((c) => c.status === "responded");
-
-  const onDispatchAll = async () => {
-    if (pending.length === 0) { toast.message("Nothing pending to dispatch."); return; }
-    setDispatching(true);
-    try {
-      const { data } = await api.post(`/contexts/${contextId}/checklists/dispatch`, {
-        checklist_ids: pending.map((c) => c.id),
-      });
-      setDispatchResult(data);
-      const sentN = data.sent?.length || 0;
-      const fbN = data.fallback_mailtos?.length || 0;
-      toast.success(`Dispatched ${sentN} via email${fbN ? `, ${fbN} as mailto fallback` : ""}.`);
-      load();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-    finally { setDispatching(false); }
-  };
-
-  const onSaveEdit = async (cl, newQuestions, newNote) => {
-    try {
-      await api.patch(`/contexts/${contextId}/checklists/${cl.id}`, {
-        questions: newQuestions, note_to_reportee: newNote,
-      });
-      setReviewing(null);
-      toast.success("Checklist updated.");
-      load();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
+  const onRemove = async (mid) => {
+    try { await api.delete(`/contexts/${cid}/cycle/team/${mid}`); await refresh(); } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
   return (
-    <div className="space-y-6">
-      {committees.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap" data-testid="checklist-committee-strip">
-          <span className="text-[11px] uppercase tracking-wider text-[var(--muted)]">Run cycle for:</span>
-          <button
-            onClick={() => setScopedCommitteeId("")}
-            className={`px-2.5 py-1 text-[12px] rounded-full border transition-colors ${scopedCommitteeId === "" ? "bg-[var(--ink)] text-white border-[var(--ink)]" : "bg-white border-[var(--rule)] text-[var(--deep)] hover:border-[var(--accent)]/40"}`}
-            data-testid="checklist-scope-all"
-          >Whole company</button>
-          {committees.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => setScopedCommitteeId(c.id)}
-              className={`px-2.5 py-1 text-[12px] rounded-full border transition-colors ${scopedCommitteeId === c.id ? "bg-[var(--accent)] text-white border-[var(--accent)]" : "bg-white border-[var(--rule)] text-[var(--deep)] hover:border-[var(--accent)]/40"}`}
-              data-testid={`checklist-scope-${c.id}`}
-            >{c.name}{c.kind ? ` · ${c.kind}` : ""}</button>
+    <section data-testid="cycle-step-team">
+      <h2 className="akki-serif text-[18px] text-[var(--ink)] mb-1">Build the team.</h2>
+      <p className="akki-meta mb-5">Add the people contributing material — describe what each one is delivering.</p>
+      {members.length > 0 && (
+        <ul className="border border-[var(--rule)] divide-y divide-[var(--rule)] rounded-md bg-white mb-5" data-testid="cycle-team-list">
+          {members.map((m) => (
+            <li key={m.id} className="px-4 py-3" data-testid={`cycle-team-row-${m.id}`}>
+              <div className="flex items-baseline justify-between gap-3 mb-1 flex-wrap">
+                <p className="akki-serif text-[14px] text-[var(--ink)]">{m.name} <span className="text-[12px] text-[var(--muted)] font-mono">· {m.email}</span></p>
+                <Button type="button" size="sm" variant="ghost" onClick={() => onRemove(m.id)} className="text-[12px] text-[var(--muted)] hover:text-[#8B2E2B] h-7"><X className="w-3.5 h-3.5" /></Button>
+              </div>
+              {m.role && <p className="text-[11.5px] text-[var(--muted)] mb-1">{m.role}</p>}
+              <p className="text-[12.5px] text-[var(--ink)] leading-[1.55]">{m.contribution_description}</p>
+              {m.owns_item_ids?.length > 0 && (
+                <p className="text-[11px] text-[var(--muted)] mt-1 font-mono">Owns: {m.owns_item_ids.map((id) => items.find((it) => it.id === id)?.label || "(missing)").join(" · ")}</p>
+              )}
+            </li>
           ))}
-          {scopedCommitteeId && (
-            <span className="text-[11.5px] text-[var(--muted)] italic ml-1">
-              Only reportees scoped to this committee will receive checklists.
-            </span>
-          )}
-        </div>
+        </ul>
       )}
-
-      <div className="bg-white border border-[var(--rule)] rounded-lg p-5" data-testid="checklist-generate">
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <p className="akki-overline">Draft checklists for the next cycle</p>
-          <button
-            onClick={() => setScheduleOpen(true)}
-            className={`text-[12px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-colors ${schedule?.enabled ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-white border-[var(--rule)] text-[var(--deep)] hover:border-[var(--accent)]/40"}`}
-            data-testid="schedule-toggle-btn"
-          >
-            <CalendarClock className="w-3.5 h-3.5" />
-            {schedule?.enabled
-              ? `${schedule.cadence === "weekly" ? "Weekly" : "Monthly"} · ${schedule.weekday}`
-              : "Schedule recurring"}
-          </button>
+      <div className="border border-[var(--rule)] rounded-md bg-[var(--cream-deep)]/30 p-4 space-y-3" data-testid="cycle-team-add">
+        <p className="akki-overline text-[var(--muted)]">Add a member</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          <Input placeholder="Name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="rounded-sm" data-testid="cycle-team-add-name" />
+          <Input placeholder="Email" type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} className="rounded-sm" data-testid="cycle-team-add-email" />
+          <Input placeholder="Role (optional)" value={draft.role} onChange={(e) => setDraft({ ...draft, role: e.target.value })} className="rounded-sm" />
         </div>
-        <div className="flex gap-2 flex-wrap items-center">
-          <Input
-            value={cycleName}
-            onChange={(e) => setCycleName(e.target.value)}
-            placeholder="Cycle name — e.g. Q2 2026 board pack"
-            className="flex-1 min-w-[240px] h-10 bg-[var(--cream)] border-[var(--rule)] text-sm"
-            data-testid="cycle-name-input"
-          />
-          <Input
-            type="date"
-            value={deadline}
-            onChange={(e) => setDeadline(e.target.value)}
-            className="w-56 h-10 bg-[var(--cream)] border-[var(--rule)] text-sm text-[var(--ink)]"
-            data-testid="cycle-deadline-input"
-          />
-          <Button onClick={onGenerate} disabled={generating} className="h-10 bg-[var(--chrome)] hover:bg-[var(--chrome)]/90 text-white" data-testid="generate-checklists-btn">
-            {generating
-              ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Drafting…</>
-              : <><Sparkles className="w-3.5 h-3.5 mr-1.5" /> Draft checklists</>}
-          </Button>
-        </div>
-        <p className="text-[11.5px] text-[var(--muted)] mt-3 leading-relaxed">
-          AKKI matches open questions from your bank to each reportee's areas. Anti-spam: a reportee can't be re-prompted within 14 days.
-        </p>
-        {skipped.length > 0 && (
-          <div className="mt-3 text-[12px] bg-[var(--cream-deep)] border border-[var(--rule)] rounded-md p-3" data-testid="checklist-skipped">
-            <p className="text-[var(--ink)] font-medium mb-1">Skipped {skipped.length}:</p>
-            <ul className="space-y-0.5 text-[var(--deep)]">
-              {skipped.map((s, i) => <li key={i}>· <strong>{s.name}</strong> — {s.reason}</li>)}
-            </ul>
+        <Textarea
+          placeholder='What is this person contributing? E.g. "Sarah owns the credit risk update."'
+          value={draft.contribution_description}
+          onChange={(e) => setDraft({ ...draft, contribution_description: e.target.value })}
+          className="rounded-sm min-h-[64px]"
+          data-testid="cycle-team-add-desc"
+        />
+        {items.length > 0 && (
+          <div>
+            <p className="text-[11px] text-[var(--muted)] mb-1.5">Owns agenda items:</p>
+            <div className="flex flex-wrap gap-1.5">
+              {items.map((it) => {
+                const on = draft.owns_item_ids.includes(it.id);
+                return (
+                  <button key={it.id} type="button" onClick={() => toggleItem(it.id)}
+                    className={`text-[11.5px] px-2.5 py-1 rounded-full border ${on ? "bg-[var(--accent)] text-white border-[var(--accent)]" : "bg-white text-[var(--ink)] border-[var(--rule)] hover:border-[var(--accent)]"}`}>
+                    {it.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
+        <Button type="button" size="sm" onClick={onAdd} disabled={busy}
+          className="bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12.5px]"
+          data-testid="cycle-team-add-submit"
+        >
+          {busy ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Plus className="w-3.5 h-3.5 mr-1" />}
+          Add member
+        </Button>
       </div>
-
-      {pending.length > 0 && (
-        <section data-testid="checklist-pending">
-          <div className="flex items-center justify-between mb-3">
-            <p className="akki-overline">Pending your approval ({pending.length})</p>
-            <Button onClick={onDispatchAll} disabled={dispatching} className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white" data-testid="dispatch-all-btn">
-              {dispatching
-                ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Dispatching…</>
-                : <><Send className="w-3.5 h-3.5 mr-1.5" /> Approve & dispatch all</>}
-            </Button>
-          </div>
-          <div className="space-y-2">
-            {pending.map((c) => (
-              <div key={c.id} className="bg-white border border-[var(--accent)]/30 rounded-lg p-4" data-testid={`checklist-${c.id}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="akki-serif text-[15px] text-[var(--ink)] mb-0.5">{c.reportee_name} · {c.cycle_name}</p>
-                    <p className="text-[12px] text-[var(--muted)] font-mono">{c.reportee_email} · due {c.deadline_date}</p>
-                    <ul className="mt-3 space-y-1.5">
-                      {c.questions.map((q, i) => (
-                        <li key={i} className="text-[13px] text-[var(--deep)] flex gap-2">
-                          <span className="text-[var(--accent)] flex-none">{i + 1}.</span>
-                          <span className="flex-1">{q.text} <span className="text-[10.5px] uppercase tracking-wider text-[var(--muted)]">· {q.category}</span></span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <button onClick={() => setReviewing(c)} className="akki-gesture text-[12px] shrink-0" data-testid={`checklist-edit-${c.id}`}>
-                    <Edit3 className="w-3.5 h-3.5" /> Edit
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {dispatchResult && dispatchResult.fallback_mailtos?.length > 0 && (
-        <section className="bg-[var(--cream-deep)] border border-[var(--rule)] rounded-lg p-5" data-testid="dispatch-fallback">
-          <p className="akki-overline mb-2 flex items-center gap-2">
-            <Mail className="w-3 h-3 text-[var(--accent)]" /> Mailto fallback
-          </p>
-          <p className="text-[12.5px] text-[var(--deep)] mb-3">
-            Resend isn't configured for this deployment. Click to open each in your email client:
-          </p>
-          <div className="space-y-1.5">
-            {dispatchResult.fallback_mailtos.map((f) => (
-              <a key={f.checklist_id} href={f.mailto} className="flex items-center gap-2 text-[13px] text-[var(--accent)] hover:underline" data-testid={`mailto-${f.checklist_id}`}>
-                <ExternalLink className="w-3 h-3" /> {f.to}
-              </a>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {dispatched.length > 0 && (
-        <section data-testid="checklist-dispatched">
-          <p className="akki-overline mb-3">Awaiting response ({dispatched.length})</p>
-          <div className="space-y-2">
-            {dispatched.map((c) => (
-              <div key={c.id} className="bg-white border border-[var(--rule)] rounded-lg p-3 flex items-center gap-3 text-[13px]">
-                <Clock className="w-4 h-4 text-[var(--muted)]" />
-                <span className="text-[var(--ink)]">{c.reportee_name}</span>
-                <span className="text-[var(--muted)] font-mono">· dispatched {shortDate(c.dispatched_at)} · due {c.deadline_date}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {responded.length > 0 && (
-        <section data-testid="checklist-responded">
-          <p className="akki-overline mb-3 flex items-center gap-2">
-            <CheckCircle2 className="w-3 h-3 text-emerald-700" /> Responded ({responded.length})
-          </p>
-          <div className="space-y-2">
-            {responded.map((c) => (
-              <div key={c.id} className="bg-white border border-emerald-200 rounded-lg p-3 flex items-center gap-3 text-[13px]">
-                <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-                <span className="text-[var(--ink)]">{c.reportee_name}</span>
-                <span className="text-[var(--muted)]">· returned {shortDate(c.responded_at)}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {!loading && items.length === 0 && (
-        <div className="bg-white border border-dashed border-[var(--rule)] rounded-lg p-10 text-center" data-testid="checklist-empty">
-          <Send className="w-10 h-10 text-[var(--muted)]/40 mx-auto mb-4" strokeWidth={1.3} />
-          <p className="akki-lead mb-2">No checklists yet.</p>
-          <p className="text-[13px] text-[var(--muted)]">Add reportees, seed your Question Bank, then draft a cycle above.</p>
-        </div>
-      )}
-
-      <ReviewModal
-        cl={reviewing}
-        onClose={() => setReviewing(null)}
-        onSave={onSaveEdit}
-      />
-      <ScheduleModal
-        open={scheduleOpen}
-        onClose={() => setScheduleOpen(false)}
-        contextId={contextId}
-        committees={committees}
-        current={schedule}
-        onSaved={(s) => setSchedule(s)}
-        onCleared={() => setSchedule(null)}
-      />
-    </div>
+      <StepFooter canBack canForward onBack={onBack} onForward={onForward} />
+    </section>
   );
 }
 
-function ReviewModal({ cl, onClose, onSave }) {
-  const [questions, setQuestions] = useState([]);
-  const [note, setNote] = useState("");
+/* ------------------------------------------------------------------ */
+/* Step 3 — Contributions                                             */
+/* ------------------------------------------------------------------ */
+function ContributionsStep({ cid, agenda, members, contributions, refresh, onBack, onForward }) {
+  const items = agenda?.items || [];
+  const [draft, setDraft] = useState({ agenda_item_id: items[0]?.id || "", team_member_id: members[0]?.id || "", title: "", body_text: "", kind: "note" });
+  const [busy, setBusy] = useState(false);
+  const [scoringId, setScoringId] = useState(null);
+
   useEffect(() => {
-    if (cl) {
-      setQuestions(cl.questions || []);
-      setNote(cl.note_to_reportee || "");
+    if (!draft.agenda_item_id && items[0]?.id) setDraft((p) => ({ ...p, agenda_item_id: items[0].id }));
+    if (!draft.team_member_id && members[0]?.id) setDraft((p) => ({ ...p, team_member_id: members[0].id }));
+  }, [items, members]); // eslint-disable-line
+
+  const addContribution = async () => {
+    if (!draft.agenda_item_id || !draft.team_member_id || !draft.body_text.trim()) {
+      toast.error("Pick an agenda item, a member, and add some text."); return;
     }
-  }, [cl]);
-  if (!cl) return null;
-  return (
-    <Dialog open={!!cl} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl bg-[var(--cream)] border border-[var(--rule)]" data-testid="review-modal">
-        <DialogHeader>
-          <DialogTitle className="akki-serif text-[20px] font-normal">{cl.reportee_name}</DialogTitle>
-          <DialogDescription className="text-[12.5px] text-[var(--muted)]">
-            {cl.cycle_name} · due {cl.deadline_date} · {cl.reportee_email}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-2">
-          {questions.map((q, i) => (
-            <div key={i} className="bg-white border border-[var(--rule)] rounded-md p-3">
-              <div className="flex items-start gap-2 mb-2">
-                <span className="text-[var(--accent)] text-[13px] font-medium">{i + 1}.</span>
-                <textarea
-                  value={q.text}
-                  onChange={(e) => setQuestions((prev) => prev.map((x, ix) => ix === i ? { ...x, text: e.target.value } : x))}
-                  className="flex-1 text-[14px] text-[var(--ink)] bg-transparent resize-none focus:outline-none border-b border-transparent focus:border-[var(--accent)]/40"
-                  rows={2}
-                  data-testid={`review-q-${i}`}
-                />
-                <button onClick={() => setQuestions((prev) => prev.filter((_, ix) => ix !== i))} className="text-[var(--muted)] hover:text-[var(--accent)]">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          ))}
-          <div>
-            <p className="akki-overline mb-1.5">Personal note (optional)</p>
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="A line in your voice — context, urgency, thank-you…"
-              rows={3}
-              className="w-full text-[13px] bg-white border border-[var(--rule)] rounded-md p-3 focus:outline-none focus:border-[var(--accent)]"
-              data-testid="review-note"
-            />
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 pt-3 border-t border-[var(--rule)]">
-          <Button variant="outline" onClick={onClose} className="border-[var(--rule)]">Cancel</Button>
-          <Button onClick={() => onSave(cl, questions, note)} className="bg-[var(--chrome)] text-white" data-testid="review-save-btn">
-            Save edits
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ---------- Inbox ----------
-function SubmissionsInbox({ contextId }) {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const load = useCallback(async () => {
-    if (!contextId) return;
-    setLoading(true);
-    try {
-      const { data } = await api.get(`/contexts/${contextId}/submissions`);
-      setItems(data.submissions || []);
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-    finally { setLoading(false); }
-  }, [contextId]);
-  useEffect(() => { load(); }, [load]);
-
-  if (loading) return <p className="p-8 text-center text-[12px] uppercase tracking-widest text-[var(--muted)]">Loading…</p>;
-  if (items.length === 0) return (
-    <div className="bg-white border border-dashed border-[var(--rule)] rounded-lg p-10 text-center" data-testid="submissions-empty">
-      <Inbox className="w-10 h-10 text-[var(--muted)]/40 mx-auto mb-4" strokeWidth={1.3} />
-      <p className="akki-lead mb-2">No submissions yet.</p>
-      <p className="text-[13px] text-[var(--muted)]">When reportees respond, their answers land here.</p>
-    </div>
-  );
-  return (
-    <div className="space-y-3" data-testid="submissions-list">
-      {items.map((s) => (
-        <div key={s.id} className="bg-white border border-[var(--rule)] rounded-lg p-5" data-testid={`submission-${s.id}`}>
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="akki-serif text-[16px] text-[var(--ink)]">{s.reportee_name}</p>
-              <p className="text-[12px] text-[var(--muted)] font-mono">{s.cycle_name} · {shortDate(s.submitted_at)}</p>
-            </div>
-            <span className="akki-context-chip">{s.answers?.length || 0} answers</span>
-          </div>
-          <ul className="space-y-3">
-            {(s.answers || []).map((a, i) => (
-              <li key={i} className="border-l-2 border-[var(--accent)]/40 pl-3">
-                <p className="text-[12.5px] text-[var(--muted)] mb-0.5">{a.question_text || a.question_id}</p>
-                <p className="akki-serif text-[14px] text-[var(--deep)] whitespace-pre-wrap">{a.answer || "—"}</p>
-              </li>
-            ))}
-          </ul>
-          {s.notes && (
-            <div className="mt-3 pt-3 border-t border-[var(--rule)]">
-              <p className="text-[11px] uppercase tracking-wider text-[var(--muted)] mb-1">Their note</p>
-              <p className="text-[13px] text-[var(--deep)] italic">{s.notes}</p>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ---------- Page ----------
-// ---------------------------------------------------------------------------
-// OverviewTab — Phase 13.2
-//
-// The existing reporting-cycle workflow (Receive → Consolidate → Generate →
-// Submit, with 6 inner sub-tabs: tracker / reportees / bank / checklists /
-// inbox / reports) is preserved verbatim under the new outer "Overview" tab.
-// Lifted from the previous Cycle() body unchanged so behaviour, telemetry
-// keys (`cycle-tabs-list`, `cycle-spine-strip`, `cycle-tab-*`), and
-// keyboard navigation all remain stable.
-// ---------------------------------------------------------------------------
-function OverviewTab({ cid, account, activeContext, isMobile }) {
-  const [cycleNames, setCycleNames] = useState([]);
-  const [activeTab, setActiveTab] = useState("tracker");
-  useEffect(() => {
-    (async () => {
-      if (!cid) return;
-      try {
-        const { data } = await api.get(`/contexts/${cid}/checklists`);
-        const names = Array.from(new Set((data.checklists || []).map((c) => c.cycle_name))).filter(Boolean);
-        setCycleNames(names);
-      } catch { /* silent */ }
-    })();
-  }, [cid]);
-  // Iter42 — 4-step workflow spine. Each tab maps onto exactly one stage
-  // of Receive → Consolidate → Generate → Submit. Used to drive the
-  // SpineStrip indicator above the tab row so the user always knows where
-  // the current tab sits in the overall workflow.
-  const TAB_STAGE = {
-    tracker:    "monitor",      // overview lives outside the spine
-    reportees:  "receive",
-    bank:       "receive",
-    checklists: "receive",
-    inbox:      "consolidate",
-    reports:    "generate",     // the report drafting step
-    // "submit" stage is reached when an existing report is sent up the
-    // chain (handled inside the reports view itself, no dedicated tab).
+    setBusy(true);
+    try { await api.post(`/contexts/${cid}/cycle/contributions`, draft); await refresh(); setDraft({ ...draft, title: "", body_text: "" }); toast.success("Added."); }
+    catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
   };
-  const SPINE = [
-    { id: "receive",     label: "Receive",     blurb: "Brief your team, send checklists, collect responses." },
-    { id: "consolidate", label: "Consolidate", blurb: "Read the inbox, surface what matters." },
-    { id: "generate",    label: "Generate",    blurb: "Draft the report from what's in the pack." },
-    { id: "submit",      label: "Submit",      blurb: "Send up the chain — every tier reviews, then approves." },
-  ];
-  const activeStage = TAB_STAGE[activeTab] || "monitor";
+
+  const score = async (cid_contrib) => {
+    setScoringId(cid_contrib);
+    try { await api.post(`/contexts/${cid}/cycle/contributions/${cid_contrib}/score`, {}); await refresh(); }
+    catch (e) { toast.error(apiErrorMessage(e)); } finally { setScoringId(null); }
+  };
 
   return (
-    <div>
-      {/* Cycle strip — Phase 2, Advisory 6. Sits above the existing
-          reporting-cycle spine, both coexist (different surfaces). */}
-      {cid ? <CycleStrip contextId={cid} isMobile={isMobile} /> : null}
-
-      {/* SPINE STRIP — 4 stages with the active tab's stage highlighted */}
-      <div className="mb-6 bg-white border border-[var(--rule)] rounded-md p-3" data-testid="cycle-spine-strip">
-        <div className="flex flex-wrap items-stretch gap-0">
-          {SPINE.map((stage, idx) => {
-            const isActive = stage.id === activeStage;
-            const isPast = SPINE.findIndex((s) => s.id === activeStage) > idx;
+    <section data-testid="cycle-step-contributions">
+      <h2 className="akki-serif text-[18px] text-[var(--ink)] mb-1">Track contributions.</h2>
+      <p className="akki-meta mb-5">Capture what each owner has sent in. Score each entry on relevance, fullness, and readiness.</p>
+      {contributions.length > 0 && (
+        <ul className="border border-[var(--rule)] divide-y divide-[var(--rule)] rounded-md bg-white mb-5" data-testid="cycle-contributions-list">
+          {contributions.map((c) => {
+            const item = items.find((it) => it.id === c.agenda_item_id);
+            const member = members.find((m) => m.id === c.team_member_id);
             return (
-              <div
-                key={stage.id}
-                className={`flex-1 min-w-[140px] px-3 py-2 border-l first:border-l-0 border-[var(--rule)] transition-colors ${
-                  isActive ? "bg-[var(--accent-soft)]" : ""
-                }`}
-                data-testid={`cycle-spine-${stage.id}${isActive ? "-active" : ""}`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-mono font-medium ${
-                    isActive
-                      ? "bg-[var(--accent)] text-white"
-                      : isPast
-                        ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                        : "bg-[var(--cream-deep)] text-[var(--muted)] border border-[var(--rule)]"
-                  }`}>
-                    {idx + 1}
-                  </span>
-                  <p className={`text-[11px] uppercase tracking-[0.18em] font-medium ${
-                    isActive ? "text-[var(--accent)]" : "text-[var(--muted)]"
-                  }`}>
-                    {stage.label}
-                  </p>
-                </div>
-                <p className={`text-[11.5px] leading-snug ${isActive ? "text-[var(--ink)]" : "text-[var(--muted)]"}`}>
-                  {stage.blurb}
-                </p>
-              </div>
+              <li key={c.id} className="px-4 py-3" data-testid={`cycle-contrib-row-${c.id}`}>
+                <p className="akki-meta text-[11px] mb-0.5 font-mono text-[var(--muted)]">{item?.label || "(item missing)"} · {member?.name || "(unknown)"}</p>
+                {c.title && <p className="akki-serif text-[14px] text-[var(--ink)]">{c.title}</p>}
+                <p className="text-[13px] text-[var(--ink)] leading-[1.55] mt-1 line-clamp-3">{c.body_text}</p>
+                {c.scores ? (
+                  <div className="flex gap-3 text-[11.5px] font-mono text-[var(--muted)] mt-2">
+                    <span>relevance <strong className="text-[var(--ink)]">{c.scores.relevance}</strong></span>
+                    <span>fullness <strong className="text-[var(--ink)]">{c.scores.fullness}</strong></span>
+                    <span>readiness <strong className="text-[var(--ink)]">{c.scores.readiness}</strong></span>
+                  </div>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => score(c.id)} disabled={scoringId === c.id} className="mt-2 text-[12px]" data-testid={`cycle-contrib-score-${c.id}`}>
+                    {scoringId === c.id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
+                    Score
+                  </Button>
+                )}
+              </li>
             );
           })}
+        </ul>
+      )}
+      {members.length === 0 ? (
+        <p className="text-[12.5px] text-amber-900 bg-amber-50 border border-amber-100 rounded-sm px-3 py-2">
+          Add at least one team member first.
+        </p>
+      ) : (
+        <div className="border border-[var(--rule)] rounded-md bg-[var(--cream-deep)]/30 p-4 space-y-3" data-testid="cycle-contrib-add">
+          <p className="akki-overline text-[var(--muted)]">Add a contribution</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <select value={draft.agenda_item_id} onChange={(e) => setDraft({ ...draft, agenda_item_id: e.target.value })} className="border border-[var(--rule)] rounded-sm h-9 px-2 text-[13px] bg-white" data-testid="cycle-contrib-add-item">
+              {items.map((it) => <option key={it.id} value={it.id}>{it.label}</option>)}
+            </select>
+            <select value={draft.team_member_id} onChange={(e) => setDraft({ ...draft, team_member_id: e.target.value })} className="border border-[var(--rule)] rounded-sm h-9 px-2 text-[13px] bg-white" data-testid="cycle-contrib-add-member">
+              {members.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.email}</option>)}
+            </select>
+          </div>
+          <Input placeholder="Title (optional)" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} className="rounded-sm" />
+          <Textarea placeholder="Paste the contribution text here." value={draft.body_text} onChange={(e) => setDraft({ ...draft, body_text: e.target.value })} className="rounded-sm min-h-[100px]" data-testid="cycle-contrib-add-body" />
+          <Button size="sm" onClick={addContribution} disabled={busy} className="bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12.5px]" data-testid="cycle-contrib-add-submit">
+            {busy ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Plus className="w-3.5 h-3.5 mr-1" />}
+            Record contribution
+          </Button>
         </div>
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        {/* April 2026 — switched from overflow-x-auto to flex-wrap so the
-            tab row wraps cleanly on tablet widths instead of sliding the
-            rightmost tab under the right portfolio rail. The wrapped row
-            still reads as one menu thanks to the shared bottom border. */}
-        <TabsList className="bg-transparent border-b border-[var(--rule)] w-full justify-start h-auto p-0 rounded-none mb-8 flex-wrap" data-testid="cycle-tabs-list">
-          {[
-            ["tracker",    "Overview",          Eye],
-            ["reportees",  "1 · Your team",     Users],
-            ["bank",       "2 · Question bank", MessageCircleQuestion],
-            ["checklists", "3 · Send checklists", Send],
-            ["inbox",      "4 · Receive submissions", Inbox],
-            ["reports",    "5 · Consolidate & send up", FileText],
-          ].map(([v, l, I]) => (
-            <TabsTrigger
-              key={v} value={v}
-              className="bg-transparent data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none text-sm text-[var(--muted)] data-[state=active]:text-[var(--ink)] py-3 px-5 border-b-2 border-transparent data-[state=active]:border-[var(--accent)] data-[state=active]:font-medium"
-              data-testid={`cycle-tab-${v}`}
-            >
-              <I className="w-4 h-4 mr-2" strokeWidth={1.7} /> {l}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        <TabsContent value="tracker"><CycleTracker contextId={cid} /></TabsContent>
-        <TabsContent value="checklists"><Checklists contextId={cid} /></TabsContent>
-        <TabsContent value="bank"><QuestionBank contextId={cid} /></TabsContent>
-        <TabsContent value="reportees"><Reportees contextId={cid} /></TabsContent>
-        <TabsContent value="inbox"><SubmissionsInbox contextId={cid} /></TabsContent>
-        <TabsContent value="reports"><ReportsTab contextId={cid} currentEmail={account?.email} cycleNames={cycleNames} /></TabsContent>
-      </Tabs>
-    </div>
+      )}
+      <StepFooter canBack canForward onBack={onBack} onForward={onForward} />
+    </section>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Cycle Manager — Phase 13.2 outer shell.
-//
-// Five top-level tabs: Overview · Briefs · Signals · Minutes · Actions.
-// Deep-linked via the `?tab=<id>` query param so a URL pasted into chat
-// or email lands on the right tab. Accent underline on active tab (per
-// UI/UX brief; never background fill).
-//
-// - Overview surfaces the existing Receive → Consolidate → Generate →
-//   Submit reporting workflow (the previous /app/cycle behaviour).
-// - Briefs / Signals / Minutes are absorbed from the legacy /app/prepare
-//   page; `<Prepare embedded forceTab="..." />` is the underlying impl,
-//   wrapped by thin tab components in `components/cycle/tabs/`.
-// - Actions aggregates signal_actions + in-flight plays + pending cycle
-//   submissions via the new `/api/contexts/{cid}/cycle/actions`
-//   aggregator endpoint.
-//
-// The nav-label rename from "Cycle" to "Cycle Manager" and the keyboard
-// shortcuts are scoped to Phase 13.3, NOT this phase.
-// ---------------------------------------------------------------------------
-const OUTER_TABS = [
-  { id: "overview", label: "Overview", icon: Eye },
-  { id: "briefs",   label: "Boardpack", icon: ScrollText },
-  { id: "signals",  label: "Signals",  icon: Activity },
-  { id: "minutes",  label: "Minutes",  icon: FileText },
-  { id: "actions",  label: "Actions",  icon: ListChecks },
-];
+/* ------------------------------------------------------------------ */
+/* Step 4 — Scoreboard                                                */
+/* ------------------------------------------------------------------ */
+function ScoreboardStep({ cid, readiness, refresh, onBack, onForward }) {
+  if (!readiness) return <p className="text-[12.5px] text-[var(--muted)]">Loading…</p>;
+  return (
+    <section data-testid="cycle-step-scoreboard">
+      <h2 className="akki-serif text-[18px] text-[var(--ink)] mb-1">Readiness scoreboard.</h2>
+      <p className="akki-meta mb-5">Where the cycle stands. Use this to decide whether to send follow-ups or compile now.</p>
+      <div className="border border-[var(--rule)] bg-white rounded-md px-5 py-4 mb-5">
+        <div className="flex items-baseline gap-4 mb-3">
+          <p className="akki-serif text-[28px] text-[var(--ink)] leading-none" data-testid="cycle-scoreboard-overall">{readiness.overall}<span className="text-[16px] text-[var(--muted)]">%</span></p>
+          <p className="akki-meta text-[var(--muted)]">overall readiness</p>
+        </div>
+        {readiness.storyline?.length > 0 && (
+          <ul className="space-y-1 text-[13.5px] text-[var(--ink)] leading-[1.6]" data-testid="cycle-scoreboard-storyline">
+            {readiness.storyline.map((s, i) => <li key={i}>· {s}</li>)}
+          </ul>
+        )}
+      </div>
+      <ul className="border border-[var(--rule)] divide-y divide-[var(--rule)] rounded-md bg-white" data-testid="cycle-scoreboard-items">
+        {readiness.items.map((row) => (
+          <li key={row.item_id} className="px-4 py-3" data-testid={`cycle-scoreboard-row-${row.item_id}`}>
+            <div className="flex items-baseline justify-between gap-3 flex-wrap">
+              <p className="akki-serif text-[14px] text-[var(--ink)]">{row.label}</p>
+              <span className={`text-[10.5px] uppercase tracking-[0.12em] font-mono px-2 py-0.5 rounded-full border ${STATUS_TONE[row.status] || ""}`}>{row.status}</span>
+            </div>
+            <div className="flex gap-4 text-[11.5px] font-mono text-[var(--muted)] mt-1.5">
+              <span>relevance <strong className="text-[var(--ink)]">{row.avg_relevance}</strong></span>
+              <span>fullness <strong className="text-[var(--ink)]">{row.avg_fullness}</strong></span>
+              <span>readiness <strong className="text-[var(--ink)]">{row.avg_readiness}</strong></span>
+              <span className="ml-auto">overall <strong className="text-[var(--ink)]">{row.overall}</strong></span>
+            </div>
+            {row.owners?.length > 0 && (
+              <p className="text-[11px] text-[var(--muted)] mt-1 font-mono">Owners: {row.owners.map((o) => o.name).join(" · ")}</p>
+            )}
+          </li>
+        ))}
+      </ul>
+      <StepFooter canBack canForward onBack={onBack} onForward={onForward} primaryLabel="Refresh" onPrimary={refresh} />
+    </section>
+  );
+}
 
-const VALID_TAB_IDS = new Set(OUTER_TABS.map((t) => t.id));
+/* ------------------------------------------------------------------ */
+/* Step 5 — Follow-ups                                                */
+/* ------------------------------------------------------------------ */
+function FollowUpsStep({ cid, followups, refresh, onBack, onForward, execName }) {
+  const [busy, setBusy] = useState(false);
+  const [sendingId, setSendingId] = useState(null);
 
+  const generate = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/contexts/${cid}/cycle/follow-ups/draft`, {});
+      toast.success(`${data.count} draft${data.count === 1 ? "" : "s"} produced.`);
+      await refresh();
+    } catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
+  };
+
+  const approveAndSend = async (fid) => {
+    setSendingId(fid);
+    try {
+      await api.post(`/contexts/${cid}/cycle/follow-ups/${fid}/approve`, {});
+      const { data } = await api.post(`/contexts/${cid}/cycle/follow-ups/${fid}/send`, {});
+      if (data?.mode === "test_mode_restricted") {
+        toast.message("Resend is in test mode — recipient skipped, follow-up logged.");
+      } else if (data?.ok) {
+        toast.success("Sent.");
+      } else {
+        toast.error(`Send mode: ${data?.mode || "unknown"}`);
+      }
+      await refresh();
+    } catch (e) { toast.error(apiErrorMessage(e)); } finally { setSendingId(null); }
+  };
+
+  return (
+    <section data-testid="cycle-step-followups">
+      <h2 className="akki-serif text-[18px] text-[var(--ink)] mb-1">Akki for {execName}.</h2>
+      <p className="akki-meta mb-5">Drafts go out only on your approval — no autonomous mass sends. Per-draft preview + approve.</p>
+      <Button size="sm" onClick={generate} disabled={busy} className="mb-4 bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12.5px]" data-testid="cycle-followups-generate">
+        {busy ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Mail className="w-3.5 h-3.5 mr-1" />}
+        Draft follow-ups for unmet items
+      </Button>
+      {followups.length === 0 ? (
+        <p className="text-[12.5px] text-[var(--muted)] py-6 text-center" data-testid="cycle-followups-empty">No drafts yet.</p>
+      ) : (
+        <ul className="border border-[var(--rule)] divide-y divide-[var(--rule)] rounded-md bg-white" data-testid="cycle-followups-list">
+          {followups.map((f) => (
+            <li key={f.id} className="px-4 py-3" data-testid={`cycle-followup-row-${f.id}`}>
+              <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+                <p className="akki-serif text-[14px] text-[var(--ink)]">{f.draft_subject}</p>
+                <span className="text-[10.5px] uppercase tracking-[0.12em] font-mono px-2 py-0.5 rounded-full border bg-stone-50 text-stone-700 border-stone-200">{f.status}</span>
+              </div>
+              <p className="text-[11.5px] text-[var(--muted)] font-mono mb-2">to {f.to_email}{f.to_name ? ` · ${f.to_name}` : ""} · for {f.agenda_item_label}</p>
+              <pre className="text-[12.5px] text-[var(--ink)] leading-[1.55] whitespace-pre-wrap font-sans border-l-2 border-[var(--rule)] pl-3 py-1 mb-2">{f.draft_body}</pre>
+              {f.status === "draft" && (
+                <Button size="sm" onClick={() => approveAndSend(f.id)} disabled={sendingId === f.id} className="bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12px]" data-testid={`cycle-followup-send-${f.id}`}>
+                  {sendingId === f.id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1" />}
+                  Approve & send
+                </Button>
+              )}
+              {f.send_mode && (
+                <p className="text-[11px] text-[var(--muted)] font-mono mt-1">send_mode: {f.send_mode}</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <StepFooter canBack canForward onBack={onBack} onForward={onForward} />
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Step 6 — Compilation                                               */
+/* ------------------------------------------------------------------ */
+function CompilationStep({ cid, onBack }) {
+  const [busy, setBusy] = useState(false);
+  const [out, setOut] = useState(null);
+
+  const compile = async () => {
+    setBusy(true); setOut(null);
+    try {
+      const { data } = await api.post(`/contexts/${cid}/cycle/draft-compilation`, {});
+      setOut(data);
+      toast.success("Compilation produced.");
+    } catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
+  };
+
+  const download = async () => {
+    if (!out?.export_id) return;
+    try {
+      // Reuse the work_studio_export download endpoint via the standard
+      // pin-token flow.
+      const status = await api.get(`/contexts/${cid}/work-studio/exports/${out.export_id}`);
+      const tok = status.data?.download_token;
+      const resp = await api.get(`/contexts/${cid}/work-studio/exports/${out.export_id}/download`, {
+        params: { token: tok }, responseType: "blob",
+      });
+      const blob = new Blob([resp.data], { type: resp.headers?.["content-type"] || "application/octet-stream" });
+      const a = document.createElement("a");
+      a.href = window.URL.createObjectURL(blob);
+      a.download = out.file_name || `cycle-compilation.docx`;
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(a.href);
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+
+  return (
+    <section data-testid="cycle-step-compilation">
+      <h2 className="akki-serif text-[18px] text-[var(--ink)] mb-1">Draft Compilation Output.</h2>
+      <p className="akki-meta mb-5">Akki produces a citation-ready draft from the scored contributions. Your judgement decides when to send.</p>
+      {!out && (
+        <Button size="sm" onClick={compile} disabled={busy} className="bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12.5px]" data-testid="cycle-compile-btn">
+          {busy ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileDown className="w-3.5 h-3.5 mr-1" />}
+          Produce draft compilation
+        </Button>
+      )}
+      {out && (
+        <div className="border border-[var(--rule)] bg-white rounded-md px-5 py-4" data-testid="cycle-compile-result">
+          <div className="flex items-start gap-3 mb-3">
+            <Check className="w-5 h-5 text-emerald-700 mt-0.5" />
+            <div>
+              <p className="akki-serif text-[14.5px] text-[var(--ink)]">Compilation ready.</p>
+              <p className="akki-meta text-[11.5px] mt-0.5 font-mono break-all">
+                {out.file_name} · {Math.round((out.byte_len || 0) / 1024)} KB · sha256 {out.sha256?.slice(0, 16)}…
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={download} className="bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12.5px]" data-testid="cycle-compile-download">
+              <Download className="w-3.5 h-3.5 mr-1" /> Download .docx
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => { setOut(null); compile(); }} className="text-[12.5px]">
+              Compile again
+            </Button>
+          </div>
+        </div>
+      )}
+      <StepFooter canBack canForward={false} onBack={onBack} />
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Page                                                               */
+/* ------------------------------------------------------------------ */
 export default function Cycle() {
   const { activeContext, account } = useAuth();
   const cid = activeContext?.id;
-  const isMobile = useIsMobile();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const queryTab = searchParams.get("tab");
-  const activeTab = VALID_TAB_IDS.has(queryTab) ? queryTab : "overview";
 
-  const onTabChange = useCallback((next) => {
-    const sp = new URLSearchParams(searchParams);
-    if (next === "overview") {
-      sp.delete("tab"); // clean URL on the default tab
-    } else {
-      sp.set("tab", next);
-    }
-    setSearchParams(sp, { replace: true });
-  }, [searchParams, setSearchParams]);
+  const [stepId, setStepId] = useState("agenda");
+  const [agenda, setAgenda] = useState(null);
+  const [members, setMembers] = useState([]);
+  const [contributions, setContributions] = useState([]);
+  const [readiness, setReadiness] = useState(null);
+  const [followups, setFollowups] = useState([]);
+  const [error, setError] = useState(null);
 
-  if (!cid) return <AppShell><div className="p-12 text-center text-[var(--muted)] text-sm">No company selected.</div></AppShell>;
+  const refreshAll = async () => {
+    if (!cid) return;
+    try {
+      const [a, t, c, r, f] = await Promise.all([
+        api.get(`/contexts/${cid}/cycle/agenda`),
+        api.get(`/contexts/${cid}/cycle/team`),
+        api.get(`/contexts/${cid}/cycle/contributions`),
+        api.get(`/contexts/${cid}/cycle/readiness`),
+        api.get(`/contexts/${cid}/cycle/follow-ups`),
+      ]);
+      setAgenda(a.data);
+      setMembers(t.data?.members || []);
+      setContributions(c.data?.contributions || []);
+      setReadiness(r.data);
+      setFollowups(f.data?.followups || []);
+      setError(null);
+    } catch (e) { setError(apiErrorMessage(e)); }
+  };
+
+  useEffect(() => { refreshAll(); /* eslint-disable-next-line */ }, [cid]);
+
+  const stepIdx = STEPS.findIndex((s) => s.id === stepId);
+  const onBack = () => setStepId(STEPS[Math.max(0, stepIdx - 1)].id);
+  const onForward = () => setStepId(STEPS[Math.min(STEPS.length - 1, stepIdx + 1)].id);
+
+  const execName = useMemo(() => {
+    const n = account?.name || account?.email || "";
+    return (n.split(" ")[0] || n || "the executive");
+  }, [account]);
+
+  if (!cid) {
+    return (
+      <AppShell>
+        <div className="akki-w-medium px-8 py-12 text-[var(--muted)]">Pick a workspace to use Cycle Manager.</div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
-      <div className="max-w-[1200px] mx-auto px-8 py-10">
-        <div className="mb-6 akki-fade-up">
-          <p className="akki-overline mb-2 flex items-center gap-2">
-            <Send className="w-3 h-3 text-[var(--accent)]" /> Cycle Manager · §12 · {activeContext.name}
+      <div className="akki-w-medium px-8 py-10" data-testid="cycle-page">
+        <p className="akki-overline mb-2 flex items-center gap-2">
+          <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Cycle Manager · {activeContext.name}
+        </p>
+        <h1 className="akki-greeting mb-1">Drafting engine.</h1>
+        <p className="akki-meta mb-6 max-w-2xl">
+          Set the agenda, build the team, score contributions, send follow-ups on your approval, and compile the draft when you decide it's ready.
+        </p>
+        {error && (
+          <p className="text-[12.5px] text-amber-900 bg-amber-50 border border-amber-100 rounded-sm px-3 py-2 mb-3 inline-flex items-start gap-2">
+            <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {error}
           </p>
-          <h1 className="akki-greeting mb-2">Receive · Consolidate · Generate · Submit.</h1>
-          <p className="akki-meta max-w-2xl">
-            One workspace for the reporting cycle, the catch-up briefs, the signals on
-            the board, the minutes you've taken, and the action items still open — all for{" "}
-            <strong className="text-[var(--ink)]">{activeContext.name}</strong>.
-          </p>
-        </div>
-
-        {/* Outer tab nav — Phase 13.2 5-tab shell. Accent underline on
-            active, no background fill (per UI/UX brief). The `?tab=`
-            query param is the source of truth so URLs are shareable. */}
-        <div className="border-b border-[var(--rule)] flex items-stretch gap-0 mb-8 flex-wrap" data-testid="cycle-manager-outer-tabs">
-          {OUTER_TABS.map((t) => {
-            const Icon = t.icon;
-            const active = activeTab === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => onTabChange(t.id)}
-                className={`px-5 py-3 text-[14px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
-                  active
-                    ? "border-[var(--accent)] text-[var(--ink)] font-medium"
-                    : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
-                }`}
-                data-testid={`cycle-manager-tab-${t.id}${active ? "-active" : ""}`}
-                aria-current={active ? "page" : undefined}
-              >
-                <Icon className="w-4 h-4" strokeWidth={1.7} />
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {activeTab === "overview" && (
-          <OverviewTab cid={cid} account={account} activeContext={activeContext} isMobile={isMobile} />
         )}
-        {activeTab === "briefs"   && <BoardpackTab />}
-        {activeTab === "signals"  && <SignalsTab />}
-        {activeTab === "minutes"  && <MinutesTab />}
-        {activeTab === "actions"  && <ActionsTab contextId={cid} />}
+        <StepShell activeId={stepId} onSelect={setStepId}>
+          {stepId === "agenda" && <AgendaStep cid={cid} agenda={agenda} onSaved={setAgenda} onForward={onForward} />}
+          {stepId === "team" && <TeamStep cid={cid} agenda={agenda} members={members} refresh={refreshAll} onBack={onBack} onForward={onForward} />}
+          {stepId === "contributions" && <ContributionsStep cid={cid} agenda={agenda} members={members} contributions={contributions} refresh={refreshAll} onBack={onBack} onForward={onForward} />}
+          {stepId === "scoreboard" && <ScoreboardStep cid={cid} readiness={readiness} refresh={refreshAll} onBack={onBack} onForward={onForward} />}
+          {stepId === "followups" && <FollowUpsStep cid={cid} followups={followups} refresh={refreshAll} onBack={onBack} onForward={onForward} execName={execName} />}
+          {stepId === "compilation" && <CompilationStep cid={cid} onBack={onBack} />}
+        </StepShell>
       </div>
     </AppShell>
   );

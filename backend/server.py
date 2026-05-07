@@ -62,6 +62,7 @@ from routers import admin_health as admin_health_router  # noqa: E402
 from routers import admin_sandbox_kpi as admin_sandbox_kpi_router  # noqa: E402
 from routers import signal_actions as signal_actions_router  # noqa: E402
 from routers import pulse as pulse_router  # noqa: E402
+from routers import cycle_manager as cycle_manager_router  # noqa: E402
 from routers import admin_signal_kpi as admin_signal_kpi_router  # noqa: E402
 from routers import prepare as prepare_router  # noqa: E402
 from routers import inbound_email as inbound_email_router  # noqa: E402
@@ -139,6 +140,7 @@ app.include_router(admin_health_router.router)
 app.include_router(admin_sandbox_kpi_router.router)
 app.include_router(signal_actions_router.router)
 app.include_router(pulse_router.router)
+app.include_router(cycle_manager_router.router)
 app.include_router(admin_signal_kpi_router.router)
 app.include_router(prepare_router.router)
 app.include_router(inbound_email_router.router)
