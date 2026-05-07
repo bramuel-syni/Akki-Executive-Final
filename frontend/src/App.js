@@ -59,7 +59,7 @@ import InboundQueue from "@/pages/InboundQueue";
 import StudioComposerPage from "@/pages/StudioComposerPage";
 // Phase 13.3 — new top-level surfaces
 import WorkStudio from "@/pages/WorkStudio";
-import PulsePlaceholder from "@/pages/PulsePlaceholder";
+import Pulse from "@/pages/Pulse";
 
 function PublicOnlyRoute({ children, allowSandbox = false }) {
   const { account } = useAuth();
@@ -175,7 +175,7 @@ function App() {
           <Route path="/app/enterprise" element={<Gated><Enterprise /></Gated>} />
           <Route path="/app/work-studio" element={<Gated><WorkStudio /></Gated>} />
           <Route path="/app/decks/:deckId" element={<Gated><Decks /></Gated>} />
-          <Route path="/app/pulse" element={<Gated><PulsePlaceholder /></Gated>} />
+          <Route path="/app/pulse" element={<Gated><Pulse /></Gated>} />
           <Route path="/app/studio/composer/:kind/:artefactId" element={<Gated><StudioComposerPage /></Gated>} />
           <Route path="/app/solva" element={<Gated><SolvaApp /></Gated>} />
           <Route path="/app/solva/session/new" element={<Gated><SolvaSession /></Gated>} />
