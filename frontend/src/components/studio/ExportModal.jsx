@@ -21,7 +21,7 @@ import { Loader2, Download, AlertCircle, FileDown } from "lucide-react";
 
 const FORMAT_OPTIONS = {
   brief:  [["docx", "DOCX"], ["pdf", "PDF"], ["auto", "Auto"]],
-  deck:   [["pptx", "PPTX"], ["auto", "Auto"]],   // PDF for deck soft-forked in dev
+  deck:   [["pptx", "PPTX"], ["pdf", "PDF"], ["auto", "Auto"]],   // PDF soft-forks to PPTX server-side
   report: [["docx", "DOCX"], ["pdf", "PDF"], ["auto", "Auto"]],
 };
 

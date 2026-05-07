@@ -182,11 +182,12 @@ async def _grounding_for_context(context_id: str, query: str, top_k: int = 8) ->
             })
     if not corpus:
         return []
-    scored = score_bm25(query=query, docs=[c["text"] for c in corpus])
-    paired = sorted(
-        list(zip(scored, corpus)), key=lambda x: x[0], reverse=True,
-    )[:top_k]
-    return [c for s, c in paired if s > 0]
+    # bm25.score_bm25(query, chunks, *, k=12) returns top-k
+    # [(score, chunk_dict), ...] already sorted desc. Each chunk dict
+    # in `corpus` carries `text` (required by score_bm25) plus the
+    # doc_id / doc_name / anchor we pass through to _format_grounding.
+    ranked = score_bm25(query, corpus, k=top_k)
+    return [c for s, c in ranked if s > 0]
 
 
 def _format_grounding(paragraphs: List[Dict[str, Any]]) -> str:
