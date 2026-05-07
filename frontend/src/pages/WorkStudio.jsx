@@ -42,6 +42,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import ExportModal from "@/components/studio/ExportModal";
 import {
   FileText, Presentation, ScrollText, Plus, Loader2, ArrowRight, AlertCircle,
   Layers, FolderOpen, FileDown, Wand2, Calendar, Users, Files,
@@ -292,14 +293,15 @@ function BriefDrawer({ open, onClose, aid, contextId }) {
   );
 }
 
-// Five-button action bar — visible but inert in C.1.
-function ActionBar({ onActionInProgress }) {
+// Five-button action bar — three Export buttons wired (Phase C.2),
+// two Enhance buttons remain inert toasts (Phase C.3).
+function ActionBar({ onExportClick, onEnhanceInProgress }) {
   const ACTIONS = [
-    { id: "export_brief",    label: "Export a Brief",         icon: FileDown },
-    { id: "export_deck",     label: "Export a Summary Deck",  icon: FileDown },
-    { id: "export_report",   label: "Export a Report",        icon: FileDown },
-    { id: "enhance_deck",    label: "Enhance my Deck",        icon: Wand2 },
-    { id: "enhance_report",  label: "Enhance my Report",      icon: Wand2 },
+    { id: "export_brief",    label: "Export a Brief",         icon: FileDown,  exportKind: "brief"  },
+    { id: "export_deck",     label: "Export a Summary Deck",  icon: FileDown,  exportKind: "deck"   },
+    { id: "export_report",   label: "Export a Report",        icon: FileDown,  exportKind: "report" },
+    { id: "enhance_deck",    label: "Enhance my Deck",        icon: Wand2,     exportKind: null     },
+    { id: "enhance_report",  label: "Enhance my Report",      icon: Wand2,     exportKind: null     },
   ];
   return (
     <div
@@ -316,7 +318,7 @@ function ActionBar({ onActionInProgress }) {
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => onActionInProgress(a.label)}
+            onClick={() => a.exportKind ? onExportClick(a.exportKind) : onEnhanceInProgress(a.label)}
             className="rounded-sm border-[var(--rule)] text-[12.5px] hover:border-[var(--accent)]"
             data-testid={`work-studio-action-${a.id}`}
           >
@@ -408,6 +410,10 @@ export default function WorkStudio() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerAid, setDrawerAid] = useState(null);
 
+  // Phase C.2 — export modal state.
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportKind, setExportKind] = useState("brief");
+
   // Decks + reports (lower section).
   const [drData, setDrData] = useState({ decks: [], reports: [], errors: [] });
   const [drLoading, setDrLoading] = useState(true);
@@ -464,9 +470,14 @@ export default function WorkStudio() {
 
   const onActionInProgress = (label) => {
     toast(`${label} — this will work in the next phase.`, {
-      description: "Action queued for C.2 / C.3.",
+      description: "Action queued for C.3.",
       duration: 3500,
     });
+  };
+
+  const onExportClick = (kind) => {
+    setExportKind(kind);
+    setExportOpen(true);
   };
 
   const onOpenBrief = (row) => {
@@ -539,8 +550,11 @@ export default function WorkStudio() {
           })}
         </div>
 
-        {/* Action bar — five inert buttons */}
-        <ActionBar onActionInProgress={onActionInProgress} />
+        {/* Action bar — three Export wired (C.2), two Enhance still inert */}
+        <ActionBar
+          onExportClick={onExportClick}
+          onEnhanceInProgress={onActionInProgress}
+        />
 
         {/* Aggregate listing */}
         {aggLoading ? (
@@ -664,6 +678,14 @@ export default function WorkStudio() {
         open={drawerOpen}
         onClose={onCloseDrawer}
         aid={drawerAid}
+        contextId={cid}
+      />
+
+      {/* Phase C.2 — Export modal (wired to the three Export buttons) */}
+      <ExportModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        kind={exportKind}
         contextId={cid}
       />
     </AppShell>

@@ -92,6 +92,8 @@ pytest==9.0.3
 pytest-asyncio>=0.25.0
 python-dateutil==2.9.0.post0
 python-docx==1.2.0
+# Phase C.2 — Work Studio export rendering (deck output).
+python-pptx==1.0.2
 python-dotenv==1.2.2
 python-jose==3.5.0
 python-multipart==0.0.24
