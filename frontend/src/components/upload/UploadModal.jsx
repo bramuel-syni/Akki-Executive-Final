@@ -129,7 +129,13 @@ export default function UploadModal({ open, onClose, onUploaded }) {
         form.append("related_doc_id", relatedDocId);
         form.append("relation_type", relationType);
       }
-      const res = await fetch(`${API_BASE}/api/contexts/${contextId}/documents`, {
+      // API_BASE already ends with `/api` (see frontend/src/lib/api.js:4),
+      // so the path here MUST NOT re-add `/api`. Doing so produces
+      // `${BACKEND_URL}/api/api/contexts/...` which is unrouted and
+      // returns 404 — the symptom users hit when "the homepage upload
+      // button does nothing". Audit the other API_BASE call-sites if
+      // copying this pattern.
+      const res = await fetch(`${API_BASE}/contexts/${contextId}/documents`, {
         method: "POST", credentials: "include", body: form,
       });
       if (!res.ok) {

@@ -78,9 +78,12 @@ export default function DocumentBodyModal({
     ? body.split(/\n\s*\n+/).map((p) => p.trim()).filter(Boolean)
     : [];
 
+  // API_BASE already ends with `/api` (see frontend/src/lib/api.js:4),
+  // so the path here MUST NOT re-add `/api` — doing so 404s. Same
+  // regression family as UploadModal.jsx.
   const downloadHref =
     contextId && docId
-      ? `${API_BASE}/api/contexts/${contextId}/documents/${docId}/download`
+      ? `${API_BASE}/contexts/${contextId}/documents/${docId}/download`
       : "#";
 
   return (

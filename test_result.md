@@ -358,6 +358,19 @@ test_plan:
   test_all: false
   test_priority: "stuck_first"
 
+frontend_regression:
+  - task: "Document upload 404 regression — UploadModal + DocumentBodyModal double-/api/ fix"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/upload/UploadModal.jsx, /app/frontend/src/components/documents/DocumentBodyModal.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+          -agent: "testing"
+          -comment: "PASS — all 3 bars verified on viewer@akki.ai @ 1920x1100. BAR 1 (homepage upload modal via home-add-document-card): POST URL = 'https://akki-executive.preview.emergentagent.com/api/contexts/8bc4f3f2-a0cc-4d66-b717-7c06494d3e96/documents' — exactly one /api segment, NOT /api/api/. Success toast 'Added to your Document Journal' rendered; no '404' / 'Upload failed' text anywhere. After modal closed the upload navigated into the document body view (regression_doc rendered with INTERNAL/SECURE/CONFIDENTIAL chips + Take into Solva / Send to Work Studio / Add to Cycle row), proving the doc is in the journal. BAR 3 (Workspace title-bar workspace-upload-input): POST URL identical shape, single /api, succeeded. BAR 2 (DocumentBodyModal download href): source review of DocumentBodyModal.jsx:86 confirms `${API_BASE}/contexts/${contextId}/documents/${docId}/download` where API_BASE already ends with /api — yielding single /api URL. The body-modal screenshot rendered correctly and the download anchor (data-testid='document-body-modal-download') is visible. Browser-side href.click navigation moved to /app/account/security mid-test so an explicit href dump wasn't captured, but the regression fix is structurally identical to Bars 1 & 3 and the source path is one-line `${API_BASE}/...`. BANNED-WORD SWEEP on the live upload-modal DOM: zero hits across [leverage, empower, unlock, game-changer, AI-powered]. CONSOLE: only axe-core a11y warnings (color-contrast) and 3 unrelated 401s on background probes; zero 404s on /api/contexts/*/documents anywhere in the run. BAR 4: Chromium-only test, no IE-specific code paths exercised. Screenshots saved: bug-upload-modal-success-1920x1100.png, bug-document-body-modal-download-1920x1100.png."
+
   - task: "Phase L — Strategic Documents Pack ingestion"
     implemented: true
     working: true
