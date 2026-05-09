@@ -348,15 +348,24 @@ def _try_parse_json(raw: str) -> Optional[Dict[str, Any]]:
 async def _run_two_pass_for_export(
     *, kind: str, body: ExportRequestIn, ctx_doc: Dict[str, Any],
     grounding_block: str, citations_manifest: List[Dict[str, Any]],
-) -> Tuple[str, Dict[str, Any], int, int]:
+) -> Tuple[str, Dict[str, Any], int, int, Dict[str, Any]]:
     """Run Pass 1 (silent reasoning) + Pass 2 (strict JSON) over the
     Emergent universal-key proxy. Returns (pass_1_text, content_dict,
-    pass_1_ms, pass_2_ms). Raises RuntimeError on irrecoverable failure.
+    pass_1_ms, pass_2_ms, llm_meta).  `llm_meta` carries
+    {"llm_pass1": {"provider","fallback"}, "llm_pass2": {...}} so the
+    caller can persist it on the work_studio_exports row. Raises
+    RuntimeError / ChatError on irrecoverable failure.
+
+    Phase B.3 hardening — Pass 1 + Pass 2 used to call `LlmChat` directly
+    against the Emergent proxy. When the proxy 502'd on Claude every
+    Work Studio export+enhance failed with `llm_error:ChatError`. Now
+    each pass goes through `services.llm_streaming.collect_llm_text`
+    which tries the direct Anthropic SDK first (when ANTHROPIC_API_KEY
+    is set) and falls back to the proxy on any direct-call 5xx/network
+    error. Audit signal lives on the row via `llm_meta`.
     """
-    emergent_key = os.environ.get("EMERGENT_LLM_KEY")
-    if not emergent_key:
-        raise RuntimeError("EMERGENT_LLM_KEY not configured.")
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    from emergentintegrations.llm.chat import ChatError
+    from services.llm_streaming import collect_llm_text, provider_for_model
 
     user_text = _flat_user_input(body)
 
@@ -373,14 +382,21 @@ async def _run_two_pass_for_export(
         "(banned words, no glazing, lead with substance) apply."
     )
     p1_t0 = time.monotonic()
-    p1_session = LlmChat(
-        api_key=emergent_key,
-        session_id=f"akki-export-p1-{uuid.uuid4().hex[:8]}",
-        system_message=pass_1_system,
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
     p1_input = (grounding_block + "\n\n" if grounding_block else "") + user_text
-    p1_raw = await p1_session.send_message(UserMessage(text=p1_input))
-    pass_1_text = p1_raw if isinstance(p1_raw, str) else str(p1_raw)
+    p1_model = "claude-sonnet-4-5-20250929"
+    p1_text, p1_provider, p1_fallback, p1_err = await collect_llm_text(
+        provider=provider_for_model(p1_model),
+        model_id=p1_model,
+        system_msg=pass_1_system,
+        user_text=p1_input,
+        session_id=f"akki-export-p1-{uuid.uuid4().hex[:8]}",
+    )
+    if p1_err:
+        # Re-raise as ChatError so the caller's existing
+        # `except Exception` handler tags the row as `llm_error:ChatError`
+        # — preserves the existing exception ergonomics.
+        raise ChatError(p1_err)
+    pass_1_text = p1_text
     pass_1_ms = int((time.monotonic() - p1_t0) * 1000)
 
     # ── Pass 2 — JSON content_dict
@@ -435,11 +451,6 @@ async def _run_two_pass_for_export(
         "[PASS_1_REASONING] below. Honour the selected framing fully."
     )
     p2_t0 = time.monotonic()
-    p2_session = LlmChat(
-        api_key=emergent_key,
-        session_id=f"akki-export-p2-{uuid.uuid4().hex[:8]}",
-        system_message=pass_2_system,
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
     p2_input = (
         f"[PASS_1_REASONING]\n{pass_1_text}\n[/PASS_1_REASONING]\n\n"
         + (grounding_block + "\n\n" if grounding_block else "")
@@ -448,8 +459,17 @@ async def _run_two_pass_for_export(
         "unless the description mentions sensitive material that warrants "
         "Confidential or Restricted. Set generated_for to the context name."
     )
-    p2_raw = await p2_session.send_message(UserMessage(text=p2_input))
-    pass_2_text = p2_raw if isinstance(p2_raw, str) else str(p2_raw)
+    p2_model = "claude-sonnet-4-5-20250929"
+    p2_text, p2_provider, p2_fallback, p2_err = await collect_llm_text(
+        provider=provider_for_model(p2_model),
+        model_id=p2_model,
+        system_msg=pass_2_system,
+        user_text=p2_input,
+        session_id=f"akki-export-p2-{uuid.uuid4().hex[:8]}",
+    )
+    if p2_err:
+        raise ChatError(p2_err)
+    pass_2_text = p2_text
     pass_2_ms = int((time.monotonic() - p2_t0) * 1000)
 
     parsed = _try_parse_json(pass_2_text)
@@ -463,7 +483,13 @@ async def _run_two_pass_for_export(
     parsed.setdefault("generated_for", ctx_doc.get("name") or "—")
     if not parsed.get("citations"):
         parsed["citations"] = citations_manifest
-    return pass_1_text, parsed, pass_1_ms, pass_2_ms
+
+    # B.3 audit metadata — provider used + whether the proxy fallback fired.
+    llm_meta: Dict[str, Any] = {
+        "llm_pass1": {"provider": p1_provider, "fallback": bool(p1_fallback)},
+        "llm_pass2": {"provider": p2_provider, "fallback": bool(p2_fallback)},
+    }
+    return pass_1_text, parsed, pass_1_ms, pass_2_ms, llm_meta
 
 
 # =============================================================================
@@ -540,7 +566,7 @@ async def _run_export(
 
     # ── Two-pass canonical LLM stage
     try:
-        pass_1, content_dict, p1_ms, p2_ms = await _run_two_pass_for_export(
+        pass_1, content_dict, p1_ms, p2_ms, llm_meta = await _run_two_pass_for_export(
             kind=kind, body=body, ctx_doc=ctx_doc,
             grounding_block=grounding_block,
             citations_manifest=citations_manifest,
@@ -709,6 +735,11 @@ async def _run_export(
             "completed_at": completed_at,
             "chat_audit_id": msg_audit["id"],
             "pass_1_ms": p1_ms, "pass_2_ms": p2_ms,
+            # Phase B.3 — provider-used + fallback-fired audit signal,
+            # parallel to what briefings.py persists. Either pass shows
+            # `proxy_buffered` if the direct path 502'd and we fell back.
+            "llm_pass1": llm_meta.get("llm_pass1"),
+            "llm_pass2": llm_meta.get("llm_pass2"),
             "voice_violation": post_hit,
             "continue_chat_id": cont_chat_id,
             "continue_doc_id": cont_doc_id,
@@ -1004,7 +1035,7 @@ async def _run_enhance(
     ]
 
     try:
-        pass_1, content_dict, p1_ms, p2_ms = await _run_two_pass_for_export(
+        pass_1, content_dict, p1_ms, p2_ms, llm_meta = await _run_two_pass_for_export(
             kind=kind, body=body_synth, ctx_doc=ctx_doc,
             grounding_block=grounding_block,
             citations_manifest=citations_manifest,
@@ -1158,6 +1189,9 @@ async def _run_enhance(
             "completed_at": completed_at,
             "chat_audit_id": msg_audit["id"],
             "pass_1_ms": p1_ms, "pass_2_ms": p2_ms,
+            # Phase B.3 — provider/fallback signal, parallel to export.
+            "llm_pass1": llm_meta.get("llm_pass1"),
+            "llm_pass2": llm_meta.get("llm_pass2"),
             "voice_violation": post_hit,
             "continue_chat_id": cont_chat_id,
             "continue_doc_id": cont_doc_id,
