@@ -247,6 +247,45 @@ async def on_startup():
             "BILLING_ENABLED=true but STRIPE_SECRET_KEY is unset. "
             "Set STRIPE_SECRET_KEY or disable billing before boot."
         )
+
+    # ─── Phase B.3 streaming-mode banner ────────────────────────────────
+    # Print which path each provider will take. `direct_stream` means
+    # we have a direct provider key and will use it; `proxy_buffered`
+    # means the call falls through to emergentintegrations and arrives
+    # as one chunk (rollback path or no-key path).
+    try:
+        from services.llm_streaming import streaming_mode_per_provider
+        _modes = streaming_mode_per_provider()
+        logger.info(
+            "[chat] streaming: claude=%s gemini=%s gpt=%s",
+            _modes["claude"], _modes["gemini"], _modes["gpt"],
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[chat] streaming mode probe failed: %s", e)
+
+    # ─── Postmark inbound webhook secret guard ──────────────────────────
+    # `routers/inbound_email._verify_secret` enforces a constant-time
+    # match against the URL `?secret=` parameter. In production we MUST
+    # have either POSTMARK_WEBHOOK_SECRET or POSTMARK_SERVER_TOKEN set
+    # — otherwise the verifier accepts everything and the route is
+    # publicly writable. In non-production, missing secret is loud-WARN.
+    _akki_env = (os.environ.get("AKKI_ENV") or "").lower()
+    _has_inbound_secret = bool(
+        os.environ.get("POSTMARK_WEBHOOK_SECRET")
+        or os.environ.get("POSTMARK_SERVER_TOKEN")
+    )
+    if _akki_env == "production" and not _has_inbound_secret:
+        raise RuntimeError(
+            "AKKI_ENV=production but neither POSTMARK_WEBHOOK_SECRET nor "
+            "POSTMARK_SERVER_TOKEN is set. Inbound email route would be "
+            "publicly writable. Set the secret or unset AKKI_ENV before boot."
+        )
+    if not _has_inbound_secret:
+        logger.warning(
+            "[postmark] signature verification disabled (no secret in env). "
+            "OK in dev; MUST be set in production."
+        )
+
     # Stripe webhook idempotency + dead-letter indexes (additive).
     try:
         from services.stripe_webhook import ensure_indexes as _stripe_ensure

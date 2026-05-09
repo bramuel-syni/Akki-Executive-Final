@@ -2087,14 +2087,78 @@ async def stream_message(
                     ).with_model(model_def["provider"], model_def["model"])
                     p2_raw = await p2_session.send_message(UserMessage(text=p2_full_prompt))
                     raw_text = p2_raw if isinstance(p2_raw, str) else str(p2_raw)
+                    # NOTE: strategic-deliverable two-pass keeps proxy_buffered for
+                    # now (already 2x LLM calls; deferred until traffic justifies
+                    # streaming the second pass too). Phase B.3 follow-up.
                 else:
-                    chat_session = LlmChat(
-                        api_key=emergent_key,
+                    # Phase B.3 — real token streaming via direct provider SDKs.
+                    # Synisense Shield only fires on the ASSEMBLED final reply
+                    # below (see `cleaned_reply` rehydration). Streaming the
+                    # raw deltas to the client during generation is intentional:
+                    # each delta is a token-fragment and Shield is built for
+                    # whole-text payloads. The `done` event below substitutes
+                    # the canonical shielded text for what the user sees.
+                    from services.llm_streaming import stream_llm_direct, provider_for_model
+                    stream_provider = provider_for_model(model_def["model"])
+                    raw_parts = []
+                    stream_provider_used = ""
+                    stream_fallback = False
+                    stream_error = None
+                    async for _chunk in stream_llm_direct(
+                        provider=stream_provider,
+                        model_id=model_def["model"],
+                        system_msg=system_msg,
+                        user_text=full_prompt,
                         session_id=f"akki-chat-{chat_id}",
-                        system_message=system_msg,
-                    ).with_model(model_def["provider"], model_def["model"])
-                    raw = await chat_session.send_message(UserMessage(text=full_prompt))
-                    raw_text = raw if isinstance(raw, str) else str(raw)
+                    ):
+                        if _chunk.kind == "delta":
+                            raw_parts.append(_chunk.text)
+                            yield (
+                                "data: " + json.dumps({
+                                    "type": "delta",
+                                    "text": _chunk.text,
+                                }) + "\n\n"
+                            )
+                        elif _chunk.kind == "done":
+                            stream_provider_used = _chunk.provider_used
+                            stream_fallback = _chunk.fallback_triggered
+                            # If proxy_buffered fallback was used, the
+                            # accumulated `raw_parts` already contains the
+                            # full text; nothing extra to do here.
+                        elif _chunk.kind == "error":
+                            stream_error = _chunk.error or "stream_interrupted"
+                            stream_provider_used = _chunk.provider_used
+                            stream_fallback = _chunk.fallback_triggered
+                    if stream_error:
+                        # Mid-stream failure (with content already partly
+                        # emitted) OR proxy fallback also failed.
+                        # DO NOT persist a partial assistant message.
+                        yield (
+                            "data: " + json.dumps({
+                                "type": "error",
+                                "code": "stream_interrupted",
+                                "message": stream_error,
+                                "provider": stream_provider_used,
+                                "fallback": stream_fallback,
+                            }) + "\n\n"
+                        )
+                        try:
+                            await _append_audit(
+                                account_id=request_account["id"], chat_id=chat_id,
+                                action="chat.message.failed", request=request_obj,
+                                payload={
+                                    "user_message_id": msg_id,
+                                    "error": "stream_interrupted",
+                                    "stream_error": stream_error[:200],
+                                    "provider": stream_provider_used,
+                                    "fallback": stream_fallback,
+                                    "channel": "stream",
+                                },
+                            )
+                        except Exception:  # noqa: BLE001
+                            pass
+                        return
+                    raw_text = "".join(raw_parts)
             except Exception as e:
                 logger.exception("Chat stream LLM call failed")
                 # Emit an error event then write a failure audit row and stop.
@@ -2420,6 +2484,14 @@ async def stream_message(
                 "pass_2": rehydrated_pass_2,
                 "show_pass_1": bool(visible_pass_1),
                 "voice_violation": voice_violation_record,
+                # Phase B.3 — direct-stream provenance. `provider_used` is
+                # one of {anthropic_direct, gemini_direct, proxy_buffered}.
+                # `fallback_triggered` is True when the direct provider
+                # 5xx'd and we fell back to the Emergent proxy mid-flight
+                # (only possible before any delta was emitted; mid-stream
+                # failures surface as type=error and DO NOT persist).
+                "provider_used": locals().get("stream_provider_used") or "",
+                "fallback_triggered": bool(locals().get("stream_fallback") or False),
             }) + "\n\n"
         )
         yield "data: " + json.dumps({"type": "done"}) + "\n\n"

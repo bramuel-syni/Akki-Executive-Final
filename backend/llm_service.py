@@ -208,17 +208,34 @@ async def call_llm(
         }
 
     try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        # Phase B.3 — strategic failover. `collect_llm_text` tries the
+        # direct provider SDK first (Anthropic / Gemini) when keys are
+        # present, and falls back to the Emergent proxy on any direct
+        # call failure (network blip, 5xx, parse). Audit-row gets
+        # `provider_used` and `fallback_triggered` so we can see post
+        # facto which path served the request. Replaces the briefings
+        # local Claude→Gemini band-aid.
+        from services.llm_streaming import collect_llm_text
         session_id = (session_context or {}).get("session_id") or str(uuid.uuid4())
-        chat = LlmChat(
-            api_key=emergent_key,
+        text_out, provider_used, fallback_triggered, err = await collect_llm_text(
+            provider=provider, model_id=model_id,
+            system_msg=system_msg, user_text=shielded_prompt,
             session_id=session_id,
-            system_message=system_msg,
-        ).with_model(provider, model_id)
-        msg = UserMessage(text=shielded_prompt)
-        raw = await chat.send_message(msg)
-        raw_text = raw if isinstance(raw, str) else str(raw)
-        rehydrated = _syn_rehydrate(raw_text, shield_map)
+        )
+        if err:
+            return {
+                "layers": layers, "mode": "error",
+                "model": model_id, "tier": tier,
+                "response": f"[LLM error: {err}]",
+                "sources": [],
+                "shielding": shield_report,
+                "synisense_verified": False,
+                "synisense_verification_id": None,
+                "error": err,
+                "provider_used": provider_used or provider,
+                "fallback_triggered": fallback_triggered,
+            }
+        rehydrated = _syn_rehydrate(text_out, shield_map)
         return {
             "layers": layers, "mode": "live",
             "model": model_id, "tier": tier,
@@ -227,6 +244,8 @@ async def call_llm(
             "shielding": shield_report,
             "synisense_verified": True,
             "synisense_verification_id": f"local-{uuid.uuid4().hex[:10]}",
+            "provider_used": provider_used,
+            "fallback_triggered": fallback_triggered,
         }
     except Exception as e:
         logger.exception("LLM call failed")
@@ -239,6 +258,8 @@ async def call_llm(
             "synisense_verified": False,
             "synisense_verification_id": None,
             "error": str(e),
+            "provider_used": provider,
+            "fallback_triggered": False,
         }
 
 

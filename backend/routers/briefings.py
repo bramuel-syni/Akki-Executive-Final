@@ -8,29 +8,6 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("akki.briefings")
 
-# Phase B (post-D) — Emergent LLM proxy is currently 502'ing on Claude
-# Sonnet 4.5 intermittently. Until direct Anthropic keys land (Phase B.3),
-# this route only carries a one-shot Claude→Gemini fallback to keep
-# briefings flowing on transient proxy outages. Other LLM-using surfaces
-# stay on Claude until the strategic failover lands in `llm_service.py`.
-_PROXY_502_MARKERS = ("502", "BadGatewayError", "BadGateway")
-
-
-def _is_proxy_502(llm_out: Dict[str, Any]) -> bool:
-    """True iff the call returned in error mode AND the error string looks
-    like a proxy/gateway 502 (not a content/quota/auth error). Conservative
-    on purpose — we don't want to mask real errors behind a Gemini fallback.
-    """
-    if not isinstance(llm_out, dict):
-        return False
-    if llm_out.get("mode") != "error":
-        return False
-    blob = " ".join(
-        str(llm_out.get(k, ""))
-        for k in ("response", "error")
-    )
-    return any(m in blob for m in _PROXY_502_MARKERS)
-
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -125,60 +102,29 @@ async def create_briefing(
         response_format="json",
     )
 
-    # Phase B post-D — one-shot Claude→Gemini fallback when the Emergent
-    # proxy 502s on the standard tier. Scope is intentionally local to
-    # this route; the strategic cross-surface failover lives in
-    # llm_service.call_llm and ships once direct Anthropic keys land
-    # (Phase B.3). Any non-502 LLM error falls through unchanged.
+    # Phase B.3 — strategic failover lives in llm_service.call_llm itself
+    # (direct Anthropic / Gemini SDKs first, Emergent proxy on failure).
+    # The previous briefings-local Claude→Gemini band-aid is gone. We
+    # still surface `fallback_triggered` on the persisted row + audit
+    # metadata so ops can spot post-facto when Claude flapped.
     fallback_meta: Optional[Dict[str, Any]] = None
-    primary_error: Optional[str] = None
-    if _is_proxy_502(llm_out):
-        primary_error = str(llm_out.get("response") or llm_out.get("error") or "")[:500]
-        logger.warning(
-            "[brief-fallback] claude_502 → retrying with tier=fast  context_id=%s",
-            context_id,
-        )
-        llm_out_fb = await llm_call_llm(
-            module="briefing",
-            user_query=prompt,
-            context_object=ctx_obj,
-            session_context={"session_id": f"briefing-{context_id}-fallback"},
-            data_trust={"overall": docs_overall_trust(docs)},
-            response_format="json",
-            tier="fast",
-        )
-        if llm_out_fb.get("mode") != "error":
-            llm_out = llm_out_fb
-            fallback_meta = {
-                "from": "standard",
-                "to": "fast",
-                "reason": "claude_proxy_502",
-                "primary_error_excerpt": primary_error,
-            }
-        else:
-            # Both providers failed — keep the original llm_out for the
-            # 502 raise below, but stash the fallback error for the
-            # caller-visible detail string.
-            llm_out["fallback_error"] = str(
-                llm_out_fb.get("response") or llm_out_fb.get("error") or ""
-            )[:500]
+    if llm_out.get("fallback_triggered"):
+        fallback_meta = {
+            "provider_used": llm_out.get("provider_used"),
+            "reason": "direct_provider_failover",
+        }
 
     parsed = parse_json_response(llm_out.get("response", ""))
     if not isinstance(parsed, dict):
-        # When the fallback also failed, surface BOTH errors so debugging
-        # is possible (option-b acceptance criterion).
-        if primary_error and llm_out.get("fallback_error"):
-            detail = (
-                f"LLM did not return a valid briefing. Mode={llm_out.get('mode')}. "
-                f"Primary (claude/standard): {primary_error} | "
-                f"Fallback (gemini/fast): {llm_out.get('fallback_error')}"
-            )
-        else:
-            detail = (
-                f"LLM did not return a valid briefing. Mode={llm_out.get('mode')}. "
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"LLM did not return a valid briefing. Mode={llm_out.get('mode')} "
+                f"provider={llm_out.get('provider_used')} "
+                f"fallback={llm_out.get('fallback_triggered')}. "
                 f"Raw: {llm_out.get('response', '')[:500]}"
-            )
-        raise HTTPException(status_code=502, detail=detail)
+            ),
+        )
 
     sig_by_id = {s["id"]: s for s in signals}
     items_raw = parsed.get("items") or []
