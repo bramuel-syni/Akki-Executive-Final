@@ -1,0 +1,126 @@
+# AKKI backend image — Python 3.11 + FastAPI + WeasyPrint + spaCy.
+#
+# Multi-stage build:
+#   * Stage 1 (builder)  — compiles wheels for every Python dep with the
+#     full apt build-essential toolchain. Result lives in /wheels.
+#   * Stage 2 (runtime)  — minimal apt set, no compilers, no build headers.
+#     Installs from the prebuilt wheels and bakes the spaCy `en_core_web_lg`
+#     model (~600 MB) into the image so cold starts don't pull at boot.
+#
+# IMPORTANT (single-replica gate):
+#   The container runs APScheduler in-process. Distributed-lock work is
+#   not done yet, so this image MUST run with `deploy.replicas: 1`. The
+#   compose file enforces this — see docker-compose.prod.yml.
+#
+# Container runs as non-root `akki` (uid 1001). TZ is pinned to UTC so
+# scheduled jobs and audit timestamps don't drift across hosts.
+
+# ---------------------------------------------------------------------------
+# Stage 1 — builder
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim-bookworm AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential \
+      pkg-config \
+      libxml2-dev \
+      libxslt1-dev \
+      libffi-dev \
+      libssl-dev \
+      libjpeg62-turbo-dev \
+      zlib1g-dev \
+      libpng-dev \
+      libcairo2-dev \
+      libpango1.0-dev \
+      libgdk-pixbuf-2.0-dev \
+      curl \
+      ca-certificates \
+   && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY backend/requirements.txt /build/requirements.txt
+
+# Install emergentintegrations from its private index, then build the
+# rest as wheels for the runtime stage to consume offline.
+RUN pip install --upgrade pip wheel setuptools \
+ && pip wheel --wheel-dir /wheels \
+      --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ \
+      -r /build/requirements.txt
+
+# ---------------------------------------------------------------------------
+# Stage 2 — runtime
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim-bookworm AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    TZ=Etc/UTC \
+    PYTHONPATH=/app/backend
+
+# Runtime apt — strict minimum to satisfy WeasyPrint (cairo+pango+pixbuf),
+# lxml (libxml2/libxslt), cryptography (libssl), pillow (jpeg/zlib/png),
+# tini (PID-1 signal handling), curl (HEALTHCHECK), tzdata (UTC pinning),
+# fonts for PDF rendering.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libcairo2 \
+      libpango-1.0-0 \
+      libpangocairo-1.0-0 \
+      libgdk-pixbuf-2.0-0 \
+      libffi8 \
+      libssl3 \
+      libxml2 \
+      libxslt1.1 \
+      libjpeg62-turbo \
+      zlib1g \
+      libpng16-16 \
+      shared-mime-info \
+      fonts-dejavu-core \
+      fonts-noto-core \
+      curl \
+      tini \
+      ca-certificates \
+      tzdata \
+   && ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime \
+   && rm -rf /var/lib/apt/lists/*
+
+# Non-root user — uid 1001 matches the compose volume permissions story.
+RUN groupadd --system --gid 1001 akki \
+ && useradd  --system --uid 1001 --gid akki --create-home --shell /usr/sbin/nologin akki
+
+WORKDIR /app
+
+# Install Python deps from prebuilt wheels — no compilers in this stage.
+COPY --from=builder /wheels /wheels
+COPY backend/requirements.txt /tmp/requirements.txt
+RUN pip install --upgrade pip \
+ && pip install --no-index --find-links=/wheels -r /tmp/requirements.txt \
+ && rm -rf /wheels /tmp/requirements.txt
+
+# Bake the spaCy model so Synisense Presidio doesn't download on first
+# request. ~600 MB image-size cost; this matters for cold-start latency,
+# not for image push time. Acceptable trade-off for AKKI.
+RUN python -m spacy download en_core_web_lg
+
+# App code last — most volatile layer.
+COPY --chown=akki:akki backend/ /app/backend/
+
+USER akki
+WORKDIR /app/backend
+
+EXPOSE 8001
+
+# Liveness + readiness combined. The /api/health handler also pings
+# Mongo, so failure here means "don't accept traffic".
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+  CMD curl -fsS http://localhost:8001/api/health || exit 1
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+# Single worker — APScheduler is in-process, see top-of-file warning.
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1"]

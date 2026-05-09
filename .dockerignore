@@ -1,0 +1,66 @@
+# AKKI Docker build context exclusions.
+# Keep this list tight — every byte slows down `docker build` and leaks
+# nothing-shaped surprises (committed creds, build artefacts, large data
+# fixtures) into image layers.
+
+# VCS and IDE
+.git
+.github
+.gitignore
+.vscode
+.idea
+.emergent
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Node / CRA
+frontend/node_modules/
+frontend/build/
+frontend/.cache/
+frontend/coverage/
+
+# Local env files (NEVER bake into images)
+backend/.env
+backend/.env.local
+frontend/.env
+frontend/.env.local
+
+# Local-disk storage from dev runs
+backend/uploads/
+
+# Docs / tests / examples not needed in image
+docs/
+tests/
+test_reports/
+*.docx
+*.xlsx
+*.pdf
+!backend/templates/**.pdf
+
+# Misc
+**/.DS_Store
+**/Thumbs.db
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs that should never enter the context
+Dockerfile*
+docker-compose*.yml
+
+# Top-level scratch
+*.log
+*.tmp

@@ -1,0 +1,135 @@
+# AKKI production compose file.
+#
+# Loaded by `akki-deploy.sh` (and by hand for first-time validation):
+#   docker compose -f /opt/akki/docker-compose.prod.yml \
+#       --env-file /etc/akki/akki.env \
+#       --env-file /etc/akki/image_tag.env \
+#       up -d
+#
+# Two env files:
+#   * /etc/akki/akki.env       — secrets + service config sourced from
+#                                Azure Key Vault by `akki-load-secrets.sh`.
+#                                Mode 0600, owner root.
+#   * /etc/akki/image_tag.env  — single line `IMAGE_TAG=<git_sha7>`,
+#                                written by the deploy script before each
+#                                pull-and-up. Never `latest` in prod.
+#
+# All four services share an internal bridge network. Only the frontend
+# container exposes ports to the VM (80/443). Backend, MinIO and ClamAV
+# are unreachable from outside the docker network.
+
+name: akki
+
+networks:
+  internal:
+    driver: bridge
+    # No external attachments; no ipv6; nothing speaks to ClamAV/MinIO
+    # from off-host.
+
+services:
+
+  backend:
+    image: ${ACR_NAME}/akki-backend:${IMAGE_TAG}
+    container_name: akki-backend
+    restart: unless-stopped
+    networks: [internal]
+    # APScheduler crons run in-process and are not yet leader-elected.
+    # DO NOT scale beyond 1 replica without distributed lock work.
+    deploy:
+      replicas: 1
+    depends_on:
+      clamav:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    # No bind mounts — backend is stateless; uploads go to MinIO via
+    # STORAGE_BACKEND=s3.
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  frontend:
+    image: ${ACR_NAME}/akki-frontend:${IMAGE_TAG}
+    container_name: akki-frontend
+    restart: unless-stopped
+    networks: [internal]
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Cloudflare Origin Certificate — issued from the Cloudflare
+      # dashboard with akki.syni.ai SAN, written to /etc/akki on the VM.
+      - /etc/akki/origin.crt:/etc/akki/origin.crt:ro
+      - /etc/akki/origin.key:/etc/akki/origin.key:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  clamav:
+    image: clamav/clamav:stable
+    container_name: akki-clamav
+    restart: unless-stopped
+    networks: [internal]
+    # First boot: freshclam pulls signature DB (~250 MB), takes ~2 min.
+    # /var/lib/clamav inside container persists signatures across
+    # restarts so subsequent boots are fast.
+    volumes:
+      - /var/lib/akki/clamav:/var/lib/clamav
+    environment:
+      # Run only the daemon (no milter); the official image enables
+      # freshclam alongside clamd by default.
+      CLAMAV_NO_MILTERD: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 240s     # cold start downloads signatures
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  minio:
+    image: minio/minio:latest
+    container_name: akki-minio
+    restart: unless-stopped
+    networks: [internal]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    volumes:
+      - /var/lib/akki/minio:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    # MinIO console (9001) is intentionally NOT published. Reach it via
+    # SSH port-forward:  ssh -L 9001:localhost:9001 vm
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
