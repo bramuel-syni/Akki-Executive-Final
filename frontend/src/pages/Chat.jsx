@@ -125,64 +125,76 @@ export default function Chat() {
     })();
   }, [activeId]);
 
-  // Workstream B.1 — per-delta auto-scroll with userScrolledUp tracking.
-  //   - Track whether the user has scrolled up more than 100 px from
-  //     the bottom; if so, freeze auto-scroll (don't yank them away
-  //     from what they're reading).
-  //   - Show a small "↓ Scroll to latest" pill while frozen + new
-  //     content is arriving.
-  //   - Use rAF to batch scroll calls so we don't fire on every
-  //     keystroke-equivalent delta.
+  // Phase A (2026-05-10) — scroll-pin lock with ResizeObserver.
+  //
+  // Symptoms before this rewrite:
+  //   1. scrollIntoView({block:"end"}) fired per delta caused viewport
+  //      jitter and "yank" when layout shifted (e.g. when a code block
+  //      gained syntax highlighting).
+  //   2. The 100 px threshold for "user has scrolled up" let small
+  //      reading scrolls trigger auto-scroll later, yanking the user.
+  //
+  // Replacement:
+  //   - `pinnedRef` is the single source of truth: when true, new
+  //     content auto-pins to the bottom; when false (user scrolled up
+  //     >64 px), we never yank.
+  //   - User scroll events update `pinnedRef` synchronously.
+  //   - A ResizeObserver on the inner messages list fires whenever
+  //     content grows (token arrives, code block highlights, image
+  //     loads, etc). If pinnedRef is true, we write
+  //     `el.scrollTop = el.scrollHeight - el.clientHeight` — one DOM
+  //     write per resize, no scrollIntoView, no smooth, no jitter.
+  //   - "Jump to latest" pill appears only when pinnedRef is false
+  //     AND new content has arrived since the user scrolled up.
   const scrollContainerRef = useRef(null);
+  const messagesInnerRef = useRef(null);
+  const pinnedRef = useRef(true);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
-  const rafRef = useRef(null);
+  const PIN_THRESHOLD_PX = 64;
 
-  // Workstream A (2026-05-10) — chat streaming flicker fix.
-  //   - scrollToLatest() now no-ops when the user is already at
-  //     bottom (no extra scroll work, no jump).
-  //   - The per-delta effect below is throttled to one frame; it
-  //     coalesces rapid content growth into one DOM scroll write
-  //     per RAF. The MarkdownMessage component coalesces the visual
-  //     update on the same frame, so they line up.
-  //   - We never scroll while the user has scrolled up.
-  const scrollToLatest = () => {
+  const scrollToLatest = useCallback(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
-    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    // Already at bottom (within 8 px) — no DOM write needed.
-    if (distFromBottom <= 8) return;
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    el.scrollTop = el.scrollHeight - el.clientHeight;
+    pinnedRef.current = true;
+    setUserScrolledUp(false);
+  }, []);
+
+  // User-scroll handler — the only thing that flips pinnedRef false.
+  const onMessagesScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const pinned = dist <= PIN_THRESHOLD_PX;
+    if (pinned !== pinnedRef.current) {
+      pinnedRef.current = pinned;
+      setUserScrolledUp(!pinned);
+    }
+  }, []);
+
+  // ResizeObserver on the inner content node — fires once per layout
+  // change, which is exactly when we want to consider re-pinning.
+  // Replaces the per-delta useEffect chain that fired on every chunk.
+  useEffect(() => {
+    const inner = messagesInnerRef.current;
+    const outer = scrollContainerRef.current;
+    if (!inner || !outer || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(() => {
+      if (pinnedRef.current) {
+        outer.scrollTop = outer.scrollHeight - outer.clientHeight;
+      }
     });
-  };
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, [activeId]);
 
-  // Bottom-distance probe — runs on user scroll only; cheap.
-  const onMessagesScroll = () => {
+  // Re-pin when the conversation switches or a fresh send begins.
+  useEffect(() => {
+    pinnedRef.current = true;
+    setUserScrolledUp(false);
     const el = scrollContainerRef.current;
-    if (!el) return;
-    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const isUp = distFromBottom > 100;
-    if (isUp !== userScrolledUp) setUserScrolledUp(isUp);
-  };
-
-  useEffect(() => {
-    if (!userScrolledUp) scrollToLatest();
-  }, [activeChat?.messages?.length, sending, userScrolledUp]);
-
-  // Per-delta auto-scroll: re-scroll on every render of the streaming
-  // message's growing `content`. Cheap because rAF batches it.
-  const lastAssistant = activeChat?.messages?.[(activeChat?.messages?.length ?? 0) - 1];
-  useEffect(() => {
-    if (lastAssistant?.streaming && !userScrolledUp) scrollToLatest();
-  }, [lastAssistant?.content?.length, lastAssistant?.streaming, userScrolledUp]);
-
-  // Reset the userScrolledUp flag when a new message starts.
-  useEffect(() => {
-    if (sending) setUserScrolledUp(false);
-  }, [sending]);
-
-  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
+    if (el) el.scrollTop = el.scrollHeight - el.clientHeight;
+  }, [activeId, sending]);
 
   // Pre-fill the composer when arriving with ?prompt=… (e.g. from the
   // sandbox tutorial card or the "Continue in Chat" chip on a saved
@@ -957,9 +969,15 @@ export default function Chat() {
               <div
                 ref={scrollContainerRef}
                 onScroll={onMessagesScroll}
-                className="flex-1 overflow-y-auto px-8 py-6 space-y-5 relative"
+                className="flex-1 overflow-y-auto px-8 py-6 relative"
                 data-testid="chat-messages"
               >
+                {/* Phase A (2026-05-10) — inner wrapper exists so a
+                    ResizeObserver can fire when content grows
+                    (token arrives, code block highlights, image
+                    loads). The outer scroll container's size doesn't
+                    change; only the inner does. */}
+                <div ref={messagesInnerRef} className="space-y-5">
                 {(activeChat.messages || []).length === 0 ? (
                   <p className="text-center text-[13px] text-[var(--muted)] italic mt-10">
                     Type your first message below.
@@ -973,18 +991,18 @@ export default function Chat() {
                   </div>
                 )}
                 <div ref={messagesEndRef} />
-                {/* Workstream B.1 — floating "↓ Scroll to latest" pill.
-                    Visible only when the user has scrolled up while
-                    new content is arriving. Click resets the scroll
-                    lock. */}
+                </div>
+                {/* Phase A (2026-05-10) — floating "↓ Jump to latest"
+                    pill. Visible only when pinnedRef has gone false
+                    (user scrolled up >64 px). Click re-pins. */}
                 {userScrolledUp && (
                   <button
                     type="button"
-                    onClick={() => { setUserScrolledUp(false); scrollToLatest(); }}
+                    onClick={scrollToLatest}
                     className="akki-chat-scroll-to-latest"
                     data-testid="chat-scroll-to-latest"
                   >
-                    <ChevronDown className="w-3 h-3" /> Scroll to latest
+                    <ChevronDown className="w-3 h-3" /> Jump to latest
                   </button>
                 )}
               </div>
