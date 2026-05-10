@@ -40,6 +40,7 @@ import Enterprise from "@/pages/Enterprise";
 import Decks from "@/pages/Decks";
 import SolvaApp from "@/pages/SolvaApp";
 import SolvaSession from "@/pages/SolvaSession";
+import SolvaSessions from "@/pages/SolvaSessions";
 import Cycle from "@/pages/Cycle";
 import Monitor from "@/pages/Monitor";
 import PlaysLibrary from "@/pages/PlaysLibrary";
@@ -178,6 +179,7 @@ function App() {
           <Route path="/app/pulse" element={<Gated><Pulse /></Gated>} />
           <Route path="/app/studio/composer/:kind/:artefactId" element={<Gated><StudioComposerPage /></Gated>} />
           <Route path="/app/solva" element={<Gated><SolvaApp /></Gated>} />
+          <Route path="/app/solva/sessions" element={<Gated><SolvaSessions /></Gated>} />
           <Route path="/app/solva/session/new" element={<Gated><SolvaSession /></Gated>} />
           <Route path="/app/solva/session/:sessionId" element={<Gated><SolvaSession /></Gated>} />
           <Route path="/app/documents/:id" element={<Gated><DocumentRouteSwitch /></Gated>} />

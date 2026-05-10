@@ -158,8 +158,12 @@ function PickerCard({ card, onSelect, isFocused, onArrowKey }) {
 }
 
 
-function RecentSessionsCollapsible({ sessions, onResume, onDiscard }) {
-  const [open, setOpen] = useState(false);
+function RecentSessionsCollapsible({ sessions, onResume, onDiscard, onStartGuided }) {
+  const [open, setOpen] = useState(sessions && sessions.length === 0);
+  // Wave 1.4 (UAT pack 2026-05-10) — when there are no recent sessions
+  // we OPEN the panel by default and render an explainer card with a
+  // "Run a guided first session" CTA. When there ARE sessions the
+  // collapsible behaves as before (closed by default).
   const has = sessions && sessions.length > 0;
 
   return (
@@ -201,14 +205,48 @@ function RecentSessionsCollapsible({ sessions, onResume, onDiscard }) {
         >
           {!has && (
             <li
+              data-testid="solva-empty-state-card"
               style={{
-                fontFamily: "Georgia, serif",
-                fontStyle: "italic",
-                fontSize: 15,
-                color: TOKEN.MUTED,
+                listStyle: "none",
+                background: "#FFFFFF",
+                border: `1px solid ${TOKEN.RULE}`,
+                borderRadius: 4,
+                padding: "20px 24px",
               }}
             >
-              Your sessions will appear here.
+              <p
+                style={{
+                  fontFamily: "Georgia, serif",
+                  fontSize: 15,
+                  color: TOKEN.INK,
+                  lineHeight: 1.55,
+                  margin: "0 0 12px 0",
+                }}
+              >
+                Solva is structured reasoning for situations that don&apos;t fit a
+                quick chat. We work through five layers — framing, surface,
+                depth, synthesis, reflection — to produce a defensible
+                artefact you can revisit or share.
+              </p>
+              <button
+                type="button"
+                onClick={onStartGuided}
+                data-testid="solva-empty-cta-guided"
+                style={{
+                  background: TOKEN.ACCENT,
+                  color: "#FFFFFF",
+                  border: "none",
+                  padding: "8px 16px",
+                  borderRadius: 2,
+                  cursor: "pointer",
+                  fontFamily: 'Calibri, "Segoe UI", system-ui, sans-serif',
+                  fontSize: 13,
+                  fontWeight: 500,
+                  letterSpacing: 0.3,
+                }}
+              >
+                Run a guided first session
+              </button>
             </li>
           )}
           {has && sessions.map((s) => {
@@ -306,10 +344,12 @@ function RecentSessionsCollapsible({ sessions, onResume, onDiscard }) {
 }
 
 
-export default function SolvaLanding({ variant = "auth" }) {
+export default function SolvaLanding({ variant = "auth", intakeSeed = null }) {
   const navigate = useNavigate();
   const [recent, setRecent] = useState([]);
   const [focusIdx, setFocusIdx] = useState(-1);
+  // Wave 1.3 (UAT pack 2026-05-10) — disambiguator dialog.
+  const [pickerHelpOpen, setPickerHelpOpen] = useState(false);
 
   useEffect(() => {
     if (variant !== "auth") return;
@@ -325,7 +365,19 @@ export default function SolvaLanding({ variant = "auth" }) {
 
   const onSelectCard = (card) => {
     if (variant === "auth") {
-      navigate(`/app/solva/session/new?submodule=${encodeURIComponent(card.key)}`);
+      // Wave 1.1 (UAT pack 2026-05-10) — forward intake_seed through
+      // the session-create URL. SolvaSession.jsx reads `seed_kind` /
+      // `seed_id` and includes `intake_seed: {kind, id}` in the
+      // POST body. The picker URL itself is transient (we navigate
+      // immediately to /session/new); the seed flows on the URL the
+      // session page reads.
+      const params = new URLSearchParams();
+      params.set("submodule", card.key);
+      if (intakeSeed?.kind && intakeSeed?.id) {
+        params.set("seed_kind", intakeSeed.kind);
+        params.set("seed_id", intakeSeed.id);
+      }
+      navigate(`/app/solva/session/new?${params.toString()}`);
     } else {
       navigate("/signin");
     }
@@ -418,11 +470,69 @@ export default function SolvaLanding({ variant = "auth" }) {
           ))}
         </div>
 
+        {/* Wave 1.3 (UAT pack 2026-05-10) — disambiguator entry point.
+            Subtle text link; opens a one-question routing dialog. */}
+        {variant === "auth" && (
+          <div style={{ textAlign: "center", marginTop: 24 }}>
+            <button
+              type="button"
+              onClick={() => setPickerHelpOpen(true)}
+              data-testid="solva-not-sure-link"
+              style={{
+                background: "none",
+                border: "none",
+                fontFamily: 'Calibri, "Segoe UI", system-ui, sans-serif',
+                fontSize: 13,
+                color: TOKEN.MUTED,
+                textDecoration: "underline",
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              Not sure which to pick?
+            </button>
+          </div>
+        )}
+
         {variant === "auth" && (
           <RecentSessionsCollapsible
             sessions={recent}
             onResume={onResume}
             onDiscard={onDiscard}
+            onStartGuided={() => setPickerHelpOpen(true)}
+          />
+        )}
+
+        {/* Wave 3.3 (UAT pack 2026-05-10) — full sessions list link.
+            Sits below the collapsed Recent Sessions block. */}
+        {variant === "auth" && (
+          <div style={{ textAlign: "center", marginTop: 18 }}>
+            <Link
+              to="/app/solva/sessions"
+              data-testid="solva-view-all-sessions-link"
+              style={{
+                fontFamily: 'Calibri, "Segoe UI", system-ui, sans-serif',
+                fontSize: 13,
+                color: TOKEN.MUTED,
+                textDecoration: "underline",
+              }}
+            >
+              View all sessions
+            </Link>
+          </div>
+        )}
+
+        {/* Wave 1.3 — disambiguator dialog. Plain HTML+inline-style
+            implementation to avoid pulling Radix here for a single
+            modal; the rest of the page is already inline-styled. */}
+        {pickerHelpOpen && (
+          <DisambiguatorDialog
+            onPick={(key) => {
+              setPickerHelpOpen(false);
+              const found = CARDS.find((c) => c.key === key);
+              if (found) onSelectCard(found);
+            }}
+            onClose={() => setPickerHelpOpen(false)}
           />
         )}
 
@@ -483,3 +593,160 @@ export default function SolvaLanding({ variant = "auth" }) {
 }
 
 export { CARDS };
+
+
+// =============================================================================
+// Wave 1.3 (UAT pack 2026-05-10) — Disambiguator dialog
+// =============================================================================
+// One routing question, four radios, each radio maps to a task tile.
+// Shipped as a plain HTML modal (no Radix dependency added) to match
+// the rest of the page's inline-style aesthetic. Closes on backdrop
+// click, on Escape, and after a selection is made.
+
+function DisambiguatorDialog({ onPick, onClose }) {
+  const [choice, setChoice] = useState("");
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const options = [
+    { key: "seek_clarity",       label: "Are you trying to understand a situation that feels foggy?" },
+    { key: "develop_strategy",   label: "Are you trying to decide between paths?" },
+    { key: "simulate_hypothesis", label: "Are you trying to stress-test an idea or hypothesis?" },
+    { key: "get_perspective",    label: "Are you trying to see a situation from a different angle?" },
+  ];
+
+  return (
+    <div
+      role="presentation"
+      onClick={onClose}
+      data-testid="solva-disambiguator-backdrop"
+      style={{
+        position: "fixed", inset: 0, zIndex: 100,
+        background: "rgba(31, 28, 24, 0.55)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="solva-disambig-title"
+        onClick={(e) => e.stopPropagation()}
+        data-testid="solva-disambiguator-dialog"
+        style={{
+          background: "#FFFFFF",
+          borderRadius: 6,
+          maxWidth: 520,
+          width: "100%",
+          padding: "28px 28px 24px",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.22)",
+        }}
+      >
+        <h2
+          id="solva-disambig-title"
+          style={{
+            fontFamily: "Georgia, serif",
+            fontSize: 22,
+            color: TOKEN.INK,
+            margin: "0 0 6px 0",
+            fontWeight: 600,
+          }}
+        >
+          Which of these fits?
+        </h2>
+        <p
+          style={{
+            fontFamily: "Georgia, serif",
+            fontStyle: "italic",
+            fontSize: 14,
+            color: TOKEN.DEEP,
+            margin: "0 0 18px 0",
+          }}
+        >
+          We&apos;ll pick the right surface for you.
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {options.map((o) => (
+            <label
+              key={o.key}
+              data-testid={`solva-disambig-option-${o.key}`}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 10,
+                padding: "10px 12px",
+                border: `1px solid ${choice === o.key ? TOKEN.ACCENT : TOKEN.RULE}`,
+                borderRadius: 4,
+                cursor: "pointer",
+                background: choice === o.key ? "rgba(139,29,44,0.04)" : "transparent",
+              }}
+            >
+              <input
+                type="radio"
+                name="solva-disambig"
+                value={o.key}
+                checked={choice === o.key}
+                onChange={() => setChoice(o.key)}
+                style={{ marginTop: 3, accentColor: TOKEN.ACCENT }}
+              />
+              <span
+                style={{
+                  fontFamily: 'Calibri, "Segoe UI", system-ui, sans-serif',
+                  fontSize: 14,
+                  color: TOKEN.INK,
+                  lineHeight: 1.5,
+                }}
+              >
+                {o.label}
+              </span>
+            </label>
+          ))}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22 }}>
+          <button
+            type="button"
+            onClick={onClose}
+            data-testid="solva-disambig-cancel"
+            style={{
+              background: "none",
+              border: `1px solid ${TOKEN.RULE}`,
+              padding: "8px 16px",
+              borderRadius: 2,
+              cursor: "pointer",
+              fontFamily: 'Calibri, "Segoe UI", system-ui, sans-serif',
+              fontSize: 13,
+              color: TOKEN.MUTED,
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!choice}
+            onClick={() => onPick(choice)}
+            data-testid="solva-disambig-confirm"
+            style={{
+              background: choice ? TOKEN.ACCENT : TOKEN.MUTED,
+              color: "#FFFFFF",
+              border: "none",
+              padding: "8px 18px",
+              borderRadius: 2,
+              cursor: choice ? "pointer" : "not-allowed",
+              fontFamily: 'Calibri, "Segoe UI", system-ui, sans-serif',
+              fontSize: 13,
+              fontWeight: 500,
+              letterSpacing: 0.3,
+              opacity: choice ? 1 : 0.6,
+            }}
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -121,6 +121,19 @@ class StartV2In(BaseModel):
     # → PREPARING → ARTEFACT (no Layer-2 depth round). Purely additive;
     # in-product flow is unchanged when sandbox=false.
     sandbox: bool = False
+    # Wave 1.1 (UAT pack 2026-05-10) — pre-framing seed from a sibling
+    # surface. Carries a {kind, id} pointer so the framing screen can
+    # render the source artefact and the audit log records the entry
+    # path. Today supported kinds: `document`, `cycle_question`,
+    # `solva_artefact`, `pulse_signal`. Additive per preservation
+    # rule 8.
+    intake_seed: Optional[Dict[str, Any]] = None
+
+
+class FrameAuditDecisionIn(BaseModel):
+    """Wave 2.1 — Layer 0 Frame Audit user choice. After the audit
+    screen, the user picks one of three CTAs."""
+    decision: str = Field(pattern="^(proceed|get_more|pause)$")
 
 
 class TurnV2In(BaseModel):
@@ -139,6 +152,191 @@ class IntentClassifyIn(BaseModel):
     """Phase 15.2 — single tier=fast LLM classification of the user's intent
     into one of the 4 sub-modules. Fronts the picker's suggestion chip."""
     intent: str = Field(min_length=20, max_length=1200)
+
+
+# =============================================================================
+# Wave 1.1 (UAT pack 2026-05-10) — intake_seed resolver
+# =============================================================================
+# When the user clicks `<HandoffActions>` "Take into Solva" from a sibling
+# surface, we land on /app/solva?seed_kind=<kind>&seed_id=<id>. The picker
+# captures those, sends them in the session-create body, and we resolve
+# them server-side into a short framing-context summary that the FramingScreen
+# renders verbatim under the user's intent input.
+#
+# Supported kinds today:
+#   - document          → fetches db.documents.{name, preview, sensitivity_band}
+#   - cycle_question    → fetches db.questions.{title, body, source_doc_id}
+#   - solva_artefact    → fetches db.solva_v2_sessions.{intent, synthesis.body[:400]}
+#   - pulse_signal      → fetches db.signals.{title, summary}
+#
+# All resolutions are scoped by account_id + (when provided) context_id; if
+# the user can't see the source, we degrade silently to seed_payload=None.
+
+async def _resolve_intake_seed(
+    seed: Dict[str, Any],
+    *, account_id: str,
+    context_id: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    kind = (seed.get("kind") or "").strip().lower()
+    sid = (seed.get("id") or "").strip()
+    if not kind or not sid:
+        return None
+
+    summary: str = ""
+    title: str = ""
+
+    if kind == "document":
+        q: Dict[str, Any] = {"id": sid}
+        if context_id:
+            q["context_id"] = context_id
+        doc = await db.documents.find_one(
+            q, {"_id": 0, "name": 1, "original_filename": 1, "preview": 1,
+                "sensitivity_band": 1, "extracted_text": 1},
+        )
+        if not doc:
+            return None
+        title = doc.get("name") or doc.get("original_filename") or "Attached document"
+        summary = (doc.get("preview") or doc.get("extracted_text") or "")[:600]
+
+    elif kind == "cycle_question":
+        ques = await db.questions.find_one(
+            {"id": sid}, {"_id": 0, "title": 1, "body": 1, "source_doc_id": 1, "context_id": 1},
+        )
+        if not ques:
+            return None
+        if context_id and ques.get("context_id") and ques["context_id"] != context_id:
+            return None
+        title = ques.get("title") or "Cycle question"
+        summary = (ques.get("body") or "")[:600]
+
+    elif kind == "cycle_contribution":
+        # Wave 3.1 (UAT pack) — Cycle Manager contribution → Solva.
+        # The user clicked "Take to Solva" on a contribution row;
+        # the body text becomes the seed framing context.
+        contrib = await db.cycle_contributions.find_one(
+            {"id": sid}, {"_id": 0, "title": 1, "body_text": 1, "context_id": 1},
+        )
+        if not contrib:
+            return None
+        if context_id and contrib.get("context_id") and contrib["context_id"] != context_id:
+            return None
+        title = contrib.get("title") or "Cycle contribution"
+        summary = (contrib.get("body_text") or "")[:600]
+
+    elif kind == "solva_artefact":
+        prior = await db.solva_v2_sessions.find_one(
+            {"id": sid, "account_id": account_id},
+            {"_id": 0, "intent": 1, "synthesis": 1, "submodule": 1},
+        )
+        if not prior:
+            return None
+        title = f"Earlier {(prior.get('submodule') or 'solva').replace('_', ' ').title()} session"
+        body = ((prior.get("synthesis") or {}).get("body") or prior.get("intent") or "")
+        summary = body[:600]
+
+    elif kind == "pulse_signal":
+        sig = await db.signals.find_one(
+            {"id": sid}, {"_id": 0, "title": 1, "summary": 1, "context_id": 1},
+        )
+        if not sig:
+            return None
+        if context_id and sig.get("context_id") and sig["context_id"] != context_id:
+            return None
+        title = sig.get("title") or "Pulse signal"
+        summary = (sig.get("summary") or "")[:600]
+
+    else:
+        return None
+
+    return {
+        "kind": kind,
+        "id": sid,
+        "title": title,
+        "summary": summary,
+        "resolved_at": iso(now()),
+    }
+
+
+# =============================================================================
+# Wave 1.2 (UAT pack 2026-05-10) — synthesis-time refusal trigger
+# =============================================================================
+# After the existing 3-attempt grounding-contract retry passes (i.e., the
+# model produced markers), we ALSO check whether those markers are
+# overwhelmingly weak. If yes, AND the session has no attached docs / no
+# corpus or comparable claims, we flip status to `refused` and write
+# a structured `synthesis_refusal_reasons` payload.
+#
+# This is DISTINCT from the safety-classifier refusal (`blocked_hard` /
+# `blocked_soft` / `therapy_redirect`) — preservation rule 4. The
+# synthesis-refusal artefact answers a different question: "we have no
+# defensible synthesis to offer; here's what would help."
+
+# Thresholds — kept easy to tune. The contract permits comparable +
+# corpus + user_assertion + domain_prior + speculation; "thin" means
+# the resolved tiers are dominated by speculation+domain_prior with
+# zero corpus AND zero comparable.
+_THIN_DOMINANT_FRACTION = 0.70
+_THIN_DOMINANT_TIERS = ("speculation", "domain_prior")
+_STRONG_TIERS = ("corpus", "comparable")
+
+
+def _should_synthesis_refuse(
+    *,
+    tier_distribution: Dict[str, int],
+    has_attached_docs: bool,
+    has_grounding_paragraphs: bool,
+) -> bool:
+    """Returns True iff synthesis is too thin to defend.
+
+    Bypass: when there ARE attached docs or grounding paragraphs (the
+    user has supplied evidence), trust the existing pipeline. The
+    refusal is for the truly ungrounded case where the model could
+    only speculate.
+    """
+    if has_attached_docs or has_grounding_paragraphs:
+        return False
+    total = sum(int(v or 0) for v in (tier_distribution or {}).values())
+    if total < 3:
+        # Too few claims to draw conclusions from the distribution.
+        # Don't trigger the refusal on tiny synthesis bodies.
+        return False
+    weak = sum(int(tier_distribution.get(t, 0) or 0) for t in _THIN_DOMINANT_TIERS)
+    strong = sum(int(tier_distribution.get(t, 0) or 0) for t in _STRONG_TIERS)
+    return strong == 0 and (weak / total) >= _THIN_DOMINANT_FRACTION
+
+
+# Task-specific "what would help" templates. Keyed by submodule, each
+# entry is a list of concrete evidence types the user could supply to
+# unblock the synthesis. Deterministic; no LLM call.
+_WHAT_WOULD_HELP_BY_SUBMODULE: Dict[str, List[str]] = {
+    "seek_clarity": [
+        "any document or memo where the situation is described in concrete terms",
+        "minutes from the meeting where this surfaced",
+        "a written brief from whoever first raised it",
+    ],
+    "develop_strategy": [
+        "the financials behind the options being considered",
+        "minutes or correspondence covering the prior round of debate",
+        "a comparable case where a similar choice was made (and what happened)",
+        "a stakeholder map identifying who supports each path and why",
+    ],
+    "simulate_hypothesis": [
+        "a written version of the hypothesis with at least one falsifiable claim",
+        "the data or analysis the hypothesis rests on",
+        "comparable cases that succeeded or failed under the same conditions",
+    ],
+    "get_perspective": [
+        "the existing framing or memo you want perspectives on",
+        "a list of stakeholders whose views matter for this decision",
+        "any prior boardroom or executive correspondence on the topic",
+    ],
+}
+
+
+def _what_would_help_template(submodule: str) -> List[str]:
+    return _WHAT_WOULD_HELP_BY_SUBMODULE.get(
+        submodule, _WHAT_WOULD_HELP_BY_SUBMODULE["seek_clarity"],
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -299,6 +497,32 @@ def _base_system_prompt(
         + "\n\nTONE: Calm, editorial. Serif voice if you were speaking. No marketing "
         "language. No false certainty. Acknowledge the user's framing before "
         "pressing it.\n"
+        # Wave 1.7 (UAT pack 2026-05-10) — explicit voice anti-list per
+        # the Solva spec. These rules are read alongside the per-submodule
+        # voice header, NOT replacing it. They tighten the existing
+        # editorial tone with the spec's specific prohibitions.
+        "\nCOACH VOICE (these are non-negotiable):\n"
+        "- Use \"we\" \u2014 this is a partnership, not a probe.\n"
+        "- Be declarative. Avoid hedging language (\"perhaps\", \"maybe\", \"I think\").\n"
+        "- Allow silences after meaty questions \u2014 do not fill them.\n"
+        "- Reference back to what the user said earlier when relevant.\n"
+        "- Take credit on the user's behalf for insights they surfaced.\n"
+        "- Use occasional warmth sparingly, when earned.\n"
+        "\nNEVER:\n"
+        "- Apologize. If you misunderstood, restate.\n"
+        "- Sycophant. (\"Great question!\" is forbidden.)\n"
+        "- Moralize. The user is an adult professional.\n"
+        "- Lecture. The user knows their domain.\n"
+        "- Soften language excessively. Direct is respectful.\n"
+        "- Perform empathy beyond a brief acknowledgement when the situation is genuinely hard.\n"
+        "- Compliment unprompted.\n"
+        "- Gamify with levels, XP, or progress streaks.\n"
+        "\nLAYER TRANSITIONS:\n"
+        "- Peer-voiced. (\"OK \u2014 we have what we need on the surface. Now let's "
+        "get into where these candidates hold up and where they don't.\")\n"
+        "- Reference what just happened (\"you flagged X\" / \"we narrowed to three options\").\n"
+        "- Brief. One or two sentences max.\n"
+        "- Never patronising. (\"Great work!\" is forbidden \u2014 see SYCOPHANCE above.)\n"
     )
 
 
@@ -790,6 +1014,24 @@ async def start_session(
 
     session_id = str(uuid.uuid4())
     is_pro_account = await _is_pro(account)
+
+    # Wave 1.1 (UAT pack) — resolve intake_seed payload (kind+id) into a
+    # short framing context block that is shown alongside the user's
+    # framing on the FramingScreen. Persisted on the session for audit.
+    seed_in: Optional[Dict[str, Any]] = body.intake_seed or None
+    seed_payload: Optional[Dict[str, Any]] = None
+    if seed_in and isinstance(seed_in, dict):
+        try:
+            seed_payload = await _resolve_intake_seed(
+                seed_in, account_id=account["id"],
+                context_id=body.context_id,
+            )
+        except Exception:  # noqa: BLE001
+            # Seed resolution must never fail session creation. Worst
+            # case: the user sees no seed-block on framing.
+            logger.warning("intake_seed resolution failed kind=%s id=%s",
+                           seed_in.get("kind"), seed_in.get("id"))
+
     rec = {
         "id": session_id,
         "account_id": account["id"],
@@ -811,6 +1053,16 @@ async def start_session(
         # Phase J.2 — sandbox flag persisted on the session doc so the
         # orchestrator's hypothesis-layer transition can short-circuit it.
         "sandbox": bool(body.sandbox),
+        # Wave 1.1 — intake_seed (kind, id, summary) for audit + framing UI.
+        "intake_seed": seed_payload,
+        # Wave 2.1 — Layer 0 Frame Audit summary; populated AFTER the
+        # framing screen submission, BEFORE the grounding flow. Null
+        # on creation; the frame_audit engine writes here.
+        "frame_audit_summary": None,
+        # Wave 1.2 — synthesis-time refusal metadata. Populated only
+        # when status=='refused' (distinct from blocked_*). Null
+        # otherwise.
+        "synthesis_refusal_reasons": None,
         "turns": [],
         "reasoning_audit_log": [],
         "synthesis": None,
@@ -915,16 +1167,201 @@ async def start_session(
     return rec
 
 
+# =============================================================================
+# Wave 2.1 (UAT pack 2026-05-10) — Layer 0 Frame Audit endpoints
+# =============================================================================
+# Two endpoints, called in this order:
+#   1. POST /sessions/{sid}/frame-audit
+#        Runs the deterministic frame_audit engine against the
+#        session's framing text, persists the result on the session
+#        AND in the reasoning_audit_log. Idempotent: returns the
+#        existing summary if one already exists, so refreshing the
+#        screen doesn't mint duplicate audit rows.
+#   2. POST /sessions/{sid}/frame-audit-decision  {decision}
+#        Records the user's choice (proceed / get_more / pause).
+#        - proceed:   no-op for the session record beyond an audit row;
+#                     the orchestrator continues to the existing
+#                     framing engine on the next /turn call.
+#        - get_more:  status remains "active"; the screen returns
+#                     the user to the framing input with the audit
+#                     observations rendered above. (Frontend-driven.)
+#        - pause:     status flips to "paused". Resumable later.
+
+@router.post("/sessions/{sid}/frame-audit")
+async def run_frame_audit(
+    sid: str,
+    account: Dict[str, Any] = Depends(get_current_account),
+):
+    rec = await db.solva_v2_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if rec.get("status") not in {"active", None}:
+        raise HTTPException(status_code=409, detail=f"Session is {rec.get('status')}; frame audit unavailable.")
+
+    if rec.get("frame_audit_summary"):
+        # Idempotent: don't mint duplicate audit rows on a refresh.
+        return {"frame_audit": rec["frame_audit_summary"], "cached": True}
+
+    # Use the lazy import to avoid pulling the engine at module load
+    # time; it's only on the framing path.
+    from services.solva_v2.engines.frame_audit import (
+        audit_framing, audit_to_audit_log_row,
+    )
+
+    framing_text = (rec.get("intent") or "").strip()
+    seed_payload = rec.get("intake_seed")
+    has_attached_docs = bool(seed_payload and seed_payload.get("kind") == "document")
+
+    audit_res = audit_framing(
+        submodule=rec.get("submodule") or "seek_clarity",
+        framing_text=framing_text,
+        has_attached_docs=has_attached_docs,
+        seed_payload=seed_payload,
+    )
+    summary = audit_res.to_dict()
+    audit_row = audit_to_audit_log_row(
+        audit_res,
+        framing_text=framing_text,
+        submodule=rec.get("submodule") or "seek_clarity",
+        iso_now=iso(now()),
+    )
+    await db.solva_v2_sessions.update_one(
+        {"id": sid, "account_id": account["id"]},
+        {
+            "$set": {"frame_audit_summary": summary, "updated_at": iso(now())},
+            "$push": {"reasoning_audit_log": audit_row},
+        },
+    )
+    return {"frame_audit": summary, "cached": False}
+
+
+@router.post("/sessions/{sid}/frame-audit-decision")
+async def frame_audit_decision(
+    sid: str,
+    body: FrameAuditDecisionIn,
+    account: Dict[str, Any] = Depends(get_current_account),
+):
+    rec = await db.solva_v2_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if rec.get("status") not in {"active", "paused", None}:
+        raise HTTPException(status_code=409, detail=f"Session is {rec.get('status')}; decision unavailable.")
+
+    decision = body.decision
+    audit_row = {
+        "engine": "frame_audit_decision",
+        "engine_version": "frame_audit@1.0",
+        "tier": "deterministic",
+        "model": "deterministic",
+        "input_sha": "",
+        "output_sha": "",
+        "shielded": False,
+        "latency_ms": 0,
+        "tier_label": decision,
+        "ts": iso(now()),
+    }
+    update: Dict[str, Any] = {"updated_at": iso(now())}
+
+    if decision == "pause":
+        update["status"] = "paused"
+        update["paused_at"] = iso(now())
+    elif decision == "get_more":
+        # No status change. The frontend keeps the user on the
+        # framing screen with the audit observations visible.
+        update["status"] = "active"
+    elif decision == "proceed":
+        # Resume from paused if applicable.
+        update["status"] = "active"
+
+    await db.solva_v2_sessions.update_one(
+        {"id": sid, "account_id": account["id"]},
+        {"$set": update, "$push": {"reasoning_audit_log": audit_row}},
+    )
+    return {"ok": True, "decision": decision, "status": update.get("status", rec.get("status"))}
+
+
+# =============================================================================
+# Wave 1.5 (UAT pack 2026-05-10) — Continue-in-Chat from a Solva artefact
+# =============================================================================
+# Mints a chat tethered to the active context with the artefact summary
+# pre-rendered as a synthetic document. The frontend picks up the
+# returned chat_id and navigates to /app/chat?chat_id=<id>. The
+# `services.continue_chat.create_continue_chat` helper used here is the
+# same one Work Studio + Cycle Manager use, so the audit shape is
+# consistent across all four "continue in chat" entry points.
+
+@router.post("/sessions/{sid}/continue-chat")
+async def solva_continue_in_chat(
+    sid: str,
+    account: Dict[str, Any] = Depends(get_current_account),
+):
+    rec = await db.solva_v2_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if rec.get("status") not in {"complete", "refused", "blocked_hard", "blocked_soft"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Session has no completed artefact yet. Continue the session first.",
+        )
+    context_id = rec.get("context_id")
+    if not context_id:
+        raise HTTPException(status_code=400, detail="Session is not bound to a context.")
+
+    # Build a short synthetic document body the chat can ground on.
+    submodule = rec.get("submodule") or "seek_clarity"
+    pretty = submodule.replace("_", " ").title()
+    intent = (rec.get("intent") or "").strip()
+    syn = rec.get("synthesis") or {}
+    body_text_parts = [f"Solva {pretty} session", f"Original framing: {intent}"]
+    if syn.get("body"):
+        body_text_parts.append(syn["body"])
+    if rec.get("status") == "refused":
+        wwh = (rec.get("synthesis_refusal_reasons") or {}).get("what_would_help") or []
+        if wwh:
+            body_text_parts.append("What would help:\n" + "\n".join(f"  - {x}" for x in wwh))
+    extracted_text = "\n\n".join(body_text_parts)[:4000]
+
+    file_name = f"Solva {pretty} — {(intent[:60] or 'session')}.txt"
+
+    from services.continue_chat import create_continue_chat
+    chat_id, doc_id = await create_continue_chat(
+        account_id=account["id"],
+        context_id=context_id,
+        kind="solva_artefact",
+        source="solva_artefact",
+        export_id=sid,
+        file_name=file_name,
+        file_path="",
+        output_format="txt",
+        extracted_text=extracted_text,
+        sensitivity_band="INTERNAL",
+    )
+    return {"ok": True, "chat_id": chat_id, "doc_id": doc_id}
+
+
 @router.get("/sessions")
 async def list_sessions(
     status: Optional[str] = None,
+    q: Optional[str] = None,
     account: Dict[str, Any] = Depends(get_current_account),
 ):
-    q: Dict[str, Any] = {"account_id": account["id"], "version": 2}
+    """List sessions for the caller. Wave 3.3 (UAT pack) — added an
+    optional `q` substring filter against `intent` (case-insensitive)
+    so the new sessions-list page can search."""
+    qfilter: Dict[str, Any] = {"account_id": account["id"], "version": 2}
     if status:
-        q["status"] = status
+        qfilter["status"] = status
+    if q and (q := q.strip()):
+        # Tight escape to keep search robust against regex-special chars.
+        qfilter["intent"] = {"$regex": re.escape(q), "$options": "i"}
     rows = await db.solva_v2_sessions.find(
-        q,
+        qfilter,
         {"_id": 0, "id": 1, "cluster_id": 1, "cluster_label": 1, "intent": 1,
          "layer": 1, "layer_index": 1, "status": 1, "submodule": 1,
          "started_at": 1, "updated_at": 1, "completed_at": 1},
@@ -1467,6 +1904,59 @@ async def post_turn(
                 "validation": out["validation"],
                 "recommendations": out.get("recommendations", []),
             }
+
+            # Wave 1.2 (UAT pack) — synthesis-time refusal trigger.
+            # After the 3-attempt grounding contract has passed (so we
+            # have legal markers), check whether the resolved tiers
+            # are too thin to defend a synthesis. If yes, swap the
+            # synthesis_record body for a refusal payload and flip the
+            # session status to "refused". The 3-attempt retry loop
+            # is preserved upstream (preservation rule 1).
+            _has_corpus_input = bool(comparables) or bool(candidates)
+            _has_attached_docs = bool(rec.get("intake_seed"))
+            if _should_synthesis_refuse(
+                tier_distribution=out.get("tier_distribution", {}),
+                has_attached_docs=_has_attached_docs,
+                has_grounding_paragraphs=_has_corpus_input,
+            ):
+                _refusal_reasons = {
+                    "refusal_kind": "synthesis_refusal",
+                    "tier_distribution": out.get("tier_distribution", {}),
+                    "what_would_help": _what_would_help_template(submodule),
+                    "submodule": submodule,
+                    "had_attached_docs": _has_attached_docs,
+                    "had_grounding_paragraphs": _has_corpus_input,
+                    "refused_at": iso(now()),
+                }
+                # Append a dedicated audit row so the reasoning log
+                # tells a coherent "we tried to synthesise, then
+                # refused" story. Engine name is `synthesis_refusal`
+                # (distinct from `refusal` which is the safety
+                # classifier — preservation rule 4).
+                all_audits.append({
+                    "engine": "synthesis_refusal",
+                    "engine_version": "synthesis_refusal@1.0",
+                    "tier": out.get("tier", "standard"),
+                    "model": out.get("model", ""),
+                    "input_sha": "",
+                    "output_sha": "",
+                    "shielded": False,
+                    "latency_ms": 0,
+                    "tier_label": "refusal",
+                    "tier_distribution": out.get("tier_distribution", {}),
+                    "what_would_help": _refusal_reasons["what_would_help"],
+                    "ts": iso(now()),
+                })
+                synthesis_record["refused"] = True
+                synthesis_record["refusal_reasons"] = _refusal_reasons
+                update_fields["synthesis"] = synthesis_record
+                update_fields["synthesis_refusal_reasons"] = _refusal_reasons
+                update_fields["status"] = "refused"
+                update_fields["completed_at"] = iso(now())
+                rec["synthesis"] = synthesis_record
+                rec["synthesis_refusal_reasons"] = _refusal_reasons
+                rec["status"] = "refused"
+
             update_fields["synthesis"] = synthesis_record
             rec["synthesis"] = synthesis_record
             solve_text = out["text"]

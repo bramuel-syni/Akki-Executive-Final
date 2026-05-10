@@ -13,10 +13,34 @@
  * GET /api/solva/v2/sessions/{sid} — same shape as the orchestrator stores.
  */
 import React, { useMemo, useState } from "react";
-import { Download } from "lucide-react";
+import { Download, MessageSquare, RefreshCw, Workflow } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import { api, apiErrorMessage } from "@/lib/api";
 import { TOKEN, FONT, SUBMODULE_LABELS } from "../flow/tokens";
 import ProbabilityBar from "./ProbabilityBar";
 import ReasoningExpandable from "./ReasoningExpandable";
+// Wave 2.2 (UAT pack 2026-05-10) — task-specific artefact bodies.
+import ClarityRead from "./ClarityRead";
+import StrategyMemo from "./StrategyMemo";
+import HypothesisStressTest from "./HypothesisStressTest";
+import PerspectiveRead from "./PerspectiveRead";
+
+// Wave 2.2 (UAT pack 2026-05-10) — task-specific artefact body
+// router. Each entry is a React component receiving the same
+// extracted props (diagnosis, scenarios, sensitivity, tensions,
+// recommendations, stripTierMarkers). When the submodule key is
+// missing or unknown, we fall through to the existing generic
+// 5-section body — which is also what the backend export pipeline
+// renders (preservation rule 9: backend keeps the generic
+// template; frontend differentiates).
+const TASK_BODIES = {
+  seek_clarity:        ClarityRead,
+  develop_strategy:    StrategyMemo,
+  simulate_hypothesis: HypothesisStressTest,
+  get_perspective:     PerspectiveRead,
+};
+
 
 const BAND_HALF_WIDTH = {
   Unlikely: 15,
@@ -257,91 +281,121 @@ export default function SolvaArtefact({ session, onStartReflection, savedToast =
         </div>
       </header>
 
-      {/* Primary diagnosis */}
-      <section style={{ marginBottom: 56 }}>
-        <Kicker>Primary diagnosis</Kicker>
-        {diagnosis.length ? (
-          diagnosis.map((p, i) => (
-            <p
-              key={i}
-              style={{
-                fontFamily: FONT.GEORGIA,
-                fontSize: 18,
-                color: TOKEN.INK,
-                lineHeight: 1.65,
-                margin: "0 0 14px 0",
-              }}
-            >
-              {p}
-            </p>
-          ))
-        ) : (
-          <p style={{ fontFamily: FONT.GEORGIA, fontStyle: "italic", color: TOKEN.MUTED }}>
-            Diagnosis not yet available for this session.
-          </p>
-        )}
-      </section>
-
-      {/* Scenarios */}
-      {scenarios.length > 0 && (
-        <section style={{ marginBottom: 56 }}>
-          <Kicker>Scenarios</Kicker>
-          {scenarios.map((s, i) => (
-            <ProbabilityBar
-              key={i}
-              label={s.label}
-              desc={s.desc}
-              pct={s.pct}
-              low={s.low}
-              high={s.high}
-              tier={s.tier}
-              testId={`solva-scenario-${i}`}
+      {/* Wave 2.2 (UAT pack 2026-05-10) — task-specific artefact body.
+          Each submodule renders its own structure. The Generic body
+          (Primary diagnosis + Scenarios + Sensitivity + Tensions +
+          Recommendations) remains the fallback for sessions where
+          submodule is missing or unrecognised, AND is the path the
+          backend PDF/DOCX exporter still hits (preservation rule 9). */}
+      {(() => {
+        const TaskBody = TASK_BODIES[session?.submodule] || null;
+        if (TaskBody) {
+          return (
+            <TaskBody
+              session={session}
+              diagnosis={diagnosis}
+              scenarios={scenarios}
+              sensitivity={sensitivity}
+              tensions={tensions}
+              recommendations={recommendations}
+              stripTierMarkers={stripTierMarkers}
             />
-          ))}
-        </section>
-      )}
+          );
+        }
+        return null;
+      })()}
 
-      {/* Sensitivity callout */}
-      {sensitivity.length > 0 && (
-        <Callout
-          variant="sensitivity"
-          kicker="What would change this read"
-          items={sensitivity}
-          testId="solva-sensitivity"
-        />
-      )}
+      {/* Generic body — rendered only when no task-specific template
+          matched (e.g. legacy sessions or unknown submodule). */}
+      {!TASK_BODIES[session?.submodule] && (
+        <>
+          {/* Primary diagnosis */}
+          <section style={{ marginBottom: 56 }}>
+            <Kicker>Primary diagnosis</Kicker>
+            {diagnosis.length ? (
+              diagnosis.map((p, i) => (
+                <p
+                  key={i}
+                  style={{
+                    fontFamily: FONT.GEORGIA,
+                    fontSize: 18,
+                    color: TOKEN.INK,
+                    lineHeight: 1.65,
+                    margin: "0 0 14px 0",
+                  }}
+                >
+                  {p}
+                </p>
+              ))
+            ) : (
+              <p style={{ fontFamily: FONT.GEORGIA, fontStyle: "italic", color: TOKEN.MUTED }}>
+                Diagnosis not yet available for this session.
+              </p>
+            )}
+          </section>
 
-      {/* Tension callout */}
-      {tensions.length > 0 && (
-        <Callout
-          variant="tension"
-          kicker="Where your framing and the evidence diverge"
-          items={tensions}
-          testId="solva-tension"
-        />
-      )}
+          {/* Scenarios */}
+          {scenarios.length > 0 && (
+            <section style={{ marginBottom: 56 }}>
+              <Kicker>Scenarios</Kicker>
+              {scenarios.map((s, i) => (
+                <ProbabilityBar
+                  key={i}
+                  label={s.label}
+                  desc={s.desc}
+                  pct={s.pct}
+                  low={s.low}
+                  high={s.high}
+                  tier={s.tier}
+                  testId={`solva-scenario-${i}`}
+                />
+              ))}
+            </section>
+          )}
 
-      {/* Recommendations — develop_strategy carries these */}
-      {recommendations.length > 0 && (
-        <section style={{ marginBottom: 56 }}>
-          <Kicker>Recommendations</Kicker>
-          <ol style={{ paddingLeft: 22, margin: 0 }}>
-            {recommendations.map((r, i) => {
-              const text = typeof r === "string" ? r : (r.body || r.text || "");
-              const head = typeof r === "string"
-                ? (text.match(/Recommendation\s*\d+:\s*/i)?.[0] || `Recommendation ${i + 1}: `)
-                : (r.heading || `Recommendation ${i + 1}`);
-              const body = typeof r === "string"
-                ? text.replace(/^\s*Recommendation\s*\d+:\s*/i, "").replace(TIER_MARKER_RE, "").trim()
-                : (text || "").replace(TIER_MARKER_RE, "").trim();
-              return (
-                <li key={i} style={{ marginBottom: 12, fontFamily: FONT.GEORGIA, fontSize: 16, color: TOKEN.INK, lineHeight: 1.55 }}>
-                  <strong>{head}</strong>{body ? <> {body.replace(/^—\s*/, "")}</> : null}
-                </li>
-              );
-            })}
-          </ol>
-        </section>
+          {/* Sensitivity callout */}
+          {sensitivity.length > 0 && (
+            <Callout
+              variant="sensitivity"
+              kicker="What would change this read"
+              items={sensitivity}
+              testId="solva-sensitivity"
+            />
+          )}
+
+          {/* Tension callout */}
+          {tensions.length > 0 && (
+            <Callout
+              variant="tension"
+              kicker="Where your framing and the evidence diverge"
+              items={tensions}
+              testId="solva-tension"
+            />
+          )}
+
+          {/* Recommendations — develop_strategy carries these */}
+          {recommendations.length > 0 && (
+            <section style={{ marginBottom: 56 }}>
+              <Kicker>Recommendations</Kicker>
+              <ol style={{ paddingLeft: 22, margin: 0 }}>
+                {recommendations.map((r, i) => {
+                  const text = typeof r === "string" ? r : (r.body || r.text || "");
+                  const head = typeof r === "string"
+                    ? (text.match(/Recommendation\s*\d+:\s*/i)?.[0] || `Recommendation ${i + 1}: `)
+                    : (r.heading || `Recommendation ${i + 1}`);
+                  const body = typeof r === "string"
+                    ? text.replace(/^\s*Recommendation\s*\d+:\s*/i, "").replace(TIER_MARKER_RE, "").trim()
+                    : (text || "").replace(TIER_MARKER_RE, "").trim();
+                  return (
+                    <li key={i} style={{ marginBottom: 12, fontFamily: FONT.GEORGIA, fontSize: 16, color: TOKEN.INK, lineHeight: 1.55 }}>
+                      <strong>{head}</strong>{body ? <> {body.replace(/^—\s*/, "")}</> : null}
+                    </li>
+                  );
+                })}
+              </ol>
+            </section>
+          )}
+        </>
       )}
 
       {/* Footer */}
@@ -351,6 +405,15 @@ export default function SolvaArtefact({ session, onStartReflection, savedToast =
 
       {/* Reasoning expandable — collapsed by default */}
       {sessionId && <ReasoningExpandable sessionId={sessionId} />}
+
+      {/* Wave 1.5 (UAT pack 2026-05-10) — handoff bar.
+          Continue in Chat → mints a chat tethered to this artefact.
+          Use as input → opens picker with seed_kind=solva_artefact.
+          Take to Cycle → currently a TODO (toast); cycle-question
+          minting from a Solva session is a Wave 3 stretch. */}
+      {(session?.status === "complete" || session?.status === "refused") && (
+        <SolvaArtefactHandoffBar session={session} sessionId={sessionId} />
+      )}
 
       {/* Continue to reflection — muted CTA, only when reflection not yet started */}
       {onStartReflection && (
@@ -469,3 +532,110 @@ const menuItem = {
   cursor: "pointer",
   textDecoration: "none",
 };
+
+
+// =============================================================================
+// Wave 1.5 (UAT pack 2026-05-10) — Solva artefact handoff bar.
+// =============================================================================
+// Three actions:
+//   - Continue in Chat — POST /sessions/{sid}/continue-chat → mints a chat
+//     tethered to this artefact, navigates to /app/chat?chat_id=<id>.
+//   - Use as input — opens picker with seed_kind=solva_artefact pre-loaded.
+//   - Take to Cycle — Wave 3 stretch; today renders a "coming soon" toast.
+
+function SolvaArtefactHandoffBar({ session, sessionId }) {
+  const navigate = useNavigate();
+  const [continuing, setContinuing] = useState(false);
+
+  const onContinueInChat = async () => {
+    if (!sessionId) return;
+    setContinuing(true);
+    try {
+      const { data } = await api.post(`/solva/v2/sessions/${sessionId}/continue-chat`);
+      if (data?.chat_id) {
+        navigate(`/app/chat?chat_id=${encodeURIComponent(data.chat_id)}`);
+      } else {
+        toast.error("Could not open chat handoff.");
+      }
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setContinuing(false);
+    }
+  };
+
+  const onUseAsInput = () => {
+    if (!sessionId) return;
+    navigate(`/app/solva?seed_kind=solva_artefact&seed_id=${encodeURIComponent(sessionId)}`);
+  };
+
+  const onTakeToCycle = () => {
+    // Stretch — wired in Wave 3 if budget allows. For UAT we surface
+    // the affordance and tell the user it's coming.
+    toast.info("Take-to-Cycle from Solva is coming next. For now, use Continue in Chat.");
+  };
+
+  const status = session?.status;
+  return (
+    <div
+      data-testid="solva-artefact-handoff-bar"
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 10,
+        marginTop: 28,
+        paddingTop: 18,
+        borderTop: `1px solid ${TOKEN.RULE}`,
+      }}
+    >
+      <button
+        type="button"
+        disabled={continuing}
+        onClick={onContinueInChat}
+        data-testid="solva-handoff-continue-chat"
+        style={{
+          background: TOKEN.ACCENT, color: "#FFFFFF", border: "none",
+          padding: "9px 16px", borderRadius: 2, cursor: "pointer",
+          fontFamily: FONT.CALIBRI, fontSize: 13, fontWeight: 500,
+          letterSpacing: 0.3, display: "inline-flex", alignItems: "center", gap: 6,
+        }}
+      >
+        <MessageSquare width={14} height={14} />
+        {continuing ? "Opening…" : "Continue in Chat"}
+      </button>
+      {status !== "refused" && (
+        <button
+          type="button"
+          onClick={onUseAsInput}
+          data-testid="solva-handoff-use-as-input"
+          style={{
+            background: "transparent", color: TOKEN.INK,
+            border: `1px solid ${TOKEN.RULE}`,
+            padding: "9px 16px", borderRadius: 2, cursor: "pointer",
+            fontFamily: FONT.CALIBRI, fontSize: 13,
+            display: "inline-flex", alignItems: "center", gap: 6,
+          }}
+        >
+          <RefreshCw width={14} height={14} />
+          Use as input for a new session
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onTakeToCycle}
+        data-testid="solva-handoff-take-to-cycle"
+        style={{
+          background: "transparent", color: TOKEN.MUTED,
+          border: `1px solid ${TOKEN.RULE}`,
+          padding: "9px 16px", borderRadius: 2, cursor: "pointer",
+          fontFamily: FONT.CALIBRI, fontSize: 13,
+          display: "inline-flex", alignItems: "center", gap: 6,
+        }}
+        title="Add this as a question for an upcoming cycle"
+      >
+        <Workflow width={14} height={14} />
+        Take to Cycle
+      </button>
+    </div>
+  );
+}

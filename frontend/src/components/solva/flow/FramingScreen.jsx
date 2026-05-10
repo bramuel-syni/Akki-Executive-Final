@@ -21,6 +21,7 @@ export default function FramingScreen({
   busy = false,
   error = null,
   onPersonaChange,
+  intakeSeed = null, // Wave 1.1 (UAT pack) — handoff seed pointer.
 }) {
   const taRef = useRef(null);
   useEffect(() => { taRef.current?.focus(); }, []);
@@ -63,6 +64,32 @@ export default function FramingScreen({
       >
         Tell me about the situation you're trying to think through.
       </h1>
+
+      {/* Wave 1.1 (UAT pack 2026-05-10) — handoff seed indicator.
+          Subtle card showing the source the user came from. The
+          backend resolves the full seed payload (title, summary)
+          on POST /sessions; here we render only the URL-carried
+          {kind, id} pointer so the user has a visual confirmation
+          that the seed is being applied. */}
+      {intakeSeed?.kind && intakeSeed?.id && (
+        <div
+          data-testid="solva-framing-seed-pill"
+          style={{
+            fontFamily: FONT.CALIBRI,
+            fontSize: 11.5,
+            color: TOKEN.MUTED,
+            background: "rgba(0,0,0,0.025)",
+            border: `1px solid ${TOKEN.RULE}`,
+            borderRadius: 999,
+            padding: "5px 12px",
+            display: "inline-block",
+            marginBottom: 16,
+            letterSpacing: 0.4,
+          }}
+        >
+          Drawing on: {seedKindLabel(intakeSeed.kind)}
+        </div>
+      )}
 
       {submodule === "get_perspective" && (
         <div style={{ marginBottom: 24 }}>
@@ -184,4 +211,18 @@ export default function FramingScreen({
       </div>
     </>
   );
+}
+
+function seedKindLabel(kind) {
+  // Wave 1.1 (UAT pack 2026-05-10) — friendly label for the seed
+  // indicator pill. Stays in sync with the resolver vocabulary in
+  // backend/routers/solva_v2.py:_resolve_intake_seed.
+  switch ((kind || "").toLowerCase()) {
+    case "document":            return "an attached document";
+    case "cycle_question":      return "a cycle question";
+    case "cycle_contribution":  return "a cycle contribution";
+    case "solva_artefact":      return "an earlier Solva artefact";
+    case "pulse_signal":        return "a Pulse signal";
+    default:                    return "the source you brought in";
+  }
 }

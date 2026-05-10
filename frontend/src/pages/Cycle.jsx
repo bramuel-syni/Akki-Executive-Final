@@ -274,6 +274,7 @@ function TeamStep({ cid, agenda, members, refresh, onBack, onForward }) {
 /* Step 3 — Contributions                                             */
 /* ------------------------------------------------------------------ */
 function ContributionsStep({ cid, agenda, members, contributions, refresh, onBack, onForward }) {
+  const navigate = useNavigate();
   const items = agenda?.items || [];
   const [draft, setDraft] = useState({ agenda_item_id: items[0]?.id || "", team_member_id: members[0]?.id || "", title: "", body_text: "", kind: "note" });
   const [busy, setBusy] = useState(false);
@@ -325,6 +326,21 @@ function ContributionsStep({ cid, agenda, members, contributions, refresh, onBac
                     Score
                   </Button>
                 )}
+                {/* Wave 3.1 (UAT pack 2026-05-10) — Take to Solva.
+                    Mints a Solva session with the contribution body
+                    as framing seed. The picker reads the seed via
+                    SolvaApp's useSearchParams plumbing (Wave 1.1). */}
+                <button
+                  type="button"
+                  onClick={() => navigate(
+                    `/app/solva?seed_kind=cycle_contribution&seed_id=${encodeURIComponent(c.id)}`
+                  )}
+                  data-testid={`cycle-contrib-take-to-solva-${c.id}`}
+                  className="mt-2 ml-2 text-[11px] text-[var(--muted)] hover:text-[var(--accent)] underline inline-flex items-center"
+                  title="Open this contribution as Solva framing"
+                >
+                  Take to Solva
+                </button>
               </li>
             );
           })}

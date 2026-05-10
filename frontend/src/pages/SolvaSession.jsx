@@ -36,6 +36,10 @@ import PreparingInterstitial from "@/components/solva/flow/PreparingInterstitial
 import ReflectionScreen from "@/components/solva/flow/ReflectionScreen";
 import SolvaArtefact from "@/components/solva/artefact/SolvaArtefact";
 import SolvaRefusalArtefact from "@/components/solva/artefact/SolvaRefusalArtefact";
+// Wave 1.6 / 1.8 / 2.1 (UAT pack 2026-05-10)
+import SolvaHeader from "@/components/solva/flow/SolvaHeader";
+import TransitionMessage from "@/components/solva/flow/TransitionMessage";
+import FrameAuditScreen from "@/components/solva/flow/FrameAuditScreen";
 import { TOKEN, FONT } from "@/components/solva/flow/tokens";
 
 const ROUND2_QUESTION_STATES = ["DEPTH_Q1", "DEPTH_Q2", "DEPTH_Q3"];
@@ -51,11 +55,20 @@ export default function SolvaSession() {
   const { sessionId: sidParam } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { account } = useAuth();
+  const { account, activeContext } = useAuth();
 
   // Reducer init
   const submoduleQuery = searchParams.get("submodule");
   const personaQuery = searchParams.get("persona");
+  // Wave 1.1 (UAT pack 2026-05-10) — intake_seed forwarded by the
+  // SolvaApp picker via URL params. Captured once on mount; sent
+  // with the framing POST when the user submits.
+  const seedKindQuery = (searchParams.get("seed_kind") || "").trim();
+  const seedIdQuery = (searchParams.get("seed_id") || "").trim();
+  const intakeSeed = useMemo(
+    () => (seedKindQuery && seedIdQuery ? { kind: seedKindQuery, id: seedIdQuery } : null),
+    [seedKindQuery, seedIdQuery],
+  );
   const [flow, dispatch] = useReducer(
     nextState,
     initialState({
@@ -156,11 +169,19 @@ export default function SolvaSession() {
         auto_cluster: true,
       };
       if (flow.persona) body.persona = flow.persona;
+      // Wave 1.1 — pass the seed pointer through to the backend so
+      // _resolve_intake_seed can hydrate it server-side.
+      if (intakeSeed) body.intake_seed = intakeSeed;
       const res = await api.post("/solva/v2/sessions", body);
       const srv = res.data;
       setSession(srv);
       dispatch(Actions.attachSession(srv.id));
       dispatch(Actions.submitFraming(framingDraft.trim()));
+      // Wave 2.1 — kick off the deterministic Frame Audit immediately
+      // after the session row exists. Fire-and-forget here; the Frame
+      // Audit screen itself will GET the result. Failures are logged
+      // but never block the framing-submit happy path.
+      api.post(`/solva/v2/sessions/${srv.id}/frame-audit`).catch(() => {});
       // Replace the URL so reload resumes the session.
       navigate(`/app/solva/session/${srv.id}`, { replace: true });
     } catch (err) {
@@ -169,7 +190,7 @@ export default function SolvaSession() {
     } finally {
       setBusy(false);
     }
-  }, [framingDraft, flow.submodule, flow.persona, navigate]);
+  }, [framingDraft, flow.submodule, flow.persona, navigate, intakeSeed]);
 
   const handleAnswerSubmit = useCallback(async () => {
     if (!flow.sessionId) return;
@@ -302,8 +323,20 @@ export default function SolvaSession() {
           onSubmit={handleFramingSubmit}
           onBack={handleBackToLanding}
           onPersonaChange={(p) => dispatch(Actions.setPersona(p))}
+          intakeSeed={intakeSeed}
           busy={busy}
           error={flow.error}
+        />
+      );
+      break;
+    case "FRAME_AUDIT":
+      // Wave 2.1 (UAT pack) — Layer 0 audit screen.
+      body = (
+        <FrameAuditScreen
+          sessionId={flow.sessionId || session?.id}
+          onProceed={() => dispatch(Actions.frameAuditDecision("proceed"))}
+          onGetMore={() => dispatch(Actions.frameAuditDecision("get_more"))}
+          onPause={() => dispatch(Actions.frameAuditDecision("pause"))}
         />
       );
       break;
@@ -376,6 +409,10 @@ export default function SolvaSession() {
 
   return (
     <AppShell>
+      {/* Wave 1.6 (UAT pack 2026-05-10) — Solva header on every screen
+          inside the session shell. Stays out of LANDING because that's
+          the picker, which has its own page chrome. */}
+      <SolvaHeader />
       <SolvaShell
         background={backgroundForState(flow.state)}
         topPadding={isFlowState(flow.state) ? 80 : 60}
@@ -398,6 +435,17 @@ export default function SolvaSession() {
           </div>
         )}
       </SolvaShell>
+      {/* Wave 1.8 (UAT pack 2026-05-10) — peer-voiced transition copy
+          when the layer changes. Reads `flow.history` to detect the
+          last layer crossed. The component fades itself out after
+          ~1.5 s; doesn't block input. */}
+      {flow.history && flow.history.length >= 2 && (
+        <TransitionMessage
+          submodule={flow.submodule}
+          fromLayer={flow.history[flow.history.length - 2]}
+          toLayer={flow.state}
+        />
+      )}
     </AppShell>
   );
 }

@@ -26,9 +26,14 @@
  */
 
 // Locked list — must not change order (the index is the progress).
+// Wave 2.1 (UAT pack 2026-05-10) — FRAME_AUDIT inserted between FRAMING
+// and Q1. Additive per preservation rule 8 — existing state names are
+// unchanged so resumePoint() still works for legacy sessions that
+// don't carry a frame_audit_summary.
 export const STATES = Object.freeze([
   "LANDING",
   "FRAMING",
+  "FRAME_AUDIT",
   "Q1",
   "Q2",
   "Q3",
@@ -47,7 +52,8 @@ export const ARTEFACT_REFUSAL = "ARTEFACT_REFUSAL";
 
 const FORWARD = {
   LANDING:    "FRAMING",
-  FRAMING:    "Q1",
+  FRAMING:    "FRAME_AUDIT",
+  FRAME_AUDIT: "Q1",
   Q1:         "Q2",
   Q2:         "Q3",
   Q3:         "DEPTH_Q1",
@@ -175,12 +181,50 @@ export function nextState(current, action) {
       if (framing.length < 20) {
         return { ...current, error: "Tell me a little more (at least 20 characters)." };
       }
-      const next = FORWARD["FRAMING"];   // → Q1
+      // Wave 2.1 — FRAMING now advances to FRAME_AUDIT (Layer 0)
+      // before the surface round. The audit screen renders the
+      // server's deterministic frame_audit_summary and offers three
+      // CTAs (proceed / get_more / pause).
+      const next = FORWARD["FRAMING"];   // → FRAME_AUDIT
       return {
         ...current,
         state:   next,
         framing,
         history: [...current.history, next],
+        error:   null,
+      };
+    }
+    /* ----- Wave 2.1 frame audit decision ----- */
+    case "FRAME_AUDIT_DECISION": {
+      if (cur !== "FRAME_AUDIT") return current;
+      const decision = action.decision || "proceed";
+      if (decision === "proceed") {
+        const next = FORWARD["FRAME_AUDIT"];   // → Q1
+        return {
+          ...current,
+          state:   next,
+          history: [...current.history, next],
+          error:   null,
+        };
+      }
+      if (decision === "get_more") {
+        // Send the user back to the framing screen so they can
+        // sharpen. The framing draft is already in `current.framing`
+        // — the FramingScreen's controlled input pre-populates from
+        // it on mount.
+        return {
+          ...current,
+          state:   "FRAMING",
+          history: [...current.history, "FRAMING"],
+          error:   null,
+        };
+      }
+      // pause — frontend bails out to the picker; component handles
+      // the actual navigation. Reducer just records the state.
+      return {
+        ...current,
+        state:   "LANDING",
+        history: [...current.history, "LANDING"],
         error:   null,
       };
     }
@@ -324,7 +368,16 @@ export function resumePoint(session) {
     const ix = session.layer_index || 0;
     switch (layer) {
       case "framing":
-        state = "FRAMING";
+        // Wave 2.1 — if the framing has been submitted (intent is
+        // present + non-empty AND there's an existing frame_audit
+        // result on the session), we resume on FRAME_AUDIT so the
+        // user can decide to proceed / get_more / pause without
+        // re-typing. If no audit yet, hold on FRAMING.
+        if (framing && (session.frame_audit_summary || (session.turns || []).length === 0)) {
+          state = session.frame_audit_summary ? "FRAME_AUDIT" : "FRAMING";
+        } else {
+          state = "FRAMING";
+        }
         break;
       case "grounding": {
         // first unanswered Q
@@ -376,6 +429,8 @@ export const Actions = Object.freeze({
   setPersona: (persona) => ({ type: "SET_PERSONA", persona }),
   attachSession: (sessionId) => ({ type: "ATTACH_SESSION_ID", sessionId }),
   submitFraming: (framing) => ({ type: "SUBMIT_FRAMING", framing }),
+  // Wave 2.1 — Frame Audit decision. decision ∈ {"proceed","get_more","pause"}.
+  frameAuditDecision: (decision) => ({ type: "FRAME_AUDIT_DECISION", decision }),
   answerQuestion: (answer) => ({ type: "ANSWER_QUESTION", answer }),
   preparingDone: (refusal = false) => ({ type: "PREPARING_DONE", refusal }),
   answerReflection: (answer, skipped = false) =>
