@@ -178,19 +178,59 @@ async def pulse_feed(
     context_id: str,
     type: Optional[str] = None,         # noqa: A002 — public query name
     freshness: Optional[str] = None,
-    limit: int = 100,
+    state: Optional[str] = "active",    # Phase G.1 — lifecycle tab
+    show_low: bool = False,             # Phase G.2 — confidence floor toggle
+    confidence: Optional[str] = None,   # Phase G.2 — explicit confidence filter
+    limit: Optional[int] = None,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    """Same-context Twitter-style signal feed."""
+    """Same-context Twitter-style signal feed.
+
+    Phase G additions:
+      • `state` query (default 'active') filters by db.signals.state ∈
+        {active, bookmarked, resolved, archived}. Falls back to legacy
+        `status` field for un-migrated rows.
+      • `show_low=true` opts in to low-confidence signals on the
+        Active tab. Other tabs always include all confidence levels.
+      • `confidence=high|medium|low` is an explicit filter.
+      • Default landing limit is 7 for Active (spec §6 volume restraint).
+        Other states default to 50.
+      • Cards carry `comments[]` inline (G.5 closes PL-01) and
+        `reasoning` so the drawer can render the spec's Reasoning
+        section without a second roundtrip.
+    """
     type_arg = _parse_type(type)
     freshness_arg = _parse_freshness(freshness)
+    state_arg = (state or "active").lower()
+    if state_arg not in ("active", "bookmarked", "resolved", "archived"):
+        state_arg = "active"
 
-    # Pull all signals (default and resolved both — we then filter via
-    # freshness server-side based on derived classifiers).
-    sigs = await db.signals.find(
-        {"context_id": context_id, "status": {"$in": ["active", "resolved"]}},
-        {"_id": 0},
-    ).sort("created_at", -1).to_list(min(max(limit, 1), 500))
+    # Volume restraint per spec §6 — Active tab caps to 7 by default;
+    # other tabs to 50. Caller can override with limit param (max 200).
+    if limit is None:
+        limit = 7 if state_arg == "active" else 50
+    limit = max(1, min(int(limit), 200))
+
+    # Query layer: prefer the new `state` field, fall back to `status`.
+    # Old rows (pre-G.1 migration) may have only `status='active'` —
+    # the $or below matches both cleanly.
+    if state_arg == "active":
+        state_filter = {"$or": [
+            {"state": "active"},
+            {"state": {"$exists": False}, "status": {"$in": ["active", None]}},
+        ]}
+    elif state_arg == "resolved":
+        state_filter = {"$or": [
+            {"state": "resolved"},
+            {"state": {"$exists": False}, "status": "resolved"},
+        ]}
+    else:
+        state_filter = {"state": state_arg}
+
+    base_query = {"context_id": context_id, **state_filter}
+
+    sigs = await db.signals.find(base_query, {"_id": 0})\
+        .sort("created_at", -1).to_list(500)
 
     me_acct = ctx["account"]["id"]
     cards: List[Dict[str, Any]] = []
@@ -199,6 +239,15 @@ async def pulse_feed(
         fresh = _derive_freshness(s)
         kind = _signal_kind(s)
         surface_type = _surface_type(s.get("type"))
+        sig_confidence = (s.get("confidence") or "medium").lower()
+
+        # Phase G.2 — refusal floor. The Active tab hides low-confidence
+        # signals unless the user explicitly opts in via show_low=true.
+        if state_arg == "active" and sig_confidence == "low" and not show_low:
+            continue
+        # Explicit confidence filter override.
+        if confidence in ("high", "medium", "low") and sig_confidence != confidence:
+            continue
 
         # Filter by query params.
         if type_arg != "any" and surface_type != type_arg:
@@ -214,39 +263,60 @@ async def pulse_feed(
             a.get("action_type") == "saved" and a.get("account_id") == me_acct
             for a in actions
         )
-        comments = [a for a in actions if a.get("action_type") == "commented"]
+        action_comments = [a for a in actions if a.get("action_type") == "commented"]
         shares = [a for a in actions if a.get("action_type") == "shared"]
         resolved_action = next(
             (a for a in actions if a.get("action_type") == "resolved"), None,
         )
+
+        # Phase G.5 — comments are now stored on the signal itself.
+        # Legacy comments from signal_actions are surfaced too so
+        # nothing is lost on the QA-brief PL-01 cleanup pass.
+        own_comments = [c for c in (s.get("comments") or [])
+                        if c.get("account_id") == me_acct]
+
         cards.append({
             "id": s["id"],
             "headline": s.get("headline") or "(untitled)",
             "summary": s.get("summary") or "",
+            "body": s.get("body") or "",
+            "reasoning": s.get("reasoning") or "",  # G.4 drawer reads this
             "type": s.get("type"),
             "surface_type": surface_type,
             "signal_kind": kind,
             "topic_class": topic,
             "freshness": fresh,
-            "confidence": s.get("confidence"),
+            "confidence": sig_confidence,
             "data_trust": s.get("data_trust"),
+            "merge_count": s.get("merge_count", 1),
             "created_at": s.get("created_at"),
+            "state": s.get("state") or s.get("status") or "active",
             "status": s.get("status"),
+            "bookmarked_at": s.get("bookmarked_at"),
+            "resolved_at": s.get("resolved_at"),
+            "resolution_note": s.get("resolution_note"),
+            "comments": own_comments,
             "references": s.get("references", []) or s.get("sources", []),
             "actions_summary": {
                 "my_saved": my_saved,
-                "comments_count": len(comments),
+                "comments_count": len(action_comments) + len(own_comments),
                 "shares_count": len(shares),
-                "resolved": resolved_action is not None,
-                "resolved_at": (resolved_action or {}).get("created_at"),
+                "resolved": resolved_action is not None or (s.get("state") == "resolved"),
+                "resolved_at": s.get("resolved_at") or (resolved_action or {}).get("created_at"),
             },
         })
+        if len(cards) >= limit:
+            break
 
     return {
         "filters": {
             "type": type_arg,
             "freshness": freshness_arg,
+            "state": state_arg,
+            "show_low": show_low,
+            "confidence": confidence,
         },
+        "limit": limit,
         "total": len(cards),
         "cards": cards,
     }
@@ -457,12 +527,55 @@ async def pulse_comment(
     context_id: str, signal_id: str, body: CommentIn,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
+    """Phase G.5 — comments are now first-class on the signal row.
+
+    Persists to BOTH `db.signal_actions` (audit trail, preserves the
+    QA-brief PL-01 historical record) AND `db.signals.comments[]`
+    (the surface the drawer reads from on every revisit). Comments
+    are private per-account: the feed/drawer only surfaces comments
+    where `account_id` matches the caller.
+    """
     await _load_signal_or_404(signal_id, context_id)
-    return await _record_action(
-        signal_id=signal_id, context_id=context_id,
-        account_id=ctx["account"]["id"], action_type="commented",
-        payload={"note": body.note.strip()},
+    aid = ctx["account"]["id"]
+    note = body.note.strip()
+    if not note:
+        raise HTTPException(status_code=400, detail="comment text is required")
+    comment_doc = {
+        "id": str(uuid.uuid4()),
+        "account_id": aid,
+        "note": note,
+        "created_at": iso(now()),
+    }
+    # Append to signals.comments[]
+    await db.signals.update_one(
+        {"id": signal_id, "context_id": context_id},
+        {"$push": {"comments": comment_doc}},
     )
+    # Mirror to signal_actions for the audit trail.
+    await _record_action(
+        signal_id=signal_id, context_id=context_id,
+        account_id=aid, action_type="commented",
+        payload={"note": note, "comment_id": comment_doc["id"]},
+    )
+    return {"ok": True, "comment": comment_doc}
+
+
+@router.delete("/contexts/{context_id}/pulse/signals/{signal_id}/comments/{comment_id}")
+async def pulse_comment_delete(
+    context_id: str, signal_id: str, comment_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Remove a comment from the signal. Only the comment's author
+    can delete their own comment."""
+    aid = ctx["account"]["id"]
+    res = await db.signals.update_one(
+        {"id": signal_id, "context_id": context_id,
+         "comments.id": comment_id, "comments.account_id": aid},
+        {"$pull": {"comments": {"id": comment_id, "account_id": aid}}},
+    )
+    if res.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Comment not found or not yours")
+    return {"ok": True, "id": comment_id}
 
 
 @router.post("/contexts/{context_id}/pulse/signals/{signal_id}/share")
@@ -480,59 +593,125 @@ async def pulse_share(
     )
 
 
-@router.post("/contexts/{context_id}/pulse/signals/{signal_id}/save")
-async def pulse_save(
-    context_id: str, signal_id: str,
-    ctx: Dict[str, Any] = Depends(require_context_membership()),
-):
-    """Toggle save: if a `saved` row exists for this user+signal, delete
-    it (unsave); otherwise create one (save)."""
-    await _load_signal_or_404(signal_id, context_id)
-    existing = await db.signal_actions.find_one(
-        {
-            "signal_id": signal_id, "context_id": context_id,
-            "account_id": ctx["account"]["id"], "action_type": "saved",
-        }, {"_id": 0},
-    )
-    if existing:
-        await db.signal_actions.delete_many(
-            {
-                "signal_id": signal_id, "context_id": context_id,
-                "account_id": ctx["account"]["id"], "action_type": "saved",
-            },
-        )
-        try:
-            await write_audit(
-                context_id, ctx["account"]["id"],
-                "pulse.signal.unsaved", "signal", signal_id, {},
-            )
-        except Exception:
-            pass
-        return {"saved": False, "signal_id": signal_id}
-    doc = await _record_action(
-        signal_id=signal_id, context_id=context_id,
-        account_id=ctx["account"]["id"], action_type="saved", payload={},
-    )
-    return {"saved": True, "signal_id": signal_id, "action": doc}
+class ResolveIn(BaseModel):
+    resolution_note: Optional[str] = Field(default=None, max_length=2000)
 
 
 @router.post("/contexts/{context_id}/pulse/signals/{signal_id}/resolve")
 async def pulse_resolve(
     context_id: str, signal_id: str,
+    body: ResolveIn = Body(default_factory=ResolveIn),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    """Mark signal resolved — flips db.signals.status and logs the action."""
+    """Phase G.1 — mark signal resolved. Sets `state='resolved'` plus
+    legacy `status='resolved'` for back-compat. Optional resolution_note
+    on body is shown in the Resolved tab card."""
     await _load_signal_or_404(signal_id, context_id)
+    upd = {
+        "state": "resolved",
+        "status": "resolved",
+        "resolved_at": iso(now()),
+        "resolved_by": ctx["account"]["id"],
+    }
+    if body and body.resolution_note:
+        upd["resolution_note"] = body.resolution_note.strip()
     await db.signals.update_one(
-        {"id": signal_id, "context_id": context_id},
-        {"$set": {"status": "resolved",
-                  "resolved_at": iso(now()),
-                  "resolved_by": ctx["account"]["id"]}},
+        {"id": signal_id, "context_id": context_id}, {"$set": upd},
     )
     return await _record_action(
         signal_id=signal_id, context_id=context_id,
-        account_id=ctx["account"]["id"], action_type="resolved", payload={},
+        account_id=ctx["account"]["id"], action_type="resolved",
+        payload={"resolution_note": upd.get("resolution_note")},
     )
+
+
+@router.post("/contexts/{context_id}/pulse/signals/{signal_id}/unresolve")
+async def pulse_unresolve(
+    context_id: str, signal_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Phase G.1 — recover from accidental resolve. Per QA brief E-02:
+    the user resolved in error and wants the signal back on the
+    Active tab. Returns state='active'; clears resolved metadata."""
+    await _load_signal_or_404(signal_id, context_id)
+    await db.signals.update_one(
+        {"id": signal_id, "context_id": context_id},
+        {"$set": {"state": "active", "status": "active"},
+         "$unset": {"resolved_at": "", "resolved_by": "", "resolution_note": ""}},
+    )
+    return await _record_action(
+        signal_id=signal_id, context_id=context_id,
+        account_id=ctx["account"]["id"], action_type="unresolved", payload={},
+    )
+
+
+@router.post("/contexts/{context_id}/pulse/signals/{signal_id}/bookmark")
+async def pulse_bookmark(
+    context_id: str, signal_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Phase G.1 + QA brief E-04 — Bookmarks as first-class state.
+    Sets state='bookmarked' on the signal AND records a per-user
+    saved row on signal_actions so per-user bookmark history
+    (multi-NED context) is preserved."""
+    await _load_signal_or_404(signal_id, context_id)
+    aid = ctx["account"]["id"]
+    await db.signals.update_one(
+        {"id": signal_id, "context_id": context_id},
+        {"$set": {"state": "bookmarked",
+                  "bookmarked_at": iso(now()),
+                  "bookmarked_by": aid}},
+    )
+    # mirror to signal_actions for the per-user trail
+    existing = await db.signal_actions.find_one(
+        {"signal_id": signal_id, "context_id": context_id,
+         "account_id": aid, "action_type": "saved"}, {"_id": 0},
+    )
+    if not existing:
+        await _record_action(
+            signal_id=signal_id, context_id=context_id,
+            account_id=aid, action_type="saved", payload={},
+        )
+    return {"ok": True, "state": "bookmarked", "id": signal_id}
+
+
+@router.post("/contexts/{context_id}/pulse/signals/{signal_id}/unbookmark")
+async def pulse_unbookmark(
+    context_id: str, signal_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Phase G.1 — remove bookmark; returns to Active state."""
+    await _load_signal_or_404(signal_id, context_id)
+    aid = ctx["account"]["id"]
+    await db.signals.update_one(
+        {"id": signal_id, "context_id": context_id},
+        {"$set": {"state": "active"},
+         "$unset": {"bookmarked_at": "", "bookmarked_by": ""}},
+    )
+    await db.signal_actions.delete_many(
+        {"signal_id": signal_id, "context_id": context_id,
+         "account_id": aid, "action_type": "saved"},
+    )
+    return {"ok": True, "state": "active", "id": signal_id}
+
+
+# Legacy /save toggle — kept for back-compat with the existing UI.
+# New UI should call /bookmark + /unbookmark explicitly.
+@router.post("/contexts/{context_id}/pulse/signals/{signal_id}/save")
+async def pulse_save(
+    context_id: str, signal_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """LEGACY toggle — flips between bookmark/unbookmark."""
+    await _load_signal_or_404(signal_id, context_id)
+    aid = ctx["account"]["id"]
+    existing = await db.signal_actions.find_one(
+        {"signal_id": signal_id, "context_id": context_id,
+         "account_id": aid, "action_type": "saved"}, {"_id": 0},
+    )
+    if existing:
+        return await pulse_unbookmark(context_id, signal_id, ctx)
+    return await pulse_bookmark(context_id, signal_id, ctx)
 
 
 @router.post("/contexts/{context_id}/pulse/signals/{signal_id}/take-to-solva")
