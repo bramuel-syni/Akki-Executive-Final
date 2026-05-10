@@ -12,10 +12,16 @@
  */
 
 .akki-chat-md {
-  /* Hint the browser that this region updates frequently while the
-   * assistant is streaming. Removed by React when the message lands
-   * (streaming flag flips false). */
-  will-change: contents;
+  /* Workstream A (2026-05-10) — `will-change: contents` was removed.
+   * It was promoting the bubble to a GPU layer for a "smoothness" win
+   * that didn't exist; on long streamed messages it actively hurt by
+   * forcing layer-thrash on every text-content delta.
+   *
+   * `contain: layout style` instead — isolates the bubble's layout +
+   * style cascade from the chat list above it, so growing the bubble
+   * doesn't reflow earlier messages. Selection still works (which
+   * `contain: content` would break). */
+  contain: layout style;
 }
 
 .akki-chat-md p {

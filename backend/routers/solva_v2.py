@@ -28,6 +28,7 @@ Out of scope for 15.1 (delivered later per docs/ROADMAP.md):
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -1358,7 +1359,6 @@ async def list_sessions(
     if status:
         qfilter["status"] = status
     if q and (q := q.strip()):
-        # Tight escape to keep search robust against regex-special chars.
         qfilter["intent"] = {"$regex": re.escape(q), "$options": "i"}
     rows = await db.solva_v2_sessions.find(
         qfilter,
@@ -1367,6 +1367,240 @@ async def list_sessions(
          "started_at": 1, "updated_at": 1, "completed_at": 1},
     ).sort("updated_at", -1).to_list(length=100)
     return {"items": rows, "count": len(rows)}
+
+
+# =============================================================================
+# Workstream B (UAT pack 2 — 2026-05-10) — in-session document attach
+# =============================================================================
+# Replaces the W3.2 stub. The user can attach documents from the active
+# context's Document Journal at session start (FramingScreen) AND at any
+# active layer. Attached docs are listed on the session record under
+# `attached_documents: [{id, title, attached_at}]` and flow into the
+# grounding stage via the existing _retrieve_grounding_paragraphs path.
+#
+# Hard cap: 5 attachments per session (UI matches; backend enforces).
+
+class AttachDocumentIn(BaseModel):
+    document_id: str = Field(min_length=1, max_length=120)
+
+
+_MAX_SESSION_ATTACHMENTS = 5
+
+
+@router.post("/sessions/{sid}/attach-document")
+async def attach_session_document(
+    sid: str,
+    body: AttachDocumentIn,
+    account: Dict[str, Any] = Depends(get_current_account),
+):
+    rec = await db.solva_v2_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if rec.get("status") not in {"active", "paused", None}:
+        raise HTTPException(status_code=409, detail=f"Session is {rec.get('status')}; attach unavailable.")
+
+    context_id = rec.get("context_id")
+    if not context_id:
+        raise HTTPException(status_code=400, detail="Session is not bound to a context.")
+
+    doc = await db.documents.find_one(
+        {"id": body.document_id, "context_id": context_id},
+        {"_id": 0, "id": 1, "name": 1, "original_filename": 1, "preview": 1,
+         "extracted_text": 1, "sensitivity_band": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found in this context.")
+
+    existing = list(rec.get("attached_documents") or [])
+    if any(a.get("id") == body.document_id for a in existing):
+        return {"ok": True, "attached_documents": existing, "already_attached": True}
+    if len(existing) >= _MAX_SESSION_ATTACHMENTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maximum {_MAX_SESSION_ATTACHMENTS} attachments per session.",
+        )
+
+    attached_at = iso(now())
+    chip = {
+        "id": doc["id"],
+        "title": doc.get("name") or doc.get("original_filename") or "Document",
+        "attached_at": attached_at,
+        "preview": (doc.get("preview") or doc.get("extracted_text") or "")[:300],
+    }
+    new_attached = existing + [chip]
+
+    audit_row = {
+        "engine": "document_attach",
+        "engine_version": "document_attach@1.0",
+        "tier": "deterministic",
+        "model": "deterministic",
+        "input_sha": hashlib.sha256(f"{sid}|{doc['id']}".encode()).hexdigest(),
+        "output_sha": "",
+        "shielded": False,
+        "latency_ms": 0,
+        "tier_label": "attached",
+        "document_id": doc["id"],
+        "document_title": chip["title"],
+        "ts": attached_at,
+    }
+
+    await db.solva_v2_sessions.update_one(
+        {"id": sid, "account_id": account["id"]},
+        {
+            "$set": {"attached_documents": new_attached, "updated_at": attached_at},
+            "$push": {"reasoning_audit_log": audit_row},
+        },
+    )
+    return {"ok": True, "attached_documents": new_attached, "already_attached": False}
+
+
+@router.delete("/sessions/{sid}/attached-documents/{document_id}")
+async def detach_session_document(
+    sid: str,
+    document_id: str,
+    account: Dict[str, Any] = Depends(get_current_account),
+):
+    rec = await db.solva_v2_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if rec.get("status") not in {"active", "paused", None}:
+        raise HTTPException(status_code=409, detail=f"Session is {rec.get('status')}; detach unavailable.")
+    existing = list(rec.get("attached_documents") or [])
+    new_attached = [a for a in existing if a.get("id") != document_id]
+    audit_row = {
+        "engine": "document_detach",
+        "engine_version": "document_attach@1.0",
+        "tier": "deterministic",
+        "model": "deterministic",
+        "input_sha": hashlib.sha256(f"{sid}|{document_id}".encode()).hexdigest(),
+        "output_sha": "",
+        "shielded": False,
+        "latency_ms": 0,
+        "tier_label": "detached",
+        "document_id": document_id,
+        "ts": iso(now()),
+    }
+    await db.solva_v2_sessions.update_one(
+        {"id": sid, "account_id": account["id"]},
+        {
+            "$set": {"attached_documents": new_attached, "updated_at": iso(now())},
+            "$push": {"reasoning_audit_log": audit_row},
+        },
+    )
+    return {"ok": True, "attached_documents": new_attached}
+
+
+# =============================================================================
+# Workstream B.2 (UAT pack 2 — 2026-05-10) — Take to Cycle from Solva artefact
+# =============================================================================
+# Mints a `cycle_question` row from a completed Solva session and
+# returns the question_id so the frontend can navigate to Cycle Manager
+# with `?question_id=` for highlight-and-scroll. Replaces the
+# previous "Coming soon" toast stub.
+
+@router.post("/sessions/{sid}/take-to-cycle")
+async def take_to_cycle(
+    sid: str,
+    account: Dict[str, Any] = Depends(get_current_account),
+):
+    rec = await db.solva_v2_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if rec.get("status") not in {"complete", "refused"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Session has no completed artefact yet.",
+        )
+    context_id = rec.get("context_id")
+    if not context_id:
+        raise HTTPException(status_code=400, detail="Session is not bound to a context.")
+
+    # Resolve the active cycle for the context (or refuse with a clear
+    # error the SPA can convert to a guidance toast).
+    config = await db.cycle_configs.find_one(
+        {"context_id": context_id}, {"_id": 0, "current_cycle_id": 1, "current_cycle_label": 1},
+    )
+    cycle_id = (config or {}).get("current_cycle_id")
+    if not cycle_id:
+        raise HTTPException(status_code=400, detail={"code": "NO_ACTIVE_CYCLE",
+                                                     "message": "Start a cycle in Cycle Manager first."})
+
+    # Build the question text from the artefact. Prefer the synthesis
+    # diagnosis paragraph; fall back to the framing intent.
+    syn = rec.get("synthesis") or {}
+    syn_body = (syn.get("stripped_text") or syn.get("body") or "").strip()
+    intent = (rec.get("intent") or "").strip()
+    submodule = rec.get("submodule") or "seek_clarity"
+    pretty = submodule.replace("_", " ").title()
+
+    # Short text (~280 chars) — first sentence of synthesis preferred.
+    short_text = syn_body or intent or "Solva session question"
+    for delim in (". ", "? ", "! ", "\n"):
+        idx = short_text.find(delim)
+        if 0 < idx < 240:
+            short_text = short_text[: idx + 1].strip()
+            break
+    short_text = short_text[:280].rstrip(" .;:")
+
+    question_id = str(uuid.uuid4())
+    full_text_parts = [
+        f"From a Solva {pretty} session.",
+        f"Original framing: {intent}" if intent else "",
+        syn_body[:1500] if syn_body else "",
+    ]
+    if rec.get("status") == "refused":
+        wwh = (rec.get("synthesis_refusal_reasons") or {}).get("what_would_help") or []
+        if wwh:
+            full_text_parts.append("What would help (per Solva refusal):\n" + "\n".join(f"  - {x}" for x in wwh))
+
+    question_doc = {
+        "id": question_id,
+        "context_id": context_id,
+        "cycle_id": cycle_id,
+        "title": f"Solva → {pretty}",
+        "body": short_text,
+        "body_full": "\n\n".join([p for p in full_text_parts if p]),
+        "source": "solva",
+        "source_solva_session_id": sid,
+        "source_artefact_kind": submodule,
+        "linked_session_id": sid,
+        "status": "open",
+        "created_by": account["id"],
+        "created_at": iso(now()),
+    }
+    await db.questions.insert_one(question_doc)
+
+    # Audit row on the Solva session.
+    audit_row = {
+        "engine": "take_to_cycle",
+        "engine_version": "take_to_cycle@1.0",
+        "tier": "deterministic",
+        "model": "deterministic",
+        "input_sha": hashlib.sha256(f"{sid}|{question_id}".encode()).hexdigest(),
+        "output_sha": "",
+        "shielded": False,
+        "latency_ms": 0,
+        "tier_label": "handoff",
+        "cycle_id": cycle_id,
+        "cycle_question_id": question_id,
+        "ts": iso(now()),
+    }
+    await db.solva_v2_sessions.update_one(
+        {"id": sid, "account_id": account["id"]},
+        {"$push": {"reasoning_audit_log": audit_row}},
+    )
+
+    return {
+        "ok": True,
+        "cycle_id": cycle_id,
+        "cycle_question_id": question_id,
+    }
 
 
 @router.get("/sessions/{sid}")

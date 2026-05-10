@@ -185,8 +185,33 @@ export default function SolvaSession() {
       // Replace the URL so reload resumes the session.
       navigate(`/app/solva/session/${srv.id}`, { replace: true });
     } catch (err) {
-      const detail = err?.response?.data?.detail || err.message;
-      dispatch(Actions.setError(typeof detail === "string" ? detail : "Could not start session."));
+      // 2026-05-10 A.0 fix — the previous handler only kept `detail`
+      // when it was a plain string, falling through to a generic
+      // "Could not start session." for every object-shape detail
+      // (which is what FastAPI returns for structured validation +
+      // domain errors like `too_many_active_sessions`). That hid
+      // actionable copy from the user. Surface the real message.
+      const detail = err?.response?.data?.detail;
+      let message = "Could not start session.";
+      if (typeof detail === "string" && detail.trim()) {
+        message = detail;
+      } else if (detail && typeof detail === "object") {
+        // FastAPI domain errors: { error, message, ...meta }.
+        if (typeof detail.message === "string" && detail.message.trim()) {
+          message = detail.message;
+        } else if (typeof detail.error === "string") {
+          // Pretty-print the error code (e.g. "too_many_active_sessions"
+          // → "Too many active sessions"). Not pretty but actionable
+          // and never blank.
+          message = detail.error.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+        } else if (Array.isArray(detail) && detail[0]?.msg) {
+          // Pydantic validation array.
+          message = detail.map((d) => d.msg).filter(Boolean).join("; ") || message;
+        }
+      } else if (err?.message) {
+        message = err.message;
+      }
+      dispatch(Actions.setError(message));
     } finally {
       setBusy(false);
     }

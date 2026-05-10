@@ -569,10 +569,22 @@ function SolvaArtefactHandoffBar({ session, sessionId }) {
     navigate(`/app/solva?seed_kind=solva_artefact&seed_id=${encodeURIComponent(sessionId)}`);
   };
 
-  const onTakeToCycle = () => {
-    // Stretch — wired in Wave 3 if budget allows. For UAT we surface
-    // the affordance and tell the user it's coming.
-    toast.info("Take-to-Cycle from Solva is coming next. For now, use Continue in Chat.");
+  const onTakeToCycle = async () => {
+    if (!sessionId) return;
+    try {
+      const { data } = await api.post(`/solva/v2/sessions/${sessionId}/take-to-cycle`, {});
+      toast.success("Added to your active cycle");
+      const qid = data?.cycle_question_id;
+      navigate(qid ? `/app/cycle?question_id=${encodeURIComponent(qid)}` : "/app/cycle");
+    } catch (e) {
+      const detail = e?.response?.data?.detail;
+      const code = (detail && typeof detail === "object" && detail.code) || "";
+      if (code === "NO_ACTIVE_CYCLE") {
+        toast.message("Start a cycle in Cycle Manager first, then come back here.");
+      } else {
+        toast.error(apiErrorMessage(e));
+      }
+    }
   };
 
   const status = session?.status;

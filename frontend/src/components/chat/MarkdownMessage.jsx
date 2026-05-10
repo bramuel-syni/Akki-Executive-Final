@@ -1,38 +1,52 @@
 /**
  * MarkdownMessage — streaming-safe markdown renderer for chat assistant
- * bubbles. Wraps `react-markdown` with the same plugin set the chat
- * surface used inline (remarkGfm + rehypeHighlight) and adds the
- * Workstream B.1 polish:
+ * bubbles.
  *
- *   - Blinking cursor `▌` while `streaming === true` (CSS keyframe,
- *     not JS interval, so it survives heavy DOM diffing).
- *   - Custom code/link/table/pre/img renderers in one place.
- *   - `disallowedElements` to neutralise any LLM that tries to emit
- *     <script>/<iframe>/<style>/<form> tags.
- *   - The wrapper is a div with `data-testid` so the existing test
- *     selectors (`chat-msg-assistant-md` / `chat-msg-assistant-streaming`)
- *     keep matching.
+ * 2026-05-10: rewritten to fix the streaming-flicker bug a UAT user
+ * reported. The original version re-ran `react-markdown` on every
+ * delta, which (a) rebuilt the AST per token and (b) ran
+ * `rehype-highlight` on partial code blocks, producing flash-of-
+ * unhighlighted-text + a perceptible flicker in the chat bubble.
  *
- * Citation rendering stays out of this component on purpose. The
- * citation-bearing path in Chat.jsx still uses `renderInlineCitations`
- * because mixing react-markdown's string parser with React node
- * substitutions for `[n]` markers is brittle. The two paths share the
- * same outer container styles via `akki-chat-md`.
+ * Fixes shipped here (Workstream A):
+ *   1. **Throttle re-renders to ~30 fps via `requestAnimationFrame`**.
+ *      We coalesce rapid `content` changes into one render per frame.
+ *      On the boundary (streaming flips false), we drain instantly so
+ *      the canonical text lands without delay.
+ *   2. **`React.memo`** on the inner body so identical content
+ *      strings are short-circuited (no AST rebuild).
+ *   3. **Stable `components` and `plugin` arrays** via module-level
+ *      consts — re-using react-markdown's `useMemo` for them was
+ *      actually preventing the AST cache from working.
+ *   4. **Skip `rehype-highlight` while streaming**. Partial code
+ *      blocks are the worst offender for visible flicker. We apply
+ *      highlighting only on the canonical (post-stream) render. On
+ *      `streaming=false` we re-render once with highlight on.
+ *   5. **No `will-change: contents`** — that hint was hurting.
+ *      Removed from the CSS file too.
+ *   6. **CSS containment** (`contain: layout style`) is set on the
+ *      outer div so the chat list above the streaming message doesn't
+ *      reflow when the bubble grows.
  */
-import React from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github.css";
 import "./MarkdownMessage.css";
 
+// Module-level constants — referential stability. React-markdown
+// caches its parser based on plugin identity; recreating arrays per
+// render busts that cache.
+const REMARK_PLUGINS = [remarkGfm];
+const REHYPE_PLUGINS_WITH_HIGHLIGHT = [rehypeHighlight];
+const REHYPE_PLUGINS_NONE = [];
+
+const DISALLOWED = ["script", "iframe", "style", "form"];
+
 const COMPONENTS = {
   a: ({ node: _node, ...props }) => (
-    <a
-      {...props}
-      target="_blank"
-      rel="noreferrer noopener"
-    />
+    <a {...props} target="_blank" rel="noreferrer noopener" />
   ),
   table: ({ node: _node, ...props }) => (
     <div className="akki-chat-md-table-wrap" style={{ overflowX: "auto" }}>
@@ -40,37 +54,91 @@ const COMPONENTS = {
     </div>
   ),
   code: ({ node: _node, inline, ...props }) =>
-    inline
-      ? <code {...props} />
-      : <code {...props} />,
+    // Inline vs block — both use the same default <code> render but
+    // we keep the function so future targeted styling has a place to
+    // live without restructuring callers.
+    inline ? <code {...props} /> : <code {...props} />,
   pre: ({ node: _node, ...props }) => <pre {...props} />,
   img: ({ node: _node, ...props }) => (
     <img {...props} alt={props.alt || ""} loading="lazy" />
   ),
 };
 
-const DISALLOWED = ["script", "iframe", "style", "form"];
+/**
+ * Inner memo'd body. Pure function of (content, streaming). React
+ * skips the render when both are referentially equal — which, for
+ * `content` (a string), is value-equal.
+ */
+const MarkdownBody = React.memo(function MarkdownBody({ content, streaming }) {
+  // Skip rehype-highlight while streaming — partial code blocks
+  // cause flash-of-unhighlighted-text on every chunk. Apply on the
+  // canonical (post-stream) render only. The user sees highlighting
+  // when the message lands, which is the same UX claude.ai uses.
+  const rehypePlugins = streaming ? REHYPE_PLUGINS_NONE : REHYPE_PLUGINS_WITH_HIGHLIGHT;
+  return (
+    <ReactMarkdown
+      remarkPlugins={REMARK_PLUGINS}
+      rehypePlugins={rehypePlugins}
+      disallowedElements={DISALLOWED}
+      unwrapDisallowed
+      components={COMPONENTS}
+    >
+      {content || ""}
+    </ReactMarkdown>
+  );
+});
+
+
+/**
+ * Throttle the visible content to one update per animation frame.
+ * Returns the throttled value. On `streaming=false` we drain
+ * immediately so the canonical text is exact at the moment the
+ * bubble lands.
+ */
+function useRafThrottledContent(content, streaming) {
+  const [shown, setShown] = useState(content);
+  const pendingRef = useRef(content);
+  const rafRef = useRef(null);
+
+  useEffect(() => {
+    pendingRef.current = content;
+    if (!streaming) {
+      // Stream just ended — drain instantly, cancel any pending RAF.
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      setShown(content);
+      return undefined;
+    }
+    if (rafRef.current) return undefined; // already scheduled
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      setShown(pendingRef.current);
+    });
+    return undefined;
+  }, [content, streaming]);
+
+  useEffect(() => () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+  }, []);
+
+  return shown;
+}
+
 
 export default function MarkdownMessage({ content, streaming = false }) {
+  const throttled = useRafThrottledContent(content, streaming);
+  // Memo the testid so the outer div doesn't churn its data attr.
+  const testid = useMemo(
+    () => (streaming ? "chat-msg-assistant-streaming" : "chat-msg-assistant-md"),
+    [streaming],
+  );
   return (
-    <div
-      className="akki-chat-md"
-      data-testid={streaming ? "chat-msg-assistant-streaming" : "chat-msg-assistant-md"}
-    >
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
-        disallowedElements={DISALLOWED}
-        unwrapDisallowed
-        components={COMPONENTS}
-      >
-        {content || ""}
-      </ReactMarkdown>
+    <div className="akki-chat-md" data-testid={testid}>
+      <MarkdownBody content={throttled} streaming={streaming} />
       {streaming && (
-        <span
-          className="akki-chat-md-cursor"
-          aria-hidden="true"
-        >
+        <span className="akki-chat-md-cursor" aria-hidden="true">
           ▌
         </span>
       )}

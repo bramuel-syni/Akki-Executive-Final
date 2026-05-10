@@ -137,7 +137,20 @@ export default function Chat() {
   const [userScrolledUp, setUserScrolledUp] = useState(false);
   const rafRef = useRef(null);
 
+  // Workstream A (2026-05-10) — chat streaming flicker fix.
+  //   - scrollToLatest() now no-ops when the user is already at
+  //     bottom (no extra scroll work, no jump).
+  //   - The per-delta effect below is throttled to one frame; it
+  //     coalesces rapid content growth into one DOM scroll write
+  //     per RAF. The MarkdownMessage component coalesces the visual
+  //     update on the same frame, so they line up.
+  //   - We never scroll while the user has scrolled up.
   const scrollToLatest = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // Already at bottom (within 8 px) — no DOM write needed.
+    if (distFromBottom <= 8) return;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
@@ -474,25 +487,34 @@ export default function Chat() {
               }
             } else if (ev.type === "message") {
               finalEvent = ev;
-              applyStreamUpdate((m) => ({
-                ...m,
-                id: ev.message_id,
-                content: ev.assistant_text,
-                model_id: ev.model,
-                citations: ev.citations || [],
-                streaming: false,
-                // Phase B.2 — propagate the structured two-pass + four-
-                // check + refusal metadata to the message bubble. The
-                // <Message/> component renders Pass 1 in a collapsible
-                // panel above the deliverable when show_pass_1 is true.
-                turn_class: ev.turn_class,
-                four_check_label: ev.four_check_label,
-                refusal_reason: ev.refusal_reason,
-                pass_1: ev.pass_1,
-                pass_2: ev.pass_2,
-                show_pass_1: ev.show_pass_1,
-                voice_violation: ev.voice_violation,
-              }));
+              applyStreamUpdate((m) => {
+                // Workstream A (2026-05-10) — flicker fix.
+                // Skip the canonical-text swap when the streamed
+                // text already matches the canonical assistant_text
+                // (the no-PII case). The swap was visible as a
+                // flicker even when the strings were identical
+                // because React still ran the diff. When the strings
+                // differ (PII redacted), we still swap — that's
+                // correct and acceptable.
+                const sameText = (m.content || "") === (ev.assistant_text || "");
+                return {
+                  ...m,
+                  id: ev.message_id,
+                  content: sameText ? m.content : ev.assistant_text,
+                  model_id: ev.model,
+                  citations: ev.citations || [],
+                  streaming: false,
+                  // Phase B.2 — propagate the structured two-pass + four-
+                  // check + refusal metadata to the message bubble.
+                  turn_class: ev.turn_class,
+                  four_check_label: ev.four_check_label,
+                  refusal_reason: ev.refusal_reason,
+                  pass_1: ev.pass_1,
+                  pass_2: ev.pass_2,
+                  show_pass_1: ev.show_pass_1,
+                  voice_violation: ev.voice_violation,
+                };
+              });
             } else if (ev.type === "error") {
               streamFailed = true;
               throw new Error(ev.message || "stream error");
