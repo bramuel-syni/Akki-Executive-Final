@@ -35,6 +35,7 @@ from documents_service import (
 )
 from services import clamav_service
 from services.clamav_service import ClamAVUnreachable
+import email_service
 
 logger = logging.getLogger("akki.inbound")
 
@@ -248,6 +249,113 @@ async def _classify_sender_tier(
     return {"tier": "unknown", "reason": "sender_not_recognised", "reportee": None}
 
 
+# ---------------------------------------------------------------------------
+# Phase D.2 — Cycle Manager reply threading
+# ---------------------------------------------------------------------------
+async def _handle_cycle_reply(
+    *,
+    payload: Dict[str, Any],
+    recipient_alias: str,
+    from_email: str, from_name: str,
+    subject: str, text_body: str, html_body: str,
+    message_id: str,
+) -> Dict[str, Any]:
+    """Postmark inbound replies that hit a `<uuid>@cycles.akki.ai` alias.
+
+    Threading: alias UUID → account_id → most-recent unanswered cycle_followups
+    row whose `to_email` matches the From header (case-insensitive). We
+    prefer rows that already record the alias on send (`reply_to_alias`);
+    fallback recomputes the alias from `account_id` for legacy rows.
+
+    Side effects:
+      1. Append the reply onto cycle_followups.replies[] with the parsed body.
+      2. Set last_reply_at and bump status from 'sent' → 'replied'.
+      3. write_audit('cycle.followup.reply_received', ...).
+      4. Idempotent on Postmark MessageID — repeats become a no-op.
+
+    Inbound-only attachments are NOT processed in this branch — the
+    cycle-reply use-case is a follow-up answer, not a document drop.
+    """
+    alias_local = email_service.cycles_alias_extract(recipient_alias)
+    if not alias_local:
+        logger.warning("cycle reply: alias not extractable from %s", recipient_alias)
+        return {"ok": False, "error": "alias_unparseable"}
+
+    candidate_followups = await db.cycle_followups.find(
+        {"to_email": {"$regex": f"^{from_email}$", "$options": "i"},
+         "status": {"$in": ["sent", "replied"]}},
+        {"_id": 0, "id": 1, "context_id": 1, "account_id": 1,
+         "reply_to_alias": 1, "to_email": 1, "sent_at": 1},
+    ).sort("sent_at", -1).to_list(50)
+
+    matching = None
+    for fu in candidate_followups:
+        if (fu.get("reply_to_alias") or "").lower() == recipient_alias.lower():
+            matching = fu
+            break
+        try:
+            alias = email_service.cycles_alias_for(fu.get("account_id") or "")
+            if alias.lower() == recipient_alias.lower():
+                matching = fu
+                break
+        except ValueError:
+            continue
+
+    if not matching:
+        logger.warning(
+            "cycle reply: no matching followup for alias=%s from=%s",
+            recipient_alias, from_email,
+        )
+        return {"ok": False, "error": "no_matching_followup",
+                "alias": recipient_alias, "from": from_email}
+
+    followup_id = matching["id"]
+    context_id = matching["context_id"]
+    account_id = matching["account_id"]
+
+    if message_id:
+        already = await db.cycle_followups.find_one(
+            {"id": followup_id,
+             "replies": {"$elemMatch": {"message_id": message_id}}},
+            {"_id": 0, "id": 1},
+        )
+        if already:
+            return {"ok": True, "duplicate": True, "followup_id": followup_id}
+
+    reply_doc = {
+        "id": str(uuid.uuid4()),
+        "message_id": message_id or None,
+        "from_email": from_email,
+        "from_name": from_name or None,
+        "subject": subject,
+        "body_text": text_body[:20000],
+        "body_html_excerpt": html_body[:8000],
+        "received_at": iso(now()),
+    }
+
+    await db.cycle_followups.update_one(
+        {"id": followup_id, "context_id": context_id},
+        {"$push": {"replies": reply_doc},
+         "$set": {"status": "replied", "last_reply_at": reply_doc["received_at"]}},
+    )
+
+    try:
+        await write_audit(
+            context_id, account_id,
+            "cycle.followup.reply_received", "cycle_followup", followup_id,
+            {"from": from_email, "subject": subject[:200],
+             "message_id": message_id or None, "via_alias": recipient_alias,
+             "body_chars": len(text_body)},
+        )
+    except Exception:
+        logger.exception("cycle reply: audit write failed (non-fatal)")
+
+    return {"ok": True, "followup_id": followup_id,
+            "context_id": context_id, "via_alias": recipient_alias}
+
+
+
+
 @router.post("/postmark")
 async def receive_postmark_inbound(request: Request, secret: Optional[str] = Query(None)):
     _verify_secret(secret)
@@ -267,6 +375,27 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
     from_name = (payload.get("FromName") or "").strip()
     message_id = (payload.get("MessageID") or "").strip()
     attachments_raw = payload.get("Attachments") or []
+
+    # Phase D.2 — if the recipient is a cycles.akki.ai alias, this is a
+    # cycle follow-up reply. Route by alias→account match BEFORE the
+    # legacy MailboxHash flow.
+    original_recipient = (payload.get("OriginalRecipient") or "").strip().lower()
+    to_full_list = payload.get("ToFull") or []
+    candidate_recipients = [original_recipient] + [
+        (e or {}).get("Email", "").strip().lower() for e in (to_full_list or [])
+    ]
+    cycle_alias_recipient = next(
+        (r for r in candidate_recipients if email_service.is_cycles_alias(r)),
+        None,
+    )
+    if cycle_alias_recipient:
+        return await _handle_cycle_reply(
+            payload=payload,
+            recipient_alias=cycle_alias_recipient,
+            from_email=from_email, from_name=from_name,
+            subject=subject, text_body=text_body, html_body=html_body,
+            message_id=message_id,
+        )
 
     if not mailbox_hash:
         # Try ToFull[0].MailboxHash as a fallback.

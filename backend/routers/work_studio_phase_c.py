@@ -115,13 +115,44 @@ async def create_export(
         resolved_revision_id = rev_id
 
     elif body.source_type == "cycle_compilation":
-        # Phase D will wire this — return 422 with an explicit code per the
-        # C.1 spec so callers can branch.
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "not_yet_supported_in_c1",
-                    "message": "Cycle Manager compilation exports land in Phase D."},
+        # Phase D.1 — wired. The `source_id` for cycle_compilation is the
+        # cycle's agenda_id. Look up the persisted brief; if not present,
+        # tell the caller to compile first.
+        from work_studio.persistence import compute_brief_id
+        bid = compute_brief_id(
+            account_id=account["id"],
+            source_type="cycle_compilation",
+            source_id=body.source_id,
         )
+        parent = await get_brief(db, bid, account["id"])
+        if not parent:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "cycle_not_compiled",
+                    "message": ("This cycle has not been compiled yet. "
+                                "Run POST /api/contexts/{cid}/cycle/draft-compilation "
+                                "first; that produces the brief."),
+                },
+            )
+        rev_id = body.revision_id or parent["active_revision_id"]
+        rev = await get_revision(
+            db, brief_id=bid, revision_id=rev_id, account_id=account["id"],
+        )
+        if not rev:
+            raise HTTPException(status_code=404, detail="revision_not_found")
+        snapshot = dict(rev.get("snapshot") or {})
+        snapshot["depth"] = body.depth
+        snapshot["fidelity"] = body.fidelity
+        if body.company_label:
+            snapshot["company_label"] = body.company_label
+        if body.document_type:
+            snapshot["document_type"] = body.document_type
+        if body.programme is not None:
+            snapshot["programme"] = body.programme
+        brief = dict_to_brief(snapshot)
+        resolved_brief_id = bid
+        resolved_revision_id = rev_id
     elif body.source_type == "chat_artefact":
         chat = await db.chats.find_one({"id": body.source_id, "account_id": account["id"]})
         if not chat:

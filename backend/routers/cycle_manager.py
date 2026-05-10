@@ -527,6 +527,7 @@ async def draft_followups(
             rec = {
                 "id": str(uuid.uuid4()),
                 "context_id": context_id,
+                "account_id": ctx["account"]["id"],
                 "agenda_id": agenda["id"],
                 "agenda_item_id": it["id"],
                 "agenda_item_label": it["label"],
@@ -542,6 +543,10 @@ async def draft_followups(
                 "sent_at": None,
                 "send_mode": None,
                 "send_id": None,
+                # Phase D.2 — replies array starts empty; gets populated
+                # by the cycle-reply branch in routers/inbound_email.py.
+                "replies": [],
+                "last_reply_at": None,
             }
             await db.cycle_followups.insert_one(rec)
             rec.pop("_id", None)
@@ -588,19 +593,28 @@ async def send_followup(
     context_id: str, followup_id: str,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    """Send an approved follow-up via Resend. D-001 — From uses the
-    forwarding alias ('AKKI for <Exec>'); test mode is fine in dev."""
+    """Phase D.2 — send an approved follow-up via Resend using the
+    Cycle Manager outbound posture:
+
+      From      :  '<Executive Name> (via Akki)' <noreply@cycles.akki.ai>
+      Reply-To  :  <account-uuid>@cycles.akki.ai     (opaque alias)
+
+    The reply-to alias is deterministic per account (UUIDv5). Inbound
+    replies hit the Postmark webhook (`routers/inbound_email.py`) and
+    are threaded back to this `cycle_followups` row by alias→account
+    lookup + most-recent-unanswered-followup-to-this-recipient match.
+    """
     rec = await db.cycle_followups.find_one(
         {"id": followup_id, "context_id": context_id}, {"_id": 0},
     )
     if not rec:
         raise HTTPException(status_code=404, detail="Follow-up not found")
     if rec["status"] not in ("approved", "draft"):
-        # idempotent — return the existing record if already sent
-        return rec
+        return rec  # idempotent
 
     exec_name = ctx["account"].get("name") or "the executive"
-    reply_to = ctx["account"].get("email")
+    reply_to = email_service.cycles_alias_for(ctx["account"]["id"])
+
     try:
         result = await email_service.send_email(
             to=[rec["to_email"]],
@@ -609,9 +623,11 @@ async def send_followup(
             text=rec["draft_body"],
             from_executive_name=exec_name,
             reply_to=reply_to,
+            posture="cycle",
             tags=[
                 {"name": "surface", "value": "cycle_followup"},
                 {"name": "context_id", "value": context_id},
+                {"name": "followup_id", "value": followup_id},
             ],
         )
     except Exception as exc:  # noqa: BLE001
@@ -634,13 +650,21 @@ async def send_followup(
             "send_mode": result.get("mode"),
             "send_id": result.get("id"),
             "sent_at": iso(now()),
+            "from_header": result.get("from"),
+            "reply_to_alias": reply_to,
         }},
     )
     try:
         await write_audit(
             context_id, ctx["account"]["id"],
             "cycle.followup.sent", "cycle_followup", followup_id,
-            {"to": rec["to_email"], "mode": result.get("mode")},
+            {
+                "to": rec["to_email"],
+                "mode": result.get("mode"),
+                "from_header": result.get("from"),
+                "reply_to_alias": reply_to,
+                "send_id": result.get("id"),
+            },
         )
     except Exception:
         pass
@@ -648,28 +672,58 @@ async def send_followup(
         "ok": result.get("ok"),
         "mode": result.get("mode"),
         "send_id": result.get("id"),
+        "from_header": result.get("from"),
+        "reply_to_alias": reply_to,
         "followup_id": followup_id,
     }
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Draft Compilation Output
+# Draft Compilation Output — Phase D.1 rebuild
 # ──────────────────────────────────────────────────────────────────────
 @router.post("/contexts/{context_id}/cycle/draft-compilation")
 async def draft_compilation(
     context_id: str,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    """Produce a deterministic .docx compilation of the cycle's scored
-    contributions. Reuses the work_studio_export renderer
-    (`render_report_docx`) so the executive gets a familiar layout
-    without a new template."""
-    from services import work_studio_export as _ex
-    from pathlib import Path
-    import os
+    """Phase D.1 — produce a real, board-grade compilation of the cycle's
+    scored contributions and persist it as a Work Studio Brief.
+
+    The compilation flows through the same pipeline as Solva-originated
+    Briefs (C.1 → C.2 → C.3) so the executive can Refine via two-pass
+    enhance and Export at any of the 18 (Format × Depth × Fidelity)
+    combinations. The pre-D.1 heuristic concat-of-bullets path has been
+    deleted — that was the spec's P0 cohort blocker.
+
+    Pipeline:
+      1. Gather agenda, scored contributions, team, readiness, prior cycles.
+      2. Two-pass LLM via services.cycle_synthesis.synthesise_cycle.
+         Drafter (Sonnet 4.5) emits a strict-JSON envelope with executive
+         summary, per-item synthesis, outstanding items, next-cycle
+         adjustments, and (when prior cycles exist) cross-cycle
+         observations. Validator (Gemini 2.5 Flash) scores drift.
+      3. Convert to a Solva-shaped envelope so build_brief_from_solva
+         produces a normal Brief dataclass.
+      4. ensure_brief_persisted (C.2) — yields a stable brief_id.
+      5. Render an immediate DOCX (Board Summary / High Fidelity) via the
+         C.1 generator so the executive gets a download chip and the
+         existing UI keeps working. The export_id round-trip via the
+         legacy collection is gone.
+      6. Audit. Continue-in-Chat handoff still mints a chat seeded with
+         the compilation prose (kept for parity with prior UX).
+    """
+    from work_studio import (
+        build_brief_from_solva, ensure_brief_persisted, render_docx,
+    )
+    from work_studio.persistence import compute_brief_id
+    from services.cycle_synthesis import synthesise_cycle
     from datetime import datetime, timezone
+    import hashlib
 
     agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"])
+    if not agenda.get("items"):
+        raise HTTPException(status_code=400, detail="Set an agenda first.")
+
     contribs = await db.cycle_contributions.find(
         {"context_id": context_id, "agenda_id": agenda["id"]}, {"_id": 0},
     ).to_list(500)
@@ -677,127 +731,187 @@ async def draft_compilation(
         {"context_id": context_id, "agenda_id": agenda["id"], "status": "active"},
         {"_id": 0},
     ).to_list(100)
-    member_by_id = {m["id"]: m for m in members}
 
-    if not agenda.get("items"):
-        raise HTTPException(status_code=400, detail="Set an agenda first.")
-
-    sections: List[Dict[str, Any]] = []
-    citations: List[Dict[str, Any]] = []
-    cite_counter = 0
-    for it in agenda.get("items", []):
-        item_contribs = [c for c in contribs if c.get("agenda_item_id") == it["id"]]
-        scored = [c for c in item_contribs if c.get("scores")]
-        avg_readiness = (
-            int(sum(c["scores"]["readiness"] for c in scored) / len(scored))
-            if scored else 0
+    if not contribs:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "no_contributions",
+                "message": "Add at least one contribution before compiling.",
+            },
         )
-        bullets: List[str] = []
-        cites_used: List[int] = []
-        for c in item_contribs:
-            mem = member_by_id.get(c.get("team_member_id") or "", {})
-            cite_counter += 1
-            citations.append({
-                "doc_id": c["id"],
-                "doc_name": (c.get("title") or f"Contribution from {mem.get('name', 'team')}"),
-                "paragraph_anchor": None,
-            })
-            cites_used.append(cite_counter)
-            preview = (c.get("body_text") or "(no text)").replace("\n", " ").strip()
-            bullets.append(
-                f"{(mem.get('name') or 'Owner')}: {preview[:240]}"
-            )
-        if not bullets:
-            bullets = ["No contributions yet — chase outstanding."]
-        callout = None
-        if scored and avg_readiness >= 70:
-            callout = "Item reads at draft strength."
-        elif scored and avg_readiness >= 40:
-            callout = "Thin in places — chase before send."
-        sections.append({
-            "heading": it["label"],
-            "bullets": bullets,
-            "callout": callout,
-            "cites":   cites_used or [1],
-        })
 
-    # Ensure at least one citation exists so the validator passes.
-    if not citations:
-        citations = [{"doc_id": "stub", "doc_name": "Cycle compilation",
-                      "paragraph_anchor": None}]
-        for s in sections:
-            s["cites"] = [1]
+    # Readiness rollup (the existing endpoint shape).
+    readiness = await get_readiness(context_id, ctx)
 
-    storyline_url = await get_readiness(context_id, ctx)  # reuse rollup
-    overall = storyline_url.get("overall", 0)
+    # Prior cycles for cross-cycle observations (omit when first cycle —
+    # spec call #2: honest empty, no placeholder text). Pull at most the
+    # 3 most-recent compiled cycles for this context.
+    prior_cycles = await db.cycle_history.find(
+        {"context_id": context_id, "status": "completed"},
+        {"_id": 0, "id": 1, "title": 1, "completed_at": 1, "summary": 1},
+    ).sort("completed_at", -1).to_list(3)
 
-    content_dict = {
-        "title": agenda.get("title") or "Cycle compilation",
-        "subtitle": "Draft compilation of scored contributions.",
-        "classification": "Confidential",
+    envelope = {
+        "context_name": ctx["context"].get("name") or "—",
+        "executive_name": ctx["account"].get("name") or "—",
         "period": iso(now())[:10],
-        "generated_for": ctx["account"].get("name") or "—",
-        "executive_summary": (
-            ("Compilation reads at draft strength on " + str(overall) + "% overall — "
-             "sections below carry the contributions as scored.")
-            if overall else
-            "First-pass compilation. Items below carry the contributions as scored."
-        ),
-        "sections": sections,
-        "conclusion": (storyline_url.get("storyline") or [
-            "Decide against the readiness scoreboard before submitting."
-        ])[-1] if storyline_url.get("storyline") else "Decide against the readiness scoreboard before submitting.",
-        "citations": citations,
-    }
-    _ex.validate_content(content_dict, "report")
-    ctx_meta = {
-        "context_name":      ctx["context"].get("name") or "—",
-        "classification":    "Confidential",
-        "period":            iso(now())[:10],
-        "generated_at_human": _ex.now_human(),
-    }
-    data, sha, fname = _ex.render_report_docx(content_dict, ctx_meta)
-
-    # Persist into work_studio_exports so the existing download endpoint
-    # can serve the file under /contexts/{cid}/work-studio/exports/{eid}/download.
-    eid = str(uuid.uuid4())
-    out_dir = Path(os.environ.get("UPLOAD_DIR", "/app/backend/uploads")) / "work_studio_exports"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    fpath = out_dir / f"{eid}.docx"
-    fpath.write_bytes(data)
-
-    row = {
-        "id": eid,
-        "context_id": context_id,
-        "account_id": ctx["account"]["id"],
-        "kind": "report",
-        "output_format": "docx",
-        "status": "complete",
-        "source": "cycle_compilation",
         "agenda_id": agenda["id"],
-        "file_name": fname,
-        "file_path": str(fpath),
-        "sha256": sha,
-        "byte_len": len(data),
-        "sensitivity_band": "INTERNAL",
-        "completed_at": iso(now()),
-        "created_at": iso(now()),
+        "source_id": agenda["id"],
+        "agenda": {
+            "id": agenda["id"],
+            "title": agenda.get("title") or "Cycle compilation",
+            "items": agenda.get("items") or [],
+        },
+        "team": [
+            {"id": m["id"], "name": m.get("name", ""),
+             "role": m.get("role", ""), "owns_item_ids": m.get("owns_item_ids", []),
+             "contribution_description": m.get("contribution_description", "")}
+            for m in members
+        ],
+        "contributions": [
+            {"id": c["id"],
+             "agenda_item_id": c.get("agenda_item_id", ""),
+             "team_member_id": c.get("team_member_id", ""),
+             "title": c.get("title", ""),
+             "body_text": c.get("body_text", ""),
+             "scores": c.get("scores") or {},
+             "score_rationale": c.get("score_rationale", "")}
+            for c in contribs
+        ],
+        "readiness": readiness,
+        "prior_cycles": prior_cycles,
     }
-    await db.work_studio_exports.insert_one(row)
+
+    # Two-pass LLM synthesis.
+    synth_result = await synthesise_cycle(
+        envelope=envelope,
+        account_id=ctx["account"]["id"],
+        context_id=context_id,
+    )
+    if not synth_result.get("ok"):
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "compilation_drafter_failed",
+                "message": "The two-pass drafter could not produce a valid envelope. Try again, or split overly long contributions.",
+                "drafter_excerpt": synth_result.get("drafter_raw_excerpt", "")[:300],
+            },
+        )
+
+    # Build the Brief and persist via C.2 — yields a deterministic brief_id
+    # keyed on (account_id, "cycle_compilation", agenda_id) so re-running
+    # the compilation against the same agenda is idempotent at the brief
+    # level. Each call still creates a fresh revision through the normal
+    # C.2 flow when the user hits Refine.
+    company_label = ctx["context"].get("name") or "Akki"
+    brief = build_brief_from_solva(
+        synth_result["solva_shaped_envelope"],
+        company_label=company_label,
+        document_type="Cycle Compilation",
+        programme=agenda.get("title") or None,
+        depth="board_summary",
+        fidelity="low",   # composer-edit-friendly seed (per Phase D rule)
+    )
+    # Cycle-specific overrides on the Solva-shaped builder output:
+    # the subtitle and closing default to "Synthesised from a Solva ..."
+    # which is wrong for a cycle compilation. Patch them in-place before
+    # persistence so the brief subtitle/closing read correctly.
+    brief.subtitle = (
+        f"Compiled from {len(envelope['contributions'])} scored "
+        f"contribution(s) across {len(envelope['agenda']['items'])} agenda item(s)."
+    )
+    if envelope.get("readiness", {}).get("storyline"):
+        brief.closing_recap = (envelope["readiness"]["storyline"][-1]
+                               if envelope["readiness"]["storyline"] else None) or brief.closing_recap
+    brief.closing_brand_line = f"{company_label} · Cycle Compilation"
+    # Cover lead — promote the executive_summary to the cover so the
+    # board reader gets the headline before any sections. The Solva
+    # builder uses `intent` for cover; for cycle compilation we want
+    # the synth's executive_summary to be the cover.
+    exec_summary = (synth_result.get("synth") or {}).get("executive_summary") or ""
+    if exec_summary:
+        brief.cover_lead_paragraph = exec_summary
+    parent = await ensure_brief_persisted(
+        db, brief=brief, account_id=ctx["account"]["id"],
+        context_id=context_id,
+        source_type="cycle_compilation",
+        source_id=agenda["id"],
+    )
+    brief_id = parent["id"]
+    revision_id = parent["active_revision_id"]
+
+    # Render an immediate DOCX (Board Summary / High Fidelity) so the
+    # existing UI's download chip keeps working without forcing a
+    # follow-up call.
+    try:
+        from work_studio import dict_to_brief, get_active_revision
+        active_rev = await get_active_revision(
+            db, brief_id=brief_id, account_id=ctx["account"]["id"],
+        )
+        snap = (active_rev or {}).get("snapshot") or {}
+        if snap:
+            snap = dict(snap)
+            snap["depth"] = "board_summary"
+            snap["fidelity"] = "high"
+            export_brief = dict_to_brief(snap)
+        else:
+            export_brief = brief
+        binary = render_docx(export_brief)
+    except Exception:
+        logger.exception("draft_compilation: deterministic render failed; falling back to seed brief")
+        binary = render_docx(brief)
+
+    sha = hashlib.sha256(binary).hexdigest()
+    export_id = str(uuid.uuid4())
+    fname = (
+        f"{(company_label or 'Akki').replace(' ', '_')}_Cycle_Compilation_"
+        f"{datetime.now(timezone.utc).strftime('%Y%m%d')}.docx"
+    )
+
+    # Persist into the C.1 export collection so the existing
+    # /api/work_studio/exports/{id}/download endpoint serves the file.
+    await db.work_studio_phase_c_exports.insert_one({
+        "id": export_id,
+        "account_id": ctx["account"]["id"],
+        "context_id": context_id,
+        "source_id": agenda["id"],
+        "source_type": "cycle_compilation",
+        "format": "docx",
+        "depth": "board_summary",
+        "fidelity": "high",
+        "company_label": company_label,
+        "document_type": "Cycle Compilation",
+        "programme": agenda.get("title"),
+        "brief_id": brief_id,
+        "revision_id": revision_id,
+        "filename": fname,
+        "size_bytes": len(binary),
+        "sha256": sha,
+        "binary": binary,
+        "created_at": iso(now()),
+    })
+
+    # Audit.
     try:
         await write_audit(
             context_id, ctx["account"]["id"],
-            "cycle.draft_compilation.produced", "work_studio_export", eid,
-            {"agenda_id": agenda["id"], "sha256": sha},
+            "cycle.draft_compilation.produced",
+            "work_studio_brief", brief_id,
+            {
+                "agenda_id": agenda["id"],
+                "brief_id": brief_id,
+                "revision_id": revision_id,
+                "export_id": export_id,
+                "sha256": sha,
+                "validator_verdict": (synth_result.get("validation") or {}).get("verdict"),
+                "drafter_model": (synth_result.get("llm_audit") or {}).get("drafter", {}).get("model"),
+            },
         )
     except Exception:
-        pass
+        logger.exception("draft_compilation: audit write failed (non-fatal)")
 
-    # Workstream B.7 (2026-05-10) — Continue-in-Chat handoff.
-    # Mint a chat tethered to the active context with the compilation
-    # DOCX pre-attached as a `cycle_compilation` document. The SPA reads
-    # the returned `continue_chat_id` to render the "Continue in chat"
-    # button on the Compilation step.
+    # Continue-in-Chat handoff (kept for parity with prior UX).
     continue_chat_id = None
     try:
         from services.continue_chat import create_continue_chat
@@ -806,26 +920,29 @@ async def draft_compilation(
             context_id=context_id,
             kind="cycle_compilation",
             source="cycle_compilation",
-            export_id=eid,
+            export_id=export_id,
             file_name=fname,
-            file_path=str(fpath),
+            file_path="",
             output_format="docx",
-            extracted_text="",
+            extracted_text=brief.cover_lead_paragraph or "",
             sensitivity_band="INTERNAL",
         )
-    except Exception as e:  # noqa: BLE001
-        # Continue-in-Chat must never block the compilation download.
-        # Log and proceed; the user gets the file, just no chat handoff.
-        import logging as _lg
-        _lg.getLogger("akki.cycle").warning(
-            "continue_chat creation failed: %s", e.__class__.__name__,
-        )
+    except Exception:
+        logger.warning("continue_chat creation failed (non-fatal)")
 
     return {
         "ok": True,
-        "export_id": eid,
+        # New (canonical) — surface the C.2/C.3-aware brief.
+        "brief_id": brief_id,
+        "revision_id": revision_id,
+        "redirect_url": f"/app/studio/composer/briefing/{brief_id}",
+        "validation": synth_result.get("validation") or {},
+        # Legacy field names — preserved so the existing CompilationStep
+        # download/continue-in-chat UI keeps working unchanged.
+        "export_id": export_id,
         "file_name": fname,
-        "byte_len": len(data),
+        "byte_len": len(binary),
         "sha256": sha,
         "continue_chat_id": continue_chat_id,
     }
+

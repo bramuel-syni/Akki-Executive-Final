@@ -1,15 +1,32 @@
 """Resend transactional email service.
 
-Single entry point for all outbound mail from AKKI. Sender format follows
-the iter18 governance posture: 'AKKI for <Executive Name> <noreply@akki.ai>'
-with reply-to set to the executive's real email address — so AKKI's role is
-explicit while replies route back to the principal naturally.
+Single entry point for all outbound mail from AKKI.
+
+Sender format
+=============
+Two shapes are supported:
+
+  iter18 governance posture (default for non-cycle traffic — checklists,
+  digests):
+      'AKKI for <Executive Name> <noreply@akki.ai>'
+      reply-to = the executive's real email address
+
+  Phase D — cycle follow-ups (per the Executive Cycle Manager Spec):
+      '<First Last> (via Akki) <noreply@cycles.akki.ai>'
+      reply-to = '<account-uuid>@cycles.akki.ai'   (opaque alias)
+      Inbound replies hit the Postmark webhook and are threaded back to
+      the cycle_followups row by the alias-recipient match.
+
+The cycle posture exists so the recipient sees a peer-toned sender
+('Sarah Mwangi (via Akki)') rather than a third-party-tooling sender,
+and so AKKI owns the inbound-reply path through a domain we control.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import os
+import uuid
 from typing import Any, Dict, List, Optional
 
 import resend
@@ -19,6 +36,13 @@ logger = logging.getLogger("akki.email")
 _RESEND_KEY = os.environ.get("RESEND_API_KEY")
 _DEFAULT_FROM = os.environ.get("RESEND_FROM_EMAIL") or "onboarding@resend.dev"
 _DEFAULT_FROM_NAME = os.environ.get("RESEND_FROM_NAME") or "AKKI"
+
+# Phase D — Cycle Manager outbound posture.
+_CYCLE_DOMAIN = os.environ.get("CYCLE_REPLY_DOMAIN") or "cycles.akki.ai"
+_CYCLE_FROM_EMAIL = os.environ.get("CYCLE_FROM_EMAIL") or f"noreply@{_CYCLE_DOMAIN}"
+# Stable namespace for per-account reply-to alias derivation. Generated
+# once; baked in. Pair with the `cycles_alias_for(account_id)` helper.
+_CYCLE_ALIAS_NAMESPACE = uuid.UUID("3f6e9c12-4b81-4a2d-9d34-2ce5a8f17b09")
 
 if _RESEND_KEY:
     resend.api_key = _RESEND_KEY
@@ -31,12 +55,76 @@ def configured() -> bool:
 
 def _format_from(executive_name: Optional[str]) -> str:
     """Compose the From header per iter18 Q3=b: 'AKKI for Bramuel <noreply@...>'.
-    Falls back to plain 'AKKI <noreply@...>' if no executive name provided."""
+    Falls back to plain 'AKKI <noreply@...>' if no executive name provided.
+
+    This is the DEFAULT (non-cycle) posture — checklists, digests, etc.
+    """
     if executive_name:
         clean = executive_name.replace('"', "").strip()
         if clean:
             return f'"AKKI for {clean}" <{_DEFAULT_FROM}>'
     return f'"{_DEFAULT_FROM_NAME}" <{_DEFAULT_FROM}>'
+
+
+def _format_from_cycle(executive_name: Optional[str]) -> str:
+    """Phase D — Cycle Manager outbound posture.
+
+    Produces  '"<First Last> (via Akki)" <noreply@cycles.akki.ai>'  per
+    the Executive Cycle Manager Spec. Recipient sees a peer-toned sender
+    rather than a third-party-tooling From header.
+
+    `executive_name` is treated as the user's full display name. We
+    don't try to split first/last — the spec calls for the natural
+    display form ('Sarah Mwangi (via Akki)'); the parenthetical is
+    audit-trail provenance, not legal attribution."""
+    if executive_name:
+        clean = executive_name.replace('"', "").strip()
+        if clean:
+            return f'"{clean} (via Akki)" <{_CYCLE_FROM_EMAIL}>'
+    return f'"AKKI Cycles" <{_CYCLE_FROM_EMAIL}>'
+
+
+def cycles_alias_for(account_id: str) -> str:
+    """Deterministic per-account opaque reply-to alias.
+
+    Returns '<uuid5>@cycles.akki.ai'. The same account_id always yields
+    the same alias — see Phase D ambiguity call #3 (per-account, not
+    per-followup).
+
+    Inbound-reply threading uses the alias to look up the account, then
+    finds the most-recent matching `cycle_followups` row by `to_email`
+    + context (in `routers/inbound_email.py`).
+    """
+    if not account_id:
+        raise ValueError("account_id required")
+    alias_uuid = str(uuid.uuid5(_CYCLE_ALIAS_NAMESPACE, account_id))
+    return f"{alias_uuid}@{_CYCLE_DOMAIN}"
+
+
+def is_cycles_alias(addr: str) -> bool:
+    """True iff `addr` looks like '<uuid>@cycles.akki.ai'. Used by the
+    Postmark webhook to detect cycle-bound inbound replies."""
+    if not addr:
+        return False
+    addr = addr.strip().lower()
+    if "@" not in addr:
+        return False
+    local, domain = addr.rsplit("@", 1)
+    if domain != _CYCLE_DOMAIN.lower():
+        return False
+    # Local part must be a UUID.
+    try:
+        uuid.UUID(local)
+        return True
+    except ValueError:
+        return False
+
+
+def cycles_alias_extract(addr: str) -> Optional[str]:
+    """Return the UUID local-part of a cycles alias, or None."""
+    if not is_cycles_alias(addr):
+        return None
+    return addr.strip().lower().rsplit("@", 1)[0]
 
 
 async def send_email(
@@ -49,17 +137,24 @@ async def send_email(
     from_executive_name: Optional[str] = None,
     tags: Optional[List[Dict[str, str]]] = None,
     attachments: Optional[List[Dict[str, Any]]] = None,
+    posture: str = "default",
 ) -> Dict[str, Any]:
     """Send a transactional email via Resend.
+
+    `posture`:
+      - 'default' (iter18) — '"AKKI for <Name>" <noreply@akki.ai>'
+                              reply-to = caller-supplied (typically the
+                              executive's own email).
+      - 'cycle'   (Phase D) — '"<Name> (via Akki)" <noreply@cycles.akki.ai>'
+                              reply-to = '<account-uuid>@cycles.akki.ai'
+                              opaque alias the caller passes in.
 
     Returns `{ok, id, mode}` where mode is one of:
       - 'sent'                 success
       - 'noop'                 Resend not configured (caller can fall back)
       - 'test_mode_restricted' Resend rejected because the API key is in
                                test mode and the recipient is not the
-                               account owner's registered address. The
-                               caller MUST surface this to the user
-                               rather than treating it as a generic error.
+                               account owner's registered address.
       - 'error'                anything else
 
     Never raises — email failures must not crash a UX flow.
@@ -71,8 +166,13 @@ async def send_email(
         logger.warning("Resend not configured — email to %s skipped", to)
         return {"ok": False, "id": None, "mode": "noop", "error": "RESEND_API_KEY not set"}
 
+    from_header = (
+        _format_from_cycle(from_executive_name)
+        if posture == "cycle"
+        else _format_from(from_executive_name)
+    )
     params: Dict[str, Any] = {
-        "from": _format_from(from_executive_name),
+        "from": from_header,
         "to": to,
         "subject": subject,
         "html": html,
@@ -88,7 +188,8 @@ async def send_email(
 
     try:
         result = await asyncio.to_thread(resend.Emails.send, params)
-        return {"ok": True, "id": result.get("id"), "mode": "sent"}
+        return {"ok": True, "id": result.get("id"), "mode": "sent",
+                "from": from_header, "reply_to": reply_to}
     except Exception as e:  # noqa: BLE001 — Resend wraps all errors
         msg = str(e)
         # Resend test-mode constraint: 403 + "you can only send testing
@@ -112,6 +213,7 @@ async def send_email(
             }
         logger.exception("Resend send failed")
         return {"ok": False, "id": None, "mode": "error", "error": msg[:300]}
+
 
 
 def render_checklist_email_html(
