@@ -24,18 +24,34 @@ import { Label } from "@/components/ui/label";
 import {
   Sparkles, ChevronLeft, ChevronRight, Plus, X, Loader2,
   Mail, FileDown, Check, AlertCircle, Users, ListChecks, CheckCircle2,
-  ClipboardList, Send, Download, MessageSquare,
+  ClipboardList, Send, Download, MessageSquare, Pencil,
 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogCancel, AlertDialogAction,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import JudgementPanel from "@/components/cycle/JudgementPanel";
 
 const STEPS = [
-  { id: "agenda",        label: "Agenda",        icon: ClipboardList },
-  { id: "team",          label: "Team",          icon: Users },
-  { id: "contributions", label: "Contributions", icon: ListChecks },
-  { id: "scoreboard",    label: "Scoreboard",    icon: CheckCircle2 },
-  { id: "followups",     label: "Follow-ups",    icon: Mail },
-  { id: "compilation",   label: "Compilation",   icon: FileDown },
+  { id: "agenda",        label: "Agenda",        icon: ClipboardList, act: "setup" },
+  { id: "team",          label: "Team",          icon: Users,         act: "setup" },
+  { id: "contributions", label: "Contributions", icon: ListChecks,    act: "run"   },
+  { id: "scoreboard",    label: "Scoreboard",    icon: CheckCircle2,  act: "run"   },
+  { id: "followups",     label: "Follow-ups",    icon: Mail,          act: "run"   },
+  { id: "compilation",   label: "Compilation",   icon: FileDown,      act: "ship"  },
+];
+
+// Phase D.3 — three-act grouping above the six-step strip.
+// Setup = define the cycle (agenda, team).
+// Run   = execute it (gather, score, chase).
+// Ship  = produce the deliverable (compile).
+const ACTS = [
+  { id: "setup", label: "Setup", subtitle: "Agenda · Team" },
+  { id: "run",   label: "Run",   subtitle: "Contributions · Scoreboard · Follow-ups" },
+  { id: "ship",  label: "Ship",  subtitle: "Compilation" },
 ];
 
 const STATUS_TONE = {
@@ -49,8 +65,47 @@ const STATUS_TONE = {
 /* Step header — shared shell for each step                           */
 /* ------------------------------------------------------------------ */
 function StepShell({ activeId, onSelect, children, busy }) {
+  const activeAct = STEPS.find((s) => s.id === activeId)?.act || "setup";
   return (
     <>
+      {/* Phase D.3 — Setup/Run/Ship act-pill bar wrapping the existing
+          six-step strip. Clicking a pill jumps to that act's first
+          unfinished step (or its first step, if all are pristine). */}
+      <nav
+        className="flex items-center gap-2 mb-3"
+        data-testid="cycle-act-bar"
+        aria-label="Cycle acts"
+      >
+        {ACTS.map((act) => {
+          const isActive = activeAct === act.id;
+          const firstStepInAct = STEPS.find((s) => s.act === act.id);
+          return (
+            <button
+              key={act.id}
+              type="button"
+              onClick={() => firstStepInAct && onSelect(firstStepInAct.id)}
+              disabled={busy}
+              className={`px-3.5 py-1.5 rounded-full border text-[12.5px] inline-flex items-center gap-2 transition-colors ${
+                isActive
+                  ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                  : "border-[var(--rule)] bg-white text-[var(--ink)] hover:border-[var(--accent)]"
+              }`}
+              data-testid={`cycle-act-pill-${act.id}${isActive ? "-active" : ""}`}
+              aria-current={isActive ? "step" : undefined}
+              title={act.subtitle}
+            >
+              <span className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-80">
+                {act.id === "setup" ? "01" : act.id === "run" ? "02" : "03"}
+              </span>
+              <span className="font-medium">{act.label}</span>
+              <span className={`hidden md:inline text-[11px] ${isActive ? "opacity-90" : "text-[var(--muted)]"}`}>
+                · {act.subtitle}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+
       <nav className="flex items-stretch gap-0 mb-6 border-b border-[var(--rule)]" data-testid="cycle-stepper" role="tablist">
         {STEPS.map((s, i) => {
           const Icon = s.icon;
@@ -182,9 +237,19 @@ function AgendaStep({ cid, agenda, onSaved, onForward }) {
 function TeamStep({ cid, agenda, members, refresh, onBack, onForward }) {
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState({ name: "", email: "", role: "", contribution_description: "", owns_item_ids: [] });
+  const [editingId, setEditingId] = useState(null);
+  const [editDraft, setEditDraft] = useState(null);
+  const [editBusy, setEditBusy] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);  // {id, name} when AlertDialog is open
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const items = agenda?.items || [];
 
   const toggleItem = (id) => setDraft((p) => ({
+    ...p,
+    owns_item_ids: p.owns_item_ids.includes(id) ? p.owns_item_ids.filter((x) => x !== id) : [...p.owns_item_ids, id],
+  }));
+
+  const toggleEditItem = (id) => setEditDraft((p) => ({
     ...p,
     owns_item_ids: p.owns_item_ids.includes(id) ? p.owns_item_ids.filter((x) => x !== id) : [...p.owns_item_ids, id],
   }));
@@ -202,8 +267,47 @@ function TeamStep({ cid, agenda, members, refresh, onBack, onForward }) {
     } catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
   };
 
-  const onRemove = async (mid) => {
-    try { await api.delete(`/contexts/${cid}/cycle/team/${mid}`); await refresh(); } catch (e) { toast.error(apiErrorMessage(e)); }
+  const startEdit = (m) => {
+    setEditingId(m.id);
+    setEditDraft({
+      name: m.name || "",
+      email: m.email || "",
+      role: m.role || "",
+      contribution_description: m.contribution_description || "",
+      owns_item_ids: Array.isArray(m.owns_item_ids) ? [...m.owns_item_ids] : [],
+    });
+  };
+  const cancelEdit = () => { setEditingId(null); setEditDraft(null); };
+
+  const saveEdit = async () => {
+    if (!editDraft) return;
+    if (!editDraft.name.trim() || !editDraft.email.trim() || !editDraft.contribution_description.trim()) {
+      toast.error("Name, email, and contribution description are required."); return;
+    }
+    setEditBusy(true);
+    try {
+      await api.patch(`/contexts/${cid}/cycle/team/${editingId}`, {
+        name: editDraft.name.trim(),
+        email: editDraft.email.trim(),
+        role: editDraft.role.trim() || null,
+        contribution_description: editDraft.contribution_description.trim(),
+        owns_item_ids: editDraft.owns_item_ids,
+      });
+      toast.success("Member updated.");
+      cancelEdit();
+      await refresh();
+    } catch (e) { toast.error(apiErrorMessage(e)); } finally { setEditBusy(false); }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    try {
+      await api.delete(`/contexts/${cid}/cycle/team/${deleteTarget.id}`);
+      toast.success(`Removed ${deleteTarget.name}.`);
+      setDeleteTarget(null);
+      await refresh();
+    } catch (e) { toast.error(apiErrorMessage(e)); } finally { setDeleteBusy(false); }
   };
 
   return (
@@ -212,21 +316,116 @@ function TeamStep({ cid, agenda, members, refresh, onBack, onForward }) {
       <p className="akki-meta mb-5">Add the people contributing material — describe what each one is delivering.</p>
       {members.length > 0 && (
         <ul className="border border-[var(--rule)] divide-y divide-[var(--rule)] rounded-md bg-white mb-5" data-testid="cycle-team-list">
-          {members.map((m) => (
-            <li key={m.id} className="px-4 py-3" data-testid={`cycle-team-row-${m.id}`}>
-              <div className="flex items-baseline justify-between gap-3 mb-1 flex-wrap">
-                <p className="akki-serif text-[14px] text-[var(--ink)]">{m.name} <span className="text-[12px] text-[var(--muted)] font-mono">· {m.email}</span></p>
-                <Button type="button" size="sm" variant="ghost" onClick={() => onRemove(m.id)} className="text-[12px] text-[var(--muted)] hover:text-[#8B2E2B] h-7"><X className="w-3.5 h-3.5" /></Button>
-              </div>
-              {m.role && <p className="text-[11.5px] text-[var(--muted)] mb-1">{m.role}</p>}
-              <p className="text-[12.5px] text-[var(--ink)] leading-[1.55]">{m.contribution_description}</p>
-              {m.owns_item_ids?.length > 0 && (
-                <p className="text-[11px] text-[var(--muted)] mt-1 font-mono">Owns: {m.owns_item_ids.map((id) => items.find((it) => it.id === id)?.label || "(missing)").join(" · ")}</p>
-              )}
-            </li>
-          ))}
+          {members.map((m) => {
+            const isEditing = editingId === m.id;
+            return (
+              <li key={m.id} className="px-4 py-3" data-testid={`cycle-team-row-${m.id}`}>
+                {!isEditing ? (
+                  <>
+                    <div className="flex items-baseline justify-between gap-3 mb-1 flex-wrap">
+                      <p className="akki-serif text-[14px] text-[var(--ink)]">{m.name} <span className="text-[12px] text-[var(--muted)] font-mono">· {m.email}</span></p>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button" size="sm" variant="ghost"
+                          onClick={() => startEdit(m)}
+                          className="text-[12px] text-[var(--muted)] hover:text-[var(--ink)] h-7"
+                          data-testid={`cycle-team-edit-${m.id}`}
+                          aria-label={`Edit ${m.name}`}
+                        ><Pencil className="w-3.5 h-3.5" /></Button>
+                        <Button
+                          type="button" size="sm" variant="ghost"
+                          onClick={() => setDeleteTarget({ id: m.id, name: m.name })}
+                          className="text-[12px] text-[var(--muted)] hover:text-[#8B2E2B] h-7"
+                          data-testid={`cycle-team-remove-${m.id}`}
+                          aria-label={`Remove ${m.name}`}
+                        ><X className="w-3.5 h-3.5" /></Button>
+                      </div>
+                    </div>
+                    {m.role && <p className="text-[11.5px] text-[var(--muted)] mb-1">{m.role}</p>}
+                    <p className="text-[12.5px] text-[var(--ink)] leading-[1.55]">{m.contribution_description}</p>
+                    {m.owns_item_ids?.length > 0 && (
+                      <p className="text-[11px] text-[var(--muted)] mt-1 font-mono">Owns: {m.owns_item_ids.map((id) => items.find((it) => it.id === id)?.label || "(missing)").join(" · ")}</p>
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-2.5" data-testid={`cycle-team-edit-form-${m.id}`}>
+                    <p className="akki-overline text-[var(--muted)]">Edit member</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      <Input placeholder="Name" value={editDraft.name} onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })} className="rounded-sm" data-testid={`cycle-team-edit-name-${m.id}`} />
+                      <Input placeholder="Email" type="email" value={editDraft.email} onChange={(e) => setEditDraft({ ...editDraft, email: e.target.value })} className="rounded-sm" data-testid={`cycle-team-edit-email-${m.id}`} />
+                      <Input placeholder="Role (optional)" value={editDraft.role} onChange={(e) => setEditDraft({ ...editDraft, role: e.target.value })} className="rounded-sm" data-testid={`cycle-team-edit-role-${m.id}`} />
+                    </div>
+                    <Textarea
+                      value={editDraft.contribution_description}
+                      onChange={(e) => setEditDraft({ ...editDraft, contribution_description: e.target.value })}
+                      className="rounded-sm min-h-[64px]"
+                      data-testid={`cycle-team-edit-desc-${m.id}`}
+                    />
+                    {items.length > 0 && (
+                      <div>
+                        <p className="text-[11px] text-[var(--muted)] mb-1.5">Owns agenda items:</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {items.map((it) => {
+                            const on = editDraft.owns_item_ids.includes(it.id);
+                            return (
+                              <button key={it.id} type="button" onClick={() => toggleEditItem(it.id)}
+                                className={`text-[11.5px] px-2.5 py-1 rounded-full border ${on ? "bg-[var(--accent)] text-white border-[var(--accent)]" : "bg-white text-[var(--ink)] border-[var(--rule)] hover:border-[var(--accent)]"}`}>
+                                {it.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button" size="sm" onClick={saveEdit} disabled={editBusy}
+                        className="bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12.5px]"
+                        data-testid={`cycle-team-edit-save-${m.id}`}
+                      >
+                        {editBusy ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Check className="w-3.5 h-3.5 mr-1" />}
+                        Save
+                      </Button>
+                      <Button
+                        type="button" size="sm" variant="ghost" onClick={cancelEdit}
+                        disabled={editBusy} className="text-[12.5px]"
+                        data-testid={`cycle-team-edit-cancel-${m.id}`}
+                      >Cancel</Button>
+                    </div>
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
+
+      {/* Delete-confirm AlertDialog — shadcn primitive. */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(v) => { if (!v && !deleteBusy) setDeleteTarget(null); }}>
+        <AlertDialogContent data-testid="cycle-team-delete-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this team member?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget ? (
+                <>{deleteTarget.name} will be removed from this cycle's team. Contributions they recorded stay on record; they just won't appear in the team list, scoreboard, or follow-up routing.</>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="cycle-team-delete-cancel" disabled={deleteBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); confirmDelete(); }}
+              disabled={deleteBusy}
+              className="bg-[#8B2E2B] hover:bg-[#7A2825] text-white"
+              data-testid="cycle-team-delete-confirm"
+            >
+              {deleteBusy ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className="border border-[var(--rule)] rounded-md bg-[var(--cream-deep)]/30 p-4 space-y-3" data-testid="cycle-team-add">
         <p className="akki-overline text-[var(--muted)]">Add a member</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -644,6 +843,11 @@ export default function Cycle() {
             <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {error}
           </p>
         )}
+        <JudgementPanel
+          readiness={readiness}
+          followups={followups}
+          onJump={setStepId}
+        />
         <StepShell activeId={stepId} onSelect={setStepId}>
           {stepId === "agenda" && <AgendaStep cid={cid} agenda={agenda} onSaved={setAgenda} onForward={onForward} />}
           {stepId === "team" && <TeamStep cid={cid} agenda={agenda} members={members} refresh={refreshAll} onBack={onBack} onForward={onForward} />}

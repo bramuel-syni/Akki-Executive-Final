@@ -234,6 +234,70 @@ function BriefDrawer({ open, onClose, aid, contextId }) {
           )}
           {detail && !loading && !err && (
             <>
+              {/* Phase F.1 — Validation header. Provenance + confidence
+                  sits AT THE TOP of the drawer so the executive sees
+                  what's vouched for before reading the body. Block is
+                  honest-render: each line only appears when its
+                  underlying field is present. The whole block stays
+                  hidden when the aggregate has no validation metadata
+                  AND no topline information at all. */}
+              {(detail.validation ||
+                (detail.topline?.doc_count ?? 0) > 0 ||
+                (detail.topline?.contributor_count ?? 0) > 0 ||
+                !!detail.topline?.period ||
+                !!detail.period_start || !!detail.period_end) && (
+                <div
+                  className="mb-5 border border-[var(--rule)] rounded-md bg-[var(--cream-deep)]/30 px-4 py-3 space-y-2"
+                  data-testid="work-studio-brief-drawer-validation"
+                >
+                  {detail.validation && (
+                    <div className="flex items-start gap-3 flex-wrap">
+                      <ValidatedBadge
+                        size="compact"
+                        validation={detail.validation}
+                        data-testid="work-studio-brief-drawer-validation-badge"
+                      />
+                      {detail.validation.validator_model && (
+                        <span className="text-[11.5px] font-mono text-[var(--muted)]">
+                          validator · {detail.validation.validator_model}
+                        </span>
+                      )}
+                      {typeof detail.validation.confidence === "number" && (
+                        <span className="text-[11.5px] font-mono text-[var(--muted)]">
+                          confidence · {detail.validation.confidence}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {(detail.topline?.doc_count ?? 0) > 0 ? (
+                    <p
+                      className="text-[12px] text-[var(--muted)] leading-[1.55]"
+                      data-testid="work-studio-brief-drawer-provenance"
+                    >
+                      Synthesised from <strong className="text-[var(--ink)] font-medium">{detail.topline.doc_count}</strong>{" "}
+                      source document{detail.topline.doc_count === 1 ? "" : "s"}
+                      {(detail.topline?.contributor_count ?? 0) > 0 && (
+                        <> · <strong className="text-[var(--ink)] font-medium">{detail.topline.contributor_count}</strong> contributor{detail.topline.contributor_count === 1 ? "" : "s"}</>
+                      )}
+                      {detail.topline?.period && <> · {detail.topline.period}</>}
+                    </p>
+                  ) : (
+                    <p
+                      className="text-[12px] text-[var(--muted)] leading-[1.55]"
+                      data-testid="work-studio-brief-drawer-provenance"
+                    >
+                      Provenance · period <strong className="text-[var(--ink)] font-medium">{detail.topline?.period || formatPeriod(detail.period_start, detail.period_end, "—")}</strong>
+                      {(detail.topline?.contributor_count ?? 0) > 0 && (
+                        <> · <strong className="text-[var(--ink)] font-medium">{detail.topline.contributor_count}</strong> contributor{detail.topline.contributor_count === 1 ? "" : "s"}</>
+                      )}
+                      {!detail.validation && (
+                        <span className="ml-1 text-[var(--muted)] italic"> · awaiting validator pass</span>
+                      )}
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Topline strip — memo: doc count, contributors, period */}
               <div
                 className="grid grid-cols-3 gap-3 mb-6 border border-[var(--rule)] rounded-md bg-white px-3 py-3"
@@ -294,13 +358,14 @@ function BriefDrawer({ open, onClose, aid, contextId }) {
   );
 }
 
-// Five-button action bar — three Export buttons (Phase C.2) and two
-// Enhance buttons (Phase C.3) wired to their respective modals.
-function ActionBar({ onExportClick, onEnhanceClick }) {
+// Six-button action bar — three Create buttons (Phase C.2 / F.4 relabel),
+// two Enhance buttons (Phase C.3), plus a Compile-a-Report CTA (F.6)
+// that reuses the legacy upload-and-enhance path for external docs.
+function ActionBar({ onExportClick, onEnhanceClick, onCompileClick }) {
   const ACTIONS = [
-    { id: "export_brief",    label: "Export a Brief",         icon: FileDown,  kind: "brief",  flow: "export"  },
-    { id: "export_deck",     label: "Export a Summary Deck",  icon: FileDown,  kind: "deck",   flow: "export"  },
-    { id: "export_report",   label: "Export a Report",        icon: FileDown,  kind: "report", flow: "export"  },
+    { id: "export_brief",    label: "Create a Brief",         icon: FileDown,  kind: "brief",  flow: "export"  },
+    { id: "export_deck",     label: "Create a Summary Deck",  icon: FileDown,  kind: "deck",   flow: "export"  },
+    { id: "export_report",   label: "Create a Report",        icon: FileDown,  kind: "report", flow: "export"  },
     { id: "enhance_deck",    label: "Enhance my Deck",        icon: Wand2,     kind: "deck",   flow: "enhance" },
     { id: "enhance_report",  label: "Enhance my Report",      icon: Wand2,     kind: "report", flow: "enhance" },
   ];
@@ -327,6 +392,22 @@ function ActionBar({ onExportClick, onEnhanceClick }) {
           </Button>
         );
       })}
+      {/* Phase F.6 — Compile a Report. Reuses EnhanceModal's Path A
+          (legacy upload-and-enhance, POST /work-studio/enhance/report)
+          but with copy that names the use case: pulling together
+          external emails / attachments / PDFs into one structured
+          report. Sits at the right edge of the action bar so the
+          first five buttons keep their established order. */}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => onCompileClick && onCompileClick("report")}
+        className="rounded-sm border-[var(--rule)] text-[12.5px] hover:border-[var(--accent)] ml-auto"
+        data-testid="work-studio-action-compile_report"
+      >
+        <Files className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.7} /> Compile a Report
+      </Button>
     </div>
   );
 }
@@ -439,6 +520,9 @@ export default function WorkStudio() {
   const [enhanceOpen, setEnhanceOpen] = useState(false);
   const [enhanceKind, setEnhanceKind] = useState("deck");
   const [enhanceBriefId, setEnhanceBriefId] = useState(null);
+  // Phase F.6 — when true, EnhanceModal renders Compile-a-Report copy
+  // for its existing Path A (upload + enhance) flow.
+  const [enhanceMode, setEnhanceMode] = useState("default");
 
   // Phase C.3 — listing of Solva-/chat-originated briefings (kind=briefing)
   // pulled from db.boardpacks via the existing aggregates listing route,
@@ -513,6 +597,19 @@ export default function WorkStudio() {
 
   const onEnhanceClick = (kind) => {
     setEnhanceKind(kind);
+    setEnhanceBriefId(null);
+    setEnhanceMode("default");
+    setEnhanceOpen(true);
+  };
+
+  // Phase F.6 — Compile-a-Report. Reuses Path A of EnhanceModal
+  // (legacy /work-studio/enhance/{kind} upload+enhance), with copy
+  // that frames the use case as combining external docs (emails,
+  // attachments, PDFs received outside Akki) into a single report.
+  const onCompileClick = (kind) => {
+    setEnhanceKind(kind || "report");
+    setEnhanceBriefId(null);
+    setEnhanceMode("compile");
     setEnhanceOpen(true);
   };
 
@@ -566,15 +663,17 @@ export default function WorkStudio() {
           <ActionBar
             onExportClick={onExportClick}
             onEnhanceClick={onEnhanceClick}
+            onCompileClick={onCompileClick}
           />
         </div>
 
-        {/* C.4 — section heading above the kind tabs */}
+        {/* F.7 — section heading: "Board Artefacts" (was "Cycle Board
+            Pack, Briefs and Reports") above the kind tabs */}
         <h2
           className="akki-serif text-[18px] text-[var(--ink)] font-medium mt-6 mb-2"
           data-testid="work-studio-section-heading"
         >
-          Cycle Board Pack, Briefs and Reports
+          Board Artefacts
         </h2>
 
         {/* Three-tab kind selector */}
@@ -758,13 +857,15 @@ export default function WorkStudio() {
         contextName={activeContext?.name}
       />
 
-      {/* Phase C.3 — Enhance modal (Path A: upload; Path B: C.2 brief refine) */}
+      {/* Phase C.3 — Enhance modal (Path A: upload; Path B: C.2 brief refine)
+          Phase F.6 — also serves the Compile-a-Report mode via the `mode` prop. */}
       <EnhanceModal
         open={enhanceOpen}
-        onClose={() => { setEnhanceOpen(false); setEnhanceBriefId(null); }}
+        onClose={() => { setEnhanceOpen(false); setEnhanceBriefId(null); setEnhanceMode("default"); }}
         kind={enhanceKind}
         contextId={cid}
         briefId={enhanceBriefId}
+        mode={enhanceMode}
       />
     </AppShell>
   );

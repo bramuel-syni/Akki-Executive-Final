@@ -239,6 +239,61 @@ async def delete_team_member(
     return {"ok": res.modified_count > 0, "id": member_id}
 
 
+# Phase D.3 — explicit PATCH for clean inline-edit UX in the Team step.
+# Idempotent edit of a single team member; honours every field the
+# upsert path accepts, but expressed as a plain PATCH so the frontend
+# doesn't need to round-trip a full body on every save. Returns 404
+# when the member doesn't exist, 410 when it has been removed.
+class TeamMemberPatch(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    email: Optional[str] = Field(default=None, min_length=3, max_length=200)
+    role: Optional[str] = Field(default=None, max_length=80)
+    contribution_description: Optional[str] = Field(default=None, min_length=1, max_length=600)
+    owns_item_ids: Optional[List[str]] = None
+
+
+@router.patch("/contexts/{context_id}/cycle/team/{member_id}")
+async def patch_team_member(
+    context_id: str, member_id: str, body: TeamMemberPatch,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    existing = await db.cycle_team.find_one(
+        {"id": member_id, "context_id": context_id}, {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Team member not found")
+    if existing.get("status") == "removed":
+        raise HTTPException(status_code=410, detail="Team member has been removed")
+
+    upd: Dict[str, Any] = {"updated_at": iso(now())}
+    if body.name is not None:
+        upd["name"] = body.name.strip()
+    if body.email is not None:
+        upd["email"] = body.email.strip().lower()
+    if body.role is not None:
+        upd["role"] = body.role.strip() or None
+    if body.contribution_description is not None:
+        upd["contribution_description"] = body.contribution_description.strip()
+    if body.owns_item_ids is not None:
+        upd["owns_item_ids"] = body.owns_item_ids
+
+    # No-op patch (no editable fields supplied) — return the row unchanged.
+    if len(upd) == 1:  # just updated_at
+        return existing
+
+    await db.cycle_team.update_one({"id": member_id}, {"$set": upd})
+    try:
+        await write_audit(
+            context_id, ctx["account"]["id"],
+            "cycle.team.member.updated", "cycle_team_member", member_id,
+            {"changed_fields": [k for k in upd if k != "updated_at"]},
+        )
+    except Exception:
+        pass
+    fresh = await db.cycle_team.find_one({"id": member_id}, {"_id": 0})
+    return fresh
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Contributions
 # ──────────────────────────────────────────────────────────────────────

@@ -196,7 +196,7 @@ export default function ExportModal({ open, onClose, kind, contextId, contextNam
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent
-        className={sourceChoice === "system" ? "max-w-md" : "max-w-3xl max-h-[88vh] overflow-y-auto"}
+        className="max-w-5xl max-h-[88vh] overflow-y-auto"
         data-testid="work-studio-export-modal"
       >
         <DialogHeader>
@@ -232,7 +232,12 @@ export default function ExportModal({ open, onClose, kind, contextId, contextNam
             />
             {sourceChoice === "system" && (
               <form onSubmit={onSubmit} className="space-y-3 pt-2 border-t border-[var(--rule)]" data-testid="work-studio-export-form">
-            <div>
+            {/* Phase F.3 — 3-column grid for the three "what" fields so
+                the Compose CTA stays on-fold at 1024×768 (the legacy
+                vertical stack pushed it below the viewport). Output
+                format spans full width below. */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
               <Label className="text-[12px]" htmlFor="ws-export-desc">Description</Label>
               <Input
                 id="ws-export-desc"
@@ -267,6 +272,7 @@ export default function ExportModal({ open, onClose, kind, contextId, contextNam
                 required
                 data-testid="work-studio-export-scope"
               />
+            </div>
             </div>
             <div>
               <Label className="text-[12px]">Output format</Label>

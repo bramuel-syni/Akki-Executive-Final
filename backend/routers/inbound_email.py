@@ -302,11 +302,72 @@ async def _handle_cycle_reply(
             continue
 
     if not matching:
-        logger.warning(
-            "cycle reply: no matching followup for alias=%s from=%s",
-            recipient_alias, from_email,
+        # Phase D.2 — alias recognised by domain shape but no followup
+        # for THIS sender. Could be: (a) reportee replied from a
+        # different email than the one we sent to, (b) shoulder-tap reply
+        # from a third party, (c) replay after the followup row was
+        # archived. Drop into db.inbound_queue with a distinct
+        # source='cycles_alias_unmatched' so the owner can still
+        # inspect it. Recover account/context provenance by
+        # cross-referencing the alias against historical
+        # cycle_followups.reply_to_alias (works for any past followup
+        # that used the same alias — the alias is deterministic per
+        # account).
+        any_prior = await db.cycle_followups.find_one(
+            {"reply_to_alias": {"$regex": f"^{recipient_alias}$", "$options": "i"}},
+            {"_id": 0, "id": 1, "context_id": 1, "account_id": 1, "sent_at": 1},
+            sort=[("sent_at", -1)],
         )
-        return {"ok": False, "error": "no_matching_followup",
+        if not any_prior:
+            logger.warning(
+                "cycle reply: alias %s does not match any historical "
+                "cycle_followups row — dropping without queueing.",
+                recipient_alias,
+            )
+            return {"ok": False, "error": "unknown_alias",
+                    "alias": recipient_alias, "from": from_email}
+
+        queue_id = str(uuid.uuid4())
+        queue_rec = {
+            "id": queue_id,
+            "context_id": any_prior["context_id"],
+            "account_id": any_prior["account_id"],
+            "status": "pending_review",
+            "source": "cycles_alias_unmatched",
+            "review_reason": "cycles_alias_unmatched",
+            "inbound_message_id": message_id or None,
+            "inbound_from_email": from_email or None,
+            "inbound_from_name": from_name or None,
+            "inbound_subject": subject,
+            "inbound_text_preview": (text_body or html_body or "")[:800],
+            "inbound_attachment_count": 0,
+            "inbound_attachment_summary": [],
+            "has_raw_payload": False,
+            "via_alias": recipient_alias,
+            "alias_recovered_account_id": any_prior["account_id"],
+            "alias_recovered_via_followup": any_prior["id"],
+            "created_at": iso(now()),
+        }
+        try:
+            await db.inbound_queue.insert_one(queue_rec)
+        except Exception:
+            logger.exception("cycle reply: inbound_queue insert failed (non-fatal)")
+        try:
+            await write_audit(
+                any_prior["context_id"], any_prior["account_id"],
+                "cycle.followup.reply_unmatched", "inbound_queue", queue_id,
+                {"alias": recipient_alias, "from": from_email,
+                 "subject": subject[:200]},
+            )
+        except Exception:
+            pass
+        logger.info(
+            "cycle reply: dropped into inbound_queue queue_id=%s "
+            "alias=%s from=%s ctx=%s",
+            queue_id, recipient_alias, from_email, any_prior["context_id"],
+        )
+        return {"ok": True, "queued": True, "queue_id": queue_id,
+                "source": "cycles_alias_unmatched",
                 "alias": recipient_alias, "from": from_email}
 
     followup_id = matching["id"]
@@ -342,7 +403,7 @@ async def _handle_cycle_reply(
     try:
         await write_audit(
             context_id, account_id,
-            "cycle.followup.reply_received", "cycle_followup", followup_id,
+            "cycle.followup.replied", "cycle_followup", followup_id,
             {"from": from_email, "subject": subject[:200],
              "message_id": message_id or None, "via_alias": recipient_alias,
              "body_chars": len(text_body)},

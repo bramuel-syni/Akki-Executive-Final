@@ -9,6 +9,13 @@
 
 :root {
   /* AKKI v4.2 tokens — cream + oxblood + warm neutrals */
+  /* Phase F.2 — `--paper` was referenced by Work Studio's BriefDrawer
+     and Solva flow tokens but was never declared in :root. When
+     unresolved, `bg-[var(--paper)]` renders transparent, causing the
+     underlying page to bleed through any drawer using it. Defined
+     here to match Solva flow tokens (`PAPER: "#FAF7F2"`).
+     CONTRACT: any drawer/sheet must use an *opaque* color token. */
+  --paper:       #FAF7F2;
   --ink:         #1A1A1A;
   --deep:        #2B2B2A;
   --muted:       #6F6A5D;

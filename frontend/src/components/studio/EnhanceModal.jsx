@@ -126,9 +126,13 @@ function C2DiffCard({ entry, defaultExpanded = false }) {
   );
 }
 
-export default function EnhanceModal({ open, onClose, kind, contextId, briefId = null }) {
+export default function EnhanceModal({ open, onClose, kind, contextId, briefId = null, mode = "default" }) {
   const navigate = useNavigate();
   const isC2 = !!briefId;
+  // Phase F.6 — Compile-a-Report shares Path A's upload+enhance plumbing
+  // but reframes the heading and helper copy. Only relevant when we're
+  // not in C.2 mode (briefId === null).
+  const isCompile = !isC2 && mode === "compile";
 
   // ---------------- shared state ----------------
   const [phase, setPhase] = useState("compose"); // compose | running | complete | failed
@@ -386,12 +390,16 @@ export default function EnhanceModal({ open, onClose, kind, contextId, briefId =
           <DialogTitle className="akki-serif text-[var(--ink)]">
             {isC2
               ? `Refine ${KIND_LABEL[kind] || "Brief"}`
-              : `Improve a ${KIND_LABEL[kind] || "Report"} you already have`}
+              : isCompile
+                ? "Compile a Report"
+                : `Improve a ${KIND_LABEL[kind] || "Report"} you already have`}
           </DialogTitle>
           <DialogDescription className="text-[12.5px] text-[var(--muted)]">
             {isC2
               ? "Two-pass enhance against the persisted Brief. The validator refuses revisions that introduce uncited claims; refused revisions are kept for inspection but cannot be set active."
-              : `Upload an existing Word, PowerPoint, or PDF ${(KIND_LABEL[kind] || "report").toLowerCase()} and write what you want changed. The composer keeps citations intact and applies the instructions.`}
+              : isCompile
+                ? "Pull together documents you've received outside Akki — emails, attachments, PDFs — into one structured report."
+                : `Upload an existing Word, PowerPoint, or PDF ${(KIND_LABEL[kind] || "report").toLowerCase()} and write what you want changed. The composer keeps citations intact and applies the instructions.`}
           </DialogDescription>
         </DialogHeader>
 
