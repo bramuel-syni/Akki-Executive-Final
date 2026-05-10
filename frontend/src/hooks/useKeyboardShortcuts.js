@@ -25,6 +25,7 @@
 import { useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { takeToSolva } from "@/lib/takeToSolva";
 
 function isTypingTarget(el) {
   if (!el) return false;
@@ -86,7 +87,7 @@ export default function useKeyboardShortcuts({ openHelp } = {}) {
       const seed = findSolvaSeed();
       if (seed && seed.includes(":")) {
         const [kind, id] = seed.split(":", 2);
-        navigate(`/app/solva?seed_kind=${encodeURIComponent(kind)}&seed_id=${encodeURIComponent(id)}`);
+        takeToSolva({ navigate, kind, id });
         toast.success("Taking this into Solva.");
       } else {
         navigate("/app/solva");

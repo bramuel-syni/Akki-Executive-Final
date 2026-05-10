@@ -31,6 +31,7 @@ import {
   ArrowLeft, ShieldCheck, Pencil, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { takeToSolva } from "@/lib/takeToSolva";
 
 const ACTS = [
   { id: "pre",  label: "Pre",  subtitle: "Read · ask · prepare" },
@@ -63,8 +64,10 @@ function PrePhase({ meeting, refresh }) {
     // Deep-link into existing chat with the document attached
     navigate(`/app/chat?new=1&doc_id=${paper.id}&context_id=${meeting.context_id}`);
   };
-  const takeToSolva = (paper) => {
-    navigate(`/app/solva/session/new?doc_id=${paper.id}&context_id=${meeting.context_id}`);
+  const takeToSolvaPaper = (paper) => {
+    // Phase F.2.A — unified journey. Lands on the framing surface
+    // with the document seed pre-populated.
+    takeToSolva({ navigate, kind: "document", id: paper.id });
   };
 
   return (
@@ -94,7 +97,7 @@ function PrePhase({ meeting, refresh }) {
                     <MessageSquare className="w-3 h-3 mr-1" /> Ask Akki Chat
                   </Button>
                   <Button type="button" size="sm" variant="outline"
-                    onClick={() => takeToSolva(p)}
+                    onClick={() => takeToSolvaPaper(p)}
                     className="text-[11.5px] rounded-sm"
                     data-testid={`ned-paper-take-solva-${p.id}`}>
                     <Sparkles className="w-3 h-3 mr-1" /> Take to Solva

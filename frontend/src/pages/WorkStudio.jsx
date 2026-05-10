@@ -371,43 +371,55 @@ function ActionBar({ onExportClick, onEnhanceClick, onCompileClick }) {
   ];
   return (
     <div
-      className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 border border-[var(--rule)] bg-white rounded-md"
+      className="flex justify-between items-center gap-3 mb-4 px-3 py-2 border border-[var(--rule)] bg-white rounded-md"
       data-testid="work-studio-action-bar"
       role="toolbar"
       aria-label="Work Studio actions"
     >
-      {ACTIONS.map((a) => {
-        const Icon = a.icon;
-        return (
-          <Button
-            key={a.id}
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => a.flow === "export" ? onExportClick(a.kind) : onEnhanceClick(a.kind)}
-            className="rounded-sm border-[var(--rule)] text-[12.5px] hover:border-[var(--accent)]"
-            data-testid={`work-studio-action-${a.id}`}
-          >
-            <Icon className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.7} /> {a.label}
-          </Button>
-        );
-      })}
-      {/* Phase F.6 — Compile a Report. Reuses EnhanceModal's Path A
-          (legacy upload-and-enhance, POST /work-studio/enhance/report)
-          but with copy that names the use case: pulling together
-          external emails / attachments / PDFs into one structured
-          report. Sits at the right edge of the action bar so the
-          first five buttons keep their established order. */}
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => onCompileClick && onCompileClick("report")}
-        className="rounded-sm border-[var(--rule)] text-[12.5px] hover:border-[var(--accent)] ml-auto"
-        data-testid="work-studio-action-compile_report"
+      {/* Phase F.2.B — left-anchored "Quick Action" editorial label.
+          Not a button. Oxblood double-rule on top + bottom marks the
+          section without competing with the clustered CTAs on the
+          right. Plain <span>; no hover, no click handler. */}
+      <span
+        className="inline-block py-1 text-[11px] font-medium tracking-[0.18em] uppercase text-[var(--accent)] border-y border-[var(--accent)] select-none"
+        data-testid="work-studio-quick-action-label"
+        aria-hidden="false"
       >
-        <Files className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.7} /> Compile a Report
-      </Button>
+        Quick Action
+      </span>
+      <div className="flex flex-wrap items-center gap-2 justify-end" data-testid="work-studio-action-cluster">
+        {ACTIONS.map((a) => {
+          const Icon = a.icon;
+          return (
+            <Button
+              key={a.id}
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => a.flow === "export" ? onExportClick(a.kind) : onEnhanceClick(a.kind)}
+              className="rounded-sm border-[var(--rule)] text-[12.5px] hover:border-[var(--accent)]"
+              data-testid={`work-studio-action-${a.id}`}
+            >
+              <Icon className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.7} /> {a.label}
+            </Button>
+          );
+        })}
+        {/* Phase F.6 — Compile Report. Reuses EnhanceModal's Path A
+            (legacy upload-and-enhance, POST /work-studio/enhance/report)
+            but with copy that names the use case: pulling together
+            external emails / attachments / PDFs into one structured
+            report. Phase F.2.C — relabelled "Compile a Report" → "Compile Report". */}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onCompileClick && onCompileClick("report")}
+          className="rounded-sm border-[var(--rule)] text-[12.5px] hover:border-[var(--accent)]"
+          data-testid="work-studio-action-compile_report"
+        >
+          <Files className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.7} /> Compile Report
+        </Button>
+      </div>
     </div>
   );
 }

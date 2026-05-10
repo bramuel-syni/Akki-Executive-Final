@@ -20,6 +20,7 @@ import { useNavigate } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
+import { takeToSolva } from "@/lib/takeToSolva";
 import {
   Sparkles, MessageSquare, Send, Bookmark, BookmarkCheck,
   CheckCircle2, ArrowRight, AlertTriangle, TrendingUp, Lightbulb,
@@ -370,14 +371,12 @@ export default function Pulse() {
         return;
       }
       if (action === "take-to-solva") {
-        const { data } = await api.post(
-          `/contexts/${cid}/pulse/signals/${sigId}/take-to-solva`,
-        );
-        toast.success("Solva session started.");
-        if (data?.solva_session_id) {
-          navigate(`/app/solva/session/${data.solva_session_id}`);
-        }
-        return data;
+        // Phase F.2.A — universal journey via takeToSolva helper.
+        // Lands the user on the Solva framing surface with the
+        // signal's text pre-populated in the textarea instead of
+        // server-creating a session before they've framed.
+        takeToSolva({ navigate, kind: "signal", id: sigId });
+        return;
       }
     } catch (e) {
       toast.error(apiErrorMessage(e));

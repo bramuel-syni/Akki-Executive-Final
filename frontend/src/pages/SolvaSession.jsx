@@ -99,6 +99,27 @@ export default function SolvaSession() {
         dispatch(
           Actions.pickSubmodule(submoduleQuery || "seek_clarity", personaQuery || null),
         );
+        // Phase F.2.A — when the user arrived via takeToSolva()
+        // (URL params seed_kind + seed_id), pre-fill the framing
+        // textarea with a seed excerpt fetched from the new
+        // /api/solva/v2/seed endpoint. Editable; cursor naturally
+        // sits at the end of the textarea so the user can append
+        // their own framing context.
+        if (seedKindQuery && seedIdQuery) {
+          try {
+            const { data } = await api.get("/solva/v2/seed", {
+              params: { kind: seedKindQuery, id: seedIdQuery },
+            });
+            if (!cancelled && data?.seed_text) {
+              setFramingDraft(data.seed_text);
+            }
+          } catch {
+            // Honest-render: if the seed can't be fetched (404, scope
+            // refusal, kind unsupported), leave the textarea empty —
+            // the user will still see the FramingScreen with the
+            // submodule pre-selected.
+          }
+        }
         return;
       }
 

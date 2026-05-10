@@ -17,6 +17,7 @@ import { Download, MessageSquare, RefreshCw, Workflow } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api, apiErrorMessage } from "@/lib/api";
+import { takeToSolva } from "@/lib/takeToSolva";
 import { TOKEN, FONT, SUBMODULE_LABELS } from "../flow/tokens";
 import ProbabilityBar from "./ProbabilityBar";
 import ReasoningExpandable from "./ReasoningExpandable";
@@ -566,7 +567,10 @@ function SolvaArtefactHandoffBar({ session, sessionId }) {
 
   const onUseAsInput = () => {
     if (!sessionId) return;
-    navigate(`/app/solva?seed_kind=solva_artefact&seed_id=${encodeURIComponent(sessionId)}`);
+    // Phase F.2.A — unified journey via takeToSolva helper. Lands
+    // user on a fresh framing surface with this artefact's framing
+    // pre-populated as the seed.
+    takeToSolva({ navigate, kind: "solva_artefact", id: sessionId });
   };
 
   const onTakeToCycle = async () => {

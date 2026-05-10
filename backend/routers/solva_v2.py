@@ -1718,6 +1718,150 @@ async def fork_session(
     return rec
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Phase F.2.A — Universal "Take to Solva" seed-fetch
+# ─────────────────────────────────────────────────────────────────────
+# Single endpoint that hydrates a framing-textarea seed for every
+# supported source kind. Account-scoped on every read; the Privacy
+# Wall's `cross_context_query` is not needed here because every read
+# is single-context (we resolve the source artefact in its OWN
+# context). For solva_artefact + cycle_compilation the artefact's
+# account_id MUST match the caller — otherwise we 404.
+#
+# Supported kinds (initial set, extensible):
+#   • signal              — pulse signal (db.signals)
+#   • document            — document journal entry (db.documents)
+#   • cycle_contribution  — exec cycle contribution (db.cycle_contributions)
+#   • cycle_compilation   — exec cycle compiled brief (work_studio_briefs)
+#   • solva_artefact      — prior Solva session artefact (db.solva_v2_sessions)
+#   • chat_message        — single chat message (db.chat_messages)
+#   • ned_meeting         — NED meeting formulated_question (db.ned_meetings)
+#
+# Returns: {seed_text, citation_label} where seed_text is ≤ 600
+# chars (the textarea pre-fill ceiling per the spec), citation_label
+# is a short human-readable label so the user can see *what* was
+# moved without re-reading the source.
+@router.get("/seed")
+async def fetch_take_to_solva_seed(
+    kind: str,
+    id: str,
+    account: Dict[str, Any] = Depends(get_current_account),
+):
+    aid = account["id"]
+    kind = (kind or "").strip()
+    sid_in = (id or "").strip()
+    if not kind or not sid_in:
+        raise HTTPException(status_code=400, detail="kind and id are required")
+
+    def _clip(s: Any, n: int = 600) -> str:
+        s = (s or "").strip()
+        if len(s) <= n:
+            return s
+        return s[:n].rsplit(" ", 1)[0] + "…"
+
+    seed_text = ""
+    citation_label = ""
+
+    if kind == "signal":
+        sig = await db.signals.find_one({"id": sid_in}, {"_id": 0})
+        if not sig:
+            raise HTTPException(status_code=404, detail="signal not found")
+        # account-scoped read: signal must be in a context the user has membership in
+        m = await db.memberships.find_one(
+            {"account_id": aid, "context_id": sig.get("context_id"), "status": "active"},
+            {"_id": 0, "role": 1},
+        )
+        if not m:
+            raise HTTPException(status_code=403, detail="not your context")
+        seed_text = _clip(sig.get("summary") or sig.get("headline") or sig.get("body") or "")
+        citation_label = sig.get("headline") or "Pulse signal"
+
+    elif kind == "document":
+        doc = await db.documents.find_one({"id": sid_in}, {"_id": 0})
+        if not doc:
+            raise HTTPException(status_code=404, detail="document not found")
+        m = await db.memberships.find_one(
+            {"account_id": aid, "context_id": doc.get("context_id"), "status": "active"},
+            {"_id": 0, "role": 1},
+        )
+        if not m:
+            raise HTTPException(status_code=403, detail="not your context")
+        # Use the AI-generated commentary if present; falls back to
+        # filename + description so the user always gets *something*.
+        seed_text = _clip(
+            doc.get("commentary_summary") or doc.get("description") or doc.get("preview") or
+            (doc.get("name") or doc.get("filename") or "")
+        )
+        citation_label = doc.get("name") or doc.get("filename") or "Document"
+
+    elif kind == "cycle_contribution":
+        c = await db.cycle_contributions.find_one(
+            {"id": sid_in, "account_id": aid}, {"_id": 0},
+        )
+        if not c:
+            raise HTTPException(status_code=404, detail="contribution not found")
+        seed_text = _clip(c.get("body") or c.get("summary") or "")
+        citation_label = "Cycle contribution"
+
+    elif kind == "cycle_compilation":
+        # Cycle compilations are persisted as Work Studio briefs.
+        b = await db.work_studio_briefs.find_one(
+            {"id": sid_in, "account_id": aid, "source_type": "cycle_compilation"},
+            {"_id": 0},
+        )
+        if not b:
+            raise HTTPException(status_code=404, detail="cycle compilation not found")
+        seed_text = _clip(
+            (b.get("active_revision") or {}).get("cover_lead_paragraph") or
+            (b.get("active_revision") or {}).get("title") or
+            b.get("title") or ""
+        )
+        citation_label = "Cycle compilation"
+
+    elif kind == "solva_artefact":
+        s = await db.solva_v2_sessions.find_one(
+            {"id": sid_in, "account_id": aid}, {"_id": 0},
+        )
+        if not s:
+            raise HTTPException(status_code=404, detail="Solva session not found")
+        # Use the user's original framing as the seed — that's the
+        # purest "what they were thinking" signal.
+        seed_text = _clip(s.get("framing") or s.get("intent") or "")
+        citation_label = (s.get("framing") or "Solva session")[:80] + "…"
+
+    elif kind == "chat_message":
+        msg = await db.chat_messages.find_one({"id": sid_in}, {"_id": 0})
+        if not msg:
+            raise HTTPException(status_code=404, detail="chat message not found")
+        if msg.get("account_id") != aid:
+            raise HTTPException(status_code=403, detail="not your chat")
+        seed_text = _clip(msg.get("content") or "")
+        citation_label = "Chat message"
+
+    elif kind == "ned_meeting":
+        mt = await db.ned_meetings.find_one(
+            {"id": sid_in, "account_id": aid}, {"_id": 0},
+        )
+        if not mt:
+            raise HTTPException(status_code=404, detail="meeting not found")
+        seed_text = _clip(
+            mt.get("formulated_question") or
+            f"{mt.get('committee', '')} — {mt.get('title', '')}"
+        )
+        citation_label = f"{mt.get('committee', '')} · {mt.get('title', '')}"
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported seed kind: {kind!r}. Supported: "
+                   "signal, document, cycle_contribution, cycle_compilation, "
+                   "solva_artefact, chat_message, ned_meeting.",
+        )
+
+    return {"kind": kind, "id": sid_in,
+            "seed_text": seed_text, "citation_label": citation_label}
+
+
 @router.post("/intent/classify")
 async def classify_intent(
     body: IntentClassifyIn,

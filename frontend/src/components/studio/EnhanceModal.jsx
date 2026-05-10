@@ -391,7 +391,7 @@ export default function EnhanceModal({ open, onClose, kind, contextId, briefId =
             {isC2
               ? `Refine ${KIND_LABEL[kind] || "Brief"}`
               : isCompile
-                ? "Compile a Report"
+                ? "Compile Report"
                 : `Improve a ${KIND_LABEL[kind] || "Report"} you already have`}
           </DialogTitle>
           <DialogDescription className="text-[12.5px] text-[var(--muted)]">

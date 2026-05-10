@@ -25,6 +25,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { api, apiErrorMessage } from "@/lib/api";
+import { takeToSolva } from "@/lib/takeToSolva";
 import { Sparkles, Presentation, ListPlus, Loader2, MessageSquare } from "lucide-react";
 
 export default function HandoffActions({ kind, id, contextId, title, className = "" }) {
@@ -46,7 +47,8 @@ export default function HandoffActions({ kind, id, contextId, title, className =
       navigate("/app/solva");
       return;
     }
-    navigate(`/app/solva?seed_kind=${encodeURIComponent(kind)}&seed_id=${encodeURIComponent(id)}`);
+    // Phase F.2.A — unified journey via takeToSolva helper.
+    takeToSolva({ navigate, kind, id });
     toast.success("Taking this into Solva.");
   }, [kind, id, seed, navigate]);
 

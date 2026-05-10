@@ -34,6 +34,7 @@ import {
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import JudgementPanel from "@/components/cycle/JudgementPanel";
+import { takeToSolva } from "@/lib/takeToSolva";
 
 const STEPS = [
   { id: "agenda",        label: "Agenda",        icon: ClipboardList, act: "setup" },
@@ -531,9 +532,7 @@ function ContributionsStep({ cid, agenda, members, contributions, refresh, onBac
                     SolvaApp's useSearchParams plumbing (Wave 1.1). */}
                 <button
                   type="button"
-                  onClick={() => navigate(
-                    `/app/solva?seed_kind=cycle_contribution&seed_id=${encodeURIComponent(c.id)}`
-                  )}
+                  onClick={() => takeToSolva({ navigate, kind: "cycle_contribution", id: c.id })}
                   data-testid={`cycle-contrib-take-to-solva-${c.id}`}
                   className="mt-2 ml-2 text-[11px] text-[var(--muted)] hover:text-[var(--accent)] underline inline-flex items-center"
                   title="Open this contribution as Solva framing"
