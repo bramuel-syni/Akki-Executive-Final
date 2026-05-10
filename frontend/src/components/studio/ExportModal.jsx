@@ -196,7 +196,7 @@ export default function ExportModal({ open, onClose, kind, contextId, contextNam
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent
-        className={sourceChoice === "system" ? "max-w-md" : "max-w-3xl"}
+        className={sourceChoice === "system" ? "max-w-md" : "max-w-3xl max-h-[88vh] overflow-y-auto"}
         data-testid="work-studio-export-modal"
       >
         <DialogHeader>
