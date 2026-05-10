@@ -1,5 +1,7 @@
 # AKKI — Product Features Audit (factual, function-level)
 
+> **DEPRECATED** — superseded by `PRODUCT_SPEC.md`. Retained for git history.
+
 > **Purpose.** Stub. We populate the long-form description later. This file
 > is the function-level truth on what works **right now** in `/app` against
 > the running database, so we don't write marketing ahead of the code.
