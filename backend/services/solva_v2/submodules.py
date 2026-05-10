@@ -173,7 +173,15 @@ def parse_recommendations_from_synthesis(text: str) -> List[Dict[str, Any]]:
 
 
 def expects_recommendations(submodule: str) -> bool:
-    return submodule == "develop_strategy"
+    """Phase B.2 (2026-05-10) — both `develop_strategy` and
+    `simulate_hypothesis` synthesise actionable, numbered output.
+    For `develop_strategy` these are strategic moves; for
+    `simulate_hypothesis` these are the actions / monitoring steps
+    under the most defensible scenario. The same `Recommendation N:`
+    structure works for both — `parse_recommendations_from_synthesis`
+    is shape-agnostic.
+    """
+    return submodule in ("develop_strategy", "simulate_hypothesis")
 
 
 def expects_hypothesis_layer(submodule: str) -> bool:

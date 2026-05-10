@@ -60,8 +60,10 @@ class FrameAuditResult:
 # Heuristics — all lowercase regex against the framing text.
 # -----------------------------------------------------------------------------
 _DECISION_CRITERION_RX = re.compile(
-    r"\b(should we|whether to|decide|deciding|between|choose|choice|trade.?off|"
-    r"option a|option b|two paths|three paths|alternatives|either)\b",
+    r"\b(should we|should i|shall we|do we|whether to|decide|deciding|"
+    r"between|choose|choice|trade.?off|option a|option b|two paths|"
+    r"three paths|alternatives|either|decision\s+impact|hold\s+or\s+\w+|"
+    r"roll\s+back\s+or\s+\w+)\b",
     re.IGNORECASE,
 )
 _TIME_HORIZON_RX = re.compile(
@@ -84,10 +86,27 @@ _EVIDENCE_HINT_RX = re.compile(
     re.IGNORECASE,
 )
 # A "falsifiable" hypothesis statement looks declarative-future or
-# conditional, not introspective.
+# conditional, not introspective. The "if X then Y" pattern allows
+# multi-word X (the previous \\w+ was too narrow — natural-language
+# hypotheses rarely fit "if pricing then churn"; they read as
+# "if the March price hike on tier 2 is the cause then ...").
 _HYPOTHESIS_FALSIFIABLE_RX = re.compile(
-    r"\b(will|won't|will not|would|wouldn't|cannot|can't|"
-    r"if\s+\w+\s+then|implies?|leads? to|results? in)\b",
+    r"\b(?:will|won't|will not|would|wouldn't|cannot|can't|"
+    r"if\s+.{1,80}?\s+then|implies?|leads? to|results? in)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+# Phase B.2 — hypothesis-specific gap heuristics. Both are required by
+# the spec's hypothesis framing checklist (PRODUCT_SPEC.md §5.1).
+_BASE_RATE_RX = re.compile(
+    r"\b(base\s*rate|comparable[s]?|benchmark[s]?|industry|peer[s]?|"
+    r"precedent[s]?|historical(?:ly)?|prior\s+experience|past\s+\w+\s+ago|"
+    r"prior\s+cycle|last\s+(?:quarter|year|cycle))\b",
+    re.IGNORECASE,
+)
+_LEADING_INDICATOR_RX = re.compile(
+    r"\b(leading\s+indicator[s]?|monitor(?:ing)?|early\s+(?:signal|sign|"
+    r"warning|indicator)|watch\s+for|track(?:ing)?|signal[s]?|trip\s*wire|"
+    r"trigger\s+(?:point|metric)|threshold|kpi[s]?|metric[s]?\s+to\s+watch)\b",
     re.IGNORECASE,
 )
 
@@ -198,6 +217,32 @@ def audit_framing(
             "\"if X then Y\" so we can examine where it breaks."
         )
         missing.append("falsifiable_hypothesis")
+
+    # 6. Hypothesis-specific: comparable / base rate ------------------------
+    # (Phase B.2 — spec calls for a comparable or base rate hint so the
+    # model has something to triangulate against.)
+    if submodule == "simulate_hypothesis" and not _BASE_RATE_RX.search(text):
+        observations.append(
+            "There's no comparable or base rate to triangulate against — "
+            "we'd otherwise be reasoning from a single data point."
+        )
+        recommendations.append(
+            "Cite a base rate, an industry comparable, or a prior-cycle "
+            "precedent we can weigh the hypothesis against."
+        )
+        missing.append("base_rate_or_comparable")
+
+    # 7. Hypothesis-specific: leading indicator / monitoring signal --------
+    if submodule == "simulate_hypothesis" and not _LEADING_INDICATOR_RX.search(text):
+        observations.append(
+            "No leading indicator named — if the hypothesis is right, "
+            "what's the earliest signal we'd see in the data?"
+        )
+        recommendations.append(
+            "Name the metric or signal you'd watch in the next 30–60 days "
+            "to confirm or falsify the claim."
+        )
+        missing.append("leading_indicator")
 
     # Severity --------------------------------------------------------------
     if not missing:

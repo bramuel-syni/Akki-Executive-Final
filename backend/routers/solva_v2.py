@@ -758,13 +758,30 @@ async def _run_synthesis(
         "If you reference comparable diagnoses, name them inline."
     )
     if expects_recommendations(submodule):
-        system_base += (
-            "\n\nADDITIONAL OUTPUT (Develop Strategy): after the diagnosis "
-            "paragraphs, write 2\u20134 numbered recommendations on their own "
-            "lines, each starting with 'Recommendation N:' followed by a "
-            "single-sentence concrete action with its tier marker. Each "
-            "recommendation must be testable and timeline-bounded."
-        )
+        # Phase B.2 — same numbered-recommendation structure for both
+        # develop_strategy and simulate_hypothesis. For strategy these are
+        # strategic moves; for hypothesis these are the actions /
+        # monitoring steps under the most defensible scenario.
+        if submodule == "simulate_hypothesis":
+            label = "Hypothesis"
+            shape = (
+                "after the diagnosis paragraphs, write 2\u20134 numbered "
+                "recommendations on their own lines, each starting with "
+                "'Recommendation N:' followed by a single-sentence concrete "
+                "action OR leading-indicator under the most defensible "
+                "scenario, with its tier marker. Each recommendation must "
+                "be testable and timeline-bounded."
+            )
+        else:
+            label = "Strategy"
+            shape = (
+                "after the diagnosis paragraphs, write 2\u20134 numbered "
+                "recommendations on their own lines, each starting with "
+                "'Recommendation N:' followed by a single-sentence concrete "
+                "action with its tier marker. Each recommendation must be "
+                "testable and timeline-bounded."
+            )
+        system_base += f"\n\nADDITIONAL OUTPUT ({label}): {shape}"
     system_msg = system_base + candidate_block + comparable_block + GROUNDING_CONTRACT_PROMPT
 
     # Phase 15.3.5 — no-opinion directive prepended to every Solva v2 LLM
