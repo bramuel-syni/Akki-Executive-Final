@@ -296,8 +296,10 @@ async def create_from_source(
     # 5) Audit and return.
     try:
         await write_audit(
-            account_id=account_id, context_id=context_id,
-            action="work_studio.from_source.created", target_id=artefact_id,
+            context_id=context_id, account_id=account_id,
+            action="work_studio.from_source.created",
+            resource_type=f"work_studio_artefact.{body.kind}",
+            resource_id=artefact_id,
             metadata={
                 "kind": body.kind,
                 "artefact_id": artefact_id,

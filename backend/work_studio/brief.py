@@ -121,12 +121,22 @@ PICKER = {
 }
 
 
-def _bullets_from_recommendations(recs: List[Dict[str, Any]]) -> List[str]:
+def _bullets_from_recommendations(recs: List[Any]) -> List[str]:
+    """Recommendations come from the Solva synthesis layer in two shapes
+    historically: dicts with `{ordinal, text}` (post-Phase B parser) and
+    plain strings (early sessions before the parser landed). Tolerate
+    both; coerce strings to a dict-equivalent at iteration time.
+    """
     out: List[str] = []
     for r in recs[:6]:
-        text = (r.get("text") or "").strip()
+        if isinstance(r, dict):
+            text = (r.get("text") or "").strip()
+            ordinal = r.get("ordinal")
+        else:
+            text = str(r or "").strip()
+            ordinal = None
         if text:
-            out.append(f"Recommendation {r.get('ordinal') or len(out) + 1}: {text}")
+            out.append(f"Recommendation {ordinal or len(out) + 1}: {text}")
     return out
 
 
@@ -154,11 +164,16 @@ def _table_kpi_contract(claims: List[Dict[str, Any]]) -> Optional[BriefTable]:
     )
 
 
-def _table_what_gets_done(recs: List[Dict[str, Any]]) -> Optional[BriefTable]:
-    """The MYDAWA "What gets done" device — # · What · Why it matters · Owner · By."""
+def _table_what_gets_done(recs: List[Any]) -> Optional[BriefTable]:
+    """The MYDAWA "What gets done" device — # · What · Why it matters · Owner · By.
+
+    Tolerant of dict and string recommendations (see `_bullets_from_recommendations`)."""
     rows: List[List[str]] = []
     for i, r in enumerate(recs[:6]):
-        text = (r.get("text") or "").strip()
+        if isinstance(r, dict):
+            text = (r.get("text") or "").strip()
+        else:
+            text = str(r or "").strip()
         if not text:
             continue
         # Heuristic split: take first sentence as "what", rest as "why".
