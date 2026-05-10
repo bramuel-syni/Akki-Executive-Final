@@ -996,21 +996,21 @@ async def start_session(
         raise HTTPException(status_code=404, detail="Unknown cluster.")
 
     # Phase 15.3 — concurrent active session limit (decision #11).
+    # 2026-05-10 A.0 — at-cap behaviour relaxed: instead of hard-blocking
+    # the user (which surfaces as "Could not start session." when the
+    # client's error handler can't unwrap the structured detail), we
+    # auto-abandon the oldest active session. The cap exists to bound
+    # concurrent live state, not to deny new framings; an oldest-active
+    # session at-cap is almost always an abandoned tab.
     active_count = await db.solva_v2_sessions.count_documents(
         {"account_id": account["id"], "status": "active"},
     )
     if active_count >= MAX_CONCURRENT_ACTIVE:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "error": "too_many_active_sessions",
-                "message": (
-                    "Too many active Solva v2 sessions. Abandon one before "
-                    "starting another."
-                ),
-                "limit": MAX_CONCURRENT_ACTIVE,
-                "active_count": active_count,
-            },
+        await db.solva_v2_sessions.find_one_and_update(
+            {"account_id": account["id"], "status": "active"},
+            {"$set": {"status": "abandoned", "abandoned_reason": "auto_evicted_at_cap",
+                      "completed_at": iso(now()), "updated_at": iso(now())}},
+            sort=[("started_at", 1)],
         )
 
     session_id = str(uuid.uuid4())
