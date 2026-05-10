@@ -1,4 +1,4 @@
-"""Phase B.3 — direct-provider token streaming + strategic failover.
+"""Phase B.3 / Phase A.1 — direct-provider token streaming + strategic failover.
 
 Replaces the briefings-local Claude→Gemini band-aid (option-b) with a
 service-layer mechanism that benefits every LLM-using surface.
@@ -7,18 +7,21 @@ Design
 ------
 * `stream_llm_direct(...)` is an async generator yielding `LlmStreamChunk`
   objects (`kind ∈ {delta, done, error}`).
-* If a direct provider key is present (`ANTHROPIC_API_KEY` for anthropic,
-  `GEMINI_API_KEY` for gemini) we attempt the direct streaming SDK first.
-* On any direct-call failure (network, 5xx, 4xx, parse) we log a single
-  `[llm-fallback]` warning and fall back to the existing Emergent proxy
-  via `LlmChat.send_message`. The fallback path is non-streaming — we
-  emit one big `delta` containing the whole reply so the consumer's
-  delta-loop logic still works.
+* Per-provider direct streaming:
+    - Anthropic — official `anthropic` SDK `messages.stream`.
+    - Gemini    — official `google-genai` SDK `aio.generate_content_stream`.
+    - OpenAI    — `litellm.acompletion(stream=True)` against the Emergent
+                  integrations proxy (no separate OPENAI_API_KEY needed).
+                  This is the same library `emergentintegrations.LlmChat`
+                  already uses for non-streaming proxy calls; we just turn
+                  on `stream=True`.
+* If the direct SDK call for a provider fails (e.g. tier 429 on Gemini
+  Pro), we attempt a litellm-stream retry through the Emergent proxy
+  (still token-level streaming) before giving up and emitting one
+  buffered delta. This means proxy-buffered is the LAST resort, not the
+  default for non-Anthropic providers.
 * The `done` chunk always carries `provider_used` and `fallback_triggered`
   so callers can audit which path served the request.
-
-GPT-5.2 / OpenAI is intentionally unsupported here — stays on the proxy
-buffered path until direct keys are provisioned for that provider too.
 """
 from __future__ import annotations
 
@@ -68,16 +71,21 @@ def streaming_mode_per_provider() -> Dict[str, str]:
         proxy_stream     — not implemented today (proxy doesn't really stream)
         direct_stream    — direct where keys are present, proxy_buffered fallback
     Default behaviour: direct where keys present, else proxy_buffered.
+
+    Phase A.1 — `gpt` reports `direct_stream` because OpenAI streaming
+    now goes through the Emergent integrations proxy via litellm with
+    `stream=True` (no separate OPENAI_API_KEY required).
     """
     forced = (os.environ.get("CHAT_STREAMING_MODE") or "").strip().lower()
     has_anth = bool(os.environ.get("ANTHROPIC_API_KEY"))
     has_gem  = bool(os.environ.get("GEMINI_API_KEY"))
+    has_proxy = bool(os.environ.get("EMERGENT_LLM_KEY"))
     if forced == "proxy_buffered":
         return {"claude": "proxy_buffered", "gemini": "proxy_buffered", "gpt": "proxy_buffered"}
     return {
         "claude": "direct_stream" if has_anth else "proxy_buffered",
         "gemini": "direct_stream" if has_gem  else "proxy_buffered",
-        "gpt":    "proxy_buffered",   # always — no direct OpenAI key wired today
+        "gpt":    "direct_stream" if has_proxy else "proxy_buffered",
     }
 
 
@@ -162,6 +170,60 @@ async def _stream_gemini(
 
 
 # ---------------------------------------------------------------------------
+# Direct streaming — OpenAI (and Gemini fallback) via LiteLLM through the
+# Emergent integrations proxy. This is the SAME library and proxy URL
+# `emergentintegrations.LlmChat` already uses for non-streaming calls; we
+# just turn on `stream=True` and iterate the OpenAI-compat delta chunks.
+# No new SDK, no new key — re-uses EMERGENT_LLM_KEY.
+# ---------------------------------------------------------------------------
+async def _stream_via_litellm_proxy(
+    *, provider: str, model_id: str, system_msg: str, user_text: str,
+    max_tokens: int = 4096,
+) -> AsyncIterator[LlmStreamChunk]:
+    api_key = os.environ.get("EMERGENT_LLM_KEY")
+    if not api_key:
+        raise RuntimeError("EMERGENT_LLM_KEY not set")
+    import litellm
+    from emergentintegrations.llm.utils import get_integration_proxy_url
+    proxy_url = get_integration_proxy_url()
+    # Match the param shape `LlmChat._execute_completion` builds — same
+    # api_base, same custom_llm_provider; only difference is stream=True.
+    if provider == "gemini":
+        litellm_model = f"gemini/{model_id}"
+    else:
+        litellm_model = model_id  # openai (gpt-5.2) and anything else
+    params = {
+        "model":               litellm_model,
+        "messages":            [
+            {"role": "system", "content": system_msg or "You are a helpful assistant."},
+            {"role": "user",   "content": user_text},
+        ],
+        "api_key":             api_key,
+        "api_base":            proxy_url + "/llm",
+        "custom_llm_provider": "openai",
+        "max_tokens":          max_tokens,
+        "stream":              True,
+    }
+    label = f"{provider}_direct"
+    parts: List[str] = []
+    response = await litellm.acompletion(**params)
+    async for chunk in response:
+        # OpenAI-compatible delta shape: chunk.choices[0].delta.content.
+        try:
+            delta = chunk.choices[0].delta
+            text = getattr(delta, "content", None)
+        except (AttributeError, IndexError, KeyError):
+            text = None
+        if not text:
+            continue
+        parts.append(text)
+        yield LlmStreamChunk(kind="delta", text=text, provider_used=label)
+    yield LlmStreamChunk(
+        kind="done", text="".join(parts), provider_used=label,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Proxy fallback (non-streaming — single-shot via LlmChat) — wrapped as
 # one delta + one done so consumers don't need a special path.
 # ---------------------------------------------------------------------------
@@ -208,7 +270,8 @@ async def stream_llm_direct(
     modes = streaming_mode_per_provider()
     direct_active = (
         (provider == "anthropic" and modes["claude"] == "direct_stream") or
-        (provider == "gemini"    and modes["gemini"] == "direct_stream")
+        (provider == "gemini"    and modes["gemini"] == "direct_stream") or
+        (provider == "openai"    and modes["gpt"]    == "direct_stream")
     )
 
     if not direct_active:
@@ -219,43 +282,50 @@ async def stream_llm_direct(
             yield c
         return
 
-    direct_gen = (
-        _stream_anthropic if provider == "anthropic"
-        else _stream_gemini
-    )
+    # Pick the first-choice direct streamer per provider.
+    if provider == "anthropic":
+        direct_gen = _stream_anthropic
+    elif provider == "gemini":
+        direct_gen = _stream_gemini
+    else:  # openai (gpt-5.2) — direct via litellm through Emergent proxy
+        direct_gen = _stream_via_litellm_proxy
 
     parts: List[str] = []
     direct_failed = False
     direct_failure_reason = ""
     started_emitting = False
     try:
-        async for c in direct_gen(
-            model_id=model_id, system_msg=system_msg,
-            user_text=user_text, max_tokens=max_tokens,
-        ):
+        # _stream_via_litellm_proxy needs `provider` because gemini gets
+        # a `gemini/` model prefix; the others ignore the kwarg.
+        if direct_gen is _stream_via_litellm_proxy:
+            gen = direct_gen(
+                provider=provider, model_id=model_id, system_msg=system_msg,
+                user_text=user_text, max_tokens=max_tokens,
+            )
+        else:
+            gen = direct_gen(
+                model_id=model_id, system_msg=system_msg,
+                user_text=user_text, max_tokens=max_tokens,
+            )
+        async for c in gen:
             if c.kind == "delta":
                 started_emitting = True
                 parts.append(c.text)
             yield c
         return
     except asyncio.CancelledError:
-        # Client disconnect — propagate, do NOT fall back.
         raise
     except Exception as e:
         direct_failed = True
         direct_failure_reason = f"{type(e).__name__}: {str(e)[:200]}"
         logger.warning(
-            "[llm-fallback] direct_%s failed (%s) → proxy_buffered",
+            "[llm-fallback] direct_%s failed (%s) → litellm_stream_proxy",
             provider, direct_failure_reason,
         )
 
     if not direct_failed:
         return
 
-    # Mid-stream failure with content already emitted → surface error.
-    # We CANNOT silently fall back to proxy because the consumer has
-    # already accumulated partial text from the direct stream; the proxy
-    # call would emit the *full* reply again, double-counting.
     if started_emitting:
         yield LlmStreamChunk(
             kind="error",
@@ -265,13 +335,33 @@ async def stream_llm_direct(
         )
         return
 
-    # No bytes shipped yet — safe to retry via proxy.
+    # No bytes shipped yet — try LiteLLM-stream through the Emergent proxy
+    # before falling all the way back to a single buffered blob. This is
+    # the path that recovers Gemini Pro from a tier 429 on the user's
+    # GEMINI_API_KEY: same provider, different transport, still token-
+    # level streaming. Still labelled `<provider>_direct` because the
+    # consumer sees real per-token deltas.
+    if provider in ("openai", "gemini") and direct_gen is not _stream_via_litellm_proxy:
+        try:
+            async for c in _stream_via_litellm_proxy(
+                provider=provider, model_id=model_id, system_msg=system_msg,
+                user_text=user_text, max_tokens=max_tokens,
+            ):
+                yield c
+            return
+        except Exception as e2:
+            logger.warning(
+                "[llm-fallback] litellm_stream_proxy_%s also failed (%s) → proxy_buffered",
+                provider, f"{type(e2).__name__}: {str(e2)[:200]}",
+            )
+
+    # Last resort — single-shot buffered proxy. Consumers see one big
+    # delta + a done with `fallback_triggered=True`.
     try:
         async for c in _stream_proxy_buffered(
             provider=provider, model_id=model_id, system_msg=system_msg,
             user_text=user_text, session_id=sid,
         ):
-            # Annotate the fallback flag on every chunk so audit captures it.
             c.fallback_triggered = True
             yield c
     except Exception as e:
