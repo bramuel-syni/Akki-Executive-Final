@@ -24,9 +24,10 @@ import { Label } from "@/components/ui/label";
 import {
   Sparkles, ChevronLeft, ChevronRight, Plus, X, Loader2,
   Mail, FileDown, Check, AlertCircle, Users, ListChecks, CheckCircle2,
-  ClipboardList, Send, Download,
+  ClipboardList, Send, Download, MessageSquare,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 const STEPS = [
   { id: "agenda",        label: "Agenda",        icon: ClipboardList },
@@ -477,6 +478,7 @@ function FollowUpsStep({ cid, followups, refresh, onBack, onForward, execName })
 function CompilationStep({ cid, onBack }) {
   const [busy, setBusy] = useState(false);
   const [out, setOut] = useState(null);
+  const navigate = useNavigate();
 
   const compile = async () => {
     setBusy(true); setOut(null);
@@ -531,6 +533,22 @@ function CompilationStep({ cid, onBack }) {
             <Button size="sm" onClick={download} className="bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12.5px]" data-testid="cycle-compile-download">
               <Download className="w-3.5 h-3.5 mr-1" /> Download .docx
             </Button>
+            {/* Workstream B.7 — Continue in Chat. The compilation
+                endpoint mints a chat tethered to the active context
+                with the DOCX pre-attached as a `cycle_compilation`
+                document. Surfaces only when the backend returned a
+                continue_chat_id (older clients / failed handoffs
+                degrade gracefully). */}
+            {out.continue_chat_id && (
+              <Button
+                size="sm" variant="outline"
+                onClick={() => navigate(`/app/chat?chat_id=${encodeURIComponent(out.continue_chat_id)}`)}
+                className="text-[12.5px]"
+                data-testid="cycle-compile-continue-in-chat"
+              >
+                <MessageSquare className="w-3.5 h-3.5 mr-1" /> Continue in Chat
+              </Button>
+            )}
             <Button size="sm" variant="outline" onClick={() => { setOut(null); compile(); }} className="text-[12.5px]">
               Compile again
             </Button>

@@ -633,6 +633,19 @@ def build_system_prompt(
     if turn_class == "trivial":
         return "\n\n".join(parts)
 
+    # Workstream A.3 — platform knowledge corpus. Injected for every
+    # non-trivial turn so the model can answer "what is X?" / "how do
+    # I Y?" platform questions without hallucinating from generic
+    # priors. Keep above the four-check rules so the model is grounded
+    # before the silent four-check evaluates the reply.
+    try:
+        from services.platform_kb import get_platform_kb_block
+        parts.append(get_platform_kb_block())
+    except Exception:  # noqa: BLE001
+        # Failing to load the KB must never break the chat path.
+        # Worst case is the pre-A.3 behaviour (no platform answers).
+        pass
+
     # light_substantive / substantive_analytical / strategic_deliverable
     parts.append(CHAT_ADAPTED_FOUR_CHECK_PROMPT)
     parts.append(_FOUR_CHECK_OUTPUT_RULE)
@@ -796,3 +809,222 @@ def sanitize_evidence_phrase(phrase: str) -> Tuple[str, Optional[str]]:
     hit = find_banned_word(p)
     return p, hit
 
+
+# =============================================================================
+# Workstream C.1 (2026-05-10) — deterministic detection for the other two
+# refusal categories. Mirrors `detect_thin_input` shape: a function that
+# returns trigger metadata or None. Both run on the ASSEMBLED ASSISTANT
+# REPLY (post-stream, post-rehydration), AFTER the four-check, BEFORE
+# persistence. When triggered, the caller swaps the visible reply for
+# the refusal template and persists a `refusal_reason` audit row.
+#
+# Both are bypassable when grounding citations are present \u2014 if the
+# reply contains `[[cite:` tokens or maps to citation chips, we trust
+# the four-check + citation_index_validator over the regex layer.
+# =============================================================================
+
+# Numeric-claim patterns: monetary, percentage, bps, plus a
+# "[number] (million|billion|customers|users|...)" bucket.
+_UNSOURCED_NUMERIC_RX = re.compile(
+    r"(\$\s?\d|\d+(?:\.\d+)?\s*(?:million|billion|trillion|m\b|bn\b|%|percent|bps|basis points|customers|users|employees|revenue|profit|EBITDA|MRR|ARR))",
+    re.IGNORECASE,
+)
+# Authorial-attribution patterns ("according to X", "X reports", "data shows").
+_UNSOURCED_ATTRIBUTION_RX = re.compile(
+    r"\b(according to|data\s+shows|reports?\s+indicate|the\s+(report|paper|study)\s+(says|states|notes|finds|argues))\b",
+    re.IGNORECASE,
+)
+_CITATION_TOKEN_RX = re.compile(r"\[\[cite:[A-Za-z0-9_\-]+\]\]")
+_BRACKET_FOOTNOTE_RX = re.compile(r"\[\d{1,3}\]")
+
+
+def detect_unsourced_claim(
+    *,
+    reply_text: str,
+    has_grounding: bool,
+    has_attached_docs: bool,
+) -> Optional[Dict[str, Any]]:
+    """Return trigger metadata if the reply makes a sourced-style claim
+    without backing it with a citation, else None.
+
+    Bypass conditions:
+      - reply already contains a `[[cite:...]]` token (model cited)
+      - reply contains a `[<n>]` footnote marker (citation pipeline)
+      - the chat HAS grounding paragraphs OR attached docs AND the model
+        cited at least one of them (the four-check covers the rest)
+    """
+    if not reply_text or len(reply_text) < 40:
+        return None
+
+    # Already cited \u2014 nothing to do.
+    if _CITATION_TOKEN_RX.search(reply_text) or _BRACKET_FOOTNOTE_RX.search(reply_text):
+        return None
+
+    numeric_hit = _UNSOURCED_NUMERIC_RX.search(reply_text)
+    attr_hit = _UNSOURCED_ATTRIBUTION_RX.search(reply_text)
+    if not (numeric_hit or attr_hit):
+        return None
+
+    # If the user explicitly attached grounding, give the model the
+    # benefit of the doubt \u2014 the four-check and the citation pipeline
+    # already evaluate this. The deterministic detector is for the
+    # ungrounded path, where the reply is a numeric / attributed claim
+    # the model invented.
+    if has_grounding or has_attached_docs:
+        return None
+
+    matched_pattern = "numeric" if numeric_hit else "attribution"
+    matched_text = (numeric_hit or attr_hit).group(0)
+    return {
+        "pattern_matched": matched_pattern,
+        "matched_text": matched_text[:80],
+        "char_len": len(reply_text),
+        "has_grounding": False,
+        "has_attached_docs": False,
+        "deterministic": True,
+    }
+
+
+# Capitalised name pairs (LastName / FirstLast) followed by a verb of
+# intent. Single-cap names are common nouns at sentence start; require
+# either two consecutive caps OR a possessive form ("Sarah's plan",
+# "the CEO's intent").
+_NAMED_PERSON_INTENT_RX = re.compile(
+    # Group 1: a CapWord+CapWord pair OR a possessive CapWord's
+    r"\b((?:[A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]{1,20})+)|(?:[A-Z][a-z]{1,20}'s))"
+    # ...followed by a verb of intent / belief / plan within ~30 chars
+    r"\s+\w{0,30}?\b(will|intends|believes|plans?\s+to|is\s+concerned|thinks|wants|expects|fears|opposes|supports|prefers)\b",
+)
+# Stop-list: phrases that match the regex but are not personal claims.
+_NAMED_INTENT_STOPLIST = {
+    "United States", "United Kingdom", "European Union",
+    "Federal Reserve", "Wall Street", "New York", "South Africa",
+}
+
+
+def detect_named_assumption(
+    *,
+    reply_text: str,
+    has_grounding: bool,
+    has_attached_docs: bool,
+) -> Optional[Dict[str, Any]]:
+    """Return trigger metadata if the reply makes a definitive intent /
+    belief / plan claim about a named individual without citation.
+
+    Same bypass conditions as `detect_unsourced_claim`.
+    """
+    if not reply_text or len(reply_text) < 40:
+        return None
+
+    if _CITATION_TOKEN_RX.search(reply_text) or _BRACKET_FOOTNOTE_RX.search(reply_text):
+        return None
+
+    if has_grounding or has_attached_docs:
+        return None
+
+    m = _NAMED_PERSON_INTENT_RX.search(reply_text)
+    if not m:
+        return None
+
+    name = m.group(1).strip()
+    if name in _NAMED_INTENT_STOPLIST:
+        return None
+
+    verb = m.group(2).lower()
+    return {
+        "matched_name": name[:60],
+        "matched_verb": verb,
+        "char_len": len(reply_text),
+        "has_grounding": False,
+        "has_attached_docs": False,
+        "deterministic": True,
+    }
+
+
+# Verbatim refusal phrasing for the two new categories. Keep these
+# in lockstep with `REFUSAL_TEMPLATES` above; the detector caller
+# emits these strings directly.
+UNSOURCED_CLAIM_DETERMINISTIC_REFUSAL = (
+    "I don't have a sourced figure for that. What you can do: attach "
+    "the underlying document, and I'll cite directly."
+)
+NAMED_ASSUMPTION_DETERMINISTIC_REFUSAL = (
+    "I shouldn't characterise {name}'s position without a source. If "
+    "you have minutes or correspondence, attach them and I'll work "
+    "from there."
+)
+
+
+def render_named_assumption_refusal(name: str) -> str:
+    """Insert the matched name into the refusal template.
+
+    Caller is responsible for sanitising the name (e.g. capping length).
+    """
+    safe_name = (name or "this person").strip()[:60] or "this person"
+    return NAMED_ASSUMPTION_DETERMINISTIC_REFUSAL.format(name=safe_name)
+
+
+# =============================================================================
+# Workstream B.2 (2026-05-10) — first-message auto-naming
+# =============================================================================
+# Cheap heuristic title generator. Avoids an extra LLM call per chat
+# (which would add ~600 ms to first-message TTFT and burn one classifier
+# credit each conversation). Works on the user's first message; the
+# router calls this AFTER user_msg persistence and BEFORE the LLM call.
+#
+# Examples (input -> output):
+#   "What is Auto-Shield?"                  -> "Auto-Shield"
+#   "Tell me about Solva"                   -> "Solva"
+#   "How do I configure billing?"           -> "Configure billing"
+#   "summarise this report"                 -> "Summarise this report"
+
+_TITLE_LEAD_STRIP = re.compile(
+    r"^(?:please\s+)?"
+    r"(?:can\s+you|could\s+you|tell\s+me\s+about|explain|describe|"
+    r"what\s+is|what\s+are|what's|how\s+do\s+i|how\s+can\s+i|"
+    r"how\s+do\s+you|how\s+does|why\s+(?:do|does|is|are)|"
+    r"give\s+me|show\s+me|walk\s+me\s+through)\s+",
+    re.IGNORECASE,
+)
+_TITLE_TRAIL_PUNCT = re.compile(r"[\s\.\?\!\,;:\-\u2014\u2013]+$")
+_TITLE_WS = re.compile(r"\s+")
+_DEFAULT_TITLES_TO_REPLACE = {"", "new conversation", "untitled", "new chat"}
+
+
+def heuristic_title_from_message(text: str, *, max_chars: int = 60) -> Optional[str]:
+    """Derive a short conversation title from the user's first message.
+
+    Returns None if the input is too thin to derive a meaningful title.
+    """
+    if not text:
+        return None
+    s = text.strip()
+    if len(s) < 6:
+        return None
+    # Take only the first sentence, capped.
+    for delim in ("? ", "! ", ". ", "\n"):
+        idx = s.find(delim)
+        if 0 < idx < max_chars + 20:
+            s = s[: idx + 1]
+            break
+    s = _TITLE_LEAD_STRIP.sub("", s)
+    s = _TITLE_TRAIL_PUNCT.sub("", s)
+    s = _TITLE_WS.sub(" ", s).strip()
+    if not s:
+        return None
+    if len(s) > max_chars:
+        cut = s.rfind(" ", 0, max_chars)
+        s = (s[:cut] if cut >= max_chars - 20 else s[:max_chars]).rstrip(" ,.;:")
+    if not s:
+        return None
+    # Capitalise the first letter only; preserve the rest of the casing
+    # because brand names ("Auto-Shield", "Solva") matter.
+    s = s[0].upper() + s[1:] if len(s) > 1 else s.upper()
+    return s
+
+
+def should_auto_rename(current_title: Optional[str]) -> bool:
+    """True iff the chat's current title is a placeholder we own."""
+    if not current_title:
+        return True
+    return current_title.strip().lower() in _DEFAULT_TITLES_TO_REPLACE

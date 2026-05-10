@@ -101,10 +101,10 @@ export default function EnhanceModal({ open, onClose, kind, contextId }) {
       fd.append("file", file);
       fd.append("instructions", instructions.trim());
       fd.append("output_format", outputFormat);
+      // Workstream B.8 — browser sets multipart boundary itself.
       const { data } = await api.post(
         `/contexts/${contextId}/work-studio/enhance/${kind}`,
         fd,
-        { headers: { "Content-Type": "multipart/form-data" } },
       );
       setExportId(data.export_id);
       setStatus(data);

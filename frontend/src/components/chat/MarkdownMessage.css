@@ -1,0 +1,188 @@
+/* MarkdownMessage — chat assistant bubble polish.
+ *
+ * Goals (Workstream B.1):
+ *   - Tighter line-height for code blocks; looser for paragraphs.
+ *   - JetBrains Mono / Menlo / Consolas / monospace fallback chain.
+ *   - Subtle table styling (borders + zebra rows).
+ *   - Block quotes: 3px left border, slight indent.
+ *   - Match the AKKI Ink/Oxblood/Cream tokens defined elsewhere in
+ *     index.css (no hard-coded colours — always var()).
+ *   - `will-change: contents` to hint the browser during streaming.
+ *   - Blinking cursor `▌` while a message is streaming.
+ */
+
+.akki-chat-md {
+  /* Hint the browser that this region updates frequently while the
+   * assistant is streaming. Removed by React when the message lands
+   * (streaming flag flips false). */
+  will-change: contents;
+}
+
+.akki-chat-md p {
+  line-height: 1.65;
+  margin: 0.35em 0;
+}
+.akki-chat-md p:first-child { margin-top: 0; }
+.akki-chat-md p:last-child  { margin-bottom: 0; }
+
+.akki-chat-md h1, .akki-chat-md h2, .akki-chat-md h3,
+.akki-chat-md h4, .akki-chat-md h5, .akki-chat-md h6 {
+  font-family: var(--font-serif, "Source Serif Pro", "Georgia", serif);
+  color: var(--ink);
+  margin: 0.85em 0 0.35em;
+  line-height: 1.35;
+}
+.akki-chat-md h1 { font-size: 1.25em; }
+.akki-chat-md h2 { font-size: 1.18em; }
+.akki-chat-md h3 { font-size: 1.1em;  }
+.akki-chat-md h4 { font-size: 1.04em; }
+
+.akki-chat-md ul,
+.akki-chat-md ol {
+  padding-left: 1.25em;
+  margin: 0.4em 0;
+}
+.akki-chat-md li {
+  margin: 0.18em 0;
+  line-height: 1.55;
+}
+.akki-chat-md li::marker {
+  color: var(--accent, #8b1d2c);
+}
+
+.akki-chat-md strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.akki-chat-md em {
+  font-style: italic;
+  color: var(--ink);
+}
+
+.akki-chat-md a {
+  color: var(--accent, #8b1d2c);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.akki-chat-md a:hover { text-decoration: none; }
+
+.akki-chat-md blockquote {
+  border-left: 3px solid var(--accent, #8b1d2c);
+  margin: 0.6em 0;
+  padding: 0.1em 0 0.1em 0.85em;
+  color: var(--muted, #6b6358);
+  background: rgba(0, 0, 0, 0.015);
+  border-radius: 0 2px 2px 0;
+}
+
+.akki-chat-md code,
+.akki-chat-md pre {
+  font-family: "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-feature-settings: "liga" 0;
+}
+.akki-chat-md code {
+  font-size: 0.92em;
+  padding: 0.1em 0.3em;
+  border-radius: 2px;
+  background: var(--cream-deep, rgba(0, 0, 0, 0.04));
+}
+.akki-chat-md pre {
+  line-height: 1.5;
+  padding: 0.8em 0.9em;
+  border-radius: 3px;
+  overflow-x: auto;
+  border: 1px solid var(--rule, rgba(0, 0, 0, 0.08));
+  background: var(--cream-deep, rgba(0, 0, 0, 0.04));
+  margin: 0.55em 0;
+  font-size: 0.88em;
+}
+.akki-chat-md pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+
+.akki-chat-md table {
+  border-collapse: collapse;
+  width: auto;
+  max-width: 100%;
+  margin: 0.55em 0;
+  font-size: 0.92em;
+}
+.akki-chat-md th,
+.akki-chat-md td {
+  border: 1px solid var(--rule, rgba(0, 0, 0, 0.1));
+  padding: 0.35em 0.6em;
+  text-align: left;
+  vertical-align: top;
+}
+.akki-chat-md th {
+  background: var(--cream-deep, rgba(0, 0, 0, 0.04));
+  font-weight: 600;
+}
+.akki-chat-md tbody tr:nth-child(even) td {
+  background: rgba(0, 0, 0, 0.012);
+}
+
+.akki-chat-md img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 3px;
+  margin: 0.4em 0;
+}
+
+.akki-chat-md hr {
+  border: 0;
+  border-top: 1px solid var(--rule, rgba(0, 0, 0, 0.1));
+  margin: 0.85em 0;
+}
+
+.akki-chat-md-cursor {
+  display: inline-block;
+  width: 0.55em;
+  margin-left: 0.05em;
+  color: var(--accent, #8b1d2c);
+  animation: akki-md-blink 1.05s steps(2, start) infinite;
+  vertical-align: baseline;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-weight: 600;
+}
+
+@keyframes akki-md-blink {
+  to { visibility: hidden; }
+}
+
+/* When the user prefers reduced motion, hold the cursor on without the
+ * blink — still gives the affordance, no animation. */
+@media (prefers-reduced-motion: reduce) {
+  .akki-chat-md-cursor {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+.akki-chat-scroll-to-latest {
+  position: absolute;
+  right: 1rem;
+  bottom: 5.5rem;
+  z-index: 12;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.7rem;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  background: var(--ink, #1f1c18);
+  color: var(--cream, #faf6ee);
+  border: none;
+  border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  transition: transform 0.12s ease, opacity 0.18s ease;
+  opacity: 0.95;
+}
+.akki-chat-scroll-to-latest:hover {
+  transform: translateY(-1px);
+  opacity: 1;
+}

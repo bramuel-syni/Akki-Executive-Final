@@ -24,13 +24,14 @@ import {
   Plus, Send, Loader2, Shield, ShieldOff, Trash2, MessageCircle,
   ChevronDown, FileLock2, Eye, AlertTriangle, Download,
   Search, Paperclip, X, FileText, StopCircle,
-  Brain, ChevronRight,
+  Brain, ChevronRight, Info, ArchiveRestore, ArrowLeft, Trash,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github.css";
 import ModelAvatar from "@/components/chat/ModelAvatar";
+import MarkdownMessage from "@/components/chat/MarkdownMessage";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
   DialogFooter,
@@ -124,9 +125,51 @@ export default function Chat() {
     })();
   }, [activeId]);
 
+  // Workstream B.1 — per-delta auto-scroll with userScrolledUp tracking.
+  //   - Track whether the user has scrolled up more than 100 px from
+  //     the bottom; if so, freeze auto-scroll (don't yank them away
+  //     from what they're reading).
+  //   - Show a small "↓ Scroll to latest" pill while frozen + new
+  //     content is arriving.
+  //   - Use rAF to batch scroll calls so we don't fire on every
+  //     keystroke-equivalent delta.
+  const scrollContainerRef = useRef(null);
+  const [userScrolledUp, setUserScrolledUp] = useState(false);
+  const rafRef = useRef(null);
+
+  const scrollToLatest = () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    });
+  };
+
+  // Bottom-distance probe — runs on user scroll only; cheap.
+  const onMessagesScroll = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const isUp = distFromBottom > 100;
+    if (isUp !== userScrolledUp) setUserScrolledUp(isUp);
+  };
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [activeChat?.messages?.length, sending]);
+    if (!userScrolledUp) scrollToLatest();
+  }, [activeChat?.messages?.length, sending, userScrolledUp]);
+
+  // Per-delta auto-scroll: re-scroll on every render of the streaming
+  // message's growing `content`. Cheap because rAF batches it.
+  const lastAssistant = activeChat?.messages?.[(activeChat?.messages?.length ?? 0) - 1];
+  useEffect(() => {
+    if (lastAssistant?.streaming && !userScrolledUp) scrollToLatest();
+  }, [lastAssistant?.content?.length, lastAssistant?.streaming, userScrolledUp]);
+
+  // Reset the userScrolledUp flag when a new message starts.
+  useEffect(() => {
+    if (sending) setUserScrolledUp(false);
+  }, [sending]);
+
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
 
   // Pre-fill the composer when arriving with ?prompt=… (e.g. from the
   // sandbox tutorial card or the "Continue in Chat" chip on a saved
@@ -203,10 +246,13 @@ export default function Chat() {
             const { data } = await api.get(`/contexts/${activeContext.id}/documents/${docId}`);
             docTitle = data?.name || data?.original_filename || docTitle;
           } catch { /* fall through with default title */ }
+          // Workstream A.1 — pass context_id so the chat shows in the
+          // active-context-filtered sidebar list and can accept attachments.
           const { data } = await api.post("/chats", {
             title: `Re: ${docTitle.slice(0, 80)}`,
             model_id: defaultModel,
             shielding_policy: "auto",
+            context_id: activeContext.id,
           });
           if (!cancelled) {
             setChats((prev) => [data, ...prev]);
@@ -214,15 +260,22 @@ export default function Chat() {
             setInput(p || `What's the most important thing for me to know from "${docTitle}"?`);
           }
         } else if (wantNew) {
-          const { data } = await api.post("/chats", {
-            title: seedTitle || "Continued from a brief",
-            model_id: defaultModel,
-            shielding_policy: "auto",
-          });
-          if (cancelled) return;
-          setChats((prev) => [data, ...prev]);
-          setActiveId(data.id);
-          if (p) setInput(p);
+          if (!activeContext?.id) {
+            toast.error("Pick a company first to continue from a brief.");
+          } else {
+            // Workstream A.1 — chats minted from "Continue from brief"
+            // must be tethered to the active context.
+            const { data } = await api.post("/chats", {
+              title: seedTitle || "Continued from a brief",
+              model_id: defaultModel,
+              shielding_policy: "auto",
+              context_id: activeContext.id,
+            });
+            if (cancelled) return;
+            setChats((prev) => [data, ...prev]);
+            setActiveId(data.id);
+            if (p) setInput(p);
+          }
         } else if (p) {
           setInput(p);
         }
@@ -241,11 +294,19 @@ export default function Chat() {
   }, [searchParams.toString(), activeContext?.id]);
 
   const onNewChat = async () => {
+    // Workstream A.1 — block when no active context is selected.
+    // Without context_id, the chat lands as an orphan and gets
+    // filtered out of the per-context list (the AC-01 root cause).
+    if (!activeContext?.id) {
+      toast.error("Pick a company first to start a chat.");
+      return;
+    }
     try {
       const { data } = await api.post("/chats", {
         title: "New conversation",
         model_id: defaultModel,
         shielding_policy: "auto",
+        context_id: activeContext.id,
       });
       setChats((prev) => [data, ...prev]);
       setActiveId(data.id);
@@ -257,8 +318,7 @@ export default function Chat() {
       await api.delete(`/chats/${id}`);
       setChats((prev) => prev.filter((c) => c.id !== id));
       if (activeId === id) setActiveId(null);
-      toast.success("Archived");
-    } catch (e) { toast.error(apiErrorMessage(e)); }
+      toast.success("Archived");    } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
   const onPatch = async (patch) => {
@@ -399,6 +459,19 @@ export default function Chat() {
             try { ev = JSON.parse(json); } catch { continue; }
             if (ev.type === "delta") {
               applyStreamUpdate((m) => ({ ...m, content: (m.content || "") + ev.text }));
+            } else if (ev.type === "chat_renamed") {
+              // Workstream B.2 — server auto-named the chat from the
+              // first user message. Update sidebar + active header.
+              const newTitle = ev.title || "";
+              const targetChatId = ev.chat_id || activeId;
+              if (newTitle && targetChatId) {
+                setChats((prev) => prev.map((c) =>
+                  c.id === targetChatId ? { ...c, title: newTitle } : c,
+                ));
+                setActiveChat((prev) =>
+                  prev && prev.id === targetChatId ? { ...prev, title: newTitle } : prev,
+                );
+              }
             } else if (ev.type === "message") {
               finalEvent = ev;
               applyStreamUpdate((m) => ({
@@ -558,14 +631,70 @@ export default function Chat() {
     return () => { dead = true; };
   }, [activeContext?.id]);
 
+  // Workstream B.5 — archive view state. When archiveOpen=true, the
+  // sidebar swaps to the archived-chat list (with Restore + Permanently
+  // Delete affordances). Active and archived lists are kept in two
+  // separate state slots so flipping back is instant — no re-fetch
+  // unless one expired in between.
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archivedChats, setArchivedChats] = useState([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+
+  const openArchive = async () => {
+    setArchiveOpen(true);
+    setArchiveLoading(true);
+    try {
+      const { data } = await api.get("/chats?include_archived=true");
+      // The backend returns active+archived merged; filter to archived
+      // only for this view.
+      setArchivedChats((data || []).filter((c) => c.status === "archived"));
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setArchiveLoading(false);
+    }
+  };
+
+  const closeArchive = () => {
+    setArchiveOpen(false);
+    setArchivedChats([]);
+  };
+
+  const onRestoreChat = async (id) => {
+    try {
+      await api.post(`/chats/${id}/restore`);
+      // Move the chat back to the active list (refresh both).
+      setArchivedChats((prev) => prev.filter((c) => c.id !== id));
+      const { data } = await api.get("/chats");
+      setChats(data || []);
+      toast.success("Restored to active conversations");
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    }
+  };
+
+  const onHardDeleteChat = async (id) => {
+    if (!window.confirm("Permanently delete this conversation? The audit trail is preserved but the messages cannot be recovered.")) return;
+    try {
+      await api.delete(`/chats/${id}?hard=true`);
+      setArchivedChats((prev) => prev.filter((c) => c.id !== id));
+      toast.success("Permanently deleted");
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    }
+  };
+
   const onAttachFile = async (file) => {
     if (!activeId || !file) return;
     try {
       const fd = new FormData();
       fd.append("file", file);
+      // Workstream B.8 — let the browser set the Content-Type
+      // (including the multipart boundary). The previous explicit
+      // header stripped the boundary, breaking uploads in legacy
+      // browsers.
       const { data } = await api.post(
         `/chats/${activeId}/attach`, fd,
-        { headers: { "Content-Type": "multipart/form-data" } },
       );
       setAttachments((prev) => [...prev, data]);
       toast.success(`Attached: ${data.name}`);
@@ -630,7 +759,58 @@ export default function Chat() {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-2" data-testid="chat-list">
-            {loading ? (
+            {archiveOpen ? (
+              /* Workstream B.5 — archive view. Replaces the active list. */
+              <div data-testid="chat-archive-view">
+                <button
+                  onClick={closeArchive}
+                  className="w-full flex items-center gap-1.5 px-2 py-1.5 mb-2 text-[11.5px] uppercase tracking-wider text-[var(--muted)] hover:text-[var(--ink)] border border-transparent hover:border-[var(--rule)] rounded-sm"
+                  data-testid="chat-archive-back-btn"
+                >
+                  <ArrowLeft className="w-3 h-3" /> Back to active chats
+                </button>
+                {archiveLoading ? (
+                  <p className="p-4 text-[11px] text-[var(--muted)] text-center">Loading…</p>
+                ) : archivedChats.length === 0 ? (
+                  <p className="p-4 text-[11px] text-[var(--muted)] text-center italic" data-testid="chat-archive-empty">
+                    No archived conversations.
+                  </p>
+                ) : (
+                  archivedChats.map((c) => (
+                    <div
+                      key={c.id}
+                      className="px-3 py-2.5 rounded-sm mb-1 border border-[var(--rule)] bg-white"
+                      data-testid={`chat-archive-item-${c.id}`}
+                    >
+                      <p className="text-[12.5px] font-medium leading-snug line-clamp-1 text-[var(--ink)]">
+                        {c.title}
+                      </p>
+                      <p className="text-[11px] text-[var(--muted)] line-clamp-1 mt-0.5">
+                        {c.last_message_preview || "(no messages yet)"}
+                      </p>
+                      <div className="flex items-center gap-1 mt-2">
+                        <button
+                          onClick={() => onRestoreChat(c.id)}
+                          className="text-[10.5px] uppercase tracking-wider text-[var(--accent)] hover:text-[var(--ink)] inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm hover:bg-[var(--cream-deep)]/40"
+                          data-testid={`chat-archive-restore-${c.id}`}
+                          title="Restore to active conversations"
+                        >
+                          <ArchiveRestore className="w-3 h-3" /> Restore
+                        </button>
+                        <button
+                          onClick={() => onHardDeleteChat(c.id)}
+                          className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] hover:text-red-600 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm hover:bg-red-50"
+                          data-testid={`chat-archive-purge-${c.id}`}
+                          title="Permanently delete (audit chain preserved)"
+                        >
+                          <Trash className="w-3 h-3" /> Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : loading ? (
               <p className="p-4 text-[11px] text-[var(--muted)] text-center">Loading…</p>
             ) : searching ? (
               <p className="p-4 text-[11px] text-[var(--muted)] text-center">Searching…</p>
@@ -700,6 +880,20 @@ export default function Chat() {
               );
             })}
           </div>
+          {/* Workstream B.5 — Archive entry point at sidebar bottom.
+              Hidden when already in archive view (the back button
+              is the affordance). */}
+          {!archiveOpen && (
+            <div className="border-t border-[var(--rule)] p-3 bg-white">
+              <button
+                onClick={openArchive}
+                className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] uppercase tracking-wider text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)]/40 rounded-sm"
+                data-testid="chat-open-archive-btn"
+              >
+                <Trash2 className="w-3 h-3" /> Archive
+              </button>
+            </div>
+          )}
         </aside>
 
         {/* Main */}
@@ -732,12 +926,18 @@ export default function Chat() {
                 chat={activeChat}
                 models={models}
                 activeModel={activeModel}
+                activeContext={activeContext}
                 onPatch={onPatch}
                 onArchive={() => onArchive(activeChat.id)}
                 onAudit={() => setAuditOpen(true)}
               />
 
-              <div className="flex-1 overflow-y-auto px-8 py-6 space-y-5" data-testid="chat-messages">
+              <div
+                ref={scrollContainerRef}
+                onScroll={onMessagesScroll}
+                className="flex-1 overflow-y-auto px-8 py-6 space-y-5 relative"
+                data-testid="chat-messages"
+              >
                 {(activeChat.messages || []).length === 0 ? (
                   <p className="text-center text-[13px] text-[var(--muted)] italic mt-10">
                     Type your first message below.
@@ -751,6 +951,20 @@ export default function Chat() {
                   </div>
                 )}
                 <div ref={messagesEndRef} />
+                {/* Workstream B.1 — floating "↓ Scroll to latest" pill.
+                    Visible only when the user has scrolled up while
+                    new content is arriving. Click resets the scroll
+                    lock. */}
+                {userScrolledUp && (
+                  <button
+                    type="button"
+                    onClick={() => { setUserScrolledUp(false); scrollToLatest(); }}
+                    className="akki-chat-scroll-to-latest"
+                    data-testid="chat-scroll-to-latest"
+                  >
+                    <ChevronDown className="w-3 h-3" /> Scroll to latest
+                  </button>
+                )}
               </div>
 
               <Composer
@@ -788,7 +1002,7 @@ export default function Chat() {
   );
 }
 
-function ChatHeader({ chat, models, activeModel, onPatch, onArchive, onAudit }) {
+function ChatHeader({ chat, models, activeModel, activeContext, onPatch, onArchive, onAudit }) {
   const [titleEdit, setTitleEdit] = useState(false);
   const [title, setTitle] = useState(chat.title);
   useEffect(() => { setTitle(chat.title); }, [chat.id, chat.title]);
@@ -807,13 +1021,27 @@ function ChatHeader({ chat, models, activeModel, onPatch, onArchive, onAudit }) 
             data-testid="chat-title-input"
           />
         ) : (
-          <button
-            onClick={() => setTitleEdit(true)}
-            className="akki-serif text-[16px] text-[var(--ink)] hover:text-[var(--accent)] truncate text-left"
-            data-testid="chat-title"
-          >
-            {chat.title}
-          </button>
+          <div className="flex items-baseline gap-2 min-w-0">
+            <button
+              onClick={() => setTitleEdit(true)}
+              className="akki-serif text-[16px] text-[var(--ink)] hover:text-[var(--accent)] truncate text-left"
+              data-testid="chat-title"
+            >
+              {chat.title}
+            </button>
+            {/* Workstream B.3 — active company context next to the title.
+                Subtle so it never reads as a primary action; visible
+                always so the user is reminded which company this
+                conversation is bound to. */}
+            {activeContext?.name && (
+              <span
+                className="text-[12px] text-[var(--muted)] truncate flex-shrink-0"
+                data-testid="chat-header-active-context"
+              >
+                in <span className="text-[var(--ink)]">{activeContext.name}</span>
+              </span>
+            )}
+          </div>
         )}
         <p className="text-[10.5px] text-[var(--muted)] mt-0.5">
           {chat.message_count || 0} messages · {POLICY_LABEL[chat.shielding_policy]}
@@ -828,6 +1056,26 @@ function ChatHeader({ chat, models, activeModel, onPatch, onArchive, onAudit }) 
         value={chat.shielding_policy}
         onChange={(shielding_policy) => onPatch({ shielding_policy })}
       />
+      {/* Workstream B.4 — Auto-Shield (i) tooltip. CSS-only hover, no
+          Radix dependency added; matches the muted-icon styling
+          elsewhere in the header bar. */}
+      <span
+        className="relative inline-flex group cursor-help text-[var(--muted)]"
+        tabIndex={0}
+        aria-label="What is Auto-Shield?"
+        data-testid="auto-shield-tooltip-trigger"
+      >
+        <Info className="w-3.5 h-3.5" aria-hidden="true" />
+        <span
+          role="tooltip"
+          className="pointer-events-none absolute right-0 top-full mt-1 w-72 z-50 hidden group-hover:block group-focus-within:block bg-[var(--ink)] text-[var(--cream)] text-[11px] leading-snug px-3 py-2 rounded-sm shadow-lg"
+        >
+          Auto-Shield redacts names and numbers before any AI sees them.
+          <span className="block mt-1"><b>Auto</b> — redact when sensitivity is detected.</span>
+          <span className="block"><b>Always</b> — redact every message.</span>
+          <span className="block"><b>Off</b> — send raw (use sparingly).</span>
+        </span>
+      </span>
       <button
         onClick={onAudit}
         className="text-[var(--muted)] hover:text-[var(--ink)] text-[11.5px] uppercase tracking-wider inline-flex items-center gap-1 px-2 py-1 rounded-sm hover:bg-[var(--cream-deep)]/40"
@@ -970,12 +1218,15 @@ function Message({ m, activeModel, models }) {
             ? "bg-[var(--cream-deep)]/50 border border-[var(--rule)] rounded-sm px-3 py-2 text-[var(--ink)] whitespace-pre-wrap"
             : "text-[var(--ink)]"
         }`}>
-          {/* Phase B.1 — markdown rendering for assistant bubbles
-              that have no citations. Citation-bearing replies keep
-              the existing inline-pill renderer because that returns
-              React nodes that don't mix with markdown's string
-              parser. User bubbles always plain-text (memo + voice
-              rule: never render user-supplied markdown as HTML). */}
+          {/* Phase B.1 / Workstream B.1 — markdown rendering for
+              assistant bubbles that have no citations. Citation-bearing
+              replies keep the existing inline-pill renderer because
+              that returns React nodes that don't mix with markdown's
+              string parser. User bubbles always plain-text (memo +
+              voice rule: never render user-supplied markdown as HTML).
+              Workstream B.1 (2026-05-10) extracted the renderer into
+              `MarkdownMessage` so the blinking-cursor and the styles
+              live in one place. */}
           {isUser ? (
             m.content
           ) : Array.isArray(m.citations) && m.citations.length > 0 ? (
@@ -983,46 +1234,14 @@ function Message({ m, activeModel, models }) {
               {renderInlineCitations(m.content, m.citations)}
             </span>
           ) : (
-            <div
-              className="akki-chat-md"
-              data-testid={m.streaming ? "chat-msg-assistant-streaming" : "chat-msg-assistant-md"}
-            >
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeHighlight]}
-                // Disallow raw HTML in LLM output. ReactMarkdown drops
-                // unknown HTML by default; we forbid the few tags
-                // that *would* parse so output is escaped not
-                // executed.
-                disallowedElements={["script", "iframe", "style", "form"]}
-                unwrapDisallowed
-                components={{
-                  a: ({ node, ...props }) => (
-                    <a {...props} target="_blank" rel="noreferrer noopener"
-                       className="text-[var(--accent)] underline" />
-                  ),
-                  table: ({ node, ...props }) => (
-                    <div className="my-2 overflow-x-auto">
-                      <table {...props} className="text-[13px] border-collapse [&_th]:border [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_th]:bg-[var(--cream-deep)]/40 [&_th]:text-left" />
-                    </div>
-                  ),
-                  code: ({ node, inline, ...props }) =>
-                    inline
-                      ? <code {...props} className="px-1 py-0.5 rounded-sm bg-[var(--cream-deep)]/60 text-[12.5px] font-mono" />
-                      : <code {...props} className="block whitespace-pre-wrap text-[12.5px] font-mono" />,
-                  pre: ({ node, ...props }) => (
-                    <pre {...props} className="my-2 p-3 rounded-sm bg-[var(--cream-deep)]/60 border border-[var(--rule)] overflow-x-auto text-[12.5px]" />
-                  ),
-                }}
-              >
-                {m.content || ""}
-              </ReactMarkdown>
+            <>
+              <MarkdownMessage content={m.content} streaming={!!m.streaming} />
               {m.cancelled && (
                 <p className="mt-2 text-[11px] text-[var(--muted)] italic">
                   Cancelled. Partial reply kept.
                 </p>
               )}
-            </div>
+            </>
           )}
         </div>
         {/* Phase 11 ITEM C — citation chips travel as a structured array

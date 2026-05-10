@@ -25,12 +25,21 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { api, apiErrorMessage } from "@/lib/api";
-import { Sparkles, Presentation, ListPlus, Loader2 } from "lucide-react";
+import { Sparkles, Presentation, ListPlus, Loader2, MessageSquare } from "lucide-react";
 
 export default function HandoffActions({ kind, id, contextId, title, className = "" }) {
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
   const seed = kind && id ? `${kind}:${id}` : null;
+
+  // Workstream B.6 (2026-05-10) — Ask in Chat handoff. Only meaningful
+  // when the seed is a `document`; the chat surface needs a doc id to
+  // pre-attach for grounded conversation.
+  const onAskInChat = useCallback(() => {
+    if (kind !== "document" || !id) return;
+    navigate(`/app/chat?doc=${encodeURIComponent(id)}`);
+    toast.success("Opened a chat tethered to this document.");
+  }, [kind, id, navigate]);
 
   const onSolva = useCallback(() => {
     if (!seed) {
@@ -80,6 +89,19 @@ export default function HandoffActions({ kind, id, contextId, title, className =
       data-solva-seed={seed || undefined}
       data-testid="handoff-actions"
     >
+      {/* Workstream B.6 — Ask in Chat. Document-only for now; the
+          chat surface needs a doc id to pre-attach. */}
+      {kind === "document" && id && (
+        <Button
+          type="button" size="sm" variant="outline"
+          onClick={onAskInChat}
+          className="rounded-sm border-[var(--rule)] text-[12.5px] hover:bg-[var(--cream-deep)]"
+          data-testid="handoff-ask-in-chat"
+        >
+          <MessageSquare className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.7} />
+          Ask in Chat
+        </Button>
+      )}
       <Button
         type="button" size="sm" variant="outline"
         onClick={onSolva}

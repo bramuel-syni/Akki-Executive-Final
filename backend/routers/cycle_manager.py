@@ -792,10 +792,40 @@ async def draft_compilation(
         )
     except Exception:
         pass
+
+    # Workstream B.7 (2026-05-10) — Continue-in-Chat handoff.
+    # Mint a chat tethered to the active context with the compilation
+    # DOCX pre-attached as a `cycle_compilation` document. The SPA reads
+    # the returned `continue_chat_id` to render the "Continue in chat"
+    # button on the Compilation step.
+    continue_chat_id = None
+    try:
+        from services.continue_chat import create_continue_chat
+        continue_chat_id, _continue_doc_id = await create_continue_chat(
+            account_id=ctx["account"]["id"],
+            context_id=context_id,
+            kind="cycle_compilation",
+            source="cycle_compilation",
+            export_id=eid,
+            file_name=fname,
+            file_path=str(fpath),
+            output_format="docx",
+            extracted_text="",
+            sensitivity_band="INTERNAL",
+        )
+    except Exception as e:  # noqa: BLE001
+        # Continue-in-Chat must never block the compilation download.
+        # Log and proceed; the user gets the file, just no chat handoff.
+        import logging as _lg
+        _lg.getLogger("akki.cycle").warning(
+            "continue_chat creation failed: %s", e.__class__.__name__,
+        )
+
     return {
         "ok": True,
         "export_id": eid,
         "file_name": fname,
         "byte_len": len(data),
         "sha256": sha,
+        "continue_chat_id": continue_chat_id,
     }

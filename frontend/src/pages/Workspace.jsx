@@ -256,9 +256,8 @@ export default function Workspace() {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const { data } = await api.post(`/contexts/${cid}/documents`, fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      // Workstream B.8 — let the browser set the multipart boundary.
+      const { data } = await api.post(`/contexts/${cid}/documents`, fd);
       setDocs((prev) => [data, ...prev]);
       toast.success(`Added · ${data.name || file.name}`);
     } catch (e) {

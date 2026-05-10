@@ -137,6 +137,23 @@ def _sanitize(rec: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in rec.items() if k != "_id"}
 
 
+def _require_active_context(request: Request) -> str:
+    """Workstream A.2 — the chat surface treats X-Active-Context as
+    REQUIRED. Returns the header value or raises 400. Centralised so
+    the error shape is consistent across every chat route.
+    """
+    ctx = request.headers.get(ACTIVE_CONTEXT_HEADER)
+    if not ctx:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "ACTIVE_CONTEXT_REQUIRED",
+                "message": "X-Active-Context header required.",
+            },
+        )
+    return ctx
+
+
 async def _last_audit_hash(account_id: str) -> str:
     """Return the SHA256 hash of the most recent audit row for this user,
     or a constant genesis hash if none yet. Used to chain rows so any
@@ -318,6 +335,28 @@ async def create_chat(
 ):
     if not _model_def(body.model_id):
         raise HTTPException(status_code=400, detail=f"Unknown model_id '{body.model_id}'.")
+
+    # Workstream A.2 (2026-05-10) — X-Active-Context REQUIRED. The
+    # chat MUST be tethered to a context at create time. Workstream
+    # A.1 traced the AC-01/AC-02 root cause to the frontend creating
+    # chats without context_id; the fix is twofold: SPA passes it,
+    # backend requires it. Body-level context_id wins (explicit > header)
+    # but at least one must be present.
+    active_ctx = request.headers.get(ACTIVE_CONTEXT_HEADER)
+    body_ctx = (body.context_id or "").strip() if body.context_id else ""
+    effective_ctx = body_ctx or active_ctx
+    if not effective_ctx:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "ACTIVE_CONTEXT_REQUIRED",
+                "message": (
+                    "Chat creation requires an active company context. "
+                    "Pass X-Active-Context header or context_id in the body."
+                ),
+            },
+        )
+
     cid = str(uuid.uuid4())
     rec = {
         "id": cid,
@@ -325,7 +364,7 @@ async def create_chat(
         "title": (body.title or "New conversation").strip()[:120],
         "model_id": body.model_id,
         "shielding_policy": body.shielding_policy,
-        "context_id": body.context_id,  # Phase 11 ITEM C — optional grounding
+        "context_id": effective_ctx,
         "status": "active",
         "message_count": 0,
         "last_message_preview": "",
@@ -338,7 +377,7 @@ async def create_chat(
         account_id=current["id"], chat_id=cid, action="chat.created",
         request=request,
         payload={"model_id": body.model_id, "shielding_policy": body.shielding_policy,
-                 "context_id": body.context_id},
+                 "context_id": effective_ctx},
     )
     return _sanitize(rec)
 
@@ -412,8 +451,10 @@ async def attach_to_chat(
             detail="Cannot attach: this chat is not bound to a company context.",
         )
 
-    active_ctx = request.headers.get(ACTIVE_CONTEXT_HEADER)
-    if active_ctx and active_ctx != chat_ctx_id:
+    # Workstream A.2 — X-Active-Context REQUIRED. The chat MUST be
+    # bound to the active context for an attach to land safely.
+    active_ctx = _require_active_context(request)
+    if active_ctx != chat_ctx_id:
         raise HTTPException(
             status_code=403,
             detail={
@@ -555,24 +596,32 @@ async def attach_to_chat(
 @router.get("/chats")
 async def list_chats(
     request: Request,
+    include_archived: bool = Query(False, description="Include archived chats in the list."),
     current: Dict[str, Any] = Depends(get_current_account),
 ):
     """List the caller's active conversations.
 
-    Phase B.1 — when `X-Active-Context` is set (the SPA always sets it
-    after Phase A), the list is **filtered to chats bound to that
-    context**. This satisfies Memo Item 5 + Item 8 acceptance #6 — a
-    user switching contexts immediately sees only the conversations
-    that belong to that context.
+    Workstream A.2 (2026-05-10) — `X-Active-Context` is now REQUIRED.
+    The pre-Phase-B legacy escape hatch (no header → account-wide list)
+    has been retired so non-SPA callers can't bypass per-context
+    isolation. Tests that don't send the header will need to be updated.
 
-    Legacy callers that don't send the header still get the
-    pre-Phase-B account-wide list (back-compat for the test_iter*
-    suite); they're allowlisted by absence of the header.
+    Workstream B.5 — `?include_archived=true` switches the filter to
+    show archived chats too (newest-first by `last_message_at`). The
+    sidebar archive view uses this.
     """
-    q: Dict[str, Any] = {"account_id": current["id"], "status": {"$ne": "archived"}}
     active_ctx = request.headers.get(ACTIVE_CONTEXT_HEADER)
-    if active_ctx:
-        q["context_id"] = active_ctx
+    if not active_ctx:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "ACTIVE_CONTEXT_REQUIRED",
+                "message": "X-Active-Context header required.",
+            },
+        )
+    q: Dict[str, Any] = {"account_id": current["id"], "context_id": active_ctx}
+    if not include_archived:
+        q["status"] = {"$ne": "archived"}
     rows = await db.chats.find(q, {"_id": 0}) \
         .sort("last_message_at", -1).to_list(200)
     rows.sort(
@@ -604,11 +653,14 @@ async def search_chats(
     q: str = Query(..., min_length=2, max_length=200,
                    description="Substring; case-insensitive. Min 2 chars."),
     limit: int = Query(50, ge=1, le=200),
+    include_archived: bool = Query(False, description="Include archived chats in search."),
     current: Dict[str, Any] = Depends(get_current_account),
 ):
     """Search chats by substring in title OR turn content, scoped to
-    the caller's active context (or account-wide if no header — same
-    legacy escape hatch as `/chats`).
+    the caller's active context.
+
+    Workstream A.2 (2026-05-10) — `X-Active-Context` REQUIRED. No more
+    account-wide escape hatch.
 
     Returns:
         {
@@ -629,11 +681,20 @@ async def search_chats(
         raise HTTPException(status_code=400, detail="Query must be at least 2 characters.")
 
     active_ctx = request.headers.get(ACTIVE_CONTEXT_HEADER)
+    if not active_ctx:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "ACTIVE_CONTEXT_REQUIRED",
+                "message": "X-Active-Context header required.",
+            },
+        )
     chat_filter: Dict[str, Any] = {
-        "account_id": current["id"], "status": {"$ne": "archived"},
+        "account_id": current["id"],
+        "context_id": active_ctx,
     }
-    if active_ctx:
-        chat_filter["context_id"] = active_ctx
+    if not include_archived:
+        chat_filter["status"] = {"$ne": "archived"}
 
     # Step 1 — find chats with title hits (cheap; 1 query).
     rx = {"$regex": _escape_regex(needle), "$options": "i"}
@@ -643,20 +704,15 @@ async def search_chats(
     ).sort("last_message_at", -1).to_list(limit)
 
     # Step 2 — find chat_messages hits scoped to allowed chat_ids.
-    allowed_chat_ids: List[str] = []
-    if active_ctx:
-        # Restrict to chats in the active context.
-        ids_cursor = await db.chats.find(
-            {**chat_filter}, {"_id": 0, "id": 1},
-        ).to_list(2000)
-        allowed_chat_ids = [c["id"] for c in ids_cursor]
-        msg_filter: Dict[str, Any] = {
-            "account_id": current["id"],
-            "chat_id": {"$in": allowed_chat_ids},
-            "content": rx,
-        }
-    else:
-        msg_filter = {"account_id": current["id"], "content": rx}
+    ids_cursor = await db.chats.find(
+        {**chat_filter}, {"_id": 0, "id": 1},
+    ).to_list(2000)
+    allowed_chat_ids: List[str] = [c["id"] for c in ids_cursor]
+    msg_filter: Dict[str, Any] = {
+        "account_id": current["id"],
+        "chat_id": {"$in": allowed_chat_ids},
+        "content": rx,
+    }
 
     msg_hits = await db.chat_messages.find(
         msg_filter,
@@ -717,11 +773,26 @@ async def search_chats(
 
 
 @router.get("/chats/{chat_id}")
-async def get_chat(chat_id: str, current: Dict[str, Any] = Depends(get_current_account)):
+async def get_chat(
+    chat_id: str, request: Request,
+    include_archived: bool = Query(False),
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Workstream A.2 — X-Active-Context REQUIRED. The chat must
+    belong to the active context, else 404 (we do NOT leak whether
+    the chat exists in another context).
+
+    Workstream B.5 — `?include_archived=true` lets the archive view
+    open an archived chat for restore preview.
+    """
+    active_ctx = _require_active_context(request)
     chat = await db.chats.find_one(
-        {"id": chat_id, "account_id": current["id"]}, {"_id": 0},
+        {"id": chat_id, "account_id": current["id"], "context_id": active_ctx},
+        {"_id": 0},
     )
-    if not chat or chat.get("status") == "archived":
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if chat.get("status") == "archived" and not include_archived:
         raise HTTPException(status_code=404, detail="Chat not found")
     msgs = await db.chat_messages.find(
         {"chat_id": chat_id, "account_id": current["id"]},
@@ -736,6 +807,8 @@ async def patch_chat(
     chat_id: str, body: ChatPatchIn, request: Request,
     current: Dict[str, Any] = Depends(get_current_account),
 ):
+    # Workstream A.2 — X-Active-Context REQUIRED.
+    active_ctx = _require_active_context(request)
     if body.model_id is not None and not _model_def(body.model_id):
         raise HTTPException(status_code=400, detail=f"Unknown model_id '{body.model_id}'.")
     update: Dict[str, Any] = {"updated_at": _iso(_now())}
@@ -758,7 +831,12 @@ async def patch_chat(
     if len(update) == 1:
         raise HTTPException(status_code=400, detail="Send at least one field.")
     res = await db.chats.update_one(
-        {"id": chat_id, "account_id": current["id"], "status": {"$ne": "archived"}},
+        {
+            "id": chat_id,
+            "account_id": current["id"],
+            "context_id": active_ctx,
+            "status": {"$ne": "archived"},
+        },
         {"$set": update},
     )
     if res.matched_count == 0:
@@ -774,6 +852,7 @@ async def patch_chat(
 @router.delete("/chats/{chat_id}")
 async def soft_delete_chat(
     chat_id: str, request: Request,
+    hard: bool = Query(False, description="When true, hard-delete immediately. Audit chain is preserved."),
     current: Dict[str, Any] = Depends(get_current_account),
 ):
     """Phase B.1 — soft-delete with a 30-day retention clock.
@@ -784,7 +863,51 @@ async def soft_delete_chat(
     name in the audit log is still ``chat.archived`` so existing
     audit-trail dashboards keep working; the hard-delete sweep writes
     its own ``chat.hard_deleted`` row with the retention metadata.
+
+    Workstream A.2 (2026-05-10) — X-Active-Context REQUIRED. The chat
+    must belong to the active context (so cross-context deletes via
+    raw chat_id are rejected).
+
+    Workstream B.5 (2026-05-10) — when `?hard=true` is passed and the
+    chat is already archived, hard-delete immediately. The audit chain
+    is preserved (chat_audit_log rows stay; only the chat doc + its
+    chat_messages are removed). The audit row is `chat.hard_deleted`
+    with `via='manual'` so the daily-sweep telemetry separates manual
+    purges from time-based ones.
     """
+    active_ctx = _require_active_context(request)
+    chat = await db.chats.find_one(
+        {"id": chat_id, "account_id": current["id"], "context_id": active_ctx},
+        {"_id": 0},
+    )
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    if hard:
+        if chat.get("status") != "archived":
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Hard-delete requires the chat to be archived first. "
+                    "Send DELETE without ?hard=true to archive, then again "
+                    "with ?hard=true to purge."
+                ),
+            )
+        # Preserve the audit chain — only remove the chat + messages.
+        msg_count = await db.chat_messages.count_documents({"chat_id": chat_id})
+        await db.chat_messages.delete_many({"chat_id": chat_id})
+        await db.chats.delete_one({"id": chat_id})
+        await _append_audit(
+            account_id=current["id"], chat_id=chat_id,
+            action="chat.hard_deleted", request=request,
+            payload={
+                "via": "manual",
+                "messages_removed": int(msg_count),
+                "title": chat.get("title", ""),
+            },
+        )
+        return {"ok": True, "hard_deleted": True, "messages_removed": int(msg_count)}
+
     now_iso = _iso(_now())
     res = await db.chats.update_one(
         {"id": chat_id, "account_id": current["id"]},
@@ -801,6 +924,45 @@ async def soft_delete_chat(
         request=request, payload={"deleted_at": now_iso, "retention_days": 30},
     )
     return {"ok": True, "deleted_at": now_iso, "retention_days": 30}
+
+
+@router.post("/chats/{chat_id}/restore")
+async def restore_chat(
+    chat_id: str, request: Request,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Workstream B.5 — restore a soft-deleted chat to active status.
+
+    Clears `deleted_at` and `archived_at`, sets `status='active'`. The
+    30-day retention clock is reset (the chat is back in the active
+    list). One audit row `chat.restored` is appended.
+
+    Workstream A.2 — X-Active-Context REQUIRED.
+    """
+    active_ctx = _require_active_context(request)
+    chat = await db.chats.find_one(
+        {"id": chat_id, "account_id": current["id"], "context_id": active_ctx},
+        {"_id": 0},
+    )
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if chat.get("status") != "archived":
+        # Idempotent: if not archived, return success without writing.
+        return {"ok": True, "already_active": True}
+    res = await db.chats.update_one(
+        {"id": chat_id, "account_id": current["id"]},
+        {
+            "$set": {"status": "active", "updated_at": _iso(_now())},
+            "$unset": {"deleted_at": "", "archived_at": ""},
+        },
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    await _append_audit(
+        account_id=current["id"], chat_id=chat_id, action="chat.restored",
+        request=request, payload={"prior_archived_at": chat.get("archived_at")},
+    )
+    return {"ok": True, "restored": True}
 
 
 # -----------------------------------------------------------------------------
@@ -1078,8 +1240,10 @@ async def send_message(
     chat_id: str, body: MessageSendIn, request: Request,
     current: Dict[str, Any] = Depends(get_current_account),
 ):
+    # Workstream A.2 — X-Active-Context REQUIRED.
+    active_ctx = _require_active_context(request)
     chat = await db.chats.find_one(
-        {"id": chat_id, "account_id": current["id"], "status": {"$ne": "archived"}},
+        {"id": chat_id, "account_id": current["id"], "context_id": active_ctx, "status": {"$ne": "archived"}},
         {"_id": 0},
     )
     if not chat:
@@ -1459,8 +1623,10 @@ async def stream_message(
     chat_id: str, body: MessageSendIn, request: Request,
     current: Dict[str, Any] = Depends(get_current_account),
 ):
+    # Workstream A.2 — X-Active-Context REQUIRED.
+    active_ctx = _require_active_context(request)
     chat = await db.chats.find_one(
-        {"id": chat_id, "account_id": current["id"], "status": {"$ne": "archived"}},
+        {"id": chat_id, "account_id": current["id"], "context_id": active_ctx, "status": {"$ne": "archived"}},
         {"_id": 0},
     )
     if not chat:
@@ -1562,6 +1728,46 @@ async def stream_message(
         },
     )
 
+    # Workstream B.2 (2026-05-10) — auto-name the chat from the first
+    # user message. Cheap heuristic; no extra LLM call. Runs only when
+    # the chat title is still a placeholder ("New conversation") AND
+    # this is the first user message in the chat. The new title is
+    # emitted as a `chat_renamed` SSE event below so the sidebar
+    # updates without a re-fetch.
+    auto_renamed_title: Optional[str] = None
+    try:
+        if _tp.should_auto_rename(chat.get("title")):
+            prior_user_count = await db.chat_messages.count_documents({
+                "chat_id": chat_id,
+                "account_id": current["id"],
+                "role": "user",
+                "id": {"$ne": msg_id},
+            })
+            if prior_user_count == 0:
+                # Title from the RAW user text (pre-shield) so brand
+                # names ("Auto-Shield", "Solva") survive intact. Only
+                # the title goes to the DB; persistence still uses the
+                # shielded text path for audit.
+                candidate = _tp.heuristic_title_from_message(text)
+                if candidate:
+                    auto_renamed_title = candidate[:120]
+                    await db.chats.update_one(
+                        {"id": chat_id, "account_id": current["id"]},
+                        {"$set": {"title": auto_renamed_title,
+                                  "updated_at": _iso(_now())}},
+                    )
+                    await _append_audit(
+                        account_id=current["id"], chat_id=chat_id,
+                        action="chat.auto_renamed", request=request,
+                        payload={"new_title": auto_renamed_title,
+                                 "from_title": chat.get("title", ""),
+                                 "source": "heuristic_first_message"},
+                    )
+                    chat["title"] = auto_renamed_title  # keep in-mem chat fresh
+    except Exception as _rename_err:  # noqa: BLE001
+        # Auto-rename must never break the streaming path.
+        logger.warning("auto-rename failed: %s", _rename_err.__class__.__name__)
+
     # ── Phase B.2 — classify the turn (heuristic + LLM fallback under
     # 350 ms hard cap). Records a `chat_classifier` audit-evidence row
     # to db.synisense_runs in the background. The classifier outcome
@@ -1628,6 +1834,15 @@ async def stream_message(
         # no preamble, no commentary.
         async def _stream_thin_input_refusal():
             import asyncio as _asyncio2
+            # Workstream B.2 — emit chat_renamed first if applicable.
+            if auto_renamed_title:
+                yield (
+                    "data: " + json.dumps({
+                        "type": "chat_renamed",
+                        "chat_id": chat_id,
+                        "title": auto_renamed_title,
+                    }) + "\n\n"
+                )
             t0 = time.monotonic()
             evidence_phrase = _tp.THIN_INPUT_FALLBACK_EVIDENCE
             evidence_source = "fallback_static"
@@ -1917,6 +2132,19 @@ async def stream_message(
 
     async def _event_gen():
         import asyncio as _asyncio
+        # Workstream B.2 — emit the chat_renamed event BEFORE anything
+        # else so the SPA sidebar updates atomically with the first
+        # delta. Idempotent: if the title wasn't auto-renamed (e.g.
+        # this isn't the first message) auto_renamed_title is None
+        # and we skip the emission.
+        if auto_renamed_title:
+            yield (
+                "data: " + json.dumps({
+                    "type": "chat_renamed",
+                    "chat_id": chat_id,
+                    "title": auto_renamed_title,
+                }) + "\n\n"
+            )
         emergent_key = os.environ.get("EMERGENT_LLM_KEY")
         started_ms = time.monotonic()
         raw_text = ""
@@ -2371,6 +2599,59 @@ async def stream_message(
         # "I can't include that claim" instead of the verbatim memo
         # phrasing.
         refusal_reason = refusal_tag or _tp.detect_refusal_reason(cleaned_reply)
+
+        # Workstream C.1 (2026-05-10) — deterministic detection for the
+        # other two refusal categories. Only fires if the four-check did
+        # NOT already surface a refusal (so we don't double-refuse the
+        # same reply). Both detectors return None in the bypass case
+        # (already cited / has grounding / has attached docs).
+        deterministic_refusal_kind: Optional[str] = None
+        deterministic_refusal_text: Optional[str] = None
+        deterministic_refusal_meta: Optional[Dict[str, Any]] = None
+        if not refusal_reason:
+            try:
+                _has_grounding = bool(grounding_paragraphs)
+                _has_attached = bool(getattr(body, "attached_document_ids", None))
+                _hit_unsourced = _tp.detect_unsourced_claim(
+                    reply_text=cleaned_reply,
+                    has_grounding=_has_grounding,
+                    has_attached_docs=_has_attached,
+                )
+                if _hit_unsourced:
+                    deterministic_refusal_kind = "unsourced_claim"
+                    deterministic_refusal_text = _tp.UNSOURCED_CLAIM_DETERMINISTIC_REFUSAL
+                    deterministic_refusal_meta = _hit_unsourced
+                else:
+                    _hit_named = _tp.detect_named_assumption(
+                        reply_text=cleaned_reply,
+                        has_grounding=_has_grounding,
+                        has_attached_docs=_has_attached,
+                    )
+                    if _hit_named:
+                        deterministic_refusal_kind = "named_assumption"
+                        deterministic_refusal_text = _tp.render_named_assumption_refusal(
+                            _hit_named.get("matched_name") or "",
+                        )
+                        deterministic_refusal_meta = _hit_named
+            except Exception as _det_err:  # noqa: BLE001
+                logger.warning(
+                    "deterministic refusal detection failed: %s",
+                    _det_err.__class__.__name__,
+                )
+
+        if deterministic_refusal_kind and deterministic_refusal_text:
+            # Swap visible reply for the deterministic refusal template.
+            # The streamed deltas have already shipped, so the final
+            # `message` SSE event will overwrite the bubble with this
+            # canonical text — same swap-on-done mechanic the existing
+            # citation rehydration uses.
+            cleaned_reply = deterministic_refusal_text
+            citations = []  # refusal carries no citations
+            refusal_reason = deterministic_refusal_kind
+            four_check_label = None
+            two_pass_record = None
+            pass_1_text = None
+            pass_2_text = deterministic_refusal_text
 
         reply_id = str(uuid.uuid4())
         reply_at = _iso(_now())
