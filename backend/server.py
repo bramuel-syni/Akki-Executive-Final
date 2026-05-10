@@ -38,6 +38,7 @@ from routers import misc as misc_router  # noqa: E402
 from routers import briefings as briefings_router  # noqa: E402
 from routers import work_studio_export as work_studio_export_router  # noqa: E402
 from routers import work_studio_phase_c as work_studio_phase_c_router  # noqa: E402
+from routers import work_studio_phase_c2 as work_studio_phase_c2_router  # noqa: E402
 from routers import learn as learn_router  # noqa: E402
 from routers import committees as committees_router  # noqa: E402
 from routers import simulate as simulate_router  # noqa: E402
@@ -117,6 +118,7 @@ app.include_router(misc_router.router)
 app.include_router(briefings_router.router)
 app.include_router(work_studio_export_router.router)
 app.include_router(work_studio_phase_c_router.router)
+app.include_router(work_studio_phase_c2_router.router)
 app.include_router(learn_router.router)
 app.include_router(committees_router.router)
 app.include_router(simulate_router.router)
@@ -478,6 +480,36 @@ async def on_startup():
     # admin LLM spend dashboard, grouped by surface.
     await db.llm_retry_log.create_index("created_at", expireAfterSeconds=30 * 24 * 3600)
     await db.llm_retry_log.create_index([("surface", 1), ("created_at", -1)])
+
+    # Phase C.1 / C.2 — Work Studio export rows + Brief revision chain.
+    # `work_studio_phase_c_exports` carries the rendered binary + sha256
+    # per export call (one row per click of an Export button).
+    # `work_studio_briefs` carries the structured Brief metadata + the
+    # active_revision_id pointer; one row per (account, source).
+    # `work_studio_brief_revisions` carries each revision's full snapshot
+    # + diff + validator verdict; many rows per brief, forming the
+    # revision tree via `parent_revision_id`.
+    await db.work_studio_phase_c_exports.create_index("id", unique=True)
+    await db.work_studio_phase_c_exports.create_index(
+        [("account_id", 1), ("created_at", -1)],
+    )
+    await db.work_studio_phase_c_exports.create_index(
+        [("brief_id", 1), ("revision_id", 1), ("format", 1)], sparse=True,
+    )
+    await db.work_studio_briefs.create_index("id", unique=True)
+    await db.work_studio_briefs.create_index(
+        [("account_id", 1), ("updated_at", -1)],
+    )
+    await db.work_studio_briefs.create_index(
+        [("account_id", 1), ("source_type", 1), ("source_id", 1)], unique=True,
+    )
+    await db.work_studio_brief_revisions.create_index("id", unique=True)
+    await db.work_studio_brief_revisions.create_index(
+        [("brief_id", 1), ("created_at", 1)],
+    )
+    await db.work_studio_brief_revisions.create_index(
+        [("account_id", 1), ("brief_id", 1)],
+    )
 
     # iter70 — inbound-queue triage (trust-tiered review)
     await db.inbound_queue.create_index("id", unique=True)

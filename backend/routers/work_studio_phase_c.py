@@ -25,6 +25,9 @@ from work_studio import (
     FORMAT_DOCX, FORMAT_PPTX, FORMAT_PDF,
     build_brief_from_solva,
     render_docx, render_pptx, render_pdf,
+    # Phase C.2 — persistence + revision_id resolution.
+    ensure_brief_persisted, get_brief, get_revision, get_active_revision,
+    dict_to_brief,
 )
 
 router = APIRouter(prefix="/api/work_studio")
@@ -39,13 +42,20 @@ EXTENSIONS = {FORMAT_DOCX: "docx", FORMAT_PPTX: "pptx", FORMAT_PDF: "pdf"}
 
 class ExportRequest(BaseModel):
     source_id: str
-    source_type: str = Field(..., pattern="^(solva_session|cycle_compilation|chat_artefact)$")
+    source_type: str = Field(
+        ...,
+        pattern="^(solva_session|cycle_compilation|chat_artefact|work_studio_brief)$",
+    )
     format: str = Field(..., pattern="^(docx|pptx|pdf)$")
     depth: str = Field(..., pattern="^(executive_brief|board_summary|deep_dive)$")
     fidelity: str = Field(..., pattern="^(low|high)$")
     company_label: str = Field("Akki", max_length=80)
     document_type: str = Field("Board Briefing", max_length=80)
     programme: Optional[str] = Field(None, max_length=80)
+    # Phase C.2 — pin a specific revision for re-export. When omitted,
+    # `work_studio_brief` source uses the active revision; the other
+    # source_types build a fresh Brief and persist revision_0.
+    revision_id: Optional[str] = Field(None, max_length=64)
 
 
 @router.get("/picker")
@@ -62,7 +72,49 @@ async def create_export(
     x_active_context: Optional[str] = Header(None, alias="X-Active-Context"),
 ):
     # 1) Resolve the source -------------------------------------------------
-    if body.source_type == "cycle_compilation":
+    # Phase C.2 — when source_type=work_studio_brief the source_id IS a
+    # brief_id. Resolve to the requested revision (or the active one).
+    # The depth/fidelity carried on the request override the snapshot's
+    # defaults so the same revision can be re-exported at multiple
+    # depth/fidelity settings without forking a new revision.
+    brief = None
+    resolved_brief_id: Optional[str] = None
+    resolved_revision_id: Optional[str] = None
+
+    if body.source_type == "work_studio_brief":
+        parent = await get_brief(db, body.source_id, account["id"])
+        if not parent:
+            raise HTTPException(status_code=404, detail="brief_not_found")
+        rev_id = body.revision_id or parent["active_revision_id"]
+        rev = await get_revision(
+            db, brief_id=body.source_id, revision_id=rev_id,
+            account_id=account["id"],
+        )
+        if not rev:
+            raise HTTPException(status_code=404, detail="revision_not_found")
+        snapshot = dict(rev.get("snapshot") or {})
+        if not snapshot:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "revision_empty",
+                        "message": "Revision has no snapshot."},
+            )
+        # Allow per-export depth/fidelity override on the revision.
+        snapshot["depth"] = body.depth
+        snapshot["fidelity"] = body.fidelity
+        # Cosmetic envelope overrides (cover labels) — do NOT mutate the
+        # persisted revision; only the rendered binary picks them up.
+        if body.company_label:
+            snapshot["company_label"] = body.company_label
+        if body.document_type:
+            snapshot["document_type"] = body.document_type
+        if body.programme is not None:
+            snapshot["programme"] = body.programme
+        brief = dict_to_brief(snapshot)
+        resolved_brief_id = body.source_id
+        resolved_revision_id = rev_id
+
+    elif body.source_type == "cycle_compilation":
         # Phase D will wire this — return 422 with an explicit code per the
         # C.1 spec so callers can branch.
         raise HTTPException(
@@ -70,7 +122,7 @@ async def create_export(
             detail={"code": "not_yet_supported_in_c1",
                     "message": "Cycle Manager compilation exports land in Phase D."},
         )
-    if body.source_type == "chat_artefact":
+    elif body.source_type == "chat_artefact":
         chat = await db.chats.find_one({"id": body.source_id, "account_id": account["id"]})
         if not chat:
             raise HTTPException(status_code=404, detail="chat_not_found")
@@ -116,6 +168,18 @@ async def create_export(
             depth=body.depth, fidelity=body.fidelity,
         )
 
+    # 1b) Phase C.2 — persist the brief on first export of any source
+    # OTHER than work_studio_brief (where it's already persisted). The
+    # brief_id is deterministic, so a second call is a no-op.
+    if body.source_type != "work_studio_brief" and brief is not None:
+        parent = await ensure_brief_persisted(
+            db, brief=brief, account_id=account["id"],
+            context_id=x_active_context,
+            source_type=body.source_type, source_id=body.source_id,
+        )
+        resolved_brief_id = parent["id"]
+        resolved_revision_id = parent["active_revision_id"]
+
     # 2) Render -------------------------------------------------------------
     if body.format == FORMAT_DOCX:
         binary = render_docx(brief)
@@ -145,6 +209,8 @@ async def create_export(
         "company_label": body.company_label,
         "document_type": body.document_type,
         "programme": body.programme,
+        "brief_id": resolved_brief_id,
+        "revision_id": resolved_revision_id,
         "filename": filename,
         "size_bytes": len(binary),
         "sha256": sha,
@@ -161,6 +227,8 @@ async def create_export(
         "filename": filename,
         "size_bytes": len(binary),
         "sha256": sha,
+        "brief_id": resolved_brief_id,
+        "revision_id": resolved_revision_id,
     }
 
 
