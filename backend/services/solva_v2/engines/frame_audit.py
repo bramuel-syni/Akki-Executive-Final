@@ -109,6 +109,41 @@ _LEADING_INDICATOR_RX = re.compile(
     r"trigger\s+(?:point|metric)|threshold|kpi[s]?|metric[s]?\s+to\s+watch)\b",
     re.IGNORECASE,
 )
+# Phase B.3 — get_perspective-specific gap heuristics. Per spec, a usable
+# perspective request needs (a) a current vantage to push against,
+# (b) an explicit contrast intent (what the lens is meant to reveal),
+# and (c) a decision the perspective is meant to inform. Without these
+# three, the persona-voiced synthesis has nothing to land against.
+_CURRENT_VANTAGE_RX = re.compile(
+    r"\b(i think|we (?:think|believe|currently|today|lean(?:ing)?)|"
+    r"our (?:view|current view|position|stance|read)|currently we|"
+    r"today (?:we|i)|(?:the\s+)?(?:cfo|chair|board|ceo|coo|cro|exec)\s+"
+    r"(?:thinks?|believes?|leans? toward|leans? to)|"
+    r"leans? toward (?:holding|the|our|on|deferring|approving|"
+    r"accepting|rejecting)|"
+    r"current\s+(?:vantage|view|stance|position)|"
+    r"working\s+assumption|status quo|existing view|prevailing view)\b",
+    re.IGNORECASE,
+)
+_CONTRAST_INTENT_RX = re.compile(
+    r"\b(stress.?test|challenge|reveal|reveals?|under.?weight(?:ing)?|"
+    r"over.?weight(?:ing)?|blind\s*spot[s]?|missing|miss(?:ing|ed)?|"
+    r"different angle|fresh angle|alternate angle|push back|"
+    r"contrast|contrasts? with|test\s+the|test\s+whether|"
+    r"counter.?view|second opinion|outside\s+(?:view|in)|"
+    r"durability|robust(?:ness)?|stress\s+the\s+\w+)\b",
+    re.IGNORECASE,
+)
+_DECISION_TO_INFORM_RX = re.compile(
+    r"\b(the decision|to (?:decide|inform|support|prepare|test|stress.?test)|"
+    r"before (?:we|i) decide|to support (?:the|our|my)\s+\w+|"
+    r"for the (?:board|audit committee|investment committee|chair|exco)|"
+    r"will (?:inform|drive|shape) (?:the|our|my)\s+\w+|"
+    r"decision (?:impact|the perspective)|"
+    r"(?:hold|roll\s*back|approve|reject|defer|sign\s*off|sign-off)\s+"
+    r"(?:tier|the|our|on|or))\b",
+    re.IGNORECASE,
+)
 
 
 def _sha256(text: str) -> str:
@@ -243,6 +278,48 @@ def audit_framing(
             "to confirm or falsify the claim."
         )
         missing.append("leading_indicator")
+
+    # 8. Perspective-specific: current vantage ------------------------------
+    # (Phase B.3 — without the user's existing view, the persona-voiced
+    # synthesis has nothing to push against; the lens floats free.)
+    if submodule == "get_perspective" and not _CURRENT_VANTAGE_RX.search(text):
+        observations.append(
+            "You haven't named your current view — without that, the "
+            "perspective has nothing to push against."
+        )
+        recommendations.append(
+            "Add a sentence saying where you (or the CFO / chair / "
+            "leadership) currently land on this, so the lens has "
+            "something to contrast."
+        )
+        missing.append("current_vantage")
+
+    # 9. Perspective-specific: contrast intent ------------------------------
+    if submodule == "get_perspective" and not _CONTRAST_INTENT_RX.search(text):
+        observations.append(
+            "It's not yet clear what you want the lens to reveal — "
+            "blind spot, durability of the current view, what you're "
+            "under-weighting?"
+        )
+        recommendations.append(
+            "Name what you want this perspective to test or expose so "
+            "the synthesis has a target to push against."
+        )
+        missing.append("contrast_intent")
+
+    # 10. Perspective-specific: decision the perspective informs ------------
+    if submodule == "get_perspective" and not _DECISION_TO_INFORM_RX.search(text):
+        observations.append(
+            "There's no decision named that this perspective is meant to "
+            "inform — without that, it's an interesting read rather than "
+            "a useful one."
+        )
+        recommendations.append(
+            "Tell us the call this perspective is feeding into "
+            "(board paper, investment decision, hold-or-roll-back, "
+            "audit committee preparation, …)."
+        )
+        missing.append("decision_to_inform")
 
     # Severity --------------------------------------------------------------
     if not missing:
