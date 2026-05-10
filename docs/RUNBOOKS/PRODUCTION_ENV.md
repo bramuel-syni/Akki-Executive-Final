@@ -345,4 +345,83 @@ SYNISENSE_SHIELD_MAP_TTL_HOURS=24
 AKKI_ENV=production
 ```
 
+---
+
+## 14. Pre-deploy secret rotation list (Azure cutover)
+
+> Consolidated checklist. Every value that has ever been pasted into a
+> dev-pod `backend/.env` MUST be reissued before the first production
+> deploy. The dev pod's `.env` lives only on the container's disk, is
+> ignored by git (`.gitignore` lines 144–146 and 153–155), and has never
+> been committed to history (verified `2026-05-10` via
+> `git log --all --pickaxe-regex` against every provider-key prefix —
+> all hits empty). Even so, a value that has touched a non-production
+> environment MUST be treated as compromised at production cutover —
+> shell access to dev pods is wider than to production Container Apps.
+>
+> Generate **fresh** values for everything below. Do **not** reuse any
+> dev value, even for "test" production runs. Source each from Azure
+> Key Vault via `secretRef` per § 12.
+
+| Secret | Rotation source | Hard requirement |
+|---|---|---|
+| `MONGO_URL` | Cosmos DB / MongoDB Atlas → new SCRAM password on a fresh `akki` user (no atlasAdmin). | Must be reissued. Cosmos vCore: `retrywrites=false` mandatory. |
+| `JWT_SECRET` | `python -c "import secrets; print(secrets.token_hex(32))"` → 64 hex chars. | Must be reissued. Rotation invalidates every existing session. |
+| `EMERGENT_LLM_KEY` | Emergent profile → "Universal Key" → revoke dev key, mint a new one for prod. | Must be reissued. One key fronts Anthropic / OpenAI / Gemini through `emergentintegrations`. |
+| `ANTHROPIC_API_KEY` | console.anthropic.com → new key, revoke old. | Must be reissued. Used by `services/llm_streaming.py::_stream_claude_native` for direct Claude streaming. |
+| `OPENAI_API_KEY` | platform.openai.com → new project-restricted key, revoke old. | Must be reissued. Phase A.3 — used by `services/llm_streaming.py::_stream_openai_native` for native GPT-5.2 streaming. Already listed as a deploy blocker in `docs/DEPLOYMENT.md` § "Pre-deploy rotation". |
+| `GEMINI_API_KEY` | aistudio.google.com → new key, revoke old. | Must be reissued. Used by `services/llm_streaming.py::_stream_gemini_native`. |
+| `SYNISENSE_MASTER_KEY` | `python -c "import secrets; print(secrets.token_hex(32))"` → 64 hex chars. | **One-time issuance.** Once chosen, do NOT rotate without the re-encryption migration (currently absent — see §11). Future rotations register prior keys as `SYNISENSE_MASTER_KEY_V<N>` so old shield-map records remain decryptable. |
+| `RESEND_API_KEY` | resend.com → API Keys → new key with `Sending access` only, scoped to prod sending domain. | Must be reissued. Revoke dev key. |
+| `POSTMARK_WEBHOOK_SECRET` | `python -c "import secrets; print(secrets.token_hex(32))"` → 64 hex chars. | Must be reissued. Boot guard refuses prod start without this **or** `POSTMARK_SERVER_TOKEN` (`server.py:280`). |
+| `POSTMARK_SERVER_TOKEN` | postmarkapp.com → server tokens → new token. | Required only if also sending via Postmark; we send via Resend. Set if migrating. |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | MinIO Gateway root credentials (Option A) or AWS IAM access key/secret. | Must be reissued. Pair both. |
+| `ADMIN_PASSWORD` | `python -c "import secrets; print(secrets.token_urlsafe(32))"` → 32+ chars. | Must be reissued. Boot hook **rotates the admin password hash** on every boot to match this value — changing it here is the rotation mechanism. |
+| `AKKI_CRON_SECRET` | `python -c "import secrets; print(secrets.token_hex(32))"` → 64 hex chars. | Must be reissued. When unset, APScheduler is **disarmed** and you lose all weekly/daily jobs. |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Stripe Dashboard → restricted live key + per-environment webhook signing secret. | Required iff `BILLING_ENABLED=true`. Otherwise leave unset (boot guard refuses if you flip the flag without keys). |
+| `SENTRY_DSN_BACKEND` / `SENTRY_DSN_FRONTEND` | sentry.io → Project DSN. | Optional. Use the EU region ingest (`*.ingest.de.sentry.io`). |
+
+**Pre-deploy gate.** The deploy is blocked until every "Must be reissued"
+row above has a fresh value in Azure Key Vault and is mounted into the
+Container App via `secretRef`. The mounting steps are in § 12. The
+deploy runner that pushes the image must verify:
+
+```bash
+# Single command to enumerate every secretref'd env var on the live app.
+az containerapp secret list \
+  --resource-group akki-prod-rg \
+  --name akki-backend \
+  --query "[].{name:name, kvref:keyVaultUrl}" -o table
+```
+
+Compare the output against the table above; every "Must be reissued"
+secret must be present and pointed at a Key Vault secret whose
+`createdTime` is within the rotation window (i.e. **not** a dev value
+copied across).
+
+**History posture.** `backend/.env` is `.gitignore`d
+(`.gitignore:155 *.env`) and `git log --all -- backend/.env` is empty.
+Pickaxe sweeps for `sk-ant-api`, `sk-proj-`, `AIzaSyB`, and
+`^RESEND_API_KEY=re_` against every commit on every branch all return
+zero results (`2026-05-10`). No `git filter-repo` history rewrite is
+required for the current repo state. **However**, dev values shared
+out of band (Slack, terminal scrollback, screenshots, paste in chat
+logs) must still be treated as compromised — that is what motivates
+the universal "Must be reissued" stance above.
+
+**Trade-off if you ever do find a leak:**
+
+| Option | When | Cost |
+|---|---|---|
+| **Rotate the leaked secret only** | Single secret leaked, history clean | Cheap. The standard daily ops path. |
+| **Fresh history baseline** | Multiple secrets leaked OR you want a clean repo for an external audit | Requires force-push to `main`, every collaborator must re-clone. Loses commit-level traceability before the cutover. |
+| **`git filter-repo` rewrite** | Single high-sensitivity secret leaked deep in history; want to keep most commits | Force-push required; collaborators re-clone; CI caches rebuild. Some platforms (GitHub) keep dangling refs reachable for a while — rotate the secret regardless. |
+
+For the AKKI repo as of 2026-05-10, none of these are required — the
+working tree is clean and history is clean. This appendix exists so
+that if a leak is found later, the operator has the playbook in one
+place.
+
+---
+
 _End of production environment template. Pair with `AZURE_DEPLOY.md` for the deployment topology._
