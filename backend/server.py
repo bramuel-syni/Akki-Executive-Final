@@ -39,6 +39,7 @@ from routers import briefings as briefings_router  # noqa: E402
 from routers import work_studio_export as work_studio_export_router  # noqa: E402
 from routers import work_studio_phase_c as work_studio_phase_c_router  # noqa: E402
 from routers import work_studio_phase_c2 as work_studio_phase_c2_router  # noqa: E402
+from routers import work_studio_from_source as work_studio_from_source_router  # noqa: E402
 from routers import learn as learn_router  # noqa: E402
 from routers import committees as committees_router  # noqa: E402
 from routers import simulate as simulate_router  # noqa: E402
@@ -119,6 +120,7 @@ app.include_router(briefings_router.router)
 app.include_router(work_studio_export_router.router)
 app.include_router(work_studio_phase_c_router.router)
 app.include_router(work_studio_phase_c2_router.router)
+app.include_router(work_studio_from_source_router.router)
 app.include_router(learn_router.router)
 app.include_router(committees_router.router)
 app.include_router(simulate_router.router)
@@ -510,6 +512,13 @@ async def on_startup():
     await db.work_studio_brief_revisions.create_index(
         [("account_id", 1), ("brief_id", 1)],
     )
+
+    # Phase C.3 — sparse `brief_id` indexes on the three kind-aware
+    # collections so the Decks/Reports listing (and any future "find
+    # the artefact backing this brief" query) is O(log n).
+    await db.boardpacks.create_index("brief_id", sparse=True)
+    await db.decks.create_index("brief_id", sparse=True)
+    await db.reports.create_index("brief_id", sparse=True)
 
     # iter70 — inbound-queue triage (trust-tiered review)
     await db.inbound_queue.create_index("id", unique=True)

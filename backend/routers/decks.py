@@ -600,7 +600,11 @@ async def list_decks(
         {"_id": 0, "id": 1, "title": 1, "subtitle": 1, "research_question": 1,
          "audience": 1, "tier": 1, "model_id": 1,
          "created_at": 1, "quality_check.score": 1, "user_feedback.rating": 1,
-         "validation": 1, "sensitivity": 1},
+         "validation": 1, "sensitivity": 1,
+         # Phase C.3 — Solva-seeded decks carry a top-level brief_id so the
+         # Decks listing row can render the Refine button (which opens
+         # EnhanceModal in C.2 mode). Status surfaces the draft chip.
+         "brief_id": 1, "status": 1},
     ).sort("created_at", -1).to_list(length=max(1, min(limit, 100)))
     return {"items": items, "count": len(items)}
 

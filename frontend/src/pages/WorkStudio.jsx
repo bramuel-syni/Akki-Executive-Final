@@ -334,10 +334,11 @@ function ActionBar({ onExportClick, onEnhanceClick }) {
 // =============================================================================
 // Decks + Reports — preserved Phase 13.3 listing (frozen until C.2)
 // =============================================================================
-function ArtefactRow({ kind, item }) {
+function ArtefactRow({ kind, item, onRefine }) {
   const href = item.href || "#";
   const updated = item.updated_at || item.modified_at || item.created_at;
   const Icon = kind === "briefing" ? ScrollText : kind === "deck" ? Presentation : FileText;
+  const hasBrief = !!item.brief_id;
   return (
     <li className="border border-[var(--rule)] rounded-md bg-white px-4 py-3 flex items-start sm:items-center gap-3 flex-col sm:flex-row" data-testid="work-studio-row">
       <Icon className="w-4 h-4 text-[var(--deep)] shrink-0 mt-1 sm:mt-0" strokeWidth={1.7} />
@@ -351,12 +352,31 @@ function ArtefactRow({ kind, item }) {
           {item.synisense_version >= 1 && (
             <span className="text-[10px] uppercase tracking-[0.14em] font-mono text-[var(--accent)]">shielded</span>
           )}
+          {hasBrief && (
+            <span
+              className="text-[10px] uppercase tracking-[0.14em] font-mono text-[var(--accent-dark)] border border-[var(--accent)] rounded-sm px-1.5 py-[1px]"
+              title="This artefact has a persisted Brief — refine via two-pass enhance."
+              data-testid="work-studio-row-brief-chip"
+            >
+              brief
+            </span>
+          )}
           {item.validation && <ValidatedBadge size="compact" validation={item.validation} />}
         </div>
       </div>
       <span className="text-[11.5px] text-[var(--muted)] shrink-0 sm:ml-2" title={updated || ""}>
         {shortAge(updated)}
       </span>
+      {hasBrief && (
+        <Button
+          variant="ghost" size="sm"
+          onClick={() => onRefine?.({ kind, brief_id: item.brief_id, title: item.title })}
+          className="shrink-0 text-[12.5px] text-[var(--accent-dark)] hover:bg-[var(--accent-soft)]"
+          data-testid="work-studio-row-refine"
+        >
+          <Sparkles className="w-3.5 h-3.5 mr-1" /> Refine
+        </Button>
+      )}
       <Link to={href} className="shrink-0">
         <Button variant="ghost" size="sm" className="text-[12.5px] text-[var(--accent)] hover:bg-[var(--accent-soft)]">
           Open <ArrowRight className="w-3.5 h-3.5 ml-1" />
@@ -368,7 +388,7 @@ function ArtefactRow({ kind, item }) {
 
 async function loadDecksReports(cid) {
   // Existing Phase 13.3 sources, retained for the lower section.
-  const out = { decks: [], reports: [], errors: [] };
+  const out = { decks: [], reports: [], briefings: [], errors: [] };
   try {
     const { data } = await api.get(`/contexts/${cid}/decks`);
     const raw = Array.isArray(data) ? data : (data?.items || data?.decks || []);
@@ -418,6 +438,12 @@ export default function WorkStudio() {
   // Phase C.3 — enhance modal state.
   const [enhanceOpen, setEnhanceOpen] = useState(false);
   const [enhanceKind, setEnhanceKind] = useState("deck");
+  const [enhanceBriefId, setEnhanceBriefId] = useState(null);
+
+  // Phase C.3 — listing of Solva-/chat-originated briefings (kind=briefing)
+  // pulled from db.boardpacks via the existing aggregates listing route,
+  // filtered to rows that carry a top-level brief_id.
+  const [seedRows, setSeedRows] = useState([]);
 
   // Decks + reports (lower section).
   const [drData, setDrData] = useState({ decks: [], reports: [], errors: [] });
@@ -661,7 +687,18 @@ export default function WorkStudio() {
               </div>
             ) : (
               <ul className="space-y-2" data-testid="work-studio-dr-decks">
-                {visibleDecks.map((d) => <ArtefactRow key={`dck-${d.id}`} kind="deck" item={d} />)}
+                {visibleDecks.map((d) => (
+                  <ArtefactRow
+                    key={`dck-${d.id}`}
+                    kind="deck"
+                    item={d}
+                    onRefine={({ brief_id }) => {
+                      setEnhanceKind("deck");
+                      setEnhanceBriefId(brief_id);
+                      setEnhanceOpen(true);
+                    }}
+                  />
+                ))}
               </ul>
             )
           ) : (
@@ -680,7 +717,18 @@ export default function WorkStudio() {
               </div>
             ) : (
               <ul className="space-y-2" data-testid="work-studio-dr-reports">
-                {visibleReports.map((r) => <ArtefactRow key={`rpt-${r.id}`} kind="report" item={r} />)}
+                {visibleReports.map((r) => (
+                  <ArtefactRow
+                    key={`rpt-${r.id}`}
+                    kind="report"
+                    item={r}
+                    onRefine={({ brief_id }) => {
+                      setEnhanceKind("report");
+                      setEnhanceBriefId(brief_id);
+                      setEnhanceOpen(true);
+                    }}
+                  />
+                ))}
               </ul>
             )
           )}
@@ -707,14 +755,16 @@ export default function WorkStudio() {
         onClose={() => setExportOpen(false)}
         kind={exportKind}
         contextId={cid}
+        contextName={activeContext?.name}
       />
 
-      {/* Phase C.3 — Enhance modal (wired to the two Enhance buttons) */}
+      {/* Phase C.3 — Enhance modal (Path A: upload; Path B: C.2 brief refine) */}
       <EnhanceModal
         open={enhanceOpen}
-        onClose={() => setEnhanceOpen(false)}
+        onClose={() => { setEnhanceOpen(false); setEnhanceBriefId(null); }}
         kind={enhanceKind}
         contextId={cid}
+        briefId={enhanceBriefId}
       />
     </AppShell>
   );

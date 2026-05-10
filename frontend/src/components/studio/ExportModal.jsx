@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { api, apiErrorMessage } from "@/lib/api";
 import { Loader2, Download, AlertCircle, FileDown, MessageSquare } from "lucide-react";
+import SourceStep from "./SourceStep";
 
 const FORMAT_OPTIONS = {
   brief:  [["docx", "DOCX"], ["pdf", "PDF"], ["auto", "Auto"]],
@@ -32,8 +33,9 @@ const KIND_LABEL = {
   report: "Report",
 };
 
-export default function ExportModal({ open, onClose, kind, contextId }) {
+export default function ExportModal({ open, onClose, kind, contextId, contextName }) {
   const navigate = useNavigate();
+  const [sourceChoice, setSourceChoice] = useState("system");
   const [description, setDescription] = useState("");
   const [objective, setObjective] = useState("");
   const [scope, setScope] = useState("");
@@ -48,6 +50,11 @@ export default function ExportModal({ open, onClose, kind, contextId }) {
   const [fileName, setFileName] = useState(null);
   const [continueChatId, setContinueChatId] = useState(null);
   const [continueDocId, setContinueDocId] = useState(null);
+  // Phase C.3 — when the source step's "Generate document now" returns,
+  // we display the C.1 result inside this modal alongside the legacy
+  // download-token path. C.1 returns a direct download_url; we reuse
+  // the existing complete-phase UI without the token roundtrip.
+  const [c1DirectDownload, setC1DirectDownload] = useState(null); // {url, filename}
 
   const pollRef = useRef(null);
   const startedAtRef = useRef(null);
@@ -55,6 +62,7 @@ export default function ExportModal({ open, onClose, kind, contextId }) {
   // Reset on open/close.
   useEffect(() => {
     if (open) {
+      setSourceChoice("system");
       setDescription("");
       setObjective("");
       setScope("");
@@ -68,6 +76,7 @@ export default function ExportModal({ open, onClose, kind, contextId }) {
       setFileName(null);
       setContinueChatId(null);
       setContinueDocId(null);
+      setC1DirectDownload(null);
     }
     return () => {
       if (pollRef.current) {
@@ -129,10 +138,29 @@ export default function ExportModal({ open, onClose, kind, contextId }) {
   };
 
   const onDownload = async () => {
+    // Phase C.3 — when the source step's "Generate document now" path
+    // populated `c1DirectDownload`, fetch via the C.1 endpoint (no token
+    // parameter — that auth model is for the legacy Phase 13 path).
+    if (c1DirectDownload?.url) {
+      try {
+        const path = c1DirectDownload.url.replace(/^\/api/, "");
+        const resp = await api.get(path, { responseType: "blob" });
+        const blob = new Blob([resp.data], { type: resp.headers?.["content-type"] || "application/octet-stream" });
+        const a = document.createElement("a");
+        a.href = window.URL.createObjectURL(blob);
+        a.download = c1DirectDownload.filename || fileName || "akki-export.bin";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(a.href);
+      } catch (e) {
+        setErrMsg(apiErrorMessage(e));
+      }
+      return;
+    }
     if (!exportId || !downloadToken) return;
     try {
-      const url = `${process.env.REACT_APP_BACKEND_URL}/api/contexts/${contextId}/work-studio/exports/${exportId}/download?token=${encodeURIComponent(downloadToken)}`;
-      // Fetch with auth and trigger browser download.
+      // Fetch with auth and trigger browser download (legacy Phase 13 path).
       const resp = await api.get(`/contexts/${contextId}/work-studio/exports/${exportId}/download`, {
         params: { token: downloadToken },
         responseType: "blob",
@@ -167,18 +195,43 @@ export default function ExportModal({ open, onClose, kind, contextId }) {
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-md" data-testid="work-studio-export-modal">
+      <DialogContent
+        className={sourceChoice === "system" ? "max-w-md" : "max-w-3xl"}
+        data-testid="work-studio-export-modal"
+      >
         <DialogHeader>
           <DialogTitle className="akki-serif text-[var(--ink)]">
             Export a {KIND_LABEL[kind] || "Brief"}
           </DialogTitle>
           <DialogDescription className="text-[12.5px] text-[var(--muted)]">
-            Provide enough context for the composer to write something a senior reader can carry into a meeting. Three short fields.
+            Pick where the source comes from. Akki composes from system info by default; you can also seed from a Solva session or a chat artefact.
           </DialogDescription>
         </DialogHeader>
 
         {phase === "compose" && (
-          <form onSubmit={onSubmit} className="space-y-3" data-testid="work-studio-export-form">
+          <div className="space-y-3" data-testid="work-studio-export-compose">
+            <SourceStep
+              contextId={contextId}
+              contextName={contextName}
+              kind={kind === "brief" ? "briefing" : kind}
+              sourceChoice={sourceChoice}
+              onSourceChange={setSourceChoice}
+              onSeeded={(seed) => {
+                // Open in composer — close modal and navigate.
+                onClose?.();
+                navigate(seed.redirect_url);
+              }}
+              onGenerated={(g) => {
+                // Generate document now — surface the C.1 download
+                // through the existing complete-phase chrome.
+                setC1DirectDownload({ url: g.download_url, filename: g.filename });
+                setFileName(g.filename);
+                setStatus({ sensitivity_band: null });
+                setPhase("complete");
+              }}
+            />
+            {sourceChoice === "system" && (
+              <form onSubmit={onSubmit} className="space-y-3 pt-2 border-t border-[var(--rule)]" data-testid="work-studio-export-form">
             <div>
               <Label className="text-[12px]" htmlFor="ws-export-desc">Description</Label>
               <Input
@@ -240,6 +293,8 @@ export default function ExportModal({ open, onClose, kind, contextId }) {
               </Button>
             </DialogFooter>
           </form>
+            )}
+          </div>
         )}
 
         {phase === "running" && (
