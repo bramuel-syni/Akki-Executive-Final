@@ -113,19 +113,20 @@ async def signal_action_heatmap(_: Dict[str, Any] = Depends(_require_superadmin)
         })
     by_bucket.sort(key=lambda x: x["acted"] + x["shared"], reverse=True)
 
-    # Recent slice for the right-hand timeline (light annotation only)
+    # Recent slice for the right-hand timeline (light annotation only).
+    # Phase E.0.1 — drop signal_headline + actor_email cross-tenant.
+    # Bucket label is the only signal-derived field shipped here;
+    # headline is content-class per privacy_wall._DENY_SIGNALS.
     recent: List[Dict[str, Any]] = []
     for a in actions[:25]:
         sig = sig_meta.get(a.get("signal_id") or "") or {}
         recent.append({
             "id": a["id"],
             "signal_id": a["signal_id"],
-            "signal_headline": sig.get("headline"),
             "bucket": _classify(sig),
             "action_type": a["action_type"],
             "recommendation_label": a.get("recommendation_label"),
             "recipients_count": len(a.get("recipients") or []),
-            "actor_email": a.get("actor_email"),
             "created_at": a.get("created_at"),
         })
 

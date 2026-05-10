@@ -1398,6 +1398,24 @@ async def send_message(
     }
     await db.chat_messages.insert_one(user_msg)
 
+    # Phase E.0.2 — cross-board metadata signature derivation. Only
+    # tethered chats (chat.context_id present) contribute signatures —
+    # untethered chats are global to the account and don't belong to
+    # any board's signal pool.
+    if chat.get("context_id"):
+        try:
+            from services.metadata_signatures import derive_and_persist
+            await derive_and_persist(
+                db,
+                text=text,
+                context_id=chat["context_id"],
+                account_id=current["id"],
+                source_artefact_kind="chat_message",
+                source_artefact_id=msg_id,
+            )
+        except Exception:  # pragma: no cover — non-fatal
+            pass
+
     await _append_audit(
         account_id=current["id"], chat_id=chat_id, action="message.sent",
         request=request,

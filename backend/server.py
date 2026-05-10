@@ -529,6 +529,20 @@ async def on_startup():
     )
     await db.inbound_queue_raw.create_index("queue_id", unique=True)
 
+    # Phase E.0.2 — context_metadata_signatures
+    # In-tenant lookup (signature kind + value within a board)
+    await db.context_metadata_signatures.create_index(
+        [("context_id", 1), ("signature_kind", 1), ("signature_value", 1)]
+    )
+    # Cross-tenant aggregation lookup (E.0.3 aggregator joins on this)
+    await db.context_metadata_signatures.create_index(
+        [("signature_kind", 1), ("signature_value", 1), ("created_at", -1)]
+    )
+    # Idempotency on per-artefact rewrite
+    await db.context_metadata_signatures.create_index(
+        [("context_id", 1), ("source_artefact_kind", 1), ("source_artefact_id", 1)]
+    )
+
     # Backfill: ensure every committee on every context has a stable id.
     async for c in db.contexts.find(
         {"committees": {"$exists": True, "$ne": []}},

@@ -253,6 +253,19 @@ async def _stage_persist(
         }
         await db.signals.insert_one(sig)
         sig.pop("_id", None)
+        # Phase E.0.2 — cross-board metadata signature derivation.
+        try:
+            from services.metadata_signatures import derive_and_persist
+            await derive_and_persist(
+                db,
+                text=f"{sig.get('headline') or ''} {sig.get('summary') or ''}",
+                context_id=context_id,
+                account_id=actor_id,
+                source_artefact_kind="signal",
+                source_artefact_id=sig["id"],
+            )
+        except Exception:  # pragma: no cover — non-fatal
+            pass
         persisted.append(sig)
     await _emit(context_id, pipeline_run_id, "signal.persisted",
                 {"count": len(persisted)}, actor_id)

@@ -147,6 +147,22 @@ async def generate_signals(
         }
         await db.signals.insert_one(doc)
         doc.pop("_id", None)
+        # Phase E.0.2 — derive cross-board metadata signatures from
+        # the freshly-inserted signal. Synchronous (small N), wrapped
+        # in best-effort try inside derive_and_persist so write
+        # failures never break the parent insert.
+        try:
+            from services.metadata_signatures import derive_and_persist
+            await derive_and_persist(
+                db,
+                text=f"{doc.get('headline') or ''} {doc.get('summary') or ''}",
+                context_id=context_id,
+                account_id=ctx["account"]["id"],
+                source_artefact_kind="signal",
+                source_artefact_id=doc["id"],
+            )
+        except Exception:  # pragma: no cover — non-fatal
+            pass
         stored.append(doc)
 
     await write_audit(

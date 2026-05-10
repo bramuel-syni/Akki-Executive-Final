@@ -28,6 +28,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import AcrossBoardsPanel from "@/components/pulse/AcrossBoardsPanel";
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                          */
@@ -482,6 +483,13 @@ export default function Pulse() {
             ))}
           </div>
         )}
+
+        {/* Phase E.0.3 — Cross-board metadata patterns. Sits UNDER
+            the same-context feed (per spec). Reads only metadata —
+            never source-board name, never source-artefact links. */}
+        <div className="mt-8">
+          <AcrossBoardsPanel contextId={cid} />
+        </div>
       </div>
     </AppShell>
   );

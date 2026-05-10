@@ -299,6 +299,29 @@ async def upload_document(
     await db.documents.insert_one(doc)
     doc.pop("_id", None)
 
+    # Phase E.0.2 — cross-board metadata signature derivation. Sources
+    # the text from a redacted preview rather than full extracted_text
+    # so the derivation pass never logs full document bodies. Pulse
+    # never reads payload anyway, but the wall principle is "metadata
+    # only" all the way down.
+    try:
+        from services.metadata_signatures import derive_and_persist
+        derivation_text = " ".join([
+            doc.get("name") or "",
+            doc.get("description") or "",
+            (preview or "")[:4000],
+        ])
+        await derive_and_persist(
+            db,
+            text=derivation_text,
+            context_id=context_id,
+            account_id=ctx["account"]["id"],
+            source_artefact_kind="document",
+            source_artefact_id=doc_id,
+        )
+    except Exception:  # pragma: no cover — non-fatal
+        pass
+
     for account_id in mention_ids:
         if account_id == ctx["account"]["id"]:
             continue

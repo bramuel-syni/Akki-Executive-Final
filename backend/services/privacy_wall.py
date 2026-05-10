@@ -407,3 +407,148 @@ def assemble_pulse_prompt(per_context_outputs: List[Dict[str, Any]]) -> str:
     raise NotImplementedError(
         "assemble_pulse_prompt is a Phase 2c surface — not callable in 2b."
     )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Phase E.0.1 — cross_context_query
+# ─────────────────────────────────────────────────────────────────────
+# Storage-layer enforcement: every cross-context read MUST funnel
+# through this wrapper. It does three things:
+#
+#   1. Asserts the caller passed an authorisation predicate — one of
+#      `account_id` (single-user multi-context) or `context_id ∈ {...}`
+#      (explicit per-context query). If the caller passed neither, we
+#      refuse the query — that's a programmer error.
+#   2. Runs `project_for_pulse(...)` on every row before yielding so
+#      content-class fields (`headline`, `body`, `extracted_text`,
+#      `commentary`, `subject`, …) are dropped at the wall boundary.
+#   3. In dev mode (`STRICT_PRIVACY_WALL_RAISE=true`) raises on drift —
+#      a column the codebase has never seen before is treated as
+#      content until explicitly classified.
+#
+# Per the recommended approach (a) (field-projection guard), this
+# wraps `project_for_pulse`; it does NOT replace it. The contract is:
+# "any cross-context read goes through cross_context_query, period."
+# Single-context reads (where the caller already constrains to one
+# `context_id`) are NOT a wall concern and bypass this helper.
+#
+# Concretely, every existing cross-context call site should look
+# like:
+#   async for row in cross_context_query(
+#       db.signals,
+#       collection_name="signals",
+#       account_id=current["id"],
+#       query={"context_id": {"$in": user_ctx_ids}, ...},
+#       projection_extras=("context_name",),  # if any
+#       sort=("created_at", -1),
+#       limit=N,
+#   ):
+#       ...row is already projected through the wall...
+#
+class CrossContextScopeError(PrivacyWallError):
+    """Raised when cross_context_query is called without a valid
+    auth predicate. Cross-context reads MUST scope by either
+    `account_id` (the user's own contexts) or an explicit
+    `context_id ∈ {...}` set the caller has already validated."""
+
+
+def _query_has_scope(query: Dict[str, Any], account_id: Optional[str]) -> bool:
+    """Permissive scope check.
+
+    Returns True if the query restricts to a known principal — either
+    via `account_id` (some collections are account-scoped, e.g. shares,
+    blog_subscribers) or via `context_id` ∈ {...} (the standard
+    multi-context member scope).
+
+    NOTE: this does NOT validate that the caller actually has membership
+    in those contexts — that is the route handler's job, NOT the wall's.
+    The wall is the *projection* boundary, not the *authorisation*
+    boundary. Membership is checked upstream (in routers via
+    `require_context_membership` / `_user_context_ids`).
+    """
+    if not isinstance(query, dict):
+        return False
+    if account_id and (
+        query.get("account_id") == account_id
+        or (isinstance(query.get("account_id"), dict)
+            and query["account_id"].get("$in") and account_id in query["account_id"]["$in"])
+    ):
+        return True
+    cid = query.get("context_id")
+    if cid is None:
+        return False
+    if isinstance(cid, str):
+        return True  # single-context — by definition not cross
+    if isinstance(cid, dict):
+        if "$in" in cid and isinstance(cid["$in"], list):
+            return True
+        if "$eq" in cid:
+            return True
+    return False
+
+
+async def cross_context_query(
+    motor_collection: Any,
+    *,
+    collection_name: str,
+    query: Dict[str, Any],
+    account_id: Optional[str] = None,
+    projection: Optional[Dict[str, int]] = None,
+    sort: Optional[Tuple[str, int]] = None,
+    limit: Optional[int] = None,
+):
+    """Privacy-Wall-mediated async iterator over a Motor collection.
+
+    Default-deny scope check: refuses any query that doesn't restrict
+    by account_id or context_id. Projects every row through
+    `project_for_pulse(collection_name, row)` before yielding so
+    content-class fields can never leak out of this wrapper.
+
+    Drift escalates per `STRICT_PRIVACY_WALL_RAISE`. Returns a list
+    (consumer rebinds `[r for r in ...]`-style); we use a list rather
+    than an async generator so the caller can `await` once and not
+    have to thread async-context through the response builder.
+    """
+    if collection_name not in _REGISTRY:
+        raise UnknownCollectionError(collection_name)
+    if not _query_has_scope(query, account_id):
+        raise CrossContextScopeError(
+            f"cross_context_query refused for collection '{collection_name}': "
+            f"query does not constrain by account_id or context_id. "
+            f"Pass `account_id=` (for account-scoped reads) or include "
+            f"`context_id` (single id, $eq, or $in) in `query`."
+        )
+
+    cursor = motor_collection.find(query, projection or {"_id": 0})
+    if sort is not None:
+        cursor = cursor.sort(*sort)
+    if limit is not None:
+        cursor = cursor.limit(limit)
+
+    raw = await cursor.to_list(limit if limit is not None else 10000)
+    return [project_for_pulse(collection_name, row) for row in raw]
+
+
+def assert_no_cross_context_payload(rows: List[Dict[str, Any]],
+                                    sentinels: List[str],
+                                    *, label: str = "rows") -> None:
+    """Test/dev helper. Walks every value in `rows` (recursively) and
+    asserts none of `sentinels` appears. Used by the regression
+    suite. Cheap enough to run in dev as a defence-in-depth check."""
+    def _walk(v: Any, path: str) -> None:
+        if isinstance(v, str):
+            for s in sentinels:
+                if s and s in v:
+                    raise AssertionError(
+                        f"Privacy wall leakage in {label} at {path}: "
+                        f"sentinel '{s[:32]}…' present in projected output."
+                    )
+        elif isinstance(v, dict):
+            for k, vv in v.items():
+                _walk(vv, f"{path}.{k}")
+        elif isinstance(v, list):
+            for i, vv in enumerate(v):
+                _walk(vv, f"{path}[{i}]")
+
+    for i, r in enumerate(rows):
+        _walk(r, f"{label}[{i}]")

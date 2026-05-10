@@ -253,6 +253,157 @@ async def pulse_feed(
 
 
 # ──────────────────────────────────────────────────────────────────────
+# GET /api/contexts/{cid}/pulse/across-boards — Phase E.0.3
+# ──────────────────────────────────────────────────────────────────────
+# Cross-board metadata aggregator. Reads ONLY db.context_metadata_signatures.
+# NEVER touches db.signals, db.documents, db.chat_messages, or any payload
+# collection from a non-active context. NEVER returns source_artefact_id,
+# source-board name, or any other field that would identify the source
+# tenant.
+#
+# Response shape — metadata only:
+#   {
+#     "patterns": [
+#       {
+#         "signature_kind": "regulatory_ref",
+#         "signature_value": "GDPR Art.17",
+#         "other_boards_count": 3,           # distinct OTHER context_ids
+#         "active_board_count": 2,            # active board's own count
+#         "last_seen_other": "ISO-8601",      # most recent across other boards
+#         "first_seen_other": "ISO-8601",
+#       },
+#       ...
+#     ],
+#     "window_days": 30,
+#     "active_board_signature_count": int,
+#     "leakage_check": "metadata_only"
+#   }
+#
+# The active_board_count surfaces ONLY the user's own context's matches
+# so they can see "this matches what your board already flagged" — a
+# useful framing without identifying who else flagged it.
+from datetime import datetime as _dt, timedelta as _td
+
+_AGGREGATOR_WINDOW_DAYS = 30
+
+
+@router.get("/contexts/{context_id}/pulse/across-boards")
+async def pulse_across_boards(
+    context_id: str,
+    window_days: int = _AGGREGATOR_WINDOW_DAYS,
+    min_other_boards: int = 1,
+    limit: int = 50,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Return cross-board metadata patterns visible from the active
+    context's perspective. Privacy Wall:
+      • Reads ONLY db.context_metadata_signatures.
+      • Filters out the active context's own rows from the OTHER-BOARDS
+        count.
+      • NEVER returns source_artefact_id, context_id-of-source, or any
+        identifier of the originating tenant.
+      • Active-board's OWN signatures are surfaced as `active_board_count`
+        so the user sees their board's match alongside the others'.
+    """
+    win = max(1, min(int(window_days or _AGGREGATOR_WINDOW_DAYS), 365))
+    cutoff = (_dt.now(timezone.utc) - _td(days=win)).isoformat().replace("+00:00", "Z")
+
+    # 1. Pull the active board's own signatures within window.
+    own = await db.context_metadata_signatures.find(
+        {"context_id": context_id, "created_at": {"$gte": cutoff}},
+        {"_id": 0, "signature_kind": 1, "signature_value": 1, "created_at": 1},
+    ).to_list(5000)
+
+    own_pairs: set = set()
+    own_count_by_value: Dict[tuple, int] = {}
+    for r in own:
+        key = (r["signature_kind"], r["signature_value"])
+        own_pairs.add(key)
+        own_count_by_value[key] = own_count_by_value.get(key, 0) + 1
+
+    # 2. For each unique (kind, value) the active board has, look up
+    #    OTHER boards' rows in window. Aggregator never touches any
+    #    payload collection.
+    patterns: List[Dict[str, Any]] = []
+    for (kind, value) in sorted(own_pairs):
+        # Cross-board lookup — explicitly EXCLUDE the active context_id.
+        # No content fields shipped; we project only what the response
+        # needs and run distinct() over context_id to count boards
+        # without listing them.
+        other_rows = await db.context_metadata_signatures.find(
+            {
+                "signature_kind": kind,
+                "signature_value": value,
+                "created_at": {"$gte": cutoff},
+                "context_id": {"$ne": context_id},
+            },
+            {"_id": 0, "context_id": 1, "created_at": 1},
+        ).to_list(5000)
+        if not other_rows:
+            continue
+        # Distinct OTHER boards.
+        other_ctx_ids = {r["context_id"] for r in other_rows if r.get("context_id")}
+        if len(other_ctx_ids) < max(1, int(min_other_boards or 1)):
+            continue
+        timestamps = sorted(r["created_at"] for r in other_rows if r.get("created_at"))
+        patterns.append({
+            "signature_kind": kind,
+            "signature_value": value,
+            "other_boards_count": len(other_ctx_ids),
+            "active_board_count": own_count_by_value.get((kind, value), 0),
+            "first_seen_other": timestamps[0] if timestamps else None,
+            "last_seen_other": timestamps[-1] if timestamps else None,
+        })
+
+    # 3. Also surface signatures present on OTHER boards but NOT yet
+    #    on the active board — useful "you might want to look at" tile.
+    #    Same metadata-only contract.
+    if len(patterns) < int(limit or 50):
+        cursor = db.context_metadata_signatures.aggregate([
+            {"$match": {
+                "created_at": {"$gte": cutoff},
+                "context_id": {"$ne": context_id},
+            }},
+            {"$group": {
+                "_id": {"k": "$signature_kind", "v": "$signature_value"},
+                "boards": {"$addToSet": "$context_id"},
+                "first_seen": {"$min": "$created_at"},
+                "last_seen": {"$max": "$created_at"},
+            }},
+            {"$match": {"boards.1": {"$exists": True}}},  # ≥ 2 boards
+            {"$limit": 200},
+        ])
+        async for g in cursor:
+            kind  = g["_id"]["k"]
+            value = g["_id"]["v"]
+            if (kind, value) in own_pairs:
+                continue  # already covered
+            patterns.append({
+                "signature_kind": kind,
+                "signature_value": value,
+                "other_boards_count": len(g["boards"]),
+                "active_board_count": 0,
+                "first_seen_other": g.get("first_seen"),
+                "last_seen_other": g.get("last_seen"),
+            })
+            if len(patterns) - 0 >= int(limit or 50):
+                break
+
+    # 4. Sort by signal strength (other_boards_count desc, then recency).
+    patterns.sort(key=lambda p: (-p["other_boards_count"], p["last_seen_other"] or ""), reverse=False)
+    patterns.sort(key=lambda p: (-p["other_boards_count"], -(int(_dt.fromisoformat(
+        (p["last_seen_other"] or "1970-01-01T00:00:00Z").replace("Z", "+00:00")
+    ).timestamp()) if p["last_seen_other"] else 0)))
+
+    return {
+        "patterns": patterns[:int(limit or 50)],
+        "window_days": win,
+        "active_board_signature_count": len(own),
+        "leakage_check": "metadata_only",
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────
 # POST endpoints — engagement actions
 # ──────────────────────────────────────────────────────────────────────
 class CommentIn(BaseModel):
