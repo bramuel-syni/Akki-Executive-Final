@@ -2,7 +2,7 @@
 
 **Document type:** Gap analysis (specification vs current build)
 **Audience:** Internal PM / engineering / governance review
-**Source of truth — spec side:** `docs/PRODUCT_SPEC.md`, Home Module Spec, Document Journal Module Spec, Streaming Transitions Design Spec, NED Cycle Manager Design
+**Source of truth — spec side:** `docs/PRODUCT_SPEC.md`, Home Module Spec, Document Journal Module Spec, Streaming Transitions Design Spec, NED Cycle Manager Design, Universal Search Module Spec
 **Source of truth — build side:** Read-only codebase audit on branch `main`, repo `bramuel-syni/Akki-Executive`
 **Status legend:** ✅ Built  ◐ Partial  ◇ Design-only  ✗ Missing  ⚠ Mocked / stubbed / hardcoded
 
@@ -11,6 +11,8 @@
 ## 1. Executive Summary
 
 AKKI is an AI-powered intelligence layer for high-level corporate governance, serving Operating Executives (CEO/CFO) and Non-Executive Directors (NEDs) at listed or pre-IPO companies. The platform provides decision support, privacy-first data synthesis, and structured reasoning, distinguished by three architectural commitments: deterministic PII redaction (**Synisense Shield**), a verifiable hash-chained audit trail (**Trust-First Chat**), and architectural isolation between company contexts (**Privacy Wall**).
+
+This review covers 13 modules.
 
 ### Build maturity at a glance
 
@@ -28,6 +30,7 @@ AKKI is an AI-powered intelligence layer for high-level corporate governance, se
 | 10 | Pulse | ◐ Partial | Backend Phase G real (lifecycle, dedup, cross-board); frontend drawer + tabs NOT WIRED |
 | 11 | Monitor | ◐ Partial | Surfacing real; baselines + first-class "goal-at-risk" flag not stored |
 | 12 | Streaming Transitions | ◐ Partial | All three strategic spots animated; no centralised abstraction |
+| 13 | Universal Search | ✗ Missing | Top-nav "Search ⌘K" hijacks to **company switcher**; no universal index, no results page |
 
 ### Top risks
 1. **Pulse frontend lags backend** — UX users do not yet see Phase G lifecycle states, confidence floors, or merge_count chips.
@@ -36,6 +39,7 @@ AKKI is an AI-powered intelligence layer for high-level corporate governance, se
 4. **Postmark inbound uses URL-secret, not HMAC signature** — production roadmap item.
 5. **Documentation drift** — `cycle_manager.py:25` still claims NED is design-only; Phase E shipped via `ned_cycle.py`.
 6. **No CI determinism gate** for Work Studio exports — documented invariant not enforced.
+7. **Universal Search P0 hijack — VERIFIED REAL** — the persistent top-nav "Search ⌘K" button and the Cmd+K shortcut both open a Dialog whose only function is to filter and switch the active company. Users typing a search query see a list of *companies* matching the query and clicking any "result" calls `switchContext(c.id)` — i.e., yanks them into a different tenant. Direct user trust impact.
 
 ---
 
@@ -412,9 +416,103 @@ AKKI is an AI-powered intelligence layer for high-level corporate governance, se
 
 ---
 
+### Module 13 — Universal Search
+
+**Purpose.** Persistent search bar in the top navigation of every Akki page so a senior user can locate any artefact (document, signal, goal, cycle activity, chat session, work-studio artefact, brief-review item) inside the **active company only** in one keystroke. Strict isolation at `(user, company, role)`. Out of scope: cross-company search, AI summaries, conversational interface, autocomplete predictions, archived content beyond retention.
+
+**User flow (per spec).** Click "Search" or press Cmd+K → type query → inline overlay shows top results grouped by category → press Enter (or "See all") → full results page with category tabs, pagination, filter, sort. Empty state: *"No results found for '[query]' in [Company name]. Try different keywords, or switch company to search elsewhere."*
+
+**Components (per spec).** Persistent top-nav search input (every page); Cmd+K / Ctrl+K binding; inline overlay (top-N grouped); dedicated results page with category tabs (Documents, Pulse, Monitor, Cycle, Chat, Work Studio, Brief Review); result rows with title / type / date / snippet / source attribution; empty state.
+
+**Functionality — built ✅.**
+- Top-nav "Search" launcher button is rendered: `frontend/src/components/layout/AppShell.jsx:251-259`, `data-testid="cmdk-launch-btn"`, with the `⌘K` kbd hint.
+- Cmd+K keyboard shortcut is bound globally: `frontend/src/hooks/useKeyboardShortcuts.js:76-79` dispatches the `akki:open-palette` custom event.
+- AppShell listens for `akki:open-palette` and opens a modal Dialog (`AppShell.jsx:163-167`).
+- A search-shaped Dialog renders with an input field (`AppShell.jsx:795-812`).
+- Per-module search endpoints exist for **3 of the 7** spec-required indexes:
+  - Documents — `GET /api/contexts/{cid}/document-journal/search` (BM25 helper at `backend/bm25.py`; Workspace.jsx:238 client-side use).
+  - Chat sessions — `GET /api/chats/search` (Chat.jsx:88,635 client-side use).
+  - NED-scoped artefacts — `GET /api/ned/search` (HomeNed.jsx:198 client-side use; NED-only).
+
+**Partial / stubbed / mocked.**
+- ⚠ **The "Search" launcher and Cmd+K both open a HARDCODED context-switcher Dialog**, not a search experience. The Dialog body filters `contexts` (companies the user is a member of) by the typed string and renders each match as a `<button>` whose onClick calls `switchContext(c.id)`.
+- ⚠ The Dialog placeholder text is **HARDCODED**: `"Switch company…  (universal search unlocks at M7)"` (`AppShell.jsx:807`).
+- ⚠ The companion DialogDescription is **HARDCODED**: `"Switch company or search. Universal search unlocks at M7."` (`AppShell.jsx:799`).
+- ⚠ The header comment is **HARDCODED self-incrimination**: `"{/* Command palette — M1 stub: context switcher; becomes universal search in M7 */}"` (`AppShell.jsx:794`).
+- ⚠ The Dialog also exposes "Add a company…" (navigates to `/app/contexts/new`) and "Open settings" (navigates to `/app/settings`) — neither is search.
+
+**Missing vs spec.**
+- ✗ No persistent **search input** in the top nav — only a launcher button that opens a Dialog (the spec requires a persistent search bar, not a launcher).
+- ✗ No `/api/search` (or equivalent) global / federated endpoint.
+- ✗ No Mongo `$text` indexes; no Atlas Search; no shared search service. Per-module endpoints are not federated.
+- ✗ **Pulse signals search** — no `/pulse/search` endpoint.
+- ✗ **Monitor goals search** — no goals search endpoint.
+- ✗ **Cycle Manager activity search** — no cycle search endpoint.
+- ✗ **Work Studio artefacts search** — no work-studio search endpoint.
+- ✗ **Brief Review items search** — no brief-review search endpoint.
+- ✗ No search **results page** (no `/app/search` route in `App.js`; no `SearchResults.jsx` component anywhere in `frontend/src/`).
+- ✗ No inline overlay results, no category tabs, no pagination, no filter, no sort, no result rows with snippet + source attribution.
+- ✗ No empty state (`"No results found for '[query]' in [Company name]…"`).
+
+**P0 hijack verification.**
+**VERIFIED — REAL.** Both the persistent top-nav "Search ⌘K" button and the Cmd+K keyboard shortcut hijack to a context-switcher modal. Quoted lines:
+
+- `frontend/src/components/layout/AppShell.jsx:251-259` — the visible "Search" launcher button:
+  ```jsx
+  <button
+    className="hidden md:flex items-center gap-2 px-3 py-1.5 text-[13px] bg-white …"
+    onClick={() => setPaletteOpen(true)}
+    data-testid="cmdk-launch-btn"
+  >
+    <Search className="w-3.5 h-3.5" strokeWidth={1.8} />
+    <span className="akki-sans">Search</span>
+    <kbd …>⌘K</kbd>
+  </button>
+  ```
+- `frontend/src/hooks/useKeyboardShortcuts.js:76-79` — the Cmd+K binding:
+  ```js
+  if (meta && key === "k") {
+    e.preventDefault();
+    window.dispatchEvent(new CustomEvent("akki:open-palette"));
+    return;
+  }
+  ```
+- `frontend/src/components/layout/AppShell.jsx:794-859` — the modal that opens, with its self-incriminating comment, hardcoded placeholder, and switch-company onClick:
+  ```jsx
+  {/* Command palette — M1 stub: context switcher; becomes universal search in M7 */}
+  <Dialog open={paletteOpen} onOpenChange={setPaletteOpen}>
+    …
+    <input
+      …
+      placeholder="Switch company…  (universal search unlocks at M7)"
+      …
+    />
+    …
+    {contexts
+      .filter((c) => !paletteQuery || c.name.toLowerCase().includes(paletteQuery.toLowerCase()))
+      .map((c) => (
+        <button
+          …
+          onClick={() => { switchContext(c.id); setPaletteOpen(false); }}
+        >…</button>
+      ))}
+  ```
+
+User-impact summary: a senior user typing into the persistent "Search" bar (or pressing Cmd+K and typing) sees a list of **other companies they belong to**, and clicking any "result" yanks them out of the active tenant into a different one — i.e., the search bar's only effect is to switch tenant. This is the spec-claimed P0 hijack.
+
+**Status:** ✗ Missing. Universal Search is not built. The current launcher is a context-switcher stub explicitly marked "becomes universal search in M7".
+
+**Notable risks / debt.**
+- Direct user-trust impact: search affordance silently changes tenant.
+- No federation primitive exists yet — building Universal Search requires either a new `/api/search?q=` endpoint that fans out across the seven required indexes (with Privacy Wall scoping) or seven new `/search` routes feeding a federated frontend orchestrator.
+- The launcher button + Cmd+K + modal scaffold can all be reused; only the Dialog body and the dispatch target need to change.
+
+---
+
 ## 4. Consolidated gap & action register
 
 ### Priority 0 (production blockers / spec contracts broken)
+- **Universal Search P0 hijack — VERIFIED** — replace the context-switcher Dialog body wired to the persistent top-nav "Search ⌘K" button + Cmd+K shortcut with an actual Universal Search experience (or, as a stop-gap, route Cmd+K and the Search button to a `/app/search` placeholder page until the real module ships). Surface the company switcher under a different affordance.
 - **Privacy Wall Phase 2c** — `redact_for_pulse_text` no-op + `assemble_pulse_prompt` `NotImplementedError`. Blocks any cross-board content synthesis.
 - **Resend production domain verification** — sending domain not verified; non-test recipients silently rejected.
 
@@ -423,6 +521,8 @@ AKKI is an AI-powered intelligence layer for high-level corporate governance, se
 - **Pulse**: ship Phase G.4 drill-down side drawer + tab-strip (state filter) on frontend.
 - **Solva**: un-stub "Take-to-Cycle" frontend CTA (backend endpoint exists).
 - **Postmark inbound**: replace URL-secret with HMAC signature.
+- **Universal Search — build the module**: persistent top-nav search input (replace launcher button); inline overlay (top-N grouped); `/app/search` results page with category tabs, pagination, filter, sort; result rows with title / type / date / snippet / source attribution; empty state copy verbatim.
+- **Universal Search — federation endpoint**: `GET /api/contexts/{cid}/search?q=` that fans out across the seven required indexes (Documents, Pulse, Monitor goals, Cycle activity, Chat sessions, Work Studio artefacts, Brief Review items) with Privacy Wall `(user, company, role)` scoping.
 
 ### Priority 2 (governance / hardening)
 - **Privacy Wall**: wire `project_for_pulse` on same-context Pulse feed (belt-and-braces).
@@ -430,11 +530,13 @@ AKKI is an AI-powered intelligence layer for high-level corporate governance, se
 - **Work Studio**: add `test_render_determinism.py` CI gate; persist `llm_pass1`/`llm_pass2` on failure rows.
 - **Chat**: provision direct OpenAI keys to unlock GPT-5.2 per-token streaming.
 - **Monitor**: first-class `at_risk` flag on `db.strategic_goals`; paginate beyond last-50 signals.
+- **Universal Search — index hardening**: add Mongo `$text` indexes (or BM25 sweeps) on the four collections that have no search today (`signals`, `strategic_goals`, `cycle_*`, `work_studio_*`, `boardpacks`); enforce per-call Synisense `surface="search"` audit row; sentinel test asserting search results never carry foreign context_id payloads.
 
 ### Priority 3 (documentation drift)
 - Update `cycle_manager.py:25` and `docs/NED_CYCLE_MANAGER_DESIGN.md` to reflect Phase E ship.
 - Resolve Solva naming drift (`solva_v2` code ↔ "v3" UX brand) — deliberate, but should be a single-line README note.
 - Decide on ExCo as first-class role vs continued derived-view treatment.
+- Remove the "M1 stub: context switcher; becomes universal search in M7" self-incriminating comment from `AppShell.jsx:794` once Module 13 ships.
 
 ### Priority 4 (deferred / v1.1)
 - Deck PDF renderer.
@@ -452,6 +554,8 @@ AKKI is an AI-powered intelligence layer for high-level corporate governance, se
 - Hash chain in `db.chat_audit_log` is mathematically real and exportable.
 - Resend `resend.Emails.send` is the live outbound call; Postmark inbound webhook is live in dev.
 - Synisense runs persist input SHA-256 only — **never raw text**.
+- **Universal Search hijack is verified at the file-and-line level** — `AppShell.jsx:251-259` (button), `useKeyboardShortcuts.js:76-79` (Cmd+K), `AppShell.jsx:794-859` (context-switcher Dialog) all confirmed.
+- **Three of seven** spec-required search indexes have a usable backend endpoint today (`/document-journal/search`, `/chats/search`, `/ned/search`); the other four (Pulse signals, Monitor goals, Cycle activity, Work Studio artefacts, Brief Review items) have no search endpoint at all.
 
 ## 6. What is mocked, stubbed, or hardcoded (transparency list)
 
@@ -470,6 +574,14 @@ AKKI is an AI-powered intelligence layer for high-level corporate governance, se
 - ⚠ `PulsePlaceholder.jsx` orphan file.
 - ⚠ ClamAV bypassed in dev via `ALLOW_UNSAFE_UPLOADS=true`.
 - ⚠ "Goals at risk" derived at read time, no `at_risk` flag stored.
+- ⚠ **Universal Search top-nav button is a HARDCODED context-switcher launcher** (`AppShell.jsx:251-259`, `data-testid="cmdk-launch-btn"`).
+- ⚠ **Cmd+K is HARDCODED to dispatch `akki:open-palette`** which AppShell consumes by opening the context-switcher Dialog (`useKeyboardShortcuts.js:76-79` + `AppShell.jsx:163-167`).
+- ⚠ **Dialog placeholder is HARDCODED**: `"Switch company…  (universal search unlocks at M7)"` (`AppShell.jsx:807`).
+- ⚠ **DialogDescription is HARDCODED**: `"Switch company or search. Universal search unlocks at M7."` (`AppShell.jsx:799`).
+- ⚠ **Self-incriminating header comment is HARDCODED**: `"Command palette — M1 stub: context switcher; becomes universal search in M7"` (`AppShell.jsx:794`).
+- ✗ **No `/api/search` federation endpoint** — Universal Search backend is unbuilt.
+- ✗ **No `/app/search` results page** — Universal Search frontend is unbuilt.
+- ✗ **No search index** for Pulse signals, Monitor goals, Cycle activity, Work Studio artefacts, Brief Review items.
 
 ---
 
