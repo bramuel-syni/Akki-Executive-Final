@@ -2260,6 +2260,12 @@ async def stream_message(
         # BUILD" are described as distinct phases, not a formatting
         # choice.
         explicit_pass_1: Optional[str] = None
+        # Phase A.2 — set true ONLY when the streaming branch yielded
+        # real-time deltas to the client. The post-process re-chunker
+        # below uses this to decide whether to re-emit the final text
+        # (strategic_deliverable two-pass needs it; streamed turns
+        # don't and would double-emit content the user already saw).
+        streamed_in_realtime = False
         if not emergent_key:
             raw_text = "(LLM unavailable — no key configured.)"
             mode = "no-key-fallback"
@@ -2347,6 +2353,16 @@ async def stream_message(
                                     "text": _chunk.text,
                                 }) + "\n\n"
                             )
+                            # Phase A.2 — yield control to the event loop so
+                            # uvicorn flushes each delta to the TCP socket
+                            # immediately. Without this, multiple yields
+                            # back-to-back can be coalesced and dumped at
+                            # generator end (visible in the browser as
+                            # "generates, then dumps"). asyncio.sleep(0)
+                            # is the documented FastAPI/uvicorn SSE-flush
+                            # primitive — no timer, no overhead, just a
+                            # cooperative tick.
+                            await _asyncio.sleep(0)
                         elif _chunk.kind == "done":
                             stream_provider_used = _chunk.provider_used
                             stream_fallback = _chunk.fallback_triggered
@@ -2387,6 +2403,10 @@ async def stream_message(
                             pass
                         return
                     raw_text = "".join(raw_parts)
+                    # Phase A.2 — track that real-time deltas already
+                    # reached the client. The post-process re-chunker
+                    # below MUST NOT re-emit the same content.
+                    streamed_in_realtime = True
             except Exception as e:
                 logger.exception("Chat stream LLM call failed")
                 # Emit an error event then write a failure audit row and stop.
@@ -2542,20 +2562,32 @@ async def stream_message(
         # Pass 1 + Pass 2 with a delimiter), not raw_text. raw_text
         # is the full LLM output and goes to the audit log; the user
         # only ever sees what we permit.
+        # Phase A.2 — IF the streaming branch already yielded real-time
+        # deltas to the client AND no banned-word retry swapped raw_text,
+        # the user has already seen the entire final reply. Re-chunking
+        # would double-emit and produce the "generates, then dumps"
+        # symptom the user reported. Skip the re-chunker in that case;
+        # it remains active for the strategic_deliverable two-pass path
+        # (which is non-streaming) and for banned-word-retry swaps.
+        skip_rechunk = streamed_in_realtime and (voice_violation_record is None)
         CHUNK_CHARS = 220
         try:
-            for i in range(0, len(visible_streamed), CHUNK_CHARS):
-                if await request_obj.is_disconnected():
-                    cancelled = True
-                    break
-                chunk = visible_streamed[i:i + CHUNK_CHARS]
-                yield (
-                    "data: " + json.dumps({"type": "delta", "text": chunk}) + "\n\n"
-                )
-                emitted_chars += len(chunk)
+            if skip_rechunk:
+                emitted_chars = len(visible_streamed)
                 _emitted_for_cancel_box[0] = emitted_chars
-                # Tiny gap so the client renders progressively.
-                await _asyncio.sleep(0.02)
+            else:
+                for i in range(0, len(visible_streamed), CHUNK_CHARS):
+                    if await request_obj.is_disconnected():
+                        cancelled = True
+                        break
+                    chunk = visible_streamed[i:i + CHUNK_CHARS]
+                    yield (
+                        "data: " + json.dumps({"type": "delta", "text": chunk}) + "\n\n"
+                    )
+                    emitted_chars += len(chunk)
+                    _emitted_for_cancel_box[0] = emitted_chars
+                    # Tiny gap so the client renders progressively.
+                    await _asyncio.sleep(0.02)
         except _asyncio.CancelledError:
             cancelled = True
 
