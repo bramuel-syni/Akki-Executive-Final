@@ -604,6 +604,8 @@ def build_system_prompt(
     turn_class: str,
     show_pass_1: bool,
     has_grounding: bool,
+    membership_role: Optional[str] = None,
+    context_type: Optional[str] = None,
 ) -> str:
     """Assemble the per-turn system message.
 
@@ -615,6 +617,9 @@ def build_system_prompt(
       • Refusal patterns block for light_substantive and above.
       • Canonical two-pass + delimiter rule for strategic_deliverable.
       • Grounding rail when context-tethered.
+      • NED voice addendum (Phase E.5) when (membership_role=='ned' AND
+        context_type starts with 'ned_'). Calibrates tone toward
+        reflective/decisional/peer rather than executive-coach.
     """
     parts: List[str] = [_BASE_VOICE]
 
@@ -628,6 +633,32 @@ def build_system_prompt(
         )
 
     parts.append(_OPERATING_VOICE)
+
+    # Phase E.5 — NED voice addendum. Per spec §9 of the NED Cycle Manager
+    # Module Specification: NEDs receive content already shaped by the
+    # company; their preparation is reflective, not generative. Tone is
+    # peer (sister NED on another board), brief, decisional. No
+    # executive-coach framing, no exhortation. Append-only — does not
+    # rewrite the base voice.
+    is_ned = (
+        (membership_role or "").lower() == "ned"
+        and (context_type or "").lower().startswith("ned_")
+    )
+    if is_ned:
+        parts.append(
+            "VOICE ADDENDUM (NED context):\n"
+            "You are speaking with a non-executive director preparing for "
+            "a board or committee meeting. Tone is peer-to-peer (think: a "
+            "fellow NED who has read the pack). Be brief, direct, and "
+            "decisional. Do NOT exhort, do NOT coach, do NOT motivate. "
+            "Reflect the material back with the rigour the pack itself "
+            "deserves. When you draw a conclusion, name it; when you cannot, "
+            "say what is missing. Avoid executive-management framing "
+            "('how to drive', 'how to enable'). Use the language of "
+            "governance: 'what is the question for the chair', 'what does "
+            "the audit committee need to see', 'what would I want to "
+            "register a position on'."
+        )
 
     # Trivial turns: no four-check, no refusal block, just answer.
     if turn_class == "trivial":

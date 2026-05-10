@@ -66,6 +66,7 @@ from routers import admin_sandbox_kpi as admin_sandbox_kpi_router  # noqa: E402
 from routers import signal_actions as signal_actions_router  # noqa: E402
 from routers import pulse as pulse_router  # noqa: E402
 from routers import cycle_manager as cycle_manager_router  # noqa: E402
+from routers import ned_cycle as ned_cycle_router  # noqa: E402  # Phase E
 from routers import admin_signal_kpi as admin_signal_kpi_router  # noqa: E402
 from routers import prepare as prepare_router  # noqa: E402
 from routers import inbound_email as inbound_email_router  # noqa: E402
@@ -147,6 +148,7 @@ app.include_router(admin_sandbox_kpi_router.router)
 app.include_router(signal_actions_router.router)
 app.include_router(pulse_router.router)
 app.include_router(cycle_manager_router.router)
+app.include_router(ned_cycle_router.router)  # Phase E — NED Cycle Manager
 app.include_router(admin_signal_kpi_router.router)
 app.include_router(prepare_router.router)
 app.include_router(inbound_email_router.router)
@@ -542,6 +544,15 @@ async def on_startup():
     await db.context_metadata_signatures.create_index(
         [("context_id", 1), ("source_artefact_kind", 1), ("source_artefact_id", 1)]
     )
+
+    # Phase E — NED Cycle Manager
+    await db.ned_meetings.create_index([("account_id", 1), ("scheduled_at", 1)])
+    await db.ned_meetings.create_index([("account_id", 1), ("context_id", 1), ("committee", 1), ("scheduled_at", -1)])
+    await db.ned_meeting_notes.create_index([("meeting_id", 1), ("created_at", 1)])
+    await db.ned_meeting_notes.create_index([("account_id", 1), ("kind", 1), ("created_at", -1)])
+    await db.ned_positions.create_index([("account_id", 1), ("context_id", 1), ("committee", 1), ("created_at", -1)])
+    await db.ned_followups.create_index([("account_id", 1), ("status", 1), ("updated_at", -1)])
+    await db.ned_followups.create_index([("meeting_id", 1)])
 
     # Backfill: ensure every committee on every context has a stable id.
     async for c in db.contexts.find(

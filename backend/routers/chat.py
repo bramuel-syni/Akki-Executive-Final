@@ -2139,10 +2139,36 @@ async def stream_message(
     #   • has_grounding      → adds the citation rail
     # Voice rules (operating preferences + banned words) are always
     # included.
+    # Phase E.5 — NED voice addendum. Resolve membership role + context
+    # type once per turn and pass to the system-prompt builder. Strict
+    # honest-render: only fires when role=ned AND context_type starts
+    # with 'ned_'. Other turns are unaffected.
+    _ned_role: Optional[str] = None
+    _ned_ctype: Optional[str] = None
+    try:
+        if chat.get("context_id"):
+            _mb = await db.memberships.find_one(
+                {"account_id": current["id"], "context_id": chat["context_id"],
+                 "status": "active"},
+                {"_id": 0, "role": 1},
+            )
+            if _mb:
+                _ned_role = _mb.get("role")
+            _ctx = await db.contexts.find_one(
+                {"id": chat["context_id"]},
+                {"_id": 0, "type": 1},
+            )
+            if _ctx:
+                _ned_ctype = _ctx.get("type")
+    except Exception:  # pragma: no cover — best-effort
+        pass
+
     system_msg = _tp.build_system_prompt(
         turn_class=turn_class,
         show_pass_1=visible_pass_1,
         has_grounding=bool(grounding_paragraphs),
+        membership_role=_ned_role,
+        context_type=_ned_ctype,
     )
 
     request_account = current  # closures capture this at the inner scope

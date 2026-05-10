@@ -61,6 +61,8 @@ import StudioComposerPage from "@/pages/StudioComposerPage";
 // Phase 13.3 — new top-level surfaces
 import WorkStudio from "@/pages/WorkStudio";
 import Pulse from "@/pages/Pulse";
+import NedMeeting from "@/pages/ned/NedMeeting";   // Phase E
+import NedCommittee from "@/pages/ned/NedCommittee"; // Phase E
 
 function PublicOnlyRoute({ children, allowSandbox = false }) {
   const { account } = useAuth();
@@ -153,6 +155,9 @@ function App() {
           <Route path="/app/first-session" element={<ProtectedRoute><FirstSession /></ProtectedRoute>} />
           <Route path="/app" element={<Gated><AppHome /></Gated>} />
           <Route path="/app/cycle" element={<Gated><Cycle /></Gated>} />
+          {/* Phase E — NED Cycle Manager */}
+          <Route path="/app/ned/meeting/:id" element={<Gated><NedMeeting /></Gated>} />
+          <Route path="/app/ned/committee/:cid/:committee" element={<Gated><NedCommittee /></Gated>} />
           <Route path="/app/monitor" element={<Gated><Monitor /></Gated>} />
           <Route path="/app/plays" element={<Gated><PlaysLibrary /></Gated>} />
           <Route path="/app/plays/:playId" element={<Gated><PlayView /></Gated>} />
