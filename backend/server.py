@@ -37,6 +37,7 @@ from routers import documents as documents_router  # noqa: E402
 from routers import misc as misc_router  # noqa: E402
 from routers import briefings as briefings_router  # noqa: E402
 from routers import work_studio_export as work_studio_export_router  # noqa: E402
+from routers import work_studio_phase_c as work_studio_phase_c_router  # noqa: E402
 from routers import learn as learn_router  # noqa: E402
 from routers import committees as committees_router  # noqa: E402
 from routers import simulate as simulate_router  # noqa: E402
@@ -115,6 +116,7 @@ app.include_router(documents_router.router)
 app.include_router(misc_router.router)
 app.include_router(briefings_router.router)
 app.include_router(work_studio_export_router.router)
+app.include_router(work_studio_phase_c_router.router)
 app.include_router(learn_router.router)
 app.include_router(committees_router.router)
 app.include_router(simulate_router.router)

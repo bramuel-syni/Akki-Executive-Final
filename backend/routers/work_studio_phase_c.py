@@ -1,0 +1,197 @@
+"""
+Phase C.1 — Work Studio export endpoints.
+
+  POST /api/work_studio/exports
+  GET  /api/work_studio/exports/{export_id}/download
+  GET  /api/work_studio/picker
+
+Note: this is the new C.1 endpoint group. The pre-existing Phase 13
+work-studio export router (`/api/contexts/{cid}/work-studio/export/...`)
+is unchanged and continues to serve the old block-composer pipeline.
+"""
+from __future__ import annotations
+import hashlib
+import uuid
+from datetime import datetime, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Header, Response
+from pydantic import BaseModel, Field
+
+from core import db, get_current_account
+from work_studio import (
+    PICKER,
+    DEPTHS, FIDELITIES, FORMATS,
+    FORMAT_DOCX, FORMAT_PPTX, FORMAT_PDF,
+    build_brief_from_solva,
+    render_docx, render_pptx, render_pdf,
+)
+
+router = APIRouter(prefix="/api/work_studio")
+
+CONTENT_TYPES = {
+    FORMAT_DOCX: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    FORMAT_PPTX: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    FORMAT_PDF:  "application/pdf",
+}
+EXTENSIONS = {FORMAT_DOCX: "docx", FORMAT_PPTX: "pptx", FORMAT_PDF: "pdf"}
+
+
+class ExportRequest(BaseModel):
+    source_id: str
+    source_type: str = Field(..., pattern="^(solva_session|cycle_compilation|chat_artefact)$")
+    format: str = Field(..., pattern="^(docx|pptx|pdf)$")
+    depth: str = Field(..., pattern="^(executive_brief|board_summary|deep_dive)$")
+    fidelity: str = Field(..., pattern="^(low|high)$")
+    company_label: str = Field("Akki", max_length=80)
+    document_type: str = Field("Board Briefing", max_length=80)
+    programme: Optional[str] = Field(None, max_length=80)
+
+
+@router.get("/picker")
+async def get_picker():
+    """Return the depth/fidelity/format options each with a one-line
+    FT-toned insight string. The Work Studio UI renders this directly."""
+    return PICKER
+
+
+@router.post("/exports")
+async def create_export(
+    body: ExportRequest,
+    account=Depends(get_current_account),
+    x_active_context: Optional[str] = Header(None, alias="X-Active-Context"),
+):
+    # 1) Resolve the source -------------------------------------------------
+    if body.source_type == "cycle_compilation":
+        # Phase D will wire this — return 422 with an explicit code per the
+        # C.1 spec so callers can branch.
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "not_yet_supported_in_c1",
+                    "message": "Cycle Manager compilation exports land in Phase D."},
+        )
+    if body.source_type == "chat_artefact":
+        chat = await db.chats.find_one({"id": body.source_id, "account_id": account["id"]})
+        if not chat:
+            raise HTTPException(status_code=404, detail="chat_not_found")
+        msgs = await db.chat_messages.find({"chat_id": body.source_id})\
+            .sort("created_at", 1).to_list(2000)
+        # Reduce the chat down to a Solva-shaped envelope so the existing
+        # builder works without a parallel code path.
+        full = "\n\n".join((m.get("content") or "").strip()
+                           for m in msgs if m.get("role") == "assistant")
+        synthetic = {
+            "id": chat["id"],
+            "submodule": "seek_clarity",
+            "intent": chat.get("title") or "Chat artefact",
+            "synthesis": {
+                "body": full,
+                "claims": [], "recommendations": [],
+                "validation": {"verdict": "informational",
+                               "confidence": 0,
+                               "validator_provider": "—",
+                               "validator_model": "—"},
+            },
+        }
+        brief = build_brief_from_solva(
+            synthetic, company_label=body.company_label,
+            document_type=body.document_type, programme=body.programme,
+            depth=body.depth, fidelity=body.fidelity,
+        )
+    else:  # solva_session
+        session = await db.solva_v2_sessions.find_one(
+            {"id": body.source_id, "account_id": account["id"]})
+        if not session:
+            raise HTTPException(status_code=404, detail="solva_session_not_found")
+        if not (session.get("synthesis") or {}).get("body"):
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "synthesis_not_ready",
+                        "message": "This Solva session has not yet produced a synthesis. "
+                                   "Run it through to the synthesis layer before exporting."},
+            )
+        brief = build_brief_from_solva(
+            session, company_label=body.company_label,
+            document_type=body.document_type, programme=body.programme,
+            depth=body.depth, fidelity=body.fidelity,
+        )
+
+    # 2) Render -------------------------------------------------------------
+    if body.format == FORMAT_DOCX:
+        binary = render_docx(brief)
+    elif body.format == FORMAT_PPTX:
+        binary = render_pptx(brief)
+    else:  # FORMAT_PDF
+        binary = render_pdf(brief)
+
+    sha = hashlib.sha256(binary).hexdigest()
+    export_id = str(uuid.uuid4())
+    filename = (
+        f"{body.company_label.replace(' ', '_')}_"
+        f"{body.document_type.replace(' ', '_')}_"
+        f"{body.depth}_{body.fidelity}.{EXTENSIONS[body.format]}"
+    )
+
+    # 3) Persist ------------------------------------------------------------
+    await db.work_studio_phase_c_exports.insert_one({
+        "id": export_id,
+        "account_id": account["id"],
+        "context_id": x_active_context,
+        "source_id": body.source_id,
+        "source_type": body.source_type,
+        "format": body.format,
+        "depth": body.depth,
+        "fidelity": body.fidelity,
+        "company_label": body.company_label,
+        "document_type": body.document_type,
+        "programme": body.programme,
+        "filename": filename,
+        "size_bytes": len(binary),
+        "sha256": sha,
+        "binary": binary,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return {
+        "export_id": export_id,
+        "download_url": f"/api/work_studio/exports/{export_id}/download",
+        "format": body.format,
+        "depth": body.depth,
+        "fidelity": body.fidelity,
+        "filename": filename,
+        "size_bytes": len(binary),
+        "sha256": sha,
+    }
+
+
+@router.get("/exports/{export_id}/download")
+async def download_export(
+    export_id: str,
+    account=Depends(get_current_account),
+):
+    rec = await db.work_studio_phase_c_exports.find_one(
+        {"id": export_id, "account_id": account["id"]})
+    if not rec:
+        raise HTTPException(status_code=404, detail="export_not_found")
+    return Response(
+        content=rec["binary"],
+        media_type=CONTENT_TYPES.get(rec["format"], "application/octet-stream"),
+        headers={
+            "Content-Disposition": f'attachment; filename="{rec["filename"]}"',
+            "X-Akki-Export-Sha256": rec["sha256"],
+        },
+    )
+
+
+@router.get("/exports/{export_id}")
+async def get_export_meta(
+    export_id: str,
+    account=Depends(get_current_account),
+):
+    rec = await db.work_studio_phase_c_exports.find_one(
+        {"id": export_id, "account_id": account["id"]},
+        {"_id": 0, "binary": 0},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="export_not_found")
+    return rec
