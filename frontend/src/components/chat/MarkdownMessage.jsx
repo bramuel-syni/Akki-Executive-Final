@@ -77,7 +77,7 @@ const COMPONENTS = {
  * backwards-compatibility with any caller that imports from the
  * component module.
  */
-export { splitIntoBlocks } from "./markdownStream";
+export { splitIntoBlocks };
 
 /**
  * Render one closed markdown block. React.memo keys on `content` —

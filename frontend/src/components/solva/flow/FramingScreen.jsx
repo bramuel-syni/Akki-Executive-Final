@@ -7,7 +7,7 @@
  * upload pipeline isn't wired into solva sessions yet — Phase I.6).
  */
 import React, { useState, useEffect, useRef } from "react";
-import { TOKEN, FONT, SUBMODULE_LABELS } from "./tokens";
+import { TOKEN, FONT, SUBMODULE_LABELS, SUBMODULE_FRAMING_COPY } from "./tokens";
 import ProgressIndicator from "./ProgressIndicator";
 import PrimaryButton, { GhostLink } from "./PrimaryButton";
 
@@ -25,6 +25,12 @@ export default function FramingScreen({
 }) {
   const taRef = useRef(null);
   useEffect(() => { taRef.current?.focus(); }, []);
+
+  // Phase B.1 — submodule-specific framing copy (spec §5.1). Defaults
+  // to seek_clarity copy if the key is unrecognised, so unknown
+  // submodules degrade gracefully.
+  const framingCopy =
+    SUBMODULE_FRAMING_COPY[submodule] || SUBMODULE_FRAMING_COPY.seek_clarity;
 
   const handleKeyDown = (e) => {
     // Ctrl/Cmd + Enter submits.
@@ -62,7 +68,7 @@ export default function FramingScreen({
           lineHeight: 1.25,
         }}
       >
-        Tell me about the situation you're trying to think through.
+        {framingCopy.headline}
       </h1>
 
       {/* Wave 1.1 (UAT pack 2026-05-10) — handoff seed indicator.
@@ -132,7 +138,7 @@ export default function FramingScreen({
         value={framingDraft}
         onChange={(e) => setFramingDraft(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="What's the situation? Be plain. Detail the numbers, the people, and what you're trying to decide."
+        placeholder={framingCopy.placeholder}
         rows={7}
         aria-label="Framing prompt"
         data-testid="solva-framing-textarea"

@@ -107,32 +107,56 @@ def parse_recommendations_from_synthesis(text: str) -> List[Dict[str, Any]]:
     """Phase 15.2 \u2014 develop_strategy synthesis post-processing.
 
     Walks the synthesis text and pulls out lines starting with
-    'Recommendation N:' / numbered bullets. Returns a list of
-    `{text, ordinal}` dicts. Confidence bands are populated by the
-    probability_weighting engine downstream \u2014 this function only
-    extracts the textual recommendations.
+    'Recommendation N:' / numbered bullets / markdown-bolded variants.
+    Returns a list of `{text, ordinal}` dicts. Confidence bands are
+    populated by the probability_weighting engine downstream \u2014 this
+    function only extracts the textual recommendations.
+
+    Phase B.1 (2026-05-10) \u2014 the regex now accepts the markdown-bold
+    forms the synthesis layer actually emits in production:
+      **Recommendation 1:** ...
+      **Recommendation:** ...
+      __Recommendation 1:__ ...
+    The previous form `[*\\-]\\s+` only caught single-asterisk bullets
+    and matched zero of the bolded \"**Recommendation N:**\" lines real
+    Solva sessions produce, leaving `synthesis.recommendations = []`
+    on every develop_strategy artefact.
     """
     import re
 
     if not text:
         return []
     out: List[Dict[str, Any]] = []
-    # Match  "Recommendation: ...", "Recommendation 1: ...", "1) ...",
-    # "1. ..." at the start of a line. Stop at the next blank line OR the
-    # next recommendation marker.
     lines = text.splitlines()
     current: List[str] = []
     ordinal = 0
+    # Match any of:
+    #   "Recommendation: ...", "Recommendation 1: ...", "Recommendation 2 \u2014 ..."
+    #   "1) ...", "1. ..."
+    # Optionally preceded by:
+    #   - markdown bullet (* or -) + space
+    #   - markdown bold (** or __) which may also wrap the ": " (e.g.
+    #     "**Recommendation 1:**" \u2014 trailing ** stripped from group 1).
     pattern = re.compile(
-        r"^\s*(?:[*\-]\s+)?(?:Recommendation\s*\d*\s*[:\u2014]|\d+[\.\)]\s+)\s*(.*)$",
+        r"^\s*(?:[*\-]\s+)?"                   # optional bullet
+        r"(?:\*\*|__)?\s*"                     # optional opening bold
+        r"(?:Recommendation\s*\d*\s*[:\u2014]" # "Recommendation 1:" or em-dash variant
+        r"|\d+[\.\)]\s+)"                      # OR numeric list "1." / "1)"
+        r"(?:\*\*|__)?\s*"                     # optional closing bold (e.g. **Rec 1:**)
+        r"(.*)$",
         re.IGNORECASE,
     )
+    # Strip a trailing markdown-bold pair from the captured tail (handles
+    # the "**Recommendation 1:** body **trailing**" rare case).
+    strip_trailing_bold = re.compile(r"\*\*\s*$|__\s*$")
 
     def flush():
         nonlocal current, ordinal
         if current:
             ordinal += 1
-            out.append({"ordinal": ordinal, "text": " ".join(current).strip()})
+            joined = " ".join(current).strip()
+            joined = strip_trailing_bold.sub("", joined).strip()
+            out.append({"ordinal": ordinal, "text": joined})
             current = []
 
     for line in lines:
