@@ -124,6 +124,16 @@ _DENY_SIGNALS: FrozenSet[str] = frozenset({
     "severity",                    # historical / not-yet-canonical.
     "fielded_metric",              # historical, dropped defensively.
     "actor", "actor_email",
+    # Phase G — lifecycle, dedup, comments are scoped to a single tenant
+    # and MUST NEVER appear in cross-board aggregator outputs.
+    "state",                       # G.1 lifecycle (active|bookmarked|resolved|archived)
+    "content_hash",                # G.3 dedup fingerprint — pinpoints content
+    "merge_count",                 # G.3 dedup counter
+    "comments",                    # G.5 first-class comments — content
+    "bookmarked_at", "bookmarked_by",
+    "resolved_at", "resolved_by", "resolution_note",
+    "last_merged_at",
+    "reasoning",                   # G.4 drawer payload — content
 })
 
 _ALLOW_BOARDPACKS: FrozenSet[str] = frozenset({

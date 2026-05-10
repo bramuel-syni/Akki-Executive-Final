@@ -250,22 +250,26 @@ async def _stage_persist(
             "verifier_note": v.get("verifier_note", ""),
             "created_at": created_at,
             "status": "active",
+            "state": "active",       # Phase G.1
+            "comments": [],          # Phase G.5
         }
-        await db.signals.insert_one(sig)
-        sig.pop("_id", None)
-        # Phase E.0.2 — cross-board metadata signature derivation.
-        try:
-            from services.metadata_signatures import derive_and_persist
-            await derive_and_persist(
-                db,
-                text=f"{sig.get('headline') or ''} {sig.get('summary') or ''}",
-                context_id=context_id,
-                account_id=actor_id,
-                source_artefact_kind="signal",
-                source_artefact_id=sig["id"],
-            )
-        except Exception:  # pragma: no cover — non-fatal
-            pass
+        # Phase G.3 — dedup against existing same-context content.
+        from services.signal_dedup import dedup_or_insert
+        sig, inserted = await dedup_or_insert(db, sig)
+        # Phase E.0.2 — only derive signatures on a real insert.
+        if inserted:
+            try:
+                from services.metadata_signatures import derive_and_persist
+                await derive_and_persist(
+                    db,
+                    text=f"{sig.get('headline') or ''} {sig.get('summary') or ''}",
+                    context_id=context_id,
+                    account_id=actor_id,
+                    source_artefact_kind="signal",
+                    source_artefact_id=sig["id"],
+                )
+            except Exception:  # pragma: no cover — non-fatal
+                pass
         persisted.append(sig)
     await _emit(context_id, pipeline_run_id, "signal.persisted",
                 {"count": len(persisted)}, actor_id)

@@ -40,7 +40,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from core import db, iso, now, require_context_membership, write_audit
@@ -231,6 +231,19 @@ async def pulse_feed(
 
     sigs = await db.signals.find(base_query, {"_id": 0})\
         .sort("created_at", -1).to_list(500)
+
+    # Phase G.3 — priority sort on Active landing: confidence × recency.
+    # high=3, medium=2, low=1. Within the same confidence bucket the newer
+    # signal wins. Other tabs keep recency-only ordering.
+    if state_arg == "active":
+        _CONF_RANK = {"high": 3, "medium": 2, "low": 1}
+        sigs.sort(
+            key=lambda s: (
+                _CONF_RANK.get((s.get("confidence") or "medium").lower(), 2),
+                s.get("created_at") or "",
+            ),
+            reverse=True,
+        )
 
     me_acct = ctx["account"]["id"]
     cards: List[Dict[str, Any]] = []

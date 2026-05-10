@@ -382,6 +382,11 @@ async def on_startup():
     await db.documents.create_index("id", unique=True)
     await db.signals.create_index([("context_id", 1), ("created_at", -1)])
     await db.signals.create_index("id", unique=True)
+    # Phase G.1 — lifecycle index. Active landing query filters on state.
+    await db.signals.create_index([("context_id", 1), ("state", 1), ("created_at", -1)])
+    # Phase G.3 — content_hash dedup. Compound on (context_id, content_hash)
+    # makes the find_one in services.signal_dedup O(log n).
+    await db.signals.create_index([("context_id", 1), ("content_hash", 1)])
     await db.ask_messages.create_index([("context_id", 1), ("created_at", -1)])
     await db.shares.create_index("id", unique=True)
     await db.shares.create_index([("shared_with_account_id", 1), ("created_at", -1)])

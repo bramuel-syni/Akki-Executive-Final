@@ -145,24 +145,34 @@ async def generate_signals(
             "mode": llm_out.get("mode"),
             "created_at": created_at, "status": "active",
         }
-        await db.signals.insert_one(doc)
-        doc.pop("_id", None)
+        # Phase G.3 — content_hash + merge_count dedup. If the same
+        # (type, headline, summary) tuple already exists in this
+        # context, we increment merge_count instead of inserting a
+        # duplicate row. `merged` is False when an existing row was
+        # bumped; True when a fresh row was inserted.
+        from services.signal_dedup import dedup_or_insert
+        # Phase G.1 default — every freshly-emitted signal lands on
+        # the Active tab. `state` is the canonical lifecycle field;
+        # `status` is kept for back-compat with pre-G readers.
+        doc["state"] = "active"
+        doc["comments"] = []
+        doc, merged = await dedup_or_insert(db, doc)
         # Phase E.0.2 — derive cross-board metadata signatures from
-        # the freshly-inserted signal. Synchronous (small N), wrapped
-        # in best-effort try inside derive_and_persist so write
-        # failures never break the parent insert.
-        try:
-            from services.metadata_signatures import derive_and_persist
-            await derive_and_persist(
-                db,
-                text=f"{doc.get('headline') or ''} {doc.get('summary') or ''}",
-                context_id=context_id,
-                account_id=ctx["account"]["id"],
-                source_artefact_kind="signal",
-                source_artefact_id=doc["id"],
-            )
-        except Exception:  # pragma: no cover — non-fatal
-            pass
+        # the freshly-inserted signal. Skip on merge — the existing
+        # row already has its signatures.
+        if merged:
+            try:
+                from services.metadata_signatures import derive_and_persist
+                await derive_and_persist(
+                    db,
+                    text=f"{doc.get('headline') or ''} {doc.get('summary') or ''}",
+                    context_id=context_id,
+                    account_id=ctx["account"]["id"],
+                    source_artefact_kind="signal",
+                    source_artefact_id=doc["id"],
+                )
+            except Exception:  # pragma: no cover — non-fatal
+                pass
         stored.append(doc)
 
     await write_audit(
