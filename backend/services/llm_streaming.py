@@ -170,11 +170,79 @@ async def _stream_gemini(
 
 
 # ---------------------------------------------------------------------------
+# Direct streaming — OpenAI native SDK.
+#
+# Phase A.3 (2026-05-10) — preferred path for GPT-5.2 when an
+# OPENAI_API_KEY is present in the environment. The LiteLLM-via-Emergent-
+# proxy path buffers the full response server-side and yields all chunks
+# at machine speed when generation completes (verified by direct probe
+# in Phase A.2: 903 chunks in a 0.48 s window after a 25 s wait). Native
+# `openai.AsyncOpenAI().chat.completions.create(stream=True)` yields
+# tokens at SDK pace, which is what the chat UI needs to render
+# progressively.
+#
+# `provider_used` reports `openai_direct` so the audit envelope is
+# byte-identical to the Anthropic / Gemini direct paths.
+# ---------------------------------------------------------------------------
+async def _stream_openai_native(
+    *, model_id: str, system_msg: str, user_text: str, max_tokens: int = 4096,
+) -> AsyncIterator[LlmStreamChunk]:
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY not set")
+    # Local import keeps the openai SDK out of the import graph for
+    # environments that don't ship a key.
+    from openai import AsyncOpenAI
+    client = AsyncOpenAI(api_key=api_key)
+    parts: List[str] = []
+    # Phase A.3 — gpt-5.x and o1.x reject the legacy `max_tokens` param
+    # and require `max_completion_tokens`. Older models keep the legacy
+    # name. Pick by model-id prefix so this works for both.
+    cap_kwargs: Dict[str, int]
+    mid = (model_id or "").lower()
+    if mid.startswith(("gpt-5", "o1", "o3", "o4")):
+        cap_kwargs = {"max_completion_tokens": max_tokens}
+    else:
+        cap_kwargs = {"max_tokens": max_tokens}
+    stream = await client.chat.completions.create(
+        model=model_id,
+        messages=[
+            {"role": "system", "content": system_msg or "You are a helpful assistant."},
+            {"role": "user",   "content": user_text},
+        ],
+        stream=True,
+        **cap_kwargs,
+    )
+    async for chunk in stream:
+        try:
+            delta = chunk.choices[0].delta
+            text = getattr(delta, "content", None)
+        except (AttributeError, IndexError, KeyError):
+            text = None
+        if not text:
+            continue
+        parts.append(text)
+        yield LlmStreamChunk(
+            kind="delta", text=text, provider_used="openai_direct",
+        )
+    yield LlmStreamChunk(
+        kind="done", text="".join(parts), provider_used="openai_direct",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Direct streaming — OpenAI (and Gemini fallback) via LiteLLM through the
 # Emergent integrations proxy. This is the SAME library and proxy URL
 # `emergentintegrations.LlmChat` already uses for non-streaming calls; we
 # just turn on `stream=True` and iterate the OpenAI-compat delta chunks.
 # No new SDK, no new key — re-uses EMERGENT_LLM_KEY.
+#
+# Phase A.3 — for OpenAI this path is now the SECOND-choice fallback;
+# `_stream_openai_native` is preferred whenever `OPENAI_API_KEY` is set.
+# This path remains the primary streamer for environments that only
+# have `EMERGENT_LLM_KEY`. `provider_used` is left as `openai_direct`
+# (still real per-token streaming from the SDK's perspective; the
+# fallback flag in `done` distinguishes proxy vs native when needed).
 # ---------------------------------------------------------------------------
 async def _stream_via_litellm_proxy(
     *, provider: str, model_id: str, system_msg: str, user_text: str,
@@ -287,7 +355,13 @@ async def stream_llm_direct(
         direct_gen = _stream_anthropic
     elif provider == "gemini":
         direct_gen = _stream_gemini
-    else:  # openai (gpt-5.2) — direct via litellm through Emergent proxy
+    elif provider == "openai" and os.environ.get("OPENAI_API_KEY"):
+        # Phase A.3 — native OpenAI SDK streaming when the key is
+        # provisioned. This is the only path that yields tokens at
+        # SDK pace; LiteLLM-via-Emergent-proxy is machine-speed
+        # buffered (see Phase A.2 diagnostic).
+        direct_gen = _stream_openai_native
+    else:  # openai (gpt-5.2) without OPENAI_API_KEY → litellm/proxy
         direct_gen = _stream_via_litellm_proxy
 
     parts: List[str] = []
