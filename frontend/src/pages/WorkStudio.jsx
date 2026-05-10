@@ -1,520 +1,52 @@
 /**
- * WorkStudio — Phase C.1 rewire (memo Item 2).
+ * WorkStudio — Phase C.3 (memo: Work Studio frontend, final phase of C series).
  *
- * The Workspace surface is reorganised around the memo's three
- * aggregate types — Cycle Board Pack, Cycle Minutes, Cycle Board
- * Committee Packs — listed under a single tabbed control. Clicking a
- * row opens a side drawer (~50% page width) showing the topline strip
- * (doc count, contributor count, period) and notes classified by
- * topic, with citations to source documents. The drawer pattern is
- * the same one Phase E will adopt for the Document Journal.
+ * Three modes via internal state:
+ *   - `picker`     : the user picks a source to compose from
+ *   - `composing`  : a Compose drawer is open over the picker
+ *   - `workspace`  : after Generate, the page transitions to a brief
+ *                    workspace (revision strip + diff + actions). The
+ *                    Refine drawer opens over this view.
  *
- * A horizontal action bar sits above the listing with five buttons —
- * Export a Brief, Export a Summary Deck, Export a Report, Enhance my
- * Deck, Enhance my Report. In C.1 they are visible but inert; they
- * raise a toast saying the action will work in the next phase. The
- * actual export and enhance logic ships in C.2 and C.3.
+ * Reads from existing endpoints (no backend change in C.3):
+ *   GET /api/solva/v2/sessions?status=completed
+ *   GET /api/chats?limit=…
+ *   GET /api/work_studio/picker
+ *   POST /api/work_studio/exports
+ *   GET /api/work_studio/briefs/{bid}
+ *   GET /api/work_studio/briefs/{bid}/revisions
+ *   GET /api/work_studio/briefs/{bid}/revisions/{rid}/diff
+ *   POST /api/work_studio/briefs/{bid}/enhance
+ *   POST /api/work_studio/briefs/{bid}/set_active
  *
- * The existing Decks and Reports tabs remain below the briefs listing
- * (frozen until C.2 redesigns the output to production quality). Each
- * tab now carries a one-line "About" caption in restraint voice.
- *
- * Read endpoints (Phase C.1 — added to backend/routers/briefings.py):
- *   GET /api/contexts/{cid}/briefings/aggregates?kind=…    listing
- *   GET /api/contexts/{cid}/briefings/aggregates/{aid}     drawer detail
- *
- * Frozen surfaces NOT touched by this rewire:
- *   /app/workspace (Document Journal — Phase E),
- *   /app/contexts, Solva, Pulse, Cycle Manager, Chat, AppShell nav.
+ * Phase 13 surfaces (legacy aggregates + ExportModal + EnhanceModal)
+ * have been retired in this phase per the C.3 brief — they posted to
+ * obsolete endpoints and the C.3 source-picker → compose → refine flow
+ * supersedes them entirely.
  */
-import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import React, { useState } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
-import { api, apiErrorMessage } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import ValidatedBadge from "@/components/trust/ValidatedBadge";
-import { toast } from "sonner";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
-import ExportModal from "@/components/studio/ExportModal";
-import EnhanceModal from "@/components/studio/EnhanceModal";
-import {
-  FileText, Presentation, ScrollText, Plus, Loader2, ArrowRight, AlertCircle,
-  Layers, FolderOpen, FileDown, Wand2, Calendar, Users, Files,
-  Sparkles, Inbox, X as XIcon,
-} from "lucide-react";
+import { Sparkles } from "lucide-react";
+import SourcePicker from "@/components/work_studio/SourcePicker";
+import ComposeDrawer from "@/components/work_studio/ComposeDrawer";
+import BriefWorkspace from "@/components/work_studio/BriefWorkspace";
 
-// =============================================================================
-// Helpers
-// =============================================================================
-function shortAge(iso) {
-  if (!iso) return "—";
-  try {
-    const d = new Date(iso);
-    const ms = Date.now() - d.getTime();
-    const mins = Math.floor(ms / 60000);
-    if (mins < 1) return "just now";
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    const days = Math.floor(hrs / 24);
-    if (days < 30) return `${days}d ago`;
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  } catch { return "—"; }
-}
-
-function formatMeetingDate(iso) {
-  if (!iso) return "—";
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-  } catch { return "—"; }
-}
-
-function formatPeriod(period_start, period_end, fallback) {
-  if (period_start && period_end) {
-    try {
-      const a = new Date(period_start);
-      const b = new Date(period_end);
-      const monthA = a.toLocaleDateString(undefined, { month: "short" });
-      const monthB = b.toLocaleDateString(undefined, { month: "short" });
-      return `${monthA}–${monthB} ${b.getFullYear()}`;
-    } catch { /* fall through */ }
-  }
-  return fallback || "—";
-}
-
-function SensitivityChip({ s }) {
-  if (!s || !s.label) return null;
-  const cls = {
-    Public: "bg-emerald-50 text-emerald-700 border-emerald-100",
-    Internal: "bg-sky-50 text-sky-700 border-sky-100",
-    Confidential: "bg-amber-50 text-amber-800 border-amber-100",
-    Restricted: "bg-rose-50 text-rose-700 border-rose-100",
-  }[s.label] || "bg-[var(--cream-deep)] text-[var(--deep)] border-[var(--rule)]";
-  return (
-    <span className={`inline-flex items-center text-[10.5px] uppercase tracking-[0.14em] font-medium border rounded-sm px-1.5 py-[2px] ${cls}`}>
-      {s.label}
-    </span>
-  );
-}
-
-// =============================================================================
-// Three-aggregate-type briefs listing (Phase C.1 core)
-// =============================================================================
-const KIND_TABS = [
-  {
-    id: "cycle_board_pack",
-    label: "Cycle Board Pack",
-    short: "Board Pack",
-    icon: ScrollText,
-    empty: "No board packs prepared for this period yet.",
-  },
-  {
-    id: "cycle_minutes",
-    label: "Cycle Minutes",
-    short: "Minutes",
-    icon: FileText,
-    empty: "No minutes uploaded for this period.",
-  },
-  {
-    id: "cycle_committee_pack",
-    label: "Cycle Board Committee Packs",
-    short: "Committee Packs",
-    icon: FolderOpen,
-    empty: "No committee packs filed yet.",
-  },
-];
-
-function BriefRow({ row, onOpen }) {
-  const Icon = (KIND_TABS.find((k) => k.id === row.kind) || KIND_TABS[0]).icon;
-  return (
-    <button
-      type="button"
-      onClick={() => onOpen(row)}
-      className="w-full text-left border border-[var(--rule)] rounded-md bg-white px-4 py-3 flex items-start sm:items-center gap-3 flex-col sm:flex-row hover:border-[var(--accent)] hover:bg-[var(--cream-deep)]/40 transition-colors"
-      data-testid="work-studio-brief-row"
-    >
-      <Icon className="w-4 h-4 text-[var(--deep)] shrink-0 mt-1 sm:mt-0" strokeWidth={1.7} />
-      <div className="min-w-0 flex-1">
-        <p className="text-[14px] text-[var(--ink)] truncate" data-testid="work-studio-brief-row-name">
-          {row.name || "Untitled"}
-        </p>
-        <div className="flex items-center gap-3 mt-1 flex-wrap text-[11.5px] text-[var(--muted)]">
-          <span className="inline-flex items-center gap-1" data-testid="work-studio-brief-row-meeting">
-            <Calendar className="w-3 h-3" strokeWidth={1.7} />
-            {formatMeetingDate(row.meeting_date)}
-          </span>
-          <span className="inline-flex items-center gap-1" data-testid="work-studio-brief-row-docs">
-            <Files className="w-3 h-3" strokeWidth={1.7} />
-            {row.document_count} {row.document_count === 1 ? "document" : "documents"}
-          </span>
-          <span className="inline-flex items-center gap-1" data-testid="work-studio-brief-row-contribs">
-            <Users className="w-3 h-3" strokeWidth={1.7} />
-            {row.contributor_count} {row.contributor_count === 1 ? "contributor" : "contributors"}
-          </span>
-          {row.cycle_label && (
-            <span className="text-[10.5px] uppercase tracking-[0.14em] font-mono text-[var(--muted)]">
-              {row.cycle_label}
-            </span>
-          )}
-        </div>
-      </div>
-      <ArrowRight className="w-3.5 h-3.5 text-[var(--muted)] shrink-0" />
-    </button>
-  );
-}
-
-// Reusable side drawer — same shape Phase E will use for the Document
-// Journal. Keeps the page mounted underneath; user can dismiss with
-// the close button or the overlay click.
-function BriefDrawer({ open, onClose, aid, contextId }) {
-  const [loading, setLoading] = useState(false);
-  const [detail, setDetail] = useState(null);
-  const [err, setErr] = useState(null);
-
-  useEffect(() => {
-    if (!open || !aid || !contextId) return;
-    let cancelled = false;
-    setLoading(true);
-    setErr(null);
-    setDetail(null);
-    api.get(`/contexts/${contextId}/briefings/aggregates/${encodeURIComponent(aid)}`)
-      .then(({ data }) => { if (!cancelled) setDetail(data); })
-      .catch((e) => { if (!cancelled) setErr(apiErrorMessage(e)); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [open, aid, contextId]);
-
-  return (
-    <Sheet open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <SheetContent
-        side="right"
-        className="w-full sm:max-w-[50vw] sm:w-[50vw] overflow-y-auto bg-[var(--paper)] p-0"
-        data-testid="work-studio-brief-drawer"
-      >
-        <div className="px-6 py-5 border-b border-[var(--rule)] flex items-start gap-3 sticky top-0 bg-[var(--paper)] z-10">
-          <div className="min-w-0 flex-1">
-            <SheetHeader className="text-left">
-              <SheetTitle className="akki-serif text-[20px] text-[var(--ink)] leading-snug" data-testid="work-studio-brief-drawer-title">
-                {detail?.name || "Loading…"}
-              </SheetTitle>
-              <SheetDescription className="text-[12px] text-[var(--muted)]">
-                Brief detail · close with Esc or the X
-              </SheetDescription>
-            </SheetHeader>
-          </div>
-          <button
-            onClick={onClose}
-            type="button"
-            className="text-[var(--muted)] hover:text-[var(--ink)] p-1"
-            aria-label="Close drawer"
-            data-testid="work-studio-brief-drawer-close"
-          >
-            <XIcon className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="px-6 py-5">
-          {loading && (
-            <div className="text-[var(--muted)] text-sm flex items-center gap-2" data-testid="work-studio-brief-drawer-loading">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading detail…
-            </div>
-          )}
-          {err && (
-            <div className="text-amber-900 bg-amber-50 border border-amber-100 rounded-sm px-3 py-2 text-[12.5px] flex items-center gap-2" data-testid="work-studio-brief-drawer-err">
-              <AlertCircle className="w-3.5 h-3.5" /> {err}
-            </div>
-          )}
-          {detail && !loading && !err && (
-            <>
-              {/* Topline strip — memo: doc count, contributors, period */}
-              <div
-                className="grid grid-cols-3 gap-3 mb-6 border border-[var(--rule)] rounded-md bg-white px-3 py-3"
-                data-testid="work-studio-brief-drawer-topline"
-              >
-                <div>
-                  <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Documents</p>
-                  <p className="text-[18px] akki-serif text-[var(--ink)]">{detail.topline?.doc_count ?? 0}</p>
-                </div>
-                <div>
-                  <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Contributors</p>
-                  <p className="text-[18px] akki-serif text-[var(--ink)]">{detail.topline?.contributor_count ?? 0}</p>
-                </div>
-                <div>
-                  <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Period</p>
-                  <p className="text-[14px] akki-serif text-[var(--ink)] truncate" title={detail.topline?.period}>
-                    {formatPeriod(detail.period_start, detail.period_end, detail.topline?.period)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Notes — classified by topic with citations */}
-              <h3 className="akki-serif text-[15px] text-[var(--ink)] mb-3">Notes</h3>
-              {(!detail.notes || detail.notes.length === 0) ? (
-                <p className="text-[12.5px] text-[var(--muted)] italic" data-testid="work-studio-brief-drawer-no-notes">
-                  No notes yet for this aggregate.
-                </p>
-              ) : (
-                <ul className="space-y-4" data-testid="work-studio-brief-drawer-notes">
-                  {detail.notes.map((n, i) => (
-                    <li key={i} className="border border-[var(--rule)] rounded-md bg-white px-4 py-3" data-testid="work-studio-brief-drawer-note">
-                      <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">{n.topic || "Note"}</p>
-                      <p className="akki-serif text-[14px] text-[var(--ink)] leading-[1.6] whitespace-pre-wrap">{n.body || "—"}</p>
-                      {n.citations && n.citations.length > 0 && (
-                        <div className="mt-3 pt-2 border-t border-[var(--rule)] flex flex-wrap gap-2" data-testid="work-studio-brief-drawer-citations">
-                          {n.citations.map((c, j) => (
-                            <Link
-                              key={`${c.doc_id}-${j}`}
-                              to={`/app/documents/${c.doc_id}`}
-                              className="inline-flex items-center gap-1 text-[11px] text-[var(--accent)] hover:text-[var(--accent-dark)] border border-[var(--rule)] rounded-sm px-1.5 py-[2px] bg-[var(--cream-deep)]/40"
-                              title={c.doc_name}
-                            >
-                              <FileText className="w-3 h-3" strokeWidth={1.7} />
-                              <span className="truncate max-w-[180px]">{c.doc_name || c.doc_id}</span>
-                            </Link>
-                          ))}
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          )}
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-// Five-button action bar — three Export buttons (Phase C.2) and two
-// Enhance buttons (Phase C.3) wired to their respective modals.
-function ActionBar({ onExportClick, onEnhanceClick }) {
-  const ACTIONS = [
-    { id: "export_brief",    label: "Export a Brief",         icon: FileDown,  kind: "brief",  flow: "export"  },
-    { id: "export_deck",     label: "Export a Summary Deck",  icon: FileDown,  kind: "deck",   flow: "export"  },
-    { id: "export_report",   label: "Export a Report",        icon: FileDown,  kind: "report", flow: "export"  },
-    { id: "enhance_deck",    label: "Enhance my Deck",        icon: Wand2,     kind: "deck",   flow: "enhance" },
-    { id: "enhance_report",  label: "Enhance my Report",      icon: Wand2,     kind: "report", flow: "enhance" },
-  ];
-  return (
-    <div
-      className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 border border-[var(--rule)] bg-white rounded-md"
-      data-testid="work-studio-action-bar"
-      role="toolbar"
-      aria-label="Work Studio actions"
-    >
-      {ACTIONS.map((a) => {
-        const Icon = a.icon;
-        return (
-          <Button
-            key={a.id}
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => a.flow === "export" ? onExportClick(a.kind) : onEnhanceClick(a.kind)}
-            className="rounded-sm border-[var(--rule)] text-[12.5px] hover:border-[var(--accent)]"
-            data-testid={`work-studio-action-${a.id}`}
-          >
-            <Icon className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.7} /> {a.label}
-          </Button>
-        );
-      })}
-    </div>
-  );
-}
-
-// =============================================================================
-// Decks + Reports — preserved Phase 13.3 listing (frozen until C.2)
-// =============================================================================
-function ArtefactRow({ kind, item }) {
-  const href = item.href || "#";
-  const updated = item.updated_at || item.modified_at || item.created_at;
-  const Icon = kind === "briefing" ? ScrollText : kind === "deck" ? Presentation : FileText;
-  return (
-    <li className="border border-[var(--rule)] rounded-md bg-white px-4 py-3 flex items-start sm:items-center gap-3 flex-col sm:flex-row" data-testid="work-studio-row">
-      <Icon className="w-4 h-4 text-[var(--deep)] shrink-0 mt-1 sm:mt-0" strokeWidth={1.7} />
-      <div className="min-w-0 flex-1">
-        <p className="text-[14px] text-[var(--ink)] truncate">{item.title || "Untitled"}</p>
-        <div className="flex items-center gap-2 mt-1 flex-wrap">
-          <span className="text-[11px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">
-            {kind} · {item.status || "draft"}
-          </span>
-          <SensitivityChip s={item.sensitivity} />
-          {item.synisense_version >= 1 && (
-            <span className="text-[10px] uppercase tracking-[0.14em] font-mono text-[var(--accent)]">shielded</span>
-          )}
-          {item.validation && <ValidatedBadge size="compact" validation={item.validation} />}
-        </div>
-      </div>
-      <span className="text-[11.5px] text-[var(--muted)] shrink-0 sm:ml-2" title={updated || ""}>
-        {shortAge(updated)}
-      </span>
-      <Link to={href} className="shrink-0">
-        <Button variant="ghost" size="sm" className="text-[12.5px] text-[var(--accent)] hover:bg-[var(--accent-soft)]">
-          Open <ArrowRight className="w-3.5 h-3.5 ml-1" />
-        </Button>
-      </Link>
-    </li>
-  );
-}
-
-async function loadDecksReports(cid) {
-  // Existing Phase 13.3 sources, retained for the lower section.
-  const out = { decks: [], reports: [], errors: [] };
-  try {
-    const { data } = await api.get(`/contexts/${cid}/decks`);
-    const raw = Array.isArray(data) ? data : (data?.items || data?.decks || []);
-    const items = raw.filter((d) => (d.status || "draft") !== "sent");
-    out.decks = items.map((d) => ({ ...d, href: `/app/decks/${d.id}` }));
-  } catch (e) { out.errors.push(["decks", apiErrorMessage(e)]); }
-  try {
-    const { data } = await api.get(`/reports/inbox`);
-    const items = (data?.reports || data?.items || []).filter((r) => {
-      if (r.context_id && r.context_id !== cid) return false;
-      const s = (r.status || "draft").toLowerCase();
-      return s !== "sent" && s !== "finalised" && s !== "finalized" && s !== "complete" && s !== "archived";
-    });
-    out.reports = items.map((r) => ({ ...r, href: `/app/cycle?tab=overview&report=${r.id}` }));
-  } catch {
-    out.reports = [];
-  }
-  return out;
-}
-
-// =============================================================================
-// Main
-// =============================================================================
 export default function WorkStudio() {
   const { activeContext } = useAuth();
   const cid = activeContext?.id;
-  const [searchParams, setSearchParams] = useSearchParams();
+  const cname = activeContext?.name;
 
-  // Top tabs for the three aggregate kinds.
-  const initialKind = (() => {
-    const k = (searchParams.get("kind") || "cycle_board_pack").toLowerCase();
-    return KIND_TABS.find((t) => t.id === k) ? k : "cycle_board_pack";
-  })();
-  const [kind, setKind] = useState(initialKind);
-  const [aggLoading, setAggLoading] = useState(true);
-  const [aggItems, setAggItems] = useState([]);
-  const [aggErr, setAggErr] = useState(null);
+  // mode ∈ "picker" | "workspace"
+  const [mode, setMode] = useState("picker");
 
-  // Drawer state.
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerAid, setDrawerAid] = useState(null);
+  // Picked source (passed to ComposeDrawer).
+  const [source, setSource] = useState(null);
+  const [composeOpen, setComposeOpen] = useState(false);
 
-  // Phase C.2 — export modal state.
-  const [exportOpen, setExportOpen] = useState(false);
-  const [exportKind, setExportKind] = useState("brief");
-
-  // Phase C.3 — enhance modal state.
-  const [enhanceOpen, setEnhanceOpen] = useState(false);
-  const [enhanceKind, setEnhanceKind] = useState("deck");
-
-  // Decks + reports (lower section).
-  const [drData, setDrData] = useState({ decks: [], reports: [], errors: [] });
-  const [drLoading, setDrLoading] = useState(true);
-  // Inner tab for decks/reports section.
-  const initialView = (() => {
-    const v = (searchParams.get("view") || "decks").toLowerCase();
-    return ["decks", "reports"].includes(v) ? v : "decks";
-  })();
-  const [view, setView] = useState(initialView);
-
-  const fetchAggregates = useCallback(async () => {
-    if (!cid) return;
-    setAggLoading(true);
-    setAggErr(null);
-    try {
-      const { data } = await api.get(`/contexts/${cid}/briefings/aggregates`, { params: { kind } });
-      setAggItems(data?.items || []);
-    } catch (e) {
-      setAggErr(apiErrorMessage(e));
-      setAggItems([]);
-    } finally {
-      setAggLoading(false);
-    }
-  }, [cid, kind]);
-
-  useEffect(() => { fetchAggregates(); }, [fetchAggregates]);
-
-  useEffect(() => {
-    if (!cid) return;
-    let cancelled = false;
-    setDrLoading(true);
-    loadDecksReports(cid).then((res) => {
-      if (cancelled) return;
-      setDrData(res);
-      setDrLoading(false);
-      res.errors.forEach(([k, msg]) => toast.error(`Could not load ${k}: ${msg}`));
-    });
-    return () => { cancelled = true; };
-  }, [cid]);
-
-  const onKind = (next) => {
-    setKind(next);
-    const sp = new URLSearchParams(searchParams);
-    if (next === "cycle_board_pack") sp.delete("kind"); else sp.set("kind", next);
-    setSearchParams(sp, { replace: true });
-  };
-
-  const onView = (next) => {
-    setView(next);
-    const sp = new URLSearchParams(searchParams);
-    if (next === "decks") sp.delete("view"); else sp.set("view", next);
-    setSearchParams(sp, { replace: true });
-  };
-
-  const onActionInProgress = (label) => {
-    toast(`${label} — this will work in the next phase.`, {
-      description: "Action queued for C.3.",
-      duration: 3500,
-    });
-  };
-
-  const onExportClick = (kind) => {
-    setExportKind(kind);
-    setExportOpen(true);
-  };
-
-  const onEnhanceClick = (kind) => {
-    setEnhanceKind(kind);
-    setEnhanceOpen(true);
-  };
-
-  const onOpenBrief = (row) => {
-    setDrawerAid(row.id);
-    setDrawerOpen(true);
-  };
-  const onCloseDrawer = () => {
-    setDrawerOpen(false);
-    // Keep the aid so the drawer-content state isn't immediately blanked
-    // during the close transition. Reset on next open.
-  };
-
-  // Sorted derived lists for the lower Decks/Reports section. Computed
-  // BEFORE the !cid early return so hook count stays constant across
-  // renders (rules-of-hooks).
-  const visibleDecks = useMemo(
-    () => [...(drData.decks || [])].sort(
-      (a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0),
-    ),
-    [drData],
-  );
-  const visibleReports = useMemo(
-    () => [...(drData.reports || [])].sort(
-      (a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0),
-    ),
-    [drData],
-  );
+  // After compose, what we know about the resulting brief + first export.
+  const [briefId, setBriefId] = useState(null);
+  const [initialExport, setInitialExport] = useState(null);
 
   if (!cid) {
     return (
@@ -524,197 +56,68 @@ export default function WorkStudio() {
     );
   }
 
+  const onPick = (s) => {
+    setSource(s);
+    setComposeOpen(true);
+  };
+
+  const onComposed = (composed) => {
+    setComposeOpen(false);
+    setSource(null);
+    setBriefId(composed.brief_id);
+    setInitialExport({
+      download_url: composed.download_url,
+      filename: composed.filename,
+      size_bytes: composed.size_bytes,
+      export_id: composed.export_id,
+      revision_id: composed.revision_id,
+      format: composed.format,
+      depth: composed.depth,
+      fidelity: composed.fidelity,
+    });
+    setMode("workspace");
+  };
+
+  const onBack = () => {
+    setMode("picker");
+    setBriefId(null);
+    setInitialExport(null);
+  };
+
   return (
     <AppShell>
       <div className="akki-w-medium px-8 py-10" data-testid="work-studio">
         <p className="akki-overline mb-2 flex items-center gap-2">
-          <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Work Studio · {activeContext.name}
-        </p>
-        <h1 className="akki-greeting mb-2">Check or review your work.</h1>
-        <p className="akki-meta max-w-2xl">
-          Cycle aggregates for <strong className="text-[var(--ink)]">{activeContext.name}</strong> — board packs, minutes, and committee packs. Click any row for the topline and notes.
+          <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Work Studio · {cname}
         </p>
 
-        {/* C.4 — action bar sits directly after the intro copy and BEFORE the kind tabs */}
-        <div className="mt-6">
-          <ActionBar
-            onExportClick={onExportClick}
-            onEnhanceClick={onEnhanceClick}
-          />
-        </div>
-
-        {/* C.4 — section heading above the kind tabs */}
-        <h2
-          className="akki-serif text-[18px] text-[var(--ink)] font-medium mt-6 mb-2"
-          data-testid="work-studio-section-heading"
-        >
-          Cycle Board Pack, Briefs and Reports
-        </h2>
-
-        {/* Three-tab kind selector */}
-        <div className="border-b border-[var(--rule)] flex items-stretch gap-0 mb-4 flex-wrap" data-testid="work-studio-kind-tabs">
-          {KIND_TABS.map((t) => {
-            const Icon = t.icon;
-            const active = kind === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => onKind(t.id)}
-                className={`px-5 py-3 text-[14px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
-                  active
-                    ? "border-[var(--accent)] text-[var(--ink)] font-medium"
-                    : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
-                }`}
-                data-testid={`work-studio-kind-tab-${t.id}${active ? "-active" : ""}`}
-                aria-current={active ? "page" : undefined}
-              >
-                <Icon className="w-3.5 h-3.5" strokeWidth={1.7} />
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Aggregate listing */}
-        {aggLoading ? (
-          <div className="p-12 text-center text-[var(--muted)] text-sm flex items-center justify-center gap-2" data-testid="work-studio-agg-loading">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loading {KIND_TABS.find((t) => t.id === kind).short.toLowerCase()}…
-          </div>
-        ) : aggErr ? (
-          <div className="p-4 bg-amber-50 border border-amber-100 rounded-md text-[12px] text-amber-900 flex items-center gap-2" data-testid="work-studio-agg-err">
-            <AlertCircle className="w-3.5 h-3.5" /> {aggErr}
-          </div>
-        ) : aggItems.length === 0 ? (
-          <div className="p-12 text-center border border-[var(--rule)] rounded-md bg-white" data-testid="work-studio-agg-empty">
-            <Layers className="w-6 h-6 text-[var(--muted)] mx-auto mb-3" />
-            <p className="text-[14px] text-[var(--ink)] font-medium">{KIND_TABS.find((t) => t.id === kind).empty}</p>
-            <p className="text-[12.5px] text-[var(--muted)] mt-1 max-w-md mx-auto">
-              When the cycle has data for this aggregate, rows will appear here.
+        {mode === "picker" && (
+          <>
+            <h1 className="akki-greeting mb-2">Compose a board-grade artefact.</h1>
+            <p className="akki-meta max-w-2xl mb-8">
+              Pick a Solva session or a chat to compose into a Brief. Two-pass refine works on the
+              persisted Brief; section-level diffs and revision history are preserved across attempts.
             </p>
-          </div>
-        ) : (
-          <ul className="space-y-2" data-testid="work-studio-agg-list">
-            {aggItems.map((row) => (
-              <BriefRow key={row.id} row={row} onOpen={onOpenBrief} />
-            ))}
-          </ul>
+            <SourcePicker contextId={cid} onPick={onPick} />
+          </>
         )}
 
-        {/* Existing Decks / Reports section — preserved, with About lines */}
-        <div className="mt-12">
-          <div className="border-b border-[var(--rule)] flex items-stretch gap-0 mb-3 flex-wrap" data-testid="work-studio-dr-tabs">
-            <button
-              type="button"
-              onClick={() => onView("decks")}
-              className={`px-5 py-3 text-[14px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
-                view === "decks"
-                  ? "border-[var(--accent)] text-[var(--ink)] font-medium"
-                  : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
-              }`}
-              data-testid={`work-studio-dr-tab-decks${view === "decks" ? "-active" : ""}`}
-            >
-              <Presentation className="w-3.5 h-3.5" strokeWidth={1.7} />
-              Decks
-              <span className="text-[11px] text-[var(--muted)] font-mono">· {visibleDecks.length}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onView("reports")}
-              className={`px-5 py-3 text-[14px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
-                view === "reports"
-                  ? "border-[var(--accent)] text-[var(--ink)] font-medium"
-                  : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
-              }`}
-              data-testid={`work-studio-dr-tab-reports${view === "reports" ? "-active" : ""}`}
-            >
-              <FileText className="w-3.5 h-3.5" strokeWidth={1.7} />
-              Reports
-              <span className="text-[11px] text-[var(--muted)] font-mono">· {visibleReports.length}</span>
-            </button>
-          </div>
-
-          {/* About line — restraint voice. */}
-          <p className="text-[12.5px] text-[var(--muted)] mb-4 max-w-2xl" data-testid="work-studio-dr-about">
-            {view === "decks"
-              ? "Decks gather slides for board read-outs and committee briefings. Lifecycle stays draft → review → approve → send."
-              : "Reports collect cycle responses ready for review and send. The reviewer queue routes them through compose, polish, and send-up."}
-          </p>
-
-          {drLoading ? (
-            <div className="p-12 text-center text-[var(--muted)] text-sm flex items-center justify-center gap-2" data-testid="work-studio-dr-loading">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading {view}…
-            </div>
-          ) : view === "decks" ? (
-            visibleDecks.length === 0 ? (
-              <div className="p-10 text-center border border-[var(--rule)] rounded-md bg-white" data-testid="work-studio-dr-empty">
-                <Presentation className="w-6 h-6 text-[var(--muted)] mx-auto mb-3" />
-                <p className="text-[14px] text-[var(--ink)] font-medium">No decks in flight.</p>
-                <p className="text-[12.5px] text-[var(--muted)] mt-1 max-w-md mx-auto">
-                  Drafts you save will land here. Use the Decks builder to start a new one.
-                </p>
-                <Link to="/app/decks" className="mt-4 inline-block">
-                  <Button variant="outline" size="sm" className="rounded-sm border-[var(--rule)] text-[12.5px]">
-                    <Plus className="w-3.5 h-3.5 mr-1.5" /> Open the deck builder
-                  </Button>
-                </Link>
-              </div>
-            ) : (
-              <ul className="space-y-2" data-testid="work-studio-dr-decks">
-                {visibleDecks.map((d) => <ArtefactRow key={`dck-${d.id}`} kind="deck" item={d} />)}
-              </ul>
-            )
-          ) : (
-            visibleReports.length === 0 ? (
-              <div className="p-10 text-center border border-[var(--rule)] rounded-md bg-white" data-testid="work-studio-dr-empty-reports">
-                <FileText className="w-6 h-6 text-[var(--muted)] mx-auto mb-3" />
-                <p className="text-[14px] text-[var(--ink)] font-medium">No reports in your reviewer queue.</p>
-                <p className="text-[12.5px] text-[var(--muted)] mt-1 max-w-md mx-auto">
-                  Reports waiting on your review will appear here.
-                </p>
-                <Link to="/app/cycle?tab=overview" className="mt-4 inline-block">
-                  <Button variant="outline" size="sm" className="rounded-sm border-[var(--rule)] text-[12.5px]">
-                    <Inbox className="w-3.5 h-3.5 mr-1.5" /> Open Cycle Manager
-                  </Button>
-                </Link>
-              </div>
-            ) : (
-              <ul className="space-y-2" data-testid="work-studio-dr-reports">
-                {visibleReports.map((r) => <ArtefactRow key={`rpt-${r.id}`} kind="report" item={r} />)}
-              </ul>
-            )
-          )}
-
-          {drData.errors.length > 0 && (
-            <div className="mt-4 p-4 bg-amber-50 border border-amber-100 rounded-md text-[12px] text-amber-900 flex items-center gap-2" data-testid="work-studio-partial-banner">
-              <AlertCircle className="w-3.5 h-3.5" />
-              Some lower-section data did not load — refresh to retry.
-            </div>
-          )}
-        </div>
+        {mode === "workspace" && briefId && (
+          <BriefWorkspace
+            briefId={briefId}
+            initialExport={initialExport}
+            onBack={onBack}
+          />
+        )}
       </div>
 
-      <BriefDrawer
-        open={drawerOpen}
-        onClose={onCloseDrawer}
-        aid={drawerAid}
+      <ComposeDrawer
+        open={composeOpen}
+        onClose={() => { setComposeOpen(false); setSource(null); }}
+        onComposed={onComposed}
+        source={source}
         contextId={cid}
-      />
-
-      {/* Phase C.2 — Export modal (wired to the three Export buttons) */}
-      <ExportModal
-        open={exportOpen}
-        onClose={() => setExportOpen(false)}
-        kind={exportKind}
-        contextId={cid}
-      />
-
-      {/* Phase C.3 — Enhance modal (wired to the two Enhance buttons) */}
-      <EnhanceModal
-        open={enhanceOpen}
-        onClose={() => setEnhanceOpen(false)}
-        kind={enhanceKind}
-        contextId={cid}
+        contextName={cname}
       />
     </AppShell>
   );
