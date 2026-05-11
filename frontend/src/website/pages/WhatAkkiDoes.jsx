@@ -1,6 +1,7 @@
 import React from "react";
 import WebsiteShell from "../WebsiteShell";
 import { SURFACES } from "../copy";
+import whatImg from "../assets/what-archive-boxes.jpg";
 import "../style.css";
 
 export default function WhatAkkiDoesPage() {
@@ -18,6 +19,21 @@ export default function WhatAkkiDoesPage() {
           Each surface is calm by default. Each is in service of a real decision
           you would otherwise be making in a Word document at 9pm.
         </p>
+        <img
+          src={whatImg}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          width={1200}
+          height={800}
+          style={{
+            display: "block", width: "100%", height: "auto",
+            margin: "0 0 40px", objectFit: "cover",
+            borderTop: "1px solid var(--rule)",
+            borderBottom: "1px solid var(--rule)",
+          }}
+          data-testid="what-supporting-image"
+        />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 18 }}>
           {SURFACES.map((s) => (
             <div key={s.id} className="website-tile" data-testid={`surface-tile-${s.id}`}>

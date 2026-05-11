@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import WebsiteShell from "../WebsiteShell";
 import { HERO, HIERARCHY, COHORT_TEASER } from "../copy";
+import heroImg from "../assets/hero-library.jpg";
 import "../style.css";
 
 export default function HomePage() {
@@ -11,15 +12,15 @@ export default function HomePage() {
       description="A private working environment for operating executives and NEDs. Use AI on the work that actually matters — with full audit trail and no training-data exposure."
       pathname="/"
     >
-      {/* Hero */}
-      <section className="website-section">
+      {/* Hero — editorial composition, single decorative image. */}
+      <section className="website-section" style={{ paddingBottom: 0 }}>
         <span className="website-label">{HERO.eyebrow}</span>
         <h1>{HERO.headline}</h1>
         <span className="website-rule" />
         <p style={{ fontSize: 20, color: "var(--muted)", maxWidth: "56ch", marginBottom: 36 }}>
           {HERO.subhead}
         </p>
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 56 }}>
           <Link to={HERO.primaryCta.href} className="website-cta-primary" data-testid="home-cta-primary">
             {HERO.primaryCta.label}
           </Link>
@@ -27,10 +28,25 @@ export default function HomePage() {
             {HERO.secondaryCta.label}
           </Link>
         </div>
+        {/* Editorial hero image — eager-loaded, decorative, no text overlay. */}
+        <img
+          src={heroImg}
+          alt=""
+          aria-hidden="true"
+          width={2000}
+          height={1125}
+          style={{
+            display: "block", width: "100%", height: "auto",
+            maxHeight: 520, objectFit: "cover",
+            borderTop: "1px solid var(--rule)",
+            borderBottom: "1px solid var(--rule)",
+          }}
+          data-testid="home-hero-image"
+        />
       </section>
 
       {/* Three-tier hierarchy */}
-      <section className="website-section" style={{ background: "var(--paper)" }}>
+      <section className="website-section website-section--paper">
         <span className="website-label">Three commitments</span>
         <h2>Safety. Workspace. Inventions.</h2>
         <span className="website-rule" />
