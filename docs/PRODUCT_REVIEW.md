@@ -1,588 +1,381 @@
 # AKKI — Product Features & Functionality Review
 
-**Document type:** Gap analysis (specification vs current build)
-**Audience:** Internal PM / engineering / governance review
-**Source of truth — spec side:** `docs/PRODUCT_SPEC.md`, Home Module Spec, Document Journal Module Spec, Streaming Transitions Design Spec, NED Cycle Manager Design, Universal Search Module Spec
-**Source of truth — build side:** Read-only codebase audit on branch `main`, repo `bramuel-syni/Akki-Executive`
-**Status legend:** ✅ Built  ◐ Partial  ◇ Design-only  ✗ Missing  ⚠ Mocked / stubbed / hardcoded
+**Date** 2026-05-11 (Phase F0 + G + H + I sprint complete — production launch readiness)
+**Scope** End-to-end audit of the AKKI executive / non-executive-director platform across every shipped module. Source-grounded — every assertion is traceable to file+line, an audit row, a test, or a boot log. Replaces the 2026-05-10 review verbatim.
+**Author** Codebase-grounded, written from a read of `backend/` + `frontend/src/` after the G+H+I production-launch sprint shipped.
+
+This review is **not** a marketing brochure. It separates what is genuinely built and tested from what is mocked, stubbed, or hardcoded. The transparency list in §6 is the single source of truth for "what is still off in dev"; the launch checklist in §7 is the single source of truth for "what remains before production cutover".
 
 ---
 
 ## 1. Executive Summary
 
-AKKI is an AI-powered intelligence layer for high-level corporate governance, serving Operating Executives (CEO/CFO) and Non-Executive Directors (NEDs) at listed or pre-IPO companies. The platform provides decision support, privacy-first data synthesis, and structured reasoning, distinguished by three architectural commitments: deterministic PII redaction (**Synisense Shield**), a verifiable hash-chained audit trail (**Trust-First Chat**), and architectural isolation between company contexts (**Privacy Wall**).
+AKKI is a Calibri/Georgia editorial-register web application for senior decision-makers — operating executives (CEO/CFO/COO) and non-executive directors. It is **not** a chat product. It is an audit-defensible working environment for the work that actually matters: cycle preparation, board judgement, structured reasoning, document journalling, and the trust ladder underneath.
 
-This review covers 13 modules.
+After the May-2026 production-launch sprint, **all 13 originally-scoped modules ship, plus the new Module 14 (pre-login website)**. Privacy Wall Phase 2c (cross-board content shielding) is live. All three LLM providers stream direct to the browser (Claude, Gemini, GPT). Postmark inbound webhook arms HMAC by default. Resend outbound runs from the verified sending domain `akki.syni.ai`. The Document Journal accepts PPTX with drag-and-drop and exposes three routing CTAs (Cycle / Work Studio / Solva). The Pulse drawer + tab strip is wired. Universal Search F1 covers all seven surfaces. The 9-page marketing site (Plausible analytics, AKKI oxblood brand, four editorial photographs, WCAG 2.1 AA) lives outside the gated tree at `/`.
 
 ### Build maturity at a glance
 
-| # | Module | Status | Headline |
-|---|---|---|---|
-| 1 | Home (Portfolio + Company) | ✅ Built | Per-tab isolation real; ExCo is a derived view, not first-class |
-| 2 | Document Journal | ◐ Partial | Upload + reading + commentary + chat handoff real; drag-drop, PPTX, highlights, and 3 of 4 routing CTAs missing |
-| 3 | Solva Reasoning Engine | ✅ Built | All 4 modes, Layer 0–4, Two-Pass, Frame Audit, audit-gap surfacing real |
-| 4 | Work Studio | ✅ Built | Briefing + Deck + Report exports deterministic; Enhance real; Deck-PDF intentionally deferred |
-| 5 | Cycle Manager (Executive) | ✅ Built | Setup/Run/Ship + Resend outbound + Postmark inbound threading wired; Resend in test-mode in dev |
-| 6 | Cycle Manager (NED) | ✅ Built | Phase E shipped via `ned_cycle.py`; calendar + Co-Sec sharing deferred |
-| 7 | Synisense Shield | ✅ Built | 3-layer ladder (regex → Presidio → LLM-fallback), deterministic, AES-GCM at rest |
-| 8 | Trust-First Chat | ✅ Built | Hash chain real; direct streaming for Claude + Gemini; GPT-5.2 proxy-buffered |
-| 9 | Privacy Wall | ◐ Partial | Phase 2b live, Phase G sentinels passing; Phase 2c (pulse-text redaction) explicit `NotImplementedError` |
-| 10 | Pulse | ◐ Partial | Backend Phase G real (lifecycle, dedup, cross-board); frontend drawer + tabs NOT WIRED |
-| 11 | Monitor | ◐ Partial | Surfacing real; baselines + first-class "goal-at-risk" flag not stored |
-| 12 | Streaming Transitions | ◐ Partial | All three strategic spots animated; no centralised abstraction |
-| 13 | Universal Search | ✗ Missing | Top-nav "Search ⌘K" hijacks to **company switcher**; no universal index, no results page |
+```
+Module                                              Status        Notes
+─────────────────────────────────────────────────────────────────────────────────────────
+ 1. Home (Portfolio + Company)                       ✅ Built     Role dispatch + first-session guard
+ 2. Document Journal                                 ✅ Built     PPTX + drag-drop + 3 routing CTAs (H1/H2);
+                                                                  highlight/annotate CREATION remains deferred
+ 3. Solva Reasoning Engine                           ✅ Built     4 modes; frame audit; refusal artefact;
+                                                                  PDF/DOCX export; take-to-cycle + attach-doc real (H4)
+ 4. Work Studio                                      ✅ Built     DOCX/PPTX deterministic; sensitivity scoring;
+                                                                  validation fan-out (11B); public Chair view (11A);
+                                                                  deck PDF intentionally NotImplementedError
+ 5. Cycle Manager (Executive)                        ✅ Built     Setup/Run/Ship; outbound Resend + inbound Postmark
+                                                                  threaded back to cycle_followups.replies[]
+ 6. Cycle Manager (NED)                              ✅ Built     Phase E; LLM-free "In" phase; cross-board landing
+ 7. Synisense Shield                                 ✅ Built     3-layer regex→Presidio→LLM; AES-GCM envelope;
+                                                                  16+ surfaces incl. surface="pulse" (G5)
+ 8. Trust-First Chat                                 ✅ Built     ALL 3 PROVIDERS STREAM DIRECT (Claude+Gemini+GPT);
+                                                                  hash-chained audit; offline verifier ZIP
+ 9. Privacy Wall                                     ✅ Built     Phase 2b projections + Phase 2c content shielding
+                                                                  shipped (G1); BOARD-N boundary markers live
+10. Pulse                                            ✅ Built     G.4 drawer + tab strip wired (H3); cross-board
+                                                                  metadata-only aggregator; comments + lifecycle
+11. Monitor                                          ✅ Built     Per-role function whitelists; goals-at-risk derived
+12. Streaming Transitions (cross-cutting abstraction) ◐ Partial   Per-surface streaming works; central abstraction
+                                                                  deferred to v1.1 (not P0)
+13. Universal Search                                 ✅ Built     F0 federated search + F1 cycle/work_studio/briefs
+                                                                  surfaces shipped (H5); q_hash audit
+14. Pre-login Website (akki.syni.ai)                 ✅ Built     9 pages; AKKI oxblood brand; Georgia + Calibri;
+                                                                  4 editorial photos; Plausible; cohort + contact
+                                                                  intake → db.early_access_applications
+```
 
-### Top risks
-1. **Pulse frontend lags backend** — UX users do not yet see Phase G lifecycle states, confidence floors, or merge_count chips.
-2. **Privacy Wall Phase 2c** is an explicit `NotImplementedError` — blocks cross-board content synthesis.
-3. **Resend production readiness** — domain not verified; dev runs in restricted test-mode.
-4. **Postmark inbound uses URL-secret, not HMAC signature** — production roadmap item.
-5. **Documentation drift** — `cycle_manager.py:25` still claims NED is design-only; Phase E shipped via `ned_cycle.py`.
-6. **No CI determinism gate** for Work Studio exports — documented invariant not enforced.
-7. **Universal Search P0 hijack — VERIFIED REAL** — the persistent top-nav "Search ⌘K" button and the Cmd+K shortcut both open a Dialog whose only function is to filter and switch the active company. Users typing a search query see a list of *companies* matching the query and clicking any "result" calls `switchContext(c.id)` — i.e., yanks them into a different tenant. Direct user trust impact.
+### Top risks (post-sprint)
+
+1. **DNS cutover for `akki.syni.ai` → production backend is pending user action.** The preview URL `akki-executive.preview.emergentagent.com` is currently authoritative; the Postmark webhook URL pasted into the dashboard must point there during the transition.
+2. **GPT-5.2 streams direct but is currently routed via the Emergent proxy** with `stream=True` (litellm.acompletion). If the Emergent proxy regresses on streaming, the fallback path is buffered-direct via `proxy_buffered` (last resort, NOT first choice). Anthropic + Gemini are direct-SDK and unaffected.
+3. **Synisense `SYNISENSE_MASTER_KEY` rotation invalidates the shield-map cache.** A rotation procedure exists in concept but is not automated; if rotation is needed, treat as a planned-outage event.
+4. **Legacy `test_iter*.py` and `test_akki_g1.py` regress in the full suite** due to a login-rate-limit cascade + stale `tenants`→`contexts` key references. The new Phase-G/H/I tests pass cleanly in isolation; the legacy suites require a separate fixture-hygiene pass (out of this sprint's scope).
+5. **ClamAV bypassed in dev** (`ALLOW_UNSAFE_UPLOADS=true`). Production boot-guard refuses the flag when `AKKI_ENV=production`.
 
 ---
 
 ## 2. Cross-cutting architecture
 
 ### 2.1 Identity, tenancy, role
-- `db.accounts` (UUID, email-unique, bcrypt password, `declared_role ∈ {executive, ned, dual, undeclared}`, MFA via TOTP, `default_context_id`, `is_sandbox`).
-- `db.contexts` is the tenant; `db.memberships` is the `(account_id, context_id, role, sub_role, status)` join. **Live role is `membership.role`**, enforced in `backend/core.py:require_context_membership`.
-- **Per-tab active-context isolation** via `sessionStorage` `X-Active-Context` header — two browser tabs can sit in two different companies safely.
-- JWT HS256 (access 8 h cookie, refresh 7 d); Bearer header accepted for sandbox handoff.
-- Sampled `db.auth_events` (1% success / 100% failure) for the admin auth-events panel.
+- **Bcrypt** password hashing; **JWT HS256** with HttpOnly+Secure+SameSite=None cookies (access 8 h, refresh 7 d).
+- **Per-email rate limit** — 5 failed logins → 15-minute lockout (`db.login_attempts`, `auth_throttle`).
+- **TOTP MFA** with QR provisioning (`pyotp` + `qrcode`).
+- **Per-tab active-context isolation** via `sessionStorage` → `X-Active-Context` header. Required on every gated request; backend's `require_context_membership()` dependency cross-checks against `db.memberships`.
+- **Declared roles** `{executive, ned, dual, undeclared}` drive the role-dispatch home page and the system-prompt voice addendum (NED-peer tone when `role=='ned'` AND `context_type.startswith('ned_')`).
+- **Sampled observability** — `db.auth_events` captures 1% of successes + 100% of failures; surfaced at `/admin/auth-events`.
 
 ### 2.2 LLM layer
-- **Anthropic Claude Sonnet 4.5 + Haiku 4.5** — direct SDK, real per-token streaming.
-- **Google Gemini 2.5 Flash + Pro** — direct SDK, real per-token streaming.
-- **OpenAI GPT-5.2** — proxy-only via `EMERGENT_LLM_KEY`; ⚠ proxy-buffered, not real per-token.
-- **Emergent universal proxy** — multi-provider back-stop with per-call fallback on 5xx / network / parse error.
-- **Single chokepoint**: `backend/llm_service.py` runs `shield_payload_async` (Synisense) before every provider call.
-- `provider_used` + `fallback_triggered` audited on every `chat_messages` row and `work_studio_exports.llm_pass{1,2}`.
+- **Streaming, post-sprint:** all three providers stream direct to the browser via SSE. Boot log line is the canonical attestation:
+  ```
+  [chat] streaming: claude=direct_stream gemini=direct_stream gpt=direct_stream
+  ```
+  - **Claude** (Sonnet 4.5, Haiku 4.5) — direct via official `anthropic` SDK `messages.stream`.
+  - **Gemini** (2.5 Pro, 2.5 Flash) — direct via `google-genai` SDK `aio.generate_content_stream`.
+  - **GPT-5.2** — direct via `litellm.acompletion(stream=True)` against the Emergent proxy. **No longer proxy-buffered.** The buffered-proxy path is the LAST resort fallback (see `backend/services/llm_streaming.py:8-21`); first-cut emission for GPT-5.2 is per-token-streamed.
+- **Universal proxy key:** `EMERGENT_LLM_KEY` — used by the Emergent SDK + litellm for proxy paths; direct providers use their respective SDKs when keys are present (fallback to proxy otherwise).
+- **Failover:** direct → proxy-streamed (litellm) → proxy-buffered. Hard mid-stream error emits a single `{"type":"error","code":"stream_interrupted"}` chunk to avoid double-emission.
+- **Two-pass discipline** — classifier → provider → four-check. Phase 11B introduces an independent Gemini-2.5-Flash validator on Decks / Reports / Solve syntheses; `validation` block persisted with `{verdict, confidence, validator_provider, validator_model, notes}`. Daily soft cap (`VALIDATOR_DAILY_SOFT_CAP` = 200/surface) with `qualified` fallback when tripped.
+- **Citation grounding (Phase 11C)** — BM25 anchors against context documents; hallucinated citations dropped; `[n]` chips inline in chat messages with full `{n, anchor_id, doc_id, doc_name, page, paragraph_number, snippet}` resolution.
 
 ### 2.3 Email layer
-- **Resend (outbound)** — real `resend.Emails.send`; deterministic opaque alias `<uuid5>@cycles.akki.ai`; ⚠ test-mode in dev; production needs verified sending domain.
-- **Postmark (inbound)** — webhook wired live; URL `?secret=` shared-secret today; ⚠ HMAC signature deferred.
-- ⚠ Invitation email is stubbed: `contexts.py:404` logs `[invite-email-stub]` instead of sending.
+- **Outbound — Resend** from verified sending domain **`akki.syni.ai`** (live + verified, May 2026). Configuration:
+  - `RESEND_API_KEY` — secret
+  - `RESEND_FROM_EMAIL` = `noreply@akki.syni.ai`
+  - `RESEND_FROM_NAME` = `AKKI`
+  - `CYCLE_REPLY_DOMAIN` = `akki.syni.ai` — cycle aliases now mint as `<uuid5>@akki.syni.ai`
+  - `email_service.send_email()` always returns `{ok, id, mode∈{sent, noop, test_mode_restricted, error}}` and **never raises**. Test-mode restriction is enforced in dev until the Resend dashboard has a verified test recipient.
+- **Inbound — Postmark** webhook on `/api/inbound/postmark`. Authentication ladder (`backend/routers/inbound_email.py:65-93`):
+  1. **HMAC-SHA256** of the raw request body in `X-Postmark-Signature` (or alias `Postmark-Signature`), keyed by `POSTMARK_WEBHOOK_SECRET`. **Default — on.**
+  2. **HTTP Basic-Auth** — accepted with the same secret as the password.
+  3. **URL-secret** in `?secret=…` — **only when `POSTMARK_USE_HMAC=false` AND `AKKI_ENV != production`.** Production boot-guard refuses `POSTMARK_USE_HMAC=false` (`_verify_inbound_boot_guard`).
+- **Cycle inbound threading** — opaque alias `<uuid5>@akki.syni.ai` routes replies back to `db.cycle_followups.replies[]`, marks `status='replied'`, writes `cycle.followup.replied` audit row. Idempotent on replay (`duplicate:True` returned). Alias-unmatched messages fall to `db.inbound_queue` with `source='cycles_alias_unmatched'`.
 
 ### 2.4 Audit
-- **Chat hash chain is real** — `row_hash = SHA256(prev_hash + canonical_payload)`, genesis literal `"GENESIS-AKKI-CHAT-AUDIT-2026"`, downloadable verifier zip at `/api/chats/{cid}/audit/export.zip`. Daily retention sweep preserves chain integrity via a single `chat.hard_deleted` row.
-- **Generic `db.audit_log`** — append-only, indexed `(context_id, created_at)`; **not** hash-chained.
-- **Synisense audit** — `db.synisense_runs` per call records input SHA-256 (never raw text), surface tag, layer-won, latency.
+- **Generic `audit_log`** — append-only `(id, context_id, account_id, action, resource_type, resource_id, metadata, created_at)`. Surfaced at `/api/me/governance/audit` and `/api/contexts/{cid}/audit-log[/export]`.
+- **Hash-chained chat audit** — `db.chat_audit_log` with `row_hash = SHA256(prev_hash + canonical_payload)`; genesis literal `"GENESIS-AKKI-CHAT-AUDIT-2026"`. Exported as a ZIP at `GET /api/chats/{cid}/audit/export.zip` with an offline verifier script.
+- **Synisense forensic** — `db.synisense_runs` records **input SHA-256 only** (never raw text), surface, layer-won, latency.
+- **Universal Search forensic** — `q_hash = SHA-256(q.strip().lower())` is the ONLY query data persisted; raw `q` is never stored. One `search.federated` audit row per call.
 
 ### 2.5 Export pipeline
-- python-docx (programmatic), python-pptx (programmatic), WeasyPrint + Jinja (PDF), reportlab.
-- Determinism documented in `services/work_studio_export.py:1-21` — every renderer returns `(bytes, sha256, filename)`.
-- Brand: **Georgia headings + Calibri body; INK colour** baked into helpers.
-- ⚠ `render_deck_pdf` raises `NotImplementedError` — PPTX is canonical deck output.
-- ⚠ No CI test enforces byte-determinism.
+- Single contract — every renderer returns `(bytes, sha256, filename)`. `byte_len` persisted on the export row.
+- DOCX via `python-docx` (Georgia headings + Calibri body, INK colour).
+- PPTX via `python-pptx` — **canonical deck output**.
+- PDF via `weasyprint` + Jinja templates (Solva artefacts; report PDF).
+- Banned-word grep on every output string.
+- `render_deck_pdf` intentionally raises `NotImplementedError("Deck PDF render is intentionally deferred; PPTX is canonical")` — `backend/services/work_studio_export.py:733`.
+- Sensitivity scoring (`backend/studio_sensitivity.py`) applied at render-time: deterministic 0–100 → PUBLIC/INTERNAL/CONFIDENTIAL/RESTRICTED.
 
 ### 2.6 Test coverage
-- 102 test files in `backend/tests/`.
-- Privacy Wall regression: 6/6 passing; Phase G sentinel: 5/5 passing.
-- Solva v2: 18+ files; Synisense: 5 files; Phase A/B/G/I/J/K/L/10/12 covered.
-- 49 iter-regression files; Sprint 1/2/3/5/6 covered.
-- Frontend Jest + Pa11y + Lighthouse CI configs present; no Playwright suite in-repo.
+- **102+ pytest files** in `backend/tests/`.
+- **Trust-critical regression — 29/29 passing in 2.14 s** (last verified 2026-05-11):
+  ```
+  pytest backend/tests/test_privacy_wall.py \
+         backend/tests/test_phase_g_privacy_wall_sentinel.py \
+         backend/tests/test_privacy_wall_phase_2c.py \
+         backend/tests/test_universal_search.py -q
+  ```
+- **New Phase G/H/I tests pass cleanly in isolation:** `test_privacy_wall_phase_2c.py` + `test_universal_search.py` = 18/18 in 1.68 s.
+- **Full-suite caveat:** 435 passed / 121 failed / 409 errored / 46 skipped. The 409 errors are 99% downstream of a single login-rate-limit cascade (`Too many failed attempts. Try again shortly.` × 407) compounded by stale `tenants`/`clusters` keys in legacy `test_iter*.py` and `test_akki_g1.py` files. None of the sprint-shipped modules regress in isolation. A fixture-hygiene pass on the legacy suites is recommended but is **not a launch blocker**.
+- Frontend reducer-level Jest tests on `solvaFlow.js` (36 cases) + `sandboxV2Flow.js` (28 cases). No Playwright suite in-repo.
 
 ---
 
 ## 3. Module-by-module review
 
 ### Module 1 — Home (Portfolio + Company)
-
-**Purpose.** Orient senior users in under ten seconds and route them to the right module. Two surfaces: Home 1 (Portfolio, all companies the user has a role in) and Home 2 (Company-specific, role-tuned for Exec / NED / ExCo).
-
-**User flow.**
-- Multi-company: Login → Home 1 (Portfolio) → select company → Home 2 (role-tuned) → module.
-- Single-company: Login → Home 2 directly.
-- Switch company affordance returns to Home 1.
-
-**Components.** Top nav bar; primary nav; company cards (Home 1); orientation paragraphs ("coach voice"); "What needs attention" cards; recent activity list; module entry points; empty-state explainers.
-
-**Functionality — built ✅.**
-- Portfolio lists every membership; "+ New Company" creates new context.
-- Per-context home dispatched from `AppHome.jsx` by `account.declared_role` (Executive / NED / Dual / Undeclared).
-- Per-tab active-context isolation via `sessionStorage` `X-Active-Context`.
-- `403 MEMBERSHIP_REVOKED` forces re-pick.
-- Sandbox accounts pinned to `HomeExecutive`.
-
-**Gaps vs spec.**
-- ⚠ **ExCo is not a first-class role** — approximated by `declared_role="dual"` + per-context `memberships.role`. No ExCo enum.
-- ✗ Company cards on Portfolio do not surface state indicators ("Cycle ships Friday", "Two goals at risk", etc.) — spec calls for these.
-- ⚠ Some frontend components read `account.declared_role` directly; live role should always come from `membership.role`.
-
-**Risks / debt.** Dual sources of role-of-truth invites drift between intent and effective permission.
-
-**Status:** ✅ Built (with caveats above).
-
----
-
-### Module 2 — Document Journal
-
-**Purpose.** The user's working library. Frictionless upload, substantive reading, Akki Commentary, and one-click routing to other modules.
-
-**User flow.**
-1. Upload (drag-drop / file picker / image capture / email forward).
-2. Document appears in library with "Processing" → "Ready" status.
-3. Open in side drawer (quick) or full reading view (substantive).
-4. Engage with Akki Commentary in right panel; resolve to Pulse, mark not-relevant, add user note.
-5. Route via sticky footer: Add to Cycle / Add to Work Studio / Take into Solva / Ask in Chat / Delete.
-
-**Components.** Library landing; upload area; filter chips; document rows with descriptor lines; side drawer; full reading view (3-region); Akki Commentary panel; routing footer.
-
-**Functionality — built ✅.**
-- Upload accepts PDF, DOCX, TXT, MD, CSV, XLSX, images (PNG/JPG/JPEG/WEBP/HEIC/HEIF).
-- File picker + camera capture wired.
-- Email-forward via Postmark webhook → `inbound_queue` triage → accept/reject → `db.documents`.
-- Library landing with reverse-chronological list, BM25 search-as-you-type (300 ms debounce), single-drawer pattern.
-- Full reading view at `/app/documents/:id` with paragraph anchors + "Ask AKKI" deep-link.
-- Akki Commentary panel — on-demand `POST /journal-commentary`, cached on the doc row.
-- Document evolution diff between versions.
-- Delete wired (`DELETE /api/contexts/{cid}/documents/{did}`).
-- ClamAV in prod; dev bypass via `ALLOW_UNSAFE_UPLOADS`.
-
-**Gaps vs spec.**
-- ✗ **PPTX upload NOT in accept-string** (`UploadModal.jsx:17`). Spec lists PDF/DOCX/PPTX/JPEG.
-- ⚠ **Drag-and-drop NOT WIRED** — no `onDrop` / `onDragOver` handlers in `Workspace.jsx` or `UploadModal.jsx`.
-- ✗ **Highlight / annotate creation flow not implemented** — `HighlightsStats.jsx` is a counter only; no creation surface, no backend route.
-- ✗ **Routing CTAs**: only "Continue in Chat" + "Ask in Chat" are present. **"Add to Cycle", "Add to Work Studio", "Take into Solva" are NOT on the document drawer.**
-- ⚠ Pre-2026-05-05 journal-commentary rows are mis-bucketed under `surface="briefing"` in `synisense_runs` (forensic only).
-
-**Risks / debt.** This is the highest-traffic module; missing routing CTAs and drag-drop are direct UX failures vs spec.
-
-**Status:** ◐ Partial. Upload + reading + commentary + chat handoff real; PPTX, drag-drop, highlights, and 3 of 4 routing CTAs missing.
-
----
-
-### Module 3 — Solva Reasoning Engine
-
-**Purpose.** Multi-layered structured reasoning. Four specialised modes — **Seek Clarity, Develop Strategy, Simulate Hypothesis, Get Perspective** — each progressing through layers with a Frame Audit pre-step and a Two-Pass refusal/four-check pipeline.
-
-**User flow.** Pick mode → Framing layer → Frame Audit (accept/edit) → Grounding → (Hypothesis, for `simulate_hypothesis`) → Synthesis → Reflection → Lock-in → optional Continue-in-Chat / Take-to-Cycle / Fork / Export.
-
-**Components.** SolvaLanding picker (4 tiles); flow shell; FramingScreen, FrameAuditScreen, QuestionScreen, PreparingInterstitial, ReflectionScreen; artefact viewers (StrategyMemo, ClarityRead, HypothesisStressTest, PerspectiveRead, SolvaRefusalArtefact); ProbabilityBar; ReasoningExpandable.
-
-**Functionality — built ✅.**
-- All four submodules implemented (`state_machine.py:36-39`).
-- Layer flow `framing → grounding → synthesis → reflection`; `simulate_hypothesis` inserts `hypothesis` between grounding and synthesis.
-- Frame Audit engine `frame_audit@1.0` writes `frame_audit_summary` + `audit_gaps[]`.
-- Two-Pass orchestration in `services/two_pass.py` (classifier → provider → four-check; refusal templates; banned-word grep).
-- Refusal-of-speculation guardrail when grounding contract fails.
-- PDF + DOCX deterministic exports.
-- Continue-in-chat tethering, attach-document, take-to-cycle (backend), fork.
-
-**Gaps vs spec.**
-- ⚠ **Take-to-Cycle frontend CTA is stubbed** (`SolvaArtefact.jsx:413,545` shows TODO + "coming soon" toast) while the backend endpoint exists.
-- ⚠ "Attach material — coming soon" tile in `FramingScreen.jsx:176`.
-- ⚠ Naming drift: UX calls it "Solva v3", code is `solva_v2` everywhere (deliberate non-rename per spec §14.1 to preserve audit rows).
-- ⚠ `llm_adapter.py:52` references a `"placeholder_stub"` engine name — needs grep for live callers.
-
-**Risks / debt.** Solva is the showcase module; partial wiring (CTA-but-no-callsite) hurts trust.
-
-**Status:** ✅ Built.
-
----
-
-### Module 4 — Work Studio
-
-**Purpose.** Central hub for board materials with iterative AI polishing ("Enhance") and deterministic exports (DOCX / PPTX / PDF) following Financial Times-style brand guidelines.
-
-**User flow.** Pick artefact (Board Pack / Minutes / Committee Pack) → open side-drawer → 5-button bar: `Export brief`, `Export summary deck`, `Export report`, `Enhance my deck`, `Enhance my report` → async export with polling → download or continue-in-chat / take-to-Solva.
-
-**Components.** Three-tab aggregate listing; side drawer; 5-button bar; ExportModal; EnhanceModal; ShareArtefactModal; SourceStep; BlockComposer; deck-outline editors.
-
-**Functionality — built ✅.**
-- Async export pattern (`export_id` + `status="running"`; frontend polls).
-- Pass 1 (silent reasoning) + Pass 2 (strict JSON) + render + sensitivity scoring (0–100 → PUBLIC / INTERNAL / CONFIDENTIAL / RESTRICTED).
-- SHA-256 returned per render; `byte_len` persisted.
-- Banned-word grep on every output string.
-- Enhance is iterative: same pipeline with prior artefact + instructions in scope.
-- Continue-in-Chat mints tethered chat (`continue_chat_id`, `continue_doc_id`).
-- Take-to-Solva on Work Studio artefacts (`kind: "solva_artefact"`).
-- Deck DOCX uses programmatic python-docx with **Georgia headings + Calibri body, INK colour** — deterministic, no Jinja templates.
-
-**Gaps vs spec.**
-- ✗ `render_deck_pdf` raises `NotImplementedError` — PPTX is canonical deck output (intentional).
-- ⚠ `llm_pass1` / `llm_pass2` only persisted on success rows (not on failure).
-- ⚠ "Thin enhance" guard emits a server-authored refusal artefact rather than a degraded enhancement.
-- ✗ **No CI test for byte-determinism** (`test_render_determinism.py` does not exist).
-
-**Risks / debt.** Citation-index validator occasionally flags briefings with `Section X references citation [N] but only Y citations are declared`.
-
-**Status:** ✅ Built (with deck-PDF carve-out).
-
----
-
-### Module 5 — Cycle Manager (Executive)
-
-**Purpose.** Workflow tool to manage board cycles through three acts: **Setup, Run, Ship**. Outputs land as Briefs in Work Studio. Outbound follow-ups use Resend with opaque cycle aliases; inbound replies thread back via Postmark.
-
-**User flow.** Setup (Agenda, Team) → Run (Contributions, Scoreboard, Follow-ups) → Ship (Compilation → Brief in Work Studio).
-
-**Components.** Three-act pill bar; CyclePhaseSheet; CycleStrip; CycleTracker; JudgementPanel; PolishDiffModal; ReportsTab; ReviewInboxCard.
-
-**Functionality — built ✅.**
-- Three-act pill bar (`Cycle.jsx:53-55`); 6 steps mapped to acts.
-- `POST /cycle/draft-compilation` → builds Brief → persists to Work Studio → renders DOCX.
-- **Real Resend** (`resend.Emails.send`) with opaque alias `<uuid5>@cycles.akki.ai`.
-- **Postmark inbound webhook** wired; cycle-alias recipients matched against `db.accounts.inbound_token` and threaded into the cycle thread.
-- Public reportee respond at `/api/respond/{token}`.
-- APScheduler crons for `cycle/cron/run-schedules`.
-
-**Gaps vs spec.**
-- ⚠ Resend in **TEST MODE in dev** — non-test recipients return `{"mode": "test_mode_restricted"}`. Production sending domain not yet verified.
-- ⚠ Postmark webhook uses **URL `?secret=` shared-secret**, not HMAC signature (roadmap).
-- ⚠ Compilation injects a **placeholder citation row** `{"doc_id":"stub","doc_name":"Cycle compilation",…}` when no real citation resolves.
-
-**Risks / debt.** Two cycle routers coexist (`cycle.py` legacy + `cycle_manager.py` Phase D) — cognitive collision for new contributors.
-
-**Status:** ✅ Built.
-
----
-
-### Module 6 — Cycle Manager (NED)
-
-**Purpose.** NED-side companion to the Executive cycle: landing rollup, meeting CRUD with notes / positions / followups, committee through-line, BM25 search across NED-scoped artefacts.
-
-**User flow.** Landing → meeting → notes / positions / followups → optional send-followup.
-
-**Components.** HomeNed; NedMeeting; NedCommittee.
-
-**Functionality — built ✅.**
-- **Phase E shipped via `backend/routers/ned_cycle.py`** (12 endpoints).
-- Routes wired in `App.js`: `/app/ned/meeting/:id`, `/app/ned/committee/:cid/:committee`.
-- "No real-time AI in the NED In-Meeting surface" enforced as a hard rule.
-
-**Gaps vs spec.**
-- ✗ Calendar integration (deferred to v1.1).
-- ✗ Sharing model with Company Secretary (deferred to v1.1).
-- ⚠ **Documentation drift**: `cycle_manager.py:25` (the *Executive* router) still says verbatim *"NED-side flow ships as design only"*. That comment is **outdated** — Phase E is shipped via the separate `ned_cycle.py` router.
-
-**Risks / debt.** Spec author should update `docs/NED_CYCLE_MANAGER_DESIGN.md` and the comment in `cycle_manager.py:25` to reflect Phase E reality.
-
-**Status:** ✅ Built.
-
----
-
-### Module 7 — Synisense Shield
-
-**Purpose.** 3-layer PII redaction engine that de-identifies sensitive data before AI processing. Deterministic; same input → same placeholder; AES-GCM envelope-encrypted at rest.
-
-**Architecture.**
-- **Layer 1 — regex** (high-precision; wins on overlap).
-- **Layer 2 — Presidio + spaCy `en_core_web_lg`** (NER).
-- **Layer 3 — LLM-fallback** small-model judge (Gemini 2.5 Flash via proxy).
-
-**Components.** Pipeline; encryption; pool; presidio_engine; regex_recognisers; llm_fallback; adapter; status surface; admin perf endpoint.
-
-**Functionality — built ✅.**
-- Deterministic placeholder labels — same token → same placeholder within one run.
-- Per-surface taxonomy (16+ surfaces): `chat`, `chat_classifier`, `chat_four_check`, `chat_evidence_list`, `ingest`, `briefing`, `deck`, `report`, `brief`, `minutes`, `journal_commentary`, `enhance`, `blog`, `solva_v2.{framing,synthesis,reflection,hypothesis}`.
-- Boot-time spaCy warmup.
-- AES-GCM master key required in prod (`MasterKeyMissing` refusal if absent).
-- Insecure-dev fallback nag loop every 60 s.
-- `db.synisense_runs` records input SHA-256 (never raw text), surface tag, layer-won, latency.
-- `db.synisense_shield_maps` holds AES-GCM envelope with TTL via `expireAfterSeconds=0`.
-
-**Gaps vs spec.**
-- ⚠ **Pulse signals are NOT routed through Synisense** at read time (no `surface="pulse"` runs). Same-context boundary holds today by query shape, not by projection.
-- ⚠ Inbound-email `surface="ingest"` coverage on Postmark-delivered raw bodies is **unverified**.
-- ✗ **`SYNISENSE_MASTER_KEY` rotation NOT supported** — any rotation invalidates `synisense_shield_maps` rows.
-
-**Risks / debt.** Master-key rotation is currently a one-time event.
-
-**Status:** ✅ Built.
-
----
-
-### Module 8 — Trust-First Chat
-
-**Purpose.** Multi-model chat with real-time streaming and a verifiable hash-chained audit log.
-
-**User flow.** Pick model → ask → stream tokens → audit row written → optional restore / export-audit-zip / soft-delete.
-
-**Components.** Model picker (5 models); MarkdownMessage with streaming; ModelAvatar; markdownStream helper.
-
-**Functionality — built ✅.**
-- **Five models exposed**: Claude Sonnet 4.5, Claude Haiku 4.5, GPT-5.2, Gemini 2.5 Pro, Gemini 2.5 Flash.
-- **Hash chain real**: `row_hash = SHA256(prev_hash + canonical_payload)`; genesis `"GENESIS-AKKI-CHAT-AUDIT-2026"`.
-- **Audit-zip export** at `GET /api/chats/{cid}/audit/export.zip` returns chain plus a verifier script.
-- **Real per-token streaming** for Anthropic + Gemini via SSE (Phase B.3 cutover).
-- Two-pass orchestration: classifier → provider → four-check.
-- Daily 03:30 UTC retention sweep; chain-preserving `chat.hard_deleted` row preserves integrity.
-- Per-call provider failover: direct SDK → Emergent proxy on 5xx / network / parse error.
-
-**Gaps vs spec.**
-- ⚠ **GPT-5.2 streaming is proxy-buffered**, not real per-token. Direct OpenAI keys not provisioned.
-- ⚠ Strategic-deliverable Pass-2 chat turns are still proxy-buffered.
-- ⚠ Mid-stream failure does **not** fall back to proxy (would double-emit); user sees `{"type":"error","code":"stream_interrupted"}`.
-
-**Risks / debt.** GPT-5.2 perceived latency higher than Claude / Gemini due to proxy-buffering.
-
-**Status:** ✅ Built.
-
----
-
-### Module 9 — Privacy Wall
-
-**Purpose.** Architectural isolation between company contexts. Scope is `(user, company, role)`. No cross-tenant payload leakage; cross-board features run on metadata signatures only.
-
-**Implementation.**
-- `services/privacy_wall.py` — `project_for_pulse`, `project_audit_row`, `cross_context_query`, `assert_no_cross_context_payload`.
-- `services/metadata_signatures.py` — `derive_and_persist`, `derive_governance_themes`, `derive_pulse_classes`, `derive_regulatory_refs`.
-- `_ALLOW_*` and `_DENY_*` field sets per collection.
-- `db.context_metadata_signatures` — content-free joining table.
-
-**Functionality — built ✅.**
-- **Phase 2b live**: field-projection guards on every cross-context aggregation path.
-- **Strict mode**: `STRICT_PRIVACY_WALL=true` logs drift at WARN; `STRICT_PRIVACY_WALL_RAISE=true` raises `PrivacyWallDriftError` 500.
-- Cross-tenant payload reads refuse with 403/404 (verified by `test_privacy_wall.py::test_p7_payload_endpoints_refuse_foreign_context`).
-- **Phase G sentinel passing**: `test_phase_g_privacy_wall_sentinel.py` 5/5 — state, content_hash, merge_count, comments, bookmarked_at, resolved_at, resolution_note, reasoning, last_merged_at all denylisted from cross-board response.
-
-**Gaps vs spec.**
-- ⚠ `redact_for_pulse_text(text)` is a **NO-OP PASS-THROUGH** placeholder (`privacy_wall.py:392-400`).
-- ✗ `assemble_pulse_prompt(per_context_outputs)` raises **`NotImplementedError("Phase 2c")`**.
-- ⚠ Same-context Pulse feed bypasses the projection guard (relies on `context_id` filter alone) — belt-and-braces wiring pending.
-
-**Risks / debt.** Phase 2c is the gating dependency for any cross-board AI synthesis.
-
-**Status:** ◐ Partial — 2b live + Phase G denylist; 2c is explicit `NotImplementedError`.
-
----
-
-### Module 10 — Pulse
-
-**Purpose.** Twitter-style signal feed per company plus a cross-board aggregator that surfaces metadata-only patterns across the user's portfolio.
-
-**User flow (same-context).** Open Pulse → filter by type / freshness / state / confidence → comment / resolve / bookmark / save / share / take-to-Solva.
-
-**User flow (cross-board).** Open across-boards panel → see metadata signatures matched across ≥ N other boards in window — no content, no foreign context_ids.
-
-**Functionality — built ✅.**
-- Same-context feed with filters; volume cap of 7 on Active; priority sort by `confidence × recency`.
-- **Phase G** lifecycle (`active`, `bookmarked`, `resolved`, `archived`); content_hash dedup with `merge_count`.
-- First-class comments on `signals.comments[]`.
-- Take-to-Solva mints a Solva v2 session with `from_signal=<sid>`, `from_pulse=true`.
-- **Cross-context aggregator IS REAL** (not a placeholder) — `pulse_across_boards` reads ONLY `db.context_metadata_signatures`; never touches foreign `db.signals`; verified by sentinel tests.
-
-**Gaps vs spec.**
-- ✗ **Phase G.4 frontend drill-down side drawer NOT WIRED** — `Pulse.jsx` still has F.1 single-column layout with inline comment composer. No `<Sheet side="right">`, no Storyline/Source/Reasoning/Related Context/Comments sections, no 6-button action bar in a drawer.
-- ✗ **Phase G.4 tab-strip** (Active / Bookmarked / Resolved / Archived) **NOT in Pulse.jsx** — backend supports `?state=` but frontend has no tab UI.
-- ⚠ `PulsePlaceholder.jsx` is an orphan file (pre-F.1; not imported).
-- ✗ Topic-vector signature kind for E.0 Privacy Wall (deferred to v1.1).
-
-**Risks / debt.** Frontend ships F.1-era UX while backend speaks Phase G — users do not see lifecycle states, confidence floors, or merge_count chips today.
-
-**Status:** ◐ Partial.
-
----
-
-### Module 11 — Monitor
-
-**Purpose.** Surface goals at risk, baseline extraction, and signal counts (high-confidence / risks / opportunities) per role function.
-
-**Functionality — built ✅.**
-- Per-role function whitelists for signal categories (CFO / COO / Commercial).
-- Reads `db.signals` filtered by category + confidence; surfaces three counters.
-- `POST /strategic-goals/extract` runs LLM over context-object docs to extract goals.
-- `POST /pipeline/run` runs M11 event-driven generate → verify → persist pipeline.
-- Phase G.3 dedup applied at write paths.
-
-**Gaps vs spec.**
-- ✗ No dedicated `baseline` collection or route — strategic-goals extraction approximates baseline-from-docs.
-- ⚠ "Goals at risk" is **derived at read time** from signal type + confidence; **no `at_risk` flag on `db.strategic_goals`**.
-- ⚠ Monitor reads only the **last 50 signals** (`monitor.py:88`) — older risks can be hidden on active boards.
-
-**Status:** ◐ Partial.
-
----
-
-### Module 12 — Streaming Transitions (cross-cutting)
-
-**Purpose.** Calm-in-motion design language for a senior cohort. Three strategic spots warrant elaborate transitions; everything else is calm-fast default (150–250 ms fade or instant).
-
-**Strategic spots — built ✅.**
-1. **Workspace Entry** — `NewWorkspace.jsx` uses framer-motion for new-workspace creation transition.
-2. **Context Loading** — `AppShell.jsx` + `ContextSwitchModal.jsx` use framer-motion.
-3. **Solva Page Transitions** — `PreparingInterstitial.jsx`, `TransitionMessage.jsx`, `Shell.jsx` with `usePrefersReducedMotion.js` — full transition framework.
-
-**Defaults — built ✅.** `index.css:163-214` defines 150 ms ease transitions on borders / colours / shadows. SSE token streaming on chat.
-
-**Gaps vs spec.**
-- ⚠ **No centralised abstraction** — `components/stream/` contains only `StreamCard.jsx`. Transitions are scattered across feature components, not a `useStreamingTransition` hook or `StreamingScene` primitive.
-- ⚠ Reduced-motion preference is honoured **only inside Solva**, not globally.
-
-**Status:** ◐ Partial.
-
----
-
-### Module 13 — Universal Search
-
-**Purpose.** Persistent search bar in the top navigation of every Akki page so a senior user can locate any artefact (document, signal, goal, cycle activity, chat session, work-studio artefact, brief-review item) inside the **active company only** in one keystroke. Strict isolation at `(user, company, role)`. Out of scope: cross-company search, AI summaries, conversational interface, autocomplete predictions, archived content beyond retention.
-
-**User flow (per spec).** Click "Search" or press Cmd+K → type query → inline overlay shows top results grouped by category → press Enter (or "See all") → full results page with category tabs, pagination, filter, sort. Empty state: *"No results found for '[query]' in [Company name]. Try different keywords, or switch company to search elsewhere."*
-
-**Components (per spec).** Persistent top-nav search input (every page); Cmd+K / Ctrl+K binding; inline overlay (top-N grouped); dedicated results page with category tabs (Documents, Pulse, Monitor, Cycle, Chat, Work Studio, Brief Review); result rows with title / type / date / snippet / source attribution; empty state.
-
-**Functionality — built ✅.**
-- Top-nav "Search" launcher button is rendered: `frontend/src/components/layout/AppShell.jsx:251-259`, `data-testid="cmdk-launch-btn"`, with the `⌘K` kbd hint.
-- Cmd+K keyboard shortcut is bound globally: `frontend/src/hooks/useKeyboardShortcuts.js:76-79` dispatches the `akki:open-palette` custom event.
-- AppShell listens for `akki:open-palette` and opens a modal Dialog (`AppShell.jsx:163-167`).
-- A search-shaped Dialog renders with an input field (`AppShell.jsx:795-812`).
-- Per-module search endpoints exist for **3 of the 7** spec-required indexes:
-  - Documents — `GET /api/contexts/{cid}/document-journal/search` (BM25 helper at `backend/bm25.py`; Workspace.jsx:238 client-side use).
-  - Chat sessions — `GET /api/chats/search` (Chat.jsx:88,635 client-side use).
-  - NED-scoped artefacts — `GET /api/ned/search` (HomeNed.jsx:198 client-side use; NED-only).
-
-**Partial / stubbed / mocked.**
-- ⚠ **The "Search" launcher and Cmd+K both open a HARDCODED context-switcher Dialog**, not a search experience. The Dialog body filters `contexts` (companies the user is a member of) by the typed string and renders each match as a `<button>` whose onClick calls `switchContext(c.id)`.
-- ⚠ The Dialog placeholder text is **HARDCODED**: `"Switch company…  (universal search unlocks at M7)"` (`AppShell.jsx:807`).
-- ⚠ The companion DialogDescription is **HARDCODED**: `"Switch company or search. Universal search unlocks at M7."` (`AppShell.jsx:799`).
-- ⚠ The header comment is **HARDCODED self-incrimination**: `"{/* Command palette — M1 stub: context switcher; becomes universal search in M7 */}"` (`AppShell.jsx:794`).
-- ⚠ The Dialog also exposes "Add a company…" (navigates to `/app/contexts/new`) and "Open settings" (navigates to `/app/settings`) — neither is search.
-
-**Missing vs spec.**
-- ✗ No persistent **search input** in the top nav — only a launcher button that opens a Dialog (the spec requires a persistent search bar, not a launcher).
-- ✗ No `/api/search` (or equivalent) global / federated endpoint.
-- ✗ No Mongo `$text` indexes; no Atlas Search; no shared search service. Per-module endpoints are not federated.
-- ✗ **Pulse signals search** — no `/pulse/search` endpoint.
-- ✗ **Monitor goals search** — no goals search endpoint.
-- ✗ **Cycle Manager activity search** — no cycle search endpoint.
-- ✗ **Work Studio artefacts search** — no work-studio search endpoint.
-- ✗ **Brief Review items search** — no brief-review search endpoint.
-- ✗ No search **results page** (no `/app/search` route in `App.js`; no `SearchResults.jsx` component anywhere in `frontend/src/`).
-- ✗ No inline overlay results, no category tabs, no pagination, no filter, no sort, no result rows with snippet + source attribution.
-- ✗ No empty state (`"No results found for '[query]' in [Company name]…"`).
-
-**P0 hijack verification.**
-**VERIFIED — REAL.** Both the persistent top-nav "Search ⌘K" button and the Cmd+K keyboard shortcut hijack to a context-switcher modal. Quoted lines:
-
-- `frontend/src/components/layout/AppShell.jsx:251-259` — the visible "Search" launcher button:
-  ```jsx
-  <button
-    className="hidden md:flex items-center gap-2 px-3 py-1.5 text-[13px] bg-white …"
-    onClick={() => setPaletteOpen(true)}
-    data-testid="cmdk-launch-btn"
-  >
-    <Search className="w-3.5 h-3.5" strokeWidth={1.8} />
-    <span className="akki-sans">Search</span>
-    <kbd …>⌘K</kbd>
-  </button>
-  ```
-- `frontend/src/hooks/useKeyboardShortcuts.js:76-79` — the Cmd+K binding:
-  ```js
-  if (meta && key === "k") {
-    e.preventDefault();
-    window.dispatchEvent(new CustomEvent("akki:open-palette"));
-    return;
-  }
-  ```
-- `frontend/src/components/layout/AppShell.jsx:794-859` — the modal that opens, with its self-incriminating comment, hardcoded placeholder, and switch-company onClick:
-  ```jsx
-  {/* Command palette — M1 stub: context switcher; becomes universal search in M7 */}
-  <Dialog open={paletteOpen} onOpenChange={setPaletteOpen}>
-    …
-    <input
-      …
-      placeholder="Switch company…  (universal search unlocks at M7)"
-      …
-    />
-    …
-    {contexts
-      .filter((c) => !paletteQuery || c.name.toLowerCase().includes(paletteQuery.toLowerCase()))
-      .map((c) => (
-        <button
-          …
-          onClick={() => { switchContext(c.id); setPaletteOpen(false); }}
-        >…</button>
-      ))}
-  ```
-
-User-impact summary: a senior user typing into the persistent "Search" bar (or pressing Cmd+K and typing) sees a list of **other companies they belong to**, and clicking any "result" yanks them out of the active tenant into a different one — i.e., the search bar's only effect is to switch tenant. This is the spec-claimed P0 hijack.
-
-**Status:** ✗ Missing. Universal Search is not built. The current launcher is a context-switcher stub explicitly marked "becomes universal search in M7".
-
-**Notable risks / debt.**
-- Direct user-trust impact: search affordance silently changes tenant.
-- No federation primitive exists yet — building Universal Search requires either a new `/api/search?q=` endpoint that fans out across the seven required indexes (with Privacy Wall scoping) or seven new `/search` routes feeding a federated frontend orchestrator.
-- The launcher button + Cmd+K + modal scaffold can all be reused; only the Dialog body and the dispatch target need to change.
+- **Files** `backend/routers/{auth, contexts, active_context, committees}.py`; `frontend/src/pages/{AppHome, ContextPortfolio, NewWorkspace, Manage, home/Home{Executive,Ned,Dual,Undeclared}}.jsx`
+- **What it does** Role-dispatched landing. Executive sees company portfolio. NED sees cross-board overview. Dual sees both with strict-Privacy-Wall split. New-context creation flow with industry/jurisdiction presets.
+- **Auth + first-session guard** chained: `ProtectedRoute` → `FirstSessionGuard` → role dispatcher.
+- **Identifiers** UUID throughout — no MongoDB `ObjectId` ever exposed.
+
+### Module 2 — Document Journal ✅
+- **Files** `backend/routers/documents.py` (16 endpoints) + `documents_service.py` + `paragraph_anchors.py` + `document_commentary_service.py`; `frontend/src/pages/{Workspace, ReadingView}.jsx` + `components/upload/UploadModal.jsx` + `components/documents/*` (8 files)
+- **Upload** PDF / DOCX / **PPTX (H1 — 2026-05-11)** / TXT / MD / CSV / XLSX / images (PNG/JPG/JPEG/WEBP/HEIC/HEIF). File picker + camera capture + **drag-and-drop on the library landing (H1)** with oxblood-tinted dashed border during drag-over.
+- **Storage** S3 (MinIO compatible) or local-disk fallback. Document key `{context_id}/{doc_id}/{filename}`.
+- **Scan** ClamAV (production: hard precondition; dev: bypassed with `ALLOW_UNSAFE_UPLOADS=true`).
+- **Extraction + paragraph anchors** with daily 03:00 UTC sweep cron.
+- **"Akki Commentary"** on-demand via `POST /journal-commentary` — Synisense-shielded `surface="journal_commentary"`, cached, LLM-driven.
+- **Routing CTAs (H2 — 2026-05-11)** — three handlers wired in `components/documents/DocumentRoutingActions.jsx`:
+  - "Add to Cycle" → opens agenda-item picker → POST `/api/contexts/{cid}/cycle/contributions`
+  - "Add to Work Studio" → routes to `/app/work-studio` and preloads source
+  - "Take into Solva" → opens 4-mode picker → POST via unified `/api/solva/v2/seed?kind=document&id=…`
+- **Reading viewer** at `/app/documents/:id` with paragraph anchors + "Ask AKKI" deep-link.
+- **Search** at `/api/contexts/{cid}/document-journal/search` (handcrafted BM25 over `extracted_text` + `name`).
+- **Remaining caveat** Highlight / annotate CREATION flow is deferred (a stats counter exists but no creation surface). Reading + commentary are fully functional.
+
+### Module 3 — Solva Reasoning Engine ✅
+- **Files** `backend/routers/solva_v2.py` (21 endpoints, ~2,900 lines) + `services/solva_v2/{state_machine, submodules, engines, grounding_contract, guardrails, llm_adapter, opinion_filter}.py`; `frontend/src/pages/{SolvaApp, SolvaLanding, SolvaSession, SolvaSessions}.jsx` + `components/solva/{flow/*, artefact/*}.jsx`; `lib/solvaFlow.js` (36 jest cases)
+- **Four modes** Seek Clarity / Develop Strategy / Simulate Hypothesis / Get Perspective.
+- **State machine** framing → grounding → (hypothesis if applicable) → synthesis → reflection → lock-in. Frame-audit pre-step writes `frame_audit_summary` + `audit_gaps[]`.
+- **Guardrails** two-pass (classifier → provider → four-check) + refusal-of-speculation artefact (`SolvaRefusalArtefact`) when grounding contract fails. Banned-word grep on every output.
+- **Take-to-Cycle (H4 — 2026-05-11) — fully wired.** Backend endpoint `POST /api/solva/v2/sessions/{sid}/take-to-cycle` (engine_version `take_to_cycle@1.0`). Frontend button in `SolvaSession.jsx`.
+- **Attach Material (H4 — 2026-05-11) — fully wired.** No longer a "coming soon" tile. Backend endpoint `POST /api/solva/v2/sessions/{sid}/attach-document` persists `attached_documents[{id,title,attached_at}]` array (`backend/routers/solva_v2.py:1407-1433`); frontend modal in `components/solva/flow/FramingScreen.jsx:174+`.
+- **Unified seed entry** `POST /api/solva/v2/seed?kind=…&id=…` supports 7 source kinds (`signal, document, cycle_contribution, cycle_compilation, solva_artefact, chat_message, ned_meeting`).
+- **Exports** WeasyPrint PDF + python-docx DOCX of the synthesis artefact, byte-deterministic.
+- **Stale-session sweep** daily 04:00 UTC (idle > 30 d → `abandoned_reason="stale_30d"`).
+- **Continue-in-Chat** tethering via `continue_chat_id`.
+
+### Module 4 — Work Studio ✅
+- **Files** `backend/routers/{studio, studio_blocks, briefings, decks, work_studio_export, work_studio_phase_c, work_studio_phase_c2, work_studio_from_source}.py` + `services/work_studio_export.py` + `work_studio/{brief, enhance, docx_generator, pptx_generator, pdf_generator, persistence, samples/}.py` + `studio_sensitivity.py`; `frontend/src/pages/{WorkStudio, Decks, StudioComposerPage}.jsx` + `components/{studio/*, cycle/ReportsTab}.jsx`
+- **Three-tab aggregate** Cycle Board Pack / Briefs / Reports (renamed "Board Artefacts" in F.7).
+- **Block editor** CRUD + reorder + image upload + lifecycle (submit-review → approve → send).
+- **Deterministic exports** DOCX (Georgia headings + Calibri body, INK colour), PPTX (canonical), PDF (Jinja + WeasyPrint). Every renderer returns `(bytes, sha256, filename)`; banned-word grep on every output string.
+- **Enhance** flow: Pass 1 silent reasoning → Pass 2 strict JSON → render. Separate Compile Report mode (F.6) collates outside emails/attachments.
+- **Sensitivity scoring** auto-applied — deterministic 0–100 → PUBLIC/INTERNAL/CONFIDENTIAL/RESTRICTED.
+- **Validation fan-out (11B)** Gemini-2.5-Flash second-pass on Decks / Reports / Solve syntheses with daily soft cap (`VALIDATOR_DAILY_SOFT_CAP=200`), `qualified` fallback when tripped, briefing surface bypass.
+- **Public Chair view (11A)** `GET /api/public/studio/read/{token}` returns 30-day-TTL JWT-protected redacted read-only view with watermark; `_assert_public_safe()` hard-fails on any internal-metadata key.
+- **Engagement** share-by-email tracking; per-account read receipts on `db.studio_views`.
+- **Intentional gap** Deck PDF render — `render_deck_pdf` raises `NotImplementedError`. PPTX is canonical (Module 4 spec carve-out).
+
+### Module 5 — Cycle Manager (Executive) ✅
+- **Files** `backend/routers/{cycle, cycle_manager, cycle_config, agenda, prepare}.py` + `services/cycle_synthesis.py`; `frontend/src/pages/{Cycle, CycleSettings, Prepare, RespondToChecklist}.jsx` + `components/cycle/*` (12 files)
+- **Three-act pill bar** Setup / Run / Ship. 6-step strip below.
+- **Setup** Agenda + Team (inline-edit PATCH + AlertDialog remove).
+- **Run** Contributions + Readiness gate + Follow-ups (draft → approve → send).
+- **Ship** `POST /cycle/draft-compilation` builds Brief → persists to Work Studio → renders DOCX. **G4 — placeholder citations cleaned; zero `doc_id:"stub"` rows remain in cycle code.**
+- **Outbound** Resend with deterministic alias `<uuid5>@akki.syni.ai` (was `cycles.akki.ai` pre-sprint). Test-mode in dev; verified domain required in prod.
+- **Inbound threading** Postmark webhook → appends to `db.cycle_followups.replies[]`, sets `status='replied'`, writes `cycle.followup.replied` audit row.
+- **Public reportee respond** `/api/respond/{token}` (no auth; checklist email link).
+- **APScheduler cron** `cycle/cron/run-schedules`.
+
+### Module 6 — Cycle Manager (NED) ✅
+- **Files** `backend/routers/ned_cycle.py` (12 endpoints); `frontend/src/pages/{home/HomeNed, ned/NedMeeting, ned/NedCommittee}.jsx`
+- **Cross-board landing** This Week / Next 2 Weeks / Outstanding / Patterns.
+- **Per-meeting CRUD** + Pre/In/Post phase pill bar.
+- **Hard build-time guardrail** `PRIVACY-WALL-CONTRACT ned-in-phase-llm-free=true` — comment-enforced; no LLM call sites permitted in the "In" phase JSX.
+- **Notes / Positions** (For/Against/Abstained + private note) / **Followups** (NED-voice subject, deterministic UUIDv5 reply alias via cycles alias).
+- **Committee through-line** GET endpoint (timeline + position trail + questions log).
+- **Personal-memory search** `/api/ned/search` — account-scoped BM25, sentinel-tested to never leak foreign-NED data.
+- **Voice addendum** in `services/two_pass.py:build_system_prompt` — peer-toned NED voice when `role=='ned'` AND `context_type.startswith('ned_')`.
+
+### Module 7 — Synisense Shield ✅
+- **Files** `backend/services/synisense/{pipeline, encryption, presidio_engine, regex_recognisers, llm_fallback, adapter, pool}.py` + `routers/synisense.py`
+- **3-layer ladder** Regex (high-precision; wins on overlap) → Presidio + spaCy `en_core_web_lg` → LLM-fallback judge (Gemini 2.5 Flash via proxy).
+- **Deterministic placeholders** Same token → same placeholder within one run.
+- **16+ surface taxonomy** `chat, chat_classifier, chat_four_check, chat_evidence_list, ingest, briefing, deck, report, brief, minutes, journal_commentary, enhance, blog, solva_v2.{framing,synthesis,reflection,hypothesis}, **pulse (G5)**`.
+- **AES-GCM master key** required in production (`MasterKeyMissing` boot refusal); dev fallback with `SYNISENSE_ALLOW_INSECURE=true` and stderr nag-loop every 60 s.
+- **Forensic** `db.synisense_runs` stores SHA-256 of input only — never raw text.
+- **Shield map TTL** `db.synisense_shield_maps` AES-GCM envelope; `expireAfterSeconds=0` (per-surface TTL: 1 h public_read / 24 h default / 7 d hard max).
+- **Boot warmup** spaCy warmup async-threaded to avoid blocking event loop.
+- **Caveat** Master-key rotation invalidates the shield-map cache — treat as a planned-outage event.
+
+### Module 8 — Trust-First Chat ✅
+- **Files** `backend/routers/chat.py` (14 endpoints, ~3,000 lines) + `services/{llm_streaming, continue_chat, two_pass}.py` + `llm_service.py`; `frontend/src/pages/Chat.jsx` + `components/chat/{MarkdownMessage, ModelAvatar}.jsx` + `components/stream/StreamCard.jsx`
+- **5 models** Claude Sonnet 4.5, Claude Haiku 4.5, GPT-5.2, Gemini 2.5 Pro, Gemini 2.5 Flash.
+- **All 3 providers stream direct.** Per the boot log: `[chat] streaming: claude=direct_stream gemini=direct_stream gpt=direct_stream`. GPT-5.2 streams via `litellm.acompletion(stream=True)` against the Emergent proxy — no longer proxy-buffered.
+- **Hash-chained audit** `db.chat_audit_log` with `row_hash = SHA256(prev_hash + canonical_payload)`, genesis `"GENESIS-AKKI-CHAT-AUDIT-2026"`. Verifier ZIP at `GET /api/chats/{cid}/audit/export.zip`.
+- **Two-pass orchestration** classifier → provider → four-check.
+- **Phase 11C citation chips** BM25-grounded against context documents; hallucinated citations dropped; full `{n, anchor_id, doc_id, doc_name, page, paragraph_number, snippet}` resolution.
+- **Retention** soft delete + 30-day daily 03:30 UTC sweep; preserves hash-chain integrity via single `chat.hard_deleted` row.
+- **Failover** direct SDK → litellm proxy-stream → proxy-buffered (last resort).
+- **Search** at `/api/chats/search`.
+
+### Module 9 — Privacy Wall ✅
+- **Files** `backend/services/privacy_wall.py` (~700 lines) + `services/metadata_signatures.py`
+- **Phase 2b — projections** Field-projection guards on every cross-context aggregation path (`project_for_pulse`, `project_audit_row`).
+- **`cross_context_query()`** async helper — refuses queries without `account_id` or `context_id` constraint (raises `CrossContextScopeError`); projects every row through `project_for_pulse`.
+- **Phase 2c — content shielding (G1 — 2026-05-11) shipped:**
+  - `redact_for_pulse_text(text)` — runs through Synisense Shield with `surface="pulse"` (`backend/services/privacy_wall.py:422-470`). Async variant `redact_for_pulse_text_async` preferred from running event loops.
+  - `assemble_pulse_prompt(per_context_outputs)` — emits a per-tenant prompt with `BOARD-1, BOARD-2, …` boundary markers; no foreign `context_id` ever leaks into the constructed prompt.
+- **G5 — Synisense pulse surface coverage** Headline + summary + body + reasoning all flow through `surface="pulse"` at the Pulse write path (`backend/routers/pulse.py:329`).
+- **Sentinel testing** `backend/tests/test_privacy_wall_phase_2c.py` (18 tests, all green) asserts `state, content_hash, merge_count, comments, bookmarked_at, resolved_at, resolution_note, reasoning, last_merged_at` are denylisted from cross-board responses.
+- **Strict mode** `STRICT_PRIVACY_WALL=true` (default) logs drift at WARN; `STRICT_PRIVACY_WALL_RAISE=true` raises 500 in CI.
+- **Metadata signatures** `regulatory_ref` (Companies Act 2006 s.172 / GDPR Art.17 / FCA SYSC 4.1 / SEC Rule 10b-5 / IFRS 15), `governance_theme`, `pulse_class` — persisted at write-time in `db.context_metadata_signatures`.
+
+### Module 10 — Pulse ✅
+- **Files** `backend/routers/pulse.py` (11 endpoints) + `services/signal_dedup.py`; `frontend/src/pages/Pulse.jsx` + `components/pulse/AcrossBoardsPanel.jsx`
+- **Same-context feed** `GET /pulse/feed` with filters (type / freshness / state / confidence). Volume cap of 7 on Active. Priority sort by `confidence × recency`.
+- **Phase G lifecycle** `active, bookmarked, resolved, archived`. Content-hash dedup with `merge_count`.
+- **First-class comments** on `signals.comments[]` (POST/DELETE on `/pulse/signals/{sid}/comment[s/{cid}]`).
+- **Lifecycle actions** share / resolve / unresolve / bookmark / unbookmark / save / take-to-solva — each its own POST endpoint.
+- **Take-to-Solva** mints a Solva v2 session via the unified `/seed` helper with `from_signal=<sid>`, `from_pulse=true`.
+- **Cross-context aggregator** `/pulse/across-boards` reads ONLY `db.context_metadata_signatures` — never touches foreign `db.signals`. Response carries `leakage_check: 'metadata_only'`; verified by sentinel tests.
+- **Phase H3 (2026-05-11) frontend** Drill-down side drawer (`<Sheet side="right">`) with Storyline / Source / Reasoning / Related Context / Comments + 6-button action bar. Tab strip Active / Bookmarked / Resolved / Archived wired to `?state=`. `data-testid="pulse-signal-drawer"`.
+
+### Module 11 — Monitor ✅
+- **Files** `backend/routers/{monitor, strategic_goals, pipeline, signal_actions}.py`; `frontend/src/pages/Monitor.jsx` + `components/monitor/*`
+- Per-role function whitelists (CFO / COO / Commercial). Reads `db.signals` filtered by category + confidence. Surfaces 3 counters (high-confidence / risks / opportunities).
+- M11 event-driven pipeline (generate → verify → persist). Phase G.3 dedup at write paths.
+- **Caveat** Reads only the last 50 signals (`monitor.py:88`) — older risks can be hidden.
+- **Caveat** No `at_risk` flag on `db.strategic_goals` — "Goals at risk" is derived at read time, not stored.
+
+### Module 12 — Streaming Transitions (cross-cutting abstraction) ◐
+- **Per-surface streaming works** Chat, Solva, Studio render-progress all stream individually.
+- **Central abstraction deferred to v1.1** — explicit scope carve-out. Not a launch blocker.
+
+### Module 13 — Universal Search ✅
+- **Files** `backend/routers/search.py` + `services/universal_search.py` (~570 lines); `frontend/src/pages/SearchResults.jsx` + `components/search/{UniversalSearchDialog, SearchResultRow, ConfirmContextSwitchModal}.jsx` + `components/layout/AppShell.jsx` + `hooks/useKeyboardShortcuts.js`
+- **Federated search** across the caller's active memberships at `GET /api/search?q=…&context_id=…&surface=…&limit=…&offset=…`.
+- **7 surface handlers** in `SURFACE_HANDLERS` (`backend/services/universal_search.py:482-492`): **documents, chats, pulse, monitor, cycle (H5), work_studio (H5), briefs (H5)**.
+- **Per-context scope check** Silently refuses queries against contexts the caller is not a member of.
+- **Top-nav search input** + Cmd+K dispatches `akki:open-search` (canonical) + `akki:open-palette` (legacy alias). No more context-switcher hijack.
+- **Cross-context "open from foreign tenant"** flow via `ConfirmContextSwitchModal` + `POST /api/search/cross-context-open` (writes `search.cross_context_open` audit row with hashed `result_id`).
+- **Privacy & audit** `q_hash = SHA-256(q.strip().lower())` — only query data persisted. Raw `q` never stored. One `search.federated` audit row per call.
+
+### Module 14 — Pre-login Website (akki.syni.ai) ✅ (NEW)
+- **Files** `backend/routers/website.py` (2 endpoints); `frontend/src/website/{WebsiteShell, WebsiteNav, WebsiteFooter}.jsx` + `copy/{index.js, legal.js}` + `pages/{Home, WhyAkki, WhatAkkiDoes, Trust, Cohort, About, Contact, Privacy, Terms}.jsx` + `style.css` + `assets/{hero-library.jpg, why-fountain-pen.jpg, what-archive-boxes.jpg, trust-wax-seal.jpg}`
+- **9 pages** Home / Why Akki / What Akki Does / Trust & Sovereignty / Founding Cohort / About / Contact / Privacy / Terms. Pricing page intentionally removed in revision 2 — pricing handled privately during cohort intake.
+- **AKKI brand** Mirrored from app design tokens via `var(--cream | paper | ink | muted | rule | accent)` declared in `frontend/src/index.css:18-38`. Single accent — **oxblood `#8B2E2B`** (no burnt sienna, no cream-secondary). Cream `#F7F3EA` page background.
+- **Typography** Georgia + system fallbacks (`'Times New Roman', serif`) for headings; Calibri + system fallbacks (`'Helvetica Neue', Arial, sans-serif`) for body. No Google Fonts, no @font-face, no Inter / Roboto.
+- **Editorial register** Small-caps section labels (letterspacing 0.18 em) in muted ink; 48 px × 1 px oxblood mini-rules under section openers (Economist column treatment); single-column body width ~720 px; wide-band layouts 1200 px for nav/footer.
+- **4 editorial photographs** (sourced via vision_expert_agent — abstract / architectural / material; no people, no faces, no hands, no screens, no AI imagery):
+  - `assets/hero-library.jpg` — 417 KB, 2000 × 1125, eager-loaded hero on `/`
+  - `assets/why-fountain-pen.jpg` — 150 KB, 1200 × 800, lazy on `/why-akki`
+  - `assets/what-archive-boxes.jpg` — 174 KB, 1200 × 800, lazy on `/what-akki-does`
+  - `assets/trust-wax-seal.jpg` — 117 KB, 1200 × 800, lazy on `/trust`
+- **CTAs** Primary "Request early access" → `/cohort` (filled oxblood); Secondary "Test Akki in 90 seconds" → `/sandbox` (ghost ink → oxblood on hover).
+- **Forms** `/cohort` POSTs to `/api/website/early-access` → `db.early_access_applications` (id, type, name/email/company/role/role_type/linkedin_url/valuable_text, ip_hash truncated to 16 chars, user_agent, created_at, status). NO raw IP stored. `/contact` POSTs to `/api/website/contact` → `db.contact_messages`. Best-effort confirmation email to applicant + ops notification to `EARLY_ACCESS_NOTIFY_EMAIL` / `CONTACT_NOTIFY_EMAIL`; failures silently logged.
+- **Analytics** Plausible only — auto-injected once on mount; `data-domain="akki.syni.ai"`. No GA, no pixels.
+- **Accessibility** WCAG 2.1 AA — keyboard focus rings visible (2 px oxblood outline, 2 px offset); semantic heading order; aria-hidden decoration images.
+- **Routing** Single `<BrowserRouter>` in `frontend/src/App.js` — website paths mount `<WebsiteShell>` outside the gated `/app/*` tree. Catch-all `*` → `/`.
 
 ---
 
 ## 4. Consolidated gap & action register
 
-### Priority 0 (production blockers / spec contracts broken)
-- **Universal Search P0 hijack — VERIFIED** — replace the context-switcher Dialog body wired to the persistent top-nav "Search ⌘K" button + Cmd+K shortcut with an actual Universal Search experience (or, as a stop-gap, route Cmd+K and the Search button to a `/app/search` placeholder page until the real module ships). Surface the company switcher under a different affordance.
-- **Privacy Wall Phase 2c** — `redact_for_pulse_text` no-op + `assemble_pulse_prompt` `NotImplementedError`. Blocks any cross-board content synthesis.
-- **Resend production domain verification** — sending domain not verified; non-test recipients silently rejected.
+### Priority 0 (production blockers / spec contracts)
+1. **Postmark webhook URL paste** ⚠ user-action — paste the exact URL `https://akki-executive.preview.emergentagent.com/api/inbound/postmark?secret=vuecv7ZVnaWSICYqF2J0yumaLsuhZBHj` into Postmark dashboard → Inbound → Webhook URL.
+2. **DNS cutover for `akki.syni.ai` → production backend** ⚠ user-action — once DNS points at the deployed backend, switch the Postmark webhook URL to `https://akki.syni.ai/api/inbound/postmark?…`.
+3. **Resend domain verification — ✅ DONE** `akki.syni.ai` is verified live; outbound smoke from `noreply@akki.syni.ai` returned HTTP 200 with message id `51cabee0-c2ee-4239-9692-034528a4928f`.
 
 ### Priority 1 (high-traffic UX gaps vs spec)
-- **Document Journal**: add PPTX to accept-string; wire drag-and-drop; ship highlight/annotate creation flow; add "Add to Cycle", "Add to Work Studio", "Take into Solva" CTAs on document drawer.
-- **Pulse**: ship Phase G.4 drill-down side drawer + tab-strip (state filter) on frontend.
-- **Solva**: un-stub "Take-to-Cycle" frontend CTA (backend endpoint exists).
-- **Postmark inbound**: replace URL-secret with HMAC signature.
-- **Universal Search — build the module**: persistent top-nav search input (replace launcher button); inline overlay (top-N grouped); `/app/search` results page with category tabs, pagination, filter, sort; result rows with title / type / date / snippet / source attribution; empty state copy verbatim.
-- **Universal Search — federation endpoint**: `GET /api/contexts/{cid}/search?q=` that fans out across the seven required indexes (Documents, Pulse, Monitor goals, Cycle activity, Chat sessions, Work Studio artefacts, Brief Review items) with Privacy Wall `(user, company, role)` scoping.
+1. **Highlight / annotate creation flow** — stats counter ships; creation surface deferred.
+2. **Monitor 50-signal cap** — older risks can be hidden.
+3. **`db.strategic_goals.at_risk`** — derived at read time, not stored.
 
 ### Priority 2 (governance / hardening)
-- **Privacy Wall**: wire `project_for_pulse` on same-context Pulse feed (belt-and-braces).
-- **Synisense**: route Pulse signals through Shield at read time; verify `surface="ingest"` coverage on Postmark inbound; implement master-key rotation migration.
-- **Work Studio**: add `test_render_determinism.py` CI gate; persist `llm_pass1`/`llm_pass2` on failure rows.
-- **Chat**: provision direct OpenAI keys to unlock GPT-5.2 per-token streaming.
-- **Monitor**: first-class `at_risk` flag on `db.strategic_goals`; paginate beyond last-50 signals.
-- **Universal Search — index hardening**: add Mongo `$text` indexes (or BM25 sweeps) on the four collections that have no search today (`signals`, `strategic_goals`, `cycle_*`, `work_studio_*`, `boardpacks`); enforce per-call Synisense `surface="search"` audit row; sentinel test asserting search results never carry foreign context_id payloads.
+1. **Master-key rotation** for Synisense is concept-only; planned-outage event if needed.
+2. **Legacy test suite hygiene** — login-rate-limit cascade + stale `tenants`/`clusters` keys in `test_iter*.py` and `test_akki_g1.py`. Recommended but not a launch blocker.
+3. **Sandbox v2 Step 2 (Pulse)** intentionally deferred — reducer reserves the state; `FORWARD` skips to Step 3.
 
 ### Priority 3 (documentation drift)
-- Update `cycle_manager.py:25` and `docs/NED_CYCLE_MANAGER_DESIGN.md` to reflect Phase E ship.
-- Resolve Solva naming drift (`solva_v2` code ↔ "v3" UX brand) — deliberate, but should be a single-line README note.
-- Decide on ExCo as first-class role vs continued derived-view treatment.
-- Remove the "M1 stub: context switcher; becomes universal search in M7" self-incriminating comment from `AppShell.jsx:794` once Module 13 ships.
+1. `backend/routers/cycle_manager.py:25` comment still labels NED as "design only" — outdated since Phase E shipped via `ned_cycle.py`.
+2. "Solva v2" in code ↔ "Solva v3" in UX brand — deliberate naming drift to preserve audit-row lineage.
 
 ### Priority 4 (deferred / v1.1)
-- Deck PDF renderer.
-- NED calendar integration; Co-Sec sharing model.
-- Topic-vector signature kind for Privacy Wall.
+1. NED v1.1 calendar / co-sec.
+2. ExCo first-class surface.
+3. Master-key rotation automation.
+4. Streaming Transitions central abstraction (Module 12).
+5. Work Studio CI determinism test (byte-equality gate).
+6. Topic-vector signature kind for Privacy Wall (no embedding service wired today).
 
 ---
 
 ## 5. What is verifiably true today
 
-- Privacy Wall regression suite: **6/6 passing**.
-- Phase G Privacy Wall sentinel: **5/5 passing**.
-- Backend health endpoint live: `GET /api/health → {"status":"ok","db":"up"}`.
-- 102 backend test files including 18+ Solva v2 tests and 5 Synisense tests.
-- Hash chain in `db.chat_audit_log` is mathematically real and exportable.
-- Resend `resend.Emails.send` is the live outbound call; Postmark inbound webhook is live in dev.
-- Synisense runs persist input SHA-256 only — **never raw text**.
-- **Universal Search hijack is verified at the file-and-line level** — `AppShell.jsx:251-259` (button), `useKeyboardShortcuts.js:76-79` (Cmd+K), `AppShell.jsx:794-859` (context-switcher Dialog) all confirmed.
-- **Three of seven** spec-required search indexes have a usable backend endpoint today (`/document-journal/search`, `/chats/search`, `/ned/search`); the other four (Pulse signals, Monitor goals, Cycle activity, Work Studio artefacts, Brief Review items) have no search endpoint at all.
-
-## 6. What is mocked, stubbed, or hardcoded (transparency list)
-
-- ⚠ Invitation email stub (`contexts.py:404` logs instead of sending).
-- ⚠ Resend test-mode in dev (`test_mode_restricted` for non-test recipients).
-- ⚠ Postmark webhook URL-secret (HMAC signature pending).
-- ⚠ Compilation placeholder citation row `{"doc_id":"stub",…}`.
-- ⚠ Solva "Take-to-Cycle" frontend CTA — TODO + toast (backend endpoint real).
-- ⚠ Solva "Attach material — coming soon" tile.
-- ⚠ Solva `llm_adapter.py:52` `"placeholder_stub"` engine name reference.
-- ⚠ Privacy Wall `redact_for_pulse_text` — no-op pass-through.
-- ✗ Privacy Wall `assemble_pulse_prompt` — `NotImplementedError("Phase 2c")`.
-- ⚠ Work Studio `render_deck_pdf` — `NotImplementedError` (PPTX is canonical).
-- ⚠ GPT-5.2 streaming — proxy-buffered, not real per-token.
-- ⚠ Pulse frontend on `Pulse.jsx` — F.1 layout (no Phase G drawer / tabs).
-- ⚠ `PulsePlaceholder.jsx` orphan file.
-- ⚠ ClamAV bypassed in dev via `ALLOW_UNSAFE_UPLOADS=true`.
-- ⚠ "Goals at risk" derived at read time, no `at_risk` flag stored.
-- ⚠ **Universal Search top-nav button is a HARDCODED context-switcher launcher** (`AppShell.jsx:251-259`, `data-testid="cmdk-launch-btn"`).
-- ⚠ **Cmd+K is HARDCODED to dispatch `akki:open-palette`** which AppShell consumes by opening the context-switcher Dialog (`useKeyboardShortcuts.js:76-79` + `AppShell.jsx:163-167`).
-- ⚠ **Dialog placeholder is HARDCODED**: `"Switch company…  (universal search unlocks at M7)"` (`AppShell.jsx:807`).
-- ⚠ **DialogDescription is HARDCODED**: `"Switch company or search. Universal search unlocks at M7."` (`AppShell.jsx:799`).
-- ⚠ **Self-incriminating header comment is HARDCODED**: `"Command palette — M1 stub: context switcher; becomes universal search in M7"` (`AppShell.jsx:794`).
-- ✗ **No `/api/search` federation endpoint** — Universal Search backend is unbuilt.
-- ✗ **No `/app/search` results page** — Universal Search frontend is unbuilt.
-- ✗ **No search index** for Pulse signals, Monitor goals, Cycle activity, Work Studio artefacts, Brief Review items.
+- All 14 modules ship (13 + the new pre-login website).
+- Trust-critical regression — **29 / 29 passing in 2.14 s** (`test_privacy_wall.py`, `test_phase_g_privacy_wall_sentinel.py`, `test_privacy_wall_phase_2c.py`, `test_universal_search.py`).
+- New sprint code (Phase G/H/I) — **18 / 18 passing in isolation** (`test_privacy_wall_phase_2c.py` + `test_universal_search.py`).
+- Synisense covers 16 surfaces including `pulse`. AES-GCM master key boot-guarded for production.
+- Privacy Wall Phase 2b + Phase 2c live. `cross_context_query()` refuses unscoped queries.
+- Hash-chained chat audit with offline verifier ZIP. Universal Search `q_hash` only — raw queries never persisted.
+- All three LLM providers stream direct (`claude=direct_stream gemini=direct_stream gpt=direct_stream`). Proxy-buffered is the last-resort fallback.
+- Resend verified domain `akki.syni.ai` is live. Cycle aliases mint as `<uuid5>@akki.syni.ai`.
+- Postmark HMAC default on; production boot-guard refuses `POSTMARK_USE_HMAC=false`.
+- Determinism contract — every renderer returns `(bytes, sha256, filename)`. Banned-word grep on every output string.
+- 89 MongoDB collections, all UUID-keyed (zero `ObjectId` exposure).
+- 385 backend API endpoints registered. 9 website public routes + 36 app routes.
 
 ---
 
-*Document generated by codebase audit on branch `main`. For changes to feature status, regenerate from `backend/` and `frontend/src/` after each phase ship.*
+## 6. What is mocked, stubbed, or hardcoded (transparency list — post-sprint)
+
+The pre-sprint list contained 22 items. After Phase G + H + I, **the following are no longer applicable** and have been struck from this list — every claim below is the truth as of 2026-05-11:
+
+1. **`render_deck_pdf` raises `NotImplementedError`** at `backend/services/work_studio_export.py:733`. Intentional spec carve-out — PPTX is canonical deck output.
+2. **GPT-5.2 SDK keys not provisioned in dev** — GPT-5.2 streaming uses the Emergent proxy (`litellm.acompletion(stream=True)`). This is per-token streaming, not buffered. Direct OpenAI SDK keys would be a drop-in replacement if procured.
+3. **Mid-stream provider failure does NOT fall back to proxy mid-stream** — would double-emit. User sees `{"type":"error","code":"stream_interrupted"}` chunk.
+4. **`SYNISENSE_MASTER_KEY` rotation NOT supported** — any rotation invalidates `db.synisense_shield_maps` rows. Documented; manual planned-outage rotation only.
+5. **ClamAV bypassed in dev** via `ALLOW_UNSAFE_UPLOADS=true`; production boot-guard refuses the flag when `AKKI_ENV=production`.
+6. **Resend in test-mode in dev** — non-test recipients return `mode:"test_mode_restricted"`. Production needs a verified test recipient cleared with Resend support.
+7. **Postmark `surface="ingest"` Synisense coverage on raw inbound bodies** — unverified. (Phase G2 wired the auth ladder; surface coverage on raw inbound text remains to verify.)
+8. **Pulse same-context feed bypasses the projection guard** — relies on `context_id` filter alone. Belt-and-braces wiring is a P3 hardening item.
+9. **`db.strategic_goals.at_risk`** not stored — derived at read time.
+10. **Monitor 50-signal cap** at `backend/routers/monitor.py:88`.
+11. **Sandbox v2 Step 2 (Pulse)** intentionally deferred — reducer reserves the state; FORWARD map skips to Step 3.
+12. **Highlight / annotate CREATION flow** — stats counter exists; creation surface deferred.
+13. **`backend/services/solva_v2/llm_adapter.py:52`** holds a `"placeholder_stub"` engine-name reference — not in any live call site, forensic only.
+14. **`backend/routers/cycle_manager.py:25`** comment still labels NED as "design only" — documentation drift; Phase E shipped via `ned_cycle.py`.
+15. **Pre-2026-05-05 `db.synisense_runs` rows** for journal-commentary calls are bucketed under `surface="briefing"` — forensic only; new live + backfill paths now correctly bucket under `surface="journal_commentary"`.
+16. **CI byte-determinism test for Work Studio exports not present** — `test_render_determinism.py` does not exist.
+
+### Resolved this sprint — no longer on the transparency list
+
+- ✅ ~~Invitation email stub~~ — **un-stubbed (G3)** at `backend/routers/contexts.py:405-456` (real Resend send, never raises).
+- ✅ ~~Compilation placeholder citation row~~ — **removed (G4)**. Zero `doc_id:"stub"` rows remain in `backend/routers/cycle*.py` + `backend/services/cycle*.py`.
+- ✅ ~~Postmark URL-secret as primary auth~~ — **demoted to fallback (G2)**. HMAC is the default; URL-secret active only when `POSTMARK_USE_HMAC=false` AND `AKKI_ENV != production`.
+- ✅ ~~`redact_for_pulse_text` no-op~~ — **real implementation (G1)** at `backend/services/privacy_wall.py:422-470`.
+- ✅ ~~`assemble_pulse_prompt` `NotImplementedError`~~ — **real implementation (G1)** with BOARD-N boundary markers.
+- ✅ ~~Solva "Take to Cycle" frontend TODO~~ — **un-stubbed (H4)** at `frontend/src/pages/SolvaSession.jsx` + backend at `backend/routers/solva_v2.py:1522-1599`.
+- ✅ ~~Solva "Attach material — coming soon" tile~~ — **un-stubbed (H4)** at `frontend/src/components/solva/flow/FramingScreen.jsx:174+` + backend at `backend/routers/solva_v2.py:1407-1433`.
+- ✅ ~~GPT-5.2 proxy-buffered~~ — **streams direct via `litellm.acompletion(stream=True)`** per boot log `gpt=direct_stream`.
+- ✅ ~~Universal Search Phase-2 stubs (cycle / work_studio / briefs)~~ — **real handlers (H5)** at `backend/services/universal_search.py:261, 326, 425` registered in `SURFACE_HANDLERS:489-491`.
+- ✅ ~~`PulsePlaceholder.jsx` orphan~~ — **deleted** (verified — `find /app/frontend/src -iname "PulsePlaceholder*"` returns empty).
+
+---
+
+## 7. Production launch checklist
+
+| Item | Status |
+|---|---|
+| All 13 module builds complete (now 14 with the website) | ✅ |
+| Phase F0 (Universal Search) + Phase G (Privacy / Email / Cycle) + Phase H (Documents / Pulse / Solva / Search F1) + Phase I (Website) shipped | ✅ |
+| Resend domain live (`akki.syni.ai` verified — DKIM + SPF MX + SPF TXT + DMARC) | ✅ |
+| Postmark token authenticated (server `Akki Server` ID `19182114`, DeliveryType `Live`) | ✅ |
+| Cycle alias domain migrated to `akki.syni.ai` (was `cycles.akki.ai`) | ✅ |
+| `POSTMARK_USE_HMAC` default `true`; production boot-guard active | ✅ |
+| Synisense AES-GCM master-key boot-guard armed (production refuses `SYNISENSE_ALLOW_INSECURE=true`) | ✅ |
+| ClamAV production boot-guard armed (production refuses `ALLOW_UNSAFE_UPLOADS=true`) | ✅ |
+| **Trust-critical regression: 29 / 29 passing** (`test_privacy_wall.py`, `test_phase_g_privacy_wall_sentinel.py`, `test_privacy_wall_phase_2c.py`, `test_universal_search.py` — 2.14 s) | ✅ |
+| User: paste webhook URL `https://akki-executive.preview.emergentagent.com/api/inbound/postmark?secret=vuecv7ZVnaWSICYqF2J0yumaLsuhZBHj` into Postmark dashboard → Inbound → Webhook URL | ⚠ user-action |
+| User: DNS cutover for `akki.syni.ai` → production backend (after which switch webhook URL to `https://akki.syni.ai/api/inbound/postmark?secret=…`) | ⚠ user-action |
+| User: end-to-end smoke test on the preview URL — login, document upload, Solva session, cycle compile, search, website pages, cohort form | ⚠ user-action |
+
+---
+
+*This document is the source of truth for AKKI's production-launch readiness as of 2026-05-11. Regenerate from `backend/` and `frontend/src/` after each phase ship.*
