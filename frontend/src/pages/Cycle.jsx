@@ -35,6 +35,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import JudgementPanel from "@/components/cycle/JudgementPanel";
 import { takeToSolva } from "@/lib/takeToSolva";
+import WorkspaceEntryGate from "@/components/transitions/WorkspaceEntryGate";
 
 const STEPS = [
   { id: "agenda",        label: "Agenda",        icon: ClipboardList, act: "setup" },
@@ -829,6 +830,7 @@ export default function Cycle() {
 
   return (
     <AppShell>
+      <WorkspaceEntryGate workspace="cycle">
       <div className="akki-w-medium px-8 py-10" data-testid="cycle-page">
         <p className="akki-overline mb-2 flex items-center gap-2">
           <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Cycle Manager · {activeContext.name}
@@ -856,6 +858,7 @@ export default function Cycle() {
           {stepId === "compilation" && <CompilationStep cid={cid} onBack={onBack} />}
         </StepShell>
       </div>
+      </WorkspaceEntryGate>
     </AppShell>
   );
 }

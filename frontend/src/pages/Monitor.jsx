@@ -6,6 +6,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import StrategicGoalsPanel from "@/components/monitor/StrategicGoalsPanel";
+import WorkspaceEntryGate from "@/components/transitions/WorkspaceEntryGate";
 import {
   Activity, AlertTriangle, ArrowRight, Eye, FileText,
   Send, Sparkles, Target, ScrollText, Layers, Pencil, X, Loader2,
@@ -88,6 +89,7 @@ export default function Monitor() {
 
   return (
     <AppShell>
+      <WorkspaceEntryGate workspace="monitor">
       <div className="h-[calc(100vh-4rem)] akki-w-medium px-8 overflow-y-auto" data-testid="monitor-page">
         <div className="pt-10 pb-6">
           <p className="akki-overline mb-2 flex items-center gap-2">
@@ -173,6 +175,7 @@ export default function Monitor() {
           />
         )}
       </div>
+      </WorkspaceEntryGate>
     </AppShell>
   );
 }

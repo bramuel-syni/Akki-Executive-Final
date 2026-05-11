@@ -4,20 +4,29 @@
    under .akki-sandbox so it never bleeds into the gated /app tree. */
 
 .akki-sandbox {
-  --sb-paper:    #F7F4EE;
-  --sb-cream:    #EDE7D6;
-  --sb-ink:      #0F1419;
-  --sb-slate:    #2A3441;
-  --sb-muted:    #6B7480;
-  --sb-accent:   #8B6F3E;   /* bronze — restrained emphasis */
-  --sb-severity: #8B2E2E;   /* deep red — genuine severity only */
-  --sb-rule:     #D8D2C5;
+  --sb-parchment:       #F2EFE8;
+  --sb-parchment-light: #F8F6F0;
+  --sb-ink:             #1A1D20;
+  --sb-graphite:        #6F7177;
+  --sb-graphite-light:  #B8B6AF;
+  --sb-oxblood:         #7A2E2E;
+  --sb-oxblood-deep:    #5E2222;
+  /* legacy aliases — kept so component-level references continue
+     resolving while we finish migration. Each one points at v7
+     canonical token. */
+  --sb-paper:    var(--sb-parchment);
+  --sb-cream:    var(--sb-parchment-light);
+  --sb-slate:    var(--sb-graphite);
+  --sb-muted:    var(--sb-graphite);
+  --sb-accent:   var(--sb-oxblood);
+  --sb-severity: var(--sb-oxblood);
+  --sb-rule:     var(--sb-graphite-light);
 
-  background: var(--sb-paper);
+  background: var(--sb-parchment);
   color: var(--sb-ink);
-  font-family: Calibri, 'Helvetica Neue', Arial, sans-serif;
-  font-size: 18px;
-  line-height: 1.65;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 17px;
+  line-height: 1.6;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -25,7 +34,7 @@
 .akki-sandbox h1,
 .akki-sandbox h2,
 .akki-sandbox h3 {
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
   color: var(--sb-ink);
   letter-spacing: -0.015em;
   font-weight: 700;
@@ -84,7 +93,7 @@
   width: 100%; padding: 12px 14px; font-size: 16px;
   border: 1px solid var(--sb-rule); border-radius: 2px;
   background: var(--sb-paper); color: var(--sb-ink);
-  font-family: Calibri, 'Helvetica Neue', Arial, sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   transition: border-color 180ms ease;
 }
 .akki-sandbox .sb-textarea { min-height: 110px; resize: vertical; }
@@ -137,7 +146,7 @@
 .akki-sandbox .sb-loading-line--done { color: var(--sb-ink); }
 
 .akki-sandbox .sb-step-reveal {
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
   font-size: 16px; font-style: italic; color: var(--sb-accent);
   border-top: 1px solid var(--sb-rule);
   padding-top: 20px; margin-top: 36px;

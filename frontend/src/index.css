@@ -35,9 +35,16 @@
   --accent-soft: #EDE3CF;   /* bronze-tinted soft surface for accent panels */
   --severity:    #8B2E2E;   /* genuine severity — risk, error, alert, refusal. NEVER decorative. */
   --slate:       #2A3441;   /* secondary text, slightly softer than --ink */
-  --navy:        #0F1E3A;   /* institutional voice — wordmark, AKKI replies, chrome */
-  --chrome:      #1A2B4C;   /* navy institutional — primary CTAs, active nav, focus ring */
-  --chrome-soft: #E6EAF1;   /* subtle navy tint for hover / soft backgrounds */
+  /* Phase K palette correction (2026-05-12) — Navy is FORBIDDEN by the
+     canonical Editorial Posture. The legacy --navy / --chrome /
+     --chrome-soft tokens have been preserved as aliases ONLY so the
+     ~50 component call sites that reference them keep rendering. Each
+     alias now points at the canonical equivalent so no Navy hex
+     value ever reaches the DOM. Do not introduce new references to
+     these aliases — use --ink / --slate / --cream directly. */
+  --navy:        var(--ink);   /* legacy alias → ink (near-black) */
+  --chrome:      var(--ink);   /* legacy alias → ink (primary CTAs render near-black) */
+  --chrome-soft: var(--cream); /* legacy alias → cream surface */
   --risk:        #8B2E2E;   /* alias of --severity — kept for backward compat */
   --gap:         #A67C00;
   --opportunity: #3D6F3D;

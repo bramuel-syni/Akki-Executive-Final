@@ -1,40 +1,44 @@
+/**
+ * Website v7 — /cycle-manager
+ * v7 §7.5.
+ */
 import React from "react";
-import { Link } from "react-router-dom";
 import WebsiteShell from "../../WebsiteShell";
-import EvidencePanel from "../../components/EvidencePanel";
-import "../../style.css";
+import { HeroWithLift, InvertedCtaSection, CitationPills } from "../../components/PagePrimitives";
+import { PRODUCTS, INVERTED_CTA } from "../../copy";
 
-export default function ProductCyclePage() {
+export default function CycleManager() {
+  const p = PRODUCTS["cycle-manager"];
   return (
     <WebsiteShell
-      title="Cycle Manager — Setup. Run. Ship."
-      description="Board cycle workflow with real outbound email under opaque aliases. Inbound replies thread back into the cycle."
-      pathname="/product/cycle-manager"
+      title="Cycle Manager — The work between meetings"
+      description="Setup the agenda. Build the team. Score contributions. Send follow-ups under opaque alias. Compile the next pack."
+      pathname="/cycle-manager"
     >
-      <section className="website-section website-section--narrow">
-        <span className="website-label">Product · Cycle Manager</span>
-        <h1>Setup. Run. Ship.</h1>
+      <HeroWithLift
+        kicker={p.kicker} headline={p.headline} lift={p.lift} dek={p.dek}
+        primaryCta={{ label: "See a cycle compile", href: "/sandbox" }}
+        secondaryCta={{ label: "How Agent Cycle works", href: "/trust#agent-cycle" }}
+        testId="cycle-page"
+      />
+      <section className="website-section section-reveal" data-testid="cycle-steps">
+        <p className="kicker">SIX STEPS</p>
+        <h2 className="section">The cycle runs in steady passes, signed by you.</h2>
         <span className="website-rule" />
-        <p style={{ fontFamily: "Georgia, serif", fontStyle: "italic", fontSize: 18, color: "#2A3441" }}>
-          The board cycle workflow as it actually runs — agenda, team, contributions,
-          follow-ups, compilation, ship.
-        </p>
-        <h2 style={{ marginTop: 56 }}>Three acts that match the work.</h2>
-        <div style={{ display: "grid", gap: 28, marginTop: 24 }}>
-          <div><h3>Setup.</h3><p>Agenda and team in one place. Inline edits. Audit-tracked changes. Real reportee invitations under opaque cycle aliases.</p></div>
-          <div><h3>Run.</h3><p>Contributions, readiness gate, follow-ups drafted in your own voice and sent under the cycle alias. Replies thread back automatically.</p></div>
-          <div><h3>Ship.</h3><p>Compilation triggers a Work Studio brief, the brief renders deterministic DOCX, and the cycle closes with an audit trail anyone can verify.</p></div>
-        </div>
-
-        <EvidencePanel kind="cycle_agenda" caption="A live cycle agenda in production form. Aliases are deterministic UUIDv5 per reportee — reply addresses are opaque." />
-
-        <p style={{ color: "#6B7480", fontSize: 14, marginTop: 24 }}>
-          Read about the choices behind Cycle Manager — <Link to="/methodology" className="website-link-inline">Methodology</Link>.
-        </p>
-        <div style={{ marginTop: 36 }}>
-          <Link to="/sandbox" className="website-cta-primary">Try the sandbox</Link>
-        </div>
+        <ol style={{ paddingLeft: 24, lineHeight: 1.7, maxWidth: 70 + "ch" }}>
+          {p.steps.map((s, i) => (
+            <li key={i} style={{ marginBottom: 10 }} data-testid={`cycle-step-${i}`}>{s}</li>
+          ))}
+        </ol>
+        <CitationPills pills={["cycle.alias.opaque", "inbound.thread.routing", "scoreboard.contribution"]} />
       </section>
+      <InvertedCtaSection
+        kicker={INVERTED_CTA.kicker}
+        headline="See Cycle Manager prepare for a meeting that hasn't happened yet."
+        body="The sandbox composes a sample agenda, scores a hypothetical contribution, and renders the next pack."
+        ctaLabel="Begin sandbox" ctaHref="/sandbox" meta={INVERTED_CTA.meta}
+        testId="cycle-inverted-cta"
+      />
     </WebsiteShell>
   );
 }

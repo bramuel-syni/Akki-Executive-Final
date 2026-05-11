@@ -1,48 +1,48 @@
+/**
+ * Website v7 — /what-akki-does  (v7 §6 — product overview).
+ * "Product" in the top nav routes here.
+ */
 import React from "react";
+import { Link } from "react-router-dom";
 import WebsiteShell from "../WebsiteShell";
-import { SURFACES } from "../copy";
-import whatImg from "../assets/what-archive-boxes.jpg";
-import "../style.css";
+import { HeroWithLift, InvertedCtaSection } from "../components/PagePrimitives";
+import { WHAT_AKKI_DOES, INVERTED_CTA } from "../copy";
 
-export default function WhatAkkiDoesPage() {
+export default function WhatAkkiDoes() {
   return (
     <WebsiteShell
-      title="What Akki Does"
-      description="Six product surfaces for senior decision work. Solva, Akki Chat, Work Studio, Cycle Manager, Monitor, Pulse — plus Document Journal."
+      title="What Akki does — Seven surfaces, one workspace"
+      description="A workspace for senior people. Solva, Akki Chat, Work Studio, Cycle Manager, Monitor, Pulse, Document Journal."
       pathname="/what-akki-does"
     >
-      <section className="website-section">
-        <span className="website-label">What Akki does</span>
-        <h1>Six surfaces. One working environment.</h1>
+      <HeroWithLift
+        kicker={WHAT_AKKI_DOES.kicker} headline={WHAT_AKKI_DOES.headline}
+        lift={WHAT_AKKI_DOES.lift} dek={WHAT_AKKI_DOES.dek}
+        primaryCta={{ label: "Try the sandbox", href: "/sandbox" }}
+        secondaryCta={{ label: "Why Akki", href: "/why-akki" }}
+        testId="what-page"
+      />
+      <section className="website-section section-reveal" data-testid="what-surfaces">
+        <p className="kicker">SEVEN SURFACES</p>
+        <h2 className="section">Each surface answers a recurring moment in senior work.</h2>
         <span className="website-rule" />
-        <p style={{ maxWidth: "60ch", marginBottom: 36, fontSize: 18, color: "#6B7480" }}>
-          Each surface is calm by default. Each is in service of a real decision
-          you would otherwise be making in a Word document at 9pm.
-        </p>
-        <img
-          src={whatImg} alt="" aria-hidden="true" loading="lazy"
-          width={1200} height={800}
-          style={{
-            display: "block", width: "100%", height: "auto", margin: "0 0 40px",
-            objectFit: "cover",
-            borderTop: "1px solid #D8D2C5",
-            borderBottom: "1px solid #D8D2C5",
-          }}
-          data-testid="what-supporting-image"
-        />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 18 }}>
-          {SURFACES.map((s) => (
-            <div key={s.id} className="website-tile" data-testid={`surface-tile-${s.id}`}>
-              <h3>{s.title}</h3>
-              <p className="website-tile-sub">{s.subtitle}</p>
-              <p style={{ fontSize: 15, color: "#0F1419" }}>{s.body}</p>
-              <p style={{ fontSize: 13, color: "#6B7480", fontStyle: "italic", margin: 0, marginTop: 12 }}>
-                Coming soon — full detail post-launch.
-              </p>
+        <div className="three-col">
+          {WHAT_AKKI_DOES.surfaces.map((s) => (
+            <div key={s.slug} className="three-col-card" data-testid={`what-surface-${s.slug}`}>
+              <h3>{s.name}.</h3>
+              <p style={{ fontStyle: "italic", color: "var(--graphite)", marginBottom: 8 }}>{s.sub}</p>
+              <p style={{ color: "var(--graphite)" }}>{s.body}</p>
+              <Link to={s.href} className="btn-tertiary">Read about {s.name} →</Link>
             </div>
           ))}
         </div>
       </section>
+      <InvertedCtaSection
+        kicker={INVERTED_CTA.kicker} headline={INVERTED_CTA.headline}
+        body={INVERTED_CTA.body} ctaLabel={INVERTED_CTA.cta.label}
+        ctaHref={INVERTED_CTA.cta.href} meta={INVERTED_CTA.meta}
+        testId="what-inverted-cta"
+      />
     </WebsiteShell>
   );
 }

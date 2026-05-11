@@ -16,7 +16,12 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Loader2, Sparkles, ArrowRight, ShieldCheck, Eye } from "lucide-react";
 
-const NAVY = "#0A1F44";
+/* Phase K palette correction (2026-05-12) — iter65 originally
+ * specified a full-bleed Navy band. Navy is now FORBIDDEN by the
+ * canonical Editorial Posture. The band is remapped to --ink
+ * (near-black) so it remains a "dark institutional" band without
+ * introducing a multi-colour semantic palette. */
+const NAVY = "#0F1419";
 const CREAM = "#F7F3EA";
 const OXBLOOD = "#8B2E2B";
 

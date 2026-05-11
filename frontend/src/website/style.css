@@ -1,84 +1,720 @@
-/* Phase I1 — Website-only stylesheet. Imported by WebsiteShell.
-   Keeps the website's typography choices isolated from the SPA. */
+/* =====================================================================
+ * Website v7 — visual system
+ * Brief: Website Brief v7.0 (locked)
+ * Implements §A1-A10 verbatim. Supersedes every prior website CSS.
+ *
+ * Token policy (single source of truth):
+ *   --parchment       #F2EFE8   every surface bg
+ *   --parchment-light #F8F6F0
+ *   --ink             #1A1D20   body + headlines + wordmark + button borders
+ *   --graphite        #6F7177   italic deks, metadata, dividers, captions
+ *   --graphite-light  #B8B6AF
+ *   --oxblood         #7A2E2E   kickers, lift words, citation pills, focus rings, footer headings
+ *   --oxblood-deep    #5E2222
+ *
+ * No bronze. No accent. No severity. No paper. No cream. No --navy.
+ * Calibri removed from website surfaces.
+ *
+ * Font-faces are self-hosted in /public/fonts. Because the v7 brief
+ * mandates no Google CDN, missing woff2 files fall through to the
+ * named stack (Georgia / system sans / system mono) — both stacks
+ * are typographically credible. Sandbox inherits the same tokens.
+ * ===================================================================== */
 
+@font-face {
+  font-family: "Source Serif 4";
+  src: local("Source Serif 4"), local("Source Serif Pro"), local("Source Serif");
+  font-display: swap;
+  font-weight: 300 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Source Serif 4";
+  src: local("Source Serif 4 Italic"), local("Source Serif Pro Italic");
+  font-display: swap;
+  font-weight: 300 700;
+  font-style: italic;
+}
+@font-face {
+  font-family: "Inter";
+  src: local("Inter"), local("Inter Variable");
+  font-display: swap;
+  font-weight: 300 700;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: local("JetBrains Mono"), local("JetBrains Mono Regular");
+  font-display: swap;
+}
+
+:root {
+  /* A1-A2 — Four-token palette + two-token oxblood + parchment-light */
+  --parchment:       #F2EFE8;
+  --parchment-light: #F8F6F0;
+  --ink:             #1A1D20;
+  --graphite:        #6F7177;
+  --graphite-light:  #B8B6AF;
+  --oxblood:         #7A2E2E;
+  --oxblood-deep:    #5E2222;
+
+  /* Type stacks */
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans:  "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono:  "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* =====================================================================
+ * Base — applies only when .akki-website ancestor is present.
+ * ===================================================================== */
 .akki-website {
-  font-family: Calibri, 'Helvetica Neue', Arial, sans-serif;
+  background: var(--parchment);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
-.akki-website h1,
-.akki-website h2,
-.akki-website h3 {
-  font-family: Georgia, 'Times New Roman', serif;
-  font-weight: 700;
-  color: #0F1419;
-  letter-spacing: -0.015em;
-}
-.akki-website h1 { font-size: 52px; line-height: 1.1; margin: 0 0 24px; }
-.akki-website h2 { font-size: 32px; line-height: 1.2; margin: 0 0 16px; }
-.akki-website h3 { font-size: 22px; line-height: 1.3; margin: 0 0 12px; }
+.akki-website *,
+.akki-website *::before,
+.akki-website *::after { box-sizing: border-box; }
 .akki-website p { margin: 0 0 16px; max-width: 70ch; }
-.akki-website .website-section { padding: 80px 32px; max-width: 1200px; margin: 0 auto; }
-.akki-website .website-section--narrow { max-width: 760px; }
-.akki-website .website-label {
-  font-family: Calibri, sans-serif;
+.akki-website img { display: block; max-width: 100%; height: auto; }
+.akki-website a { color: var(--ink); text-decoration: none; }
+.akki-website ::selection { background: var(--oxblood); color: var(--parchment); }
+
+/* =====================================================================
+ * A4 — Typography
+ * ===================================================================== */
+.akki-website h1.hero {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(40px, 5.5vw, 68px);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0 0 24px;
+}
+.akki-website h2.section,
+.akki-website .h2 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(32px, 3.5vw, 44px);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0 0 20px;
+}
+.akki-website h3 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 22px;
+  line-height: 1.25;
+  color: var(--ink);
+  margin: 0 0 14px;
+}
+@media (min-width: 900px) {
+  .akki-website h3 { font-size: 24px; }
+}
+.akki-website .dek {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: clamp(19px, 1.6vw, 23px);
+  line-height: 1.5;
+  color: var(--graphite);
+  margin: 0 0 28px;
+  max-width: 60ch;
+}
+
+.akki-website .kicker {
+  font-family: var(--sans);
+  font-weight: 600;
   font-size: 12px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #8B6F3E;
+  color: var(--oxblood);
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 18px;
+}
+.akki-website .kicker::before {
+  content: "";
   display: inline-block;
-  margin-bottom: 12px;
+  width: 18px;
+  height: 1.5px;
+  background: var(--oxblood);
+}
+
+/* A5 — One-word oxblood lift in headlines */
+.akki-website .lift {
+  color: var(--oxblood);
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* Citation pill — A4 spec */
+.akki-website .citation-pill {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--oxblood);
+  background: rgba(122, 46, 46, 0.06);
+  padding: 1px 6px;
+  border-radius: 2px;
+  letter-spacing: 0.04em;
+}
+
+/* =====================================================================
+ * A7 — Buttons
+ * ===================================================================== */
+.akki-website .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--ink);
+  background: transparent;
+  border: 1.5px solid var(--ink);
+  padding: 11px 22px;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 180ms ease, color 180ms ease;
+  text-decoration: none;
+}
+.akki-website .btn-primary.btn-hero {
+  font-size: 15px;
+  padding: 14px 28px;
+}
+.akki-website .btn-primary:hover {
+  background: var(--ink);
+  color: var(--parchment);
+}
+.akki-website .btn-tertiary {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--graphite);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  transition: color 180ms ease, gap 180ms ease;
+  gap: 8px;
+  text-decoration: none;
+}
+@media (min-width: 900px) {
+  .akki-website .btn-tertiary { font-size: 14px; }
+}
+.akki-website .btn-tertiary:hover {
+  color: var(--ink);
+  gap: 12px;
+}
+.akki-website .btn-cta-section {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--parchment);
+  background: transparent;
+  border: 1.5px solid var(--parchment);
+  padding: 14px 28px;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 180ms ease, color 180ms ease;
+  text-decoration: none;
+}
+.akki-website .btn-cta-section:hover {
+  background: var(--parchment);
+  color: var(--ink);
+}
+.akki-website .btn-primary:focus-visible,
+.akki-website .btn-tertiary:focus-visible,
+.akki-website .btn-cta-section:focus-visible,
+.akki-website a:focus-visible {
+  outline: 2px solid var(--oxblood);
+  outline-offset: 3px;
+}
+
+/* =====================================================================
+ * Layout helpers
+ * ===================================================================== */
+.akki-website .website-section {
+  padding: 96px 40px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.akki-website .website-section--narrow {
+  padding: 96px 40px;
+  max-width: 880px;
+  margin: 0 auto;
+}
+.akki-website .website-section--full {
+  padding: 0;
+  max-width: none;
+  width: 100%;
 }
 .akki-website .website-rule {
-  display: block; width: 64px; height: 2px;
-  background: #8B6F3E; margin: 24px 0;
+  display: block;
+  width: 60px;
+  height: 1.5px;
+  background: var(--oxblood);
+  margin: 20px 0 32px;
 }
-.akki-website .website-cta-primary {
-  display: inline-block; background: #8B6F3E; color: #EDE7D6;
-  padding: 14px 28px; text-decoration: none; font-weight: 600;
-  border-radius: 2px; letter-spacing: 0.02em;
+.akki-website .website-rule--full {
+  display: block;
+  width: 100%;
+  height: 1px;
+  background: var(--graphite-light);
+}
+.akki-website .website-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--graphite);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.akki-website .website-link-inline {
+  color: var(--oxblood);
+  border-bottom: 1px solid currentColor;
+}
+.akki-website .website-link-inline:hover { opacity: 0.75; }
+
+/* =====================================================================
+ * A8 — Hero staggered reveal.
+ * Defensive: opacity starts at 1, the animation re-opens it from 0 only
+ * on the first paint. JS will toggle a `.reveal-armed` class on mount;
+ * if the class never gets toggled (SSR, JS-off, hydration race), the
+ * content is still fully visible.
+ * ===================================================================== */
+@keyframes website-rise {
+  0%   { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.akki-website .reveal-armed .reveal-1,
+.akki-website .reveal-armed .reveal-2,
+.akki-website .reveal-armed .reveal-3,
+.akki-website .reveal-armed .reveal-4 {
+  animation: website-rise 700ms ease-out both;
+}
+.akki-website .reveal-armed .reveal-1 { animation-delay:  50ms; }
+.akki-website .reveal-armed .reveal-2 { animation-delay: 200ms; }
+.akki-website .reveal-armed .reveal-3 { animation-delay: 380ms; }
+.akki-website .reveal-armed .reveal-4 { animation-delay: 560ms; }
+
+/* A9 — Section reveal (driven by IntersectionObserver in WebsiteShell) */
+.akki-website .section-reveal {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 700ms ease-out, transform 700ms ease-out;
+  will-change: opacity, transform;
+}
+.akki-website .section-reveal.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* A8/A9 — reduced motion respect */
+@media (prefers-reduced-motion: reduce) {
+  .akki-website .reveal-armed .reveal-1,
+  .akki-website .reveal-armed .reveal-2,
+  .akki-website .reveal-armed .reveal-3,
+  .akki-website .reveal-armed .reveal-4 {
+    animation: none;
+  }
+  .akki-website .section-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* =====================================================================
+ * Nav (E1) — sticky parchment with backdrop blur
+ * ===================================================================== */
+.akki-website .nav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: rgba(242, 239, 232, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--graphite-light);
+  padding: 20px 40px;
+}
+.akki-website .nav-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.akki-website .nav-wordmark {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 22px;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+.akki-website .nav-center {
+  display: flex;
+  gap: 36px;
+  align-items: center;
+}
+.akki-website .nav-center a {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 15px;
+  color: var(--ink);
   transition: opacity 150ms ease;
 }
-.akki-website .website-cta-primary:hover { opacity: 0.9; }
-.akki-website .website-cta-secondary {
-  display: inline-block; padding: 14px 28px; color: #0F1419;
-  text-decoration: none; font-weight: 600; letter-spacing: 0.02em;
-  border: 1px solid #D8D2C5; border-radius: 2px;
-  transition: border-color 150ms ease;
+.akki-website .nav-center a:hover { opacity: 0.65; }
+.akki-website .nav-right {
+  display: flex;
+  gap: 20px;
+  align-items: center;
 }
-.akki-website .website-cta-secondary:hover { border-color: #8B6F3E; }
-.akki-website a:focus-visible,
-.akki-website button:focus-visible,
-.akki-website input:focus-visible,
-.akki-website textarea:focus-visible,
-.akki-website select:focus-visible {
-  outline: 2px solid #8B6F3E; outline-offset: 2px;
+.akki-website .nav-signin {
+  font-family: var(--sans);
+  font-size: 15px;
+  color: var(--graphite);
+  transition: color 150ms ease;
 }
-.akki-website .website-tile {
-  background: #EDE7D6; border: 1px solid #D8D2C5;
-  padding: 28px; border-radius: 2px;
+.akki-website .nav-signin:hover { color: var(--ink); }
+@media (max-width: 820px) {
+  .akki-website .nav-center { display: none; }
 }
-.akki-website .website-tile h3 { margin-bottom: 6px; }
-.akki-website .website-tile-sub {
-  font-size: 14px; color: #8B6F3E; text-transform: uppercase;
-  letter-spacing: 0.15em; margin-bottom: 12px;
+
+/* =====================================================================
+ * Hero (F1) + marginalia
+ * ===================================================================== */
+.akki-website .hero {
+  padding: 120px 40px 100px;
+  max-width: 1200px;
+  margin: 0 auto;
+  position: relative;
 }
-.akki-website .website-form-row { display: flex; gap: 16px; margin-bottom: 16px; }
-.akki-website .website-form-row > * { flex: 1; }
-.akki-website .website-input,
-.akki-website .website-textarea,
-.akki-website .website-select {
-  width: 100%; padding: 12px 14px; font-size: 16px;
-  border: 1px solid #D8D2C5; border-radius: 2px;
-  background: #EDE7D6; color: #0F1419;
-  font-family: Calibri, sans-serif;
+.akki-website .hero-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 56px;
+  align-items: center;
 }
-.akki-website .website-textarea { min-height: 110px; resize: vertical; }
-.akki-website .website-label-block {
-  display: block; font-size: 13px; letter-spacing: 0.08em;
-  text-transform: uppercase; color: #6B7480; margin-bottom: 6px;
+@media (min-width: 980px) {
+  .akki-website .hero-grid {
+    grid-template-columns: 1fr 42%;
+    gap: 80px;
+  }
 }
-@media (max-width: 720px) {
-  .akki-website h1 { font-size: 36px; }
-  .akki-website .website-section { padding: 56px 24px; }
-  .akki-website .website-form-row { flex-direction: column; gap: 0; }
-  .akki-website .website-nav-links { display: none !important; }
+.akki-website .hero-text {
+  max-width: 640px;
+}
+.akki-website .hero-image-wrap {
+  aspect-ratio: 4 / 5;
+  background: var(--parchment-light);
+  border: 1px solid var(--graphite-light);
+}
+.akki-website .hero-image-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+@media (max-width: 979px) {
+  .akki-website .hero-image-wrap {
+    aspect-ratio: 16 / 9;
+    margin-top: 32px;
+  }
+}
+.akki-website .hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.akki-website .marginalia {
+  display: none;
+}
+@media (min-width: 1100px) {
+  .akki-website .marginalia {
+    display: block;
+    position: absolute;
+    top: 140px;
+    right: 40px;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--graphite-light);
+    letter-spacing: 0.16em;
+    user-select: none;
+  }
+}
+
+/* =====================================================================
+ * Evidence Strip (F4)
+ * ===================================================================== */
+.akki-website .evidence-strip {
+  padding: 80px 40px;
+  max-width: 1200px;
+  margin: 0 auto;
+  border-top: 1px solid var(--graphite-light);
+  border-bottom: 1px solid var(--graphite-light);
+}
+.akki-website .evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 48px;
+  margin-top: 32px;
+}
+@media (max-width: 900px) {
+  .akki-website .evidence-grid { grid-template-columns: repeat(2, 1fr); gap: 36px; }
+}
+@media (max-width: 500px) {
+  .akki-website .evidence-grid { grid-template-columns: 1fr; }
+}
+.akki-website .evidence-cell {
+  border-left: 1.5px solid var(--graphite-light);
+  padding-left: 20px;
+}
+.akki-website .evidence-numeral {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 36px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0 0 12px;
+}
+.akki-website .evidence-caption {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--graphite);
+  margin: 0;
+}
+
+/* =====================================================================
+ * Tier 1 — Safety band (full-width image band)
+ * ===================================================================== */
+.akki-website .tier1-band {
+  position: relative;
+  width: 100%;
+  height: 40vh;
+  min-height: 320px;
+  overflow: hidden;
+  margin-top: 40px;
+}
+.akki-website .tier1-band img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: brightness(0.88);
+}
+.akki-website .tier1-band-overlay {
+  position: absolute;
+  bottom: 28px;
+  left: 40px;
+  right: 40px;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 18px;
+  color: var(--parchment);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  max-width: 60ch;
+}
+
+/* =====================================================================
+ * Inverted CTA (F5)
+ * ===================================================================== */
+.akki-website .inverted-cta {
+  background: var(--ink);
+  color: var(--parchment);
+  padding: 96px 40px;
+}
+.akki-website .inverted-cta-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 56px;
+  align-items: center;
+}
+@media (max-width: 820px) {
+  .akki-website .inverted-cta-inner {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+}
+.akki-website .inverted-cta h2 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(28px, 3vw, 40px);
+  line-height: 1.15;
+  color: var(--parchment);
+  margin: 0 0 18px;
+}
+.akki-website .inverted-cta .kicker {
+  color: rgba(242, 239, 232, 0.85);
+}
+.akki-website .inverted-cta .kicker::before {
+  background: rgba(242, 239, 232, 0.85);
+}
+.akki-website .inverted-cta .dek {
+  color: rgba(242, 239, 232, 0.75);
+  margin-bottom: 0;
+}
+.akki-website .inverted-cta-meta {
+  margin-top: 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: rgba(242, 239, 232, 0.5);
+  letter-spacing: 0.1em;
+}
+
+/* =====================================================================
+ * Three-column cards (audiences, tier 3 inventions, etc.)
+ * ===================================================================== */
+.akki-website .three-col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 40px;
+  margin-top: 32px;
+}
+@media (max-width: 900px) {
+  .akki-website .three-col { grid-template-columns: 1fr; gap: 28px; }
+}
+.akki-website .three-col-card {
+  border-top: 1.5px solid var(--graphite-light);
+  padding-top: 24px;
+}
+
+/* =====================================================================
+ * Footer (E3) — 4-column grid
+ * ===================================================================== */
+.akki-website .footer {
+  background: var(--parchment);
+  border-top: 1px solid var(--graphite-light);
+  padding: 60px 40px 40px;
+  margin-top: 96px;
+}
+.akki-website .footer-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 48px;
+}
+@media (max-width: 820px) {
+  .akki-website .footer-inner {
+    grid-template-columns: 1fr 1fr;
+    gap: 36px;
+  }
+  .akki-website .footer-brand { grid-column: span 2; }
+}
+.akki-website .footer-brand-wordmark {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 22px;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  display: block;
+  margin-bottom: 12px;
+}
+.akki-website .footer-tagline {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--graphite);
+  max-width: 36ch;
+  margin: 0;
+}
+.akki-website .footer-col-heading {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--oxblood);
+  margin: 0 0 16px;
+}
+.akki-website .footer-col ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.akki-website .footer-col li {
+  margin-bottom: 10px;
+}
+.akki-website .footer-col a {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--ink);
+  transition: opacity 150ms ease;
+}
+.akki-website .footer-col a:hover { opacity: 0.6; }
+.akki-website .footer-bottom {
+  max-width: 1200px;
+  margin: 40px auto 0;
+  padding-top: 24px;
+  border-top: 1px solid var(--graphite-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--graphite);
+}
+
+/* =====================================================================
+ * Misc tokens used by legacy components (kept until migration completes)
+ * ===================================================================== */
+.akki-website .stat-block {
+  border-left: 2px solid var(--graphite-light);
+  padding-left: 20px;
+  margin-bottom: 28px;
+}
+.akki-website .stat-numeral {
+  font-family: var(--serif);
+  font-size: 32px;
+  line-height: 1;
+  color: var(--ink);
+}
+.akki-website .pricing-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 32px 0;
+  font-family: var(--sans);
+  font-size: 14px;
+}
+.akki-website .pricing-table th,
+.akki-website .pricing-table td {
+  text-align: left;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--graphite-light);
+}
+.akki-website .pricing-table th {
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--graphite);
+}
+.akki-website .pricing-table td:first-child {
+  font-family: var(--serif);
+  font-size: 17px;
+  color: var(--ink);
 }

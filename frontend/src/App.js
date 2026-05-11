@@ -66,29 +66,29 @@ import WorkStudio from "@/pages/WorkStudio";
 import Pulse from "@/pages/Pulse";
 import SearchResults from "@/pages/SearchResults";  // Phase F0 — Universal Search results page
 
-// Phase I1 (2026-05-11) + Phase J.2 (2026-05-12) — Pre-login marketing
-// website. All website routes live OUTSIDE of /app/* — public, no auth.
-// Pricing page deliberately removed (revision 2 — pricing handled
-// privately during cohort intake). Phase J.2 adds 11 new pages.
+// Phase I1 (2026-05-11) + v7 (2026-05-12) — Pre-login marketing website.
+// All website routes live OUTSIDE /app/*. v7 reinstates /pricing and
+// adds /document-journal. Per-product pages move from /product/<x> to
+// top-level routes (/solva, /akki-chat, /work-studio, etc.).
 import WebsiteHome from "@/website/pages/Home";
 import WebsiteWhyAkki from "@/website/pages/WhyAkki";
 import WebsiteWhatAkkiDoes from "@/website/pages/WhatAkkiDoes";
 import WebsiteTrust from "@/website/pages/Trust";
 import WebsiteCohort from "@/website/pages/Cohort";
+import WebsitePricing from "@/website/pages/Pricing";
 import WebsiteAbout from "@/website/pages/About";
 import WebsiteContact from "@/website/pages/Contact";
 import WebsitePrivacy from "@/website/pages/Privacy";
 import WebsiteTerms from "@/website/pages/Terms";
-// Phase J.2 — Website Experience Architecture v1.
 import WebsiteMethodology from "@/website/pages/Methodology";
 import WebsiteExco360 from "@/website/pages/Exco360";
-import WebsiteProductHub from "@/website/pages/ProductHub";
 import WebsiteProductSolva from "@/website/pages/product/Solva";
 import WebsiteProductChat from "@/website/pages/product/AkkiChat";
 import WebsiteProductWorkStudio from "@/website/pages/product/WorkStudio";
 import WebsiteProductCycle from "@/website/pages/product/CycleManager";
 import WebsiteProductMonitor from "@/website/pages/product/Monitor";
 import WebsiteProductPulse from "@/website/pages/product/Pulse";
+import WebsiteProductJournal from "@/website/pages/product/DocumentJournal";
 import WebsiteForExecutives from "@/website/pages/ForExecutives";
 import WebsiteForExco from "@/website/pages/ForExco";
 import WebsiteForNeds from "@/website/pages/ForNeds";
@@ -174,31 +174,39 @@ function App() {
           <Route path="/what-akki-does" element={<WebsiteWhatAkkiDoes />} />
           <Route path="/trust" element={<WebsiteTrust />} />
           <Route path="/cohort" element={<WebsiteCohort />} />
+          <Route path="/pricing" element={<WebsitePricing />} />
           <Route path="/about" element={<WebsiteAbout />} />
           <Route path="/contact" element={<WebsiteContact />} />
           <Route path="/privacy" element={<WebsitePrivacy />} />
           <Route path="/terms" element={<WebsiteTerms />} />
-          {/* Phase J.2 — new Website Experience Architecture v1 pages. */}
           <Route path="/methodology" element={<WebsiteMethodology />} />
           <Route path="/exco360" element={<WebsiteExco360 />} />
-          <Route path="/product" element={<WebsiteProductHub />} />
-          <Route path="/product/solva" element={<WebsiteProductSolva />} />
-          <Route path="/product/akki-chat" element={<WebsiteProductChat />} />
-          <Route path="/product/work-studio" element={<WebsiteProductWorkStudio />} />
-          <Route path="/product/cycle-manager" element={<WebsiteProductCycle />} />
-          <Route path="/product/monitor" element={<WebsiteProductMonitor />} />
-          <Route path="/product/pulse" element={<WebsiteProductPulse />} />
+          {/* v7 (2026-05-12): per-product pages move to top-level routes. */}
+          <Route path="/solva" element={<WebsiteProductSolva />} />
+          <Route path="/akki-chat" element={<WebsiteProductChat />} />
+          <Route path="/work-studio" element={<WebsiteProductWorkStudio />} />
+          <Route path="/cycle-manager" element={<WebsiteProductCycle />} />
+          <Route path="/monitor" element={<WebsiteProductMonitor />} />
+          <Route path="/pulse" element={<WebsiteProductPulse />} />
+          <Route path="/document-journal" element={<WebsiteProductJournal />} />
+          {/* Back-compat: legacy /product and /product/<x> routes
+              redirect to v7 top-level surfaces via Navigate. */}
+          <Route path="/product" element={<Navigate to="/what-akki-does" replace />} />
+          <Route path="/product/solva" element={<Navigate to="/solva" replace />} />
+          <Route path="/product/akki-chat" element={<Navigate to="/akki-chat" replace />} />
+          <Route path="/product/work-studio" element={<Navigate to="/work-studio" replace />} />
+          <Route path="/product/cycle-manager" element={<Navigate to="/cycle-manager" replace />} />
+          <Route path="/product/monitor" element={<Navigate to="/monitor" replace />} />
+          <Route path="/product/pulse" element={<Navigate to="/pulse" replace />} />
           <Route path="/for-executives" element={<WebsiteForExecutives />} />
           <Route path="/for-exco" element={<WebsiteForExco />} />
           <Route path="/for-non-executive-directors" element={<WebsiteForNeds />} />
           <Route path="/for-organisations" element={<WebsiteForOrganisations />} />
-          {/* /pricing removed (revision 2) — pricing is handled privately
-              during the founding-cohort intake. Stray hits fall through
-              to the catch-all and land on /. */}
 
           {/* Retained marketing routes (back-link compatibility) */}
           <Route path="/landing-legacy" element={<Landing />} />
-          <Route path="/solva" element={<SolvaLanding />} />
+          {/* v7: /solva is now the v7 marketing page (above). The
+              authenticated landing for Solva lives at /app/solva. */}
           <Route path="/features" element={<Features />} />
           <Route path="/security" element={<Security />} />
           <Route path="/plans" element={<Plans />} />

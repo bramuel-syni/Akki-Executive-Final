@@ -48,12 +48,12 @@ export default function StudioComposerPage() {
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-[#7C6A4F] hover:text-[#0A1F44]"
+            className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-[#7C6A4F] hover:text-[#0F1419]"
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Back
           </button>
           <span className="text-[11px] uppercase tracking-[0.16em] text-[#7C6A4F]">·</span>
-          <span className="text-[11px] uppercase tracking-[0.16em] text-[#0A1F44]">
+          <span className="text-[11px] uppercase tracking-[0.16em] text-[#0F1419]">
             Work Studio composer · {KIND_LABEL[kind]}
           </span>
         </div>

@@ -3054,3 +3054,45 @@ render the trust chain.
 - Real validator (Gemini 2.5 Flash) fan-out to decks, reports, Solve
 - Cross-Board Pulse as dedicated surface OR soften landing copy
 
+
+---
+
+## Sprint PRE / Website v7 — closure (2026-05-12)
+
+Full rebuild of the public marketing surface to **Website Brief v7.0**. Bronze
+removed; canonical 7-token palette is now the website's only design system.
+
+- **Visual system**: parchment / parchment-light / ink / graphite / graphite-light /
+  oxblood / oxblood-deep. Source Serif 4 + Inter + JetBrains Mono with credible
+  fallbacks. Single-word oxblood italic lift per hero h1 (every page).
+- **18 pages built/rewritten** at top-level routes (`/solva`, `/akki-chat`,
+  `/work-studio`, `/cycle-manager`, `/monitor`, `/pulse`, `/document-journal`
+  reinstated; `/pricing` reinstated; `/for-exco` retained).
+- **Home**: 10-section v7 hierarchy — Hero / Evidence Strip / Tier 1 Safety /
+  Tier 2 Workspace (no product names) / Tier 3 Inventions (Solva, Synisense,
+  Agent Cycle) / Three Audiences + triptych / Cohort teaser / Inverted CTA.
+- **5 images** at <120 KB each, anonymised graphite duotone editorial portraits.
+- **Smoke**: 24/24 routes return 200 with valid v7 hero + Plausible + canonical.
+- **Backend regression**: 29/29 trust-critical tests passing.
+- **Perf**: LCP 404 ms, CLS 0, FCP 132 ms, TTI 489 ms (container-headless).
+  Bundle weight 2.5 MB shared with /app SPA — marketing-chunk split is next sprint.
+- **SEO**: sitemap.xml (24 URLs), robots.txt, OG/Twitter cards, per-page canonical
+  to akki.syni.ai.
+- **Plausible analytics** wired with `data-domain="akki.syni.ai"`.
+
+### Out of scope (next sprints)
+- App `index.css` v7 palette migration (kept aliased — `--navy → var(--ink)`,
+  `--chrome → var(--ink)`, `--cream → var(--cream)` etc.)
+- Marketing-route code-splitting (to hit <500 KB landing budget)
+- Self-hosted woff2 for Source Serif 4 / Inter / JetBrains Mono
+- `/about` named team portraits (G6 requires real photography)
+- Cohort + Organisation application form workstreams
+
+### Files
+- New: `frontend/src/website/style.css`, `WebsiteShell.jsx`, `WebsiteNav.jsx`,
+  `WebsiteFooter.jsx`, `copy/index.js`, `components/PagePrimitives.jsx`,
+  18 page files in `pages/` and `pages/product/`, 5 `assets/v7/*.webp`,
+  `public/{robots.txt,sitemap.xml}`.
+- Removed: `pages/ProductHub.jsx`, `components/EvidencePanel.jsx`.
+- Modified palette only: `frontend/src/sandbox/style.css`.
+- Closure: `/app/docs/sprints/PRE_v7_website.md`.

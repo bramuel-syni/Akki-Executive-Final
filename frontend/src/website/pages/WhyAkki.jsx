@@ -1,40 +1,38 @@
+/**
+ * Website v7 — /why-akki  (v7 §5).
+ */
 import React from "react";
 import WebsiteShell from "../WebsiteShell";
-import { WHY } from "../copy";
-import whyImg from "../assets/why-fountain-pen.jpg";
-import "../style.css";
+import { HeroWithLift, InvertedCtaSection } from "../components/PagePrimitives";
+import { WHY, INVERTED_CTA } from "../copy";
 
-export default function WhyAkkiPage() {
+export default function WhyAkki() {
   return (
     <WebsiteShell
-      title="Why Akki"
-      description="Senior work is private work. Decisions, not transcripts. A peer, not a vendor."
+      title="Why Akki — Senior work has structure"
+      description="AI products are mostly built for two-thumb consumers or for engineers. Senior work is neither."
       pathname="/why-akki"
     >
-      <section className="website-section website-section--narrow">
-        <span className="website-label">Why Akki</span>
-        <h1>Built for the kind of work most AI products were not built for.</h1>
-        <span className="website-rule" />
-        <img
-          src={whyImg} alt="" aria-hidden="true" loading="lazy"
-          width={1200} height={800}
-          style={{
-            display: "block", width: "100%", height: "auto", margin: "32px 0",
-            objectFit: "cover",
-            borderTop: "1px solid #D8D2C5",
-            borderBottom: "1px solid #D8D2C5",
-          }}
-          data-testid="why-supporting-image"
-        />
-        <div style={{ display: "grid", gap: 36, marginTop: 36 }}>
-          {WHY.map((w, i) => (
-            <div key={i} data-testid={`why-block-${i}`}>
-              <h3>{w.title}</h3>
-              <p>{w.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      <HeroWithLift
+        kicker={WHY.kicker} headline={WHY.headline} lift={WHY.lift} dek={WHY.dek}
+        primaryCta={{ label: "Read the methodology", href: "/methodology" }}
+        secondaryCta={{ label: "What Akki does", href: "/what-akki-does" }}
+        testId="why-page"
+      />
+      {WHY.sections.map((s, i) => (
+        <section key={i} className="website-section--narrow section-reveal" data-testid={`why-section-${i}`}>
+          <p className="kicker">{`COMMITMENT ${String(i + 1).padStart(2, "0")}`}</p>
+          <h2 className="section">{s.title}</h2>
+          <span className="website-rule" />
+          <p style={{ maxWidth: 70 + "ch", lineHeight: 1.7, color: "var(--graphite)" }}>{s.body}</p>
+        </section>
+      ))}
+      <InvertedCtaSection
+        kicker={INVERTED_CTA.kicker} headline={INVERTED_CTA.headline}
+        body={INVERTED_CTA.body} ctaLabel={INVERTED_CTA.cta.label}
+        ctaHref={INVERTED_CTA.cta.href} meta={INVERTED_CTA.meta}
+        testId="why-inverted-cta"
+      />
     </WebsiteShell>
   );
 }

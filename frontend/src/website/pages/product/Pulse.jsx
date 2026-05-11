@@ -1,39 +1,46 @@
+/**
+ * Website v7 — /pulse
+ */
 import React from "react";
-import { Link } from "react-router-dom";
 import WebsiteShell from "../../WebsiteShell";
-import EvidencePanel from "../../components/EvidencePanel";
-import "../../style.css";
+import { HeroWithLift, InvertedCtaSection, CitationPills } from "../../components/PagePrimitives";
+import { PRODUCTS, INVERTED_CTA } from "../../copy";
 
-export default function ProductPulsePage() {
+export default function Pulse() {
+  const p = PRODUCTS.pulse;
   return (
     <WebsiteShell
-      title="Pulse — quiet attention, never an alarm"
-      description="Same-context signal feed plus a metadata-only cross-board view. Comments, lifecycle, take-to-Solva."
-      pathname="/product/pulse"
+      title="Pulse — Quiet signals with confidence floors"
+      description="A restrained feed for the noise of operating life. Cross-board patterns visible, never cross-board content."
+      pathname="/pulse"
     >
-      <section className="website-section website-section--narrow">
-        <span className="website-label">Product · Pulse</span>
-        <h1>What is worth attention right now — not what is loudest.</h1>
+      <HeroWithLift
+        kicker={p.kicker} headline={p.headline} lift={p.lift} dek={p.dek}
+        primaryCta={{ label: "See Pulse in motion", href: "/sandbox" }}
+        secondaryCta={{ label: "How signals are scored", href: "/methodology#pulse" }}
+        testId="pulse-page"
+      />
+      <section className="website-section section-reveal" data-testid="pulse-bullets">
+        <p className="kicker">HOW PULSE FILTERS</p>
+        <h2 className="section">Less, but cleaner.</h2>
         <span className="website-rule" />
-        <p style={{ fontFamily: "Georgia, serif", fontStyle: "italic", fontSize: 18, color: "#2A3441" }}>
-          Same-context feed inside the workspace. Metadata-only cross-board view
-          for non-executives who sit on multiple boards.
-        </p>
-        <h2 style={{ marginTop: 56 }}>Three commitments inside Pulse.</h2>
-        <div style={{ display: "grid", gap: 28, marginTop: 24 }}>
-          <div><h3>Quiet by default.</h3><p>Volume cap of seven on the Active tab. Priority sorted by confidence × recency. Never an alarm.</p></div>
-          <div><h3>Cross-board metadata only.</h3><p>The cross-board view reads only metadata signatures — regulatory_ref, governance_theme, pulse_class. Foreign signal content is never accessed.</p></div>
-          <div><h3>Lifecycle as a first-class thing.</h3><p>Active → Bookmarked → Resolved. Comments scoped per signal. Take into Solva turns a signal into a real working session.</p></div>
-        </div>
-        <EvidencePanel kind="pulse_card" caption="A live Pulse signal as it appears in the feed. No LLM is invoked during render. Cross-board view never reads foreign signal content." />
-
-        <p style={{ color: "#6B7480", fontSize: 14, marginTop: 24 }}>
-          Read about the choices behind Pulse — <Link to="/methodology" className="website-link-inline">Methodology</Link>.
-        </p>
-        <div style={{ marginTop: 36 }}>
-          <Link to="/sandbox" className="website-cta-primary">Try the sandbox</Link>
-        </div>
+        <ul style={{ listStyle: "none", padding: 0, maxWidth: 70 + "ch" }}>
+          {p.bullets.map((b, i) => (
+            <li key={i} style={{ marginBottom: 16, paddingLeft: 22, position: "relative" }} data-testid={`pulse-bullet-${i}`}>
+              <span style={{ position: "absolute", left: 0, top: 12, width: 12, height: 1.5, background: "var(--oxblood)" }} />
+              {b}
+            </li>
+          ))}
+        </ul>
+        <CitationPills pills={["pulse.confidence.floor", "pulse.lifecycle.state"]} />
       </section>
+      <InvertedCtaSection
+        kicker={INVERTED_CTA.kicker}
+        headline="See Pulse score a quiet signal against a confidence floor."
+        body="The sandbox shows the same lifecycle and reasoning that runs across boards in production."
+        ctaLabel="Begin sandbox" ctaHref="/sandbox" meta={INVERTED_CTA.meta}
+        testId="pulse-inverted-cta"
+      />
     </WebsiteShell>
   );
 }

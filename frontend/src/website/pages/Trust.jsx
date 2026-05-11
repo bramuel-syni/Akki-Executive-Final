@@ -1,42 +1,51 @@
+/**
+ * Website v7 — /trust  (v7 §9 verbatim).
+ *
+ * ONLY page where Solva / Synisense / Agent Cycle appear as technical
+ * names in marketing copy.
+ */
 import React from "react";
 import WebsiteShell from "../WebsiteShell";
-import { TRUST } from "../copy";
-import trustImg from "../assets/trust-wax-seal.jpg";
-import "../style.css";
+import { HeroWithLift, InvertedCtaSection, CitationPills } from "../components/PagePrimitives";
+import { TRUST, INVERTED_CTA } from "../copy";
 
-export default function TrustPage() {
+export default function Trust() {
   return (
     <WebsiteShell
-      title="Trust & sovereignty — Akki"
-      description="How Akki protects your data: Synisense Shield, Privacy Wall, hash-chained audit, sovereignty by construction."
+      title="Trust & Sovereignty — Akki"
+      description="Synisense at depth, Solva at depth, Agent Cycle at depth. Memory and provenance. Four architectural commitments, each enforced in code."
       pathname="/trust"
     >
-      <section className="website-section website-section--narrow">
-        <span className="website-label">Trust & sovereignty</span>
-        <h1>Built so your governance team has nothing to discover later.</h1>
-        <span className="website-rule" />
-        <img
-          src={trustImg} alt="" aria-hidden="true" loading="lazy"
-          width={1200} height={800}
-          style={{
-            display: "block", width: "100%", height: "auto", margin: "32px 0",
-            objectFit: "cover",
-            borderTop: "1px solid #D8D2C5",
-            borderBottom: "1px solid #D8D2C5",
-          }}
-          data-testid="trust-supporting-image"
-        />
-        <p style={{ fontSize: 18, color: "#6B7480" }}>{TRUST.intro}</p>
-        <div style={{ display: "grid", gap: 28, marginTop: 36 }}>
-          {TRUST.pillars.map((p, i) => (
-            <div key={i} className="website-tile" data-testid={`trust-pillar-${i}`}>
-              <h3>{p.title}</h3>
-              <p className="website-tile-sub">{p.sub}</p>
-              <p>{p.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      <HeroWithLift
+        kicker={TRUST.kicker} headline={TRUST.headline} lift={TRUST.lift} dek={TRUST.dek}
+        primaryCta={{ label: "Read the methodology", href: "/methodology" }}
+        secondaryCta={{ label: "See the audit chain", href: "/sandbox" }}
+        testId="trust-page"
+      />
+      {TRUST.pillars.map((pillar, i) => (
+        <section
+          key={pillar.anchor}
+          id={pillar.anchor}
+          className="website-section section-reveal"
+          data-testid={`trust-pillar-${pillar.anchor}`}
+        >
+          <p className="kicker">{`PILLAR ${String(i + 1).padStart(2, "0")}`}</p>
+          <h2 className="section">{pillar.title}</h2>
+          <p className="dek">{pillar.sub}</p>
+          <span className="website-rule" />
+          <p style={{ maxWidth: 70 + "ch", color: "var(--graphite)", lineHeight: 1.7 }}>
+            {pillar.body}
+          </p>
+          <CitationPills pills={[`${pillar.anchor}.audit.hash`, `${pillar.anchor}.architecture.v1`]} />
+        </section>
+      ))}
+      <InvertedCtaSection
+        kicker={INVERTED_CTA.kicker}
+        headline="See the audit chain on a live conversation."
+        body="The sandbox surfaces the same hash-chained pattern that runs in production."
+        ctaLabel="Begin sandbox" ctaHref="/sandbox" meta={INVERTED_CTA.meta}
+        testId="trust-inverted-cta"
+      />
     </WebsiteShell>
   );
 }

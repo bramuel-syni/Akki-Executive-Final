@@ -1,39 +1,50 @@
+/**
+ * Website v7 — /for-non-executive-directors  (v7 §8.2)
+ */
 import React from "react";
-import { Link } from "react-router-dom";
 import WebsiteShell from "../WebsiteShell";
-import EvidencePanel from "../components/EvidencePanel";
-import "../style.css";
+import { HeroWithLift, InvertedCtaSection } from "../components/PagePrimitives";
+import { AUDIENCE_PAGES, INVERTED_CTA } from "../copy";
+import heroImg from "../assets/v7/for-neds-hero.webp";
 
-export default function ForNedsPage() {
+export default function ForNeds() {
+  const p = AUDIENCE_PAGES["for-non-executive-directors"];
   return (
     <WebsiteShell
-      title="For Non-Executive Directors — Akki for chairs and NEDs"
-      description="Cross-board attention without leakage. Personal memory for the boards you sit on. A peer voice, not a vendor."
+      title="For non-executive directors — Akki"
+      description="A workspace for the NED sitting on multiple boards. Private reading library per seat, cross-board patterns without content."
       pathname="/for-non-executive-directors"
     >
-      <section className="website-section website-section--narrow">
-        <span className="website-label">For non-executive directors</span>
-        <h1>For the chair and the non-executive who sits on multiple boards.</h1>
+      <HeroWithLift
+        kicker={p.kicker} headline={p.headline} lift={p.lift} dek={p.dek}
+        primaryCta={{ label: "Join the founding cohort", href: "/cohort" }}
+        secondaryCta={{ label: "See pricing", href: "/pricing" }}
+        image={heroImg} imageAlt={p.image_alt}
+        testId="for-neds"
+      />
+      <section className="website-section section-reveal" data-testid="for-neds-moments">
+        <p className="kicker">THREE MOMENTS</p>
+        <h2 className="section">Where Akki shows up across boards.</h2>
         <span className="website-rule" />
-        <p style={{ fontFamily: "Georgia, serif", fontStyle: "italic", fontSize: 18, color: "#2A3441" }}>
-          Cross-board attention without leakage. Personal memory scoped to your
-          account. A peer voice, never a vendor pitch.
-        </p>
-        <h2 style={{ marginTop: 56 }}>What Akki commits to non-executives.</h2>
-        <div style={{ display: "grid", gap: 28, marginTop: 24 }}>
-          <div><h3>Hard separation, by construction.</h3><p>You cannot accidentally leak between the boards you sit on. The Privacy Wall enforces it in code, not in policy.</p></div>
-          <div><h3>Cross-board metadata only.</h3><p>The cross-board pulse view reads regulatory and governance signatures — never foreign signal content.</p></div>
-          <div><h3>NED-voice followups.</h3><p>When the NED phase calls for an outbound, the system speaks in a peer-board register — not in vendor copy.</p></div>
+        <div className="three-col">
+          {p.moments.map((m, i) => (
+            <div key={i} className="three-col-card" data-testid={`for-neds-moment-${i}`}>
+              <h3>{m.title}</h3>
+              <p style={{ color: "var(--graphite)" }}>{m.body}</p>
+            </div>
+          ))}
         </div>
-        <EvidencePanel kind="pulse_card" caption="A Pulse signal scoped to one board. The cross-board view shows only metadata signatures, never the signal body." />
-
-        <p style={{ color: "#6B7480", fontSize: 14, marginTop: 24 }}>
-          Read about the choices behind the wall — <Link to="/methodology" className="website-link-inline">Methodology</Link>.
+        <p className="website-label" style={{ marginTop: 40 }} data-testid="for-neds-pricing-line">
+          {p.pricing_line}
         </p>
-        <div style={{ marginTop: 36 }}>
-          <Link to="/sandbox" className="website-cta-primary" data-testid="for-neds-cta">Try the sandbox</Link>
-        </div>
       </section>
+      <InvertedCtaSection
+        kicker={INVERTED_CTA.kicker}
+        headline="See three questions a Solva pre-board pass surfaces."
+        body="The sandbox runs against a synthetic board pack for your sector. Nothing is retained."
+        ctaLabel="Begin sandbox" ctaHref="/sandbox" meta={INVERTED_CTA.meta}
+        testId="for-neds-inverted-cta"
+      />
     </WebsiteShell>
   );
 }

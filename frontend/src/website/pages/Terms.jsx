@@ -1,7 +1,9 @@
+/**
+ * Website v7 — /terms (palette migration, copy preserved).
+ */
 import React from "react";
 import WebsiteShell from "../WebsiteShell";
 import { TERMS } from "../copy/legal";
-import "../style.css";
 
 export default function TermsPage() {
   return (
@@ -11,12 +13,12 @@ export default function TermsPage() {
       pathname="/terms"
     >
       <section className="website-section website-section--narrow">
-        <span className="website-label">Terms</span>
-        <h1>Terms of Service</h1>
+        <p className="kicker">TERMS</p>
+        <h1 className="hero">Terms of Service</h1>
         <span className="website-rule" />
-        <p style={{ color: "#6B7480", fontSize: 14 }}>{TERMS.effective}</p>
+        <p className="website-label">{TERMS.effective}</p>
         {TERMS.blocks.map((b, i) => (
-          <div key={i} style={{ marginTop: 24 }}>
+          <div key={i} style={{ marginTop: 32 }}>
             <h3>{b.h}</h3>
             <p>{b.p}</p>
           </div>

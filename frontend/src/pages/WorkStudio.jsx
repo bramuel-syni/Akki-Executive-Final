@@ -49,6 +49,7 @@ import {
   Layers, FolderOpen, FileDown, Wand2, Calendar, Users, Files,
   Sparkles, Inbox, X as XIcon,
 } from "lucide-react";
+import WorkspaceEntryGate from "@/components/transitions/WorkspaceEntryGate";
 
 // =============================================================================
 // Helpers
@@ -661,6 +662,7 @@ export default function WorkStudio() {
 
   return (
     <AppShell>
+      <WorkspaceEntryGate workspace="work_studio">
       <div className="akki-w-medium px-8 py-10" data-testid="work-studio">
         <p className="akki-overline mb-2 flex items-center gap-2">
           <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Work Studio · {activeContext.name}
@@ -879,6 +881,7 @@ export default function WorkStudio() {
         briefId={enhanceBriefId}
         mode={enhanceMode}
       />
+      </WorkspaceEntryGate>
     </AppShell>
   );
 }

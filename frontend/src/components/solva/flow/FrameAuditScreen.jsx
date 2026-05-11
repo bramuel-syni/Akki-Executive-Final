@@ -25,6 +25,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
+import ContextLoadingScene from "@/components/transitions/ContextLoadingScene";
 
 const SEVERITY_BADGE = {
   advisory: {
@@ -77,11 +78,17 @@ export default function FrameAuditScreen({ sessionId, onProceed, onGetMore, onPa
 
   if (loading) {
     return (
-      <div data-testid="frame-audit-loading" style={{ padding: 32, textAlign: "center", color: "#6B6358" }}>
-        <p style={{ fontFamily: "Georgia, serif", fontStyle: "italic" }}>
-          Reading what you wrote…
-        </p>
-      </div>
+      <ContextLoadingScene
+        title="Reading what you wrote."
+        lines={[
+          "Reading the framing you submitted.",
+          "Checking what's missing before we proceed.",
+          "Comparing against comparable diagnoses.",
+          "Drafting the frame audit.",
+          "Almost there.",
+        ]}
+        testId="frame-audit-loading"
+      />
     );
   }
 

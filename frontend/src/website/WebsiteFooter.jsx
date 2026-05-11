@@ -1,32 +1,84 @@
+/**
+ * Website v7 — Footer (E3).
+ *
+ * Four-column grid (brand spans 2 cols mobile), padding 60/40/40,
+ * column headings 11px oxblood, links 14px ink, bottom rule mono 11px
+ * graphite. Verbatim sequence per v7 §4.10.
+ */
 import React from "react";
 import { Link } from "react-router-dom";
-import { FOOTER } from "./copy";
+
+const PRODUCT = [
+  ["Solva",            "/solva"],
+  ["Akki Chat",        "/akki-chat"],
+  ["Work Studio",      "/work-studio"],
+  ["Cycle Manager",    "/cycle-manager"],
+  ["Monitor",          "/monitor"],
+  ["Pulse",            "/pulse"],
+  ["Document Journal", "/document-journal"],
+];
+const READING = [
+  ["Methodology",         "/methodology"],
+  ["Exco360",             "/exco360"],
+  ["Trust & Sovereignty", "/trust"],
+  ["Founding cohort",     "/cohort"],
+];
+const STUDIO = [
+  ["Syni.ai", "https://syni.ai"],
+  ["About",   "/about"],
+  ["Contact", "/contact"],
+];
 
 export default function WebsiteFooter() {
   return (
-    <footer style={{
-      background: "#EDE7D6",
-      borderTop: "1px solid #D8D2C5",
-      padding: "28px 32px",
-      marginTop: 60,
-    }}>
-      <div style={{
-        maxWidth: 1200, margin: "0 auto", display: "flex",
-        alignItems: "center", justifyContent: "space-between",
-        gap: 24, flexWrap: "wrap",
-      }}>
-        <p style={{ margin: 0, fontSize: 13, color: "#6B7480" }}>
-          <span style={{ fontFamily: "Georgia, serif", fontWeight: 700, color: "#0F1419" }}>AKKI</span>
-          {" "}· © {new Date().getFullYear()} Akki Limited
-        </p>
-        <nav style={{ display: "flex", gap: 24, fontSize: 13 }}>
-          <Link to="/privacy" style={{ color: "#6B7480", textDecoration: "none" }}>Privacy</Link>
-          <Link to="/terms" style={{ color: "#6B7480", textDecoration: "none" }}>Terms</Link>
-          <Link to="/contact" style={{ color: "#6B7480", textDecoration: "none" }}>Contact</Link>
-        </nav>
-        <p style={{ margin: 0, fontSize: 13, color: "#6B7480", fontStyle: "italic" }}>
-          {FOOTER.signoff}
-        </p>
+    <footer className="footer" data-testid="website-footer">
+      <div className="footer-inner">
+        <div className="footer-brand footer-col">
+          <Link to="/" className="footer-brand-wordmark" data-testid="footer-wordmark">Akki</Link>
+          <p className="footer-tagline">
+            A workspace for senior people running serious operations. From Syni.ai, Nairobi.
+          </p>
+        </div>
+        <div className="footer-col">
+          <p className="footer-col-heading">Product</p>
+          <ul>
+            {PRODUCT.map(([label, to]) => (
+              <li key={to}><Link to={to} data-testid={`footer-product-${to.replace(/^\//, "")}`}>{label}</Link></li>
+            ))}
+          </ul>
+        </div>
+        <div className="footer-col">
+          <p className="footer-col-heading">Reading</p>
+          <ul>
+            {READING.map(([label, to]) => (
+              <li key={to}><Link to={to} data-testid={`footer-reading-${to.replace(/^\//, "")}`}>{label}</Link></li>
+            ))}
+          </ul>
+        </div>
+        <div className="footer-col">
+          <p className="footer-col-heading">Studio</p>
+          <ul>
+            {STUDIO.map(([label, to]) => {
+              const external = to.startsWith("http");
+              return (
+                <li key={to}>
+                  {external ? (
+                    <a href={to} target="_blank" rel="noopener noreferrer" data-testid={`footer-studio-external`}>{label}</a>
+                  ) : (
+                    <Link to={to} data-testid={`footer-studio-${to.replace(/^\//, "")}`}>{label}</Link>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
+      <div className="footer-bottom">
+        <span>© {new Date().getFullYear()} Syni.ai · Nairobi · Built for people who read before they buy.</span>
+        <span>
+          <Link to="/privacy" style={{ marginRight: 12 }} data-testid="footer-privacy">Privacy</Link>
+          <Link to="/terms" data-testid="footer-terms">Terms</Link>
+        </span>
       </div>
     </footer>
   );

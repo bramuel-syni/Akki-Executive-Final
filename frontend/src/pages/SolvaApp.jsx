@@ -16,6 +16,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import SolvaLanding from "@/components/solva/SolvaLanding";
+import WorkspaceEntryGate from "@/components/transitions/WorkspaceEntryGate";
 
 export default function SolvaApp() {
   const [params, setParams] = useSearchParams();
@@ -42,7 +43,9 @@ export default function SolvaApp() {
 
   return (
     <AppShell>
-      <SolvaLanding variant="auth" intakeSeed={seed} />
+      <WorkspaceEntryGate workspace="solva">
+        <SolvaLanding variant="auth" intakeSeed={seed} />
+      </WorkspaceEntryGate>
     </AppShell>
   );
 }

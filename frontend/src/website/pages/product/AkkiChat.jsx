@@ -1,41 +1,47 @@
+/**
+ * Website v7 — /akki-chat
+ * v7 §7.3.
+ */
 import React from "react";
-import { Link } from "react-router-dom";
 import WebsiteShell from "../../WebsiteShell";
-import EvidencePanel from "../../components/EvidencePanel";
-import "../../style.css";
+import { HeroWithLift, InvertedCtaSection, CitationPills } from "../../components/PagePrimitives";
+import { PRODUCTS, INVERTED_CTA } from "../../copy";
 
-export default function ProductChatPage() {
+export default function AkkiChat() {
+  const p = PRODUCTS["akki-chat"];
   return (
     <WebsiteShell
-      title="Akki Chat — trust-first multi-model chat"
-      description="Three providers, real per-token streaming, hash-chained audit log with offline verifier."
-      pathname="/product/akki-chat"
+      title="Akki Chat — Multi-model with audit chain"
+      description="Multi-model chat with Synisense anonymisation on every outbound prompt and a SHA-256 audit chain on every turn."
+      pathname="/akki-chat"
     >
-      <section className="website-section website-section--narrow">
-        <span className="website-label">Product · Akki Chat</span>
-        <h1>The chat surface for people who will be audited.</h1>
+      <HeroWithLift
+        kicker={p.kicker} headline={p.headline} lift={p.lift} dek={p.dek}
+        primaryCta={{ label: "Try Akki Chat", href: "/sandbox" }}
+        secondaryCta={{ label: "Audit chain & shielding", href: "/trust#synisense" }}
+        testId="chat-page"
+      />
+      <section className="website-section section-reveal" data-testid="chat-bullets">
+        <p className="kicker">HOW IT WORKS</p>
+        <h2 className="section">Four commitments under every turn.</h2>
         <span className="website-rule" />
-        <p style={{ fontFamily: "Georgia, serif", fontStyle: "italic", fontSize: 18, color: "#2A3441" }}>
-          Claude, Gemini, GPT. Every turn appended to a hash-chained audit log.
-          Synisense Shield runs before any model sees a single character.
-        </p>
-
-        <h2 style={{ marginTop: 56 }}>Three commitments inside one surface.</h2>
-        <div style={{ display: "grid", gap: 28, marginTop: 24 }}>
-          <div><h3>Direct streaming.</h3><p>All three providers stream direct to the browser. No buffering, no proxy lag.</p></div>
-          <div><h3>Hash-chained audit.</h3><p>Every turn is a row in an append-only chain. The export bundles a Python verifier so auditors validate without trusting us.</p></div>
-          <div><h3>Two-pass discipline.</h3><p>Classifier → provider → four-check. The model says less, but says it more carefully. Hallucinated citations are dropped.</p></div>
-        </div>
-
-        <EvidencePanel kind="chat_audit" caption="Live audit metric strip from Akki Chat. Counts come from db.synisense_runs and update as redactions accumulate." />
-
-        <p style={{ color: "#6B7480", fontSize: 14, marginTop: 24 }}>
-          Read about the choices behind Akki Chat — <Link to="/methodology" className="website-link-inline">Methodology</Link>.
-        </p>
-        <div style={{ marginTop: 36 }}>
-          <Link to="/sandbox" className="website-cta-primary">Try the sandbox</Link>
-        </div>
+        <ul style={{ listStyle: "none", padding: 0, maxWidth: 70 + "ch" }}>
+          {p.bullets.map((b, i) => (
+            <li key={i} style={{ marginBottom: 16, paddingLeft: 22, position: "relative" }} data-testid={`chat-bullet-${i}`}>
+              <span style={{ position: "absolute", left: 0, top: 12, width: 12, height: 1.5, background: "var(--oxblood)" }} />
+              {b}
+            </li>
+          ))}
+        </ul>
+        <CitationPills pills={["chat.audit.sha256", "synisense.regex.presidio.judge"]} />
       </section>
+      <InvertedCtaSection
+        kicker={INVERTED_CTA.kicker}
+        headline="A reasoning chat where the audit chain is visible."
+        body="The sandbox shows the same audit-chain pattern that ships with every Akki conversation."
+        ctaLabel="Begin sandbox" ctaHref="/sandbox" meta={INVERTED_CTA.meta}
+        testId="chat-inverted-cta"
+      />
     </WebsiteShell>
   );
 }

@@ -1,7 +1,9 @@
+/**
+ * Website v7 — /privacy (palette migration, copy preserved).
+ */
 import React from "react";
 import WebsiteShell from "../WebsiteShell";
 import { PRIVACY } from "../copy/legal";
-import "../style.css";
 
 export default function PrivacyPage() {
   return (
@@ -11,12 +13,12 @@ export default function PrivacyPage() {
       pathname="/privacy"
     >
       <section className="website-section website-section--narrow">
-        <span className="website-label">Privacy</span>
-        <h1>Privacy Policy</h1>
+        <p className="kicker">PRIVACY</p>
+        <h1 className="hero">Privacy Policy</h1>
         <span className="website-rule" />
-        <p style={{ color: "#6B7480", fontSize: 14 }}>{PRIVACY.effective}</p>
+        <p className="website-label">{PRIVACY.effective}</p>
         {PRIVACY.blocks.map((b, i) => (
-          <div key={i} style={{ marginTop: 24 }}>
+          <div key={i} style={{ marginTop: 32 }}>
             <h3>{b.h}</h3>
             <p>{b.p}</p>
           </div>

@@ -1,39 +1,50 @@
+/**
+ * Website v7 — /for-executives  (v7 §8.1)
+ */
 import React from "react";
-import { Link } from "react-router-dom";
 import WebsiteShell from "../WebsiteShell";
-import EvidencePanel from "../components/EvidencePanel";
-import "../style.css";
+import { HeroWithLift, InvertedCtaSection } from "../components/PagePrimitives";
+import { AUDIENCE_PAGES, INVERTED_CTA } from "../copy";
+import heroImg from "../assets/v7/for-executives-hero.webp";
 
-export default function ForExecutivesPage() {
+export default function ForExecutives() {
+  const p = AUDIENCE_PAGES["for-executives"];
   return (
     <WebsiteShell
-      title="For Executives — Akki for CEOs, CFOs, COOs"
-      description="How Akki fits the operating executive's working day — cycle prep, board pack analysis, judgement-grade reasoning."
+      title="For executives — Akki"
+      description="A workspace for the operating executive running the cycle. CEO, CFO, COO, CRO."
       pathname="/for-executives"
     >
-      <section className="website-section website-section--narrow">
-        <span className="website-label">For executives</span>
-        <h1>For the operating executive who runs the cycle.</h1>
+      <HeroWithLift
+        kicker={p.kicker} headline={p.headline} lift={p.lift} dek={p.dek}
+        primaryCta={{ label: "Join the founding cohort", href: "/cohort" }}
+        secondaryCta={{ label: "See pricing", href: "/pricing" }}
+        image={heroImg} imageAlt={p.image_alt}
+        testId="for-executives"
+      />
+      <section className="website-section section-reveal" data-testid="for-executives-moments">
+        <p className="kicker">THREE MOMENTS</p>
+        <h2 className="section">Where Akki shows up in the cycle.</h2>
         <span className="website-rule" />
-        <p style={{ fontFamily: "Georgia, serif", fontStyle: "italic", fontSize: 18, color: "#2A3441" }}>
-          Cycle prep that lands. Board pack analysis that doesn't leak. Judgement
-          that survives audit.
-        </p>
-        <h2 style={{ marginTop: 56 }}>Three working moments Akki makes easier.</h2>
-        <div style={{ display: "grid", gap: 28, marginTop: 24 }}>
-          <div><h3>The Sunday board pack read.</h3><p>Reading View with paragraph anchors, Ask-Akki deep links, and on-demand commentary that respects Privacy Wall scope.</p></div>
-          <div><h3>The Friday compilation.</h3><p>Cycle Manager turns contributions and follow-ups into a deterministic brief, validated and audit-tracked, ready for chair sign-off.</p></div>
-          <div><h3>The board-paper rework at 9pm.</h3><p>Work Studio enhance — silent Pass 1 reasoning, strict Pass 2 render. The output you would have stayed up writing.</p></div>
+        <div className="three-col">
+          {p.moments.map((m, i) => (
+            <div key={i} className="three-col-card" data-testid={`for-executives-moment-${i}`}>
+              <h3>{m.title}</h3>
+              <p style={{ color: "var(--graphite)" }}>{m.body}</p>
+            </div>
+          ))}
         </div>
-        <EvidencePanel kind="cycle_agenda" caption="A real cycle agenda close to ship. Reportee aliases are opaque; replies thread back automatically." />
-
-        <p style={{ color: "#6B7480", fontSize: 14, marginTop: 24 }}>
-          Read about the choices behind Akki — <Link to="/methodology" className="website-link-inline">Methodology</Link>.
+        <p className="website-label" style={{ marginTop: 40 }} data-testid="for-executives-pricing-line">
+          {p.pricing_line}
         </p>
-        <div style={{ marginTop: 36 }}>
-          <Link to="/sandbox" className="website-cta-primary" data-testid="for-executives-cta">Try the sandbox</Link>
-        </div>
       </section>
+      <InvertedCtaSection
+        kicker={INVERTED_CTA.kicker}
+        headline="See your own board pack analysed in sixty seconds."
+        body="The sandbox runs Solva against a paragraph from your last board paper. Nothing is retained."
+        ctaLabel="Begin sandbox" ctaHref="/sandbox" meta={INVERTED_CTA.meta}
+        testId="for-executives-inverted-cta"
+      />
     </WebsiteShell>
   );
 }

@@ -1,40 +1,47 @@
+/**
+ * Website v7 — /work-studio
+ * v7 §7.4.
+ */
 import React from "react";
-import { Link } from "react-router-dom";
 import WebsiteShell from "../../WebsiteShell";
-import EvidencePanel from "../../components/EvidencePanel";
-import "../../style.css";
+import { HeroWithLift, InvertedCtaSection, CitationPills } from "../../components/PagePrimitives";
+import { PRODUCTS, INVERTED_CTA } from "../../copy";
 
-export default function ProductWorkStudioPage() {
+export default function WorkStudio() {
+  const p = PRODUCTS["work-studio"];
   return (
     <WebsiteShell
-      title="Work Studio — deterministic board-grade outputs"
-      description="DOCX, PPTX, PDF — byte-deterministic, hashed, banned-word grep on every render."
-      pathname="/product/work-studio"
+      title="Work Studio — Deterministic board-ready outputs"
+      description="Briefs, decks and reports rendered byte-deterministically. Every export hash-stamped for governance."
+      pathname="/work-studio"
     >
-      <section className="website-section website-section--narrow">
-        <span className="website-label">Product · Work Studio</span>
-        <h1>Boardpacks that audit themselves.</h1>
+      <HeroWithLift
+        kicker={p.kicker} headline={p.headline} lift={p.lift} dek={p.dek}
+        primaryCta={{ label: "See an output run", href: "/sandbox" }}
+        secondaryCta={{ label: "How deterministic rendering works", href: "/methodology#determinism" }}
+        testId="work-studio-page"
+      />
+      <section className="website-section section-reveal" data-testid="ws-bullets">
+        <p className="kicker">WHAT YOU GET</p>
+        <h2 className="section">Brand-grade outputs that survive committee scrutiny.</h2>
         <span className="website-rule" />
-        <p style={{ fontFamily: "Georgia, serif", fontStyle: "italic", fontSize: 18, color: "#2A3441" }}>
-          Brand-grade DOCX, PPTX and PDF. Byte-deterministic, every render hashed,
-          banned-word grep on every output.
-        </p>
-        <h2 style={{ marginTop: 56 }}>Discipline by construction.</h2>
-        <div style={{ display: "grid", gap: 28, marginTop: 24 }}>
-          <div><h3>Deterministic.</h3><p>Two renders, same input, same bytes. The SHA-256 is persisted with every export.</p></div>
-          <div><h3>Sensitivity-scored.</h3><p>Every output is auto-classified — PUBLIC / INTERNAL / CONFIDENTIAL / RESTRICTED — by a deterministic scorer.</p></div>
-          <div><h3>Cross-document validation.</h3><p>An independent second-pass validator catches numeric inconsistencies before the chair sees them.</p></div>
-        </div>
-
-        <EvidencePanel kind="work_studio_diff" caption="A cross-document inconsistency surfaced before sign-off. Anonymised; the live flag includes byte hashes and validator notes." />
-
-        <p style={{ color: "#6B7480", fontSize: 14, marginTop: 24 }}>
-          Read about the choices behind Work Studio — <Link to="/methodology" className="website-link-inline">Methodology</Link>.
-        </p>
-        <div style={{ marginTop: 36 }}>
-          <Link to="/sandbox" className="website-cta-primary">Try the sandbox</Link>
-        </div>
+        <ul style={{ listStyle: "none", padding: 0, maxWidth: 70 + "ch" }}>
+          {p.bullets.map((b, i) => (
+            <li key={i} style={{ marginBottom: 16, paddingLeft: 22, position: "relative" }} data-testid={`ws-bullet-${i}`}>
+              <span style={{ position: "absolute", left: 0, top: 12, width: 12, height: 1.5, background: "var(--oxblood)" }} />
+              {b}
+            </li>
+          ))}
+        </ul>
+        <CitationPills pills={["render.byte.hash", "validator.brief.minutes.pack", "docx.pptx.pdf"]} />
       </section>
+      <InvertedCtaSection
+        kicker={INVERTED_CTA.kicker}
+        headline="Generate a board-ready brief in sixty seconds."
+        body="The sandbox produces the same deterministic DOCX and PDF that ship with Akki."
+        ctaLabel="Begin sandbox" ctaHref="/sandbox" meta={INVERTED_CTA.meta}
+        testId="ws-inverted-cta"
+      />
     </WebsiteShell>
   );
 }

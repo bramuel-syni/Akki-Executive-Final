@@ -26,7 +26,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 
 // Token-aligned colours. Keep in sync with index.css palette.
 const TIER_STYLES = {
-  corpus:         { bg: "#0F1E3A", fg: "white",        label: "Corpus" },        // navy
+  corpus:         { bg: "#0F1419", fg: "white",        label: "Corpus" },        // ink (was navy — Phase K palette correction)
   comparable:     { bg: "#8B2E2B", fg: "white",        label: "Comparable" },    // oxblood
   domain_prior:   { bg: "#E8E5DC", fg: "#39312A",      label: "Domain prior" },  // cream-deep
   user_assertion: { bg: "#F5F1E6", fg: "#39312A",      label: "User assertion" },// cream

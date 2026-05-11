@@ -130,7 +130,7 @@ function SlashMenu({ open, query, anchorRect, onPick, onClose }) {
               onMouseDown={(e) => { e.preventDefault(); onPick(p); }}
               className={`flex items-start gap-3 px-3 py-2 cursor-pointer text-[13px] ${active ? "bg-[#F2EAD6]" : "bg-transparent"}`}
             >
-              <p.Icon className="w-4 h-4 mt-[2px] text-[#0A1F44] shrink-0" strokeWidth={1.6} />
+              <p.Icon className="w-4 h-4 mt-[2px] text-[#0F1419] shrink-0" strokeWidth={1.6} />
               <div className="flex-1 min-w-0">
                 <div className="text-[#1a1a1a]" style={{ fontFamily: "Georgia, serif" }}>{p.label}</div>
                 <div className="text-[11.5px] text-[#5C5247] leading-snug">{p.desc}</div>
@@ -157,7 +157,7 @@ function HeadingBlock({ content, onChange, readOnly }) {
       value={content?.text || ""}
       onChange={(e) => onChange({ ...content, text: e.target.value, level })}
       placeholder={`Heading ${level}`}
-      className={`w-full bg-transparent border-0 outline-none focus:ring-0 ${sizeCls} text-[#0A1F44] placeholder:text-[#A89878]`}
+      className={`w-full bg-transparent border-0 outline-none focus:ring-0 ${sizeCls} text-[#0F1419] placeholder:text-[#A89878]`}
       style={{ fontFamily: "Georgia, serif" }}
     />
   );
@@ -214,7 +214,7 @@ function BulletedListBlock({ content, onChange, readOnly }) {
       ))}
       {!readOnly && (
         <li>
-          <button type="button" onClick={addItem} className="text-[11px] uppercase tracking-[0.14em] text-[#7C6A4F] hover:text-[#0A1F44]">
+          <button type="button" onClick={addItem} className="text-[11px] uppercase tracking-[0.14em] text-[#7C6A4F] hover:text-[#0F1419]">
             + Add item
           </button>
         </li>
@@ -226,7 +226,7 @@ function BulletedListBlock({ content, onChange, readOnly }) {
 function CalloutBlock({ content, onChange, readOnly }) {
   const tone = content?.tone || "info";
   const tones = [
-    { id: "info", label: "Info",  border: "border-[#0A1F44]" },
+    { id: "info", label: "Info",  border: "border-[#0F1419]" },
     { id: "warn", label: "Warn",  border: "border-amber-500" },
     { id: "risk", label: "Risk",  border: "border-[#8B2E2B]" },
   ];
@@ -240,7 +240,7 @@ function CalloutBlock({ content, onChange, readOnly }) {
               key={t.id}
               type="button"
               onClick={() => onChange({ ...content, tone: t.id })}
-              className={`text-[10px] uppercase tracking-[0.14em] px-1.5 py-[2px] border ${tone === t.id ? "border-[#0A1F44] text-[#0A1F44] bg-[#F7F3EA]" : "border-transparent text-[#7C6A4F]"}`}
+              className={`text-[10px] uppercase tracking-[0.14em] px-1.5 py-[2px] border ${tone === t.id ? "border-[#0F1419] text-[#0F1419] bg-[#F7F3EA]" : "border-transparent text-[#7C6A4F]"}`}
             >
               {t.label}
             </button>
@@ -314,7 +314,7 @@ function CitationBlock({ content, onChange, readOnly, documents }) {
       {readOnly && selectedDoc && (
         <a
           href={`/app/documents/${selectedDoc.id}${content?.paragraph_id ? `#${content.paragraph_id}` : ""}`}
-          className="block text-[11px] uppercase tracking-[0.14em] text-[#0A1F44] hover:underline mt-2"
+          className="block text-[11px] uppercase tracking-[0.14em] text-[#0F1419] hover:underline mt-2"
         >
           {selectedDoc.name} · p.{content?.page || 1}
         </a>
@@ -345,7 +345,7 @@ function SignalCardBlock({ content, onChange, readOnly, signals }) {
         </div>
       )}
       {sigId && (signals || []).find((s) => s.id === sigId) && (
-        <p className="text-[13px] text-[#0A1F44] mb-2" style={{ fontFamily: "Georgia, serif" }}>
+        <p className="text-[13px] text-[#0F1419] mb-2" style={{ fontFamily: "Georgia, serif" }}>
           {(signals || []).find((s) => s.id === sigId).headline}
         </p>
       )}
@@ -366,7 +366,7 @@ function SignalCardBlock({ content, onChange, readOnly, signals }) {
       {(metric.label || metric.value) && (
         <div className="mt-2 flex items-baseline gap-2">
           <span className="text-[10px] uppercase tracking-[0.14em] text-[#7C6A4F]">{metric.label}</span>
-          <span className="text-[20px] text-[#0A1F44]" style={{ fontFamily: "Georgia, serif" }}>{metric.value}{metric.unit ? ` ${metric.unit}` : ""}</span>
+          <span className="text-[20px] text-[#0F1419]" style={{ fontFamily: "Georgia, serif" }}>{metric.value}{metric.unit ? ` ${metric.unit}` : ""}</span>
           {metric.delta && (
             <span className={`text-[12px] ${trend === "up" ? "text-emerald-700" : trend === "down" ? "text-[#8B2E2B]" : "text-[#5C5247]"}`}>
               {arrow} {metric.delta}
@@ -402,7 +402,7 @@ function TableBlock({ content, onChange, readOnly }) {
                   value={h}
                   onChange={(e) => setHeader(i, e.target.value)}
                   placeholder={`Col ${i + 1}`}
-                  className="w-full bg-transparent border-0 outline-none focus:ring-0 text-[12px] uppercase tracking-[0.14em] text-[#0A1F44]"
+                  className="w-full bg-transparent border-0 outline-none focus:ring-0 text-[12px] uppercase tracking-[0.14em] text-[#0F1419]"
                 />
               </th>
             ))}
@@ -435,8 +435,8 @@ function TableBlock({ content, onChange, readOnly }) {
       </table>
       {!readOnly && (
         <div className="flex gap-3 mt-2 text-[11px] uppercase tracking-[0.14em] text-[#7C6A4F]">
-          <button type="button" onClick={addRow} className="hover:text-[#0A1F44]">+ Row</button>
-          <button type="button" onClick={addCol} className="hover:text-[#0A1F44]">+ Column</button>
+          <button type="button" onClick={addRow} className="hover:text-[#0F1419]">+ Row</button>
+          <button type="button" onClick={addCol} className="hover:text-[#0F1419]">+ Column</button>
         </div>
       )}
     </div>
@@ -538,7 +538,7 @@ function ImageBlock({ content, onChange, readOnly, onUpload }) {
           {!readOnly && (
             <>
               <input ref={fileRef} type="file" accept="image/*" onChange={handlePick} className="hidden" data-testid="image-file-input" />
-              <button type="button" disabled={busy} onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2 py-1 border border-[#0A1F44] text-[#0A1F44] hover:bg-[#0A1F44] hover:text-[#F7F3EA] disabled:opacity-50">
+              <button type="button" disabled={busy} onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2 py-1 border border-[#0F1419] text-[#0F1419] hover:bg-[#0F1419] hover:text-[#F7F3EA] disabled:opacity-50">
                 <ImageIcon className="w-3.5 h-3.5" /> {busy ? "Scanning…" : "Upload image"}
               </button>
             </>
@@ -556,7 +556,7 @@ const STATE_LABELS = {
   draft:     { label: "Draft",     bar: "bg-[#7C6A4F]" },
   in_review: { label: "In review", bar: "bg-amber-700" },
   approved:  { label: "Approved",  bar: "bg-emerald-700" },
-  sent:      { label: "Sent",      bar: "bg-[#0A1F44]" },
+  sent:      { label: "Sent",      bar: "bg-[#0F1419]" },
 };
 
 export default function BlockComposer({ kind, artefactId }) {
@@ -803,7 +803,7 @@ export default function BlockComposer({ kind, artefactId }) {
                 <li key={b.id}>
                   <a
                     href={`#slide-${slideIdx + 1}`}
-                    className="block text-[13px] text-[#0A1F44] hover:underline truncate"
+                    className="block text-[13px] text-[#0F1419] hover:underline truncate"
                     style={{ fontFamily: "Georgia, serif" }}
                   >
                     {slideIdx + 1}. {b.content?.text || "(untitled slide)"}
@@ -828,7 +828,7 @@ export default function BlockComposer({ kind, artefactId }) {
           </span>
           <div className="ml-auto flex flex-wrap gap-2">
             {lifecycle === "draft" && (
-              <button onClick={submitForReview} data-testid="composer-submit-review" className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2.5 py-1 border border-[#0A1F44] text-[#0A1F44] hover:bg-[#0A1F44] hover:text-[#F7F3EA]">
+              <button onClick={submitForReview} data-testid="composer-submit-review" className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2.5 py-1 border border-[#0F1419] text-[#0F1419] hover:bg-[#0F1419] hover:text-[#F7F3EA]">
                 <FileText className="w-3.5 h-3.5" /> Submit for review
               </button>
             )}
@@ -843,7 +843,7 @@ export default function BlockComposer({ kind, artefactId }) {
               </button>
             )}
             {lifecycle === "sent" && (
-              <span className="text-[11px] uppercase tracking-[0.14em] text-[#0A1F44]">Sent · ledger updated</span>
+              <span className="text-[11px] uppercase tracking-[0.14em] text-[#0F1419]">Sent · ledger updated</span>
             )}
           </div>
         </header>
@@ -863,13 +863,13 @@ export default function BlockComposer({ kind, artefactId }) {
               <div
                 key={b.id}
                 id={isSlideStart ? `slide-${slideIdxFromStart}` : undefined}
-                className={`group relative ${isSlideStart ? "border-t-2 border-[#0A1F44] pt-4 mt-2" : ""}`}
+                className={`group relative ${isSlideStart ? "border-t-2 border-[#0F1419] pt-4 mt-2" : ""}`}
                 data-testid={`block-${b.kind}`}
               >
                 {!readOnly && (
                   <div className="absolute -left-9 top-0 hidden group-hover:flex flex-col items-center gap-0.5">
-                    <button onClick={() => moveBlock(b.id, "up")} aria-label="Move up" className="text-[#7C6A4F] hover:text-[#0A1F44] p-0.5"><ChevronUp className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => moveBlock(b.id, "down")} aria-label="Move down" className="text-[#7C6A4F] hover:text-[#0A1F44] p-0.5"><ChevronDown className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => moveBlock(b.id, "up")} aria-label="Move up" className="text-[#7C6A4F] hover:text-[#0F1419] p-0.5"><ChevronUp className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => moveBlock(b.id, "down")} aria-label="Move down" className="text-[#7C6A4F] hover:text-[#0F1419] p-0.5"><ChevronDown className="w-3.5 h-3.5" /></button>
                     <button onClick={() => deleteBlock(b.id)} aria-label="Delete block" className="text-[#7C6A4F] hover:text-[#8B2E2B] p-0.5"><Trash2 className="w-3.5 h-3.5" /></button>
                   </div>
                 )}
@@ -889,7 +889,7 @@ export default function BlockComposer({ kind, artefactId }) {
                       type="button"
                       data-testid={`block-insert-after-${b.id}`}
                       onClick={(e) => openSlashMenuAt(e, b.id)}
-                      className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.14em] text-[#7C6A4F] hover:text-[#0A1F44]"
+                      className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.14em] text-[#7C6A4F] hover:text-[#0F1419]"
                     >
                       <Plus className="w-3 h-3" /> Insert
                     </button>
@@ -905,7 +905,7 @@ export default function BlockComposer({ kind, artefactId }) {
                 type="button"
                 data-testid="composer-add-block"
                 onClick={(e) => openSlashMenuAt(e, null)}
-                className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2 py-1 border border-[#0A1F44] text-[#0A1F44] hover:bg-[#0A1F44] hover:text-[#F7F3EA]"
+                className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2 py-1 border border-[#0F1419] text-[#0F1419] hover:bg-[#0F1419] hover:text-[#F7F3EA]"
               >
                 <Plus className="w-3.5 h-3.5" /> Add block · or press &quot;/&quot;
               </button>

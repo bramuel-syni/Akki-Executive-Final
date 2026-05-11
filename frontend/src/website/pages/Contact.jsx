@@ -1,85 +1,40 @@
-import React, { useState } from "react";
+/**
+ * Website v7 — /contact  (v7 §10.4 — three paths).
+ */
+import React from "react";
 import WebsiteShell from "../WebsiteShell";
-import "../style.css";
+import { HeroWithLift } from "../components/PagePrimitives";
+import { CONTACT } from "../copy";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "";
-
-export default function ContactPage() {
-  const [form, setForm] = useState({
-    name: "", work_email: "", company: "", message: "",
-  });
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(null);
-  const [err, setErr] = useState(null);
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setBusy(true); setErr(null);
-    try {
-      const r = await fetch(`${BACKEND_URL}/api/website/contact`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      const data = await r.json();
-      if (!r.ok) setErr(data?.detail?.message || "Could not submit.");
-      else setDone(data.submission_id || "received");
-    } catch {
-      setErr("Network error.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
+export default function Contact() {
   return (
     <WebsiteShell
       title="Contact — Akki"
-      description="Get in touch with the Akki team."
+      description="Three ways to reach Akki: cohort, organisation, general. We reply personally."
       pathname="/contact"
     >
-      <section className="website-section website-section--narrow">
-        <span className="website-label">Contact</span>
-        <h1>Get in touch.</h1>
+      <HeroWithLift
+        kicker={CONTACT.kicker}
+        headline={CONTACT.headline}
+        lift={CONTACT.lift}
+        dek={CONTACT.dek}
+        testId="contact-page"
+      />
+      <section className="website-section section-reveal" data-testid="contact-paths">
+        <p className="kicker">PICK THE PATH</p>
+        <h2 className="section">One of these is yours.</h2>
         <span className="website-rule" />
-        <p style={{ fontSize: 18, color: "#6B7480", marginBottom: 28 }}>
-          For partnerships, press, or product feedback. We read everything that comes in.
-        </p>
-        {done ? (
-          <div data-testid="contact-form-done" style={{ padding: 24, background: "#EDE7D6", border: "1px solid #D8D2C5" }}>
-            <h3>Message received.</h3>
-            <p>We'll reply to your work email. Reference: {String(done).slice(0, 8)}</p>
-          </div>
-        ) : (
-          <form onSubmit={submit} data-testid="contact-form">
-            <div className="website-form-row">
-              <div>
-                <label className="website-label-block">Name *</label>
-                <input className="website-input" required value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="contact-name" />
-              </div>
-              <div>
-                <label className="website-label-block">Email *</label>
-                <input className="website-input" type="email" required value={form.work_email}
-                  onChange={(e) => setForm({ ...form, work_email: e.target.value })} data-testid="contact-email" />
-              </div>
+        <div className="three-col">
+          {CONTACT.paths.map((path, i) => (
+            <div key={i} className="three-col-card" data-testid={`contact-path-${i}`}>
+              <h3>{path.label}</h3>
+              <p style={{ color: "var(--graphite)" }}>{path.body}</p>
+              <a href={path.cta_href} className="btn-primary" style={{ marginTop: 12 }} data-testid={`contact-path-${i}-cta`}>
+                {path.cta_label}
+              </a>
             </div>
-            <div style={{ marginBottom: 16 }}>
-              <label className="website-label-block">Company</label>
-              <input className="website-input" value={form.company}
-                onChange={(e) => setForm({ ...form, company: e.target.value })} data-testid="contact-company" />
-            </div>
-            <div style={{ marginBottom: 24 }}>
-              <label className="website-label-block">Message *</label>
-              <textarea className="website-textarea" required rows={6} value={form.message}
-                onChange={(e) => setForm({ ...form, message: e.target.value })} data-testid="contact-message" />
-            </div>
-            {err && <p style={{ color: "#8B2E2E", fontSize: 14, marginBottom: 16 }}>{err}</p>}
-            <button type="submit" disabled={busy} className="website-cta-primary"
-              style={{ border: "none", cursor: busy ? "wait" : "pointer", opacity: busy ? 0.6 : 1 }}
-              data-testid="contact-submit">
-              {busy ? "Sending…" : "Send"}
-            </button>
-          </form>
-        )}
+          ))}
+        </div>
       </section>
     </WebsiteShell>
   );
