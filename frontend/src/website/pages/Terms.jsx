@@ -14,7 +14,7 @@ export default function TermsPage() {
         <span className="website-label">Terms</span>
         <h1>Terms of Service</h1>
         <span className="website-rule" />
-        <p style={{ color: "#6B6B6B", fontSize: 14 }}>{TERMS.effective}</p>
+        <p style={{ color: "#6B7480", fontSize: 14 }}>{TERMS.effective}</p>
         {TERMS.blocks.map((b, i) => (
           <div key={i} style={{ marginTop: 24 }}>
             <h3>{b.h}</h3>

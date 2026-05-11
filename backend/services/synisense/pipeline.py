@@ -37,6 +37,11 @@ _VALID_SURFACES = {"chat", "ingest", "briefing", "deck", "report",
                    # correct surface. Pre-Phase-1, the live path
                    # mis-labelled these as "briefing".
                    "journal_commentary",
+                   # Phase J (2026-05-12) — Generative Sandbox MVP.
+                   # The unauthenticated /sandbox route shields the
+                   # visitor's free-text "situation" field before any
+                   # LLM sees it. Defence in depth.
+                   "sandbox_generation",
                    # Phase B.2 (2026-05-05) — chat two-pass method.
                    # `chat_classifier` is the surface for the turn-
                    # class probe (text → trivial/light_substantive/

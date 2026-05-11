@@ -1,0 +1,178 @@
+/* Phase J — Sandbox-only stylesheet. Imported by SandboxApp.
+   Implements the Editorial Posture canonical palette (NEW tokens —
+   distinct from the app's existing var(--*) in index.css). Scoped
+   under .akki-sandbox so it never bleeds into the gated /app tree. */
+
+.akki-sandbox {
+  --sb-paper:    #F7F4EE;
+  --sb-cream:    #EDE7D6;
+  --sb-ink:      #0F1419;
+  --sb-slate:    #2A3441;
+  --sb-muted:    #6B7480;
+  --sb-accent:   #8B6F3E;   /* bronze — restrained emphasis */
+  --sb-severity: #8B2E2E;   /* deep red — genuine severity only */
+  --sb-rule:     #D8D2C5;
+
+  background: var(--sb-paper);
+  color: var(--sb-ink);
+  font-family: Calibri, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 18px;
+  line-height: 1.65;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.akki-sandbox h1,
+.akki-sandbox h2,
+.akki-sandbox h3 {
+  font-family: Georgia, 'Times New Roman', serif;
+  color: var(--sb-ink);
+  letter-spacing: -0.015em;
+  font-weight: 700;
+}
+.akki-sandbox h1 { font-size: 44px; line-height: 1.1; margin: 0 0 20px; }
+.akki-sandbox h2 { font-size: 28px; line-height: 1.2; margin: 0 0 14px; }
+.akki-sandbox h3 { font-size: 20px; line-height: 1.3; margin: 0 0 10px; }
+.akki-sandbox p { margin: 0 0 16px; max-width: 64ch; }
+
+.akki-sandbox .sb-shell {
+  max-width: 720px; margin: 0 auto; padding: 56px 32px;
+  flex: 1; width: 100%;
+}
+.akki-sandbox .sb-shell--wide { max-width: 960px; }
+
+.akki-sandbox .sb-label {
+  font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--sb-muted); display: block; margin-bottom: 12px;
+}
+.akki-sandbox .sb-rule {
+  display: block; width: 48px; height: 1px;
+  background: var(--sb-accent); margin: 18px 0 24px;
+}
+.akki-sandbox .sb-divider {
+  display: block; width: 100%; height: 1px;
+  background: var(--sb-rule); margin: 32px 0; border: 0;
+}
+
+.akki-sandbox .sb-cta-primary {
+  display: inline-block; background: var(--sb-accent); color: #fff;
+  padding: 14px 28px; text-decoration: none; font-weight: 600;
+  border: 1px solid var(--sb-accent); border-radius: 2px;
+  letter-spacing: 0.03em; cursor: pointer; font-size: 16px;
+  transition: background-color 180ms ease, border-color 180ms ease;
+  font-family: Calibri, sans-serif;
+}
+.akki-sandbox .sb-cta-primary:hover {
+  background: #735B33; border-color: #735B33;
+}
+.akki-sandbox .sb-cta-primary:disabled {
+  opacity: 0.5; cursor: not-allowed;
+}
+.akki-sandbox .sb-cta-secondary {
+  display: inline-block; background: transparent; color: var(--sb-ink);
+  padding: 14px 28px; text-decoration: none; font-weight: 600;
+  border: 1px solid var(--sb-ink); border-radius: 2px;
+  letter-spacing: 0.03em; cursor: pointer; font-size: 16px;
+  transition: border-color 180ms ease, color 180ms ease;
+  font-family: Calibri, sans-serif;
+}
+.akki-sandbox .sb-cta-secondary:hover {
+  border-color: var(--sb-accent); color: var(--sb-accent);
+}
+
+.akki-sandbox .sb-input, .akki-sandbox .sb-select, .akki-sandbox .sb-textarea {
+  width: 100%; padding: 12px 14px; font-size: 16px;
+  border: 1px solid var(--sb-rule); border-radius: 2px;
+  background: var(--sb-paper); color: var(--sb-ink);
+  font-family: Calibri, 'Helvetica Neue', Arial, sans-serif;
+  transition: border-color 180ms ease;
+}
+.akki-sandbox .sb-textarea { min-height: 110px; resize: vertical; }
+.akki-sandbox .sb-input:focus, .akki-sandbox .sb-select:focus, .akki-sandbox .sb-textarea:focus {
+  outline: none; border-color: var(--sb-ink);
+}
+.akki-sandbox .sb-field { margin-bottom: 24px; }
+.akki-sandbox .sb-field-label {
+  display: block; font-size: 13px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--sb-muted); margin-bottom: 8px;
+  font-family: Calibri, sans-serif;
+}
+.akki-sandbox .sb-field-help {
+  font-size: 14px; color: var(--sb-muted); margin-top: 8px; font-style: italic;
+}
+
+.akki-sandbox .sb-progress {
+  display: flex; gap: 4px; margin-bottom: 32px;
+}
+.akki-sandbox .sb-progress-pill {
+  flex: 1; height: 3px; background: var(--sb-rule);
+  border-radius: 0;
+}
+.akki-sandbox .sb-progress-pill--active { background: var(--sb-accent); }
+.akki-sandbox .sb-progress-pill--done { background: var(--sb-ink); }
+
+.akki-sandbox .sb-pick-list { display: grid; gap: 10px; }
+.akki-sandbox .sb-pick-button {
+  text-align: left; padding: 14px 16px; font-size: 15px;
+  background: var(--sb-paper); color: var(--sb-ink);
+  border: 1px solid var(--sb-rule); border-radius: 2px;
+  font-family: Calibri, sans-serif; cursor: pointer;
+  transition: border-color 180ms ease, background-color 180ms ease;
+}
+.akki-sandbox .sb-pick-button:hover { border-color: var(--sb-ink); }
+.akki-sandbox .sb-pick-button[aria-pressed="true"] {
+  border-color: var(--sb-accent); background: var(--sb-cream);
+}
+
+.akki-sandbox .sb-error {
+  color: var(--sb-severity); font-size: 14px; margin-bottom: 16px;
+  border-left: 2px solid var(--sb-severity); padding-left: 12px;
+}
+
+.akki-sandbox .sb-loading-line {
+  font-size: 16px; color: var(--sb-muted); margin: 6px 0;
+  opacity: 0; transition: opacity 200ms ease;
+}
+.akki-sandbox .sb-loading-line--visible { opacity: 1; }
+.akki-sandbox .sb-loading-line--done { color: var(--sb-ink); }
+
+.akki-sandbox .sb-step-reveal {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 16px; font-style: italic; color: var(--sb-accent);
+  border-top: 1px solid var(--sb-rule);
+  padding-top: 20px; margin-top: 36px;
+}
+
+.akki-sandbox .sb-tile {
+  background: transparent; padding: 24px 0 0;
+  border-top: 1px solid var(--sb-rule); margin-top: 0;
+}
+.akki-sandbox .sb-tile-meta {
+  font-size: 12px; letter-spacing: 0.15em; text-transform: uppercase;
+  color: var(--sb-muted); margin-bottom: 8px;
+}
+.akki-sandbox .sb-tile-body { font-size: 16px; color: var(--sb-slate); }
+
+.akki-sandbox .sb-conversion {
+  margin-top: 56px; padding: 24px 0 0;
+  border-top: 1px solid var(--sb-rule);
+  font-size: 14px; color: var(--sb-muted);
+  display: flex; gap: 24px; flex-wrap: wrap; align-items: center;
+}
+.akki-sandbox .sb-conversion a {
+  color: var(--sb-accent); text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 180ms ease;
+}
+.akki-sandbox .sb-conversion a:hover { border-bottom-color: var(--sb-accent); }
+
+.akki-sandbox a:focus-visible, .akki-sandbox button:focus-visible,
+.akki-sandbox input:focus-visible, .akki-sandbox textarea:focus-visible,
+.akki-sandbox select:focus-visible {
+  outline: 2px solid var(--sb-accent); outline-offset: 2px;
+}
+
+@media (max-width: 720px) {
+  .akki-sandbox h1 { font-size: 32px; }
+  .akki-sandbox .sb-shell { padding: 36px 20px; }
+}

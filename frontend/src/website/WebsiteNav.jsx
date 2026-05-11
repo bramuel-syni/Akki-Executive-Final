@@ -5,7 +5,6 @@ const LINKS = [
   { to: "/why-akki",       label: "Why Akki" },
   { to: "/what-akki-does", label: "What Akki Does" },
   { to: "/trust",          label: "Trust" },
-  { to: "/pricing",        label: "Pricing" },
   { to: "/about",          label: "About" },
   { to: "/contact",        label: "Contact" },
 ];
@@ -21,8 +20,8 @@ export default function WebsiteNav() {
     <header
       style={{
         position: "sticky", top: 0, zIndex: 50,
-        background: "#FAF7F2",
-        borderBottom: "1px solid #D5C9B6",
+        background: "#EDE7D6",
+        borderBottom: "1px solid #D8D2C5",
         boxShadow: scrolled ? "0 2px 8px rgba(42,27,29,0.06)" : "none",
         transition: "box-shadow 150ms ease",
       }}
@@ -33,7 +32,7 @@ export default function WebsiteNav() {
       }}>
         <Link to="/" style={{
           fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 700,
-          color: "#2A1B1D", textDecoration: "none", letterSpacing: "-0.01em",
+          color: "#0F1419", textDecoration: "none", letterSpacing: "-0.01em",
         }}>
           AKKI
         </Link>
@@ -43,7 +42,7 @@ export default function WebsiteNav() {
               key={l.to}
               to={l.to}
               style={({ isActive }) => ({
-                fontSize: 14, color: isActive ? "#C25A38" : "#2A1B1D",
+                fontSize: 14, color: isActive ? "#8B6F3E" : "#0F1419",
                 textDecoration: "none", letterSpacing: "0.02em",
                 fontFamily: "Calibri, 'Helvetica Neue', Arial, sans-serif",
               })}
@@ -56,7 +55,7 @@ export default function WebsiteNav() {
         <Link
           to="/cohort"
           style={{
-            background: "#C25A38", color: "#FAF7F2", padding: "10px 18px",
+            background: "#8B6F3E", color: "#EDE7D6", padding: "10px 18px",
             textDecoration: "none", fontSize: 14, fontWeight: 600,
             borderRadius: 2, letterSpacing: "0.02em",
           }}
@@ -66,7 +65,7 @@ export default function WebsiteNav() {
         </Link>
         <Link
           to="/signin"
-          style={{ fontSize: 14, color: "#2A1B1D", textDecoration: "none" }}
+          style={{ fontSize: 14, color: "#0F1419", textDecoration: "none" }}
         >
           Sign in
         </Link>

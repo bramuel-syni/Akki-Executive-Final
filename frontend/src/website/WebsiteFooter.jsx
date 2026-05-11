@@ -5,8 +5,8 @@ import { FOOTER } from "./copy";
 export default function WebsiteFooter() {
   return (
     <footer style={{
-      background: "#FAF7F2",
-      borderTop: "1px solid #D5C9B6",
+      background: "#EDE7D6",
+      borderTop: "1px solid #D8D2C5",
       padding: "28px 32px",
       marginTop: 60,
     }}>
@@ -15,16 +15,16 @@ export default function WebsiteFooter() {
         alignItems: "center", justifyContent: "space-between",
         gap: 24, flexWrap: "wrap",
       }}>
-        <p style={{ margin: 0, fontSize: 13, color: "#6B6B6B" }}>
-          <span style={{ fontFamily: "Georgia, serif", fontWeight: 700, color: "#2A1B1D" }}>AKKI</span>
+        <p style={{ margin: 0, fontSize: 13, color: "#6B7480" }}>
+          <span style={{ fontFamily: "Georgia, serif", fontWeight: 700, color: "#0F1419" }}>AKKI</span>
           {" "}· © {new Date().getFullYear()} Akki Limited
         </p>
         <nav style={{ display: "flex", gap: 24, fontSize: 13 }}>
-          <Link to="/privacy" style={{ color: "#6B6B6B", textDecoration: "none" }}>Privacy</Link>
-          <Link to="/terms" style={{ color: "#6B6B6B", textDecoration: "none" }}>Terms</Link>
-          <Link to="/contact" style={{ color: "#6B6B6B", textDecoration: "none" }}>Contact</Link>
+          <Link to="/privacy" style={{ color: "#6B7480", textDecoration: "none" }}>Privacy</Link>
+          <Link to="/terms" style={{ color: "#6B7480", textDecoration: "none" }}>Terms</Link>
+          <Link to="/contact" style={{ color: "#6B7480", textDecoration: "none" }}>Contact</Link>
         </nav>
-        <p style={{ margin: 0, fontSize: 13, color: "#6B6B6B", fontStyle: "italic" }}>
+        <p style={{ margin: 0, fontSize: 13, color: "#6B7480", fontStyle: "italic" }}>
           {FOOTER.signoff}
         </p>
       </div>

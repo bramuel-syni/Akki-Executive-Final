@@ -1085,6 +1085,11 @@ function ChatHeader({ chat, models, activeModel, activeContext, onPatch, onArchi
         )}
         <p className="text-[10.5px] text-[var(--muted)] mt-0.5">
           {chat.message_count || 0} messages · {POLICY_LABEL[chat.shielding_policy]}
+          {/* Phase J — inline Synisense redaction count + 3-layer indicator.
+              Renders only when the live metric has loaded. Honest about
+              what was redacted, with a tooltip-style hover for the layer
+              breakdown so curious users can drill in. */}
+          <SynisenseInlineBadge chatId={chat.id} />
         </p>
       </div>
       <ModelPicker
@@ -1596,6 +1601,8 @@ function BypassDialog({ info, onClose, onConfirm }) {
 function AuditDialog({ open, onClose, chatId }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  // Phase J — Synisense audit metrics strip + storyline (everyday-people numbers).
+  const [metrics, setMetrics] = useState(null);
   useEffect(() => {
     if (!open || !chatId) return;
     setLoading(true);
@@ -1603,6 +1610,10 @@ function AuditDialog({ open, onClose, chatId }) {
       .then(({ data }) => setRows(data?.rows || []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
+    // Fetch the human-readable Synisense metrics in parallel — never blocks render.
+    api.get(`/chats/${chatId}/synisense-metrics`)
+      .then(({ data }) => setMetrics(data))
+      .catch(() => setMetrics(null));
   }, [open, chatId]);
 
   const onDownload = async () => {
@@ -1646,6 +1657,30 @@ function AuditDialog({ open, onClose, chatId }) {
             <code className="font-mono text-[11px] px-1">verify.py</code> for one-shot validation.
           </DialogDescription>
         </DialogHeader>
+        {/* Phase J — Synisense audit metrics strip + editorial storyline. */}
+        {metrics && (
+          <div className="border border-[var(--rule)] bg-[var(--cream)]/40 rounded-sm p-3 mb-3" data-testid="chat-audit-synisense-metrics">
+            <div className="flex flex-wrap gap-x-6 gap-y-2 items-baseline">
+              <div>
+                <span className="block text-[10px] uppercase tracking-[0.18em] text-[var(--muted)]">Identifiers redacted</span>
+                <span className="akki-serif text-[24px] text-[var(--accent)]" data-testid="metric-identifiers">{metrics.identifiers_redacted}</span>
+                <span className="text-[11px] text-[var(--muted)] ml-1">in this conversation</span>
+              </div>
+              <div>
+                <span className="block text-[10px] uppercase tracking-[0.18em] text-[var(--muted)]">Model calls</span>
+                <span className="akki-serif text-[24px] text-[var(--accent)]" data-testid="metric-modelcalls">{metrics.model_calls}</span>
+                <span className="text-[11px] text-[var(--muted)] ml-1">through Synisense Shield</span>
+              </div>
+              <div className="text-[11px] text-[var(--muted)]" data-testid="metric-layer-breakdown">
+                <span className="block text-[10px] uppercase tracking-[0.18em]">Layers won</span>
+                <span><span className="text-[var(--ink)]">{metrics.layer_breakdown?.regex || 0}</span> regex · <span className="text-[var(--ink)]">{metrics.layer_breakdown?.presidio || 0}</span> Presidio · <span className="text-[var(--ink)]">{metrics.layer_breakdown?.llm || 0}</span> LLM-fallback</span>
+              </div>
+            </div>
+            <p className="akki-serif text-[14px] text-[var(--ink)] italic mt-3 leading-relaxed" data-testid="metric-storyline">
+              {metrics.storyline}
+            </p>
+          </div>
+        )}
         {loading ? (
           <p className="text-[12px] text-[var(--muted)] italic text-center py-8">Loading…</p>
         ) : rows.length === 0 ? (
@@ -1674,5 +1709,36 @@ function AuditDialog({ open, onClose, chatId }) {
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function SynisenseInlineBadge({ chatId }) {
+  // Phase J — lightweight live counter shown beside the chat title.
+  // Polls every 30s so the number ticks up as redactions accumulate.
+  // Tooltip surfaces the per-layer breakdown.
+  const [m, setM] = useState(null);
+  useEffect(() => {
+    if (!chatId) return;
+    let alive = true;
+    const fetchOnce = () => {
+      api.get(`/chats/${chatId}/synisense-metrics`)
+        .then(({ data }) => { if (alive) setM(data); })
+        .catch(() => {});
+    };
+    fetchOnce();
+    const id = setInterval(fetchOnce, 30000);
+    return () => { alive = false; clearInterval(id); };
+  }, [chatId]);
+  if (!m || (m.identifiers_redacted || 0) === 0) return null;
+  const lb = m.layer_breakdown || {};
+  const layersUsed = ["regex", "presidio", "llm"].filter((k) => (lb[k] || 0) > 0).length;
+  return (
+    <span
+      className="ml-2 inline-block px-1.5 py-[1px] border border-[var(--rule)] rounded-sm text-[10px] text-[var(--accent)] align-baseline"
+      title={`Layer breakdown — regex: ${lb.regex || 0} · Presidio: ${lb.presidio || 0} · LLM-fallback: ${lb.llm || 0}`}
+      data-testid="chat-synisense-inline-badge"
+    >
+      {m.identifiers_redacted} redacted · {layersUsed}-layer Shield
+    </span>
   );
 }

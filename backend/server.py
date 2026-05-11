@@ -51,6 +51,9 @@ from routers import audit as audit_router  # noqa: E402
 from routers import synisense as synisense_router  # noqa: E402
 from routers import shares as shares_router  # noqa: E402
 from routers import sandbox as sandbox_router  # noqa: E402
+# Phase J (2026-05-12) — Generative Sandbox + Synisense audit metrics.
+from routers import sandbox_generation as sandbox_gen_router  # noqa: E402
+from routers import synisense_metrics as synisense_metrics_router  # noqa: E402
 from routers import cycle as cycle_router  # noqa: E402
 from routers import blog as blog_router  # noqa: E402
 from routers import billing as billing_router  # noqa: E402
@@ -179,6 +182,9 @@ app.include_router(governance_router.router)
 app.include_router(solva_v2_router.router)
 app.include_router(search_router.router)  # Phase F0 — Universal Search
 app.include_router(website_router.router)  # Phase I1 — Pre-login website
+# Phase J (2026-05-12) — Generative Sandbox MVP + Synisense audit metrics.
+app.include_router(sandbox_gen_router.router)
+app.include_router(synisense_metrics_router.router)
 
 
 # -----------------------------------------------------------------------------
@@ -478,6 +484,13 @@ async def on_startup():
     await db.sandbox_v2_sessions.create_index("id", unique=True)
     await db.sandbox_v2_sessions.create_index("expires_at", expireAfterSeconds=0)
     await db.sandbox_v2_sessions.create_index([("created_at", -1)])
+
+    # Phase J (2026-05-12) — Generative Sandbox MVP. New collection
+    # distinct from `sandbox_v2_sessions` (that one belongs to the
+    # legacy guided tour, now moved to /legacy-sandbox). 24h TTL.
+    await db.sandbox_sessions.create_index("id", unique=True)
+    await db.sandbox_sessions.create_index("expires_at", expireAfterSeconds=0)
+    await db.sandbox_sessions.create_index([("created_at", -1)])
 
     # Inbound-email idempotency
     await db.accounts.create_index("inbound_token", sparse=True)

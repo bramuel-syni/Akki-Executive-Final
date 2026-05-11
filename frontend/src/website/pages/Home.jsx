@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import WebsiteShell from "../WebsiteShell";
 import { HERO, HIERARCHY, COHORT_TEASER } from "../copy";
+import heroImg from "../assets/hero-library.jpg";
 import "../style.css";
 
 export default function HomePage() {
@@ -12,14 +13,14 @@ export default function HomePage() {
       pathname="/"
     >
       {/* Hero */}
-      <section className="website-section">
+      <section className="website-section" style={{ paddingBottom: 0 }}>
         <span className="website-label">{HERO.eyebrow}</span>
         <h1>{HERO.headline}</h1>
         <span className="website-rule" />
-        <p style={{ fontSize: 20, color: "#6B6B6B", maxWidth: "56ch", marginBottom: 36 }}>
+        <p style={{ fontSize: 20, color: "#6B7480", maxWidth: "56ch", marginBottom: 36 }}>
           {HERO.subhead}
         </p>
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 56 }}>
           <Link to={HERO.primaryCta.href} className="website-cta-primary" data-testid="home-cta-primary">
             {HERO.primaryCta.label}
           </Link>
@@ -27,10 +28,21 @@ export default function HomePage() {
             {HERO.secondaryCta.label}
           </Link>
         </div>
+        <img
+          src={heroImg} alt="" aria-hidden="true"
+          width={2000} height={1125}
+          style={{
+            display: "block", width: "100%", height: "auto",
+            maxHeight: 520, objectFit: "cover",
+            borderTop: "1px solid #D8D2C5",
+            borderBottom: "1px solid #D8D2C5",
+          }}
+          data-testid="home-hero-image"
+        />
       </section>
 
       {/* Three-tier hierarchy */}
-      <section className="website-section" style={{ background: "#FAF7F2" }}>
+      <section className="website-section" style={{ background: "#EDE7D6" }}>
         <span className="website-label">Three commitments</span>
         <h2>Safety. Workspace. Inventions.</h2>
         <span className="website-rule" />

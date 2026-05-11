@@ -35,6 +35,9 @@ import LLMSpend from "@/pages/admin/LLMSpend";
 import AuthEvents from "@/pages/admin/AuthEvents";
 import AdminIndex from "@/pages/admin/AdminIndex";
 import SandboxV2 from "@/pages/SandboxV2";
+// Phase J (2026-05-12) — Generative Sandbox MVP replaces the legacy
+// guided tour at /sandbox. The old tour moves to /legacy-sandbox.
+import SandboxApp from "@/sandbox/SandboxApp";
 import Manage from "@/pages/Manage";
 import Enterprise from "@/pages/Enterprise";
 import Decks from "@/pages/Decks";
@@ -182,10 +185,12 @@ function App() {
           <Route path="/signup" element={<PublicOnlyRoute allowSandbox><SignUp /></PublicOnlyRoute>} />
           <Route path="/invite/:token" element={<InviteAccept />} />
           {/* M.4: legacy /sandbox/legacy + /sandbox/generating + /quick-results
-              retired. Sandbox v2 is the single canonical pre-auth demo
-              surface; legacy stub components were deleted. */}
-          <Route path="/sandbox" element={<SandboxV2 />} />
-          <Route path="/sandbox/resume" element={<SandboxV2 />} />
+              retired. Phase J (2026-05-12): /sandbox is now the new
+              Generative Sandbox MVP. The legacy guided tour (SandboxV2)
+              moved to /legacy-sandbox for back-link compatibility. */}
+          <Route path="/sandbox" element={<SandboxApp />} />
+          <Route path="/legacy-sandbox" element={<SandboxV2 />} />
+          <Route path="/legacy-sandbox/resume" element={<SandboxV2 />} />
 
           <Route path="/app/first-session" element={<ProtectedRoute><FirstSession /></ProtectedRoute>} />
           <Route path="/app" element={<Gated><AppHome /></Gated>} />

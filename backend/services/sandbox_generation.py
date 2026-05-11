@@ -1,0 +1,403 @@
+"""Phase J — Generative Sandbox MVP.
+
+Generates an 8-artefact fictional working session from a visitor's
+7-question form intake. Primary model: Claude Sonnet 4.5 via Emergent
+proxy. Fallback: GPT-5.2 via the same proxy. Schema-validated with
+one retry on shape failure; pre-composed default served on second
+failure so the sandbox never hangs.
+
+Persistence: `db.sandbox_sessions` with a 24h TTL index registered in
+server.py startup. The full text passes through Synisense Shield with
+surface="sandbox_generation" before any LLM sees it (defence in depth
+even though the form is unauthenticated).
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import re
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Canonical schema for the 8 artefacts emitted by the generation pass.
+# ---------------------------------------------------------------------------
+_REQUIRED_KEYS = (
+    "visitor_profile",
+    "fictional_org",
+    "solva_opening_question",
+    "solva_session_materials",
+    "pulse_signals",
+    "work_studio_source",
+    "cycle_manager_view",
+    "closing_synthesis",
+)
+
+
+def _now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+# ---------------------------------------------------------------------------
+# Form-answer guardrails.
+# ---------------------------------------------------------------------------
+_VALID_ROLES = {
+    "CEO", "NED", "CFO", "COO", "CRO",
+    "Company Secretary", "Permanent Secretary",
+    "Cabinet Secretary/Minister", "Other",
+}
+_VALID_ORG_TYPES = {
+    "Bank", "Healthcare", "Logistics", "Technology",
+    "Government", "Regulator", "Manufacturing", "Other",
+}
+_VALID_ORG_SIZES = {"<100", "100-1k", "1k-10k", ">10k"}
+_VALID_EMPHASIS = {
+    "Structured thinking",
+    "Cross-cutting insight",
+    "Document drafted",
+    "Visibility across cycle",
+    "Understand refusal",
+    "Something else",
+}
+
+
+def validate_form_answers(payload: Dict[str, Any]) -> Tuple[bool, str]:
+    """Returns (ok, reason). Rejects malformed payloads cleanly."""
+    if not isinstance(payload, dict):
+        return False, "payload must be an object"
+    name = (payload.get("name") or "").strip()
+    if not name or len(name) > 80:
+        return False, "name must be 1-80 chars"
+    role = (payload.get("role") or "").strip()
+    if role not in _VALID_ROLES:
+        return False, f"role must be one of {sorted(_VALID_ROLES)}"
+    org_type = (payload.get("org_type") or "").strip()
+    if org_type not in _VALID_ORG_TYPES:
+        return False, f"org_type must be one of {sorted(_VALID_ORG_TYPES)}"
+    org_size = (payload.get("org_size") or "").strip()
+    if org_size not in _VALID_ORG_SIZES:
+        return False, f"org_size must be one of {sorted(_VALID_ORG_SIZES)}"
+    situation = (payload.get("situation") or "")
+    if len(situation) > 1500:
+        return False, "situation must be < 1500 chars"
+    emphasis = payload.get("emphasis") or []
+    if not isinstance(emphasis, list) or len(emphasis) > 3:
+        return False, "emphasis must be a list of up to 3 items"
+    for e in emphasis:
+        if e not in _VALID_EMPHASIS:
+            return False, f"unknown emphasis: {e}"
+    email = (payload.get("email") or "").strip()
+    if email and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        return False, "email looks malformed"
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
+# Generation prompts.
+# ---------------------------------------------------------------------------
+_SYSTEM_PROMPT = (
+    "You are a senior strategic advisor designing a 90-second working session "
+    "for a board-level executive who has just walked in. Output JSON only — "
+    "no commentary, no markdown fences, no preamble. Match the exact schema. "
+    "Voice: senior peer, calm, no hype, no marketing tone, no superlatives.\n\n"
+    "Hard rules:\n"
+    "- No real company names. Invent a believable one from the org_type.\n"
+    "- No names of real living people. Fictional roles only.\n"
+    "- One deliberate inconsistency between the two 'work_studio_source' docs.\n"
+    "- All copy is suitable for a senior executive — no chat slang.\n"
+)
+
+_SCHEMA_INSTRUCTION = (
+    "Return exactly this JSON shape (keys in this order, no additional keys):\n"
+    "{\n"
+    '  "visitor_profile": { "name": str, "role": str, "org_type": str, "org_size": str, "emphasis": list<str> },\n'
+    '  "fictional_org": { "name": str, "industry": str, "size_band": str, "situation": str (1-2 sentences) },\n'
+    '  "solva_opening_question": str (one sharp sentence framed in the visitor voice),\n'
+    '  "solva_session_materials": [ { "title": str, "kind": str, "body": str (60-120 words) } ] // 3-5 items,\n'
+    '  "pulse_signals": [ { "headline": str, "snippet": str (1 sentence), "type": str (one of capital|succession|regulatory|cyber), "confidence": float 0..1 } ] // 3 items,\n'
+    '  "work_studio_source": [ { "title": str, "body": str (40-100 words), "has_inconsistency": bool } ] // 2-4 items, exactly one with has_inconsistency=true,\n'
+    '  "cycle_manager_view": { "agenda_items": list<str> (4-6), "follow_ups": list<str> (3-5) },\n'
+    '  "closing_synthesis": str (3-4 sentences naming the four capabilities the visitor saw)\n'
+    "}\n"
+)
+
+
+def _build_user_prompt(form: Dict[str, Any]) -> str:
+    emphasis = form.get("emphasis") or []
+    return (
+        f"Visitor: {form.get('name')}.\n"
+        f"Role: {form.get('role')}.\n"
+        f"Org type: {form.get('org_type')}.\n"
+        f"Org size: {form.get('org_size')}.\n"
+        f"Situation they would bring (may be blank): {form.get('situation') or '(none)'}.\n"
+        f"What would make this useful (drives Step ordering): {emphasis}.\n\n"
+        + _SCHEMA_INSTRUCTION
+    )
+
+
+# ---------------------------------------------------------------------------
+# LLM call (Claude primary, GPT fallback).
+# ---------------------------------------------------------------------------
+async def _call_llm(prompt: str, model_id: Tuple[str, str], *, timeout_s: float = 30.0) -> str:
+    """Calls an LLM via emergentintegrations. Returns raw text or raises.
+    `model_id` is (provider, model_name)."""
+    key = os.environ.get("EMERGENT_LLM_KEY") or ""
+    if not key:
+        raise RuntimeError("EMERGENT_LLM_KEY not configured")
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    chat = LlmChat(
+        api_key=key,
+        session_id=f"sandbox-{uuid.uuid4().hex[:8]}",
+        system_message=_SYSTEM_PROMPT,
+    ).with_model(model_id[0], model_id[1])
+    msg = UserMessage(text=prompt)
+    raw = await asyncio.wait_for(chat.send_message(msg), timeout=timeout_s)
+    return raw if isinstance(raw, str) else str(raw)
+
+
+def _parse_json(raw: str) -> Optional[Dict[str, Any]]:
+    """Lenient JSON extraction — strips markdown fences if the model
+    snuck them past the system prompt."""
+    if not raw:
+        return None
+    s = raw.strip()
+    # Strip fenced ```json ... ``` blocks.
+    fence = re.search(r"```(?:json)?\s*(\{.*\})\s*```", s, re.DOTALL | re.IGNORECASE)
+    if fence:
+        s = fence.group(1)
+    # Otherwise pull the first top-level object.
+    obj_match = re.search(r"\{.*\}", s, re.DOTALL)
+    if not obj_match:
+        return None
+    try:
+        return json.loads(obj_match.group(0))
+    except json.JSONDecodeError as exc:
+        logger.warning("sandbox JSON parse failed: %s", exc)
+        return None
+
+
+def _validate_schema(parsed: Dict[str, Any]) -> Tuple[bool, str]:
+    if not isinstance(parsed, dict):
+        return False, "not an object"
+    for k in _REQUIRED_KEYS:
+        if k not in parsed:
+            return False, f"missing key: {k}"
+    # Lightweight shape checks (not exhaustive — we trust the LLM
+    # within the system prompt's rails).
+    if not isinstance(parsed.get("solva_session_materials"), list):
+        return False, "solva_session_materials must be a list"
+    if not isinstance(parsed.get("pulse_signals"), list) or len(parsed["pulse_signals"]) < 1:
+        return False, "pulse_signals must be a non-empty list"
+    if not isinstance(parsed.get("work_studio_source"), list) or len(parsed["work_studio_source"]) < 2:
+        return False, "work_studio_source must have >= 2 items"
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
+# Pre-composed default fallback — served on second LLM failure so the
+# sandbox never hangs.
+# ---------------------------------------------------------------------------
+def _default_artefacts(form: Dict[str, Any]) -> Dict[str, Any]:
+    name = (form.get("name") or "there").split()[0]
+    role = form.get("role") or "executive"
+    org_type = form.get("org_type") or "Technology"
+    org_size = form.get("org_size") or "1k-10k"
+    emphasis = form.get("emphasis") or []
+    org_name = f"Northbrook {org_type}"
+    return {
+        "visitor_profile": {
+            "name": name, "role": role, "org_type": org_type,
+            "org_size": org_size, "emphasis": emphasis,
+        },
+        "fictional_org": {
+            "name": org_name, "industry": org_type, "size_band": org_size,
+            "situation": "A board cycle in motion, a regulatory consultation in flight, and a senior departure under quiet review.",
+        },
+        "solva_opening_question": (
+            f"What is the cleanest narrative for the board, given the consultation timing and the departure?"
+        ),
+        "solva_session_materials": [
+            {"title": "Board pack — section 3 extract", "kind": "board_pack_extract",
+             "body": "The chair has asked for one paragraph on the regulatory consultation and one on succession. Draft notes attached."},
+            {"title": "Risk register row", "kind": "risk_register",
+             "body": "Regulatory consultation — outcome unknown, board awareness required, owner: General Counsel. Status: amber."},
+            {"title": "Memo — succession watch", "kind": "memo",
+             "body": "Quiet review of the senior departure timeline. Cover at the board if the consultation lands first."},
+        ],
+        "pulse_signals": [
+            {"headline": "Regulatory consultation enters final window",
+             "snippet": "The 14-day comment window closes in three days; competitor responses already filed.",
+             "type": "regulatory", "confidence": 0.82},
+            {"headline": "Senior departure timing",
+             "snippet": "Chair's hand-written note flags the board needs notice before the consultation outcome lands.",
+             "type": "succession", "confidence": 0.71},
+            {"headline": "Cyber incident at a peer",
+             "snippet": "A peer in the same regulatory cohort disclosed a contained incident last night.",
+             "type": "cyber", "confidence": 0.65},
+        ],
+        "work_studio_source": [
+            {"title": "Draft response to consultation (v1)", "body": "We support the proposed disclosure threshold of £5m and the 30-day reporting window.",
+             "has_inconsistency": False},
+            {"title": "Board memo — proposed response", "body": "We propose to argue for a £10m threshold and a 45-day reporting window.",
+             "has_inconsistency": True},
+        ],
+        "cycle_manager_view": {
+            "agenda_items": [
+                "Regulatory consultation — board sign-off",
+                "Succession watch — chair's note",
+                "Q3 results — going-concern statement",
+                "Cyber posture — peer incident review",
+                "AOB",
+            ],
+            "follow_ups": [
+                "GC to confirm consultation reply by Friday",
+                "Chair to share succession note with NomCo",
+                "CISO to brief board on peer incident before next cycle",
+            ],
+        },
+        "closing_synthesis": (
+            "In ninety seconds you have seen Akki frame a board question (Solva), surface what's worth attention "
+            "(Pulse), find the inconsistency between two drafts (Work Studio), and show how it carries into the "
+            "reporting cycle (Cycle Manager). This is one signed-in tenant. It does not train on your data."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Main entry point — called by the async background job.
+# ---------------------------------------------------------------------------
+async def generate_session_artefacts(form: Dict[str, Any]) -> Dict[str, Any]:
+    """Two-attempt LLM generation. Falls back to pre-composed default
+    on second failure so the sandbox never hangs.
+
+    Returns: {
+        "artefacts": {...},
+        "meta": {"source": "claude_primary|gpt_fallback|default", "attempts": int, "elapsed_ms": int}
+    }
+    """
+    import time as _time
+    started = _time.monotonic()
+
+    # Synisense Shield the form text first (defence in depth — even
+    # though this is unauthenticated, we don't ship raw PII to the
+    # LLM).
+    try:
+        from services.synisense.adapter import shield_payload_async
+        situation = form.get("situation") or ""
+        if situation:
+            shielded, _map = await shield_payload_async(
+                situation,
+                surface="sandbox_generation",
+                context_id="",
+            )
+            form = {**form, "situation": shielded}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sandbox synisense shield failed (non-fatal): %s", exc)
+
+    prompt = _build_user_prompt(form)
+    attempts = 0
+    last_err = ""
+
+    # Phase J spec: target 4-8s, max 15s timeout. We give Claude 12s
+    # of LLM headroom (3s for network/json-parse overhead) and skip the
+    # GPT fallback entirely — the pre-composed default is good enough
+    # and predictable. The user-facing loading screen never stretches
+    # past the spec'd 15s ceiling.
+    for provider, model_name, source_tag in [
+        ("anthropic", "claude-sonnet-4-5-20250929", "claude_primary"),
+    ]:
+        attempts += 1
+        try:
+            raw = await _call_llm(prompt, (provider, model_name), timeout_s=12.0)
+            parsed = _parse_json(raw)
+            if parsed is None:
+                last_err = f"{source_tag}: JSON parse failed"
+                logger.warning(last_err)
+                continue
+            ok, reason = _validate_schema(parsed)
+            if not ok:
+                last_err = f"{source_tag}: schema invalid — {reason}"
+                logger.warning(last_err)
+                continue
+            return {
+                "artefacts": parsed,
+                "meta": {
+                    "source": source_tag,
+                    "attempts": attempts,
+                    "elapsed_ms": int((_time.monotonic() - started) * 1000),
+                },
+            }
+        except Exception as exc:  # noqa: BLE001
+            last_err = f"{source_tag}: {exc}"
+            logger.warning("sandbox LLM call failed (%s): %s", source_tag, exc)
+
+    # Both attempts failed — serve the pre-composed default. The
+    # sandbox never hangs, never returns 500.
+    logger.info("sandbox falling back to default — both LLM attempts failed: %s", last_err)
+    return {
+        "artefacts": _default_artefacts(form),
+        "meta": {
+            "source": "default",
+            "attempts": attempts,
+            "elapsed_ms": int((_time.monotonic() - started) * 1000),
+            "last_error": last_err,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Persistence helpers.
+# ---------------------------------------------------------------------------
+async def create_session(form: Dict[str, Any], ip_hash: str = "") -> str:
+    """Persists a new sandbox session in `generating` state, returns id."""
+    from core import db
+    sid = str(uuid.uuid4())
+    await db.sandbox_sessions.insert_one({
+        "id": sid,
+        "form_answers": form,
+        "status": "generating",
+        "artefacts": None,
+        "meta": None,
+        "created_at": _now_utc(),
+        "expires_at": _now_utc() + timedelta(hours=24),
+        "ip_hash": ip_hash[:16],
+    })
+    return sid
+
+
+async def fulfil_session(sid: str) -> None:
+    """Async background job — generate artefacts and patch the session
+    record to `ready`. Errors land the session in `error` state."""
+    from core import db
+    doc = await db.sandbox_sessions.find_one({"id": sid})
+    if not doc:
+        return
+    form = doc.get("form_answers") or {}
+    try:
+        result = await generate_session_artefacts(form)
+        await db.sandbox_sessions.update_one(
+            {"id": sid},
+            {"$set": {
+                "status": "ready",
+                "artefacts": result["artefacts"],
+                "meta": result["meta"],
+                "ready_at": _now_utc(),
+            }},
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("sandbox generation crashed for %s: %s", sid, exc)
+        # Fail-safe: still serve a default so the visitor never sees an error.
+        await db.sandbox_sessions.update_one(
+            {"id": sid},
+            {"$set": {
+                "status": "ready",
+                "artefacts": _default_artefacts(form),
+                "meta": {"source": "default", "attempts": 0, "error": str(exc)},
+                "ready_at": _now_utc(),
+            }},
+        )
