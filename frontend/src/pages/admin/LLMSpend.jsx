@@ -388,7 +388,7 @@ function Tile({ label, value, subline, accent = false }) {
       <p className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--muted)] font-mono">
         {label}
       </p>
-      <p className={`akki-serif text-[26px] mt-1 ${accent ? "text-[var(--accent)]" : "text-[var(--ink)]"}`}>
+      <p className={`akki-serif text-[26px] mt-1 ${accent ? "text-[var(--severity)]" : "text-[var(--ink)]"}`}>
         {value}
       </p>
       {subline && (

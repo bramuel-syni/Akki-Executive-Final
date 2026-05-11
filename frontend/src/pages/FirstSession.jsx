@@ -176,7 +176,7 @@ function FirstSessionIntake({ initial, onSubmitted, onSkip }) {
       </div>
 
       {err && (
-        <p className="text-[13px] text-[var(--accent)] mb-4" data-testid="first-session-error">{err}</p>
+        <p className="text-[13px] text-[var(--severity)] mb-4" data-testid="first-session-error">{err}</p>
       )}
 
       <div className="flex items-center justify-between">

@@ -90,6 +90,7 @@ import WebsiteProductCycle from "@/website/pages/product/CycleManager";
 import WebsiteProductMonitor from "@/website/pages/product/Monitor";
 import WebsiteProductPulse from "@/website/pages/product/Pulse";
 import WebsiteForExecutives from "@/website/pages/ForExecutives";
+import WebsiteForExco from "@/website/pages/ForExco";
 import WebsiteForNeds from "@/website/pages/ForNeds";
 import WebsiteForOrganisations from "@/website/pages/ForOrganisations";
 import NedMeeting from "@/pages/ned/NedMeeting";   // Phase E
@@ -188,6 +189,7 @@ function App() {
           <Route path="/product/monitor" element={<WebsiteProductMonitor />} />
           <Route path="/product/pulse" element={<WebsiteProductPulse />} />
           <Route path="/for-executives" element={<WebsiteForExecutives />} />
+          <Route path="/for-exco" element={<WebsiteForExco />} />
           <Route path="/for-non-executive-directors" element={<WebsiteForNeds />} />
           <Route path="/for-organisations" element={<WebsiteForOrganisations />} />
           {/* /pricing removed (revision 2) — pricing is handled privately

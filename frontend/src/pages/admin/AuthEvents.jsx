@@ -184,14 +184,14 @@ export default function AuthEvents() {
 function Tile({ label, value, accent = false, warn = false }) {
   return (
     <div
-      className={`bg-white border rounded-sm px-5 py-4 ${warn ? "border-amber-300" : accent ? "border-[var(--accent)]/30" : "border-[var(--rule)]"}`}
+      className={`bg-white border rounded-sm px-5 py-4 ${warn ? "border-amber-300" : accent ? "border-[var(--severity)]/30" : "border-[var(--rule)]"}`}
       data-testid={`auth-events-tile-${label.toLowerCase().replace(/\s+/g, "-")}`}
     >
       <p className="text-[10.5px] uppercase tracking-[0.18em] text-[var(--muted)] font-mono">
         {label}
       </p>
       <p className={`akki-serif text-[26px] mt-1 tabular-nums ${
-        warn ? "text-amber-700" : accent ? "text-[var(--accent)]" : "text-[var(--ink)]"
+        warn ? "text-amber-700" : accent ? "text-[var(--severity)]" : "text-[var(--ink)]"
       }`}>
         {value}
       </p>

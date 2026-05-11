@@ -111,7 +111,7 @@ function SimulationViewer({ sim, onArchive }) {
                 <div className="flex-1 min-w-0">
                   <p className="akki-serif text-[15px] text-[var(--ink)] leading-snug">{w.indicator}</p>
                   <p className="text-[12.5px] text-[var(--muted)] mt-1">
-                    <span className="text-[var(--accent)]">Trigger:</span> {w.early_warning}
+                    <span className="text-[var(--severity)]">Trigger:</span> {w.early_warning}
                   </p>
                   {w.committee && (
                     <span className="inline-block mt-2 akki-context-chip">{w.committee}</span>

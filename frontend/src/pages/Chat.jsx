@@ -72,6 +72,37 @@ export default function Chat() {
   const [auditOpen, setAuditOpen] = useState(false);
   const messagesEndRef = useRef(null);
 
+  // K1 (2026-05-12) — Per-message Synisense badge.
+  // We batch-fetch redaction counts for visible messages on a single
+  // 30s loop (one request per message, but coalesced into a single
+  // useEffect — no N+1 polls on every re-render). Returns a
+  // Map<msg_id, {identifiers_redacted, layer_breakdown}>.
+  const [messageSynisense, setMessageSynisense] = useState(new Map());
+  useEffect(() => {
+    if (!activeChat?.id) return;
+    const msgs = (activeChat.messages || []).filter((m) => m.role !== "user" && m.id);
+    if (msgs.length === 0) return;
+    let alive = true;
+    const fetchAll = async () => {
+      const results = await Promise.all(
+        msgs.map((m) =>
+          api.get(`/chats/${activeChat.id}/messages/${m.id}/synisense-runs`)
+            .then(({ data }) => [m.id, data])
+            .catch(() => [m.id, null])
+        )
+      );
+      if (!alive) return;
+      const next = new Map();
+      for (const [id, data] of results) if (data) next.set(id, data);
+      setMessageSynisense(next);
+    };
+    fetchAll();
+    const tid = setInterval(fetchAll, 30000);
+    return () => { alive = false; clearInterval(tid); };
+  }, [activeChat?.id, activeChat?.messages?.length]);
+
+
+
   // Phase B.1 — Cancel in flight via AbortController. We hold the
   // controller in a ref so the Cancel button reads the current value
   // without re-rendering on every keystroke.
@@ -983,7 +1014,8 @@ export default function Chat() {
                     Type your first message below.
                   </p>
                 ) : (activeChat.messages || []).map((m) => (
-                  <Message key={m.id} m={m} activeModel={activeModel} models={models} />
+                  <Message key={m.id} m={m} activeModel={activeModel} models={models}
+                    synisense={messageSynisense.get(m.id)} />
                 ))}
                 {sending && (
                   <div className="flex items-center gap-2 text-[12.5px] text-[var(--muted)] italic">
@@ -1199,7 +1231,7 @@ function PolicyPicker({ value, onChange }) {
   );
 }
 
-function Message({ m, activeModel, models }) {
+function Message({ m, activeModel, models, synisense }) {
   const isUser = m.role === "user";
   const shielded = m.shielded;
   const detected = (m.shielding?.identifiers_masked || 0) > 0;
@@ -1233,7 +1265,20 @@ function Message({ m, activeModel, models }) {
         )}
         {!isUser && (m.model_label || msgModel?.label) && (
           <p className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-1">
-            {m.model_label || msgModel?.label} · {m.latency_ms ? `${(m.latency_ms / 1000).toFixed(1)}s` : ""}
+            {m.model_label || msgModel?.label}
+            {/* K1 — per-message Synisense badge. Renders ONLY when the
+                batched hook has resolved a non-zero count for this msg.
+                Title attribute exposes the layer breakdown on hover. */}
+            {synisense && (synisense.identifiers_redacted || 0) > 0 && (
+              <span
+                className="ml-2 inline-block px-1.5 py-[1px] border border-[var(--rule)] rounded-sm text-[9.5px] text-[var(--accent)] align-baseline normal-case tracking-normal"
+                title={`Layer breakdown — regex: ${synisense.layer_breakdown?.regex || 0} · Presidio: ${synisense.layer_breakdown?.presidio || 0} · LLM-fallback: ${synisense.layer_breakdown?.llm || 0}`}
+                data-testid={`chat-msg-synisense-${m.id}`}
+              >
+                {synisense.identifiers_redacted} redacted
+              </span>
+            )}
+            {m.latency_ms ? ` · ${(m.latency_ms / 1000).toFixed(1)}s` : ""}
           </p>
         )}
         {/* Phase B.2 — collapsible Pass 1 reasoning panel. Renders only

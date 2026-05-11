@@ -157,7 +157,7 @@ function ErrorPanel({ status, detail }) {
   return (
     <section className="bg-white border border-[var(--rule)] rounded-sm p-8" data-testid="shared-error">
       <div className="flex items-start gap-3">
-        <AlertTriangle className="w-6 h-6 text-[var(--accent)] mt-1 shrink-0" />
+        <AlertTriangle className="w-6 h-6 text-[var(--severity)] mt-1 shrink-0" />
         <div>
           <h1 className="akki-serif text-[22px] text-[var(--ink)] leading-tight mb-2">
             {title}

@@ -115,7 +115,11 @@ export default function SandboxStep({ session, stepIndex, onNext }) {
       <span className="sb-rule" />
       {body}
       <p className="sb-step-reveal" data-testid={`sandbox-step-${stepIndex}-reveal`}>
-        {cap.reveal}
+        {/* K1 — prefer LLM-generated step_reveals from this session's
+            artefacts; fall back to the canonical CAPABILITIES sentence
+            when the artefact is missing the field (older sessions, or
+            the pre-composed default before its step_reveals shipped). */}
+        {art.step_reveals?.[capKey] ?? cap.reveal}
       </p>
       {stepIndex >= 1 && <ConversionRow />}
       <div style={{ marginTop: 32, textAlign: "right" }}>

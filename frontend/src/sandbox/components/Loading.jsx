@@ -1,6 +1,29 @@
 import React, { useEffect, useState, useRef } from "react";
 import { getSandboxSession } from "../api";
 
+/**
+ * Phase J — Streaming Transitions: Context Loading pattern.
+ *
+ * K1 update (2026-05-12) — the surfacing lines now reflect REAL
+ * backend phase boundaries instead of a fixed 1.7s timer. The polling
+ * loop reads `session.progress.phase` and translates each phase into
+ * the visible line. If the backend hasn't checkpointed yet (very early
+ * polls), we still surface line 0 so the screen never looks blank.
+ *
+ * Polls every 800ms during generation; hard ceiling at 18s = 22 polls,
+ * after which we proceed with whatever state exists (the backend's
+ * default fallback always lands a `ready` state eventually).
+ */
+const PHASE_TO_INDEX = {
+  received: 0,
+  composing_org: 1,
+  drafting_solva: 2,
+  surfacing_pulse: 3,
+  preparing_work_studio: 4,
+  finalising: 4,
+  ready: 4,
+};
+
 const LINES = [
   "Reading your inputs.",
   "Composing a fictional organisation that fits.",
@@ -9,64 +32,41 @@ const LINES = [
   "Preparing the rest.",
 ];
 
-/**
- * SandboxLoading — Streaming Transitions: Context Loading pattern.
- * Progressive surfacing 1-2s apart. Polls the session every 1.5s.
- * Hard ceiling at 18s — if generation hasn't finished, we still
- * proceed (the backend's `default` fallback will have served by then).
- */
 export default function SandboxLoading({ sessionId, onReady }) {
-  const [visibleLines, setVisibleLines] = useState(0);
-  const [completedLines, setCompletedLines] = useState(0);
+  const [phaseIndex, setPhaseIndex] = useState(0);
   const polledRef = useRef(false);
 
-  // Progressive surfacing — reveal a new line every 1.7s up to 5.
-  useEffect(() => {
-    if (visibleLines >= LINES.length) return;
-    const t = setTimeout(() => setVisibleLines((v) => v + 1), 1700);
-    return () => clearTimeout(t);
-  }, [visibleLines]);
-
-  // Mark earlier lines as done as we progress.
-  useEffect(() => {
-    if (visibleLines > 0 && completedLines < visibleLines - 1) {
-      const t = setTimeout(() => setCompletedLines((c) => c + 1), 800);
-      return () => clearTimeout(t);
-    }
-  }, [visibleLines, completedLines]);
-
-  // Poll the session.
   useEffect(() => {
     if (!sessionId || polledRef.current) return;
     polledRef.current = true;
     let cancelled = false;
     let attempts = 0;
+
     const tick = async () => {
       if (cancelled) return;
       attempts += 1;
       try {
         const s = await getSandboxSession(sessionId);
+        const phase = s?.progress?.phase || "received";
+        const idx = PHASE_TO_INDEX[phase] ?? 0;
+        // Lines advance monotonically — never go backwards if a poll
+        // races with a phase write.
+        setPhaseIndex((cur) => Math.max(cur, idx));
         if (s.status === "ready") {
-          // Ensure the user sees the loading screen for at least 3s
-          // even if generation completed faster, so the calm tone holds.
-          if (attempts <= 2) {
-            await new Promise((r) => setTimeout(r, 1500));
-          }
+          // Minimum hold so the calm tone reads even on a fast finish.
+          if (attempts <= 2) await new Promise((r) => setTimeout(r, 1200));
           if (!cancelled) onReady(s);
           return;
         }
       } catch (_) { /* swallow — keep polling */ }
-      // Hard ceiling at 18s = 12 polls.
-      if (attempts >= 12) {
-        // Best-effort — read whatever state exists; the backend's
-        // default fallback always lands a `ready` state eventually.
+      if (attempts >= 22) {
         try {
           const s = await getSandboxSession(sessionId);
           if (!cancelled) onReady(s);
         } catch (_) { /* fully abandon */ }
         return;
       }
-      setTimeout(tick, 1500);
+      setTimeout(tick, 800);
     };
     tick();
     return () => { cancelled = true; };
@@ -83,12 +83,12 @@ export default function SandboxLoading({ sessionId, onReady }) {
             key={i}
             className={
               "sb-loading-line " +
-              (i < visibleLines ? "sb-loading-line--visible " : "") +
-              (i < completedLines ? "sb-loading-line--done" : "")
+              (i <= phaseIndex ? "sb-loading-line--visible " : "") +
+              (i < phaseIndex ? "sb-loading-line--done" : "")
             }
             data-testid={`sandbox-loading-line-${i}`}
           >
-            {i < completedLines ? "✓  " : i < visibleLines ? "·  " : "   "}
+            {i < phaseIndex ? "✓  " : i === phaseIndex ? "·  " : "   "}
             {line}
           </div>
         ))}

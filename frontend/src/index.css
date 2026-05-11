@@ -13,28 +13,35 @@
      and Solva flow tokens but was never declared in :root. When
      unresolved, `bg-[var(--paper)]` renders transparent, causing the
      underlying page to bleed through any drawer using it. Defined
-     here to match Solva flow tokens (`PAPER: "#FAF7F2"`).
-     CONTRACT: any drawer/sheet must use an *opaque* color token. */
-  --paper:       #FAF7F2;
-  --ink:         #1A1A1A;
-  --deep:        #2B2B2A;
-  --muted:       #6F6A5D;
-  --cream:       #F7F3EA;
-  --cream-deep:  #EFE9D9;
+     here to match Solva flow tokens.
+     CONTRACT: any drawer/sheet must use an *opaque* color token.
+
+     Phase K (2026-05-12) — app-wide migration to the canonical
+     Editorial Posture palette. The values below match the website +
+     sandbox tokens. Three semantic tokens that DID NOT exist before
+     are added: --slate, --severity, --emphasis. --accent now means
+     bronze editorial emphasis ONLY; --severity is the new deep-red
+     reserved for genuine severity/risk/error UI. Components that used
+     --accent for error states are migrated case-by-case. */
+  --paper:       #F7F4EE;
+  --ink:         #0F1419;
+  --deep:        #1A2028;
+  --muted:       #6B7480;
+  --cream:       #EDE7D6;
+  --cream-deep:  #E2DAC2;
   --warm-white:  #FAFAF5;
-  --rule:        #D9D3C1;
-  --accent:      #8B2E2B;   /* oxblood — RISK, severity, editorial pull-quotes, "read this closely" */
-  --accent-soft: #F3E7E5;
+  --rule:        #D8D2C5;
+  --accent:      #8B6F3E;   /* bronze — editorial emphasis, kicker labels, restrained pull-quotes */
+  --accent-soft: #EDE3CF;   /* bronze-tinted soft surface for accent panels */
+  --severity:    #8B2E2E;   /* genuine severity — risk, error, alert, refusal. NEVER decorative. */
+  --slate:       #2A3441;   /* secondary text, slightly softer than --ink */
   --navy:        #0F1E3A;   /* institutional voice — wordmark, AKKI replies, chrome */
-  /* --chrome is the primary navy used on shell elements, primary CTAs, and
-     the active-nav rail. Split from --navy (which is the narrow voice token)
-     so we can tune chrome without affecting AKKI-voice copy. */
   --chrome:      #1A2B4C;   /* navy institutional — primary CTAs, active nav, focus ring */
   --chrome-soft: #E6EAF1;   /* subtle navy tint for hover / soft backgrounds */
-  --risk:        #8B2E2B;
+  --risk:        #8B2E2E;   /* alias of --severity — kept for backward compat */
   --gap:         #A67C00;
   --opportunity: #3D6F3D;
-  --neutral:     #6F6A5D;
+  --neutral:     #6B7480;
   --meeting:     #4A5568;
 
   /* =====================================================================
