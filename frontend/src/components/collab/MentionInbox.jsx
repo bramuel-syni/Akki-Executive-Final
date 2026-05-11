@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bell, AtSign, Check } from "lucide-react";
+import { AtSign, Check, Inbox } from "lucide-react";
 
 /** Polls the current context's mention inbox every 60s and renders a bell
  *  with an unread count. Clicking an item marks it read and navigates to
@@ -61,8 +61,14 @@ export default function MentionInbox() {
           className="relative flex items-center px-2 py-1.5 text-[var(--deep)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
           data-testid="mention-inbox-btn"
           title="Mentions"
+          aria-label={unread > 0 ? `Mentions · ${unread} unread` : "Mentions"}
         >
-          <Bell className="w-4 h-4" strokeWidth={1.8} />
+          {/* Phase-tidy 2026-05: was a second <Bell> sitting next to
+              ReviewBadge in the top nav — two bells side-by-side is a
+              UX bug. ReviewBadge keeps the bell (queue semantics);
+              this Mentions inbox switches to <Inbox> so the two
+              affordances are visually distinct. */}
+          <Inbox className="w-4 h-4" strokeWidth={1.8} />
           {unread > 0 && (
             <span
               className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-[4px] bg-[var(--accent)] text-white text-[9px] font-semibold rounded-full flex items-center justify-center"

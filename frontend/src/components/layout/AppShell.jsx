@@ -266,15 +266,19 @@ export default function AppShell({ children }) {
 
           {/* Cmd+K search — Phase F0: now opens UniversalSearchDialog,
               NOT the company switcher. Dispatching `akki:open-search`
-              keeps AppShell free of the modal state. */}
+              keeps AppShell free of the modal state.
+              Phase-tidy 2026-05: widened from content-natural (~145px)
+              to 280px @ md and 340px @ xl so the primary nav affordance
+              reads as primary, not as an afterthought next to the bell.
+              On viewports < md the button is hidden — Cmd+K still works. */}
           <button
-            className="hidden md:flex items-center gap-2 px-3 py-1.5 text-[13px] bg-white hover:bg-[var(--cream-deep)] text-[var(--muted)] rounded-md transition-colors border border-[var(--rule)]"
+            className="hidden md:flex md:w-[280px] xl:w-[340px] items-center gap-2 px-3 py-1.5 text-[13px] bg-white hover:bg-[var(--cream-deep)] text-[var(--muted)] rounded-md transition-colors border border-[var(--rule)]"
             onClick={() => window.dispatchEvent(new CustomEvent("akki:open-search"))}
             data-testid="cmdk-launch-btn"
           >
-            <Search className="w-3.5 h-3.5" strokeWidth={1.8} />
+            <Search className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.8} />
             <span className="akki-sans">Search</span>
-            <kbd className="ml-2 text-[10px] font-mono bg-[var(--cream-deep)] px-1.5 py-0.5 rounded tracking-wider">⌘K</kbd>
+            <kbd className="ml-auto text-[10px] font-mono bg-[var(--cream-deep)] px-1.5 py-0.5 rounded tracking-wider flex-shrink-0">⌘K</kbd>
           </button>
 
           {/* Mentions bell — pulls from /mentions endpoint */}
