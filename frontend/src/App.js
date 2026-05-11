@@ -61,6 +61,7 @@ import StudioComposerPage from "@/pages/StudioComposerPage";
 // Phase 13.3 — new top-level surfaces
 import WorkStudio from "@/pages/WorkStudio";
 import Pulse from "@/pages/Pulse";
+import SearchResults from "@/pages/SearchResults";  // Phase F0 — Universal Search results page
 import NedMeeting from "@/pages/ned/NedMeeting";   // Phase E
 import NedCommittee from "@/pages/ned/NedCommittee"; // Phase E
 
@@ -182,6 +183,8 @@ function App() {
           <Route path="/app/work-studio" element={<Gated><WorkStudio /></Gated>} />
           <Route path="/app/decks/:deckId" element={<Gated><Decks /></Gated>} />
           <Route path="/app/pulse" element={<Gated><Pulse /></Gated>} />
+          {/* Phase F0 — Universal Search full results page. */}
+          <Route path="/app/search" element={<Gated><SearchResults /></Gated>} />
           <Route path="/app/studio/composer/:kind/:artefactId" element={<Gated><StudioComposerPage /></Gated>} />
           <Route path="/app/solva" element={<Gated><SolvaApp /></Gated>} />
           <Route path="/app/solva/sessions" element={<Gated><SolvaSessions /></Gated>} />

@@ -40,6 +40,12 @@ import CycleContextIndicator from "@/components/layout/CycleContextIndicator";
 import ContextSwitchModal from "@/components/layout/ContextSwitchModal";
 import useKeyboardShortcuts from "@/hooks/useKeyboardShortcuts";
 import KeyboardHelp from "@/components/layout/KeyboardHelp";
+// Phase F0 — Universal Search replaces the F0.0 hijack where Cmd+K
+// opened a company switcher disguised as search. The company switcher
+// is now its own affordance (CompanySwitcherDialog) mounted alongside.
+import UniversalSearchDialog from "@/components/search/UniversalSearchDialog";
+import ConfirmContextSwitchModal from "@/components/search/ConfirmContextSwitchModal";
+import CompanySwitcherDialog from "@/components/layout/CompanySwitcherDialog";
 
 
 // Phase 13.3 — primary 8-item top nav. Order locked per UI/UX brief.
@@ -148,19 +154,30 @@ export default function AppShell({ children }) {
   const isProPlan = (account?.plan || "free") !== "free";
   const [trustOpen, setTrustOpen] = useState(false);
 
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);  // legacy state — kept only as a no-op fallback for any stale callers
   const [uploadOpen, setUploadOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
   const paletteInputRef = useRef(null);
+  // Phase F0 — when a search result lives in a foreign tenant, we
+  // route it through the ConfirmContextSwitchModal. The search dialog
+  // dispatches the candidate row up via `onCrossContextRequest`.
+  const [searchPending, setSearchPending] = useState(null);
   // Phase 13.3 — keyboard help overlay + mobile drawer state.
   const [helpOpen, setHelpOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Phase 13.3 — global keyboard shortcuts hook (⌘K / ⌘J / ⌘S / ?).
-  // Cmd+K dispatches `akki:open-palette` so AppShell stays the single
-  // source of truth for the palette dialog state.
+  // Phase F0 — Cmd+K now opens UniversalSearchDialog. The dialog
+  // listens for `akki:open-search`; the keyboard hook still fires
+  // that event. We DO NOT mount the F0.0 hijack here anymore.
   useKeyboardShortcuts({ openHelp: () => setHelpOpen(true) });
   useEffect(() => {
+    // Phase F0 — `akki:open-palette` no longer toggles a stub dialog
+    // owned by AppShell. UniversalSearchDialog listens for both
+    // `akki:open-search` (canonical) and `akki:open-palette` (legacy
+    // alias) directly. We keep this listener as a defensive no-op
+    // setter so `paletteOpen` state doesn't go stale — but it does
+    // NOT control any visible UI.
     const onPaletteOpen = () => setPaletteOpen((v) => !v);
     window.addEventListener("akki:open-palette", onPaletteOpen);
     return () => window.removeEventListener("akki:open-palette", onPaletteOpen);
@@ -247,10 +264,12 @@ export default function AppShell({ children }) {
               on surfaces where it would be redundant. */}
           <ContinueWithPill />
 
-          {/* Cmd+K search */}
+          {/* Cmd+K search — Phase F0: now opens UniversalSearchDialog,
+              NOT the company switcher. Dispatching `akki:open-search`
+              keeps AppShell free of the modal state. */}
           <button
             className="hidden md:flex items-center gap-2 px-3 py-1.5 text-[13px] bg-white hover:bg-[var(--cream-deep)] text-[var(--muted)] rounded-md transition-colors border border-[var(--rule)]"
-            onClick={() => setPaletteOpen(true)}
+            onClick={() => window.dispatchEvent(new CustomEvent("akki:open-search"))}
             data-testid="cmdk-launch-btn"
           >
             <Search className="w-3.5 h-3.5" strokeWidth={1.8} />
@@ -791,72 +810,29 @@ export default function AppShell({ children }) {
         </main>
       </div>
 
-      {/* Command palette — M1 stub: context switcher; becomes universal search in M7 */}
-      <Dialog open={paletteOpen} onOpenChange={setPaletteOpen}>
-        <DialogContent className="rounded-sm max-w-xl p-0 overflow-hidden">
-          <DialogHeader className="sr-only">
-            <DialogTitle>Command palette</DialogTitle>
-            <DialogDescription>Switch company or search. Universal search unlocks at M7.</DialogDescription>
-          </DialogHeader>
-          <div className="flex items-center gap-3 border-b border-[#E1E6ED] px-4 py-3">
-            <Search className="w-4 h-4 text-slate-400" strokeWidth={1.8} />
-            <input
-              ref={paletteInputRef}
-              value={paletteQuery}
-              onChange={(e) => setPaletteQuery(e.target.value)}
-              placeholder="Switch company…  (universal search unlocks at M7)"
-              className="flex-1 bg-transparent outline-none text-sm placeholder:text-slate-400"
-              data-testid="palette-input"
-            />
-            <kbd className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-sm">esc</kbd>
-          </div>
-          <div className="max-h-80 overflow-y-auto py-2">
-            <p className="px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-slate-400">Companies</p>
-            {contexts
-              .filter((c) => !paletteQuery || c.name.toLowerCase().includes(paletteQuery.toLowerCase()))
-              .map((c) => {
-                const active = c.id === activeContext?.id;
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => { switchContext(c.id); setPaletteOpen(false); }}
-                    className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-slate-50 text-left group"
-                    data-testid={`palette-switch-${c.id}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Layers className={`w-4 h-4 ${active ? "text-[var(--accent)]" : "text-slate-400"}`} strokeWidth={1.6} />
-                      <div>
-                        <p className="text-sm text-[var(--ink)] font-medium">{c.name}</p>
-                        <p className="text-[10px] uppercase tracking-wider text-slate-400">
-                          {c.my_role || "member"}
-                          {isSponsoredContext(c) && <span className="ml-2 text-[var(--accent)]">sponsored</span>}
-                        </p>
-                      </div>
-                    </div>
-                    {active && <CheckCircle2 className="w-4 h-4 text-[var(--accent)]" />}
-                  </button>
-                );
-              })}
-            <p className="px-4 py-1.5 mt-2 text-[10px] uppercase tracking-[0.2em] text-slate-400">Actions</p>
-            <button
-              onClick={() => { setPaletteOpen(false); navigate("/app/contexts/new"); }}
-              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left"
-              data-testid="palette-new-context-btn"
-            >
-              <Sparkles className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.6} />
-              <span className="text-sm text-[var(--ink)]">Add a company…</span>
-            </button>
-            <button
-              onClick={() => { setPaletteOpen(false); navigate("/app/settings"); }}
-              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left"
-              data-testid="palette-settings-btn"
-            >
-              <Settings className="w-4 h-4 text-slate-400" strokeWidth={1.6} />
-              <span className="text-sm text-[var(--ink)]">Open settings</span>
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Phase F0 — Universal Search.
+          • UniversalSearchDialog listens for `akki:open-search` (canonical)
+            and `akki:open-palette` (legacy alias). Opened by the top-nav
+            "Search ⌘K" button and the global Cmd+K keyboard shortcut.
+          • Cross-context result clicks bubble up via onCrossContextRequest;
+            ConfirmContextSwitchModal names BOTH companies before any
+            tenant switch happens — no silent hijack.
+          • CompanySwitcherDialog is the moved F0.0 hijack body, now reachable
+            only via `akki:open-company-switcher` (Cmd+Shift+K) and is
+            independent of the search input. The day-to-day affordance to
+            switch company remains the CycleContextIndicator dropdown above. */}
+      <UniversalSearchDialog onCrossContextRequest={(row) => setSearchPending({
+        from_context_id: activeContext?.id,
+        from_context_name: activeContext?.name,
+        to_context_id: row.context_id,
+        to_context_name: row.context_name,
+        surface: row.surface,
+        result_id: row.id,
+        deep_link: row.deep_link,
+        type: row.type,
+      })} />
+      <ConfirmContextSwitchModal pending={searchPending} onClose={() => setSearchPending(null)} />
+      <CompanySwitcherDialog />
 
       <UploadModal
         open={uploadOpen}

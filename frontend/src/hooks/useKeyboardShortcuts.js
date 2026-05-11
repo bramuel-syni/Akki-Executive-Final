@@ -70,11 +70,24 @@ export default function useKeyboardShortcuts({ openHelp } = {}) {
       return;
     }
 
-    // ⌘/Ctrl-K — open palette. AppShell owns the palette state, so we
-    // dispatch a request event rather than wiring state through a
-    // context. Do not skip on typing-targets — Cmd-K is universal.
+    // ⌘/Ctrl-K — Phase F0: open the Universal Search dialog. Dispatches
+    // the new `akki:open-search` event (UniversalSearchDialog listens
+    // for it). Also fires the legacy `akki:open-palette` alias so any
+    // third-party callers that still listen for the old name keep
+    // working — but Phase F0 has unbound that name from any hijack.
+    //
+    // ⌘/Ctrl-Shift-K — open the company switcher dialog. Distinct
+    // affordance, distinct event. Do NOT collide with Cmd+K.
+    if (meta && e.shiftKey && key === "k") {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent("akki:open-company-switcher"));
+      return;
+    }
     if (meta && key === "k") {
       e.preventDefault();
+      window.dispatchEvent(new CustomEvent("akki:open-search"));
+      // Legacy alias — kept ONLY for back-compat; the new search dialog
+      // listens for both names.
       window.dispatchEvent(new CustomEvent("akki:open-palette"));
       return;
     }

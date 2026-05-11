@@ -91,6 +91,7 @@ from routers import first_session as first_session_router  # noqa: E402
 from routers import depth as depth_router  # noqa: E402
 from routers import governance as governance_router  # noqa: E402
 from routers import solva_v2 as solva_v2_router  # noqa: E402  Phase 15.0 — Solva v2 POC (feature-flagged)
+from routers import search as search_router  # noqa: E402  Phase F0 — Universal Search
 
 
 logger = logging.getLogger("akki")
@@ -175,6 +176,7 @@ app.include_router(governance_router.router)
 # Solva v2 — production reasoning surface. Open to every authenticated
 # account. Registered AFTER all v1 routers so nothing is shadowed.
 app.include_router(solva_v2_router.router)
+app.include_router(search_router.router)  # Phase F0 — Universal Search
 
 
 # -----------------------------------------------------------------------------
