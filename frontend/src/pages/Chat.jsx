@@ -14,7 +14,7 @@
  *             would shield and the user wants to bypass
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import AppShell from "@/components/layout/AppShell";
 import { api, apiErrorMessage } from "@/lib/api";
@@ -24,10 +24,14 @@ import {
   Plus, Send, Loader2, Shield, ShieldOff, Trash2, MessageCircle,
   ChevronDown, FileLock2, Eye, AlertTriangle, Download,
   Search, Paperclip, X, FileText, StopCircle,
-  Brain, ChevronRight, Info, ArchiveRestore, ArrowLeft, Trash,
+  Brain, ChevronRight, Info, ArchiveRestore, Trash,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useMessagesSynisense } from "@/hooks/useMessagesSynisense";
+import PerMessageSynisenseBadge from "@/components/chat/PerMessageSynisenseBadge";
+import ProviderLine from "@/components/chat/ProviderLine";
+import WorkspaceEntryGate from "@/components/transitions/WorkspaceEntryGate";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github.css";
 import ModelAvatar from "@/components/chat/ModelAvatar";
@@ -75,31 +79,17 @@ export default function Chat() {
   // K1 (2026-05-12) — Per-message Synisense badge.
   // We batch-fetch redaction counts for visible messages on a single
   // 30s loop (one request per message, but coalesced into a single
-  // useEffect — no N+1 polls on every re-render). Returns a
-  // Map<msg_id, {identifiers_redacted, layer_breakdown}>.
-  const [messageSynisense, setMessageSynisense] = useState(new Map());
-  useEffect(() => {
-    if (!activeChat?.id) return;
-    const msgs = (activeChat.messages || []).filter((m) => m.role !== "user" && m.id);
-    if (msgs.length === 0) return;
-    let alive = true;
-    const fetchAll = async () => {
-      const results = await Promise.all(
-        msgs.map((m) =>
-          api.get(`/chats/${activeChat.id}/messages/${m.id}/synisense-runs`)
-            .then(({ data }) => [m.id, data])
-            .catch(() => [m.id, null])
-        )
-      );
-      if (!alive) return;
-      const next = new Map();
-      for (const [id, data] of results) if (data) next.set(id, data);
-      setMessageSynisense(next);
-    };
-    fetchAll();
-    const tid = setInterval(fetchAll, 30000);
-    return () => { alive = false; clearInterval(tid); };
-  }, [activeChat?.id, activeChat?.messages?.length]);
+  // CHAT sprint (2026-05-12) — batched per-message Synisense metrics
+  // (single POST, no N+1). The hook polls every 30s while the chat is
+  // open so the count ticks up as audit rows land.
+  const assistantMsgIds = useMemo(
+    () => (activeChat?.messages || []).filter((m) => m.role !== "user" && m.id).map((m) => m.id),
+    [activeChat?.messages]
+  );
+  const { map: messageSynisense } = useMessagesSynisense({
+    chatId: activeChat?.id,
+    msgIds: assistantMsgIds,
+  });
 
 
 
@@ -779,6 +769,7 @@ export default function Chat() {
 
   return (
     <AppShell>
+      <WorkspaceEntryGate workspace="chat">
       <div className="h-[calc(100vh-4rem)] akki-w-medium grid grid-cols-1 lg:grid-cols-[300px_1fr] overflow-hidden" data-testid="chat-page">
         {/* Sidebar */}
         <aside className="border-r border-[var(--rule)] bg-[var(--cream)] flex flex-col min-h-0" data-testid="chat-sidebar">
@@ -1070,6 +1061,7 @@ export default function Chat() {
         onClose={() => setAuditOpen(false)}
         chatId={activeChat?.id}
       />
+      </WorkspaceEntryGate>
     </AppShell>
   );
 }
@@ -1264,22 +1256,23 @@ function Message({ m, activeModel, models, synisense }) {
           </div>
         )}
         {!isUser && (m.model_label || msgModel?.label) && (
-          <p className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-1">
-            {m.model_label || msgModel?.label}
-            {/* K1 — per-message Synisense badge. Renders ONLY when the
-                batched hook has resolved a non-zero count for this msg.
-                Title attribute exposes the layer breakdown on hover. */}
-            {synisense && (synisense.identifiers_redacted || 0) > 0 && (
-              <span
-                className="ml-2 inline-block px-1.5 py-[1px] border border-[var(--rule)] rounded-sm text-[9.5px] text-[var(--accent)] align-baseline normal-case tracking-normal"
-                title={`Layer breakdown — regex: ${synisense.layer_breakdown?.regex || 0} · Presidio: ${synisense.layer_breakdown?.presidio || 0} · LLM-fallback: ${synisense.layer_breakdown?.llm || 0}`}
-                data-testid={`chat-msg-synisense-${m.id}`}
-              >
-                {synisense.identifiers_redacted} redacted
-              </span>
-            )}
-            {m.latency_ms ? ` · ${(m.latency_ms / 1000).toFixed(1)}s` : ""}
-          </p>
+          <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1" data-testid={`chat-msg-meta-${m.id}`}>
+            <p className="text-[10px] uppercase tracking-wider text-[var(--graphite)] m-0">
+              {m.model_label || msgModel?.label}
+              {m.latency_ms ? ` · ${(m.latency_ms / 1000).toFixed(1)}s` : ""}
+            </p>
+            {/* CHAT sprint (2026-05-12) — per-message Synisense badge.
+                Always renders; "—" when count is zero. Hover tooltip
+                shows the three-layer breakdown. */}
+            <PerMessageSynisenseBadge runs={synisense} testId={`chat-msg-synisense-${m.id}`} />
+            {/* CHAT sprint — provider transparency line. Italic when
+                fallback_triggered=true. Tooltip resolves the chain. */}
+            <ProviderLine
+              providerUsed={m.provider_used}
+              fallbackTriggered={m.fallback_triggered}
+              testId={`chat-msg-provider-${m.id}`}
+            />
+          </div>
         )}
         {/* Phase B.2 — collapsible Pass 1 reasoning panel. Renders only
             when the backend included a `pass_1` AND the visibility flag
@@ -1724,6 +1717,25 @@ function AuditDialog({ open, onClose, chatId }) {
             <p className="akki-serif text-[14px] text-[var(--ink)] italic mt-3 leading-relaxed" data-testid="metric-storyline">
               {metrics.storyline}
             </p>
+            {/* CHAT sprint (2026-05-12) — Trust Panel cross-link.
+                Tertiary v7 button: no border, graphite text, oxblood
+                arrow on hover. Right-aligned. Opens the global Trust
+                Panel mounted in AppShell via the
+                `akki:open-trust-panel` event bus. */}
+            <div className="flex justify-end mt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  window.dispatchEvent(new Event("akki:open-trust-panel"));
+                }}
+                className="group inline-flex items-center gap-2 text-[13px] font-medium text-[var(--graphite)] hover:text-[var(--ink)] transition-colors"
+                data-testid="chat-audit-trust-panel-link"
+              >
+                View full Trust Panel
+                <span className="inline-flex items-center transition-all text-[var(--graphite)] group-hover:text-[var(--oxblood)] group-hover:ml-1">→</span>
+              </button>
+            </div>
           </div>
         )}
         {loading ? (

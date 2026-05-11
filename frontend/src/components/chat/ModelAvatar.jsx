@@ -13,9 +13,9 @@
 import React from "react";
 
 const PROVIDER_PALETTE = {
-  anthropic: { bg: "var(--accent)", fg: "#FFFFFF", monogram: "C" },
+  anthropic: { bg: "var(--oxblood)", fg: "#FFFFFF", monogram: "C" },
   openai:    { bg: "var(--ink)",    fg: "#FFFFFF", monogram: "G" },
-  gemini:    { bg: "var(--gold, #C9A961)", fg: "#1A1A1A", monogram: "✦" },
+  gemini:    { bg: "var(--graphite)", fg: "#1A1A1A", monogram: "✦" },
   default:   { bg: "var(--muted)",  fg: "#FFFFFF", monogram: "?" },
 };
 

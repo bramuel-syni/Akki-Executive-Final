@@ -25,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,63 @@ async def message_synisense_runs(chat_id: str, msg_id: str) -> Dict[str, Any]:
         "model_calls": agg["runs"],
         "layer_breakdown": agg["layer_breakdown"],
     }
+
+
+class _BatchMsgIds(BaseModel):
+    msg_ids: List[str] = Field(default_factory=list, max_length=200)
+
+
+@router.post("/chats/{chat_id}/messages/synisense-runs/batch")
+async def messages_synisense_runs_batch(chat_id: str, body: _BatchMsgIds) -> Dict[str, Any]:
+    """CHAT sprint (2026-05-12) — batched per-message Synisense metrics.
+
+    Replaces the N+1 pattern (one HTTP call per assistant message) with
+    a single aggregation pipeline grouped by `message_id`. The UI calls
+    this once after the message list paints.
+
+    Response shape:
+      {"items": { "<msg_id>": {identifiers_redacted, model_calls,
+                               layer_breakdown}, ... }}
+    Messages with zero shield activity simply aren't present in the
+    map — the UI treats absent as zero."""
+    from core import db
+    msg_ids = [m for m in (body.msg_ids or []) if isinstance(m, str)]
+    if not msg_ids:
+        return {"items": {}}
+    pipeline = [
+        {"$match": {"chat_id": chat_id, "message_id": {"$in": msg_ids}}},
+        {
+            "$group": {
+                "_id": "$message_id",
+                "runs": {"$sum": 1},
+                "identifiers": {"$sum": {"$size": {"$ifNull": ["$spans", []]}}},
+                "layers": {"$push": "$stats.layer_won"},
+            }
+        },
+    ]
+    rows = await db.synisense_runs.aggregate(pipeline).to_list(length=len(msg_ids))
+    items: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        msg_id = row.get("_id")
+        if not msg_id:
+            continue
+        layers = row.get("layers") or []
+        breakdown = {"regex": 0, "presidio": 0, "llm": 0}
+        for lw in layers:
+            if not lw:
+                continue
+            if lw == "regex":
+                breakdown["regex"] += 1
+            elif lw == "presidio":
+                breakdown["presidio"] += 1
+            elif lw in ("llm", "llm_fallback"):
+                breakdown["llm"] += 1
+        items[msg_id] = {
+            "identifiers_redacted": int(row.get("identifiers") or 0),
+            "model_calls": int(row.get("runs") or 0),
+            "layer_breakdown": breakdown,
+        }
+    return {"items": items}
 
 
 @router.get("/contexts/{cid}/synisense-metrics")

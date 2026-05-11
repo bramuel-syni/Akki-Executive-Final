@@ -3131,3 +3131,44 @@ on the top-nav.
 - Self-hosted woff2 files in `public/fonts/` (chains ready, files awaited)
 - Module-surface palette refinement (separate sprint per module)
 - Cross-board "dual" auto-detection (still relies on `account.declared_role`)
+
+---
+
+## Sprint CHAT — closure (2026-05-12)
+
+Trust-First Chat refinement: light v7 palette pass on chat surfaces,
+inline per-message Synisense badge, provider transparency line, Trust
+Panel cross-link from AuditDialog, K5 streaming transition on first
+chat open.
+
+- **v7 palette light pass**: `MarkdownMessage.css` + `ModelAvatar.jsx`
+  migrated off legacy hex literals (`--accent: #8b1d2c`, `--gold: #C9A961`)
+  to canonical v7 tokens (`--oxblood`, `--graphite`). `Chat.jsx` resolves
+  through HOME-sprint alias chains.
+- **Batched per-message Synisense**: new `POST /api/chats/{cid}/messages/synisense-runs/batch`
+  endpoint replaces the N+1 pattern. `useMessagesSynisense` hook + 30s
+  polling + invalidation on chat change. `PerMessageSynisenseBadge`
+  renders inline next to model label, mono 10px oxblood, hover tooltip
+  with three-layer breakdown.
+- **Provider transparency**: `ProviderLine` reads `provider_used` +
+  `fallback_triggered` from the message record; italic when fallback,
+  hover tooltip resolves the chain (e.g., "Direct Anthropic SDK →
+  Emergent universal proxy").
+- **Trust Panel cross-link**: tertiary v7 button at bottom of
+  AuditDialog dispatches global `akki:open-trust-panel` event;
+  AppShell listens and opens the panel without prop-drilling.
+- **Streaming transition**: Chat wrapped in `WorkspaceEntryGate` so
+  first navigation TO `/app/chat` per session shows the editorial scene
+  (4-5s, prefers-reduced-motion respected).
+- **Tests**: 35/35 passing — no regressions.
+
+### Files
+- New: `frontend/src/hooks/useMessagesSynisense.js`, `frontend/src/components/chat/{PerMessageSynisenseBadge,ProviderLine}.jsx`.
+- Modified: `backend/routers/synisense_metrics.py` (+batch endpoint), `frontend/src/pages/Chat.jsx`, `frontend/src/components/chat/{MarkdownMessage.css,ModelAvatar.jsx}`, `frontend/src/components/layout/AppShell.jsx` (event listener).
+- Closure: `/app/docs/sprints/CHAT.md`.
+
+### Out of scope (deferred)
+- Editorial chat redesign (letter format, no bubbles)
+- Export redaction record PDF (move to TRUST sprint)
+- Hash chain changes (frozen)
+- Module-specific tests for batch endpoint (covered by shared aggregation pipeline)

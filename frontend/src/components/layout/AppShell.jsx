@@ -154,6 +154,15 @@ export default function AppShell({ children }) {
   const isProPlan = (account?.plan || "free") !== "free";
   const [trustOpen, setTrustOpen] = useState(false);
 
+  // CHAT sprint (2026-05-12) — surfaces nested inside AppShell (e.g.
+  // Chat → AuditDialog) can request opening the Trust Panel by
+  // dispatching the global event `akki:open-trust-panel`. No prop drilling.
+  useEffect(() => {
+    const handler = () => setTrustOpen(true);
+    window.addEventListener("akki:open-trust-panel", handler);
+    return () => window.removeEventListener("akki:open-trust-panel", handler);
+  }, []);
+
   const [paletteOpen, setPaletteOpen] = useState(false);  // legacy state — kept only as a no-op fallback for any stale callers
   const [uploadOpen, setUploadOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");

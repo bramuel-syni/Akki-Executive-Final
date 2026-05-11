@@ -33,7 +33,7 @@
 
 .akki-chat-md h1, .akki-chat-md h2, .akki-chat-md h3,
 .akki-chat-md h4, .akki-chat-md h5, .akki-chat-md h6 {
-  font-family: var(--font-serif, "Source Serif Pro", "Georgia", serif);
+  font-family: var(--font-display, "Source Serif 4", Georgia, serif);
   color: var(--ink);
   margin: 0.85em 0 0.35em;
   line-height: 1.35;
@@ -53,7 +53,7 @@
   line-height: 1.55;
 }
 .akki-chat-md li::marker {
-  color: var(--accent, #8b1d2c);
+  color: var(--oxblood);
 }
 
 .akki-chat-md strong {
@@ -66,17 +66,17 @@
 }
 
 .akki-chat-md a {
-  color: var(--accent, #8b1d2c);
+  color: var(--oxblood);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 .akki-chat-md a:hover { text-decoration: none; }
 
 .akki-chat-md blockquote {
-  border-left: 3px solid var(--accent, #8b1d2c);
+  border-left: 3px solid var(--oxblood);
   margin: 0.6em 0;
   padding: 0.1em 0 0.1em 0.85em;
-  color: var(--muted, #6b6358);
+  color: var(--graphite);
   background: rgba(0, 0, 0, 0.015);
   border-radius: 0 2px 2px 0;
 }
@@ -147,7 +147,7 @@
   display: inline-block;
   width: 0.55em;
   margin-left: 0.05em;
-  color: var(--accent, #8b1d2c);
+  color: var(--oxblood);
   animation: akki-md-blink 1.05s steps(2, start) infinite;
   vertical-align: baseline;
   font-family: "JetBrains Mono", Menlo, Consolas, monospace;
@@ -179,8 +179,8 @@
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.02em;
-  background: var(--ink, #1f1c18);
-  color: var(--cream, #faf6ee);
+  background: var(--ink);
+  color: var(--parchment-light);
   border: none;
   border-radius: 999px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
