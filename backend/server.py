@@ -92,6 +92,7 @@ from routers import depth as depth_router  # noqa: E402
 from routers import governance as governance_router  # noqa: E402
 from routers import solva_v2 as solva_v2_router  # noqa: E402  Phase 15.0 — Solva v2 POC (feature-flagged)
 from routers import search as search_router  # noqa: E402  Phase F0 — Universal Search
+from routers import website as website_router  # noqa: E402  Phase I1 — Pre-login website
 
 
 logger = logging.getLogger("akki")
@@ -177,6 +178,7 @@ app.include_router(governance_router.router)
 # account. Registered AFTER all v1 routers so nothing is shadowed.
 app.include_router(solva_v2_router.router)
 app.include_router(search_router.router)  # Phase F0 — Universal Search
+app.include_router(website_router.router)  # Phase I1 — Pre-login website
 
 
 # -----------------------------------------------------------------------------
@@ -295,6 +297,16 @@ async def on_startup():
             "[postmark] signature verification disabled (no secret in env). "
             "OK in dev; MUST be set in production."
         )
+
+    # Phase G2 (2026-05-11) — HMAC/Basic-Auth boot guard.
+    # If AKKI_ENV=production and POSTMARK_USE_HMAC is explicitly
+    # disabled, refuse boot — accepting URL-secret in production is a
+    # downgrade attack vector.
+    try:
+        from routers.inbound_email import _verify_inbound_boot_guard
+        _verify_inbound_boot_guard()
+    except Exception as exc:  # noqa: BLE001
+        raise
 
     # Stripe webhook idempotency + dead-letter indexes (additive).
     try:

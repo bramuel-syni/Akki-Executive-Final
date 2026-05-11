@@ -12,10 +12,17 @@ import {
   Shield, Check,
 } from "lucide-react";
 
-/** File types mirror the backend ACCEPT_EXT. Kept in-sync by convention. */
+/** File types mirror the backend ACCEPT_EXT. Kept in-sync by convention.
+ *  Phase H1 (2026-05-11) — added .pptx (presentations) and .doc/.ppt
+ *  binary legacy forms so users can drop board decks straight in.
+ *  Backend ACCEPT_EXT must mirror this list. */
 const ACCEPT =
-  ".pdf,.docx,.txt,.md,.csv,.xlsx,.png,.jpg,.jpeg,.webp,.heic,.heif," +
-  "application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/*";
+  ".pdf,.docx,.pptx,.txt,.md,.csv,.xlsx,.png,.jpg,.jpeg,.webp,.heic,.heif," +
+  "application/pdf," +
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document," +
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation," +
+  "text/plain,text/markdown,text/csv," +
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/*";
 
 const TRUST_OPTS = [
   { value: "trusted", label: "Trusted", hint: "Issued by us or a regulator — no adjustment." },
@@ -42,6 +49,24 @@ export default function UploadModal({ open, onClose, onUploaded }) {
   const contextId = activeContext?.id;
 
   const [file, setFile] = useState(null);
+  // Phase H1 (2026-05-11) — drag-and-drop. `dragOver` flips the
+  // drop-zone visual treatment; `onDragOver` MUST call
+  // preventDefault so the browser allows `onDrop` to fire.
+  const [dragOver, setDragOver] = useState(false);
+  const onDragOver = useCallback((e) => {
+    e.preventDefault();
+    setDragOver(true);
+  }, []);
+  const onDragLeave = useCallback((e) => {
+    e.preventDefault();
+    setDragOver(false);
+  }, []);
+  const onDrop = useCallback((e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer?.files?.[0];
+    if (f) onFileSelected(f);
+  }, []);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [trust, setTrust] = useState("mixed");
@@ -203,29 +228,42 @@ export default function UploadModal({ open, onClose, onUploaded }) {
                 </button>
               </div>
             ) : (
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => fileInput.current?.click()}
-                  variant="outline"
-                  className="flex-1 rounded-sm h-10 border-[var(--rule)] text-[var(--deep)]"
-                  data-testid="upload-pick-file-btn"
-                >
-                  <Upload className="w-3.5 h-3.5 mr-2" /> Choose file
-                </Button>
-                <Button
-                  onClick={() => cameraInput.current?.click()}
-                  variant="outline"
-                  className="rounded-sm h-10 border-[var(--rule)] text-[var(--deep)]"
-                  data-testid="upload-camera-btn"
-                >
-                  <Camera className="w-3.5 h-3.5 mr-2" /> Camera
-                </Button>
-                <input ref={fileInput} type="file" accept={ACCEPT} className="hidden"
-                  onChange={(e) => onFileSelected(e.target.files?.[0])}
-                  data-testid="upload-file-input" />
-                <input ref={cameraInput} type="file" accept="image/*" capture="environment" className="hidden"
-                  onChange={(e) => onFileSelected(e.target.files?.[0])}
-                  data-testid="upload-modal-camera-input" />
+              <div
+                className={`flex flex-col gap-2 rounded-sm p-1 border-2 border-dashed transition-colors ${dragOver ? "border-[var(--accent)] bg-[var(--accent)]/5" : "border-transparent"}`}
+                onDragOver={onDragOver}
+                onDragLeave={onDragLeave}
+                onDrop={onDrop}
+                data-testid="upload-drop-zone"
+              >
+                {dragOver && (
+                  <p className="text-[11px] text-[var(--accent)] akki-sans text-center py-1">
+                    Drop the file here
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => fileInput.current?.click()}
+                    variant="outline"
+                    className="flex-1 rounded-sm h-10 border-[var(--rule)] text-[var(--deep)]"
+                    data-testid="upload-pick-file-btn"
+                  >
+                    <Upload className="w-3.5 h-3.5 mr-2" /> Choose file or drop
+                  </Button>
+                  <Button
+                    onClick={() => cameraInput.current?.click()}
+                    variant="outline"
+                    className="rounded-sm h-10 border-[var(--rule)] text-[var(--deep)]"
+                    data-testid="upload-camera-btn"
+                  >
+                    <Camera className="w-3.5 h-3.5 mr-2" /> Camera
+                  </Button>
+                  <input ref={fileInput} type="file" accept={ACCEPT} className="hidden"
+                    onChange={(e) => onFileSelected(e.target.files?.[0])}
+                    data-testid="upload-file-input" />
+                  <input ref={cameraInput} type="file" accept="image/*" capture="environment" className="hidden"
+                    onChange={(e) => onFileSelected(e.target.files?.[0])}
+                    data-testid="upload-modal-camera-input" />
+                </div>
               </div>
             )}
           </div>

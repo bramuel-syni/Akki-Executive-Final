@@ -22,6 +22,7 @@ import { Sparkles, Search, Upload, Camera, FileText, X, Eye, Loader2, ArrowRight
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import DocumentRoutingActions from "@/components/documents/DocumentRoutingActions";
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                            */
@@ -42,7 +43,7 @@ function formatDate(s) {
 /* JournalDrawer — side drawer for a single document                  */
 /* Pattern mirrors WorkStudio.BriefDrawer (Phase C.1).                */
 /* ------------------------------------------------------------------ */
-function JournalDrawer({ doc, loading, onClose, onOpenStructuralDetail }) {
+function JournalDrawer({ doc, loading, onClose, onOpenStructuralDetail, contextId }) {
   if (!doc && !loading) return null;
   return (
     <div
@@ -169,6 +170,12 @@ function JournalDrawer({ doc, loading, onClose, onOpenStructuralDetail }) {
                 >
                   Ask in Chat
                 </Link>
+                {/* Phase H2 (2026-05-11) — three new routing CTAs. */}
+                <DocumentRoutingActions
+                  contextId={contextId}
+                  doc={doc}
+                  onActionDone={onClose}
+                />
               </div>
             </>
           )}
@@ -199,6 +206,8 @@ export default function Workspace() {
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  // Phase H1 (2026-05-11) — drag-and-drop on the library landing.
+  const [dragOver, setDragOver] = useState(false);
 
   /* Initial listing */
   useEffect(() => {
@@ -323,7 +332,35 @@ export default function Workspace() {
 
   return (
     <AppShell>
-      <div className="akki-w-medium px-8 py-10" data-testid="workspace-journal">
+      {/* Phase H1 (2026-05-11) — page-level drag-and-drop. Drop a
+          file anywhere on the workspace and it uploads via the same
+          handler as the Upload button. dragOverlay flips on
+          dragenter; visual cue stays subtle (calm-fast). */}
+      <div
+        className="akki-w-medium px-8 py-10"
+        data-testid="workspace-journal"
+        onDragOver={(e) => { e.preventDefault(); if (!dragOver) setDragOver(true); }}
+        onDragLeave={(e) => {
+          // Only deactivate when leaving the wrapper, not entering a child.
+          if (e.currentTarget === e.target) setDragOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          const f = e.dataTransfer?.files?.[0];
+          if (f) onUploadFile(f);
+        }}
+      >
+        {dragOver && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--accent)]/8 pointer-events-none border-4 border-dashed border-[var(--accent)]/40"
+            data-testid="workspace-drop-overlay"
+          >
+            <p className="text-2xl akki-serif text-[var(--accent)] bg-[var(--cream)] px-6 py-3 rounded-sm shadow-lg">
+              Drop to add to {activeContext.name}
+            </p>
+          </div>
+        )}
         {/* Title bar */}
         <div className="flex items-start justify-between flex-wrap gap-4 mb-6">
           <div>
@@ -339,6 +376,7 @@ export default function Workspace() {
             <input
               ref={fileInputRef}
               type="file"
+              accept=".pdf,.docx,.pptx,.txt,.md,.csv,.xlsx,.png,.jpg,.jpeg,.webp,.heic,.heif,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/markdown,text/csv,image/*"
               className="hidden"
               onChange={(e) => onUploadFile(e.target.files?.[0])}
               data-testid="workspace-upload-input"
@@ -448,6 +486,7 @@ export default function Workspace() {
         <JournalDrawer
           doc={drawerDoc}
           loading={drawerLoading}
+          contextId={cid}
           onClose={() => { setDrawerDoc(null); setDrawerLoading(false); }}
           onOpenStructuralDetail={() => {
             // The legacy three-column reader (ReadingView.jsx) is the

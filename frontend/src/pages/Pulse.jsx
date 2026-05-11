@@ -24,12 +24,23 @@ import { takeToSolva } from "@/lib/takeToSolva";
 import {
   Sparkles, MessageSquare, Send, Bookmark, BookmarkCheck,
   CheckCircle2, ArrowRight, AlertTriangle, TrendingUp, Lightbulb,
-  Loader2, Filter, X,
+  Loader2, Filter, X, Layers, FileText, Lightbulb as Reasoning,
+  Network, Inbox, RotateCcw, Eye, EyeOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from "@/components/ui/sheet";
 import { toast } from "sonner";
 import AcrossBoardsPanel from "@/components/pulse/AcrossBoardsPanel";
+
+const STATE_TABS = [
+  { id: "active",     label: "Active"     },
+  { id: "bookmarked", label: "Bookmarked" },
+  { id: "resolved",   label: "Resolved"   },
+  { id: "archived",   label: "Archived"   },
+];
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                          */
@@ -102,7 +113,7 @@ function Chip({ children, tone = "default", testid }) {
 /* ------------------------------------------------------------------ */
 /* Per-card                                                           */
 /* ------------------------------------------------------------------ */
-function SignalCard({ card, onAction, busyAction }) {
+function SignalCard({ card, onAction, busyAction, onOpenDrawer }) {
   const TypeIcon = TYPE_ICON[card.surface_type] || Lightbulb;
   const [showComment, setShowComment] = useState(false);
   const [comment, setComment] = useState("");
@@ -121,6 +132,14 @@ function SignalCard({ card, onAction, busyAction }) {
       className={`border border-[var(--rule)] bg-white rounded-md px-5 py-4 mb-3 ${isResolved ? "opacity-70" : ""}`}
       data-testid={`pulse-card-${card.id}`}
     >
+      {/* Phase H3 (2026-05-11) — clicking the card body opens the drawer.
+          Button-class elements inside the action row still stopPropagation. */}
+      <button
+        type="button"
+        onClick={() => onOpenDrawer?.(card)}
+        className="block w-full text-left"
+        data-testid={`pulse-card-open-${card.id}`}
+      >
       {/* Chip cluster */}
       <div className="flex flex-wrap items-center gap-1.5 mb-2" data-testid={`pulse-card-chips-${card.id}`}>
         <Chip
@@ -148,6 +167,22 @@ function SignalCard({ card, onAction, busyAction }) {
             confidence {Math.round(card.confidence * 100)}%
           </Chip>
         )}
+        {typeof card.confidence === "string" && card.confidence && (
+          <Chip
+            tone={card.confidence === "low" ? "bg-slate-50 text-slate-600 border-slate-200" : "default"}
+            testid={`pulse-card-chip-confidence-tier-${card.id}`}
+          >
+            {card.confidence}
+          </Chip>
+        )}
+        {card.merge_count > 1 && (
+          <Chip
+            tone="bg-amber-50 text-amber-800 border-amber-200"
+            testid={`pulse-card-chip-merge-${card.id}`}
+          >
+            ×{card.merge_count} merged
+          </Chip>
+        )}
       </div>
 
       {/* Headline + body */}
@@ -159,6 +194,7 @@ function SignalCard({ card, onAction, busyAction }) {
           {card.summary}
         </p>
       )}
+      </button>
 
       {/* Action row */}
       <div className="flex flex-wrap gap-1 items-center pt-2 border-t border-[var(--rule)] mt-2" data-testid={`pulse-card-actions-${card.id}`}>
@@ -273,6 +309,10 @@ export default function Pulse() {
   const [typeFilter, setTypeFilter] = useState("any");
   // Default per brief: New + Critical.
   const [freshnessSet, setFreshnessSet] = useState(new Set(["new", "critical"]));
+  // Phase H3 (2026-05-11) — Phase G.4 frontend wiring.
+  const [stateTab, setStateTab] = useState("active");   // active|bookmarked|resolved|archived
+  const [showLow, setShowLow] = useState(false);        // surface confidence='low'
+  const [drawerCard, setDrawerCard] = useState(null);   // currently-open signal in side drawer
 
   /* Load feed (re-runs when context or filters change) */
   const fetchFeed = async (silent = false) => {
@@ -282,6 +322,9 @@ export default function Pulse() {
       const params = new URLSearchParams();
       params.set("type", typeFilter);
       params.set("freshness", Array.from(freshnessSet).join(","));
+      // Phase H3 — pipe state + show_low to the backend feed.
+      params.set("state", stateTab);
+      if (showLow) params.set("show_low", "true");
       const { data } = await api.get(`/contexts/${cid}/pulse/feed?${params.toString()}`);
       setCards(data?.cards || []);
       setError(null);
@@ -295,7 +338,7 @@ export default function Pulse() {
   useEffect(() => {
     fetchFeed();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cid, typeFilter, freshnessSet]);
+  }, [cid, typeFilter, freshnessSet, stateTab, showLow]);
 
   const toggleFreshness = (id) => {
     setFreshnessSet((prev) => {
@@ -365,8 +408,26 @@ export default function Pulse() {
         return data;
       }
       if (action === "resolve") {
-        await api.post(`/contexts/${cid}/pulse/signals/${sigId}/resolve`);
+        await api.post(`/contexts/${cid}/pulse/signals/${sigId}/resolve`, payload || {});
         toast.success("Marked resolved.");
+        await fetchFeed(true);
+        return;
+      }
+      if (action === "unresolve") {
+        await api.post(`/contexts/${cid}/pulse/signals/${sigId}/unresolve`);
+        toast.success("Returned to Active.");
+        await fetchFeed(true);
+        return;
+      }
+      if (action === "bookmark") {
+        await api.post(`/contexts/${cid}/pulse/signals/${sigId}/bookmark`);
+        toast.success("Bookmarked.");
+        await fetchFeed(true);
+        return;
+      }
+      if (action === "unbookmark") {
+        await api.post(`/contexts/${cid}/pulse/signals/${sigId}/unbookmark`);
+        toast.success("Removed from bookmarks.");
         await fetchFeed(true);
         return;
       }
@@ -407,6 +468,40 @@ export default function Pulse() {
         <p className="akki-meta mb-6 max-w-2xl">
           Risks, opportunities, and recommendations surfaced from <strong className="text-[var(--ink)]">{activeContext.name}</strong>. Use the chips below to refine.
         </p>
+
+        {/* Phase H3 (2026-05-11) — Phase G.4 lifecycle tab strip.
+            Switch sets ?state= on the feed query. Each tab refetches. */}
+        <div className="flex items-center gap-0.5 mb-4 border-b border-[var(--rule)]" data-testid="pulse-state-tabs">
+          {STATE_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setStateTab(t.id)}
+              data-testid={`pulse-tab-${t.id}${stateTab === t.id ? "-active" : ""}`}
+              aria-pressed={stateTab === t.id}
+              className={`px-3 py-2 text-[13px] akki-sans -mb-px border-b-2 transition-colors ${
+                stateTab === t.id
+                  ? "text-[var(--accent)] border-[var(--accent)]"
+                  : "text-[var(--muted)] hover:text-[var(--ink)] border-transparent"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+          <span className="flex-1" />
+          {/* Show low toggle — G.2 confidence floor */}
+          <button
+            type="button"
+            onClick={() => setShowLow((v) => !v)}
+            data-testid="pulse-show-low-toggle"
+            aria-pressed={showLow}
+            className="text-[12px] px-2.5 py-1.5 text-[var(--muted)] hover:text-[var(--ink)] inline-flex items-center gap-1.5"
+            title={showLow ? "Hiding low-confidence signals" : "Show low-confidence signals"}
+          >
+            {showLow ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            {showLow ? "Show all" : "Hide low confidence"}
+          </button>
+        </div>
 
         {/* Filter strip */}
         <div className="border border-[var(--rule)] bg-white rounded-md px-4 py-3 mb-5 space-y-3" data-testid="pulse-filters">
@@ -478,6 +573,7 @@ export default function Pulse() {
                 card={card}
                 onAction={onAction}
                 busyAction={busyAction}
+                onOpenDrawer={setDrawerCard}
               />
             ))}
           </div>
@@ -490,6 +586,278 @@ export default function Pulse() {
           <AcrossBoardsPanel contextId={cid} />
         </div>
       </div>
+      {/* Phase H3 (2026-05-11) — Phase G.4 drill-down drawer.
+          5 sections (Storyline / Source / Reasoning / Related Context
+          / Comments) + a 6-button action footer. */}
+      <SignalDrawer
+        card={drawerCard}
+        contextId={cid}
+        onClose={() => setDrawerCard(null)}
+        onAction={async (action, sigId, payload) => {
+          await onAction(action, sigId, payload);
+          // Re-pull the card with updated state so the drawer reflects.
+          // The feed has been refetched; find the updated card.
+          if (drawerCard) {
+            const updated = (cards || []).find((c) => c.id === drawerCard.id);
+            setDrawerCard(updated || null);
+          }
+        }}
+        busyAction={busyAction}
+      />
     </AppShell>
+  );
+}
+
+
+/* ───────────────────────────────────────────────────────────────
+ * Phase H3 (2026-05-11) — SignalDrawer (Phase G.4 right-side drawer).
+ *
+ * 5 sections:
+ *   1. Storyline           — headline, body, confidence, last_merged_at
+ *   2. Source              — provenance (doc / monitor goal / pipeline)
+ *   3. Reasoning           — signals.reasoning field (verbatim)
+ *   4. Related Context     — cross-board metadata matches (if any)
+ *   5. Comments            — existing comment composer/list
+ *
+ * 6 actions in footer:
+ *   Resolve | Unresolve | Bookmark | Unbookmark | Save | Take to Solva
+ * ─────────────────────────────────────────────────────────────── */
+function SignalDrawer({ card, contextId, onClose, onAction, busyAction }) {
+  const navigate = useNavigate();
+  const [related, setRelated] = useState(null);
+  const [relatedLoading, setRelatedLoading] = useState(false);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [submittingComment, setSubmittingComment] = useState(false);
+
+  useEffect(() => {
+    if (!card || !contextId) return;
+    let alive = true;
+    setRelatedLoading(true);
+    (async () => {
+      try {
+        const { data } = await api.get(
+          `/contexts/${contextId}/pulse/across-boards?window_days=30&min_other_boards=1&limit=10`,
+        );
+        if (alive) setRelated(data);
+      } catch {
+        /* drawer renders without related section */
+      } finally {
+        if (alive) setRelatedLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [card, contextId]);
+
+  if (!card) return null;
+  const state = (card.state || card.status || "active").toLowerCase();
+  const isResolved = state === "resolved" || !!card.actions_summary?.resolved;
+  const isBookmarked = state === "bookmarked" || !!card.bookmarked_at;
+
+  const handleComment = async () => {
+    const text = commentDraft.trim();
+    if (!text) return;
+    setSubmittingComment(true);
+    try {
+      await onAction("comment", card.id, { text });
+      setCommentDraft("");
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
+
+  return (
+    <Sheet open={!!card} onOpenChange={(v) => !v && onClose?.()}>
+      <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col p-0" data-testid="pulse-signal-drawer">
+        <SheetHeader className="px-6 py-4 border-b border-[var(--rule)]">
+          <SheetTitle className="akki-serif text-[18px] text-[var(--ink)] leading-snug pr-8" data-testid="pulse-drawer-title">
+            {card.headline || "(untitled)"}
+          </SheetTitle>
+          <SheetDescription className="sr-only">Signal details and actions.</SheetDescription>
+        </SheetHeader>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+          <section data-testid="pulse-drawer-storyline">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)] akki-sans mb-2">Storyline</p>
+            {card.summary && (
+              <p className="text-[13.5px] text-[var(--ink)] leading-[1.65] mb-3">{card.summary}</p>
+            )}
+            <div className="flex flex-wrap gap-2 text-[11px] text-[var(--muted)]">
+              {card.confidence != null && (
+                <span className="px-2 py-0.5 bg-slate-50 border border-slate-200 rounded-sm" data-testid="pulse-drawer-confidence">
+                  confidence: {typeof card.confidence === "number" ? `${Math.round(card.confidence * 100)}%` : card.confidence}
+                </span>
+              )}
+              {card.merge_count > 1 && (
+                <span className="px-2 py-0.5 bg-amber-50 border border-amber-200 rounded-sm text-amber-800">
+                  ×{card.merge_count} merged
+                </span>
+              )}
+              {card.created_at && (
+                <span className="px-2 py-0.5">
+                  created {new Date(card.created_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                </span>
+              )}
+              {card.last_merged_at && (
+                <span className="px-2 py-0.5">
+                  last merged {new Date(card.last_merged_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                </span>
+              )}
+            </div>
+          </section>
+
+          <section data-testid="pulse-drawer-source">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)] akki-sans mb-2">Source</p>
+            {(card.references && card.references.length > 0) ? (
+              <ul className="space-y-1.5">
+                {card.references.slice(0, 6).map((r, i) => (
+                  <li key={i} className="flex items-start gap-2 text-[12px] text-[var(--ink)]">
+                    <FileText className="w-3.5 h-3.5 mt-0.5 text-[var(--muted)]" strokeWidth={1.7} />
+                    <span>{r.label || r.doc_name || r.title || r.doc_id || "(reference)"}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[12px] text-[var(--muted)] italic">No source attributions recorded.</p>
+            )}
+          </section>
+
+          <section data-testid="pulse-drawer-reasoning">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)] akki-sans mb-2">Reasoning</p>
+            {card.reasoning ? (
+              <p className="text-[12.5px] text-[var(--ink)] leading-[1.6] whitespace-pre-wrap">{card.reasoning}</p>
+            ) : (
+              <p className="text-[12px] text-[var(--muted)] italic">No reasoning recorded for this signal.</p>
+            )}
+          </section>
+
+          <section data-testid="pulse-drawer-related">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)] akki-sans mb-2">Related context</p>
+            {relatedLoading ? (
+              <p className="text-[12px] text-[var(--muted)] italic">Looking across boards…</p>
+            ) : (related?.patterns?.length || 0) === 0 ? (
+              <p className="text-[12px] text-[var(--muted)] italic">No cross-board matches in window.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {(related?.patterns || []).slice(0, 5).map((p, i) => (
+                  <li key={i} className="flex items-start gap-2 text-[12px] text-[var(--ink)]">
+                    <Network className="w-3.5 h-3.5 mt-0.5 text-[var(--muted)]" strokeWidth={1.7} />
+                    <span>
+                      <span className="font-medium">{p.signature_kind}</span>: {p.signature_value}
+                      <span className="text-[var(--muted)] ml-1">— seen on {p.other_boards_count} other board{p.other_boards_count === 1 ? "" : "s"}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section data-testid="pulse-drawer-comments">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)] akki-sans mb-2">Comments</p>
+            <div className="space-y-2 mb-3">
+              {(card.comments || []).length === 0 && (
+                <p className="text-[12px] text-[var(--muted)] italic">No comments yet.</p>
+              )}
+              {(card.comments || []).map((c) => (
+                <div key={c.id} className="border border-[var(--rule)] rounded-sm px-3 py-2 bg-[var(--cream)]/30">
+                  <p className="text-[12.5px] text-[var(--ink)] leading-[1.55] whitespace-pre-wrap">{c.note}</p>
+                  <p className="text-[10px] uppercase tracking-wider text-[var(--muted)] mt-1">
+                    {c.created_at ? new Date(c.created_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : ""}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-col gap-2">
+              <Textarea
+                value={commentDraft}
+                onChange={(e) => setCommentDraft(e.target.value)}
+                placeholder="Add a private note…"
+                className="text-[13px] min-h-[60px]"
+                data-testid="pulse-drawer-comment-input"
+              />
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={handleComment}
+                  disabled={!commentDraft.trim() || submittingComment}
+                  className="bg-[var(--accent)] text-white hover:opacity-90"
+                  data-testid="pulse-drawer-comment-submit"
+                >
+                  {submittingComment ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Send className="w-3 h-3 mr-1" />}
+                  Post
+                </Button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div className="border-t border-[var(--rule)] px-4 py-3 flex flex-wrap gap-2 bg-[var(--cream)]/30" data-testid="pulse-drawer-footer">
+          {!isResolved ? (
+            <button
+              onClick={() => onAction("resolve", card.id, {})}
+              disabled={busyAction === card.id}
+              data-testid="pulse-drawer-action-resolve"
+              className="text-[12px] px-3 py-1.5 border border-[var(--rule)] rounded-sm hover:border-[var(--accent)] inline-flex items-center gap-1.5"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" /> Resolve
+            </button>
+          ) : (
+            <button
+              onClick={() => onAction("unresolve", card.id)}
+              disabled={busyAction === card.id}
+              data-testid="pulse-drawer-action-unresolve"
+              className="text-[12px] px-3 py-1.5 border border-[var(--rule)] rounded-sm hover:border-[var(--accent)] inline-flex items-center gap-1.5"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Unresolve
+            </button>
+          )}
+          {!isBookmarked ? (
+            <button
+              onClick={() => onAction("bookmark", card.id)}
+              disabled={busyAction === card.id}
+              data-testid="pulse-drawer-action-bookmark"
+              className="text-[12px] px-3 py-1.5 border border-[var(--rule)] rounded-sm hover:border-[var(--accent)] inline-flex items-center gap-1.5"
+            >
+              <Bookmark className="w-3.5 h-3.5" /> Bookmark
+            </button>
+          ) : (
+            <button
+              onClick={() => onAction("unbookmark", card.id)}
+              disabled={busyAction === card.id}
+              data-testid="pulse-drawer-action-unbookmark"
+              className="text-[12px] px-3 py-1.5 border border-[var(--rule)] rounded-sm hover:border-[var(--accent)] inline-flex items-center gap-1.5"
+            >
+              <BookmarkCheck className="w-3.5 h-3.5" /> Unbookmark
+            </button>
+          )}
+          <button
+            onClick={() => onAction("save", card.id)}
+            disabled={busyAction === card.id}
+            data-testid="pulse-drawer-action-save"
+            className="text-[12px] px-3 py-1.5 border border-[var(--rule)] rounded-sm hover:border-[var(--accent)] inline-flex items-center gap-1.5"
+          >
+            <Inbox className="w-3.5 h-3.5" /> Save
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                const { data } = await api.post(`/contexts/${contextId}/pulse/signals/${card.id}/take-to-solva`);
+                if (data?.session_id) navigate(`/app/solva/session/${data.session_id}`);
+                else navigate("/app/solva");
+              } catch {
+                takeToSolva({
+                  navigate, submodule: "seek_clarity",
+                  seed: { kind: "signal", id: card.id, headline: card.headline },
+                });
+              }
+            }}
+            disabled={busyAction === card.id}
+            data-testid="pulse-drawer-action-take-to-solva"
+            className="ml-auto text-[12px] px-3 py-1.5 bg-[var(--accent)] text-white rounded-sm hover:opacity-90 inline-flex items-center gap-1.5"
+          >
+            <Sparkles className="w-3.5 h-3.5" /> Take to Solva
+          </button>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

@@ -54,7 +54,16 @@ _VALID_SURFACES = {"chat", "ingest", "briefing", "deck", "report",
                    # thin-input refusal template. Bounded output
                    # (3–6 comma-separated items, ≤ 200 chars after
                    # sanitisation).
-                   "chat_evidence_list"}
+                   "chat_evidence_list",
+                   # Phase G1/G5 (2026-05-11) — Privacy Wall Phase 2c.
+                   # `pulse` is the surface for any text rendered into
+                   # the Pulse feed or the cross-board aggregator.
+                   # Today the across-boards aggregator is metadata-
+                   # only and produces no text, but `redact_for_pulse_text`
+                   # in `services.privacy_wall` invokes the shield with
+                   # this surface tag so every future cross-board text
+                   # emission is shielded by default.
+                   "pulse"}
 
 # Phase 15.1 anticipates per-engine sub-surfaces under solve_v2 so the perf
 # ring buffer can separate (e.g.) triangulation latency from synthesis

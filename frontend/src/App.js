@@ -62,6 +62,19 @@ import StudioComposerPage from "@/pages/StudioComposerPage";
 import WorkStudio from "@/pages/WorkStudio";
 import Pulse from "@/pages/Pulse";
 import SearchResults from "@/pages/SearchResults";  // Phase F0 — Universal Search results page
+
+// Phase I1 (2026-05-11) — Pre-login marketing website (10 pages).
+// All website routes live OUTSIDE of /app/* — public, no auth required.
+import WebsiteHome from "@/website/pages/Home";
+import WebsiteWhyAkki from "@/website/pages/WhyAkki";
+import WebsiteWhatAkkiDoes from "@/website/pages/WhatAkkiDoes";
+import WebsiteTrust from "@/website/pages/Trust";
+import WebsitePricing from "@/website/pages/Pricing";
+import WebsiteCohort from "@/website/pages/Cohort";
+import WebsiteAbout from "@/website/pages/About";
+import WebsiteContact from "@/website/pages/Contact";
+import WebsitePrivacy from "@/website/pages/Privacy";
+import WebsiteTerms from "@/website/pages/Terms";
 import NedMeeting from "@/pages/ned/NedMeeting";   // Phase E
 import NedCommittee from "@/pages/ned/NedCommittee"; // Phase E
 
@@ -131,9 +144,27 @@ function App() {
         <Toaster position="top-right" richColors />
         <UpgradeModal />
         <Routes>
-          <Route path="/" element={<Landing />} />
+          {/* Phase I1 (2026-05-11) — pre-login website (10-page MVP).
+              `/` now serves the new senior-peer-voice marketing site.
+              The legacy `Landing` and `About` routes are repointed to
+              the new website surfaces. Older marketing pages
+              (Features/Security/Plans/Enterprise/EarlyAccess/Blog)
+              remain as deeper routes for back-link compatibility but
+              are not in the new website's primary nav. */}
+          <Route path="/" element={<WebsiteHome />} />
+          <Route path="/why-akki" element={<WebsiteWhyAkki />} />
+          <Route path="/what-akki-does" element={<WebsiteWhatAkkiDoes />} />
+          <Route path="/trust" element={<WebsiteTrust />} />
+          <Route path="/pricing" element={<WebsitePricing />} />
+          <Route path="/cohort" element={<WebsiteCohort />} />
+          <Route path="/about" element={<WebsiteAbout />} />
+          <Route path="/contact" element={<WebsiteContact />} />
+          <Route path="/privacy" element={<WebsitePrivacy />} />
+          <Route path="/terms" element={<WebsiteTerms />} />
+
+          {/* Retained marketing routes (back-link compatibility) */}
+          <Route path="/landing-legacy" element={<Landing />} />
           <Route path="/solva" element={<SolvaLanding />} />
-          <Route path="/about" element={<About />} />
           <Route path="/features" element={<Features />} />
           <Route path="/security" element={<Security />} />
           <Route path="/plans" element={<Plans />} />

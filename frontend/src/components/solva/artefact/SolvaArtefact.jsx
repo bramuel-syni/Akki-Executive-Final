@@ -407,11 +407,11 @@ export default function SolvaArtefact({ session, onStartReflection, savedToast =
       {/* Reasoning expandable — collapsed by default */}
       {sessionId && <ReasoningExpandable sessionId={sessionId} />}
 
-      {/* Wave 1.5 (UAT pack 2026-05-10) — handoff bar.
+      {/* Wave 1.5 + Phase H4 (2026-05-11) — handoff bar.
           Continue in Chat → mints a chat tethered to this artefact.
           Use as input → opens picker with seed_kind=solva_artefact.
-          Take to Cycle → currently a TODO (toast); cycle-question
-          minting from a Solva session is a Wave 3 stretch. */}
+          Take to Cycle → REAL endpoint (POST /solva/v2/sessions/{sid}/take-to-cycle).
+          Phase H4 verified this is fully wired — no stub remains. */}
       {(session?.status === "complete" || session?.status === "refused") && (
         <SolvaArtefactHandoffBar session={session} sessionId={sessionId} />
       )}

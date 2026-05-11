@@ -401,7 +401,57 @@ async def create_invitation(
 
     frontend_url = os.environ.get("FRONTEND_URL", "").rstrip("/")
     accept_url = f"{frontend_url}/invite/{token}" if frontend_url else f"/invite/{token}"
-    logger.info(f"[invite-email-stub] to={email} context={ctx['context']['name']} link={accept_url}")
+
+    # Phase G3 (2026-05-11) — un-stub invitation email. Real Resend
+    # send via the existing email_service wrapper. Wrapper returns
+    # `mode ∈ {sent, noop, test_mode_restricted, error}` and NEVER
+    # raises — so a Resend outage cannot fail the API call.
+    try:
+        from email_service import send_email
+        inviter_name = ctx["account"].get("name") or ctx["account"].get("email") or "Akki"
+        company_name = ctx["context"].get("name") or "an Akki workspace"
+        subject = f"{inviter_name} invited you to {company_name} on Akki"
+        text_body = (
+            f"Hello,\n\n"
+            f"{inviter_name} has invited you to join {company_name} on Akki "
+            f"as a {body.role}.\n\n"
+            f"Accept the invitation here:\n  {accept_url}\n\n"
+            f"This invitation expires in 7 days.\n\n"
+            f"If you weren't expecting this, you can ignore this email.\n\n"
+            f"— Akki"
+        )
+        html_body = f"""
+<div style="font-family: Georgia, serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #2A1B1D; background: #FAF7F2;">
+  <h1 style="font-size: 24px; font-weight: bold; margin: 0 0 16px;">You've been invited to {company_name}</h1>
+  <p style="font-size: 16px; line-height: 1.6; color: #2A1B1D; margin: 0 0 16px;">
+    <strong>{inviter_name}</strong> has invited you to join <strong>{company_name}</strong> on Akki as a <strong>{body.role}</strong>.
+  </p>
+  <p style="margin: 24px 0;">
+    <a href="{accept_url}" style="display: inline-block; background: #C25A38; color: #FAF7F2; padding: 12px 24px; text-decoration: none; font-weight: bold; border-radius: 2px;">
+      Accept invitation
+    </a>
+  </p>
+  <p style="font-size: 13px; color: #6B6B6B; margin: 24px 0 0;">
+    This invitation expires in 7 days. If you weren't expecting it, you can ignore this email.
+  </p>
+  <p style="font-size: 13px; color: #6B6B6B; margin: 16px 0 0; border-top: 1px solid #D5C9B6; padding-top: 16px;">
+    — Akki
+  </p>
+</div>
+""".strip()
+        email_result = await send_email(
+            to=[email], subject=subject, html=html_body, text=text_body,
+            tags=[{"name": "type", "value": "invitation"},
+                  {"name": "context", "value": context_id}],
+        )
+        logger.info(
+            "[invite-email] to=%s ctx=%s mode=%s id=%s",
+            email, ctx["context"]["name"], email_result.get("mode"),
+            email_result.get("id"),
+        )
+    except Exception as exc:  # noqa: BLE001 — never break invite flow
+        logger.error("[invite-email] send failed err=%s — invite row was still created", exc)
+        email_result = {"ok": False, "mode": "error", "id": None}
 
     await write_audit(
         context_id, ctx["account"]["id"], "member.invited", "invitation", inv["id"],

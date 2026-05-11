@@ -19,6 +19,8 @@ documented at https://postmarkapp.com/developer/webhooks/inbound-webhook.
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac as _hmac
 import logging
 import os
 import secrets
@@ -43,12 +45,26 @@ router = APIRouter(prefix="/api/inbound", tags=["inbound"])
 
 
 # ---------------------------------------------------------------------------
-# Auth — Postmark signs nothing, so we rely on a shared secret in the URL
-# (passed as ?secret=…). Postmark stores this in their server config and
-# replays it on every webhook call. The token is held in env as
-# POSTMARK_WEBHOOK_SECRET. If it's not configured, we fall back to the
-# server token itself (so single-key setups still work).
+# Inbound webhook auth — three accepted modes, default HMAC.
+#
+# Phase G2 (2026-05-11) — the URL `?secret=` mode is a legacy/dev
+# fallback only. Production accepts EITHER:
+#   1. HMAC-SHA256 of the raw request body in header `X-Postmark-Signature`
+#      (or alias `Postmark-Signature`), keyed by POSTMARK_WEBHOOK_SECRET.
+#      This is what we want once a signing proxy (or future Postmark
+#      feature) sits in front of the webhook.
+#   2. HTTP Basic-Auth in `Authorization: Basic …` — Postmark's
+#      native inbound auth option (https://postmarkapp.com/developer/
+#      webhooks/webhooks-overview#basic-authentication). The password
+#      MUST equal POSTMARK_WEBHOOK_SECRET; the username is ignored.
+# The URL-secret legacy path is enabled ONLY when:
+#   POSTMARK_USE_HMAC=false  AND  AKKI_ENV != "production"
+# A boot guard in server.py enforces "AKKI_ENV=production implies
+# POSTMARK_USE_HMAC!=false" — see `_verify_inbound_boot_guard`.
 # ---------------------------------------------------------------------------
+POSTMARK_USE_HMAC_DEFAULT = "true"
+
+
 def _expected_secret() -> str:
     return (
         os.environ.get("POSTMARK_WEBHOOK_SECRET")
@@ -57,12 +73,107 @@ def _expected_secret() -> str:
     ).strip()
 
 
-def _verify_secret(provided: Optional[str]) -> None:
-    expected = _expected_secret()
-    if not expected:
-        # No secret configured at all — refuse to accept inbound mail.
+def _hmac_mode_enabled() -> bool:
+    return (
+        os.environ.get("POSTMARK_USE_HMAC", POSTMARK_USE_HMAC_DEFAULT)
+        .strip().lower()
+        in ("true", "1", "yes")
+    )
+
+
+def _is_production() -> bool:
+    return (os.environ.get("AKKI_ENV") or "").strip().lower() == "production"
+
+
+def _verify_inbound_boot_guard() -> None:
+    """Called at app startup. Refuses boot if production env is
+    accepting URL-secret fallback."""
+    if _is_production() and not _hmac_mode_enabled():
+        raise RuntimeError(
+            "AKKI_ENV=production but POSTMARK_USE_HMAC is disabled. "
+            "Refusing to boot — HMAC/Basic auth is mandatory in prod."
+        )
+
+
+def _verify_hmac(raw_body: bytes, sig_header: Optional[str]) -> bool:
+    secret = _expected_secret()
+    if not (secret and sig_header):
+        return False
+    expected = _hmac.new(
+        secret.encode("utf-8"), raw_body, hashlib.sha256,
+    ).hexdigest()
+    # Accept either hex digest (most common) or base64 — some signing
+    # proxies emit base64 instead of hex. Constant-time compare both.
+    provided = sig_header.strip().lower()
+    if provided.startswith("sha256="):
+        provided = provided[7:]
+    if secrets.compare_digest(provided, expected):
+        return True
+    # base64 variant
+    expected_b64 = base64.b64encode(
+        _hmac.new(secret.encode(), raw_body, hashlib.sha256).digest()
+    ).decode("ascii").strip()
+    if secrets.compare_digest(sig_header.strip(), expected_b64):
+        return True
+    return False
+
+
+def _verify_basic_auth(authz_header: Optional[str]) -> bool:
+    secret = _expected_secret()
+    if not (secret and authz_header):
+        return False
+    if not authz_header.lower().startswith("basic "):
+        return False
+    try:
+        decoded = base64.b64decode(authz_header[6:].strip()).decode("utf-8")
+    except Exception:  # noqa: BLE001
+        return False
+    if ":" not in decoded:
+        return False
+    _user, _, pw = decoded.partition(":")
+    return secrets.compare_digest(pw, secret)
+
+
+def _verify_url_secret(provided: Optional[str]) -> bool:
+    secret = _expected_secret()
+    if not (secret and provided):
+        return False
+    return secrets.compare_digest(provided.strip(), secret)
+
+
+async def _verify_inbound(request: Request, url_secret: Optional[str]) -> bytes:
+    """Verify the inbound POST and return the raw request body so the
+    caller can parse it as JSON without re-reading the stream."""
+    secret = _expected_secret()
+    if not secret:
         raise HTTPException(status_code=503, detail="Inbound mail not configured.")
-    if not provided or not secrets.compare_digest(provided.strip(), expected):
+    raw = await request.body()
+    sig = (
+        request.headers.get("x-postmark-signature")
+        or request.headers.get("postmark-signature")
+        or request.headers.get("x-webhook-signature")
+    )
+    if _verify_hmac(raw, sig):
+        return raw
+    if _verify_basic_auth(request.headers.get("authorization")):
+        return raw
+    # Legacy URL-secret — only when explicitly disabled HMAC AND not prod.
+    if (not _hmac_mode_enabled()) and (not _is_production()):
+        if _verify_url_secret(url_secret):
+            logger.warning(
+                "inbound auth via URL-secret legacy path (not prod). "
+                "Set POSTMARK_USE_HMAC=true and switch to HMAC/Basic."
+            )
+            return raw
+    raise HTTPException(status_code=401, detail="Invalid inbound credentials.")
+
+
+# Kept for any third-party callers that may still import this name.
+def _verify_secret(provided: Optional[str]) -> None:  # noqa: D401 — legacy
+    """Deprecated — use `_verify_inbound(request, secret)` instead.
+    Retained as a stub for back-compat; raises 401 if the URL secret
+    does not match. Will be removed once all callers migrate."""
+    if not _verify_url_secret(provided):
         raise HTTPException(status_code=401, detail="Invalid inbound secret.")
 
 
@@ -419,10 +530,11 @@ async def _handle_cycle_reply(
 
 @router.post("/postmark")
 async def receive_postmark_inbound(request: Request, secret: Optional[str] = Query(None)):
-    _verify_secret(secret)
+    raw_body = await _verify_inbound(request, secret)
 
     try:
-        payload = await request.json()
+        import json
+        payload = json.loads(raw_body.decode("utf-8") or "{}")
     except Exception as e:  # noqa: BLE001
         logger.warning("Postmark inbound: invalid JSON: %s", e)
         # Return 200 so Postmark doesn't retry; log for ops.

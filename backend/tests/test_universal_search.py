@@ -157,18 +157,21 @@ async def test_surface_registry_complete():
     """All 7 surfaces listed in the dispatcher registry."""
     for s in ("documents", "chats", "pulse", "monitor", "cycle", "work_studio", "briefs"):
         assert s in SURFACE_HANDLERS
-    # Phase 1 handlers must be callables (not stubs).
+    # ALL 7 handlers must be callables now — Phase H5 wired cycle /
+    # work_studio / briefs in May 2026.
     from services.universal_search import (
         search_documents as sd, search_chats as sc,
-        search_pulse as sp, search_monitor as sm, _empty as e,
+        search_pulse as sp, search_monitor as sm,
+        search_cycle as scy, search_work_studio as sw,
+        search_briefs as sb,
     )
     assert SURFACE_HANDLERS["documents"] is sd
     assert SURFACE_HANDLERS["chats"] is sc
     assert SURFACE_HANDLERS["pulse"] is sp
     assert SURFACE_HANDLERS["monitor"] is sm
-    assert SURFACE_HANDLERS["cycle"] is e
-    assert SURFACE_HANDLERS["work_studio"] is e
-    assert SURFACE_HANDLERS["briefs"] is e
+    assert SURFACE_HANDLERS["cycle"] is scy
+    assert SURFACE_HANDLERS["work_studio"] is sw
+    assert SURFACE_HANDLERS["briefs"] is sb
 
 
 @pytest.mark.asyncio
@@ -302,3 +305,141 @@ async def test_cross_context_open_rejects_foreign_target(db, planted):
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v", "--tb=short"]))
+
+
+# ---------------------------------------------------------------------------
+# Phase H5 — Universal Search F1 — coverage for the three new surfaces.
+# ---------------------------------------------------------------------------
+SENT_H5 = uuid.uuid4().hex[:10]
+NEEDLE_H5 = f"PWALL-UV-H5-{SENT_H5}"
+
+
+@pytest.fixture(scope="module")
+async def planted_h5(db):
+    """Seed a cycle agenda, contribution, committee; a work_studio_brief,
+    studio_block, boardpack, brief, deck; and a 'in_review' boardpack +
+    'in_review' report, all carrying NEEDLE_H5, in one context where
+    the test account has active membership."""
+    acct = f"acct-h5-{SENT_H5}"
+    cid = f"ctx-h5-{SENT_H5}"
+    await db.contexts.insert_one({"id": cid, "name": "H5 Industries"})
+    await db.memberships.insert_one(
+        {"account_id": acct, "context_id": cid, "role": "executive", "status": "active"})
+    await db.cycle_agendas.insert_one({
+        "id": f"agenda-{SENT_H5}", "context_id": cid,
+        "title": f"Q3 Board Cycle — {NEEDLE_H5}",
+        "items": [{"id": "i1", "title": "Review covenants"}],
+        "created_at": "2026-05-11T08:00:00Z", "updated_at": "2026-05-11T08:00:00Z",
+    })
+    await db.cycle_contributions.insert_one({
+        "id": f"contrib-{SENT_H5}", "context_id": cid,
+        "title": "Liquidity update", "body_text": f"Cash position {NEEDLE_H5}",
+        "created_at": "2026-05-11T09:00:00Z", "updated_at": "2026-05-11T09:00:00Z",
+    })
+    await db.committees.insert_one({
+        "id": f"comm-{SENT_H5}", "context_id": cid,
+        "name": f"Audit Committee — {NEEDLE_H5}",
+        "purpose": "Oversees external audit and risk",
+        "created_at": "2026-05-11T07:00:00Z",
+    })
+    await db.work_studio_briefs.insert_one({
+        "id": f"wsb-{SENT_H5}", "context_id": cid,
+        "title": f"Cycle compilation — {NEEDLE_H5}",
+        "active_revision": {"title": f"Compiled — {NEEDLE_H5}",
+                            "cover_lead_paragraph": "Board pack draft."},
+        "source_type": "cycle_compilation",
+        "created_at": "2026-05-11T10:00:00Z", "updated_at": "2026-05-11T10:00:00Z",
+    })
+    await db.studio_blocks.insert_one({
+        "id": f"blk-{SENT_H5}", "context_id": cid,
+        "heading": f"Section H5 — {NEEDLE_H5}",
+        "content": "Block body text.",
+        "artefact_kind": "briefing", "artefact_id": f"art-{SENT_H5}",
+        "created_at": "2026-05-11T10:30:00Z", "updated_at": "2026-05-11T10:30:00Z",
+    })
+    await db.boardpacks.insert_one({
+        "id": f"bp-{SENT_H5}", "context_id": cid,
+        "title": f"May Board Pack — {NEEDLE_H5}",
+        "summary": "Aggregated brief.",
+        "status": "in_review",
+        "created_at": "2026-05-11T11:00:00Z", "updated_at": "2026-05-11T11:00:00Z",
+    })
+    await db.briefs.insert_one({
+        "id": f"br-{SENT_H5}", "context_id": cid,
+        "title": f"Pre-board brief — {NEEDLE_H5}",
+        "summary": "Composer state.", "kind": "briefing",
+        "created_at": "2026-05-11T12:00:00Z",
+    })
+    await db.decks.insert_one({
+        "id": f"dk-{SENT_H5}", "context_id": cid,
+        "title": f"Deck — {NEEDLE_H5}",
+        "summary": "Summary deck.",
+        "created_at": "2026-05-11T12:30:00Z",
+    })
+    await db.reports.insert_one({
+        "id": f"rep-{SENT_H5}", "context_id": cid,
+        "title": f"Report awaiting review — {NEEDLE_H5}",
+        "summary": "In-review report body.", "status": "in_review",
+        "created_at": "2026-05-11T13:00:00Z", "updated_at": "2026-05-11T13:00:00Z",
+    })
+    h = {"acct": acct, "cid": cid}
+    yield h
+    await db.contexts.delete_many({"id": cid})
+    await db.memberships.delete_many({"context_id": cid})
+    await db.cycle_agendas.delete_many({"context_id": cid})
+    await db.cycle_contributions.delete_many({"context_id": cid})
+    await db.committees.delete_many({"context_id": cid})
+    await db.work_studio_briefs.delete_many({"context_id": cid})
+    await db.studio_blocks.delete_many({"context_id": cid})
+    await db.boardpacks.delete_many({"context_id": cid})
+    await db.briefs.delete_many({"context_id": cid})
+    await db.decks.delete_many({"context_id": cid})
+    await db.reports.delete_many({"context_id": cid})
+
+
+@pytest.mark.asyncio
+async def test_h5_cycle_surface_returns_real_rows(db, planted_h5):
+    h = await planted_h5.__anext__() if hasattr(planted_h5, "__anext__") else planted_h5
+    from services.universal_search import search_cycle
+    rows = await search_cycle(db, h["cid"], NEEDLE_H5, 10)
+    assert len(rows) >= 3, f"expected ≥3 cycle rows, got {len(rows)}"
+    types = {r["type"] for r in rows}
+    assert "Cycle agenda" in types
+    assert "Cycle contribution" in types
+    assert "Committee" in types
+
+
+@pytest.mark.asyncio
+async def test_h5_work_studio_surface_returns_real_rows(db, planted_h5):
+    h = await planted_h5.__anext__() if hasattr(planted_h5, "__anext__") else planted_h5
+    from services.universal_search import search_work_studio
+    rows = await search_work_studio(db, h["cid"], NEEDLE_H5, 20)
+    types = {r["type"] for r in rows}
+    assert "Brief" in types
+    assert "Studio block" in types
+    assert "Boardpack" in types
+    assert "Deck" in types
+
+
+@pytest.mark.asyncio
+async def test_h5_briefs_review_surface_returns_real_rows(db, planted_h5):
+    h = await planted_h5.__anext__() if hasattr(planted_h5, "__anext__") else planted_h5
+    from services.universal_search import search_briefs
+    rows = await search_briefs(db, h["cid"], NEEDLE_H5, 10)
+    types = {r["type"] for r in rows}
+    assert "Brief in review" in types
+    assert "Report in review" in types
+
+
+@pytest.mark.asyncio
+async def test_h5_federation_hits_seven_surfaces(db, planted_h5):
+    h = await planted_h5.__anext__() if hasattr(planted_h5, "__anext__") else planted_h5
+    out = await run_federated_search(
+        db, account_id=h["acct"], q=NEEDLE_H5,
+        memberships=[{"context_id": h["cid"], "context_name": "H5 Industries"}],
+    )
+    surface_hits = {s["surface"]: s["count"] for s in out["per_surface"]}
+    for s in ("cycle", "work_studio", "briefs"):
+        assert surface_hits.get(s, 0) >= 1, (
+            f"surface {s} returned 0 hits after H5 wiring: {surface_hits}"
+        )

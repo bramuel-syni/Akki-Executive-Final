@@ -38,6 +38,7 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
+import os
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -321,6 +322,21 @@ async def pulse_feed(
         if len(cards) >= limit:
             break
 
+    # Phase G1 (2026-05-11) — defensive Synisense shield pass on
+    # rendered text. Same-context pulse_feed is NOT a wall boundary
+    # crossing (the caller is a member of `context_id`), so this is
+    # opt-in via env `PULSE_SHIELD_TEXT=true`. When enabled, every
+    # headline+summary+body+reasoning goes through `surface="pulse"`
+    # before reaching the client. Off by default in dev to avoid
+    # 50-100ms per-call Synisense latency. Production toggle when
+    # ops is comfortable.
+    if os.environ.get("PULSE_SHIELD_TEXT", "false").lower() in ("true", "1", "yes"):
+        from services.privacy_wall import redact_for_pulse_text_async
+        for c in cards:
+            for f in ("headline", "summary", "body", "reasoning"):
+                if c.get(f):
+                    c[f] = await redact_for_pulse_text_async(c[f]) or c[f]
+
     return {
         "filters": {
             "type": type_arg,
@@ -477,6 +493,20 @@ async def pulse_across_boards(
     patterns.sort(key=lambda p: (-p["other_boards_count"], -(int(_dt.fromisoformat(
         (p["last_seen_other"] or "1970-01-01T00:00:00Z").replace("Z", "+00:00")
     ).timestamp()) if p["last_seen_other"] else 0)))
+
+    # Phase G1 (2026-05-11) — defensive Synisense shield seam.
+    # The across-boards aggregator is metadata-only today (no text
+    # field), so the shield is a no-op on the current response shape.
+    # Wiring it here means any future addition of a text field
+    # (e.g. a redacted theme paragraph) is shielded by default — we
+    # never have to remember to add the call.
+    from services.privacy_wall import redact_for_pulse_text_async
+    for p in patterns:
+        # Iterate keys defensively in case a future contributor adds a
+        # text-valued field. Any non-string is left alone.
+        for k, v in list(p.items()):
+            if isinstance(v, str) and k in ("snippet", "theme_text", "summary"):
+                p[k] = await redact_for_pulse_text_async(v) or v
 
     return {
         "patterns": patterns[:int(limit or 50)],

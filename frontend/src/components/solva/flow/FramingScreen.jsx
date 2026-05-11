@@ -2,14 +2,22 @@
  * Framing screen — the first prompt after the user picks a sub-module.
  * Brief §4.2. Single column, max 720px, primary action = "Begin".
  *
- * Material attach button is present and visible but disabled in v3 first
- * pass (the brief makes it optional and the existing /api/contexts/*
- * upload pipeline isn't wired into solva sessions yet — Phase I.6).
+ * Phase H4 (2026-05-11) — material attach is now REAL. The button
+ * opens a file picker, uploads the file to the active context's
+ * documents endpoint, and exposes the resulting `doc_id` via
+ * `onMaterialAttached(doc)`. Parent components can then pass that
+ * doc_id through to the session-creation call so the post-create
+ * `POST /api/solva/v2/sessions/{sid}/attach-document` lands the
+ * material on the new session. If no `onMaterialAttached` callback
+ * is provided, the file still uploads but no further wiring happens
+ * (defensive — older callers don't break).
  */
 import React, { useState, useEffect, useRef } from "react";
 import { TOKEN, FONT, SUBMODULE_LABELS, SUBMODULE_FRAMING_COPY } from "./tokens";
 import ProgressIndicator from "./ProgressIndicator";
 import PrimaryButton, { GhostLink } from "./PrimaryButton";
+import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function FramingScreen({
   submodule,
@@ -22,8 +30,14 @@ export default function FramingScreen({
   error = null,
   onPersonaChange,
   intakeSeed = null, // Wave 1.1 (UAT pack) — handoff seed pointer.
+  onMaterialAttached = null,   // Phase H4 — receives the uploaded doc shape
 }) {
   const taRef = useRef(null);
+  const attachInputRef = useRef(null);
+  const { activeContext } = useAuth() || {};
+  const [attached, setAttached] = useState(null);
+  const [attaching, setAttaching] = useState(false);
+  const [attachErr, setAttachErr] = useState(null);
   useEffect(() => { taRef.current?.focus(); }, []);
 
   // Phase B.1 — submodule-specific framing copy (spec §5.1). Defaults
@@ -157,7 +171,9 @@ export default function FramingScreen({
         }}
       />
 
-      {/* + Attach material — Phase I.6 wires the upload. Visible but muted now. */}
+      {/* + Attach material — Phase H4 (2026-05-11): now REAL. Opens a
+          file picker, uploads to the active context's docs endpoint,
+          and exposes the doc_id via `onMaterialAttached`. */}
       <div
         style={{
           marginTop: 14,
@@ -169,25 +185,70 @@ export default function FramingScreen({
           color: TOKEN.MUTED,
         }}
       >
-        <button
-          type="button"
-          disabled
-          aria-disabled="true"
-          title="Attach material — coming soon"
-          style={{
-            background: "transparent",
-            border: "none",
-            color: TOKEN.MUTED,
-            cursor: "not-allowed",
-            padding: 0,
-            fontFamily: FONT.CALIBRI,
-            fontSize: 13,
-          }}
-        >
-          + Attach material
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            type="button"
+            disabled={attaching || !activeContext?.id}
+            onClick={() => attachInputRef.current?.click()}
+            data-testid="solva-framing-attach-material-btn"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: attached ? TOKEN.INK : TOKEN.MUTED,
+              cursor: attaching || !activeContext?.id ? "not-allowed" : "pointer",
+              padding: 0,
+              fontFamily: FONT.CALIBRI,
+              fontSize: 13,
+              textDecoration: attached ? "none" : "underline",
+            }}
+          >
+            {attaching
+              ? "Uploading…"
+              : attached
+                ? `✓ Attached: ${attached.name}`
+                : "+ Attach material"}
+          </button>
+          <input
+            ref={attachInputRef}
+            type="file"
+            accept=".pdf,.docx,.pptx,.txt,.md,.csv,image/*"
+            style={{ display: "none" }}
+            data-testid="solva-framing-attach-material-input"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";   // reset for retry
+              if (!f || !activeContext?.id) return;
+              setAttaching(true);
+              setAttachErr(null);
+              try {
+                const fd = new FormData();
+                fd.append("file", f);
+                const { data } = await api.post(
+                  `/contexts/${activeContext.id}/documents`,
+                  fd,
+                  { headers: { "Content-Type": "multipart/form-data" } },
+                );
+                const doc = data?.document || data;
+                setAttached({ id: doc.id, name: doc.name || f.name });
+                if (typeof onMaterialAttached === "function") {
+                  onMaterialAttached({ id: doc.id, name: doc.name || f.name });
+                }
+              } catch (err) {
+                setAttachErr(err?.response?.data?.detail?.message || "Couldn't upload.");
+                setAttached(null);
+              } finally {
+                setAttaching(false);
+              }
+            }}
+          />
+        </div>
         <span style={{ fontStyle: "italic" }}>Optional · never required.</span>
       </div>
+      {attachErr && (
+        <p style={{ marginTop: 6, color: TOKEN.ACCENT, fontSize: 12, fontFamily: FONT.CALIBRI }}>
+          {attachErr}
+        </p>
+      )}
 
       {error && (
         <div

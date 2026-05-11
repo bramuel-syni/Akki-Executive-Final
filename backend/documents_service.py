@@ -14,11 +14,13 @@ from __future__ import annotations
 import io
 import re
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from services import storage_service
 
-ACCEPT_EXT = {".pdf", ".docx", ".txt", ".md", ".rtf"}
+ACCEPT_EXT = {".pdf", ".docx", ".pptx", ".txt", ".md", ".rtf",
+              ".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif",
+              ".csv", ".xlsx"}
 MAX_BYTES = 25 * 1024 * 1024  # 25 MB
 MAX_EXTRACT_CHARS = 200_000
 
@@ -56,6 +58,28 @@ def extract_text(data: bytes, filename: str, mime_type: str) -> Tuple[str, Optio
             d = DocxDocument(io.BytesIO(data))
             text = "\n".join(p.text for p in d.paragraphs if p.text)
             return text[:MAX_EXTRACT_CHARS], None
+        # Phase H1 (2026-05-11) — PPTX text extraction via python-pptx
+        # (already in requirements.txt for Work Studio deck rendering).
+        # Pulls slide titles + every text frame in render order so
+        # search hits and BM25 ranking land on actual slide content.
+        if ext == ".pptx" or "officedocument.presentationml" in (mime_type or ""):
+            from pptx import Presentation
+            prs = Presentation(io.BytesIO(data))
+            chunks: List[str] = []
+            for slide_no, slide in enumerate(prs.slides, start=1):
+                slide_lines: List[str] = []
+                for shape in slide.shapes:
+                    if not getattr(shape, "has_text_frame", False):
+                        continue
+                    tf = shape.text_frame
+                    for para in tf.paragraphs:
+                        line = "".join(run.text or "" for run in para.runs).strip()
+                        if line:
+                            slide_lines.append(line)
+                if slide_lines:
+                    chunks.append(f"--- Slide {slide_no} ---")
+                    chunks.extend(slide_lines)
+            return ("\n".join(chunks))[:MAX_EXTRACT_CHARS], None
         if ext in (".txt", ".md", ".rtf") or (mime_type or "").startswith("text/"):
             try:
                 return data.decode("utf-8", errors="replace")[:MAX_EXTRACT_CHARS], None

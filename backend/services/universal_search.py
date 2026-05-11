@@ -258,12 +258,220 @@ async def search_monitor(
     return out
 
 
+async def search_cycle(
+    db: Any, context_id: str, q: str, limit: int,
+) -> List[Dict[str, Any]]:
+    """Cycle Manager activity — matches `cycle_agendas.title/items[].title`,
+    `cycle_contributions.title/body/body_text`, `committees.name`."""
+    rx = {"$regex": _escape_regex(q), "$options": "i"}
+    out: List[Dict[str, Any]] = []
+    # Agendas
+    async for a in db.cycle_agendas.find(
+        {"context_id": context_id,
+         "$or": [{"title": rx}, {"items.title": rx}]},
+        {"_id": 0, "id": 1, "title": 1, "items": 1, "created_at": 1, "updated_at": 1},
+    ).sort("updated_at", -1).limit(limit):
+        title = a.get("title") or "(agenda)"
+        # Snippet from a matching item if any.
+        snip_src = title
+        for it in (a.get("items") or []):
+            itt = it.get("title") or ""
+            if q.lower() in itt.lower():
+                snip_src = itt
+                break
+        out.append({
+            "id": a["id"],
+            "title": title,
+            "snippet": _build_snippet(snip_src, q),
+            "type": "Cycle agenda",
+            "date": a.get("updated_at") or a.get("created_at") or "",
+            "deep_link": "/app/cycle",
+            "_score": 2.0 if q.lower() in title.lower() else 1.0,
+        })
+    # Contributions
+    async for c in db.cycle_contributions.find(
+        {"context_id": context_id,
+         "$or": [{"title": rx}, {"body_text": rx}, {"body": rx}, {"summary": rx}]},
+        {"_id": 0, "id": 1, "title": 1, "body_text": 1, "body": 1, "summary": 1,
+         "created_at": 1, "updated_at": 1, "agenda_item_id": 1},
+    ).sort("updated_at", -1).limit(limit):
+        title = c.get("title") or "(contribution)"
+        body = c.get("body_text") or c.get("body") or c.get("summary") or ""
+        out.append({
+            "id": c["id"],
+            "title": title,
+            "snippet": _build_snippet(body, q),
+            "type": "Cycle contribution",
+            "date": c.get("updated_at") or c.get("created_at") or "",
+            "deep_link": "/app/cycle",
+            "_score": 2.0 if q.lower() in title.lower() else 1.0,
+        })
+    # Committees
+    async for cm in db.committees.find(
+        {"context_id": context_id, "name": rx},
+        {"_id": 0, "id": 1, "name": 1, "purpose": 1, "created_at": 1},
+    ).limit(limit):
+        out.append({
+            "id": cm["id"],
+            "title": cm.get("name") or "(committee)",
+            "snippet": _build_snippet(cm.get("purpose") or "", q),
+            "type": "Committee",
+            "date": cm.get("created_at") or "",
+            "deep_link": "/app/cycle",
+            "_score": 2.0,
+        })
+    return out[:limit]
+
+
+async def search_work_studio(
+    db: Any, context_id: str, q: str, limit: int,
+) -> List[Dict[str, Any]]:
+    """Work Studio artefacts — matches across `work_studio_briefs`,
+    `studio_blocks`, `boardpacks`, `briefs`, `decks`."""
+    rx = {"$regex": _escape_regex(q), "$options": "i"}
+    out: List[Dict[str, Any]] = []
+    # Briefs (Work Studio Phase C2 revisions live underneath)
+    async for b in db.work_studio_briefs.find(
+        {"context_id": context_id,
+         "$or": [{"title": rx}, {"active_revision.title": rx},
+                 {"active_revision.cover_lead_paragraph": rx}]},
+        {"_id": 0, "id": 1, "title": 1, "active_revision": 1,
+         "source_type": 1, "source_id": 1, "updated_at": 1, "created_at": 1},
+    ).sort("updated_at", -1).limit(limit):
+        rev = b.get("active_revision") or {}
+        title = rev.get("title") or b.get("title") or "(brief)"
+        body = rev.get("cover_lead_paragraph") or ""
+        out.append({
+            "id": b["id"],
+            "title": title,
+            "snippet": _build_snippet(body, q) or _build_snippet(title, q),
+            "type": "Brief",
+            "date": b.get("updated_at") or b.get("created_at") or "",
+            "deep_link": f"/app/work-studio?brief={b['id']}",
+            "_score": 2.0 if q.lower() in title.lower() else 1.0,
+        })
+    # Studio blocks (block composer rows)
+    async for blk in db.studio_blocks.find(
+        {"context_id": context_id,
+         "$or": [{"heading": rx}, {"content": rx}, {"text": rx}]},
+        {"_id": 0, "id": 1, "heading": 1, "content": 1, "text": 1,
+         "artefact_kind": 1, "artefact_id": 1, "created_at": 1, "updated_at": 1},
+    ).sort("updated_at", -1).limit(limit):
+        title = blk.get("heading") or "(block)"
+        body = blk.get("content") or blk.get("text") or ""
+        kind = blk.get("artefact_kind") or "artefact"
+        aid = blk.get("artefact_id") or ""
+        out.append({
+            "id": blk["id"],
+            "title": title,
+            "snippet": _build_snippet(body, q),
+            "type": "Studio block",
+            "date": blk.get("updated_at") or blk.get("created_at") or "",
+            "deep_link": f"/app/studio/composer/{kind}/{aid}" if aid else "/app/work-studio",
+            "_score": 1.0,
+        })
+    # Boardpacks (aggregates)
+    async for bp in db.boardpacks.find(
+        {"context_id": context_id,
+         "$or": [{"title": rx}, {"summary": rx}]},
+        {"_id": 0, "id": 1, "title": 1, "summary": 1, "created_at": 1, "updated_at": 1},
+    ).sort("updated_at", -1).limit(limit):
+        title = bp.get("title") or "(boardpack)"
+        out.append({
+            "id": bp["id"],
+            "title": title,
+            "snippet": _build_snippet(bp.get("summary") or "", q),
+            "type": "Boardpack",
+            "date": bp.get("updated_at") or bp.get("created_at") or "",
+            "deep_link": f"/app/work-studio?boardpack={bp['id']}",
+            "_score": 2.0 if q.lower() in title.lower() else 1.0,
+        })
+    # Briefs (legacy / Prepare module)
+    async for br in db.briefs.find(
+        {"context_id": context_id,
+         "$or": [{"title": rx}, {"summary": rx}, {"body": rx}]},
+        {"_id": 0, "id": 1, "title": 1, "summary": 1, "body": 1,
+         "kind": 1, "created_at": 1},
+    ).sort("created_at", -1).limit(limit):
+        title = br.get("title") or "(brief)"
+        out.append({
+            "id": br["id"],
+            "title": title,
+            "snippet": _build_snippet(br.get("summary") or br.get("body") or "", q),
+            "type": "Brief",
+            "date": br.get("created_at") or "",
+            "deep_link": f"/app/work-studio?brief={br['id']}",
+            "_score": 1.0,
+        })
+    # Decks
+    async for d in db.decks.find(
+        {"context_id": context_id,
+         "$or": [{"title": rx}, {"summary": rx}]},
+        {"_id": 0, "id": 1, "title": 1, "summary": 1, "created_at": 1},
+    ).sort("created_at", -1).limit(limit):
+        title = d.get("title") or "(deck)"
+        out.append({
+            "id": d["id"],
+            "title": title,
+            "snippet": _build_snippet(d.get("summary") or "", q),
+            "type": "Deck",
+            "date": d.get("created_at") or "",
+            "deep_link": f"/app/decks/{d['id']}",
+            "_score": 2.0 if q.lower() in title.lower() else 1.0,
+        })
+    return out[:limit]
+
+
+async def search_briefs(
+    db: Any, context_id: str, q: str, limit: int,
+) -> List[Dict[str, Any]]:
+    """Brief Review queue items — items awaiting review live in
+    `boardpacks` with status='in_review' or in `reports.status='in_review'`.
+    We surface both."""
+    rx = {"$regex": _escape_regex(q), "$options": "i"}
+    out: List[Dict[str, Any]] = []
+    # Boardpacks awaiting review
+    async for bp in db.boardpacks.find(
+        {"context_id": context_id,
+         "status": {"$in": ["in_review", "awaiting_review", "review"]},
+         "$or": [{"title": rx}, {"summary": rx}]},
+        {"_id": 0, "id": 1, "title": 1, "summary": 1, "status": 1, "updated_at": 1, "created_at": 1},
+    ).sort("updated_at", -1).limit(limit):
+        title = bp.get("title") or "(brief in review)"
+        out.append({
+            "id": bp["id"],
+            "title": title,
+            "snippet": _build_snippet(bp.get("summary") or "", q),
+            "type": "Brief in review",
+            "date": bp.get("updated_at") or bp.get("created_at") or "",
+            "deep_link": "/app/review",
+            "_score": 2.0 if q.lower() in title.lower() else 1.0,
+        })
+    # Reports awaiting review
+    async for r in db.reports.find(
+        {"context_id": context_id, "status": "in_review",
+         "$or": [{"title": rx}, {"summary": rx}, {"body": rx}]},
+        {"_id": 0, "id": 1, "title": 1, "summary": 1, "body": 1,
+         "status": 1, "updated_at": 1, "created_at": 1},
+    ).sort("updated_at", -1).limit(limit):
+        title = r.get("title") or "(report in review)"
+        out.append({
+            "id": r["id"],
+            "title": title,
+            "snippet": _build_snippet(r.get("summary") or r.get("body") or "", q),
+            "type": "Report in review",
+            "date": r.get("updated_at") or r.get("created_at") or "",
+            "deep_link": "/app/review",
+            "_score": 1.0,
+        })
+    return out[:limit]
+
+
 # ---------------------------------------------------------------------------
-# Surface handlers (Phase 2 — stubs)
+# Surface handlers (Phase 2 — Universal Search F1 wired May 2026)
 # ---------------------------------------------------------------------------
-# Each returns [] today. Wiring a handler is one-line: change the body
-# to match the Phase 1 pattern. Keeping them in the registry makes the
-# surface set discoverable to ops/tests without grepping the codebase.
+# Empty placeholder kept for any caller that imports the symbol but
+# never reaches the dispatcher path. Real handlers above.
 
 async def _empty(*_args: Any, **_kwargs: Any) -> List[Dict[str, Any]]:
     return []
@@ -272,15 +480,15 @@ async def _empty(*_args: Any, **_kwargs: Any) -> List[Dict[str, Any]]:
 SurfaceHandler = Callable[..., Awaitable[List[Dict[str, Any]]]]
 
 SURFACE_HANDLERS: Dict[str, SurfaceHandler] = {
-    # Phase 1 (shipped)
+    # Phase 1 (Phase F0)
     "documents": search_documents,
     "chats": search_chats,
     "pulse": search_pulse,
     "monitor": search_monitor,
-    # Phase 2 (deferred — return [] until handlers land)
-    "cycle": _empty,
-    "work_studio": _empty,
-    "briefs": _empty,
+    # Phase 2 — Phase H5 wired May 2026
+    "cycle": search_cycle,
+    "work_studio": search_work_studio,
+    "briefs": search_briefs,
 }
 
 

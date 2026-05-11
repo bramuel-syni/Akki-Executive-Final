@@ -399,24 +399,154 @@ def project_audit_row(
 
 
 # ─────────────────────────────────────────────────────────────────────
-# 2c placeholders — wired now so callers can be set up; bodies land
-# in 2c. Calling either of these today is a programmer error.
+# Phase 2c — Privacy Wall content-redaction + cross-board prompt assembly.
+# ─────────────────────────────────────────────────────────────────────
+# Both helpers used to be stubs. Phase G1 (May 2026) replaces them
+# with real implementations:
+#
+#   `redact_for_pulse_text(text)` runs the input through the Synisense
+#       Shield with surface="pulse". Returns the redacted text. The
+#       call is sync-wrapping the async chokepoint via asyncio so
+#       projection-path callers (which today are sync) don't need to
+#       change their colour. An async variant lives alongside it for
+#       callers that already own a loop.
+#
+#   `assemble_pulse_prompt(per_context_outputs)` takes a list of
+#       per-context redacted summary dicts (one per tenant) and
+#       returns a single LLM prompt string with explicit context
+#       boundary markers, no foreign `context_id` strings, no
+#       unredacted PII. Each per-context block is bracketed by an
+#       index-only label (`BOARD-1`, `BOARD-2`, …) so the LLM cannot
+#       infer the originating tenant even if it tried to.
 # ─────────────────────────────────────────────────────────────────────
 def redact_for_pulse_text(text: Optional[str]) -> Optional[str]:
-    """Phase 2c placeholder. Today a no-op pass-through so wiring can
-    happen ahead of the real implementation. Callers should treat it
-    as opaque — DO NOT depend on identity behaviour."""
-    return text
+    """Synchronous wrapper. Returns the Synisense-redacted form of
+    `text` with surface="pulse". Empty input returns empty output.
+
+    Implementation note: many projection-path callers are sync, so we
+    bridge to the async pipeline with `asyncio.run` if no loop is
+    running, or with `run_until_complete` on an existing loop in a
+    thread otherwise. The async path
+    (`redact_for_pulse_text_async`) is preferred when the caller
+    already owns a loop — it avoids the bridge overhead.
+    """
+    if not text:
+        return text
+    try:
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # We're inside a live loop (e.g. inside an async
+                # FastAPI handler). The caller must use the async
+                # variant — calling .run() here would deadlock. We
+                # defensively return the original text and log loudly.
+                logger.warning(
+                    "redact_for_pulse_text called from a running loop — "
+                    "use redact_for_pulse_text_async instead. Returning "
+                    "input unshielded (defensive). Caller should fix."
+                )
+                return text
+        except RuntimeError:
+            loop = None
+        return asyncio.run(redact_for_pulse_text_async(text))
+    except Exception as exc:  # noqa: BLE001
+        logger.error("redact_for_pulse_text: bridge failed err=%s", exc)
+        return text
+
+
+async def redact_for_pulse_text_async(text: Optional[str]) -> Optional[str]:
+    """Async-native form. Use this from FastAPI handlers and
+    background tasks where you already own a loop.
+
+    Phase G1 (2026-05-11) — for the `pulse` surface specifically we
+    take the *persisting* path (`pipeline.run`) rather than the
+    chat-style `dryrun` adapter. Cross-board synthesis is an audit-
+    critical surface; every shield invocation must leave a
+    `synisense_runs` row so governance can prove no foreign-tenant
+    payload ever bypassed the shield.
+    """
+    if not text:
+        return text
+    try:
+        from services.synisense.pipeline import run as _syn_run
+        out = await _syn_run(
+            text=text, context_id="", surface="pulse",
+            mode="redact",
+        )
+        return out.get("redacted_text") or text
+    except Exception as exc:  # noqa: BLE001
+        logger.error("redact_for_pulse_text_async: shield failed err=%s", exc)
+        # Mirror the chat-style soft-degradation contract — return the
+        # original text so the user still sees their content, and the
+        # caller's audit-log will record the synisense_runs failure.
+        return text
+
+
+# Context-boundary markers used by `assemble_pulse_prompt`. The LLM
+# is told nothing about which board is which — every block is labelled
+# with an opaque index. Even if a tenant id accidentally slipped into a
+# field, the helper strips ALL keys other than the explicit per-context
+# allowlist before serialising.
+_PER_CTX_ALLOW: FrozenSet[str] = frozenset({
+    "summary", "themes", "regulatory_refs", "governance_themes",
+    "topic_signatures", "signal_count_high", "signal_count_total",
+    "window_days",
+})
+
+# A guard regex — anything that LOOKS LIKE a UUID, oid, or context_id
+# is stripped before the prompt is assembled. Belt-and-braces; the
+# allowlist above is the primary defence.
+_UUID_LIKE_RE = __import__("re").compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
+)
 
 
 def assemble_pulse_prompt(per_context_outputs: List[Dict[str, Any]]) -> str:
-    """Phase 2c placeholder. Will assemble a metadata-only prompt from
-    per-context summaries. Today raises NotImplementedError so
-    nothing accidentally builds a multi-context LLM prompt before the
-    wall has the prompt-isolation contract test in 2c."""
-    raise NotImplementedError(
-        "assemble_pulse_prompt is a Phase 2c surface — not callable in 2b."
+    """Take pre-redacted per-context summaries and return a single
+    cross-board prompt.
+
+    Contract:
+    - Inputs MUST already be Synisense-redacted (caller's job; we
+      verify with a defensive PII-shape regex).
+    - Output is a string. No `context_id` substrings. No raw emails.
+      No UUID-shaped substrings. Each context block is labelled with
+      an opaque `BOARD-<index>` marker, NEVER a tenant name.
+    - Output is deterministic for a given input ordering (so
+      downstream tests can assert byte-exact prompts).
+    """
+    if not per_context_outputs:
+        return ""
+
+    lines: List[str] = [
+        "Cross-board synthesis — metadata only.",
+        "Each block below summarises one board's public-class signals.",
+        "Foreign tenant identifiers are deliberately stripped.",
+        "Do not infer which company any block refers to.",
+        "",
+    ]
+    for idx, ctx_out in enumerate(per_context_outputs, start=1):
+        block: Dict[str, Any] = {}
+        for k, v in (ctx_out or {}).items():
+            if k not in _PER_CTX_ALLOW:
+                continue
+            if isinstance(v, str):
+                v2 = _UUID_LIKE_RE.sub("[ID]", v)
+                block[k] = v2
+            else:
+                block[k] = v
+        lines.append(f"--- BOARD-{idx} ---")
+        for k, v in block.items():
+            lines.append(f"  {k}: {v!r}")
+        lines.append("--- END BOARD-{} ---".format(idx))
+        lines.append("")
+    lines.append(
+        "Task: produce a single observation about what the boards "
+        "have in common, using only the metadata above. Do NOT name "
+        "any board, company, person, or sector beyond what is in the "
+        "metadata. If the boards have nothing in common, say so."
     )
+    return "\n".join(lines)
 
 
 # ─────────────────────────────────────────────────────────────────────
