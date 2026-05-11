@@ -30,6 +30,7 @@ import {
   Loader2, MapPin, ListChecks, Globe2, Clock, ArrowRight,
 } from "lucide-react";
 import AcrossBoardsPanel from "@/components/pulse/AcrossBoardsPanel";
+import NedInboxTile from "@/components/cycle/NedInboxTile";
 
 function fmtDate(iso) {
   if (!iso) return "—";
@@ -305,6 +306,11 @@ export default function HomeNed() {
 
         {!loading && (
           <>
+            {/* Cycle sprint — Inbox tile. Surfaces pending assignments
+                from executive boards. Tile is always present; the inner
+                pending count is fetched lazily and degrades silently. */}
+            <NedInboxTile />
+
             <SearchPanel onResultClick={onResultClick} />
 
             {/* Section 1 — This Week */}

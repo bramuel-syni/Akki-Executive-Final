@@ -1,6 +1,6 @@
 # Cycle Manager — Sprint Brief
 
-**Status:** Draft for user approval. Read-only on application code.
+**Status:** APPROVED-FOR-BUILD (2026-02). Scope locked. C3 resolved: **ASSIGNMENT HANDOFF model** (see §3.3 locked decisions below).
 **Author:** Fork agent, 2026-02.
 **Inputs used:** `/app/memory/SPRINT_AUDIT.md`, `/app/docs/PRODUCT_SPEC.md §5.6`, `/app/docs/NED_CYCLE_MANAGER_DESIGN.md`, `/app/backend/work_studio/samples/Akki_NED_Cycle_Manager_Module_Specification.docx` (extracted), live code in `/app/backend/routers/{cycle.py, cycle_manager.py, cycle_config.py, ned_cycle.py}`, `/app/frontend/src/pages/{Cycle.jsx, CycleSettings.jsx, ned/NedMeeting.jsx, ned/NedCommittee.jsx, home/HomeNed.jsx}`.
 
@@ -125,9 +125,25 @@ The richer 13-section design spec (`Akki_NED_Cycle_Manager_Module_Specification.
 | C12 | Audit / §5.6 — "4 hex literals (`#8B2E2B`) remain in `pages/Cycle.jsx`" + "2 in `pages/Pulse.jsx`" | Confirmed via grep | **keep-code, sweep** | Trivial v7 token replacement on the Cycle page; Pulse is out of scope for this sprint (Should-have only). |
 | C13 | Audit deviation — "two cycle routers coexist (`cycle_manager.py` Phase D + legacy `cycle.py` 30 endpoints) — intentional but cognitive collision risk" | Confirmed | **keep-code, document** | Removing `cycle.py` is out-of-scope and dangerous; the legacy router serves questions / committees / submissions which still have frontend consumers. Document the split in `cycle_manager.py` header (already partly there) and leave a `## Layering` section in this brief's §6 dependencies. |
 
-### 3.3 Highest-risk reconciliation decision
+### 3.3 Highest-risk reconciliation decision — LOCKED (ASSIGNMENT HANDOFF)
 
-**C3 — Exec cycle compilation → NED meeting pack delivery (spec §12, "Brief delivery model: TBD"):** this is the only contradiction where (a) the spec hard-rule (§1 architectural separation, §11 failure mode "policy-based confidentiality") combines with (b) a real product handoff that doesn't yet have a code path, and (c) the wrong direction (Exec push vs NED pull) is **silently** unsafe — a push from the Exec side would tempt downstream consumers to enrich the NED pack with Exec-side fields like `cycle_agendas.scoring_rationale` that the NED is not supposed to see and that, once on the NED's surface, become impossible to retract.
+**C3 resolution (locked 2026-02):** Exec → NED brief delivery is **neither push nor pull**. It is an explicit **assignment handoff** with privacy-wall-enforced ingest, in five state transitions:
+
+1. **Submit** `POST /api/contexts/{cid}/cycles/{cycle_id}/briefs/{brief_id}/submit-for-board` — marks brief `submitted`. Permitted callers: owner (individual workspace); owner + ExCo members + `sub_role="chief_of_staff"` (team workspace). Helper: `services/cycle_permissions.can_submit_for_board`.
+2. **Assign** `POST /api/contexts/{cid}/cycles/{cycle_id}/briefs/{brief_id}/assignments` — body `{ned_ids?:[str], cohort_id?:str, note?:str}`. Mutually exclusive — exactly one of `ned_ids` / `cohort_id` MUST be set. Cohort resolution snapshots NED ids at assignment time, persists on the row. Fans out one `cycle_assignments` row per NED.
+3. **NED inbox** `GET /api/ned/inbox/assignments` — strict field whitelist `{assignment_id, brief_id, submitter_display_name, cycle_title, submitted_at, cohort_label_optional}`. NO Exec-internal fields, EVER.
+4. **Accept** `POST /api/ned/assignments/{assignment_id}/accept` — idempotent. Privacy Wall projects ONLY the approved Brief artefact into the NED's durable record. No agenda metadata, no scoring, no contribution metadata.
+5. **Decline** `POST /api/ned/assignments/{assignment_id}/decline` — body `{reason?:str}`. Logs; never ingests.
+
+**Forbidden code path:** any write that copies Exec-internal fields (`cycle_agendas`, `cycle_contributions`, `cycle_team`, `cycle_followups`, scoring rationale, agenda internals) into NED collections (`ned_meetings`, `ned_meeting_notes`, `ned_positions`, `ned_followups`, `ned_annotations`). Enforced by negative tests in `test_cycle_assignment_privacy_wall.py`.
+
+**Resend in dev:** MOCKED IN DEV (test mode). Notification call sites are wired in code with explicit `# MOCKED IN DEV` markers; no fake confirmation surfaced to the user.
+
+### 3.4 Original reconciliation table (for historical context)
+
+### 3.5 Original highest-risk callout (resolution: ASSIGNMENT HANDOFF, see §3.3)
+
+**C3 — Exec cycle compilation → NED meeting pack delivery:** this is the only contradiction where (a) the spec hard-rule (§1 architectural separation, §11 failure mode "policy-based confidentiality") combines with (b) a real product handoff that doesn't yet have a code path, and (c) the wrong direction (Exec push vs NED pull) is **silently** unsafe — a push from the Exec side would tempt downstream consumers to enrich the NED pack with Exec-side fields like `cycle_agendas.scoring_rationale` that the NED is not supposed to see and that, once on the NED's surface, become impossible to retract.
 
 The brief recommends a **NED-side pull** that takes only the Brief artefact_id (no agenda metadata, no contribution metadata, no scoring), with the privacy wall enforcing the cross-context guard. Getting this direction wrong on the first ship is the single decision that could leak Exec-internal cycle data onto a NED's permanent record.
 

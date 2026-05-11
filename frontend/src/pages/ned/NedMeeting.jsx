@@ -196,7 +196,7 @@ function InPhase({ meeting, refresh }) {
             <li key={n.id} className="py-2 flex items-start gap-2 group" data-testid={`ned-in-note-${n.id}`}>
               <p className="text-[13px] text-[var(--ink)] leading-[1.55] flex-1 whitespace-pre-wrap">{n.body}</p>
               <button type="button" onClick={() => setConfirmDelete(n)}
-                className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-[#8B2E2B]"
+                className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-[color:var(--oxblood)]"
                 aria-label="Remove note" data-testid={`ned-in-note-remove-${n.id}`}>
                 <Trash2 className="w-3 h-3" />
               </button>
@@ -265,7 +265,7 @@ function InPhase({ meeting, refresh }) {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={(e) => { e.preventDefault(); removeNote(confirmDelete.id); }}
-              className="bg-[#8B2E2B] hover:bg-[#7A2825] text-white">Delete</AlertDialogAction>
+              className="bg-[color:var(--oxblood)] hover:bg-[color:var(--oxblood-deep)] text-white">Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

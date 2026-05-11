@@ -95,6 +95,7 @@ import WebsiteForNeds from "@/website/pages/ForNeds";
 import WebsiteForOrganisations from "@/website/pages/ForOrganisations";
 import NedMeeting from "@/pages/ned/NedMeeting";   // Phase E
 import NedCommittee from "@/pages/ned/NedCommittee"; // Phase E
+import NedInbox from "@/pages/ned/NedInbox";       // Cycle sprint — assignment handoff
 
 function PublicOnlyRoute({ children, allowSandbox = false }) {
   const { account } = useAuth();
@@ -234,6 +235,7 @@ function App() {
           {/* Phase E — NED Cycle Manager */}
           <Route path="/app/ned/meeting/:id" element={<Gated><NedMeeting /></Gated>} />
           <Route path="/app/ned/committee/:cid/:committee" element={<Gated><NedCommittee /></Gated>} />
+          <Route path="/app/ned/inbox" element={<Gated><NedInbox /></Gated>} />
           <Route path="/app/monitor" element={<Gated><Monitor /></Gated>} />
           <Route path="/app/plays" element={<Gated><PlaysLibrary /></Gated>} />
           <Route path="/app/plays/:playId" element={<Gated><PlayView /></Gated>} />

@@ -992,6 +992,11 @@ async def draft_compilation(
         "revision_id": revision_id,
         "redirect_url": f"/app/studio/composer/briefing/{brief_id}",
         "validation": synth_result.get("validation") or {},
+        # Cycle context (used by the ship-step assignment UI in
+        # frontend/src/components/cycle/BoardSubmitPanel.jsx).
+        "agenda_id": agenda["id"],
+        "cycle_id": agenda["id"],   # for now, agenda_id IS the cycle_id
+        "board_status": "draft",     # brief is persisted as draft until submit
         # Legacy field names — preserved so the existing CompilationStep
         # download/continue-in-chat UI keeps working unchanged.
         "export_id": export_id,

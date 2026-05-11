@@ -3256,3 +3256,70 @@ template v7 + CI determinism.
 - Auto-compose `audit_summary` from synisense_runs at export time
 - ExCo association on Studio artefacts (Q4(b) → CYCLE sprint)
 - Deck PDF renderer (`render_deck_pdf` NotImplementedError)
+
+---
+
+## CYCLE sprint — Assignment Handoff (2026-02)
+
+**Brief:** `/app/memory/sprints/CYCLE_MANAGER_BRIEF.md` (APPROVED-FOR-BUILD).
+**Verify doc:** `/app/memory/sprints/CYCLE_MANAGER_VERIFY.md`.
+**Architectural lock:** C3 resolved → ASSIGNMENT HANDOFF (not push, not pull).
+
+### What shipped
+
+- **`services/cycle_permissions.py`** — `can_submit_for_board(account, context, membership)` and `permission_reason(...)`. Owner only for individual workspaces; owner + admin + chief_of_staff + ExCo team members for team workspaces; NED contexts never permitted.
+- **`routers/cycle_assignments.py`** — 7 new endpoints under `/api`:
+  - `POST .../briefs/{bid}/submit-for-board` (draft → submitted)
+  - `POST .../briefs/{bid}/assignments` (fan-out, ned_ids XOR cohort_id)
+  - `GET .../briefs/{bid}/assignments` (creator-side list)
+  - `DELETE .../cycle-assignments/{aid}` (cancel pending)
+  - `GET /api/ned/inbox/assignments` (NED inbox; strict whitelist)
+  - `POST /api/ned/assignments/{aid}/accept` (privacy-wall ingest; idempotent; flips brief → shipped)
+  - `POST /api/ned/assignments/{aid}/decline` (no ingest)
+  - `GET /api/me/submitted-briefs` (submitter rollup view)
+- **`routers/ned/__init__.py`** — marker module documenting that PRODUCT_SPEC §5.6 ("NED has zero code") is out of date; keep-code decision recorded.
+- **`email_service.notify_ned_assignment_stub`** — MOCKED IN DEV. Resend is in test mode in the preview env; the call site is wired so production can flip without code change.
+- **New collections + indexes:** `db.cycle_assignments` (unique partial index on `(brief_id, ned_id)` where status ∈ {pending, accepted, declined}; secondary indexes by NED + by context+cycle + by submitter), `db.ned_packs` (unique by `assignment_id`), plus a `work_studio_briefs.{submitter_account_id, board_status, submitted_at}` secondary index for the rollup view.
+- **Frontend — new:**
+  - `pages/ned/NedInbox.jsx` (`/app/ned/inbox`) — tabs Pending / Accepted / Declined, accept/decline dialogs, streaming reveal first visit.
+  - `components/cycle/CycleStatusBadge.jsx` — v7 status badge (draft/submitted/shipped + pending/accepted/declined/cancelled).
+  - `components/cycle/BoardSubmitPanel.jsx` — ship-step UX, submit + assign + cancel + roster.
+  - `components/cycle/NedInboxTile.jsx` — HomeNed indicator with pending count.
+- **Frontend — edited:**
+  - `pages/Cycle.jsx` — 4 hex literals removed; `BoardSubmitPanel` wired into Compilation step.
+  - `pages/ned/NedMeeting.jsx` — 2 hex literals removed.
+  - `pages/home/HomeNed.jsx` — `NedInboxTile` mounted.
+  - `components/transitions/WorkspaceEntryScene.jsx` — `ned_inbox` workspace lines.
+  - `App.js` — `/app/ned/inbox` route.
+  - `routers/cycle_manager.py` — compile response now surfaces `cycle_id`, `agenda_id`, `board_status` for the ship-step UI.
+
+### Privacy-wall enforcement
+
+`tests/test_cycle_assignment_privacy_wall.py` (3 tests, all green):
+
+1. Strict-whitelist enforcement on NED inbox even with deliberately polluted source rows.
+2. `ned_packs` row schema locked to 7 keys; sentinel scan over every value.
+3. Defensive guard — accept path is monkey-patched to fail loudly if it reads `cycle_agendas` / `cycle_contributions` / `cycle_team` / `cycle_followups`.
+
+### Acceptance — automated
+
+`pytest tests/test_privacy_wall.py tests/test_phase_g_privacy_wall_sentinel.py tests/test_privacy_wall_phase_2c.py tests/test_universal_search.py tests/test_exco_teams.py tests/test_render_determinism.py tests/test_cycle_assignment_handoff.py tests/test_cycle_assignment_privacy_wall.py -q`
+
+→ **66 passed** (41 baseline + 25 new).
+
+### Acceptance — manual
+
+See `/app/memory/sprints/CYCLE_MANAGER_VERIFY.md` for the §D + §E walkthroughs.
+
+### Hex-literal sweep
+
+`grep -rE '#[0-9a-fA-F]{3,8}\b' pages/Cycle.jsx pages/CycleSettings.jsx pages/ned/ components/cycle/ | grep -v 'color:var'` → **0 hits**.
+
+### Deferred (Should-have, not done)
+
+- Should-have S1 audit log entries beyond submit/assign/accept/decline (those four are wired).
+- Could-have items 1–3 (reminder pings, cohort builder UI, CSV export) not started.
+
+### Files index
+
+See `CYCLE_MANAGER_VERIFY.md` §"Files touched in this sprint".

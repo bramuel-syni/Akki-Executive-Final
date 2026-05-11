@@ -85,4 +85,10 @@ const DEFAULT_LINES = {
     "Surfacing what is worth attention.",
     "Ready.",
   ],
+  ned_inbox: [
+    "NED Inbox.",
+    "Looking for assignments waiting on you.",
+    "Routing through the privacy wall.",
+    "Ready.",
+  ],
 };

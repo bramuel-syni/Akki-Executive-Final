@@ -272,3 +272,36 @@ def render_checklist_email_html(
   </table>
 </body></html>
 """
+
+
+
+# ---------------------------------------------------------------------------
+# Cycle Manager — assignment notification stub
+# ---------------------------------------------------------------------------
+# MOCKED IN DEV — Resend runs in test mode in the preview environment, so
+# this helper never reaches the wire. It is wired so production can flip
+# `RESEND_TEST_MODE=false` and a real send goes out without code change.
+# ---------------------------------------------------------------------------
+async def notify_ned_assignment_stub(
+    *,
+    assignment_id: str,
+    ned_account_id: str,
+    submitter_name: str,
+    cycle_title: str,
+) -> Dict[str, Any]:
+    """Notify a NED that a Brief has been assigned to them.
+
+    Today this writes a single log line and returns a fake-success
+    payload so the caller's audit_log row still proves a notification
+    attempt was made. NO email is sent in dev. Switch to a real
+    `send_email(...)` call when product wants live notifications.
+    """
+    logger.info(
+        "ned_assignment_notification.MOCKED assignment_id=%s ned=%s submitter=%s cycle=%r",
+        assignment_id, ned_account_id, submitter_name, cycle_title,
+    )
+    return {
+        "ok": True,
+        "mode": "mocked_in_dev",
+        "assignment_id": assignment_id,
+    }

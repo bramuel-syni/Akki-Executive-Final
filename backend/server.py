@@ -69,6 +69,7 @@ from routers import admin_sandbox_kpi as admin_sandbox_kpi_router  # noqa: E402
 from routers import signal_actions as signal_actions_router  # noqa: E402
 from routers import pulse as pulse_router  # noqa: E402
 from routers import cycle_manager as cycle_manager_router  # noqa: E402
+from routers import cycle_assignments as cycle_assignments_router  # noqa: E402  # Cycle sprint (C3 ASSIGNMENT HANDOFF)
 from routers import ned_cycle as ned_cycle_router  # noqa: E402  # Phase E
 from routers import admin_signal_kpi as admin_signal_kpi_router  # noqa: E402
 from routers import prepare as prepare_router  # noqa: E402
@@ -155,6 +156,7 @@ app.include_router(admin_sandbox_kpi_router.router)
 app.include_router(signal_actions_router.router)
 app.include_router(pulse_router.router)
 app.include_router(cycle_manager_router.router)
+app.include_router(cycle_assignments_router.router)  # Cycle sprint — submit/assign/inbox/accept/decline
 app.include_router(ned_cycle_router.router)  # Phase E — NED Cycle Manager
 app.include_router(admin_signal_kpi_router.router)
 app.include_router(prepare_router.router)
@@ -419,6 +421,24 @@ async def on_startup():
 
     # HOME sprint (2026-05-12) — ExCo teams.
     await exco_teams_router.ensure_exco_indexes()
+
+    # Cycle Manager sprint (2026-02) — assignment handoff collections.
+    # See /app/memory/sprints/CYCLE_MANAGER_BRIEF.md §3.3 for the design.
+    await db.cycle_assignments.create_index("id", unique=True)
+    await db.cycle_assignments.create_index(
+        [("brief_id", 1), ("ned_id", 1)], unique=True,
+        partialFilterExpression={"status": {"$in": ["pending", "accepted", "declined"]}},
+    )
+    await db.cycle_assignments.create_index([("ned_id", 1), ("status", 1), ("submitted_at", -1)])
+    await db.cycle_assignments.create_index([("context_id", 1), ("cycle_id", 1)])
+    await db.cycle_assignments.create_index([("submitter_account_id", 1), ("created_at", -1)])
+    await db.ned_packs.create_index("id", unique=True)
+    await db.ned_packs.create_index([("ned_id", 1), ("received_at", -1)])
+    await db.ned_packs.create_index([("assignment_id", 1)], unique=True)
+    # board_status filter on work_studio_briefs (Should-have: my submitted briefs).
+    await db.work_studio_briefs.create_index(
+        [("submitter_account_id", 1), ("board_status", 1), ("submitted_at", -1)],
+    )
 
     # Early-access registrations (public marketing intake)
     await db.early_access_registrations.create_index("email", unique=True)

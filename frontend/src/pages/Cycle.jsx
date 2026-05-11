@@ -34,6 +34,7 @@ import {
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import JudgementPanel from "@/components/cycle/JudgementPanel";
+import BoardSubmitPanel from "@/components/cycle/BoardSubmitPanel";
 import { takeToSolva } from "@/lib/takeToSolva";
 import WorkspaceEntryGate from "@/components/transitions/WorkspaceEntryGate";
 
@@ -60,7 +61,7 @@ const STATUS_TONE = {
   ready:    "text-emerald-800 bg-emerald-50 border-emerald-200",
   thin:     "text-amber-900 bg-amber-50 border-amber-200",
   weak:     "text-amber-900 bg-amber-50 border-amber-200",
-  missing:  "text-[#8B2E2B] bg-[#8B2E2B]/10 border-[#8B2E2B]/30",
+  missing:  "text-[color:var(--oxblood)] bg-[color:var(--oxblood)]/10 border-[color:var(--oxblood)]/30",
 };
 
 /* ------------------------------------------------------------------ */
@@ -220,7 +221,7 @@ function AgendaStep({ cid, agenda, onSaved, onForward }) {
                 placeholder="Owner (optional)"
                 className="rounded-sm w-[200px]"
               />
-              <Button type="button" size="sm" variant="ghost" onClick={() => removeItem(i)} className="text-[var(--muted)] hover:text-[#8B2E2B]"><X className="w-3.5 h-3.5" /></Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => removeItem(i)} className="text-[var(--muted)] hover:text-[color:var(--oxblood)]"><X className="w-3.5 h-3.5" /></Button>
             </div>
           ))}
           <Button type="button" size="sm" variant="outline" onClick={addItem} className="text-[12.5px] rounded-sm" data-testid="cycle-agenda-add-item">
@@ -337,7 +338,7 @@ function TeamStep({ cid, agenda, members, refresh, onBack, onForward }) {
                         <Button
                           type="button" size="sm" variant="ghost"
                           onClick={() => setDeleteTarget({ id: m.id, name: m.name })}
-                          className="text-[12px] text-[var(--muted)] hover:text-[#8B2E2B] h-7"
+                          className="text-[12px] text-[var(--muted)] hover:text-[color:var(--oxblood)] h-7"
                           data-testid={`cycle-team-remove-${m.id}`}
                           aria-label={`Remove ${m.name}`}
                         ><X className="w-3.5 h-3.5" /></Button>
@@ -418,7 +419,7 @@ function TeamStep({ cid, agenda, members, refresh, onBack, onForward }) {
             <AlertDialogAction
               onClick={(e) => { e.preventDefault(); confirmDelete(); }}
               disabled={deleteBusy}
-              className="bg-[#8B2E2B] hover:bg-[#7A2825] text-white"
+              className="bg-[color:var(--oxblood)] hover:bg-[color:var(--oxblood-deep)] text-white"
               data-testid="cycle-team-delete-confirm"
             >
               {deleteBusy ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
@@ -768,6 +769,12 @@ function CompilationStep({ cid, onBack }) {
               Compile again
             </Button>
           </div>
+          <BoardSubmitPanel
+            cid={cid}
+            cycleId={out.cycle_id || out.agenda_id}
+            briefId={out.brief_id}
+            briefStatus={out.board_status || "draft"}
+          />
         </div>
       )}
       <StepFooter canBack canForward={false} onBack={onBack} />
