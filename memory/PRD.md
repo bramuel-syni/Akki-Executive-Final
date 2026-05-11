@@ -3096,3 +3096,38 @@ removed; canonical 7-token palette is now the website's only design system.
 - Removed: `pages/ProductHub.jsx`, `components/EvidencePanel.jsx`.
 - Modified palette only: `frontend/src/sandbox/style.css`.
 - Closure: `/app/docs/sprints/PRE_v7_website.md`.
+
+---
+
+## Sprint HOME — closure (2026-05-12)
+
+Post-sign-in Home surface upgrade: full v7 palette migration into `index.css`,
+ExCo as a grouping function (NEW), Portfolio state indicators, role calibration
+on the top-nav.
+
+- **App `index.css` v7 migration**: 7-token palette canonical, legacy
+  `--paper/--cream/--accent/--severity/--navy/--chrome` preserved as aliases →
+  `var(--<v7-token>)`. Source Serif 4 + Inter + JetBrains Mono via `@font-face
+  local()`. Calibri removed.
+- **ExCo (new collection)**: `db.exco_teams` per-context grouping with 7
+  endpoints (`POST/GET/PATCH/DELETE /api/contexts/{cid}/exco-teams`,
+  member add/remove, archive). Owner/admin gating, audit rows on every
+  mutation, soft-delete only. `ExcoTeamsCard` on HomeExecutive + HomeDual.
+- **`GET /api/me/portfolio`**: per-membership cycle / goals-at-risk /
+  pending-followups / unread-signals / last-active state with 30-second
+  in-memory cache. Portfolio cards render state badges (oxblood for attention,
+  graphite-light for quiet).
+- **Role kicker on top-nav**: derives `Executive` / `Non-Executive Director`
+  / `Executive · NED` / appends `· ExCo` when the account is in any ExCo team
+  in the active context.
+- **Tests**: 35/35 passing (29 trust-critical + 6 new `test_exco_teams.py`).
+
+### Files
+- New: `backend/routers/{exco_teams,portfolio}.py`, `backend/tests/test_exco_teams.py`, `frontend/src/components/home/ExcoTeamsCard.jsx`.
+- Modified: `backend/server.py`, `frontend/src/index.css`, `frontend/public/index.html`, `pages/home/{HomeExecutive,HomeDual}.jsx`, `pages/ContextPortfolio.jsx`, `components/layout/CycleContextIndicator.jsx`.
+- Closure: `/app/docs/sprints/HOME.md`.
+
+### Deferred
+- Self-hosted woff2 files in `public/fonts/` (chains ready, files awaited)
+- Module-surface palette refinement (separate sprint per module)
+- Cross-board "dual" auto-detection (still relies on `account.declared_role`)

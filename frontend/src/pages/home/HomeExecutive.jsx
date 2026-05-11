@@ -50,6 +50,7 @@ import {
 } from "lucide-react";
 import AddDocumentCard from "@/components/home/AddDocumentCard";
 import AllDocumentsButton from "@/components/home/AllDocumentsButton";
+import ExcoTeamsCard from "@/components/home/ExcoTeamsCard";
 
 function greeting(name) {
   const h = new Date().getHours();
@@ -183,6 +184,9 @@ export default function HomeExecutive() {
   const cid = activeContext?.id;
   const isMobile = useIsMobile();
   const firstName = (account?.name || "there").split(" ")[0];
+  const isAdmin =
+    activeContext?.my_sub_role === "admin" ||
+    activeContext?.owner_account_id === account?.id;
 
   return (
     <AppShell>
@@ -299,6 +303,9 @@ export default function HomeExecutive() {
             </span>
           </Link>
         </div>
+
+        {/* HOME sprint (2026-05-12) — ExCo teams grouping function. */}
+        <ExcoTeamsCard contextId={cid} isAdmin={isAdmin} />
       </div>
     </AppShell>
   );

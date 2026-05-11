@@ -16,11 +16,15 @@ import CycleStrip from "@/components/cycle/CycleStrip";
 import useIsMobile from "@/hooks/useIsMobile";
 import AddDocumentCard from "@/components/home/AddDocumentCard";
 import AllDocumentsButton from "@/components/home/AllDocumentsButton";
+import ExcoTeamsCard from "@/components/home/ExcoTeamsCard";
 
 export default function HomeDual() {
-  const { activeContext } = useAuth();
+  const { account, activeContext } = useAuth();
   const cid = activeContext?.id;
   const isMobile = useIsMobile();
+  const isAdmin =
+    activeContext?.my_sub_role === "admin" ||
+    activeContext?.owner_account_id === account?.id;
   return (
     <AppShell>
       <div className="akki-w-medium px-8 py-10" data-testid="home-dual">
@@ -90,6 +94,9 @@ export default function HomeDual() {
             </Link>
           </section>
         </div>
+
+        {/* HOME sprint (2026-05-12) — ExCo teams grouping function. */}
+        <ExcoTeamsCard contextId={cid} isAdmin={isAdmin} />
       </div>
     </AppShell>
   );

@@ -96,6 +96,8 @@ from routers import governance as governance_router  # noqa: E402
 from routers import solva_v2 as solva_v2_router  # noqa: E402  Phase 15.0 — Solva v2 POC (feature-flagged)
 from routers import search as search_router  # noqa: E402  Phase F0 — Universal Search
 from routers import website as website_router  # noqa: E402  Phase I1 — Pre-login website
+from routers import exco_teams as exco_teams_router  # noqa: E402  HOME sprint — ExCo teams
+from routers import portfolio as portfolio_router  # noqa: E402  HOME sprint — portfolio state
 
 
 logger = logging.getLogger("akki")
@@ -185,6 +187,9 @@ app.include_router(website_router.router)  # Phase I1 — Pre-login website
 # Phase J (2026-05-12) — Generative Sandbox MVP + Synisense audit metrics.
 app.include_router(sandbox_gen_router.router)
 app.include_router(synisense_metrics_router.router)
+# HOME sprint (2026-05-12) — ExCo teams grouping function.
+app.include_router(exco_teams_router.router)
+app.include_router(portfolio_router.router)
 
 
 # -----------------------------------------------------------------------------
@@ -411,6 +416,9 @@ async def on_startup():
     await db.shares.create_index("id", unique=True)
     await db.shares.create_index([("shared_with_account_id", 1), ("created_at", -1)])
     await db.shares.create_index([("shared_by_account_id", 1), ("created_at", -1)])
+
+    # HOME sprint (2026-05-12) — ExCo teams.
+    await exco_teams_router.ensure_exco_indexes()
 
     # Early-access registrations (public marketing intake)
     await db.early_access_registrations.create_index("email", unique=True)

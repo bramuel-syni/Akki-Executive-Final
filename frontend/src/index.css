@@ -2,66 +2,102 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Phase A — Calibri ships from the system font stack. Georgia (editorial
- * serif) is universally available on macOS / Windows / iOS / Android and
- * needs no @import. JetBrains Mono is brought in for code surfaces. */
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+/* =====================================================================
+ * App shell — v7 visual system (HOME sprint, 2026-05-12).
+ *
+ * Single source of truth for the authenticated /app SPA. Migrated from
+ * the Editorial Posture palette (paper / cream / accent / severity) to
+ * the canonical v7 four-token palette used by the website + sandbox.
+ *
+ * Token rules:
+ *   --parchment, --parchment-light, --ink, --graphite, --graphite-light,
+ *   --oxblood, --oxblood-deep — all that exists.
+ *
+ * Legacy aliases (--paper, --cream, --accent, --severity, --slate,
+ * --muted, --rule, --navy, --chrome) are PRESERVED as aliases pointing
+ * at v7 tokens so the ~200 component call sites keep rendering without
+ * a full sweep. New work must use the v7 names directly.
+ *
+ * Fonts:
+ *   --font-display  Source Serif 4   → Georgia / Times fallback
+ *   --font-ui       Inter            → system sans fallback
+ *   --font-mono     JetBrains Mono   → ui-monospace fallback
+ *
+ * Self-hosted woff2 expected under /public/fonts/. If a file is missing,
+ * the @font-face falls through to `local()` and then the named family
+ * fallbacks — every stack is typographically credible.
+ * ===================================================================== */
+
+@font-face {
+  font-family: "Source Serif 4";
+  src: local("Source Serif 4"), local("Source Serif Pro"), local("Source Serif");
+  font-display: swap;
+  font-weight: 300 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Source Serif 4";
+  src: local("Source Serif 4 Italic"), local("Source Serif Pro Italic");
+  font-display: swap;
+  font-weight: 300 700;
+  font-style: italic;
+}
+@font-face {
+  font-family: "Inter";
+  src: local("Inter"), local("Inter Variable");
+  font-display: swap;
+  font-weight: 300 700;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: local("JetBrains Mono"), local("JetBrains Mono Regular");
+  font-display: swap;
+  font-weight: 400 500;
+}
 
 :root {
-  /* AKKI v4.2 tokens — cream + oxblood + warm neutrals */
-  /* Phase F.2 — `--paper` was referenced by Work Studio's BriefDrawer
-     and Solva flow tokens but was never declared in :root. When
-     unresolved, `bg-[var(--paper)]` renders transparent, causing the
-     underlying page to bleed through any drawer using it. Defined
-     here to match Solva flow tokens.
-     CONTRACT: any drawer/sheet must use an *opaque* color token.
+  /* v7 canonical palette ---------------------------------------------- */
+  --parchment:       #F2EFE8;
+  --parchment-light: #F8F6F0;
+  --ink:             #1A1D20;
+  --graphite:        #6F7177;
+  --graphite-light:  #B8B6AF;
+  --oxblood:         #7A2E2E;
+  --oxblood-deep:    #5E2222;
 
-     Phase K (2026-05-12) — app-wide migration to the canonical
-     Editorial Posture palette. The values below match the website +
-     sandbox tokens. Three semantic tokens that DID NOT exist before
-     are added: --slate, --severity, --emphasis. --accent now means
-     bronze editorial emphasis ONLY; --severity is the new deep-red
-     reserved for genuine severity/risk/error UI. Components that used
-     --accent for error states are migrated case-by-case. */
-  --paper:       #F7F4EE;
-  --ink:         #0F1419;
-  --deep:        #1A2028;
-  --muted:       #6B7480;
-  --cream:       #EDE7D6;
-  --cream-deep:  #E2DAC2;
-  --warm-white:  #FAFAF5;
-  --rule:        #D8D2C5;
-  --accent:      #8B6F3E;   /* bronze — editorial emphasis, kicker labels, restrained pull-quotes */
-  --accent-soft: #EDE3CF;   /* bronze-tinted soft surface for accent panels */
-  --severity:    #8B2E2E;   /* genuine severity — risk, error, alert, refusal. NEVER decorative. */
-  --slate:       #2A3441;   /* secondary text, slightly softer than --ink */
-  /* Phase K palette correction (2026-05-12) — Navy is FORBIDDEN by the
-     canonical Editorial Posture. The legacy --navy / --chrome /
-     --chrome-soft tokens have been preserved as aliases ONLY so the
-     ~50 component call sites that reference them keep rendering. Each
-     alias now points at the canonical equivalent so no Navy hex
-     value ever reaches the DOM. Do not introduce new references to
-     these aliases — use --ink / --slate / --cream directly. */
-  --navy:        var(--ink);   /* legacy alias → ink (near-black) */
-  --chrome:      var(--ink);   /* legacy alias → ink (primary CTAs render near-black) */
-  --chrome-soft: var(--cream); /* legacy alias → cream surface */
-  --risk:        #8B2E2E;   /* alias of --severity — kept for backward compat */
-  --gap:         #A67C00;
-  --opportunity: #3D6F3D;
-  --neutral:     #6B7480;
-  --meeting:     #4A5568;
+  /* Legacy aliases — DO NOT use in new code. ---------------------------
+   * Every alias maps to the closest v7 token so component call sites
+   * keep rendering without a global sweep. */
+  --paper:        var(--parchment);
+  --cream:        var(--parchment-light);
+  --cream-deep:   var(--graphite-light);
+  --warm-white:   var(--parchment-light);
+  --rule:         var(--graphite-light);
+  --muted:        var(--graphite);
+  --slate:        var(--graphite);
+  --deep:         var(--ink);
+  --accent:       var(--oxblood);
+  --accent-soft:  rgba(122, 46, 46, 0.06);
+  --severity:     var(--oxblood);
+  --risk:         var(--oxblood);
+  --navy:         var(--ink);
+  --chrome:       var(--ink);
+  --chrome-soft:  var(--parchment-light);
 
-  /* =====================================================================
-   * Phase H — UI width consistency tokens (MEMO Item 7).
-   * Three patterns, applied app-wide:
-   *   --w-narrow  →  760 px   single-column reading. Editorial content,
-   *                            settings forms, intake, single-column flows.
-   *   --w-medium  →  1200 px  two-column workspace. Listings + drawer,
-   *                            dashboards, multi-column homes, composers.
-   *   --w-wide    →  none     full-bleed. Data-heavy tables, scoreboards.
-   * Pages must use one of the three utility classes below to enforce the
-   * pattern; arbitrary `max-w-[Npx] mx-auto` page-frames are not allowed.
-   * ===================================================================== */
+  /* Functional accents (still used by a few badges) — neutralised but
+   * preserved as readable graphite/oxblood derivatives. */
+  --gap:          var(--graphite);
+  --opportunity:  var(--graphite);
+  --neutral:      var(--graphite);
+  --meeting:      var(--graphite);
+
+  /* Font stacks ------------------------------------------------------- */
+  --font-display: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-ui:      "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+                  system-ui, Roboto, Helvetica, Arial, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Width tokens (Phase H — UI consistency) --------------------------- */
   --w-narrow: 760px;
   --w-medium: 1200px;
   --w-wide:   100%;
@@ -78,112 +114,116 @@ html, body, #root {
 }
 
 body {
-  font-family: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
-  background: var(--cream);
+  font-family: var(--font-ui);
+  background: var(--parchment-light);
   color: var(--ink);
-  font-feature-settings: "ss01", "cv11";
 }
 
-/* Typography utilities */
-.akki-serif { font-family: Georgia, Cambria, 'Times New Roman', serif; }
-.akki-sans  { font-family: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif; }
-.akki-mono  { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+/* Typography utility families */
+.akki-serif { font-family: var(--font-display); }
+.akki-sans  { font-family: var(--font-ui); }
+.akki-mono  { font-family: var(--font-mono); }
 
 ::selection {
-  background: var(--accent);
-  color: #fff;
+  background: var(--oxblood);
+  color: var(--parchment);
 }
 
 /* Subtle scrollbars */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #c7c1b0; border-radius: 0; }
-::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+::-webkit-scrollbar-thumb { background: var(--graphite-light); border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: var(--graphite); }
 
-/* Shadcn CSS variables rewired to AKKI v4.2 palette (cream + oxblood) */
+/* Shadcn CSS variables rewired to v7 (parchment + ink + oxblood) */
 @layer base {
   :root {
-    --background: 44 42% 94%;           /* #F7F3EA cream */
-    --foreground: 0 0% 10%;              /* #1A1A1A ink */
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 10%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 10%;
-    --primary: 2 51% 36%;                /* #8B2E2B oxblood */
-    --primary-foreground: 0 0% 100%;
-    --secondary: 44 37% 89%;             /* cream-deep */
-    --secondary-foreground: 0 0% 10%;
-    --muted: 44 37% 89%;
-    --muted-foreground: 39 9% 40%;       /* muted */
-    --accent: 2 51% 36%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 42 27% 80%;                /* rule */
-    --input: 42 27% 80%;
-    --ring: 2 51% 36%;
+    --background: 39 25% 92%;            /* parchment */
+    --foreground: 220 9% 11%;            /* ink */
+    --card: 38 31% 96%;                  /* parchment-light */
+    --card-foreground: 220 9% 11%;
+    --popover: 38 31% 96%;
+    --popover-foreground: 220 9% 11%;
+    --primary: 0 53% 33%;                /* oxblood */
+    --primary-foreground: 39 25% 92%;
+    --secondary: 38 31% 96%;
+    --secondary-foreground: 220 9% 11%;
+    --muted: 38 31% 96%;
+    --muted-foreground: 220 4% 45%;      /* graphite */
+    --accent: 0 53% 33%;
+    --accent-foreground: 39 25% 92%;
+    --destructive: 0 53% 33%;
+    --destructive-foreground: 39 25% 92%;
+    --border: 45 8% 72%;                 /* graphite-light */
+    --input: 45 8% 72%;
+    --ring: 0 53% 33%;
     --radius: 0.5rem;
   }
 }
 
-/* Typography utilities from spec */
+/* Typography utilities ------------------------------------------------ */
 .akki-overline {
-  font-size: 10px;
-  font-weight: 700;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.16em;
-  color: var(--muted);
-  font-family: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  color: var(--oxblood);
 }
 
 .akki-greeting {
-  font-family: Georgia, serif;
-  font-size: 26px;
-  line-height: 1.25;
+  font-family: var(--font-display);
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
   color: var(--ink);
   font-weight: 400;
 }
 
 .akki-lead {
-  font-family: Georgia, serif;
+  font-family: var(--font-display);
   font-size: 18px;
+  font-style: italic;
   line-height: 1.5;
-  color: var(--ink);
-  font-weight: 400;
+  color: var(--graphite);
+  font-weight: 300;
 }
 
 .akki-title-22 {
-  font-family: Georgia, serif;
+  font-family: var(--font-display);
   font-size: 22px;
   line-height: 1.3;
   color: var(--ink);
-  font-weight: 400;
+  font-weight: 500;
 }
 
 .akki-meta {
-  font-family: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-ui);
   font-size: 13px;
-  color: var(--muted);
+  color: var(--graphite);
 }
 
 .akki-gesture {
-  font-family: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-ui);
   font-size: 14px;
   font-weight: 500;
-  color: var(--accent);
+  color: var(--oxblood);
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  transition: border-color 150ms ease;
+  transition: gap 180ms ease;
   border-bottom: 1px solid transparent;
 }
-.akki-gesture:hover { border-bottom-color: var(--accent); }
+.akki-gesture:hover {
+  gap: 8px;
+  border-bottom-color: var(--oxblood);
+}
 
 .akki-context-chip {
-  font-family: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-ui);
   font-size: 12px;
-  background: var(--cream-deep);
-  color: var(--deep);
+  background: var(--parchment-light);
+  color: var(--ink);
   padding: 4px 10px;
   border-radius: 14px;
   height: 28px;
@@ -193,29 +233,29 @@ body {
 }
 
 .akki-scope-chip {
-  font-family: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-ui);
   font-size: 14px;
   padding: 4px 2px;
-  color: var(--muted);
+  color: var(--graphite);
   border-bottom: 2px solid transparent;
   transition: border-color 150ms ease, color 150ms ease;
   cursor: pointer;
 }
 .akki-scope-chip[data-selected="true"] {
-  color: var(--deep);
+  color: var(--ink);
   font-weight: 600;
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--oxblood);
 }
-.akki-scope-chip:hover { color: var(--deep); }
+.akki-scope-chip:hover { color: var(--ink); }
 
 /* Stream card (Home + Highlights shared) */
 .akki-stream-card {
   position: relative;
-  background: #fff;
-  border: 1px solid var(--rule);
+  background: var(--parchment-light);
+  border: 1px solid var(--graphite-light);
   border-radius: 8px;
   padding: 24px 24px 24px 28px;
-  transition: box-shadow 150ms ease, transform 150ms ease;
+  transition: box-shadow 150ms ease;
   cursor: pointer;
 }
 .akki-stream-card::before {
@@ -223,38 +263,51 @@ body {
   position: absolute;
   left: 0; top: 0; bottom: 0;
   width: 3px;
-  background: var(--accent);
+  background: var(--oxblood);
   border-radius: 8px 0 0 8px;
   transition: width 150ms ease;
 }
-.akki-stream-card[data-severity="opportunity"]::before { background: var(--opportunity); }
-.akki-stream-card[data-severity="gap"]::before         { background: var(--gap); }
-.akki-stream-card[data-severity="neutral"]::before     { background: var(--neutral); }
-.akki-stream-card[data-severity="meeting"]::before     { background: var(--meeting); }
-.akki-stream-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+.akki-stream-card[data-severity="opportunity"]::before,
+.akki-stream-card[data-severity="gap"]::before,
+.akki-stream-card[data-severity="neutral"]::before,
+.akki-stream-card[data-severity="meeting"]::before {
+  background: var(--graphite);
 }
+.akki-stream-card:hover { box-shadow: 0 4px 12px rgba(26, 29, 32, 0.06); }
 .akki-stream-card:hover::before { width: 4px; }
 
 .akki-type-badge {
-  font-family: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-ui);
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: var(--muted);
+  color: var(--graphite);
 }
 
-/* Oxblood focus ring */
-.akki-ring:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+/* v7 — citation pill (HOME sprint) */
+.akki-citation-pill {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--oxblood);
+  background: rgba(122, 46, 46, 0.06);
+  padding: 1px 6px;
+  border-radius: 2px;
+  letter-spacing: 0.04em;
+}
+
+/* Oxblood focus ring — applies app-wide via :focus-visible */
+.akki-ring:focus-visible,
+.akki-website *:focus-visible {
+  outline: 2px solid var(--oxblood);
+  outline-offset: 3px;
 }
 
 /* Animations */
 @keyframes akki-fade-up {
   from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 .akki-fade-up { animation: akki-fade-up 0.35s ease-out both; }
 
@@ -264,33 +317,16 @@ body {
 }
 .akki-pulse { animation: akki-shimmer 2.4s ease-in-out infinite; }
 
-
 /* =======================================================================
- * Phase H — UI width consistency utility classes (MEMO Item 7).
- * Apply one of these to the page-frame div on every authenticated page.
- *   - akki-w-narrow  : 760 px  (single-column reading, intake, settings)
- *   - akki-w-medium  : 1200 px (workspace, dashboards, two-column flows)
- *   - akki-w-wide    : full    (data-heavy tables, scoreboards)
- * Each class centres the frame and sets the max-width to the matching
- * token. Width: 100% guards against shrink-wrap on flex parents. The
- * classes are layout-only — they do NOT touch padding, vertical rhythm,
- * or any other typography/colour token.
+ * Phase H — UI width consistency utility classes (preserved).
  * ===================================================================== */
-.akki-w-narrow {
-  width: 100%;
-  max-width: var(--w-narrow);
-  margin-left: auto;
-  margin-right: auto;
-}
-.akki-w-medium {
-  width: 100%;
-  max-width: var(--w-medium);
-  margin-left: auto;
-  margin-right: auto;
-}
+.akki-w-narrow,
+.akki-w-medium,
 .akki-w-wide {
   width: 100%;
-  max-width: var(--w-wide);
   margin-left: auto;
   margin-right: auto;
 }
+.akki-w-narrow { max-width: var(--w-narrow); }
+.akki-w-medium { max-width: var(--w-medium); }
+.akki-w-wide   { max-width: var(--w-wide); }

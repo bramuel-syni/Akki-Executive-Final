@@ -14,9 +14,10 @@
  * — the rest stays cream/oxblood-restrained per UI/UX brief (max two
  * accent uses per screen).
  */
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -25,15 +26,50 @@ import { Building2, ChevronDown, CheckCircle2, Plus, Briefcase, Landmark } from 
 import { isSponsoredContext } from "@/lib/sponsorship";
 
 const ROLE_LABEL = {
-  ned: "NED",
+  ned: "Non-Executive Director",
   executive: "Executive",
   reportee: "Reportee",
   member: "Member",
 };
 
+function deriveRoleKicker(activeContext, accountDeclaredRole, excoMembership) {
+  const role = activeContext.my_role || "member";
+  let label = ROLE_LABEL[role] || role;
+  // Dual context — if the user is BOTH executive and NED in this context.
+  // Today the model has a single `my_role` per membership, so "dual" is a
+  // declared role at the account level. We compose `EXECUTIVE · NED` when
+  // the account is dual-declared AND has at least one NED context.
+  if (accountDeclaredRole === "dual" && role === "executive") {
+    label = "Executive · NED";
+  }
+  if (excoMembership?.team_count > 0) {
+    label += " · ExCo";
+  }
+  return label;
+}
+
 export default function CycleContextIndicator() {
-  const { activeContext, contexts, switchContext } = useAuth();
+  const { activeContext, contexts, switchContext, account } = useAuth();
   const navigate = useNavigate();
+  const [excoMembership, setExcoMembership] = useState(null);
+
+  // HOME sprint — read the current account's ExCo membership in this
+  // active context so the role kicker can append "· ExCo" if applicable.
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeContext?.id) { setExcoMembership(null); return; }
+    (async () => {
+      try {
+        const { data } = await api.get(`/me/portfolio`);
+        if (cancelled) return;
+        const row = (data?.items || []).find((r) => r.context_id === activeContext.id);
+        setExcoMembership(row?.state?.exco || null);
+      } catch {
+        if (!cancelled) setExcoMembership(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeContext?.id]);
 
   if (!activeContext) {
     return (
@@ -51,20 +87,24 @@ export default function CycleContextIndicator() {
 
   const role = activeContext.my_role || "member";
   const RoleIcon = role === "ned" ? Landmark : Briefcase;
+  const roleKicker = deriveRoleKicker(activeContext, account?.declared_role, excoMembership);
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="hidden md:flex items-center gap-2 px-3 h-9 text-[13px] text-[var(--ink)] border border-[var(--rule)] rounded-md hover:bg-[var(--cream-deep)] transition-colors max-w-[260px]"
+          className="hidden md:flex items-center gap-2 px-3 h-9 text-[13px] text-[var(--ink)] border border-[var(--rule)] rounded-md hover:bg-[var(--cream-deep)] transition-colors max-w-[320px]"
           data-testid="cycle-context-indicator"
           aria-label="Switch active context"
         >
           <RoleIcon className="w-3.5 h-3.5 text-[var(--deep)]" strokeWidth={1.7} />
           <span className="akki-serif truncate">{activeContext.name}</span>
-          <span className="text-[9.5px] uppercase tracking-[0.18em] font-mono text-[var(--muted)] ml-1 shrink-0">
-            {ROLE_LABEL[role] || role}
+          <span
+            className="text-[9.5px] uppercase tracking-[0.18em] font-mono text-[var(--muted)] ml-1 shrink-0"
+            data-testid="context-role-kicker"
+          >
+            {roleKicker}
           </span>
           <ChevronDown className="w-3 h-3 text-[var(--muted)]" />
         </button>

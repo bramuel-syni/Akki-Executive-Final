@@ -21,12 +21,20 @@ function roleIcon(c) {
   return Briefcase;
 }
 
-function ContextCard({ c, active, metrics, onOpen }) {
+function ContextCard({ c, active, metrics, state, onOpen }) {
   const Icon = roleIcon(c);
   const sponsored =
     c.provisioning === "sponsored" ||
     c.type === "ned_sponsored" ||
     c.type === "executive_enterprise";
+  // HOME sprint — derive a couple of state badges.
+  const cycle = state?.cycle;
+  const cycleLabel = cycle && cycle.status !== "no_cycle"
+    ? `Cycle · ${cycle.act_label}`
+    : null;
+  const goalsAtRisk = state?.goals_at_risk_count || 0;
+  const pendingFollowups = state?.pending_followups_count || 0;
+  const unreadSignals = state?.unread_signals_count || 0;
 
   return (
     <button
@@ -89,6 +97,44 @@ function ContextCard({ c, active, metrics, onOpen }) {
         <Metric icon={FileText} label="Docs" value={metrics?.documents ?? "—"} />
       </div>
 
+      {/* HOME sprint — state badges row (cycle / goals at risk / followups / signals). */}
+      {(cycleLabel || goalsAtRisk > 0 || pendingFollowups > 0 || unreadSignals > 0) && (
+        <div className="flex flex-wrap gap-2 mt-3" data-testid={`portfolio-state-${c.id}`}>
+          {cycleLabel && (
+            <span
+              className="text-[10px] uppercase tracking-[0.14em] text-[var(--graphite)] border border-[var(--graphite-light)] px-2 py-0.5 rounded-sm"
+              data-testid="portfolio-badge-cycle"
+            >
+              {cycleLabel}
+            </span>
+          )}
+          {goalsAtRisk > 0 && (
+            <span
+              className="text-[10px] uppercase tracking-[0.14em] text-[var(--oxblood)] bg-[rgba(122,46,46,0.06)] px-2 py-0.5 rounded-sm"
+              data-testid="portfolio-badge-risk"
+            >
+              {goalsAtRisk} goal{goalsAtRisk === 1 ? "" : "s"} at risk
+            </span>
+          )}
+          {pendingFollowups > 0 && (
+            <span
+              className="text-[10px] uppercase tracking-[0.14em] text-[var(--oxblood)] bg-[rgba(122,46,46,0.06)] px-2 py-0.5 rounded-sm"
+              data-testid="portfolio-badge-followups"
+            >
+              {pendingFollowups} follow-up{pendingFollowups === 1 ? "" : "s"}
+            </span>
+          )}
+          {unreadSignals > 0 && (
+            <span
+              className="text-[10px] uppercase tracking-[0.14em] text-[var(--graphite)] border border-[var(--graphite-light)] px-2 py-0.5 rounded-sm"
+              data-testid="portfolio-badge-signals"
+            >
+              {unreadSignals} signal{unreadSignals === 1 ? "" : "s"}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Gesture */}
       <div className="flex items-center justify-between mt-4 pt-3 border-t border-[var(--rule)]/50">
         <span className="text-[11px] text-[var(--muted)]">
@@ -118,7 +164,25 @@ export default function ContextPortfolio() {
   const { contexts, activeContextId, switchContext, account } = useAuth();
   const navigate = useNavigate();
   const [metricsMap, setMetricsMap] = useState({});
+  const [stateMap, setStateMap] = useState({});
   const [loading, setLoading] = useState(true);
+
+  // HOME sprint — fetch portfolio state once per mount.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get(`/me/portfolio`);
+        if (cancelled) return;
+        const next = {};
+        (data?.items || []).forEach((row) => { next[row.context_id] = row.state; });
+        setStateMap(next);
+      } catch {
+        if (!cancelled) setStateMap({});
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [contexts.length]); // refresh when membership set changes
 
   // Fetch signals/briefings/documents counts per context in parallel.
   useEffect(() => {
@@ -276,7 +340,7 @@ export default function ContextPortfolio() {
                     key={c.id}
                     c={c}
                     active={c.id === activeContextId}
-                    metrics={metricsMap[c.id]}
+                    metrics={metricsMap[c.id]} state={stateMap[c.id]}
                     onOpen={() => openContext(c.id)}
                   />
                 ))}
@@ -296,7 +360,7 @@ export default function ContextPortfolio() {
                     key={c.id}
                     c={c}
                     active={c.id === activeContextId}
-                    metrics={metricsMap[c.id]}
+                    metrics={metricsMap[c.id]} state={stateMap[c.id]}
                     onOpen={() => openContext(c.id)}
                   />
                 ))}
