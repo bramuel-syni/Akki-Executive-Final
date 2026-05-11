@@ -93,7 +93,57 @@ export const TRUST = {
   ],
 };
 
-export const PRICING = null; // Pricing page removed in revision 2 — handled privately during cohort intake.
+export const PRICING = {
+  intro: "Three tiers, plus organisation pricing. The founding cohort is admitted at a price that locks for life.",
+  tiers: [
+    {
+      id: "executive", name: "Executive",
+      price: "£1,200", period: "per month",
+      audience: "For a single operating executive (CEO, CFO, COO).",
+      includes: [
+        "All six product surfaces",
+        "Up to 3 active companies",
+        "Synisense Shield + hash-chained audit",
+        "All four Solva modes",
+        "Brand-grade DOCX / PPTX / PDF export",
+      ],
+    },
+    {
+      id: "ned", name: "NED",
+      price: "£600", period: "per month",
+      audience: "For a single non-executive director sitting on multiple boards.",
+      includes: [
+        "Pulse, Cycle Manager (NED), Solva, Akki Chat",
+        "Up to 6 active board seats",
+        "Cross-board metadata view (no content)",
+        "Confidential committee through-line",
+      ],
+    },
+    {
+      id: "dual", name: "Dual",
+      price: "£1,500", period: "per month",
+      audience: "For senior people who are both — executive role and one or more NED seats.",
+      includes: [
+        "Everything in Executive",
+        "Everything in NED",
+        "Strict Privacy Wall between roles",
+        "Single sign-in, separate audit trails",
+      ],
+    },
+    {
+      id: "organisation", name: "Organisation",
+      price: "On request", period: "",
+      audience: "For companies and funds rolling out Akki to a leadership team or portfolio.",
+      includes: [
+        "SSO + tenancy controls",
+        "Company Secretary sharing model",
+        "Dedicated Solva tuning",
+        "Governance reporting on use",
+      ],
+    },
+  ],
+  footnote: "Founding cohort: 30% off — locked for life. Limited to the first cohort.",
+};
 
 export const COHORT = {
   headline: "Founding cohort",
