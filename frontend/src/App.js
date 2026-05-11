@@ -63,13 +63,14 @@ import WorkStudio from "@/pages/WorkStudio";
 import Pulse from "@/pages/Pulse";
 import SearchResults from "@/pages/SearchResults";  // Phase F0 — Universal Search results page
 
-// Phase I1 (2026-05-11) — Pre-login marketing website (10 pages).
+// Phase I1 (2026-05-11) — Pre-login marketing website (9 pages).
 // All website routes live OUTSIDE of /app/* — public, no auth required.
+// Pricing page deliberately removed in revision 2 — pricing is handled
+// privately during the founding-cohort intake.
 import WebsiteHome from "@/website/pages/Home";
 import WebsiteWhyAkki from "@/website/pages/WhyAkki";
 import WebsiteWhatAkkiDoes from "@/website/pages/WhatAkkiDoes";
 import WebsiteTrust from "@/website/pages/Trust";
-import WebsitePricing from "@/website/pages/Pricing";
 import WebsiteCohort from "@/website/pages/Cohort";
 import WebsiteAbout from "@/website/pages/About";
 import WebsiteContact from "@/website/pages/Contact";
@@ -155,12 +156,14 @@ function App() {
           <Route path="/why-akki" element={<WebsiteWhyAkki />} />
           <Route path="/what-akki-does" element={<WebsiteWhatAkkiDoes />} />
           <Route path="/trust" element={<WebsiteTrust />} />
-          <Route path="/pricing" element={<WebsitePricing />} />
           <Route path="/cohort" element={<WebsiteCohort />} />
           <Route path="/about" element={<WebsiteAbout />} />
           <Route path="/contact" element={<WebsiteContact />} />
           <Route path="/privacy" element={<WebsitePrivacy />} />
           <Route path="/terms" element={<WebsiteTerms />} />
+          {/* /pricing removed (revision 2) — pricing is handled privately
+              during the founding-cohort intake. Stray hits fall through
+              to the catch-all and land on /. */}
 
           {/* Retained marketing routes (back-link compatibility) */}
           <Route path="/landing-legacy" element={<Landing />} />

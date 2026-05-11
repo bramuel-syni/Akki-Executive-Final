@@ -14,7 +14,7 @@ export default function PrivacyPage() {
         <span className="website-label">Privacy</span>
         <h1>Privacy Policy</h1>
         <span className="website-rule" />
-        <p style={{ color: "#6B6B6B", fontSize: 14 }}>{PRIVACY.effective}</p>
+        <p style={{ color: "var(--muted)", fontSize: 14 }}>{PRIVACY.effective}</p>
         {PRIVACY.blocks.map((b, i) => (
           <div key={i} style={{ marginTop: 24 }}>
             <h3>{b.h}</h3>

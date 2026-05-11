@@ -34,8 +34,8 @@ export default function WebsiteShell({ children, title, description, pathname })
 
   return (
     <div className="akki-website min-h-screen flex flex-col" style={{
-      background: "#F5EFE6",
-      color: "#2A1B1D",
+      background: "var(--cream)",
+      color: "var(--ink)",
       fontFamily: "Calibri, 'Helvetica Neue', Arial, sans-serif",
       fontSize: "18px",
       lineHeight: 1.65,

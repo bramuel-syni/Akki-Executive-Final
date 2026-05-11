@@ -1,30 +1,32 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Link, NavLink } from "react-router-dom";
 
+/**
+ * WebsiteNav — sticky top header for the pre-login marketing site.
+ *
+ * AKKI brand palette via app design tokens (var(--paper), var(--rule),
+ * var(--ink), var(--accent)). Single sticky band, 1px --rule bottom
+ * divider, no box-shadow, no scroll-triggered effects.
+ *
+ * Right cluster: primary oxblood CTA (Request early access → /cohort)
+ * + ghost-ink sign-in link. Pricing nav link is intentionally absent
+ * (page deleted Phase I1 revision 2).
+ */
 const LINKS = [
   { to: "/why-akki",       label: "Why Akki" },
   { to: "/what-akki-does", label: "What Akki Does" },
   { to: "/trust",          label: "Trust" },
-  { to: "/pricing",        label: "Pricing" },
   { to: "/about",          label: "About" },
   { to: "/contact",        label: "Contact" },
 ];
 
 export default function WebsiteNav() {
-  const [scrolled, setScrolled] = useState(false);
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 4);
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
   return (
     <header
       style={{
         position: "sticky", top: 0, zIndex: 50,
-        background: "#FAF7F2",
-        borderBottom: "1px solid #D5C9B6",
-        boxShadow: scrolled ? "0 2px 8px rgba(42,27,29,0.06)" : "none",
-        transition: "box-shadow 150ms ease",
+        background: "var(--paper)",
+        borderBottom: "1px solid var(--rule)",
       }}
     >
       <div className="akki-website-container" style={{
@@ -32,8 +34,8 @@ export default function WebsiteNav() {
         display: "flex", alignItems: "center", gap: 24,
       }}>
         <Link to="/" style={{
-          fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 700,
-          color: "#2A1B1D", textDecoration: "none", letterSpacing: "-0.01em",
+          fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 22, fontWeight: 700,
+          color: "var(--ink)", textDecoration: "none", letterSpacing: "-0.01em",
         }}>
           AKKI
         </Link>
@@ -43,9 +45,10 @@ export default function WebsiteNav() {
               key={l.to}
               to={l.to}
               style={({ isActive }) => ({
-                fontSize: 14, color: isActive ? "#C25A38" : "#2A1B1D",
+                fontSize: 14, color: isActive ? "var(--accent)" : "var(--ink)",
                 textDecoration: "none", letterSpacing: "0.02em",
                 fontFamily: "Calibri, 'Helvetica Neue', Arial, sans-serif",
+                transition: "color 200ms ease",
               })}
             >
               {l.label}
@@ -55,18 +58,19 @@ export default function WebsiteNav() {
         <div style={{ flex: 1 }} />
         <Link
           to="/cohort"
-          style={{
-            background: "#C25A38", color: "#FAF7F2", padding: "10px 18px",
-            textDecoration: "none", fontSize: 14, fontWeight: 600,
-            borderRadius: 2, letterSpacing: "0.02em",
-          }}
+          className="website-cta-primary"
+          style={{ padding: "10px 18px", fontSize: 14 }}
           data-testid="website-nav-cohort-btn"
         >
           Request early access
         </Link>
         <Link
           to="/signin"
-          style={{ fontSize: 14, color: "#2A1B1D", textDecoration: "none" }}
+          style={{
+            fontSize: 14, color: "var(--ink)", textDecoration: "none",
+            transition: "color 200ms ease",
+          }}
+          data-testid="website-nav-signin"
         >
           Sign in
         </Link>

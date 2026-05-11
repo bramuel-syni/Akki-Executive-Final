@@ -14,7 +14,7 @@ export default function TrustPage() {
         <span className="website-label">Trust & sovereignty</span>
         <h1>Built so your governance team has nothing to discover later.</h1>
         <span className="website-rule" />
-        <p style={{ fontSize: 18, color: "#6B6B6B" }}>{TRUST.intro}</p>
+        <p style={{ fontSize: 18, color: "var(--muted)" }}>{TRUST.intro}</p>
         <div style={{ display: "grid", gap: 28, marginTop: 36 }}>
           {TRUST.pillars.map((p, i) => (
             <div key={i} className="website-tile" data-testid={`trust-pillar-${i}`}>

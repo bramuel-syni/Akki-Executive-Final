@@ -51,14 +51,14 @@ export default function CohortPage() {
         <span className="website-rule" />
         <p>{COHORT.body}</p>
         {done ? (
-          <div data-testid="cohort-form-done" style={{ marginTop: 32, padding: 24, background: "#FAF7F2", border: "1px solid #D5C9B6" }}>
+          <div data-testid="cohort-form-done" style={{ marginTop: 32, padding: 24, background: "var(--paper)", border: "1px solid var(--rule)" }}>
             <h3>Application received.</h3>
             <p>Thank you. We've sent a confirmation to your work email and someone from the founding team will be in touch within a few business days.</p>
-            <p style={{ fontSize: 13, color: "#6B6B6B" }}>Reference: {String(done).slice(0, 8)}</p>
+            <p style={{ fontSize: 13, color: "var(--muted)" }}>Reference: {String(done).slice(0, 8)}</p>
           </div>
         ) : (
           <form onSubmit={submit} style={{ marginTop: 32 }} data-testid="cohort-form">
-            <p style={{ fontSize: 16, color: "#6B6B6B", marginBottom: 28 }}>{COHORT.formIntro}</p>
+            <p style={{ fontSize: 16, color: "var(--muted)", marginBottom: 28 }}>{COHORT.formIntro}</p>
             <div className="website-form-row">
               <div>
                 <label className="website-label-block">First name *</label>
@@ -108,16 +108,16 @@ export default function CohortPage() {
               <textarea className="website-textarea" rows={4} value={form.valuable_text}
                 onChange={(e) => setForm({ ...form, valuable_text: e.target.value })} data-testid="cohort-valuable" />
             </div>
-            <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 24, fontSize: 14, color: "#2A1B1D" }}>
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 24, fontSize: 14, color: "var(--ink)" }}>
               <input type="checkbox" required style={{ marginTop: 4 }}
                 checked={form.cohort_understood}
                 onChange={(e) => setForm({ ...form, cohort_understood: e.target.checked })}
                 data-testid="cohort-consent" />
               <span>I understand the founding cohort is a small group providing feedback in exchange for early-access pricing.</span>
             </label>
-            {err && <p style={{ color: "#8B2E2B", fontSize: 14, marginBottom: 16 }} data-testid="cohort-form-error">{err}</p>}
+            {err && <p className="website-form-error" data-testid="cohort-form-error">{err}</p>}
             <button type="submit" disabled={busy} className="website-cta-primary"
-              style={{ border: "none", cursor: busy ? "wait" : "pointer", opacity: busy ? 0.6 : 1 }}
+              style={{ border: "1px solid var(--accent)", cursor: busy ? "wait" : "pointer", opacity: busy ? 0.6 : 1 }}
               data-testid="cohort-submit">
               {busy ? "Submitting…" : "Submit application"}
             </button>

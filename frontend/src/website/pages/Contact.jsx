@@ -40,11 +40,11 @@ export default function ContactPage() {
         <span className="website-label">Contact</span>
         <h1>Get in touch.</h1>
         <span className="website-rule" />
-        <p style={{ fontSize: 18, color: "#6B6B6B", marginBottom: 28 }}>
+        <p style={{ fontSize: 18, color: "var(--muted)", marginBottom: 28 }}>
           For partnerships, press, or product feedback. We read everything that comes in.
         </p>
         {done ? (
-          <div data-testid="contact-form-done" style={{ padding: 24, background: "#FAF7F2", border: "1px solid #D5C9B6" }}>
+          <div data-testid="contact-form-done" style={{ padding: 24, background: "var(--paper)", border: "1px solid var(--rule)" }}>
             <h3>Message received.</h3>
             <p>We'll reply to your work email. Reference: {String(done).slice(0, 8)}</p>
           </div>
@@ -72,9 +72,9 @@ export default function ContactPage() {
               <textarea className="website-textarea" required rows={6} value={form.message}
                 onChange={(e) => setForm({ ...form, message: e.target.value })} data-testid="contact-message" />
             </div>
-            {err && <p style={{ color: "#8B2E2B", fontSize: 14, marginBottom: 16 }}>{err}</p>}
+            {err && <p className="website-form-error" data-testid="contact-form-error">{err}</p>}
             <button type="submit" disabled={busy} className="website-cta-primary"
-              style={{ border: "none", cursor: busy ? "wait" : "pointer", opacity: busy ? 0.6 : 1 }}
+              style={{ border: "1px solid var(--accent)", cursor: busy ? "wait" : "pointer", opacity: busy ? 0.6 : 1 }}
               data-testid="contact-submit">
               {busy ? "Sending…" : "Send"}
             </button>

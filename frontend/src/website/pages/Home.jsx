@@ -16,7 +16,7 @@ export default function HomePage() {
         <span className="website-label">{HERO.eyebrow}</span>
         <h1>{HERO.headline}</h1>
         <span className="website-rule" />
-        <p style={{ fontSize: 20, color: "#6B6B6B", maxWidth: "56ch", marginBottom: 36 }}>
+        <p style={{ fontSize: 20, color: "var(--muted)", maxWidth: "56ch", marginBottom: 36 }}>
           {HERO.subhead}
         </p>
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
@@ -30,7 +30,7 @@ export default function HomePage() {
       </section>
 
       {/* Three-tier hierarchy */}
-      <section className="website-section" style={{ background: "#FAF7F2" }}>
+      <section className="website-section" style={{ background: "var(--paper)" }}>
         <span className="website-label">Three commitments</span>
         <h2>Safety. Workspace. Inventions.</h2>
         <span className="website-rule" />
