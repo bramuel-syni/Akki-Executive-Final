@@ -108,15 +108,15 @@ function SlashMenu({ open, query, anchorRect, onPick, onClose }) {
       role="listbox"
       aria-label="Insert block"
       data-testid="block-composer-slash-menu"
-      className="fixed z-50 w-[340px] bg-[#FFFEFA] border border-[#D9CFB8] shadow-lg rounded-sm overflow-hidden"
+      className="fixed z-50 w-[340px] bg-[var(--parchment-light)] border border-[var(--graphite-light)] shadow-lg rounded-sm overflow-hidden"
       style={{ left: anchorRect.left, top: anchorRect.bottom + 6 }}
     >
-      <div className="px-3 py-2 text-[10px] uppercase tracking-[0.16em] text-[#7C6A4F] border-b border-[#E8DFC9] bg-[#F7F3EA]">
+      <div className="px-3 py-2 text-[10px] uppercase tracking-[0.16em] text-[var(--graphite)] border-b border-[var(--graphite-light)] bg-[var(--parchment-light)]">
         Insert block
       </div>
       <ul className="max-h-[320px] overflow-y-auto">
         {items.length === 0 && (
-          <li className="px-3 py-2 text-[12px] text-[#7C6A4F] italic">No blocks match that query.</li>
+          <li className="px-3 py-2 text-[12px] text-[var(--graphite)] italic">No blocks match that query.</li>
         )}
         {items.map((p, i) => {
           const active = i === cursor;
@@ -128,12 +128,12 @@ function SlashMenu({ open, query, anchorRect, onPick, onClose }) {
               aria-selected={active}
               onMouseEnter={() => setCursor(i)}
               onMouseDown={(e) => { e.preventDefault(); onPick(p); }}
-              className={`flex items-start gap-3 px-3 py-2 cursor-pointer text-[13px] ${active ? "bg-[#F2EAD6]" : "bg-transparent"}`}
+              className={`flex items-start gap-3 px-3 py-2 cursor-pointer text-[13px] ${active ? "bg-[var(--parchment)]" : "bg-transparent"}`}
             >
-              <p.Icon className="w-4 h-4 mt-[2px] text-[#0F1419] shrink-0" strokeWidth={1.6} />
+              <p.Icon className="w-4 h-4 mt-[2px] text-[var(--ink)] shrink-0" strokeWidth={1.6} />
               <div className="flex-1 min-w-0">
-                <div className="text-[#1a1a1a]" style={{ fontFamily: "Georgia, serif" }}>{p.label}</div>
-                <div className="text-[11.5px] text-[#5C5247] leading-snug">{p.desc}</div>
+                <div className="text-[var(--ink)]" style={{ fontFamily: "Georgia, serif" }}>{p.label}</div>
+                <div className="text-[11.5px] text-[var(--graphite)] leading-snug">{p.desc}</div>
               </div>
             </li>
           );
@@ -157,7 +157,7 @@ function HeadingBlock({ content, onChange, readOnly }) {
       value={content?.text || ""}
       onChange={(e) => onChange({ ...content, text: e.target.value, level })}
       placeholder={`Heading ${level}`}
-      className={`w-full bg-transparent border-0 outline-none focus:ring-0 ${sizeCls} text-[#0F1419] placeholder:text-[#A89878]`}
+      className={`w-full bg-transparent border-0 outline-none focus:ring-0 ${sizeCls} text-[var(--ink)] placeholder:text-[#A89878]`}
       style={{ fontFamily: "Georgia, serif" }}
     />
   );
@@ -172,7 +172,7 @@ function ParagraphBlock({ content, onChange, readOnly }) {
       onChange={(e) => onChange({ ...content, text: e.target.value })}
       placeholder="Write a paragraph…"
       rows={Math.max(2, Math.min(12, ((content?.text || "").match(/\n/g) || []).length + 2))}
-      className="w-full resize-y bg-transparent border-0 outline-none focus:ring-0 text-[15px] leading-[1.65] text-[#1a1a1a] placeholder:text-[#A89878]"
+      className="w-full resize-y bg-transparent border-0 outline-none focus:ring-0 text-[15px] leading-[1.65] text-[var(--ink)] placeholder:text-[#A89878]"
       style={{ fontFamily: "Georgia, serif" }}
     />
   );
@@ -195,18 +195,18 @@ function BulletedListBlock({ content, onChange, readOnly }) {
     <ul className="space-y-1.5" data-testid="block-list">
       {items.map((it, i) => (
         <li key={i} className="flex gap-2 items-start">
-          <span className="mt-[10px] w-1.5 h-1.5 rounded-full bg-[#8B2E2B] shrink-0" />
+          <span className="mt-[10px] w-1.5 h-1.5 rounded-full bg-[var(--oxblood)] shrink-0" />
           <input
             readOnly={readOnly}
             value={it}
             onChange={(e) => update(i, e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addItem(); } }}
             placeholder="List item"
-            className="flex-1 bg-transparent border-0 outline-none focus:ring-0 text-[14.5px] text-[#1a1a1a] placeholder:text-[#A89878] py-1"
+            className="flex-1 bg-transparent border-0 outline-none focus:ring-0 text-[14.5px] text-[var(--ink)] placeholder:text-[#A89878] py-1"
             style={{ fontFamily: "Georgia, serif" }}
           />
           {!readOnly && items.length > 1 && (
-            <button type="button" onClick={() => removeItem(i)} className="text-[#7C6A4F] hover:text-[#8B2E2B] mt-1.5" aria-label="Remove item">
+            <button type="button" onClick={() => removeItem(i)} className="text-[var(--graphite)] hover:text-[var(--oxblood)] mt-1.5" aria-label="Remove item">
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           )}
@@ -214,7 +214,7 @@ function BulletedListBlock({ content, onChange, readOnly }) {
       ))}
       {!readOnly && (
         <li>
-          <button type="button" onClick={addItem} className="text-[11px] uppercase tracking-[0.14em] text-[#7C6A4F] hover:text-[#0F1419]">
+          <button type="button" onClick={addItem} className="text-[11px] uppercase tracking-[0.14em] text-[var(--graphite)] hover:text-[var(--ink)]">
             + Add item
           </button>
         </li>
@@ -226,9 +226,9 @@ function BulletedListBlock({ content, onChange, readOnly }) {
 function CalloutBlock({ content, onChange, readOnly }) {
   const tone = content?.tone || "info";
   const tones = [
-    { id: "info", label: "Info",  border: "border-[#0F1419]" },
+    { id: "info", label: "Info",  border: "border-[var(--ink)]" },
     { id: "warn", label: "Warn",  border: "border-amber-500" },
-    { id: "risk", label: "Risk",  border: "border-[#8B2E2B]" },
+    { id: "risk", label: "Risk",  border: "border-[var(--oxblood)]" },
   ];
   const sel = tones.find((t) => t.id === tone) || tones[0];
   return (
@@ -240,7 +240,7 @@ function CalloutBlock({ content, onChange, readOnly }) {
               key={t.id}
               type="button"
               onClick={() => onChange({ ...content, tone: t.id })}
-              className={`text-[10px] uppercase tracking-[0.14em] px-1.5 py-[2px] border ${tone === t.id ? "border-[#0F1419] text-[#0F1419] bg-[#F7F3EA]" : "border-transparent text-[#7C6A4F]"}`}
+              className={`text-[10px] uppercase tracking-[0.14em] px-1.5 py-[2px] border ${tone === t.id ? "border-[var(--ink)] text-[var(--ink)] bg-[var(--parchment-light)]" : "border-transparent text-[var(--graphite)]"}`}
             >
               {t.label}
             </button>
@@ -253,7 +253,7 @@ function CalloutBlock({ content, onChange, readOnly }) {
         onChange={(e) => onChange({ ...content, text: e.target.value, tone: sel.id })}
         placeholder="Callout text"
         rows={2}
-        className="w-full resize-y bg-transparent border-0 outline-none focus:ring-0 text-[14px] leading-[1.6] text-[#1a1a1a] placeholder:text-[#A89878]"
+        className="w-full resize-y bg-transparent border-0 outline-none focus:ring-0 text-[14px] leading-[1.6] text-[var(--ink)] placeholder:text-[#A89878]"
         style={{ fontFamily: "Georgia, serif" }}
       />
     </div>
@@ -265,14 +265,14 @@ function CitationBlock({ content, onChange, readOnly, documents }) {
   const selectedDoc = (documents || []).find((d) => d.id === docId);
   const restricted = (selectedDoc?.classification?.classification || selectedDoc?.classification) === "restricted";
   return (
-    <figure className="border-l-[3px] border-[#8B2E2B] pl-4 py-2 bg-[#F9F5EA]" data-testid="block-citation">
+    <figure className="border-l-[3px] border-[var(--oxblood)] pl-4 py-2 bg-[#F9F5EA]" data-testid="block-citation">
       {!readOnly && (
         <div className="flex flex-wrap gap-2 items-center mb-2">
           <select
             data-testid="citation-doc-select"
             value={docId}
             onChange={(e) => onChange({ ...content, doc_id: e.target.value })}
-            className="text-[12px] bg-white border border-[#D9CFB8] px-2 py-1 max-w-[260px]"
+            className="text-[12px] bg-white border border-[var(--graphite-light)] px-2 py-1 max-w-[260px]"
           >
             <option value="">— Pick a source —</option>
             {(documents || []).map((d) => (
@@ -285,14 +285,14 @@ function CitationBlock({ content, onChange, readOnly, documents }) {
             value={content?.page || 1}
             onChange={(e) => onChange({ ...content, page: Math.max(1, parseInt(e.target.value || "1", 10)) })}
             placeholder="page"
-            className="w-[68px] text-[12px] bg-white border border-[#D9CFB8] px-2 py-1"
+            className="w-[68px] text-[12px] bg-white border border-[var(--graphite-light)] px-2 py-1"
             aria-label="Source page number"
           />
           <input
             value={content?.paragraph_id || ""}
             onChange={(e) => onChange({ ...content, paragraph_id: e.target.value || null })}
             placeholder="paragraph anchor (optional)"
-            className="flex-1 min-w-[160px] text-[12px] bg-white border border-[#D9CFB8] px-2 py-1"
+            className="flex-1 min-w-[160px] text-[12px] bg-white border border-[var(--graphite-light)] px-2 py-1"
             aria-label="Paragraph anchor"
           />
           {restricted && (
@@ -308,13 +308,13 @@ function CitationBlock({ content, onChange, readOnly, documents }) {
         onChange={(e) => onChange({ ...content, text: e.target.value })}
         placeholder='"Quote from the source."'
         rows={2}
-        className="w-full resize-y bg-transparent border-0 outline-none focus:ring-0 text-[14.5px] leading-[1.6] text-[#1a1a1a] italic placeholder:text-[#A89878]"
+        className="w-full resize-y bg-transparent border-0 outline-none focus:ring-0 text-[14.5px] leading-[1.6] text-[var(--ink)] italic placeholder:text-[#A89878]"
         style={{ fontFamily: "Georgia, serif" }}
       />
       {readOnly && selectedDoc && (
         <a
           href={`/app/documents/${selectedDoc.id}${content?.paragraph_id ? `#${content.paragraph_id}` : ""}`}
-          className="block text-[11px] uppercase tracking-[0.14em] text-[#0F1419] hover:underline mt-2"
+          className="block text-[11px] uppercase tracking-[0.14em] text-[var(--ink)] hover:underline mt-2"
         >
           {selectedDoc.name} · p.{content?.page || 1}
         </a>
@@ -329,13 +329,13 @@ function SignalCardBlock({ content, onChange, readOnly, signals }) {
   const trend = (metric.trend || "").toLowerCase();
   const arrow = trend === "up" ? "▲" : trend === "down" ? "▼" : trend === "flat" ? "—" : "";
   return (
-    <div className="border border-[#D9CFB8] bg-white p-3" data-testid="block-signal-card">
+    <div className="border border-[var(--graphite-light)] bg-white p-3" data-testid="block-signal-card">
       {!readOnly && (
         <div className="flex flex-wrap gap-2 items-center mb-2">
           <select
             value={sigId}
             onChange={(e) => onChange({ ...content, signal_id: e.target.value })}
-            className="text-[12px] bg-white border border-[#D9CFB8] px-2 py-1 max-w-[260px]"
+            className="text-[12px] bg-white border border-[var(--graphite-light)] px-2 py-1 max-w-[260px]"
           >
             <option value="">— Pick a signal —</option>
             {(signals || []).map((s) => (
@@ -345,17 +345,17 @@ function SignalCardBlock({ content, onChange, readOnly, signals }) {
         </div>
       )}
       {sigId && (signals || []).find((s) => s.id === sigId) && (
-        <p className="text-[13px] text-[#0F1419] mb-2" style={{ fontFamily: "Georgia, serif" }}>
+        <p className="text-[13px] text-[var(--ink)] mb-2" style={{ fontFamily: "Georgia, serif" }}>
           {(signals || []).find((s) => s.id === sigId).headline}
         </p>
       )}
       {!readOnly && (
         <div className="grid grid-cols-2 gap-2 mt-1">
-          <input value={metric.label || ""}  onChange={(e) => onChange({ ...content, metric: { ...metric, label: e.target.value } })} placeholder="Metric label" className="text-[12px] bg-[#FBF7EC] border border-[#D9CFB8] px-2 py-1" />
-          <input value={metric.value || ""}  onChange={(e) => onChange({ ...content, metric: { ...metric, value: e.target.value } })} placeholder="Value (e.g. 12.4)" className="text-[12px] bg-[#FBF7EC] border border-[#D9CFB8] px-2 py-1" />
-          <input value={metric.unit || ""}   onChange={(e) => onChange({ ...content, metric: { ...metric, unit: e.target.value } })} placeholder="Unit (% / £m)" className="text-[12px] bg-[#FBF7EC] border border-[#D9CFB8] px-2 py-1" />
-          <input value={metric.delta || ""}  onChange={(e) => onChange({ ...content, metric: { ...metric, delta: e.target.value } })} placeholder="Delta (+1.2pp)" className="text-[12px] bg-[#FBF7EC] border border-[#D9CFB8] px-2 py-1" />
-          <select value={metric.trend || ""} onChange={(e) => onChange({ ...content, metric: { ...metric, trend: e.target.value || null } })} className="text-[12px] bg-[#FBF7EC] border border-[#D9CFB8] px-2 py-1">
+          <input value={metric.label || ""}  onChange={(e) => onChange({ ...content, metric: { ...metric, label: e.target.value } })} placeholder="Metric label" className="text-[12px] bg-[#FBF7EC] border border-[var(--graphite-light)] px-2 py-1" />
+          <input value={metric.value || ""}  onChange={(e) => onChange({ ...content, metric: { ...metric, value: e.target.value } })} placeholder="Value (e.g. 12.4)" className="text-[12px] bg-[#FBF7EC] border border-[var(--graphite-light)] px-2 py-1" />
+          <input value={metric.unit || ""}   onChange={(e) => onChange({ ...content, metric: { ...metric, unit: e.target.value } })} placeholder="Unit (% / £m)" className="text-[12px] bg-[#FBF7EC] border border-[var(--graphite-light)] px-2 py-1" />
+          <input value={metric.delta || ""}  onChange={(e) => onChange({ ...content, metric: { ...metric, delta: e.target.value } })} placeholder="Delta (+1.2pp)" className="text-[12px] bg-[#FBF7EC] border border-[var(--graphite-light)] px-2 py-1" />
+          <select value={metric.trend || ""} onChange={(e) => onChange({ ...content, metric: { ...metric, trend: e.target.value || null } })} className="text-[12px] bg-[#FBF7EC] border border-[var(--graphite-light)] px-2 py-1">
             <option value="">trend (optional)</option>
             <option value="up">up</option>
             <option value="down">down</option>
@@ -365,10 +365,10 @@ function SignalCardBlock({ content, onChange, readOnly, signals }) {
       )}
       {(metric.label || metric.value) && (
         <div className="mt-2 flex items-baseline gap-2">
-          <span className="text-[10px] uppercase tracking-[0.14em] text-[#7C6A4F]">{metric.label}</span>
-          <span className="text-[20px] text-[#0F1419]" style={{ fontFamily: "Georgia, serif" }}>{metric.value}{metric.unit ? ` ${metric.unit}` : ""}</span>
+          <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--graphite)]">{metric.label}</span>
+          <span className="text-[20px] text-[var(--ink)]" style={{ fontFamily: "Georgia, serif" }}>{metric.value}{metric.unit ? ` ${metric.unit}` : ""}</span>
           {metric.delta && (
-            <span className={`text-[12px] ${trend === "up" ? "text-emerald-700" : trend === "down" ? "text-[#8B2E2B]" : "text-[#5C5247]"}`}>
+            <span className={`text-[12px] ${trend === "up" ? "text-emerald-700" : trend === "down" ? "text-[var(--oxblood)]" : "text-[var(--graphite)]"}`}>
               {arrow} {metric.delta}
             </span>
           )}
@@ -379,7 +379,7 @@ function SignalCardBlock({ content, onChange, readOnly, signals }) {
 }
 
 function DividerBlock() {
-  return <hr className="border-0 border-t border-[#D9CFB8] my-2" data-testid="block-divider" />;
+  return <hr className="border-0 border-t border-[var(--graphite-light)] my-2" data-testid="block-divider" />;
 }
 
 function TableBlock({ content, onChange, readOnly }) {
@@ -392,17 +392,17 @@ function TableBlock({ content, onChange, readOnly }) {
   const removeRow = (r) => { const next = rows.filter((_, i) => i !== r); onChange({ headers, rows: next.length ? next : [headers.map(() => "")] }); };
   return (
     <div className="overflow-x-auto" data-testid="block-table">
-      <table className="w-full text-[13px] border border-[#D9CFB8]">
-        <thead className="bg-[#F2EAD6]">
+      <table className="w-full text-[13px] border border-[var(--graphite-light)]">
+        <thead className="bg-[var(--parchment)]">
           <tr>
             {headers.map((h, i) => (
-              <th key={i} className="border border-[#D9CFB8] px-2 py-1 text-left">
+              <th key={i} className="border border-[var(--graphite-light)] px-2 py-1 text-left">
                 <input
                   readOnly={readOnly}
                   value={h}
                   onChange={(e) => setHeader(i, e.target.value)}
                   placeholder={`Col ${i + 1}`}
-                  className="w-full bg-transparent border-0 outline-none focus:ring-0 text-[12px] uppercase tracking-[0.14em] text-[#0F1419]"
+                  className="w-full bg-transparent border-0 outline-none focus:ring-0 text-[12px] uppercase tracking-[0.14em] text-[var(--ink)]"
                 />
               </th>
             ))}
@@ -413,7 +413,7 @@ function TableBlock({ content, onChange, readOnly }) {
           {rows.map((row, r) => (
             <tr key={r}>
               {row.map((cell, c) => (
-                <td key={c} className="border border-[#D9CFB8] px-2 py-1 align-top">
+                <td key={c} className="border border-[var(--graphite-light)] px-2 py-1 align-top">
                   <input
                     readOnly={readOnly}
                     value={cell || ""}
@@ -423,8 +423,8 @@ function TableBlock({ content, onChange, readOnly }) {
                 </td>
               ))}
               {!readOnly && (
-                <td className="border border-[#D9CFB8] px-1 text-center">
-                  <button type="button" onClick={() => removeRow(r)} aria-label="Remove row" className="text-[#7C6A4F] hover:text-[#8B2E2B]">
+                <td className="border border-[var(--graphite-light)] px-1 text-center">
+                  <button type="button" onClick={() => removeRow(r)} aria-label="Remove row" className="text-[var(--graphite)] hover:text-[var(--oxblood)]">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </td>
@@ -434,9 +434,9 @@ function TableBlock({ content, onChange, readOnly }) {
         </tbody>
       </table>
       {!readOnly && (
-        <div className="flex gap-3 mt-2 text-[11px] uppercase tracking-[0.14em] text-[#7C6A4F]">
-          <button type="button" onClick={addRow} className="hover:text-[#0F1419]">+ Row</button>
-          <button type="button" onClick={addCol} className="hover:text-[#0F1419]">+ Column</button>
+        <div className="flex gap-3 mt-2 text-[11px] uppercase tracking-[0.14em] text-[var(--graphite)]">
+          <button type="button" onClick={addRow} className="hover:text-[var(--ink)]">+ Row</button>
+          <button type="button" onClick={addCol} className="hover:text-[var(--ink)]">+ Column</button>
         </div>
       )}
     </div>
@@ -501,10 +501,10 @@ function ImageBlock({ content, onChange, readOnly, onUpload }) {
     }
   };
   return (
-    <div className="bg-[#FBF7EC] border border-dashed border-[#D9CFB8] p-3" data-testid="block-image">
+    <div className="bg-[#FBF7EC] border border-dashed border-[var(--graphite-light)] p-3" data-testid="block-image">
       {content?.storage_key ? (
         <div className="flex flex-col gap-2">
-          <p className="text-[11px] uppercase tracking-[0.14em] text-[#7C6A4F]">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--graphite)]">
             Image attached · {content.storage_key.split("/").pop()}
             {/* Scanner provenance: the API returns {scan: "clamav"} on
                 success. We map known clean values to "Scanned" and
@@ -520,7 +520,7 @@ function ImageBlock({ content, onChange, readOnly, onUpload }) {
               value={content?.alt || ""}
               onChange={(e) => onChange({ ...content, alt: e.target.value })}
               placeholder="Alt text (accessibility)"
-              className="text-[12px] bg-white border border-[#D9CFB8] px-2 py-1"
+              className="text-[12px] bg-white border border-[var(--graphite-light)] px-2 py-1"
             />
           )}
           {!readOnly && (
@@ -528,17 +528,17 @@ function ImageBlock({ content, onChange, readOnly, onUpload }) {
               value={content?.caption || ""}
               onChange={(e) => onChange({ ...content, caption: e.target.value })}
               placeholder="Caption (optional)"
-              className="text-[12px] bg-white border border-[#D9CFB8] px-2 py-1"
+              className="text-[12px] bg-white border border-[var(--graphite-light)] px-2 py-1"
             />
           )}
         </div>
       ) : (
         <div className="flex flex-col items-start gap-2">
-          <p className="text-[12px] text-[#5C5247]">No image attached.</p>
+          <p className="text-[12px] text-[var(--graphite)]">No image attached.</p>
           {!readOnly && (
             <>
               <input ref={fileRef} type="file" accept="image/*" onChange={handlePick} className="hidden" data-testid="image-file-input" />
-              <button type="button" disabled={busy} onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2 py-1 border border-[#0F1419] text-[#0F1419] hover:bg-[#0F1419] hover:text-[#F7F3EA] disabled:opacity-50">
+              <button type="button" disabled={busy} onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2 py-1 border border-[var(--ink)] text-[var(--ink)] hover:bg-[var(--ink)] hover:text-[var(--parchment-light)] disabled:opacity-50">
                 <ImageIcon className="w-3.5 h-3.5" /> {busy ? "Scanning…" : "Upload image"}
               </button>
             </>
@@ -553,10 +553,10 @@ function ImageBlock({ content, onChange, readOnly, onUpload }) {
 // Composer surface
 // ─────────────────────────────────────────────────────────────────────────
 const STATE_LABELS = {
-  draft:     { label: "Draft",     bar: "bg-[#7C6A4F]" },
+  draft:     { label: "Draft",     bar: "bg-[var(--graphite)]" },
   in_review: { label: "In review", bar: "bg-amber-700" },
   approved:  { label: "Approved",  bar: "bg-emerald-700" },
-  sent:      { label: "Sent",      bar: "bg-[#0F1419]" },
+  sent:      { label: "Sent",      bar: "bg-[var(--ink)]" },
 };
 
 export default function BlockComposer({ kind, artefactId }) {
@@ -776,10 +776,10 @@ export default function BlockComposer({ kind, artefactId }) {
 
   // ─── Render ───────────────────────────────────────────────────────────
   if (loading) {
-    return <div className="text-[#7C6A4F] italic" style={{ fontFamily: "Georgia, serif" }}>Reading the draft…</div>;
+    return <div className="text-[var(--graphite)] italic" style={{ fontFamily: "Georgia, serif" }}>Reading the draft…</div>;
   }
   if (error) {
-    return <div className="text-[#8B2E2B] text-sm">{error}</div>;
+    return <div className="text-[var(--oxblood)] text-sm">{error}</div>;
   }
 
   // Decks: render slide-tray sidebar based on H1 boundaries.
@@ -791,10 +791,10 @@ export default function BlockComposer({ kind, artefactId }) {
     <div className="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-6" data-testid="block-composer">
       {/* Slide tray (decks only) ─────────────────────────────────────── */}
       {kind === "deck" && (
-        <aside className="border border-[#D9CFB8] bg-[#FBF7EC] p-3 self-start sticky top-4">
-          <div className="text-[10px] uppercase tracking-[0.16em] text-[#7C6A4F] mb-2">Slides</div>
+        <aside className="border border-[var(--graphite-light)] bg-[#FBF7EC] p-3 self-start sticky top-4">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-[var(--graphite)] mb-2">Slides</div>
           {slideStarts.length === 0 && (
-            <p className="text-[12px] text-[#5C5247] italic">Insert a Heading 1 to start a new slide.</p>
+            <p className="text-[12px] text-[var(--graphite)] italic">Insert a Heading 1 to start a new slide.</p>
           )}
           <ol className="space-y-1.5">
             {slideStarts.map((i, slideIdx) => {
@@ -803,7 +803,7 @@ export default function BlockComposer({ kind, artefactId }) {
                 <li key={b.id}>
                   <a
                     href={`#slide-${slideIdx + 1}`}
-                    className="block text-[13px] text-[#0F1419] hover:underline truncate"
+                    className="block text-[13px] text-[var(--ink)] hover:underline truncate"
                     style={{ fontFamily: "Georgia, serif" }}
                   >
                     {slideIdx + 1}. {b.content?.text || "(untitled slide)"}
@@ -818,38 +818,38 @@ export default function BlockComposer({ kind, artefactId }) {
       {/* Main composer ──────────────────────────────────────────────── */}
       <div className="min-w-0">
         {/* Header: classification + lifecycle + actions */}
-        <header className="border-b border-[#D9CFB8] pb-3 mb-4 flex flex-wrap items-center gap-3">
+        <header className="border-b border-[var(--graphite-light)] pb-3 mb-4 flex flex-wrap items-center gap-3">
           <span className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] px-1.5 py-0.5 border ${cls.bg} ${cls.border} ${cls.text}`} data-testid="composer-classification">
             <Lock className="w-3 h-3" /> {cls.label}
           </span>
-          <span className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] px-1.5 py-0.5 border border-[#D9CFB8] text-[#7C6A4F] bg-[#F7F3EA]`} data-testid="composer-lifecycle">
-            <span className={`inline-block w-1.5 h-1.5 rounded-full ${STATE_LABELS[lifecycle]?.bar || "bg-[#7C6A4F]"}`} />
+          <span className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] px-1.5 py-0.5 border border-[var(--graphite-light)] text-[var(--graphite)] bg-[var(--parchment-light)]`} data-testid="composer-lifecycle">
+            <span className={`inline-block w-1.5 h-1.5 rounded-full ${STATE_LABELS[lifecycle]?.bar || "bg-[var(--graphite)]"}`} />
             {STATE_LABELS[lifecycle]?.label || lifecycle}
           </span>
           <div className="ml-auto flex flex-wrap gap-2">
             {lifecycle === "draft" && (
-              <button onClick={submitForReview} data-testid="composer-submit-review" className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2.5 py-1 border border-[#0F1419] text-[#0F1419] hover:bg-[#0F1419] hover:text-[#F7F3EA]">
+              <button onClick={submitForReview} data-testid="composer-submit-review" className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2.5 py-1 border border-[var(--ink)] text-[var(--ink)] hover:bg-[var(--ink)] hover:text-[var(--parchment-light)]">
                 <FileText className="w-3.5 h-3.5" /> Submit for review
               </button>
             )}
             {lifecycle === "in_review" && (
-              <button onClick={approve} data-testid="composer-approve" className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2.5 py-1 border border-emerald-700 text-emerald-700 hover:bg-emerald-700 hover:text-[#F7F3EA]">
+              <button onClick={approve} data-testid="composer-approve" className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2.5 py-1 border border-emerald-700 text-emerald-700 hover:bg-emerald-700 hover:text-[var(--parchment-light)]">
                 <CheckCircle2 className="w-3.5 h-3.5" /> Approve
               </button>
             )}
             {lifecycle === "approved" && (
-              <button onClick={send} data-testid="composer-send" className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2.5 py-1 border border-[#8B2E2B] text-[#8B2E2B] hover:bg-[#8B2E2B] hover:text-[#F7F3EA]">
+              <button onClick={send} data-testid="composer-send" className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2.5 py-1 border border-[var(--oxblood)] text-[var(--oxblood)] hover:bg-[var(--oxblood)] hover:text-[var(--parchment-light)]">
                 <Send className="w-3.5 h-3.5" /> Send via Resend
               </button>
             )}
             {lifecycle === "sent" && (
-              <span className="text-[11px] uppercase tracking-[0.14em] text-[#0F1419]">Sent · ledger updated</span>
+              <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--ink)]">Sent · ledger updated</span>
             )}
           </div>
         </header>
 
         {readOnly && (
-          <p className="text-[12px] text-[#7C6A4F] italic mb-3">
+          <p className="text-[12px] text-[var(--graphite)] italic mb-3">
             This artefact is no longer editable in {STATE_LABELS[lifecycle]?.label}. Reject from Daily Review to return it to draft.
           </p>
         )}
@@ -863,14 +863,14 @@ export default function BlockComposer({ kind, artefactId }) {
               <div
                 key={b.id}
                 id={isSlideStart ? `slide-${slideIdxFromStart}` : undefined}
-                className={`group relative ${isSlideStart ? "border-t-2 border-[#0F1419] pt-4 mt-2" : ""}`}
+                className={`group relative ${isSlideStart ? "border-t-2 border-[var(--ink)] pt-4 mt-2" : ""}`}
                 data-testid={`block-${b.kind}`}
               >
                 {!readOnly && (
                   <div className="absolute -left-9 top-0 hidden group-hover:flex flex-col items-center gap-0.5">
-                    <button onClick={() => moveBlock(b.id, "up")} aria-label="Move up" className="text-[#7C6A4F] hover:text-[#0F1419] p-0.5"><ChevronUp className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => moveBlock(b.id, "down")} aria-label="Move down" className="text-[#7C6A4F] hover:text-[#0F1419] p-0.5"><ChevronDown className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => deleteBlock(b.id)} aria-label="Delete block" className="text-[#7C6A4F] hover:text-[#8B2E2B] p-0.5"><Trash2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => moveBlock(b.id, "up")} aria-label="Move up" className="text-[var(--graphite)] hover:text-[var(--ink)] p-0.5"><ChevronUp className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => moveBlock(b.id, "down")} aria-label="Move down" className="text-[var(--graphite)] hover:text-[var(--ink)] p-0.5"><ChevronDown className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => deleteBlock(b.id)} aria-label="Delete block" className="text-[var(--graphite)] hover:text-[var(--oxblood)] p-0.5"><Trash2 className="w-3.5 h-3.5" /></button>
                   </div>
                 )}
                 {b.kind === "heading"        && <HeadingBlock        content={b.content} onChange={onBlockChange(b.id)} readOnly={readOnly} />}
@@ -889,7 +889,7 @@ export default function BlockComposer({ kind, artefactId }) {
                       type="button"
                       data-testid={`block-insert-after-${b.id}`}
                       onClick={(e) => openSlashMenuAt(e, b.id)}
-                      className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.14em] text-[#7C6A4F] hover:text-[#0F1419]"
+                      className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.14em] text-[var(--graphite)] hover:text-[var(--ink)]"
                     >
                       <Plus className="w-3 h-3" /> Insert
                     </button>
@@ -900,12 +900,12 @@ export default function BlockComposer({ kind, artefactId }) {
           })}
 
           {!readOnly && (
-            <div className="pt-3 border-t border-dashed border-[#D9CFB8]">
+            <div className="pt-3 border-t border-dashed border-[var(--graphite-light)]">
               <button
                 type="button"
                 data-testid="composer-add-block"
                 onClick={(e) => openSlashMenuAt(e, null)}
-                className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2 py-1 border border-[#0F1419] text-[#0F1419] hover:bg-[#0F1419] hover:text-[#F7F3EA]"
+                className="inline-flex items-center gap-1 text-[12px] uppercase tracking-[0.14em] px-2 py-1 border border-[var(--ink)] text-[var(--ink)] hover:bg-[var(--ink)] hover:text-[var(--parchment-light)]"
               >
                 <Plus className="w-3.5 h-3.5" /> Add block · or press &quot;/&quot;
               </button>

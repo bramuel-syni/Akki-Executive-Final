@@ -148,8 +148,16 @@ def validate_content(content: Dict[str, Any], kind: str) -> Dict[str, Any]:
         if not heading:
             continue
         cites = s.get("cites") or []
-        # Normalise + validate citations indices.
-        norm_cites = []
+        # Normalise + validate citation indices.
+        # STUDIO sprint (2026-05-12) — W-23 fix: a citation index that
+        # exceeds the declared citation list (a Pass-2 "phantom citation")
+        # used to fail the entire render with `ContentValidationError`,
+        # which threw away the whole briefing for one bad index. We now
+        # drop the phantom indices silently and record a warning on the
+        # validation result so the audit log keeps the trail. The
+        # renderer-side will simply omit the missing citation chip.
+        norm_cites: List[int] = []
+        dropped_phantoms: List[int] = []
         for idx in cites:
             try:
                 i = int(idx)
@@ -158,11 +166,12 @@ def validate_content(content: Dict[str, Any], kind: str) -> Dict[str, Any]:
             if 1 <= i <= n_cit:
                 norm_cites.append(i)
             else:
-                # Fabricated citation index — this is a hard fail.
-                raise ContentValidationError(
-                    f"Section `{heading[:60]}` references citation [{i}] "
-                    f"but only {n_cit} citations are declared."
-                )
+                dropped_phantoms.append(i)
+        if dropped_phantoms:
+            logger.warning(
+                "work_studio_export: dropped phantom citations heading=%r dropped=%s declared=%d",
+                heading[:60], dropped_phantoms, n_cit,
+            )
         if kind == "deck":
             bullets = [b for b in (s.get("bullets") or []) if isinstance(b, str) and b.strip()]
             sections.append({

@@ -74,6 +74,13 @@ class Brief:
     source_type: str = ""
     depth: str = DEPTH_BOARD
     fidelity: str = FIDELITY_HIGH
+    # STUDIO sprint (2026-05-12) — W-19: optional Synisense audit
+    # summary line stamped at the bottom of exports. When None, no
+    # audit footer is rendered (preserves determinism for legacy
+    # fixtures that don't supply one). When set, every export kind
+    # appends a single mono line:
+    #   "Synisense Shield · N identifiers redacted · 3-layer pipeline · Akki audit chain"
+    audit_summary: Optional[str] = None
 
     def with_depth(self, depth: str) -> "Brief":
         self.depth = depth

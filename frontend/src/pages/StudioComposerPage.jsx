@@ -29,7 +29,7 @@ export default function StudioComposerPage() {
     return (
       <AppShell>
         <div className="akki-w-narrow p-6">
-          <p className="text-[#8B2E2B] text-sm">Unknown artefact kind: <code>{kind}</code></p>
+          <p className="text-[var(--oxblood)] text-sm">Unknown artefact kind: <code>{kind}</code></p>
         </div>
       </AppShell>
     );
@@ -48,18 +48,18 @@ export default function StudioComposerPage() {
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-[#7C6A4F] hover:text-[#0F1419]"
+            className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-[var(--graphite)] hover:text-[var(--ink)]"
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Back
           </button>
-          <span className="text-[11px] uppercase tracking-[0.16em] text-[#7C6A4F]">·</span>
-          <span className="text-[11px] uppercase tracking-[0.16em] text-[#0F1419]">
+          <span className="text-[11px] uppercase tracking-[0.16em] text-[var(--graphite)]">·</span>
+          <span className="text-[11px] uppercase tracking-[0.16em] text-[var(--ink)]">
             Work Studio composer · {KIND_LABEL[kind]}
           </span>
         </div>
 
         {isBriefing && (
-          <p className="text-[11.5px] text-[#7C6A4F] italic mb-3 max-w-prose" style={{ fontFamily: "Georgia, serif" }}>
+          <p className="text-[11.5px] text-[var(--graphite)] italic mb-3 max-w-prose" style={{ fontFamily: "Georgia, serif" }}>
             Briefings sit best around two printed pages. The soft guide is editorial, not enforced — long briefings still ship.
           </p>
         )}

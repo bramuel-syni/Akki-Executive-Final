@@ -40,7 +40,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from core import (
-    db, now, iso, write_audit, require_context_membership,
+    db, now, iso, write_audit, require_context_membership, get_current_account,
 )
 from services import two_pass as _tp
 from services import work_studio_export as _ex
@@ -369,6 +369,26 @@ async def _run_two_pass_for_export(
 
     user_text = _flat_user_input(body)
 
+    # STUDIO sprint (2026-05-12) — W-22 fix: capture partial pass content
+    # + per-pass provider metadata in a single dict reference. On any
+    # raise, attach it to the exception as `.partial` so the caller can
+    # persist what we DID succeed at before the failure. Without this,
+    # debugging a "validation error on Pass 2" requires re-running the
+    # whole thing.
+    partial: Dict[str, Any] = {
+        "llm_pass1": None,
+        "llm_pass2": None,
+        "pass1_text": None,
+        "pass2_text_head": None,
+    }
+
+    def _attach(exc: Exception) -> Exception:
+        try:
+            setattr(exc, "partial", partial)
+        except Exception:
+            pass
+        return exc
+
     # ── Pass 1 — reasoning rail (silent)
     pass_1_system = (
         "You are AKKI's reasoning rail for a Work Studio export. "
@@ -395,9 +415,12 @@ async def _run_two_pass_for_export(
         # Re-raise as ChatError so the caller's existing
         # `except Exception` handler tags the row as `llm_error:ChatError`
         # — preserves the existing exception ergonomics.
-        raise ChatError(p1_err)
+        partial["llm_pass1"] = {"provider": p1_provider, "fallback": bool(p1_fallback), "error": p1_err[:300]}
+        raise _attach(ChatError(p1_err))
     pass_1_text = p1_text
     pass_1_ms = int((time.monotonic() - p1_t0) * 1000)
+    partial["llm_pass1"] = {"provider": p1_provider, "fallback": bool(p1_fallback)}
+    partial["pass1_text"] = pass_1_text[:8000] if pass_1_text else None
 
     # ── Pass 2 — JSON content_dict
     schema_doc = {
@@ -468,16 +491,19 @@ async def _run_two_pass_for_export(
         session_id=f"akki-export-p2-{uuid.uuid4().hex[:8]}",
     )
     if p2_err:
-        raise ChatError(p2_err)
+        partial["llm_pass2"] = {"provider": p2_provider, "fallback": bool(p2_fallback), "error": p2_err[:300]}
+        raise _attach(ChatError(p2_err))
     pass_2_text = p2_text
     pass_2_ms = int((time.monotonic() - p2_t0) * 1000)
+    partial["llm_pass2"] = {"provider": p2_provider, "fallback": bool(p2_fallback)}
+    partial["pass2_text_head"] = pass_2_text[:2000] if pass_2_text else None
 
     parsed = _try_parse_json(pass_2_text)
     if parsed is None:
-        raise RuntimeError(
+        raise _attach(RuntimeError(
             f"Pass 2 LLM did not return parseable JSON (kind={kind}). "
             f"Head: {pass_2_text[:200]!r}"
-        )
+        ))
 
     # Force the canonical context name + period overrides if absent.
     parsed.setdefault("generated_for", ctx_doc.get("name") or "—")
@@ -573,10 +599,21 @@ async def _run_export(
         )
     except Exception as e:
         logger.exception("Export LLM stage failed")
+        # STUDIO sprint (W-22): persist whatever partial pass metadata
+        # + text we captured before the failure, so a later debug pass
+        # can see exactly which pass failed and why.
+        partial = getattr(e, "partial", None) or {}
         await db.work_studio_exports.update_one(
             {"id": export_id},
-            {"$set": {"status": "failed", "error": f"llm_error:{type(e).__name__}",
-                      "completed_at": iso(now())}},
+            {"$set": {
+                "status": "failed",
+                "error": f"llm_error:{type(e).__name__}",
+                "completed_at": iso(now()),
+                "llm_pass1": partial.get("llm_pass1"),
+                "llm_pass2": partial.get("llm_pass2"),
+                "llm_pass1_text": partial.get("pass1_text"),
+                "llm_pass2_text_head": partial.get("pass2_text_head"),
+            }},
         )
         try:
             await write_audit(
@@ -1289,6 +1326,95 @@ async def start_export(
         "kind": kind,
         "output_format": output_format,
         "created_at": created_at,
+    }
+
+
+@router.get("/work_studio/artefacts/{kind}/{artefact_id}/synisense-breakdown")
+async def get_studio_synisense_breakdown(
+    kind: str,
+    artefact_id: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+) -> Dict[str, Any]:
+    """STUDIO sprint (2026-05-12) — per-artefact Synisense breakdown.
+
+    Returns the total identifier count + three-layer breakdown grouped
+    by Work Studio surface (briefing / deck / report / brief / minutes /
+    enhance). Powers the inline badge on the artefact detail drawer and
+    the redaction-count line stamped on exports.
+
+    Filter is on `artefact_id` (post-sprint sessions) with a fallback to
+    account_id + surface family when no artefact_id is present (legacy
+    artefacts created before the threading)."""
+    if kind not in {"briefing", "deck", "report", "brief", "minutes"}:
+        raise HTTPException(status_code=400, detail=f"Unknown artefact kind: {kind}")
+    # Map the artefact kind → the set of surface keys we aggregate over.
+    # Every kind also includes its corresponding `enhance` surface so
+    # an "Enhance pass" counts toward the same artefact.
+    surface_family = {
+        "briefing": ["briefing", "enhance"],
+        "deck":     ["deck", "enhance"],
+        "report":   ["report", "enhance"],
+        "brief":    ["brief", "enhance"],
+        "minutes":  ["minutes", "enhance"],
+    }[kind]
+
+    pipeline = [
+        {
+            "$match": {
+                "artefact_id": artefact_id,
+                "surface": {"$in": surface_family},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$surface",
+                "runs": {"$sum": 1},
+                "identifiers": {"$sum": {"$size": {"$ifNull": ["$spans", []]}}},
+                "layers": {"$push": "$stats.layer_won"},
+            }
+        },
+    ]
+    rows = await db.synisense_runs.aggregate(pipeline).to_list(length=32)
+
+    per_surface: List[Dict[str, Any]] = []
+    total_identifiers = 0
+    total_calls = 0
+    for row in rows:
+        layers = row.get("layers") or []
+        breakdown = {"regex": 0, "presidio": 0, "llm": 0}
+        for lw in layers:
+            if not lw:
+                continue
+            if lw == "regex":
+                breakdown["regex"] += 1
+            elif lw == "presidio":
+                breakdown["presidio"] += 1
+            elif lw in ("llm", "llm_fallback"):
+                breakdown["llm"] += 1
+        ident = int(row.get("identifiers") or 0)
+        calls = int(row.get("runs") or 0)
+        total_identifiers += ident
+        total_calls += calls
+        per_surface.append({
+            "surface": row.get("_id"),
+            "identifiers_count": ident,
+            "model_calls": calls,
+            "layers": breakdown,
+        })
+    per_surface.sort(key=lambda r: r["surface"])
+    storyline = (
+        f"This artefact passed through three layers of redaction. "
+        f"{total_identifiers} identifier{'s were' if total_identifiers != 1 else ' was'} "
+        f"masked deterministically across {total_calls} model call{'s' if total_calls != 1 else ''}. "
+        f"Nothing left your tenant."
+    )
+    return {
+        "artefact_id": artefact_id,
+        "artefact_kind": kind,
+        "per_surface": per_surface,
+        "total_identifiers_count": total_identifiers,
+        "model_calls_total": total_calls,
+        "storyline": storyline,
     }
 
 

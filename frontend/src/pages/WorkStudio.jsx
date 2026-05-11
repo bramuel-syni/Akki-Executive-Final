@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/sheet";
 import ExportModal from "@/components/studio/ExportModal";
 import EnhanceModal from "@/components/studio/EnhanceModal";
+import PerArtefactSynisenseBadge from "@/components/studio/PerArtefactSynisenseBadge";
 import {
   FileText, Presentation, ScrollText, Plus, Loader2, ArrowRight, AlertCircle,
   Layers, FolderOpen, FileDown, Wand2, Calendar, Users, Files,
@@ -235,6 +236,11 @@ function BriefDrawer({ open, onClose, aid, contextId }) {
           )}
           {detail && !loading && !err && (
             <>
+              {/* STUDIO sprint (2026-05-12) — per-artefact Synisense
+                  badge + storyline. Sits at the very top of the drawer
+                  body so the trust posture is visible before the
+                  validation / topline / sections. */}
+              <PerArtefactSynisenseBadge kind={detail.kind || "briefing"} artefactId={detail.id || detail.brief_id} />
               {/* Phase F.1 — Validation header. Provenance + confidence
                   sits AT THE TOP of the drawer so the executive sees
                   what's vouched for before reading the body. Block is

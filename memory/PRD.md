@@ -3210,3 +3210,49 @@ sweep (code namespace preserved).
 - Solva ExCo association (Q2(c))
 - Export-redaction-record cross-link from Solva artefact (S-27 → TRUST sprint)
 - Pre-existing Solva v2 test failures (schema drift in synthesis cluster path)
+
+---
+
+## Sprint STUDIO — closure (2026-05-12)
+
+Work Studio editorial pass + per-artefact audit visibility + export
+template v7 + CI determinism.
+
+- **v7 palette sweep**: 67 hex literals → 0 across `pages/WorkStudio.jsx`,
+  `pages/StudioComposerPage.jsx`, `pages/Decks.jsx`, `components/studio/`.
+  Banned-vocab clean.
+- **Per-artefact Synisense breakdown**: new endpoint
+  `GET /api/work_studio/artefacts/{kind}/{id}/synisense-breakdown`.
+  `artefact_id` threaded through `synisense/pipeline.py`. Frontend
+  `PerArtefactSynisenseBadge.jsx` renders inline at the top of the
+  artefact drawer with audit storyline.
+- **Export-footer stamp**: `Brief.audit_summary` optional field; when
+  set, DOCX + PDF render an italic mono footer line and PPTX appends a
+  dedicated `AUDIT` slide. None by default — preserves byte-determinism
+  for legacy callers.
+- **Export template v7**: DOCX + PPTX + PDF palette migrated to v7
+  oxblood/ink/graphite. Font runs preserved (Georgia/Calibri) to
+  maintain hash-stamped reproducibility.
+- **CI determinism test**: new `backend/tests/test_render_determinism.py`
+  with 6 tests — DOCX, PPTX, PDF deterministic across two renders;
+  report kind shares pipeline; audit-summary variant deterministic;
+  citation-index W-23 regression.
+- **W-22 (failure persistence)**: `llm_pass1` + `llm_pass2` (+ raw text
+  heads) now persisted on every failure row via `partial` capture
+  attached to the exception.
+- **W-23 (citation validator)**: phantom citation indices now dropped
+  silently with a WARNING log row — no longer fails the whole render.
+
+### Files
+- New: `backend/tests/test_render_determinism.py`,
+  `frontend/src/components/studio/PerArtefactSynisenseBadge.jsx`.
+- Modified: `backend/services/{synisense/pipeline.py,work_studio_export.py}`,
+  `backend/routers/work_studio_export.py`, `backend/work_studio/{brief,docx_generator,pptx_generator,pdf_generator}.py`,
+  `frontend/src/pages/{WorkStudio,StudioComposerPage,Decks}.jsx`,
+  `frontend/src/components/studio/*.jsx`.
+- Closure: `/app/docs/sprints/STUDIO.md`.
+
+### Deferred
+- Auto-compose `audit_summary` from synisense_runs at export time
+- ExCo association on Studio artefacts (Q4(b) → CYCLE sprint)
+- Deck PDF renderer (`render_deck_pdf` NotImplementedError)

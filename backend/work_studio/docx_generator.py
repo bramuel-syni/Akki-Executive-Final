@@ -20,9 +20,9 @@ from docx.oxml import OxmlElement
 from .brief import Brief, BriefSection, BriefTable, FIDELITY_HIGH, FIDELITY_LOW
 
 # Brand palette ------------------------------------------------------------
-INK   = RGBColor(0x0E, 0x0E, 0x0E)
-OXBLD = RGBColor(0x6E, 0x14, 0x18)
-MUTED = RGBColor(0x55, 0x55, 0x55)
+INK   = RGBColor(0x1A, 0x1D, 0x20)
+OXBLD = RGBColor(0x7A, 0x2E, 0x2E)
+MUTED = RGBColor(0x6F, 0x71, 0x77)
 
 BODY_FONT    = "Calibri"
 HEADING_FONT = "Georgia"
@@ -206,6 +206,15 @@ def render_docx(brief: Brief) -> bytes:
     if brief.closing_brand_line:
         _add_para(doc, brief.closing_brand_line, font=KICKER_FONT, size_pt=10,
                   colour=MUTED, italic=True, all_caps=True, space_after=0)
+
+    # STUDIO sprint — W-19: Synisense audit footer line. Only rendered
+    # when Brief.audit_summary is set (preserves determinism for fixtures
+    # that don't supply one).
+    if brief.audit_summary:
+        _add_para(
+            doc, brief.audit_summary, font="Courier New", size_pt=9,
+            colour=MUTED, italic=True, space_before=18, space_after=0,
+        )
 
     buf = BytesIO()
     doc.save(buf)

@@ -21,11 +21,11 @@ from weasyprint import HTML, CSS
 
 from .brief import Brief, BriefSection, BriefTable, FIDELITY_HIGH
 
-INK   = "#0E0E0E"
-OXBLD = "#6E1418"
-MUTED = "#555555"
-CREAM = "#FAF6EF"
-HAIRLINE = "#C8C8C8"
+INK   = "#1A1D20"
+OXBLD = "#7A2E2E"
+MUTED = "#6F7177"
+CREAM = "#F2EFE8"
+HAIRLINE = "#B8B6AF"
 
 
 CSS_BASE = """
@@ -179,6 +179,17 @@ def _render_html(brief: Brief) -> str:
             <div class="brand">{_escape(brief.closing_brand_line or '')}</div>
         </div>"""
 
+    # STUDIO sprint — W-19: Synisense audit footer line. Only rendered
+    # when Brief.audit_summary is set (preserves determinism for
+    # fixtures that don't supply one).
+    audit_html = ""
+    if brief.audit_summary:
+        audit_html = (
+            f'<div class="audit-footer" style="margin-top:32px;font-family:'
+            f'\'JetBrains Mono\', \'Courier New\', monospace;font-size:9px;'
+            f'color:#6F7177;font-style:italic;">{_escape(brief.audit_summary)}</div>'
+        )
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><title>{_escape(brief.title)}</title></head>
@@ -194,6 +205,7 @@ def _render_html(brief: Brief) -> str:
   </div>
   {sections_html}
   {closing_html}
+  {audit_html}
 </body>
 </html>"""
 

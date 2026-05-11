@@ -25,12 +25,12 @@ from lxml import etree
 from .brief import Brief, BriefSection, BriefTable, FIDELITY_HIGH, FIDELITY_LOW
 
 # Brand palette ------------------------------------------------------------
-INK    = RGBColor(0x0E, 0x0E, 0x0E)
-OXBLD  = RGBColor(0x6E, 0x14, 0x18)
-CREAM  = RGBColor(0xFA, 0xF6, 0xEF)
-MUTED  = RGBColor(0x55, 0x55, 0x55)
+INK    = RGBColor(0x1A, 0x1D, 0x20)
+OXBLD  = RGBColor(0x7A, 0x2E, 0x2E)
+CREAM  = RGBColor(0xF2, 0xEF, 0xE8)
+MUTED  = RGBColor(0x6F, 0x71, 0x77)
 WHITE  = RGBColor(0xFF, 0xFF, 0xFF)
-SIDEBAR_BG = RGBColor(0x0E, 0x0E, 0x0E)
+SIDEBAR_BG = RGBColor(0x1A, 0x1D, 0x20)
 
 BODY_FONT  = "Calibri"
 HEAD_FONT  = "Calibri"   # match MYDAWA — sans throughout
@@ -330,7 +330,39 @@ def render_pptx(brief: Brief) -> bytes:
             _add_section_slide(prs, brief, sec, slide_number=slide_no)
             slide_no += 1
         _add_closing(prs, brief, slide_number=slide_no)
+        slide_no += 1
+        # STUDIO sprint — W-19: append an AUDIT slide. Only rendered
+        # when Brief.audit_summary is set.
+        if brief.audit_summary:
+            _add_audit_slide(prs, brief, slide_number=slide_no)
 
     buf = BytesIO()
     prs.save(buf)
     return buf.getvalue()
+
+
+def _add_audit_slide(prs, brief: Brief, slide_number: int) -> None:
+    """STUDIO sprint — minimal slide labelled `AUDIT` carrying the
+    Synisense storyline. Uses primitive python-pptx shapes only so the
+    output remains byte-deterministic."""
+    blank = prs.slide_layouts[6] if len(prs.slide_layouts) > 6 else prs.slide_layouts[-1]
+    slide = prs.slides.add_slide(blank)
+    tx = slide.shapes.add_textbox(Inches(0.6), Inches(0.6), Inches(11.5), Inches(0.5))
+    tf = tx.text_frame
+    p = tf.paragraphs[0]
+    run = p.add_run()
+    run.text = "AUDIT"
+    run.font.name = "Calibri"
+    run.font.bold = True
+    run.font.size = Pt(11)
+    run.font.color.rgb = RGBColor(0x7A, 0x2E, 0x2E)
+    tx2 = slide.shapes.add_textbox(Inches(0.6), Inches(1.2), Inches(11.5), Inches(2.0))
+    tf2 = tx2.text_frame
+    tf2.word_wrap = True
+    p2 = tf2.paragraphs[0]
+    run2 = p2.add_run()
+    run2.text = brief.audit_summary or ""
+    run2.font.name = "Georgia"
+    run2.font.italic = True
+    run2.font.size = Pt(16)
+    run2.font.color.rgb = RGBColor(0x6F, 0x71, 0x77)
