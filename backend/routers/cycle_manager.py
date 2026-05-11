@@ -42,7 +42,7 @@ import re
 import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core import db, iso, now, require_context_membership, write_audit
@@ -63,7 +63,42 @@ def _ctx_slug(name: Optional[str]) -> str:
     return s or "exec"
 
 
-async def _get_or_init_agenda(context_id: str, account_id: str) -> Dict[str, Any]:
+async def _get_or_init_agenda(
+    context_id: str,
+    account_id: str,
+    cycle_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Resolve the agenda row for a cycle.
+
+    Multi-cycle (v2) call paths: pass `cycle_id` explicitly. Legacy
+    (single-cycle) call paths: leave `cycle_id` as None — we resolve
+    the unique active cycle for the context via
+    `services.cycle_lifecycle.resolve_implicit_cycle_id`.
+    """
+    from services.cycle_lifecycle import resolve_implicit_cycle_id  # noqa: WPS433
+
+    cycle_id = await resolve_implicit_cycle_id(context_id, cycle_id)
+    if cycle_id:
+        row = await db.cycle_agendas.find_one({"id": cycle_id}, {"_id": 0})
+        if row:
+            return row
+        # The cycle exists in `db.cycles` but the agenda shell hasn't
+        # been created — create it now so downstream queries succeed.
+        rec = {
+            "id": cycle_id,
+            "cycle_id": cycle_id,
+            "context_id": context_id,
+            "account_id": account_id,
+            "title": "Main board reporting cycle",
+            "items": [],
+            "status": "active",
+            "created_at": iso(now()),
+            "updated_at": iso(now()),
+        }
+        await db.cycle_agendas.insert_one(rec)
+        rec.pop("_id", None)
+        return rec
+    # Truly legacy fallback — no cycle, no cycles row. Auto-create on first hit.
     row = await db.cycle_agendas.find_one(
         {"context_id": context_id, "status": "active"}, {"_id": 0},
     )
@@ -79,6 +114,7 @@ async def _get_or_init_agenda(context_id: str, account_id: str) -> Dict[str, Any
         "created_at": iso(now()),
         "updated_at": iso(now()),
     }
+    rec["cycle_id"] = rec["id"]
     await db.cycle_agendas.insert_one(rec)
     rec.pop("_id", None)
     return rec
@@ -133,18 +169,22 @@ class FollowUpsDraftIn(BaseModel):
 @router.get("/contexts/{context_id}/cycle/agenda")
 async def get_agenda(
     context_id: str,
+    cycle_id: Optional[str] = Query(default=None),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"])
+    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"], cycle_id)
     return agenda
 
 
 @router.post("/contexts/{context_id}/cycle/agenda")
 async def upsert_agenda(
     context_id: str, body: AgendaIn,
+    cycle_id: Optional[str] = Query(default=None),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"])
+    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"], cycle_id)
+    from services.cycle_lifecycle import require_cycle_writable as _rcw  # noqa: WPS433
+    await _rcw(context_id, agenda["id"])
     items: List[Dict[str, Any]] = []
     for it in body.items:
         items.append({
@@ -177,22 +217,26 @@ async def upsert_agenda(
 @router.get("/contexts/{context_id}/cycle/team")
 async def list_team(
     context_id: str,
+    cycle_id: Optional[str] = Query(default=None),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"])
+    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"], cycle_id)
     members = await db.cycle_team.find(
         {"context_id": context_id, "agenda_id": agenda["id"], "status": "active"},
         {"_id": 0},
     ).sort("created_at", 1).to_list(100)
-    return {"agenda_id": agenda["id"], "members": members}
+    return {"agenda_id": agenda["id"], "cycle_id": agenda["id"], "members": members}
 
 
 @router.post("/contexts/{context_id}/cycle/team")
 async def upsert_team_member(
     context_id: str, body: TeamMemberIn,
+    cycle_id: Optional[str] = Query(default=None),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"])
+    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"], cycle_id)
+    from services.cycle_lifecycle import require_cycle_writable as _rcw  # noqa: WPS433
+    await _rcw(context_id, agenda["id"])
     if body.id:
         existing = await db.cycle_team.find_one(
             {"id": body.id, "context_id": context_id}, {"_id": 0},
@@ -213,6 +257,7 @@ async def upsert_team_member(
         "id": str(uuid.uuid4()),
         "context_id": context_id,
         "agenda_id": agenda["id"],
+        "cycle_id": agenda["id"],
         "name": body.name.strip(),
         "email": body.email.strip().lower(),
         "role": (body.role or "").strip() or None,
@@ -232,6 +277,12 @@ async def delete_team_member(
     context_id: str, member_id: str,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
+    existing = await db.cycle_team.find_one(
+        {"id": member_id, "context_id": context_id}, {"_id": 0, "agenda_id": 1, "cycle_id": 1},
+    )
+    if existing:
+        from services.cycle_lifecycle import require_cycle_writable as _rcw  # noqa: WPS433
+        await _rcw(context_id, existing.get("agenda_id") or existing.get("cycle_id"))
     res = await db.cycle_team.update_one(
         {"id": member_id, "context_id": context_id},
         {"$set": {"status": "removed", "updated_at": iso(now())}},
@@ -264,6 +315,9 @@ async def patch_team_member(
         raise HTTPException(status_code=404, detail="Team member not found")
     if existing.get("status") == "removed":
         raise HTTPException(status_code=410, detail="Team member has been removed")
+
+    from services.cycle_lifecycle import require_cycle_writable as _rcw  # noqa: WPS433
+    await _rcw(context_id, existing.get("agenda_id") or existing.get("cycle_id"))
 
     upd: Dict[str, Any] = {"updated_at": iso(now())}
     if body.name is not None:
@@ -300,25 +354,30 @@ async def patch_team_member(
 @router.get("/contexts/{context_id}/cycle/contributions")
 async def list_contributions(
     context_id: str,
+    cycle_id: Optional[str] = Query(default=None),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"])
+    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"], cycle_id)
     rows = await db.cycle_contributions.find(
         {"context_id": context_id, "agenda_id": agenda["id"]}, {"_id": 0},
     ).sort("created_at", -1).to_list(500)
-    return {"agenda_id": agenda["id"], "contributions": rows}
+    return {"agenda_id": agenda["id"], "cycle_id": agenda["id"], "contributions": rows}
 
 
 @router.post("/contexts/{context_id}/cycle/contributions")
 async def add_contribution(
     context_id: str, body: ContributionIn,
+    cycle_id: Optional[str] = Query(default=None),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"])
+    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"], cycle_id)
+    from services.cycle_lifecycle import require_cycle_writable as _rcw  # noqa: WPS433
+    await _rcw(context_id, agenda["id"])
     rec = {
         "id": str(uuid.uuid4()),
         "context_id": context_id,
         "agenda_id": agenda["id"],
+        "cycle_id": agenda["id"],
         "agenda_item_id": body.agenda_item_id,
         "team_member_id": body.team_member_id,
         "kind": body.kind,
@@ -334,6 +393,40 @@ async def add_contribution(
     await db.cycle_contributions.insert_one(rec)
     rec.pop("_id", None)
     return rec
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Eligible contributors — PO decision #2 (filtered dropdown)
+# ──────────────────────────────────────────────────────────────────────
+@router.get(
+    "/contexts/{context_id}/cycles/{cycle_id}/agenda-items/"
+    "{agenda_item_id}/eligible-contributors",
+)
+async def list_eligible_contributors(
+    context_id: str,
+    cycle_id: str,
+    agenda_item_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Return team members assigned to a specific agenda item on a
+    specific cycle. Used to scope the Contributions tab contributor
+    dropdown per PO decision #2."""
+    rows = await db.cycle_team.find(
+        {
+            "context_id": context_id,
+            "agenda_id": cycle_id,
+            "status": "active",
+            "owns_item_ids": agenda_item_id,
+        },
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1,
+         "contribution_description": 1, "owns_item_ids": 1},
+    ).sort("name", 1).to_list(200)
+    return {
+        "cycle_id": cycle_id,
+        "agenda_item_id": agenda_item_id,
+        "contributors": rows,
+        "count": len(rows),
+    }
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -382,6 +475,8 @@ async def score_contribution(
     )
     if not rec:
         raise HTTPException(status_code=404, detail="Contribution not found")
+    from services.cycle_lifecycle import require_cycle_writable as _rcw  # noqa: WPS433
+    await _rcw(context_id, rec.get("agenda_id") or rec.get("cycle_id"))
     member = await db.cycle_team.find_one(
         {"id": rec.get("team_member_id"), "context_id": context_id}, {"_id": 0},
     )
@@ -414,9 +509,10 @@ async def score_contribution(
 @router.get("/contexts/{context_id}/cycle/readiness")
 async def get_readiness(
     context_id: str,
+    cycle_id: Optional[str] = Query(default=None),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"])
+    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"], cycle_id)
     contribs = await db.cycle_contributions.find(
         {"context_id": context_id, "agenda_id": agenda["id"]}, {"_id": 0},
     ).to_list(500)
@@ -539,11 +635,14 @@ def _draft_email_text(*, exec_name: str, member_name: str, item_label: str,
 @router.post("/contexts/{context_id}/cycle/follow-ups/draft")
 async def draft_followups(
     context_id: str, body: FollowUpsDraftIn,
+    cycle_id: Optional[str] = Query(default=None),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
     """Generate restrained follow-up drafts for unmet contributions.
     Returns the drafts; nothing is sent."""
-    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"])
+    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"], cycle_id)
+    from services.cycle_lifecycle import require_cycle_writable as _rcw  # noqa: WPS433
+    await _rcw(context_id, agenda["id"])
     members = await db.cycle_team.find(
         {"context_id": context_id, "agenda_id": agenda["id"], "status": "active"},
         {"_id": 0},
@@ -584,6 +683,7 @@ async def draft_followups(
                 "context_id": context_id,
                 "account_id": ctx["account"]["id"],
                 "agenda_id": agenda["id"],
+                "cycle_id": agenda["id"],
                 "agenda_item_id": it["id"],
                 "agenda_item_label": it["label"],
                 "team_member_id": owner["id"],
@@ -613,13 +713,14 @@ async def draft_followups(
 @router.get("/contexts/{context_id}/cycle/follow-ups")
 async def list_followups(
     context_id: str,
+    cycle_id: Optional[str] = Query(default=None),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"])
+    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"], cycle_id)
     rows = await db.cycle_followups.find(
         {"context_id": context_id, "agenda_id": agenda["id"]}, {"_id": 0},
     ).sort("created_at", -1).to_list(200)
-    return {"agenda_id": agenda["id"], "followups": rows}
+    return {"agenda_id": agenda["id"], "cycle_id": agenda["id"], "followups": rows}
 
 
 @router.post("/contexts/{context_id}/cycle/follow-ups/{followup_id}/approve")
@@ -632,6 +733,8 @@ async def approve_followup(
     )
     if not rec:
         raise HTTPException(status_code=404, detail="Follow-up not found")
+    from services.cycle_lifecycle import require_cycle_writable as _rcw  # noqa: WPS433
+    await _rcw(context_id, rec.get("agenda_id") or rec.get("cycle_id"))
     if rec["status"] not in ("draft",):
         return rec
     await db.cycle_followups.update_one(
@@ -739,6 +842,7 @@ async def send_followup(
 @router.post("/contexts/{context_id}/cycle/draft-compilation")
 async def draft_compilation(
     context_id: str,
+    cycle_id: Optional[str] = Query(default=None),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
     """Phase D.1 — produce a real, board-grade compilation of the cycle's
@@ -749,6 +853,10 @@ async def draft_compilation(
     enhance and Export at any of the 18 (Format × Depth × Fidelity)
     combinations. The pre-D.1 heuristic concat-of-bullets path has been
     deleted — that was the spec's P0 cohort blocker.
+
+    Cycle Manager v2 (2026-02): explicitly permitted on **completed**
+    cycles — re-download is an Acceptance criterion. The completed-cycle
+    write-guard is therefore NOT applied here.
 
     Pipeline:
       1. Gather agenda, scored contributions, team, readiness, prior cycles.
@@ -775,7 +883,7 @@ async def draft_compilation(
     from datetime import datetime, timezone
     import hashlib
 
-    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"])
+    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"], cycle_id)
     if not agenda.get("items"):
         raise HTTPException(status_code=400, detail="Set an agenda first.")
 
@@ -797,7 +905,7 @@ async def draft_compilation(
         )
 
     # Readiness rollup (the existing endpoint shape).
-    readiness = await get_readiness(context_id, ctx)
+    readiness = await get_readiness(context_id, agenda["id"], ctx)
 
     # Prior cycles for cross-cycle observations (omit when first cycle —
     # spec call #2: honest empty, no placeholder text). Pull at most the

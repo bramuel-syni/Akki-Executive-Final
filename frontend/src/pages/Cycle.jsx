@@ -32,11 +32,22 @@ import {
   AlertDialogCancel, AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import JudgementPanel from "@/components/cycle/JudgementPanel";
 import BoardSubmitPanel from "@/components/cycle/BoardSubmitPanel";
+import CycleBreadcrumb from "@/components/cycle/CycleBreadcrumb";
+import CycleStepNav from "@/components/cycle/CycleStepNav";
+import AddTeamMemberDialog from "@/components/cycle/AddTeamMemberDialog";
+import TeamCatalogueDialog from "@/components/cycle/TeamCatalogueDialog";
+import { activateCycle, closeCycle, getCycle, listEligibleContributors } from "@/lib/cycleApi";
 import { takeToSolva } from "@/lib/takeToSolva";
 import WorkspaceEntryGate from "@/components/transitions/WorkspaceEntryGate";
+
+/** Returns `?cycle_id=...` (or `&cycle_id=...`) when cycleId is set. */
+function qcid(cycleId, leading = "?") {
+  if (!cycleId) return "";
+  return `${leading}cycle_id=${encodeURIComponent(cycleId)}`;
+}
 
 const STEPS = [
   { id: "agenda",        label: "Agenda",        icon: ClipboardList, act: "setup" },
@@ -168,7 +179,7 @@ function StepFooter({ canBack, canForward, onBack, onForward, primaryLabel, onPr
 /* ------------------------------------------------------------------ */
 /* Step 1 — Agenda                                                    */
 /* ------------------------------------------------------------------ */
-function AgendaStep({ cid, agenda, onSaved, onForward }) {
+function AgendaStep({ cid, cycleId, agenda, onSaved, onForward }) {
   const [title, setTitle] = useState(agenda?.title || "Main board reporting cycle");
   const [items, setItems] = useState(agenda?.items?.length ? agenda.items : [
     { id: null, label: "", owner_label: "" },
@@ -190,7 +201,7 @@ function AgendaStep({ cid, agenda, onSaved, onForward }) {
     if (!itemsClean.length) { toast.error("Add at least one agenda item."); return; }
     setBusy(true);
     try {
-      const { data } = await api.post(`/contexts/${cid}/cycle/agenda`, { title: title.trim(), items: itemsClean });
+      const { data } = await api.post(`/contexts/${cid}/cycle/agenda${qcid(cycleId)}`, { title: title.trim(), items: itemsClean });
       toast.success("Agenda saved.");
       onSaved(data);
       onForward();
@@ -237,7 +248,7 @@ function AgendaStep({ cid, agenda, onSaved, onForward }) {
 /* ------------------------------------------------------------------ */
 /* Step 2 — Team                                                      */
 /* ------------------------------------------------------------------ */
-function TeamStep({ cid, agenda, members, refresh, onBack, onForward }) {
+function TeamStep({ cid, cycleId, agenda, members, refresh, onBack, onForward }) {
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState({ name: "", email: "", role: "", contribution_description: "", owns_item_ids: [] });
   const [editingId, setEditingId] = useState(null);
@@ -263,7 +274,7 @@ function TeamStep({ cid, agenda, members, refresh, onBack, onForward }) {
     }
     setBusy(true);
     try {
-      await api.post(`/contexts/${cid}/cycle/team`, draft);
+      await api.post(`/contexts/${cid}/cycle/team${qcid(cycleId)}`, draft);
       toast.success("Member added.");
       setDraft({ name: "", email: "", role: "", contribution_description: "", owns_item_ids: [] });
       await refresh();
@@ -289,7 +300,7 @@ function TeamStep({ cid, agenda, members, refresh, onBack, onForward }) {
     }
     setEditBusy(true);
     try {
-      await api.patch(`/contexts/${cid}/cycle/team/${editingId}`, {
+      await api.patch(`/contexts/${cid}/cycle/team/${editingId}${qcid(cycleId)}`, {
         name: editDraft.name.trim(),
         email: editDraft.email.trim(),
         role: editDraft.role.trim() || null,
@@ -306,17 +317,62 @@ function TeamStep({ cid, agenda, members, refresh, onBack, onForward }) {
     if (!deleteTarget) return;
     setDeleteBusy(true);
     try {
-      await api.delete(`/contexts/${cid}/cycle/team/${deleteTarget.id}`);
+      await api.delete(`/contexts/${cid}/cycle/team/${deleteTarget.id}${qcid(cycleId)}`);
       toast.success(`Removed ${deleteTarget.name}.`);
       setDeleteTarget(null);
       await refresh();
     } catch (e) { toast.error(apiErrorMessage(e)); } finally { setDeleteBusy(false); }
   };
 
+  const [addOpen, setAddOpen] = useState(false);
+  const [catOpen, setCatOpen] = useState(false);
+
   return (
     <section data-testid="cycle-step-team">
-      <h2 className="akki-serif text-[18px] text-[var(--ink)] mb-1">Build the team.</h2>
-      <p className="akki-meta mb-5">Add the people contributing material — describe what each one is delivering.</p>
+      <div className="flex items-end justify-between gap-3 mb-5">
+        <div className="flex-1">
+          <h2 className="akki-serif text-[18px] text-[var(--ink)] mb-1">Build the team.</h2>
+          <p className="akki-meta">Add the people contributing material — describe what each one is delivering.</p>
+        </div>
+        {cycleId && (
+          <div className="flex items-center gap-2">
+            <Button
+              type="button" size="sm" variant="outline"
+              onClick={() => setCatOpen(true)}
+              className="text-[12.5px]"
+              data-testid="cycle-team-manage-catalogue"
+            >
+              Manage Catalogue
+            </Button>
+            <Button
+              type="button" size="sm"
+              onClick={() => setAddOpen(true)}
+              className="bg-[color:var(--oxblood)] hover:bg-[color:var(--oxblood-deep)] text-white text-[12.5px]"
+              data-testid="cycle-team-add-dialog"
+            >
+              + Add Team Member
+            </Button>
+          </div>
+        )}
+      </div>
+      {cycleId && (
+        <>
+          <AddTeamMemberDialog
+            open={addOpen}
+            onOpenChange={setAddOpen}
+            contextId={cid}
+            cycleId={cycleId}
+            agendaItems={items}
+            agendaItemId={null}
+            onAdded={refresh}
+          />
+          <TeamCatalogueDialog
+            open={catOpen}
+            onOpenChange={setCatOpen}
+            contextId={cid}
+          />
+        </>
+      )}
       {members.length > 0 && (
         <ul className="border border-[var(--rule)] divide-y divide-[var(--rule)] rounded-md bg-white mb-5" data-testid="cycle-team-list">
           {members.map((m) => {
@@ -475,7 +531,7 @@ function TeamStep({ cid, agenda, members, refresh, onBack, onForward }) {
 /* ------------------------------------------------------------------ */
 /* Step 3 — Contributions                                             */
 /* ------------------------------------------------------------------ */
-function ContributionsStep({ cid, agenda, members, contributions, refresh, onBack, onForward }) {
+function ContributionsStep({ cid, cycleId, agenda, members, contributions, refresh, onBack, onForward }) {
   const navigate = useNavigate();
   const items = agenda?.items || [];
   const [draft, setDraft] = useState({ agenda_item_id: items[0]?.id || "", team_member_id: members[0]?.id || "", title: "", body_text: "", kind: "note" });
@@ -483,22 +539,53 @@ function ContributionsStep({ cid, agenda, members, contributions, refresh, onBac
   const [scoringId, setScoringId] = useState(null);
 
   useEffect(() => {
+    // Cycle v2 contributions tab opens at "Select an agenda item"
+    // (PO decision #2 — contributor dropdown stays empty until the
+    // user explicitly picks an agenda item). The legacy default-to-
+    // first-item behaviour is preserved when no v2 cycleId is set.
+    if (cycleId) return;
     if (!draft.agenda_item_id && items[0]?.id) setDraft((p) => ({ ...p, agenda_item_id: items[0].id }));
     if (!draft.team_member_id && members[0]?.id) setDraft((p) => ({ ...p, team_member_id: members[0].id }));
   }, [items, members]); // eslint-disable-line
+
+  // Cycle v2 — PO decision #2: contributor dropdown is FILTERED by
+  // the selected agenda item. When the item changes, refresh the
+  // eligible-contributors list from the backend.
+  const [eligible, setEligible] = useState([]);
+  useEffect(() => {
+    if (!cycleId || !draft.agenda_item_id) { setEligible([]); return; }
+    let alive = true;
+    (async () => {
+      try {
+        const d = await listEligibleContributors(cid, cycleId, draft.agenda_item_id);
+        if (!alive) return;
+        setEligible(d.contributors || []);
+        // If the currently-selected member isn't eligible, reset.
+        const eligibleIds = new Set((d.contributors || []).map((m) => m.id));
+        if (draft.team_member_id && !eligibleIds.has(draft.team_member_id)) {
+          setDraft((p) => ({ ...p, team_member_id: (d.contributors || [])[0]?.id || "" }));
+        }
+      } catch { if (alive) setEligible([]); }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cid, cycleId, draft.agenda_item_id]);
+  // Fall back to ALL members if no v2 cycle (legacy path) — keeps the
+  // pre-v2 UX intact for contexts that haven't started a fresh cycle.
+  const contributorPool = cycleId ? eligible : members;
 
   const addContribution = async () => {
     if (!draft.agenda_item_id || !draft.team_member_id || !draft.body_text.trim()) {
       toast.error("Pick an agenda item, a member, and add some text."); return;
     }
     setBusy(true);
-    try { await api.post(`/contexts/${cid}/cycle/contributions`, draft); await refresh(); setDraft({ ...draft, title: "", body_text: "" }); toast.success("Added."); }
+    try { await api.post(`/contexts/${cid}/cycle/contributions${qcid(cycleId)}`, draft); await refresh(); setDraft({ ...draft, title: "", body_text: "" }); toast.success("Added."); }
     catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
   };
 
   const score = async (cid_contrib) => {
     setScoringId(cid_contrib);
-    try { await api.post(`/contexts/${cid}/cycle/contributions/${cid_contrib}/score`, {}); await refresh(); }
+    try { await api.post(`/contexts/${cid}/cycle/contributions/${cid_contrib}/score${qcid(cycleId)}`, {}); await refresh(); }
     catch (e) { toast.error(apiErrorMessage(e)); } finally { setScoringId(null); }
   };
 
@@ -554,11 +641,30 @@ function ContributionsStep({ cid, agenda, members, contributions, refresh, onBac
         <div className="border border-[var(--rule)] rounded-md bg-[var(--cream-deep)]/30 p-4 space-y-3" data-testid="cycle-contrib-add">
           <p className="akki-overline text-[var(--muted)]">Add a contribution</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            <select value={draft.agenda_item_id} onChange={(e) => setDraft({ ...draft, agenda_item_id: e.target.value })} className="border border-[var(--rule)] rounded-sm h-9 px-2 text-[13px] bg-white" data-testid="cycle-contrib-add-item">
+            <select
+              value={draft.agenda_item_id || ""}
+              onChange={(e) => setDraft({ ...draft, agenda_item_id: e.target.value, team_member_id: "" })}
+              className="border border-[var(--rule)] rounded-sm h-9 px-2 text-[13px] bg-white"
+              data-testid="cycle-contrib-add-item"
+            >
+              <option value="">Select an agenda item</option>
               {items.map((it) => <option key={it.id} value={it.id}>{it.label}</option>)}
             </select>
-            <select value={draft.team_member_id} onChange={(e) => setDraft({ ...draft, team_member_id: e.target.value })} className="border border-[var(--rule)] rounded-sm h-9 px-2 text-[13px] bg-white" data-testid="cycle-contrib-add-member">
-              {members.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.email}</option>)}
+            <select
+              value={draft.team_member_id || ""}
+              onChange={(e) => setDraft({ ...draft, team_member_id: e.target.value })}
+              disabled={!draft.agenda_item_id || contributorPool.length === 0}
+              className="border border-[var(--rule)] rounded-sm h-9 px-2 text-[13px] bg-white disabled:opacity-50"
+              data-testid="cycle-contrib-add-member"
+            >
+              <option value="">
+                {!draft.agenda_item_id
+                  ? "Pick an agenda item first"
+                  : contributorPool.length === 0
+                    ? "No team member assigned to this item"
+                    : "Select a contributor"}
+              </option>
+              {contributorPool.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.email}</option>)}
             </select>
           </div>
           <Input placeholder="Title (optional)" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} className="rounded-sm" />
@@ -577,7 +683,7 @@ function ContributionsStep({ cid, agenda, members, contributions, refresh, onBac
 /* ------------------------------------------------------------------ */
 /* Step 4 — Scoreboard                                                */
 /* ------------------------------------------------------------------ */
-function ScoreboardStep({ cid, readiness, refresh, onBack, onForward }) {
+function ScoreboardStep({ cid, cycleId, readiness, refresh, onBack, onForward }) {
   if (!readiness) return <p className="text-[12.5px] text-[var(--muted)]">Loading…</p>;
   return (
     <section data-testid="cycle-step-scoreboard">
@@ -621,14 +727,14 @@ function ScoreboardStep({ cid, readiness, refresh, onBack, onForward }) {
 /* ------------------------------------------------------------------ */
 /* Step 5 — Follow-ups                                                */
 /* ------------------------------------------------------------------ */
-function FollowUpsStep({ cid, followups, refresh, onBack, onForward, execName }) {
+function FollowUpsStep({ cid, cycleId, followups, refresh, onBack, onForward, execName }) {
   const [busy, setBusy] = useState(false);
   const [sendingId, setSendingId] = useState(null);
 
   const generate = async () => {
     setBusy(true);
     try {
-      const { data } = await api.post(`/contexts/${cid}/cycle/follow-ups/draft`, {});
+      const { data } = await api.post(`/contexts/${cid}/cycle/follow-ups/draft${qcid(cycleId)}`, {});
       toast.success(`${data.count} draft${data.count === 1 ? "" : "s"} produced.`);
       await refresh();
     } catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
@@ -637,8 +743,8 @@ function FollowUpsStep({ cid, followups, refresh, onBack, onForward, execName })
   const approveAndSend = async (fid) => {
     setSendingId(fid);
     try {
-      await api.post(`/contexts/${cid}/cycle/follow-ups/${fid}/approve`, {});
-      const { data } = await api.post(`/contexts/${cid}/cycle/follow-ups/${fid}/send`, {});
+      await api.post(`/contexts/${cid}/cycle/follow-ups/${fid}/approve${qcid(cycleId)}`, {});
+      const { data } = await api.post(`/contexts/${cid}/cycle/follow-ups/${fid}/send${qcid(cycleId)}`, {});
       if (data?.mode === "test_mode_restricted") {
         toast.message("Resend is in test mode — recipient skipped, follow-up logged.");
       } else if (data?.ok) {
@@ -691,7 +797,7 @@ function FollowUpsStep({ cid, followups, refresh, onBack, onForward, execName })
 /* ------------------------------------------------------------------ */
 /* Step 6 — Compilation                                               */
 /* ------------------------------------------------------------------ */
-function CompilationStep({ cid, onBack }) {
+function CompilationStep({ cid, cycleId, cycle, onBack }) {
   const [busy, setBusy] = useState(false);
   const [out, setOut] = useState(null);
   const navigate = useNavigate();
@@ -699,7 +805,7 @@ function CompilationStep({ cid, onBack }) {
   const compile = async () => {
     setBusy(true); setOut(null);
     try {
-      const { data } = await api.post(`/contexts/${cid}/cycle/draft-compilation`, {});
+      const { data } = await api.post(`/contexts/${cid}/cycle/draft-compilation${qcid(cycleId)}`, {});
       setOut(data);
       toast.success("Compilation produced.");
     } catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
@@ -788,8 +894,27 @@ function CompilationStep({ cid, onBack }) {
 export default function Cycle() {
   const { activeContext, account } = useAuth();
   const cid = activeContext?.id;
+  // Cycle v2 — cycle id from URL params + tab state in query string.
+  const { cycleId: routeCycleId } = useParams();
+  const [search, setSearch] = useSearchParams();
+  const cycleId = routeCycleId || null;
+  const navigate = useNavigate();
+  const [cycle, setCycle] = useState(null);
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [activating, setActivating] = useState(false);
+  const [activateOpen, setActivateOpen] = useState(false);
 
-  const [stepId, setStepId] = useState("agenda");
+  // Default tab: URL ?tab=… > "agenda".
+  const initialTab = (search.get("tab") || "agenda").toLowerCase();
+  const [stepId, setStepId] = useState(STEPS.find((s) => s.id === initialTab) ? initialTab : "agenda");
+  const setStepIdSynced = (id) => {
+    setStepId(id);
+    const next = new URLSearchParams(search);
+    next.set("tab", id);
+    setSearch(next, { replace: true });
+  };
+
   const [agenda, setAgenda] = useState(null);
   const [members, setMembers] = useState([]);
   const [contributions, setContributions] = useState([]);
@@ -797,15 +922,38 @@ export default function Cycle() {
   const [followups, setFollowups] = useState([]);
   const [error, setError] = useState(null);
 
+  const isCompleted = cycle?.status === "completed";
+  const isDraft = cycle?.status === "draft";
+  const isActive = cycle?.status === "active";
+  // Active-cycle gating for the activate button (Agenda tab).
+  const canActivate = isDraft && (agenda?.title || cycle?.title || "").trim().length > 0
+                      && (agenda?.items || []).length > 0;
+
+  // Load the cycle row whenever the id changes (or once when no id —
+  // legacy path, just leaves `cycle` null).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!cid || !cycleId) { setCycle(null); return; }
+      try {
+        const c = await getCycle(cid, cycleId);
+        if (alive) setCycle(c);
+      } catch (e) {
+        if (alive) { setError("Cycle not found."); }
+      }
+    })();
+    return () => { alive = false; };
+  }, [cid, cycleId]);
+
   const refreshAll = async () => {
     if (!cid) return;
     try {
       const [a, t, c, r, f] = await Promise.all([
-        api.get(`/contexts/${cid}/cycle/agenda`),
-        api.get(`/contexts/${cid}/cycle/team`),
-        api.get(`/contexts/${cid}/cycle/contributions`),
-        api.get(`/contexts/${cid}/cycle/readiness`),
-        api.get(`/contexts/${cid}/cycle/follow-ups`),
+        api.get(`/contexts/${cid}/cycle/agenda${qcid(cycleId)}`),
+        api.get(`/contexts/${cid}/cycle/team${qcid(cycleId)}`),
+        api.get(`/contexts/${cid}/cycle/contributions${qcid(cycleId)}`),
+        api.get(`/contexts/${cid}/cycle/readiness${qcid(cycleId)}`),
+        api.get(`/contexts/${cid}/cycle/follow-ups${qcid(cycleId)}`),
       ]);
       setAgenda(a.data);
       setMembers(t.data?.members || []);
@@ -816,16 +964,40 @@ export default function Cycle() {
     } catch (e) { setError(apiErrorMessage(e)); }
   };
 
-  useEffect(() => { refreshAll(); /* eslint-disable-next-line */ }, [cid]);
+  useEffect(() => { refreshAll(); /* eslint-disable-next-line */ }, [cid, cycleId]);
 
   const stepIdx = STEPS.findIndex((s) => s.id === stepId);
-  const onBack = () => setStepId(STEPS[Math.max(0, stepIdx - 1)].id);
-  const onForward = () => setStepId(STEPS[Math.min(STEPS.length - 1, stepIdx + 1)].id);
+  const onBack = () => setStepIdSynced(STEPS[Math.max(0, stepIdx - 1)].id);
+  const onForward = () => setStepIdSynced(STEPS[Math.min(STEPS.length - 1, stepIdx + 1)].id);
 
   const execName = useMemo(() => {
     const n = account?.name || account?.email || "";
     return (n.split(" ")[0] || n || "the executive");
   }, [account]);
+
+  const doActivate = async () => {
+    setActivating(true);
+    try {
+      const c = await activateCycle(cid, cycleId);
+      setCycle(c);
+      setActivateOpen(false);
+      toast.success("Cycle activated.");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Failed to activate cycle.");
+    } finally { setActivating(false); }
+  };
+  const doClose = async () => {
+    setClosing(true);
+    try {
+      const c = await closeCycle(cid, cycleId);
+      setCycle(c);
+      setCloseOpen(false);
+      toast.success("Cycle closed. You can still re-download the compilation document from the Compilation tab.");
+      navigate("/app/cycle");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Failed to close cycle.");
+    } finally { setClosing(false); }
+  };
 
   if (!cid) {
     return (
@@ -838,32 +1010,120 @@ export default function Cycle() {
   return (
     <AppShell>
       <WorkspaceEntryGate workspace="cycle">
-      <div className="akki-w-medium px-8 py-10" data-testid="cycle-page">
-        <p className="akki-overline mb-2 flex items-center gap-2">
-          <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Cycle Manager · {activeContext.name}
-        </p>
-        <h1 className="akki-greeting mb-1">Drafting engine.</h1>
-        <p className="akki-meta mb-6 max-w-2xl">
-          Set the agenda, build the team, score contributions, send follow-ups on your approval, and compile the draft when you decide it's ready.
-        </p>
+      <div
+        className="akki-w-medium px-8 py-10"
+        data-testid="cycle-page"
+        aria-disabled={isCompleted ? "true" : "false"}
+      >
+        {cycleId && (
+          <CycleBreadcrumb
+            title={cycle?.title || agenda?.title}
+            status={cycle?.status}
+          />
+        )}
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <p className="akki-overline mb-2 flex items-center gap-2">
+              <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Cycle Manager · {activeContext.name}
+            </p>
+            <h1 className="akki-greeting mb-1">{cycle?.title || "Drafting engine."}</h1>
+            <p className="akki-meta mb-6 max-w-2xl">
+              Set the agenda, build the team, score contributions, send follow-ups on your approval, and compile the draft when you decide it's ready.
+            </p>
+          </div>
+          {isDraft && stepId === "agenda" && cycleId && (
+            <Button
+              size="sm"
+              onClick={() => setActivateOpen(true)}
+              disabled={!canActivate}
+              title={canActivate ? undefined : "Title + at least one agenda item required."}
+              className="bg-[color:var(--oxblood)] hover:bg-[color:var(--oxblood-deep)] text-white"
+              data-testid="cycle-activate-open"
+            >
+              Activate Cycle
+            </Button>
+          )}
+        </div>
+        {isCompleted && (
+          <p
+            className="text-[12px] text-[var(--muted)] bg-[var(--parchment)] border border-[var(--rule)] rounded-sm px-3 py-2 mb-3 font-mono"
+            data-testid="cycle-readonly-banner"
+          >
+            This cycle is closed and read-only. The Compilation tab can still re-generate the document.
+          </p>
+        )}
         {error && (
           <p className="text-[12.5px] text-amber-900 bg-amber-50 border border-amber-100 rounded-sm px-3 py-2 mb-3 inline-flex items-start gap-2">
             <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {error}
           </p>
         )}
+        <fieldset disabled={isCompleted} className={isCompleted ? "opacity-95" : ""}>
         <JudgementPanel
           readiness={readiness}
           followups={followups}
-          onJump={setStepId}
+          onJump={setStepIdSynced}
         />
-        <StepShell activeId={stepId} onSelect={setStepId}>
-          {stepId === "agenda" && <AgendaStep cid={cid} agenda={agenda} onSaved={setAgenda} onForward={onForward} />}
-          {stepId === "team" && <TeamStep cid={cid} agenda={agenda} members={members} refresh={refreshAll} onBack={onBack} onForward={onForward} />}
-          {stepId === "contributions" && <ContributionsStep cid={cid} agenda={agenda} members={members} contributions={contributions} refresh={refreshAll} onBack={onBack} onForward={onForward} />}
-          {stepId === "scoreboard" && <ScoreboardStep cid={cid} readiness={readiness} refresh={refreshAll} onBack={onBack} onForward={onForward} />}
-          {stepId === "followups" && <FollowUpsStep cid={cid} followups={followups} refresh={refreshAll} onBack={onBack} onForward={onForward} execName={execName} />}
-          {stepId === "compilation" && <CompilationStep cid={cid} onBack={onBack} />}
+        <StepShell activeId={stepId} onSelect={setStepIdSynced}>
+          {stepId === "agenda" && <AgendaStep cid={cid} cycleId={cycleId} agenda={agenda} onSaved={setAgenda} onForward={onForward} />}
+          {stepId === "team" && <TeamStep cid={cid} cycleId={cycleId} agenda={agenda} members={members} refresh={refreshAll} onBack={onBack} onForward={onForward} />}
+          {stepId === "contributions" && <ContributionsStep cid={cid} cycleId={cycleId} agenda={agenda} members={members} contributions={contributions} refresh={refreshAll} onBack={onBack} onForward={onForward} />}
+          {stepId === "scoreboard" && <ScoreboardStep cid={cid} cycleId={cycleId} readiness={readiness} refresh={refreshAll} onBack={onBack} onForward={onForward} />}
+          {stepId === "followups" && <FollowUpsStep cid={cid} cycleId={cycleId} followups={followups} refresh={refreshAll} onBack={onBack} onForward={onForward} execName={execName} />}
+          {stepId === "compilation" && <CompilationStep cid={cid} cycleId={cycleId} cycle={cycle} onBack={onBack} />}
         </StepShell>
+        </fieldset>
+        {cycleId && (
+          <CycleStepNav
+            tab={stepId}
+            status={cycle?.status}
+            onChange={setStepIdSynced}
+            onClose={() => setCloseOpen(true)}
+          />
+        )}
+
+        <AlertDialog open={activateOpen} onOpenChange={setActivateOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="akki-serif">Activate this cycle?</AlertDialogTitle>
+              <AlertDialogDescription className="akki-meta">
+                Once active, it appears as active on the cycle list and contributors can begin work.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={activating} data-testid="cycle-activate-cancel">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => { e.preventDefault(); doActivate(); }}
+                disabled={activating}
+                className="bg-[color:var(--oxblood)] hover:bg-[color:var(--oxblood-deep)] text-white"
+                data-testid="cycle-activate-confirm"
+              >
+                {activating ? "Activating…" : "Activate"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={closeOpen} onOpenChange={setCloseOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="akki-serif">Close this cycle?</AlertDialogTitle>
+              <AlertDialogDescription className="akki-meta">
+                Are you sure you want to close this cycle? Once closed, the cycle will be read-only and cannot be edited. Make sure you have downloaded the compilation document before closing.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={closing} data-testid="cycle-close-cancel">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => { e.preventDefault(); doClose(); }}
+                disabled={closing}
+                className="bg-[color:var(--oxblood)] hover:bg-[color:var(--oxblood-deep)] text-white"
+                data-testid="cycle-close-confirm"
+              >
+                {closing ? "Closing…" : "Close cycle"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
       </WorkspaceEntryGate>
     </AppShell>

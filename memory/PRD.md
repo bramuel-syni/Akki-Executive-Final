@@ -3323,3 +3323,56 @@ See `/app/memory/sprints/CYCLE_MANAGER_VERIFY.md` for the §D + §E walkthroughs
 ### Files index
 
 See `CYCLE_MANAGER_VERIFY.md` §"Files touched in this sprint".
+
+---
+
+## CYCLE v2 sprint — Multi-Cycle Support (2026-02)
+
+**Brief:** `/app/memory/sprints/CYCLE_MANAGER_V2_BRIEF.md` (APPROVED-FOR-BUILD).
+**Verify doc:** `/app/memory/sprints/CYCLE_MANAGER_V2_VERIFY.md`.
+**Predecessor:** Cycle Manager Assignment Handoff Sprint — `/app/memory/sprints/CYCLE_MANAGER_BRIEF.md`.
+
+### Architectural shift
+Single cycle per (account, context) → many cycles per context. New `db.cycles` master collection. Existing `cycle_agendas` / `cycle_team` / `cycle_contributions` / `cycle_followups` / `cycle_assignments` now scoped by `cycle_id`. New account-scoped `db.team_catalogue` holds permanent (name, email) identity.
+
+### What shipped
+
+**Backend**
+- `services/cycle_lifecycle.py` — `get_cycle_or_404`, `require_cycle_writable`, `resolve_implicit_cycle_id`, `compute_cycle_counts`, `compute_readiness_score`.
+- `routers/cycles.py` — 5 endpoints: create, list (paginated/searchable/sortable), detail, activate, close.
+- `routers/team_catalogue.py` — 5 endpoints: list, add (auto-upsert + resurrect-on-add), patch (collision-safe), soft-delete, duplicate-check.
+- `routers/cycle_manager.py` — `?cycle_id=` query param on every singleton route (`/cycle/agenda`, `/cycle/team`, `/cycle/contributions`, `/cycle/follow-ups/*`, `/cycle/draft-compilation`, `/cycle/readiness`); `require_cycle_writable` enforced on every mutation; new `GET /cycles/{cycle_id}/agenda-items/{ai_id}/eligible-contributors` (PO #2).
+- `migrations/0001_multi_cycle.py` — one-shot, idempotent, runs on boot. Creates a `cycles` row per existing `cycle_agendas.context_id` with the same id; status=active per PO #3. Backfills `cycle_id` on `cycle_team` / `cycle_contributions` / `cycle_followups` / `cycle_compilations` / `cycle_assignments` rows that reference `agenda_id`.
+- Indexes: `cycles` `{id unique, (context_id,status,created_at desc), (context_id,title)}`; `team_catalogue` `{id unique, (context_id,email_lc) unique, (context_id,deleted_at,name)}`; `_migrations` `{id unique}`.
+
+**Frontend**
+- `/app/cycle` now routes to `CycleList` (new).  `/app/cycle/:cycleId` routes to the existing `Cycle` page (now cycle-aware).
+- `lib/cycleApi.js` — typed thin wrappers.
+- `pages/cycle/CycleList.jsx` — search + sort (recent / oldest / alpha / status) + 12-per-page pagination + Add Cycle modal + `c` keyboard shortcut + empty state.
+- `components/cycle/CycleCard.jsx` — status-driven visual hierarchy (active prominent, draft medium, completed quiet).
+- `components/cycle/CycleBreadcrumb.jsx` — Layer 1 nav back to list.
+- `components/cycle/CycleStepNav.jsx` — Layer 2 Back/Next. Compilation tab: Next becomes "Close Cycle" (active) / "Cycle Completed" disabled (completed).
+- `components/cycle/AddTeamMemberDialog.jsx` — two tabs (Catalogue / New). Duplicate-warning inline; "Add anyway" path.
+- `components/cycle/TeamCatalogueDialog.jsx` — manage permanent identity; soft-delete preserves history.
+- `pages/Cycle.jsx` — surgical patch: reads `cycleId` from URL params, threads `?cycle_id=` through every API call, sync tab state to URL, contributor dropdown scoped to selected agenda item (PO #2), Activate Cycle button on Agenda tab for Draft (PO #1), Close Cycle button on Compilation tab via step nav, completed-cycle banner + disabled fieldset.
+
+**Conflicts with C3 assignment handoff:** zero refactor needed. See `CYCLE_MANAGER_V2_BRIEF.md §3 Conflicts` for the full reconciliation.
+
+### Acceptance — automated
+
+`pytest tests/test_cycles_v2.py tests/test_team_catalogue.py tests/test_cycle_migration.py + critical regression suite` → **86 / 86 green** (41 baseline + 25 C3 + 20 new).
+
+### Acceptance — migration marker
+
+`db._migrations.findOne({id: "0001_multi_cycle"})` returns a row with `applied_at` + stats (cycles_created, backfilled_cycle_*). Verified live: 3 cycles created, 37 contexts scanned, 5 backfills.
+
+### Acceptance — hex sweep
+
+`grep -rE '#[0-9a-fA-F]{3,8}\b' frontend/src/pages/cycle frontend/src/components/cycle frontend/src/pages/{Cycle,CycleSettings}.jsx frontend/src/pages/ned/ | grep -v 'color:var'` → 0 hits.
+
+### Deferred (Should-have / Could-have, not done)
+
+- Card hover micro-interaction (subtle parchment-shift)
+- Sticky Back/Next bar on long tabs
+- Cycle title inline edit on detail header
+- Bulk close, CSV export, filter pills — all explicitly out of scope per brief.

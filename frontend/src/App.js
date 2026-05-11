@@ -45,6 +45,7 @@ import SolvaApp from "@/pages/SolvaApp";
 import SolvaSession from "@/pages/SolvaSession";
 import SolvaSessions from "@/pages/SolvaSessions";
 import Cycle from "@/pages/Cycle";
+import CycleList from "@/pages/cycle/CycleList";  // Cycle v2 — multi-cycle list landing
 import Monitor from "@/pages/Monitor";
 import PlaysLibrary from "@/pages/PlaysLibrary";
 import PlayView from "@/pages/PlayView";
@@ -231,7 +232,8 @@ function App() {
 
           <Route path="/app/first-session" element={<ProtectedRoute><FirstSession /></ProtectedRoute>} />
           <Route path="/app" element={<Gated><AppHome /></Gated>} />
-          <Route path="/app/cycle" element={<Gated><Cycle /></Gated>} />
+          <Route path="/app/cycle" element={<Gated><CycleList /></Gated>} />
+          <Route path="/app/cycle/:cycleId" element={<Gated><Cycle /></Gated>} />
           {/* Phase E — NED Cycle Manager */}
           <Route path="/app/ned/meeting/:id" element={<Gated><NedMeeting /></Gated>} />
           <Route path="/app/ned/committee/:cid/:committee" element={<Gated><NedCommittee /></Gated>} />

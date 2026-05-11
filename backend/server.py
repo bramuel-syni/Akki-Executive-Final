@@ -69,6 +69,8 @@ from routers import admin_sandbox_kpi as admin_sandbox_kpi_router  # noqa: E402
 from routers import signal_actions as signal_actions_router  # noqa: E402
 from routers import pulse as pulse_router  # noqa: E402
 from routers import cycle_manager as cycle_manager_router  # noqa: E402
+from routers import cycles as cycles_router  # noqa: E402  # Cycle v2 — multi-cycle master
+from routers import team_catalogue as team_catalogue_router  # noqa: E402  # Cycle v2
 from routers import cycle_assignments as cycle_assignments_router  # noqa: E402  # Cycle sprint (C3 ASSIGNMENT HANDOFF)
 from routers import ned_cycle as ned_cycle_router  # noqa: E402  # Phase E
 from routers import admin_signal_kpi as admin_signal_kpi_router  # noqa: E402
@@ -156,6 +158,8 @@ app.include_router(admin_sandbox_kpi_router.router)
 app.include_router(signal_actions_router.router)
 app.include_router(pulse_router.router)
 app.include_router(cycle_manager_router.router)
+app.include_router(cycles_router.router)  # Cycle v2 — multi-cycle master
+app.include_router(team_catalogue_router.router)  # Cycle v2 — team catalogue
 app.include_router(cycle_assignments_router.router)  # Cycle sprint — submit/assign/inbox/accept/decline
 app.include_router(ned_cycle_router.router)  # Phase E — NED Cycle Manager
 app.include_router(admin_signal_kpi_router.router)
@@ -439,6 +443,27 @@ async def on_startup():
     await db.work_studio_briefs.create_index(
         [("submitter_account_id", 1), ("board_status", 1), ("submitted_at", -1)],
     )
+
+    # Cycle Manager v2 sprint (2026-02) — multi-cycle pivot.
+    # See /app/memory/sprints/CYCLE_MANAGER_V2_BRIEF.md.
+    await db.cycles.create_index("id", unique=True)
+    await db.cycles.create_index([("context_id", 1), ("status", 1), ("created_at", -1)])
+    await db.cycles.create_index([("context_id", 1), ("title", 1)])
+    await db.team_catalogue.create_index("id", unique=True)
+    await db.team_catalogue.create_index(
+        [("context_id", 1), ("email_lc", 1)], unique=True,
+    )
+    await db.team_catalogue.create_index([("context_id", 1), ("deleted_at", 1), ("name", 1)])
+    await db["_migrations"].create_index("id", unique=True)
+
+    # Run the multi-cycle migration on startup (idempotent).
+    try:
+        from migrations import _runner as _mig_runner  # type: ignore
+        await _mig_runner.run_all()
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("akki.server").warning(
+            "migration runner failed at boot: %s", exc,
+        )
 
     # Early-access registrations (public marketing intake)
     await db.early_access_registrations.create_index("email", unique=True)
