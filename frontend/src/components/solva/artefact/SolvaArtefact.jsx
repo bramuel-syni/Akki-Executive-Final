@@ -12,7 +12,8 @@
  * The session prop is the dict returned by
  * GET /api/solva/v2/sessions/{sid} — same shape as the orchestrator stores.
  */
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
+import PerSectionSynisenseBadge from "@/components/solva/artefact/PerSectionSynisenseBadge";
 import { Download, MessageSquare, RefreshCw, Workflow } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -156,6 +157,34 @@ export default function SolvaArtefact({ session, onStartReflection, savedToast =
   const [downloadOpen, setDownloadOpen] = useState(false);
   const sessionId = session?.id;
 
+  // SOLVA sprint — per-section Synisense breakdown. Fetched once when
+  // the artefact mounts; distributed by surface key to badges that
+  // render inline at the top of each major reasoning section.
+  const [synBreakdown, setSynBreakdown] = useState(null);
+  useEffect(() => {
+    if (!sessionId) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get(`/solva/v2/sessions/${sessionId}/synisense-breakdown`);
+        if (!cancelled) setSynBreakdown(data);
+      } catch {
+        if (!cancelled) setSynBreakdown(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionId]);
+  const surfaceMap = useMemo(() => {
+    const m = new Map();
+    (synBreakdown?.per_surface || []).forEach((row) => {
+      // Surface keys arrive as `solve_v2.framing` etc. Strip the prefix
+      // so we can look up by short key (`framing`, `grounding`, …).
+      const short = (row.surface || "").replace(/^solve_v2\./, "");
+      m.set(short, row);
+    });
+    return m;
+  }, [synBreakdown]);
+
   const synthesis = session?.synthesis || {};
   const claims = synthesis.claims || [];
 
@@ -281,6 +310,63 @@ export default function SolvaArtefact({ session, onStartReflection, savedToast =
           )}
         </div>
       </header>
+
+      {/* SOLVA sprint (2026-05-12) — audit storyline + per-section
+          Synisense breakdown strip. Sits between the masthead and the
+          task body so a reader sees the trust posture before the
+          reasoning. Falls back to a "—" badge per surface when the
+          session pre-dates session-id threading. */}
+      {synBreakdown && (
+        <section
+          style={{
+            margin: "0 0 40px 0",
+            padding: "20px 24px",
+            background: TOKEN.PAPER,
+            border: `1px solid ${TOKEN.RULE}`,
+            borderRadius: 2,
+          }}
+          data-testid="solva-audit-storyline"
+        >
+          <p
+            style={{
+              fontFamily: FONT.GEORGIA,
+              fontStyle: "italic",
+              fontSize: 15,
+              color: TOKEN.MUTED,
+              margin: "0 0 14px 0",
+              lineHeight: 1.55,
+              maxWidth: "70ch",
+            }}
+            data-testid="solva-audit-storyline-text"
+          >
+            {synBreakdown.storyline}
+          </p>
+          {synBreakdown.per_surface && synBreakdown.per_surface.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+              {synBreakdown.per_surface.map((row) => {
+                const short = (row.surface || "").replace(/^solve_v2\./, "");
+                return (
+                  <div key={row.surface} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span
+                      style={{
+                        fontFamily: FONT.CALIBRI,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: TOKEN.MUTED,
+                        letterSpacing: "0.12em",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {short.replace(/_/g, " ")}
+                    </span>
+                    <PerSectionSynisenseBadge surface={short} runs={row} />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Wave 2.2 (UAT pack 2026-05-10) — task-specific artefact body.
           Each submodule renders its own structure. The Generic body
@@ -610,7 +696,7 @@ function SolvaArtefactHandoffBar({ session, sessionId }) {
         onClick={onContinueInChat}
         data-testid="solva-handoff-continue-chat"
         style={{
-          background: TOKEN.ACCENT, color: "#FFFFFF", border: "none",
+          background: TOKEN.ACCENT, color: "var(--parchment-light)", border: "none",
           padding: "9px 16px", borderRadius: 2, cursor: "pointer",
           fontFamily: FONT.CALIBRI, fontSize: 13, fontWeight: 500,
           letterSpacing: 0.3, display: "inline-flex", alignItems: "center", gap: 6,

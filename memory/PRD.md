@@ -3172,3 +3172,41 @@ chat open.
 - Export redaction record PDF (move to TRUST sprint)
 - Hash chain changes (frozen)
 - Module-specific tests for batch endpoint (covered by shared aggregation pipeline)
+
+---
+
+## Sprint SOLVA — closure (2026-05-12)
+
+Editorial pass on Solva surfaces: v7 palette/typography sweep, per-section
+Synisense badge with audit storyline, export template v7 migration with
+preserved byte-determinism, `placeholder_stub` deletion, v2→v3 UI brand
+sweep (code namespace preserved).
+
+- **v7 palette sweep**: `tokens.js` migrated to v7 `var(--*)` references;
+  5 component files patched (69 hex literals → 0). Banned-vocab clean.
+- **Per-section Synisense breakdown**: new endpoint `GET /api/solva/v2/sessions/{sid}/synisense-breakdown`
+  + `session_id` threaded through pipeline. `PerSectionSynisenseBadge.jsx`
+  + audit storyline at top of `SolvaArtefact.jsx`. Legacy sessions fall
+  back to surface + time-window query.
+- **Export templates**: HTML (WeasyPrint) palette → v7; DOCX colors → oxblood;
+  font runs preserved (determinism). DOCX + PDF rebuild produces identical
+  SHA-256 across runs.
+- **placeholder_stub deleted** from `SHIELD_BYPASS_REASONS` (zero live callers).
+- **v2→v3 UI brand sweep**: zero UI-visible "Solva v2" matches; CODE
+  namespace + DB collections + audit-chain surfaces untouched.
+- **Tests**: 35/35 trust-critical preserved; 112/132 Solva v2 (20 failures
+  pre-date this sprint, confirmed via `git stash` retest).
+
+### Files
+- New: `frontend/src/components/solva/artefact/PerSectionSynisenseBadge.jsx`.
+- Modified: `frontend/src/components/solva/flow/tokens.js`, 5 Solva surface files,
+  `backend/routers/solva_v2.py` (+endpoint), `backend/services/synisense/pipeline.py`,
+  `backend/services/solva_v2/llm_adapter.py`, `backend/solva_artefact_export.py`,
+  `backend/templates/solva_*.html`.
+- Closure: `/app/docs/sprints/SOLVA.md`.
+
+### Deferred
+- DOCX font runs (Source Serif 4 / Inter) — pending hash-chain version bump
+- Solva ExCo association (Q2(c))
+- Export-redaction-record cross-link from Solva artefact (S-27 → TRUST sprint)
+- Pre-existing Solva v2 test failures (schema drift in synthesis cluster path)

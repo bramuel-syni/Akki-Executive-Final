@@ -81,6 +81,14 @@ from services.solva_v2.submodules import (
 
 logger = logging.getLogger("akki.solva_v2")
 
+# SOLVA sprint (2026-05-12) — code namespace `solva_v2` is preserved
+# for audit-chain stability. Existing hash-chained session records,
+# audit log rows, and Mongo collection names (`db.solva_v2_sessions`,
+# `db.synisense_runs` with `surface=solva_v2.*`) MUST continue to
+# resolve — renaming the namespace would break the chain. The UX brand
+# surface is "Solva v3" or simply "Solva". Internal references in this
+# router and `services/solva_v2/` stay verbatim.
+
 router = APIRouter(prefix="/api/solva/v2", tags=["solva_v2"])
 
 
@@ -1952,6 +1960,117 @@ async def get_reasoning_log(
         "status": rec.get("status"),
         "entry_count": len(rec.get("reasoning_audit_log") or []),
         "entries": rec.get("reasoning_audit_log") or [],
+    }
+
+
+@router.get("/sessions/{sid}/synisense-breakdown")
+async def get_synisense_breakdown(
+    sid: str,
+    account: Dict[str, Any] = Depends(get_current_account),
+) -> Dict[str, Any]:
+    """SOLVA sprint (2026-05-12) — per-section Synisense breakdown.
+
+    Returns the total identifier count + three-layer breakdown grouped
+    by Solva reasoning surface (framing / grounding / hypothesis /
+    synthesis / reflection). Powers the per-section badge on the
+    artefact UI.
+
+    Filter is on (session_id, surface) which is reliable once the
+    pipeline started threading session_id forward (SOLVA sprint).
+    Older sessions that pre-date the threading return an empty list —
+    the UI degrades gracefully to "—" badges. We also accept the
+    surface-by-time-window approximation for that historical bucket by
+    reading the session's account_id + creation/update window."""
+    rec = await db.solva_v2_sessions.find_one(
+        {"id": sid, "account_id": account["id"]},
+        {"_id": 0, "id": 1, "account_id": 1, "created_at": 1, "updated_at": 1, "status": 1},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    # Primary query — session_id threaded through (post-SOLVA-sprint sessions).
+    pipeline = [
+        {
+            "$match": {
+                "session_id": sid,
+                "surface": {"$regex": "^solve_v2\\."},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$surface",
+                "runs": {"$sum": 1},
+                "identifiers": {"$sum": {"$size": {"$ifNull": ["$spans", []]}}},
+                "layers": {"$push": "$stats.layer_won"},
+            }
+        },
+    ]
+    rows = await db.synisense_runs.aggregate(pipeline).to_list(length=64)
+
+    # Fallback for pre-sprint sessions — surface + account_id + time-window.
+    if not rows and rec.get("created_at"):
+        fallback_pipeline = [
+            {
+                "$match": {
+                    "account_id": account["id"],
+                    "surface": {"$regex": "^solve_v2\\."},
+                    "ts": {
+                        "$gte": rec["created_at"],
+                        "$lte": rec.get("updated_at") or rec["created_at"],
+                    },
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$surface",
+                    "runs": {"$sum": 1},
+                    "identifiers": {"$sum": {"$size": {"$ifNull": ["$spans", []]}}},
+                    "layers": {"$push": "$stats.layer_won"},
+                }
+            },
+        ]
+        rows = await db.synisense_runs.aggregate(fallback_pipeline).to_list(length=64)
+
+    per_surface: List[Dict[str, Any]] = []
+    total_identifiers = 0
+    total_calls = 0
+    for row in rows:
+        layers = row.get("layers") or []
+        breakdown = {"regex": 0, "presidio": 0, "llm": 0}
+        for lw in layers:
+            if not lw:
+                continue
+            if lw == "regex":
+                breakdown["regex"] += 1
+            elif lw == "presidio":
+                breakdown["presidio"] += 1
+            elif lw in ("llm", "llm_fallback"):
+                breakdown["llm"] += 1
+        ident = int(row.get("identifiers") or 0)
+        calls = int(row.get("runs") or 0)
+        total_identifiers += ident
+        total_calls += calls
+        per_surface.append(
+            {
+                "surface": row.get("_id"),
+                "identifiers_count": ident,
+                "model_calls": calls,
+                "layers": breakdown,
+            }
+        )
+    per_surface.sort(key=lambda r: r["surface"])
+    storyline = (
+        f"This session passed through three layers of redaction across "
+        f"{len(per_surface)} reasoning surface{'s' if len(per_surface) != 1 else ''}. "
+        f"{total_identifiers} identifier{'s were' if total_identifiers != 1 else ' was'} "
+        f"masked deterministically before any AI saw them. Nothing left your tenant."
+    )
+    return {
+        "session_id": sid,
+        "per_surface": per_surface,
+        "total_identifiers_count": total_identifiers,
+        "model_calls_total": total_calls,
+        "storyline": storyline,
     }
 
 

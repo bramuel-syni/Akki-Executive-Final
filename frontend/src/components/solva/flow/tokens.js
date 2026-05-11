@@ -1,32 +1,32 @@
 /**
- * Solva v3 design tokens (brief §7.1) — re-exported here so every flow /
- * artefact component picks them up from one place. Pure constants, no
- * runtime cost.
+ * Solva v3 design tokens — migrated to v7 canonical palette
+ * (SOLVA sprint, 2026-05-12). Every key now points at the canonical
+ * v7 token via the CSS variable bridge, so the visible palette flows
+ * from one source of truth (`frontend/src/index.css`).
+ *
+ * The legacy uppercase names are preserved as the JS-side dictionary so
+ * the ~50 component call sites continue to render without a sweep.
+ * Hard-coded brand red (`#C25A38`) becomes oxblood (`#7A2E2E`); paper /
+ * cream become parchment / parchment-light. Decorative ACCENT_DARK
+ * collapses into oxblood-deep.
  */
 export const TOKEN = Object.freeze({
-  INK:    "#2A1B1D",
-  DEEP:   "#5A4A4D",
-  MUTED:  "#6B6B6B",
-  RULE:   "#D5C9B6",
-  CREAM:  "#F5EFE6",
-  CREAM_DEEP: "#E8DCC8",
-  ACCENT: "#C25A38",
-  // Phase I.5 — WCAG AA-safe variant of the brand accent for *interactive*
-  // surfaces (button fills, refusal pill, link hover). The decorative
-  // ACCENT (#C25A38) ratios at 4.36 against #FFFFFF — that's a hair below
-  // the 4.5:1 threshold for normal-weight text. Using ACCENT_DARK (#B85230)
-  // for fills behind white text gets us to 4.90:1 (AA normal text).
-  // Visual difference vs the brand accent is sub-perceptual; brand kickers
-  // and dividers continue to use ACCENT.
-  ACCENT_DARK: "#B85230",
-  PAPER:  "#FAF7F2",
-  LIGHT:  "#FFFFFF",
+  INK:         "var(--ink)",
+  DEEP:        "var(--ink)",
+  MUTED:       "var(--graphite)",
+  RULE:        "var(--graphite-light)",
+  CREAM:       "var(--parchment-light)",
+  CREAM_DEEP:  "var(--parchment)",
+  ACCENT:      "var(--oxblood)",
+  ACCENT_DARK: "var(--oxblood-deep)",
+  PAPER:       "var(--parchment-light)",
+  LIGHT:       "var(--parchment-light)",
 });
 
 export const FONT = Object.freeze({
-  GEORGIA: "Georgia, 'Times New Roman', serif",
-  CALIBRI: "Calibri, 'Calibri Light', 'Helvetica Neue', Arial, sans-serif",
-  CONSOLAS: "'Consolas', 'SF Mono', 'Menlo', monospace",
+  GEORGIA:  "var(--font-display, 'Source Serif 4', Georgia, serif)",
+  CALIBRI:  "var(--font-ui, Inter, 'Calibri Light', 'Helvetica Neue', Arial, sans-serif)",
+  CONSOLAS: "var(--font-mono, 'JetBrains Mono', Consolas, 'SF Mono', monospace)",
 });
 
 export const SUBMODULE_LABELS = Object.freeze({

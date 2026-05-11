@@ -77,7 +77,7 @@ export default function TransitionMessage({ submodule, fromLayer, toLayer, durat
           fontFamily: "Georgia, serif",
           fontStyle: "italic",
           fontSize: 13.5,
-          color: "#6B6358",
+          color: "var(--graphite)",
           background: "rgba(250, 246, 238, 0.92)",
           border: "1px solid rgba(0,0,0,0.06)",
           borderRadius: 999,

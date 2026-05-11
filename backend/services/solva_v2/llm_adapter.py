@@ -47,9 +47,13 @@ ENGINE_VERSIONS: Dict[str, str] = {
 # Every audit entry with shield_required=False MUST carry exactly one of
 # these reasons, so the audit log never has to be interpreted to know why
 # Synisense was not invoked.
+#
+# SOLVA sprint (2026-05-12): the legacy "placeholder_stub" value was
+# removed — no live caller has emitted it since the Solva v2 GA wave
+# (Phase 15.2+). If a future engine ever returns canned content it must
+# pick one of the surviving reasons that match its actual mode.
 SHIELD_BYPASS_REASONS = frozenset({
     "engine_does_not_call_llm",  # generic — engine is not an LLM call site
-    "placeholder_stub",          # stub returning canned content for 15.0
     "deterministic_only",        # pure DB / arithmetic / parser; no model
 })
 
@@ -124,7 +128,8 @@ async def shielded_call(
     t0 = _time.monotonic()
 
     # 1. Synisense first — surface='solve_v2' closes the v1 gap flagged at
-    #    docs/SYNISENSE_SCOPE.md:49.
+    #    docs/SYNISENSE_SCOPE.md:49. The session_id is now threaded so the
+    #    UI can render a per-section badge grouped by (session_id, surface).
     try:
         syn_out = await syn_run(
             text=prompt,
@@ -132,6 +137,7 @@ async def shielded_call(
             surface=surface,
             mode="redact",
             account_id=account_id,
+            session_id=session_id,
         )
     except Exception as exc:
         logger.error(
@@ -355,7 +361,7 @@ async def validator_call(
         )
     except Exception as exc:
         logger.error("solva_v2 validator: synisense failed err=%s", exc)
-        raise RuntimeError(f"Synisense unavailable for validator; refusing call") from exc
+        raise RuntimeError("Synisense unavailable for validator; refusing call") from exc
 
     shielded_content = syn_out.get("redacted_text") or content
     ihash = hashlib.sha256((content or "").encode("utf-8")).hexdigest()

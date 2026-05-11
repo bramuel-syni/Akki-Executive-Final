@@ -41,15 +41,15 @@ import { api } from "@/lib/api";
 
 // Tokens (brief §7.1) — kept inline so the component is portable.
 const TOKEN = {
-  INK: "#2A1B1D",
-  DEEP: "#5A4A4D",
-  MUTED: "#6B6B6B",
-  RULE: "#D5C9B6",
-  CREAM: "#F5EFE6",
-  CREAM_DEEP: "#E8DCC8",
-  ACCENT: "#C25A38",
-  PAPER: "#FAF7F2",
-  LIGHT: "#FFFFFF",
+  INK: "var(--ink)",
+  DEEP: "var(--graphite)",
+  MUTED: "var(--graphite)",
+  RULE: "var(--graphite-light)",
+  CREAM: "var(--parchment-light)",
+  CREAM_DEEP: "var(--parchment)",
+  ACCENT: "var(--oxblood)",
+  PAPER: "var(--parchment-light)",
+  LIGHT: "var(--parchment-light)",
 };
 
 // Brief §3.2 — verbatim card copy. Card 04 label per user instruction.
@@ -208,7 +208,7 @@ function RecentSessionsCollapsible({ sessions, onResume, onDiscard, onStartGuide
               data-testid="solva-empty-state-card"
               style={{
                 listStyle: "none",
-                background: "#FFFFFF",
+                background: "var(--parchment-light)",
                 border: `1px solid ${TOKEN.RULE}`,
                 borderRadius: 4,
                 padding: "20px 24px",
@@ -234,7 +234,7 @@ function RecentSessionsCollapsible({ sessions, onResume, onDiscard, onStartGuide
                 data-testid="solva-empty-cta-guided"
                 style={{
                   background: TOKEN.ACCENT,
-                  color: "#FFFFFF",
+                  color: "var(--parchment-light)",
                   border: "none",
                   padding: "8px 16px",
                   borderRadius: 2,
@@ -638,7 +638,7 @@ function DisambiguatorDialog({ onPick, onClose }) {
         onClick={(e) => e.stopPropagation()}
         data-testid="solva-disambiguator-dialog"
         style={{
-          background: "#FFFFFF",
+          background: "var(--parchment-light)",
           borderRadius: 6,
           maxWidth: 520,
           width: "100%",
@@ -731,7 +731,7 @@ function DisambiguatorDialog({ onPick, onClose }) {
             data-testid="solva-disambig-confirm"
             style={{
               background: choice ? TOKEN.ACCENT : TOKEN.MUTED,
-              color: "#FFFFFF",
+              color: "var(--parchment-light)",
               border: "none",
               padding: "8px 18px",
               borderRadius: 2,

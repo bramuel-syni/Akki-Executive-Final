@@ -346,7 +346,7 @@ export default function SolvaSession() {
         margin: "0 auto 24px",
         maxWidth: 760,
         padding: 14,
-        background: "#FFFFFF",
+        background: "var(--parchment-light)",
         border: `1px solid ${TOKEN.ACCENT}`,
         color: TOKEN.ACCENT,
         fontFamily: FONT.CALIBRI,

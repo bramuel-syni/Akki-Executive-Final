@@ -83,7 +83,7 @@ export default function SolvaSessions() {
           style={{
             display: "inline-flex", alignItems: "center", gap: 6,
             fontFamily: 'Calibri, "Segoe UI", system-ui, sans-serif',
-            fontSize: 12, color: "#6B6358",
+            fontSize: 12, color: "var(--graphite)",
             textDecoration: "none", marginBottom: 14,
           }}
         >
@@ -93,7 +93,7 @@ export default function SolvaSessions() {
         <h1
           style={{
             fontFamily: "Georgia, serif",
-            fontSize: 26, color: "#1F1C18",
+            fontSize: 26, color: "var(--ink)",
             margin: "0 0 4px 0", fontWeight: 600,
           }}
         >
@@ -102,7 +102,7 @@ export default function SolvaSessions() {
         <p
           style={{
             fontFamily: "Georgia, serif", fontStyle: "italic",
-            fontSize: 14, color: "#6B6358",
+            fontSize: 14, color: "var(--graphite)",
             margin: "0 0 22px 0",
           }}
         >
@@ -114,10 +114,10 @@ export default function SolvaSessions() {
           style={{
             display: "flex", alignItems: "center", gap: 8,
             border: "1px solid rgba(0,0,0,0.16)", borderRadius: 2,
-            padding: "8px 12px", marginBottom: 14, background: "#FFFFFF",
+            padding: "8px 12px", marginBottom: 14, background: "var(--parchment-light)",
           }}
         >
-          <Search width={14} height={14} color="#6B6358" />
+          <Search width={14} height={14} color="var(--graphite)" />
           <input
             type="text"
             value={q}
@@ -127,7 +127,7 @@ export default function SolvaSessions() {
             style={{
               border: "none", outline: "none", flex: 1,
               fontFamily: 'Calibri, "Segoe UI", system-ui, sans-serif',
-              fontSize: 14, color: "#1F1C18",
+              fontSize: 14, color: "var(--ink)",
             }}
           />
         </div>
@@ -145,9 +145,9 @@ export default function SolvaSessions() {
                 style={{
                   padding: "6px 14px",
                   borderRadius: 999,
-                  border: `1px solid ${selected ? "#8B1D2C" : "rgba(0,0,0,0.18)"}`,
-                  background: selected ? "rgba(139,29,44,0.08)" : "#FFFFFF",
-                  color: selected ? "#8B1D2C" : "#6B6358",
+                  border: `1px solid ${selected ? "var(--oxblood)" : "rgba(0,0,0,0.18)"}`,
+                  background: selected ? "rgba(139,29,44,0.08)" : "var(--parchment-light)",
+                  color: selected ? "var(--oxblood)" : "var(--graphite)",
                   fontFamily: 'Calibri, "Segoe UI", system-ui, sans-serif',
                   fontSize: 12, letterSpacing: 0.3,
                   cursor: "pointer",
@@ -161,11 +161,11 @@ export default function SolvaSessions() {
 
         {/* List */}
         {loading ? (
-          <p style={{ color: "#6B6358", fontStyle: "italic" }}>Loading…</p>
+          <p style={{ color: "var(--graphite)", fontStyle: "italic" }}>Loading…</p>
         ) : items.length === 0 ? (
           <p
             data-testid="solva-sessions-empty"
-            style={{ color: "#6B6358", fontStyle: "italic", fontFamily: "Georgia, serif" }}
+            style={{ color: "var(--graphite)", fontStyle: "italic", fontFamily: "Georgia, serif" }}
           >
             No sessions match.
           </p>
@@ -178,7 +178,7 @@ export default function SolvaSessions() {
                 style={{
                   border: "1px solid rgba(0,0,0,0.06)",
                   borderRadius: 4,
-                  background: "#FFFFFF",
+                  background: "var(--parchment-light)",
                   padding: "14px 16px",
                   marginBottom: 10,
                   display: "flex", alignItems: "flex-start",
@@ -191,7 +191,7 @@ export default function SolvaSessions() {
                       style={{
                         fontFamily: 'Calibri, "Segoe UI", system-ui, sans-serif',
                         fontSize: 11, letterSpacing: 0.5,
-                        textTransform: "uppercase", color: "#8B1D2C", fontWeight: 600,
+                        textTransform: "uppercase", color: "var(--oxblood)", fontWeight: 600,
                       }}
                     >
                       {SUBMODULE_LABEL[s.submodule] || s.submodule || "Solva"}
@@ -201,7 +201,7 @@ export default function SolvaSessions() {
                   <p
                     style={{
                       fontFamily: "Georgia, serif", fontSize: 15,
-                      color: "#1F1C18", lineHeight: 1.5,
+                      color: "var(--ink)", lineHeight: 1.5,
                       margin: "0 0 6px 0",
                       whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     }}
@@ -211,7 +211,7 @@ export default function SolvaSessions() {
                   <p
                     style={{
                       fontFamily: 'Calibri, "Segoe UI", system-ui, sans-serif',
-                      fontSize: 11, color: "#6B6358",
+                      fontSize: 11, color: "var(--graphite)",
                       margin: 0,
                     }}
                   >
@@ -223,7 +223,7 @@ export default function SolvaSessions() {
                   onClick={() => navigate(`/app/solva/session/${s.id}`)}
                   data-testid={`solva-sessions-open-${s.id}`}
                   style={{
-                    background: "transparent", color: "#1F1C18",
+                    background: "transparent", color: "var(--ink)",
                     border: "1px solid rgba(0,0,0,0.16)",
                     padding: "6px 14px", borderRadius: 2, cursor: "pointer",
                     fontFamily: 'Calibri, "Segoe UI", system-ui, sans-serif',
@@ -244,14 +244,14 @@ export default function SolvaSessions() {
 function StatusPill({ status }) {
   const s = (status || "").toLowerCase();
   const palette = {
-    active:        { bg: "rgba(50,100,180,0.10)", fg: "#1E4D8A", label: "Active" },
-    complete:      { bg: "rgba(50,140,90,0.10)",  fg: "#225B3A", label: "Complete" },
-    refused:       { bg: "rgba(139,29,44,0.10)",  fg: "#8B1D2C", label: "Refused" },
-    paused:        { bg: "rgba(0,0,0,0.05)",       fg: "#6B6358", label: "Paused" },
-    blocked_hard:  { bg: "rgba(139,29,44,0.10)",  fg: "#8B1D2C", label: "Blocked" },
-    blocked_soft:  { bg: "rgba(180,130,50,0.10)", fg: "#7B541E", label: "Caution" },
-    abandoned:     { bg: "rgba(0,0,0,0.05)",       fg: "#6B6358", label: "Abandoned" },
-  }[s] || { bg: "rgba(0,0,0,0.05)", fg: "#6B6358", label: s || "—" };
+    active:        { bg: "rgba(50,100,180,0.10)", fg: "var(--graphite)", label: "Active" },
+    complete:      { bg: "rgba(50,140,90,0.10)",  fg: "var(--graphite)", label: "Complete" },
+    refused:       { bg: "rgba(139,29,44,0.10)",  fg: "var(--oxblood)", label: "Refused" },
+    paused:        { bg: "rgba(0,0,0,0.05)",       fg: "var(--graphite)", label: "Paused" },
+    blocked_hard:  { bg: "rgba(139,29,44,0.10)",  fg: "var(--oxblood)", label: "Blocked" },
+    blocked_soft:  { bg: "rgba(180,130,50,0.10)", fg: "var(--oxblood)", label: "Caution" },
+    abandoned:     { bg: "rgba(0,0,0,0.05)",       fg: "var(--graphite)", label: "Abandoned" },
+  }[s] || { bg: "rgba(0,0,0,0.05)", fg: "var(--graphite)", label: s || "—" };
   return (
     <span
       style={{

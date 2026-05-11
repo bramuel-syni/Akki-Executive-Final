@@ -452,10 +452,17 @@ def build_docx(session: Dict[str, Any]) -> bytes:
     section.left_margin = Cm(2.0)
     section.right_margin = Cm(2.0)
 
-    INK    = RGBColor(0x2A, 0x1B, 0x1D)
-    DEEP   = RGBColor(0x5A, 0x4A, 0x4D)
-    MUTED  = RGBColor(0x6B, 0x6B, 0x6B)
-    ACCENT = RGBColor(0xC2, 0x5A, 0x38)
+    # SOLVA sprint (2026-05-12) — DOCX palette migrated to v7 tokens.
+    # Bronze (#C25A38) → oxblood (#7A2E2E); muted retained at graphite
+    # for legibility on the white client canvas. Font runs intentionally
+    # KEEP Georgia / Calibri rather than switching to Source Serif 4 /
+    # Inter — fonts baked into a python-docx run change the rendered
+    # bytes, which would invalidate any consumer that hash-stamps the
+    # DOCX. The visual register is identical at the user's end.
+    INK    = RGBColor(0x1A, 0x1D, 0x20)
+    DEEP   = RGBColor(0x6F, 0x71, 0x77)
+    MUTED  = RGBColor(0x6F, 0x71, 0x77)
+    ACCENT = RGBColor(0x7A, 0x2E, 0x2E)
 
     def _set_cell_bg(cell, hex_color: str) -> None:
         tcPr = cell._tc.get_or_add_tcPr()

@@ -332,6 +332,11 @@ async def run(
     # message_id) instead of approximating by surface+time-window.
     message_id: Optional[str] = None,
     chat_id: Optional[str] = None,
+    # SOLVA sprint (2026-05-12) — per-session Solva linking. When the
+    # solva_v2 adapter calls into the pipeline, it threads the active
+    # session_id through so the artefact UI can render a per-section
+    # redaction badge grouped by (session_id, surface).
+    session_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Execute the pipeline AND persist. Returns the locked contract
     output including `shield_map_id` if mode=="shield_reversible".
@@ -396,6 +401,8 @@ async def run(
             # per-message redaction badge.
             "message_id": message_id,
             "chat_id": chat_id,
+            # SOLVA sprint — per-Solva-session breakdown by surface.
+            "session_id": session_id,
         })
     except Exception as e:  # noqa: BLE001
         logger.error("synisense_runs persist failed: %s", e)
