@@ -72,6 +72,10 @@ async def get_session(sid: str) -> Dict[str, Any]:
         "form_answers": doc.get("form_answers"),
         "artefacts": doc.get("artefacts"),
         "meta": doc.get("meta"),
+        # Phase J.2 — surface the live progress checkpoint so the
+        # frontend can drive the loading screen off real backend phase
+        # boundaries (Streaming Transitions: Context Loading pattern).
+        "progress": doc.get("progress") or {"phase": "received", "percent": 0},
         "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else None,
     }
 

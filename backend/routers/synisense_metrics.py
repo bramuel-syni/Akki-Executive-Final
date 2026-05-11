@@ -119,6 +119,26 @@ async def chat_synisense_metrics(chat_id: str) -> Dict[str, Any]:
     }
 
 
+@router.get("/chats/{chat_id}/messages/{msg_id}/synisense-runs")
+async def message_synisense_runs(chat_id: str, msg_id: str) -> Dict[str, Any]:
+    """Phase J.2 — per-message Synisense metrics. Returns counts +
+    layer breakdown scoped to a SINGLE chat message. Used by the chat
+    UI to render an inline redaction badge per assistant message.
+
+    Filter is on (chat_id, message_id) which is reliable once
+    `_record_synisense_audit_evidence` and `shield_payload_async`
+    started threading these fields (Phase J.2)."""
+    query = {"chat_id": chat_id, "message_id": msg_id}
+    agg = await _aggregate(query)
+    return {
+        "chat_id": chat_id,
+        "message_id": msg_id,
+        "identifiers_redacted": agg["identifiers"],
+        "model_calls": agg["runs"],
+        "layer_breakdown": agg["layer_breakdown"],
+    }
+
+
 @router.get("/contexts/{cid}/synisense-metrics")
 async def context_synisense_metrics(
     cid: str,

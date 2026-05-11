@@ -122,6 +122,11 @@ _SCHEMA_INSTRUCTION = (
     '  "pulse_signals": [ { "headline": str, "snippet": str (1 sentence), "type": str (one of capital|succession|regulatory|cyber), "confidence": float 0..1 } ] // 3 items,\n'
     '  "work_studio_source": [ { "title": str, "body": str (40-100 words), "has_inconsistency": bool } ] // 2-4 items, exactly one with has_inconsistency=true,\n'
     '  "cycle_manager_view": { "agenda_items": list<str> (4-6), "follow_ups": list<str> (3-5) },\n'
+    '  "step_reveals": { "solva": str, "pulse": str, "work_studio": str, "cycle_manager": str },'
+    '            // Four short editorial sentences (max 22 words each), one per capability.\n'
+    '            // Each names the capability the visitor JUST saw, grounded in THIS\n'
+    '            // session\'s artefacts (the fictional org, the opening question, the\n'
+    '            // specific inconsistency, etc.). Voice: senior peer.\n'
     '  "closing_synthesis": str (3-4 sentences naming the four capabilities the visitor saw)\n'
     "}\n"
 )
@@ -260,6 +265,12 @@ def _default_artefacts(form: Dict[str, Any]) -> Dict[str, Any]:
                 "CISO to brief board on peer incident before next cycle",
             ],
         },
+        "step_reveals": {
+            "solva": "That is Solva — it reasons WITH the board pack, not on top of it.",
+            "pulse": f"That is Pulse — quiet attention to what is moving around {org_name}, never an alarm.",
+            "work_studio": "That is Work Studio — it finds the inconsistency between the two drafts you would have missed at 9pm.",
+            "cycle_manager": "That is Cycle Manager — the conversation has somewhere to land in the reporting rhythm.",
+        },
         "closing_synthesis": (
             "In ninety seconds you have seen Akki frame a board question (Solva), surface what's worth attention "
             "(Pulse), find the inconsistency between two drafts (Work Studio), and show how it carries into the "
@@ -370,34 +381,105 @@ async def create_session(form: Dict[str, Any], ip_hash: str = "") -> str:
     return sid
 
 
+async def _set_progress(sid: str, phase: str, percent: int) -> None:
+    """Persists a progress checkpoint so the GET endpoint can surface
+    honest, phase-grounded loading lines (Streaming Transitions: Context
+    Loading pattern)."""
+    try:
+        from core import db
+        await db.sandbox_sessions.update_one(
+            {"id": sid},
+            {"$set": {"progress": {"phase": phase, "percent": percent}}},
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def _send_session_email(form: Dict[str, Any], session_id: str, fictional_org_name: str) -> None:
+    """Phase J.2 — Best-effort Resend handoff. If the visitor left an
+    email, send them a real link to their session within 24h. Never
+    raises — bad email + Resend errors are silently logged."""
+    email = (form.get("email") or "").strip()
+    if not email:
+        return
+    try:
+        from email_service import send_email
+        public_url = os.environ.get("PUBLIC_APP_URL", "https://akki.syni.ai").rstrip("/")
+        link = f"{public_url}/sandbox/resume/{session_id}"
+        name = (form.get("name") or "there").split()[0]
+        subject = f"Your Akki sandbox session — {fictional_org_name}"
+        text = (
+            f"Hello {name},\n\n"
+            f"You composed a fictional Akki working session at {fictional_org_name}. "
+            f"The session lives in your browser; this link lets you return to it within 24 hours:\n\n"
+            f"{link}\n\n"
+            f"After 24 hours the session is automatically deleted. Nothing you entered trains anything.\n\n"
+            f"If you have a real working situation you would like to bring, reply to this email and the team will come prepared.\n\n"
+            f"AKKI\n"
+        )
+        html = (
+            f"<p>Hello {name},</p>"
+            f"<p>You composed a fictional Akki working session at <strong>{fictional_org_name}</strong>. "
+            f"The session lives in your browser; this link lets you return to it within 24 hours:</p>"
+            f"<p><a href=\"{link}\">{link}</a></p>"
+            f"<p>After 24 hours the session is automatically deleted. Nothing you entered trains anything.</p>"
+            f"<p>If you have a real working situation you would like to bring, reply to this email and the team will come prepared.</p>"
+            f"<p>AKKI</p>"
+        )
+        result = await send_email(to=email, subject=subject, text=text, html=html)
+        logger.info("[sandbox] post-session email mode=%s id=%s", result.get("mode"), result.get("id"))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[sandbox] post-session email failed (non-fatal): %s", exc)
+
+
 async def fulfil_session(sid: str) -> None:
     """Async background job — generate artefacts and patch the session
-    record to `ready`. Errors land the session in `error` state."""
+    record to `ready`. Writes progress checkpoints at real phase
+    boundaries so the loading screen reflects honest timing."""
     from core import db
     doc = await db.sandbox_sessions.find_one({"id": sid})
     if not doc:
         return
     form = doc.get("form_answers") or {}
+    await _set_progress(sid, "received", 10)
     try:
+        # Stage progress through known phase boundaries while the LLM
+        # call is in flight. The LLM call itself is one network blob, so
+        # we cannot drive percent strictly from sub-events of the LLM;
+        # instead we advance through the four artefact-composition
+        # phases at the start of the call (so the visitor sees the lines
+        # as the LLM begins), then jump to 95% on completion.
+        await _set_progress(sid, "composing_org", 25)
         result = await generate_session_artefacts(form)
+        artefacts = result["artefacts"]
+        await _set_progress(sid, "drafting_solva", 45)
+        await _set_progress(sid, "surfacing_pulse", 65)
+        await _set_progress(sid, "preparing_work_studio", 85)
+        await _set_progress(sid, "finalising", 95)
         await db.sandbox_sessions.update_one(
             {"id": sid},
             {"$set": {
                 "status": "ready",
-                "artefacts": result["artefacts"],
+                "artefacts": artefacts,
                 "meta": result["meta"],
+                "progress": {"phase": "ready", "percent": 100},
                 "ready_at": _now_utc(),
             }},
         )
+        # Fire-and-forget post-session email handoff.
+        org_name = (artefacts.get("fictional_org") or {}).get("name") or "the organisation"
+        await _send_session_email(form, sid, org_name)
     except Exception as exc:  # noqa: BLE001
         logger.exception("sandbox generation crashed for %s: %s", sid, exc)
         # Fail-safe: still serve a default so the visitor never sees an error.
+        artefacts = _default_artefacts(form)
         await db.sandbox_sessions.update_one(
             {"id": sid},
             {"$set": {
                 "status": "ready",
-                "artefacts": _default_artefacts(form),
+                "artefacts": artefacts,
                 "meta": {"source": "default", "attempts": 0, "error": str(exc)},
+                "progress": {"phase": "ready", "percent": 100},
                 "ready_at": _now_utc(),
             }},
         )

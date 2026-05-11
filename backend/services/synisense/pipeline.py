@@ -326,6 +326,12 @@ async def run(
     account_id: Optional[str] = None,
     tier_limit: Optional[int] = None,
     context_people: Optional[List[str]] = None,
+    # Phase J.2 — per-message Synisense linking. When chat-family
+    # surfaces are persisted via this path, the chat audit UI can
+    # render a per-message redaction badge by querying on (chat_id,
+    # message_id) instead of approximating by surface+time-window.
+    message_id: Optional[str] = None,
+    chat_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Execute the pipeline AND persist. Returns the locked contract
     output including `shield_map_id` if mode=="shield_reversible".
@@ -385,6 +391,11 @@ async def run(
             "stats": inner["stats"],
             "shield_map_id": shield_map_id,
             "synisense_version": current_version(),
+            # Phase J.2 — chat-family runs are linked to the specific
+            # chat_message that triggered them, so the UI can render a
+            # per-message redaction badge.
+            "message_id": message_id,
+            "chat_id": chat_id,
         })
     except Exception as e:  # noqa: BLE001
         logger.error("synisense_runs persist failed: %s", e)

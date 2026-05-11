@@ -8,8 +8,10 @@ export const HERO = {
   eyebrow: "For senior people",
   headline: "For senior people who want to use AI fully — without governance exposure.",
   subhead: "Akki gives operating executives and non-executive directors a private, audit-defensible way to think with AI on the work that actually matters.",
-  primaryCta: { label: "Request early access", href: "/cohort" },
-  secondaryCta: { label: "Test Akki in 90 seconds", href: "/sandbox" },
+  // Phase J.2 — site-wide primary CTA is now "Try the sandbox" → /sandbox.
+  // The cohort intake page keeps its own contextual CTA.
+  primaryCta: { label: "Try the sandbox", href: "/sandbox" },
+  secondaryCta: { label: "How it works", href: "/methodology" },
 };
 
 export const HIERARCHY = [
@@ -36,7 +38,7 @@ export const HIERARCHY = [
 export const COHORT_TEASER = {
   label: "Founding cohort — May 2026",
   body: "We are admitting a small group of executives and NEDs to use Akki first. In exchange for feedback, the founding cohort gets early-access pricing locked for life.",
-  cta: { label: "Apply", href: "/cohort" },
+  cta: { label: "Read about the cohort", href: "/cohort" },
 };
 
 export const SURFACES = [

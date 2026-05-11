@@ -212,6 +212,10 @@ async def _append_audit(
 # -----------------------------------------------------------------------------
 async def _record_synisense_audit_evidence(
     *, surface: str, account_id: str, context_id: Optional[str], text: str,
+    # Phase J.2 — per-message linking so the chat audit UI can render a
+    # redaction badge per message (not per conversation).
+    message_id: Optional[str] = None,
+    chat_id: Optional[str] = None,
 ) -> None:
     """Run the Synisense pipeline for audit evidence on a non-user-text
     surface (chat_classifier, chat_four_check). The redacted output is
@@ -230,6 +234,8 @@ async def _record_synisense_audit_evidence(
             surface=surface,
             mode="redact",
             account_id=account_id,
+            message_id=message_id,
+            chat_id=chat_id,
         )
     except Exception as e:  # noqa: BLE001
         logger.warning(
@@ -1821,6 +1827,11 @@ async def stream_message(
                 # not the user's text (which is already in the `chat`
                 # surface row).
                 text=_tp.CHAT_ADAPTED_FOUR_CHECK_PROMPT,
+                # Phase J.2 — link this audit row to the user message
+                # so the chat UI badge knows which assistant turn it
+                # belongs to.
+                chat_id=chat_id,
+                message_id=msg_id,
             )
         )
     prior = await db.chat_messages.find(

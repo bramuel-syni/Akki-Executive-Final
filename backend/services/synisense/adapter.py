@@ -60,6 +60,14 @@ async def shield_payload_async(
     surface: str = "chat",
     context_id: str = "",
     context_people: Optional[List[str]] = None,
+    # Phase J.2 — when chat-family callers pass message_id (+ chat_id +
+    # account_id), the call routes to the persisting `pipeline.run()`
+    # so the chat audit UI can render a per-message redaction badge.
+    # Backward compatible — omitting these kwargs preserves the existing
+    # non-persisting `dryrun` behaviour.
+    message_id: Optional[str] = None,
+    chat_id: Optional[str] = None,
+    account_id: Optional[str] = None,
 ) -> Tuple[str, Dict[str, str]]:
     """Drop-in replacement for `llm_service.shield_payload`.
 
@@ -78,13 +86,28 @@ async def shield_payload_async(
         return "", {}
 
     try:
-        out = await _pipeline.dryrun(
-            text=text,
-            context_id=context_id or "",
-            surface=surface,
-            mode="redact",
-            context_people=context_people,
-        )
+        # Phase J.2 — chat-family callers that pass message_id get the
+        # persisting `run()` path so per-message audit metrics work.
+        # Everything else keeps the cheaper non-persisting `dryrun`.
+        if message_id and surface.startswith("chat"):
+            out = await _pipeline.run(
+                text=text,
+                context_id=context_id or "",
+                surface=surface,
+                mode="redact",
+                account_id=account_id,
+                context_people=context_people,
+                message_id=message_id,
+                chat_id=chat_id,
+            )
+        else:
+            out = await _pipeline.dryrun(
+                text=text,
+                context_id=context_id or "",
+                surface=surface,
+                mode="redact",
+                context_people=context_people,
+            )
     except Exception as exc:  # noqa: BLE001
         # Defensive — if the pipeline raises (bad surface, presidio
         # collapse, etc.), fall through with the unshielded text but
