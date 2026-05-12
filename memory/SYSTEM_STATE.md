@@ -120,6 +120,21 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Deployment Hotfix — spaCy model installer regression — 2026-05-12 ✅
+- **Symptom**: Production deploy to `akki-executive` failed in the backend Docker build step with:
+  ```
+  ERROR: Could not find a version that satisfies the requirement en_core_web_lg==3.8.0 (from versions: none)
+  ```
+- **Root cause**: The deployer's pip-compile / pip-freeze pass rewrites `package @ url` syntax in `requirements.txt` into `package==version` form before it hits the Docker build. spaCy language models (`en_core_web_lg`, `en_core_web_sm`) are NOT published to PyPI — only to GitHub releases — so the rewritten `en_core_web_lg==3.8.0` line had no resolvable index.
+- **Fix** (code-only, no Dockerfile touch):
+  - `/app/backend/requirements.txt`: removed lines 33–34 (`en_core_web_lg @ …` and `en_core_web_sm @ …`). `en_core_web_lg` was dead code (zero references); `en_core_web_sm` is the runtime model.
+  - `/app/backend/services/synisense/presidio_engine.py`: new `_ensure_spacy_model(model_name)` helper called from `_build_analyzer()`. It runs `spacy.load(model_name)` first; on `OSError` it shells out to `python -m spacy download <model_name>` (which fetches the wheel from GitHub releases). Idempotent — already-installed models short-circuit instantly.
+- **Verification**:
+  - Backend restarts cleanly: log line `akki.synisense.presidio - INFO - Presidio analyzer ready (model=en_core_web_sm)`.
+  - `/api/health` → 200.
+  - `pytest tests/test_synisense_integration.py tests/test_phase12_2_e2e.py` → 8 passed, 5 quarantined skips.
+- **Note on frontend lint warnings shown in the same build log**: not blockers — the React/CRA build completed (`File sizes after gzip:` + artifact `cp ... s3://…` lines followed by `[FRONTEND_BUILD] Build completed successfully!`). `CI=true` is not set anywhere so warnings stay non-fatal.
+
 ### Patch 29 — SYSTEM_STATE close-out — 2026-05-12 ✅
 - This entry. Patches 26, 27, 28 promoted into §1 and §4. No code change.
 - Test suite delta: **393 passed** (was 386 going into this fork), 565 skipped (all pre-existing quarantines per §7), 44 warnings. No new failures.

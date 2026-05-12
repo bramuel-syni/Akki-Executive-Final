@@ -27,6 +27,8 @@ from __future__ import annotations
 import logging
 import os
 import re
+import subprocess
+import sys
 import threading
 from typing import Any, Dict, List, Optional
 
@@ -36,11 +38,52 @@ _LOCK = threading.Lock()
 _ANALYZER = None  # type: ignore[assignment]
 
 
+def _ensure_spacy_model(model_name: str) -> None:
+    """Make sure the spaCy model is importable; download it if missing.
+
+    Deployment fix (2026-05-12) — spaCy language models are no longer
+    pinned in `/app/backend/requirements.txt` because the deployer's
+    pip-compile/freeze step rewrites `package @ url` to `package==version`
+    form, which fails to resolve against PyPI (the models live only on
+    GitHub releases). Instead, we lazy-download the model at first use.
+    A successful download in the sandbox image (where the model is
+    already installed) is a no-op — `spacy.load` returns immediately.
+    """
+    try:
+        import spacy
+        spacy.load(model_name)
+        return
+    except OSError:
+        # Model not installed — fall through to the download path.
+        pass
+    except ImportError:
+        # spaCy itself isn't installed — let _build_analyzer raise its
+        # own clearer ImportError below; nothing we can do here.
+        return
+
+    logger.warning(
+        "spaCy model %s not present; running 'python -m spacy download %s'…",
+        model_name, model_name,
+    )
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "spacy", "download", model_name],
+            check=True,
+        )
+        logger.info("spaCy model %s downloaded successfully.", model_name)
+    except subprocess.CalledProcessError as exc:
+        logger.error(
+            "spaCy model %s download failed (rc=%s). Presidio will raise on first analyze call.",
+            model_name, exc.returncode,
+        )
+
+
 def _build_analyzer():  # noqa: ANN202 — Presidio types are heavy
     from presidio_analyzer import AnalyzerEngine, RecognizerRegistry, PatternRecognizer, Pattern
     from presidio_analyzer.nlp_engine import NlpEngineProvider
 
     model_name = os.environ.get("SYNISENSE_SPACY_MODEL", "en_core_web_sm")
+    _ensure_spacy_model(model_name)
     nlp_conf = {
         "nlp_engine_name": "spacy",
         "models": [{"lang_code": "en", "model_name": model_name}],
