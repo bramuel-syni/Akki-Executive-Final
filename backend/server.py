@@ -107,6 +107,7 @@ from routers import home as home_router  # noqa: E402  Patch 3 — Home v2
 from routers import monitor_v2 as monitor_v2_router  # noqa: E402  Patch 5 — Objectives & Projects
 from routers import streaming_v9 as streaming_v9_router  # noqa: E402  Patch 9 — Streaming phase events
 from routers import questions as questions_router  # noqa: E402  Patch 14 — Questions UI
+from routers import news as news_router  # noqa: E402  Patch 21 — News feed
 
 
 logger = logging.getLogger("akki")
@@ -208,6 +209,7 @@ app.include_router(home_router.router)  # Patch 3 — Home v2
 app.include_router(monitor_v2_router.router)  # Patch 5 — Monitor v2
 app.include_router(streaming_v9_router.router)  # Patch 9 — Streaming phase events
 app.include_router(questions_router.router)  # Patch 14 — Questions UI
+app.include_router(news_router.router)  # Patch 21 — News feed
 
 
 # -----------------------------------------------------------------------------
@@ -344,6 +346,20 @@ async def on_startup():
     except Exception as e:  # noqa: BLE001
         import logging as _lg
         _lg.getLogger("akki.startup").warning("stripe idempotency indexes: %s", e)
+
+    # ─── Patch 21 — News aggregator boot ────────────────────────────────
+    # Set up the indexes idempotently, then start the background sweep
+    # task. Sweep fetches all enabled sources every NEWS_REFRESH_MINUTES
+    # (default 30 min) and upserts into `news_items`. TTL on created_at
+    # ages items out after NEWS_TTL_DAYS (default 14). If sources file
+    # is missing or empty, sweep is a no-op — no crash.
+    try:
+        from services import news_aggregator as _news_agg
+        await _news_agg.setup_indexes(db)
+        _news_agg.start_scheduler(db)
+        logger.info("[news] aggregator scheduled (every %s minutes)", _news_agg.NEWS_REFRESH_MINUTES)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[news] aggregator boot failed (continuing): %s", e)
 
     # ─── Phase 12.1 Synisense boot guard ────────────────────────────────
     # Master key required in production. Dev escape hatch:

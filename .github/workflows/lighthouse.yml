@@ -1,0 +1,51 @@
+name: Lighthouse CI
+
+# Patch 20 (2026-05-12) — locks in the Patch 18 JS-bundle gain.
+# Runs Lighthouse against the marketing pages on every PR + main push.
+# Budgets defined in frontend/lighthouserc.json:
+#   - LCP < 2.5s mobile
+#   - FCP < 1.8s
+#   - CLS < 0.1
+#   - JS resource size < 600 kB
+# Rationale per-budget documented in
+# /app/memory/sprints/CI_HYGIENE.md.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/lighthouse.yml"
+  push:
+    branches: [ main ]
+    paths:
+      - "frontend/**"
+
+jobs:
+  lhci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ./frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+      - run: yarn install --frozen-lockfile
+      - name: Lighthouse CI
+        run: |
+          npm install -g @lhci/cli@0.13.x
+          lhci autorun --config=lighthouserc.json
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-reports
+          path: frontend/.lighthouseci
+          retention-days: 14

@@ -3,6 +3,36 @@
 > Append-only history of shipped work. Newest first.
 > Detailed patch close-outs live in `/app/memory/SYSTEM_STATE.md` §4.
 
+## 2026-05-12 — P0 + Follow-up Sprint (Patches 20-23)
+
+### P0 (Patch 23) — Document upload UploadModal auth-header fix 🚨
+User-reported regression: all document uploads were failing. Diagnosed
+to a single root cause: `UploadModal.jsx` used raw `fetch()` instead
+of the axios `api` client, dropping the `Authorization: Bearer <token>`
+header that the rest of the app relies on. Every upload returned 401.
+Fix: switched to `api.post()`. 3 regression tests added. Full inventory
++ curl reproduction in `/app/memory/sprints/UPLOAD_P0_DIAGNOSIS.md`.
+
+### Patch 22 — ClamAV upload-scan contract tests
+Discovered the scanner was already wired into all 5 upload routes per
+Phase 10 spec. Added 5 contract tests: OK happy path, INFECTED → 422,
+ALLOW_UNSAFE_UPLOADS=true allows in dev, ClamAVUnreachable in prod →
+503, healthcheck reports unsafe mode. All green.
+
+### Patch 21 — News feed (Option C self-hosted RSS)
+Replaced `mock_news.json` with a real RSS aggregator. New service
+`news_aggregator.py` (asyncio task, runs every 30 min). 9 curated
+sources in `data/news_sources.json` (editable). New endpoint
+`GET /api/news`. New collection `news_items` with TTL on `created_at`
+(14 days). Home 1 now shows live FT/BBC/Economist/Reuters/BoE headlines.
+
+### Patch 20 — CI hygiene: Lighthouse-CI + Render-smoke
+Hardened `lighthouserc.json` assertions from `warn` to `error` for
+LCP < 2.5s, FCP < 1.8s, CLS < 0.1, JS bytes < 614KB. Added Playwright
+render-smoke covering 8 authenticated routes — fails on `ReferenceError`/
+`TypeError`/etc. Two GitHub Actions workflows. Self-test: synthetic
+undefined-reference probe correctly trips the build.
+
 ## 2026-05-12 — One-swipe Sprint (Patches 15-19 + §I integrations)
 
 ### Patch 19 — Quarantine Phase 3 + Phase 4 attempt + Phase 5 diagnoses

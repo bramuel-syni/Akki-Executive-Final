@@ -1,0 +1,52 @@
+name: Render Smoke
+
+# Patch 20 (2026-05-12) — runtime-error tripwire.
+#
+# Signs in as bramuel@syni.ai (seeded NED test account) and visits the
+# top 8 authenticated routes. Fails the build if ANY route throws a
+# `ReferenceError`, `TypeError`, "is not defined", or "Cannot read
+# prop…" exception, OR if the body renders empty.
+#
+# Would have caught:
+#   - `addAgendaButton is not defined`  (Cycle Manager regression)
+#   - `expectedCloseAt is not defined`  (Cycle detail, Patch 15)
+#
+# Test creds in /app/memory/test_credentials.md.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - ".github/workflows/render-smoke.yml"
+  push:
+    branches: [ main ]
+    paths:
+      - "frontend/**"
+      - "backend/**"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ./frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+      - run: yarn install --frozen-lockfile
+      - name: Install Playwright Chromium
+        run: yarn playwright install chromium --with-deps
+      - name: Run render smoke
+        run: yarn render-smoke
+        env:
+          # Default base URL points at the preview. Override per env if needed.
+          RENDER_SMOKE_BASE_URL: ${{ vars.RENDER_SMOKE_BASE_URL || 'https://akki-executive.preview.emergentagent.com' }}
+          RENDER_SMOKE_EMAIL: ${{ secrets.RENDER_SMOKE_EMAIL }}
+          RENDER_SMOKE_PASSWORD: ${{ secrets.RENDER_SMOKE_PASSWORD }}

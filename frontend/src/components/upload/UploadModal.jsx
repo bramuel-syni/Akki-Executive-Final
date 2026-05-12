@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { api, apiErrorMessage, API_BASE } from "@/lib/api";
+import { api, apiErrorMessage } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -154,24 +154,21 @@ export default function UploadModal({ open, onClose, onUploaded }) {
         form.append("related_doc_id", relatedDocId);
         form.append("relation_type", relationType);
       }
-      // API_BASE already ends with `/api` (see frontend/src/lib/api.js:4),
-      // so the path here MUST NOT re-add `/api`. Doing so produces
-      // `${BACKEND_URL}/api/api/contexts/...` which is unrouted and
-      // returns 404 — the symptom users hit when "the homepage upload
-      // button does nothing". Audit the other API_BASE call-sites if
-      // copying this pattern.
-      const res = await fetch(`${API_BASE}/contexts/${contextId}/documents`, {
-        method: "POST", credentials: "include", body: form,
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || `Upload failed (${res.status})`);
-      }
-      const doc = await res.json();
+      // P0 fix (Patch 23) — use the shared axios `api` client so the
+      // request gets the `Authorization: Bearer <token>` AND
+      // `X-Active-Context` headers injected by the interceptor. The
+      // previous raw `fetch()` only sent the cookie via
+      // `credentials: "include"`, but AKKI's auth is bearer-token
+      // (localStorage), so every UploadModal upload returned 401
+      // "Not authenticated". See /app/memory/sprints/UPLOAD_P0_DIAGNOSIS.md.
+      const { data: doc } = await api.post(
+        `/contexts/${contextId}/documents`,
+        form,
+      );
       toast.success(`${doc.name} added to the journal.`);
       onUploaded?.(doc);
       onClose();
-    } catch (e) { toast.error(e.message || "Upload failed"); }
+    } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setUploading(false); }
   };
 

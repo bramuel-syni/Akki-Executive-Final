@@ -6,7 +6,7 @@
  *   2. Portfolio chips strip
  *   3. Continue where you left off (last 3 surfaces via /api/me/recent-views)
  *   4. Calendar peek (placeholder until we wire real cycle ship dates)
- *   5. News strip — MOCKED IN DEV — from /src/data/mock_news.json
+ *   5. News strip — Patch 21: real RSS aggregator from /api/news
  *   6. New features card — from /src/data/release_notes.json
  *
  * No company-specific data on Home 1 — that lives on Home 2.
@@ -17,7 +17,6 @@ import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import { Newspaper, Calendar, History, ChevronRight, Sparkles } from "lucide-react";
-import mockNews from "@/data/mock_news.json";
 import releaseNotes from "@/data/release_notes.json";
 
 
@@ -76,11 +75,22 @@ export default function Home1() {
   const { account, contexts, switchContext } = useAuth();
   const navigate = useNavigate();
   const [recent, setRecent] = useState([]);
+  // Patch 21 — real news from the curated RSS aggregator. The
+  // aggregator runs every 30 min server-side; this fetch is cheap
+  // (top-N from cache). Empty array on cold-start renders the
+  // editorial fallback line below; never block render on this.
+  const [news, setNews] = useState([]);
 
   useEffect(() => {
     api.get("/me/recent-views", { params: { limit: 3 } })
       .then(({ data }) => setRecent(data?.items || []))
       .catch(() => setRecent([]));
+  }, []);
+
+  useEffect(() => {
+    api.get("/news", { params: { limit: 5 } })
+      .then(({ data }) => setNews(data?.items || []))
+      .catch(() => setNews([]));
   }, []);
 
   const greeting = useMemo(() => greetingFor(new Date()), []);
@@ -157,7 +167,7 @@ export default function Home1() {
           </p>
         </section>
 
-        {/* 5. News strip — MOCKED */}
+        {/* 5. News strip — Patch 21: real RSS feed via /api/news */}
         <section className="mb-12" data-testid="home1-news">
           <div className="flex items-baseline justify-between mb-3">
             <h2 className="akki-serif text-[15px] text-[var(--ink)] inline-flex items-center gap-2">
@@ -165,32 +175,47 @@ export default function Home1() {
             </h2>
             <span
               className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]"
-              data-testid="home1-news-mock-badge"
+              data-testid="home1-news-source-label"
             >
-              Curated · sample feed
+              Curated · live feed
             </span>
           </div>
-          <ul className="space-y-3" data-testid="home1-news-list">
-            {mockNews.items.map((n) => (
-              <li
-                key={n.id}
-                className="border-b border-[var(--rule)] pb-3 last:border-b-0"
-                data-testid={`home1-news-${n.id}`}
-              >
-                <div className="flex items-baseline gap-2 mb-1">
-                  <span className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">
-                    {n.source}
-                  </span>
-                  <span className="text-[10.5px] font-mono text-[var(--muted)]">·</span>
-                  <span className="text-[10.5px] font-mono text-[var(--muted)]">
-                    {new Date(n.published_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                  </span>
-                </div>
-                <p className="akki-serif text-[15px] text-[var(--ink)] leading-snug">{n.headline}</p>
-                <p className="text-[12.5px] text-[var(--muted)] leading-snug mt-1">{n.summary}</p>
-              </li>
-            ))}
-          </ul>
+          {news.length === 0 ? (
+            <p className="akki-meta italic" data-testid="home1-news-fallback">
+              News updating — check back shortly.
+            </p>
+          ) : (
+            <ul className="space-y-3" data-testid="home1-news-list">
+              {news.map((n) => (
+                <li
+                  key={n.id}
+                  className="border-b border-[var(--rule)] pb-3 last:border-b-0"
+                  data-testid={`home1-news-${n.id}`}
+                >
+                  <div className="flex items-baseline gap-2 mb-1">
+                    <span className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">
+                      {n.source}
+                    </span>
+                    <span className="text-[10.5px] font-mono text-[var(--muted)]">·</span>
+                    <span className="text-[10.5px] font-mono text-[var(--muted)]">
+                      {new Date(n.published_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                    </span>
+                  </div>
+                  <a
+                    href={n.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="akki-serif text-[15px] text-[var(--ink)] leading-snug hover:text-[var(--accent)] no-underline block"
+                  >
+                    {n.title}
+                  </a>
+                  {n.summary && (
+                    <p className="text-[12.5px] text-[var(--muted)] leading-snug mt-1">{n.summary}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         {/* 6. New features card */}

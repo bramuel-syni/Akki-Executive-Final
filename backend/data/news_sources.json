@@ -1,0 +1,20 @@
+{
+  "_comment": [
+    "AKKI news-feed sources (Patch 21, 2026-05-12). One RSS feed per entry.",
+    "Curated for governance / executive / FTSE audience. Edit freely.",
+    "If `enabled` is false, the aggregator skips the feed. If a feed",
+    "returns malformed XML or 404, the aggregator logs a warning and",
+    "moves on — never crashes."
+  ],
+  "sources": [
+    { "id": "bbc-business",   "name": "BBC Business",          "url": "http://feeds.bbci.co.uk/news/business/rss.xml",                 "enabled": true },
+    { "id": "reuters-biz",    "name": "Reuters Business",      "url": "https://feeds.reuters.com/reuters/businessNews",                "enabled": true },
+    { "id": "ft-companies",   "name": "Financial Times — Companies", "url": "https://www.ft.com/companies?format=rss",                "enabled": true },
+    { "id": "ft-lex",         "name": "Financial Times — Lex", "url": "https://www.ft.com/lex?format=rss",                            "enabled": true },
+    { "id": "economist-biz",  "name": "The Economist — Business",    "url": "https://www.economist.com/business/rss.xml",             "enabled": true },
+    { "id": "hbr",            "name": "Harvard Business Review",     "url": "https://hbr.org/feed",                                   "enabled": true },
+    { "id": "frc-uk",         "name": "Financial Reporting Council UK", "url": "https://www.frc.org.uk/news-and-events/rss",         "enabled": true },
+    { "id": "boe-news",       "name": "Bank of England",       "url": "https://www.bankofengland.co.uk/rss/news",                     "enabled": true },
+    { "id": "iod",            "name": "Institute of Directors", "url": "https://www.iod.com/news/rss",                                "enabled": true }
+  ]
+}
