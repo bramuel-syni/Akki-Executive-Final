@@ -1,38 +1,37 @@
 /**
- * StreamingShell — Patch 4B.
+ * StreamingShell — Patch 12 v3 rewrite.
  *
- * Document-typesetting motion for high-impact streaming surfaces:
- * Solva (all 4 modes), Cycle session compilation, Work Studio Enhance,
- * and workspace/role transitions.
+ * Philosophy: authenticity over theatre. The earlier v1 (Patch 4B) used a
+ * pre-rendered skeleton frame; v2 (Patch 9) wired phase events. v3
+ * removes the skeleton, drives every motion off real backend signals,
+ * adopts variable cadence + crossfading phase labels.
  *
- * Architecture:
- *   1. Skeleton frame renders first — heading + dividers + section labels
- *   2. Content fills in under each section as tokens arrive
- *   3. Phase label (small editorial line above stream) cycles through
- *      real backend phases:
- *        Reading context → Shielding input → Reasoning →
- *        Drafting → Refining → Complete
- *   4. Cursor at the streaming edge
- *   5. Provider+model+latency footer line
- *   6. Stop generating always reachable
- *   7. Graceful failure: >10s stall → "Reconnecting… retry now"
- *      inline, preserves partial output
+ * Inputs:
+ *   - phase    "reading_context" | … | "complete"
+ *   - status   "idle" | "streaming" | "stalled" | "complete" | "error"
+ *   - content  the current renderable string (consumer-paced via
+ *              useStreamingPhases + createClausePacer)
+ *   - provider / model / latencyMs  → settle-state footer line
+ *   - onStop, onRetry
  *
- * Chat surface uses a quieter variant — only the cursor.
+ * No skeleton. The page is empty until the model speaks; then content
+ * appears top-down at a clause-aware cadence. On `complete` we play a
+ * single 240ms vertical-lift settle. Headings ARE rendered at once by
+ * the caller (clauseStream emits them whole) — the shell just paints.
  *
- * No emoji, no spinners at page level, no bouncy effects.
+ * Chat surface uses the `quiet` variant (cursor only).
  */
-import React, { useEffect, useMemo, useState } from "react";
-import { Loader2, Square, RefreshCw } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { Square, RefreshCw } from "lucide-react";
 
 
 export const PHASE_LABELS = {
-  reading_context:   "Reading context",
-  shielding_input:   "Shielding input",
-  reasoning:         "Reasoning",
-  drafting:          "Drafting",
-  refining:          "Refining",
-  complete:          "Complete",
+  reading_context: "Reading context",
+  shielding_input: "Shielding input",
+  reasoning:       "Reasoning",
+  drafting:        "Drafting",
+  refining:        "Refining",
+  complete:        "Complete",
 };
 
 export const PHASE_ORDER = [
@@ -45,26 +44,91 @@ export const PHASE_ORDER = [
 ];
 
 
-function PhaseLabel({ phase }) {
+/**
+ * PhaseCaption — graphite caption above the streaming surface.
+ *
+ * Crossfades between the previous and current phase over 250ms.
+ * If two phases arrive within 200ms, we snap to the new label
+ * (no crossfade — pretending to crossfade nothing is dishonest).
+ *
+ * Reasoning has a subtle horizontal pulse on the label itself
+ * (4% opacity dip + rebound, 1.5s cycle). No separate spinner.
+ *
+ * On `complete`: caption fades fully after 1.2s (work is done — get
+ * out of the way).
+ */
+function PhaseCaption({ phase, status }) {
+  const [prev, setPrev] = useState(phase);
+  const [snap, setSnap] = useState(false);
+  const lastChangeRef = useRef(Date.now());
+  const [hidden, setHidden] = useState(false);
+
+  useEffect(() => {
+    if (phase === prev) return undefined;
+    const dt = Date.now() - lastChangeRef.current;
+    setSnap(dt < 200);
+    setPrev(phase);
+    lastChangeRef.current = Date.now();
+    return undefined;
+  }, [phase, prev]);
+
+  useEffect(() => {
+    if (status !== "complete") { setHidden(false); return undefined; }
+    const t = setTimeout(() => setHidden(true), 1200);
+    return () => clearTimeout(t);
+  }, [status]);
+
+  if (hidden) return null;
+
   const label = PHASE_LABELS[phase] || PHASE_LABELS.reasoning;
+  const isReasoning = phase === "reasoning" && status !== "complete";
+  const cls = [
+    "text-[10.5px] uppercase tracking-[0.18em] font-mono text-[var(--muted)]",
+    snap ? "" : "akki-phase-crossfade",
+    isReasoning ? "akki-phase-pulse" : "",
+  ].filter(Boolean).join(" ");
+
   return (
-    <p
-      className="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[var(--muted)] mb-2"
-      data-testid="streaming-phase-label"
-    >
+    <p className={cls} data-testid="streaming-phase-label" data-phase={phase}>
       {label}
     </p>
   );
 }
 
 
-function StreamingFooter({ provider, model, latencyMs, onStop, onRetry, status }) {
+function StreamCursor() {
   return (
-    <div className="flex items-center justify-between gap-3 mt-3 pt-2 border-t border-[var(--rule)]" data-testid="streaming-footer">
-      <p className="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[var(--muted)]">
-        {provider || "akki"} · {model || "—"}
-        {typeof latencyMs === "number" && ` · ${Math.round(latencyMs)}ms`}
-      </p>
+    <span
+      className="inline-block w-[2px] h-[1.1em] align-[-2px] ml-[1px] bg-[var(--ink)] animate-akki-cursor"
+      aria-hidden="true"
+      data-testid="streaming-cursor"
+    />
+  );
+}
+
+
+function StreamingFooter({ provider, model, latencyMs, onStop, onRetry, status }) {
+  // Footer fades in only at completion (the latency value is honest
+  // once we have it). During streaming we hide it — no provisional
+  // latency theatre.
+  const visible = status === "complete";
+  if (!visible && status !== "stalled" && status !== "streaming") return null;
+  return (
+    <div
+      className={[
+        "flex items-center justify-between gap-3 mt-3 pt-2 border-t border-[var(--rule)]",
+        visible ? "akki-footer-fade-in" : "",
+      ].join(" ")}
+      data-testid="streaming-footer"
+    >
+      {visible ? (
+        <p className="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[var(--muted)]">
+          {provider || "akki"} · {model || "—"}
+          {typeof latencyMs === "number" && ` · ${Math.round(latencyMs)}ms`}
+        </p>
+      ) : (
+        <span />
+      )}
       <div className="flex items-center gap-2">
         {status === "stalled" && onRetry && (
           <button
@@ -92,81 +156,55 @@ function StreamingFooter({ provider, model, latencyMs, onStop, onRetry, status }
 }
 
 
-/**
- * Skeleton — a heading + 3 section labels with parchment-fade dividers.
- * Renders first while we wait for tokens.
- */
-function Skeleton({ sections = ["Section 1", "Section 2", "Section 3"] }) {
-  return (
-    <div className="space-y-5 animate-akki-fade" data-testid="streaming-skeleton">
-      <div className="space-y-2">
-        <div className="h-5 w-2/3 bg-[var(--parchment)] rounded-sm" />
-        <div className="h-3 w-1/3 bg-[var(--parchment)] rounded-sm" />
-      </div>
-      {sections.map((label, i) => (
-        <div key={i} className="space-y-2">
-          <p className="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[var(--muted)]">
-            {label}
-          </p>
-          <div className="h-3 w-full bg-[var(--parchment)] rounded-sm" />
-          <div className="h-3 w-5/6 bg-[var(--parchment)] rounded-sm" />
-          <div className="h-3 w-4/6 bg-[var(--parchment)] rounded-sm" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-
-/**
- * Subtle blinking cursor at the streaming edge.
- */
-function StreamCursor() {
-  return (
-    <span
-      className="inline-block w-[2px] h-[1.1em] align-[-2px] ml-[1px] bg-[var(--ink)] animate-akki-cursor"
-      data-testid="streaming-cursor"
-      aria-hidden="true"
-    />
-  );
-}
-
-
 export default function StreamingShell({
-  phase = "reasoning",
-  status = "streaming",        // streaming | stalled | complete
+  phase = "reading_context",
+  status = "streaming",
   provider,
   model,
   latencyMs,
   onStop,
   onRetry,
-  sections,                    // for skeleton
-  partial,                     // streamed content node — when null, renders skeleton
-  variant = "document",        // "document" (default) | "quiet" (chat)
+  content,                 // string OR React node — already paced by useStreamingPhases
+  variant = "document",    // "document" | "quiet"
 }) {
-  // Detect stall: if status === "streaming" and we don't get a phase update
-  // for >10s, the parent should switch us to "stalled".
-  const showCursor = status !== "complete";
+  const contentRef = useRef(null);
+  const settledRef = useRef(false);
+  const showCursor = status !== "complete" && status !== "error";
+
+  // Completion settle — fire exactly once on real `complete`.
+  useEffect(() => {
+    if (status !== "complete" || settledRef.current) return undefined;
+    const node = contentRef.current;
+    if (!node) return undefined;
+    settledRef.current = true;
+    node.classList.add("akki-completion-settle");
+    const t = setTimeout(() => node.classList.remove("akki-completion-settle"), 280);
+    return () => clearTimeout(t);
+  }, [status]);
 
   if (variant === "quiet") {
     return (
-      <div data-testid="streaming-shell-quiet" className="flex items-center gap-2">
-        {partial}
+      <div data-testid="streaming-shell-quiet" className="inline-flex items-center gap-1">
+        {content}
         {showCursor && <StreamCursor />}
       </div>
     );
   }
 
-  const showSkeleton = !partial && status !== "complete";
-
+  // Empty state until content actually arrives. NO skeleton, NO scaffolding.
+  const isEmpty = !content || (typeof content === "string" && content.length === 0);
   return (
     <div className="space-y-3" data-testid="streaming-shell">
-      <PhaseLabel phase={phase} />
-      {showSkeleton ? (
-        <Skeleton sections={sections} />
-      ) : (
-        <div className="akki-serif text-[15px] leading-[1.7] text-[var(--ink)]" data-testid="streaming-content">
-          {partial}
+      <PhaseCaption phase={phase} status={status} />
+      {!isEmpty && (
+        <div
+          ref={contentRef}
+          className="akki-serif text-[15px] leading-[1.7] text-[var(--ink)]"
+          data-testid="streaming-content"
+        >
+          {typeof content === "string" ? (
+            <span style={{ whiteSpace: "pre-wrap" }}>{content}</span>
+          ) : content}
           {showCursor && <StreamCursor />}
         </div>
       )}

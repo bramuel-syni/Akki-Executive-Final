@@ -74,7 +74,7 @@ const CARD_CONFIG = {
   open_questions: {
     title: "Open questions", icon: MessageSquare, urgency: 2,
     template: (n) => `${n} from NEDs awaiting your response`,
-    href: "/app/ned-inbox",
+    href: "/app/questions?filter=open",
   },
   solva_waiting: {
     title: "Solva sessions waiting", icon: Sparkles, urgency: 1,

@@ -12,7 +12,7 @@
 """
 
 import pytest
-pytestmark = pytest.mark.skip(reason='Patch 8 quarantined — pre-existing failures from before autonomous sprint. See SYSTEM_STATE §7.')
+pytestmark = pytest.mark.skip(reason='Patch 13 Phase 2 attempt — depends on live sandbox endpoint + LLM key; reclassified to Phase 4 (REWRITE).')
 import io
 import os
 import time

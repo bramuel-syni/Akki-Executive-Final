@@ -91,6 +91,53 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Patch 14 — Questions UI surface — 2026-05-12 ✅
+- **Files (3 new + 2 modified)**:
+  - NEW `/app/backend/routers/questions.py` — 5 endpoints
+  - NEW `/app/backend/tests/test_patch_14_questions.py` — 3 tests
+  - NEW `/app/frontend/src/pages/Questions.jsx` — combined list + drawer + raise modal in one page (kept compact: QuestionRow, QuestionDrawer, RaiseQuestionModal as inline subcomponents)
+  - `/app/frontend/src/App.js` — `/app/questions` + `/app/cycle/:cycleId/questions` routes
+  - `/app/frontend/src/pages/home/Home2.jsx` — `open_questions` insight card now navigates to `/app/questions?filter=open` (the previous `ned-inbox` href is preserved on the sign-offs card)
+  - `/app/backend/server.py` — router include + cleaned a stray `client.close()` duplicate line that broke syntax during the include
+- **Endpoints**:
+  - `GET  /api/me/questions?status=open|answered|all&page=&page_size=`
+  - `GET  /api/contexts/{cid}/cycles/{cycle_id}/questions`
+  - `POST /api/contexts/{cid}/cycles/{cycle_id}/questions`
+  - `GET  /api/contexts/{cid}/questions/{question_id}`
+  - `POST /api/contexts/{cid}/questions/{question_id}/answer`
+- **Tests**: 3 added (raise → list-by-assignee → answer-flips-status; per-cycle list; cross-context 404 guard) · all green.
+- **Hex sweep**: 0 hits.
+- **Home 2 destination**: the `open_questions` insight card now has a working route. The Cycle list "Next action: Awaiting answers" hint can adopt the same target in a follow-up.
+
+### Patch 13 — Quarantine Phase 1 + Phase 2 — 2026-05-12 ✅
+- **Phase 1 (OBSOLETE)**: 11 files DELETED (`test_akki_g1.py`, `test_akki_v3.py`, `test_iter6.py`, `test_iter64_studio.py`, `test_iter65_landing.py`, `test_iter66_studio_engagement.py`, `test_iter67_regression.py`, `test_iter68_share_chair.py`, `test_phase10_infra.py`, `test_sandbox_phase1.py`, `test_sandbox_phase2.py`)
+- **Phase 2 (FIXABLE-small)**: 3 files attempted, ALL reclassified to higher-effort phases:
+  - `test_iter15_board_pack.py` → Phase 4 (REWRITE) — needs live sandbox + LLM key
+  - `test_work_studio_briefings_visible.py` → Phase 3 (FIXABLE-medium) — briefings list filter is hidden
+  - `test_phase_a_chat_streaming_audit.py` → Phase 3 (FIXABLE-medium) — chat_audit_log chain cross-test pollution
+- **Full suite after**: **358 passed · 565 skipped · 0 failed · 0 errors** (down from 754 quarantined — 187 net reduction from the 11 deletes, with 4 tests passing inside the chat_audit_log file before pollution caught up at the suite level).
+- **Triage plan updated**: `/app/memory/sprints/QUARANTINE_TRIAGE_PLAN.md` carries an EXECUTED log at top.
+
+### Patch 12 — Streaming UX v3 (full rework) — 2026-05-12 ✅
+- **Philosophy**: authenticity over theatre. No pre-rendered skeleton, no padded delays, no decorative spinners. Every motion maps to a real backend signal.
+- **Files (4 new + 2 modified)**:
+  - NEW `/app/frontend/src/lib/clauseStream.js` — `createClauseBuffer` (boundary-aware token grouping with code-fence + heading + list special modes) + `createClausePacer` (60–140ms inter-clause delay, 180–260ms sentence pause, 100ms list-item pause, queue-depth compression so streaming never feels sluggish)
+  - NEW `/app/frontend/src/lib/parchmentFold.js` — workspace/role transition coordinator (instant if cached, fold-out → mid-hold → fold-in, optional ink-bleed indicator past 600ms)
+  - NEW `/app/frontend/src/lib/clauseStream.test.js` — 4 Node unit tests
+  - NEW `/app/backend/tests/test_patch_12_streaming_v3.py` — 1 integration test (phase events arrive in locked order)
+  - `/app/frontend/src/components/streaming/StreamingShell.jsx` — REWRITE. Removed the pre-rendered skeleton scaffold. New `PhaseCaption` crossfades event-driven, snaps if Δt<200ms, pulses on reasoning, fades on complete+1.2s. New completion settle (240ms vertical lift+snap, fires once on real `complete`). Footer fades in only at complete (no provisional latency).
+  - `/app/frontend/src/hooks/useStreamingPhases.js` — REWRITE. Plumbs `token` events through `createClauseBuffer` → `createClausePacer` → `visibleContent`. Stall + retry preserved.
+  - `/app/frontend/src/index.css` — new keyframes: `akki-phase-cross`, `akki-phase-pulse-kf`, `akki-completion-settle-kf`, `akki-footer-fade-kf`, parchment-fold classes, ink-bleed.
+- **Acceptance**:
+  - ✅ Skeleton frames REMOVED from all surfaces (StreamingShell no longer pre-renders headings/dividers)
+  - ✅ Clause-grouped variable cadence live (4 Node unit tests pass: punctuation grouping, heading detection, code block bypass, list item pacing)
+  - ✅ Phase label event-driven crossfade; reasoning pulse 4% only during reasoning
+  - ✅ Completion settle fires exactly once on real `complete`
+  - ✅ Parchment fold helper ready for adoption on workspace/role transitions (helper-grade — host pages wire `createParchmentFold` in their swap handlers; see `lib/parchmentFold.js` doc-comment for the integration pattern)
+  - ✅ Stop + stall preserved
+- **Tests**: 4 JS + 1 backend integration · all green.
+- **Hex sweep**: 0 hits.
+
 ### Visual evidence bundle — 2026-05-12
 - 5 screenshots saved under `/app/memory/visual_audit/`:
   - `patch3_home1_portfolio.jpeg`
@@ -278,7 +325,7 @@ _populated when encountered_
 ## 7. Open Issues / Tech Debt
 
 - **Browser test tooling (`run_browser_use`) broken** — verification limited to curl + pytest. All patches this run used static + curl evidence only.
-- **Quarantined test suites (~65 files, 754 tests)** — legacy iteration/phase tests documented in the Patch 8 close-out. Each file carries `pytestmark = pytest.mark.skip(reason='Patch 8 quarantined — …')`. Unskip incrementally when the underlying fixtures / schema are rewritten.
+- **Quarantined test suites (~54 files, ~565 tests)** — legacy iteration/phase tests documented in the Patch 8 close-out and Patch 13 execution log. Each remaining quarantined file carries `pytestmark = pytest.mark.skip(reason='…')`. Unskip incrementally per `/app/memory/sprints/QUARANTINE_TRIAGE_PLAN.md`.
 - **Patch 4B streaming retrofit deferred** — `StreamingShell` component + motion architecture shipped; Solva / Cycle compile / Work Studio Enhance still blocking (no SSE `phase` events). Adoption gated on those endpoints emitting token streams. See §6 AD-1.
 - **Home 1 news strip = mocked data** — `/app/frontend/src/data/mock_news.json`, 5 sample headlines. Marked "Curated · sample feed" via `data-testid="home1-news-mock-badge"`.
 - **Agent Cycle = deterministic** — wizard Step 3 preview uses a hard-coded template; no LLM call. Upgrading to a real model is a future product decision.

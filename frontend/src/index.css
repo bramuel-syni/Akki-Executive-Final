@@ -340,6 +340,75 @@ body {
 .akki-transition-fade { animation: akki-stream-fade 0.25s ease-out both; }
 
 /* =======================================================================
+ * Patch 12 — Streaming UX v3.
+ *
+ * Authenticity over theatre. Every motion below maps to a real backend
+ * signal. No timer-driven flourish unless a phase explicitly calls for it.
+ * ===================================================================== */
+
+/* Phase caption crossfade (250ms) */
+@keyframes akki-phase-cross {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.akki-phase-crossfade { animation: akki-phase-cross 0.25s ease-in-out both; }
+
+/* Reasoning phase pulse — 4% opacity dip + rebound on a 1.5s cycle.
+ * Subtle, on the LABEL itself. No separate spinner. */
+@keyframes akki-phase-pulse-kf {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.96; }
+}
+.akki-phase-pulse { animation: akki-phase-pulse-kf 1.5s ease-in-out infinite; }
+
+/* Completion settle — 240ms vertical lift of 2px then snap back.
+ * Fires once on real `complete`. */
+@keyframes akki-completion-settle-kf {
+  0%   { transform: translateY(0); }
+  60%  { transform: translateY(-2px); }
+  100% { transform: translateY(0); }
+}
+.akki-completion-settle { animation: akki-completion-settle-kf 0.24s ease-out; }
+
+/* Footer fade-in — only at completion, when latency value is honest. */
+@keyframes akki-footer-fade-kf {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.akki-footer-fade-in { animation: akki-footer-fade-kf 0.32s ease-out both; }
+
+/* Parchment fold — workspace transition */
+.akki-transition-fold-out {
+  transform-origin: top;
+  transform: scaleY(0);
+  opacity: 0;
+  transition: transform 0.2s ease-in, opacity 0.2s ease-in;
+}
+.akki-transition-fold-in {
+  transform-origin: top;
+  transform: scaleY(1);
+  opacity: 1;
+  transition: transform 0.24s ease-out, opacity 0.24s ease-out;
+}
+.akki-transition-ink-bleed {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 2px;
+  width: 100%;
+  background: linear-gradient(to right, var(--ink), var(--ink) 30%, transparent);
+  background-size: 30% 100%;
+  background-repeat: no-repeat;
+  animation: akki-ink-bleed-kf 1.5s ease-in-out infinite;
+  z-index: 9999;
+  pointer-events: none;
+}
+@keyframes akki-ink-bleed-kf {
+  0%   { background-position: -30% 0; }
+  100% { background-position: 130% 0; }
+}
+
+/* =======================================================================
  * Phase H — UI width consistency utility classes (preserved).
  * ===================================================================== */
 .akki-w-narrow,

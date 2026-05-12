@@ -48,7 +48,7 @@ from server import app  # noqa: E402
 from core import db  # noqa: E402
 
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.skip(reason='Patch 8 quarantined — pre-existing failures from before autonomous sprint. See SYSTEM_STATE §7.')]
+pytestmark = [pytest.mark.asyncio, pytest.mark.skip(reason="Patch 13 Phase 2 attempt — passes in isolation but fails under full-suite due to chat_audit_log chain cross-test pollution. Reclassified to Phase 3 (FIXABLE-medium): needs per-test chat_audit_log reset fixture.")]
 
 
 @pytest_asyncio.fixture

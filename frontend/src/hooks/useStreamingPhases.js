@@ -1,76 +1,98 @@
 /**
- * useStreamingPhases — Patch 9 client hook.
+ * useStreamingPhases — Patch 12 v3 rewrite.
  *
- * Connects to one of the new SSE wrapper endpoints and surfaces:
- *   • phase        — current phase key (PHASE_LABELS in StreamingShell maps to user-facing text)
- *   • status       — "idle" | "streaming" | "stalled" | "complete" | "error"
- *   • partial      — accumulated `data:` payloads (final result lands in `result`)
- *   • result       — the final JSON body emitted by the inner handler
- *   • error        — error text when an `event: error` is received
+ * Consumes one of the Patch 9 SSE wrapper endpoints, paces the visible
+ * content through `clauseStream` (variable cadence), and surfaces the
+ * standard motion state.
  *
- * Stall detection: if no `phase` event is received for `stallMs` (default 10s),
- * status flips to "stalled" until the next event arrives (then back to
- * "streaming"). This drives the "Reconnecting · retry now" affordance in
- * StreamingShell.
+ *   const {
+ *     start, stop, retry,
+ *     phase, status,
+ *     visibleContent,  // user-facing string — paced, clause-grouped
+ *     result,          // full JSON returned by the inner handler
+ *     error,
+ *     latencyMs,
+ *   } = useStreamingPhases({ endpoint, body });
  *
- * Usage:
- *   const { start, stop, phase, status, partial, result, error } =
- *     useStreamingPhases({
- *       endpoint: `${BACKEND_URL}/api/contexts/${cid}/cycle/draft-compilation/stream`,
- *       method: "POST",
- *       body: { cycle_id: cid },
- *     });
- *
- * Then render:
- *   <StreamingShell phase={phase} status={status} partial={partial} onStop={stop} ... />
+ * Differences vs v2 (Patch 9):
+ *   - No skeleton frame state — caller renders the empty state
+ *   - Clause-aware pacing replaces the raw text accumulation
+ *   - `visibleContent` advances at a "thinking pace", not at network pace
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createClauseBuffer, createClausePacer } from "@/lib/clauseStream";
 
 const DEFAULT_STALL_MS = 10_000;
 
 
-export default function useStreamingPhases({ endpoint, method = "POST", headers = {}, body = null, stallMs = DEFAULT_STALL_MS, autoStart = false } = {}) {
+export default function useStreamingPhases({
+  endpoint,
+  method = "POST",
+  headers = {},
+  body = null,
+  stallMs = DEFAULT_STALL_MS,
+  autoStart = false,
+} = {}) {
   const [phase, setPhase] = useState("reading_context");
   const [status, setStatus] = useState("idle");
-  const [partial, setPartial] = useState("");
+  const [visibleContent, setVisibleContent] = useState("");
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [latencyMs, setLatencyMs] = useState(null);
+
   const abortRef = useRef(null);
-  const stallTimerRef = useRef(null);
+  const stallRef = useRef(null);
+  const bufRef = useRef(null);
+  const pacerRef = useRef(null);
+  const t0Ref = useRef(0);
 
   const clearStallTimer = () => {
-    if (stallTimerRef.current) {
-      clearTimeout(stallTimerRef.current);
-      stallTimerRef.current = null;
-    }
+    if (stallRef.current) { clearTimeout(stallRef.current); stallRef.current = null; }
   };
-
   const armStallTimer = useCallback(() => {
     clearStallTimer();
-    stallTimerRef.current = setTimeout(() => {
+    stallRef.current = setTimeout(() => {
       setStatus((s) => (s === "complete" || s === "error" ? s : "stalled"));
     }, stallMs);
   }, [stallMs]);
 
-  const stop = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
+  const teardown = useCallback(() => {
+    if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
+    if (pacerRef.current) { pacerRef.current.cancel(); pacerRef.current = null; }
+    if (bufRef.current) { bufRef.current.cancel(); bufRef.current = null; }
     clearStallTimer();
-    setStatus((s) => (s === "complete" || s === "error" ? s : "complete"));
   }, []);
+
+  const stop = useCallback(() => {
+    teardown();
+    setStatus((s) => (s === "error" ? s : "complete"));
+  }, [teardown]);
 
   const start = useCallback(async () => {
     if (!endpoint) return;
+    teardown();
     setStatus("streaming");
-    setPartial("");
+    setVisibleContent("");
     setResult(null);
     setError(null);
     setPhase("reading_context");
+    setLatencyMs(null);
+    t0Ref.current = performance.now();
+
+    // Pace clauses onto the screen.
+    const pacer = createClausePacer({
+      onClause: ({ text }) => setVisibleContent((s) => s + text),
+    });
+    pacerRef.current = pacer;
+    const cbuf = createClauseBuffer({
+      onFlush: (clause) => pacer.enqueue(clause),
+    });
+    bufRef.current = cbuf;
+
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     armStallTimer();
+
     try {
       const res = await fetch(endpoint, {
         method,
@@ -87,12 +109,10 @@ export default function useStreamingPhases({ endpoint, method = "POST", headers 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = "";
-      let dataBag = "";
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         buf += decoder.decode(value, { stream: true });
-        // Split SSE blocks on blank lines.
         let idx;
         while ((idx = buf.indexOf("\n\n")) !== -1) {
           const block = buf.slice(0, idx);
@@ -103,42 +123,39 @@ export default function useStreamingPhases({ endpoint, method = "POST", headers 
             if (line.startsWith("event:")) eventType = line.slice(6).trim();
             else if (line.startsWith("data:")) dataLine += line.slice(5).trim();
           }
-          // Re-arm the stall timer on every event received.
           armStallTimer();
           setStatus((s) => (s === "stalled" ? "streaming" : s));
           if (eventType === "phase") {
             try {
               const p = JSON.parse(dataLine || "{}");
               if (p?.phase) setPhase(p.phase);
-            } catch { /* keep current phase */ }
+            } catch { /* keep current */ }
+          } else if (eventType === "token") {
+            try {
+              const p = JSON.parse(dataLine || "{}");
+              if (typeof p?.text === "string") cbuf.push(p.text);
+            } catch {
+              cbuf.push(dataLine);
+            }
           } else if (eventType === "error") {
             let payload = null;
             try { payload = JSON.parse(dataLine || "{}"); } catch { /* noop */ }
             setError(payload?.detail || dataLine || "Stream error");
             setStatus("error");
           } else if (eventType === "done") {
-            setStatus("complete");
+            // wait for any queued clauses
           } else {
-            // Default `message` event (no explicit `event:` line)
-            // carries the final data body. We accumulate so streaming
-            // tokens can be supported later.
-            dataBag += dataLine;
+            // Default `message` event carries the final JSON body.
             try {
               const p = JSON.parse(dataLine);
               setResult(p);
-            } catch {
-              setPartial((s) => s + dataLine);
-            }
+            } catch { /* noop */ }
           }
         }
       }
-      // Drain any final buffered block.
-      if (buf.trim()) {
-        try {
-          const p = JSON.parse(buf.trim().replace(/^data:\s*/, ""));
-          setResult(p);
-        } catch { /* noop */ }
-      }
+      // Drain.
+      cbuf.flush();
+      setLatencyMs(performance.now() - t0Ref.current);
       setStatus((s) => (s === "error" ? s : "complete"));
     } catch (e) {
       if (e.name === "AbortError") return;
@@ -148,13 +165,15 @@ export default function useStreamingPhases({ endpoint, method = "POST", headers 
       clearStallTimer();
       abortRef.current = null;
     }
-  }, [endpoint, method, headers, body, armStallTimer]);
+  }, [endpoint, method, headers, body, armStallTimer, teardown]);
+
+  const retry = useCallback(() => { start(); }, [start]);
 
   useEffect(() => {
     if (autoStart) { start(); }
-    return () => { stop(); };
+    return () => { teardown(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStart]);
 
-  return { start, stop, phase, status, partial, result, error };
+  return { start, stop, retry, phase, status, visibleContent, result, error, latencyMs };
 }

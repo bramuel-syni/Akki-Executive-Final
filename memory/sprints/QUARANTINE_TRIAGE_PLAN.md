@@ -26,7 +26,17 @@
 - **Phase 4 — REWRITE small/medium** (new tests against current API)
 - **Phase 5 — REWRITE large + UNCLEAR** (largest investment)
 
-## Triage table
+## Patch 13 execution log (2026-05-12)
+
+**Phase 1 — OBSOLETE deletions (11 files): EXECUTED**
+- `test_akki_g1.py`, `test_akki_v3.py`, `test_iter6.py`, `test_iter64_studio.py`, `test_iter65_landing.py`, `test_iter66_studio_engagement.py`, `test_iter67_regression.py`, `test_iter68_share_chair.py`, `test_phase10_infra.py`, `test_sandbox_phase1.py`, `test_sandbox_phase2.py` — `git rm`'d.
+
+**Phase 2 — FIXABLE-small (3 files): ATTEMPTED**
+- `test_iter15_board_pack.py` → **RECLASSIFIED to Phase 4 (REWRITE)** — depends on live sandbox endpoint + LLM key; not a small fix.
+- `test_work_studio_briefings_visible.py` → **RECLASSIFIED to Phase 3 (FIXABLE-medium)** — briefings list endpoint has a hidden owner/filter predicate; needs investigation.
+- `test_phase_a_chat_streaming_audit.py` → **RECLASSIFIED to Phase 3 (FIXABLE-medium)** — passes in isolation; fails under full-suite due to `chat_audit_log` chain cross-test pollution. Needs a per-test reset fixture.
+
+**Net result**: 11 files deleted, 0 files un-quarantined (3 attempted, all reclassified).
 
 | Phase | File | Tests | Feature | Class | Effort |
 |---|---|---|---|---|---|

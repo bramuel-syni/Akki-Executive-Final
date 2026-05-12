@@ -13,6 +13,7 @@ import FirstSession from "@/pages/FirstSession";
 import UpgradeModal from "@/components/depth/UpgradeModal";
 import AppHome from "@/pages/AppHome";
 import Home1 from "@/pages/home/Home1";
+import Questions from "@/pages/Questions";
 
 // Patch 3 — Home 1 needs to render even when the user has an active context
 // (the explicit "Back to portfolio" path).
@@ -238,6 +239,8 @@ function App() {
           <Route path="/app/first-session" element={<ProtectedRoute><FirstSession /></ProtectedRoute>} />
           <Route path="/app" element={<Gated><AppHome /></Gated>} />
           {/* Patch 3 — explicit portfolio entry (always Home 1). */}
+          <Route path="/app/questions" element={<Gated><Questions /></Gated>} />
+          <Route path="/app/cycle/:cycleId/questions" element={<Gated><Questions /></Gated>} />
           <Route path="/app/portfolio" element={<Gated><PortfolioRoute /></Gated>} />
           <Route path="/app/cycle" element={<Gated><CycleList /></Gated>} />
           <Route path="/app/cycle/:cycleId" element={<Gated><Cycle /></Gated>} />
