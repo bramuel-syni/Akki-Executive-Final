@@ -70,6 +70,7 @@ from routers import signal_actions as signal_actions_router  # noqa: E402
 from routers import pulse as pulse_router  # noqa: E402
 from routers import cycle_manager as cycle_manager_router  # noqa: E402
 from routers import cycles as cycles_router  # noqa: E402  # Cycle v2 — multi-cycle master
+from routers import quick_actions as quick_actions_router  # noqa: E402  # Cycle Feel pass — telemetry
 from routers import team_catalogue as team_catalogue_router  # noqa: E402  # Cycle v2
 from routers import cycle_assignments as cycle_assignments_router  # noqa: E402  # Cycle sprint (C3 ASSIGNMENT HANDOFF)
 from routers import ned_cycle as ned_cycle_router  # noqa: E402  # Phase E
@@ -159,6 +160,7 @@ app.include_router(signal_actions_router.router)
 app.include_router(pulse_router.router)
 app.include_router(cycle_manager_router.router)
 app.include_router(cycles_router.router)  # Cycle v2 — multi-cycle master
+app.include_router(quick_actions_router.router)  # Cycle Feel pass — Quick Action telemetry
 app.include_router(team_catalogue_router.router)  # Cycle v2 — team catalogue
 app.include_router(cycle_assignments_router.router)  # Cycle sprint — submit/assign/inbox/accept/decline
 app.include_router(ned_cycle_router.router)  # Phase E — NED Cycle Manager
@@ -455,6 +457,14 @@ async def on_startup():
     )
     await db.team_catalogue.create_index([("context_id", 1), ("deleted_at", 1), ("name", 1)])
     await db["_migrations"].create_index("id", unique=True)
+    # Cycle Manager Feel pass (Patch 2 of 4) — quick action telemetry.
+    await db.quick_action_usage.create_index(
+        [("context_id", 1), ("account_id", 1), ("action_key", 1)], unique=True,
+    )
+    await db.quick_action_usage.create_index([
+        ("context_id", 1), ("account_id", 1),
+        ("click_count", -1), ("last_used_at", -1),
+    ])
 
     # Run the multi-cycle migration on startup (idempotent).
     try:

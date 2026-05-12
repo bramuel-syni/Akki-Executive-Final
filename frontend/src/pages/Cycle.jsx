@@ -833,7 +833,9 @@ function CompilationStep({ cid, cycleId, cycle, onBack }) {
   return (
     <section data-testid="cycle-step-compilation">
       <h2 className="akki-serif text-[18px] text-[var(--ink)] mb-1">Draft Compilation Output.</h2>
-      <p className="akki-meta mb-5">Akki produces a citation-ready draft from the scored contributions. Your judgement decides when to send.</p>
+      <p className="akki-meta mb-5" data-testid="cycle-compilation-subtitle">
+        When every agenda item is ready, agent cycle compiles your board pack.
+      </p>
       {!out && (
         <Button size="sm" onClick={compile} disabled={busy} className="bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12.5px]" data-testid="cycle-compile-btn">
           {busy ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileDown className="w-3.5 h-3.5 mr-1" />}
@@ -1027,8 +1029,14 @@ export default function Cycle() {
               <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Cycle Manager · {activeContext.name}
             </p>
             <h1 className="akki-greeting mb-1">{cycle?.title || "Drafting engine."}</h1>
-            <p className="akki-meta mb-6 max-w-2xl">
-              Set the agenda, build the team, score contributions, send follow-ups on your approval, and compile the draft when you decide it's ready.
+            <p className="akki-meta mb-6 max-w-2xl" data-testid="cycle-detail-status-sentence">
+              {isCompleted
+                ? "Closed cycle. Read-only. You can regenerate the compilation document from the Compilation tab."
+                : isActive
+                  ? "Active cycle. Agent cycle is tracking readiness per agenda item."
+                  : isDraft
+                    ? "Draft cycle. Add an agenda and team, then activate to begin contributions."
+                    : "Set the agenda, build the team, score contributions, send follow-ups on your approval, and compile the draft when you decide it's ready."}
             </p>
           </div>
           {isDraft && stepId === "agenda" && cycleId && (

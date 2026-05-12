@@ -79,11 +79,63 @@ async def _persist_agenda_shell(cycle_id: str, context_id: str, account_id: str,
 async def _hydrate_cycle(row: Dict[str, Any]) -> Dict[str, Any]:
     counts = await compute_cycle_counts(row["id"])
     readiness = await compute_readiness_score(row["id"])
+    cycle_id = row["id"]
+    agenda_count = counts["agenda_count"]
+    team_count = counts["contributor_count"]
+    # Readiness % — count agenda items that have at least one contribution.
+    readiness_pct = 0
+    if agenda_count > 0:
+        agenda_doc = await db.cycle_agendas.find_one(
+            {"id": cycle_id}, {"_id": 0, "items": 1},
+        )
+        items = (agenda_doc or {}).get("items") or []
+        item_ids_with_contrib = await db.cycle_contributions.distinct(
+            "agenda_item_id",
+            {"agenda_id": cycle_id, "agenda_item_id": {"$ne": None}},
+        )
+        covered = sum(1 for it in items if it.get("id") in item_ids_with_contrib)
+        readiness_pct = int((covered * 100) // agenda_count) if agenda_count else 0
+    # Last activity = most recent updated_at across the cycle-scoped
+    # collections, falling back to the cycle's own created_at.
+    last_act = row.get("updated_at") or row.get("created_at")
+    for coll, ts_field in (
+        ("cycle_contributions", "created_at"),
+        ("cycle_team", "updated_at"),
+        ("cycle_followups", "updated_at"),
+    ):
+        c = getattr(db, coll)
+        latest = await c.find_one(
+            {"agenda_id": cycle_id}, {"_id": 0, ts_field: 1},
+            sort=[(ts_field, -1)],
+        )
+        if latest and latest.get(ts_field) and latest[ts_field] > (last_act or ""):
+            last_act = latest[ts_field]
+    # Next-action hint — deterministic finite-state ladder.
+    cycle_status = (row.get("status") or "draft").lower()
+    if cycle_status == "completed":
+        next_hint = "Closed"
+    elif agenda_count == 0:
+        next_hint = "Add agenda items"
+    elif team_count == 0:
+        next_hint = "Add team"
+    elif readiness_pct == 0:
+        next_hint = "Awaiting contributions"
+    elif readiness_pct < 100:
+        scored_count = await db.cycle_contributions.count_documents({
+            "agenda_id": cycle_id, "scores.readiness": {"$exists": True},
+        })
+        next_hint = "Score available" if scored_count > 0 else "Ready to score"
+    else:
+        next_hint = "Ready to compile" if not row.get("compiled_brief_id") else "Ready to close"
     return {
         **row,
-        "agenda_count": counts["agenda_count"],
-        "contributor_count": counts["contributor_count"],
+        "agenda_count": agenda_count,
+        "team_count": team_count,
+        "contributor_count": team_count,  # legacy alias kept for v2 callers
+        "readiness_pct": readiness_pct,
         "readiness_score": readiness,
+        "last_activity_at": last_act,
+        "next_action_hint": next_hint,
     }
 
 
@@ -146,28 +198,48 @@ _SORT_MAP = {
 async def list_cycles(
     context_id: str,
     q: Optional[str] = Query(default=None, max_length=200),
+    status: Optional[str] = Query(
+        default=None,
+        pattern=r"^(all|active|draft|completed)$",
+    ),
     sort: str = Query(default="recent", pattern=r"^(recent|oldest|alpha|status)$"),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=12, ge=1, le=60),
+    page_size: int = Query(default=10, ge=1, le=60),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
+    """Cycle list with ListingShell-shaped pagination envelope.
+
+    Cycle Manager Feel pass (Patch 2 of 4, 2026-02): added `status`
+    filter, mirrored Work Studio's `counts_by_status` envelope, and
+    extended each row with intel fields for the Cycle Card visual:
+    `agenda_count`, `team_count`, `readiness_pct`, `last_activity_at`,
+    `next_action_hint`.
+    """
     filt: Dict[str, Any] = {"context_id": context_id}
     if q:
-        # Mongo regex on title — case-insensitive, escaped.
         filt["title"] = {"$regex": re.escape(q.strip()), "$options": "i"}
+
+    # Counts pre-status-filter (the filter-tab badges show the full
+    # picture, not the post-filter result).
+    counts_filt = {"context_id": context_id}
+    if q:
+        counts_filt["title"] = filt["title"]
+    counts_by_status = {
+        "all":       await db.cycles.count_documents(counts_filt),
+        "active":    await db.cycles.count_documents({**counts_filt, "status": "active"}),
+        "draft":     await db.cycles.count_documents({**counts_filt, "status": "draft"}),
+        "completed": await db.cycles.count_documents({**counts_filt, "status": "completed"}),
+    }
+
+    if status and status != "all":
+        filt["status"] = status
 
     total = await db.cycles.count_documents(filt)
 
     if sort == "status":
-        # Custom server-side sort: active > draft > completed, then recency.
         cur = db.cycles.find(filt, {"_id": 0})
         rows = await cur.to_list(2000)
         order = {"active": 0, "draft": 1, "completed": 2}
-        rows.sort(key=lambda r: (
-            order.get((r.get("status") or "draft"), 3),
-            -1 * (r.get("created_at") or "").__hash__()  # stable secondary
-        ))
-        # Secondary sort by created_at desc — re-sort with stable comparator.
         rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
         rows.sort(key=lambda r: order.get((r.get("status") or "draft"), 3))
         rows = rows[(page - 1) * page_size : page * page_size]
@@ -187,7 +259,9 @@ async def list_cycles(
         "page": page,
         "page_size": page_size,
         "total_pages": max(1, (total + page_size - 1) // page_size),
+        "counts_by_status": counts_by_status,
         "sort": sort,
+        "status": status or "all",
         "q": q or "",
     }
 
@@ -270,3 +344,128 @@ async def close_cycle(
         {"final_readiness_score": readiness},
     )
     return await _hydrate_cycle(await get_cycle_or_404(context_id, cycle_id))
+
+
+
+# ─────────────────────────────────────────────────────────────────────
+# 6. Apply template (Quick Action — Prepare for Main Board)
+# ─────────────────────────────────────────────────────────────────────
+class ApplyTemplateIn(BaseModel):
+    template_key: str = Field(min_length=1, max_length=64)
+
+
+_MAIN_BOARD_AGENDA_ITEMS = (
+    "Strategy review",
+    "Financial performance",
+    "Risk and compliance",
+    "People and culture",
+    "ExCo report",
+    "Forward look",
+)
+
+
+@router.post("/contexts/{context_id}/cycles/{cycle_id}/apply-template")
+async def apply_template(
+    context_id: str,
+    cycle_id: str,
+    body: ApplyTemplateIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Seed a draft cycle with a structured template.
+
+    Quick Action "Prepare for Main Board" — `template_key="main_board"`:
+      • Seeds 6 agenda items (in canonical order).
+      • Seeds the team from the workspace `team_catalogue`, with empty
+        role / contribution_description / agenda_assignments.
+      • Idempotent — refuses (409, `cycle_not_empty`) if the cycle
+        already has agenda items.
+    """
+    cycle = await get_cycle_or_404(context_id, cycle_id)
+    if (cycle.get("status") or "draft") == "completed":
+        raise HTTPException(status_code=409, detail="Cycle is closed.")
+
+    if body.template_key != "main_board":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown template_key {body.template_key!r}.",
+        )
+
+    # Idempotency guard — refuse if agenda already has items.
+    agenda = await db.cycle_agendas.find_one({"id": cycle_id}, {"_id": 0, "items": 1})
+    if agenda and (agenda.get("items") or []):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "cycle_not_empty",
+                "message": (
+                    "This cycle already has agenda items. Apply a template "
+                    "to an empty draft cycle instead."
+                ),
+            },
+        )
+
+    # Seed agenda items.
+    now_iso = iso(now())
+    items = [
+        {"id": str(uuid.uuid4()), "label": lbl, "created_at": now_iso}
+        for lbl in _MAIN_BOARD_AGENDA_ITEMS
+    ]
+    await db.cycle_agendas.update_one(
+        {"id": cycle_id, "context_id": context_id},
+        {"$set": {
+            "items": items,
+            "updated_at": now_iso,
+        }},
+        upsert=False,
+    )
+
+    # Seed team from the (account-scoped) catalogue, skipping any
+    # member already present in this cycle.
+    catalogue = await db.team_catalogue.find(
+        {"context_id": context_id, "deleted_at": None},
+        {"_id": 0, "name": 1, "email": 1},
+    ).to_list(500)
+    existing_emails = await db.cycle_team.distinct(
+        "email", {"agenda_id": cycle_id, "status": "active"},
+    )
+    existing_lc = {(e or "").strip().lower() for e in existing_emails}
+    team_inserted = 0
+    for m in catalogue:
+        email_lc = (m.get("email") or "").strip().lower()
+        if not email_lc or email_lc in existing_lc:
+            continue
+        await db.cycle_team.insert_one({
+            "id": str(uuid.uuid4()),
+            "context_id": context_id,
+            "agenda_id": cycle_id,
+            "cycle_id": cycle_id,
+            "name": m.get("name") or "",
+            "email": m.get("email") or "",
+            "role": None,
+            "contribution_description": "—",
+            "owns_item_ids": [],
+            "status": "active",
+            "created_at": now_iso,
+            "updated_at": now_iso,
+        })
+        team_inserted += 1
+
+    await write_audit(
+        context_id, ctx["account"]["id"],
+        "cycle.template_applied", "cycle", cycle_id,
+        {
+            "template_key": body.template_key,
+            "agenda_items_added": len(items),
+            "team_members_added": team_inserted,
+        },
+    )
+
+    return {
+        "cycle_id": cycle_id,
+        "template_key": body.template_key,
+        "agenda_items_added": len(items),
+        "team_members_added": team_inserted,
+        "cycle": await _hydrate_cycle(
+            await get_cycle_or_404(context_id, cycle_id)
+        ),
+    }
