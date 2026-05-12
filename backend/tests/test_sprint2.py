@@ -13,7 +13,7 @@ import pytest
 
 BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") + "/api"
 
-BRAMUEL = {"email": "bramuel@syni.ai", "password": "TestBramuel2026!"}
+BRAMUEL = {"email": "bramuel@syni.ai", "password": "Bramuel2026!"}
 EXEC_TEST = {"email": "exec.test@akki.ai", "password": "TestExec2026!", "name": "Test Executive"}
 
 

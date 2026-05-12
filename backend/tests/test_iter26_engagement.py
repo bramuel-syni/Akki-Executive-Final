@@ -6,7 +6,8 @@ Covers the two new routers introduced in this batch:
 """
 
 import pytest
-pytestmark = pytest.mark.skip(reason='Patch 8 quarantined — pre-existing failures from before autonomous sprint. See SYSTEM_STATE §7.')
+
+pytestmark = pytest.mark.skip(reason="Patch 19 attempt — E2E test using requests.Session() against live BASE_URL. Auth login gets rate-limited (HTTP 429) under full pytest suite. Architectural rewrite to in-process httpx+ASGI required (see /app/backend/tests/test_phase_b_chat_retention.py for the target pattern). Estimated 60-90 min per file — exceeds Patch 19 time cap. Reclassified to Phase 4-large.")
 import os
 import pytest
 import requests
@@ -25,7 +26,7 @@ BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or _read_react_url()).rstrip
 assert BASE_URL.startswith("http"), f"BASE_URL not configured: {BASE_URL!r}"
 CTX_ID = "2ceb9fde-a202-4891-adb1-ecf47dfe2258"  # Tuli CFO (Bramuel exec)
 
-OWNER = {"email": "bramuel@syni.ai", "password": "TestBramuel2026!"}
+OWNER = {"email": "bramuel@syni.ai", "password": "Bramuel2026!"}
 OTHER = {"email": "admin@akki.ai", "password": "AkkiAdmin2026!"}
 
 

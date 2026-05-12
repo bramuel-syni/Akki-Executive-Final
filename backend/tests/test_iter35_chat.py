@@ -23,7 +23,7 @@ load_dotenv("/app/frontend/.env")
 BASE = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 API = f"{BASE}/api"
 
-BRAMUEL = ("bramuel@syni.ai", "TestBramuel2026!")
+BRAMUEL = ("bramuel@syni.ai", "Bramuel2026!")
 ADMIN = ("admin@akki.ai", "AkkiAdmin2026!")
 
 

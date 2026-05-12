@@ -1,108 +1,111 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import "@/App.css";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { Toaster } from "@/components/ui/sonner";
 
-import Landing from "@/pages/Landing";
-import SolvaLanding from "@/pages/SolvaLanding";
+// Patch 18 — code-split.
+// Public marketing landing + auth pages stay eagerly imported because
+// they're the first impression and gating reduces useful interactivity
+// on slow networks. Everything else (app routes, admin, sandbox, deep
+// marketing pages) is lazy-loaded per route via React.lazy.
+import WebsiteHome from "@/website/pages/Home";
 import SignIn from "@/pages/SignIn";
 import SignUp from "@/pages/SignUp";
-import FirstSession from "@/pages/FirstSession";
 import UpgradeModal from "@/components/depth/UpgradeModal";
-import AppHome from "@/pages/AppHome";
-import Home1 from "@/pages/home/Home1";
-import Questions from "@/pages/Questions";
+
+// -- Lazy: marketing deeper routes (rarely visited from cold start) ----------
+const Landing = lazy(() => import("@/pages/Landing"));
+const SolvaLanding = lazy(() => import("@/pages/SolvaLanding"));
+const About = lazy(() => import("@/pages/marketing/About"));
+const Features = lazy(() => import("@/pages/marketing/Features"));
+const Security = lazy(() => import("@/pages/marketing/Security"));
+const Plans = lazy(() => import("@/pages/marketing/Plans"));
+const EnterpriseMarketing = lazy(() => import("@/pages/marketing/Enterprise"));
+const EarlyAccess = lazy(() => import("@/pages/marketing/EarlyAccess"));
+const Blog = lazy(() => import("@/pages/marketing/Blog"));
+const BlogPost = lazy(() => import("@/pages/marketing/BlogPost"));
+const BlogAdmin = lazy(() => import("@/pages/marketing/BlogAdmin"));
+const WebsiteWhyAkki = lazy(() => import("@/website/pages/WhyAkki"));
+const WebsiteWhatAkkiDoes = lazy(() => import("@/website/pages/WhatAkkiDoes"));
+const WebsiteTrust = lazy(() => import("@/website/pages/Trust"));
+const WebsiteCohort = lazy(() => import("@/website/pages/Cohort"));
+const WebsitePricing = lazy(() => import("@/website/pages/Pricing"));
+const WebsiteAbout = lazy(() => import("@/website/pages/About"));
+const WebsiteContact = lazy(() => import("@/website/pages/Contact"));
+const WebsitePrivacy = lazy(() => import("@/website/pages/Privacy"));
+const WebsiteTerms = lazy(() => import("@/website/pages/Terms"));
+const WebsiteMethodology = lazy(() => import("@/website/pages/Methodology"));
+const WebsiteExco360 = lazy(() => import("@/website/pages/Exco360"));
+const WebsiteProductSolva = lazy(() => import("@/website/pages/product/Solva"));
+const WebsiteProductChat = lazy(() => import("@/website/pages/product/AkkiChat"));
+const WebsiteProductWorkStudio = lazy(() => import("@/website/pages/product/WorkStudio"));
+const WebsiteProductCycle = lazy(() => import("@/website/pages/product/CycleManager"));
+const WebsiteProductMonitor = lazy(() => import("@/website/pages/product/Monitor"));
+const WebsiteProductPulse = lazy(() => import("@/website/pages/product/Pulse"));
+const WebsiteProductJournal = lazy(() => import("@/website/pages/product/DocumentJournal"));
+const WebsiteForExecutives = lazy(() => import("@/website/pages/ForExecutives"));
+const WebsiteForExco = lazy(() => import("@/website/pages/ForExco"));
+const WebsiteForNeds = lazy(() => import("@/website/pages/ForNeds"));
+const WebsiteForOrganisations = lazy(() => import("@/website/pages/ForOrganisations"));
+
+// -- Lazy: protected app routes ----------------------------------------------
+const FirstSession = lazy(() => import("@/pages/FirstSession"));
+const AppHome = lazy(() => import("@/pages/AppHome"));
+const Home1 = lazy(() => import("@/pages/home/Home1"));
+const Questions = lazy(() => import("@/pages/Questions"));
+const Workspace = lazy(() => import("@/pages/Workspace"));
+const Activity = lazy(() => import("@/pages/Activity"));
+const ReadingView = lazy(() => import("@/pages/ReadingView"));
+const CycleSettings = lazy(() => import("@/pages/CycleSettings"));
+const DailyReview = lazy(() => import("@/pages/DailyReview"));
+const Learn = lazy(() => import("@/pages/Learn"));
+const TenantSettings = lazy(() => import("@/pages/TenantSettings"));
+const AccountSecurity = lazy(() => import("@/pages/AccountSecurity"));
+const InviteAccept = lazy(() => import("@/pages/InviteAccept"));
+const NewContext = lazy(() => import("@/pages/NewWorkspace"));
+const ContextPortfolio = lazy(() => import("@/pages/ContextPortfolio"));
+const Simulate = lazy(() => import("@/pages/Simulate"));
+const LensRoom = lazy(() => import("@/pages/LensRoom"));
+const Chat = lazy(() => import("@/pages/Chat"));
+const InfluenceMap = lazy(() => import("@/pages/InfluenceMap"));
+const SandboxV2 = lazy(() => import("@/pages/SandboxV2"));
+const SandboxApp = lazy(() => import("@/sandbox/SandboxApp"));
+const Manage = lazy(() => import("@/pages/Manage"));
+const Enterprise = lazy(() => import("@/pages/Enterprise"));
+const Decks = lazy(() => import("@/pages/Decks"));
+const SolvaApp = lazy(() => import("@/pages/SolvaApp"));
+const SolvaSession = lazy(() => import("@/pages/SolvaSession"));
+const SolvaSessions = lazy(() => import("@/pages/SolvaSessions"));
+const Cycle = lazy(() => import("@/pages/Cycle"));
+const CycleList = lazy(() => import("@/pages/cycle/CycleList"));
+const Monitor = lazy(() => import("@/pages/Monitor"));
+const PlaysLibrary = lazy(() => import("@/pages/PlaysLibrary"));
+const PlayView = lazy(() => import("@/pages/PlayView"));
+const RespondToChecklist = lazy(() => import("@/pages/RespondToChecklist"));
+const SharedArtefact = lazy(() => import("@/pages/SharedArtefact"));
+const InboundQueue = lazy(() => import("@/pages/InboundQueue"));
+const StudioComposerPage = lazy(() => import("@/pages/StudioComposerPage"));
+const WorkStudio = lazy(() => import("@/pages/WorkStudio"));
+const Pulse = lazy(() => import("@/pages/Pulse"));
+const SearchResults = lazy(() => import("@/pages/SearchResults"));
+const NedMeeting = lazy(() => import("@/pages/ned/NedMeeting"));
+const NedCommittee = lazy(() => import("@/pages/ned/NedCommittee"));
+const NedInbox = lazy(() => import("@/pages/ned/NedInbox"));
+// Prepare page kept for back-compat (not in routes today but imported elsewhere)
+
+// -- Lazy: admin (separate chunk) --------------------------------------------
+const HealthDashboard = lazy(() => import("@/pages/admin/HealthDashboard"));
+const SandboxKPI = lazy(() => import("@/pages/admin/SandboxKPI"));
+const SignalKPI = lazy(() => import("@/pages/admin/SignalKPI"));
+const LLMSpend = lazy(() => import("@/pages/admin/LLMSpend"));
+const AuthEvents = lazy(() => import("@/pages/admin/AuthEvents"));
+const AdminIndex = lazy(() => import("@/pages/admin/AdminIndex"));
 
 // Patch 3 — Home 1 needs to render even when the user has an active context
 // (the explicit "Back to portfolio" path).
 function PortfolioRoute() { return <Home1 />; }
-import Workspace from "@/pages/Workspace";
-import Prepare from "@/pages/Prepare";
-import Activity from "@/pages/Activity";
-import ReadingView from "@/pages/ReadingView";
-import CycleSettings from "@/pages/CycleSettings";
-import DailyReview from "@/pages/DailyReview";
-import Learn from "@/pages/Learn";
-import TenantSettings from "@/pages/TenantSettings";
-import AccountSecurity from "@/pages/AccountSecurity";
-import InviteAccept from "@/pages/InviteAccept";
-import NewContext from "@/pages/NewWorkspace";
-import ContextPortfolio from "@/pages/ContextPortfolio";
-import Simulate from "@/pages/Simulate";
-import LensRoom from "@/pages/LensRoom";
-import Chat from "@/pages/Chat";
-import InfluenceMap from "@/pages/InfluenceMap";
-import HealthDashboard from "@/pages/admin/HealthDashboard";
-import SandboxKPI from "@/pages/admin/SandboxKPI";
-import SignalKPI from "@/pages/admin/SignalKPI";
-import LLMSpend from "@/pages/admin/LLMSpend";
-import AuthEvents from "@/pages/admin/AuthEvents";
-import AdminIndex from "@/pages/admin/AdminIndex";
-import SandboxV2 from "@/pages/SandboxV2";
-// Phase J (2026-05-12) — Generative Sandbox MVP replaces the legacy
-// guided tour at /sandbox. The old tour moves to /legacy-sandbox.
-import SandboxApp from "@/sandbox/SandboxApp";
-import Manage from "@/pages/Manage";
-import Enterprise from "@/pages/Enterprise";
-import Decks from "@/pages/Decks";
-import SolvaApp from "@/pages/SolvaApp";
-import SolvaSession from "@/pages/SolvaSession";
-import SolvaSessions from "@/pages/SolvaSessions";
-import Cycle from "@/pages/Cycle";
-import CycleList from "@/pages/cycle/CycleList";  // Cycle v2 — multi-cycle list landing
-import Monitor from "@/pages/Monitor";
-import PlaysLibrary from "@/pages/PlaysLibrary";
-import PlayView from "@/pages/PlayView";
-import RespondToChecklist from "@/pages/RespondToChecklist";
-import About from "@/pages/marketing/About";
-import Features from "@/pages/marketing/Features";
-import Security from "@/pages/marketing/Security";
-import Plans from "@/pages/marketing/Plans";
-import EnterpriseMarketing from "@/pages/marketing/Enterprise";
-import EarlyAccess from "@/pages/marketing/EarlyAccess";
-import Blog from "@/pages/marketing/Blog";
-import BlogPost from "@/pages/marketing/BlogPost";
-import BlogAdmin from "@/pages/marketing/BlogAdmin";
-import SharedArtefact from "@/pages/SharedArtefact";
-import InboundQueue from "@/pages/InboundQueue";
-import StudioComposerPage from "@/pages/StudioComposerPage";
-// Phase 13.3 — new top-level surfaces
-import WorkStudio from "@/pages/WorkStudio";
-import Pulse from "@/pages/Pulse";
-import SearchResults from "@/pages/SearchResults";  // Phase F0 — Universal Search results page
-
-// Phase I1 (2026-05-11) + v7 (2026-05-12) — Pre-login marketing website.
-// All website routes live OUTSIDE /app/*. v7 reinstates /pricing and
-// adds /document-journal. Per-product pages move from /product/<x> to
-// top-level routes (/solva, /akki-chat, /work-studio, etc.).
-import WebsiteHome from "@/website/pages/Home";
-import WebsiteWhyAkki from "@/website/pages/WhyAkki";
-import WebsiteWhatAkkiDoes from "@/website/pages/WhatAkkiDoes";
-import WebsiteTrust from "@/website/pages/Trust";
-import WebsiteCohort from "@/website/pages/Cohort";
-import WebsitePricing from "@/website/pages/Pricing";
-import WebsiteAbout from "@/website/pages/About";
-import WebsiteContact from "@/website/pages/Contact";
-import WebsitePrivacy from "@/website/pages/Privacy";
-import WebsiteTerms from "@/website/pages/Terms";
-import WebsiteMethodology from "@/website/pages/Methodology";
-import WebsiteExco360 from "@/website/pages/Exco360";
-import WebsiteProductSolva from "@/website/pages/product/Solva";
-import WebsiteProductChat from "@/website/pages/product/AkkiChat";
-import WebsiteProductWorkStudio from "@/website/pages/product/WorkStudio";
-import WebsiteProductCycle from "@/website/pages/product/CycleManager";
-import WebsiteProductMonitor from "@/website/pages/product/Monitor";
-import WebsiteProductPulse from "@/website/pages/product/Pulse";
-import WebsiteProductJournal from "@/website/pages/product/DocumentJournal";
-import WebsiteForExecutives from "@/website/pages/ForExecutives";
-import WebsiteForExco from "@/website/pages/ForExco";
-import WebsiteForNeds from "@/website/pages/ForNeds";
-import WebsiteForOrganisations from "@/website/pages/ForOrganisations";
-import NedMeeting from "@/pages/ned/NedMeeting";   // Phase E
-import NedCommittee from "@/pages/ned/NedCommittee"; // Phase E
-import NedInbox from "@/pages/ned/NedInbox";       // Cycle sprint — assignment handoff
 
 function PublicOnlyRoute({ children, allowSandbox = false }) {
   const { account } = useAuth();
@@ -163,12 +166,18 @@ function Gated({ children }) {
   );
 }
 
+// Lazy fallback — intentionally invisible. Renders nothing during the
+// per-chunk fetch (typically <300ms on a warm cache). A spinner would
+// cause a flash before the real UI mounts.
+function LazyFallback() { return null; }
+
 function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Toaster position="top-right" richColors />
         <UpgradeModal />
+        <Suspense fallback={<LazyFallback />}>
         <Routes>
           {/* Phase I1 (2026-05-11) — pre-login website (10-page MVP).
               `/` now serves the new senior-peer-voice marketing site.
@@ -294,6 +303,7 @@ function App() {
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
       </BrowserRouter>
     </AuthProvider>
   );

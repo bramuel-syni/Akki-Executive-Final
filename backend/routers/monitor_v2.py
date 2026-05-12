@@ -188,7 +188,7 @@ async def create_item(
         "context_id": context_id,
         "created_at": _iso(now),
         "updated_at": _iso(now),
-        **parsed.dict(),
+        **parsed.model_dump(),
     }
     await _coll(kind).insert_one(rec.copy())
     return _sanitize(rec)

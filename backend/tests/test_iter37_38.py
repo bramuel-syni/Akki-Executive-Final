@@ -14,7 +14,7 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://akki-executive.previ
 ADMIN_EMAIL = "admin@akki.ai"
 ADMIN_PASS = "AkkiAdmin2026!"
 USER_EMAIL = "bramuel@syni.ai"
-USER_PASS = "TestBramuel2026!"
+USER_PASS = "Bramuel2026!"
 TULI_CFO_CTX = "2ceb9fde-a202-4891-adb1-ecf47dfe2258"
 CRON_SECRET = "local-dev-cron-secret-rotate-in-prod-2026"
 

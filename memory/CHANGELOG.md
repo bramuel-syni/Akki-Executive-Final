@@ -3,6 +3,44 @@
 > Append-only history of shipped work. Newest first.
 > Detailed patch close-outs live in `/app/memory/SYSTEM_STATE.md` §4.
 
+## 2026-05-12 — One-swipe Sprint (Patches 15-19 + §I integrations)
+
+### Patch 19 — Quarantine Phase 3 + Phase 4 attempt + Phase 5 diagnoses
+Phase 3: 8/9 FIXABLE-medium files unquarantined at module level (~37 individual
+tests now run green). Phase 4: architectural diagnosis — 47 E2E iter/sprint files
+need in-process httpx+ASGI rewrite (estimated 7 person-days); password constant
+unified across all 47 (`TestBramuel2026!` → `Bramuel2026!`) as a one-line preparatory
+fix. Phase 5: 5/5 diagnosis paragraphs with rewrite plans. Suite: 364 passed · 562
+skipped · 0 failed (+6 vs Patch-13 baseline).
+
+### §I — Integration setup guidelines (no code change)
+Four actionable docs in `/app/memory/integrations/`: AZURE_SETUP_GUIDELINE.md
+(full AKS/ACR/Key Vault/Blob/Front Door provisioning + cost estimates), STRIPE_SETUP_GUIDELINE.md
+(product/price IDs, webhook events, Customer Portal), CLAMAV_SETUP_GUIDELINE.md
+(sidecar vs hosted, signature DB strategy, fail-closed contract), NEWS_FEED_OPTIONS.md
+(4 options compared with recommendation: self-hosted RSS).
+
+### Patch 18 — Marketing JS bundle code-split
+80 of 84 page imports converted to `React.lazy()` + `<Suspense>`. Initial JS main.js
+gzipped: **605.9 kB → 143.34 kB (-76%)**. Marketing initial load well under <500 kB
+target. Per-route chunks load on demand. Curl + live screenshot confirm no regression.
+
+### Patch 17 — Legacy Home parity audit + delete
+`HomeDual.jsx` + `HomeExecutive.jsx` + `HomeNed.jsx` (~835 ll. total) deleted after
+section-by-section parity audit. 2 MISSING items added to Home2.jsx (Continue-onboarding
+band; ExcoTeamsCard). Parity audit: `/app/memory/sprints/LEGACY_HOME_PARITY.md`.
+
+### Patch 16 — Pydantic v2 migration
+All 3 `.dict()` call sites → `.model_dump()`. All 3 `@validator` decorators → 
+`@field_validator` + `@classmethod`. Zero Pydantic v1 API remaining in backend.
+Full suite green.
+
+### Patch 15 — Visual Audit V2
+28 live Playwright screenshots at `/app/memory/visual_audit/v2/` covering all 9 sprint
+surfaces. `VISUAL_AUDIT_V2.md` walkthrough with API payloads + DOM trees + verbatim copy.
+**Bug found and fixed during capture**: `Cycle.jsx` referenced `expectedCloseAt`/
+`setExpectedCloseAt` without declaring the `useState` pair — Patch 10 regression.
+
 ## 2026-05-12 — Autonomous Sprint (Patches 2B.1 → 8)
 
 ### Patch 8 — Legacy test triage (quarantine)

@@ -18,7 +18,7 @@ CTX_ID = "fb4df969-3f17-4279-bf78-f07bb9e29650"
 EXISTING_DECK_ID = "4fde929d-d9ae-433d-8cc9-bf60fda6eacd"
 
 USER_EMAIL = "bramuel@syni.ai"
-USER_PASSWORD = "TestBramuel2026!"
+USER_PASSWORD = "Bramuel2026!"
 ADMIN_EMAIL = "admin@akki.ai"
 ADMIN_PASSWORD = "AkkiAdmin2026!"
 

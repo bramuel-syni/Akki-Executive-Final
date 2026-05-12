@@ -19,7 +19,7 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 assert BASE_URL, "REACT_APP_BACKEND_URL must be set"
 
 EMAIL = "bramuel@syni.ai"
-PASSWORD = "TestBramuel2026!"
+PASSWORD = "Bramuel2026!"
 
 # Tuli CFO executive context (per review request)
 CTX_ID = "2ceb9fde-a202-4891-adb1-ecf47dfe2258"

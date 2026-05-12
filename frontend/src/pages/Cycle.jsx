@@ -906,6 +906,13 @@ export default function Cycle() {
   const [closing, setClosing] = useState(false);
   const [activating, setActivating] = useState(false);
   const [activateOpen, setActivateOpen] = useState(false);
+  // Patch 10 — Expected close date (Home 2 "cycles closing this week" insight).
+  // Default = today + 30 days, in ISO YYYY-MM-DD format. Reset on each dialog open.
+  const [expectedCloseAt, setExpectedCloseAt] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().slice(0, 10);
+  });
 
   // Default tab: URL ?tab=… > "agenda".
   const initialTab = (search.get("tab") || "agenda").toLowerCase();

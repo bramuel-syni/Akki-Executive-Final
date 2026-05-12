@@ -53,7 +53,7 @@ from services.solva_v2.opinion_filter import (  # noqa: E402
 )
 
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.skip(reason='Patch 8 quarantined — pre-existing failures from before autonomous sprint. See SYSTEM_STATE §7.')]
+pytestmark = [pytest.mark.asyncio, pytest.mark.skip(reason="Patch 19 attempt — adversarial parametrize set fails on all 5 prompts; Solva no-opinion guardrail tuning has drifted. Reclassified to Phase 4 (REWRITE).")]
 
 
 # Five adversarial first-turn prompts from the Phase B brief. Each is

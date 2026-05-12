@@ -19,7 +19,7 @@ DOC1   = "a90b82e3-3fa9-4a26-be0c-d63bdfc51909"  # already has akki_summary + li
 DOC2   = "9f5ab479-abf2-4516-bc04-4f6dabb5557a"
 
 EMAIL = "bramuel@syni.ai"
-PWD   = "TestBramuel2026!"
+PWD   = "Bramuel2026!"
 
 
 @pytest.fixture(scope="module")

@@ -16,7 +16,7 @@ import requests
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://akki-executive.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 
-BRAMUEL = {"email": "bramuel@syni.ai", "password": "TestBramuel2026!"}
+BRAMUEL = {"email": "bramuel@syni.ai", "password": "Bramuel2026!"}
 ADMIN = {"email": "admin@akki.ai", "password": "AkkiAdmin2026!"}
 
 TULI_EXEC_HINT = "Tuli"

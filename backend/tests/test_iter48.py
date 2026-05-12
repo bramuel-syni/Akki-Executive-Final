@@ -16,7 +16,7 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 assert BASE_URL, "REACT_APP_BACKEND_URL missing"
 
 BRAMUEL_EMAIL = "bramuel@syni.ai"
-BRAMUEL_PASSWORD = "TestBramuel2026!"
+BRAMUEL_PASSWORD = "Bramuel2026!"
 
 
 # -----------------------------------------------------------------------------

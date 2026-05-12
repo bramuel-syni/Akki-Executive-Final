@@ -23,7 +23,7 @@ MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
 
 EMAIL = "bramuel@syni.ai"
-PASSWORD = "TestBramuel2026!"
+PASSWORD = "Bramuel2026!"
 TULI_NED_CTX = "fb4df969-3f17-4279-bf78-f07bb9e29650"
 
 

@@ -16,9 +16,11 @@ import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import HeroDocActions from "@/components/home/HeroDocActions";
+import ExcoTeamsCard from "@/components/home/ExcoTeamsCard";
+import { Button } from "@/components/ui/button";
 import {
   Files, AlertTriangle, Briefcase, CheckCircle2, Calendar,
-  Plus, MessageSquare, ChevronRight, History, ArrowLeft, Sparkles,
+  Plus, MessageSquare, ChevronRight, History, ArrowLeft, ArrowRight, Sparkles,
 } from "lucide-react";
 
 
@@ -89,8 +91,42 @@ const CARD_CONFIG = {
 };
 
 
-function InsightCard({ keyName, count, onClick }) {
-  const cfg = CARD_CONFIG[keyName];
+// Patch 17 — Continue-onboarding band (parity preserve from
+// legacy HomeExecutive.jsx). Renders only when the account's
+// first-session journey is still open (NOT completed AND NOT
+// skipped). Gated this way so we don't pester returning users
+// who explicitly chose to skip.
+function ContinueOnboardingBand({ account, navigate }) {
+  const status = account?.first_session?.status;
+  if (status === "completed" || status === "skipped") return null;
+  return (
+    <div
+      className="mt-8 mb-2 bg-white border border-[var(--rule)] rounded-md p-6 relative overflow-hidden"
+      data-testid="home2-continue-onboarding"
+    >
+      <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[var(--accent)]" />
+      <p className="akki-overline mb-2">Next · 7 minutes</p>
+      <h3 className="akki-serif text-[20px] mb-2 text-[var(--ink)] leading-snug">
+        Finish your profile to start receiving signals.
+      </h3>
+      <p className="akki-meta max-w-2xl mb-5">
+        Seven role-specific questions establish your profile — the foundation for every signal,
+        briefing, and lens session AKKI runs on your behalf.
+      </p>
+      <Button
+        onClick={() => navigate("/app/first-session")}
+        className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white rounded-md h-9 px-4 font-medium"
+        data-testid="home2-continue-onboarding-cta"
+        aria-label="Continue onboarding"
+      >
+        Continue onboarding <ArrowRight className="w-4 h-4 ml-2" />
+      </Button>
+    </div>
+  );
+}
+
+
+function InsightCard({ keyName, count, onClick }) {  const cfg = CARD_CONFIG[keyName];
   if (!cfg) return null;
   const Icon = cfg.icon;
   const muted = count === 0;
@@ -124,6 +160,11 @@ function InsightCard({ keyName, count, onClick }) {
 export default function Home2() {
   const { account, activeContext } = useAuth();
   const navigate = useNavigate();
+
+  const cid = activeContext?.id;
+  const isAdmin =
+    activeContext?.my_sub_role === "admin" ||
+    activeContext?.owner_account_id === account?.id;
 
   const [insights, setInsights] = useState(null);
   const [whatsNew, setWhatsNew] = useState([]);
@@ -219,6 +260,10 @@ export default function Home2() {
           </p>
         </section>
 
+        {/* Patch 17 — Continue-onboarding band (parity from HomeExecutive).
+            Renders only when account.first_session is open. */}
+        <ContinueOnboardingBand account={account} navigate={navigate} />
+
         {/* 2. Hero copy band */}
         <section className="mt-8 mb-6" data-testid="home2-hero-copy">
           <h2 className="akki-serif text-[24px] text-[var(--ink)] leading-tight mb-2 font-normal">
@@ -313,6 +358,10 @@ export default function Home2() {
             </p>
           </button>
         </section>
+
+        {/* Patch 17 — ExCo teams card parity (was on HomeDual + HomeExecutive).
+            Renders the admin-only ExCo teams grouping function. */}
+        <ExcoTeamsCard contextId={cid} isAdmin={isAdmin} />
       </div>
     </AppShell>
   );

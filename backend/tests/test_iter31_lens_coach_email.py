@@ -18,7 +18,7 @@ import pytest
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://akki-executive.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 
-USER = {"email": "bramuel@syni.ai", "password": "TestBramuel2026!"}
+USER = {"email": "bramuel@syni.ai", "password": "Bramuel2026!"}
 CFO_CTX = "2ceb9fde-a202-4891-adb1-ecf47dfe2258"
 
 

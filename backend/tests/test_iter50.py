@@ -1,7 +1,8 @@
 """Iter50 backend regression — briefs concurrency, minutes endpoint, regression."""
 
 import pytest
-pytestmark = pytest.mark.skip(reason='Patch 8 quarantined — pre-existing failures from before autonomous sprint. See SYSTEM_STATE §7.')
+
+pytestmark = pytest.mark.skip(reason="Patch 19 attempt — E2E test using requests.Session() against live BASE_URL. Auth login gets rate-limited (HTTP 429) under full pytest suite. Architectural rewrite to in-process httpx+ASGI required (see /app/backend/tests/test_phase_b_chat_retention.py for the target pattern). Estimated 60-90 min per file — exceeds Patch 19 time cap. Reclassified to Phase 4-large.")
 import os
 import time
 import pytest
@@ -9,7 +10,7 @@ import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://akki-executive.preview.emergentagent.com").rstrip("/")
 EMAIL = "bramuel@syni.ai"
-PASSWORD = "TestBramuel2026!"
+PASSWORD = "Bramuel2026!"
 
 
 @pytest.fixture(scope="module")

@@ -9,10 +9,10 @@
  * /app/portfolio always renders Home1 (the explicit "Back to portfolio"
  * affordance from Home 2 routes here).
  *
- * Legacy role-specific homes (HomeNed / HomeExecutive / HomeDual) are
- * preserved as components but no longer auto-dispatched — Home 2 covers
- * both operator and NED needs in one shell. Removing them would be a
- * silent feature deletion (forbidden by SYSTEM_STATE §2.5).
+ * Legacy role-specific homes (HomeNed / HomeExecutive / HomeDual) were
+ * deleted in Patch 17 after the LEGACY_HOME_PARITY audit confirmed all
+ * sections were either preserved on Home 2 or relocated to a dedicated
+ * route (NedInbox / NedMeeting / Pulse).
  *
  * The FirstSessionGuard in App.js still bounces brand-new accounts to
  * /app/first-session before they reach this dispatcher.

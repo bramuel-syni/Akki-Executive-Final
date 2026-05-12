@@ -15,7 +15,7 @@ if not BASE_URL:
                 BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
                 break
 
-BRAMUEL = {"email": "bramuel@syni.ai", "password": "TestBramuel2026!"}
+BRAMUEL = {"email": "bramuel@syni.ai", "password": "Bramuel2026!"}
 TULI_CFO = "2ceb9fde-a202-4891-adb1-ecf47dfe2258"
 MAWINGU_NED = "06cc1fc6-4308-4d19-a679-6f8f6bd692dc"
 

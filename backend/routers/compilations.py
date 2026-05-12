@@ -23,7 +23,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 from core import db, iso as _iso, now as _now, require_context_membership
 
@@ -58,19 +58,22 @@ class CompilationCreate(BaseModel):
     cadence_payload: CadencePayload = Field(default_factory=CadencePayload)
     formats: List[str] = Field(default_factory=list)
 
-    @validator("artefact_type")
+    @field_validator("artefact_type")
+    @classmethod
     def _v_artefact(cls, v):
         if v not in _ARTEFACT_TYPES:
             raise ValueError(f"artefact_type must be one of {_ARTEFACT_TYPES}")
         return v
 
-    @validator("cadence_kind")
+    @field_validator("cadence_kind")
+    @classmethod
     def _v_cadence(cls, v):
         if v not in _CADENCE_KINDS:
             raise ValueError(f"cadence_kind must be one of {_CADENCE_KINDS}")
         return v
 
-    @validator("formats")
+    @field_validator("formats")
+    @classmethod
     def _v_formats(cls, v):
         # Patch 9+ correction — `formats` is OPTIONAL (default `[]`). When
         # present, every entry must be one of docx/pptx/pdf. An empty
@@ -106,7 +109,7 @@ async def create_compilation(
         "source_ids": list(body.source_ids),
         "contributor_ids": list(body.contributor_ids),
         "cadence_kind": body.cadence_kind,
-        "cadence_payload": body.cadence_payload.dict(exclude_none=True),
+        "cadence_payload": body.cadence_payload.model_dump(exclude_none=True),
         "formats": body.formats,
         "status": "queued",
         "created_at": _iso(now),

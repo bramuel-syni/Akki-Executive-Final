@@ -41,7 +41,7 @@ BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 POSTMARK_SECRET = os.environ.get("POSTMARK_WEBHOOK_SECRET") or os.environ["POSTMARK_SERVER_TOKEN"]
 
 BRAMUEL_EMAIL = "bramuel@syni.ai"
-BRAMUEL_PASSWORD = "TestBramuel2026!"
+BRAMUEL_PASSWORD = "Bramuel2026!"
 CTX_TULI_NED = "fb4df969-3f17-4279-bf78-f07bb9e29650"
 
 

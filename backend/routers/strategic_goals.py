@@ -157,7 +157,7 @@ async def create_goal(
     goal = {
         "id": str(uuid.uuid4()),
         "context_id": context_id,
-        **body.dict(),
+        **body.model_dump(),
         "score_history": (
             [{"score": body.current_score, "recorded_at": now_iso}]
             if body.current_score is not None else []
@@ -178,7 +178,7 @@ async def update_goal(
     context_id: str, goal_id: str, body: GoalPatch,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    updates = {k: v for k, v in body.dict().items() if v is not None}
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if not updates:
         existing = await db.strategic_goals.find_one(
             {"id": goal_id, "context_id": context_id}, {"_id": 0})

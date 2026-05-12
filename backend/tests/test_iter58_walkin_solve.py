@@ -9,7 +9,7 @@ import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://akki-executive.preview.emergentagent.com").rstrip("/")
 EMAIL = "bramuel@syni.ai"
-PASSWORD = "TestBramuel2026!"
+PASSWORD = "Bramuel2026!"
 CTX_ID = "fb4df969-3f17-4279-bf78-f07bb9e29650"
 DECK_ID = "4fde929d-d9ae-433d-8cc9-bf60fda6eacd"
 

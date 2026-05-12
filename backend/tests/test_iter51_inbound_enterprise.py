@@ -45,7 +45,7 @@ def api():
 @pytest.fixture(scope="session")
 def auth(api):
     r = api.post(f"{BASE_URL}/api/auth/login",
-                 json={"email": "bramuel@syni.ai", "password": "TestBramuel2026!"})
+                 json={"email": "bramuel@syni.ai", "password": "Bramuel2026!"})
     assert r.status_code == 200, f"Login failed: {r.status_code} {r.text}"
     data = r.json()
     token = data.get("access_token") or data.get("token")

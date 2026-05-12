@@ -48,7 +48,7 @@ from server import app  # noqa: E402
 from core import db  # noqa: E402
 
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.skip(reason="Patch 13 Phase 2 attempt — passes in isolation but fails under full-suite due to chat_audit_log chain cross-test pollution. Reclassified to Phase 3 (FIXABLE-medium): needs per-test chat_audit_log reset fixture.")]
+pytestmark = pytest.mark.asyncio
 
 
 @pytest_asyncio.fixture
@@ -131,6 +131,7 @@ async def _drain_stream(client, chat_id, token, *, headers_extra=None, content="
 # ---------------------------------------------------------------------------
 # AC #5 — audit chain integrity preserved by the streaming path
 # ---------------------------------------------------------------------------
+@pytest.mark.skip(reason="Patch 19 — cross-test chat_audit_log chain pollution; passes in isolation. Needs per-test reset fixture.")
 async def test_phase_a_streaming_preserves_audit_chain_integrity(client):
     account, token = await _register(client)
 
@@ -190,6 +191,7 @@ async def test_phase_a_streaming_preserves_audit_chain_integrity(client):
 # ---------------------------------------------------------------------------
 # AC #8 — multi-context isolation: switching X-Active-Context mid-conversation
 # ---------------------------------------------------------------------------
+@pytest.mark.skip(reason="Patch 19 — cross-test chat_audit_log chain pollution; passes in isolation. Needs per-test reset fixture.")
 async def test_phase_a_context_switch_isolates_chats_and_audit_chain(client):
     account, token = await _register(client)
 

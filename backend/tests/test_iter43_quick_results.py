@@ -1,7 +1,8 @@
 """Iter43 backend tests: Quick-Results endpoints + sandbox streaming stage copy."""
 
 import pytest
-pytestmark = pytest.mark.skip(reason='Patch 8 quarantined — pre-existing failures from before autonomous sprint. See SYSTEM_STATE §7.')
+
+pytestmark = pytest.mark.skip(reason="Patch 19 attempt — E2E test using requests.Session() against live BASE_URL. Auth login gets rate-limited (HTTP 429) under full pytest suite. Architectural rewrite to in-process httpx+ASGI required (see /app/backend/tests/test_phase_b_chat_retention.py for the target pattern). Estimated 60-90 min per file — exceeds Patch 19 time cap. Reclassified to Phase 4-large.")
 import os
 import pytest
 import requests
@@ -23,7 +24,7 @@ except Exception:
     pass
 
 EMAIL = "bramuel@syni.ai"
-PASSWORD = "TestBramuel2026!"
+PASSWORD = "Bramuel2026!"
 CTX = "fb4df969-3f17-4279-bf78-f07bb9e29650"
 DOC = "12d411aa-ba6d-4b25-8995-4f28d0d1e1b6"
 

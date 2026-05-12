@@ -13,7 +13,7 @@ API = f"{BASE_URL}/api"
 
 CTX_ID = "fb4df969-3f17-4279-bf78-f07bb9e29650"  # Tuli NED
 USER_EMAIL = "bramuel@syni.ai"
-USER_PWD = "TestBramuel2026!"
+USER_PWD = "Bramuel2026!"
 ADMIN_EMAIL = "admin@akki.ai"
 ADMIN_PWD = "AkkiAdmin2026!"
 POSTMARK_SECRET = "c04fdcf8-24c4-4e44-b19f-337f80607d6c"

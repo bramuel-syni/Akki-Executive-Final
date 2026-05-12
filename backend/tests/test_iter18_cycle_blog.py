@@ -13,7 +13,7 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://akki-executive.previ
 API = f"{BASE_URL}/api"
 
 BRAMUEL_EMAIL = "bramuel@syni.ai"
-BRAMUEL_PASSWORD = "TestBramuel2026!"
+BRAMUEL_PASSWORD = "Bramuel2026!"
 ADMIN_EMAIL = "admin@akki.ai"
 ADMIN_PASSWORD = "AkkiAdmin2026!"
 TULI_CONTEXT_ID = "06cc1fc6-4308-4d19-a679-6f8f6bd692dc"

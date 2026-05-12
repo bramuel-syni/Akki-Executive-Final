@@ -16,7 +16,7 @@ if not BASE_URL:
     BASE_URL = "https://akki-executive.preview.emergentagent.com"
 
 EMAIL = "bramuel@syni.ai"
-PASSWORD = "TestBramuel2026!"
+PASSWORD = "Bramuel2026!"
 
 
 @pytest.fixture(scope="module")

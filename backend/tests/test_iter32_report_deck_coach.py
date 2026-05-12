@@ -21,7 +21,7 @@ assert BASE_URL, "REACT_APP_BACKEND_URL not set"
 API = f"{BASE_URL}/api"
 
 EMAIL = "bramuel@syni.ai"
-PASSWORD = "TestBramuel2026!"
+PASSWORD = "Bramuel2026!"
 
 # Mawingu Logistics (NED) — has the iter19 rich draft report
 MAWINGU_CTX = "06cc1fc6-4308-4d19-a679-6f8f6bd692dc"
