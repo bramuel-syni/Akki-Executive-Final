@@ -130,4 +130,68 @@ Override base URL or credentials via env vars (`RENDER_SMOKE_BASE_URL`, `RENDER_
 | Smoke catches a synthetic undefined-reference and reverts cleanly | ✅ (above) |
 | SYSTEM_STATE §4 + §7 updated to retire the runtime-bug debt entry | (pending — applied during Patch 20 close-out) |
 
+---
+
+## 4. Requirements URL guard (added post-Patch-30)
+
+Third tripwire. Locks in the spaCy deploy-fragility class that hit
+production on 2026-05-12 (Patch 30 hotfix).
+
+**Workflow**: `.github/workflows/requirements-guard.yml`
+**Script**:   `scripts/check_requirements_urls.py`
+**Self-test**: `backend/tests/test_requirements_guard.py` (9 tests)
+
+### Why it exists
+Production deploys run a `pip-compile` / `pip-freeze` step that rewrites
+PEP 508 direct references (`package @ https://…`) into pinned form
+(`package==version`). That's fine for PyPI-published packages but fatal
+for anything that lives only on GitHub releases, a private wheelhouse,
+or a VCS — there is no PyPI index entry to resolve the rewritten line
+against, so `pip install` dies with *"Could not find a version that
+satisfies the requirement …"*.
+
+Patch 30 hit this with `en_core_web_lg==3.8.0` (the spaCy model wheel),
+which is only published to GitHub releases. The runtime fallback was to
+download the model on first use via `python -m spacy download`.
+This guard surfaces the same class **at PR time**, before any deploy
+build ever runs.
+
+### Patterns flagged
+| Label | Pattern | Example |
+|---|---|---|
+| `pep508-direct-ref` | `package @ url` | `en_core_web_sm @ https://github.com/…` |
+| `github-url`        | any `https://github.com/…` line | direct wheel URL with no package name |
+| `find-links`        | `--find-links <url>` or `-f <url>` | offsite wheelhouse |
+| `vcs-pin`           | `git+…`, `hg+…`, `svn+…`, `bzr+…` | `pkg @ git+https://…` |
+
+### Files scanned
+* `**/requirements*.txt` (any depth — excludes `node_modules`, `.venv`, `venv`, `build`, `dist`, `.git`)
+* `pyproject.toml` (repo root only — Poetry / PEP 621 dependencies)
+
+### Allow-list
+Append `# ci-requirements-guard: allow <reason>` to a line to opt it
+out. Use sparingly — every allow-listed line MUST carry a runtime
+fallback installer in code. The canonical pattern is
+`backend/services/synisense/presidio_engine.py::_ensure_spacy_model`
+(tries `spacy.load` first, falls back to `python -m spacy download`
+on `OSError`).
+
+### Triggers
+On every push to `main` and every PR that touches:
+* `**/requirements*.txt`
+* `pyproject.toml`
+* `scripts/check_requirements_urls.py`
+* `.github/workflows/requirements-guard.yml`
+
+### Acceptance check
+| Acceptance criterion | Status |
+|---|---|
+| `scripts/check_requirements_urls.py` committed and executable | ✅ |
+| `.github/workflows/requirements-guard.yml` committed | ✅ |
+| `backend/tests/test_requirements_guard.py` 9/9 green | ✅ |
+| Current `backend/requirements.txt` scans clean | ✅ (0 offenses) |
+| Error message tells the developer how to fix it | ✅ (cites the spaCy pattern + allow-list syntax) |
+| SYSTEM_STATE §4 + §7 entries appended | ✅ |
+
 — end of CI hygiene doc —
+

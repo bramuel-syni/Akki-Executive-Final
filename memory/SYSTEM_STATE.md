@@ -120,6 +120,15 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Patch 30B — CI requirements URL guard — 2026-05-12 ✅
+- **Why**: lock in the Patch-30 spaCy deploy-fragility class — the deployer's pip-compile rewrites `package @ url` into `package==version`, which can't resolve for packages that live only on GitHub releases.
+- **Ship**:
+  - `/app/scripts/check_requirements_urls.py` — Python-only, no third-party deps. Flags PEP 508 direct refs (`package @ url`), plain GitHub URLs, `--find-links` lines, and VCS pins (`git+`, `hg+`, etc.). Honours `# ci-requirements-guard: allow <reason>` on individual lines.
+  - `/app/.github/workflows/requirements-guard.yml` — runs on PRs + main pushes that touch `requirements*.txt` / `pyproject.toml` / the script itself. Invokes the script + the self-test.
+  - `/app/backend/tests/test_requirements_guard.py` — 9 tests: clean fixture, PEP 508 direct ref, GitHub URL, VCS pin, find-links, allow-marker, pyproject.toml scan, and a "real `backend/requirements.txt` is clean" lock that catches future regressions.
+- **Self-test**: 9/9 green. Current `backend/requirements.txt` scans clean (0 offenses).
+- **Docs**: extended `/app/memory/sprints/CI_HYGIENE.md` with §4 (patterns table, files scanned, allow-list rules, triggers, acceptance check).
+
 ### Deployment Hotfix — spaCy model installer regression — 2026-05-12 ✅
 - **Symptom**: Production deploy to `akki-executive` failed in the backend Docker build step with:
   ```
@@ -577,6 +586,7 @@ _populated when encountered_
   - **Azure stack** → `AZURE_SETUP_GUIDELINE.md` (AKS / ACR / Key Vault / Blob / Front Door — full provisioning + cost estimates). **Not yet provisioned.**
 - **FastAPI `@app.on_event` + `regex=` deprecations** — emits `DeprecationWarning` on every test run. Pre-existing, low priority, separate cleanup patch.
 - **47 E2E iter/sprint tests still quarantined** — architectural rewrite required (see Patch 19 close-out + AD-3). Password constant unified (`TestBramuel2026!` → `Bramuel2026!`) in this sprint as a one-line preparatory fix.
+- **CI requirements guard now blocks the `@ url` class at PR time** — Patch 30B. `.github/workflows/requirements-guard.yml` + `scripts/check_requirements_urls.py` flag any deploy-fragile syntax (PEP 508 direct refs, GitHub URLs, find-links, VCS pins) before merge. Allow-list via `# ci-requirements-guard: allow <reason>` for legitimate cases that carry a runtime fallback (canonical pattern: `services/synisense/presidio_engine.py::_ensure_spacy_model`).
 
 ## 8. Completion Checklist
 

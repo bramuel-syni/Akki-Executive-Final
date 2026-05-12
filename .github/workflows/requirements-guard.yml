@@ -1,0 +1,46 @@
+name: requirements-guard
+
+# Pre-merge guard against deploy-fragile requirements syntax.
+#
+# The deployer's pip-compile / pip-freeze pass rewrites `package @ url`
+# lines into `package==version` form. That's fatal for packages that
+# live on GitHub releases or a private wheelhouse (not PyPI) — pip can't
+# resolve them in the build container. The Patch-30 spaCy hotfix
+# exposed this class; this guard prevents recurrence at PR time.
+#
+# Script: scripts/check_requirements_urls.py
+# Allow-list: append `# ci-requirements-guard: allow <reason>` to a line.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/requirements*.txt"
+      - "pyproject.toml"
+      - "scripts/check_requirements_urls.py"
+      - ".github/workflows/requirements-guard.yml"
+  pull_request:
+    paths:
+      - "**/requirements*.txt"
+      - "pyproject.toml"
+      - "scripts/check_requirements_urls.py"
+      - ".github/workflows/requirements-guard.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Scan requirements / pyproject for deploy-fragile syntax
+        run: |
+          python3 scripts/check_requirements_urls.py --root .
+
+      - name: Self-test (synthetic fixture)
+        run: |
+          python3 -m pytest backend/tests/test_requirements_guard.py -q
