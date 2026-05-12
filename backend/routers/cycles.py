@@ -16,9 +16,10 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core import db, iso, now, require_context_membership, write_audit
@@ -286,6 +287,7 @@ async def get_cycle(
 async def activate_cycle(
     context_id: str,
     cycle_id: str,
+    body: Dict[str, Any] = Body(default_factory=dict),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
     row = await get_cycle_or_404(context_id, cycle_id)
@@ -303,13 +305,35 @@ async def activate_cycle(
             detail="At least one agenda item is required to activate a cycle.",
         )
     now_iso = iso(now())
+    # Patch 10 — `expected_close_at` is optional on activate. Default to
+    # now + 30 days when the client doesn't provide one so the Home 2
+    # `cycles_closing_this_week` count has a denominator to look at.
+    raw_close = (body or {}).get("expected_close_at")
+    if raw_close in (None, ""):
+        expected_close_at = iso(now() + timedelta(days=30))
+    else:
+        # Accept either a bare YYYY-MM-DD date or a full ISO timestamp;
+        # normalise to ISO so downstream queries stay consistent.
+        try:
+            from datetime import datetime as _dt
+            if len(str(raw_close)) <= 10:
+                expected_close_at = iso(_dt.fromisoformat(str(raw_close)))
+            else:
+                expected_close_at = iso(_dt.fromisoformat(str(raw_close).replace("Z", "+00:00")))
+        except Exception:
+            raise HTTPException(status_code=400, detail="expected_close_at must be ISO date or datetime.")
     await db.cycles.update_one(
         {"id": cycle_id, "context_id": context_id},
-        {"$set": {"status": "active", "activated_at": now_iso}},
+        {"$set": {
+            "status": "active",
+            "activated_at": now_iso,
+            "expected_close_at": expected_close_at,
+        }},
     )
     await write_audit(
         context_id, ctx["account"]["id"],
-        "cycle.activated", "cycle", cycle_id, {},
+        "cycle.activated", "cycle", cycle_id,
+        {"expected_close_at": expected_close_at},
     )
     return await _hydrate_cycle(await get_cycle_or_404(context_id, cycle_id))
 

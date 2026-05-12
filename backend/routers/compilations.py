@@ -72,9 +72,11 @@ class CompilationCreate(BaseModel):
 
     @validator("formats")
     def _v_formats(cls, v):
-        if not v:
-            raise ValueError("formats must contain at least one of: docx/pptx/pdf")
-        lower = [f.lower() for f in v]
+        # Patch 9+ correction — `formats` is OPTIONAL (default `[]`). When
+        # present, every entry must be one of docx/pptx/pdf. An empty
+        # list is valid — the wizard still produces a record; format
+        # selection can land later via update.
+        lower = [f.lower() for f in (v or [])]
         for f in lower:
             if f not in _FORMATS:
                 raise ValueError(f"unknown format {f!r}; allowed: {_FORMATS}")

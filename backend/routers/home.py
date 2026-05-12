@@ -143,15 +143,15 @@ async def _count_signoffs_needed(context_id: str, account_id: str) -> int:
 
 
 async def _count_cycles_closing_this_week(context_id: str) -> int:
-    """Active cycles whose expected close lands in the next 7 days."""
-    in_week = (_now() + timedelta(days=7)).isoformat()
+    """Active cycles whose `expected_close_at` is between now and now+7d.
+    Cycles without `expected_close_at` are excluded — correct behaviour
+    per Patch 10 spec."""
+    now_iso = _iso(_now())
+    in_week = _iso(_now() + timedelta(days=7))
     return await db.cycles.count_documents({
         "context_id": context_id,
         "status": "active",
-        "$and": [
-            {"expected_close_at": {"$lte": in_week}},
-            {"expected_close_at": {"$ne": None}},
-        ],
+        "expected_close_at": {"$gte": now_iso, "$lte": in_week, "$ne": None},
     })
 
 
@@ -167,7 +167,9 @@ async def _count_new_documents_since(context_id: str, since_iso: str, account_id
 
 
 async def _count_open_questions(context_id: str, account_id: str) -> int:
-    """NED questions assigned to the user that are unanswered."""
+    """NED questions in this context assigned to the user that are
+    unanswered. Reads the `assignee_account_id` field added in
+    migration 0002_home_insight_fields."""
     return await db.cycle_questions.count_documents({
         "context_id": context_id,
         "assignee_account_id": account_id,

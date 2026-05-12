@@ -121,16 +121,19 @@ async def test_post_compilation_happy_path(env):
 
 
 @pytest.mark.asyncio
-async def test_post_validation_rejects_missing_formats(env):
+async def test_post_accepts_empty_formats(env):
+    """Patch 9+ correction — `formats` is OPTIONAL (default []).
+    Empty list must NOT trigger 422."""
     _auth(env["owner_a"])
-    bad = _valid_body()
-    bad["formats"] = []
+    body = _valid_body()
+    body["formats"] = []
     async with _client() as c:
         r = await c.post(
             f"/api/contexts/{env['ctx_a']}/work-studio/compilations",
-            json=bad,
+            json=body,
         )
-    assert r.status_code == 422, r.text
+    assert r.status_code == 200, r.text
+    assert r.json()["formats"] == []
 
 
 @pytest.mark.asyncio

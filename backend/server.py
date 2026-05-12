@@ -105,6 +105,7 @@ from routers import portfolio as portfolio_router  # noqa: E402  HOME sprint —
 from routers import compilations as compilations_router  # noqa: E402  Patch 2B.2 — Compilation Wizard
 from routers import home as home_router  # noqa: E402  Patch 3 — Home v2
 from routers import monitor_v2 as monitor_v2_router  # noqa: E402  Patch 5 — Objectives & Projects
+from routers import streaming_v9 as streaming_v9_router  # noqa: E402  Patch 9 — Streaming phase events
 
 
 logger = logging.getLogger("akki")
@@ -204,6 +205,7 @@ app.include_router(portfolio_router.router)
 app.include_router(compilations_router.router)  # Patch 2B.2 — Compilation Wizard
 app.include_router(home_router.router)  # Patch 3 — Home v2
 app.include_router(monitor_v2_router.router)  # Patch 5 — Monitor v2
+app.include_router(streaming_v9_router.router)  # Patch 9 — Streaming phase events
 
 
 # -----------------------------------------------------------------------------

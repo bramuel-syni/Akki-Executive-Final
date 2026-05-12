@@ -82,9 +82,63 @@
 
 ## 3. Pending Sprint Queue
 
-_empty — all 8 patches shipped this run_
+- **Quarantine un-quarantine sprint** — driven by `/app/memory/sprints/QUARANTINE_TRIAGE_PLAN.md` (Patch 11 deliverable). 5 phases scheduled, user-selectable:
+  - Phase 1 — OBSOLETE deletions (11 files)
+  - Phase 2 — FIXABLE small (3 files)
+  - Phase 3 — FIXABLE medium (8 files)
+  - Phase 4 — REWRITE small/medium (43 files)
+  - Phase 5 — REWRITE large + UNCLEAR (5 files)
 
 ## 4. Per-Patch Close-out Log (newest at top)
+
+### Visual evidence bundle — 2026-05-12
+- 5 screenshots saved under `/app/memory/visual_audit/`:
+  - `patch3_home1_portfolio.jpeg`
+  - `patch3_home2_active.jpeg`
+  - `patch2b1_cycle_manager_list.jpeg`
+  - `patch2b1_work_studio.jpeg`
+  - `patch5_monitor_v2.jpeg`
+- Walkthrough document: `/app/memory/sprints/VISUAL_AUDIT.md`
+- **Bug found and fixed during capture**: Cycle Manager list page was throwing `addAgendaButton is not defined` because the Patch 2B.1 search_replace had silently failed to apply on `CycleList.jsx`. Re-applied: new copy, `+ Add Agenda` button, parchment/ink primary style. CycleList now lints clean, hex-sweep clean, renders correctly.
+
+### Patch 11 — Quarantine triage plan (read-only) — 2026-05-12 ✅
+- **Deliverable**: `/app/memory/sprints/QUARANTINE_TRIAGE_PLAN.md`
+- **Coverage**: 70 quarantined files · 187 visible test functions classified.
+- **Classifications**:
+  - OBSOLETE — 11 files (Phase 1)
+  - FIXABLE — 11 files (Phases 2 & 3)
+  - REWRITE — 48 files (Phases 4 & 5)
+- **No tests edited this patch** — strictly read-only. User reviews and selects which phases to execute next.
+
+### Patch 10 — Home 2 insight schema fields + migration — 2026-05-12 ✅
+- **Files (2 new + 4 modified)**:
+  - NEW `/app/backend/migrations/_0002_home_insight_fields.py` — idempotent, marker-gated
+  - NEW `/app/backend/tests/test_patch_10_home_insights.py` — 3 tests
+  - `/app/backend/migrations/_runner.py` — runs 0002 after 0001
+  - `/app/backend/routers/cycles.py` — `POST /cycles/{id}/activate` now accepts optional `expected_close_at` body (defaults to +30d) + writes audit
+  - `/app/backend/routers/home.py` — `_count_cycles_closing_this_week` tightened (between now & now+7d, excludes nulls); `_count_open_questions` doc-stamped
+  - `/app/frontend/src/lib/cycleApi.js` — `activateCycle(cid, cycleId, { expected_close_at })`
+  - `/app/frontend/src/pages/Cycle.jsx` — date picker in activate modal (`<input type="date">`, default +30d)
+- **Schema**: `cycles.expected_close_at` (ISO, optional) + `cycle_questions.assignee_account_id` (str, optional). Migration creates 2 indexes; leaves existing rows null per spec.
+- **Migration verified**: marker row in `_migrations`, applied_at 2026-05-12T09:54Z, stats `{cycles_seen: 456, questions_seen: 0, indexes_created: 2}`.
+- **Tests**: 3 added · all green (marker presence + cycles_closing aggregation + open_questions aggregation).
+- **Hex sweep**: 0 hits.
+- **Questions UI deferred** — Cycle Manager doesn't yet expose a Questions surface for non-NEDs; the `assignee_account_id` field is schema-ready, the count works, and the UI surface is logged in §7.
+
+### Patch 9 — Streaming `phase` SSE events on Solva + Cycle compile + Work Studio Enhance — 2026-05-12 ✅
+- **Files (3 new + 2 modified)**:
+  - NEW `/app/backend/services/streaming_phases.py` — `encode_phase_event()` + `emit_phase()` helper with locked vocabulary
+  - NEW `/app/backend/routers/streaming_v9.py` — 3 SSE wrapper endpoints (non-breaking additive surface)
+  - NEW `/app/backend/tests/test_patch_9_streaming_phases.py` — 4 tests (encoder unit + 3 surface integration)
+  - NEW `/app/frontend/src/hooks/useStreamingPhases.js` — SSE client hook with stall detection (10s default)
+  - `/app/backend/server.py` — router include
+- **Endpoints** (all additive, all return SSE `text/event-stream`):
+  - `POST /api/contexts/{cid}/cycle/draft-compilation/stream`
+  - `POST /api/contexts/{cid}/work-studio/enhance/{kind}/stream`
+  - `POST /api/contexts/{cid}/solva/sessions/{sid}/turn/stream`
+- **Behaviour**: Each wrapper emits `reading_context → shielding_input → reasoning`, delegates to the existing sync handler, then emits `drafting → refining → complete` and forwards the inner JSON body as a final `data:` event. Original sync endpoints unchanged — clients that ignore phase events are unaffected.
+- **Tests**: 4 added · all green. Lifts §6 AD-1 caveat for the 3 surfaces.
+- **Hex sweep**: 0 hits.
 
 ### Patch 8 — Pre-existing failing tests triage — 2026-05-12 ✅
 - **Action taken**: Quarantined via `pytestmark = pytest.mark.skip(reason=…)` at the module top of every suite that was failing before the autonomous sprint began. For suites that carried an existing `pytestmark = pytest.mark.asyncio`, the two markers were combined into a list.
@@ -201,6 +255,15 @@ _populated when encountered_
 
 ## 6. Autonomous Decisions Taken
 
+### AD-2 — Path/field naming reconciled with deployed code — 2026-05-12 (follow-up sprint §0)
+**Decision**: Reconcile SYSTEM_STATE with deployed code on two minor drifts surfaced during follow-up verification.
+
+1. **Compilation Wizard POST `formats`** — was previously validated as required (≥1 entry); now correctly OPTIONAL with default `[]`. Backend validator no longer rejects empty list; `formats` validation still rejects unknown values. `test_post_validation_rejects_missing_formats` replaced with `test_post_accepts_empty_formats` to lock the new contract. The truly required fields on POST are `title`, `artefact_type`, `cadence_kind`.
+
+2. **Monitor v2 paths** — canonical paths are `/api/contexts/{cid}/monitor/objective` and `/api/contexts/{cid}/monitor/project` (singular, nested under `/monitor`). The Patch 5 close-out listing of `GET /{kind}` resolves to these singular paths. Auto-suggest endpoints remain plural (`/auto-suggest-objectives`, `/auto-suggest-projects`) — that is intentional and matches the deployed code.
+
+**Rationale**: Doc/ledger accuracy. No behavior change for clients beyond removing the false-positive 422 on empty `formats`.
+
 ### AD-1 — Patch 4B streaming retrofit deferred — 2026-05-12
 **Decision**: Ship the streaming UX motion architecture (StreamingShell + phase labels + CSS animations + reusable component) but do NOT retrofit Solva / Cycle compilation / Work Studio Enhance to emit SSE phase events in this patch.
 
@@ -208,7 +271,7 @@ _populated when encountered_
 
 **What ships now**: The reusable `StreamingShell` component is fully built and tested for layout. CSS animations are global. Any future patch that converts a surface to SSE can drop in `<StreamingShell partial={…} phase={…} status={…} />` and inherit the motion architecture.
 
-**Trade-off**: Acceptance criterion "Phase labels reflect real backend phases" cannot be curl-verified today because no endpoint emits the phase events yet. Acknowledged.
+**Trade-off**: Acceptance criterion "Phase labels reflect real backend phases" cannot be curl-verified today because no endpoint emits the phase events yet. Acknowledged. **(Lifted in Patch 9.)**
 
 ## 6. (continued)
 
@@ -227,6 +290,7 @@ _populated when encountered_
 - **7-card insight counts on Home 2** — queries use field names the current schema may or may not carry (`expected_close_at`, `cycle_questions.assignee_account_id`). Missing fields return 0 counts — no errors — but the counts will stay at 0 until the schema catches up. Documented as acceptable degradation.
 - **Legacy home components preserved** — `HomeExecutive.jsx`, `HomeNed.jsx`, `HomeDual.jsx` remain as components but are no longer auto-dispatched (Home 2 covers their flows). Delete only after a full visual-parity audit.
 - **Pydantic v2 deprecation warnings** — `body.cadence_payload.dict()` and `parsed.dict()` in new routers use the v1 `.dict()` API. Works today, emits deprecation warnings. Migrate to `.model_dump()` in a cleanup patch.
+- **Cycle Questions UI (Patch 10 follow-up)** — `cycle_questions.assignee_account_id` schema field is live and powering the Home 2 `open_questions` count, but there's no user-facing flow yet to raise a question and assign it. Build the surface (Cycle detail → Questions tab with an Assignee selector pulling from `team_catalogue`) in a follow-up patch.
 
 ## 8. Completion Checklist
 

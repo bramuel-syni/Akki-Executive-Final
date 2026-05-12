@@ -980,7 +980,9 @@ export default function Cycle() {
   const doActivate = async () => {
     setActivating(true);
     try {
-      const c = await activateCycle(cid, cycleId);
+      const c = await activateCycle(cid, cycleId, {
+        expected_close_at: expectedCloseAt || undefined,
+      });
       setCycle(c);
       setActivateOpen(false);
       toast.success("Cycle activated.");
@@ -1097,6 +1099,24 @@ export default function Cycle() {
                 Once active, it appears as active on the cycle list and contributors can begin work.
               </AlertDialogDescription>
             </AlertDialogHeader>
+            {/* Patch 10 — Expected close date. Default = activated_at + 30 days.
+                Drives the Home 2 "cycles closing this week" insight count. */}
+            <div className="space-y-1.5 py-2" data-testid="cycle-activate-expected-close-row">
+              <label className="text-[11px] uppercase tracking-[0.18em] font-mono text-[var(--muted)]" htmlFor="cycle-activate-expected-close-input">
+                Expected close date
+              </label>
+              <input
+                id="cycle-activate-expected-close-input"
+                type="date"
+                value={expectedCloseAt}
+                onChange={(e) => setExpectedCloseAt(e.target.value)}
+                className="w-full border border-[var(--rule)] rounded-sm px-2 py-2 text-[13.5px] bg-white"
+                data-testid="cycle-activate-expected-close-input"
+              />
+              <p className="text-[11.5px] text-[var(--muted)] leading-snug">
+                Used by Home 2 to surface cycles closing this week. You can change it later.
+              </p>
+            </div>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={activating} data-testid="cycle-activate-cancel">Cancel</AlertDialogCancel>
               <AlertDialogAction

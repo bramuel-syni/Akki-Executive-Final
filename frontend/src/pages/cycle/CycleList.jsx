@@ -119,14 +119,18 @@ export default function CycleList() {
     { key: "completed", label: "Completed", count: cbs.completed },
   ];
 
-  const headerRight = (
+  // Patch 2B.1 — "Add Cycle" → "+ Add Agenda". UI label only; backend stays
+  // on `cycles`. Primary parchment/ink style (no oxblood — reserved for
+  // severity). Mounted in the search-bar row via ListingShell's
+  // `controlsRight` slot.
+  const addAgendaButton = (
     <Button
       size="sm"
       onClick={() => setAddOpen(true)}
-      className="bg-[color:var(--oxblood)] hover:bg-[color:var(--oxblood-deep)] text-white"
+      className="bg-[var(--ink)] hover:bg-[var(--ink)]/90 text-[var(--parchment)] rounded-sm"
       data-testid="cycle-list-add-cycle"
     >
-      <Plus className="w-3.5 h-3.5 mr-1" /> Add Cycle
+      <Plus className="w-3.5 h-3.5 mr-1" /> Add Agenda
     </Button>
   );
 
@@ -135,9 +139,9 @@ export default function CycleList() {
       className="border border-dashed border-[var(--rule)] bg-[var(--parchment)] rounded-sm px-6 py-12 text-center"
       data-testid="cycle-list-empty"
     >
-      <p className="akki-serif text-[16px] text-[var(--ink)]">No cycles yet.</p>
+      <p className="akki-serif text-[16px] text-[var(--ink)]">No agendas yet.</p>
       <p className="akki-meta text-[12.5px] mt-2 max-w-prose mx-auto">
-        Use a Quick Action above to start with a structured template, or add a blank cycle from the top-right.
+        Use a Quick Action above to start with a structured template, or add a new agenda from the top-right of the list.
       </p>
     </div>
   );

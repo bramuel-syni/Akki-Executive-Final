@@ -26,8 +26,13 @@ export async function getCycle(cid, cycleId) {
   return data;
 }
 
-export async function activateCycle(cid, cycleId) {
-  const { data } = await api.post(`/contexts/${cid}/cycles/${cycleId}/activate`);
+export async function activateCycle(cid, cycleId, opts = {}) {
+  // Patch 10 — `expected_close_at` is optional. Bare ISO date string
+  // (YYYY-MM-DD) or full ISO timestamp accepted. Backend defaults to
+  // now+30d when omitted.
+  const body = {};
+  if (opts && opts.expected_close_at) body.expected_close_at = opts.expected_close_at;
+  const { data } = await api.post(`/contexts/${cid}/cycles/${cycleId}/activate`, body);
   return data;
 }
 
