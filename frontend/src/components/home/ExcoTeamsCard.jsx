@@ -167,7 +167,7 @@ function CreateTeamModal({ contextId, eligibleMembers, onClose, onCreated }) {
 
   return (
     <div className="fixed inset-0 bg-[var(--ink)]/40 z-50 flex items-center justify-center p-4" data-testid="exco-create-modal">
-      <div className="bg-[var(--parchment-light)] border border-[var(--graphite-light)] rounded-md max-w-lg w-full p-6">
+      <div className="bg-[var(--parchment-light)] border border-[var(--graphite-light)] rounded-md max-w-lg w-full p-6 max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h3 className="akki-serif text-[22px] text-[var(--ink)]">Create ExCo team</h3>
           <button onClick={onClose} className="text-[var(--graphite)] hover:text-[var(--ink)]" data-testid="exco-modal-close">

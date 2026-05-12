@@ -375,7 +375,7 @@ function FunctionPickerModal({ current, onClose, onSaved }) {
   };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-md shadow-xl border border-[var(--rule)] w-full max-w-md mx-4 p-6" onClick={(e) => e.stopPropagation()} data-testid="monitor-fn-modal">
+      <div className="bg-white rounded-md shadow-xl border border-[var(--rule)] w-full max-w-md mx-4 p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()} data-testid="monitor-fn-modal">
         <div className="flex items-center justify-between mb-4">
           <h2 className="akki-serif text-[18px] text-[var(--ink)]">Set your function</h2>
           <button onClick={onClose} className="text-[var(--muted)] hover:text-[var(--ink)]"><X className="w-4 h-4" /></button>

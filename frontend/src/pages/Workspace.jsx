@@ -308,16 +308,25 @@ export default function Workspace() {
         score: h.score,
       }));
     }
-    return docs.map((d) => ({
-      id: d.id,
-      name: d.name || "(untitled)",
-      created_at: d.created_at,
-      doc_kind: d.doc_kind,
-      sensitivity_band: d.sensitivity_band,
-      size_bytes: d.size_bytes,
-      snippet: null,
-      score: null,
-    }));
+    // Patch 28D — non-search listing also carries a snippet so every row
+    // has a description line. We use the cached `preview` (~240 chars,
+    // generated server-side at upload time) if available; otherwise fall
+    // back to the user-set description; otherwise null and the row will
+    // render the muted placeholder.
+    return docs.map((d) => {
+      const raw = (d.preview || d.description || "").trim();
+      const snippet = raw ? raw.replace(/\s+/g, " ").slice(0, 220) : null;
+      return {
+        id: d.id,
+        name: d.name || "(untitled)",
+        created_at: d.created_at,
+        doc_kind: d.doc_kind,
+        sensitivity_band: d.sensitivity_band,
+        size_bytes: d.size_bytes,
+        snippet,
+        score: null,
+      };
+    });
   }, [searchHits, docs]);
 
   if (!cid) {

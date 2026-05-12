@@ -639,7 +639,7 @@ function ExtractFromDocModal({ contextId, onClose, onExtracted }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-md shadow-xl border border-[var(--rule)] w-full max-w-lg mx-4 p-6" onClick={(e) => e.stopPropagation()} data-testid="goals-extract-modal">
+      <div className="bg-white rounded-md shadow-xl border border-[var(--rule)] w-full max-w-lg mx-4 p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()} data-testid="goals-extract-modal">
         <div className="flex items-center justify-between mb-4">
           <div>
             <p className="akki-overline mb-1">Strategic goals</p>

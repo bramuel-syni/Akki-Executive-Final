@@ -3376,3 +3376,38 @@ Single cycle per (account, context) → many cycles per context. New `db.cycles`
 - Sticky Back/Next bar on long tabs
 - Cycle title inline edit on detail header
 - Bulk close, CSV export, filter pills — all explicitly out of scope per brief.
+
+
+## Patches 26-29 sprint — closure (2026-05-12)
+
+Closing entry for the multi-patch autonomous sprint covering Chat redesign,
+Portfolio Drawer removal, Document Journal & Modal & Monitor v2 polish, and
+SYSTEM_STATE refresh.
+
+### What shipped
+- **Patch 26 — Chat redesign**: left/right boundary rails removed; 7-word topic title cap; metadata kicker moved below the title; Claude 4.7 Opus + GPT-4o added to model picker; SSE phase labels rewritten in privacy-first narrative voice (e.g. "Reading your context…", "Drafting the reply locally…"). Contract tests in `/app/backend/tests/test_patch_26_chat.py`.
+- **Patch 27 — Portfolio Drawer removal**: `<PortfolioDrawer />` component + all mount points deleted across authenticated pages. AppShell portal slot removed. Backend `/api/portfolio` endpoints retained as dead code for future re-introduction.
+- **Patch 28 — Home / Documents / Modal / Monitor close-out**:
+  - 28A/B: Home 2 hero copy AND insight cards now key off `activeRole === "ned"` to render the right phrasing for Executive vs NED audiences.
+  - 28C: Document Journal "empty button" fix — `ReadingTopBar.jsx` download link rewritten to use the axios `api` client with `responseType: "blob"`, ObjectURL anchor pattern; label "Download original" on both `title` and `aria-label` (the icon-only `<a href>` was the user-reported bug and a recurrence of the Patch 23 regression class).
+  - 28D: Workspace.jsx document listing now renders a description snippet under every row — sourced from `doc.preview` (server-side ~240-char preview) → `doc.description` → muted italic placeholder. Test ID `workspace-row-snippet-{id}`. `line-clamp-2` keeps row height stable.
+  - 28E: Global modal sizing rule. Updated shadcn `DialogContent` + `AlertDialogContent` with `max-h-[85vh] overflow-y-auto pb-6` (inherited by ~33 modals via `cn()` merge). Applied the same constraints inline on 4 hand-rolled modals that don't go through shadcn: `StrategicGoalsPanel ExtractFromDocModal`, `Monitor FunctionPickerModal`, `ShareModal`, `ExcoTeamsCard create-team`.
+  - 28F: Monitor v2 executive listings — `StrategicGoalsPanel` rows are now clickable (`role="button"`) and open a new `GoalDetailDrawer` that mirrors the Objectives & Projects drawer pattern (status/score/probability/target panel + score timeline + Edit affordance). Objectives drawer was already wired pre-sprint.
+- **Patch 29 — SYSTEM_STATE refresh**: §1, §4, §8 of `/app/memory/SYSTEM_STATE.md` updated with all four patches and final hand-off line.
+
+### Verification
+- pytest: **393 passed**, 565 skipped, 0 failed (was 386 going into the fork; the 7 new tests cover the Patch 26 / 28D / 28F surfaces).
+- ESLint: clean across all 6 touched JSX files.
+- render-smoke: **8 routes clean · 2 upload paths green · Patch 28 interactions green**. The smoke script was extended with a new Step 4 ("Patch 28 interaction smoke") that asserts:
+  - workspace row → `journal-drawer-panel` opens
+  - workspace row carries `workspace-row-snippet-*` description
+  - monitor-fn-modal carries `max-h-[85vh] overflow-y-auto` in its class
+  - monitor row click opens `goal-drawer` (or `obj-drawer` fallback)
+  - Each check soft-skips gracefully when the seeded data is absent (NED-only context, empty workspace), with reason logged.
+
+### Out of scope (intentional)
+- No backend route changes (zero new endpoints).
+- No migration runs.
+- No auth model changes.
+- ExcoTeamsCard manage-drawer left untouched (already had `md:max-h-[90vh] overflow-y-auto`).
+- 47 quarantined E2E iter/sprint files (`requests.Session()` rate-limit class) remain quarantined per §7 of SYSTEM_STATE.

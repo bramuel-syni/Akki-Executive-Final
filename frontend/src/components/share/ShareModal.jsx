@@ -118,7 +118,7 @@ export default function ShareModal({
             onClick={onClose}
           />
           <motion.div
-            className="relative bg-[var(--cream)] border border-[var(--rule)] rounded-lg shadow-xl max-w-[720px] w-full p-7 mt-10 md:mt-0"
+            className="relative bg-[var(--cream)] border border-[var(--rule)] rounded-lg shadow-xl max-w-[720px] w-full p-7 pb-6 mt-10 md:mt-0 max-h-[85vh] overflow-y-auto"
             initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
             transition={{ duration: 0.25, ease: [0.2, 0.8, 0.2, 1] }}
           >
