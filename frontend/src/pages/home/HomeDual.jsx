@@ -14,8 +14,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Briefcase, Landmark, ArrowRight, Activity, ScrollText, Presentation, FileText } from "lucide-react";
 import CycleStrip from "@/components/cycle/CycleStrip";
 import useIsMobile from "@/hooks/useIsMobile";
-import AddDocumentCard from "@/components/home/AddDocumentCard";
-import AllDocumentsButton from "@/components/home/AllDocumentsButton";
+import AddDocumentCard from "@/components/home/AddDocumentCard";  // kept for one-pass back-compat; unused in this layout
+import AllDocumentsButton from "@/components/home/AllDocumentsButton";  // kept for one-pass back-compat; unused in this layout
+import HeroDocActions from "@/components/home/HeroDocActions";
 import ExcoTeamsCard from "@/components/home/ExcoTeamsCard";
 
 export default function HomeDual() {
@@ -39,12 +40,10 @@ export default function HomeDual() {
           your active context.
         </p>
 
-        {/* Phase E (D-006) — Document Journal entry-point hoisted into
-            the page-title band so it's visible above the fold at
-            1920×1100 without scrolling. */}
-        <div className="mb-8" data-testid="home-dual-all-documents-strip">
-          <AllDocumentsButton />
-        </div>
+        {/* Patch 2A — Hero doc actions: compact `+ Add document` + `All documents`
+            button pair, replaces the prior big "Add a document" card in the
+            left column and the standalone AllDocumentsButton strip. */}
+        <HeroDocActions />
 
         {cid && <CycleStrip contextId={cid} isMobile={isMobile} />}
 
@@ -54,7 +53,6 @@ export default function HomeDual() {
             <h2 className="akki-serif text-[22px] text-[var(--ink)] inline-flex items-center gap-2">
               <Briefcase className="w-4 h-4 text-[var(--deep)]" strokeWidth={1.7} /> Running the business
             </h2>
-            <AddDocumentCard />
             <Link to="/app/work-studio" className="block p-5 border border-[var(--rule)] bg-white rounded-md hover:bg-[var(--cream-deep)]/40 transition-colors">
               <p className="akki-overline mb-2 text-[var(--muted)]">Work Studio</p>
               <p className="text-[14px] text-[var(--ink)] mb-1">In-flight briefings, decks, and reports for {activeContext?.name || "this company"}.</p>

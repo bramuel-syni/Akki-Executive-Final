@@ -48,8 +48,9 @@ import {
   Sparkles,
   Clock,
 } from "lucide-react";
-import AddDocumentCard from "@/components/home/AddDocumentCard";
-import AllDocumentsButton from "@/components/home/AllDocumentsButton";
+import AddDocumentCard from "@/components/home/AddDocumentCard";  // kept for one-pass back-compat; unused in this layout
+import AllDocumentsButton from "@/components/home/AllDocumentsButton";  // kept for one-pass back-compat; unused in this layout
+import HeroDocActions from "@/components/home/HeroDocActions";
 import ExcoTeamsCard from "@/components/home/ExcoTeamsCard";
 
 function greeting(name) {
@@ -200,28 +201,30 @@ export default function HomeExecutive() {
           this week's submissions, pending action items, the next cycle phase.
         </p>
 
-        {/* Phase E (D-006) — Document Journal entry-point hoisted into
-            the page-title band so it's visible above the fold at
-            1920×1100 without scrolling. */}
-        <div className="mb-8" data-testid="home-exec-all-documents-strip">
-          <AllDocumentsButton />
-        </div>
+        {/* Patch 2A — Hero doc actions: compact `+ Add document` + `All documents`
+            button pair, replaces the prior AllDocumentsButton strip and
+            the AddDocumentCard quick action. */}
+        <HeroDocActions />
 
         <ContinueOnboardingCard account={account} />
         <WorkStudioPreview contextId={cid} />
 
         {cid && <CycleStrip contextId={cid} isMobile={isMobile} />}
 
-        {/* Phase M.1 — "Running the business" Quick Actions strip. The
-            "Add a document" card is the first thing the user sees so
-            uploading a board pack is one click from Home. */}
+        {/* Phase M.1 — "Running the business" Quick Actions strip.
+            Patch 2A removed the AddDocumentCard from this strip (it now
+            lives in the hero band). Renders a minimal empty-state line
+            until further "Running the business" cards land. */}
         <section className="mt-8" data-testid="home-exec-running-the-business">
           <h2 className="akki-serif text-[20px] text-[var(--ink)] inline-flex items-center gap-2 mb-3">
             <Briefcase className="w-4 h-4 text-[var(--deep)]" strokeWidth={1.7} /> Running the business
           </h2>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <AddDocumentCard />
-          </div>
+          <p
+            className="text-[12.5px] text-[var(--muted)] italic"
+            data-testid="home-exec-running-the-business-empty"
+          >
+            More running-the-business signals will surface here.
+          </p>
         </section>
 
         {/* Two-column quick-link grid — every card lands on a real
