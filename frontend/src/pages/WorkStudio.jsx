@@ -51,6 +51,7 @@ import {
   Sparkles, Inbox, X as XIcon,
 } from "lucide-react";
 import WorkspaceEntryGate from "@/components/transitions/WorkspaceEntryGate";
+import ListingShell from "@/components/common/ListingShell";
 
 // =============================================================================
 // Helpers
@@ -526,6 +527,25 @@ export default function WorkStudio() {
   const [aggLoading, setAggLoading] = useState(true);
   const [aggItems, setAggItems] = useState([]);
   const [aggErr, setAggErr] = useState(null);
+  // Cycle Manager Feel pass — ListingShell state. URL-backed.
+  const [aggTotal, setAggTotal] = useState(0);
+  const [aggCounts, setAggCounts] = useState({ all: 0, draft: 0, in_progress: 0, compiled: 0, shipped: 0 });
+  const aggQ = searchParams.get("q") || "";
+  const aggStatus = searchParams.get("status") || "all";
+  const aggSort = searchParams.get("sort") || "recent";
+  const aggPage = parseInt(searchParams.get("page") || "1", 10) || 1;
+  const aggPageSize = 5;
+  const setListingParam = (k, v, opts = {}) => {
+    const sp = new URLSearchParams(searchParams);
+    if (v === "" || v === null || v === undefined || v === "all" || v === "recent" || v === 1) {
+      sp.delete(k);
+    } else {
+      sp.set(k, String(v));
+    }
+    // Filter/sort/search change resets page to 1 unless caller opts out.
+    if (k !== "page" && !opts.preservePage) sp.delete("page");
+    setSearchParams(sp, { replace: true });
+  };
 
   // Drawer state.
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -563,15 +583,27 @@ export default function WorkStudio() {
     setAggLoading(true);
     setAggErr(null);
     try {
-      const { data } = await api.get(`/contexts/${cid}/briefings/aggregates`, { params: { kind } });
+      const { data } = await api.get(`/contexts/${cid}/briefings/aggregates`, {
+        params: {
+          kind,
+          q: aggQ || undefined,
+          status: aggStatus,
+          sort: aggSort,
+          page: aggPage,
+          page_size: aggPageSize,
+        },
+      });
       setAggItems(data?.items || []);
+      setAggTotal(data?.total ?? (data?.items || []).length);
+      setAggCounts(data?.counts_by_status || {});
     } catch (e) {
       setAggErr(apiErrorMessage(e));
       setAggItems([]);
+      setAggTotal(0);
     } finally {
       setAggLoading(false);
     }
-  }, [cid, kind]);
+  }, [cid, kind, aggQ, aggStatus, aggSort, aggPage]);
 
   useEffect(() => { fetchAggregates(); }, [fetchAggregates]);
 
@@ -687,64 +719,98 @@ export default function WorkStudio() {
           />
         </div>
 
-        {/* F.7 — section heading: "Board Artefacts" (was "Cycle Board
-            Pack, Briefs and Reports") above the kind tabs */}
-        <h2
-          className="akki-serif text-[18px] text-[var(--ink)] font-medium mt-6 mb-2"
-          data-testid="work-studio-section-heading"
-        >
-          Board Artefacts
-        </h2>
+        {/* F.7 — section heading: "Board Artefacts" wrapped in
+            ListingShell (Cycle Manager Feel pass, 2026-02). The shell
+            provides search + status filter tabs + sort + pagination.
+            The 3 kind tabs (board_pack / minutes / committee_pack)
+            stay as a sub-navigation rendered inside ListingShell. */}
+        <div className="mt-6">
+          <ListingShell
+            testId="work-studio-listing"
+            title="Board Artefacts"
+            subtitle="Compile briefs, packs, and proposals into board-ready documents."
+            searchValue={aggQ}
+            onSearchChange={(v) => setListingParam("q", v)}
+            searchPlaceholder={`Search ${KIND_TABS.find((t) => t.id === kind)?.short?.toLowerCase() || "artefacts"} by name…`}
+            filterTabs={[
+              { key: "all",         label: "All",         count: aggCounts.all },
+              { key: "draft",       label: "Drafts",      count: aggCounts.draft },
+              { key: "in_progress", label: "In progress", count: aggCounts.in_progress },
+              { key: "compiled",    label: "Compiled",    count: aggCounts.compiled },
+              { key: "shipped",     label: "Shipped",     count: aggCounts.shipped },
+            ]}
+            activeFilterKey={aggStatus}
+            onFilterChange={(k) => setListingParam("status", k)}
+            sortOptions={[
+              { key: "recent", label: "Most recent" },
+              { key: "oldest", label: "Oldest" },
+              { key: "alpha",  label: "A → Z" },
+              { key: "type",   label: "By type" },
+            ]}
+            activeSortKey={aggSort}
+            onSortChange={(k) => setListingParam("sort", k)}
+            pageSize={aggPageSize}
+            page={aggPage}
+            totalCount={aggTotal}
+            onPageChange={(n) => setListingParam("page", n, { preservePage: true })}
+            isLoading={aggLoading}
+            emptyState={
+              <div className="border border-dashed border-[var(--rule)] rounded-sm bg-[var(--parchment)] px-6 py-10 text-center" data-testid="work-studio-agg-empty">
+                <Layers className="w-6 h-6 text-[var(--muted)] mx-auto mb-3" />
+                <p className="text-[14px] text-[var(--ink)] font-medium">
+                  {aggQ || aggStatus !== "all"
+                    ? "No artefacts match these filters."
+                    : (KIND_TABS.find((t) => t.id === kind)?.empty || "Nothing here yet.")}
+                </p>
+                <p className="text-[12.5px] text-[var(--muted)] mt-1 max-w-md mx-auto">
+                  {aggQ || aggStatus !== "all"
+                    ? "Try clearing the search or switching tabs."
+                    : "When the cycle has data for this aggregate, rows will appear here."}
+                </p>
+              </div>
+            }
+          >
+            {/* Sub-navigation — three kind tabs */}
+            <div
+              className="border-b border-[var(--rule)] flex items-stretch gap-0 mb-4 flex-wrap -mt-2"
+              data-testid="work-studio-kind-tabs"
+            >
+              {KIND_TABS.map((t) => {
+                const Icon = t.icon;
+                const active = kind === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => onKind(t.id)}
+                    className={`px-5 py-2.5 text-[13px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
+                      active
+                        ? "border-[var(--accent)] text-[var(--ink)] font-medium"
+                        : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
+                    }`}
+                    data-testid={`work-studio-kind-tab-${t.id}${active ? "-active" : ""}`}
+                    aria-current={active ? "page" : undefined}
+                  >
+                    <Icon className="w-3.5 h-3.5" strokeWidth={1.7} />
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
 
-        {/* Three-tab kind selector */}
-        <div className="border-b border-[var(--rule)] flex items-stretch gap-0 mb-4 flex-wrap" data-testid="work-studio-kind-tabs">
-          {KIND_TABS.map((t) => {
-            const Icon = t.icon;
-            const active = kind === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => onKind(t.id)}
-                className={`px-5 py-3 text-[14px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
-                  active
-                    ? "border-[var(--accent)] text-[var(--ink)] font-medium"
-                    : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"
-                }`}
-                data-testid={`work-studio-kind-tab-${t.id}${active ? "-active" : ""}`}
-                aria-current={active ? "page" : undefined}
-              >
-                <Icon className="w-3.5 h-3.5" strokeWidth={1.7} />
-                {t.label}
-              </button>
-            );
-          })}
+            {aggErr ? (
+              <div className="p-4 bg-amber-50 border border-amber-100 rounded-md text-[12px] text-amber-900 flex items-center gap-2" data-testid="work-studio-agg-err">
+                <AlertCircle className="w-3.5 h-3.5" /> {aggErr}
+              </div>
+            ) : (
+              <ul className="space-y-2" data-testid="work-studio-agg-list">
+                {aggItems.map((row) => (
+                  <BriefRow key={row.id} row={row} onOpen={onOpenBrief} />
+                ))}
+              </ul>
+            )}
+          </ListingShell>
         </div>
-
-        {/* Aggregate listing */}
-        {aggLoading ? (
-          <div className="p-12 text-center text-[var(--muted)] text-sm flex items-center justify-center gap-2" data-testid="work-studio-agg-loading">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loading {KIND_TABS.find((t) => t.id === kind).short.toLowerCase()}…
-          </div>
-        ) : aggErr ? (
-          <div className="p-4 bg-amber-50 border border-amber-100 rounded-md text-[12px] text-amber-900 flex items-center gap-2" data-testid="work-studio-agg-err">
-            <AlertCircle className="w-3.5 h-3.5" /> {aggErr}
-          </div>
-        ) : aggItems.length === 0 ? (
-          <div className="p-12 text-center border border-[var(--rule)] rounded-md bg-white" data-testid="work-studio-agg-empty">
-            <Layers className="w-6 h-6 text-[var(--muted)] mx-auto mb-3" />
-            <p className="text-[14px] text-[var(--ink)] font-medium">{KIND_TABS.find((t) => t.id === kind).empty}</p>
-            <p className="text-[12.5px] text-[var(--muted)] mt-1 max-w-md mx-auto">
-              When the cycle has data for this aggregate, rows will appear here.
-            </p>
-          </div>
-        ) : (
-          <ul className="space-y-2" data-testid="work-studio-agg-list">
-            {aggItems.map((row) => (
-              <BriefRow key={row.id} row={row} onOpen={onOpenBrief} />
-            ))}
-          </ul>
-        )}
 
         {/* Existing Decks / Reports section — preserved, with About lines */}
         <div className="mt-12">

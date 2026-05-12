@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("akki.briefings")
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -275,6 +275,14 @@ async def mark_briefing_read(
 async def list_brief_aggregates(
     context_id: str,
     kind: str,
+    q: Optional[str] = Query(default=None, max_length=200),
+    status: Optional[str] = Query(
+        default=None,
+        pattern=r"^(all|draft|in_progress|compiled|shipped)$",
+    ),
+    sort: str = Query(default="recent", pattern=r"^(recent|oldest|alpha|type)$"),
+    page: int = Query(default=1, ge=1, le=1000),
+    page_size: int = Query(default=5, ge=1, le=100),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
     """Phase C.1 — aggregate listing for the Workspace rewire.
@@ -282,6 +290,16 @@ async def list_brief_aggregates(
     Registered BEFORE the `/{briefing_id}` route below so FastAPI's
     in-order matcher resolves `/aggregates` to this handler instead of
     treating "aggregates" as a briefing id.
+
+    Cycle Manager Feel pass (2026-02) added:
+      • `q` — case-insensitive substring match on the row's name.
+      • `status` ∈ {all, draft, in_progress, compiled, shipped} — filter
+        by the derived artefact lifecycle status. `all` is a no-op.
+      • `sort` ∈ {recent, oldest, alpha, type} — recent / oldest sorts
+        by meeting_date desc / asc; alpha by name; type by kind then date.
+      • `page` / `page_size` — paginate the post-filter result.
+    The response now includes `total` + `page` + `page_size` + `total_pages`
+    + `counts_by_status` for ListingShell consumption.
     """
     if kind not in _AGG_KINDS:
         raise HTTPException(
@@ -294,7 +312,54 @@ async def list_brief_aggregates(
         items = await _list_cycle_minutes(context_id)
     else:
         items = await _list_cycle_committee_packs(context_id)
-    return {"kind": kind, "items": items}
+
+    # Counts pre-filter (for the FilterTabs count badges).
+    counts_by_status = {
+        "all": len(items),
+        "draft": sum(1 for r in items if r.get("status") == "draft"),
+        "in_progress": sum(1 for r in items if r.get("status") == "in_progress"),
+        "compiled": sum(1 for r in items if r.get("status") == "compiled"),
+        "shipped": sum(1 for r in items if r.get("status") == "shipped"),
+    }
+
+    # Search filter (case-insensitive substring on name).
+    if q:
+        q_lc = q.strip().lower()
+        if q_lc:
+            items = [r for r in items if q_lc in (r.get("name") or "").lower()]
+
+    # Status filter.
+    if status and status != "all":
+        items = [r for r in items if r.get("status") == status]
+
+    # Sort.
+    if sort == "alpha":
+        items.sort(key=lambda r: (r.get("name") or "").lower())
+    elif sort == "oldest":
+        items.sort(key=lambda r: r.get("meeting_date") or "")
+    elif sort == "type":
+        items.sort(key=lambda r: (r.get("kind") or "", r.get("meeting_date") or ""), reverse=True)
+    else:  # recent (default)
+        items.sort(key=lambda r: r.get("meeting_date") or "", reverse=True)
+
+    total = len(items)
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_items = items[start:end]
+    total_pages = max(1, (total + page_size - 1) // page_size)
+
+    return {
+        "kind": kind,
+        "items": page_items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "counts_by_status": counts_by_status,
+        "q": q or "",
+        "status": status or "all",
+        "sort": sort,
+    }
 
 
 @router.get("/contexts/{context_id}/briefings/aggregates/{aggregate_id}")
@@ -781,6 +846,25 @@ async def _list_cycle_board_packs(context_id: str) -> List[Dict[str, Any]]:
             uploaders = {d.get("uploaded_by") for d in await cursor.to_list(500) if d.get("uploaded_by")}
             contributor_count = len(uploaders)
         meeting_date = r.get("meeting_date") or r.get("cycle_meeting_date") or r.get("created_at")
+        # Cycle v7 ListingShell — derive an artefact lifecycle status.
+        # Order matters: shipped > compiled > in_progress > draft.
+        brief_id = r.get("brief_id")
+        bp_status = (r.get("status") or "").lower()
+        if brief_id:
+            brief = await db.work_studio_briefs.find_one(
+                {"id": brief_id, "context_id": context_id},
+                {"_id": 0, "board_status": 1},
+            )
+            if (brief or {}).get("board_status") == "shipped":
+                lifecycle_status = "shipped"
+            else:
+                lifecycle_status = "compiled"
+        elif len(doc_ids) > 0:
+            lifecycle_status = "in_progress"
+        elif bp_status == "draft":
+            lifecycle_status = "draft"
+        else:
+            lifecycle_status = "draft" if bp_status != "active" else "in_progress"
         out.append({
             "id": _agg_id("cycle_board_pack", r["id"]),
             "kind": "cycle_board_pack",
@@ -788,6 +872,8 @@ async def _list_cycle_board_packs(context_id: str) -> List[Dict[str, Any]]:
             "meeting_date": meeting_date,
             "document_count": len(doc_ids),
             "contributor_count": contributor_count,
+            "status": lifecycle_status,
+            "created_at": r.get("created_at"),
             **_quarter_bounds(meeting_date),
             "cycle_label": r.get("cycle_label"),
         })
@@ -836,6 +922,12 @@ async def _list_cycle_minutes(context_id: str) -> List[Dict[str, Any]]:
             "period_start": b.get("period_start"),
             "period_end": b.get("period_end"),
             "cycle_label": ql,
+            # Minutes aggregates have no compile pipeline today, so the
+            # ListingShell status is always 'in_progress' (documents present)
+            # or 'draft' (none — should never appear because the bucket
+            # only exists when at least one doc matches).
+            "status": "in_progress" if b["doc_ids"] else "draft",
+            "created_at": b["latest"],
         })
     return out
 
@@ -882,6 +974,8 @@ async def _list_cycle_committee_packs(context_id: str) -> List[Dict[str, Any]]:
                 "period_end": b.get("period_end"),
                 "cycle_label": ql,
                 "committee_id": cm_id,
+                "status": "in_progress" if b["doc_ids"] else "draft",
+                "created_at": b["latest"],
             })
     out.sort(key=lambda r: r.get("meeting_date") or "", reverse=True)
     return out
