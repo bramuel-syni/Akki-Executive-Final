@@ -12,6 +12,11 @@ import SignUp from "@/pages/SignUp";
 import FirstSession from "@/pages/FirstSession";
 import UpgradeModal from "@/components/depth/UpgradeModal";
 import AppHome from "@/pages/AppHome";
+import Home1 from "@/pages/home/Home1";
+
+// Patch 3 — Home 1 needs to render even when the user has an active context
+// (the explicit "Back to portfolio" path).
+function PortfolioRoute() { return <Home1 />; }
 import Workspace from "@/pages/Workspace";
 import Prepare from "@/pages/Prepare";
 import Activity from "@/pages/Activity";
@@ -232,6 +237,8 @@ function App() {
 
           <Route path="/app/first-session" element={<ProtectedRoute><FirstSession /></ProtectedRoute>} />
           <Route path="/app" element={<Gated><AppHome /></Gated>} />
+          {/* Patch 3 — explicit portfolio entry (always Home 1). */}
+          <Route path="/app/portfolio" element={<Gated><PortfolioRoute /></Gated>} />
           <Route path="/app/cycle" element={<Gated><CycleList /></Gated>} />
           <Route path="/app/cycle/:cycleId" element={<Gated><Cycle /></Gated>} />
           {/* Phase E — NED Cycle Manager */}

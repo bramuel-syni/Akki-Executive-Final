@@ -994,6 +994,10 @@ export default function Chat() {
                 className="flex-1 overflow-y-auto px-8 py-6 relative"
                 data-testid="chat-messages"
               >
+                {/* Patch 4A — chat horizontal-clipping fix: centred
+                    max-width gutter so message bubbles, code blocks, and
+                    tables stay inside ~1040px regardless of viewport. */}
+                <div className="max-w-[1040px] mx-auto" data-testid="chat-messages-gutter">
                 {/* Phase A (2026-05-10) — inner wrapper exists so a
                     ResizeObserver can fire when content grows
                     (token arrives, code block highlights, image
@@ -1014,6 +1018,7 @@ export default function Chat() {
                   </div>
                 )}
                 <div ref={messagesEndRef} />
+                </div>
                 </div>
                 {/* Phase A (2026-05-10) — floating "↓ Jump to latest"
                     pill. Visible only when pinnedRef has gone false

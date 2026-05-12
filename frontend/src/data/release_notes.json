@@ -1,0 +1,26 @@
+{
+  "_meta": {
+    "note": "What's new in AKKI — surfaced on Home 1.",
+    "version": "v1"
+  },
+  "items": [
+    {
+      "id": "rel-2b2-compilation-wizard",
+      "title": "Compilation Wizard — commission Agent Cycle in four steps",
+      "summary": "A new sticky rail and 4-step modal let you compile board packs, decks, reports and briefings end-to-end. Pick a template, select sources, confirm contributors, set cadence, ship.",
+      "shipped_at": "2026-05-12"
+    },
+    {
+      "id": "rel-2b1-work-studio",
+      "title": "Work Studio — six tabs, per-tab actions, calmer chrome",
+      "summary": "Board Packs · Minutes · Committee Packs · Decks · Reports · Briefing. Universal Quick Action row removed; each tab now carries its own contextual actions.",
+      "shipped_at": "2026-05-12"
+    },
+    {
+      "id": "rel-cycle-manager-v2",
+      "title": "Cycle Manager — multi-cycle support and full-width rows",
+      "summary": "Run multiple agendas in parallel per context. CycleCard is now a full-width row with a readiness numeral and an intel strip.",
+      "shipped_at": "2026-05-11"
+    }
+  ]
+}

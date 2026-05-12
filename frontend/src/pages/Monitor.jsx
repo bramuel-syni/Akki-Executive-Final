@@ -6,6 +6,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import StrategicGoalsPanel from "@/components/monitor/StrategicGoalsPanel";
+import ObjectivesProjectsPanel from "@/components/monitor/ObjectivesProjectsPanel";
 import WorkspaceEntryGate from "@/components/transitions/WorkspaceEntryGate";
 import {
   Activity, AlertTriangle, ArrowRight, Eye, FileText,
@@ -147,7 +148,10 @@ export default function Monitor() {
           )}
         </div>
 
-        {/* PRIMARY — Strategic goals tracker */}
+        {/* PRIMARY (Patch 5) — Objectives & Projects, top section */}
+        <ObjectivesProjectsPanel contextId={cid} />
+
+        {/* SECONDARY (was PRIMARY pre-Patch-5) — Strategic goals tracker */}
         <StrategicGoalsPanel
           contextId={cid}
           fn={fn}

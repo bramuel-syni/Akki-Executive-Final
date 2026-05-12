@@ -834,7 +834,7 @@ function CompilationStep({ cid, cycleId, cycle, onBack }) {
     <section data-testid="cycle-step-compilation">
       <h2 className="akki-serif text-[18px] text-[var(--ink)] mb-1">Draft Compilation Output.</h2>
       <p className="akki-meta mb-5" data-testid="cycle-compilation-subtitle">
-        When every agenda item is ready, agent cycle compiles your board pack.
+        When every item is ready, Agent Cycle compiles your output to executive cadence.
       </p>
       {!out && (
         <Button size="sm" onClick={compile} disabled={busy} className="bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12.5px]" data-testid="cycle-compile-btn">
@@ -1031,11 +1031,11 @@ export default function Cycle() {
             <h1 className="akki-greeting mb-1">{cycle?.title || "Drafting engine."}</h1>
             <p className="akki-meta mb-6 max-w-2xl" data-testid="cycle-detail-status-sentence">
               {isCompleted
-                ? "Closed cycle. Read-only. You can regenerate the compilation document from the Compilation tab."
+                ? "Closed agenda. Read-only. You can regenerate the compilation from the Compilation tab."
                 : isActive
-                  ? "Active cycle. Agent cycle is tracking readiness per agenda item."
+                  ? "Active agenda. Agent Cycle is tracking readiness per item and chasing contributors."
                   : isDraft
-                    ? "Draft cycle. Add an agenda and team, then activate to begin contributions."
+                    ? "Draft agenda. Add items and team, then activate to begin contributions."
                     : "Set the agenda, build the team, score contributions, send follow-ups on your approval, and compile the draft when you decide it's ready."}
             </p>
           </div>

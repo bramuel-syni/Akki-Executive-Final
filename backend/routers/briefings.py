@@ -310,8 +310,17 @@ async def list_brief_aggregates(
         items = await _list_cycle_board_packs(context_id)
     elif kind == "cycle_minutes":
         items = await _list_cycle_minutes(context_id)
-    else:
+    elif kind == "cycle_committee_pack":
         items = await _list_cycle_committee_packs(context_id)
+    elif kind == "deck":
+        items = await _list_decks(context_id)
+    elif kind == "report":
+        items = await _list_reports(context_id)
+    elif kind == "briefing":
+        items = await _list_briefings(context_id)
+    else:
+        # Defensive: should be unreachable because of the kind whitelist above.
+        items = []
 
     # Counts pre-filter (for the FilterTabs count badges).
     counts_by_status = {
@@ -764,7 +773,16 @@ async def regenerate_boardpack_commentary(
 # is there and leaves blanks where the upstream data has not yet
 # settled. The UI shows an empty-state when a kind returns zero rows.
 # =============================================================================
-_AGG_KINDS = ("cycle_board_pack", "cycle_minutes", "cycle_committee_pack")
+_AGG_KINDS = (
+    "cycle_board_pack",
+    "cycle_minutes",
+    "cycle_committee_pack",
+    # Patch 2B.1 — Work Studio 6-tab expansion. Decks/Reports/Briefing
+    # surface from their canonical collections; empty list when no rows.
+    "deck",
+    "report",
+    "briefing",
+)
 _MINUTES_NAME_RE = None  # lazy
 _MINUTES_KINDS = {"minutes", "meeting_minutes", "minutes_main_board"}
 
@@ -978,6 +996,120 @@ async def _list_cycle_committee_packs(context_id: str) -> List[Dict[str, Any]]:
                 "created_at": b["latest"],
             })
     out.sort(key=lambda r: r.get("meeting_date") or "", reverse=True)
+    return out
+
+
+# -----------------------------------------------------------------------------
+# Patch 2B.1 — Work Studio 6-tab expansion. Decks / Reports / Briefing.
+# Each list reads from its canonical collection and renders into the
+# same aggregate envelope as the cycle kinds. Empty list when no rows.
+# -----------------------------------------------------------------------------
+async def _list_decks(context_id: str) -> List[Dict[str, Any]]:
+    """Surface rows from db.decks scoped to this context."""
+    rows = await db.decks.find(
+        {"context_id": context_id},
+        {"_id": 0},
+    ).sort("updated_at", -1).to_list(200)
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        when = r.get("updated_at") or r.get("created_at")
+        slide_count = len(r.get("slides") or [])
+        # Lifecycle: status field on the row, mapped to the artefact lifecycle.
+        s = (r.get("status") or "draft").lower()
+        if s in ("sent", "shipped", "complete", "completed"):
+            lifecycle = "shipped"
+        elif s in ("approved", "compiled"):
+            lifecycle = "compiled"
+        elif s in ("review", "in_review", "in_progress"):
+            lifecycle = "in_progress"
+        else:
+            lifecycle = "draft"
+        out.append({
+            "id": _agg_id("deck", r["id"]),
+            "kind": "deck",
+            "name": r.get("title") or "Untitled deck",
+            "meeting_date": when,
+            "document_count": slide_count,
+            "contributor_count": 1,  # author only; deck collaboration is a future feature
+            "period_start": None,
+            "period_end": None,
+            "cycle_label": None,
+            "status": lifecycle,
+            "created_at": r.get("created_at"),
+        })
+    return out
+
+
+async def _list_reports(context_id: str) -> List[Dict[str, Any]]:
+    """Surface rows from db.reports scoped to this context."""
+    rows = await db.reports.find(
+        {"context_id": context_id, "status": {"$ne": "withdrawn"}},
+        {"_id": 0},
+    ).sort("updated_at", -1).to_list(200)
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        when = r.get("updated_at") or r.get("created_at")
+        chain = r.get("chain") or []
+        s = (r.get("status") or "draft").lower()
+        if s in ("sent", "finalised", "finalized"):
+            lifecycle = "shipped"
+        elif s == "compiled":
+            lifecycle = "compiled"
+        elif s in ("in_review", "review"):
+            lifecycle = "in_progress"
+        else:
+            lifecycle = "draft"
+        out.append({
+            "id": _agg_id("report", r["id"]),
+            "kind": "report",
+            "name": r.get("title") or "Untitled report",
+            "meeting_date": when,
+            "document_count": 0,
+            "contributor_count": len(chain),
+            "period_start": None,
+            "period_end": None,
+            "cycle_label": None,
+            "status": lifecycle,
+            "created_at": r.get("created_at"),
+        })
+    return out
+
+
+async def _list_briefings(context_id: str) -> List[Dict[str, Any]]:
+    """Surface rows from db.work_studio_briefs scoped to this context.
+    A "briefing" in Work Studio == a brief artefact (the editorial,
+    one-page output that gets attached to a board pack or sent on its
+    own). Empty list when no briefs exist yet."""
+    rows = await db.work_studio_briefs.find(
+        {"context_id": context_id},
+        {"_id": 0},
+    ).sort("updated_at", -1).to_list(200)
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        when = r.get("updated_at") or r.get("created_at")
+        board_status = (r.get("board_status") or "").lower()
+        s = (r.get("status") or "draft").lower()
+        if board_status == "shipped" or s in ("shipped", "sent"):
+            lifecycle = "shipped"
+        elif board_status == "compiled" or s == "compiled":
+            lifecycle = "compiled"
+        elif s in ("in_progress", "in_review", "review"):
+            lifecycle = "in_progress"
+        else:
+            lifecycle = "draft"
+        out.append({
+            "id": _agg_id("briefing", r["id"]),
+            "kind": "briefing",
+            "name": r.get("title") or "Untitled brief",
+            "meeting_date": when,
+            "document_count": 0,
+            "contributor_count": 1,
+            "period_start": None,
+            "period_end": None,
+            "cycle_label": None,
+            "status": lifecycle,
+            "created_at": r.get("created_at"),
+        })
     return out
 
 

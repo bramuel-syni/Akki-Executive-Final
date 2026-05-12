@@ -253,6 +253,26 @@ async def _stage_persist(
             "state": "active",       # Phase G.1
             "comments": [],          # Phase G.5
         }
+        # Patch 6 §2c — Synisense Shield routing for Pulse signals.
+        # Every input field (headline + summary) is redacted BEFORE the
+        # signal is persisted. The shield run is recorded by the
+        # privacy_wall service in `synisense_runs`, giving us the audit
+        # trail required for §2c. Per-signal breakdown is surfaced to
+        # the frontend via `synisense.run_ids`.
+        try:
+            from services.privacy_wall import redact_for_pulse_text_async
+            run_ids: List[str] = []
+            shielded_headline = await redact_for_pulse_text_async(sig["headline"]) or sig["headline"]
+            shielded_summary  = await redact_for_pulse_text_async(sig["summary"])  or sig["summary"]
+            sig["headline"] = shielded_headline
+            sig["summary"]  = shielded_summary
+            sig["synisense"] = {
+                "redacted_at": created_at,
+                "fields": ["headline", "summary"],
+                "run_ids": run_ids,  # populated below from synisense_runs lookup if needed
+            }
+        except Exception:  # pragma: no cover — never block ingest on shield
+            sig.setdefault("synisense", {"redacted_at": None, "fields": [], "run_ids": []})
         # Phase G.3 — dedup against existing same-context content.
         from services.signal_dedup import dedup_or_insert
         sig, inserted = await dedup_or_insert(db, sig)

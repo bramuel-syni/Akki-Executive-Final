@@ -102,6 +102,9 @@ from routers import search as search_router  # noqa: E402  Phase F0 — Universa
 from routers import website as website_router  # noqa: E402  Phase I1 — Pre-login website
 from routers import exco_teams as exco_teams_router  # noqa: E402  HOME sprint — ExCo teams
 from routers import portfolio as portfolio_router  # noqa: E402  HOME sprint — portfolio state
+from routers import compilations as compilations_router  # noqa: E402  Patch 2B.2 — Compilation Wizard
+from routers import home as home_router  # noqa: E402  Patch 3 — Home v2
+from routers import monitor_v2 as monitor_v2_router  # noqa: E402  Patch 5 — Objectives & Projects
 
 
 logger = logging.getLogger("akki")
@@ -198,6 +201,9 @@ app.include_router(synisense_metrics_router.router)
 # HOME sprint (2026-05-12) — ExCo teams grouping function.
 app.include_router(exco_teams_router.router)
 app.include_router(portfolio_router.router)
+app.include_router(compilations_router.router)  # Patch 2B.2 — Compilation Wizard
+app.include_router(home_router.router)  # Patch 3 — Home v2
+app.include_router(monitor_v2_router.router)  # Patch 5 — Monitor v2
 
 
 # -----------------------------------------------------------------------------
@@ -400,6 +406,19 @@ async def on_startup():
 
     await db.accounts.create_index("email", unique=True)
     await db.accounts.create_index("id", unique=True)
+    # Patch 2B.2 — Compilation Wizard.
+    await db.compilations.create_index("id", unique=True)
+    await db.compilations.create_index([("context_id", 1), ("status", 1), ("created_at", -1)])
+    await db.compilations.create_index([("context_id", 1), ("artefact_type", 1)])
+    # Patch 3 — Home v2.
+    await db.user_recent_views.create_index([("account_id", 1), ("surface_path", 1)], unique=True)
+    await db.user_recent_views.create_index([("account_id", 1), ("last_visited_at", -1)])
+    await db.user_context_visits.create_index([("account_id", 1), ("context_id", 1)], unique=True)
+    # Patch 5 — Monitor v2.
+    await db.objectives.create_index("id", unique=True)
+    await db.objectives.create_index([("context_id", 1), ("rag_status", 1), ("score", -1)])
+    await db.projects.create_index("id", unique=True)
+    await db.projects.create_index([("context_id", 1), ("rag_status", 1), ("score", -1)])
     await db.contexts.create_index("id", unique=True)
     await db.contexts.create_index("owner_account_id")
     await db.memberships.create_index([("context_id", 1), ("account_id", 1)])

@@ -1,43 +1,33 @@
 /**
- * AppHome — role-aware home dispatcher (Phase 15.3.5 cutover).
+ * AppHome — Patch 3 dispatcher.
  *
- * Single canonical home. Branches on `account.declared_role`:
- *   - `ned`        → <HomeNed />
- *   - `executive`  → <HomeExecutive />
- *   - `dual`       → <HomeDual />
- *   - `undeclared` → <HomeUndeclared />
- *   - anything else (defensive) → <HomeUndeclared />
+ *   /app  →
+ *     • If account.declared_role is undeclared → HomeUndeclared (unchanged)
+ *     • Else, if there is NO active context → Home1 (portfolio entry)
+ *     • Else                                → Home2 (active-context home)
  *
- * Phase 15.3.5 / Phase A retired:
- *   - `?home=v2` and `?home=v1|legacy` URL switches (single production
- *     surface; archived files removed in Phase A).
- *   - LegacyAppHome.jsx and HomeV2.jsx components.
+ * /app/portfolio always renders Home1 (the explicit "Back to portfolio"
+ * affordance from Home 2 routes here).
  *
- * Sandbox accounts now route through HomeExecutive (the closest legacy
- * shape) rather than LegacyAppHome.
+ * Legacy role-specific homes (HomeNed / HomeExecutive / HomeDual) are
+ * preserved as components but no longer auto-dispatched — Home 2 covers
+ * both operator and NED needs in one shell. Removing them would be a
+ * silent feature deletion (forbidden by SYSTEM_STATE §2.5).
  *
- * The FirstSessionGuard in App.js has already run by the time we
- * mount, so brand-new accounts are bounced to /app/first-session
- * before they can land here.
+ * The FirstSessionGuard in App.js still bounces brand-new accounts to
+ * /app/first-session before they reach this dispatcher.
  */
 import React from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import HomeNed from "@/pages/home/HomeNed";
-import HomeExecutive from "@/pages/home/HomeExecutive";
-import HomeDual from "@/pages/home/HomeDual";
+import Home1 from "@/pages/home/Home1";
+import Home2 from "@/pages/home/Home2";
 import HomeUndeclared from "@/pages/home/HomeUndeclared";
 
 export default function AppHome() {
-  const { account } = useAuth();
-
-  // Sandbox accounts use the executive home — closest match to the
-  // pre-15.3.5 LegacyAppHome shape, semantics-preserving for the
-  // sandbox-pinned demo flow.
-  if (account?.is_sandbox) return <HomeExecutive />;
-
+  const { account, activeContext } = useAuth();
   const role = (account?.declared_role || "undeclared").toLowerCase();
-  if (role === "ned") return <HomeNed />;
-  if (role === "executive") return <HomeExecutive />;
-  if (role === "dual") return <HomeDual />;
-  return <HomeUndeclared />;
+
+  if (role === "undeclared") return <HomeUndeclared />;
+  if (!activeContext) return <Home1 />;
+  return <Home2 />;
 }

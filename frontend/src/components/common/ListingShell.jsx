@@ -87,6 +87,7 @@ export default function ListingShell({
   searchValue,
   onSearchChange,
   searchPlaceholder = "Search…",
+  controlsRight,
   filterTabs = [],
   activeFilterKey,
   onFilterChange,
@@ -207,6 +208,11 @@ export default function ListingShell({
                 <option key={s.key} value={s.key}>{s.label}</option>
               ))}
             </select>
+          </div>
+        )}
+        {controlsRight && (
+          <div className="shrink-0" data-testid={`${testId}-controls-right`}>
+            {controlsRight}
           </div>
         )}
       </div>

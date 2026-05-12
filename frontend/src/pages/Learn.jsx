@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import VideoModal from "@/components/learn/VideoModal";
 import LearnMoreModal from "@/components/learn/LearnMoreModal";
+import WorkspaceEntryGate from "@/components/transitions/WorkspaceEntryGate";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   LEARN_ARTICLES, LEARN_VIDEOS, LEARN_NEWS, TOPIC_LABEL, CONTENT_TYPE_LABEL,
@@ -317,6 +318,7 @@ export default function Learn() {
 
   return (
     <AppShell>
+      <WorkspaceEntryGate workspace="learn">
       {/* Fixed-height page: only the grid area scrolls */}
       <div className="h-[calc(100vh-4rem)] akki-w-medium px-8 grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-10 overflow-hidden">
         {/* Left rail — intro + topic pills for current tab */}
@@ -541,6 +543,7 @@ export default function Learn() {
         tab={activeTab}
         topic={topic}
       />
+      </WorkspaceEntryGate>
     </AppShell>
   );
 }

@@ -318,6 +318,28 @@ body {
 .akki-pulse { animation: akki-shimmer 2.4s ease-in-out infinite; }
 
 /* =======================================================================
+ * Patch 4B — Streaming UX motion.
+ *   • akki-cursor: subtle blinking cursor at the streaming edge.
+ *   • akki-fade:   parchment fade-in for skeleton frames.
+ * No bouncy effects; transitions on opacity only.
+ * ===================================================================== */
+@keyframes akki-cursor-blink {
+  0%, 60% { opacity: 1; }
+  61%, 100% { opacity: 0; }
+}
+.animate-akki-cursor { animation: akki-cursor-blink 1.05s steps(1, end) infinite; }
+
+@keyframes akki-stream-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-akki-fade { animation: akki-stream-fade 0.45s ease-out both; }
+
+/* Workspace/role transition surface — destination renders with a calm
+ * fade before data arrives so the perceived load feels intentional. */
+.akki-transition-fade { animation: akki-stream-fade 0.25s ease-out both; }
+
+/* =======================================================================
  * Phase H — UI width consistency utility classes (preserved).
  * ===================================================================== */
 .akki-w-narrow,

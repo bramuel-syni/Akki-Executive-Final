@@ -29,7 +29,7 @@ import QuickActionBar from "@/components/cycle/QuickActionBar";
 import { api } from "@/lib/api";
 
 
-const SUBTITLE = "Run governance cycles end-to-end. Agent cycle aggregates contributions and tracks readiness per agenda item until your board pack is ready to ship.";
+const SUBTITLE = "Cycle Manager is where you organise your team to produce collaborative outputs. Set the agenda, assign contributors, and commission Agent Cycle to follow up and keep readiness moving until you ship.";
 
 
 export default function CycleList() {
@@ -153,10 +153,10 @@ export default function CycleList() {
             testId="cycle-listing"
             title="Cycle Manager"
             subtitle={SUBTITLE}
-            headerRight={headerRight}
             searchValue={q}
             onSearchChange={(v) => setParam("q", v)}
-            searchPlaceholder="Search cycles by title…"
+            searchPlaceholder="Search agendas by title…"
+            controlsRight={addAgendaButton}
             filterTabs={filterTabs}
             activeFilterKey={status}
             onFilterChange={(k) => setParam("status", k)}
@@ -176,7 +176,7 @@ export default function CycleList() {
             emptyState={emptyState}
           >
             <div
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"
+              className="flex flex-col gap-3"
               data-testid="cycle-list-grid"
             >
               {(data.cycles || []).map((c) => (

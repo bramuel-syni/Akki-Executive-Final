@@ -79,8 +79,13 @@ function WorkStudioPreview({ contextId }) {
         .get(`/contexts/${contextId}/decks`)
         .then(({ data }) => (data?.items || data?.decks || []).filter((d) => (d.status || "draft") !== "sent").length)
         .catch(() => 0),
+      // Patch 2A — 404 fix. Previously hit `/contexts/{cid}/cycle/reports/inbox`
+      // which doesn't exist (the inbox endpoint is cross-context at
+      // `/api/reports/inbox`). We want the in-flight count for the
+      // *active* context, so we hit the context-scoped list endpoint
+      // and filter to non-terminal statuses client-side.
       api
-        .get(`/contexts/${contextId}/cycle/reports/inbox`)
+        .get(`/contexts/${contextId}/reports`)
         .then(({ data }) => {
           const items = data?.reports || data?.items || [];
           return items.filter((r) => {

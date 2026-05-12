@@ -9,17 +9,20 @@
  * by default; "undeclared" only exists as a deliberate reset). For
  * those who want the full intake, the link to /app/first-session is
  * preserved as the secondary path.
+ *
+ * Patch 2A — hero band now renders the shared <HeroDocActions /> pair
+ * ([+ Add document] [All documents → /app/work-studio]) instead of the
+ * old AddDocumentCard + AllDocumentsButton drift, so the undeclared
+ * home matches the executive/dual hero pattern.
  */
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
-import { Button } from "@/components/ui/button";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
-import { Briefcase, Landmark, ArrowRight, Loader2 } from "lucide-react";
-import AddDocumentCard from "@/components/home/AddDocumentCard";
-import AllDocumentsButton from "@/components/home/AllDocumentsButton";
+import { Briefcase, Landmark, Loader2 } from "lucide-react";
+import HeroDocActions from "@/components/home/HeroDocActions";
 
 export default function HomeUndeclared() {
   const { account, refreshAuth } = useAuth();
@@ -51,24 +54,11 @@ export default function HomeUndeclared() {
           actually do. You can change this anytime from the avatar menu → Settings.
         </p>
 
-        {/* Phase E (D-006) — Document Journal entry-point hoisted into
-            the page-title band so it's visible above the fold at
-            1920×1100 without scrolling. */}
-        <div className="mb-10" data-testid="home-undeclared-all-documents-strip">
-          <AllDocumentsButton />
-        </div>
-
-        {/* Phase M.1 — "Running the business" Quick Action. Even before
-            the user picks a role, uploading a board pack is a useful
-            first move; AKKI can read it and use it to seed signals. */}
-        <section className="mb-10" data-testid="home-undeclared-running-the-business">
-          <h2 className="akki-serif text-[18px] text-[var(--ink)] inline-flex items-center gap-2 mb-3">
-            <Briefcase className="w-4 h-4 text-[var(--deep)]" strokeWidth={1.7} /> Running the business
-          </h2>
-          <div className="max-w-[560px]">
-            <AddDocumentCard />
-          </div>
-        </section>
+        {/* Patch 2A — Hero doc actions: compact `+ Add document` +
+            `All documents` pair, replacing the prior big AllDocumentsButton
+            strip and the AddDocumentCard quick action so the undeclared
+            home matches the executive/dual hero pattern. */}
+        <HeroDocActions />
 
         <div className="grid sm:grid-cols-2 gap-3 max-w-[560px]">
           <button

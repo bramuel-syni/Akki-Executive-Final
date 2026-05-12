@@ -11,8 +11,8 @@
  *
  * + Add document  → opens the Universal Uploader (same target as the
  *                   previous AddDocumentCard).
- * All documents   → routes to /app/workspace (existing document
- *                   journal landing).
+ * All documents   → routes to /app/work-studio (canonical Work Studio
+ *                   listing surface; uses the shared ListingShell).
  */
 import React from "react";
 import { Link } from "react-router-dom";
@@ -58,7 +58,7 @@ export default function HeroDocActions() {
       </button>
 
       <Link
-        to="/app/workspace"
+        to="/app/work-studio"
         data-testid="home-hero-all-documents"
         className="
           inline-flex items-center gap-1.5

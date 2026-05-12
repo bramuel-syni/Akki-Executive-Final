@@ -1,23 +1,24 @@
 /**
- * CycleCard — Cycle Manager Feel pass (Patch 2 of 4).
+ * CycleCard — Patch 2B.1 full-width row.
  *
- * Visual contract (top → bottom):
- *   1. Title (prominent)
- *   2. Status badge (Active / Draft / Completed)
- *   3. Readiness % — "Not yet scored" for empty drafts
- *   4. Date created
- *   5. Intel row — Monitor-style metadata strip:
- *        Agenda · N · Team · N · Last activity · {rel} · Next · {hint}
+ * Layout (desktop, single horizontal line):
+ *   [ Title (prominent) ]  [ Status badge ]  [ READINESS % ]  [ Created date ]
+ *   [ Intel strip: Agenda · N · Team · N · Last activity · X ago · Next · hint ]
+ *   [ Chevron → ]
  *
- * Visual hierarchy per v2 brief:
- *   Active    — ink text on parchment, full saturation
- *   Draft     — graphite border, muted
+ * Narrow (<768px) viewports: title row on top, then status/readiness/date
+ * stack under title, intel strip wraps. Same row rhythm as Work Studio rows.
+ *
+ * Visual hierarchy:
+ *   Active    — ink text on parchment
+ *   Draft     — muted border, ink
  *   Completed — quiet greyscale; archived feel
  *
- * All colours via CSS tokens; no hex literals.
+ * All colours via CSS tokens. No hex literals.
  */
 import React from "react";
 import { Link } from "react-router-dom";
+import { ArrowRight } from "lucide-react";
 import CycleStatusBadge from "./CycleStatusBadge";
 
 
@@ -54,9 +55,9 @@ function fmtRelative(iso) {
 
 
 const STATUS_TONE = {
-  active:    "bg-[var(--parchment)] border-[var(--rule)] hover:border-[color:var(--oxblood)] text-[var(--ink)]",
-  draft:     "bg-white border-[var(--graphite,var(--rule))]/30 hover:border-[var(--ink)] text-[var(--ink)]",
-  completed: "bg-[var(--parchment-soft,var(--parchment))] border-[var(--rule)] hover:border-[var(--muted)] text-[var(--muted)]",
+  active:    "bg-white border-[var(--rule)] hover:border-[color:var(--oxblood)] text-[var(--ink)]",
+  draft:     "bg-white border-[var(--rule)] hover:border-[var(--ink)] text-[var(--ink)]",
+  completed: "bg-[var(--parchment)] border-[var(--rule)] hover:border-[var(--muted)] text-[var(--muted)]",
 };
 
 
@@ -67,12 +68,8 @@ export default function CycleCard({ cycle }) {
 
   const agendaCount = cycle.agenda_count ?? 0;
   const teamCount = cycle.team_count ?? cycle.contributor_count ?? 0;
-  // Readiness — backend-computed; null/undefined → "Not yet scored".
   const readiness = (typeof cycle.readiness_pct === "number") ? cycle.readiness_pct : null;
   const hasAgenda = agendaCount > 0;
-  const readinessNode = (!hasAgenda)
-    ? <span className="text-[var(--muted)] italic">Not yet scored</span>
-    : <span className="font-mono">{readiness ?? 0}%</span>;
 
   return (
     <Link
@@ -82,40 +79,63 @@ export default function CycleCard({ cycle }) {
         ? "Compilation document can be re-generated from the Compilation tab."
         : undefined}
       className={[
-        "block border rounded-sm px-4 py-3.5",
+        "group block border rounded-sm px-5 py-4 w-full",
         "transition-colors duration-150",
         tone,
         isCompleted ? "opacity-90" : "",
       ].join(" ")}
     >
-      {/* Title + Status */}
-      <div className="flex items-start justify-between gap-3 mb-2">
+      {/* Top line: title (flex-grow) + status badge + readiness + created date + chevron */}
+      <div className="flex items-start md:items-center gap-3 md:gap-5 flex-col md:flex-row">
+        {/* Title — prominent, flex-grow */}
         <h3
-          className={`akki-serif ${isCompleted ? "text-[15.5px]" : "text-[17px]"} leading-tight flex-1`}
+          className={`akki-serif ${isCompleted ? "text-[16px]" : "text-[17px]"} leading-tight flex-1 min-w-0 md:truncate`}
           data-testid={`cycle-card-title-${cycle.id}`}
         >
           {cycle.title}
         </h3>
-        <CycleStatusBadge status={status} testId={`cycle-card-status-${cycle.id}`} />
+
+        {/* Status badge — fixed slot */}
+        <div className="shrink-0">
+          <CycleStatusBadge status={status} testId={`cycle-card-status-${cycle.id}`} />
+        </div>
+
+        {/* Readiness % — JetBrains Mono numeral + small READINESS label */}
+        <div
+          className="shrink-0 inline-flex items-baseline gap-1.5"
+          data-testid={`cycle-card-readiness-${cycle.id}`}
+        >
+          {hasAgenda ? (
+            <span className="font-mono text-[14px] text-[var(--ink)] tabular-nums">
+              {readiness ?? 0}%
+            </span>
+          ) : (
+            <span className="text-[12px] text-[var(--muted)] italic">Not yet scored</span>
+          )}
+          <span className="text-[9.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">
+            Readiness
+          </span>
+        </div>
+
+        {/* Created date — fixed slot */}
+        <p
+          className="shrink-0 akki-meta text-[11.5px] font-mono text-[var(--muted)]"
+          data-testid={`cycle-card-created-${cycle.id}`}
+        >
+          Created {fmtDate(cycle.created_at)}
+        </p>
+
+        {/* Chevron */}
+        <ArrowRight
+          className="shrink-0 w-3.5 h-3.5 text-[var(--muted)] group-hover:text-[var(--ink)] transition-colors hidden md:inline-block"
+          strokeWidth={1.7}
+          aria-hidden="true"
+        />
       </div>
 
-      {/* Readiness % */}
+      {/* Intel strip — monitor-style metadata under the top line */}
       <p
-        className="text-[13px] mb-1"
-        data-testid={`cycle-card-readiness-${cycle.id}`}
-      >
-        <span className="akki-meta text-[10.5px] uppercase tracking-[0.12em] mr-2">Readiness</span>
-        {readinessNode}
-      </p>
-
-      {/* Date created */}
-      <p className="akki-meta text-[11.5px] font-mono mb-3">
-        Created {fmtDate(cycle.created_at)}
-      </p>
-
-      {/* Intel row — Monitor-style */}
-      <p
-        className="border-t border-[var(--rule)] pt-2 text-[11.5px] text-[var(--muted)] font-mono leading-relaxed"
+        className="mt-2.5 pt-2.5 border-t border-[var(--rule)] text-[11.5px] text-[var(--muted)] font-mono leading-relaxed"
         data-testid={`cycle-card-intel-${cycle.id}`}
       >
         <span data-testid={`cycle-card-intel-agenda-${cycle.id}`}>Agenda · {agendaCount}</span>

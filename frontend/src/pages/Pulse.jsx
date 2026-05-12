@@ -25,7 +25,7 @@ import {
   Sparkles, MessageSquare, Send, Bookmark, BookmarkCheck,
   CheckCircle2, ArrowRight, AlertTriangle, TrendingUp, Lightbulb,
   Loader2, Filter, X, Layers, FileText, Lightbulb as Reasoning,
-  Network, Inbox, RotateCcw, Eye, EyeOff,
+  Network, Inbox, RotateCcw, Eye, EyeOff, ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -85,7 +85,7 @@ const FRESHNESS_LABEL = {
 };
 
 const FRESHNESS_TONE = {
-  "critical":               "bg-[#8B2E2B]/10 text-[#8B2E2B] border-[#8B2E2B]/30",
+  "critical":               "bg-[color:var(--oxblood)]/10 text-[color:var(--oxblood)] border-[color:var(--oxblood)]/30",
   "new":                    "bg-emerald-50 text-emerald-800 border-emerald-200",
   "old-but-unresolved":     "bg-amber-50 text-amber-900 border-amber-200",
   "nice-to-look-into":      "bg-sky-50 text-sky-800 border-sky-200",
@@ -144,7 +144,7 @@ function SignalCard({ card, onAction, busyAction, onOpenDrawer }) {
       <div className="flex flex-wrap items-center gap-1.5 mb-2" data-testid={`pulse-card-chips-${card.id}`}>
         <Chip
           tone={card.surface_type === "risk"
-            ? "bg-[#8B2E2B]/10 text-[#8B2E2B] border-[#8B2E2B]/30"
+            ? "bg-[color:var(--oxblood)]/10 text-[color:var(--oxblood)] border-[color:var(--oxblood)]/30"
             : card.surface_type === "opportunity"
               ? "bg-emerald-50 text-emerald-800 border-emerald-200"
               : "bg-sky-50 text-sky-800 border-sky-200"}
@@ -181,6 +181,15 @@ function SignalCard({ card, onAction, busyAction, onOpenDrawer }) {
             testid={`pulse-card-chip-merge-${card.id}`}
           >
             ×{card.merge_count} merged
+          </Chip>
+        )}
+        {card.synisense?.redacted_at && (
+          <Chip
+            tone="bg-[var(--parchment)] text-[var(--ink)] border-[var(--rule)]"
+            testid={`pulse-card-chip-synisense-${card.id}`}
+          >
+            <ShieldCheck className="w-3 h-3 mr-1" strokeWidth={1.7} />
+            Synisense · {(card.synisense?.fields || []).length} field{(card.synisense?.fields || []).length === 1 ? "" : "s"} redacted
           </Chip>
         )}
       </div>
