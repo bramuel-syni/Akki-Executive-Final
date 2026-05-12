@@ -94,9 +94,22 @@ export default function useStreamingPhases({
     armStallTimer();
 
     try {
+      // Patch 24B — raw fetch() is required here because we need
+      // ReadableStream support for SSE-style token streaming, which
+      // axios doesn't expose cleanly. Manually inject the bearer
+      // token (same pattern as pages/Chat.jsx) so this matches what
+      // the axios `api` interceptor would do automatically.
+      const tok = typeof window !== "undefined"
+        ? window.localStorage.getItem("akki_access_token")
+        : null;
+      // eslint-disable-next-line no-restricted-syntax -- streaming SSE; axios cannot
       const res = await fetch(endpoint, {
         method,
-        headers: { "Content-Type": "application/json", ...headers },
+        headers: {
+          "Content-Type": "application/json",
+          ...(tok ? { Authorization: `Bearer ${tok}` } : {}),
+          ...headers,
+        },
         body: body == null ? null : JSON.stringify(body),
         signal: ctrl.signal,
         credentials: "include",

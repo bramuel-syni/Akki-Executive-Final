@@ -228,19 +228,24 @@ export default function Settings() {
 
   const onExport = async () => {
     try {
-      const res = await fetch(`${api.defaults.baseURL}/contexts/${contextId}/export`,
-        { method: "POST", credentials: "include" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
+      // Patch 24B — use axios so the bearer token is injected. We
+      // request `responseType: "blob"` so the JSON export comes back
+      // as a binary blob ready for browser download.
+      const res = await api.post(
+        `/contexts/${contextId}/export`,
+        null,
+        { responseType: "blob" },
+      );
+      const blob = res.data;
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      const disp = res.headers.get("Content-Disposition") || "";
+      const disp = res.headers["content-disposition"] || "";
       const match = /filename="([^"]+)"/.exec(disp);
       a.href = url;
       a.download = match ? match[1] : `akki-export-${contextId}.json`;
       a.click(); URL.revokeObjectURL(url);
       await loadContextData(); toast.success("Export downloaded");
-    } catch (e) { toast.error(e.message || "Export failed"); }
+    } catch (e) { toast.error(apiErrorMessage(e) || "Export failed"); }
   };
 
   const onArchive = async () => {

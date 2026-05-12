@@ -25,7 +25,7 @@ import {
 import MentionInbox from "@/components/collab/MentionInbox";
 import ReviewBadge from "@/components/layout/ReviewBadge";
 import UploadModal from "@/components/upload/UploadModal";
-import PortfolioRail from "@/components/layout/PortfolioRail";
+// Patch 27 — PortfolioRail removed entirely.
 import { isSponsoredContext } from "@/lib/sponsorship";
 import ContinueWithPill from "@/components/layout/ContinueWithPill";
 import ProPill from "@/components/depth/ProPill";
@@ -503,20 +503,15 @@ export default function AppShell({ children }) {
         </div>
       )}
 
-      {/* Permanent right-side portfolio rail — visible on every /app page,
-          shows the user's contexts with a green active dot, and exposes
-          role switcher inline. Self-positions via fixed; we add right
-          padding to the main content below to keep the rail clear. */}
-      <PortfolioRail />
-
-      {/* Phase 13.3 — left nav rail removed in favour of the new
-          horizontal primary nav above. Main content now flows full-
-          width (minus the 48px collapsed PortfolioRail sliver). Routes
-          previously surfaced only in the left rail (Lens, Simulate,
-          Influence Map, Document Journal, Manage shortcuts) remain
-          URL-accessible and discoverable via ⌘K palette + the surfaces
-          they belong to (Monitor / Cycle Manager / Settings). */}
-      <div className="flex flex-1 min-h-0 lg:pr-[48px]">
+      {/* Patch 27 — PortfolioRail removed entirely. The workspace
+          switcher in the top bar is now the single canonical way to
+          switch contexts; the right-side rail was redundant and
+          visually intrusive (user feedback). Home 1 portfolio chips
+          (`/app/portfolio`) remain the explicit portfolio surface for
+          multi-company navigation.
+          Main content now flows full-width to the outer gutter — no
+          `pr-[48px]` reservation. */}
+      <div className="flex flex-1 min-h-0">
         {/* (Phase 13.3) Left nav rail intentionally not rendered. The
             <aside> tree below stays for code-archaeology reference but
             is now wrapped in a `false` guard. */}

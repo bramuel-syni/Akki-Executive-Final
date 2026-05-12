@@ -34,6 +34,24 @@ export const PHASE_LABELS = {
   complete:        "Complete",
 };
 
+// Patch 26E — Chat-only privacy-first label pack. Other surfaces
+// (Solva, Cycle, Work Studio) keep the editorial vocabulary in
+// PHASE_LABELS above. The `shielding_input` step rotates between two
+// phrasings (alternating per request via the rotation counter the
+// caller passes in) so the language doesn't feel canned.
+export const CHAT_PRIVACY_LABELS = {
+  reading_context: "Reading your context",
+  shielding_input_a: "Making your data anonymous",
+  shielding_input_b: "Identifying and removing identifiers",
+  reasoning:       "Thinking privately on your behalf",
+  drafting:        "Drafting a response",
+  refining:        "Polishing",
+  // `complete` deliberately omitted — the caption fades out on
+  // completion, no overt "Complete" label needed.
+  // Stall fallback (>10s without phase change) per brief.
+  _stall: "Taking longer, but making sure you are safe.",
+};
+
 export const PHASE_ORDER = [
   "reading_context",
   "shielding_input",
@@ -57,17 +75,21 @@ export const PHASE_ORDER = [
  * On `complete`: caption fades fully after 1.2s (work is done — get
  * out of the way).
  */
-function PhaseCaption({ phase, status }) {
+function PhaseCaption({ phase, status, labelPack, shieldRotation = 0 }) {
   const [prev, setPrev] = useState(phase);
   const [snap, setSnap] = useState(false);
   const lastChangeRef = useRef(Date.now());
   const [hidden, setHidden] = useState(false);
+  // Patch 26E — stall detection. If we've sat on the same phase for
+  // >10s without `complete`, swap the label to the stall message.
+  const [stalled, setStalled] = useState(false);
 
   useEffect(() => {
     if (phase === prev) return undefined;
     const dt = Date.now() - lastChangeRef.current;
     setSnap(dt < 200);
     setPrev(phase);
+    setStalled(false);
     lastChangeRef.current = Date.now();
     return undefined;
   }, [phase, prev]);
@@ -78,9 +100,33 @@ function PhaseCaption({ phase, status }) {
     return () => clearTimeout(t);
   }, [status]);
 
+  // Patch 26E — stall watcher (active phases only, not complete).
+  useEffect(() => {
+    if (status === "complete") return undefined;
+    setStalled(false);
+    const t = setTimeout(() => setStalled(true), 10000);
+    return () => clearTimeout(t);
+  }, [phase, status]);
+
   if (hidden) return null;
 
-  const label = PHASE_LABELS[phase] || PHASE_LABELS.reasoning;
+  // Resolve the displayed label.
+  // Patch 26E — Chat passes a privacy-first pack; everyone else uses
+  // the default editorial vocabulary.
+  let label;
+  if (stalled && labelPack && labelPack._stall) {
+    label = labelPack._stall;
+  } else if (labelPack) {
+    if (phase === "shielding_input") {
+      const k = shieldRotation % 2 === 0 ? "shielding_input_a" : "shielding_input_b";
+      label = labelPack[k] || labelPack.shielding_input || PHASE_LABELS.shielding_input;
+    } else {
+      label = labelPack[phase] || PHASE_LABELS[phase] || PHASE_LABELS.reasoning;
+    }
+  } else {
+    label = PHASE_LABELS[phase] || PHASE_LABELS.reasoning;
+  }
+
   const isReasoning = phase === "reasoning" && status !== "complete";
   const cls = [
     "text-[10.5px] uppercase tracking-[0.18em] font-mono text-[var(--muted)]",
@@ -89,7 +135,7 @@ function PhaseCaption({ phase, status }) {
   ].filter(Boolean).join(" ");
 
   return (
-    <p className={cls} data-testid="streaming-phase-label" data-phase={phase}>
+    <p className={cls} data-testid="streaming-phase-label" data-phase={phase} data-stalled={stalled || undefined}>
       {label}
     </p>
   );
@@ -166,6 +212,11 @@ export default function StreamingShell({
   onRetry,
   content,                 // string OR React node — already paced by useStreamingPhases
   variant = "document",    // "document" | "quiet"
+  // Patch 26E — Chat passes the privacy-first label pack. Other
+  // surfaces (Solva, Cycle, Studio) leave this undefined and get the
+  // editorial vocabulary (PHASE_LABELS).
+  labelPack,
+  shieldRotation = 0,
 }) {
   const contentRef = useRef(null);
   const settledRef = useRef(false);
@@ -195,7 +246,7 @@ export default function StreamingShell({
   const isEmpty = !content || (typeof content === "string" && content.length === 0);
   return (
     <div className="space-y-3" data-testid="streaming-shell">
-      <PhaseCaption phase={phase} status={status} />
+      <PhaseCaption phase={phase} status={status} labelPack={labelPack} shieldRotation={shieldRotation} />
       {!isEmpty && (
         <div
           ref={contentRef}

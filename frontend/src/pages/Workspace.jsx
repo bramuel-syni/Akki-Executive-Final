@@ -470,11 +470,22 @@ export default function Workspace() {
                       {[formatDate(row.created_at), formatBytes(row.size_bytes), row.doc_kind, (row.sensitivity_band || "").toLowerCase()].filter(Boolean).join(" · ")}
                     </p>
                   </div>
-                  {row.snippet && (
-                    <p className="text-[12.5px] text-[var(--muted)] mt-1 leading-[1.55] line-clamp-2" data-testid={`workspace-row-snippet-${row.id}`}>
-                      {row.snippet}
-                    </p>
-                  )}
+                  {/* Patch 28D — Document Journal description line.
+                      Uses the snippet (derived from doc.summary or
+                      first 240 chars of extracted text — see ll. 117-120
+                      above) when present; muted placeholder when not.
+                      Two-line clamp keeps rows readable. */}
+                  <p
+                    className={
+                      "text-[12.5px] mt-1 leading-[1.55] line-clamp-2 " +
+                      (row.snippet
+                        ? "text-[var(--muted)]"
+                        : "text-[var(--muted)] italic opacity-70")
+                    }
+                    data-testid={`workspace-row-snippet-${row.id}`}
+                  >
+                    {row.snippet || "No summary available yet."}
+                  </p>
                 </button>
               </li>
             ))}

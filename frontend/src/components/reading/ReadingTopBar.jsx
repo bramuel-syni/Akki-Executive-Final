@@ -14,7 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Download, FileText, Loader2, ShieldCheck, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { API_BASE } from "@/lib/api";
+import { api } from "@/lib/api";  // Patch 28C — switched from API_BASE href to api blob download
 
 const TRUST_STYLE = {
   trusted: "text-emerald-700 bg-emerald-50 border-emerald-200",
@@ -111,16 +111,44 @@ export default function ReadingTopBar({
         </Button>
 
         <div className="hidden md:flex items-center gap-1">
-          <a
-            href={`${API_BASE}/contexts/${contextId}/documents/${doc.id}/download`}
-            target="_blank"
-            rel="noreferrer"
+          {/* Patch 28C — Download document button.
+              Previously a plain <a href={API_BASE}/contexts/…/download>
+              which (a) renders as an icon-only "empty button" (one of
+              the issues the user flagged) and (b) bypasses the axios
+              `api` bearer-token interceptor — same regression class
+              as Patch 23. Now downloads via api.get blob + Object URL
+              so it works regardless of cookie scope, and carries an
+              explicit "Download" label on hover for clarity. */}
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const { data: blob, headers } = await api.get(
+                  `/contexts/${contextId}/documents/${doc.id}/download`,
+                  { responseType: "blob" },
+                );
+                const disp = headers["content-disposition"] || "";
+                const m = /filename="([^"]+)"/.exec(disp);
+                const fname = m ? m[1] : (doc.original_filename || doc.title || "document");
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = fname;
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 60_000);
+              } catch (e) {
+                /* eslint-disable no-console */
+                console.error("download failed:", e);
+                /* eslint-enable no-console */
+              }
+            }}
             title="Download original"
+            aria-label="Download original"
             className="inline-flex items-center justify-center w-8 h-8 rounded-sm text-slate-500 hover:text-[var(--ink)] hover:bg-white border border-transparent hover:border-[var(--rule)]"
             data-testid="reading-download-btn"
           >
             <Download className="w-4 h-4" />
-          </a>
+          </button>
           <button
             type="button"
             onClick={() => navigate("/app/workspace")}

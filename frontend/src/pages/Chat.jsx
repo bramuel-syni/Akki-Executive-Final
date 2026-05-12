@@ -61,6 +61,73 @@ function _humanBytes(n) {
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
 
+/**
+ * Patch 26B — Cap a title at N word-tokens for prominent display.
+ * Splits on whitespace, keeps first N, appends `…` if truncation
+ * happened. Punctuation is treated as part of the adjacent word
+ * (matches the "7 tokens" intent in the brief). Empty / short
+ * titles pass through unchanged.
+ */
+function truncateTitleWords(title, n = 7) {
+  if (!title) return "";
+  const tokens = String(title).trim().split(/\s+/);
+  if (tokens.length <= n) return title;
+  return tokens.slice(0, n).join(" ") + "…";
+}
+
+/**
+ * Patch 26E — Chat privacy-first phase captions.
+ * Backend emits {type:"phase", phase:"reading_context"|...} on the
+ * SSE stream. We render the corresponding label above the streaming
+ * bubble. After 10s on the same phase, we swap to the stall message
+ * so the user knows we haven't hung — *"Taking longer, but making
+ * sure you are safe."*
+ */
+const CHAT_PRIVACY_LABELS = {
+  reading_context: "Reading your context",
+  shielding_input_a: "Making your data anonymous",
+  shielding_input_b: "Identifying and removing identifiers",
+  reasoning:       "Thinking privately on your behalf",
+  drafting:        "Drafting a response",
+  refining:        "Polishing",
+  _stall:          "Taking longer, but making sure you are safe.",
+};
+// Module-level rotation counter for shielding_input phrasing. Persists
+// across renders so phrasings genuinely alternate per request.
+let _shieldRotationCounter = 0;
+
+function ChatPhaseCaption({ phase }) {
+  const [stalled, setStalled] = React.useState(false);
+  const [rotation] = React.useState(() => _shieldRotationCounter++);
+  React.useEffect(() => {
+    setStalled(false);
+    const t = setTimeout(() => setStalled(true), 10000);
+    return () => clearTimeout(t);
+  }, [phase]);
+
+  let label;
+  if (stalled) {
+    label = CHAT_PRIVACY_LABELS._stall;
+  } else if (phase === "shielding_input") {
+    label = rotation % 2 === 0
+      ? CHAT_PRIVACY_LABELS.shielding_input_a
+      : CHAT_PRIVACY_LABELS.shielding_input_b;
+  } else {
+    label = CHAT_PRIVACY_LABELS[phase] || "";
+  }
+  if (!label) return null;
+  return (
+    <p
+      className="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[var(--muted)] mb-2"
+      data-testid="chat-phase-label"
+      data-phase={phase}
+      data-stalled={stalled || undefined}
+    >
+      {label}
+    </p>
+  );
+}
+
 export default function Chat() {
   const { activeContext } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -450,6 +517,11 @@ export default function Chat() {
     setAttachments([]);
 
     try {
+      // Patch 24B — raw fetch() is required here because we need
+      // ReadableStream support for SSE-style streaming, which axios
+      // doesn't expose cleanly. The bearer token + active-context
+      // headers are injected manually above (lines 420-424, 461).
+      // eslint-disable-next-line no-restricted-syntax -- streaming SSE; axios cannot
       const resp = await fetch(`${BACKEND}/api/chats/${activeId}/messages/stream`, {
         method: "POST",
         credentials: "include",
@@ -504,7 +576,18 @@ export default function Chat() {
             let ev;
             try { ev = JSON.parse(json); } catch { continue; }
             if (ev.type === "delta") {
-              applyStreamUpdate((m) => ({ ...m, content: (m.content || "") + ev.text }));
+              // Patch 26E — first delta means model is "drafting".
+              // Subsequent deltas keep the phase steady on `drafting`.
+              applyStreamUpdate((m) => ({
+                ...m,
+                content: (m.content || "") + ev.text,
+                _phase: m._phase === "drafting" ? "drafting" : "drafting",
+              }));
+            } else if (ev.type === "phase") {
+              // Patch 26E — backend emits {type:"phase", phase:"reading_context"|...}
+              // at real boundaries. Stash the phase on the streaming
+              // bubble so the privacy-first caption renders.
+              applyStreamUpdate((m) => ({ ...m, _phase: ev.phase }));
             } else if (ev.type === "chat_renamed") {
               // Workstream B.2 — server auto-named the chat from the
               // first user message. Update sidebar + active header.
@@ -771,8 +854,10 @@ export default function Chat() {
     <AppShell>
       <WorkspaceEntryGate workspace="chat">
       <div className="h-[calc(100vh-4rem)] akki-w-medium grid grid-cols-1 lg:grid-cols-[300px_1fr] overflow-hidden" data-testid="chat-page">
-        {/* Sidebar */}
-        <aside className="border-r border-[var(--rule)] bg-[var(--cream)] flex flex-col min-h-0" data-testid="chat-sidebar">
+        {/* Patch 26A — sidebar boundary removed. Two regions now read
+            as one continuous canvas with whitespace as the only
+            separator (Claude.ai-style). */}
+        <aside className="bg-[var(--cream)] flex flex-col min-h-0" data-testid="chat-sidebar">
           <div className="p-4 border-b border-[var(--rule)] bg-white">
             <div className="flex items-center justify-between mb-2">
               <p className="akki-overline flex items-center gap-1.5">
@@ -1090,34 +1175,30 @@ function ChatHeader({ chat, models, activeModel, activeContext, onPatch, onArchi
             data-testid="chat-title-input"
           />
         ) : (
-          <div className="flex items-baseline gap-2 min-w-0">
-            <button
-              onClick={() => setTitleEdit(true)}
-              className="akki-serif text-[16px] text-[var(--ink)] hover:text-[var(--accent)] truncate text-left"
-              data-testid="chat-title"
-            >
-              {chat.title}
-            </button>
-            {/* Workstream B.3 — active company context next to the title.
-                Subtle so it never reads as a primary action; visible
-                always so the user is reminded which company this
-                conversation is bound to. */}
-            {activeContext?.name && (
-              <span
-                className="text-[12px] text-[var(--muted)] truncate flex-shrink-0"
-                data-testid="chat-header-active-context"
-              >
+          <button
+            onClick={() => setTitleEdit(true)}
+            className="akki-serif text-[16px] text-[var(--ink)] hover:text-[var(--accent)] truncate text-left block w-full"
+            data-testid="chat-title"
+            title={chat.title /* full title in tooltip per Patch 26B */}
+          >
+            {/* Patch 26B — cap at 7 word-tokens. Full title is in the
+                conversation list + tooltip. */}
+            {truncateTitleWords(chat.title, 7)}
+          </button>
+        )}
+        <p className="text-[10.5px] text-[var(--muted)] mt-0.5 truncate">
+          {chat.message_count || 0} messages
+          {/* Patch 26C — workspace name moves from the title row into
+              the meta line so the title row stays clean. */}
+          {activeContext?.name && (
+            <>
+              {" · "}
+              <span data-testid="chat-header-active-context">
                 in <span className="text-[var(--ink)]">{activeContext.name}</span>
               </span>
-            )}
-          </div>
-        )}
-        <p className="text-[10.5px] text-[var(--muted)] mt-0.5">
-          {chat.message_count || 0} messages · {POLICY_LABEL[chat.shielding_policy]}
-          {/* Phase J — inline Synisense redaction count + 3-layer indicator.
-              Renders only when the live metric has loaded. Honest about
-              what was redacted, with a tooltip-style hover for the layer
-              breakdown so curious users can drill in. */}
+            </>
+          )}
+          {" · "}{POLICY_LABEL[chat.shielding_policy]}
           <SynisenseInlineBadge chatId={chat.id} />
         </p>
       </div>
@@ -1323,6 +1404,14 @@ function Message({ m, activeModel, models, synisense }) {
             </span>
           ) : (
             <>
+              {/* Patch 26E — privacy-first phase caption above the
+                  streaming reply. Only renders while the assistant
+                  bubble is still streaming AND a phase has been
+                  emitted by the backend. Falls back to silence on
+                  surfaces that don't emit phase events. */}
+              {m.streaming && m._phase && m._phase !== "complete" && (
+                <ChatPhaseCaption phase={m._phase} />
+              )}
               <MarkdownMessage content={m.content} streaming={!!m.streaming} />
               {m.cancelled && (
                 <p className="mt-2 text-[11px] text-[var(--muted)] italic">

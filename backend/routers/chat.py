@@ -52,17 +52,41 @@ ShieldingPolicy = Literal["auto", "always", "off"]
 
 # Provider+model identifiers exposed to the user. Keep in sync with the
 # Emergent LLM Key playbook.
+#
+# Patch 26G — refresh against latest provider releases (verified Feb 2026):
+#   * Anthropic — Claude Opus 4.7 added (released Apr 2026 per Anthropic);
+#     Sonnet 4.5 + Haiku 4.5 kept as faster + cheaper alternatives.
+#   * OpenAI — GPT-5.5 added (released May 2026 as the new default
+#     ChatGPT model per OpenAI). GPT-5.2 kept as legacy fallback.
+#   * Google — Gemini 3.1 Pro added (most advanced per DeepMind model
+#     card). Gemini 3 Flash added (3x faster than 2.5 Pro). Gemini
+#     2.5 family kept as legacy fallbacks.
+#
+# Friendly `label` shows on the picker. `model` is the provider-side
+# identifier used by emergentintegrations; the full identifier shows
+# in the picker tooltip.
 SUPPORTED_MODELS: List[Dict[str, str]] = [
+    # ── Anthropic ─────────────────────────────────────────────────────
+    {"id": "claude-opus-4-7",    "label": "Claude Opus 4.7",    "provider": "anthropic",
+     "model": "claude-opus-4-7-20260416",    "tone": "highest reasoning, agentic"},
     {"id": "claude-sonnet-4-5",  "label": "Claude Sonnet 4.5",  "provider": "anthropic",
      "model": "claude-sonnet-4-5-20250929", "tone": "careful, long-form"},
     {"id": "claude-haiku-4-5",   "label": "Claude Haiku 4.5",   "provider": "anthropic",
      "model": "claude-haiku-4-5-20251001",  "tone": "fast, terse"},
+    # ── OpenAI ────────────────────────────────────────────────────────
+    {"id": "gpt-5-5",            "label": "GPT-5.5",            "provider": "openai",
+     "model": "gpt-5.5",                    "tone": "newest default"},
     {"id": "gpt-5-2",            "label": "GPT-5.2",            "provider": "openai",
      "model": "gpt-5.2",                    "tone": "balanced, fast"},
+    # ── Google ────────────────────────────────────────────────────────
+    {"id": "gemini-3-1-pro",     "label": "Gemini 3.1 Pro",     "provider": "gemini",
+     "model": "gemini-3.1-pro",             "tone": "most advanced"},
+    {"id": "gemini-3-flash",     "label": "Gemini 3 Flash",     "provider": "gemini",
+     "model": "gemini-3-flash",             "tone": "fastest in class"},
     {"id": "gemini-2-5-pro",     "label": "Gemini 2.5 Pro",     "provider": "gemini",
      "model": "gemini-2.5-pro",             "tone": "research-heavy"},
     {"id": "gemini-2-5-flash",   "label": "Gemini 2.5 Flash",   "provider": "gemini",
-     "model": "gemini-2.5-flash",           "tone": "fastest"},
+     "model": "gemini-2.5-flash",           "tone": "fast"},
 ]
 DEFAULT_MODEL_ID = "claude-sonnet-4-5"
 
@@ -2187,6 +2211,14 @@ async def stream_message(
 
     async def _event_gen():
         import asyncio as _asyncio
+        # Patch 26E — emit the privacy-first phase narrative as the very
+        # first event of every stream so the user gets instant feedback
+        # (TTFP < 100ms) instead of staring at a blank bubble for the
+        # 0.5-3s while shielding + grounding + the LLM warm-up run.
+        # Other phases (`shielding_input`, `reasoning`, `drafting`,
+        # `refining`, `complete`) emit at the corresponding real
+        # boundaries below.
+        yield "data: " + json.dumps({"type": "phase", "phase": "reading_context"}) + "\n\n"
         # Workstream B.2 — emit the chat_renamed event BEFORE anything
         # else so the SPA sidebar updates atomically with the first
         # delta. Idempotent: if the title wasn't auto-renamed (e.g.
@@ -2862,6 +2894,9 @@ async def stream_message(
                 "fallback_triggered": bool(locals().get("stream_fallback") or False),
             }) + "\n\n"
         )
+        # Patch 26E — emit phase: complete just before `done` so the
+        # privacy-first caption fades out cleanly on the client.
+        yield "data: " + json.dumps({"type": "phase", "phase": "complete"}) + "\n\n"
         yield "data: " + json.dumps({"type": "done"}) + "\n\n"
 
         # Success path complete — stop the disconnect watcher so it

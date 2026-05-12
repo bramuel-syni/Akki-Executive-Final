@@ -25,8 +25,7 @@ import React, { useMemo } from "react";
 import { ShieldCheck, X, FileLock2 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "";
+import { api } from "@/lib/api";
 
 /**
  * Render the original text with `<mark>` highlights at every span
@@ -87,13 +86,15 @@ export default function PreviewDrawer({
 
   const handleAccept = async () => {
     try {
-      const r = await fetch(
-        `${BACKEND_URL}/api/studio/${kind}/${artefactId}/synisense-accept`,
-        { method: "POST", credentials: "include" }
+      // Patch 24B — use the shared axios `api` client so the bearer
+      // token is injected automatically. The previous raw `fetch()`
+      // here relied on cookie credentials, which was the same class
+      // of bug fixed by Patch 23 on UploadModal.
+      const { data: body } = await api.post(
+        `/studio/${kind}/${artefactId}/synisense-accept`,
+        {},
       );
-      if (!r.ok) throw new Error(`accept HTTP ${r.status}`);
-      const body = await r.json().catch(() => ({}));
-      onAccepted && onAccepted(body);
+      onAccepted && onAccepted(body || {});
     } catch (e) {
       // Bubble up so the parent can surface a toast; we don't dismiss
       // the drawer on error so the user can retry.

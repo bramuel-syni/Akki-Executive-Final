@@ -1,20 +1,41 @@
 {
   "_comment": [
-    "AKKI news-feed sources (Patch 21, 2026-05-12). One RSS feed per entry.",
-    "Curated for governance / executive / FTSE audience. Edit freely.",
-    "If `enabled` is false, the aggregator skips the feed. If a feed",
-    "returns malformed XML or 404, the aggregator logs a warning and",
-    "moves on — never crashes."
+    "AKKI news-feed sources (Patch 21 + Patch 25, 2026-05-12).",
+    "One RSS feed per entry. Each entry carries a `regions` array of",
+    "ISO-3166-1 alpha-2 codes plus 'GLOBAL' for non-region-specific.",
+    "Set `enabled: false` to skip a source without removing it.",
+    "Aggregator parses these every NEWS_REFRESH_MINUTES (default 30).",
+    "Malformed XML or 404s log a warning and are skipped — never crash."
+  ],
+  "_notes_on_substitutions": [
+    "FT — Companies: regions UK+EU+GLOBAL (London-headquartered, EU+UK governance focus)",
+    "Original ask 'NYT Business RSS': substituted for `nyt-business` -> NYT Business top-level feed which works.",
+    "Original ask 'Handelsblatt English': RSS no longer publishes English; substituted with `politico-eu-business` (Europe-focused, English-language, RSS public).",
+    "Original ask 'Nikkei Asia Business': RSS not public; substituted with `scmp-business` (South China Morning Post — Asia-business focus, RSS public).",
+    "Original ask 'Business Day South Africa': RSS not public; substituted with `aljazeera-business` (pan-Africa+global coverage, RSS public). Best fit for Africa region tag in the curated set."
   ],
   "sources": [
-    { "id": "bbc-business",   "name": "BBC Business",          "url": "http://feeds.bbci.co.uk/news/business/rss.xml",                 "enabled": true },
-    { "id": "reuters-biz",    "name": "Reuters Business",      "url": "https://feeds.reuters.com/reuters/businessNews",                "enabled": true },
-    { "id": "ft-companies",   "name": "Financial Times — Companies", "url": "https://www.ft.com/companies?format=rss",                "enabled": true },
-    { "id": "ft-lex",         "name": "Financial Times — Lex", "url": "https://www.ft.com/lex?format=rss",                            "enabled": true },
-    { "id": "economist-biz",  "name": "The Economist — Business",    "url": "https://www.economist.com/business/rss.xml",             "enabled": true },
-    { "id": "hbr",            "name": "Harvard Business Review",     "url": "https://hbr.org/feed",                                   "enabled": true },
-    { "id": "frc-uk",         "name": "Financial Reporting Council UK", "url": "https://www.frc.org.uk/news-and-events/rss",         "enabled": true },
-    { "id": "boe-news",       "name": "Bank of England",       "url": "https://www.bankofengland.co.uk/rss/news",                     "enabled": true },
-    { "id": "iod",            "name": "Institute of Directors", "url": "https://www.iod.com/news/rss",                                "enabled": true }
+    { "id": "bbc-business",        "name": "BBC Business",                  "url": "http://feeds.bbci.co.uk/news/business/rss.xml",            "regions": ["UK", "GLOBAL"],         "enabled": true },
+    { "id": "reuters-biz",         "name": "Reuters Business",              "url": "https://feeds.reuters.com/reuters/businessNews",           "regions": ["GLOBAL"],               "enabled": true },
+    { "id": "ft-companies",        "name": "Financial Times — Companies",   "url": "https://www.ft.com/companies?format=rss",                  "regions": ["UK", "EU", "GLOBAL"],   "enabled": true },
+    { "id": "ft-lex",              "name": "Financial Times — Lex",         "url": "https://www.ft.com/lex?format=rss",                        "regions": ["UK", "EU", "GLOBAL"],   "enabled": true },
+    { "id": "economist-biz",       "name": "The Economist — Business",      "url": "https://www.economist.com/business/rss.xml",               "regions": ["UK", "GLOBAL"],         "enabled": true },
+    { "id": "hbr",                 "name": "Harvard Business Review",       "url": "https://hbr.org/feed",                                     "regions": ["US", "GLOBAL"],         "enabled": true },
+    { "id": "frc-uk",              "name": "Financial Reporting Council UK","url": "https://www.frc.org.uk/news-and-events/rss",               "regions": ["UK"],                   "enabled": true },
+    { "id": "boe-news",            "name": "Bank of England",               "url": "https://www.bankofengland.co.uk/rss/news",                 "regions": ["UK"],                   "enabled": true },
+    { "id": "iod",                 "name": "Institute of Directors",        "url": "https://www.iod.com/news/rss",                             "regions": ["UK"],                   "enabled": true },
+
+    { "id": "nyt-business",        "name": "New York Times — Business",     "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", "regions": ["US", "GLOBAL"],         "enabled": true,
+      "note": "Substitution for the Patch 25 brief's NYT Business RSS ask. RSS endpoint stable + open."
+    },
+    { "id": "politico-eu-business","name": "Politico Europe — Business",    "url": "https://www.politico.eu/section/business/feed/",           "regions": ["EU", "GLOBAL"],         "enabled": true,
+      "note": "Substitution for Handelsblatt English (RSS no longer published). Politico EU has open RSS + English-language EU business focus."
+    },
+    { "id": "scmp-business",       "name": "South China Morning Post — Business", "url": "https://www.scmp.com/rss/92/feed",                  "regions": ["HK", "CN", "GLOBAL"],   "enabled": true,
+      "note": "Substitution for Nikkei Asia Business (RSS not public). SCMP gives Asia-business + Greater-China governance coverage."
+    },
+    { "id": "aljazeera-business",  "name": "Al Jazeera — Business",         "url": "https://www.aljazeera.com/xml/rss/all.xml",                "regions": ["AF", "GLOBAL"],         "enabled": true,
+      "note": "Substitution for Business Day South Africa (RSS not public). Al Jazeera carries pan-Africa + global coverage. Africa tag is the best fit in the curated set."
+    }
   ]
 }

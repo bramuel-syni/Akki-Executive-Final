@@ -75,6 +75,7 @@ class NewsItem:
     source_id: str
     source_name: str
     published_at: datetime     # tz-aware UTC
+    regions: List[str]         # Patch 25 — denormalized from source
 
     def to_doc(self) -> Dict[str, Any]:
         return {
@@ -85,6 +86,7 @@ class NewsItem:
             "source_id": self.source_id,
             "source_name": self.source_name,
             "published_at": self.published_at,
+            "regions": self.regions,
             "created_at": datetime.now(timezone.utc),
         }
 
@@ -135,8 +137,14 @@ def _clean_summary(raw: Optional[str], cap: int = 280) -> str:
     return txt
 
 
-def parse_feed(body: str, source_id: str, source_name: str) -> List[NewsItem]:
+def parse_feed(
+    body: str,
+    source_id: str,
+    source_name: str,
+    regions: Optional[List[str]] = None,
+) -> List[NewsItem]:
     """Parse RSS/Atom bytes into a list of NewsItem. Permissive."""
+    regions = regions if regions is not None else ["GLOBAL"]
     parsed = feedparser.parse(body)
     items: List[NewsItem] = []
     for entry in (parsed.entries or []):
@@ -154,6 +162,7 @@ def parse_feed(body: str, source_id: str, source_name: str) -> List[NewsItem]:
             source_id=source_id,
             source_name=source_name,
             published_at=_coerce_datetime(entry),
+            regions=list(regions),
         ))
     return items
 
@@ -165,6 +174,7 @@ async def fetch_one(source: Dict[str, Any], client: httpx.AsyncClient) -> List[N
     """Fetch + parse a single source. Never raises."""
     src_id = source["id"]
     src_name = source.get("name") or src_id
+    src_regions = source.get("regions") or ["GLOBAL"]
     url = source["url"]
     started = time.time()
     try:
@@ -172,7 +182,7 @@ async def fetch_one(source: Dict[str, Any], client: httpx.AsyncClient) -> List[N
         if r.status_code >= 400:
             logger.warning("news source %s returned HTTP %s", src_id, r.status_code)
             return []
-        items = parse_feed(r.text, src_id, src_name)
+        items = parse_feed(r.text, src_id, src_name, src_regions)
         ms = int((time.time() - started) * 1000)
         logger.info("news source %s -> %d items in %dms", src_id, len(items), ms)
         return items
@@ -231,6 +241,13 @@ async def fetch_once(
                         "published_at": doc["published_at"],
                         "created_at": doc["created_at"],
                     },
+                    # Patch 25 — regions are denormalized on the item so
+                    # we can serve `?region=...` filtering with a single
+                    # mongo query. Use `$set` (not `$setOnInsert`) so
+                    # existing items get their regions backfilled on the
+                    # next sweep — handy when a source's regions list
+                    # changes in news_sources.json.
+                    "$set": {"regions": doc["regions"]},
                 },
                 upsert=True,
             )
@@ -296,3 +313,196 @@ def stop_scheduler() -> None:
     if _task and not _task.done():
         _task.cancel()
     _task = None
+
+
+# ---------------------------------------------------------------------------
+# Patch 25 — Diversification + region resolution
+# ---------------------------------------------------------------------------
+
+# Accept-Language language-tag -> region heuristic. Used only when the
+# user has no profile country AND no workspace country.
+_LANG_TO_REGION = {
+    "en-gb": "UK",
+    "en-uk": "UK",
+    "en-us": "US",
+    "en-ca": "CA",
+    "en-au": "AU",
+    "en-nz": "NZ",
+    "en-in": "IN",
+    "en-ie": "IE",
+    "en-za": "ZA",
+    "en-sg": "SG",
+    "en-hk": "HK",
+    "de":    "DE",
+    "de-de": "DE",
+    "de-at": "AT",
+    "de-ch": "CH",
+    "fr":    "FR",
+    "fr-fr": "FR",
+    "fr-ca": "CA",
+    "fr-ch": "CH",
+    "es":    "ES",
+    "es-es": "ES",
+    "es-mx": "MX",
+    "it":    "IT",
+    "it-it": "IT",
+    "nl":    "NL",
+    "nl-nl": "NL",
+    "nl-be": "BE",
+    "pt":    "PT",
+    "pt-pt": "PT",
+    "pt-br": "BR",
+    "ja":    "JP",
+    "ja-jp": "JP",
+    "zh":    "CN",
+    "zh-cn": "CN",
+    "zh-hk": "HK",
+    "zh-tw": "TW",
+    "ko":    "KR",
+    "ko-kr": "KR",
+    "ru":    "RU",
+    "ar":    "GLOBAL",
+}
+
+
+def _accept_language_to_region(header_value: Optional[str]) -> str:
+    """Map an Accept-Language header value to a single region code.
+
+    Picks the FIRST valid language-tag (the user's primary preference),
+    then looks it up in `_LANG_TO_REGION`. Falls back to GLOBAL.
+    """
+    if not header_value:
+        return "GLOBAL"
+    # Take only the first language tag (ignore q=); lower-case it.
+    parts = [p.strip().lower() for p in header_value.split(",") if p.strip()]
+    for raw in parts:
+        # Strip the q= weight if present
+        lang = raw.split(";")[0].strip()
+        if not lang:
+            continue
+        if lang in _LANG_TO_REGION:
+            return _LANG_TO_REGION[lang]
+        # Try the bare language (e.g. "en" from "en-GB-oxendict")
+        prefix = lang.split("-")[0]
+        if prefix in _LANG_TO_REGION:
+            return _LANG_TO_REGION[prefix]
+    return "GLOBAL"
+
+
+def resolve_user_region(
+    account: Optional[Dict[str, Any]],
+    active_context: Optional[Dict[str, Any]] = None,
+    accept_language: Optional[str] = None,
+) -> str:
+    """Pick the best region code for this request.
+
+    Priority (per Patch 25C):
+      1. account.profile.country               (ISO-3166 alpha-2)
+      2. account.country                       (top-level)
+      3. active_context.country                (workspace-level)
+      4. Accept-Language header heuristic
+      5. GLOBAL
+    """
+    if account:
+        profile = (account.get("profile") or {})
+        for k in (profile.get("country"), account.get("country")):
+            if k and isinstance(k, str):
+                return k.upper()
+    if active_context:
+        c = active_context.get("country")
+        if c and isinstance(c, str):
+            return c.upper()
+    return _accept_language_to_region(accept_language)
+
+
+def diversify_items(
+    items: List[Dict[str, Any]],
+    limit: int,
+) -> List[Dict[str, Any]]:
+    """Source-balanced ordering.
+
+    Group `items` (assumed already published_at DESC) by `source_name`,
+    then interleave: round-robin take 1 from each source until `limit`
+    is reached. If fewer distinct sources have items than `limit`,
+    allow a second pass per source.
+
+    Properties:
+    - For limit=5 with 5+ distinct sources: each source contributes
+      exactly 1 item (no source dominates).
+    - For limit=5 with 3 sources (5/2/1 items): result mixes all 3
+      then top up with the most-populous source's next-most-recent.
+    - Within a source, ordering stays published_at DESC.
+    """
+    if not items or limit <= 0:
+        return []
+
+    # Group by source_name; preserve insertion order = published_at DESC
+    by_source: Dict[str, List[Dict[str, Any]]] = {}
+    source_order: List[str] = []
+    for it in items:
+        s = it.get("source_name") or it.get("source_id") or "unknown"
+        if s not in by_source:
+            by_source[s] = []
+            source_order.append(s)
+        by_source[s].append(it)
+
+    picked: List[Dict[str, Any]] = []
+    rounds = 0
+    # Max number of rounds = the count of the most populous source.
+    max_rounds = max(len(v) for v in by_source.values())
+    while len(picked) < limit and rounds < max_rounds:
+        for s in source_order:
+            if len(picked) >= limit:
+                break
+            bucket = by_source[s]
+            if rounds < len(bucket):
+                picked.append(bucket[rounds])
+        rounds += 1
+    return picked[:limit]
+
+
+async def query_items(
+    db,
+    limit: int = 10,
+    since: Optional[datetime] = None,
+    source: Optional[str] = None,
+    region: Optional[str] = None,
+    diversify: bool = True,
+    include_all_regions: bool = False,
+) -> Dict[str, Any]:
+    """Build the `GET /api/news` response.
+
+    Applies region filter (if region != None AND not include_all_regions),
+    then either diversifies or returns recency-pure ordering.
+
+    Returns {items: [...], total: int, region_applied: str|None}.
+    """
+    q: Dict[str, Any] = {}
+    if since:
+        q["published_at"] = {"$gt": since}
+    if source:
+        q["source_id"] = source
+    region_applied: Optional[str] = None
+    if region and not include_all_regions:
+        # Include items tagged with this region OR GLOBAL.
+        q["regions"] = {"$in": [region, "GLOBAL"]}
+        region_applied = region
+
+    # Over-fetch when diversifying so we have enough per-source supply
+    # to round-robin from. 4x is plenty for limit≤50.
+    fetch_n = limit * 4 if diversify else limit
+
+    projection = {"_id": 0, "id": 1, "title": 1, "summary": 1, "url": 1,
+                  "source_id": 1, "source_name": 1, "published_at": 1, "regions": 1}
+
+    cursor = (
+        db.news_items
+        .find(q, projection)
+        .sort("published_at", -1)
+        .limit(fetch_n)
+    )
+    raw = await cursor.to_list(length=fetch_n)
+    total = await db.news_items.count_documents(q)
+
+    items = diversify_items(raw, limit) if diversify else raw[:limit]
+    return {"items": items, "total": total, "region_applied": region_applied}

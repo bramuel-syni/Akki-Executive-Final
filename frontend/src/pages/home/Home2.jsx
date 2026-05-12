@@ -166,6 +166,39 @@ export default function Home2() {
     activeContext?.my_sub_role === "admin" ||
     activeContext?.owner_account_id === account?.id;
 
+  // Patch 28A — role-sensitive hero copy on Home 2.
+  // The user's role on THIS active context is what matters here —
+  // not the user's portfolio-level mix. We honour 3 variants:
+  //   1. EXECUTIVE — operator framing
+  //   2. NED — board framing
+  //   3. DUAL — both seats on the same workspace (rare; keeps the
+  //      original "side by side" framing).
+  const roleHeroCopy = useMemo(() => {
+    const role = (activeContext?.my_role || "").toLowerCase();
+    const subRole = (activeContext?.my_sub_role || "").toLowerCase();
+    const isExec = role === "executive" || role === "owner" || subRole === "executive";
+    const isNed = role === "ned" || role === "non_executive_director" || role === "non-executive-director";
+    if (isExec && isNed) {
+      return {
+        headline: "Two roles, one calm view.",
+        sub: "AKKI keeps your operating cadence and your board cadence side by side.",
+      };
+    }
+    if (isNed) {
+      return {
+        headline: "Sit on your boards with confidence.",
+        sub: "Briefs, questions, and sign-offs — surfaced where you need them.",
+      };
+    }
+    // Default = executive framing (covers explicit Executive role +
+    // unrecognised role strings which historically defaulted to the
+    // operator side).
+    return {
+      headline: "Run your business with clarity.",
+      sub: "Cycles, signals, and decisions — all kept in one calm view.",
+    };
+  }, [activeContext?.my_role, activeContext?.my_sub_role]);
+
   const [insights, setInsights] = useState(null);
   const [whatsNew, setWhatsNew] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -193,9 +226,20 @@ export default function Home2() {
 
   // Order the 7 cards by score = count * 1 + urgency. Cards with count 0
   // still render but at the end (urgency-only).
+  // Patch 28B — role-sensitive card visibility. NEDs see a subset
+  // tuned to board work (no `compile_ready`, no `new_documents` since
+  // those are operator-facing). The `open_questions` template rewrites
+  // to reflect the answer-side for NEDs.
+  const isNedRole = useMemo(() => {
+    const r = (activeContext?.my_role || "").toLowerCase();
+    return r === "ned" || r === "non_executive_director" || r === "non-executive-director";
+  }, [activeContext?.my_role]);
+
   const orderedCards = useMemo(() => {
     const map = insights?.insights || {};
-    const keys = Object.keys(CARD_CONFIG);
+    const NED_KEYS = ["signoffs_needed", "open_questions", "pulse_critical", "cycles_closing", "solva_waiting"];
+    const allKeys = Object.keys(CARD_CONFIG);
+    const keys = isNedRole ? allKeys.filter((k) => NED_KEYS.includes(k)) : allKeys;
     return keys
       .map((k) => ({
         key: k,
@@ -264,13 +308,13 @@ export default function Home2() {
             Renders only when account.first_session is open. */}
         <ContinueOnboardingBand account={account} navigate={navigate} />
 
-        {/* 2. Hero copy band */}
-        <section className="mt-8 mb-6" data-testid="home2-hero-copy">
-          <h2 className="akki-serif text-[24px] text-[var(--ink)] leading-tight mb-2 font-normal">
-            Run the business on the left. Sit on the boards on the right.
+        {/* 2. Hero copy band — Patch 28A role-sensitive */}
+        <section className="mt-8 mb-6" data-testid="home2-hero-copy" data-role={(activeContext?.my_role || "").toLowerCase()}>
+          <h2 className="akki-serif text-[24px] text-[var(--ink)] leading-tight mb-2 font-normal" data-testid="home2-hero-headline">
+            {roleHeroCopy.headline}
           </h2>
-          <p className="akki-meta max-w-2xl">
-            One home for both. AKKI keeps your operating cadence and your board cadence side by side.
+          <p className="akki-meta max-w-2xl" data-testid="home2-hero-sub">
+            {roleHeroCopy.sub}
           </p>
         </section>
 

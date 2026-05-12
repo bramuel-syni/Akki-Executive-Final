@@ -4,8 +4,11 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from "@/components/ui/sheet";
+import {
   Target, Sparkles, FileText, ChevronRight, ChevronDown, Loader2, X,
-  TrendingUp, AlertTriangle, CheckCircle2, Plus, Info, Layers,
+  TrendingUp, AlertTriangle, CheckCircle2, Plus, Info, Layers, Pencil,
 } from "lucide-react";
 
 /**
@@ -59,6 +62,12 @@ export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange }) 
   const [loading, setLoading] = useState(true);
   const [extractOpen, setExtractOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  // Patch 28F — drawer state for the Strategic Goals listing. Row
+  // click now opens a side drawer showing full goal context + timeline
+  // (parity with the Objectives & Projects panel). "Edit" inside the
+  // drawer drops the user into the inline-edit mode for power users
+  // who want to update score / probability quickly.
+  const [drawerGoal, setDrawerGoal] = useState(null);
 
   const load = useCallback(async () => {
     if (!contextId) return;
@@ -144,6 +153,7 @@ export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange }) 
                   isLast={i === groups[dept].length - 1}
                   isNED={isNED}
                   isEditing={editingId === g.id}
+                  onOpenDrawer={() => setDrawerGoal(g)}
                   onEdit={() => setEditingId(g.id)}
                   onCancel={() => setEditingId(null)}
                   onSaved={() => { setEditingId(null); refresh(); }}
@@ -154,6 +164,17 @@ export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange }) 
           </div>
         ))}
       </div>
+
+      {/* Patch 28F — Strategic Goal detail drawer.
+          Opens on row click. Mirrors the ObjectivesProjectsPanel
+          drawer pattern so the executive listings now have the same
+          click-to-detail UX. */}
+      <GoalDetailDrawer
+        goal={drawerGoal}
+        onClose={() => setDrawerGoal(null)}
+        onEdit={() => { if (drawerGoal) { setEditingId(drawerGoal.id); setDrawerGoal(null); } }}
+        isNED={isNED}
+      />
 
       {extractOpen && (
         <ExtractFromDocModal
@@ -202,7 +223,7 @@ function probabilityNarrative(value) {
   return "Unlikely without a different plan.";
 }
 
-function GoalRow({ goal, isLast, isNED, isEditing, onEdit, onCancel, onSaved, contextId }) {
+function GoalRow({ goal, isLast, isNED, isEditing, onOpenDrawer, onEdit, onCancel, onSaved, contextId }) {
   const status = STATUS_STYLE[goal.status] || STATUS_STYLE.on_track;
   const score = typeof goal.current_score === "number" ? goal.current_score : null;
   const prob = typeof goal.probability === "number" ? goal.probability : null;
@@ -215,7 +236,11 @@ function GoalRow({ goal, isLast, isNED, isEditing, onEdit, onCancel, onSaved, co
 
   return (
     <div
-      className={`px-5 py-3.5 ${!isLast ? "border-b border-[var(--rule)]" : ""} hover:bg-[var(--cream-deep)]/30`}
+      role="button"
+      tabIndex={0}
+      onClick={onOpenDrawer}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenDrawer && onOpenDrawer(); } }}
+      className={`px-5 py-3.5 cursor-pointer ${!isLast ? "border-b border-[var(--rule)]" : ""} hover:bg-[var(--cream-deep)]/30 focus:outline-none focus:bg-[var(--cream-deep)]/40`}
       data-testid={`strategic-goal-${goal.id}`}
     >
       {/* TOP ROW — single line. Title + category chip + status + the two
@@ -296,6 +321,116 @@ function GoalRow({ goal, isLast, isNED, isEditing, onEdit, onCancel, onSaved, co
         <p className="text-[12px] text-[var(--muted)] italic mt-2 leading-relaxed line-clamp-2">{goal.description}</p>
       )}
     </div>
+  );
+}
+
+/**
+ * GoalDetailDrawer — Patch 28F.
+ *
+ * Side drawer that opens when a row in the Strategic Goals listing is
+ * clicked. Mirrors the visual language of the Objectives & Projects
+ * drawer (border-rule + akki-serif heading + mono labels). Read-only
+ * detail surface; an `Edit` button drops the user into the inline
+ * edit mode for the same goal (used by execs to update score quickly).
+ */
+function GoalDetailDrawer({ goal, onClose, onEdit, isNED }) {
+  const open = !!goal;
+  const status = STATUS_STYLE[goal?.status] || STATUS_STYLE.on_track;
+  const cat = CATEGORY_STYLE[goal?.category] || CATEGORY_STYLE.operations;
+  return (
+    <Sheet open={open} onOpenChange={(v) => !v && onClose && onClose()}>
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-[460px] sm:w-[460px] overflow-y-auto bg-[var(--paper)] p-0"
+        data-testid="goal-drawer"
+      >
+        <div className="px-6 py-5 border-b border-[var(--rule)] sticky top-0 bg-[var(--paper)] z-10">
+          <div className="flex items-start justify-between gap-3">
+            <SheetHeader className="text-left flex-1 min-w-0">
+              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">
+                {cat.label} · Strategic goal
+              </p>
+              <SheetTitle className="akki-serif text-[18px] text-[var(--ink)] leading-snug">
+                {goal?.title}
+              </SheetTitle>
+              <SheetDescription className="text-[12px] text-[var(--muted)]">
+                Status · <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10px] border ${status.tone}`}>{status.label}</span>
+              </SheetDescription>
+            </SheetHeader>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-[var(--muted)] hover:text-[var(--ink)] p-1"
+              aria-label="Close drawer"
+              data-testid="goal-drawer-close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          <div className="grid grid-cols-2 gap-3 border border-[var(--rule)] rounded-sm bg-white px-3 py-3">
+            <div>
+              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Current score</p>
+              <p className="text-[14px] akki-serif text-[var(--ink)]">{goal?.current_score ?? "—"}</p>
+            </div>
+            <div>
+              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Probability</p>
+              <p className="text-[14px] akki-serif text-[var(--ink)]">{goal?.probability != null ? `${goal.probability}%` : "—"}</p>
+            </div>
+            <div>
+              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Target</p>
+              <p className="text-[14px] akki-serif text-[var(--ink)]">{goal?.target_value || "—"} {goal?.target_metric || ""}</p>
+            </div>
+            <div>
+              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Target date</p>
+              <p className="text-[14px] akki-serif text-[var(--ink)]">{goal?.target_date || "—"}</p>
+            </div>
+          </div>
+
+          {goal?.description && (
+            <div>
+              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--ink)] mb-2">Description</p>
+              <p className="akki-serif text-[13.5px] text-[var(--ink)] leading-snug whitespace-pre-wrap">{goal.description}</p>
+            </div>
+          )}
+
+          <div data-testid="goal-drawer-timeline">
+            <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--ink)] mb-2">Timeline</p>
+            {!goal?.score_history || goal.score_history.length === 0 ? (
+              <p className="text-[12.5px] text-[var(--muted)] italic">No score updates recorded yet.</p>
+            ) : (
+              <ol className="relative border-l border-[var(--rule)] ml-2 pl-4 space-y-3">
+                {[...goal.score_history].slice(-8).reverse().map((ev, i) => (
+                  <li key={i} className="text-[12.5px]">
+                    <span className="absolute -left-[5px] w-2 h-2 rounded-full bg-[var(--ink)]" />
+                    <p className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-[var(--muted)]">
+                      {ev.recorded_at?.slice(0, 10) || "—"}
+                    </p>
+                    <p className="text-[var(--ink)]">Score · {ev.score ?? "—"}</p>
+                    {ev.note && <p className="text-[var(--muted)] italic">{ev.note}</p>}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+
+          {!isNED && (
+            <div className="pt-2 border-t border-[var(--rule)]">
+              <Button
+                type="button"
+                onClick={onEdit}
+                className="w-full"
+                data-testid="goal-drawer-edit-btn"
+              >
+                <Pencil className="w-3.5 h-3.5 mr-2" /> Edit this goal
+              </Button>
+            </div>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 

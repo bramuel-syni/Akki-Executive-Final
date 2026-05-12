@@ -108,6 +108,7 @@ from routers import monitor_v2 as monitor_v2_router  # noqa: E402  Patch 5 — O
 from routers import streaming_v9 as streaming_v9_router  # noqa: E402  Patch 9 — Streaming phase events
 from routers import questions as questions_router  # noqa: E402  Patch 14 — Questions UI
 from routers import news as news_router  # noqa: E402  Patch 21 — News feed
+from routers import profile as profile_router  # noqa: E402  Patch 25C — /me/profile country
 
 
 logger = logging.getLogger("akki")
@@ -210,6 +211,7 @@ app.include_router(monitor_v2_router.router)  # Patch 5 — Monitor v2
 app.include_router(streaming_v9_router.router)  # Patch 9 — Streaming phase events
 app.include_router(questions_router.router)  # Patch 14 — Questions UI
 app.include_router(news_router.router)  # Patch 21 — News feed
+app.include_router(profile_router.router)  # Patch 25C — /me/profile country
 
 
 # -----------------------------------------------------------------------------

@@ -19,6 +19,40 @@ import { api } from "@/lib/api";
 import { Newspaper, Calendar, History, ChevronRight, Sparkles } from "lucide-react";
 import releaseNotes from "@/data/release_notes.json";
 
+// Patch 25 — region code → label map. GLOBAL is intentionally
+// rendered as a neutral live-feed label (no geographic tag) — honest
+// fallback when the server couldn't resolve a meaningful region.
+const REGION_LABELS = {
+  UK: "United Kingdom",
+  US: "United States",
+  EU: "Europe",
+  CA: "Canada",
+  AU: "Australia",
+  NZ: "New Zealand",
+  IN: "India",
+  IE: "Ireland",
+  ZA: "South Africa",
+  SG: "Singapore",
+  HK: "Hong Kong",
+  DE: "Germany",
+  AT: "Austria",
+  CH: "Switzerland",
+  FR: "France",
+  ES: "Spain",
+  IT: "Italy",
+  NL: "Netherlands",
+  BE: "Belgium",
+  PT: "Portugal",
+  BR: "Brazil",
+  MX: "Mexico",
+  JP: "Japan",
+  CN: "China",
+  TW: "Taiwan",
+  KR: "Korea",
+  RU: "Russia",
+  AF: "Africa",
+};
+
 
 function greetingFor(date = new Date()) {
   const h = date.getHours();
@@ -80,6 +114,8 @@ export default function Home1() {
   // (top-N from cache). Empty array on cold-start renders the
   // editorial fallback line below; never block render on this.
   const [news, setNews] = useState([]);
+  // Patch 25 — server resolves region from profile/workspace/Accept-Language.
+  const [regionApplied, setRegionApplied] = useState(null);
 
   useEffect(() => {
     api.get("/me/recent-views", { params: { limit: 3 } })
@@ -89,7 +125,10 @@ export default function Home1() {
 
   useEffect(() => {
     api.get("/news", { params: { limit: 5 } })
-      .then(({ data }) => setNews(data?.items || []))
+      .then(({ data }) => {
+        setNews(data?.items || []);
+        setRegionApplied(data?.region_applied || null);
+      })
       .catch(() => setNews([]));
   }, []);
 
@@ -177,7 +216,9 @@ export default function Home1() {
               className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]"
               data-testid="home1-news-source-label"
             >
-              Curated · live feed
+              {regionApplied && regionApplied !== "GLOBAL" && REGION_LABELS[regionApplied]
+                ? `Curated for ${REGION_LABELS[regionApplied]}`
+                : "Curated · live feed"}
             </span>
           </div>
           {news.length === 0 ? (

@@ -55,6 +55,13 @@ export default function EnterpriseFeature() {
     setScoring(true);
     setError("");
     try {
+      // Patch 24B — raw fetch() is fine here: this is a PUBLIC marketing
+      // endpoint (`/api/public/studio/sensitivity-demo`) reachable on
+      // the unauthenticated marketing page. Using the axios `api`
+      // client would inject an Authorization header from any cached
+      // localStorage token, which would taint the rate-limit logic
+      // server-side.
+      // eslint-disable-next-line no-restricted-syntax -- public marketing endpoint, intentionally no auth
       const r = await fetch(`${API_BASE}/api/public/studio/sensitivity-demo`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

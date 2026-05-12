@@ -161,6 +161,9 @@ export default function UploadModal({ open, onClose, onUploaded }) {
       // `credentials: "include"`, but AKKI's auth is bearer-token
       // (localStorage), so every UploadModal upload returned 401
       // "Not authenticated". See /app/memory/sprints/UPLOAD_P0_DIAGNOSIS.md.
+      // ENFORCEMENT — Patch 24A's render-smoke asserts this request
+      // carries `Authorization: Bearer …`. Patch 24B's ESLint rule
+      // forbids raw `fetch()` outside the api client allowlist.
       const { data: doc } = await api.post(
         `/contexts/${contextId}/documents`,
         form,

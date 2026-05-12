@@ -965,24 +965,21 @@ function StudioHistoryStrip({ items, contextId, onOpenDeck }) {
       // the PDF export in a new tab — it carries the same shielding,
       // citations and sensitivity record the Studio history strip already
       // shows.
-      const url = `${process.env.REACT_APP_BACKEND_URL}/api/contexts/${contextId}/briefings/${it.id}/export?format=pdf`;
-      const tok = localStorage.getItem("akki_access_token");
-      // Authenticated download in a new tab — fetch as blob, open via object URL.
-      fetch(url, {
-        headers: tok ? { Authorization: `Bearer ${tok}` } : {},
-        credentials: "include",
-      })
-        .then((r) => {
-          if (!r.ok) throw new Error("Couldn't open the briefing.");
-          return r.blob();
-        })
-        .then((blob) => {
+      //
+      // Patch 24B — use the axios `api` client (so the bearer token
+      // is injected by the interceptor) + responseType blob so we
+      // can hand the blob to a new tab via object URL.
+      api.get(
+        `/contexts/${contextId}/briefings/${it.id}/export?format=pdf`,
+        { responseType: "blob" },
+      )
+        .then(({ data: blob }) => {
           const u = URL.createObjectURL(blob);
           window.open(u, "_blank", "noopener,noreferrer");
           // Don't revoke immediately — the new tab needs the URL alive.
           setTimeout(() => URL.revokeObjectURL(u), 60_000);
         })
-        .catch((e) => toast.error(e.message || "Couldn't open the briefing."));
+        .catch((e) => toast.error(apiErrorMessage(e) || "Couldn't open the briefing."));
     }
   };
 
