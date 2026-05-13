@@ -42,6 +42,14 @@ What the route does, atomically:
 
 This route does NOT touch the C.1 generators or Solva engines. It
 reads and writes only.
+
+Chunk 5 — 2026-05-13 — sister endpoint
+  POST /api/contexts/{cid}/work-studio/artefacts
+adds the three create-from-Work-Studio paths the QA report flagged
+(WS-R09 / R10 / R11 / R13 / R14): create a draft Deck or draft Report
+from a Blank starting point, an existing Work-Studio brief, or an
+external (already-uploaded) document. Inserts into the same
+db.decks / db.reports collections used by the block composer.
 """
 from __future__ import annotations
 
@@ -316,5 +324,250 @@ async def create_from_source(
         "artefact_id": artefact_id,
         "brief_id": brief_id,
         "active_revision_id": revision_id,
+        "redirect_url": f"/app/studio/composer/{body.kind}/{artefact_id}",
+    }
+
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Chunk 5 (2026-05-13) — Create-from-Work-Studio.
+#
+# Sister endpoint to /from-source. Where /from-source seeds a draft from
+# an existing Solva session or chat, /artefacts creates a draft from one
+# of three Work-Studio-native sources:
+#
+#   - blank              — empty body, user composes from scratch
+#   - brief              — references a db.work_studio_briefs row by uuid
+#   - external_document  — references a db.documents row by uuid
+#
+# Only `deck` and `report` kinds are accepted here. `briefing` artefacts
+# in Work Studio go through the C.1 ExportModal pipeline (entirely
+# separate code path); this endpoint refuses `kind=briefing` to avoid
+# accidental double-creation of brief rows.
+# ═════════════════════════════════════════════════════════════════════════
+_VALID_CREATE_KINDS = {"deck", "report"}
+_VALID_CREATE_SOURCES = {"blank", "brief", "external_document"}
+
+
+class CreateArtefactRequest(BaseModel):
+    kind: Literal["deck", "report"]
+    title: str = Field(..., min_length=1, max_length=200)
+    source: Literal["blank", "brief", "external_document"]
+    # Raw uuid from db.work_studio_briefs.id (Chunk 5 — we also
+    # gracefully accept the aggregate-id form `briefing::<uuid>` that
+    # the Work Studio listing emits, so future UI calls that forget to
+    # strip the prefix don't silently 404).
+    source_brief_id: Optional[str] = Field(None, max_length=128)
+    # Raw uuid from db.documents.id.
+    source_document_id: Optional[str] = Field(None, max_length=128)
+
+
+def _strip_agg_prefix(raw: str, expected_kind: str) -> str:
+    """Tolerate the aggregate-id form (`<kind>::<uuid>`) coming from
+    the briefings/aggregates listing. Returns the raw uuid if a
+    prefix is present, otherwise returns the input unchanged."""
+    if not raw or "::" not in raw:
+        return raw or ""
+    prefix, _, suffix = raw.partition("::")
+    if prefix == expected_kind:
+        return suffix
+    # Unknown prefix — return as-is so the downstream lookup fails
+    # with a clean 404 rather than silently truncating.
+    return raw
+
+
+@router.post("/contexts/{context_id}/work-studio/artefacts", status_code=201)
+async def create_work_studio_artefact(
+    context_id: str,
+    body: CreateArtefactRequest,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Create a draft Deck or Report from one of three sources.
+
+    The artefact row is inserted into the same kind-aware collection
+    (`db.decks` / `db.reports`) the block composer reads from. The
+    response carries a `redirect_url` pointing at the composer surface
+    so the frontend can hard-redirect after the toast.
+
+    422 paths:
+      - `kind` is not deck/report (briefing is handled elsewhere)
+      - `source` is not blank/brief/external_document
+      - `source=brief` with no `source_brief_id`
+      - `source=external_document` with no `source_document_id`
+
+    404 paths:
+      - `source_brief_id` doesn't resolve in this account/context
+      - `source_document_id` doesn't resolve in this context
+    """
+    # Defence-in-depth — Pydantic Literal already gates these but
+    # explicit raise gives a friendlier error.
+    if body.kind not in _VALID_CREATE_KINDS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Unsupported kind `{body.kind}`. "
+                f"Work Studio create accepts: {sorted(_VALID_CREATE_KINDS)}."
+            ),
+        )
+    if body.source not in _VALID_CREATE_SOURCES:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Unsupported source `{body.source}`. "
+                f"Allowed: {sorted(_VALID_CREATE_SOURCES)}."
+            ),
+        )
+
+    account = ctx["account"]
+    account_id = account["id"]
+    title = body.title.strip()
+
+    description: Optional[str] = None
+    body_text: str = ""
+    brief_id: Optional[str] = None
+    document_id: Optional[str] = None
+
+    # ── Source-specific resolution ────────────────────────────────────
+    if body.source == "brief":
+        if not body.source_brief_id:
+            raise HTTPException(
+                status_code=422,
+                detail="`source_brief_id` is required when source=brief.",
+            )
+        raw_bid = _strip_agg_prefix(body.source_brief_id, "briefing")
+        brief = await db.work_studio_briefs.find_one(
+            {"id": raw_bid, "context_id": context_id, "account_id": account_id},
+            {"_id": 0},
+        )
+        if not brief:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Brief `{raw_bid}` not found in this workspace "
+                    f"(or you don't have access)."
+                ),
+            )
+        brief_id = brief["id"]
+        # Seed body from the active revision's snapshot prose, so the
+        # composer renders something useful on first open.
+        revision = await db.work_studio_brief_revisions.find_one(
+            {"id": brief.get("active_revision_id"), "brief_id": brief_id},
+            {"_id": 0, "snapshot": 1},
+        )
+        snapshot = (revision or {}).get("snapshot") or {}
+        if snapshot:
+            prose = _assemble_prose(snapshot)
+            body_text = prose["body"]
+            if prose.get("opening_paragraph"):
+                # Front-load the opening paragraph as the first
+                # composer paragraph (it survives the seeder's
+                # paragraph splitter).
+                body_text = (
+                    prose["opening_paragraph"].strip()
+                    + ("\n\n" + body_text if body_text else "")
+                )
+        description = f"Composed from brief: {brief.get('title') or 'Untitled brief'}"
+
+    elif body.source == "external_document":
+        if not body.source_document_id:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "`source_document_id` is required when "
+                    "source=external_document."
+                ),
+            )
+        doc = await db.documents.find_one(
+            {"id": body.source_document_id, "context_id": context_id},
+            {
+                "_id": 0, "id": 1, "name": 1, "preview": 1,
+                "akki_summary": 1, "extracted_text": 1,
+            },
+        )
+        if not doc:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Document `{body.source_document_id}` not found in "
+                    f"this workspace."
+                ),
+            )
+        document_id = doc["id"]
+        # Seed body with a short stub the composer can render. Prefer
+        # the AKKI summary (richer); fall back to preview; finally a
+        # short stub naming the source so the user has a starting line.
+        seed_text = (doc.get("akki_summary") or doc.get("preview") or "").strip()
+        if seed_text:
+            body_text = seed_text
+        else:
+            body_text = f"Composed from document: {doc.get('name') or 'Untitled document'}."
+        description = f"Composed from document: {doc.get('name') or 'Untitled document'}"
+
+    else:
+        # blank — composer's seed renders title + a fallback paragraph;
+        # no body needed.
+        description = "Draft started from blank."
+
+    # ── Insert ─────────────────────────────────────────────────────────
+    artefact_id = str(uuid.uuid4())
+    now = _now_iso()
+    artefact_row: Dict[str, Any] = {
+        "id": artefact_id,
+        "context_id": context_id,
+        "account_id": account_id,
+        "title": title,
+        "description": description,
+        "body": body_text,
+        "status": "draft",
+        "source": body.source,
+        "brief_id": brief_id,
+        "source_document_id": document_id,
+        "origin": {
+            "source": body.source,
+            "brief_id": brief_id,
+            "document_id": document_id,
+        },
+        "created_at": now,
+        "updated_at": now,
+    }
+    # Kind-specific defaults the listing surface expects.
+    if body.kind == "deck":
+        artefact_row["slides"] = []
+        artefact_row["subject"] = title
+    if body.kind == "report":
+        artefact_row["subject"] = title
+        # The block composer reads `body` for reports; chain stays
+        # empty here (the multi-tier review-chain flow is a separate
+        # path in routers/cycle.py — Work-Studio-created reports are
+        # composer artefacts, not chain artefacts).
+        artefact_row["chain"] = []
+
+    coll_name = _KIND_COLLECTION[body.kind]
+    coll = getattr(db, coll_name)
+    await coll.insert_one(artefact_row)
+
+    # ── Audit ──────────────────────────────────────────────────────────
+    try:
+        await write_audit(
+            context_id=context_id, account_id=account_id,
+            action="work_studio.artefact.created",
+            resource_type=f"work_studio_artefact.{body.kind}",
+            resource_id=artefact_id,
+            metadata={
+                "kind": body.kind,
+                "source": body.source,
+                "brief_id": brief_id,
+                "document_id": document_id,
+                "title": title,
+            },
+        )
+    except Exception:
+        logger.exception("create_work_studio_artefact: audit write failed (non-fatal)")
+
+    return {
+        "kind": body.kind,
+        "artefact_id": artefact_id,
+        "brief_id": brief_id,
+        "document_id": document_id,
         "redirect_url": f"/app/studio/composer/{body.kind}/{artefact_id}",
     }

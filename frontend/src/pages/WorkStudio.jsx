@@ -154,6 +154,12 @@ function ContextActions({ kind, onExport, onEnhance, onCompile, onCreate }) {
 
 function BriefRow({ row, onOpen }) {
   const Icon = (KIND_TABS.find((k) => k.id === row.kind) || KIND_TABS[0]).icon;
+  // Chunk 5 (2026-05-13) — Patch 28D parity: show a 1-line description
+  // under the title, prioritised as `description` (set by Work Studio
+  // create flows) → null (no placeholder; we hide the line entirely
+  // when there's nothing to show, since these rows already carry
+  // structured meeting/doc/contributor metadata below the title).
+  const description = (row.description || "").trim();
   return (
     <button
       type="button"
@@ -166,6 +172,14 @@ function BriefRow({ row, onOpen }) {
         <p className="text-[14px] text-[var(--ink)] truncate" data-testid="work-studio-brief-row-name">
           {row.name || "Untitled"}
         </p>
+        {description && (
+          <p
+            className="text-[12px] text-[var(--muted)] mt-0.5 line-clamp-1"
+            data-testid={`work-studio-brief-row-description-${row.id}`}
+          >
+            {description}
+          </p>
+        )}
         <div className="flex items-center gap-3 mt-1 flex-wrap text-[11.5px] text-[var(--muted)]">
           <span className="inline-flex items-center gap-1" data-testid="work-studio-brief-row-meeting">
             <Calendar className="w-3 h-3" strokeWidth={1.7} />

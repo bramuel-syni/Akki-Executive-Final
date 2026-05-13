@@ -1090,6 +1090,10 @@ async def _list_decks(context_id: str) -> List[Dict[str, Any]]:
             "id": _agg_id("deck", r["id"]),
             "kind": "deck",
             "name": r.get("title") or "Untitled deck",
+            # Chunk 5 (2026-05-13, WS-R09→R14 follow-on) — surface the
+            # row's `description` so the Work Studio listing carries
+            # the Patch 28D `preview → description → placeholder` chain.
+            "description": r.get("description"),
             "meeting_date": when,
             "document_count": slide_count,
             "contributor_count": 1,  # author only; deck collaboration is a future feature
@@ -1125,6 +1129,8 @@ async def _list_reports(context_id: str) -> List[Dict[str, Any]]:
             "id": _agg_id("report", r["id"]),
             "kind": "report",
             "name": r.get("title") or "Untitled report",
+            # Chunk 5 — description chain (Patch 28D parity).
+            "description": r.get("description"),
             "meeting_date": when,
             "document_count": 0,
             "contributor_count": len(chain),
@@ -1163,6 +1169,9 @@ async def _list_briefings(context_id: str) -> List[Dict[str, Any]]:
             "id": _agg_id("briefing", r["id"]),
             "kind": "briefing",
             "name": r.get("title") or "Untitled brief",
+            # Chunk 5 — description chain (Patch 28D parity). Briefs
+            # use `subtitle` as their description-equivalent.
+            "description": r.get("subtitle") or r.get("description"),
             "meeting_date": when,
             "document_count": 0,
             "contributor_count": 1,
