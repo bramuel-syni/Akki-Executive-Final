@@ -92,6 +92,15 @@
 - **Home 1 empty calendar**: *"No upcoming events on your calendar."*
 - **Home 2 whats-new empty**: *"You're all caught up since your last visit."*
 
+#### Chunk 6.5 — Left rail labels (locked 2026-05-13)
+- **Module labels (9)** (locked order): *"Home"*, *"Cycle Manager"*, *"Work Studio"*, *"Document Journal"*, *"Akki Chat"*, *"Monitor"*, *"Pulse"*, *"Learn"*, *"Questions"*
+- **Recent section header**: *"Recent"*
+- **Collapse toggle aria-label (expanded)**: *"Collapse navigation"*
+- **Collapse toggle aria-label (collapsed)**: *"Expand navigation"*
+- **Workspace switcher menu — personal group**: *"Your workspaces"*
+- **Workspace switcher menu — sponsored group**: *"Sponsored"*
+- **Workspace switcher manage row**: *"Manage workspaces…"*
+
 ### 2.4 Out-of-Scope (NEVER touch)
 - Rename `cycles` collection/routes to `agendas`
 - Build a real AI engine for Agent Cycle (readiness deterministic)
@@ -119,6 +128,40 @@
   - Phase 5 — REWRITE large + UNCLEAR (5 files)
 
 ## 4. Per-Patch Close-out Log (newest at top)
+
+### Chunk 6.5 — Left dashboard navigation (Claude-style) — 2026-05-13 ✅
+- **Headline**: cross-cutting outer-shell refactor. Replaced the old two-header-rows-plus-dead-left-aside layout with a persistent left navigation rail and a slimmed top bar. Every authenticated page now renders inside the new shell.
+- **Pre-change inventory**: the old `AppShell.jsx` had two stacked headers (64px logo header + 64px primary 8-tab nav row) plus a giant legacy left-aside guarded behind `false && (…)` (~225 lines of dead code carried for archaeology). The workspace switcher (`CycleContextIndicator`) lived in the top header. The Add-Document plus, keyboard-help, account avatar, and mobile-nav-trigger all crowded the top right.
+- **New components**:
+  - `/app/frontend/src/components/shell/LeftRail.jsx` — 260px expanded / 64px collapsed. Top: workspace-switcher card (replicates the dropdown shape of the old top-bar pill — `useAuth().switchContext`). Body: 9 modules in locked order — Home · Cycle Manager · Work Studio · Document Journal · Akki Chat · Monitor · Pulse · Learn · Questions. Below modules: "Recent" section fed by `/api/me/recent-views` (Patch 3 endpoint, limit=5). Bottom: user-block (avatar + name + email + cog) with Settings / Sign-out dropdown. Collapse toggle in top-right corner. State persisted to `localStorage["akki:leftRailCollapsed"]` as `"1"` / `"0"`. Auto-collapse at viewport `< 1100px` (matches Compilation Wizard rail breakpoint); user preference wins above that threshold. Hidden entirely below `md` (768px) — mobile drawer in `AppShell.jsx` replaces it.
+  - `/app/frontend/src/components/shell/TopBar.jsx` — 64px slim. Breadcrumb (left), `ContinueWithPill`, Cmd+K search button (existing `akki:open-search` event), `MentionInbox` (bell), `ReviewBadge`, Add-Document plus (Hero Doc Action), Keyboard-help (?), account avatar dropdown (Settings / Account security / Trust / Sign out). Workspace switcher INTENTIONALLY removed — the LeftRail owns that affordance now. Trust classification chip removed.
+- **Shell composition**: `AppShell.jsx` rewritten — `<LeftRail />` left column (sticky, `h-screen`), right column is `flex flex-col` containing `<TopBar />` + the 3 inline banners (MFA nudge / role mismatch / sponsored) + `<main>{children}</main>` + trust footer. The legacy left-aside and the primary 8-tab nav row are GONE — 470 lines deleted; ~280 added back across the three shell files. All global-modal mounts (UniversalSearch, ConfirmContextSwitch, CompanySwitcher, Upload, Trust, KeyboardHelp, ContextSwitchModal) stay rooted at the shell level.
+- **Routes migrated**: every authenticated page already wrapped `<AppShell>{children}</AppShell>` — the contract didn't change. Verified by grep: 30+ pages import `AppShell` as default and all continue to render correctly. Live screenshots confirmed for **Home, Work Studio, Cycle Manager, Workspace** (the 4 highest-traffic). Backend test suite unchanged at 453 passing.
+- **Tests**: extended `render-smoke.js` with `smokeChunk65LeftRail` step that:
+  - Visits 4 authenticated routes; asserts `[data-testid="left-rail"]`, `[data-testid="topbar"]`, `[data-testid="topbar-breadcrumb-0"]`, `[data-testid="left-rail-workspace-switcher"]` all present.
+  - Resets localStorage; verifies default `data-collapsed="0"`; clicks toggle → `data-collapsed="1"`; verifies `localStorage["akki:leftRailCollapsed"] === "1"`; reloads → state persists.
+  - Shrinks viewport to 1024px; verifies auto-collapse fires (`data-collapsed="1"`).
+- **Test counts**: **453 passed** (unchanged — Chunk 6.5 is frontend-only), 565 skipped. `render-smoke`: PASS — 8 routes + 2 uploads + Patch 28 interactions + Chunk 4 wizard + Chunk 5 create-artefact + Chunk 6 brief-drawer CTA + **Chunk 6.5 left rail green** (4 routes verified, toggle round-trip + persistence verified, auto-collapse verified).
+- **v7 hex-sweep on new shell files**: **0 hits** (all 3 new/refactored files use `var(--token)` exclusively).
+- **Visual evidence**: 4 live preview screenshots captured at 1920×800 viewport:
+  - `/tmp/c65-home.png` — Home with expanded rail, active "Home" highlight, breadcrumb "Home"
+  - `/tmp/c65-workstudio.png` — Work Studio with active "Work Studio" highlight, breadcrumb "Home › Work Studio"
+  - `/tmp/c65-cycle.png` — Cycle Manager with active "Cycle Manager" highlight, breadcrumb "Home › Cycle Manager"
+  - `/tmp/c65-collapsed.png` + `/tmp/c65-narrow.png` — icon-only rail in both manual-collapse and auto-collapse states
+- **Step-5 cross-check findings**:
+  - Patch 27 Portfolio Drawer removal — no resurrection. The right-side rail stays deleted; LeftRail is the single navigation surface.
+  - Patch 24 banned-fetch ESLint — clean. The 3 new shell files use `api.get` exclusively (LeftRail's recent-views call).
+  - Patch 24 render-smoke top 8 routes — all still green.
+  - v7 token discipline — 0 hex literals across the 3 new files.
+  - Compilation Wizard rail (Patch 2B.2) — sticky-right rail unaffected. Wide viewports (≥1100px) render BOTH rails simultaneously without overflow.
+  - Monitor drawer (Patch 28F) — opens from the right edge; doesn't conflict with the left rail (different sides).
+  - Cycle two-layer nav (Patch CM v2) — Layer 1 breadcrumb still aligns with the new 64px TopBar baseline (matches the previous header height).
+- **Autonomous decisions** (logged for PO review):
+  - **Top-bar avatar menu preserved alongside LeftRail user-block**: both surfaces now reach Settings / Sign-out. Power users reach top-right reflexively; the rail user-block is the discoverable surface. The duplication is intentional, not accidental.
+  - **CycleContextIndicator component left in place but no longer mounted in the shell**: kept as a reusable primitive in case a future page (e.g. a single-context-edit screen) wants to inline a context picker. Tree-shaken from bundles where unused.
+  - **Mobile drawer kept inside `AppShell.jsx`** (not extracted to `MobileNav.jsx`): only 30 lines, only one consumer. Splitting would have been premature abstraction.
+  - **Trust classification chip removed from shell**: it lives on the Trust panel + the Trust footer. Surfacing it in three places was redundant. PO can re-introduce as a TopBar-right element if requested.
+- **Diagnosis doc**: none needed for this chunk — the change was a deliberate refactor, not a bug.
 
 ### Chunk 6 — Brief surfaces (WS-R01 / R17 / R18 / R19) — 2026-05-13 ✅
 - **Headline**: four QA tickets resolved in one sweep. WS-R17 was **NOT** resolved by Chunk 5 — verified by live curl reproduction (HTTP 400 "Bad aggregate id." for `briefing::<uuid>`, `deck::<uuid>`, and `report::<uuid>` aggregate ids).
