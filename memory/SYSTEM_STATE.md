@@ -129,6 +129,16 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Documentation pass — 2026-05-13 (no code changes)
+- Produced `/app/memory/docs/PRODUCT_FEATURES_REVIEW.md` — comprehensive Product Features & Functionality Review grounded in the actual `Akki-Executive 2` code.
+- 9 numbered sections (§0 Executive Summary → §8 Glossary). 7,131 words. 31 headings (22 `###`).
+- **Coverage**: 9 modules profiled (Home, Cycle Manager, Work Studio, Akki Chat, Solva, Monitor, Pulse, Document Journal, Settings/Admin). Each carries Purpose, Flows, Components+paths, Endpoints, Data model, Integrations, Recent fixes, Open findings table, PO clarifications, Acceptance criteria.
+- **QA matrix** in §6 maps all 22 explicit-ID findings (WS-R01…R19, DJ-R03, DJ-R05, CM-R04, MS-R01) plus 14 PO-pending items to module + severity + chunk + status. 19 fixed, 3 explicit pending, 14 PO-pending.
+- **Risks** in §4 catalogue 7 open debts: sync document endpoints (P1 timeouts), 10 unscoped Solva routes, SSE `repr(exc)` leaks, 47 quarantined E2E tests, 524/541 orphan Solva sessions, brief-revision cascade gap, mobile-viewport reflow.
+- **Sprint map** in §5 confirms Chunks 1–6 + 6.5 complete; Chunks 7–12 are working hypotheses tied to clarification groupings.
+- **Findings during the walk** (surprises): (a) 77 backend routers but only 9 user-facing modules — the catalogue is more granular than the UI suggests; (b) the `decks` router has full `/api/...` prefixes hardcoded into route paths (not relying on the global `/api` prefix), unusual but functional; (c) the Pulse "Across Other Boards" endpoint exists in code (`GET /pulse/across-boards`) but the PO clarification says its function is undefined — the UI consumer hasn't been audited; (d) `chats` are scoped by `account_id` only, not by `context_id` — PO clarification #16 is the gating decision before adding context scoping.
+- **Chunk 6.5 remains parked and untouched.** No code modified during this documentation pass. PRD / SYSTEM_STATE additions are limited to this close-out block.
+
 ### Chunk 6.5 — Left dashboard navigation (Claude-style) — 2026-05-13 ✅
 - **Headline**: cross-cutting outer-shell refactor. Replaced the old two-header-rows-plus-dead-left-aside layout with a persistent left navigation rail and a slimmed top bar. Every authenticated page now renders inside the new shell.
 - **Pre-change inventory**: the old `AppShell.jsx` had two stacked headers (64px logo header + 64px primary 8-tab nav row) plus a giant legacy left-aside guarded behind `false && (…)` (~225 lines of dead code carried for archaeology). The workspace switcher (`CycleContextIndicator`) lived in the top header. The Add-Document plus, keyboard-help, account avatar, and mobile-nav-trigger all crowded the top right.
