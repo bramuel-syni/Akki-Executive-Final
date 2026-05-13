@@ -203,9 +203,18 @@ def _table_what_gets_done(recs: List[Any]) -> Optional[BriefTable]:
 def build_brief_from_solva(session: Dict[str, Any], *,
                            company_label: str, document_type: str,
                            programme: Optional[str], depth: str,
-                           fidelity: str) -> Brief:
+                           fidelity: str,
+                           title_override: Optional[str] = None) -> Brief:
     """Translate a persisted Solva v2 session document into a Brief shaped
-    for the requested depth + fidelity."""
+    for the requested depth + fidelity.
+
+    `title_override` (Chunk 6, WS-R19): when set, the brief's title is
+    the override verbatim (capped at 200 chars by the cover layout —
+    same cap as the per-chat title). The submodule prefix is dropped
+    in that case. Used by chat→brief flows where the user's own chat
+    title carries more meaning than a generic `"Clarity Read: …"`
+    label.
+    """
     sub = session.get("submodule") or "seek_clarity"
     intent = (session.get("intent") or "").strip()
     syn = session.get("synthesis") or {}
@@ -223,7 +232,18 @@ def build_brief_from_solva(session: Dict[str, Any], *,
     }
     sub_title = submodule_titles.get(sub, "Solva Memo")
 
-    title = f"{sub_title}: {(intent[:70] + ('…' if len(intent) > 70 else '')) or '—'}"
+    # Chunk 6 (2026-05-13, WS-R19): raised intent-truncation from 70
+    # → 200 chars so real titles aren't aggressively chopped on the
+    # DOCX cover. 200 still prevents pathological runaway-length
+    # titles from breaking the cover layout. When `title_override`
+    # is supplied (chat sources), use it verbatim and skip the
+    # submodule prefix entirely — the user's chat title IS the brief
+    # title in that case.
+    if title_override:
+        title = title_override[:200] + ("…" if len(title_override) > 200 else "")
+    else:
+        capped = intent[:200] + ("…" if len(intent) > 200 else "")
+        title = f"{sub_title}: {capped or '—'}"
     subtitle = (
         f"From a {persona} lens" if (sub == "get_perspective" and persona)
         else f"Synthesised from a Solva {sub.replace('_', ' ')} session"

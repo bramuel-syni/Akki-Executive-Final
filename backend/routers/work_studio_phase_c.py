@@ -163,10 +163,11 @@ async def create_export(
         # builder works without a parallel code path.
         full = "\n\n".join((m.get("content") or "").strip()
                            for m in msgs if m.get("role") == "assistant")
+        chat_title = (chat.get("title") or "").strip()
         synthetic = {
             "id": chat["id"],
             "submodule": "seek_clarity",
-            "intent": chat.get("title") or "Chat artefact",
+            "intent": chat_title or "Chat artefact",
             "synthesis": {
                 "body": full,
                 "claims": [], "recommendations": [],
@@ -180,6 +181,9 @@ async def create_export(
             synthetic, company_label=body.company_label,
             document_type=body.document_type, programme=body.programme,
             depth=body.depth, fidelity=body.fidelity,
+            # Chunk 6 (2026-05-13, WS-R19): chat title becomes the
+            # brief title verbatim; no submodule prefix, 200-char cap.
+            title_override=chat_title or None,
         )
     else:  # solva_session
         session = await db.solva_v2_sessions.find_one(

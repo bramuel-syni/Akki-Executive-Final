@@ -175,7 +175,15 @@ async def _resolve_solva_session(account_id: str, source_id: str) -> Dict[str, A
 async def _resolve_chat_envelope(account_id: str, source_id: str) -> Dict[str, Any]:
     """Reduce a chat down to a Solva-shaped envelope so the C.1 builder
     works without a parallel code path. Mirrors the same shaping the C.1
-    export endpoint already does for `chat_artefact`."""
+    export endpoint already does for `chat_artefact`.
+
+    Chunk 6 (2026-05-13, WS-R19): the returned envelope now carries
+    `title_override` set to the chat's own title — `build_brief_from_solva`
+    consumes it to set the brief.title verbatim (no submodule prefix,
+    200-char cap). This stops the DOCX cover from displaying e.g.
+    `"Clarity Read: Q3 board meeting — strategic review of expansion plans into…"`
+    truncated mid-word; the user sees their full chat title instead.
+    """
     chat = await db.chats.find_one({"id": source_id, "account_id": account_id})
     if not chat:
         raise HTTPException(status_code=404, detail="chat_not_found")
@@ -191,10 +199,13 @@ async def _resolve_chat_envelope(account_id: str, source_id: str) -> Dict[str, A
                 "message": "This chat has no assistant content to compose from yet.",
             },
         )
+    chat_title = (chat.get("title") or "").strip()
     return {
         "id": chat["id"],
         "submodule": "seek_clarity",
-        "intent": chat.get("title") or "Chat artefact",
+        "intent": chat_title or "Chat artefact",
+        # Chunk 6 — chat title becomes the brief title verbatim.
+        "title_override": chat_title or None,
         "synthesis": {
             "body": full,
             "claims": [],
@@ -245,6 +256,9 @@ async def create_from_source(
         programme=body.programme,
         depth="board_summary",
         fidelity="low",
+        # Chunk 6 (2026-05-13, WS-R19): thread the chat title verbatim
+        # when present so the cover renders the user's own words.
+        title_override=envelope.get("title_override"),
     )
 
     # 3) Persist Brief — yields a stable brief_id (idempotent).

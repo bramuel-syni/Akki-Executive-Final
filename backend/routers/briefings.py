@@ -439,15 +439,38 @@ async def get_brief_aggregate(
     aggregate_id: str,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    """Phase C.1 — aggregate detail for the Workspace drawer."""
+    """Phase C.1 — aggregate detail for the Workspace drawer.
+
+    Chunk 6 (2026-05-13, WS-R01 / WS-R17): added explicit dispatch for
+    `briefing`, `deck`, and `report` kinds. Pre-fix the fall-through
+    sent every non-cycle kind to `_detail_cycle_committee_pack` which
+    required a `<committee_id>::<quarter>` internal id and raised
+    `Bad aggregate id.` 400 for any plain uuid. Net effect: clicking
+    any deck / report / brief row in Work Studio returned 400. The
+    drawer also lacked an Open-in-composer CTA; the new handlers
+    surface `composer_url` so the BriefDrawer can wire a working
+    primary action.
+    """
     parsed = _split_agg_id(aggregate_id)
     if not parsed:
         raise HTTPException(status_code=400, detail="Bad aggregate id.")
-    if parsed["kind"] == "cycle_board_pack":
-        return await _detail_cycle_board_pack(context_id, parsed["internal_id"])
-    if parsed["kind"] == "cycle_minutes":
-        return await _detail_cycle_minutes(context_id, parsed["internal_id"])
-    return await _detail_cycle_committee_pack(context_id, parsed["internal_id"])
+    kind = parsed["kind"]
+    internal_id = parsed["internal_id"]
+    if kind == "cycle_board_pack":
+        return await _detail_cycle_board_pack(context_id, internal_id)
+    if kind == "cycle_minutes":
+        return await _detail_cycle_minutes(context_id, internal_id)
+    if kind == "cycle_committee_pack":
+        return await _detail_cycle_committee_pack(context_id, internal_id)
+    if kind == "briefing":
+        return await _detail_briefing(context_id, internal_id)
+    if kind == "deck":
+        return await _detail_deck(context_id, internal_id)
+    if kind == "report":
+        return await _detail_report(context_id, internal_id)
+    # _split_agg_id already gated on _AGG_KINDS, so this is unreachable
+    # in practice — kept as a defensive 400 for forward compat.
+    raise HTTPException(status_code=400, detail=f"Unsupported aggregate kind: {kind}")
 
 
 @router.get("/contexts/{context_id}/briefings/{briefing_id}")
@@ -1365,3 +1388,110 @@ async def _detail_cycle_committee_pack(context_id: str, internal_id: str) -> Dic
         "notes": notes,
     }
 
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Chunk 6 (2026-05-13) — WS-R01 / WS-R17 fix.
+#
+# Aggregate detail for `briefing`, `deck`, `report` kinds. Each returns
+# a uniform shape the Work Studio BriefDrawer can render:
+#
+#   {
+#     id, kind, name, meeting_date,
+#     topline:       {doc_count, contributor_count, period | None},
+#     period_start:  iso | None,
+#     period_end:    iso | None,
+#     notes:         [{type, body, citations: []}],
+#     composer_url:  "/app/studio/composer/{kind}/{artefact_id}",
+#     artefact_id:   "<raw uuid>",
+#   }
+#
+# `composer_url` is the new field — the BriefDrawer primary CTA reads
+# it to route the user into the block composer (Chunk 5 redirect
+# convention). Citations are empty for now (Work-Studio-native rows
+# don't carry a `documents` snapshot the way cycle aggregates do).
+# ─────────────────────────────────────────────────────────────────────
+async def _detail_briefing(context_id: str, internal_id: str) -> Dict[str, Any]:
+    brief = await db.work_studio_briefs.find_one(
+        {"id": internal_id, "context_id": context_id},
+        {"_id": 0},
+    )
+    if not brief:
+        raise HTTPException(status_code=404, detail="Briefing not found.")
+    when = brief.get("updated_at") or brief.get("created_at")
+    subtitle = (brief.get("subtitle") or "").strip()
+    return {
+        "id": _agg_id("briefing", internal_id),
+        "kind": "briefing",
+        "name": brief.get("title") or "Untitled briefing",
+        "topline": {
+            "doc_count": 0,
+            "contributor_count": 1,
+            "period": None,
+        },
+        "meeting_date": when,
+        "period_start": None,
+        "period_end": None,
+        "notes": ([{"type": "subtitle", "body": subtitle, "citations": []}]
+                  if subtitle else []),
+        "composer_url": f"/app/studio/composer/briefing/{internal_id}",
+        "artefact_id": internal_id,
+    }
+
+
+async def _detail_deck(context_id: str, internal_id: str) -> Dict[str, Any]:
+    deck = await db.decks.find_one(
+        {"id": internal_id, "context_id": context_id},
+        {"_id": 0},
+    )
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found.")
+    when = deck.get("updated_at") or deck.get("created_at")
+    description = (deck.get("description") or "").strip()
+    slide_count = len(deck.get("slides") or [])
+    return {
+        "id": _agg_id("deck", internal_id),
+        "kind": "deck",
+        "name": deck.get("title") or "Untitled deck",
+        "topline": {
+            "doc_count": slide_count,
+            "contributor_count": 1,
+            "period": None,
+        },
+        "meeting_date": when,
+        "period_start": None,
+        "period_end": None,
+        "notes": ([{"type": "description", "body": description, "citations": []}]
+                  if description else []),
+        "composer_url": f"/app/studio/composer/deck/{internal_id}",
+        "artefact_id": internal_id,
+    }
+
+
+async def _detail_report(context_id: str, internal_id: str) -> Dict[str, Any]:
+    report = await db.reports.find_one(
+        {"id": internal_id, "context_id": context_id},
+        {"_id": 0},
+    )
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found.")
+    when = report.get("updated_at") or report.get("created_at")
+    description = (report.get("description") or "").strip()
+    chain = report.get("chain") or []
+    return {
+        "id": _agg_id("report", internal_id),
+        "kind": "report",
+        "name": report.get("title") or "Untitled report",
+        "topline": {
+            "doc_count": 0,
+            "contributor_count": max(len(chain), 1),
+            "period": None,
+        },
+        "meeting_date": when,
+        "period_start": None,
+        "period_end": None,
+        "notes": ([{"type": "description", "body": description, "citations": []}]
+                  if description else []),
+        "composer_url": f"/app/studio/composer/report/{internal_id}",
+        "artefact_id": internal_id,
+    }

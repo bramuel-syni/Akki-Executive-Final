@@ -100,5 +100,23 @@ export function apiErrorMessage(err, fallback = "Something went wrong. Please tr
       .join(" ");
   }
   if (detail && typeof detail.msg === "string") return detail.msg;
+  // Chunk 6 (2026-05-13) — many backend HTTPException(detail={...})
+  // payloads use a {code, message} shape (e.g. chat_empty,
+  // synthesis_not_ready). Read `message` so the toast description
+  // surfaces the human-readable explanation instead of "[object
+  // Object]".
+  if (detail && typeof detail.message === "string") return detail.message;
   return String(detail);
+}
+
+// Chunk 6 (2026-05-13) — error-code helper. Reads `detail.code` from
+// the same nested-dict payloads. Lets callers branch on known states
+// (e.g. show a different toast for chat_empty vs unknown failures)
+// without parsing the raw response.
+export function apiErrorCode(err) {
+  const detail = err?.response?.data?.detail;
+  if (detail && typeof detail === "object" && typeof detail.code === "string") {
+    return detail.code;
+  }
+  return null;
 }

@@ -22,7 +22,7 @@
  * v7 palette only. No hex literals.
  */
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
@@ -208,6 +208,7 @@ function BriefRow({ row, onOpen }) {
 
 // Reusable side drawer — same shape as the legacy briefs drawer.
 function BriefDrawer({ open, onClose, aid, contextId }) {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState(null);
   const [err, setErr] = useState(null);
@@ -268,6 +269,30 @@ function BriefDrawer({ open, onClose, aid, contextId }) {
           {detail && !loading && !err && (
             <>
               <PerArtefactSynisenseBadge kind={detail.kind || "briefing"} artefactId={detail.id || detail.brief_id} />
+
+              {/* Chunk 6 (2026-05-13, WS-R01): primary CTA to open the
+                  artefact in the block composer. The backend now emits
+                  `composer_url` on every detail response; we route via
+                  useNavigate so the SPA doesn't full-reload. */}
+              {detail.composer_url && (
+                <div className="mb-5 pb-4 border-b border-[var(--rule)]" data-testid="work-studio-brief-drawer-cta-row">
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      navigate(detail.composer_url);
+                    }}
+                    className="bg-[var(--ink)] hover:bg-[var(--ink)]/90 text-[var(--parchment)] rounded-sm"
+                    data-testid="work-studio-brief-drawer-open-composer"
+                  >
+                    Open in composer
+                    <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                  </Button>
+                  <p className="text-[11.5px] text-[var(--muted)] mt-1.5">
+                    Edit blocks, attach citations, and export when ready.
+                  </p>
+                </div>
+              )}
               {(detail.validation ||
                 (detail.topline?.doc_count ?? 0) > 0 ||
                 (detail.topline?.contributor_count ?? 0) > 0 ||
@@ -343,7 +368,7 @@ function BriefDrawer({ open, onClose, aid, contextId }) {
                       <p className="akki-serif text-[14px] text-[var(--ink)] leading-[1.6] whitespace-pre-wrap">{n.body || "—"}</p>
                       {n.citations && n.citations.length > 0 && (
                         <div className="mt-3 pt-2 border-t border-[var(--rule)] flex flex-wrap gap-2" data-testid="work-studio-brief-drawer-citations">
-                          {n.citations.map((c, j) => (
+                          {n.citations.filter((c) => c && c.doc_id).map((c, j) => (
                             <Link
                               key={`${c.doc_id}-${j}`}
                               to={`/app/documents/${c.doc_id}`}

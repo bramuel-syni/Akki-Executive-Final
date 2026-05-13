@@ -30,7 +30,7 @@
  * mono kicker. NO new design tokens.
  */
 import React, { useEffect, useMemo, useState } from "react";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, apiErrorCode } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -213,7 +213,14 @@ function InlinePicker({ sourceType, value, onPick, contextId }) {
           <li key={id}>
             <button
               type="button"
-              onClick={() => onPick({ id, label: title, sub_label: sub })}
+              onClick={() => onPick({
+                id, label: title, sub_label: sub,
+                // Chunk 6 (2026-05-13, WS-R18): expose message_count
+                // so the caller can pre-flight an empty-chat state
+                // and disable the Generate buttons before the user
+                // hits a 409.
+                message_count: sourceType === "chat_artefact" ? (it.message_count ?? null) : null,
+              })}
               className={`w-full text-left border rounded-sm px-3 py-2 transition-colors ${
                 active
                   ? "border-[var(--accent)] bg-[var(--cream-deep)]/40"
@@ -342,6 +349,20 @@ export default function SourceStep({
     return () => { cancelled = true; };
   }, [sourceChoice]);
 
+  // Chunk 6 (2026-05-13, WS-R18) — turn opaque "Seed failed" /
+  // "Generate failed" toast titles into user-actionable copy. The
+  // backend returns a `{code, message}` payload for the two most
+  // common failure modes (chat_empty, synthesis_not_ready) — we
+  // surface the message verbatim and pick a title from the code.
+  const titleFor = (kindLabel, code) => {
+    if (code === "chat_empty") return "This chat has no answers yet";
+    if (code === "synthesis_not_ready") return "Solva session isn't ready";
+    if (code === "chat_not_found" || code === "solva_session_not_found") {
+      return "Source not found";
+    }
+    return `Couldn't ${kindLabel} this ${kind}`;
+  };
+
   const handleOpenInComposer = async () => {
     if (!picked) return;
     setBusy("open"); setErr(null);
@@ -358,8 +379,9 @@ export default function SourceStep({
       onSeeded?.(data);
     } catch (e) {
       const msg = apiErrorMessage(e);
+      const code = apiErrorCode(e);
       setErr(msg);
-      toast.error("Seed failed", { description: msg });
+      toast.error(titleFor("compose", code), { description: msg });
     } finally {
       setBusy(null);
     }
@@ -398,8 +420,9 @@ export default function SourceStep({
       });
     } catch (e) {
       const msg = apiErrorMessage(e);
+      const code = apiErrorCode(e);
       setErr(msg);
-      toast.error("Generate failed", { description: msg });
+      toast.error(titleFor("generate", code), { description: msg });
     } finally {
       setBusy(null);
     }
@@ -462,29 +485,42 @@ export default function SourceStep({
               )}
 
               {/* Two CTAs */}
-              <div className="mt-5 pt-4 border-t border-[var(--rule)] flex flex-wrap items-center gap-2">
-                <Button type="button" variant="outline"
-                  onClick={handleOpenInComposer}
-                  disabled={!!busy}
-                  data-testid="source-step-open"
-                  className="rounded-sm border-[var(--rule)] text-[12.5px]">
-                  {busy === "open"
-                    ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Seeding…</>
-                    : <>Open in composer</>}
-                </Button>
-                <Button type="button"
-                  onClick={handleGenerateNow}
-                  disabled={!!busy}
-                  data-testid="source-step-generate"
-                  className="akki-cta bg-[var(--accent-dark)] hover:bg-[var(--accent)] text-white">
-                  {busy === "generate"
-                    ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Generating…</>
-                    : <>Generate document now <ChevronRight className="w-3.5 h-3.5 ml-1" /></>}
-                </Button>
-                <span className="text-[11.5px] text-[var(--muted)]">
-                  Open: seed-and-edit. Generate: seed and produce a downloadable {format.toUpperCase()}.
-                </span>
-              </div>
+              {/* Chunk 6 (2026-05-13, WS-R18): when the picked source
+                  is an empty chat, both CTAs are disabled and a
+                  tooltip-style hint surfaces the reason — same
+                  authenticity principle Chunk 3 applied to worker
+                  crashes, but pre-flighted instead of post-mortem. */}
+              {(() => {
+                const isChatSource = sourceChoice === "chat_artefact";
+                const isEmptyChat = isChatSource && (picked?.message_count ?? null) === 0;
+                return (
+                  <div className="mt-5 pt-4 border-t border-[var(--rule)] flex flex-wrap items-center gap-2">
+                    <Button type="button" variant="outline"
+                      onClick={handleOpenInComposer}
+                      disabled={!!busy || isEmptyChat}
+                      data-testid="source-step-open"
+                      className="rounded-sm border-[var(--rule)] text-[12.5px]">
+                      {busy === "open"
+                        ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Seeding…</>
+                        : <>Open in composer</>}
+                    </Button>
+                    <Button type="button"
+                      onClick={handleGenerateNow}
+                      disabled={!!busy || isEmptyChat}
+                      data-testid="source-step-generate"
+                      className="akki-cta bg-[var(--accent-dark)] hover:bg-[var(--accent)] text-white">
+                      {busy === "generate"
+                        ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Generating…</>
+                        : <>Generate document now <ChevronRight className="w-3.5 h-3.5 ml-1" /></>}
+                    </Button>
+                    <span className="text-[11.5px] text-[var(--muted)]" data-testid="source-step-hint">
+                      {isEmptyChat
+                        ? "This chat has no assistant answers yet. Finish chatting first."
+                        : `Open: seed-and-edit. Generate: seed and produce a downloadable ${format.toUpperCase()}.`}
+                    </span>
+                  </div>
+                );
+              })()}
             </>
           )}
 
