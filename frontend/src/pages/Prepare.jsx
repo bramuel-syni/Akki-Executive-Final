@@ -44,6 +44,7 @@ import HighlightsStats from "@/components/highlights/HighlightsStats";
 import HandoffActions from "@/components/shell/HandoffActions";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
+import { pollJob } from "@/lib/pollJob";
 import { toast } from "sonner";
 import {
   Sparkles, Loader2, ScrollText, Activity, FileText, ArrowRight,
@@ -514,7 +515,15 @@ function SignalsTab({ contextId, contextName, onCreated }) {
     try {
       const filterLabel = SIGNAL_FILTERS.find((f) => f.id === filter)?.label || filter;
       const focus = `[${filterLabel}] ${objective.trim()}`;
-      await api.post(`/contexts/${contextId}/signals/generate`, { focus });
+      // Chunk 2 (2026-05-13, DJ-R05) — async pattern. Endpoint returns
+      // 202 + { job_id } immediately; we poll until terminal.
+      const { data: enq } = await api.post(
+        `/contexts/${contextId}/signals/generate`, { focus },
+      );
+      const job = await pollJob(enq.job_id);
+      if (job.status === "failed") {
+        throw new Error(job.error || "Signals generation failed.");
+      }
       toast.success("Signals surfaced.");
       setObjective("");
       onCreated?.();

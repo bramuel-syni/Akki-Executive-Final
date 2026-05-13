@@ -29,6 +29,7 @@ import { toast } from "sonner";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
+import { pollJob } from "@/lib/pollJob";
 
 import ReadingTopBar from "@/components/reading/ReadingTopBar";
 import ReadingBody from "@/components/reading/ReadingBody";
@@ -231,16 +232,36 @@ export default function ReadingView() {
   );
 
   // Primary action: Generate brief.
+  // Chunk 2 (2026-05-13, DJ-R03) — async pattern. The endpoint returns
+  // 202 + { job_id } immediately and the heavy LLM work runs in the
+  // background. We poll until terminal, then route the user to Prepare
+  // with the resulting briefing id. The Generate-Brief button stays
+  // "working" the whole time but the user can navigate away — the job
+  // continues server-side.
   const handleGenerateBrief = useCallback(async () => {
     if (!contextId || !doc) return;
     setGeneratingBrief(true);
     try {
-      const { data } = await api.post(`/contexts/${contextId}/briefings`, {
+      const { data: enqueueResp } = await api.post(`/contexts/${contextId}/briefings`, {
         title: `Briefing on ${doc.name}`,
       });
+      const jobId = enqueueResp?.job_id;
+      if (!jobId) throw new Error("Backend did not return a job_id");
+      const job = await pollJob(jobId, {
+        onProgress: (status, elapsedS) => {
+          if (status === "running" && elapsedS > 5) {
+            // Re-toast every ~20 s so the user sees progress.
+            if (elapsedS % 20 === 0) {
+              toast.message(`Drafting briefing… ${elapsedS}s elapsed.`);
+            }
+          }
+        },
+      });
+      if (job.status === "failed") {
+        throw new Error(job.error || "Briefing job failed.");
+      }
       toast.success("Briefing drafted. Opening Catch-up.");
-      // Navigate to Catch-up where the new briefing surfaces.
-      const briefingId = data?.id;
+      const briefingId = job?.result?.id;
       if (briefingId) {
         navigate(`/app/prepare?briefing=${briefingId}`);
       } else {
@@ -263,7 +284,12 @@ export default function ReadingView() {
     if (!contextId || generatingSignals) return;
     setGeneratingSignals(true);
     try {
-      await api.post(`/contexts/${contextId}/signals/generate`, {});
+      // Chunk 2 (2026-05-13, DJ-R05) — async pattern. Enqueue + poll.
+      const { data: enq } = await api.post(`/contexts/${contextId}/signals/generate`, {});
+      const job = await pollJob(enq.job_id);
+      if (job.status === "failed") {
+        throw new Error(job.error || "Signal refresh failed.");
+      }
       toast.success("Signals refreshed.");
       await loadCommentary();
     } catch (err) {

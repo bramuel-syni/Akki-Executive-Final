@@ -2,9 +2,17 @@
 
 Both endpoints share the same grounding pipeline (Context Object + uploaded
 documents), so they live together in a single router.
+
+Chunk 2 (2026-05-13, DJ-R05) — the original synchronous
+`POST /contexts/{cid}/signals/generate` was timing out behind the
+gateway (HTTP 524) because the inline LLM call routinely took
+~75–100 s. The endpoint now returns **202 + `job_id`** immediately
+and the LLM work runs as a `BackgroundTasks` worker that updates a
+row in `db.async_jobs`. The frontend polls `GET /api/jobs/{job_id}`.
 """
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from typing import Any, Dict, List, Optional
@@ -20,7 +28,13 @@ from core import (
     gather_context_object, gather_documents_for_grounding,
     docs_as_grounding_block, docs_overall_trust,
 )
+from services.job_queue import (
+    create_job as _create_job, mark_running as _mark_running,
+    mark_completed as _mark_completed, mark_failed as _mark_failed,
+    spawn as _spawn,
+)
 
+logger = logging.getLogger("akki.signals")
 router = APIRouter(prefix="/api")
 
 _CITE_RE = re.compile(r"\[doc:[a-f0-9-]+(?:[,\s]+doc:[a-f0-9-]+)*\]")
@@ -40,12 +54,75 @@ class SignalGenerateIn(BaseModel):
     focus: Optional[str] = None
 
 
-@router.post("/contexts/{context_id}/signals/generate")
+@router.post("/contexts/{context_id}/signals/generate", status_code=202)
 async def generate_signals(
     body: SignalGenerateIn,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
+    """Chunk 2 — async pattern.
+
+    Returns **202 Accepted** with a `job_id` immediately. The actual
+    LLM work runs in a `BackgroundTasks` worker that updates the
+    `db.async_jobs` row. Frontend should poll
+    `GET /api/jobs/{job_id}` every 2–3 s and consume the row's
+    `result` payload when `status == "completed"`.
+
+    The `result` payload mirrors the legacy sync response shape so
+    the frontend's downstream logic (toast, list refresh) keeps
+    working unchanged.
+    """
     context_id = ctx["context"]["id"]
+    # Cheap pre-flight check — we want to surface "no documents"
+    # synchronously so the user sees the error immediately instead of
+    # after a polling round-trip.
+    docs_count = await db.documents.count_documents(
+        {"context_id": context_id, "status": "extracted"},
+    )
+    if docs_count == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Upload at least one document to this context before generating signals.",
+        )
+
+    job_id = await _create_job(
+        kind="signals.generate",
+        account_id=ctx["account"]["id"],
+        context_id=context_id,
+        input_summary={"focus": body.focus or "", "docs_count": docs_count},
+    )
+
+    background_account_id = ctx["account"]["id"]
+
+    async def _runner():
+        await _mark_running(job_id)
+        try:
+            result = await _generate_signals_worker(
+                body=body, account_id=background_account_id, context_id=context_id,
+            )
+            await _mark_completed(job_id, result)
+        except HTTPException as e:
+            # 4xx/5xx surfaced by the worker — preserve the message for the
+            # polling response. We do NOT re-raise because the spawned task
+            # would just swallow the exception; the polling endpoint must
+            # be able to see the failure shape instead.
+            detail = e.detail if isinstance(e.detail, str) else str(e.detail)
+            await _mark_failed(job_id, f"http_{e.status_code}: {detail}")
+        except Exception as e:
+            logger.exception("signals.generate worker crashed (job=%s)", job_id)
+            await _mark_failed(job_id, f"{type(e).__name__}: {str(e)[:400]}")
+
+    _spawn(_runner())
+    return {"job_id": job_id, "status": "queued"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Background worker — runs the legacy heavy body.
+# Pre-Chunk 2 callers (tests, internal tooling) can still invoke this
+# directly if they need synchronous behaviour for fast-path test fixtures.
+# ─────────────────────────────────────────────────────────────────────────────
+async def _generate_signals_worker(
+    *, body: SignalGenerateIn, account_id: str, context_id: str,
+) -> Dict[str, Any]:
     ctx_obj = await gather_context_object(context_id)
     docs = await gather_documents_for_grounding(context_id)
     if not docs:
@@ -138,7 +215,7 @@ async def generate_signals(
             # are nullable until LLM prompts are tightened in a later pass.
             "references": build_references(sources, doc_by_id),
             "data_trust": docs_overall_trust([doc_by_id[i] for i in merged_ids]) if merged_ids else "unrated",
-            "generated_by": ctx["account"]["id"],
+            "generated_by": account_id,
             "focus": body.focus,
             "shielding_masked": llm_out.get("shielding", {}).get("identifiers_masked", 0),
             "shielding": llm_out.get("shielding", {}),
@@ -167,7 +244,7 @@ async def generate_signals(
                     db,
                     text=f"{doc.get('headline') or ''} {doc.get('summary') or ''}",
                     context_id=context_id,
-                    account_id=ctx["account"]["id"],
+                    account_id=account_id,
                     source_artefact_kind="signal",
                     source_artefact_id=doc["id"],
                 )
@@ -176,7 +253,7 @@ async def generate_signals(
         stored.append(doc)
 
     await write_audit(
-        context_id, ctx["account"]["id"], "signals.generated", "signal", None,
+        context_id, account_id, "signals.generated", "signal", None,
         {"count": len(stored), "mode": llm_out.get("mode")},
     )
     return {"signals": stored, "mode": llm_out.get("mode"), "shielding": llm_out.get("shielding", {})}

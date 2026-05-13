@@ -20,6 +20,11 @@ from core import (
     db, now, iso, write_audit, require_context_membership,
     gather_context_object, docs_overall_trust,
 )
+from services.job_queue import (
+    create_job as _create_job, mark_running as _mark_running,
+    mark_completed as _mark_completed, mark_failed as _mark_failed,
+    spawn as _spawn,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -48,16 +53,73 @@ def _serialise_briefing(doc: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-@router.post("/contexts/{context_id}/briefings")
+@router.post("/contexts/{context_id}/briefings", status_code=202)
 async def create_briefing(
     body: BriefingCreateIn,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    context_id = ctx["context"]["id"]
-    context_name = ctx["context"]["name"]
+    """Chunk 2 (DJ-R03) — async pattern.
 
+    Returns **202 + `job_id`** immediately. The LLM-heavy compose
+    work runs as a `BackgroundTasks` worker; the frontend polls
+    `GET /api/jobs/{job_id}` and consumes `result` (the serialised
+    briefing row) when status → `completed`. Sync legacy callers
+    can still hit `_create_briefing_worker(...)` directly.
+    """
+    context_id = ctx["context"]["id"]
+
+    # Cheap pre-flight: surface "no signals" synchronously so the user
+    # sees the error immediately instead of after a polling round-trip.
+    q: Dict[str, Any] = {"context_id": context_id, "status": "active"}
+    if body.signal_ids:
+        q["id"] = {"$in": body.signal_ids}
+    signal_count = await db.signals.count_documents(q)
+    if signal_count == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No signals to brief on. Generate signals first, or select specific signal ids.",
+        )
+
+    job_id = await _create_job(
+        kind="briefing.create",
+        account_id=ctx["account"]["id"],
+        context_id=context_id,
+        input_summary={
+            "signal_ids": list(body.signal_ids or []),
+            "title": body.title or None,
+            "signal_count": signal_count,
+        },
+    )
+
+    background_account_id = ctx["account"]["id"]
+    background_context_name = ctx["context"]["name"]
+
+    async def _runner():
+        await _mark_running(job_id)
+        try:
+            result = await _create_briefing_worker(
+                body=body,
+                account_id=background_account_id,
+                context_id=context_id,
+                context_name=background_context_name,
+            )
+            await _mark_completed(job_id, result)
+        except HTTPException as e:
+            detail = e.detail if isinstance(e.detail, str) else str(e.detail)
+            await _mark_failed(job_id, f"http_{e.status_code}: {detail}")
+        except Exception as e:
+            logger.exception("briefing.create worker crashed (job=%s)", job_id)
+            await _mark_failed(job_id, f"{type(e).__name__}: {str(e)[:400]}")
+
+    _spawn(_runner())
+    return {"job_id": job_id, "status": "queued"}
+
+
+async def _create_briefing_worker(
+    *, body: BriefingCreateIn, account_id: str, context_id: str, context_name: str,
+) -> Dict[str, Any]:
     my_membership = await db.memberships.find_one(
-        {"context_id": context_id, "account_id": ctx["account"]["id"], "status": "active"},
+        {"context_id": context_id, "account_id": account_id, "status": "active"},
         {"_id": 0, "role": 1},
     )
     my_role = (my_membership or {}).get("role") or "executive"
@@ -176,7 +238,7 @@ async def create_briefing(
         # fast-tier (Gemini) retry succeeded. Absent on the happy path,
         # so existing rows and the briefing serialiser are unaffected.
         "llm_fallback": fallback_meta,
-        "created_by": ctx["account"]["id"],
+        "created_by": account_id,
         "created_at": created_at,
         "status": "active",
     }
@@ -188,7 +250,7 @@ async def create_briefing(
         doc["sensitivity"] = None
     await db.boardpacks.insert_one(doc)
     await write_audit(
-        context_id, ctx["account"]["id"], "briefing.created", "briefing", briefing_id,
+        context_id, account_id, "briefing.created", "briefing", briefing_id,
         {"version": version, "items": len(items), "mode": llm_out.get("mode"),
          "llm_fallback": fallback_meta},
     )

@@ -839,12 +839,87 @@ async def send_followup(
 # ──────────────────────────────────────────────────────────────────────
 # Draft Compilation Output — Phase D.1 rebuild
 # ──────────────────────────────────────────────────────────────────────
-@router.post("/contexts/{context_id}/cycle/draft-compilation")
+@router.post("/contexts/{context_id}/cycle/draft-compilation", status_code=202)
 async def draft_compilation(
     context_id: str,
     cycle_id: Optional[str] = Query(default=None),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
+    """Chunk 2 (CM-R04) — async pattern.
+
+    Returns **202 + `job_id`** immediately. The two-pass LLM compile
+    (drafter Sonnet 4.5 → validator Gemini 2.5 Flash) + brief
+    persistence + DOCX render runs as a fire-and-forget asyncio task.
+    Frontend polls `GET /api/jobs/{job_id}` until terminal and then
+    consumes `result` (which carries `redirect_url`, `export_id`,
+    `byte_len`, etc. — the legacy sync response shape preserved).
+
+    The pre-flight checks (agenda exists + contributions exist) run
+    synchronously so the user sees those 400s instantly without a
+    polling round-trip.
+    """
+    from services.job_queue import (
+        create_job as _create_job, mark_running as _mark_running,
+        mark_completed as _mark_completed, mark_failed as _mark_failed,
+        spawn as _spawn,
+    )
+
+    # Pre-flight (synchronous, < 100 ms — surface 400s immediately).
+    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"], cycle_id)
+    if not agenda.get("items"):
+        raise HTTPException(status_code=400, detail="Set an agenda first.")
+    contrib_count = await db.cycle_contributions.count_documents(
+        {"context_id": context_id, "agenda_id": agenda["id"]},
+    )
+    if contrib_count == 0:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "no_contributions",
+                "message": "Add at least one contribution before compiling.",
+            },
+        )
+
+    job_id = await _create_job(
+        kind="cycle.draft_compilation",
+        account_id=ctx["account"]["id"],
+        context_id=context_id,
+        input_summary={
+            "agenda_id": agenda["id"],
+            "cycle_id": cycle_id or agenda["id"],
+            "contrib_count": contrib_count,
+        },
+    )
+
+    background_account_id = ctx["account"]["id"]
+    background_context_name = ctx["context"].get("name") or "Akki"
+    background_executive_name = ctx["account"].get("name") or "—"
+
+    async def _runner():
+        await _mark_running(job_id)
+        try:
+            result = await _draft_compilation_worker(
+                context_id=context_id, cycle_id=cycle_id,
+                account_id=background_account_id,
+                context_name=background_context_name,
+                executive_name=background_executive_name,
+            )
+            await _mark_completed(job_id, result)
+        except HTTPException as e:
+            detail = e.detail if isinstance(e.detail, (str, dict)) else str(e.detail)
+            await _mark_failed(job_id, f"http_{e.status_code}: {detail}")
+        except Exception as e:
+            logger.exception("cycle.draft_compilation worker crashed (job=%s)", job_id)
+            await _mark_failed(job_id, f"{type(e).__name__}: {str(e)[:400]}")
+
+    _spawn(_runner())
+    return {"job_id": job_id, "status": "queued", "agenda_id": agenda["id"]}
+
+
+async def _draft_compilation_worker(
+    *, context_id: str, cycle_id: Optional[str],
+    account_id: str, context_name: str, executive_name: str,
+) -> Dict[str, Any]:
     """Phase D.1 — produce a real, board-grade compilation of the cycle's
     scored contributions and persist it as a Work Studio Brief.
 
@@ -883,7 +958,9 @@ async def draft_compilation(
     from datetime import datetime, timezone
     import hashlib
 
-    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"], cycle_id)
+    agenda = await _get_or_init_agenda(context_id, account_id, cycle_id)
+    # Pre-flight already verified — but be defensive in case the
+    # job ran a long time and state mutated.
     if not agenda.get("items"):
         raise HTTPException(status_code=400, detail="Set an agenda first.")
 
@@ -904,8 +981,12 @@ async def draft_compilation(
             },
         )
 
-    # Readiness rollup (the existing endpoint shape).
-    readiness = await get_readiness(context_id, agenda["id"], ctx)
+    # Readiness rollup (the existing endpoint shape). `get_readiness` is
+    # an endpoint handler that expects a dependency-injected `ctx` dict.
+    # We synthesise the minimum shape it actually reads.
+    synthetic_ctx = {"account": {"id": account_id},
+                     "context": {"id": context_id, "name": context_name}}
+    readiness = await get_readiness(context_id, agenda["id"], synthetic_ctx)
 
     # Prior cycles for cross-cycle observations (omit when first cycle —
     # spec call #2: honest empty, no placeholder text). Pull at most the
@@ -916,8 +997,8 @@ async def draft_compilation(
     ).sort("completed_at", -1).to_list(3)
 
     envelope = {
-        "context_name": ctx["context"].get("name") or "—",
-        "executive_name": ctx["account"].get("name") or "—",
+        "context_name": context_name,
+        "executive_name": executive_name,
         "period": iso(now())[:10],
         "agenda_id": agenda["id"],
         "source_id": agenda["id"],
@@ -949,7 +1030,7 @@ async def draft_compilation(
     # Two-pass LLM synthesis.
     synth_result = await synthesise_cycle(
         envelope=envelope,
-        account_id=ctx["account"]["id"],
+        account_id=account_id,
         context_id=context_id,
     )
     if not synth_result.get("ok"):
@@ -967,7 +1048,7 @@ async def draft_compilation(
     # the compilation against the same agenda is idempotent at the brief
     # level. Each call still creates a fresh revision through the normal
     # C.2 flow when the user hits Refine.
-    company_label = ctx["context"].get("name") or "Akki"
+    company_label = context_name
     brief = build_brief_from_solva(
         synth_result["solva_shaped_envelope"],
         company_label=company_label,
@@ -996,7 +1077,7 @@ async def draft_compilation(
     if exec_summary:
         brief.cover_lead_paragraph = exec_summary
     parent = await ensure_brief_persisted(
-        db, brief=brief, account_id=ctx["account"]["id"],
+        db, brief=brief, account_id=account_id,
         context_id=context_id,
         source_type="cycle_compilation",
         source_id=agenda["id"],
@@ -1010,7 +1091,7 @@ async def draft_compilation(
     try:
         from work_studio import dict_to_brief, get_active_revision
         active_rev = await get_active_revision(
-            db, brief_id=brief_id, account_id=ctx["account"]["id"],
+            db, brief_id=brief_id, account_id=account_id,
         )
         snap = (active_rev or {}).get("snapshot") or {}
         if snap:
@@ -1036,7 +1117,7 @@ async def draft_compilation(
     # /api/work_studio/exports/{id}/download endpoint serves the file.
     await db.work_studio_phase_c_exports.insert_one({
         "id": export_id,
-        "account_id": ctx["account"]["id"],
+        "account_id": account_id,
         "context_id": context_id,
         "source_id": agenda["id"],
         "source_type": "cycle_compilation",
@@ -1058,7 +1139,7 @@ async def draft_compilation(
     # Audit.
     try:
         await write_audit(
-            context_id, ctx["account"]["id"],
+            context_id, account_id,
             "cycle.draft_compilation.produced",
             "work_studio_brief", brief_id,
             {
@@ -1079,7 +1160,7 @@ async def draft_compilation(
     try:
         from services.continue_chat import create_continue_chat
         continue_chat_id, _continue_doc_id = await create_continue_chat(
-            account_id=ctx["account"]["id"],
+            account_id=account_id,
             context_id=context_id,
             kind="cycle_compilation",
             source="cycle_compilation",

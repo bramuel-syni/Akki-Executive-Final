@@ -120,6 +120,21 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 2 — Backend timeout/gateway failures (DJ-R03, DJ-R05, CM-R04) — 2026-05-13 ✅
+- **Severity**: Three P0 endpoints non-functional in production due to gateway timeouts (HTTP 524 / 502). Inline-LLM-on-the-request-thread pattern routinely exceeded the ~100 s gateway ceiling. Local reproduction: signals generation took 77 s even for a small fixture; briefings + cycle compilation heavier.
+- **Pattern adopted**: async job + status polling. New shared helper `services/job_queue.py` (db.async_jobs collection) + polling endpoint `GET /api/jobs/{job_id}` in `routers/async_jobs.py`. Each of the three endpoints now returns 202 + `job_id` instantly; heavy work runs via `asyncio.create_task` (preferred over `BackgroundTasks` — fire-and-forget at the event loop, identical behaviour in prod + tests).
+- **Endpoints refactored**:
+  - `POST /contexts/{cid}/signals/generate` — `signals_ask.py` — worker extracted as `_generate_signals_worker`.
+  - `POST /contexts/{cid}/briefings` — `briefings.py` — worker extracted as `_create_briefing_worker`.
+  - `POST /contexts/{cid}/cycle/draft-compilation` — `cycle_manager.py` — worker extracted as `_draft_compilation_worker`.
+- **Pre-flight checks (no documents / no signals / no contributions) still synchronous** — surface 400s instantly without a polling round-trip.
+- **Frontend wiring**: new shared `lib/pollJob.js` helper (1.5 s polling for the first 30 s → exponential backoff up to 5 s → 6 minute hard ceiling). Wired into `ReadingView.jsx` (Generate Brief + Refresh Signals), `Prepare.jsx` (Signals tab), and `Cycle.jsx` (`CompilationStep`, with a live "Compiling… {n}s" label).
+- **Tests** (`/app/backend/tests/test_chunk2_async_jobs.py`): 6 new — dispatch-fast guarantee (mocks worker to `sleep(120)` and asserts endpoint still returns in <5 s; **this is the canonical "no more 524" lock**), happy path polling, unknown job 404, foreign job 404 (privacy boundary), worker exception → terminal failed + error captured, rapid polling doesn't corrupt the row (cancellation safety).
+- **Test counts**: 412 passed (was 406 entering chunk), 565 skipped, 0 failed.
+- **render-smoke**: PASS — 8 routes + 2 uploads + Patch 28 interactions green.
+- **Step-7 audit**: enhance / Solva session turn / Compile Wizard commission / Document upload — all SAFE (already streaming, already BG, or already converted). **4 P1-risk endpoints found** on Document detail routes (`generate-meta`, `summary`, `journal-commentary`, `evolution-diff`) — same 524 risk class but not in the QA report yet. Earmarked in §7.
+- **Diagnosis doc**: `/app/memory/sprints/CHUNK_2_TIMEOUT_DIAGNOSIS.md`
+
 ### Chunk 1 — P0 Solva cross-account leakage (WS-R16) — 2026-05-13 ✅
 - **Severity**: CRITICAL SECURITY — data-segregation failure. Tester report: *"Solva contexts from other accounts and companies are available for selection in the Generate Brief from Solva flow."* A user with memberships in multiple workspaces saw Solva sessions from every workspace they belonged to, regardless of which one was active. Privacy-promise violation.
 - **Root cause**: `GET /api/solva/v2/sessions` (`routers/solva_v2.py` line 1383) filtered by `account_id` + `version` only — no `context_id` clause.
@@ -609,6 +624,7 @@ _populated when encountered_
 - **PO clarifications doc 13May2026 — 17 items pending response; defaults applied where build-blocking.** See `/app/memory/clarifications/PRODUCT_CLARIFICATIONS_13MAY2026.md`. Build proceeds against the default for each; revisit after PO sign-off.
 - **Chunk 7 earmark — Solva single-session endpoints lack context_id filter (defense-in-depth)**. `GET /api/solva/v2/sessions/{sid}` and ~10 sibling routes (`/fork`, `/take-to-cycle`, `/abandon`, `/turn`, `/attach-document`, `/handoff/cycle`, `/synisense-breakdown`, `/reasoning-log`, `/artefact-reasoning`, `/export.pdf`, `/export.docx`) filter only by `id` + `account_id`. Not currently exploitable through the UI (Chunk 1 fix scopes the picker properly), but a leaked session UUID could still be fetched from a different workspace. Lockdown is mechanical — apply the same active-membership check the list endpoint now has. Audited in `/app/memory/sprints/CHUNK_1_SOLVA_LEAK_DIAGNOSIS.md` §5.
 - **Data debt — 524 of 541 `solva_v2_sessions` rows have null `context_id`**. Now correctly invisible to the picker (Chunk 1 fix). Three cleanup paths documented (admin reclaim / archive collection / hard-delete). Awaits PO decision in clarifications doc.
+- **Document-detail LLM endpoints — same 524 risk class as Chunk 2** (earmark for follow-up async-conversion chunk). The four routes `POST /contexts/{cid}/documents/generate-meta`, `/documents/{doc_id}/summary`, `/documents/{doc_id}/journal-commentary`, `/documents/{doc_id}/evolution-diff` all run their LLM work synchronously. Not in the 13 May QA report (so not blocking the current 12-chunk sprint), but they should be converted to the same `services/job_queue.py` + `pollJob` pattern Chunk 2 introduced. Refactor is mechanical — the helper and frontend client are already there. Likely a single 1-day chunk.
 
 ## 8. Completion Checklist
 

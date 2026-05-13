@@ -212,6 +212,11 @@ app.include_router(streaming_v9_router.router)  # Patch 9 — Streaming phase ev
 app.include_router(questions_router.router)  # Patch 14 — Questions UI
 app.include_router(news_router.router)  # Patch 21 — News feed
 app.include_router(profile_router.router)  # Patch 25C — /me/profile country
+# Chunk 2 (2026-05-13) — async job polling for the three long-running
+# QA-blocking endpoints (DJ-R03 brief, DJ-R05 signals, CM-R04 cycle
+# compilation). Single GET /api/jobs/{job_id}; scoped per-account.
+from routers import async_jobs as async_jobs_router  # noqa: E402
+app.include_router(async_jobs_router.router)
 
 
 # -----------------------------------------------------------------------------

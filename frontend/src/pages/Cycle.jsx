@@ -17,6 +17,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
+import { pollJob } from "@/lib/pollJob";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -800,15 +801,32 @@ function FollowUpsStep({ cid, cycleId, followups, refresh, onBack, onForward, ex
 function CompilationStep({ cid, cycleId, cycle, onBack }) {
   const [busy, setBusy] = useState(false);
   const [out, setOut] = useState(null);
+  const [progress, setProgress] = useState(null);
   const navigate = useNavigate();
 
   const compile = async () => {
-    setBusy(true); setOut(null);
+    setBusy(true); setOut(null); setProgress(null);
     try {
-      const { data } = await api.post(`/contexts/${cid}/cycle/draft-compilation${qcid(cycleId)}`, {});
-      setOut(data);
+      // Chunk 2 (2026-05-13, CM-R04) — async pattern. The endpoint
+      // returns 202 + { job_id } immediately. The two-pass LLM compile
+      // (drafter Sonnet 4.5 → validator Gemini 2.5 Flash) runs in the
+      // background; we poll until terminal. Progress label updates so
+      // the user sees we're still working.
+      const { data: enq } = await api.post(
+        `/contexts/${cid}/cycle/draft-compilation${qcid(cycleId)}`, {},
+      );
+      const job = await pollJob(enq.job_id, {
+        onProgress: (status, elapsedS) => {
+          setProgress(`Compiling… ${elapsedS}s`);
+        },
+      });
+      if (job.status === "failed") {
+        throw new Error(job.error || "Compilation failed.");
+      }
+      setOut(job.result || {});
       toast.success("Compilation produced.");
-    } catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setBusy(false); setProgress(null); }
   };
 
   const download = async () => {
@@ -837,10 +855,17 @@ function CompilationStep({ cid, cycleId, cycle, onBack }) {
         When every item is ready, Agent Cycle compiles your output to executive cadence.
       </p>
       {!out && (
-        <Button size="sm" onClick={compile} disabled={busy} className="bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12.5px]" data-testid="cycle-compile-btn">
-          {busy ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileDown className="w-3.5 h-3.5 mr-1" />}
-          Produce draft compilation
-        </Button>
+        <>
+          <Button size="sm" onClick={compile} disabled={busy} className="bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12.5px]" data-testid="cycle-compile-btn">
+            {busy ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileDown className="w-3.5 h-3.5 mr-1" />}
+            {busy ? "Compiling…" : "Produce draft compilation"}
+          </Button>
+          {busy && progress && (
+            <p className="akki-meta mt-3 text-[12px] text-[var(--muted)]" data-testid="cycle-compile-progress">
+              {progress} — you can keep working; this finishes in the background.
+            </p>
+          )}
+        </>
       )}
       {out && (
         <div className="border border-[var(--rule)] bg-white rounded-md px-5 py-4" data-testid="cycle-compile-result">
