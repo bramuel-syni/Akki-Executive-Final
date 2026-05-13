@@ -42,13 +42,21 @@ const FORMAT_OPTIONS = {
 };
 
 const ACCEPT_BY_KIND = {
-  deck:   ".pptx,.pdf",
-  report: ".docx,.pdf",
+  deck:    ".pptx,.pdf",
+  report:  ".docx,.pdf",
+  // Chunk 3 (2026-05-13, WS-R06) — Minutes added as a first-class
+  // enhance kind. Minutes are a narrative artefact identical in
+  // shape to a Report (sections + paragraphs) so the backend routes
+  // them through the same Report renderer (docx-only output).
+  // `.txt` is accepted alongside `.docx`/`.pdf` because draft
+  // minutes are commonly pasted from notes apps as plain text.
+  minutes: ".docx,.pdf,.txt",
 };
 
 const KIND_LABEL = {
-  deck:   "Deck",
-  report: "Report",
+  deck:     "Deck",
+  report:   "Report",
+  minutes:  "Minutes",
   briefing: "Brief",
   brief:    "Brief",
 };
@@ -641,10 +649,37 @@ export default function EnhanceModal({ open, onClose, kind, contextId, briefId =
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
                 className="block w-full text-[12.5px] mt-1 file:mr-3 file:py-1.5 file:px-3 file:rounded-sm file:border file:border-[var(--rule)] file:bg-white file:text-[12px] file:cursor-pointer"
                 data-testid="work-studio-enhance-file"
-                required
               />
+              {/*
+                Chunk 3 (2026-05-13, WS-R06 sub-bug) — "Adjust and retry"
+                preserves the previously-selected `file` in React state,
+                but the browser's <input type="file"> visually shows
+                "No file chosen" after re-render (HTML inputs can't be
+                programmatically re-populated for security reasons). The
+                `required` HTML attribute was therefore *blocking* form
+                submission on retry even though `file` state was intact,
+                producing the "previously attached document is lost" UX
+                that QA reported. We drop the HTML `required` and rely
+                on the JS `if (!file)` check at submit time (see
+                handleSubmit) — the React state IS the source of truth.
+                When a previously-attached file is in state but the input
+                shows empty, the file-name line below makes it clear the
+                file IS still attached.
+              */}
               {file && (
-                <p className="text-[11px] text-[var(--muted)] mt-1 font-mono break-all">{file.name} · {Math.round(file.size / 1024)} KB</p>
+                <p className="text-[11px] text-[var(--muted)] mt-1 font-mono break-all" data-testid="work-studio-enhance-file-current">
+                  Using: {file.name} · {Math.round(file.size / 1024)} KB
+                  {phase === "compose" && (
+                    <button
+                      type="button"
+                      onClick={() => setFile(null)}
+                      className="ml-2 text-[var(--ink)] underline underline-offset-2 hover:opacity-80"
+                      data-testid="work-studio-enhance-file-clear"
+                    >
+                      clear
+                    </button>
+                  )}
+                </p>
               )}
             </div>
             <div>

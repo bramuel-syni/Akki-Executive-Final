@@ -203,11 +203,52 @@ def validate_content(content: Dict[str, Any], kind: str) -> Dict[str, Any]:
         "sections": sections,
         "citations": citations,
     }
-    if kind == "report":
+    if kind in ("report", "minutes"):
+        # Chunk 3 (2026-05-13, WS-R06) — `minutes` shares the Report
+        # renderer and therefore the recommendations surface. We also
+        # coerce dict-shaped LLM outputs (some models return
+        # `[{"owner": "A", "action": "..."}]` instead of plain strings)
+        # into a flat string so the renderer's `expects str` contract
+        # is honoured. Prevents the
+        #   TypeError: sequence item N: expected str instance, dict found
+        # crash that was the actual root cause of WS-R06 once the
+        # `KeyError: 'minutes'` schema-dispatch bug was fixed.
+        def _stringify_rec(r):
+            if isinstance(r, str):
+                return r.strip()
+            if isinstance(r, dict):
+                # Common shapes: {owner, action, when} | {heading, body} |
+                # {text} | {title, detail}. Concatenate non-empty fields
+                # in a sensible reading order.
+                parts = []
+                for key in ("owner", "title", "heading"):
+                    v = r.get(key)
+                    if isinstance(v, str) and v.strip():
+                        parts.append(v.strip())
+                        break
+                for key in ("action", "body", "detail", "text", "description"):
+                    v = r.get(key)
+                    if isinstance(v, str) and v.strip():
+                        parts.append(v.strip())
+                        break
+                when = r.get("when") or r.get("by") or r.get("deadline")
+                if isinstance(when, str) and when.strip():
+                    parts.append(f"by {when.strip()}")
+                if parts:
+                    # Join with " — " between owner and action, " " before when
+                    if len(parts) >= 2:
+                        return f"{parts[0]} — {' '.join(parts[1:])}"
+                    return parts[0]
+            # Last resort — render the dict / non-str as a clean string.
+            try:
+                return str(r).strip()
+            except Exception:
+                return ""
+
         out["recommendations"] = [
-            r.strip() for r in (content.get("recommendations") or [])
-            if isinstance(r, str) and r.strip()
-        ][:6]
+            s for s in (_stringify_rec(r) for r in (content.get("recommendations") or []))
+            if s
+        ][:8]
     if kind == "deck":
         out["conclusion"] = (content.get("conclusion") or "").strip() or None
     return out
@@ -803,7 +844,28 @@ def scrape_content_text(content: Dict[str, Any]) -> str:
         parts.extend(s.get("bullets") or [])
         parts.append(s.get("callout") or "")
         parts.append(s.get("pullquote") or "")
-    parts.extend(content.get("recommendations") or [])
+    # Chunk 3 (2026-05-13, WS-R06) — defensive stringification of
+    # recommendations. Some LLM outputs return dicts here (e.g.
+    # `{"owner": "...", "action": "..."}`) which used to crash the
+    # `"\n".join(...)` below with
+    #   TypeError: sequence item N: expected str instance, dict found
+    # The renderer's `normalize_content_for_render` already handles
+    # this for the visible output, but `scrape_content_text` runs
+    # earlier (banned-word scan, etc.) and needs its own coercion.
+    for rec in (content.get("recommendations") or []):
+        if isinstance(rec, str):
+            parts.append(rec)
+        elif isinstance(rec, dict):
+            # Flatten the dict into a single readable line.
+            chunks = [str(v).strip() for v in rec.values()
+                      if isinstance(v, str) and v.strip()]
+            if chunks:
+                parts.append(" — ".join(chunks))
+        else:
+            try:
+                parts.append(str(rec))
+            except Exception:
+                pass
     return "\n".join(p for p in parts if p)
 
 

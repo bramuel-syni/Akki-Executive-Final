@@ -124,19 +124,26 @@ class ExportStatusOut(BaseModel):
 # completed export), an instructions string, and an output_format. We
 # parse these from multipart/form fields rather than JSON so the file
 # upload can ride the same request.
-_ENHANCE_KINDS = ("deck", "report")
+#
+# Chunk 3 (2026-05-13, WS-R06) — `minutes` added as a registered
+# enhance kind. Minutes are functionally a Report-style narrative
+# artefact, so the renderer treats them as Report (docx-only output).
+# Accepted upload extensions extended to match (`.docx`, `.pdf`,
+# `.txt` — plain text is common for minutes drafts pasted from notes).
+_ENHANCE_KINDS = ("deck", "report", "minutes")
 _ENHANCE_MAX_BYTES = 25 * 1024 * 1024  # 25 MB ceiling, mirrors chat_attach
 _ENHANCE_ACCEPTED_EXT_BY_KIND = {
-    "deck":   {".pptx", ".pdf"},
-    "report": {".docx", ".pdf"},
+    "deck":    {".pptx", ".pdf"},
+    "report":  {".docx", ".pdf"},
+    "minutes": {".docx", ".pdf", ".txt"},
 }
 
 
 # =============================================================================
 # Output-format selection
 # =============================================================================
-_AUTO_FORMAT = {"brief": "docx", "deck": "pptx", "report": "docx"}
-_VALID_KINDS = ("brief", "deck", "report")
+_AUTO_FORMAT = {"brief": "docx", "deck": "pptx", "report": "docx", "minutes": "docx"}
+_VALID_KINDS = ("brief", "deck", "report", "minutes")
 
 
 def _resolve_format(kind: str, requested: str) -> str:
@@ -449,6 +456,24 @@ async def _run_two_pass_for_export(
             'recommendations (list of 1-5 short imperatives), '
             'citations.'
         ),
+        # Chunk 3 (2026-05-13, WS-R06) — Minutes shape. Identical
+        # structural keys to a Report (the same DOCX renderer is used)
+        # but tighter section sizing (a typical minutes doc has many
+        # short sections, not 4-8 long ones). Recommendations are
+        # renamed `actions` semantically but we keep the key name as
+        # `recommendations` so the renderer schema is unchanged.
+        "minutes": (
+            'Required keys: title (e.g. "Board Minutes — <date>"), '
+            'subtitle (attendees in one line), classification, period, '
+            'generated_for, executive_summary (one short paragraph of '
+            'context and overall outcome), sections (one per agenda '
+            'item, each {heading, subheading (optional, e.g. owner), '
+            'paragraphs (list of 1-3 strings capturing the discussion '
+            'and the decision), pullquote (optional, the verbatim '
+            'decision), cites}), recommendations (list of 0-8 next '
+            'actions, each phrased as "<owner> to <action> by <when>"), '
+            'citations.'
+        ),
     }[kind]
 
     cite_manifest_text = "\n".join(
@@ -602,12 +627,18 @@ async def _run_export(
         # STUDIO sprint (W-22): persist whatever partial pass metadata
         # + text we captured before the failure, so a later debug pass
         # can see exactly which pass failed and why.
+        # Chunk 3 (2026-05-13) — also capture the exception message so
+        # the user / ops can see WHICH key / arg / etc. blew up. Was:
+        # `llm_error:KeyError` (opaque). Now: `llm_error:KeyError: 'sections'`.
         partial = getattr(e, "partial", None) or {}
+        err_class = type(e).__name__
+        err_msg = str(e).replace("\n", " ").strip()[:300]
+        err_field = f"llm_error:{err_class}" + (f": {err_msg}" if err_msg else "")
         await db.work_studio_exports.update_one(
             {"id": export_id},
             {"$set": {
                 "status": "failed",
-                "error": f"llm_error:{type(e).__name__}",
+                "error": err_field,
                 "completed_at": iso(now()),
                 "llm_pass1": partial.get("llm_pass1"),
                 "llm_pass2": partial.get("llm_pass2"),
@@ -1079,9 +1110,18 @@ async def _run_enhance(
         )
     except Exception as e:
         logger.exception("Enhance LLM stage failed")
+        # Chunk 3 (2026-05-13) — capture the actual exception message,
+        # not just the class name. Pre-Chunk 3 the row stored
+        # `llm_error:KeyError` which gave the user (and ops) no clue
+        # which key was missing. Now stores
+        # `llm_error:KeyError: 'content_pass2'` so the failure point
+        # is identifiable without backend log access.
+        err_class = type(e).__name__
+        err_msg = str(e).replace("\n", " ").strip()[:300]
+        err_field = f"llm_error:{err_class}" + (f": {err_msg}" if err_msg else "")
         await db.work_studio_exports.update_one(
             {"id": export_id},
-            {"$set": {"status": "failed", "error": f"llm_error:{type(e).__name__}",
+            {"$set": {"status": "failed", "error": err_field,
                       "completed_at": iso(now())}},
         )
         try:
@@ -1121,9 +1161,19 @@ async def _run_enhance(
         }
         if output_format == "docx" and kind == "report":
             data, sha, fname = _ex.render_report_docx(content_dict, ctx_meta_full)
+        elif output_format == "docx" and kind == "minutes":
+            # Chunk 3 (WS-R06) — Minutes use the same DOCX renderer as
+            # Report. Minutes are a narrative artefact identical in
+            # structure (headings + body paragraphs) to a Report, so
+            # the same renderer path applies cleanly. A bespoke
+            # Minutes renderer can branch off this if PO later wants
+            # a different visual treatment.
+            data, sha, fname = _ex.render_report_docx(content_dict, ctx_meta_full)
         elif output_format == "pptx" and kind == "deck":
             data, sha, fname = _ex.render_deck_pptx(content_dict, ctx_meta_full)
         elif output_format == "pdf" and kind == "report":
+            data, sha, fname = _ex.render_report_pdf(content_dict, ctx_meta_full)
+        elif output_format == "pdf" and kind == "minutes":
             data, sha, fname = _ex.render_report_pdf(content_dict, ctx_meta_full)
         else:
             raise _ex.ContentValidationError(
@@ -1304,6 +1354,11 @@ async def start_export(
         pass
 
     # Schedule the worker. The wrapper detaches from the request scope.
+    #
+    # Chunk 3 (2026-05-13) — same fix as the enhance-runner above.
+    # The pre-Chunk-3 code wrote the literal `"worker_crash"` here too,
+    # hiding the real exception. Use a typed-error message so the UI
+    # has something to show beyond an opaque token.
     async def _runner():
         try:
             await _run_export(
@@ -1311,12 +1366,17 @@ async def start_export(
                 context_id=context_id, kind=kind,
                 output_format=output_format, body=body,
             )
-        except Exception:
-            logger.exception("export worker crashed")
+        except Exception as exc:
+            logger.exception("export worker crashed (export_id=%s, kind=%s)", export_id, kind)
+            err_class = type(exc).__name__
+            err_msg = str(exc).replace("\n", " ").strip()[:300] or "(no message)"
             await db.work_studio_exports.update_one(
                 {"id": export_id},
-                {"$set": {"status": "failed", "error": "worker_crash",
-                          "completed_at": iso(now())}},
+                {"$set": {
+                    "status": "failed",
+                    "error": f"{err_class}: {err_msg}",
+                    "completed_at": iso(now()),
+                }},
             )
     background.add_task(_runner)
 
@@ -1644,6 +1704,16 @@ async def start_enhance(
         }
 
     # Schedule the worker.
+    #
+    # Chunk 3 (2026-05-13, WS-R06/R12/R15) — pre-Chunk-3 this catch-all
+    # wrote the literal string `"worker_crash"` as the row's error,
+    # hiding the actual exception type and message from the user (and
+    # from anyone reading the row without backend log access). The real
+    # exception was logged but never persisted. Now the error string
+    # carries the actual exception type + message so the UI can show
+    # something actionable ("Refine failed: TimeoutError — LLM provider
+    # returned 503 after 60s") instead of an opaque "worker_crash".
+    # logger.exception still captures the full traceback for ops.
     async def _runner():
         try:
             await _run_enhance(
@@ -1652,12 +1722,21 @@ async def start_enhance(
                 instructions=instructions, source_data=source_bytes,
                 source_filename=source_filename, source_label=source_label,
             )
-        except Exception:
-            logger.exception("enhance worker crashed")
+        except Exception as exc:
+            logger.exception("enhance worker crashed (export_id=%s, kind=%s)", export_id, kind)
+            # Sanitise: cap at 300 chars to avoid bloating the DB row;
+            # strip newlines so the message renders cleanly inline; keep
+            # the exception class name as the leading token so the UI
+            # can decide whether to offer Retry or not.
+            err_class = type(exc).__name__
+            err_msg = str(exc).replace("\n", " ").strip()[:300] or "(no message)"
             await db.work_studio_exports.update_one(
                 {"id": export_id},
-                {"$set": {"status": "failed", "error": "worker_crash",
-                          "completed_at": iso(now())}},
+                {"$set": {
+                    "status": "failed",
+                    "error": f"{err_class}: {err_msg}",
+                    "completed_at": iso(now()),
+                }},
             )
     background.add_task(_runner)
 

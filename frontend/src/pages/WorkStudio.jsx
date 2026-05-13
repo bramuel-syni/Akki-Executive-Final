@@ -95,7 +95,11 @@ function ContextActions({ kind, onExport, onEnhance, onCompile, onCreate }) {
     ],
     cycle_minutes: [
       { id: "compile_minutes",    label: "Compile Minutes",    icon: Files,    onClick: () => onCompile("report") },
-      { id: "enhance_minutes",    label: "Enhance Minutes",    icon: Wand2,    onClick: () => onEnhance("report") },
+      // Chunk 3 (WS-R06) — Enhance Minutes now passes `kind="minutes"`
+      // (was `"report"`). The backend has a dedicated `minutes` kind
+      // registered as of Chunk 3 (same renderer as Report, but the
+      // resulting artefact is filed under Minutes rather than Reports).
+      { id: "enhance_minutes",    label: "Enhance Minutes",    icon: Wand2,    onClick: () => onEnhance("minutes") },
     ],
     cycle_committee_pack: [
       { id: "compile_committee_pack", label: "Compile Committee Pack", icon: Files, onClick: () => onCompile("report") },

@@ -120,6 +120,23 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 3 — Enhance worker_crash (WS-R06, R12, R15) — 2026-05-13 ✅
+- **Headline**: "worker_crash" was never a real Python exception — it was a **literal string** the export-runner's catch-all wrote into the row's `error` field, eating whatever actually went wrong. Three QA reports with the same opaque token were three different underlying bugs.
+- **Real root causes** (uncovered by first improving the error reporting):
+  - **Minutes (WS-R06)**: `KeyError: 'minutes'` at `_two_pass_schema_doc` — `minutes` was not registered in `_ENHANCE_KINDS`, accepted-extensions, schema dispatch, or renderer dispatch. Triple-gap.
+  - **Report & Deck (WS-R12 / WS-R15)** (also hits Minutes once it's registered): `TypeError: sequence item N: expected str instance, dict found` in `services/work_studio_export.py::scrape_content_text`. LLM sometimes returns `recommendations` as a list with dict items (`{owner,action,when}`); the scraper assumed `List[str]`.
+  - **WS-R06 sub-bug "Adjust and Retry loses the document"**: `<input type="file" required>` browser quirk. React state preserved `file` correctly but the HTML `required` attribute blocked form submission because the input element rendered visually empty after re-render (browsers can't programmatically re-populate file inputs for security reasons).
+- **Fixes**:
+  - `routers/work_studio_export.py` — 4 catch-alls rewritten to surface `{ClassName}: {message}` instead of opaque tokens (`worker_crash`, `llm_error:KeyError`). `_ENHANCE_KINDS`, accepted-extensions, schema dispatch, and renderer dispatch all extended for `minutes`.
+  - `services/work_studio_export.py` — `normalize_content_for_render` + `scrape_content_text` both coerce dict-shaped recommendations into clean strings (defence-in-depth: tolerates strings, dicts with various key shapes, ints, Nones).
+  - `components/studio/EnhanceModal.jsx` — drop HTML `required` on file input (JS `if (!file)` check is the source of truth); add visible "Using: <filename> · <size> · clear" affordance so users see the attached file persists across Adjust-and-Retry; extend `ACCEPT_BY_KIND` + `KIND_LABEL` for `minutes`.
+  - `pages/WorkStudio.jsx` — "Enhance Minutes" quick-action now calls `onEnhance("minutes")` (was `"report"` — silently misfiled the artefact).
+- **Tests** (`/app/backend/tests/test_chunk3_enhance_worker.py`): 7 new. Highlights — parametrised three-variant test asserting the runner writes `ValueError: Synthetic chunk-3 explosion: …` not `worker_crash` (canonical "no more opaque errors" lock); direct unit test of `scrape_content_text` against mixed-type recommendations input.
+- **Test counts**: 419 passed (was 412 entering chunk), 565 skipped, 0 failed.
+- **render-smoke**: PASS — 8 routes + 2 uploads + Patch 28 interactions.
+- **Step-5 audit**: 2 sibling soft-debts found — `streaming_v9.py` SSE error events surface raw `repr(exc)` (carries class + message; less opaque than `worker_crash` but still raw Python). Earmarked in §7 for a polish chunk. No remaining `worker_crash` literals in the codebase.
+- **Diagnosis doc**: `/app/memory/sprints/CHUNK_3_ENHANCE_CRASH_DIAGNOSIS.md`
+
 ### Chunk 2 — Backend timeout/gateway failures (DJ-R03, DJ-R05, CM-R04) — 2026-05-13 ✅
 - **Severity**: Three P0 endpoints non-functional in production due to gateway timeouts (HTTP 524 / 502). Inline-LLM-on-the-request-thread pattern routinely exceeded the ~100 s gateway ceiling. Local reproduction: signals generation took 77 s even for a small fixture; briefings + cycle compilation heavier.
 - **Pattern adopted**: async job + status polling. New shared helper `services/job_queue.py` (db.async_jobs collection) + polling endpoint `GET /api/jobs/{job_id}` in `routers/async_jobs.py`. Each of the three endpoints now returns 202 + `job_id` instantly; heavy work runs via `asyncio.create_task` (preferred over `BackgroundTasks` — fire-and-forget at the event loop, identical behaviour in prod + tests).
@@ -625,6 +642,7 @@ _populated when encountered_
 - **Chunk 7 earmark — Solva single-session endpoints lack context_id filter (defense-in-depth)**. `GET /api/solva/v2/sessions/{sid}` and ~10 sibling routes (`/fork`, `/take-to-cycle`, `/abandon`, `/turn`, `/attach-document`, `/handoff/cycle`, `/synisense-breakdown`, `/reasoning-log`, `/artefact-reasoning`, `/export.pdf`, `/export.docx`) filter only by `id` + `account_id`. Not currently exploitable through the UI (Chunk 1 fix scopes the picker properly), but a leaked session UUID could still be fetched from a different workspace. Lockdown is mechanical — apply the same active-membership check the list endpoint now has. Audited in `/app/memory/sprints/CHUNK_1_SOLVA_LEAK_DIAGNOSIS.md` §5.
 - **Data debt — 524 of 541 `solva_v2_sessions` rows have null `context_id`**. Now correctly invisible to the picker (Chunk 1 fix). Three cleanup paths documented (admin reclaim / archive collection / hard-delete). Awaits PO decision in clarifications doc.
 - **Document-detail LLM endpoints — same 524 risk class as Chunk 2** (earmark for follow-up async-conversion chunk). The four routes `POST /contexts/{cid}/documents/generate-meta`, `/documents/{doc_id}/summary`, `/documents/{doc_id}/journal-commentary`, `/documents/{doc_id}/evolution-diff` all run their LLM work synchronously. Not in the 13 May QA report (so not blocking the current 12-chunk sprint), but they should be converted to the same `services/job_queue.py` + `pollJob` pattern Chunk 2 introduced. Refactor is mechanical — the helper and frontend client are already there. Likely a single 1-day chunk.
+- **SSE error events surface raw `repr(exc)` — soft-debt** (earmark for a polish chunk). Two call sites in `routers/streaming_v9.py` (work-studio enhance stream + Solva turn stream) emit `repr(exc)` (e.g. `ValueError('foo')`) as the SSE `error` event detail. Not the `worker_crash` failure mode (carries class + message) but still raw Python repr surfaced to the user. Replace with `{type(exc).__name__}: {str(exc)[:300]}` — same one-line treatment Chunk 3 applied to the export-runner catch-alls. Three call sites total: streaming_v9 line 108, line 155; solva_v2 lines ~1950/2970/3004 should be audited at the same time.
 
 ## 8. Completion Checklist
 
