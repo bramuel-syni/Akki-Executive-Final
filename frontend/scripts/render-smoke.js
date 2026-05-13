@@ -272,6 +272,19 @@ async function smoke() {
   console.log(`[render-smoke] step 4 — Patch 28 interaction smoke`);
   await smokePatch28(page, failures);
 
+  // ────────────────────────────────────────────────────────────────────
+  // Phase 4 — Chunk 4 Compilation Wizard kind dispatch.
+  //
+  //   WS-R02 / R07 / R08 — Compile-XXX buttons open the wizard on Step 1
+  //   WS-R04             — Compile Board Pack pre-selects Board Pack
+  //                        (was Report — same call site)
+  //   WS-R05 / R08       — Step 2 source list is scoped to the right kind
+  //                        (covered by backend test_chunk4_wizard_aggregates;
+  //                        smoke only checks the Step-1 contract here).
+  // ────────────────────────────────────────────────────────────────────
+  console.log(`[render-smoke] step 5 — Chunk 4 Compilation Wizard smoke`);
+  await smokeChunk4Wizard(page, failures);
+
   await browser.close();
 
   if (failures.length) {
@@ -279,7 +292,120 @@ async function smoke() {
     for (const f of failures) console.error(`  • ${f}`);
     process.exit(1);
   }
-  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green.`);
+  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green.`);
+}
+
+// ----------------------------------------------------------------------
+// Phase 4 (Chunk 4) — Compilation Wizard kind-dispatch.
+//
+// Visit Work Studio → click "Compile Board Pack" → wizard MUST open
+// on Step 1 with Board Pack pre-selected (was: Step 2 with Report
+// selected). We then close and repeat for "Compile Minutes" to prove
+// the per-button dispatch routes to the right kind.
+//
+// We DO NOT validate Step 2's source list contents here — that's
+// covered by `test_chunk4_wizard_aggregates.py` on the backend (data
+// shape depends on seeded state which is account-specific). The
+// contract this smoke locks is the UI-side wiring (right step, right
+// radio).
+// ----------------------------------------------------------------------
+async function smokeChunk4Wizard(page, failures) {
+  const pageErrors = [];
+  const onPageError = (err) => { pageErrors.push(err.toString()); };
+  page.on("pageerror", onPageError);
+
+  try {
+    await page.goto(`${BASE_URL}/app/work-studio`, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(800);
+
+    // Iterate the kinds the QA report explicitly named (R02 board_pack,
+    // R07 minutes, R08 committee_pack). For each: locate the Compile
+    // action chip, click it, assert wizard-step-1 visible + the matching
+    // type radio carries the `-selected` testid suffix.
+    const cases = [
+      { tabAction: "compile_board_pack",     expectedSelected: "board_pack" },
+      { tabAction: "compile_minutes",        expectedSelected: "minutes" },
+      { tabAction: "compile_committee_pack", expectedSelected: "committee_pack" },
+    ];
+
+    for (const c of cases) {
+      // Action chips live inside the per-tab ContextActions row in
+      // WorkStudio — they don't carry a deterministic testid, so we
+      // locate them by visible text inside the contextual action row.
+      // First, open the matching artefact tab via its testid.
+      const tabTestId = c.tabAction === "compile_board_pack"
+        ? "work-studio-tab-cycle_board_pack"
+        : c.tabAction === "compile_minutes"
+          ? "work-studio-tab-cycle_minutes"
+          : "work-studio-tab-cycle_committee_pack";
+      // The active variant of the testid (when already focused) uses a
+      // suffix, so we match by id prefix. The "active" suffix is
+      // appended only when already on the tab — both variants suit us.
+      const tabBtn = page.locator(
+        `[data-testid^="${tabTestId}"]`,
+      ).first();
+      const labelMap = {
+        compile_board_pack:     "Board Pack",
+        compile_minutes:        "Minutes",
+        compile_committee_pack: "Committee Pack",
+      };
+      const tabLabel = labelMap[c.tabAction];
+      if (!(await tabBtn.isVisible({ timeout: 4000 }).catch(() => false))) {
+        console.log(`[render-smoke]  · Chunk 4 — tab "${tabLabel}" not visible; soft-skipping`);
+        continue;
+      }
+      await tabBtn.click();
+      await page.waitForTimeout(500);
+
+      const compileLabel = `Compile ${tabLabel}`;
+      const compileBtn = page.locator(`button:has-text("${compileLabel}")`).first();
+      if (!(await compileBtn.isVisible({ timeout: 3000 }).catch(() => false))) {
+        console.log(`[render-smoke]  · Chunk 4 — "${compileLabel}" action not visible; soft-skipping`);
+        continue;
+      }
+      await compileBtn.click();
+
+      // Step 1 must render. Step 2 must NOT be the initial render.
+      const onStep1 = await page
+        .waitForSelector('[data-testid="wizard-step-1"]', { timeout: 4000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!onStep1) {
+        failures.push(`Chunk 4: wizard did not land on Step 1 for ${c.tabAction}`);
+        // Close any open dialog before next iteration.
+        await page.keyboard.press("Escape").catch(() => {});
+        await page.waitForTimeout(300);
+        continue;
+      }
+
+      // The selected radio carries `-selected` in its testid.
+      const selSel = `[data-testid="wizard-artefact-type-${c.expectedSelected}-selected"]`;
+      const isSelected = await page.locator(selSel).isVisible({ timeout: 2000 }).catch(() => false);
+      if (!isSelected) {
+        failures.push(
+          `Chunk 4: Compile ${tabLabel} did not pre-select "${c.expectedSelected}" on Step 1 ` +
+          `(missing ${selSel})`,
+        );
+      } else {
+        console.log(`[render-smoke]  ✓ Chunk 4 — Compile ${tabLabel} opens Step 1 with ${c.expectedSelected} selected`);
+      }
+
+      // Close the wizard before next iteration. The wizard doesn't
+      // carry a dedicated cancel button testid — ESC + click-outside
+      // both fire `onClose`. We use ESC since it's deterministic.
+      await page.keyboard.press("Escape").catch(() => {});
+      await page.waitForTimeout(400);
+    }
+  } catch (e) {
+    failures.push(`Chunk 4: wizard flow threw — ${e.message}`);
+  }
+
+  if (pageErrors.length > 0) {
+    failures.push(`Chunk 4 step: ${pageErrors.length} uncaught page error(s)`);
+    for (const e of pageErrors) console.error(`    PAGEERROR  ${e.slice(0, 240)}`);
+  }
+  page.off("pageerror", onPageError);
 }
 
 // ----------------------------------------------------------------------

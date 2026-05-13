@@ -88,6 +88,20 @@ function StepIndicator({ step }) {
 }
 
 
+// Chunk 4 (2026-05-13) — per-artefact-type default output format.
+// Pre-fix every wizard run defaulted to `["docx"]` which made a Deck
+// compilation get marked as DOCX-only on Step 4 (wrong; PowerPoint is
+// the obvious primary). The user could still tick PPTX, but the
+// default mismatched intent for half the types. Map below:
+const DEFAULT_FORMAT_BY_TYPE = {
+  board_pack:     ["docx"],
+  minutes:        ["docx"],
+  committee_pack: ["docx"],
+  deck:           ["pptx"],
+  report:         ["docx"],
+  briefing:       ["docx"],
+};
+
 export default function CompilationWizard({ open, onClose, contextId,
                                             preselectArtefactType = null,
                                             preselectSourceId = null,
@@ -115,9 +129,22 @@ export default function CompilationWizard({ open, onClose, contextId,
   const [submitting, setSubmitting] = useState(false);
 
   // Reset state when the modal closes.
+  //
+  // Chunk 4 (2026-05-13, WS-R02/R07/R08) — pre-fix the wizard auto-
+  // skipped Step 1 when a `preselectArtefactType` was provided
+  // (`setStep(preselectArtefactType ? 2 : 1)`). The Compile-XXX
+  // buttons in WorkStudio pass a preselect type now (Chunk 4 fixed
+  // them to pass the correct type), but the user must STILL confirm
+  // the type on Step 1 — every wizard run begins on Step 1, the
+  // preselect just sets the radio default. This matches QA's
+  // expectation in WS-R02/R07/R08.
+  //
+  // Chunk 4 (2026-05-13, WS-R04 sub-fix) — the default `formats` is
+  // now keyed off the preselected artefact type, so opening Compile
+  // Deck → Step 4 shows PPTX ticked by default instead of DOCX.
   useEffect(() => {
     if (open) {
-      setStep(preselectArtefactType ? 2 : 1);
+      setStep(1);
       setArtefactType(preselectArtefactType || "");
       setTemplateKey("standard");
       setSelectedSourceIds(new Set(preselectSourceId ? [preselectSourceId] : []));
@@ -125,10 +152,23 @@ export default function CompilationWizard({ open, onClose, contextId,
       setCadenceKind("one_off");
       setRecurringInterval("monthly");
       setScheduledAt("");
-      setFormats(["docx"]);
+      setFormats(DEFAULT_FORMAT_BY_TYPE[preselectArtefactType] || ["docx"]);
       setTitle("");
     }
   }, [open, preselectArtefactType, preselectSourceId]);
+
+  // Chunk 4 — when the user changes the artefact type radio on Step 1,
+  // also flip the format default so they don't have to manually
+  // un-tick DOCX + tick PPTX every time they pick Deck. Only triggers
+  // when the type actually changes (not on every render).
+  useEffect(() => {
+    if (!open || !artefactType) return;
+    const wantedDefault = DEFAULT_FORMAT_BY_TYPE[artefactType] || ["docx"];
+    setFormats(wantedDefault);
+    // Title is regenerated whenever the type changes (next effect),
+    // so we reset that too when the user explicitly switches type.
+    setTitle("");
+  }, [artefactType, open]);
 
   // Derive the aggregate `kind` for the chosen artefact type.
   const artefact = useMemo(

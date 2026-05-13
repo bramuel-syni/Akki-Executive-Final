@@ -91,10 +91,16 @@ const KIND_TABS = [
 function ContextActions({ kind, onExport, onEnhance, onCompile, onCreate }) {
   const ACTIONS = {
     cycle_board_pack: [
-      { id: "compile_board_pack", label: "Compile Board Pack", icon: Files,    onClick: () => onCompile("report") },
+      // Chunk 4 (2026-05-13, WS-R02/R04/R05/R07/R08) — pass the *real*
+      // artefact-type key so the wizard opens with the right radio
+      // pre-selected AND queries the right source kind on Step 2.
+      // Pre-fix all three Compile-XXX buttons literally passed
+      // `"report"`, which made every flow land as a Report
+      // compilation regardless of which button was clicked.
+      { id: "compile_board_pack", label: "Compile Board Pack", icon: Files,    onClick: () => onCompile("board_pack") },
     ],
     cycle_minutes: [
-      { id: "compile_minutes",    label: "Compile Minutes",    icon: Files,    onClick: () => onCompile("report") },
+      { id: "compile_minutes",    label: "Compile Minutes",    icon: Files,    onClick: () => onCompile("minutes") },
       // Chunk 3 (WS-R06) — Enhance Minutes now passes `kind="minutes"`
       // (was `"report"`). The backend has a dedicated `minutes` kind
       // registered as of Chunk 3 (same renderer as Report, but the
@@ -102,7 +108,7 @@ function ContextActions({ kind, onExport, onEnhance, onCompile, onCreate }) {
       { id: "enhance_minutes",    label: "Enhance Minutes",    icon: Wand2,    onClick: () => onEnhance("minutes") },
     ],
     cycle_committee_pack: [
-      { id: "compile_committee_pack", label: "Compile Committee Pack", icon: Files, onClick: () => onCompile("report") },
+      { id: "compile_committee_pack", label: "Compile Committee Pack", icon: Files, onClick: () => onCompile("committee_pack") },
     ],
     deck: [
       { id: "create_summary_deck", label: "Create Summary Deck", icon: Plus,   onClick: () => onCreate("deck") },
@@ -454,12 +460,27 @@ export default function WorkStudio() {
     setEnhanceOpen(true);
   };
   const onCompileClick = (k) => {
-    // Patch 2B.2 — Compile actions now open the wizard (with the relevant
-    // artefact type pre-selected) instead of jumping straight into the
-    // legacy enhance flow.
+    // Chunk 4 (2026-05-13, WS-R02/R04/R05/R07/R08) — the Compile-XXX
+    // buttons now pass their REAL artefact-type key (board_pack /
+    // minutes / committee_pack / deck / report), and this map routes
+    // all six wizard-eligible types to the wizard. Pre-Chunk-4 only
+    // `report` and `deck` were mapped, so Board Pack / Minutes /
+    // Committee Pack fell into the legacy enhance-compile fallback
+    // path AND every Compile-XXX button literally passed `"report"`
+    // (ContextActions, see above), making the wizard land as a
+    // Report compilation regardless of which button was clicked.
+    //
+    // Patch 2B.2's `preselectArtefactType` prop is still used — but
+    // the wizard itself now ALWAYS opens at Step 1 (see
+    // `CompilationWizard.jsx` post-Chunk-4) so the user explicitly
+    // confirms the radio default before continuing.
     const map = {
-      report: "report",
-      deck: "deck",
+      board_pack:     "board_pack",
+      minutes:        "minutes",
+      committee_pack: "committee_pack",
+      deck:           "deck",
+      report:         "report",
+      briefing:       "briefing",
     };
     const preset = map[k] || null;
     if (preset) {

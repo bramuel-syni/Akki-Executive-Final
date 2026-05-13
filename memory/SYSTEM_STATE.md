@@ -120,6 +120,21 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 4 — Compilation Wizard wiring (WS-R02 / R04 / R05 / R07 / R08) — 2026-05-13 ✅
+- **Headline**: five QA tickets, **one bug** at three call sites + one wizard-contract decision. All three Compile-XXX buttons (`Compile Board Pack`, `Compile Minutes`, `Compile Committee Pack`) literally passed the string `"report"` to `onCompile(...)` regardless of which button was clicked. That single mistake cascaded into:
+  - Wizard landed on Step 2 (preselect-truthy branch) — WS-R02 / R07 / R08
+  - Step 1's radio pre-selected Report — WS-R04
+  - Step 2's source query fetched `kind=report` (empty for Minutes / Committee-Pack contexts) — WS-R05 / R08
+- **Second contract issue**: the wizard's `useEffect` had `setStep(preselectArtefactType ? 2 : 1)` — even with the right type passed in, it still auto-skipped Step 1, violating QA's expectation that the wizard ALWAYS lands on Step 1. Preselect should set the radio default only, not the step index.
+- **Fixes**:
+  - `pages/WorkStudio.jsx::ContextActions` — three Compile-XXX rows pass real artefact-type keys (`board_pack`, `minutes`, `committee_pack`); `onCompileClick` map extended to all 6 wizard-eligible types.
+  - `components/work_studio/CompilationWizard.jsx` — `setStep(1)` unconditionally; new `DEFAULT_FORMAT_BY_TYPE` map (Deck → PPTX, everything else → DOCX) + two effects to seed the format default on open and re-sync when the type radio changes.
+- **Step-5 cross-check finding applied inline**: Compile Deck → Step 4 now defaults to PPTX (was DOCX for every artefact type). PO override available via single map.
+- **Tests** (`/app/backend/tests/test_chunk4_wizard_aggregates.py`): 9 new — 6-kind parametrise (aggregate endpoint accepts every wizard kind cleanly), unknown-kind 400 hardening, board-pack-surfaces-under-its-own-kind, board-pack-doesn't-leak-under-foreign-kinds. Render-smoke extended with Step 5 (`smokeChunk4Wizard`) that asserts Step 1 + correct radio for each of the three QA-named buttons; soft-skips on accounts without those tab items (NED seed) with reason logged.
+- **Test counts**: 428 passed (was 419 entering chunk), 565 skipped, 0 failed.
+- **render-smoke**: PASS — 8 routes + 2 uploads + Patch 28 interactions + Chunk 4 wizard green.
+- **Diagnosis doc**: `/app/memory/sprints/CHUNK_4_WIZARD_DIAGNOSIS.md`
+
 ### Chunk 3 — Enhance worker_crash (WS-R06, R12, R15) — 2026-05-13 ✅
 - **Headline**: "worker_crash" was never a real Python exception — it was a **literal string** the export-runner's catch-all wrote into the row's `error` field, eating whatever actually went wrong. Three QA reports with the same opaque token were three different underlying bugs.
 - **Real root causes** (uncovered by first improving the error reporting):
