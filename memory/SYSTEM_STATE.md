@@ -120,6 +120,18 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 1 — P0 Solva cross-account leakage (WS-R16) — 2026-05-13 ✅
+- **Severity**: CRITICAL SECURITY — data-segregation failure. Tester report: *"Solva contexts from other accounts and companies are available for selection in the Generate Brief from Solva flow."* A user with memberships in multiple workspaces saw Solva sessions from every workspace they belonged to, regardless of which one was active. Privacy-promise violation.
+- **Root cause**: `GET /api/solva/v2/sessions` (`routers/solva_v2.py` line 1383) filtered by `account_id` + `version` only — no `context_id` clause.
+- **Fix**:
+  - `/app/backend/routers/solva_v2.py` — `list_sessions` now requires `context_id` (FastAPI 422 if missing), checks active membership (403 if not a member), and filters Mongo by `account_id` + `context_id` + `version`. Orphan rows (null `context_id`) are excluded by the strict-equality clause.
+  - `/app/frontend/src/components/studio/SourceStep.jsx` — `InlinePicker` accepts `contextId` prop and forwards it as a query param. The parent `SourceStep` already received `contextId` from `ExportModal` so it was a single-prop thread.
+- **Tests** (`/app/backend/tests/test_chunk1_solva_leak.py`): 4 new regression tests — (1) 422 when `context_id` missing, (2) 403 when caller is not a member, (3) canonical two-context isolation, (4) orphan-row exclusion. Existing `tests/test_solva_v2_smoke.py` updated to seed a context + pass `context_id` (2 tests). Full sweep: 406 passed, 565 skipped, 0 failed.
+- **render-smoke**: PASS — 8 routes + 2 upload paths + Patch 28 interactions green.
+- **Sibling audit** (§5 of diagnosis doc): 8 adjacent listing endpoints audited — `/chats`, `/contexts/{cid}/cycles`, briefings aggregates, monitor, pulse feed, pulse across-boards, work-studio compilations, work-studio exports — all SAFE (URL-scoped or `X-Active-Context`-gated). **One adjacent defense-in-depth gap found**: `GET /api/solva/v2/sessions/{sid}` and ~10 sibling single-session routes filter only by `id` + `account_id`, no `context_id` check. Not actively exploited (picker can no longer surface foreign-context session ids after this fix) but should be locked down. Earmarked **Chunk 7**.
+- **Data debt**: 524 of 541 seeded `solva_v2_sessions` rows (~97%) have null `context_id`. After the fix these are invisible to the picker (correct for privacy). Cleanup options (admin reclaim / archive / delete) documented; awaits PO decision.
+- **Diagnosis doc**: `/app/memory/sprints/CHUNK_1_SOLVA_LEAK_DIAGNOSIS.md`
+
 ### Patch 30B — CI requirements URL guard — 2026-05-12 ✅
 - **Why**: lock in the Patch-30 spaCy deploy-fragility class — the deployer's pip-compile rewrites `package @ url` into `package==version`, which can't resolve for packages that live only on GitHub releases.
 - **Ship**:
@@ -561,6 +573,13 @@ _populated when encountered_
 
 ## 6. (continued)
 
+### AD-4 — Solva session-list `context_id` is REQUIRED, not OPTIONAL — 2026-05-13 (Chunk 1)
+**Decision**: `GET /api/solva/v2/sessions` requires `context_id` as a strict, mandatory query parameter (FastAPI returns 422 when absent). Considered alternative: keep `context_id` optional with a sane default (e.g. the caller's `default_context_id` on the account record).
+
+**Rationale**: Optional + defaulted creates an invisible failure mode — a forgetful frontend call would silently scope to a workspace the user didn't intend, which is exactly the bug pattern that produced the original leak. Required + 422 makes the call site visible at PR time. The frontend that the leak surfaced from (`SourceStep.jsx`) is updated in the same chunk; any future caller (admin tool, scripts, etc.) will fail loudly on first call rather than silently wrong on every call thereafter.
+
+**Trade-off**: One-line breaking change to two existing smoke tests (`test_solva_v2_smoke.py`) — both updated in the same commit to seed a context + pass `context_id` explicitly.
+
 ## 7. Open Issues / Tech Debt
 
 - **Browser test tooling (`run_browser_use`) broken** — Playwright `mcp_screenshot_tool` works reliably now (Patch 15 captured 28 screenshots); the older `run_browser_use` tool remains broken.
@@ -587,6 +606,9 @@ _populated when encountered_
 - **FastAPI `@app.on_event` + `regex=` deprecations** — emits `DeprecationWarning` on every test run. Pre-existing, low priority, separate cleanup patch.
 - **47 E2E iter/sprint tests still quarantined** — architectural rewrite required (see Patch 19 close-out + AD-3). Password constant unified (`TestBramuel2026!` → `Bramuel2026!`) in this sprint as a one-line preparatory fix.
 - **CI requirements guard now blocks the `@ url` class at PR time** — Patch 30B. `.github/workflows/requirements-guard.yml` + `scripts/check_requirements_urls.py` flag any deploy-fragile syntax (PEP 508 direct refs, GitHub URLs, find-links, VCS pins) before merge. Allow-list via `# ci-requirements-guard: allow <reason>` for legitimate cases that carry a runtime fallback (canonical pattern: `services/synisense/presidio_engine.py::_ensure_spacy_model`).
+- **PO clarifications doc 13May2026 — 17 items pending response; defaults applied where build-blocking.** See `/app/memory/clarifications/PRODUCT_CLARIFICATIONS_13MAY2026.md`. Build proceeds against the default for each; revisit after PO sign-off.
+- **Chunk 7 earmark — Solva single-session endpoints lack context_id filter (defense-in-depth)**. `GET /api/solva/v2/sessions/{sid}` and ~10 sibling routes (`/fork`, `/take-to-cycle`, `/abandon`, `/turn`, `/attach-document`, `/handoff/cycle`, `/synisense-breakdown`, `/reasoning-log`, `/artefact-reasoning`, `/export.pdf`, `/export.docx`) filter only by `id` + `account_id`. Not currently exploitable through the UI (Chunk 1 fix scopes the picker properly), but a leaked session UUID could still be fetched from a different workspace. Lockdown is mechanical — apply the same active-membership check the list endpoint now has. Audited in `/app/memory/sprints/CHUNK_1_SOLVA_LEAK_DIAGNOSIS.md` §5.
+- **Data debt — 524 of 541 `solva_v2_sessions` rows have null `context_id`**. Now correctly invisible to the picker (Chunk 1 fix). Three cleanup paths documented (admin reclaim / archive collection / hard-delete). Awaits PO decision in clarifications doc.
 
 ## 8. Completion Checklist
 

@@ -1373,14 +1373,49 @@ async def solva_continue_in_chat(
 
 @router.get("/sessions")
 async def list_sessions(
+    context_id: str,
     status: Optional[str] = None,
     q: Optional[str] = None,
     account: Dict[str, Any] = Depends(get_current_account),
 ):
-    """List sessions for the caller. Wave 3.3 (UAT pack) — added an
-    optional `q` substring filter against `intent` (case-insensitive)
-    so the new sessions-list page can search."""
-    qfilter: Dict[str, Any] = {"account_id": account["id"], "version": 2}
+    """List sessions for the caller, **strictly scoped to one workspace context**.
+
+    Privacy fix (WS-R16, 2026-05-13) — `context_id` is now a REQUIRED
+    query parameter. Previously this endpoint filtered by `account_id`
+    only, which meant a user with active memberships in multiple
+    workspaces (companies / boards) saw Solva sessions from ALL of their
+    contexts mixed together. Concretely, the Generate-Brief-from-Solva
+    picker (`components/studio/SourceStep.jsx`) surfaced sessions from
+    every context the user had ever logged into, not the workspace they
+    were currently in. That is a data-segregation violation.
+
+    Defense-in-depth applied here:
+      1. `context_id` is required (FastAPI raises 422 if missing).
+      2. The caller must have an **active membership** in `context_id`.
+         A 403 is returned if not — protects against a user passing
+         a workspace id they're not a member of.
+      3. The Mongo find filter combines `account_id` AND `context_id`.
+         Belt-and-braces — even if membership lookup is bypassed by a
+         future bug, the data filter still scopes correctly.
+      4. Sessions whose stored `context_id` is null / missing are
+         **excluded** from the response (legacy/orphan data — see
+         SYSTEM_STATE §7 entry for the follow-up cleanup task).
+
+    Wave 3.3 (UAT pack) — `q` substring filter against `intent`
+    (case-insensitive) is preserved.
+    """
+    membership = await db.memberships.find_one(
+        {"context_id": context_id, "account_id": account["id"], "status": "active"},
+        {"_id": 0},
+    )
+    if not membership:
+        raise HTTPException(status_code=403, detail="Not a member of this context")
+
+    qfilter: Dict[str, Any] = {
+        "account_id": account["id"],
+        "context_id": context_id,
+        "version": 2,
+    }
     if status:
         qfilter["status"] = status
     if q and (q := q.strip()):

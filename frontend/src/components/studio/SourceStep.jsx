@@ -151,7 +151,7 @@ export function SourceChoice({ value, onChange }) {
 // =============================================================================
 // Inline session / chat picker
 // =============================================================================
-function InlinePicker({ sourceType, value, onPick }) {
+function InlinePicker({ sourceType, value, onPick, contextId }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -159,8 +159,13 @@ function InlinePicker({ sourceType, value, onPick }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setErr(null); setItems([]);
+    // Privacy fix (WS-R16, 2026-05-13) — the Solva session picker MUST
+    // pass `context_id` so the backend can scope results to the active
+    // workspace. Before this fix, the picker leaked sessions from every
+    // workspace the user belonged to. The backend now also requires
+    // `context_id` (422 if missing), so this is belt-and-braces.
     const path = sourceType === "solva_session"
-      ? { url: "/solva/v2/sessions", params: { status: "completed" } }
+      ? { url: "/solva/v2/sessions", params: { status: "completed", context_id: contextId } }
       : { url: "/chats", params: { limit: 25 } };
     api.get(path.url, { params: path.params })
       .then(({ data }) => {
@@ -409,7 +414,7 @@ export default function SourceStep({
             <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1.5">
               {sourceChoice === "solva_session" ? "Pick a Solva session" : "Pick a chat"}
             </p>
-            <InlinePicker sourceType={sourceChoice} value={picked} onPick={setPicked} />
+            <InlinePicker sourceType={sourceChoice} value={picked} onPick={setPicked} contextId={contextId} />
           </div>
 
           {picked && (
