@@ -13,6 +13,7 @@
  * v7 palette only.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -267,24 +268,65 @@ function CreateModal({ open, onClose, kind, contextId, onCreated }) {
 }
 
 
+// Chunk 6.5-REVISED Task F (2026-05-13) — canonical owner-role list.
+// Mirrors the backend `CANONICAL_OWNER_ROLES` in `routers/monitor_v2.py`.
+// "Other" is implicit — items whose `owner_role` falls outside this
+// list (or is null) surface under the "Other" tab.
+const CANONICAL_OWNER_ROLES = [
+  "CEO", "CFO", "COO", "CCO", "CTO", "CRO", "CIO",
+  "Audit Committee", "Risk Committee",
+];
+// URL query-param sentinel for the "Other" tab. Decoupled from the
+// canonical labels so a role literally named "Other" doesn't collide.
+const OWNER_OTHER_SENTINEL = "__other__";
+
+
 export default function ObjectivesProjectsPanel({ contextId }) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [kind, setKind] = useState("objective");
   const [page, setPage] = useState(1);
   const [q, setQ] = useState("");
   const [rag, setRag] = useState("all");
+  // Chunk 6.5-REVISED Task F — owner-role filter state. `all` is the
+  // default and means "no owner filter applied"; an empty string from
+  // the URL is also coerced to `all`.
+  const [ownerRole, setOwnerRole] = useState(searchParams.get("owner") || "all");
+  const [ownerRoleCounts, setOwnerRoleCounts] = useState({ total: 0, roles: [] });
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ items: [], total: 0, total_pages: 1 });
   const [drawerRow, setDrawerRow] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
 
+  // Reflect owner-role changes back into the URL so users can deep-link
+  // and bookmark a filter. We deliberately keep this on the existing
+  // `useSearchParams` rather than `useLocation` so other query params
+  // (e.g. cycle deep-links) aren't trampled.
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (!ownerRole || ownerRole === "all") {
+      next.delete("owner");
+    } else {
+      next.set("owner", ownerRole);
+    }
+    // setSearchParams with `replace: true` to avoid filling the back
+    // stack on every tab click.
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownerRole]);
+
   const load = useCallback(async () => {
     if (!contextId) return;
     setLoading(true);
     try {
-      const { data: d } = await api.get(`/contexts/${contextId}/monitor/${kind}`, {
-        params: { status: rag, page, page_size: 5 },
-      });
+      const params = { status: rag, page, page_size: 5 };
+      // Chunk 6.5-REVISED Task F — only pass `owner_role` when not "all".
+      // The "Other" sentinel is forwarded verbatim; the backend
+      // recognises it and matches null/non-canonical rows.
+      if (ownerRole && ownerRole !== "all") {
+        params.owner_role = ownerRole;
+      }
+      const { data: d } = await api.get(`/contexts/${contextId}/monitor/${kind}`, { params });
       let items = d?.items || [];
       if (q) {
         const lc = q.toLowerCase();
@@ -294,9 +336,28 @@ export default function ObjectivesProjectsPanel({ contextId }) {
     } catch (e) {
       setData({ items: [], total: 0, total_pages: 1 });
     } finally { setLoading(false); }
-  }, [contextId, kind, rag, page, q]);
+  }, [contextId, kind, rag, page, q, ownerRole]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Chunk 6.5-REVISED Task F — fetch the owner-role counts so the tab
+  // strip knows which canonical labels actually have data behind them.
+  // Refetched whenever the user creates / deletes / accepts an item
+  // (the `load` dep chain ensures this stays in sync via `loadOwnerCounts`).
+  const loadOwnerCounts = useCallback(async () => {
+    if (!contextId) return;
+    try {
+      const { data: d } = await api.get(`/contexts/${contextId}/monitor/owner-roles`);
+      setOwnerRoleCounts({
+        total: d?.total ?? 0,
+        roles: Array.isArray(d?.roles) ? d.roles : [],
+      });
+    } catch {
+      setOwnerRoleCounts({ total: 0, roles: [] });
+    }
+  }, [contextId]);
+
+  useEffect(() => { loadOwnerCounts(); }, [loadOwnerCounts, kind]);
 
   const loadSuggestions = useCallback(async () => {
     if (!contextId) return;
@@ -320,11 +381,29 @@ export default function ObjectivesProjectsPanel({ contextId }) {
       });
       toast.success("Added.");
       loadSuggestions();
+      loadOwnerCounts();
       load();
     } catch (e) {
       toast.error(apiErrorMessage(e));
     }
   };
+
+  // Chunk 6.5-REVISED Task F — derive the visible owner-tab list from
+  // backend counts. Canonical roles render in their locked order; the
+  // "Other" tab (sentinel) follows. Tabs with zero count are hidden;
+  // "All" is always rendered first.
+  const ownerTabs = useMemo(() => {
+    const tabs = [{ key: "all", label: "All", count: ownerRoleCounts.total }];
+    const seen = {};
+    (ownerRoleCounts.roles || []).forEach((r) => { seen[r.role] = r.count; });
+    CANONICAL_OWNER_ROLES.forEach((r) => {
+      if ((seen[r] || 0) > 0) tabs.push({ key: r, label: r, count: seen[r] });
+    });
+    if ((seen.Other || 0) > 0) {
+      tabs.push({ key: OWNER_OTHER_SENTINEL, label: "Other", count: seen.Other });
+    }
+    return tabs;
+  }, [ownerRoleCounts]);
 
   const filterTabs = [
     { key: "all",   label: "All",        count: data.total },
@@ -393,6 +472,48 @@ export default function ObjectivesProjectsPanel({ contextId }) {
         </div>
       )}
 
+      {/* Chunk 6.5-REVISED Task F (2026-05-13) — owner-role tab strip.
+          Renders BELOW the panel header + suggestions, ABOVE the
+          ListingShell's RAG filter tabs (the two strips are
+          orthogonal — owner × status). Tabs with zero count are
+          hidden; "All" is always rendered first. Visually distinct
+          from the RAG strip: smaller chip, no border, single
+          underline accent on the active tab. */}
+      {ownerTabs.length > 1 && (
+        <div
+          className="mb-3 pb-2 border-b border-[var(--rule)] flex items-center gap-1 flex-wrap"
+          data-testid="obj-panel-owner-tabs"
+          role="tablist"
+          aria-label="Filter by owner role"
+        >
+          <span className="text-[10px] uppercase tracking-[0.18em] font-mono text-[var(--muted)] mr-2 shrink-0">
+            Owner
+          </span>
+          {ownerTabs.map((t) => {
+            const isActive = ownerRole === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => { setOwnerRole(t.key); setPage(1); }}
+                className={[
+                  "inline-flex items-center gap-1 px-2 py-1 rounded-sm text-[11.5px] transition-colors",
+                  isActive
+                    ? "bg-[var(--ink)] text-[var(--parchment)]"
+                    : "text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)]",
+                ].join(" ")}
+                data-testid={`obj-panel-owner-tab-${t.key}`}
+              >
+                <span>{t.label}</span>
+                <span className="font-mono text-[10px] opacity-80">{t.count}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <ListingShell
         testId="obj-panel-listing"
         searchValue={q}
@@ -441,7 +562,7 @@ export default function ObjectivesProjectsPanel({ contextId }) {
         onClose={() => setCreateOpen(false)}
         kind={kind}
         contextId={contextId}
-        onCreated={() => { load(); loadSuggestions(); }}
+        onCreated={() => { load(); loadSuggestions(); loadOwnerCounts(); }}
       />
     </section>
   );

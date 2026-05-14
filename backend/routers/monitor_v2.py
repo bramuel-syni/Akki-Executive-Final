@@ -27,6 +27,34 @@ _SOURCE = ("auto", "manual", "hybrid")
 _KIND = ("objective", "project")
 
 
+# Chunk 6.5-REVISED Task F (2026-05-13) — canonical owner-role list.
+# These are the labels surfaced as tabs in the Monitor Owner filter.
+# Matching against `accounts.declared_role` is **case-insensitive**;
+# anything not in this list (and any null) collapses into "Other" on
+# the frontend. Order is the locked product order — do not re-sort.
+#
+# PO-18 (open clarification): `declared_role` on accounts uses values
+# like `executive`/`ned`/`reportee`/`dual`. None of those literally
+# equal "CEO"/"CFO"/... so in practice today most items fall under
+# "Other". The owner-roles endpoint will return what's actually in
+# the data so the frontend renders the right tabs once the field
+# semantics are resolved.
+CANONICAL_OWNER_ROLES: tuple[str, ...] = (
+    "CEO", "CFO", "COO", "CCO", "CTO", "CRO", "CIO",
+    "Audit Committee", "Risk Committee",
+)
+_CANONICAL_LOWERS: dict[str, str] = {r.lower(): r for r in CANONICAL_OWNER_ROLES}
+
+
+def _canonical_owner_role(raw: Optional[str]) -> Optional[str]:
+    """Map a raw `accounts.declared_role` value to a canonical role
+    label. Returns the canonical TitleCase form when matched,
+    otherwise None (the frontend buckets it under 'Other')."""
+    if not raw:
+        return None
+    return _CANONICAL_LOWERS.get(str(raw).strip().lower())
+
+
 def _sanitize(rec: Dict[str, Any]) -> Dict[str, Any]:
     rec = dict(rec)
     rec.pop("_id", None)
@@ -129,7 +157,97 @@ async def auto_suggest_projects(
 
 
 # -----------------------------------------------------------------------------
+# Owner-roles aggregator — Chunk 6.5-REVISED Task F (2026-05-13).
+#
+# Declared BEFORE the generic /monitor/{kind} route so FastAPI matches
+# the specific path first (without this ordering the literal
+# `/monitor/owner-roles` would be captured by `kind=owner-roles` and
+# 400 from the `_KIND` validation).
+#
+# Returns the distinct list of `owner_role` values currently present
+# in this context's objectives + projects, with counts per role.
+# Frontend uses this to populate the tab strip without having to
+# fetch the full list of items first.
+#
+# Response shape:
+#   {
+#     "total": int,
+#     "roles": [
+#       {"role": "CEO",   "count": 4},
+#       {"role": "Audit Committee", "count": 1},
+#       {"role": "Other", "count": 3},   ← anything not in the canonical list
+#       ...
+#     ]
+#   }
+#
+# Strict context scoping; no cross-context leakage.
+# -----------------------------------------------------------------------------
+@router.get("/contexts/{context_id}/monitor/owner-roles")
+async def list_owner_role_counts(
+    context_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    counts: Dict[str, int] = {}
+    total = 0
+    for kind in _KIND:
+        pipeline: List[Dict[str, Any]] = [
+            {"$match": {"context_id": context_id, "deleted_at": {"$exists": False}}},
+            {
+                "$lookup": {
+                    "from": "accounts",
+                    "localField": "owner_account_id",
+                    "foreignField": "id",
+                    "as": "_owner",
+                }
+            },
+            {
+                "$addFields": {
+                    "_decl": {
+                        "$let": {
+                            "vars": {"first": {"$arrayElemAt": ["$_owner", 0]}},
+                            "in": {
+                                "$cond": [
+                                    {"$ifNull": ["$$first.declared_role", False]},
+                                    "$$first.declared_role",
+                                    None,
+                                ]
+                            },
+                        }
+                    }
+                }
+            },
+            {"$group": {"_id": "$_decl", "n": {"$sum": 1}}},
+        ]
+        async for row in _coll(kind).aggregate(pipeline):
+            raw = row.get("_id")
+            canonical = _canonical_owner_role(raw)
+            bucket = canonical if canonical else "Other"
+            counts[bucket] = counts.get(bucket, 0) + int(row.get("n", 0))
+            total += int(row.get("n", 0))
+
+    # Always emit canonical roles in their locked order, then Other
+    # last. Roles with zero count are omitted (the frontend will not
+    # render a tab for them).
+    ordered: List[Dict[str, Any]] = []
+    for r in CANONICAL_OWNER_ROLES:
+        n = counts.get(r, 0)
+        if n > 0:
+            ordered.append({"role": r, "count": n})
+    if counts.get("Other", 0) > 0:
+        ordered.append({"role": "Other", "count": counts["Other"]})
+    return {"total": total, "roles": ordered}
+
+
+# -----------------------------------------------------------------------------
 # CRUD — shared shape across objectives and projects.
+#
+# Chunk 6.5-REVISED Task F (2026-05-13): switched from `find()` to an
+# aggregation pipeline that `$lookup`s `db.accounts` against
+# `owner_account_id` and projects `accounts.declared_role` onto each
+# item as `owner_role`. The frontend's owner-tab strip filters on this
+# field. When the lookup yields no match (owner_account_id is null or
+# the account row is gone), `owner_role` is set to null — the item
+# falls under the "Other" tab on the frontend.
 # -----------------------------------------------------------------------------
 @router.get("/contexts/{context_id}/monitor/{kind}")
 async def list_items(
@@ -137,6 +255,7 @@ async def list_items(
     kind: str,
     status: Optional[str] = None,
     owner: Optional[str] = None,
+    owner_role: Optional[str] = None,
     page: int = 1,
     page_size: int = 5,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
@@ -145,23 +264,94 @@ async def list_items(
         raise HTTPException(status_code=400, detail="Unknown kind.")
     page = max(1, int(page or 1))
     page_size = max(1, min(50, int(page_size or 5)))
-    q: Dict[str, Any] = {"context_id": context_id, "deleted_at": {"$exists": False}}
+    match: Dict[str, Any] = {"context_id": context_id, "deleted_at": {"$exists": False}}
     if status:
         if status not in _RAG and status != "all":
             raise HTTPException(status_code=400, detail="Unknown status.")
         if status != "all":
-            q["rag_status"] = status
+            match["rag_status"] = status
     if owner:
-        q["owner_account_id"] = owner
-    total = await _coll(kind).count_documents(q)
-    cursor = (
-        _coll(kind)
-        .find(q, {"_id": 0})
-        .sort("score", -1)
-        .skip((page - 1) * page_size)
-        .limit(page_size)
-    )
-    items = [_sanitize(r) async for r in cursor]
+        match["owner_account_id"] = owner
+
+    # Aggregation pipeline:
+    #   1) $match the base context+kind filters.
+    #   2) $lookup the owner account row (to read declared_role).
+    #   3) Project owner_role from declared_role; strip _id and the
+    #      heavy joined doc array.
+    #   4) Apply owner_role filter (if any) AFTER the lookup since the
+    #      field doesn't exist on the source documents.
+    #   5) Sort, skip, limit.
+    pipeline: List[Dict[str, Any]] = [
+        {"$match": match},
+        {
+            "$lookup": {
+                "from": "accounts",
+                "localField": "owner_account_id",
+                "foreignField": "id",
+                "as": "_owner",
+            }
+        },
+        {
+            "$addFields": {
+                "owner_role": {
+                    "$let": {
+                        "vars": {"first": {"$arrayElemAt": ["$_owner", 0]}},
+                        "in": {
+                            "$cond": [
+                                {"$ifNull": ["$$first.declared_role", False]},
+                                "$$first.declared_role",
+                                None,
+                            ]
+                        },
+                    }
+                }
+            }
+        },
+        {"$project": {"_id": 0, "_owner": 0}},
+    ]
+    # owner_role filter — accepts canonical TitleCase forms ("CEO",
+    # "Audit Committee") plus the special sentinel "__other__" which
+    # matches items whose owner_role is null OR not in the canonical
+    # list. Case-insensitive on the canonical match.
+    if owner_role:
+        if owner_role == "__other__":
+            canonical_lowers = [r.lower() for r in CANONICAL_OWNER_ROLES]
+            pipeline.append({
+                "$match": {
+                    "$expr": {
+                        "$or": [
+                            {"$eq": ["$owner_role", None]},
+                            {"$not": {"$in": [
+                                {"$toLower": {"$ifNull": ["$owner_role", ""]}},
+                                canonical_lowers,
+                            ]}},
+                        ]
+                    }
+                }
+            })
+        else:
+            # Case-insensitive equality on the raw stored value.
+            ci_target = owner_role.strip().lower()
+            pipeline.append({
+                "$match": {
+                    "$expr": {
+                        "$eq": [{"$toLower": {"$ifNull": ["$owner_role", ""]}}, ci_target]
+                    }
+                }
+            })
+
+    # Total count for this filter set (re-runs the pipeline with $count).
+    total_pipeline = list(pipeline) + [{"$count": "n"}]
+    total_cursor = _coll(kind).aggregate(total_pipeline)
+    total_doc = await total_cursor.to_list(1)
+    total = (total_doc[0]["n"] if total_doc else 0)
+
+    pipeline += [
+        {"$sort": {"score": -1}},
+        {"$skip": (page - 1) * page_size},
+        {"$limit": page_size},
+    ]
+    items = [_sanitize(r) async for r in _coll(kind).aggregate(pipeline)]
     return {
         "kind": kind,
         "items": items,

@@ -129,6 +129,34 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 6.5-REVISED Sub-task F — Monitor Owner-filter tabs — 2026-05-13 ✅
+- **Headline**: 6 of 6 sub-tasks now complete. Sub-task F unblocked via PO-chosen Option (b) — query-time `$lookup` against `db.accounts`. No migration, always-fresh, no editable field.
+- **Backend** (`routers/monitor_v2.py`):
+  - `list_items` refactored from `find()` to an aggregation pipeline: `$match` → `$lookup` accounts on `owner_account_id` → `$addFields` `owner_role` (projected from `accounts.declared_role`) → `$project` to strip `_id` + the joined `_owner` doc → optional `$match` on `owner_role` filter → `$sort/$skip/$limit`. Items now carry `owner_role` (null when owner_account_id is null OR the linked account has no declared_role).
+  - New endpoint `GET /api/contexts/{cid}/monitor/owner-roles` — registered BEFORE the generic `/monitor/{kind}` so FastAPI route ordering doesn't shadow it. Returns `{total, roles: [{role, count}]}`. Buckets all rows into the 9 canonical CANONICAL_OWNER_ROLES (case-insensitive match) or "Other". Canonical role order locked in product spec; zero-count tabs omitted.
+  - `owner_role` query param accepts canonical case-insensitively + special sentinel `__other__` (matches null + non-canonical owner_role values via `$expr` + `$toLower` + `$not $in canonical_lowers`).
+  - Strict context scoping enforced — `require_context_membership()` dependency on both routes; cross-context tested + 403 verified.
+- **Frontend** (`pages/Monitor.jsx` + `components/monitor/ObjectivesProjectsPanel.jsx`):
+  - **Removed**: the inline `monitor-function-indicator` chip strip ("Chief Executive (CEO) · Cross-functional pulse · ✏ change") and the first-time `monitor-fn-nudge` onboarding banner. Both retired per the brief.
+  - **Added**: owner-tab strip BELOW "OBJECTIVES & PROJECTS" header, ABOVE the RAG (`ALL · ON TRACK · AT RISK · OFF TRACK`) status tabs. Visually distinct: smaller chip, no border, single underline accent on active tab, dark-ink+parchment pill on selected state. The two strips are orthogonal — owner × status — and combine cleanly (e.g. `?owner=CFO&status=red` returns only red-rag, CFO-owned items).
+  - **Tab order locked**: `All` (always present, default selected), `CEO`, `CFO`, `COO`, `CCO`, `CTO`, `CRO`, `CIO`, `Audit Committee`, `Risk Committee`, `Other`. Zero-count tabs hidden.
+  - **URL state**: persisted in query params via `useSearchParams` (`?owner=CFO`, `?owner=__other__`). Deep-link / bookmarkable. `setSearchParams(..., { replace: true })` to avoid filling back-stack on every tab click.
+  - **CRUD refresh**: owner-counts refetch on item create/accept (`onCreated`, `acceptSuggestion`).
+- **Tests**: 8 new tests appended to `/app/backend/tests/test_chunk6_5_revised_endpoints.py` covering (1) canonical owner-role counts with case-insensitive matching, (2) cross-context isolation, (3) foreign-context 403, (4) `owner_role` attached via $lookup, (5) canonical filter behaviour, (6) `__other__` sentinel filter, (7) null `owner_account_id` yields null `owner_role`, (8) orthogonal filter intersection (`owner_role=CEO` AND `status=red`). All green.
+- **Test counts**: **469 passed** (was 461 entering Task F; +8 from this task), 565 skipped, 0 failed.
+- **render-smoke**: PASS — all 8 routes + uploads + Chunk 4/5/6 specific.
+- **Live preview verification** (3 screenshots captured):
+  - `/tmp/c65r-monitor.png` — default state: `Owner: All 5 · CFO 3 · Other 2` strip visible, RAG strip below, 5 objectives listed.
+  - `/tmp/c65r-monitor-cfo.png` — CFO tab clicked, URL = `/app/monitor?owner=CFO`, `ALL · 3` (intersected count), 3 CFO-owned items.
+  - `/tmp/c65r-monitor-other.png` — Other tab clicked, URL = `/app/monitor?owner=__other__`, `ALL · 2`, 2 null-owner items.
+- **Cross-cutting**: Task A "Documents" button visible in top-bar across all screenshots.
+- **PO-18 logged**: appended to `/app/memory/clarifications/PRODUCT_CLARIFICATIONS_13MAY2026.md` as a new entry. Covers committee-level ownership semantics (Audit Committee / Risk Committee) that don't naturally surface via the individual-role derivation. Three options + default-behaviour-until-resolved note included.
+- **Autonomous decisions** (logged for PO):
+  - Pipeline-based `list_items` re-implementation: total count via a separate `$count` pipeline run rather than splitting the main pipeline. Slightly more queries per page load (2 instead of 1 with `count_documents`), but the cleaner separation lets the owner-role filter apply post-lookup without duplicating logic.
+  - Route ordering: declared `/monitor/owner-roles` BEFORE `/monitor/{kind}` so the literal path matches first. Earlier shadowing would have collided with `_KIND` validation and returned a 400.
+  - Test fixture seeded `db.objectives` / `db.projects` (the actual collection names — see `_coll()` in `monitor_v2.py:84`), NOT `monitor_objectives` / `monitor_projects`. Confirmed via initial failing test run.
+- **Diagnosis doc**: none — F was a feature build, not a bug fix.
+
 ### Chunk 6.5-REVISED — Home / Top Bar / Document Journal / Review / Monitor — 2026-05-13 ✅ (5 of 6 sub-tasks shipped; F blocked on data)
 - **Sprint plan update**: the previously-shipped Chunk 6.5 (Claude-style Left Dashboard Nav) was **CANCELLED** by user direction at the start of this chunk. The LeftRail + new TopBar shell components built in that pass have been **reverted** — `components/shell/LeftRail.jsx` and `components/shell/TopBar.jsx` deleted; `components/layout/AppShell.jsx` restored from commit `a09f8da` (876 lines, the legacy two-header-row shell with the original logo header + primary 8-tab nav). Render-smoke's `smokeChunk65LeftRail` step removed. The cancelled-6.5 close-out entry below is preserved for archaeology but marked CANCELLED.
 - **Headline**: 5 sub-tasks shipped against the existing top-bar shell. 1 blocked on missing data field (Task F — `owner_role` does not exist on `db.monitor_objectives` / `db.monitor_projects` per `routers/monitor_v2.py:42-47`).

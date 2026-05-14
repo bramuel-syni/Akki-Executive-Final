@@ -405,5 +405,30 @@ Document Journal.
 | 15 — Scoreboard CTA after poor score | ✅ | ⏳ |
 | 16 — Chat scope | ✅ | ⏳ |
 | 17 — Document tagging | ✅ | ⏳ |
+| 18 — Committee-level ownership on objectives/projects | ✅ | ⏳ |
 
 — end —
+
+---
+
+## 18. Committee-level ownership on objectives/projects (NEW · added 2026-05-13 during Chunk 6.5-REVISED Task F)
+
+**Context.** Chunk 6.5-REVISED Task F shipped a new Monitor Owner-filter tab strip driven by a `$lookup` against `db.accounts.declared_role`. The canonical owner-role list includes individual roles (CEO / CFO / COO / CCO / CTO / CRO / CIO) plus two committee labels:
+
+- **Audit Committee**
+- **Risk Committee**
+
+These last two are committees, not individual roles. With the current `owner_account_id → accounts.declared_role` derivation, a tab named "Audit Committee" only appears if a person's `declared_role` literally equals "Audit Committee" — which is unlikely. `declared_role` in this codebase is typically `executive`, `ned`, `reportee`, or `dual`. **In practice today, none of the canonical CEO-CIO tabs will appear** unless someone is declared with those specific role strings.
+
+**Question for PO.** Should objectives/projects support a separate, optional committee-ownership field — i.e. `owner_committee: Optional[str]` — that lives alongside `owner_account_id`? Three concrete options:
+
+- **(a)** Add `owner_committee` as an optional editable field on the create/edit forms. The Owner tab strip then unions individual-role-derived tabs with committee tabs derived from this new field. (Closest to current PO direction but introduces an editable field, which the original Chunk 6.5-REVISED constraint discouraged.)
+- **(b)** Model committee-level review as a separate "review forum" / "review path" attribute distinct from ownership entirely. Tabs only ever reflect individual ownership. Committees surface via a separate UI surface.
+- **(c)** Drop "Audit Committee" and "Risk Committee" from the canonical owner-role list. Tabs are individual-role-only. (Simplest; loses the editorial distinction.)
+
+**Default behaviour until resolved**: tabs are emitted only for canonical labels with non-zero counts. "Audit Committee" / "Risk Committee" tabs will simply not appear unless some account is declared with one of those role strings. This is fail-safe but might not match user expectation.
+
+| Asked? | Answered? |
+|--------|----------|
+| ✅ | ⏳ |
+

@@ -106,46 +106,14 @@ export default function Monitor() {
               : `${FUNCTION_LABEL[fn] || "Executive"} view of ${activeContext?.name || "this company"} — board-tracked goals you own, plus signals and cycle items adapted to your function.`}
           </p>
 
-          {/* Function indicator — read-only, with a small change affordance.
-              The chip strip from iter27 is gone — the system populates this
-              based on profile, not user selection. */}
-          {!isNED && (
-            <div className="mt-4 flex items-center gap-2 text-[12px]" data-testid="monitor-function-indicator">
-              <span className="akki-context-chip">{FUNCTION_LABEL[fn]} ({fn.toUpperCase()})</span>
-              <span className="text-[var(--muted)] italic">{FUNCTION_DESCRIPTION[fn]}</span>
-              <button
-                onClick={() => setEditFn(true)}
-                className="text-[var(--muted)] hover:text-[var(--accent)] inline-flex items-center gap-1 ml-1"
-                data-testid="monitor-edit-fn"
-              >
-                <Pencil className="w-3 h-3" /> change
-              </button>
-            </div>
-          )}
-
-          {/* First-time onboarding nudge — fires once until the user picks
-              a function. Quiet inline editorial banner, not a modal. */}
-          {!isNED && !fnSet && (
-            <div
-              className="mt-5 bg-[var(--cream-deep)]/60 border border-[var(--accent)]/20 rounded-md px-4 py-3 flex items-start gap-3"
-              data-testid="monitor-fn-nudge"
-            >
-              <Sparkles className="w-4 h-4 text-[var(--accent)] mt-0.5 shrink-0" />
-              <div className="flex-1">
-                <p className="text-[12.5px] text-[var(--ink)] leading-relaxed">
-                  AKKI is showing you the <strong>CEO</strong> view by default. Set your function once and Monitor will adapt — signals filtered to what your role tracks, goals scoped to your department.
-                </p>
-              </div>
-              <Button
-                size="sm"
-                onClick={() => setEditFn(true)}
-                className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white text-[12px] h-7"
-                data-testid="monitor-fn-nudge-cta"
-              >
-                Set my function
-              </Button>
-            </div>
-          )}
+          {/* Chunk 6.5-REVISED Task F (2026-05-13) — the inline
+              `Chief Executive (CEO) · Cross-functional pulse · ✏ change`
+              chip strip and the first-time onboarding nudge are GONE.
+              The Owner filter (a data-driven tab strip living inside
+              `ObjectivesProjectsPanel`) replaces both. The function
+              picker still exists for the legacy SecondaryTiles
+              section below ("Around the goals") so signals + cycle
+              tiles continue to scope by function. */}
         </div>
 
         {/* PRIMARY (Patch 5) — Objectives & Projects, top section */}
