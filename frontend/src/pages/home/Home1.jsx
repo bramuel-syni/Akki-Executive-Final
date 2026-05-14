@@ -100,7 +100,7 @@ function ChipCompany({ ctx, onPick }) {
       data-testid={`home1-chip-${ctx.id}`}
     >
       <p
-        className="akki-serif text-[16px] text-[var(--ink)] font-medium truncate leading-tight"
+        className="akki-serif text-[16px] text-[var(--ink)] font-bold truncate leading-tight"
         title={ctx.name}
       >
         {ctx.name}
