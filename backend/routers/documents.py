@@ -496,6 +496,49 @@ async def get_document_journal(
 
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Chunk 6.5-REVISED (2026-05-13, Task D)
+#
+# Thin wrapper for the Work Studio "Document Journal" side deck. Same
+# shape as `/document-journal` above but bounded by `limit` (default
+# 5, max 25). Newest-first. Used by `CompilationRail.jsx` to populate
+# the Document Journal deck without pulling the full 500-row payload
+# every page render.
+# ─────────────────────────────────────────────────────────────────────
+@router.get("/contexts/{context_id}/document-journal/recent")
+async def get_document_journal_recent(
+    context_id: str,
+    limit: int = 5,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    if limit < 1:
+        limit = 1
+    if limit > 25:
+        limit = 25
+    cursor = db.documents.find(
+        {"context_id": context_id},
+        {
+            "_id": 0,
+            "id": 1, "name": 1, "title": 1, "doc_kind": 1, "doc_type": 1,
+            "created_at": 1, "updated_at": 1,
+        },
+    ).sort("created_at", -1)
+    rows = await cursor.to_list(limit)
+    items = [
+        {
+            "id": r["id"],
+            "title": r.get("name") or r.get("title") or "(untitled)",
+            "doc_kind": r.get("doc_kind"),
+            "doc_type": r.get("doc_type"),
+            "created_at": r.get("created_at"),
+            "updated_at": r.get("updated_at"),
+        }
+        for r in rows
+    ]
+    return {"items": items, "count": len(items), "limit": limit}
+
+
+
 # ═════════════════════════════════════════════════════════════════════════
 #  Phase E — Documents Journal full-text search
 #

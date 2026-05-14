@@ -7,6 +7,9 @@
  *   1. Primary CTA: full-width `Compile a Report` button → opens wizard
  *   2. Ready to compile — top 3 with readiness ≥ 80%
  *   3. At risk      — top 3 with readiness ≤ 40% OR no activity > 7 days
+ *   4. Document Journal — Chunk 6.5-REVISED (2026-05-13, Task D)
+ *      top 5 most-recent documents in the context with a "View more"
+ *      CTA routing to `/app/workspace`.
  *
  * Source: aggregates across all 6 kinds, with deterministic readiness.
  * The same readiness placeholder is used as in the wizard
@@ -17,6 +20,14 @@
  *   • Primary CTA → onOpenWizard()
  *   • Ready row    → onOpenWizard({ artefactType, sourceId })  (pre-selects on Step 2)
  *   • At-risk row  → navigates to the artefact detail surface
+ *   • Document row → navigates to /app/documents/<id>
+ *   • View more →  → navigates to /app/workspace
+ *
+ * Constant-height constraint (Chunk 6.5-REVISED): each deck body
+ * carries an explicit `min-height` + `max-height` + overflow:hidden,
+ * so the rail's vertical layout doesn't jump as data populates. The
+ * Document Journal deck's "View more" button stays visible regardless
+ * of how many docs are returned (the overflow rolls behind it).
  *
  * Oxblood is used ONLY on the At-risk readiness numeral (severity case).
  */
@@ -24,7 +35,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Sparkles, RefreshCw, AlertCircle, Loader2 } from "lucide-react";
+import {
+  Sparkles, RefreshCw, AlertCircle, Loader2, BookOpenCheck, ArrowRight,
+} from "lucide-react";
 
 
 // Match the wizard's artefact type ↔ aggregate kind mapping.
@@ -36,6 +49,14 @@ const KINDS = [
   { artefact_type: "report",         kind: "report",               label: "Report" },
   { artefact_type: "briefing",       kind: "briefing",             label: "Briefing" },
 ];
+
+
+// Per-deck body height. 3-row sections (Ready / At-risk) cap at ~120px;
+// the 5-row Document Journal deck caps at ~180px. Both render at fixed
+// height regardless of how many items load, so the rail doesn't jump.
+const DECK_BODY_HEIGHT_3ROW = 120;
+const DECK_BODY_HEIGHT_5ROW = 180;
+const RECENT_DOCS_LIMIT = 5;
 
 
 function fmtRelDays(iso) {
@@ -73,6 +94,9 @@ export default function CompilationRail({ contextId, onOpenWizard, refreshKey = 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
+  // Chunk 6.5-REVISED (Task D) — Document Journal side deck state.
+  const [recentDocs, setRecentDocs] = useState([]);
+  const [recentDocsLoading, setRecentDocsLoading] = useState(true);
 
   useEffect(() => {
     if (!contextId) return undefined;
@@ -93,6 +117,20 @@ export default function CompilationRail({ contextId, onOpenWizard, refreshKey = 
       })
       .catch(() => { if (!dead) setErr("Could not load rail."); })
       .finally(() => { if (!dead) setLoading(false); });
+    return () => { dead = true; };
+  }, [contextId, refreshKey]);
+
+  // Document Journal deck — fetched independently so a Document Journal
+  // outage doesn't blank the Compile-report sections.
+  useEffect(() => {
+    if (!contextId) return undefined;
+    let dead = false;
+    setRecentDocsLoading(true);
+    api
+      .get(`/contexts/${contextId}/document-journal/recent`, { params: { limit: RECENT_DOCS_LIMIT } })
+      .then(({ data }) => { if (!dead) setRecentDocs(data?.items || []); })
+      .catch(() => { if (!dead) setRecentDocs([]); })
+      .finally(() => { if (!dead) setRecentDocsLoading(false); });
     return () => { dead = true; };
   }, [contextId, refreshKey]);
 
@@ -147,7 +185,10 @@ export default function CompilationRail({ contextId, onOpenWizard, refreshKey = 
             </p>
             {loading && <Loader2 className="w-3 h-3 animate-spin text-[var(--muted)]" />}
           </header>
-          <div className="p-2.5">
+          <div
+            className="p-2.5 overflow-hidden"
+            style={{ minHeight: DECK_BODY_HEIGHT_3ROW, maxHeight: DECK_BODY_HEIGHT_3ROW }}
+          >
             {loading ? null : ready.length === 0 ? (
               <p className="text-[12px] text-[var(--muted)] italic px-1" data-testid="compilation-rail-ready-empty">
                 Nothing ready yet.
@@ -194,7 +235,10 @@ export default function CompilationRail({ contextId, onOpenWizard, refreshKey = 
             <AlertCircle className="w-3 h-3 text-[color:var(--oxblood)]" strokeWidth={1.7} />
             <p className="akki-overline text-[10.5px] tracking-[0.16em] text-[var(--ink)]">At risk</p>
           </header>
-          <div className="p-2.5">
+          <div
+            className="p-2.5 overflow-hidden"
+            style={{ minHeight: DECK_BODY_HEIGHT_3ROW, maxHeight: DECK_BODY_HEIGHT_3ROW }}
+          >
             {loading ? null : atRisk.length === 0 ? (
               <p className="text-[12px] text-[var(--muted)] italic px-1" data-testid="compilation-rail-atrisk-empty">
                 Nothing at risk. Healthy queue.
@@ -229,6 +273,61 @@ export default function CompilationRail({ contextId, onOpenWizard, refreshKey = 
               </ul>
             )}
           </div>
+        </section>
+
+        {/* Chunk 6.5-REVISED (2026-05-13, Task D) — Document Journal deck. */}
+        <section
+          className="border border-[var(--rule)] bg-white rounded-sm"
+          data-testid="compilation-rail-document-journal"
+        >
+          <header className="px-3 py-2 border-b border-[var(--rule)] flex items-center gap-1.5">
+            <BookOpenCheck className="w-3 h-3 text-[var(--deep)]" strokeWidth={1.7} />
+            <p className="akki-overline text-[10.5px] tracking-[0.16em] text-[var(--ink)]">Document journal</p>
+            {recentDocsLoading && <Loader2 className="w-3 h-3 animate-spin text-[var(--muted)] ml-auto" />}
+          </header>
+          <div
+            className="p-2.5 overflow-hidden"
+            style={{ minHeight: DECK_BODY_HEIGHT_5ROW, maxHeight: DECK_BODY_HEIGHT_5ROW }}
+          >
+            {recentDocsLoading ? null : recentDocs.length === 0 ? (
+              <p className="text-[12px] text-[var(--muted)] italic px-1" data-testid="compilation-rail-document-journal-empty">
+                No documents yet.
+              </p>
+            ) : (
+              <ul className="space-y-1.5" data-testid="compilation-rail-document-journal-list">
+                {recentDocs.map((d) => (
+                  <li key={d.id} className="text-[12.5px]">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/app/documents/${d.id}`)}
+                      className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-[var(--parchment)] flex items-center gap-2"
+                      data-testid={`compilation-rail-document-journal-row-${d.id}`}
+                    >
+                      <span className="flex-1 min-w-0 truncate text-[var(--ink)]">{d.title}</span>
+                      {d.doc_kind && (
+                        <span className="text-[10.5px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] shrink-0">
+                          {d.doc_kind}
+                        </span>
+                      )}
+                      <span className="font-mono text-[11px] text-[var(--muted)] shrink-0 w-8 text-right">
+                        {fmtRelDays(d.created_at)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <footer className="px-3 py-2 border-t border-[var(--rule)] bg-[var(--cream-deep)]/40">
+            <button
+              type="button"
+              onClick={() => navigate("/app/workspace")}
+              className="text-[11.5px] text-[var(--deep)] hover:text-[var(--ink)] inline-flex items-center gap-1 transition-colors"
+              data-testid="compilation-rail-document-journal-view-more"
+            >
+              View more <ArrowRight className="w-3 h-3" strokeWidth={1.7} />
+            </button>
+          </footer>
         </section>
 
         {err && (

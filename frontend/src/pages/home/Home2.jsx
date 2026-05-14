@@ -20,7 +20,7 @@ import ExcoTeamsCard from "@/components/home/ExcoTeamsCard";
 import { Button } from "@/components/ui/button";
 import {
   Files, AlertTriangle, Briefcase, CheckCircle2, Calendar,
-  Plus, MessageSquare, ChevronRight, History, ArrowLeft, ArrowRight, Sparkles,
+  MessageSquare, ChevronRight, History, ArrowLeft, ArrowRight, Sparkles,
 } from "lucide-react";
 
 
@@ -51,6 +51,12 @@ function relTime(iso) {
 
 // Card config — key matches the backend insights map.
 // `urgency` drives the default order; `count_weight` was set per spec.
+//
+// Chunk 6.5-REVISED (2026-05-13, Task B): the `new_documents` tile
+// has been removed from this map. The Document Journal is now
+// reachable directly from the top-bar "Documents" button (Task A);
+// surfacing a count-tile for it here was redundant and crowded the
+// plate.
 const CARD_CONFIG = {
   pulse_critical: {
     title: "Pulse alerts", icon: AlertTriangle, urgency: 6,
@@ -82,11 +88,6 @@ const CARD_CONFIG = {
     title: "Solva sessions waiting", icon: Sparkles, urgency: 1,
     template: (n) => `${n} draft${n === 1 ? "" : "s"} ready for review`,
     href: "/app/solva",
-  },
-  new_documents: {
-    title: "New documents", icon: Plus, urgency: 0,
-    template: (n) => `${n} added since your last visit by team`,
-    href: "/app/work-studio?since=last_visit",
   },
 };
 
@@ -283,62 +284,82 @@ export default function Home2() {
   return (
     <AppShell>
       <div className="akki-w-medium px-8 py-12" data-testid="home2">
-        {/* 1. Greeting band */}
-        <section className="mb-2" data-testid="home2-greeting">
-          <p className="akki-overline mb-1 flex items-center gap-2">
-            <span>{activeContext.name}</span>
-            <button
-              onClick={onBackToPortfolio}
-              className="inline-flex items-center gap-1 text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] hover:text-[var(--ink)]"
-              data-testid="home2-back-to-portfolio"
-            >
-              <ArrowLeft className="w-3 h-3" strokeWidth={1.7} /> Back to portfolio
-            </button>
-          </p>
-          <h1 className="akki-greeting">{greeting}, {firstName}.</h1>
-          <p className="akki-meta mt-1">
-            Welcome back to {activeContext.name}.
-            {insights?.previous_visit_at && (
-              <> Last seen here {relTime(insights.previous_visit_at)}.</>
-            )}
-          </p>
-        </section>
+        {/* Chunk 6.5-REVISED (2026-05-13, Task B):
+            Hero (sections 1-3) and Plate (section 4) sit side-by-side
+            at ≥1100px (3fr / 2fr split). Below the breakpoint the
+            grid collapses to a single column — hero on top, plate
+            beneath — preserving mobile readability. Both columns
+            start at the same top edge for visual balance. */}
+        <div
+          className="grid grid-cols-1 min-[1100px]:grid-cols-[3fr_2fr] gap-x-10 gap-y-8 items-start"
+          data-testid="home2-hero-plate-grid"
+        >
+          {/* ─── Left column: HERO ─── */}
+          <div data-testid="home2-hero-block">
+            {/* 1. Greeting band */}
+            <section data-testid="home2-greeting">
+              <p className="akki-overline mb-1 flex items-center gap-2">
+                <span>{activeContext.name}</span>
+                <button
+                  onClick={onBackToPortfolio}
+                  className="inline-flex items-center gap-1 text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] hover:text-[var(--ink)]"
+                  data-testid="home2-back-to-portfolio"
+                >
+                  <ArrowLeft className="w-3 h-3" strokeWidth={1.7} /> Back to portfolio
+                </button>
+              </p>
+              <h1 className="akki-greeting">{greeting}, {firstName}.</h1>
+              <p className="akki-meta mt-1">
+                Welcome back to {activeContext.name}.
+                {insights?.previous_visit_at && (
+                  <> Last seen here {relTime(insights.previous_visit_at)}.</>
+                )}
+              </p>
+            </section>
 
-        {/* Patch 17 — Continue-onboarding band (parity from HomeExecutive).
-            Renders only when account.first_session is open. */}
-        <ContinueOnboardingBand account={account} navigate={navigate} />
+            {/* Patch 17 — Continue-onboarding band (kept in the hero
+                column so the next-step prompt sits within the user's
+                primary reading flow). */}
+            <ContinueOnboardingBand account={account} navigate={navigate} />
 
-        {/* 2. Hero copy band — Patch 28A role-sensitive */}
-        <section className="mt-8 mb-6" data-testid="home2-hero-copy" data-role={(activeContext?.my_role || "").toLowerCase()}>
-          <h2 className="akki-serif text-[24px] text-[var(--ink)] leading-tight mb-2 font-normal" data-testid="home2-hero-headline">
-            {roleHeroCopy.headline}
-          </h2>
-          <p className="akki-meta max-w-2xl" data-testid="home2-hero-sub">
-            {roleHeroCopy.sub}
-          </p>
-        </section>
+            {/* 2. Hero copy band — Patch 28A role-sensitive */}
+            <section className="mt-8 mb-6" data-testid="home2-hero-copy" data-role={(activeContext?.my_role || "").toLowerCase()}>
+              <h2 className="akki-serif text-[24px] text-[var(--ink)] leading-tight mb-2 font-normal" data-testid="home2-hero-headline">
+                {roleHeroCopy.headline}
+              </h2>
+              <p className="akki-meta max-w-2xl" data-testid="home2-hero-sub">
+                {roleHeroCopy.sub}
+              </p>
+            </section>
 
-        {/* 3. HeroDocActions — preserved from Patch 2A */}
-        <HeroDocActions />
+            {/* 3. HeroDocActions — preserved from Patch 2A.
+                "+ Add document" + "All documents" CTAs. */}
+            <HeroDocActions />
+          </div>
 
-        {/* 4. Leading-insight Quick Action cards — 7, dynamic order */}
-        <section className="mt-10" data-testid="home2-insights">
-          <h2 className="akki-serif text-[15px] text-[var(--ink)] mb-3">What's on your plate</h2>
-          {!loaded ? (
-            <p className="akki-meta italic">Reading the room…</p>
-          ) : (
-            <div className="grid sm:grid-cols-2 gap-3" data-testid="home2-insights-grid">
-              {orderedCards.map((c) => (
-                <InsightCard
-                  key={c.key}
-                  keyName={c.key}
-                  count={c.count}
-                  onClick={() => onCardClick(c.key)}
-                />
-              ))}
-            </div>
-          )}
-        </section>
+          {/* ─── Right column: PLATE ─── */}
+          <div data-testid="home2-plate-block">
+            <section data-testid="home2-insights">
+              <h2 className="akki-serif text-[15px] text-[var(--ink)] mb-3">
+                What&apos;s on your plate
+              </h2>
+              {!loaded ? (
+                <p className="akki-meta italic">Reading the room…</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-3" data-testid="home2-insights-grid">
+                  {orderedCards.map((c) => (
+                    <InsightCard
+                      key={c.key}
+                      keyName={c.key}
+                      count={c.count}
+                      onClick={() => onCardClick(c.key)}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        </div>
 
         {/* 5. What's new since last visit */}
         <section className="mt-12" data-testid="home2-whats-new">

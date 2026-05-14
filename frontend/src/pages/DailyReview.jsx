@@ -33,7 +33,6 @@ import useReviewQueue from "@/hooks/useReviewQueue";
 import useIsMobile from "@/hooks/useIsMobile";
 import { apiErrorMessage } from "@/lib/api";
 import ReviewItemCard from "@/components/review/ReviewItemCard";
-import ReviewQueueStrip from "@/components/review/ReviewQueueStrip";
 
 function isTypingTarget(target) {
   if (!target) return false;
@@ -45,6 +44,58 @@ function isTypingTarget(target) {
   // the next tick — belt-and-braces.
   if (typeof target.getAttribute === "function" && target.getAttribute("contenteditable") === "true") return true;
   return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Chunk 6.5-REVISED (2026-05-13, Task E) — inbox row helpers.
+//
+//   kindLabel(kind)  → short uppercase chip label for the Type column.
+//   formatSize(item) → words / pages / kb depending on what's present.
+//   formatAge(item)  → "12m" / "3h" / "5d" relative timestamp.
+// ─────────────────────────────────────────────────────────────────────
+const KIND_LABEL_MAP = {
+  briefing:      "Brief",
+  inbound_doc:   "Doc",
+  deck:          "Deck",
+  report:        "Report",
+  solva_session: "Solva",
+};
+function kindLabel(kind) {
+  return KIND_LABEL_MAP[kind] || (kind || "—").toUpperCase();
+}
+
+function formatSize(item) {
+  const p = item?.payload || {};
+  if (typeof p.word_count === "number" && p.word_count > 0) {
+    return `${p.word_count.toLocaleString()}w`;
+  }
+  if (typeof p.page_count === "number" && p.page_count > 0) {
+    return `${p.page_count} pp`;
+  }
+  if (typeof p.size_bytes === "number" && p.size_bytes > 0) {
+    const kb = p.size_bytes / 1024;
+    return kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb.toFixed(0)} KB`;
+  }
+  if (Array.isArray(p.attachments) && p.attachments.length > 0) {
+    return `${p.attachments.length} att`;
+  }
+  return "—";
+}
+
+function formatAge(item) {
+  const ts = item?.payload?.created_at || item?.created_at || item?.payload?.received_at;
+  if (!ts) return "—";
+  const ms = Date.now() - new Date(ts).getTime();
+  if (Number.isNaN(ms) || ms < 0) return "—";
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d`;
+  const months = Math.floor(days / 30);
+  return `${months}mo`;
 }
 
 export default function DailyReview() {
@@ -59,6 +110,9 @@ export default function DailyReview() {
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [editPayload, setEditPayload] = useState(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // Chunk 6.5-REVISED (2026-05-13, Task E) — inbox-style filter chips.
+  // Hidden chips have zero matching items; `all` is always present.
+  const [filterKind, setFilterKind] = useState("all");
   const editIframeRef = useRef(null);
   const pageRef = useRef(null);
 
@@ -99,16 +153,47 @@ export default function DailyReview() {
     return undefined;
   }, [rejectOpen, editSheetOpen, shortcutsOpen]);
 
-  const current = items[currentIndex] || null;
+  // Chunk 6.5-REVISED (2026-05-13, Task E) — derive filter chips from
+  // the kinds actually present in the queue. Order is fixed; chips
+  // with zero items are hidden; `all` always shows. Selecting a chip
+  // narrows the table without reloading the queue.
+  const kindCounts = useMemo(() => {
+    const acc = {};
+    items.forEach((it) => { acc[it.kind] = (acc[it.kind] || 0) + 1; });
+    return acc;
+  }, [items]);
+  const filterChips = useMemo(() => {
+    const chips = [{ key: "all", label: "All", count: items.length }];
+    const order = [
+      { key: "briefing",      label: "Briefs" },
+      { key: "inbound_doc",   label: "Inbound" },
+      { key: "deck",          label: "Decks" },
+      { key: "report",        label: "Reports" },
+      { key: "solva_session", label: "Solva" },
+    ];
+    order.forEach((o) => {
+      const c = kindCounts[o.key] || 0;
+      if (c > 0) chips.push({ key: o.key, label: o.label, count: c });
+    });
+    return chips;
+  }, [items.length, kindCounts]);
+  const filteredItems = useMemo(
+    () => (filterKind === "all" ? items : items.filter((it) => it.kind === filterKind)),
+    [items, filterKind],
+  );
+  // Reset selection when filter changes.
+  useEffect(() => { setCurrentIndex(0); }, [filterKind]);
 
-  // Keep currentIndex within bounds when the queue shrinks.
+  const current = filteredItems[currentIndex] || null;
+
+  // Keep currentIndex within bounds when the filtered queue shrinks.
   useEffect(() => {
-    if (items.length === 0) {
+    if (filteredItems.length === 0) {
       setCurrentIndex(0);
-    } else if (currentIndex >= items.length) {
-      setCurrentIndex(Math.max(0, items.length - 1));
+    } else if (currentIndex >= filteredItems.length) {
+      setCurrentIndex(Math.max(0, filteredItems.length - 1));
     }
-  }, [items, currentIndex]);
+  }, [filteredItems, currentIndex]);
 
   const handleApprove = useCallback(async () => {
     if (!current || acting) return;
@@ -209,7 +294,7 @@ export default function DailyReview() {
         case "ArrowDown":
         case "j":
           e.preventDefault();
-          setCurrentIndex((i) => Math.min(items.length - 1, i + 1));
+          setCurrentIndex((i) => Math.min(filteredItems.length - 1, i + 1));
           break;
         case "ArrowUp":
         case "k":
@@ -222,13 +307,11 @@ export default function DailyReview() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [current, items.length, handleApprove, handleEdit, navigate]);
+  }, [current, filteredItems.length, handleApprove, handleEdit, navigate]);
 
-  const headline = useMemo(() => {
-    if (loading) return null;
-    if (items.length === 0) return null;
-    return `${currentIndex + 1} of ${items.length} awaiting your review`;
-  }, [items.length, currentIndex, loading]);
+  // Chunk 6.5-REVISED (2026-05-13, Task E) — `headline` removed (the
+  // inbox table now carries the count via the page-header badge).
+  // `ReviewQueueStrip` removed (the table is the queue surface).
 
   if (loading) {
     return (
@@ -303,34 +386,136 @@ export default function DailyReview() {
         data-testid="daily-review-page"
       >
         <div className="akki-w-medium">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-4 md:mb-6">
-            <p
-              className="akki-overline text-[10.5px] tracking-[0.22em] text-[var(--muted)]"
-              data-testid="review-count-headline"
-            >
-              {headline}
-            </p>
+          {/* Chunk 6.5-REVISED (2026-05-13, Task E) — page header.
+              Replaces the old one-item-at-a-time hero copy with an
+              inbox-style "Approvals queue" header carrying the count
+              badge + the kept-from-before "Done for today" link. */}
+          <div className="flex items-baseline justify-between gap-4 mb-3">
+            <div className="min-w-0">
+              <p className="akki-overline text-[10.5px] tracking-[0.22em] text-[var(--muted)] mb-1">
+                Daily Review
+              </p>
+              <h1 className="akki-serif text-[24px] md:text-[28px] leading-[1.2] text-[var(--ink)] font-normal flex items-baseline gap-3">
+                Approvals queue
+                <span
+                  className="text-[12px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]"
+                  data-testid="review-count-badge"
+                >
+                  {items.length} awaiting
+                </span>
+              </h1>
+              <p className="akki-meta mt-1">
+                Items awaiting your review. Click an item to open.
+              </p>
+            </div>
             <Link
               to="/app"
-              className="text-[12px] text-[var(--muted)] hover:text-[var(--ink)] underline-offset-2 hover:underline"
+              className="text-[12px] text-[var(--muted)] hover:text-[var(--ink)] underline-offset-2 hover:underline shrink-0"
               data-testid="review-done-for-today"
             >
-              Done for today
+              Done for today →
             </Link>
           </div>
 
-          {/* Mobile strip on top */}
-          {isMobile ? (
-            <ReviewQueueStrip
-              items={items}
-              currentIndex={currentIndex}
-              onJump={setCurrentIndex}
-              isMobile
-            />
-          ) : null}
+          {/* Filter chips — hide chips with zero items; All always shown. */}
+          {filterChips.length > 1 && (
+            <div
+              className="flex flex-wrap gap-1.5 mb-4"
+              data-testid="review-filter-chips"
+              role="tablist"
+              aria-label="Filter approvals by type"
+            >
+              {filterChips.map((c) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={filterKind === c.key}
+                  onClick={() => setFilterKind(c.key)}
+                  className={
+                    "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[11.5px] uppercase tracking-[0.14em] font-mono transition-colors " +
+                    (filterKind === c.key
+                      ? "bg-[var(--ink)] text-[var(--parchment)]"
+                      : "bg-white border border-[var(--rule)] text-[var(--muted)] hover:text-[var(--ink)] hover:border-[var(--ink)]")
+                  }
+                  data-testid={`review-filter-chip-${c.key}`}
+                >
+                  {c.label}
+                  <span className="font-mono text-[10.5px] opacity-80">{c.count}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
-          {/* Body */}
+          {/* Inbox table — clickable rows, selected row highlights. */}
+          <div
+            className="border border-[var(--rule)] bg-white rounded-sm overflow-hidden mb-6"
+            data-testid="review-inbox-table"
+          >
+            <div className="grid grid-cols-[88px_minmax(0,2fr)_minmax(0,1.4fr)_92px_80px_120px] gap-3 px-4 py-2.5 border-b border-[var(--rule)] bg-[var(--cream-deep)]/40 text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">
+              <span>Type</span>
+              <span>Title</span>
+              <span>Drafted from</span>
+              <span className="text-right">Size</span>
+              <span className="text-right">Age</span>
+              <span className="text-right">Status</span>
+            </div>
+            {filteredItems.length === 0 ? (
+              <p
+                className="px-4 py-5 text-[12.5px] text-[var(--muted)] italic"
+                data-testid="review-inbox-empty"
+              >
+                Nothing matches this filter.
+              </p>
+            ) : (
+              <ul role="listbox" aria-label="Approvals queue">
+                {filteredItems.map((it, idx) => {
+                  const isCurrent = idx === currentIndex;
+                  const p = it.payload || {};
+                  const title = p.title || p.subject || "(untitled)";
+                  const draftedFrom = p.doc_title || p.from_name || p.from || "—";
+                  const size = formatSize(it);
+                  const age = formatAge(it);
+                  return (
+                    <li key={it.id || `${it.kind}-${idx}`}>
+                      <button
+                        type="button"
+                        onClick={() => setCurrentIndex(idx)}
+                        role="option"
+                        aria-selected={isCurrent}
+                        className={
+                          "w-full grid grid-cols-[88px_minmax(0,2fr)_minmax(0,1.4fr)_92px_80px_120px] gap-3 px-4 py-2.5 text-[12.5px] text-left border-b border-[var(--rule)] last:border-b-0 transition-colors " +
+                          (isCurrent
+                            ? "bg-[var(--cream-deep)]"
+                            : "bg-white hover:bg-[var(--cream-deep)]/40")
+                        }
+                        data-testid={`review-inbox-row-${idx}`}
+                        data-row-kind={it.kind}
+                      >
+                        <span className="inline-flex items-center gap-1 text-[10.5px] uppercase tracking-[0.14em] font-mono text-[var(--muted)]">
+                          {kindLabel(it.kind)}
+                        </span>
+                        <span className="truncate text-[var(--ink)]" title={title}>{title}</span>
+                        <span className="truncate text-[var(--muted)]" title={draftedFrom}>{draftedFrom}</span>
+                        <span className="font-mono tabular-nums text-[var(--muted)] text-right">{size}</span>
+                        <span className="font-mono tabular-nums text-[var(--muted)] text-right">{age}</span>
+                        <span className="text-right">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] uppercase tracking-[0.14em] font-mono bg-[var(--cream-deep)] text-[var(--deep)]">
+                            Awaiting review
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
+          {/* Detail surface — preserves the existing ReviewItemCard +
+              actions footer + keyboard shortcuts. Selecting a row in
+              the table sets `currentIndex`; the detail re-renders
+              against `current`. */}
           <div className="grid grid-cols-1 md:grid-cols-[1fr_180px] gap-4 md:gap-6">
             <div>
               <ReviewItemCard item={current} />
@@ -424,19 +609,12 @@ export default function DailyReview() {
               </div>
             </div>
 
-            {/* Desktop strip on right */}
-            {!isMobile ? (
-              <aside className="hidden md:block bg-white border border-[var(--rule)] rounded-sm p-3 sticky top-6 self-start">
-                <p className="akki-overline text-[10px] tracking-[0.22em] text-[var(--muted)] mb-2 px-2">
-                  Queue
-                </p>
-                <ReviewQueueStrip
-                  items={items}
-                  currentIndex={currentIndex}
-                  onJump={setCurrentIndex}
-                />
-              </aside>
-            ) : null}
+            {/* Chunk 6.5-REVISED (2026-05-13, Task E):
+                The legacy desktop ReviewQueueStrip on the right is
+                gone — the inbox table at the top is the new queue
+                surface. We keep the column structure so the action
+                footer's alignment stays put. */}
+            {!isMobile ? <div aria-hidden="true" /> : null}
           </div>
 
           {/* Shortcuts hint (desktop only) */}

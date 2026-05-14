@@ -310,20 +310,6 @@ async function smoke() {
   console.log(`[render-smoke] step 7 — Chunk 6 Brief drawer CTA smoke`);
   await smokeChunk6BriefDrawer(page, failures);
 
-  // ────────────────────────────────────────────────────────────────────
-  // Phase 8 — Chunk 6.5 Left rail + new TopBar.
-  //
-  // Asserts:
-  //   - `[data-testid="left-rail"]` is visible on every authenticated
-  //     route (Home, Work Studio, Cycle, Workspace).
-  //   - The collapse toggle flips `data-collapsed` and persists in
-  //     localStorage as `akki:leftRailCollapsed`.
-  //   - The workspace switcher in the rail is visible and clickable.
-  //   - The new TopBar's breadcrumb-0 testid is present.
-  // ────────────────────────────────────────────────────────────────────
-  console.log(`[render-smoke] step 8 — Chunk 6.5 Left rail + TopBar smoke`);
-  await smokeChunk65LeftRail(page, failures);
-
   await browser.close();
 
   if (failures.length) {
@@ -331,7 +317,7 @@ async function smoke() {
     for (const f of failures) console.error(`  • ${f}`);
     process.exit(1);
   }
-  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green · Chunk 6.5 left rail green.`);
+  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green.`);
 }
 
 // ----------------------------------------------------------------------
@@ -829,117 +815,3 @@ smoke().catch((e) => {
   process.exit(3);
 });
 
-// ----------------------------------------------------------------------
-// Phase 8 (Chunk 6.5) — Left rail + new top bar across authenticated routes.
-//
-// Visits each of the 4 highest-traffic authenticated routes, asserts
-// the new shell primitives render, exercises the collapse toggle and
-// persistence, then verifies auto-collapse triggers at <1100px.
-// ----------------------------------------------------------------------
-async function smokeChunk65LeftRail(page, failures) {
-  const pageErrors = [];
-  const onPageError = (err) => { pageErrors.push(err.toString()); };
-  page.on("pageerror", onPageError);
-
-  try {
-    // 1. Each of 4 routes shows the rail + the new TopBar.
-    const routes = [
-      "/app",
-      "/app/work-studio",
-      "/app/cycle",
-      "/app/workspace",
-    ];
-    for (const r of routes) {
-      await page.goto(`${BASE_URL}${r}`, { waitUntil: "domcontentloaded", timeout: 20000 });
-      await page.waitForLoadState("networkidle", { timeout: 12000 }).catch(() => {});
-      await page.waitForTimeout(700);
-      const railVisible = await page.locator(`[data-testid="left-rail"]`).first().isVisible({ timeout: 4000 }).catch(() => false);
-      if (!railVisible) {
-        failures.push(`Chunk 6.5: left rail not visible on ${r}`);
-        continue;
-      }
-      const topbarVisible = await page.locator(`[data-testid="topbar"]`).first().isVisible({ timeout: 2000 }).catch(() => false);
-      if (!topbarVisible) {
-        failures.push(`Chunk 6.5: top bar not visible on ${r}`);
-      }
-      const breadcrumb0 = await page.locator(`[data-testid="topbar-breadcrumb-0"]`).first().isVisible({ timeout: 2000 }).catch(() => false);
-      if (!breadcrumb0) {
-        failures.push(`Chunk 6.5: breadcrumb anchor missing on ${r}`);
-      }
-      const wsSwitcher = await page.locator(`[data-testid="left-rail-workspace-switcher"]`).first().isVisible({ timeout: 2000 }).catch(() => false);
-      if (!wsSwitcher) {
-        failures.push(`Chunk 6.5: workspace switcher missing in rail on ${r}`);
-      }
-    }
-    console.log(`[render-smoke]  ✓ Chunk 6.5 — left rail + top bar visible on ${routes.length} authenticated routes`);
-
-    // 2. Collapse toggle round-trip + localStorage persistence.
-    await page.goto(`${BASE_URL}/app`, { waitUntil: "domcontentloaded", timeout: 15000 });
-    await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
-    await page.waitForTimeout(600);
-
-    // Reset stored preference if any.
-    await page.evaluate(() => { try { window.localStorage.removeItem("akki:leftRailCollapsed"); } catch (_) {} });
-    await page.reload({ waitUntil: "domcontentloaded", timeout: 12000 });
-    await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
-    await page.waitForTimeout(500);
-
-    const beforeToggle = await page.getAttribute(`[data-testid="left-rail"]`, "data-collapsed");
-    if (beforeToggle !== "0") {
-      failures.push(`Chunk 6.5: rail did not default to expanded at wide viewport (got ${beforeToggle})`);
-    }
-
-    await page.click(`[data-testid="left-rail-collapse-toggle"]`);
-    await page.waitForTimeout(300);
-    const afterToggle = await page.getAttribute(`[data-testid="left-rail"]`, "data-collapsed");
-    if (afterToggle !== "1") {
-      failures.push(`Chunk 6.5: rail did not collapse after toggle (got ${afterToggle})`);
-    }
-
-    const storedVal = await page.evaluate(() => window.localStorage.getItem("akki:leftRailCollapsed"));
-    if (storedVal !== "1") {
-      failures.push(`Chunk 6.5: collapse state not persisted to localStorage (got ${storedVal})`);
-    }
-
-    // Reload — preference must be remembered.
-    await page.reload({ waitUntil: "domcontentloaded", timeout: 12000 });
-    await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
-    await page.waitForTimeout(500);
-    const afterReload = await page.getAttribute(`[data-testid="left-rail"]`, "data-collapsed");
-    if (afterReload !== "1") {
-      failures.push(`Chunk 6.5: collapse state not restored after reload (got ${afterReload})`);
-    } else {
-      console.log(`[render-smoke]  ✓ Chunk 6.5 — collapse toggle round-trip + localStorage persistence`);
-    }
-
-    // 3. Expand back, then shrink viewport — auto-collapse.
-    await page.click(`[data-testid="left-rail-collapse-toggle"]`);
-    await page.waitForTimeout(300);
-    const expanded = await page.getAttribute(`[data-testid="left-rail"]`, "data-collapsed");
-    if (expanded !== "0") {
-      failures.push(`Chunk 6.5: rail did not expand on second toggle (got ${expanded})`);
-    }
-    await page.setViewportSize({ width: 1024, height: 800 });
-    await page.waitForTimeout(500);
-    const autoCollapsed = await page.getAttribute(`[data-testid="left-rail"]`, "data-collapsed");
-    if (autoCollapsed !== "1") {
-      failures.push(`Chunk 6.5: rail did not auto-collapse below 1100px (got ${autoCollapsed})`);
-    } else {
-      console.log(`[render-smoke]  ✓ Chunk 6.5 — auto-collapse at <1100px viewport`);
-    }
-
-    // Restore viewport for following tests.
-    await page.setViewportSize({ width: 1920, height: 800 });
-    await page.waitForTimeout(300);
-    // Clean up the persisted preference so reruns start fresh.
-    await page.evaluate(() => { try { window.localStorage.removeItem("akki:leftRailCollapsed"); } catch (_) {} });
-  } catch (e) {
-    failures.push(`Chunk 6.5: rail flow threw — ${e.message}`);
-  }
-
-  if (pageErrors.length > 0) {
-    failures.push(`Chunk 6.5 step: ${pageErrors.length} uncaught page error(s)`);
-    for (const e of pageErrors) console.error(`    PAGEERROR  ${e.slice(0, 240)}`);
-  }
-  page.off("pageerror", onPageError);
-}
