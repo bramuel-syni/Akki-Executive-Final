@@ -65,6 +65,111 @@ _PROVIDER_PRETTY = {
 }
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Friendly model-name sanitiser — strips API-version date suffixes so
+# the audit panel doesn't leak engineering-speak.
+#
+# Phase C fix bundle (2026-05-13). Each provider has its own date-stamp
+# convention; we strip the date stamps and any inert version trailers
+# (`-001`, `:mock`, etc.) while preserving the human-recognisable model
+# tier (`sonnet-4-5`, `4o`, `2.5-flash`).
+#
+# The friendly-name map is also used by the Phase D Solva audit panel
+# (per the PO's Phase D pre-fold instruction) — `solva.layer_*` purpose
+# strings get a human label so the Solva session timeline reads as
+# "Frame Audit" / "Triangulation" / etc. rather than enum text.
+# ─────────────────────────────────────────────────────────────────────
+import re as _re
+
+_MODEL_DATE_SUFFIX = _re.compile(
+    r"-\d{8}$"                # ISO-stamped: claude-sonnet-4-5-20250929 → claude-sonnet-4-5
+    r"|-\d{4}-\d{2}-\d{2}$"   # dashed-ISO: gpt-4o-2024-08-06 → gpt-4o
+    r"|-\d{3}$"               # 3-digit revision: gemini-2.5-flash-001 → gemini-2.5-flash
+)
+
+
+def _friendly_model_name(raw: str) -> str:
+    """Strip API-version date suffixes and inert revision trailers from
+    a model id so the audit panel reads naturally for an executive."""
+    if not raw:
+        return ""
+    s = str(raw)
+    # Mock-mode tag emitted by `llm_router.invoke` when EMERGENT_LLM_KEY
+    # is absent — drop for the audit panel (user-visible).
+    s = s.replace(":mock", "")
+    # Strip date/revision suffix; loop once per pattern in case of stacked
+    # `-001-20250929` style trailers.
+    prev = None
+    while prev != s:
+        prev = s
+        s = _MODEL_DATE_SUFFIX.sub("", s)
+    return s
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Purpose-string friendly labels.
+#
+# Phase C — chat consumer set today; Phase D Solva inherits the
+# solva.* entries (PO-approved fold-in on 2026-05-13). The audit panel
+# falls back to the raw purpose string when no friendly label is
+# registered, so adding a new label is non-blocking.
+# ─────────────────────────────────────────────────────────────────────
+_PURPOSE_LABEL = {
+    # Chat
+    "chat.standard_response":            "Chat reply",
+    "chat.session.summarise":            "Conversation summary",
+    "chat.streaming.standard_response":  "Chat reply (streamed)",
+    "chat.fm_a.hypothesis_detection":    "Hypothesis-check (Detector A)",
+    "chat.fm_b.claim_extraction":        "Claim-grounding check (Detector B)",
+    "chat.fm_c.consequence_classification": "Consequence check (Detector C)",
+    "chat.refusal.compose":              "Refusal compose",
+    "chat.thin_input.evidence_list":     "Evidence prompt (thin input)",
+    "chat.tools.classify_turn":          "Turn classifier",
+    "chat.deliverable.pass1_reasoning":  "Deliverable — Pass 1 reasoning",
+    "chat.deliverable.pass2_render":     "Deliverable — Pass 2 render",
+
+    # Solva (Phase D pre-fold per PO 2026-05-13)
+    "solva.layer_0.frame_audit":                       "Frame Audit",
+    "solva.layer_0.situation_classification":          "Situation Classification",
+    "solva.layer_1.candidate_generation":              "Candidate Generation",
+    "solva.layer_2.triangulation.claim_extraction":    "Triangulation — Claim Extraction",
+    "solva.layer_2.triangulation.entailment_classification": "Triangulation — Entailment",
+    "solva.layer_2.tension_detection":                 "Tension Detection",
+    "solva.layer_3.scenario_narrative_generation":     "Scenario Narrative",
+    "solva.layer_3.synthesis_rendering":               "Synthesis",
+    "solva.refusal.compose":                           "Refusal compose",
+    "solva.entry.frame_payload":                       "Entry framing",
+
+    # Work Studio / Document Journal / Cycle / Monitor / Pulse
+    "work_studio.brief.enhance":                       "Brief — enhance",
+    "work_studio.brief.seed":                          "Brief — seed",
+    "work_studio.deck.generate":                       "Deck generation",
+    "work_studio.report.generate":                     "Report generation",
+    "work_studio.minutes.enhance":                     "Minutes — enhance",
+    "work_studio.compile.board_pack":                  "Board pack compile",
+    "work_studio.sandbox.generate":                    "Sandbox seed",
+    "document_journal.commentary.generate":            "Document commentary",
+    "document_journal.meta.generate":                  "Document meta",
+    "document_journal.summary.generate":               "Document summary",
+    "document_journal.evolution_diff":                 "Evolution diff",
+    "document_journal.signals.generate":               "Document signals",
+    "cycle_manager.agenda.generate":                   "Cycle agenda",
+    "cycle_manager.briefing.aggregate":                "Cycle briefing",
+    "monitor.objective.status_assessment":             "Objective status",
+    "monitor.project.status_assessment":               "Project status",
+    "monitor.strategic_goal.update":                   "Strategic goal update",
+    "pulse.signal.commentary":                         "Pulse signal commentary",
+    "akki.gateway.standard":                           "Gateway call",
+    "health.ping":                                     "Health probe",
+}
+
+
+def _friendly_purpose(raw: str) -> str:
+    if not raw:
+        return ""
+    return _PURPOSE_LABEL.get(raw, raw)
+
+
 def _plural(n: int, singular: str, plural: Optional[str] = None) -> str:
     plural = plural or (singular + "s")
     if n == 1:
@@ -94,8 +199,9 @@ def _summary_to_prose(summary: Dict[str, int]) -> str:
 
 def _provider_pretty(provider: str, model: str) -> str:
     base = _PROVIDER_PRETTY.get(provider, provider.capitalize() if provider else "an LLM")
-    if model:
-        return f"{base}'s {model.replace(':mock', '')}"
+    friendly = _friendly_model_name(model)
+    if friendly:
+        return f"{base}'s {friendly}"
     return base
 
 
@@ -227,6 +333,7 @@ async def get_audit_panel(
         },
         "references": {
             "purpose": audit_row.get("purpose"),
+            "purpose_label": _friendly_purpose(audit_row.get("purpose") or ""),
             "consumer": audit_row.get("consumer_id"),
             "audit_id": audit_id,
             "trust_receipt_id": receipt.get("receipt_id"),
@@ -234,7 +341,11 @@ async def get_audit_panel(
         },
         "protective_layer_prose": _intervention_prose(matching_event),
         "protective_event": matching_event,
-        "raw_de_id_summary": summary,  # for the frontend KPI strip if needed
+        # Phase C fix bundle (2026-05-13) — `raw_de_id_summary` was
+        # exposed on the user-visible payload as a future leak hazard
+        # (raw enum keys would surface if anything started rendering
+        # it). Removed. The structured breakdown remains available
+        # internally via `synisense_audit_log` for admin tooling.
     }
 
 

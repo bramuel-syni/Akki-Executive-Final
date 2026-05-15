@@ -209,3 +209,181 @@ fire are similarly locked.
   call sites pass through `call_llm` with the default purpose; a
   one-line addition of `purpose="..."` per call site finishes the
   job in <30 min during Phase D housekeeping).
+
+---
+
+## Addendum — 2026-05-13 (post-`e1_tester` Phase C fix bundle)
+
+`e1_tester` results: T2A aggregate strip PASS, T4 async Doc Reader PASS,
+T3B Detector B HUMAN_REQUIRED (grounding refused natural prompts).
+**T1 audit panel FAIL**, **T2B archive flow BLOCKER**, **T3A 480px
+overflow FAIL**, plus a hygiene WARN. Five focused fixes applied.
+
+### Fix 1 (BLOCKER) — Archive flow crash
+
+`ReferenceError: ArrowLeft is not defined` was thrown when the user
+clicked Archive on the chat list. Root cause: `routers chat list` JSX
+at `pages/Chat.jsx:927` uses `<ArrowLeft className="w-3 h-3" /> Back
+to active chats` but `ArrowLeft` was missing from the lucide-react
+imports block at line 16-28.
+
+Fix: added `ArrowLeft` to the lucide-react import list in
+`src/pages/Chat.jsx`. Audited every `<CapitalCase` JSX tag in the 4
+new Phase C component files (`AuditPanel`, `AggregateStrip`,
+`ProtectiveInterventionCard`, `ArchivedChats`) — all icons already
+imported correctly.
+
+Verification: navigated to `/app/chats/archived` with the screenshot
+tool — page renders with "Archived Chats" heading, "Back to Chat"
+button, "No archived conversations." empty state. **`pageerror`
+count: 0**.
+
+### Fix 2 (FAIL — HEADLINE) — Model-date suffix stripped from `provider_prose`
+
+Backend was emitting `"...read by Anthropic's claude-sonnet-4-5-20250929"`.
+Added `_friendly_model_name(raw: str) -> str` helper in
+`routers/chat_audit_panel.py` that strips three trailer patterns
+via a single compiled regex:
+
+- ISO-stamped: `-\d{8}$` → `claude-sonnet-4-5-20250929` becomes
+  `claude-sonnet-4-5`.
+- Dashed-ISO: `-\d{4}-\d{2}-\d{2}$` → `gpt-4o-2024-08-06` becomes
+  `gpt-4o`.
+- 3-digit revision: `-\d{3}$` → `gemini-2.5-flash-001` becomes
+  `gemini-2.5-flash`.
+
+Also strips `:mock` tags emitted by Shield's mock-mode router. Loops
+to drain stacked suffixes (e.g. `-001-20250929`).
+
+11 parametrised test cases in `tests/test_phase_c_fix_bundle.py
+::test_friendly_model_name` lock the behaviour across all three
+providers + edge cases (empty string, no suffix, mock tag with date).
+
+**Bonus delivered alongside Fix 2** — added `_friendly_purpose(raw)`
+which translates canonical purpose strings to executive labels.
+Pre-folded the Solva purposes (`solva.layer_0.frame_audit` →
+"Frame Audit", `solva.layer_2.tension_detection` → "Tension
+Detection", etc.) per the PO's Phase D pre-fold instruction. The
+audit panel response now carries `references.purpose_label`
+alongside the raw `references.purpose` so the frontend shows
+"Chat reply" (or Phase D's "Frame Audit") to the user while
+keeping the raw string for debugging.
+
+### Fix 3 (FAIL) — 480px responsive overflow
+
+Three changes in `src/pages/Chat.jsx`:
+
+1. Page-shell wrapper gets `overflow-x-hidden` (line 882). Defence-
+   in-depth: any internal overflow is clipped, not scrolled.
+2. Chat header (line 1196) — `px-6 flex items-center gap-3` becomes
+   `px-3 sm:px-6 flex flex-wrap items-center gap-2 sm:gap-3`. Header
+   children now wrap to a second row at narrow viewports.
+3. Message bubble (line 1413) — `whitespace-pre-wrap` for user
+   messages is supplemented with `break-words` on every bubble so
+   long unbroken strings wrap rather than blow out.
+
+Computed-style measurement at 480px after the fix (logged by the
+screenshot tool):
+```
+MEASUREMENTS_AT_480: {
+  url: '/app/chat',
+  scrollWidth: 480,
+  innerWidth: 480,
+  bodyScrollWidth: 480,
+  verdict: 'PASS'    # scrollWidth ≤ innerWidth
+}
+```
+
+### Fix 4 (HYGIENE WARN) — `raw_de_id_summary` removed
+
+`GET /api/chats/{cid}/audit-panel` no longer returns
+`raw_de_id_summary`. Top-level response keys are now:
+`['audit_id', 'message_id', 'protective_event', 'protective_layer_prose', 'provider_prose', 'references', 'scores', 'shielding_prose']`.
+
+The structured breakdown is still available internally via
+`synisense_audit_log.de_id_summary` for any future admin tooling.
+Test `test_audit_panel_response_omits_raw_de_id_summary` locks the
+absence.
+
+### Fix 5 (UNIT TEST) — Deterministic Detector B verification
+
+Tester reported HUMAN_REQUIRED on T3B because Akki's grounding
+correctly refuses ungrounded natural prompts — the natural fire
+condition isn't reachable. New test
+`test_detector_b_fires_with_mocked_shield` patches the protective
+layer's `_invoke_detector` to inject:
+- Detector A → None (no fire).
+- Detector B → `{"score": 0.85, "claims": ["historical NPV is 12%",
+  "industry benchmark is 8%"]}`.
+- Detector C → None.
+
+Then asserts the assistant message's `protective_event`:
+- `detectors_fired == ["B"]`
+- `intervention_type == "annotation"`
+- `template_id == "B.annotation"`
+- `annotation_anchors` contains the mocked claim phrases.
+
+AND the audit panel `protective_layer_prose` for that message
+contains the canonical Detector B sentence ("Detector B fired —
+Akki flagged one or more factual claims in the reply as
+general-practice references worth verifying against your data").
+
+Detector B's wiring is now locked behaviourally without depending
+on an unreliable natural trigger.
+
+### Tests
+
+```
+$ pytest tests/test_phase_c_fix_bundle.py tests/test_phase_c_chat_protective_layer.py
+  tests/test_no_direct_llm_calls_outside_shield.py -v --tb=short
+25 passed, 9 warnings in 24.85s
+```
+
+Full suite: **538 → 552 passing** (+14 net new tests: 11 parametrised
+friendly-model-name + 1 friendly-purpose + 1 audit-panel hygiene +
+1 Detector B mock). 0 regressions.
+
+### Curl trace — audit panel after fix
+
+```
+$ curl -s "$API/api/chats/cht-curlchatfix-001/audit-panel?message_id=3327acb7-..." \
+       -H "Authorization: Bearer $TOKEN" | jq .
+
+provider_prose: "The redacted message was read by Anthropic's claude-sonnet-4-5."
+purpose_label : "Chat reply"
+purpose (raw) : "chat.standard_response"
+raw_de_id_summary present?: False
+keys at top level: ['audit_id', 'message_id', 'protective_event',
+                   'protective_layer_prose', 'provider_prose',
+                   'references', 'scores', 'shielding_prose']
+```
+
+### Phase D pre-fold confirmation
+
+Per the PO's approval ("APPROVED. Folding into Phase D.
+solva_sessions.synisense_audit_ids…"), the Solva purpose-label map
+is already in `_PURPOSE_LABEL` so Phase D's audit panel inherits
+human-prose labels for every layer purpose with zero further work:
+
+| Raw purpose | Executive label |
+|---|---|
+| `solva.layer_0.frame_audit` | Frame Audit |
+| `solva.layer_0.situation_classification` | Situation Classification |
+| `solva.layer_1.candidate_generation` | Candidate Generation |
+| `solva.layer_2.triangulation.claim_extraction` | Triangulation — Claim Extraction |
+| `solva.layer_2.triangulation.entailment_classification` | Triangulation — Entailment |
+| `solva.layer_2.tension_detection` | Tension Detection |
+| `solva.layer_3.scenario_narrative_generation` | Scenario Narrative |
+| `solva.layer_3.synthesis_rendering` | Synthesis |
+| `solva.refusal.compose` | Refusal compose |
+| `solva.entry.frame_payload` | Entry framing |
+
+Locked by `test_friendly_purpose_chat_and_solva_labels`.
+
+### Phase C status
+
+REWRITE_SPRINT_STATE.md Phase C remains **complete**. This addendum
+finishes what was already declared done — closing the 4 e1_tester
+fails and adding a regression test that locks Detector B behavior
+without requiring an unreliable natural trigger.
+

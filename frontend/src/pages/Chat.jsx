@@ -25,6 +25,11 @@ import {
   ChevronDown, FileLock2, Eye, AlertTriangle, Download,
   Search, Paperclip, X, FileText, StopCircle,
   Brain, ChevronRight, Info, ArchiveRestore, Trash,
+  // Phase C fix bundle (2026-05-13) — ArrowLeft used by the
+  // "Back to active chats" affordance on the archive list; missing
+  // import was causing a runtime ReferenceError that crashed the
+  // archive surface. Imported now.
+  ArrowLeft,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -869,7 +874,7 @@ export default function Chat() {
   return (
     <AppShell>
       <WorkspaceEntryGate workspace="chat">
-      <div className="h-[calc(100vh-4rem)] akki-w-medium grid grid-cols-1 lg:grid-cols-[300px_1fr] overflow-hidden" data-testid="chat-page">
+      <div className="h-[calc(100vh-4rem)] akki-w-medium grid grid-cols-1 lg:grid-cols-[300px_1fr] overflow-x-hidden overflow-hidden" data-testid="chat-page">
         {/* Patch 26A — sidebar boundary removed. Two regions now read
             as one continuous canvas with whitespace as the only
             separator (Claude.ai-style). */}
@@ -1187,7 +1192,7 @@ function ChatHeader({ chat, models, activeModel, activeContext, onPatch, onArchi
   useEffect(() => { setTitle(chat.title); }, [chat.id, chat.title]);
 
   return (
-    <div className="border-b border-[var(--rule)] px-6 py-3 bg-white flex items-center gap-3" data-testid="chat-header">
+    <div className="border-b border-[var(--rule)] px-3 sm:px-6 py-3 bg-white flex flex-wrap items-center gap-2 sm:gap-3" data-testid="chat-header">
       <div className="flex-1 min-w-0">
         {titleEdit ? (
           <input
@@ -1407,9 +1412,9 @@ function Message({ m, activeModel, models, synisense, chatId }) {
             {m.four_check_label}
           </div>
         )}
-        <div className={`inline-block max-w-full akki-serif text-[14.5px] leading-[1.65] ${
+        <div className={`inline-block max-w-full akki-serif text-[14.5px] leading-[1.65] break-words ${
           isUser
-            ? "bg-[var(--cream-deep)]/50 border border-[var(--rule)] rounded-sm px-3 py-2 text-[var(--ink)] whitespace-pre-wrap"
+            ? "bg-[var(--cream-deep)]/50 border border-[var(--rule)] rounded-sm px-3 py-2 text-[var(--ink)] whitespace-pre-wrap break-words"
             : "text-[var(--ink)]"
         }`}>
           {/* Phase B.1 / Workstream B.1 — markdown rendering for
