@@ -250,22 +250,17 @@ async def _record_synisense_audit_evidence(
     """
     if surface not in {"chat_classifier", "chat_four_check"}:
         return  # belt-and-braces guard
-    try:
-        from services.synisense import run as syn_run
-        await syn_run(
-            text=text,
-            context_id=context_id or "",
-            surface=surface,
-            mode="redact",
-            account_id=account_id,
-            message_id=message_id,
-            chat_id=chat_id,
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.warning(
-            "synisense audit-evidence run failed (surface=%s): %s",
-            surface, e.__class__.__name__,
-        )
+    # Phase B P0 fix (2026-05-13): the legacy Phase 12.1 `syn_run`
+    # audit-evidence stamp has been retired. Phase A's Shield already
+    # writes an audit row per LLM call (see `synisense_audit_log`), so
+    # the chat-side classifier/four-check surfaces inherit that
+    # provenance the moment they invoke `shield.client.invoke()`. We
+    # keep this helper as a no-op for now so callers don't need to be
+    # rewritten in this patch; Phase C will replace its callers with
+    # explicit Shield invocations carrying a purpose like
+    # `chat.tools.four_check`.
+    _ = (text, account_id, context_id, message_id, chat_id)  # noqa: F841
+    return
 
 
 async def _llm_classify_fallback(text: str, *, tenant_id: str = "system.chat.classify") -> Optional[str]:
@@ -556,17 +551,16 @@ async def attach_to_chat(
     preview = make_preview(text)
 
     # Synisense Shield — surface=chat (matches the user-typed path).
+    # Phase B P0 fix (2026-05-13): the legacy `_syn_shield` call has
+    # been retired. The uploaded file content flows through Shield the
+    # moment a chat send references it in `body.content`; doing a
+    # second de-id pass here would duplicate Shield's own work. We
+    # persist the raw extracted text in `body_redacted` (Mongo column
+    # name preserved for backward compat with existing `chats` rows);
+    # downstream chat reads continue to surface the original content
+    # because Shield re-identifies on the LLM response path.
     body_redacted: str = text
-    syn_version = 0
-    if text:
-        try:
-            shielded_text, _shield_meta = await _syn_shield(
-                text, surface="chat", context_id=chat_ctx_id, mode="redact",
-            )
-            body_redacted = shielded_text or text
-            syn_version = 1
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("synisense shielding failed on chat attach: %s", exc)
+    syn_version = 1  # bumped — schema unchanged but pipeline replaced
 
     # Sensitivity band — deterministic scorer, no LLM.
     band = score_sensitivity({"text": text}) if text else {
@@ -1280,127 +1274,29 @@ async def send_message(
     model_def = _model_def(chat["model_id"]) or _model_def(DEFAULT_MODEL_ID)
     policy: ShieldingPolicy = chat.get("shielding_policy", "auto")
 
-    # ── Phase 12.2 / Phase A — Synisense pre-LLM hook (the only shield
-    # path on this surface). The user's text flows through the
-    # three-layer pipeline (regex → Presidio → LLM fallback) which
-    # produces a redacted projection AND a span list we can use to
-    # rebuild a process-local `{token: original}` map for rehydration
-    # of the model's reply. The legacy in-process regex shield was
-    # retired in Phase A.
+    # ── Phase B P0 fix (2026-05-13) — chat router's legacy in-band
+    # de-identification pipeline (Phase 12.1 `syn_run`) has been
+    # REMOVED. Per the user's locked structural-privacy decision,
+    # Synisense Shield is the SINGLE source of de-id and re-id. The
+    # raw user text flows directly to Shield's `client.invoke(...)`
+    # below; Shield's three-layer de-id (regex → tenant dict → local
+    # spaCy) runs there and Shield's re-identifier reverses the
+    # tokens before this handler returns the assistant reply. Having
+    # two maskers (the chat router's AND Shield's) created silent
+    # divergence — the chat router masker missed MONEY entities that
+    # Shield catches. One pipeline removes the divergence.
+    #
+    # The `shielding_policy` flag is now INFORMATIONAL ONLY. It is
+    # preserved on each message record for UI display so users can
+    # see that Shield ran, but it no longer gates behaviour.
     text = body.content.strip()
-    original_text_for_shield = text
+    shield_map: Dict[str, str] = {}  # filled in below from Shield's de_id_summary
     syn_stats: Dict[str, Any] = {"spans_redacted": 0, "by_type": {}, "elapsed_ms": 0}
-    shield_map: Dict[str, str] = {}
-    shielded_text = text
-    try:
-        from services.synisense import run as syn_run
-        from services.synisense.pipeline import current_version as _syn_version
-        syn_out = await syn_run(
-            text=text,
-            context_id=chat.get("context_id") or "",
-            surface="chat",
-            mode="redact",
-            account_id=current["id"],
-        )
-        shielded_text = syn_out["redacted_text"]
-        # Phase A — chat keeps the redacted projection in `text` for
-        # downstream prompt assembly (history block, system prompt) but
-        # also retains an explicit `shielded_text` so the policy gate
-        # logic below can decide whether to send the redacted or raw
-        # version to the LLM. The shield_map reconstructed here lets
-        # rehydrate(...) restore real values in the reply post-call.
-        text = shielded_text
-        spans = syn_out.get("spans") or []
-        for s in spans:
-            token = s.get("replacement")
-            if not token:
-                continue
-            try:
-                original = original_text_for_shield[int(s["start"]):int(s["end"])]
-            except (KeyError, ValueError, TypeError):
-                continue
-            shield_map[token] = original
-        # Build a stats summary safe to persist on the message record.
-        by_type: Dict[str, int] = {}
-        for s in spans:
-            t = s.get("entity_type") or "UNKNOWN"
-            by_type[t] = by_type.get(t, 0) + 1
-        syn_stats = {
-            "spans_redacted": len(spans),
-            "by_type": by_type,
-            "elapsed_ms": int(syn_out.get("stats", {}).get("elapsed_ms") or 0),
-            # Phase 12.2 closeout BUG 3 — engine version was being read
-            # from a non-existent field on the response stats; the engine
-            # exposes it via `current_version()` at module level.
-            "version": _syn_version(),
-        }
-        # Audit row per turn (no text, no spans, just counts + types).
-        try:
-            from core import write_audit
-            await write_audit(
-                context_id=chat.get("context_id"),
-                account_id=current["id"],
-                action="synisense.chat.ran",
-                resource_type="chat_message",
-                resource_id=None,
-                metadata={
-                    "surface": "chat",
-                    "spans_redacted": len(spans),
-                    "entity_types": list(by_type.keys()),
-                    "elapsed_ms": syn_stats["elapsed_ms"],
-                },
-            )
-        except Exception:  # noqa: BLE001
-            pass
-    except Exception as e:  # noqa: BLE001
-        # Phase A — chat preserves the historical degradation contract:
-        # if Synisense fails, the message still goes through unshielded
-        # (with a loud warn). Solva v2 surfaces use the strict adapter
-        # at services.solva_v2.llm_adapter.shielded_call which DOES
-        # refuse on the same condition. Future hardening could promote
-        # chat to the strict path if ops sees zero degraded calls in
-        # production.
-        logger.warning(
-            "synisense chat hook failed (degraded — proceeding with raw "
-            "input as shield_map=empty): %s", e.__class__.__name__,
-        )
-
-    detected = _syn_report(shield_map)
-    has_identifiers = detected["identifiers_masked"] > 0
-
-    # ── Decide whether THIS message goes shielded.
-    if policy == "always":
-        will_shield = True
-        bypass_reason = None
-    elif policy == "off":
-        # Even with policy=off, if a sensitive identifier is detected and
-        # the user has not acknowledged the bypass, refuse the send. This
-        # prevents a "policy=off" footgun from leaking PII to a provider.
-        if has_identifiers and not body.acknowledge_unshielded:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "shielding_acknowledgement_required",
-                    "message": "Sensitive identifiers detected. Confirm send-as-is or enable shielding.",
-                    "detected": detected,
-                },
-            )
-        will_shield = False
-        bypass_reason = "policy_off_acknowledged" if has_identifiers else "no_identifiers"
-    else:  # auto — the default
-        if has_identifiers:
-            # The auto policy ALWAYS shields when something is detected.
-            # The user can acknowledge a bypass per message; that gets
-            # logged with full provenance for audit.
-            if body.acknowledge_unshielded:
-                will_shield = False
-                bypass_reason = "user_bypass_acknowledged"
-            else:
-                will_shield = True
-                bypass_reason = None
-        else:
-            will_shield = False
-            bypass_reason = "no_identifiers"
+    will_shield = True
+    bypass_reason = None
+    detected = {"identifiers_masked": 0, "by_category": {}, "shielded_by": "synisense-shield-v1"}
+    has_identifiers = False  # populated post-Shield invoke below
+    shielded_text = text  # historical alias — same as `text` now
 
     # ── Persist the user message FIRST (so we have a provable record
     # even if the LLM call fails).
@@ -1467,29 +1363,17 @@ async def send_message(
 
     # Stitch a single prompt so the model gets the full conversation;
     # this side-steps any quirks in LlmChat's session-history reuse.
+    # Phase B P0 fix (2026-05-13) — per-message re-shielding REMOVED.
+    # Shield's de-id runs on the full `full_prompt` below, which
+    # includes this history block. One pipeline, no divergence.
     history_lines: List[str] = []
     for m in prior:
         role = "USER" if m.get("role") == "user" else "AKKI"
-        # Re-shield prior user messages defensively — we don't want to
-        # reveal earlier identifiers to the LLM if shielding was on then.
-        # Phase A — historical messages are already stored as the
-        # redacted projection (`text = syn_out["redacted_text"]` at
-        # message-send time), so this re-shield is a belt-and-braces
-        # second pass through the Synisense pipeline. If the historical
-        # row pre-dates Phase A and contains raw PII, this catches it.
         c = m.get("content") or ""
-        if m.get("role") == "user":
-            try:
-                c_shielded, _ = await _syn_shield(c, surface="chat",
-                                                  context_id=chat.get("context_id") or "")
-            except Exception:  # noqa: BLE001
-                c_shielded = c
-            history_lines.append(f"{role}: {c_shielded}")
-        else:
-            history_lines.append(f"{role}: {c}")
+        history_lines.append(f"{role}: {c}")
     history_block = "\n\n".join(history_lines)
 
-    sent_to_llm = shielded_text if will_shield else text
+    sent_to_llm = text
 
     # Phase 11 ITEM C — fetch grounding paragraphs when this chat is
     # tethered to a context. The retrieval allowlist is what we'll
@@ -1536,11 +1420,14 @@ async def send_message(
 
     # ── LLM call (Phase B 2026-05-13 — migrated through Synisense Shield).
     # `purpose="chat.standard_response"`. Shield handles de-id + LLM
-    # provider selection + re-id; the inline `_syn_rehydrate` step
-    # below is therefore redundant for content emitted by Shield, but
-    # we keep the surrounding `shield_map` for any caller-side tokens
-    # that were merged into the prompt before Shield's own pass.
+    # provider selection + re-id; the returned `response` is already
+    # the FINAL re-identified text — no further rehydration needed.
+    # The Shield `audit_id` is captured and `$push`ed onto the chat
+    # session's `synisense_audit_ids` array so the audit panel
+    # (Phase C) can replay the full chain.
     started_ms = time.monotonic()
+    shield_audit_id: Optional[str] = None
+    shield_de_id_summary: Dict[str, int] = {}
     try:
         from services.synisense.shield.client import invoke as shield_invoke
         pref = "balanced"
@@ -1551,20 +1438,55 @@ async def send_message(
         sr = await shield_invoke(
             purpose="chat.standard_response",
             content=full_prompt,
-            tenant_id=account_id,
+            tenant_id=current["id"],
             consumer_id="chat",
-            user_id=account_id,
+            user_id=current["id"],
             model_preference=pref,
             internal_caller=True,
         )
-        raw_text = sr.get("response") or ""
-        reply_text = _syn_rehydrate(raw_text, shield_map) if will_shield else raw_text
+        reply_text = sr.get("response") or ""
+        shield_audit_id = sr.get("audit_id")
+        shield_de_id_summary = (
+            (sr.get("trust_receipt") or {}).get("de_id_summary") or {}
+        )
         mode = "live"
     except Exception as e:
         logger.exception("Chat Shield call failed")
         reply_text = f"(LLM error: {type(e).__name__}: {str(e)[:200]})"
         mode = "error"
     latency_ms = int((time.monotonic() - started_ms) * 1000)
+
+    # ── Phase B P0 fix (2026-05-13) — surface Shield's audit row on
+    # the chat session document. `chats.synisense_audit_ids` is an
+    # array of every Shield audit_id this session produced; the
+    # audit panel (Phase C) reads it for the per-conversation
+    # provenance chain. Field is created on first push.
+    if shield_audit_id:
+        try:
+            await db.chats.update_one(
+                {"id": chat_id, "account_id": current["id"]},
+                {"$push": {"synisense_audit_ids": shield_audit_id}},
+            )
+            # Update local has_identifiers / detected from Shield's
+            # de_id_summary so the persisted message record reflects
+            # what Shield ACTUALLY masked (not the removed legacy
+            # pipeline's view).
+            total_masked = sum(shield_de_id_summary.values())
+            has_identifiers = total_masked > 0
+            detected = {
+                "identifiers_masked": total_masked,
+                "by_category": shield_de_id_summary,
+                "shielded_by": "synisense-shield-v1",
+            }
+            syn_stats = {
+                "spans_redacted": total_masked,
+                "by_type": shield_de_id_summary,
+                "elapsed_ms": latency_ms,
+                "version": "synisense-shield-v1",
+                "audit_id": shield_audit_id,
+            }
+        except Exception:  # noqa: BLE001 — non-fatal; audit failure shouldn't break reply
+            logger.warning("failed to $push synisense_audit_id to chat session")
 
     # ── Persist the assistant message.
     # Phase 11 ITEM C — extract & validate citation markers. Hallucinated
@@ -1691,43 +1613,16 @@ async def stream_message(
     # than refactored into a shared helper because the prep includes
     # several short-circuiting decisions (acknowledgement gate, history
     # block) that would clutter a generator signature.
+    # Phase B P0 fix (2026-05-13) — the streaming chat send path
+    # also retired its in-router Phase 12.1 `syn_run` masker. Shield
+    # is the single de-id pipeline; the raw `body.content.strip()`
+    # flows to `shield.client.invoke()` below (the streaming branch
+    # invokes Shield's streaming wrapper under `services.synisense.
+    # shield.streaming`).
     text = body.content.strip()
-    original_text_for_shield = text
     syn_stats: Dict[str, Any] = {"spans_redacted": 0, "by_type": {}, "elapsed_ms": 0}
     shield_map: Dict[str, str] = {}
     shielded_text = text
-    try:
-        from services.synisense import run as syn_run
-        from services.synisense.pipeline import current_version as _syn_version
-        syn_out = await syn_run(
-            text=text,
-            context_id=chat.get("context_id") or "",
-            surface="chat", mode="redact",
-            account_id=current["id"],
-        )
-        shielded_text = syn_out["redacted_text"]
-        text = shielded_text
-        spans = syn_out.get("spans") or []
-        for s in spans:
-            tok = s.get("replacement")
-            if not tok:
-                continue
-            try:
-                shield_map[tok] = original_text_for_shield[int(s["start"]):int(s["end"])]
-            except (KeyError, ValueError, TypeError):
-                continue
-        by_type: Dict[str, int] = {}
-        for s in spans:
-            t = s.get("entity_type") or "UNKNOWN"
-            by_type[t] = by_type.get(t, 0) + 1
-        syn_stats = {
-            "spans_redacted": len(spans),
-            "by_type": by_type,
-            "elapsed_ms": int(syn_out.get("stats", {}).get("elapsed_ms") or 0),
-            "version": _syn_version(),
-        }
-    except Exception as e:  # noqa: BLE001
-        logger.warning("synisense chat stream hook failed: %s", e.__class__.__name__)
 
     detected = _syn_report(shield_map)
     has_identifiers = detected["identifiers_masked"] > 0
@@ -2120,21 +2015,18 @@ async def stream_message(
             },
         )
 
+    # Phase B P0 fix (2026-05-13) — history re-shielding REMOVED.
+    # Shield's de-id runs on the full `full_prompt` below (which
+    # includes this history block), so re-shielding each historical
+    # user message here would duplicate Shield's work and risk
+    # divergence (the chat router's masker missed MONEY entities).
     history_lines: List[str] = []
     for m in prior:
         role = "USER" if m.get("role") == "user" else "AKKI"
         c = m.get("content") or ""
-        if m.get("role") == "user":
-            try:
-                c_sh, _ = await _syn_shield(c, surface="chat",
-                                            context_id=chat.get("context_id") or "")
-            except Exception:  # noqa: BLE001
-                c_sh = c
-            history_lines.append(f"{role}: {c_sh}")
-        else:
-            history_lines.append(f"{role}: {c}")
+        history_lines.append(f"{role}: {c}")
     history_block = "\n\n".join(history_lines)
-    sent_to_llm = shielded_text if will_shield else text
+    sent_to_llm = text
 
     grounding_paragraphs: List[Dict[str, Any]] = []
     grounding_block = ""

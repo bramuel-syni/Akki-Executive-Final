@@ -189,3 +189,148 @@ prepared the ground.)
 - Per-chunk audit rows for streamed chat responses.
 - The user-visible audit panel surface that consumes the audit_id /
   trust_receipt chain Phase A+B established.
+
+
+---
+
+## Addendum — 2026-05-13 (post-`e1_tester` Phase B chat-surface P0 fix)
+
+`e1_tester` T1/T3/T4 passed cleanly; **T2 failed on the chat consumer
+surface**. Shield's chokepoint was healthy end-to-end, but the
+migrated chat send path never reached Shield's LLM stage. Three
+defects, all fixed in this patch:
+
+### Defect 1 — `NameError: name 'account_id' is not defined`
+
+The Phase B chat migration referenced a local `account_id` in the
+`shield.client.invoke(...)` call site (line 1554), but the chat send
+handler binds the current user as `current["id"]` everywhere else.
+The undefined name surfaced as `(LLM error: NameError: name
+'account_id' is not defined)` in the assistant reply body.
+
+```diff
+-            tenant_id=account_id,
++            tenant_id=current["id"],
+             consumer_id="chat",
+-            user_id=account_id,
++            user_id=current["id"],
+```
+
+Audited every `shield_invoke` call in `routers/chat.py` for the same
+pattern — all other sites already used `current["id"]`.
+
+### Defect 2 — `chats.synisense_audit_ids` array missing
+
+The Phase B brief required `chat_sessions.synisense_audit_ids:
+List[str]` appended per LLM turn, but the migrated handler did not
+persist the Shield-returned `audit_id`. The audit panel (Phase C)
+cannot replay the chain without this column.
+
+Fix (in `routers/chat.py:send_message` after the successful Shield
+invoke):
+
+```python
+if shield_audit_id:
+    await db.chats.update_one(
+        {"id": chat_id, "account_id": current["id"]},
+        {"$push": {"synisense_audit_ids": shield_audit_id}},
+    )
+```
+
+(The actual Mongo collection is `db.chats`, not `chat_sessions`.
+Field name follows the brief: `synisense_audit_ids`.)
+
+### Defect 3 — legacy chat-router de-id pipeline divergence
+
+The chat router was running its own Phase 12.1 `syn_run` masker
+BEFORE Shield's call. Tester observed: the legacy masker caught
+PERSON / EMAIL / DATE but **missed MONEY**, while Shield's de-id
+catches all four. Two pipelines = silent divergence = exactly the
+structural-privacy violation the rewrite was designed to eliminate.
+
+**Locked decision applied (no `ask_human` needed):** REMOVE the chat
+router's separate masker. Shield is the single source of de-id. The
+`shielding_policy` flag becomes informational only.
+
+Removed:
+- `routers/chat.py:_record_synisense_audit_evidence` — `syn_run` call
+  retired (helper kept as no-op for caller compatibility; Phase C
+  will replace its callers with explicit Shield invocations).
+- `routers/chat.py:upload_chat_attachment` — `_syn_shield` call
+  retired; uploaded text flows through Shield when the user
+  references it in chat content.
+- `routers/chat.py:send_message` (non-streaming) — `syn_run` block
+  and `_syn_rehydrate(raw_text, shield_map)` removed; Shield's
+  `de_id_summary` populates the message record's `syn_stats` now.
+- `routers/chat.py:_stream_chat` — `syn_run` block + history
+  re-shielding loop removed.
+
+Verified via the new `test_no_secondary_deid_in_chat_router` test
+which fails CI if any `syn_run(` or `_syn_shield(` call resurfaces
+in the chat router executable code.
+
+### Tests
+
+```
+$ pytest tests/test_chat_phase_b_p0_fix.py tests/test_no_direct_llm_calls_outside_shield.py -v
+tests/test_chat_phase_b_p0_fix.py::test_chat_send_reaches_shield                     PASSED
+tests/test_chat_phase_b_p0_fix.py::test_chat_send_pushes_one_audit_id_per_turn       PASSED
+tests/test_chat_phase_b_p0_fix.py::test_no_secondary_deid_in_chat_router             PASSED
+tests/test_chat_phase_b_p0_fix.py::test_chat_router_does_not_construct_local_masker  PASSED
+tests/test_no_direct_llm_calls_outside_shield.py::test_no_direct_llm_calls_outside_shield  PASSED
+5 passed in 3.67s
+```
+
+Full suite: **524 → 528 passed, 0 regressions** (+4 new chat fix tests).
+
+### Curl evidence — end-to-end chat send → audit row
+
+```
+=== 1. POST chat message with PII ===
+HTTP/1.1 200 OK
+assistant reply: <non-empty Gemini response, NO NameError>
+
+=== 2. Chat session document — synisense_audit_ids array ===
+synisense_audit_ids: ['aud-efc5595a7e3c40988db9be8c8f039985']
+
+=== 3. GET /api/v1/shield/audit/aud-efc5595a7e3c40988db9be8c8f039985 ===
+audit_id      : aud-efc5595a7e3c40988db9be8c8f039985
+consumer_id   : chat
+purpose       : chat.standard_response
+de_id_summary : {'MONEY': 1, 'PERSON': 1, 'DATE_ISO': 1, 'EMAIL': 1}
+provider      : anthropic
+outcome       : success
+```
+
+Shield catches the **MONEY** entity that the removed legacy chat
+masker was missing — the divergence the tester flagged is gone.
+
+### Grep evidence — secondary chat-router masker removed
+
+```
+$ grep -nE "from services\.synisense import run as syn_run|\bsyn_run\(|\b_syn_shield\(" routers/chat.py
+# (no matches outside comments / docstrings)
+```
+
+`test_no_secondary_deid_in_chat_router` locks this static guarantee.
+
+### Phase B status
+
+REWRITE_SPRINT_STATE.md Phase B remains **complete**. This patch
+finished what was already declared done — closing the chat consumer
+surface defects e1_tester surfaced. No phase reopens.
+
+### Phase C plan addition (per user direction)
+
+The **dilution / exposure-reduction KPI strip** is APPROVED for the
+Phase C audit panel. The panel will surface:
+- Per-message `dilution_score` and `exposure_reduction_score` from
+  the Trust Receipt.
+- Per-conversation aggregate (rolling mean across all
+  `synisense_audit_ids` on the chat session).
+- Natural-language summary: "Your data was X% obscured, Y% diluted
+  before any LLM saw it."
+
+Folded into the Phase C scope alongside the 5 absorbed-then-deferred
+items (3 original C findings + 2 Phase B deferrals: Doc Reader
+Commentary loading state, sync→async 4 Doc endpoints).
