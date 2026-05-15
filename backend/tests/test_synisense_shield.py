@@ -357,7 +357,9 @@ def test_purpose_validator_allows_wildcard_match():
 
 def test_purpose_validator_denies_unknown():
     with pytest.raises(PurposeInvalid):
-        purpose_validator.validate_purpose("chat.something")
+        # Phase B added chat.*, solva.*, work_studio.*, etc. — pick a
+        # consumer prefix that does NOT have a wildcard registration.
+        purpose_validator.validate_purpose("rogue_consumer.something")
 
 
 def test_purpose_validator_blocks_internal_for_external_callers():

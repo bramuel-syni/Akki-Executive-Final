@@ -268,42 +268,40 @@ async def _record_synisense_audit_evidence(
         )
 
 
-async def _llm_classify_fallback(text: str) -> Optional[str]:
+async def _llm_classify_fallback(text: str, *, tenant_id: str = "system.chat.classify") -> Optional[str]:
     """Classifier LLM fallback used by `two_pass.classify_turn_async`.
 
-    Calls Gemini 2.5 Flash (the cheapest/fastest model in the router)
-    with a tight system prompt to return one of the four labels. On any
+    Phase B (2026-05-13): migrated through Synisense Shield with
+    `purpose="chat.tools.classify_turn"`. Internal caller — the chat
+    turn text already passed Shield de-id at message ingress so the
+    extra de-id pass here is double-protection (harmless). On any
     error, returns None so the caller defaults to substantive_analytical.
     """
-    emergent_key = os.environ.get("EMERGENT_LLM_KEY")
-    if not emergent_key:
-        return None
     try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
-        sess = LlmChat(
-            api_key=emergent_key,
-            session_id=f"akki-classify-{uuid.uuid4().hex[:8]}",
-            system_message=(
-                "Classify the user's chat turn into exactly one of: "
+        from services.synisense.shield.client import invoke as shield_invoke
+        result = await shield_invoke(
+            purpose="chat.tools.classify_turn",
+            content=(
+                "SYSTEM: Classify the user's chat turn into exactly one of: "
                 "trivial, light_substantive, substantive_analytical, "
-                "strategic_deliverable. Reply with only the label, "
-                "lowercase, no punctuation. Definitions: trivial = "
-                "conversational acknowledgement (thanks, ok). "
-                "light_substantive = simple question or summary request. "
-                "substantive_analytical = analytical question or "
-                "judgement call. strategic_deliverable = produce a "
-                "document, deck, memo, brief, or paper."
+                "strategic_deliverable. Reply with only the label, lowercase, "
+                "no punctuation.\n\n"
+                f"USER TURN:\n{text}"
             ),
-        ).with_model("gemini", "gemini-2.5-flash")
-        raw = await sess.send_message(UserMessage(text=text))
-        label = (raw if isinstance(raw, str) else str(raw)).strip().lower()
+            tenant_id=tenant_id,
+            consumer_id="chat",
+            user_id=tenant_id,
+            model_preference="balanced",  # Gemini flash — cheapest
+            internal_caller=True,
+        )
+        label = (result.get("response") or "").strip().lower()
         # Tolerate prefix/suffix noise.
         for cls in _tp.TURN_CLASSES:
             if label == cls or cls in label:
                 return cls
         return None
     except Exception as e:  # noqa: BLE001
-        logger.warning("classifier llm fallback failed: %s", e.__class__.__name__)
+        logger.warning("classifier shield fallback failed: %s", e.__class__.__name__)
         return None
 
 
@@ -1536,29 +1534,36 @@ async def send_message(
     full_prompt_parts.append(f"USER: {sent_to_llm}")
     full_prompt = "\n\n".join(full_prompt_parts)
 
-    # ── LLM call. Using the EMERGENT_LLM_KEY playbook directly so we can
-    # pick the model per chat (the global call_llm hardcodes claude).
-    emergent_key = os.environ.get("EMERGENT_LLM_KEY")
+    # ── LLM call (Phase B 2026-05-13 — migrated through Synisense Shield).
+    # `purpose="chat.standard_response"`. Shield handles de-id + LLM
+    # provider selection + re-id; the inline `_syn_rehydrate` step
+    # below is therefore redundant for content emitted by Shield, but
+    # we keep the surrounding `shield_map` for any caller-side tokens
+    # that were merged into the prompt before Shield's own pass.
     started_ms = time.monotonic()
-    if not emergent_key:
-        reply_text = "(LLM unavailable — no key configured.)"
-        mode = "no-key-fallback"
-    else:
-        try:
-            from emergentintegrations.llm.chat import LlmChat, UserMessage
-            chat_session = LlmChat(
-                api_key=emergent_key,
-                session_id=f"akki-chat-{chat_id}",
-                system_message=system_msg,
-            ).with_model(model_def["provider"], model_def["model"])
-            raw = await chat_session.send_message(UserMessage(text=full_prompt))
-            raw_text = raw if isinstance(raw, str) else str(raw)
-            reply_text = _syn_rehydrate(raw_text, shield_map) if will_shield else raw_text
-            mode = "live"
-        except Exception as e:
-            logger.exception("Chat LLM call failed")
-            reply_text = f"(LLM error: {type(e).__name__}.)"
-            mode = "error"
+    try:
+        from services.synisense.shield.client import invoke as shield_invoke
+        pref = "balanced"
+        if model_def.get("provider") == "anthropic":
+            pref = "analytical"
+        elif model_def.get("provider") == "openai":
+            pref = "generative"
+        sr = await shield_invoke(
+            purpose="chat.standard_response",
+            content=full_prompt,
+            tenant_id=account_id,
+            consumer_id="chat",
+            user_id=account_id,
+            model_preference=pref,
+            internal_caller=True,
+        )
+        raw_text = sr.get("response") or ""
+        reply_text = _syn_rehydrate(raw_text, shield_map) if will_shield else raw_text
+        mode = "live"
+    except Exception as e:
+        logger.exception("Chat Shield call failed")
+        reply_text = f"(LLM error: {type(e).__name__}: {str(e)[:200]})"
+        mode = "error"
     latency_ms = int((time.monotonic() - started_ms) * 1000)
 
     # ── Persist the assistant message.
@@ -1901,8 +1906,14 @@ async def stream_message(
             evidence_source = "fallback_static"
             ev_latency_ms = 0
             ev_audit_task = None
-            emergent_key = os.environ.get("EMERGENT_LLM_KEY")
-            if emergent_key:
+            # Phase B (2026-05-13): the previous `if emergent_key:` gate
+            # was removed — Synisense Shield's `llm_router.py` is now the
+            # exclusive credential-handler. When the env var is absent
+            # Shield falls back to mock mode (deterministic echo) so the
+            # downstream evidence path remains exercised. Setting a
+            # truthy local for readability.
+            shield_available = True
+            if shield_available:
                 # Fire the audit-evidence Synisense run for this surface
                 # in the background so the chain has a `chat_evidence_list`
                 # row alongside the cheap LLM call.
@@ -1923,39 +1934,45 @@ async def stream_message(
                     "closing."
                 )
                 try:
-                    from emergentintegrations.llm.chat import LlmChat, UserMessage
-                    sess = LlmChat(
-                        api_key=emergent_key,
-                        session_id=f"akki-thin-input-{uuid.uuid4().hex[:8]}",
-                        system_message=evidence_system,
-                    ).with_model("gemini", "gemini-2.5-flash")
-                    raw = await _asyncio2.wait_for(
-                        sess.send_message(UserMessage(text=body.content)),
+                    # Phase B (2026-05-13) — migrated to Synisense Shield
+                    # with `purpose="chat.thin_input.evidence_list"`.
+                    from services.synisense.shield.client import invoke as shield_invoke
+                    sr = await _asyncio2.wait_for(
+                        shield_invoke(
+                            purpose="chat.thin_input.evidence_list",
+                            content=evidence_system + "\n\nUSER: " + body.content,
+                            tenant_id=current["id"],
+                            consumer_id="chat",
+                            user_id=current["id"],
+                            model_preference="balanced",
+                            internal_caller=True,
+                        ),
                         timeout=4.0,
                     )
-                    candidate = raw if isinstance(raw, str) else str(raw)
+                    candidate = sr.get("response") or ""
                     candidate, hit = _tp.sanitize_evidence_phrase(candidate)
                     if hit and candidate:
-                        # One retry — same call with the banned-word
-                        # corrective in the system prompt.
+                        # One retry — same Shield purpose, system prompt
+                        # carries the banned-word corrective.
                         retry_sys = (
                             evidence_system
                             + "\n\n"
                             + _tp.banned_word_retry_instruction(hit)
                         )
                         try:
-                            sess2 = LlmChat(
-                                api_key=emergent_key,
-                                session_id=f"akki-thin-input-r-{uuid.uuid4().hex[:8]}",
-                                system_message=retry_sys,
-                            ).with_model("gemini", "gemini-2.5-flash")
-                            raw2 = await _asyncio2.wait_for(
-                                sess2.send_message(UserMessage(text=body.content)),
+                            sr2 = await _asyncio2.wait_for(
+                                shield_invoke(
+                                    purpose="chat.thin_input.evidence_list",
+                                    content=retry_sys + "\n\nUSER: " + body.content,
+                                    tenant_id=current["id"],
+                                    consumer_id="chat",
+                                    user_id=current["id"],
+                                    model_preference="balanced",
+                                    internal_caller=True,
+                                ),
                                 timeout=4.0,
                             )
-                            cand2, hit2 = _tp.sanitize_evidence_phrase(
-                                raw2 if isinstance(raw2, str) else str(raw2)
-                            )
+                            cand2, hit2 = _tp.sanitize_evidence_phrase(sr2.get("response") or "")
                             if hit2 or not cand2:
                                 evidence_phrase = _tp.THIN_INPUT_FALLBACK_EVIDENCE
                                 evidence_source = "fallback_after_retry"
@@ -2232,7 +2249,10 @@ async def stream_message(
                     "title": auto_renamed_title,
                 }) + "\n\n"
             )
-        emergent_key = os.environ.get("EMERGENT_LLM_KEY")
+        # Phase B (2026-05-13): EMERGENT_LLM_KEY env-var read removed
+        # from the streaming chat path. Synisense Shield's
+        # `llm_router.py` is the exclusive credential-handler; absence
+        # of the key triggers Shield's mock fallback transparently.
         started_ms = time.monotonic()
         raw_text = ""
         mode = "live"
@@ -2353,65 +2373,69 @@ async def stream_message(
         # (strategic_deliverable two-pass needs it; streamed turns
         # don't and would double-emit content the user already saw).
         streamed_in_realtime = False
-        if not emergent_key:
-            raw_text = "(LLM unavailable — no key configured.)"
-            mode = "no-key-fallback"
+        # Phase B (2026-05-13) — strategic_deliverable Pass 1 + Pass 2
+        # migrated to Synisense Shield. The streaming branch (else
+        # arm) still uses `stream_llm_direct` from
+        # `services.synisense.shield.streaming` per the streaming
+        # carve-out documented in PHASE_B_INVENTORY.md.
+        if turn_class == "strategic_deliverable":
+            try:
+                from services.synisense.shield.client import invoke as shield_invoke
+                pref = "balanced"
+                if model_def.get("provider") == "anthropic":
+                    pref = "analytical"
+                elif model_def.get("provider") == "openai":
+                    pref = "generative"
+                # Pass 1: reasoning only.
+                pass_1_system = (
+                    "You are AKKI's reasoning rail. Apply the four-layer "
+                    "reasoning architecture to the user's task. Output "
+                    "candidate framings, triangulation against context, "
+                    "probability weighting (with confidence intervals), "
+                    "and reflection. Do NOT produce the deliverable. Do "
+                    "NOT include the marker lines. Just the reasoning."
+                )
+                p1_sr = await shield_invoke(
+                    purpose="chat.deliverable.pass1_reasoning",
+                    content=pass_1_system + "\n\n" + full_prompt,
+                    tenant_id=current["id"],
+                    consumer_id="chat",
+                    user_id=current["id"],
+                    model_preference=pref,
+                    internal_caller=True,
+                )
+                explicit_pass_1 = p1_sr.get("response") or ""
+                # Pass 2: deliverable.
+                pass_2_system = (
+                    system_msg
+                    + "\n\nThe Pass 1 reasoning has already been "
+                    "produced separately and is in [PASS_1_REASONING] "
+                    "below. Honour Pass 1's selected framing fully. "
+                    "Do not hedge into other scenarios. Output ONLY "
+                    "the deliverable — no markers, no preamble, "
+                    "no Pass 1 recap."
+                )
+                p2_full_prompt = (
+                    f"[PASS_1_REASONING]\n{explicit_pass_1}\n[/PASS_1_REASONING]\n\n"
+                    + full_prompt
+                )
+                p2_sr = await shield_invoke(
+                    purpose="chat.deliverable.pass2_render",
+                    content=pass_2_system + "\n\n" + p2_full_prompt,
+                    tenant_id=current["id"],
+                    consumer_id="chat",
+                    user_id=current["id"],
+                    model_preference=pref,
+                    internal_caller=True,
+                )
+                raw_text = p2_sr.get("response") or ""
+                mode = "live"
+            except Exception as _ex:
+                logger.exception("Strategic-deliverable Shield call failed")
+                raw_text = f"(LLM error: {type(_ex).__name__}: {str(_ex)[:200]})"
+                mode = "error"
         else:
             try:
-                from emergentintegrations.llm.chat import LlmChat, UserMessage
-                if turn_class == "strategic_deliverable":
-                    # Pass 1: reasoning only. We strip the OUTPUT FORMAT
-                    # section because we want just the four-layer trail
-                    # (no markers, no deliverable). The model is told
-                    # explicitly NOT to write the deliverable.
-                    pass_1_system = (
-                        "You are AKKI's reasoning rail. "
-                        "Apply the four-layer reasoning architecture to "
-                        "the user's task. Output candidate framings, "
-                        "triangulation against context, probability "
-                        "weighting (with confidence intervals), and "
-                        "reflection (three questions: what would change "
-                        "my mind? what's the explanation in six months "
-                        "if I got this wrong? what am I disappointed "
-                        "by?). Do NOT produce the deliverable. Do NOT "
-                        "include the marker lines. Just the reasoning. "
-                        "Operating preferences (banned words, no "
-                        "glazing, lead with substance) apply."
-                    )
-                    p1_session = LlmChat(
-                        api_key=emergent_key,
-                        session_id=f"akki-chat-{chat_id}-p1",
-                        system_message=pass_1_system,
-                    ).with_model(model_def["provider"], model_def["model"])
-                    p1_raw = await p1_session.send_message(UserMessage(text=full_prompt))
-                    explicit_pass_1 = p1_raw if isinstance(p1_raw, str) else str(p1_raw)
-
-                    # Pass 2: deliverable. We feed Pass 1 reasoning as
-                    # context so Pass 2 honours its positioning.
-                    pass_2_system = (
-                        system_msg
-                        + "\n\nThe Pass 1 reasoning has already been "
-                        "produced separately and is in [PASS_1_REASONING] "
-                        "below. Honour Pass 1's selected framing fully. "
-                        "Do not hedge into other scenarios. Output ONLY "
-                        "the deliverable — no markers, no preamble, "
-                        "no Pass 1 recap."
-                    )
-                    p2_full_prompt = (
-                        f"[PASS_1_REASONING]\n{explicit_pass_1}\n[/PASS_1_REASONING]\n\n"
-                        + full_prompt
-                    )
-                    p2_session = LlmChat(
-                        api_key=emergent_key,
-                        session_id=f"akki-chat-{chat_id}-p2",
-                        system_message=pass_2_system,
-                    ).with_model(model_def["provider"], model_def["model"])
-                    p2_raw = await p2_session.send_message(UserMessage(text=p2_full_prompt))
-                    raw_text = p2_raw if isinstance(p2_raw, str) else str(p2_raw)
-                    # NOTE: strategic-deliverable two-pass keeps proxy_buffered for
-                    # now (already 2x LLM calls; deferred until traffic justifies
-                    # streaming the second pass too). Phase B.3 follow-up.
-                else:
                     # Phase B.3 — real token streaming via direct provider SDKs.
                     # Synisense Shield only fires on the ASSEMBLED final reply
                     # below (see `cleaned_reply` rehydration). Streaming the
@@ -2531,20 +2555,34 @@ async def stream_message(
         first_banned = _detect_voice_violation(raw_text)
         retry_text: Optional[str] = None
         original_pre_retry: Optional[str] = raw_text if first_banned else None
-        if first_banned and emergent_key:
+        # Phase B (2026-05-13): voice-violation retry routes through Shield.
+        # The previous emergent_key gate is gone — Shield handles the
+        # missing-key fallback transparently via mock mode.
+        if first_banned:
             try:
-                from emergentintegrations.llm.chat import LlmChat as _LR, UserMessage as _UR
-                retry_session = _LR(
-                    api_key=emergent_key,
-                    session_id=f"akki-chat-retry-{chat_id}-{uuid.uuid4().hex[:6]}",
-                    system_message=(
-                        system_msg
-                        + "\n\n"
-                        + _tp.banned_word_retry_instruction(first_banned)
-                    ),
-                ).with_model(model_def["provider"], model_def["model"])
-                retry_raw = await retry_session.send_message(_UR(text=full_prompt))
-                retry_text = retry_raw if isinstance(retry_raw, str) else str(retry_raw)
+                # Phase B (2026-05-13) — voice-violation retry migrated to
+                # Synisense Shield with `purpose="chat.refusal.compose"`.
+                from services.synisense.shield.client import invoke as shield_invoke
+                pref = "balanced"
+                if model_def.get("provider") == "anthropic":
+                    pref = "analytical"
+                elif model_def.get("provider") == "openai":
+                    pref = "generative"
+                retry_sys = (
+                    system_msg
+                    + "\n\n"
+                    + _tp.banned_word_retry_instruction(first_banned)
+                )
+                retry_sr = await shield_invoke(
+                    purpose="chat.refusal.compose",
+                    content=retry_sys + "\n\n" + full_prompt,
+                    tenant_id=current["id"],
+                    consumer_id="chat",
+                    user_id=current["id"],
+                    model_preference=pref,
+                    internal_caller=True,
+                )
+                retry_text = retry_sr.get("response") or ""
                 second_hit = _detect_voice_violation(retry_text)
                 if second_hit:
                     # Retry failed; ship original AND record violation.

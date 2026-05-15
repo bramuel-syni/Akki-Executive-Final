@@ -174,7 +174,10 @@ async def call_llm(
     )
     shield_report = _syn_report(shield_map)
 
-    emergent_key = os.environ.get("EMERGENT_LLM_KEY")
+    # Phase B (2026-05-13): `EMERGENT_LLM_KEY` env read removed —
+    # Synisense Shield's `llm_router.py` is the exclusive credential-
+    # handler. The "no-key-fallback" mode is now produced internally by
+    # Shield (mock echo) and surfaced via the gateway's normal path.
     system_msg = layers["layer_1_system"]
     if response_format == "json":
         system_msg += (
@@ -196,68 +199,57 @@ async def call_llm(
         provider = "anthropic"
         model_id = os.environ.get("LLM_MODEL_STANDARD", "claude-sonnet-4-5-20250929")
 
-    if not emergent_key:
-        return {
-            "layers": layers, "mode": "no-key-fallback",
-            "model": model_id, "tier": tier,
-            "response": "[LLM unavailable — no key configured]",
-            "sources": [],
-            "shielding": shield_report,
-            "synisense_verified": True,
-            "synisense_verification_id": f"local-{uuid.uuid4().hex[:10]}",
-        }
-
     try:
-        # Phase B.3 — strategic failover. `collect_llm_text` tries the
-        # direct provider SDK first (Anthropic / Gemini) when keys are
-        # present, and falls back to the Emergent proxy on any direct
-        # call failure (network blip, 5xx, parse). Audit-row gets
-        # `provider_used` and `fallback_triggered` so we can see post
-        # facto which path served the request. Replaces the briefings
-        # local Claude→Gemini band-aid.
-        from services.llm_streaming import collect_llm_text
-        session_id = (session_context or {}).get("session_id") or str(uuid.uuid4())
-        text_out, provider_used, fallback_triggered, err = await collect_llm_text(
-            provider=provider, model_id=model_id,
-            system_msg=system_msg, user_text=shielded_prompt,
-            session_id=session_id,
+        # Phase B (2026-05-13) — gateway migrated to Synisense Shield.
+        # `call_llm` now delegates to `shield.client.invoke()` which
+        # owns provider selection, de-id, re-id, and Trust Receipt
+        # issuance. Phase 12.1's `_syn_shield` pre-pass still runs
+        # ABOVE us so the rich `shielding` report keeps its existing
+        # shape — Phase A's Shield merely re-runs de-id (idempotent on
+        # already-tokenised text) and contributes the audit row + trust
+        # receipt visible via `synisense_audit_id` below.
+        from services.synisense.shield.client import invoke as shield_invoke
+        if provider == "anthropic":
+            pref = "analytical"
+        elif provider == "openai":
+            pref = "generative"
+        else:
+            pref = "balanced"
+        sr = await shield_invoke(
+            purpose=f"akki.gateway.standard",
+            content=system_msg + "\n\n" + shielded_prompt,
+            tenant_id=((session_context or {}).get("account_id") or "system.gateway"),
+            consumer_id=module,
+            user_id=((session_context or {}).get("account_id") or "system.gateway"),
+            model_preference=pref,  # type: ignore[arg-type]
+            internal_caller=True,
         )
-        if err:
-            return {
-                "layers": layers, "mode": "error",
-                "model": model_id, "tier": tier,
-                "response": f"[LLM error: {err}]",
-                "sources": [],
-                "shielding": shield_report,
-                "synisense_verified": False,
-                "synisense_verification_id": None,
-                "error": err,
-                "provider_used": provider_used or provider,
-                "fallback_triggered": fallback_triggered,
-            }
+        text_out = sr.get("response") or ""
         rehydrated = _syn_rehydrate(text_out, shield_map)
         return {
             "layers": layers, "mode": "live",
-            "model": model_id, "tier": tier,
+            "model": (sr.get("trust_receipt") or {}).get("llm_model") or model_id,
+            "tier": tier,
             "response": rehydrated,
             "sources": [],
             "shielding": shield_report,
             "synisense_verified": True,
             "synisense_verification_id": f"local-{uuid.uuid4().hex[:10]}",
-            "provider_used": provider_used,
-            "fallback_triggered": fallback_triggered,
+            "synisense_audit_id": sr.get("audit_id"),
+            "provider_used": (sr.get("trust_receipt") or {}).get("llm_provider") or provider,
+            "fallback_triggered": False,
         }
     except Exception as e:
         logger.exception("LLM call failed")
         return {
             "layers": layers, "mode": "error",
             "model": model_id, "tier": tier,
-            "response": f"[LLM error: {type(e).__name__}: {e}]",
+            "response": f"[LLM error: {type(e).__name__}: {str(e)[:200]}]",
             "sources": [],
             "shielding": shield_report,
             "synisense_verified": False,
             "synisense_verification_id": None,
-            "error": str(e),
+            "error": f"{type(e).__name__}: {str(e)[:200]}",
             "provider_used": provider,
             "fallback_triggered": False,
         }
@@ -330,14 +322,10 @@ async def validate_independent(
         "validator_provider": "n/a", "validator_model": "n/a",
     }
     started_at = _time.monotonic()
-    emergent_key = os.environ.get("EMERGENT_LLM_KEY")
-    if not emergent_key:
-        logger.warning(
-            "validator skipped event=skipped surface=%s reason=no_emergent_key "
-            "provider=n/a elapsed_ms=%d account=%s",
-            surface, int((_time.monotonic() - started_at) * 1000), account_id,
-        )
-        return {**fallback, "notes": ["Validator key not configured; treat with normal scrutiny."]}
+    # Phase B (2026-05-13): `EMERGENT_LLM_KEY` env-read removed —
+    # Shield's `llm_router.py` is the exclusive credential-handler.
+    # On absence Shield falls back to mock mode; the validator then
+    # sees a deterministic echo (which the JSON parser handles below).
     if not content or len(content.strip()) < 40:
         logger.warning(
             "validator skipped event=skipped surface=%s reason=content_too_short "
@@ -383,19 +371,29 @@ async def validate_independent(
     )
 
     try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
-        chat = LlmChat(
-            api_key=emergent_key,
-            session_id=f"validator-{uuid.uuid4().hex[:10]}",
-            system_message=(
-                "You are AKKI's second-pass validator. Independent of the drafter. "
-                "Be terse. JSON only. Never invent facts. If the draft is fine, say so."
-            ),
-        ).with_model("gemini", "gemini-2.5-flash")
-        msg = UserMessage(text=instruction)
+        # Phase B (2026-05-13) — independent validator migrated through
+        # Synisense Shield with `purpose="akki.gateway.validate_independent"`.
+        from services.synisense.shield.client import invoke as shield_invoke
         import asyncio as _asyncio
-        raw = await _asyncio.wait_for(chat.send_message(msg), timeout=timeout_seconds)
-        parsed = parse_json_response(raw if isinstance(raw, str) else str(raw)) or {}
+        sr = await _asyncio.wait_for(
+            shield_invoke(
+                purpose="akki.gateway.standard",
+                content=(
+                    "SYSTEM: You are AKKI's second-pass validator. Independent "
+                    "of the drafter. Be terse. JSON only. Never invent facts. "
+                    "If the draft is fine, say so.\n\n"
+                    + instruction
+                ),
+                tenant_id=account_id or "system.validator",
+                consumer_id="akki_validator",
+                user_id=account_id or "system.validator",
+                model_preference="balanced",  # Gemini flash — cheap
+                internal_caller=True,
+            ),
+            timeout=timeout_seconds,
+        )
+        raw = sr.get("response") or ""
+        parsed = parse_json_response(raw) or {}
         if not parsed:
             logger.warning(
                 "validator empty event=empty_response surface=%s reason=parse_failed "

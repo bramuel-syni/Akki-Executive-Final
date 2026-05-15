@@ -371,8 +371,16 @@ async def _run_two_pass_for_export(
     is set) and falls back to the proxy on any direct-call 5xx/network
     error. Audit signal lives on the row via `llm_meta`.
     """
-    from emergentintegrations.llm.chat import ChatError
     from services.llm_streaming import collect_llm_text, provider_for_model
+    # Phase B (2026-05-13): `ChatError` was previously imported from
+    # `emergentintegrations.llm.chat` to flag LLM-failure rows. We now
+    # use a local marker class (`_WorkStudioLLMError`) so the CI guard
+    # `test_no_direct_llm_calls_outside_shield` finds zero SDK imports
+    # outside Shield. Behaviour is unchanged: outer `except Exception`
+    # blocks still catch and persist `llm_error:_WorkStudioLLMError`.
+    class _WorkStudioLLMError(RuntimeError):
+        """Marker for Pass 1 / Pass 2 LLM failures. Preserves the prior
+        `ChatError` ergonomics without importing the SDK exception."""
 
     user_text = _flat_user_input(body)
 
@@ -423,7 +431,7 @@ async def _run_two_pass_for_export(
         # `except Exception` handler tags the row as `llm_error:ChatError`
         # — preserves the existing exception ergonomics.
         partial["llm_pass1"] = {"provider": p1_provider, "fallback": bool(p1_fallback), "error": p1_err[:300]}
-        raise _attach(ChatError(p1_err))
+        raise _attach(_WorkStudioLLMError(p1_err))
     pass_1_text = p1_text
     pass_1_ms = int((time.monotonic() - p1_t0) * 1000)
     partial["llm_pass1"] = {"provider": p1_provider, "fallback": bool(p1_fallback)}
@@ -517,7 +525,7 @@ async def _run_two_pass_for_export(
     )
     if p2_err:
         partial["llm_pass2"] = {"provider": p2_provider, "fallback": bool(p2_fallback), "error": p2_err[:300]}
-        raise _attach(ChatError(p2_err))
+        raise _attach(_WorkStudioLLMError(p2_err))
     pass_2_text = p2_text
     pass_2_ms = int((time.monotonic() - p2_t0) * 1000)
     partial["llm_pass2"] = {"provider": p2_provider, "fallback": bool(p2_fallback)}

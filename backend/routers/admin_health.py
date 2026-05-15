@@ -61,27 +61,31 @@ async def _check_mongo() -> Dict[str, Any]:
 
 
 async def _check_llm() -> Dict[str, Any]:
-    """A 1-token Emergent LLM ping. Uses Haiku for cost."""
-    key = os.environ.get("EMERGENT_LLM_KEY", "")
-    if not key:
-        return _result("fail", error="EMERGENT_LLM_KEY missing")
+    """A 1-token Emergent LLM ping via Synisense Shield (Phase B —
+    migrated 2026-05-13). Uses `purpose="health.ping"`; Shield routes
+    to the balanced provider (Gemini flash by default) for cost."""
     started = time.monotonic()
     try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
-        chat = LlmChat(
-            api_key=key, session_id=f"healthcheck-{int(time.time())}",
-            system_message="Reply with exactly: OK",
-        ).with_model("anthropic", "claude-haiku-4-5-20251001")
-        out = await asyncio.wait_for(
-            chat.send_message(UserMessage(text="ping")),
+        from services.synisense.shield.client import invoke as shield_invoke
+        result = await asyncio.wait_for(
+            shield_invoke(
+                purpose="health.ping",
+                content="ping",
+                tenant_id="system.health.probe",
+                consumer_id="admin_health",
+                user_id="system.health.probe",
+                model_preference="balanced",
+                internal_caller=True,
+            ),
             timeout=15,
         )
-        text = (out if isinstance(out, str) else str(out)).strip()
+        text = (result.get("response") or "").strip()
         return _result(
             "pass" if text else "warn",
             latency_ms=int((time.monotonic() - started) * 1000),
             evidence=f"{text[:60]!r}",
-            model="claude-haiku-4-5",
+            audit_id=result.get("audit_id"),
+            model=result.get("trust_receipt", {}).get("llm_model"),
         )
     except asyncio.TimeoutError:
         return _result("fail", error="timed out after 15s")

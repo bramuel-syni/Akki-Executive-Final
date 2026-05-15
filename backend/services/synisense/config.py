@@ -74,10 +74,77 @@ ALLOWED_PURPOSES: Set[str] = {
     # Test-only.
     "test.smoke",
     "test.*",
-    # Phase B will add: chat.*, solva.*, work_studio.*, etc.
     # NOTE: `synisense.shield.internal.ner` REMOVED — Phase A switched
     # the NER pass from cloud-LLM to local spaCy + tenant dictionary,
     # so there is no longer an internal LLM-NER call site to allow-list.
+
+    # ── Phase B — LLM Call Migration (2026-05-13) ──
+    # Chat (Phase C will add the protective layer + audit panel)
+    "chat.session.summarise",
+    "chat.streaming.standard_response",
+    "chat.standard_response",
+    "chat.fm_a.hypothesis_detection",
+    "chat.fm_b.claim_extraction",
+    "chat.fm_c.consequence_classification",
+    "chat.refusal.compose",
+    "chat.*",
+
+    # Solva (Phase D will rewrite the 5-layer pipeline; entry path
+    # migrates here so docs-into-solva no longer 524s on a direct call)
+    "solva.layer_0.frame_audit",
+    "solva.layer_0.situation_classification",
+    "solva.layer_1.candidate_generation",
+    "solva.layer_2.triangulation.claim_extraction",
+    "solva.layer_2.triangulation.entailment_classification",
+    "solva.layer_2.tension_detection",
+    "solva.layer_3.scenario_narrative_generation",
+    "solva.layer_3.synthesis_rendering",
+    "solva.refusal.compose",
+    "solva.entry.frame_payload",
+    "solva.*",
+
+    # Work Studio
+    "work_studio.brief.enhance",
+    "work_studio.brief.seed",
+    "work_studio.deck.generate",
+    "work_studio.report.generate",
+    "work_studio.minutes.enhance",
+    "work_studio.compile.board_pack",
+    "work_studio.sandbox.generate",
+    "work_studio.*",
+
+    # Document Journal
+    "document_journal.commentary.generate",
+    "document_journal.meta.generate",
+    "document_journal.summary.generate",
+    "document_journal.evolution_diff",
+    "document_journal.signals.generate",
+    "document_journal.add_to_cycle.prep",
+    "document_journal.take_to_solva.prep",
+    "document_journal.*",
+
+    # Cycle Manager
+    "cycle_manager.agenda.generate",
+    "cycle_manager.briefing.aggregate",
+    "cycle_manager.*",
+
+    # Monitor (Phase F real-signal generation will exercise)
+    "monitor.objective.status_assessment",
+    "monitor.project.status_assessment",
+    "monitor.strategic_goal.update",
+    "monitor.*",
+
+    # Pulse
+    "pulse.signal.commentary",
+    "pulse.*",
+
+    # Generic gateway (legacy `call_llm` paths whose module string
+    # doesn't fit a named purpose. Phase C will tighten by mapping
+    # every gateway caller to a specific consumer prefix.)
+    "akki.gateway.standard",
+
+    # Ops / health probes (no PII)
+    "health.ping",
 }
 
 # Purposes that may NEVER be invoked from external HTTP callers — only

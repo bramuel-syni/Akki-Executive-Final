@@ -105,7 +105,7 @@ async def draft_compilation_stream(
         except HTTPException as exc:  # pragma: no cover — protected by inner tests
             yield _error_event(str(exc.detail), status=exc.status_code)
         except Exception as exc:  # pragma: no cover
-            yield _error_event(repr(exc))
+            yield _error_event(f"{type(exc).__name__}: {str(exc)[:300]}")
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -152,7 +152,7 @@ async def enhance_stream(
             return
         except Exception as exc:  # pragma: no cover
             yield encode_phase_event("complete", {"surface": "work_studio_enhance", "error": True})
-            yield _error_event(repr(exc))
+            yield _error_event(f"{type(exc).__name__}: {str(exc)[:300]}")
             return
         yield encode_phase_event("drafting", {"surface": "work_studio_enhance"})
         yield encode_phase_event("refining", {"surface": "work_studio_enhance"})
@@ -206,11 +206,11 @@ async def solva_turn_stream(
                 result = await inner_fn(sid, body, ctx)
             except Exception as exc:  # pragma: no cover
                 yield encode_phase_event("complete", {"surface": "solva", "error": True})
-                yield _error_event(repr(exc))
+                yield _error_event(f"{type(exc).__name__}: {str(exc)[:300]}")
                 return
         except Exception as exc:  # pragma: no cover
             yield encode_phase_event("complete", {"surface": "solva", "error": True})
-            yield _error_event(repr(exc))
+            yield _error_event(f"{type(exc).__name__}: {str(exc)[:300]}")
             return
         yield encode_phase_event("drafting", {"surface": "solva"})
         yield encode_phase_event("refining", {"surface": "solva"})

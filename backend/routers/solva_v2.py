@@ -35,7 +35,7 @@ import re
 import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core import db, get_current_account, iso, now
@@ -1666,12 +1666,19 @@ async def take_to_cycle(
 @router.get("/sessions/{sid}")
 async def get_session(
     sid: str,
+    context_id: Optional[str] = Query(None),
     account: Dict[str, Any] = Depends(get_current_account),
 ):
+    # Phase B P1 fix (2026-05-13) — strict context_id scoping mirroring
+    # the list_sessions guard. Without this, a user with two contexts
+    # can read a session from context B while operating in context A.
     rec = await db.solva_v2_sessions.find_one(
         {"id": sid, "account_id": account["id"]}, {"_id": 0}
     )
     if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if context_id and rec.get("context_id") and rec["context_id"] != context_id:
+        # Treat cross-context access as 404 (don't leak existence).
         raise HTTPException(status_code=404, detail="Session not found.")
     # Phase 15.2 — backwards compat: sessions written before 15.2 may not
     # carry submodule. Default at read time so the client never has to handle

@@ -105,35 +105,34 @@ def test_rehydrate_round_trips_via_synisense_helpers():
 # 4) `llm_service.call_llm`'s own internal Synisense hook fires — when
 #    we call it with `module='chat'`, the adapter sees surface='chat'
 #    and the redacted prompt path is exercised. We don't need the LLM
-#    to actually respond; calling without EMERGENT_LLM_KEY hits the
-#    no-key-fallback branch which returns a `mode='no-key-fallback'`
-#    envelope after still running the shield.
+#    to actually respond. Phase B (2026-05-13) replaced the old
+#    `mode='no-key-fallback'` branch — `call_llm` now delegates to
+#    `services.synisense.shield.client.invoke()` which transparently
+#    falls back to mock-mode (deterministic echo) when no key is set.
+#    The user-visible contract: a successful response + a Trust Receipt
+#    audit_id stamped on the return dict.
 # ---------------------------------------------------------------------------
-def test_call_llm_routes_through_synisense_no_key_branch(monkeypatch):
+@pytest.mark.asyncio
+async def test_call_llm_routes_through_synisense_no_key_branch(monkeypatch):
     monkeypatch.delenv("EMERGENT_LLM_KEY", raising=False)
     from llm_service import call_llm
-
-    async def _run():
-        return await call_llm(
-            module="chat",
-            user_query=SAMPLE_PROMPT,
-            tier="standard",
-        )
-
-    out = asyncio.run(_run())
-    assert out["mode"] == "no-key-fallback", out["mode"]
-    # The shielding report MUST identify masked things (the prompt
-    # carries unambiguous PII). If the regex shield were still in play,
-    # the by_category keys would carry "email|phone|iban" — pipeline
-    # categories normalise to lowercase too, but the contract here is
-    # only that something was masked (proves the shield ran).
+    out = await call_llm(
+        module="chat",
+        user_query=SAMPLE_PROMPT,
+        tier="standard",
+    )
+    # Phase B: Shield mock-mode produces a "live" mode envelope (echo
+    # path is the canonical fallback, not a distinct mode flag).
+    assert out["mode"] == "live", out["mode"]
     rep = out.get("shielding") or {}
     assert int(rep.get("identifiers_masked") or 0) >= 1, rep
     by_cat = rep.get("by_category") or {}
     assert by_cat, by_cat
-    # The adapter labels itself as the pipeline (NOT the legacy
-    # `synisense-local` regex shield).
     assert rep.get("shielded_by") == "synisense-pipeline", rep
+    # Phase B addition: every gateway call now carries a synisense
+    # audit_id stamped on the return dict so consumers can correlate
+    # with the new `/api/v1/shield/audit/{id}` retrieval surface.
+    assert out.get("synisense_audit_id"), out
 
 
 # ---------------------------------------------------------------------------

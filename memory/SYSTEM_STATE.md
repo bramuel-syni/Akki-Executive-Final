@@ -129,6 +129,32 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Phase B — LLM Call Migration — 2026-05-13 ✅
+- **Headline**: every LLM provider SDK call in `/app/backend/` now routes through `services.synisense.shield.client.invoke(...)`. Single chokepoint: `services/synisense/shield/llm_router.py`. Passive CI guard (`tests/test_no_direct_llm_calls_outside_shield.py`) prevents future PRs from smuggling direct calls back in. Full suite: **524 passed, 0 regressions** (was 520; +4 net new). Phase A test count: **51 → 55**. Detailed close-out in `/app/memory/sprints/PHASE_B_CLOSEOUT.md`; inventory in `/app/memory/sprints/PHASE_B_INVENTORY.md`.
+- **Moved under `services/synisense/shield/`** (file moves + re-export shims at old paths so existing imports unchanged):
+  - `services/llm_streaming.py` → `services/synisense/shield/streaming.py`.
+  - `services/synisense/llm_fallback.py` → `services/synisense/shield/_legacy_llm_fallback.py`.
+- **Migrated to `shield.client.invoke()`** (10 call sites across 6 files):
+  - `llm_service.py:call_llm` (the central Akki gateway — now stamps `synisense_audit_id` on every return dict).
+  - `llm_service.py:validate_independent` (second-pass validator).
+  - `services/sandbox_generation.py:_call_llm` (work-studio sandbox seed).
+  - `routers/admin_health.py:_check_llm` (DevOps LLM-ping health probe).
+  - `routers/chat.py`: turn classifier, standard-response, thin-input evidence-list + retry, strategic-deliverable two-pass, voice-violation retry (5 sites).
+- **Refactored (import-only, no SDK call)**:
+  - `routers/work_studio_export.py` — dropped `ChatError` import from `emergentintegrations.llm.chat`; replaced with local `_WorkStudioLLMError` marker class.
+- **ALLOWED_PURPOSES extended** (`services/synisense/config.py`) with 62 canonical Phase B entries across chat/solva/work_studio/document_journal/cycle_manager/monitor/pulse/ops. All consumer-prefix wildcards (`chat.*`, `solva.*`, etc.) declared so Phase C/D/E/F migrations land cleanly.
+- **CI guard** (`tests/test_no_direct_llm_calls_outside_shield.py`) scans the backend tree (excluding `services/synisense/shield/`, `tests/`, `scripts/`, `routers/billing.py`) for: `emergentintegrations.llm` imports, `LlmChat(`, `UserMessage(`, `openai.{ChatCompletion,chat,completions}`, `anthropic.{Anthropic(,messages}`, `genai.GenerativeModel`, `google.generativeai`, `litellm.{completion,acompletion}`, `os.environ.get("EMERGENT_LLM_KEY")`, `os.environ["EMERGENT_LLM_KEY"]`. Skips docstring lines and comments. Fails with a per-violation report naming `file:line` so PRs know exactly what to fix.
+- **P1 risks resolved**:
+  - **Solva single-session `context_id` scoping**: `GET /api/solva/v2/sessions/{sid}` now accepts an optional `context_id` query param; cross-context access returns 404 (no existence-leak in error text). Regression test `test_solva_session_rejects_foreign_context`.
+  - **SSE `repr(exc)` leaks**: 4 instances in `routers/streaming_v9.py` replaced with `f"{type(exc).__name__}: {str(exc)[:300]}"` per the Chunk 3 error-authenticity rule. Regression tests `test_streaming_v9_no_repr_exc` + `test_streaming_v9_error_format_locked`.
+  - **Sync Document endpoints 524 timeouts** + **Doc Reader Commentary loading state**: **deliberately DEFERRED to Phase C** — both belong with the audit panel surface Phase C is scoped to deliver. Splitting across phases would land partial UX.
+- **6 QA findings**:
+  - Generate Signals / Take into Solva / Add to Cycle / Enhance Minutes errors: **resolved by gateway migration** — opaque `except` catch-alls removed; Shield's `{type(exc).__name__}: {str(exc)[:300]}` now propagates verbatim.
+  - Akki Commentary loading state: **partially absorbed** (the backend half delivered `synisense_audit_id`; frontend polling deferred to Phase C with the audit panel).
+  - QA #7 Doc Reader button parity: **no backend work needed** — buttons already call the same endpoints as Doc Journal side drawer per inventory inspection. Logged in deferred bucket.
+- **Autonomous decisions logged** (in `PHASE_B_CLOSEOUT.md §Decisions made autonomously`): re-export shims preserved, `mode="live"` for Shield mock-mode (replaces `no-key-fallback` envelope), `akki.gateway.standard` umbrella purpose for legacy `call_llm` callers (to be tightened in Phase C), `system.gateway` synthetic tenant for internal callers without account_id, streaming carve-out (per-chunk audit deferred to Phase C).
+- **Stale Phase A unification test updated**: `test_call_llm_routes_through_synisense_no_key_branch` now asserts `mode="live"` + `synisense_audit_id` (Phase B contract) and uses `@pytest.mark.asyncio` to avoid event-loop pollution under full-suite ordering.
+
 ### Phase A — Synisense Foundation (Shield + Engine + Audit) — 2026-05-13 ✅
 - **Headline**: full Phase A delivered per the user's resync brief. Shield + Engine + Audit running under `/api/v1/*` with 3-layer de-id (regex → tenant dict → local spaCy), HMAC-SHA256 trust receipts with HKDF-derived per-tenant keys, seeded engine signals with `derivation_source` markers, and a DEV-only `/admin/reseed`. 517 pytest passing (was 469 baseline; +47 new Phase A tests; **0 regressions**). 4 user decisions baked in: dev-fallback master secret, `tenant_id := account_id`, soft-delete PO default noted, strict A→B→C→D→E→F phase order. Detailed close-out in `/app/memory/sprints/PHASE_A_CLOSEOUT.md`. Canonical recovery doc `/app/memory/REWRITE_SPRINT_STATE.md` written.
 - **Endpoints shipped** (`/api/openapi.json` verified):

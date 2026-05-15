@@ -146,23 +146,46 @@ def _build_user_prompt(form: Dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# LLM call (Claude primary, GPT fallback).
+# LLM call (Phase B 2026-05-13 — migrated through Synisense Shield).
+# `services.synisense.shield.client.invoke` handles credential management,
+# de-id, LLM provider selection, re-id, and emits a Trust Receipt + audit
+# row. `purpose="work_studio.sandbox.generate"`.
 # ---------------------------------------------------------------------------
-async def _call_llm(prompt: str, model_id: Tuple[str, str], *, timeout_s: float = 30.0) -> str:
-    """Calls an LLM via emergentintegrations. Returns raw text or raises.
-    `model_id` is (provider, model_name)."""
-    key = os.environ.get("EMERGENT_LLM_KEY") or ""
-    if not key:
-        raise RuntimeError("EMERGENT_LLM_KEY not configured")
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
-    chat = LlmChat(
-        api_key=key,
-        session_id=f"sandbox-{uuid.uuid4().hex[:8]}",
-        system_message=_SYSTEM_PROMPT,
-    ).with_model(model_id[0], model_id[1])
-    msg = UserMessage(text=prompt)
-    raw = await asyncio.wait_for(chat.send_message(msg), timeout=timeout_s)
-    return raw if isinstance(raw, str) else str(raw)
+async def _call_llm(
+    prompt: str,
+    model_id: Tuple[str, str],
+    *,
+    timeout_s: float = 30.0,
+    tenant_id: Optional[str] = None,
+) -> str:
+    """Sandbox generation via the Shield gateway. `model_id` is
+    `(provider, model_name)` mapped through Shield's `model_preference`.
+    `tenant_id` should be the authenticated `account_id`; sandbox is a
+    seed/dev surface so we accept a synthetic tenant when none is
+    supplied (the in-process `client.invoke` lets internal callers
+    pass a system tenant)."""
+    from services.synisense.shield.client import invoke as shield_invoke
+    pref = "analytical" if model_id[0] == "anthropic" else "generative" \
+        if model_id[0] == "openai" else "balanced"
+    effective_tenant = tenant_id or "system.sandbox.seed"
+    try:
+        result = await asyncio.wait_for(
+            shield_invoke(
+                purpose="work_studio.sandbox.generate",
+                content=prompt,
+                tenant_id=effective_tenant,
+                consumer_id="sandbox",
+                user_id=effective_tenant,
+                model_preference=pref,  # type: ignore[arg-type]
+                internal_caller=True,
+            ),
+            timeout=timeout_s,
+        )
+    except asyncio.TimeoutError as exc:
+        raise RuntimeError(
+            f"asyncio.TimeoutError: sandbox generation timed out after {timeout_s}s"
+        ) from exc
+    return result["response"]
 
 
 def _parse_json(raw: str) -> Optional[Dict[str, Any]]:
