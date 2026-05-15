@@ -129,6 +129,35 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Phase C — Akki Chat Protective Layer + Audit Panel — 2026-05-13 ✅
+- **Headline**: Bank-QA demo centrepiece delivered. Three failure-mode detectors (A/B/C) run on every assistant turn via Shield with their declared purposes (`chat.fm_a.hypothesis_detection`, `chat.fm_b.claim_extraction`, `chat.fm_c.consequence_classification`). `ProtectiveEvent` persisted per assistant message on `chats.protective_layer_events`. Per-message audit panel endpoint composes executive-readable prose (zero raw enum values surfaced). Per-conversation aggregate strip with rolling-mean exposure-reduction + dilution KPIs. All 4 Document Reader endpoints (`generate-meta`, `summary`, `journal-commentary`, `evolution-diff`) have async mirrors returning `{job_id, status: queued}` immediately. Archived chats list + permanent-delete CRUD. Full suite: **528 → 538 passing, 0 regressions**. Detailed close-out in `/app/memory/sprints/PHASE_C_CLOSEOUT.md`.
+- **New backend files**: `services/chat/protective_layer/__init__.py` (detectors + Pydantic models), `routers/chat_audit_panel.py` (4 endpoints), `routers/documents_async_mirror.py` (4 async-mirror endpoints), `tests/test_phase_c_chat_protective_layer.py` (10 new tests).
+- **Modified backend**: `routers/chat.py:send_message` — protective layer hook wired post-draft; `llm_service.py:call_llm` — new `purpose` kwarg for per-call-site provenance; `document_commentary_service.py` — passes `purpose="document_journal.commentary.generate"`; `server.py` — wires routers in order so `/api/chats/archived` wins exact-path match over `/api/chats/{chat_id}`.
+- **New frontend files**: `src/components/chat/AuditPanel.jsx` (per-message expander), `src/components/chat/AggregateStrip.jsx` (KPI strip), `src/components/chat/ProtectiveInterventionCard.jsx` (Mode A / Mode C cards), `src/pages/ArchivedChats.jsx` (dedicated archived chats page).
+- **Modified frontend**: `src/App.js` — lazy route for `/app/chats/archived`; `src/pages/Chat.jsx` — imports + wires AggregateStrip + AuditPanel + ProtectiveInterventionCard per assistant message + archive-toast carries inline "View archived" action + chat-messages container padding scales `px-3 sm:px-6 md:px-8` (480px overflow fix).
+- **Endpoints shipped**:
+  - `GET  /api/chats/{cid}/audit-panel?message_id={mid}` — per-message executive prose.
+  - `GET  /api/chats/{cid}/audit-panel/aggregate` — per-conversation rolling-mean KPIs.
+  - `GET  /api/chats/archived` — paginated archived-chats list.
+  - `DELETE /api/chats/{cid}/permanent` — hard delete (requires `{confirm: true}`).
+  - `POST /api/contexts/{ctx}/documents/generate-meta/async` — async meta job.
+  - `POST /api/contexts/{ctx}/documents/{doc}/summary/async` — async summary job.
+  - `POST /api/contexts/{ctx}/documents/{doc}/journal-commentary/async` — async commentary job.
+  - `POST /api/contexts/{ctx}/documents/{doc}/evolution-diff/async` — async diff job.
+- **Detector precedence (A > C > B)** locked via `test_detector_bundle_precedence_a_over_c_over_b`. Mode B requires non-empty `claims` to fire (`test_detector_b_threshold_requires_claims`). Session context capped at 1800 chars for prompt budget. All three detectors run concurrently via `asyncio.gather`.
+- **Async commentary curl evidence**: `POST .../journal-commentary/async` → `{job_id, status: queued, kind: document_journal.commentary.generate}` in <50ms; poll `GET /api/jobs/{id}` reports `running → completed` in 4.5s; audit row stamped with `consumer_id: document_journal_commentary, purpose: document_journal.commentary.generate, outcome: success`.
+- **Audit panel prose translation tables** (in `routers/chat_audit_panel.py`): `_ENTITY_LABEL` maps 17 entity types to executive-friendly labels (PERSON → "person name", MONEY → "monetary figure", PHONE_E164 → "phone number", etc.). `_PROVIDER_PRETTY` maps providers to capitalised names. Sample output: "Before any LLM saw your message, Synisense shielded 3 person names, 2 monetary figures, 1 email address, and 1 date."
+- **Aggregate strip prose**: "This conversation: 24 messages · Synisense shielded 47 identifiers across 12 LLM calls. Average exposure reduction: 91% · Average dilution: 16%." Re-fetches after every assistant turn.
+- **CI guard PASS** — `test_no_direct_llm_calls_outside_shield` still green; no Phase C work introduced new direct SDK call sites.
+- **Autonomous decisions logged** (in `PHASE_C_CLOSEOUT.md §Decisions made autonomously`):
+  - Detector precedence A > C > B.
+  - Mode B requires `claims_b` non-empty to fire.
+  - `session_context` truncated to 1800 chars in detector prompts.
+  - Async-mirror endpoints alongside legacy sync routes (not replacement).
+  - Archive toast inline action (vs discrete onboarding nudge).
+  - Mode B inline-superscript footnote rendering DEFERRED to a follow-up patch (markdown-DOM rewrite required); audit panel exposes `annotation_anchors` so the data is captured.
+  - PDF "Export this conversation's privacy report" DEFERRED to a follow-up patch per user instruction ("If Phase C core deliverables are taking longer than expected, defer this to a small follow-up patch AFTER Phase C closes").
+
 ### Phase B — LLM Call Migration — 2026-05-13 ✅
 - **Headline**: every LLM provider SDK call in `/app/backend/` now routes through `services.synisense.shield.client.invoke(...)`. Single chokepoint: `services/synisense/shield/llm_router.py`. Passive CI guard (`tests/test_no_direct_llm_calls_outside_shield.py`) prevents future PRs from smuggling direct calls back in. Full suite: **524 passed, 0 regressions** (was 520; +4 net new). Phase A test count: **51 → 55**. Detailed close-out in `/app/memory/sprints/PHASE_B_CLOSEOUT.md`; inventory in `/app/memory/sprints/PHASE_B_INVENTORY.md`.
 - **Moved under `services/synisense/shield/`** (file moves + re-export shims at old paths so existing imports unchanged):

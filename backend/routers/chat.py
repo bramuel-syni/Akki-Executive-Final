@@ -1498,6 +1498,41 @@ async def send_message(
 
     reply_id = str(uuid.uuid4())
     reply_at = _iso(_now())
+
+    # ── Phase C (2026-05-13) — Protective Layer detectors A/B/C run
+    # on the assistant draft + the user message. Three concurrent
+    # Shield invokes (purpose=chat.fm_{a,b,c}.*) produce a
+    # `ProtectiveEvent` we persist on the chat session AND surface to
+    # the frontend so it can render the appropriate intervention
+    # (hypothesis-test framing card / inline annotation / Solva
+    # handoff offer). Detector failures are non-fatal.
+    protective_event = None
+    if mode == "live":
+        try:
+            from services.chat.protective_layer import detect_all
+            session_context_blob = "\n".join(
+                f"{m.get('role','?')}: {(m.get('content') or '')[:400]}"
+                for m in prior[-8:]
+            )[:1800]
+            bundle = await detect_all(
+                user_message=body.content.strip(),
+                draft_response=cleaned_reply,
+                session_context=session_context_blob,
+                tenant_id=current["id"],
+                user_id=current["id"],
+            )
+            protective_event = bundle.as_protective_event(message_id=reply_id)
+            # $push the event onto the chat session.
+            await db.chats.update_one(
+                {"id": chat_id, "account_id": current["id"]},
+                {"$push": {"protective_layer_events": protective_event.model_dump()}},
+            )
+        except Exception as _pe:  # noqa: BLE001
+            logger.warning(
+                "protective layer failed (non-fatal): %s",
+                type(_pe).__name__,
+            )
+
     assistant_msg = {
         "id": reply_id,
         "chat_id": chat_id,
@@ -1552,6 +1587,13 @@ async def send_message(
         "shielding": detected,
         "will_shield": will_shield,
         "bypass_reason": bypass_reason,
+        # Phase C — frontend uses this to render the intervention card
+        # (hypothesis-test / annotation / Solva handoff). When no
+        # detector fires, `protective_event.intervention_type == "none"`
+        # and the frontend renders nothing.
+        "protective_event": (
+            protective_event.model_dump() if protective_event else None
+        ),
     }
 
 

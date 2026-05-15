@@ -69,6 +69,7 @@ const ContextPortfolio = lazy(() => import("@/pages/ContextPortfolio"));
 const Simulate = lazy(() => import("@/pages/Simulate"));
 const LensRoom = lazy(() => import("@/pages/LensRoom"));
 const Chat = lazy(() => import("@/pages/Chat"));
+const ArchivedChats = lazy(() => import("@/pages/ArchivedChats"));
 const InfluenceMap = lazy(() => import("@/pages/InfluenceMap"));
 const SandboxV2 = lazy(() => import("@/pages/SandboxV2"));
 const SandboxApp = lazy(() => import("@/sandbox/SandboxApp"));
@@ -267,6 +268,7 @@ function App() {
           <Route path="/app/simulate" element={<Gated><Simulate /></Gated>} />
           <Route path="/app/lens" element={<Gated><LensRoom /></Gated>} />
           <Route path="/app/chat" element={<Gated><Chat /></Gated>} />
+          <Route path="/app/chats/archived" element={<Gated><ArchivedChats /></Gated>} />
           <Route path="/app/influence" element={<Gated><InfluenceMap /></Gated>} />
           <Route path="/admin/health" element={<ProtectedRoute><HealthDashboard /></ProtectedRoute>} />
           <Route path="/admin/sandbox-kpi" element={<ProtectedRoute><SandboxKPI /></ProtectedRoute>} />

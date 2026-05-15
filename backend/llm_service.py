@@ -140,6 +140,7 @@ async def call_llm(
     system_override: Optional[str] = None,
     response_format: str = "text",   # "text" or "json"
     tier: str = "standard",          # "fast" | "standard" | "deep"
+    purpose: Optional[str] = None,   # Phase C — explicit Shield purpose override
 ) -> Dict[str, Any]:
     """Shielded call. Returns {layers, response, mode, model, tier, sources, shielding, synisense_verified}.
 
@@ -148,6 +149,11 @@ async def call_llm(
     tier="deep"     → Claude Opus (long-form narrative, decks, ExCo blogs)
 
     response_format="json" instructs the model to return valid JSON only.
+
+    `purpose` (Phase C) lets callers specify the canonical Shield
+    purpose string so audit rows carry per-call-site provenance
+    (e.g. `document_journal.commentary.generate`). Falls back to
+    `akki.gateway.standard` for legacy callers that haven't migrated yet.
     """
     layers = build_prompt_layers(
         module=module, user_query=user_query,
@@ -216,7 +222,7 @@ async def call_llm(
         else:
             pref = "balanced"
         sr = await shield_invoke(
-            purpose=f"akki.gateway.standard",
+            purpose=(purpose or "akki.gateway.standard"),
             content=system_msg + "\n\n" + shielded_prompt,
             tenant_id=((session_context or {}).get("account_id") or "system.gateway"),
             consumer_id=module,

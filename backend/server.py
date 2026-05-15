@@ -163,6 +163,12 @@ app.include_router(agenda_router.router)
 app.include_router(document_engagement_router.router)
 app.include_router(monitor_router.router)
 app.include_router(strategic_goals_router.router)
+# Phase C — chat-audit-panel router includes `/api/chats/archived`
+# which would be shadowed by `/api/chats/{chat_id}` in `chat_router`.
+# Registering BEFORE the parameterised chat router so FastAPI matches
+# the exact path first.
+from routers import chat_audit_panel as _chat_audit_panel  # noqa: E402
+app.include_router(_chat_audit_panel.router)
 app.include_router(chat_router.router)
 app.include_router(influence_map_router.router)
 app.include_router(admin_health_router.router)
@@ -209,6 +215,11 @@ app.include_router(synisense_metrics_router.router)
 # Phase A — Synisense Foundation under /api/v1/.
 app.include_router(synisense_shield_router.router)
 app.include_router(synisense_engine_router.router)
+# Phase C — Chat Protective Layer + Audit Panel.
+from routers import chat_audit_panel as _chat_audit_panel  # noqa: E402
+from routers import documents_async_mirror as _docs_async_mirror  # noqa: E402
+app.include_router(_chat_audit_panel.router)
+app.include_router(_docs_async_mirror.router)
 # HOME sprint (2026-05-12) — ExCo teams grouping function.
 app.include_router(exco_teams_router.router)
 app.include_router(portfolio_router.router)

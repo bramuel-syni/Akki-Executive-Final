@@ -31,8 +31,8 @@ Full production rewrite per the 4 developer briefs in `/app/memory/briefs/`. Rep
 |---|---|---|---|---|
 | A | Synisense Foundation (Shield + Engine + Audit) | **complete** (2026-05-13) | — | `sprints/PHASE_A_CLOSEOUT.md` |
 | B | LLM Call Migration | **complete** (2026-05-13) | 4: Generate Signals err, Take into Solva err, Add to Cycle err, Enhance Minutes err (all resolved by removing opaque catch-alls + Shield's canonical error format). 2 absorbed P1 risks: Solva single-session context_id scoping, SSE `repr(exc)` leaks. 2 items DEFERRED to Phase C: Document Reader Commentary loading state, sync→async conversion of 4 Doc Reader endpoints (524-prone) — both belong with the Phase C audit panel surface. | `sprints/PHASE_B_CLOSEOUT.md` |
-| C | Chat Protective Layer + Audit Panel | **queued (next)** | 3 (chat overflow, archive flow, audit panel) + **2 absorbed from Phase B**: Doc Reader Commentary loading state, sync→async 4 Doc endpoints | — |
-| D | Solva Backend Rewrite (UI unchanged) | queued | 1: framing-thin page from QA screenshot | — |
+| C | Chat Protective Layer + Audit Panel | **complete** (2026-05-13) | 5: chat overflow, archive flow, audit panel + 2 absorbed from Phase B (Doc Reader Commentary loading state, sync→async 4 Doc endpoints) — **all resolved**. Mode B inline-superscript annotation rendering + PDF privacy-report export deferred to a small follow-up patch (data + endpoints already in place). | `sprints/PHASE_C_CLOSEOUT.md` |
+| D | Solva Backend Rewrite (UI unchanged) | **queued (next)** | 1: framing-thin page from QA screenshot | — |
 | E | Solva Phases 2-4 (Tension / Guardrails / Polish) | queued | — | — |
 | F | Engine real signal generation | queued | 1: Monitor Akki status assignment mechanic | — |
 

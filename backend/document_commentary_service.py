@@ -148,6 +148,9 @@ async def generate_journal_commentary(
                 "account_id": account_id,
             },
             tier="standard",
+            # Phase C (2026-05-13) — explicit Shield purpose so the
+            # audit row carries per-call-site provenance.
+            purpose="document_journal.commentary.generate",
         )
     except Exception as exc:  # noqa: BLE001
         raise CommentaryGenerationError(f"LLM commentary failed: {exc}") from exc

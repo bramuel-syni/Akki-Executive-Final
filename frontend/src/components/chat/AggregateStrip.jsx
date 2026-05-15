@@ -1,0 +1,57 @@
+/**
+ * AggregateStrip — pinned banner at the top of the chat surface
+ * showing per-conversation Synisense protection KPIs.
+ *
+ * Phase C (2026-05-13). Re-fetches the aggregate via the backend's
+ * `/api/chats/{cid}/audit-panel/aggregate` endpoint after every
+ * assistant turn (parent passes a `refreshNonce` that bumps on each
+ * new assistant message).
+ */
+import React, { useState, useEffect } from "react";
+import { api } from "../../lib/api";
+import { ShieldCheck } from "lucide-react";
+
+export default function AggregateStrip({ chatId, refreshNonce = 0 }) {
+  const [agg, setAgg] = useState(null);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    if (!chatId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get(
+          `/chats/${chatId}/audit-panel/aggregate`
+        );
+        if (!cancelled) setAgg(data);
+      } catch (e) {
+        if (!cancelled)
+          setErr(`${e?.name || "Error"}: ${(e?.message || "").slice(0, 200)}`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [chatId, refreshNonce]);
+
+  if (!chatId) return null;
+  if (err) {
+    return (
+      <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+        Audit aggregate unavailable: {err}
+      </div>
+    );
+  }
+  if (!agg) return null;
+  if ((agg.llm_calls ?? 0) === 0) return null;
+
+  return (
+    <div
+      data-testid="chat-audit-aggregate-strip"
+      className="mb-3 flex flex-col gap-1 rounded-md border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-xs text-emerald-900 sm:flex-row sm:items-center sm:gap-3"
+    >
+      <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-700" />
+      <span className="leading-snug">{agg.headline_prose}</span>
+    </div>
+  );
+}

@@ -28,6 +28,13 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+// Phase C (2026-05-13) — Synisense audit panel + protective layer
+// intervention rendering. Components live under components/chat/ so
+// other consumer surfaces (Solva, Work Studio) can reuse them in
+// later phases.
+import AuditPanel from "@/components/chat/AuditPanel";
+import AggregateStrip from "@/components/chat/AggregateStrip";
+import ProtectiveInterventionCard from "@/components/chat/ProtectiveInterventionCard";
 import { useMessagesSynisense } from "@/hooks/useMessagesSynisense";
 import PerMessageSynisenseBadge from "@/components/chat/PerMessageSynisenseBadge";
 import ProviderLine from "@/components/chat/ProviderLine";
@@ -431,7 +438,16 @@ export default function Chat() {
       await api.delete(`/chats/${id}`);
       setChats((prev) => prev.filter((c) => c.id !== id));
       if (activeId === id) setActiveId(null);
-      toast.success("Archived");    } catch (e) { toast.error(apiErrorMessage(e)); }
+      // Phase C (2026-05-13) — when a chat is archived, surface the
+      // "View archived" affordance so users know where to retrieve
+      // or permanently delete archived conversations.
+      toast.success("Chat archived. You can restore it from your Archived Chats.", {
+        action: {
+          label: "View archived",
+          onClick: () => { window.location.href = "/app/chats/archived"; },
+        },
+      });
+    } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
   const onPatch = async (patch) => {
@@ -1076,7 +1092,7 @@ export default function Chat() {
               <div
                 ref={scrollContainerRef}
                 onScroll={onMessagesScroll}
-                className="flex-1 overflow-y-auto px-8 py-6 relative"
+                className="flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5 md:px-8 md:py-6 relative"
                 data-testid="chat-messages"
               >
                 {/* Patch 4A — chat horizontal-clipping fix: centred
@@ -1089,13 +1105,22 @@ export default function Chat() {
                     loads). The outer scroll container's size doesn't
                     change; only the inner does. */}
                 <div ref={messagesInnerRef} className="space-y-5">
+                {/* Phase C (2026-05-13) — per-conversation Synisense
+                    aggregate KPI strip. Re-fetches after every assistant
+                    turn (refresh nonce keyed on message count). */}
+                {activeChat?.id && (
+                  <AggregateStrip
+                    chatId={activeChat.id}
+                    refreshNonce={(activeChat.messages || []).length}
+                  />
+                )}
                 {(activeChat.messages || []).length === 0 ? (
                   <p className="text-center text-[13px] text-[var(--muted)] italic mt-10">
                     Type your first message below.
                   </p>
                 ) : (activeChat.messages || []).map((m) => (
                   <Message key={m.id} m={m} activeModel={activeModel} models={models}
-                    synisense={messageSynisense.get(m.id)} />
+                    synisense={messageSynisense.get(m.id)} chatId={activeChat?.id} />
                 ))}
                 {sending && (
                   <div className="flex items-center gap-2 text-[12.5px] text-[var(--muted)] italic">
@@ -1309,7 +1334,7 @@ function PolicyPicker({ value, onChange }) {
   );
 }
 
-function Message({ m, activeModel, models, synisense }) {
+function Message({ m, activeModel, models, synisense, chatId }) {
   const isUser = m.role === "user";
   const shielded = m.shielded;
   const detected = (m.shielding?.identifiers_masked || 0) > 0;
@@ -1470,6 +1495,25 @@ function Message({ m, activeModel, models, synisense }) {
               <span>Content screened · {m.synisense_stats.spans_redacted}</span>
             </button>
           </div>
+        )}
+        {/* Phase C (2026-05-13) — per-message Synisense audit panel.
+            Collapsed by default; expanding fetches the natural-
+            language audit data from /api/chats/{cid}/audit-panel
+            and renders the executive-readable sections. */}
+        {!isUser && m.id && !m.streaming && (
+          <AuditPanel chatId={chatId} messageId={m.id} />
+        )}
+        {/* Phase C — protective layer intervention card (Mode A
+            hypothesis-test framing or Mode C Solva handoff offer).
+            Mode B annotations are inline footnotes; rendered above
+            when `m.protective_event.intervention_type === "annotation"`. */}
+        {!isUser && m.protective_event && (
+          <ProtectiveInterventionCard
+            event={m.protective_event}
+            onSolvaContinue={() => {
+              window.location.href = "/app/solva";
+            }}
+          />
         )}
       </div>
     </div>
