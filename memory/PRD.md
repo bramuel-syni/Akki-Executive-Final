@@ -3411,3 +3411,59 @@ SYSTEM_STATE refresh.
 - No auth model changes.
 - ExcoTeamsCard manage-drawer left untouched (already had `md:max-h-[90vh] overflow-y-auto`).
 - 47 quarantined E2E iter/sprint files (`requests.Session()` rate-limit class) remain quarantined per §7 of SYSTEM_STATE.
+
+
+---
+
+## Phase A — Synisense Foundation (Shield + Engine + Audit) — 2026-05-13 ✅
+
+The 12-chunk QA sprint is **PAUSED**. The user authorised a full architectural rewrite per
+the 4 developer briefs in `/app/memory/briefs/` (Synisense, Solva, Akki Chat, Service
+Integration). Phase A is the first of six phases (A → B → C → D → E → F).
+
+**What ships in Phase A:**
+- Synisense Shield: in-process FastAPI module under `/app/backend/services/synisense/`
+  with three-layer de-identification (regex → tenant-entity dictionary → local spaCy NER),
+  HMAC-SHA256 trust receipts with HKDF-derived per-tenant keys, tamper-evident audit log.
+- Synisense Engine: signal catalogue (6 categories), seeded-from-Mongo signal generator
+  with `derivation_source` markers, paginated tenant-scoped query, subscription stub.
+- 7 new HTTP endpoints under `/api/v1/shield/*` and `/api/v1/engine/*`.
+- 47 new pytest tests. Full suite: **517 passed, 0 regressions** (was 469).
+
+**Phase A locked decisions (user-approved):**
+- `SYNISENSE_MASTER_SECRET` dev fallback OK for now (logged STARTUP WARNING in caps);
+  real secret arrives pre-Bank-QA.
+- `tenant_id` = existing `account_id`. Single-tenant-per-account. No auth refactor.
+- De-id: regex → tenant dict → local spaCy. Cloud LLM-NER removed.
+- Trust Receipts v1: HMAC-SHA256 + HKDF.
+- Engine seed signals carry `derivation_source: "seeded_from_<collection>"`.
+- Strict phase order: A → B → C → D → E → F.
+
+**Phase A PO defaults (locked, relevant to later phases):**
+- Cross-module document deletion → soft-delete (`deleted_at`), downstream surfaces
+  show "source document deleted" banner.
+- "Around the Goals" → Solva sub-module triangulating objectives ↔ cycle outcomes.
+- Akki-assigned Monitor status → NOT manually overridable.
+
+**Detailed close-out:** `/app/memory/sprints/PHASE_A_CLOSEOUT.md`.
+**Canonical recovery surface:** `/app/memory/REWRITE_SPRINT_STATE.md` (read first
+after any handoff/compression).
+
+---
+
+## Phase A backlog (Phase B+ pickup)
+
+- Phase B — migrate every direct LLM call site in `/app/backend/` to
+  `services.synisense.shield.client.invoke()`. Absorb 3 P1 risks (sync Document
+  endpoints, Solva single-session context scoping, SSE `repr(exc)` leaks) plus 6
+  QA findings (Generate Signals error, Take into Solva error, Add to Cycle error,
+  Enhance Minutes error, Akki Commentary loading).
+- Phase C — Chat protective layer + user-visible audit panel (3 QA findings: chat
+  overflow, archive flow, audit panel).
+- Phase D — Solva backend rewrite (UI unchanged; 1 QA finding: framing-thin page).
+- Phase E — Solva phases 2-4 (Tension / Guardrails / Polish).
+- Phase F — Engine real signal generation (1 QA finding: Monitor Akki status mechanic).
+
+## Deferred QA findings (14 items, post-Phase-F)
+Pure UI/UX, no AI dependency. Documented in `REWRITE_SPRINT_STATE.md §Deferred QA
+Findings`. Do NOT touch during rewrite phases.

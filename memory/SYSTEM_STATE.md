@@ -129,6 +129,41 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Phase A — Synisense Foundation (Shield + Engine + Audit) — 2026-05-13 ✅
+- **Headline**: full Phase A delivered per the user's resync brief. Shield + Engine + Audit running under `/api/v1/*` with 3-layer de-id (regex → tenant dict → local spaCy), HMAC-SHA256 trust receipts with HKDF-derived per-tenant keys, seeded engine signals with `derivation_source` markers, and a DEV-only `/admin/reseed`. 517 pytest passing (was 469 baseline; +47 new Phase A tests; **0 regressions**). 4 user decisions baked in: dev-fallback master secret, `tenant_id := account_id`, soft-delete PO default noted, strict A→B→C→D→E→F phase order. Detailed close-out in `/app/memory/sprints/PHASE_A_CLOSEOUT.md`. Canonical recovery doc `/app/memory/REWRITE_SPRINT_STATE.md` written.
+- **Endpoints shipped** (`/api/openapi.json` verified):
+  - `POST /api/v1/shield/llm/invoke` — de-id → LLM → re-id → Trust Receipt.
+  - `GET  /api/v1/shield/audit/{audit_id}` — tenant-scoped audit row retrieval.
+  - `GET  /api/v1/shield/receipt/{audit_id}` — tenant-scoped receipt mirror.
+  - `POST /api/v1/engine/signals/query` — paginated signal retrieval, cursor-based.
+  - `POST /api/v1/engine/subscriptions` — stub, returns `{subscription_id, status: "pending"}` (real delivery is Phase F).
+  - `GET  /api/v1/engine/signal_types` — canonical 6-category catalogue.
+  - `POST /api/v1/engine/admin/reseed` — DEV-only (gated by `ENVIRONMENT != "production"`).
+- **De-id stack**: regex (MONEY, EMAIL, PHONE_E164, IBAN, ACCOUNT_NUM, DATE_ISO, IP, URL, SSN) → tenant entity dictionary (case-insensitive, longest-match, harvested from `accounts.{company_name, full_name}` + `contexts.{name, organization_name}` + `cycles.title`) → local spaCy NER (`en_core_web_trf` preferred; falls back to `en_core_web_sm` on ImportError/OSError per brief permission). NO cloud-LLM-NER. `synisense.shield.internal.ner` REMOVED from `ALLOWED_PURPOSES`. Fail-closed: any spaCy load failure OR tenant-dict throw → `503 SERVICE_UNAVAILABLE`. Performance test asserts warm de-id pass on a 500-word doc completes in <1s on CPU.
+- **Trust Receipt v1**: HKDF-SHA256(master_secret, info=tenant_id, salt=b"synisense/v1", length=32) → per-tenant key. Signature is HMAC-SHA256(per_tenant_key, canonical_json(payload − signature)). Constant-time verify via `hmac.compare_digest`. Version `"v1"` baked in for future asymmetric / post-quantum upgrade path.
+- **Audit + Receipt** collections: `synisense_audit_log` and `synisense_trust_receipts`, both with strict `tenant_id` indexing on lookups.
+- **Engine signals**: seeded from existing Mongo via `signal_seeder.seed_for_tenant()`. Every seeded row carries `derivation_source: "seeded_from_<collection>"`. Real-ingestion rows (`derivation_source: "real_ingestion"`) are explicitly preserved by the idempotent seeder. 6 canonical signal types covering all 6 brief categories (profile, anomaly, life_stage, risk, operational, compliance).
+- **Auth binding**: `tenant_id := account_id` via `get_current_account`. Body `tenant_id` MUST equal authenticated `account_id` for any non-`test.*` purpose; otherwise → `401 AUTH_DENIED`. Test purposes (`test.smoke`, `test.*`) accept arbitrary `tenant_id` (smoke fixture friendly).
+- **Cross-process HMAC verify** with stable `SYNISENSE_MASTER_SECRET`: ✅ correct tenant → True; wrong tenant → False; tampered receipt → False. Dev fallback STARTUP WARNING logs in caps when env var is absent.
+- **Live curl evidence**: John Smith / Apple Inc. / $50,000 / IBAN GB29NWBK60161331926819 / +1-415-555-1234 / john.smith@example.com → all 7 entity types tokenised, real Gemini-2.5-flash call paraphrased the de-id'd content, re-identifier swapped every token back, **0 token leaks** in the final consumer response, `exposure_reduction_score=62.89`, `dilution_score=40.0`.
+- **Tests**: 47 new tests across 3 files:
+  - `test_synisense_shield.py` (28) — regex coverage, spaCy NER, tenant-dict (incl. obscure-name "Lemasy" fixture), scoring clamping, performance, fail-closed, re-id round-trip, HKDF + HMAC sign/verify/tamper, purpose validator, allow-list integrity (confirms `synisense.shield.internal.ner` no longer in catalogue).
+  - `test_synisense_engine.py` (9) — catalogue shape, seeder writes `derivation_source` + idempotent + preserves real-ingestion rows, query strict tenant-scoping + category filter + cursor pagination + `_id` exclusion.
+  - `test_synisense_e2e.py` (10) — full HTTP smoke (audit row check + signature verify + no-token-leak assertion), 401 unauthenticated, 422 unknown purpose, 422 internal-purpose-via-HTTP, 401 wrong tenant for non-test purpose, signal_types catalogue, subscription stub returns pending, admin/reseed end-to-end, signals/query tenant scoping.
+- **Side-effect fix**: removed the broken `/root/.venv/.../torch/` package directory — a previous partial install left `libtorch_global_deps.so` missing, which made `thinc.compat`'s opportunistic `import torch` raise `OSError` (not `ImportError`) and broke spaCy loading in fresh Python processes. With torch removed, thinc takes its `ImportError` fallback branch and spaCy loads `en_core_web_sm` cleanly. Production image should ship `spacy-transformers` + `en_core_web_trf` to unlock the F1 upgrade — that path is exercised by `_attempt_load` already.
+- **Files**: see `/app/memory/sprints/PHASE_A_CLOSEOUT.md` (full diff summary). Highlights: `services/synisense/shield/*.py` (9 new), `services/synisense/engine/*.py` (5 new), `routers/synisense_shield.py` + `routers/synisense_engine.py` (2 new), 3 new test files, plus `REWRITE_SPRINT_STATE.md` + `PHASE_A_CLOSEOUT.md`.
+- **Locked decisions** (baked in this phase, see REWRITE_SPRINT_STATE.md §Locked Decisions):
+  1. Full production rewrite per the 4 briefs. Not a shim.
+  2. 12-chunk QA plan PAUSED. Chunks 7–12 deferred.
+  3. De-id stack = regex → tenant dict → local spaCy. No cloud NER.
+  4. Trust Receipts = HMAC-SHA256 + HKDF per-tenant. v1.
+  5. Engine signals seeded with `derivation_source`. Real ingestion = Phase F.
+  6. `SYNISENSE_MASTER_SECRET` dev fallback for now.
+  7. `tenant_id` = `account_id`. Single-tenant-per-account.
+  8. PO defaults: soft-delete docs; "Around the Goals" = Solva sub-module; Akki Monitor status non-overridable.
+  9. Strict phase order: A → B → C → D → E → F.
+- **Autonomous decisions logged** (in `PHASE_A_CLOSEOUT.md` §Decisions made autonomously): silent sm-fallback (warning only), broad `ACCOUNT_NUM` regex, greedy tenant-entity harvest, `payload_hash` excluded from `verify()`, `LATENCY_BUDGET_*` informational only, subscriptions stub persists for Phase F resumption.
+
 ### Chunk 6.5-REVISED Sub-task F — Monitor Owner-filter tabs — 2026-05-13 ✅
 - **Headline**: 6 of 6 sub-tasks now complete. Sub-task F unblocked via PO-chosen Option (b) — query-time `$lookup` against `db.accounts`. No migration, always-fresh, no editable field.
 - **Backend** (`routers/monitor_v2.py`):

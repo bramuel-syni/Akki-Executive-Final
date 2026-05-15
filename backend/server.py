@@ -54,6 +54,10 @@ from routers import sandbox as sandbox_router  # noqa: E402
 # Phase J (2026-05-12) — Generative Sandbox + Synisense audit metrics.
 from routers import sandbox_generation as sandbox_gen_router  # noqa: E402
 from routers import synisense_metrics as synisense_metrics_router  # noqa: E402
+# Phase A (2026-05-13) — Synisense Foundation: new Shield + Engine routers
+# under /api/v1/*. Coexists with the legacy in-process pipeline above.
+from routers import synisense_shield as synisense_shield_router  # noqa: E402
+from routers import synisense_engine as synisense_engine_router  # noqa: E402
 from routers import cycle as cycle_router  # noqa: E402
 from routers import blog as blog_router  # noqa: E402
 from routers import billing as billing_router  # noqa: E402
@@ -202,6 +206,9 @@ app.include_router(website_router.router)  # Phase I1 — Pre-login website
 # Phase J (2026-05-12) — Generative Sandbox MVP + Synisense audit metrics.
 app.include_router(sandbox_gen_router.router)
 app.include_router(synisense_metrics_router.router)
+# Phase A — Synisense Foundation under /api/v1/.
+app.include_router(synisense_shield_router.router)
+app.include_router(synisense_engine_router.router)
 # HOME sprint (2026-05-12) — ExCo teams grouping function.
 app.include_router(exco_teams_router.router)
 app.include_router(portfolio_router.router)

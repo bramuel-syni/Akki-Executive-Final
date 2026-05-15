@@ -74,8 +74,10 @@ ALLOWED_PURPOSES: Set[str] = {
     # Test-only.
     "test.smoke",
     "test.*",
-    # Internal — for Shield's own LLM-NER pass (de-id).
-    "synisense.shield.internal.ner",
+    # Phase B will add: chat.*, solva.*, work_studio.*, etc.
+    # NOTE: `synisense.shield.internal.ner` REMOVED — Phase A switched
+    # the NER pass from cloud-LLM to local spaCy + tenant dictionary,
+    # so there is no longer an internal LLM-NER call site to allow-list.
 }
 
 # Purposes that may NEVER be invoked from external HTTP callers — only
