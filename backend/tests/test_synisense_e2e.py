@@ -98,6 +98,9 @@ async def _login(client: AsyncClient, email: str, password: str) -> dict:
 
 # ═════════════════════════════════════════════════════════════════════
 # Smoke — the canonical brief fixture.
+# Phase A P0 fix (2026-05-13): tenant_id MUST equal the authenticated
+# account_id for every purpose, including test.*. Smoke now uses the
+# authed_user's account_id rather than a sentinel "test-tenant-smoke".
 # ═════════════════════════════════════════════════════════════════════
 @pytest.mark.asyncio
 async def test_e2e_shield_invoke_smoke(client, db_conn, authed_user):
@@ -107,8 +110,8 @@ async def test_e2e_shield_invoke_smoke(client, db_conn, authed_user):
         "content": SMOKE_CONTENT,
         "model_preference": "balanced",
         "consumer_id": "test",
-        "tenant_id": "test-tenant-smoke",
-        "user_id": "test-user",
+        "tenant_id": authed_user["account_id"],
+        "user_id": authed_user["account_id"],
     }, headers=auth)
     assert r.status_code == 200, r.text
     body = r.json()
@@ -123,7 +126,7 @@ async def test_e2e_shield_invoke_smoke(client, db_conn, authed_user):
         {"audit_id": body["audit_id"]}, {"_id": 0},
     )
     assert audit is not None
-    assert audit["tenant_id"] == "test-tenant-smoke"
+    assert audit["tenant_id"] == authed_user["account_id"]
     s = audit["de_id_summary"]
     assert s.get("PERSON", 0) >= 1, s
     assert s.get("MONEY", 0) >= 1, s
@@ -139,7 +142,7 @@ async def test_e2e_shield_invoke_smoke(client, db_conn, authed_user):
     assert receipt is not None
     assert receipt["version"] == "v1"
     # Signature verifies under HKDF-derived per-tenant key.
-    assert trust_receipt.verify(receipt, tenant_id="test-tenant-smoke")
+    assert trust_receipt.verify(receipt, tenant_id=authed_user["account_id"])
 
 
 @pytest.mark.asyncio
@@ -147,13 +150,67 @@ async def test_e2e_shield_invoke_response_contains_no_tokens(client, authed_user
     auth = await _login(client, authed_user["email"], authed_user["password"])
     r = await client.post("/api/v1/shield/llm/invoke", json={
         "purpose": "test.smoke", "content": SMOKE_CONTENT,
-        "consumer_id": "test", "tenant_id": "test-tenant-tokens",
-        "user_id": "test-user",
+        "consumer_id": "test", "tenant_id": authed_user["account_id"],
+        "user_id": authed_user["account_id"],
     }, headers=auth)
     assert r.status_code == 200
     # Even though the mock LLM echoes the de-id'd content (which contains
     # tokens), the re-identifier MUST wipe every token before returning.
     assert "[[ENT_" not in r.json()["response"]
+
+
+# ═════════════════════════════════════════════════════════════════════
+# P0 REGRESSION (e1_tester Test 2): cross-tenant isolation must hold
+# for EVERY purpose, including test.*. User A authenticated with their
+# own JWT must NOT be able to forge a receipt for user B by passing
+# `tenant_id = B's account_id`.
+# ═════════════════════════════════════════════════════════════════════
+@pytest_asyncio.fixture
+async def second_authed_user(db_conn):
+    """A second isolated account so we can prove cross-tenant rejection."""
+    suffix = uuid.uuid4().hex[:8]
+    email = f"phasea-b-{suffix}@example.com"
+    password = "PhaseA-B2026!"
+    account_id = f"acc-b-{suffix}"
+    from core import hash_password
+    pw_hash = hash_password(password)
+    await db_conn.accounts.insert_one({
+        "id": account_id, "email": email, "password_hash": pw_hash,
+        "name": "PhaseA B Probe", "role": "executive",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "session_version": 0, "verified": True,
+    })
+    yield {"account_id": account_id, "email": email, "password": password}
+    await db_conn.accounts.delete_one({"id": account_id})
+
+
+@pytest.mark.asyncio
+async def test_shield_rejects_foreign_tenant_id(client, db_conn, authed_user, second_authed_user):
+    """User A's JWT cannot forge a receipt under user B's tenant_id."""
+    auth_a = await _login(client, authed_user["email"], authed_user["password"])
+    r = await client.post("/api/v1/shield/llm/invoke", json={
+        "purpose": "test.smoke",
+        "content": "Just hello.",
+        "model_preference": "balanced",
+        "consumer_id": "test",
+        # The forgery — user A passing user B's account_id.
+        "tenant_id": second_authed_user["account_id"],
+        "user_id": authed_user["account_id"],
+    }, headers=auth_a)
+    assert r.status_code == 401, f"expected 401, got {r.status_code}: {r.text[:200]}"
+    body = r.json()
+    assert body["error_class"] == "AUTH_DENIED"
+    # Error message format per the Chunk 3 authenticity rule.
+    assert authed_user["account_id"] in body["message"]
+    assert second_authed_user["account_id"] in body["message"]
+    # No audit row or receipt should have been written under either tenant.
+    n_a = await db_conn.synisense_audit_log.count_documents(
+        {"tenant_id": authed_user["account_id"]},
+    )
+    n_b = await db_conn.synisense_audit_log.count_documents(
+        {"tenant_id": second_authed_user["account_id"]},
+    )
+    assert n_a == 0 and n_b == 0, "no audit row may be written for a rejected forgery"
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -203,10 +260,12 @@ async def test_invoke_internal_purpose_blocked_via_http(client, authed_user):
 
 @pytest.mark.asyncio
 async def test_invoke_non_test_purpose_requires_tenant_eq_account_id(client, authed_user):
-    """For a non-test purpose, body.tenant_id MUST match account_id."""
+    """For ANY purpose (test or otherwise), body.tenant_id MUST match
+    account_id. The test/non-test distinction was retired in the
+    2026-05-13 P0 fix — see `test_shield_rejects_foreign_tenant_id`."""
     auth = await _login(client, authed_user["email"], authed_user["password"])
     # Insert a temporary allow-listed purpose for this test (mimics what
-    # Phase B will do).
+    # Phase B will do for production consumer purposes).
     from services.synisense.config import ALLOWED_PURPOSES
     ALLOWED_PURPOSES.add("phaseA.binding.probe")
     try:
@@ -248,10 +307,12 @@ async def test_get_signal_types(client, authed_user):
 
 @pytest.mark.asyncio
 async def test_subscription_returns_pending(client, authed_user):
+    """Subscriptions now filter by suffixed type names only (P0 fix:
+    `signal_categories` field removed; `signal_types` accepts the 6
+    canonical catalogue type names)."""
     auth = await _login(client, authed_user["email"], authed_user["password"])
     r = await client.post("/api/v1/engine/subscriptions", json={
-        "signal_categories": ["anomaly"],
-        "signal_types": [],
+        "signal_types": ["anomaly_flag", "churn_risk"],
         "delivery": "poll",
         "tenant_id": authed_user["account_id"],
         "consumer_id": "test",
@@ -260,6 +321,21 @@ async def test_subscription_returns_pending(client, authed_user):
     body = r.json()
     assert body["status"] == "pending"
     assert body["subscription_id"].startswith("sub-")
+
+
+@pytest.mark.asyncio
+async def test_subscription_rejects_unsuffixed_category(client, authed_user):
+    """Sending `"anomaly"` (an umbrella category) MUST be rejected —
+    the canonical naming is the suffixed type name (`anomaly_flag`)."""
+    auth = await _login(client, authed_user["email"], authed_user["password"])
+    r = await client.post("/api/v1/engine/subscriptions", json={
+        "signal_types": ["anomaly"],
+        "delivery": "poll",
+        "tenant_id": authed_user["account_id"],
+        "consumer_id": "test",
+    }, headers=auth)
+    # Pydantic Literal validation → 422.
+    assert r.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -304,3 +380,62 @@ async def test_signals_query_tenant_scoped(client, db_conn, authed_user):
         "tenant_id": "someone-elses-tenant", "consumer_id": "test",
     }, headers=auth)
     assert r2.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_signals_query_http_pagination_with_cursor(client, db_conn, authed_user):
+    """HTTP-level pagination round-trip on a tenant with ≥10 signals
+    (addresses tester item (c): 2-signal tenant can't exercise the cursor)."""
+    auth = await _login(client, authed_user["email"], authed_user["password"])
+    # Seed 12 synthetic signals so the cursor can do a real round-trip.
+    tid = authed_user["account_id"]
+    base = datetime.now(timezone.utc)
+    rows = []
+    for i in range(12):
+        rows.append({
+            "signal_id": f"sig-pagi-{i:03d}",
+            "tenant_id": tid,
+            "signal_category": "profile",
+            "signal_type": "behavioral_vector",
+            "entity_ref": tid,
+            "payload": {"vector": [0.0] * 8, "window_days": 7},
+            "confidence": 0.5,
+            "derivation_source": "seeded_from_action_log",
+            "created_at": base.replace(microsecond=i * 1000).isoformat(),
+        })
+    await db_conn.synisense_signals.insert_many(rows)
+
+    # Page 1.
+    r1 = await client.post("/api/v1/engine/signals/query", json={
+        "filter": {"signal_type": "behavioral_vector"},
+        "pagination": {"limit": 5},
+        "tenant_id": tid, "consumer_id": "test",
+    }, headers=auth)
+    assert r1.status_code == 200, r1.text
+    b1 = r1.json()
+    assert len(b1["signals"]) == 5
+    assert b1["next_cursor"] is not None
+
+    # Page 2 — pass the cursor.
+    r2 = await client.post("/api/v1/engine/signals/query", json={
+        "filter": {"signal_type": "behavioral_vector"},
+        "pagination": {"limit": 5, "cursor": b1["next_cursor"]},
+        "tenant_id": tid, "consumer_id": "test",
+    }, headers=auth)
+    assert r2.status_code == 200
+    b2 = r2.json()
+    assert len(b2["signals"]) == 5
+    # Page 3 — should drain the rest (2 remaining of the 12).
+    r3 = await client.post("/api/v1/engine/signals/query", json={
+        "filter": {"signal_type": "behavioral_vector"},
+        "pagination": {"limit": 5, "cursor": b2["next_cursor"]},
+        "tenant_id": tid, "consumer_id": "test",
+    }, headers=auth)
+    assert r3.status_code == 200
+    b3 = r3.json()
+    assert len(b3["signals"]) == 2
+    assert b3["next_cursor"] is None
+
+    # No overlap across pages.
+    ids = [s["signal_id"] for page in (b1, b2, b3) for s in page["signals"]]
+    assert len(ids) == len(set(ids)), "pagination produced duplicate signals"

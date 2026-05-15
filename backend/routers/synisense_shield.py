@@ -77,20 +77,21 @@ async def invoke(
     audit_id = "aud-" + uuid.uuid4().hex
     receipt_id = "rcp-" + uuid.uuid4().hex
 
-    # ── Auth boundary ── tenant_id must match authenticated account_id
-    #    UNLESS the purpose is a `test.*` purpose (allows arbitrary
-    #    tenant strings for the smoke-test fixture).
+    # ── Auth boundary ──
+    # SECURITY (Phase A, P0 fix 2026-05-13): tenant_id in the body
+    # MUST equal the authenticated account_id for EVERY purpose,
+    # including `test.*` purposes. There is no longer a test-purpose
+    # bypass — the previous exemption allowed user A to forge receipts
+    # for user B by passing `tenant_id=B`. The check now mirrors the
+    # Engine routes (signals/query, subscriptions) exactly.
     purpose = body.purpose
-    if not purpose.startswith("test."):
-        if body.tenant_id != current["id"]:
-            return _err_response(
-                AuthDenied(
-                    f"tenant_id '{body.tenant_id}' does not match authenticated "
-                    f"account_id '{current['id']}'. For non-test purposes the two "
-                    f"must be equal (Phase A binding)."
-                ),
-                audit_id=None,
-            )
+    if body.tenant_id != current["id"]:
+        return _err_response(
+            AuthDenied(
+                f"tenant_id '{body.tenant_id}' does not match account_id '{current['id']}'"
+            ),
+            audit_id=None,
+        )
 
     # ── Purpose validation ──
     try:

@@ -88,10 +88,18 @@ class Signal(BaseModel):
 
 
 class SubscriptionRequest(BaseModel):
-    signal_categories: List[Literal[
-        "profile", "anomaly", "life_stage", "risk", "operational", "compliance",
+    # Phase A canonical naming (P0 fix 2026-05-13): subscriptions filter
+    # ONLY by `signal_types` using the suffixed type names from the
+    # `signal_types` catalogue (anomaly_flag, life_stage, churn_risk,
+    # behavioral_vector, compliance_trigger, operational_health). The
+    # earlier `signal_categories` field — which accepted unsuffixed
+    # umbrella categories like "anomaly" — was removed to align the
+    # subscription contract with the catalogue. Bank QA reviewers see
+    # one canonical type name everywhere.
+    signal_types: List[Literal[
+        "anomaly_flag", "life_stage", "churn_risk", "behavioral_vector",
+        "compliance_trigger", "operational_health",
     ]] = Field(default_factory=list)
-    signal_types: List[str] = Field(default_factory=list)
     delivery: Literal["webhook", "stream", "poll"] = "poll"
     webhook_url: Optional[str] = None
     tenant_id: str

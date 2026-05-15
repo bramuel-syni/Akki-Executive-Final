@@ -26,7 +26,6 @@ async def create(req: SubscriptionRequest, *, tenant_id: str) -> SubscriptionRes
         "subscription_id": sid,
         "tenant_id": tenant_id,
         "consumer_id": req.consumer_id,
-        "signal_categories": req.signal_categories,
         "signal_types": req.signal_types,
         "delivery": req.delivery,
         "webhook_url": req.webhook_url,

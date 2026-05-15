@@ -208,3 +208,117 @@ The signature scheme works as designed. Without the env var, the dev-fallback ep
 ## Backwards compatibility
 
 - The legacy Phase 12.1 Synisense pipeline (`pipeline.py`, `adapter.py`, `pool.py`, `presidio_engine.py`, `regex_recognisers.py`, `encryption.py`, `llm_fallback.py`) is **untouched**. Existing chat / briefing / deck call sites continue to use it. Phase B migrates them off; until then, both pipelines coexist.
+
+
+---
+
+## Addendum — 2026-05-13 (post-`e1_tester` P0 fix)
+
+`e1_tester` Test 2 caught a structural-privacy violation in
+`POST /api/v1/shield/llm/invoke`: the route exempted `test.*` purposes
+from the `tenant_id == account_id` check. That meant user A with their
+own JWT could pass `tenant_id = <user B's account_id>` and obtain a
+fully-signed Trust Receipt scoped to user B — exactly the kind of
+foreign-context leak Synisense is supposed to make architecturally
+impossible.
+
+### What changed
+
+1. **`routers/synisense_shield.py`** — removed the `test.*` exemption.
+   The handler now rejects any mismatch with `401 AUTH_DENIED` for
+   EVERY purpose, mirroring the Engine routes. Diff (anchor):
+   ```diff
+   -    if not purpose.startswith("test."):
+   -        if body.tenant_id != current["id"]:
+   -            return _err_response(AuthDenied(...))
+   +    if body.tenant_id != current["id"]:
+   +        return _err_response(AuthDenied(
+   +            f"tenant_id '{body.tenant_id}' does not match account_id '{current['id']}'"
+   +        ), audit_id=None)
+   ```
+   Critical security property: the check runs BEFORE de-identification,
+   LLM invocation, audit write, AND receipt issuance — a rejected
+   forgery leaves no trace under either tenant's namespace.
+
+2. **`services/synisense/models.py`** — `SubscriptionRequest`:
+   - Removed the redundant `signal_categories` field that accepted
+     unsuffixed umbrella names like `"anomaly"`.
+   - Tightened `signal_types: List[Literal[...]]` to the six canonical
+     suffixed type names from the catalogue: `anomaly_flag`,
+     `life_stage`, `churn_risk`, `behavioral_vector`,
+     `compliance_trigger`, `operational_health`. Bank QA now sees one
+     canonical naming end-to-end.
+   - `engine/subscription.py` updated to persist only the new shape.
+
+3. **`tests/test_synisense_e2e.py`** — 3 new tests:
+   - `test_shield_rejects_foreign_tenant_id` — the explicit P0
+     regression. User A authenticated, body `tenant_id` = user B's
+     account_id → asserts 401, `error_class: AUTH_DENIED`, message
+     mentions both ids, AND no audit row written under either tenant.
+   - `test_subscription_rejects_unsuffixed_category` — sending
+     `"anomaly"` (umbrella category) → 422 Pydantic validation.
+   - `test_signals_query_http_pagination_with_cursor` — HTTP-level
+     cursor round-trip on a tenant seeded with 12 signals: page1 (5)
+     → page2 (5) → page3 (2, `next_cursor: null`), no duplicates.
+   Existing smoke fixtures rewritten to use `authed_user["account_id"]`
+   as `tenant_id` instead of sentinel values.
+
+### Route audit (per tester item 3)
+
+| Route | Body `tenant_id`? | Check present? | Status |
+|---|---|---|---|
+| `POST /api/v1/shield/llm/invoke` | yes | **FIXED** in this patch | ✅ |
+| `GET  /api/v1/shield/audit/{audit_id}` | no (uses `current["id"]`) | n/a | ✅ |
+| `GET  /api/v1/shield/receipt/{audit_id}` | no (uses `current["id"]`) | n/a | ✅ |
+| `POST /api/v1/engine/signals/query` | yes | already enforced | ✅ |
+| `POST /api/v1/engine/subscriptions` | yes | already enforced | ✅ |
+| `GET  /api/v1/engine/signal_types` | no body | n/a | ✅ |
+| `POST /api/v1/engine/admin/reseed` | no (uses `current["id"]`) | n/a | ✅ |
+
+All 7 endpoints audited. The Shield invoke route was the only gap.
+
+### Test results
+
+- `pytest /app/backend/tests/test_synisense_*.py -v` →
+  **51 passed** (was 48; +3 new this fix).
+- Full suite: **520 passed, 0 regressions** (was 517).
+
+### Curl evidence
+
+User A (`acc-curl-userA-001`) with their own JWT attempts a forgery
+under user B's tenant_id (`acc-curl-userB-002`):
+
+```
+HTTP/1.1 401 Unauthorized
+content-type: application/json
+
+{"error_class":"AUTH_DENIED",
+ "message":"AuthDenied: tenant_id 'acc-curl-userB-002' does not match account_id 'acc-curl-userA-001'",
+ "audit_id":null}
+```
+
+Positive control — same JWT with own tenant_id:
+```
+status: 200 — audit_id: aud-1e1070239583425c947a41a9e1e745d7
+```
+
+### Tester item (a) — schema discoverability
+
+`tenant_id` and `consumer_id` on `POST /api/v1/engine/signals/query`
+and `POST /api/v1/engine/subscriptions` are already declared as
+required fields in their Pydantic v2 models — they surface in
+`/api/openapi.json` under each route's `requestBody.content.
+application/json.schema.required`. No further change required.
+
+### Decision on the "Potential improvement" (purposes registry)
+
+User direction is **Rejected — keep `ALLOWED_PURPOSES` code-controlled**.
+Forcing a deploy cycle on every new purpose enforces code review on
+every consumer integration. This aligns with Synisense's
+structural-privacy principle (governance by architecture, not by API
+call). Phase B/C/D/E will add their consumer's purposes directly to
+`ALLOWED_PURPOSES`.
+
+### Ready for re-test
+
+Awaiting `e1_tester` Test 2 re-run. Once green, Phase B can dispatch.
