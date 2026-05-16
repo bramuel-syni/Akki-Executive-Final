@@ -173,6 +173,13 @@ app.include_router(_chat_audit_panel.router)
 # Distinct from the legacy /api/solva/v2/* paths in routers/solva_v2.py.
 from routers import solva_phase_d as _solva_phase_d  # noqa: E402
 app.include_router(_solva_phase_d.router)
+# Phase E (2026-05-16) — observability + migration + export + PDF.
+from routers import synisense_observability as _syn_obs  # noqa: E402
+from routers import solva_phase_e_polish as _solva_pe  # noqa: E402
+app.include_router(_syn_obs.router)
+app.include_router(_solva_pe.admin_router)
+app.include_router(_solva_pe.solva_export_router)
+app.include_router(_solva_pe.chat_pdf_router)
 app.include_router(chat_router.router)
 app.include_router(influence_map_router.router)
 app.include_router(admin_health_router.router)

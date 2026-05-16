@@ -3,7 +3,7 @@ from .frame_audit_engine import run_frame_audit, FrameAuditOutput
 from .situation_class_classifier import classify_situation, SituationClassOutput
 from .candidate_generation import generate_candidates, CandidateGenerationOutput
 from .triangulation_engine import run_triangulation, TriangulationOutput
-from .tension_detection import detect_tensions, TensionDetectionOutput
+from .tension_detection import detect_tensions, TensionDetectionOutput, auto_activate
 from .probability_weighting import weight_scenarios, ProbabilityWeightingOutput
 from .refusal_logic import (
     evaluate_refusal,
@@ -16,7 +16,7 @@ __all__ = [
     "classify_situation", "SituationClassOutput",
     "generate_candidates", "CandidateGenerationOutput",
     "run_triangulation", "TriangulationOutput",
-    "detect_tensions", "TensionDetectionOutput",
+    "detect_tensions", "TensionDetectionOutput", "auto_activate",
     "weight_scenarios", "ProbabilityWeightingOutput",
     "evaluate_refusal", "RefusalDecision", "RefusalReason",
 ]

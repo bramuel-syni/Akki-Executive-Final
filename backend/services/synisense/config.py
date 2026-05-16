@@ -101,6 +101,10 @@ ALLOWED_PURPOSES: Set[str] = {
     "solva.layer_3.synthesis_rendering",
     "solva.refusal.compose",
     "solva.entry.frame_payload",
+    # Phase E Sub-task B (2026-05-16) — guardrail purposes.
+    "solva.guardrails.jailbreak_detection",
+    "solva.guardrails.therapy_detection",
+    "solva.guardrails.coaching_detection",
     "solva.*",
 
     # Work Studio

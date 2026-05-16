@@ -126,3 +126,88 @@ async def detect_tensions(
         audit_id=shield_res.audit_id,
         orchestration_entries=[shield_res.orchestration_entry],
     )
+
+
+def auto_activate(
+    *,
+    candidates: List[Dict[str, Any]],
+    triangulation_result: Dict[str, Any],
+    detected_tensions: List[Dict[str, Any]],
+    sub_module: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Phase E Sub-task C (2026-05-16) — decide whether the session
+    has surfaced enough tension to ESCALATE in Layer 2 (additional
+    probe question + tension-flagged synthesis variant).
+
+    Triggers when ANY of:
+      (1) two candidates have weight intervals (±0.10 band) that don't
+          overlap;
+      (2) one candidate weight > 0.5 AND another > 0.25;
+      (3) tension_detection emitted a `material` or `critical` tension;
+      (4) triangulation flagged a `material`/`critical` divergence.
+
+    Always-on for `simulate_hypothesis` per brief §3.4.2 — that
+    sub-module exists to test claims, so tension acknowledgement is
+    its default mode.
+    """
+    if sub_module == "simulate_hypothesis":
+        return {
+            "activated": True,
+            "reason": "simulate_hypothesis_default",
+            "tension_question_key": f"{sub_module}.layer_2.probe.tension_invitation",
+            "synthesis_variant": "tension_flagged",
+        }
+
+    weights = sorted(
+        [(c.get("id"), float(c.get("weight", 0.0))) for c in candidates or []],
+        key=lambda x: -x[1],
+    )
+    if len(weights) >= 2:
+        w_a = weights[0][1]
+        w_b = weights[1][1]
+        # Trigger 1 — non-overlapping intervals (±0.10 band each).
+        a_lo, a_hi = w_a - 0.10, w_a + 0.10
+        b_lo, b_hi = w_b - 0.10, w_b + 0.10
+        if a_lo > b_hi or b_lo > a_hi:
+            return {
+                "activated": True,
+                "reason": "non_overlapping_weight_bands",
+                "tension_question_key": f"{sub_module or 'seek_clarity'}.layer_2.probe.tension_invitation",
+                "synthesis_variant": "tension_flagged",
+            }
+        # Trigger 2 — lead > 0.5 with second > 0.25.
+        if w_a > 0.5 and w_b > 0.25:
+            return {
+                "activated": True,
+                "reason": "lead_dominant_with_strong_alternate",
+                "tension_question_key": f"{sub_module or 'seek_clarity'}.layer_2.probe.tension_invitation",
+                "synthesis_variant": "tension_flagged",
+            }
+
+    # Trigger 3 — material/critical tension already detected.
+    for t in detected_tensions or []:
+        if (t.get("severity") or "minor") in ("material", "critical"):
+            return {
+                "activated": True,
+                "reason": "material_tension_detected",
+                "tension_question_key": f"{sub_module or 'seek_clarity'}.layer_2.probe.tension_invitation",
+                "synthesis_variant": "tension_flagged",
+            }
+
+    # Trigger 4 — triangulation contradiction.
+    align = (triangulation_result or {}).get("divergences") or []
+    if any((d.get("severity") or "minor") in ("material", "critical") for d in align):
+        return {
+            "activated": True,
+            "reason": "triangulation_contradiction",
+            "tension_question_key": f"{sub_module or 'seek_clarity'}.layer_2.probe.tension_invitation",
+            "synthesis_variant": "tension_flagged",
+        }
+
+    return {
+        "activated": False,
+        "reason": "no_tension_surfaced",
+        "tension_question_key": None,
+        "synthesis_variant": "neutral",
+    }
+

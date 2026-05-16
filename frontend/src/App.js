@@ -79,6 +79,12 @@ const Decks = lazy(() => import("@/pages/Decks"));
 const SolvaApp = lazy(() => import("@/pages/SolvaApp"));
 const SolvaSession = lazy(() => import("@/pages/SolvaSession"));
 const SolvaSessions = lazy(() => import("@/pages/SolvaSessions"));
+// Phase E Sub-task A (2026-05-16) — Phase D session page wired at a
+// distinct route so the legacy SolvaSession.jsx stays available for
+// pre-Phase-D sessions until the migration in Phase E Sub-task F.
+const SolvaPhaseDSession = lazy(() => import("@/pages/SolvaPhaseDSession"));
+// Phase E Sub-task D (2026-05-16) — admin observability dashboard.
+const SynisenseObservability = lazy(() => import("@/pages/SynisenseObservability"));
 const Cycle = lazy(() => import("@/pages/Cycle"));
 const CycleList = lazy(() => import("@/pages/cycle/CycleList"));
 const Monitor = lazy(() => import("@/pages/Monitor"));
@@ -290,6 +296,10 @@ function App() {
           <Route path="/app/solva/sessions" element={<Gated><SolvaSessions /></Gated>} />
           <Route path="/app/solva/session/new" element={<Gated><SolvaSession /></Gated>} />
           <Route path="/app/solva/session/:sessionId" element={<Gated><SolvaSession /></Gated>} />
+          {/* Phase E Sub-task A — Phase D engine surface. */}
+          <Route path="/app/solva/phase-d/session/new" element={<Gated><SolvaPhaseDSession /></Gated>} />
+          <Route path="/app/solva/phase-d/session/:sessionId" element={<Gated><SolvaPhaseDSession /></Gated>} />
+          <Route path="/app/admin/synisense-observability" element={<Gated><SynisenseObservability /></Gated>} />
           <Route path="/app/documents/:id" element={<Gated><DocumentRouteSwitch /></Gated>} />
           <Route path="/app/contexts" element={<Gated><ContextPortfolio /></Gated>} />
           {/* Phase 15.2 cosmetic alias: /app/companies alongside /app/contexts. */}

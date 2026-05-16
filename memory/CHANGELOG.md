@@ -3,6 +3,20 @@
 > Append-only history of shipped work. Newest first.
 > Detailed patch close-outs live in `/app/memory/SYSTEM_STATE.md` §4.
 
+## 2026-05-16 — Phase E (Synisense Rewrite, Phase 5 of 6)
+
+### Phase E — Solva Phase 2-4 + Frontend wiring + Observability
+- New `SolvaPhaseDSession.jsx` page wires the Phase D engine to the user-facing Solva surface (the unblocker). Routes new (no-seed) sessions through Phase D.
+- Guardrail ladder (jailbreak/therapy/coaching) on the Phase D path — pre-filter regex + 3 Shield-routed classifiers. Brings parity with legacy `solva_v2.py`.
+- Tension auto-activation in Layer 2 with `simulate_hypothesis` always-on. New synthesis renderer variant for tension-flagged sessions.
+- Superadmin observability dashboard at `/api/admin/synisense/observability` + admin UI page. Per-consumer KPIs, top purposes, refusal reason distribution.
+- "Trust verified by Synisense" CTA on Solva start + every Phase D session.
+- Admin legacy session migration endpoint (soft-archive + restore + orphan-count). Live migration on preview pod: 0 orphans.
+- Solva session → Work Studio brief artefact export with audit-trail back-link.
+- Per-chat privacy report PDF download (reportlab-styled).
+
+620 passing pytest (+36 net new), 0 regressions. Close-out: `/app/memory/sprints/PHASE_E_CLOSEOUT.md`.
+
 ## 2026-05-16 — Phase D (Synisense Rewrite, Phase 4 of 6)
 
 ### Phase D — Fix Bundle v2 (placeholder family + macro + FAR fixture)

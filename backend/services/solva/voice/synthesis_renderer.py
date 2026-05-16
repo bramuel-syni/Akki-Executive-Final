@@ -159,6 +159,7 @@ def render_synthesis(
     surfaced_tensions: List[Dict[str, Any]],
     carry_forward_caveats: Optional[List[str]] = None,   # accepted but IGNORED
     evidence_trace: Optional[List[Dict[str, Any]]] = None,
+    tension_activation: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Compose the Layer 3 user-visible synthesis.
 
@@ -167,13 +168,29 @@ def render_synthesis(
     close. `carry_forward_caveats` is accepted for API back-compat
     but IGNORED — those are FAR-internal sensitivity flags.
 
+    Phase E Sub-task C (2026-05-16): when `tension_activation.activated`
+    is True AND `synthesis_variant=="tension_flagged"`, the prose opens
+    with an EXPLICIT acknowledgement of the contested read instead of
+    the neutral "Here is where I've landed." This keeps the
+    disagreement visible to the user.
+
     Contract: returned string contains ZERO `[[ENT_` substrings and
     ZERO `invalidation_condition`-style copy. Locked by
     `test_synthesis_contains_no_entity_placeholders` and
     `test_synthesis_contains_no_invalidation_phrases`.
     """
     out: List[str] = []
-    out.append("Here is where I've landed.")
+    tension_flagged = bool(
+        (tension_activation or {}).get("activated")
+        and (tension_activation or {}).get("synthesis_variant") == "tension_flagged"
+    )
+    if tension_flagged:
+        out.append(
+            "Two readings are pulling against each other here, and I'm "
+            "going to keep that visible rather than smooth it over."
+        )
+    else:
+        out.append("Here is where I've landed.")
     out.append("")
 
     if scenarios:

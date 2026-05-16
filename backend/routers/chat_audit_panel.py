@@ -161,6 +161,10 @@ _PURPOSE_LABEL = {
     "pulse.signal.commentary":                         "Pulse signal commentary",
     "akki.gateway.standard":                           "Gateway call",
     "health.ping":                                     "Health probe",
+    # Phase E Sub-task B (2026-05-16) — guardrail labels.
+    "solva.guardrails.jailbreak_detection":            "Guardrail — jailbreak detection",
+    "solva.guardrails.therapy_detection":              "Guardrail — therapy detection",
+    "solva.guardrails.coaching_detection":             "Guardrail — coaching detection",
 }
 
 

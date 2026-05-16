@@ -44,6 +44,24 @@ export default function SolvaApp() {
   return (
     <AppShell>
       <WorkspaceEntryGate workspace="solva">
+        {/* Phase E Sub-task E (2026-05-16) — Trust verified by Synisense CTA */}
+        <div
+          data-testid="solva-trust-banner"
+          className="mx-auto mb-6 mt-4 flex max-w-3xl items-center gap-3 rounded-md border border-emerald-200/70 bg-emerald-50/70 px-4 py-2 text-sm text-emerald-900"
+        >
+          <span className="text-emerald-600" aria-hidden>✓</span>
+          <span>
+            <strong>Trust verified by Synisense</strong> — every reasoning step
+            is governed and auditable.
+          </span>
+          <a
+            href="/app/solva/sessions"
+            data-testid="solva-trust-banner-view-audit"
+            className="ml-auto text-emerald-700 underline-offset-2 hover:underline"
+          >
+            View audit timeline →
+          </a>
+        </div>
         <SolvaLanding variant="auth" intakeSeed={seed} />
       </WorkspaceEntryGate>
     </AppShell>

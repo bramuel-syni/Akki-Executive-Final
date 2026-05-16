@@ -116,6 +116,23 @@ _BANK: Dict[str, List[str]] = {
     "_generic.layer_2.probe": [
         "Take me deeper on one piece — what's the part of this that's harder to name than the rest?",
     ],
+    # ── Phase E Sub-task C (2026-05-16) — tension invitation probes ──
+    "seek_clarity.layer_2.probe.tension_invitation": [
+        "There are two readings here pulling against each other. Tell me which one feels closer to lived reality — and what it would cost you to be wrong about that.",
+        "I'm seeing a tension in the picture. If you had to weight one reading over the other tonight, which would it be — and what makes you uneasy about that call?",
+    ],
+    "develop_strategy.layer_2.probe.tension_invitation": [
+        "Two options are sitting close in weight. Which would you regret more — picking the wrong one, or picking too late?",
+        "There's tension in the choice. Tell me what each option costs that the other doesn't.",
+    ],
+    "simulate_hypothesis.layer_2.probe.tension_invitation": [
+        "The hypothesis is contested. Walk me through what would change in your read if the contrary case is actually right.",
+        "There's pull in both directions. What's the cleanest test you could run that would resolve it one way or the other?",
+    ],
+    "get_perspective.layer_2.probe.tension_invitation": [
+        "The lens you're asking for surfaces a tension. Tell me whose perspective sits closest to your gut — and whose you most need to hear out.",
+        "Two perspectives are diverging here. Which one would you find hardest to sit with if it turned out to be the right read?",
+    ],
 }
 
 

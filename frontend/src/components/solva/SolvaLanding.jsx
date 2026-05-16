@@ -365,19 +365,23 @@ export default function SolvaLanding({ variant = "auth", intakeSeed = null }) {
 
   const onSelectCard = (card) => {
     if (variant === "auth") {
-      // Wave 1.1 (UAT pack 2026-05-10) — forward intake_seed through
-      // the session-create URL. SolvaSession.jsx reads `seed_kind` /
-      // `seed_id` and includes `intake_seed: {kind, id}` in the
-      // POST body. The picker URL itself is transient (we navigate
-      // immediately to /session/new); the seed flows on the URL the
-      // session page reads.
+      // Phase E Sub-task A (2026-05-16) — Brand-new sessions route to
+      // the Phase D engine at /app/solva/phase-d/session/new. Seed
+      // forwarding is preserved on the URL; the Phase D session page
+      // ignores seed params for now (Phase E.5 will wire seed support
+      // into Phase D's framing endpoint). Sessions started WITHOUT a
+      // seed land cleanly in the Phase D engine.
       const params = new URLSearchParams();
       params.set("submodule", card.key);
       if (intakeSeed?.kind && intakeSeed?.id) {
         params.set("seed_kind", intakeSeed.kind);
         params.set("seed_id", intakeSeed.id);
+        // Seed flows route through the LEGACY engine until seed
+        // support is wired into the Phase D framing endpoint.
+        navigate(`/app/solva/session/new?${params.toString()}`);
+        return;
       }
-      navigate(`/app/solva/session/new?${params.toString()}`);
+      navigate(`/app/solva/phase-d/session/new?${params.toString()}`);
     } else {
       navigate("/signin");
     }

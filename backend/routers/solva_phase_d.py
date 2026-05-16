@@ -48,6 +48,10 @@ from services.solva.voice import (
     render_acknowledgement,
     render_refusal,
 )
+from services.solva.guardrails import (
+    run_guardrail_ladder,
+    GuardrailOutcome,
+)
 
 
 logger = logging.getLogger("akki.solva.phase_d")
@@ -98,6 +102,79 @@ class RefuseIn(BaseModel):
 # ─────────────────────────────────────────────────────────────────────
 # Helpers.
 # ─────────────────────────────────────────────────────────────────────
+async def _guardrail_check_and_persist(
+    *,
+    session_id: str,
+    context_id: str,
+    account_id: str,
+    input_text: str,
+) -> Optional[Dict[str, Any]]:
+    """Run the Phase E guardrail ladder. If outcome is BLOCKED_HARD,
+    persist the block on the session (status=blocked_hard, layer_3.
+    rendered_synthesis=None, refusal_rendering carries the templated
+    response). If BLOCKED_SOFT, persist a soft annotation on the session
+    BUT allow the caller to continue. Returns a response payload to
+    send back to the user OR None when the call should proceed.
+
+    Audit IDs from the classifiers are appended to the session.
+    """
+    decision = await run_guardrail_ladder(
+        input_text=input_text or "",
+        tenant_id=account_id,
+        user_id=account_id,
+    )
+    if decision.audit_ids or decision.orchestration_entries:
+        await _push_audit(session_id, decision.audit_ids, decision.orchestration_entries)
+
+    if decision.outcome == GuardrailOutcome.OK:
+        return None
+
+    if decision.outcome == GuardrailOutcome.BLOCKED_HARD:
+        await _coll().update_one(
+            {"session_id": session_id},
+            {"$set": {
+                "status": "blocked_hard",
+                "layer_state": "refused",
+                "guardrail_outcome": decision.outcome.value,
+                "guardrail_primary_classifier": decision.primary_classifier,
+                "guardrail_scores": [s.model_dump() for s in decision.scores],
+                "completed_at": _utc_now(),
+                "updated_at": _utc_now(),
+                "layer_3": {
+                    "scenarios": [],
+                    "sensitivity_drivers": [],
+                    "surfaced_tensions": [],
+                    "evidence_trace": [],
+                    "primary_diagnosis_prose": "",
+                    "refusal_flag": True,
+                    "refusal_reason": f"guardrail.{decision.primary_classifier}",
+                    "refusal_rendering": decision.rendering,
+                    "rendered_synthesis": None,
+                },
+            }},
+        )
+        refreshed = await _get_session(context_id, session_id, account_id)
+        return _serialise(refreshed)
+
+    # SOFT — annotate and proceed.
+    await _coll().update_one(
+        {"session_id": session_id},
+        {"$set": {
+            "guardrail_outcome": decision.outcome.value,
+            "guardrail_primary_classifier": decision.primary_classifier,
+            "guardrail_scores": [s.model_dump() for s in decision.scores],
+            "updated_at": _utc_now(),
+        }, "$push": {
+            "soft_guardrail_notices": {
+                "classifier": decision.primary_classifier,
+                "rendering": decision.rendering,
+                "at": _utc_now().isoformat(),
+            },
+        }},
+    )
+    return None
+
+
 async def _get_session(context_id: str, session_id: str, account_id: str) -> Dict[str, Any]:
     row = await _coll().find_one(
         {"session_id": session_id, "context_id": context_id, "account_id": account_id},
@@ -316,6 +393,18 @@ async def submit_framing(
             {"$set": {"initial_framing": body.framing_text}},
         )
 
+    # Phase E Sub-task B (2026-05-16) — guardrail ladder runs BEFORE
+    # the FAR. Hard blocks return immediately; soft annotations are
+    # logged but the engine continues.
+    blocked = await _guardrail_check_and_persist(
+        session_id=session_id,
+        context_id=context_id,
+        account_id=account["id"],
+        input_text=body.framing_text,
+    )
+    if blocked is not None:
+        return blocked
+
     # Layer 0 — situation class + frame audit (silent).
     sc_out = await classify_situation(
         framing_text=body.framing_text,
@@ -387,6 +476,17 @@ async def submit_answer(
             status_code=409,
             detail=f"Cannot submit an answer at layer_state={state}.",
         )
+
+    # Phase E Sub-task B (2026-05-16) — guardrail ladder runs BEFORE
+    # the answer is recorded. Hard block returns immediately.
+    blocked = await _guardrail_check_and_persist(
+        session_id=session_id,
+        context_id=context_id,
+        account_id=account["id"],
+        input_text=body.answer_text,
+    )
+    if blocked is not None:
+        return blocked
 
     answer_record = {
         "id": "ans-" + uuid.uuid4().hex,
@@ -484,6 +584,18 @@ async def submit_answer(
                 },
             )
 
+            # Phase E Sub-task C (2026-05-16) — tension auto-activation.
+            from services.solva.reasoning.tension_detection import auto_activate as _auto_act
+            ten_decision = _auto_act(
+                candidates=refined,
+                triangulation_result={
+                    "overall_consistency": tri.overall_consistency,
+                    "divergences": [d.model_dump() for d in tri.divergences],
+                },
+                detected_tensions=[t.model_dump() for t in ten.tensions],
+                sub_module=session["sub_module"],
+            )
+
             await _coll().update_one(
                 {"session_id": session_id},
                 {"$set": {
@@ -494,6 +606,7 @@ async def submit_answer(
                     },
                     "layer_2.detected_tensions": [t.model_dump() for t in ten.tensions],
                     "layer_2.refined_candidates": refined,
+                    "layer_2.tension_activation": ten_decision,
                     "layer_state": "layer_3",
                     "updated_at": _utc_now(),
                 }},
@@ -616,13 +729,13 @@ async def _run_layer_3(session_id: str, context_id: str, account_id: str) -> Non
         user_id=account_id,
     )
     surfaced = (session.get("layer_2") or {}).get("detected_tensions") or []
+    tension_activation = (session.get("layer_2") or {}).get("tension_activation") or None
     rendered = render_synthesis(
         sub_module=session["sub_module"],
         scenarios=[s.model_dump() for s in pw.scenarios],
         sensitivity_drivers=[d.model_dump() for d in pw.sensitivity_drivers],
         surfaced_tensions=surfaced,
-        # Phase D fix bundle 2026-05-16: carry_forward_caveats omitted.
-        # The renderer ignores them; passing nothing makes intent explicit.
+        tension_activation=tension_activation,
     )
     await _coll().update_one(
         {"session_id": session_id},
