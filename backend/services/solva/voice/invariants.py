@@ -53,6 +53,15 @@ INTERNAL_ARTEFACT_TERMS: List[str] = [
     "a couple of pieces are thin",
     "several structural pieces are missing",
     "your framing is workable",
+    # Phase D fix bundle 2026-05-16 — invalidation_condition + FAR
+    # sensitivity-flag vocabulary, and Shield re-id placeholders.
+    "invalidation_condition",
+    "the lead reading shifts",
+    "FAR.dimensions",
+    "far.dimensions",
+    "routing_decision",
+    "[[ent_",
+    "[[ENT_",
 ]
 
 

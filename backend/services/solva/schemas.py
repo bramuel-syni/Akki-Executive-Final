@@ -33,9 +33,10 @@ SUB_MODULES = (
 # `layer_3` → SYNTHESIS rendered to user (no questions).
 # `layer_4` → REFLECTION round (3 fixed questions).
 # `done` → session complete.
+# `refused` → terminal: refusal_logic fired (Phase D fix 2026-05-16).
 LAYER_STATES = (
     "entry", "framing", "layer_0", "layer_1", "layer_2",
-    "layer_3", "layer_4", "done",
+    "layer_3", "layer_4", "done", "refused",
 )
 TERMINAL_STATES = ("done", "refused", "abandoned")
 

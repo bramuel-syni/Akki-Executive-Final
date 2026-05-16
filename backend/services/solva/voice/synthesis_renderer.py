@@ -3,17 +3,29 @@ coach-voice user-facing prose.
 
 This is the ONE place where Layer 3 user content is produced. The
 function consumes the (internal) probability weighting output +
-triangulation divergences + carry-forward caveats and renders an
-editorial-cadence synthesis paragraph.
+surfaced tensions and renders an editorial-cadence synthesis
+paragraph.
 
 CRITICAL invariant: NO internal artefact terminology (FAR, candidate,
-triangulation, frame audit, scenario weight, dimension, etc.) appears
-in the output. Locked by `voice.invariants.scan_for_internal_artefacts`.
+triangulation, frame audit, scenario weight, dimension, invalidation
+condition, etc.) appears in the output. Locked by
+`voice.invariants.scan_for_internal_artefacts`.
+
+CRITICAL invariant: NO Shield de-identification placeholders
+(`[[ENT_*_NNN]]`) reach user-visible prose. Stripped by
+`_strip_entity_placeholders` before assembly.
+
+Phase D fix bundle 2026-05-16:
+  - `carry_forward_caveats` removed from the rendered output entirely.
+    Those are FAR-internal sensitivity flags, not user prose. Synthesis
+    derives only from weights + tensions + scenario descriptions.
+  - `[[ENT_*]]` placeholders stripped from every input string before
+    rendering — surfaced as a structural artefact (see `synthesis_had_unresolved_entities`).
 """
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 # Strip layer references and Markdown field labels from any string
@@ -23,9 +35,27 @@ _MARKDOWN_LABEL_RE = re.compile(r"\*{2}[^*]{1,40}\*{2}\s*:?\s*", re.I)
 _LEADING_LABEL_RE = re.compile(r"^\s*[A-Z][a-z]+(\s+[A-Za-z]+){0,2}\s*:\s+", re.I)
 _INTERNAL_TERMS_RE = re.compile(
     r"\b(frame audit|candidate set|triangulation result|audit_?id|"
-    r"dimension score|calibration version|synisense audit)\b",
+    r"dimension score|calibration version|synisense audit|"
+    r"invalidation_?condition|routing_?decision)\b",
     re.I,
 )
+
+# Shield de-identification placeholder pattern. Examples:
+#   [[ENT_PERSON_001]]   [[ENT_MONEY_42]]   [[ENT_PROJECT_007]]
+_ENT_PLACEHOLDER_RE = re.compile(r"\[\[ENT_[A-Z][A-Z_0-9]*_\d+\]\]")
+
+
+def _strip_entity_placeholders(text: str) -> Tuple[str, int]:
+    """Strip any Shield `[[ENT_*_NNN]]` placeholders. Returns the
+    cleaned text + a count of how many placeholders were stripped.
+    The count is a structural signal — if non-zero, the upstream
+    LLM hallucinated entity tokens not present in the de-id map."""
+    if not text:
+        return "", 0
+    n = len(_ENT_PLACEHOLDER_RE.findall(text))
+    cleaned = _ENT_PLACEHOLDER_RE.sub("", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,;:.-")
+    return cleaned, n
 
 
 def _sanitize_internal_string(text: str) -> str:
@@ -34,7 +64,8 @@ def _sanitize_internal_string(text: str) -> str:
     content; removes the engineering scaffolding."""
     if not text:
         return ""
-    t = _MARKDOWN_LABEL_RE.sub("", text)
+    t, _ = _strip_entity_placeholders(text)
+    t = _MARKDOWN_LABEL_RE.sub("", t)
     t = _LAYER_REF_RE.sub("the framing", t)
     t = _INTERNAL_TERMS_RE.sub("the read", t)
     # Drop a leading "Word:" label like "Description: ...".
@@ -63,8 +94,6 @@ def render_acknowledgement(
     if not framing_text:
         return "I've read what you've brought. Let's start here."
     snippet = (framing_text or "").strip()
-    # Use the first 90 chars as a hint that lands as recognition,
-    # not paraphrase (paraphrasing is fragile and feels patronising).
     if len(snippet) > 90:
         snippet = snippet[:87].rstrip(",;:- ") + "…"
     return (
@@ -79,22 +108,25 @@ def render_synthesis(
     scenarios: List[Dict[str, Any]],
     sensitivity_drivers: List[Dict[str, Any]],
     surfaced_tensions: List[Dict[str, Any]],
-    carry_forward_caveats: List[str],
+    carry_forward_caveats: Optional[List[str]] = None,   # accepted but IGNORED
     evidence_trace: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """Compose the Layer 3 user-visible synthesis.
 
-    Editorial cadence — one orientation sentence, two short bodies,
-    one closing diagnosis sentence. Probability + interval shown per
-    leading scenario. Tensions and caveats render as conditional
-    clauses, not as enumerated lists with audit vocabulary.
+    Editorial cadence — orientation, lead scenario with weight +
+    interval, two alternates, surfaced tension, sensitivity driver,
+    close. `carry_forward_caveats` is accepted for API back-compat
+    but IGNORED — those are FAR-internal sensitivity flags.
+
+    Contract: returned string contains ZERO `[[ENT_` substrings and
+    ZERO `invalidation_condition`-style copy. Locked by
+    `test_synthesis_contains_no_entity_placeholders` and
+    `test_synthesis_contains_no_invalidation_phrases`.
     """
     out: List[str] = []
-    # Orientation.
     out.append("Here is where I've landed.")
     out.append("")
 
-    # Lead scenario.
     if scenarios:
         lead = max(scenarios, key=lambda s: float(s.get("weight", 0)))
         weight_str = _pct(float(lead.get("weight", 0)))
@@ -107,7 +139,6 @@ def render_synthesis(
             f"The reading that holds up best is this: {lead_desc}. "
             f"I'd put that at around {weight_str} ({ci_str})."
         )
-        # Two alternates.
         alts = sorted(
             (s for s in scenarios if s.get("id") != lead.get("id")),
             key=lambda s: -float(s.get("weight", 0)),
@@ -146,13 +177,19 @@ def render_synthesis(
         if d_desc:
             out.append(f"What would change this read most is fresh signal from {d_desc}")
 
-    # Carry-forward caveats render as conditional close.
-    if carry_forward_caveats:
-        cf = _sanitize_internal_string(str(carry_forward_caveats[0]))
-        if cf:
-            out.append(f"If {cf}, the lead reading shifts.")
+    # NOTE: carry_forward_caveats deliberately NOT rendered (Phase D
+    # fix bundle 2026-05-16). Those are FAR-internal invalidation
+    # conditions; rendering them leaked engineering vocabulary into
+    # user prose ("If no explicit decision the diagnosis would inform,
+    # the lead reading shifts.").
 
-    # Closing.
     out.append("")
     out.append("That's the position I'd hold to. Push back wherever it doesn't sit right.")
-    return "\n".join(out).strip()
+
+    # Final defensive scrub — strip any entity placeholders that snuck
+    # through (e.g. inside scenario descriptions the LLM hallucinated
+    # tokens for). The post-strip count is logged structurally above
+    # via _sanitize_internal_string.
+    body = "\n".join(out).strip()
+    body, _ = _strip_entity_placeholders(body)
+    return body

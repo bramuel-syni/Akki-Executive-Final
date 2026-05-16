@@ -193,6 +193,16 @@ def _next_question_payload(session: Dict[str, Any]) -> Dict[str, Any]:
             "is_refusal": bool(l3.get("refusal_flag")),
         }
 
+    if state == "refused":
+        l3 = session.get("layer_3") or {}
+        return {
+            "layer": "refused",
+            "synthesis_text": None,
+            "is_refusal": True,
+            "refusal_rendering": l3.get("refusal_rendering") or l3.get("rendered_synthesis") or "",
+            "refusal_reason": l3.get("refusal_reason"),
+        }
+
     return {"layer": state, "question_text": None}
 
 
@@ -525,10 +535,14 @@ async def _run_layer_3(session_id: str, context_id: str, account_id: str) -> Non
     sc_conf = float(far_dict.get("situation_class_confidence", 0.0))
     refined = (session.get("layer_2") or {}).get("refined_candidates") or []
     tri_dict = (session.get("layer_2") or {}).get("triangulation_result") or {}
+    layer_1_answers = (session.get("layer_1") or {}).get("answers") or []
+    layer_2_answers = (session.get("layer_2") or {}).get("answers") or []
 
     # Reconstruct Pydantic-shaped inputs for the refusal evaluator.
     from services.solva.reasoning.frame_audit_engine import FrameAuditOutput, FARDimension
     from services.solva.reasoning.triangulation_engine import TriangulationOutput, Divergence
+    from services.solva.reasoning.refusal_logic import compute_layer_2_resolved
+
     far_obj = FrameAuditOutput(
         verdict=far_dict.get("verdict", "sufficient"),
         dimensions=[FARDimension(**d) for d in far_dict.get("dimensions", [])],
@@ -541,13 +555,21 @@ async def _run_layer_3(session_id: str, context_id: str, account_id: str) -> Non
         extracted_claims=tri_dict.get("extracted_claims", []),
     )
 
+    # Compute resolved-missing-dimensions from actual answer content
+    # (Phase D fix bundle 2026-05-16 — was hardcoded True, which made
+    # Rule 3 of refusal_logic never fire in the live pipeline).
+    layer_2_resolved = compute_layer_2_resolved(
+        layer_1_answers=layer_1_answers,
+        layer_2_answers=layer_2_answers,
+    )
+
     decision = evaluate_refusal(
         far=far_obj,
         triangulation=tri_obj,
         candidates=refined,
         situation_class=far_situation_class,
         situation_class_confidence=sc_conf,
-        layer_2_resolved_missing_dimensions=True,
+        layer_2_resolved_missing_dimensions=layer_2_resolved,
     )
 
     if decision.should_refuse:
@@ -567,9 +589,18 @@ async def _run_layer_3(session_id: str, context_id: str, account_id: str) -> Non
                     "primary_diagnosis_prose": "",
                     "refusal_flag": True,
                     "refusal_reason": decision.reason.value if decision.reason else "refused",
-                    "rendered_synthesis": prose,
+                    "refusal_detail": decision.detail,
+                    # Phase D fix bundle 2026-05-16 — refusal copy lands ONLY
+                    # in `refusal_rendering`. `rendered_synthesis` is None
+                    # because no synthesis was produced (brief §4.7 acceptance
+                    # criterion). The AuditPanel timeline reads
+                    # `synisense_audit_ids` not these fields, so no
+                    # back-compat break.
+                    "refusal_rendering": prose,
+                    "rendered_synthesis": None,
                 },
                 "status": "refused",
+                "layer_state": "refused",
                 "completed_at": _utc_now(),
                 "updated_at": _utc_now(),
             }},
@@ -590,7 +621,8 @@ async def _run_layer_3(session_id: str, context_id: str, account_id: str) -> Non
         scenarios=[s.model_dump() for s in pw.scenarios],
         sensitivity_drivers=[d.model_dump() for d in pw.sensitivity_drivers],
         surfaced_tensions=surfaced,
-        carry_forward_caveats=far_dict.get("carry_forward_caveats", []),
+        # Phase D fix bundle 2026-05-16: carry_forward_caveats omitted.
+        # The renderer ignores them; passing nothing makes intent explicit.
     )
     await _coll().update_one(
         {"session_id": session_id},
@@ -635,7 +667,7 @@ async def refuse_session(
         {"session_id": session_id},
         {"$set": {
             "status": "refused",
-            "layer_state": "layer_3",
+            "layer_state": "refused",
             "completed_at": _utc_now(),
             "updated_at": _utc_now(),
             "layer_3": {
@@ -647,7 +679,8 @@ async def refuse_session(
                 "refusal_flag": True,
                 "refusal_reason": "operator_refusal",
                 "operator_reason": body.operator_reason,
-                "rendered_synthesis": prose,
+                "refusal_rendering": prose,
+                "rendered_synthesis": None,
             },
         }},
     )

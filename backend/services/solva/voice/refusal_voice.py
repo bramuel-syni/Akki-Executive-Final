@@ -2,13 +2,18 @@
 to produce a probability-weighted diagnosis when evidence is thin.
 
 Templates per brief §4.7 + §5.3. NO LLM call — these strings are
-locked product copy.
+locked product copy. Candidate descriptions surfaced via
+`candidates_to_surface` are sanitized via
+`synthesis_renderer._sanitize_internal_string` to strip Markdown
+labels, layer references, and Shield `[[ENT_*]]` placeholders before
+they reach user-visible prose.
 """
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
 from ..reasoning.refusal_logic import RefusalReason
+from .synthesis_renderer import _sanitize_internal_string, _strip_entity_placeholders
 
 
 _WHAT_WOULD_HELP: Dict[str, List[str]] = {
@@ -70,16 +75,31 @@ def render_refusal(
             "What you've brought sits outside the situation classes I'm calibrated for. "
             "I'd rather say so than synthesise something that sounds right but isn't anchored."
         )
+    elif reason == RefusalReason.LOW_TRIANGULATION_CONSISTENCY:
+        lines.append(
+            "The narrative and the evidence are pulling in directions weak enough that I can't "
+            "stand a probability-weighted reading on them. I'd rather hold than overclaim."
+        )
     else:
         lines.append(
             "I'm holding back on a probability-weighted synthesis. The footing isn't there."
         )
 
-    # What I CAN give you.
+    # What I CAN give you — sanitised candidate descriptions.
     if candidates:
         lines.append("")
         lines.append("Here's what I can put on the table.")
-        names = [c.get("description", "").strip() for c in candidates[:4] if c.get("description")]
+        names: List[str] = []
+        for c in candidates[:4]:
+            raw = str(c.get("description") or "").strip()
+            if not raw:
+                continue
+            cleaned = _sanitize_internal_string(raw)
+            cleaned, _ = _strip_entity_placeholders(cleaned)
+            cleaned = cleaned.strip(" .-*·:;")
+            if cleaned:
+                # Cap length so the refusal stays scannable.
+                names.append(cleaned[:140])
         if names:
             lines.append(" · ".join(names))
 
@@ -90,4 +110,6 @@ def render_refusal(
     for h in helps:
         lines.append(f"  · {h}")
 
-    return "\n".join(lines).strip()
+    body = "\n".join(lines).strip()
+    body, _ = _strip_entity_placeholders(body)
+    return body

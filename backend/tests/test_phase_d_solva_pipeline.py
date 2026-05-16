@@ -222,9 +222,9 @@ def test_refusal_holds_when_evidence_sufficient():
         far=None,
         triangulation=None,
         candidates=[
-            {"id": "c1", "evidence_requirement": "memo X", "weight": 0.3},
-            {"id": "c2", "evidence_requirement": "deck Y", "weight": 0.3},
-            {"id": "c3", "evidence_requirement": "report Z", "weight": 0.3},
+            {"id": "c1", "evidence_requirement": "the board memo on Q3 customer renewal patterns", "weight": 0.3, "source": "layer_1"},
+            {"id": "c2", "evidence_requirement": "the CFO stress-scenarios deck dated last week", "weight": 0.3, "source": "layer_1"},
+            {"id": "c3", "evidence_requirement": "the customer scorecard refreshed in May 2026", "weight": 0.3, "source": "layer_1"},
         ],
         situation_class="capital_allocation",
         situation_class_confidence=0.9,
@@ -351,13 +351,22 @@ async def test_full_session_round_trip_audit_ids_grow(client, authed, db_conn):
         )
         assert r.status_code == 200, r.text
     payload = r.json()
-    # Layer 3 ran during the last Layer 2 answer. Should now be in layer_4 (synthesis) or refused.
-    assert payload["layer_state"] in ("layer_4", "layer_3")
+    # Layer 3 ran during the last Layer 2 answer. Under mock LLM the
+    # canned responses are unlikely to produce substantive candidates,
+    # so the session may refuse correctly. With substantive cloud LLM
+    # responses we'd see layer_4 (full synthesis). Both are valid
+    # Phase D outcomes — the assertion is that Layer 3 ran AT ALL.
+    assert payload["layer_state"] in ("layer_4", "layer_3", "refused")
     if payload["layer_state"] == "layer_4":
         assert payload["layer_3"]["rendered_synthesis"]
         # Single-voice invariant on the synthesis prose.
         from services.solva.voice.invariants import scan_for_internal_artefacts
         assert scan_for_internal_artefacts(payload["layer_3"]["rendered_synthesis"]) == []
+    elif payload["layer_state"] == "refused":
+        # Refusal-by-rule (likely Rule 1: all candidates fell back to
+        # synthetic under the mock Shield). Verify rendering is present.
+        assert payload["layer_3"]["refusal_flag"] is True
+        assert payload["layer_3"].get("refusal_rendering") or payload["layer_3"].get("rendered_synthesis")
     audits_after_layer_3 = len(payload["synisense_audit_ids"])
     assert audits_after_layer_3 > audits_after_layer_1
 
@@ -429,10 +438,16 @@ async def test_operator_refusal_endpoint(client, authed):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["status"] == "refused"
+    # Phase D fix 2026-05-16: layer_state is "refused", not "layer_3".
+    assert body["layer_state"] == "refused"
     assert body["layer_3"]["refusal_flag"] is True
-    # Refusal coach-voice prose passes single-voice scan.
+    # Phase D fix bundle: rendered_synthesis MUST be None on refusal.
+    assert body["layer_3"].get("rendered_synthesis") is None
+    # The coach-voice refusal copy lives in refusal_rendering.
+    rendering = body["layer_3"].get("refusal_rendering") or ""
+    assert rendering
     from services.solva.voice.invariants import scan_for_internal_artefacts
-    assert scan_for_internal_artefacts(body["layer_3"]["rendered_synthesis"]) == []
+    assert scan_for_internal_artefacts(rendering) == []
     # Subsequent operator-refuse on the same session is a 409.
     r = await client.post(
         f"/api/contexts/{cid}/solva/v2/sessions/{sid}/refuse",

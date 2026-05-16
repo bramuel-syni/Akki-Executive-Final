@@ -130,11 +130,19 @@ async def run_triangulation(
     audit_ids.append(eres.audit_id)
 
     # 3. Aggregate. Rule-based reading of the entailment response.
+    # When there is no evidence corpus AND no prior signals, the
+    # entailment classifier has nothing to weigh against — we treat
+    # the read as NEUTRAL (0.5), not low. Phase E adds document
+    # retrieval which will feed real evidence chunks.
+    has_corpus = bool(evidence_chunks) or bool(prior_signals)
     response_lower = (eres.response_text or "").lower()
     contradiction_hits = response_lower.count("contradict")
     entail_hits = response_lower.count("entail")
-    total_signal = max(1, contradiction_hits + entail_hits)
-    consistency = round(entail_hits / total_signal, 2) if total_signal > 0 else 0.5
+    if not has_corpus and contradiction_hits == 0 and entail_hits == 0:
+        consistency = 0.5
+    else:
+        total_signal = max(1, contradiction_hits + entail_hits)
+        consistency = round(entail_hits / total_signal, 2) if total_signal > 0 else 0.5
 
     divergences: List[Divergence] = []
     if contradiction_hits and claims:

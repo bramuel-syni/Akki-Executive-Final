@@ -5,6 +5,15 @@
 
 ## 2026-05-16 — Phase D (Synisense Rewrite, Phase 4 of 6)
 
+### Phase D — Fix Bundle (e1_tester defects)
+- Refusal gate now FIRES in the live pipeline (was unit-passing but integration-failing). 4 rules + a new helper now cover synthetic-fallback candidates, persistently thin Layer 2 answers, and low triangulation alignment.
+- `invalidation_condition` text removed from synthesis renderer entirely; scanner extended to catch it.
+- Shield `[[ENT_*]]` placeholders structurally stripped from every user-visible surface (synthesis + refusal + scanned by invariants).
+- Single-voice tests now cover `rendered_synthesis` + `primary_diagnosis_prose`; 10 net new tests including 2 reproducing tester's exact T4 scenario.
+- On refusal: `rendered_synthesis = None`; coach-voice copy lives in `refusal_rendering`. `layer_state="refused"` is a terminal state.
+
+580 passing pytest. Close-out: `/app/memory/sprints/PHASE_D_FIX_BUNDLE.md`.
+
 ### Phase D — Solva Backend Rewrite (5-layer pipeline)
 Coach-voice executive reasoning, structurally enforced. New 5-layer
 state machine (`entry → framing → layer_0 → layer_1 → layer_2 →

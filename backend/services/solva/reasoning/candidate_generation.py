@@ -66,52 +66,202 @@ _PREAMBLE_RE = re.compile(
 )
 
 # Markdown bold marker for field labels e.g. "**Description**:".
-_MARKDOWN_LABEL_RE = re.compile(
-    r"^\s*\*{2}[^*]{1,40}\*{2}\s*:?\s*", re.I,
+_MARKDOWN_BOLD_RE = re.compile(r"\*{2}", re.I)
+
+# Detects an evidence-requirement label that the LLM used to introduce
+# the second half of a candidate. Catches all of:
+#   "Evidence Requirement: ..."
+#   "**Evidence Requirement**: ..."
+#   "evidence_requirement**: ..."
+#   "Evidence: ..."
+_EVIDENCE_LABEL_RE = re.compile(
+    r"^[\s·\-\*\u2022]*\**\s*evidence[_\s]*(?:requirement[s]?)?\**\s*[:\-]\s*(.+)$",
+    re.I,
+)
+
+# Detects an inline description label.
+_DESC_LABEL_RE = re.compile(
+    r"^[\s·\-\*\u2022]*\**\s*description\**\s*[:\-]\s*(.+)$",
+    re.I,
+)
+
+# JSON-key-prefix pattern — strips `"description": "` or `"evidence_requirement": "` etc.
+_JSON_KEY_PREFIX_RE = re.compile(
+    r'^[\s,{]*"(?:description|evidence_requirement|likelihood|category|'
+    r'cause|strategy|hypothesis|perspective|reasoning|notes)"\s*:\s*"?',
+    re.I,
 )
 
 
-def _parse_candidates_from_text(body: str, ctype: str) -> List[Candidate]:
-    """Tolerant parser — accepts bullets, numbered lists, or short lines.
+def _strip_label(line: str) -> str:
+    """Strip Markdown bold markers, leading bullet chars, and JSON
+    key/value scaffolding."""
+    s = _MARKDOWN_BOLD_RE.sub("", line)
+    s = _JSON_KEY_PREFIX_RE.sub("", s)
+    s = re.sub(r"^[\s·\-\*\u2022]+", "", s)
+    return s.strip(" .-*·:;\"',")
 
-    Skips LLM preambles and strips Markdown field labels. Never emits
-    a candidate whose description is shorter than 12 characters."""
+
+def _parse_candidates_from_json(body: str, ctype: str) -> List[Candidate]:
+    """Try to extract a JSON array/object structure from the LLM
+    response. Returns an empty list if no usable JSON is found."""
+    if not body:
+        return []
+    # Look for the first `[` ... last `]` to bound a JSON array.
+    start = body.find("[")
+    end = body.rfind("]")
+    candidates_data: List[Dict[str, Any]] = []
+    if start >= 0 and end > start:
+        snippet = body[start:end + 1]
+        try:
+            parsed = json.loads(snippet)
+            if isinstance(parsed, list):
+                candidates_data = [c for c in parsed if isinstance(c, dict)]
+        except (ValueError, TypeError):
+            pass
+    # Fall back: bracket may be missing. Try whole-body JSON object
+    # whose value is a list under any key.
+    if not candidates_data:
+        try:
+            parsed = json.loads(body)
+            if isinstance(parsed, dict):
+                for v in parsed.values():
+                    if isinstance(v, list) and all(isinstance(x, dict) for x in v):
+                        candidates_data = v
+                        break
+        except (ValueError, TypeError):
+            pass
     out: List[Candidate] = []
-    seen: set[str] = set()
-    for line in (body or "").splitlines():
-        if _PREAMBLE_RE.match(line):
+    for c in candidates_data[:TARGET_CANDIDATES]:
+        desc = str(c.get("description") or c.get("desc") or c.get("name") or "").strip()
+        evid = str(
+            c.get("evidence_requirement")
+            or c.get("evidence")
+            or c.get("evidence_needed")
+            or ""
+        ).strip()
+        if not desc or len(desc) < 12:
             continue
-        m = _BULLET_LINE_RE.match(line)
-        text = m.group(1) if m else line.strip()
-        text = _MARKDOWN_LABEL_RE.sub("", text).strip(" -*:")
-        if not text or len(text) < 12:
-            continue
-        # Drop trailing "(evidence: ...)" decoration for the description.
-        evid_match = re.search(r"\(\s*evidence[:\-]\s*(.+?)\s*\)", text, re.I)
-        evidence = evid_match.group(1) if evid_match else (
-            "evidence from attached material or referenced source"
-        )
-        desc = re.sub(r"\(\s*evidence[:\-].+?\)", "", text, flags=re.I).strip(" .-:;")
-        # Reject anything still looking like layer-internal vocabulary.
-        if re.search(r"\b(layer\s*[0-9]|frame audit|candidate set)\b", desc, re.I):
-            continue
-        if desc.lower() in seen:
-            continue
-        seen.add(desc.lower())
+        if not evid:
+            evid = "evidence from attached material or referenced source"
         out.append(Candidate(
             id=f"cand-{hashlib.sha1(desc.encode('utf-8')).hexdigest()[:10]}",
             candidate_type=ctype,
             description=desc[:240],
-            evidence_requirement=evidence[:240],
+            evidence_requirement=evid[:240],
         ))
-        if len(out) >= TARGET_CANDIDATES:
-            break
+    return out
+
+
+def _parse_candidates_from_text(body: str, ctype: str) -> List[Candidate]:
+    """Tolerant parser — handles four cloud-LLM response patterns:
+
+      (a) One line per candidate, parenthesised:
+              "<desc> (evidence: <req>)"
+      (b) One line per candidate, mid-line label:
+              "Description: <desc> · Evidence Requirement: <req>"
+      (c) Two lines per candidate:
+              line N:    "<desc>"
+              line N+1:  "Evidence Requirement: <req>"
+      (d) JSON array — handled by `_parse_candidates_from_json` first.
+
+    Skips preambles. Rejects internal-vocabulary leaks. Pairs orphan
+    evidence-requirement lines onto the preceding candidate.
+    """
+    # JSON-first path.
+    json_out = _parse_candidates_from_json(body, ctype)
+    if json_out:
+        return json_out
+
+    out: List[Candidate] = []
+    pending_desc: Optional[str] = None
+
+    def _emit(desc: str, evidence: str) -> None:
+        d = _strip_label(desc)
+        e = _strip_label(evidence) if evidence else (
+            "evidence from attached material or referenced source"
+        )
+        if not d or len(d) < 12:
+            return
+        if re.search(r"\b(layer\s*[0-9]|frame audit|candidate set)\b", d, re.I):
+            return
+        for existing in out:
+            if existing.description.lower() == d.lower():
+                return
+        out.append(Candidate(
+            id=f"cand-{hashlib.sha1(d.encode('utf-8')).hexdigest()[:10]}",
+            candidate_type=ctype,
+            description=d[:240],
+            evidence_requirement=e[:240],
+        ))
+
+    for raw_line in (body or "").splitlines():
+        line = raw_line.strip()
+        if not line or _PREAMBLE_RE.match(line) or len(line) < 12:
+            continue
+        m = _BULLET_LINE_RE.match(line)
+        text = m.group(1) if m else line
+
+        # Pattern (c): orphan evidence line — attach to preceding desc.
+        ev_match = _EVIDENCE_LABEL_RE.match(text)
+        if ev_match and pending_desc:
+            _emit(pending_desc, ev_match.group(1))
+            pending_desc = None
+            if len(out) >= TARGET_CANDIDATES:
+                break
+            continue
+        if ev_match and not pending_desc:
+            continue
+
+        # Pattern (b): "Description: X ... Evidence Requirement: Y"
+        ev_split = re.search(
+            r"(?:[·\-\*\u2022]\s*)?\**\s*evidence[_\s]*(?:requirement[s]?)?\**\s*[:\-]\s*(.+)$",
+            text, re.I,
+        )
+        if ev_split:
+            desc_half = text[:ev_split.start()].strip(" .-*·:;")
+            evid_half = ev_split.group(1)
+            dm = _DESC_LABEL_RE.match(desc_half)
+            if dm:
+                desc_half = dm.group(1)
+            if pending_desc and not desc_half:
+                _emit(pending_desc, evid_half)
+                pending_desc = None
+            elif desc_half:
+                _emit(desc_half, evid_half)
+            if len(out) >= TARGET_CANDIDATES:
+                break
+            continue
+
+        # Pattern (a): parenthesised "(evidence: ...)" — handle inline.
+        evid_match = re.search(r"\(\s*evidence[:\-]\s*(.+?)\s*\)", text, re.I)
+        if evid_match:
+            desc = re.sub(r"\(\s*evidence[:\-].+?\)", "", text, flags=re.I)
+            _emit(desc, evid_match.group(1))
+            pending_desc = None
+            if len(out) >= TARGET_CANDIDATES:
+                break
+            continue
+
+        # No evidence label on this line — treat as pending description.
+        if pending_desc is not None:
+            _emit(pending_desc, "")
+            if len(out) >= TARGET_CANDIDATES:
+                break
+        dm = _DESC_LABEL_RE.match(text)
+        pending_desc = dm.group(1) if dm else text
+
+    # Flush any trailing pending description.
+    if pending_desc and len(out) < TARGET_CANDIDATES:
+        _emit(pending_desc, "")
     return out
 
 
 def _fallback_candidates(ctype: str, framing: str, n: int = 5) -> List[Candidate]:
     """Stable fallback set when the LLM didn't return parseable
-    candidates. Generic but valid Pydantic shapes."""
+    candidates. Generic but valid Pydantic shapes. Tagged as
+    `source="fallback_synthetic"` so the refusal evaluator does NOT
+    count them as user-anchored grounded candidates."""
     templates = [
         ("internal_capability_gap",      "An internal capability gap that is upstream of the visible symptom."),
         ("external_market_shift",        "An external market shift the user has not fully named."),
@@ -127,6 +277,7 @@ def _fallback_candidates(ctype: str, framing: str, n: int = 5) -> List[Candidate
             evidence_requirement="material or document referenced in the user's framing",
             prior_probability=round(1.0 / max(1, n), 2),
             weight=round(1.0 / max(1, n), 2),
+            source="fallback_synthetic",
         )
         for slug, desc in templates
     ]
@@ -152,7 +303,15 @@ async def generate_candidates(
         "far_routing": far_routing,
         "layer_1_answers": (layer_1_answers or [])[:6],
         "target_count": TARGET_CANDIDATES,
-        "output_schema": "list of objects with: description, evidence_requirement",
+        "output_schema": (
+            "JSON ARRAY of EXACTLY 5 objects. Each object has TWO string "
+            "fields: 'description' (the candidate, 1-2 sentences, NO field "
+            "labels, NO markdown) and 'evidence_requirement' (what document "
+            "or data would confirm or refute it, 1 sentence, anchored to "
+            "the user's framing). Return ONLY the JSON array — no preamble, "
+            "no markdown fence. Example: "
+            '[{"description": "...", "evidence_requirement": "..."}, ...]'
+        ),
     }, ensure_ascii=False)
     shield_res = await invoke_via_shield(
         purpose="solva.layer_1.candidate_generation",
