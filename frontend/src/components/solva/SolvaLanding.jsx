@@ -365,21 +365,17 @@ export default function SolvaLanding({ variant = "auth", intakeSeed = null }) {
 
   const onSelectCard = (card) => {
     if (variant === "auth") {
-      // Phase E Sub-task A (2026-05-16) — Brand-new sessions route to
-      // the Phase D engine at /app/solva/phase-d/session/new. Seed
-      // forwarding is preserved on the URL; the Phase D session page
-      // ignores seed params for now (Phase E.5 will wire seed support
-      // into Phase D's framing endpoint). Sessions started WITHOUT a
-      // seed land cleanly in the Phase D engine.
+      // Phase F + E.5 (2026-05-16) — Phase D framing now supports
+      // seed-handoff payloads (`seed_payload` on POST /sessions),
+      // so seed-bearing flows (cycle / work-studio / document-
+      // journal) route to Phase D too. Legacy /app/solva/session/new
+      // is no longer exercised for new sessions.
       const params = new URLSearchParams();
       params.set("submodule", card.key);
       if (intakeSeed?.kind && intakeSeed?.id) {
         params.set("seed_kind", intakeSeed.kind);
         params.set("seed_id", intakeSeed.id);
-        // Seed flows route through the LEGACY engine until seed
-        // support is wired into the Phase D framing endpoint.
-        navigate(`/app/solva/session/new?${params.toString()}`);
-        return;
+        if (intakeSeed.preview) params.set("seed_preview", intakeSeed.preview);
       }
       navigate(`/app/solva/phase-d/session/new?${params.toString()}`);
     } else {

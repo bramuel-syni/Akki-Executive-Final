@@ -68,7 +68,12 @@ export default function SolvaPhaseDSession() {
     }
   }, [ctxId]);
 
-  // Boot: either resume :sid OR create a fresh session from ?submodule
+  // Boot: either resume :sid OR create a fresh session from ?submodule.
+  // Phase E.5 — when URL carries seed params (?seed_kind=cycle|work_studio_artefact|document_journal
+  // + seed_id=… + optional seed_preview), construct a seed_payload and
+  // pass it to the create endpoint. The Phase D backend pre-populates
+  // the framing field, attaches references to Layer 0, and stores
+  // `source_handoff` provenance on the session.
   useEffect(() => {
     let cancelled = false;
     async function boot() {
@@ -78,11 +83,35 @@ export default function SolvaPhaseDSession() {
         return;
       }
       const sub = (searchParams.get("submodule") || "seek_clarity").trim();
+      const seedKind = (searchParams.get("seed_kind") || "").trim();
+      const seedId = (searchParams.get("seed_id") || "").trim();
+      const seedPreview = (searchParams.get("seed_preview") || "").trim();
+      let seedPayload = null;
+      if (seedKind && seedId) {
+        // Map URL `seed_kind` short labels to the backend's source enum.
+        const sourceMap = {
+          cycle: "cycle",
+          work_studio: "work_studio_artefact",
+          work_studio_artefact: "work_studio_artefact",
+          document: "document_journal",
+          document_journal: "document_journal",
+        };
+        const mappedSource = sourceMap[seedKind] || seedKind;
+        seedPayload = {
+          source: mappedSource,
+          source_id: seedId,
+          preview_text: seedPreview,
+          attached_references: [seedId],
+        };
+      }
       try {
         setBusy(true);
-        const fresh = await createPhaseDSession({ contextId: ctxId, subModule: sub });
+        const fresh = await createPhaseDSession({
+          contextId: ctxId, subModule: sub, seedPayload,
+        });
         if (cancelled) return;
         setSession(fresh);
+        if (seedPayload && fresh.initialFraming) setDraft(fresh.initialFraming);
         navigate(`/app/solva/phase-d/session/${fresh.sessionId}`, { replace: true });
       } catch (e) {
         setError(`${e?.name || "Error"}: ${(e?.message || "").slice(0, 200)}`);

@@ -90,8 +90,35 @@ function ItemRow({ row, onOpen }) {
 }
 
 
-function ItemDrawer({ row, onClose }) {
+function ItemDrawer({ row, onClose, onAssessed }) {
   const open = !!row;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [assessment, setAssessment] = useState(null);
+
+  // Reset assessment state whenever a different row is opened.
+  React.useEffect(() => {
+    setAssessment(row?.last_akki_assessment || null);
+    setError(null);
+  }, [row?.id]);
+
+  const updateGoal = async () => {
+    if (!row?.id || !row?.context_id || !row?.kind) return;
+    setBusy(true); setError(null);
+    try {
+      const r = await api.post(
+        `/contexts/${row.context_id}/monitor/${row.kind}/${row.id}/update-status`,
+        {},
+      );
+      setAssessment(r.data?.assessment || null);
+      if (onAssessed) onAssessed(r.data);
+    } catch (e) {
+      setError(`${e?.name || "Error"}: ${(e?.message || "").slice(0, 200)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose && onClose()}>
       <SheetContent
@@ -122,7 +149,7 @@ function ItemDrawer({ row, onClose }) {
           <div className="grid grid-cols-3 gap-3 border border-[var(--rule)] rounded-sm bg-white px-3 py-3">
             <div>
               <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Status</p>
-              <p className="text-[14px] akki-serif text-[var(--ink)]">{RAG_LABEL[row?.rag_status]}</p>
+              <p className="text-[14px] akki-serif text-[var(--ink)]" data-testid="obj-drawer-rag">{RAG_LABEL[row?.rag_status]}</p>
             </div>
             <div>
               <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Score</p>
@@ -133,6 +160,54 @@ function ItemDrawer({ row, onClose }) {
               <p className="text-[14px] akki-serif text-[var(--ink)]">{row?.trend || "flat"}</p>
             </div>
           </div>
+
+          {/* Phase F (2026-05-16) — "Update goal" mechanic. Non-overridable; */}
+          {/* status is set by Akki from engine signals + recent docs.       */}
+          <div className="border border-[var(--rule)] rounded-sm bg-white px-3 py-3" data-testid="obj-drawer-update-goal">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">Akki status</p>
+                <p className="text-[12px] text-[var(--muted)]">Reads recent engine signals + documents.</p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={updateGoal}
+                disabled={busy}
+                data-testid="obj-drawer-update-goal-btn"
+              >
+                {busy ? "Analysing…" : "Update goal"}
+              </Button>
+            </div>
+            {error && (
+              <p className="mt-2 text-[12px] text-rose-700" data-testid="obj-drawer-update-goal-error">{error}</p>
+            )}
+            {assessment && (
+              <div className="mt-3 text-[12.5px] text-[var(--ink)] space-y-2" data-testid="obj-drawer-assessment">
+                <p>
+                  <span className="font-mono uppercase tracking-[0.16em] text-[10.5px] text-[var(--muted)]">Rationale · </span>
+                  <span data-testid="obj-drawer-assessment-rationale">{assessment.rationale}</span>
+                </p>
+                <p className="text-[11px] text-[var(--muted)]">
+                  Confidence {Math.round((assessment.confidence || 0) * 100)}% · audit{" "}
+                  <code className="font-mono text-[10.5px]" data-testid="obj-drawer-assessment-audit-id">{assessment.audit_id}</code>
+                </p>
+                {((assessment.supporting_signal_ids || []).length > 0) && (
+                  <p className="text-[11px]">
+                    <span className="text-[var(--muted)]">Signals: </span>
+                    <span data-testid="obj-drawer-assessment-signals" className="font-mono">{(assessment.supporting_signal_ids || []).join(", ")}</span>
+                  </p>
+                )}
+                {((assessment.supporting_doc_ids || []).length > 0) && (
+                  <p className="text-[11px]">
+                    <span className="text-[var(--muted)]">Docs: </span>
+                    <span data-testid="obj-drawer-assessment-docs" className="font-mono">{(assessment.supporting_doc_ids || []).join(", ")}</span>
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
           {row?.description && (
             <div>
               <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--ink)] mb-2">Description</p>
@@ -551,12 +626,20 @@ export default function ObjectivesProjectsPanel({ contextId }) {
       >
         <ul className="space-y-3" data-testid="obj-panel-list">
           {data.items.map((row) => (
-            <ItemRow key={row.id} row={row} onOpen={setDrawerRow} />
+            <ItemRow
+              key={row.id}
+              row={row}
+              onOpen={(r) => setDrawerRow({ ...r, kind, context_id: contextId })}
+            />
           ))}
         </ul>
       </ListingShell>
 
-      <ItemDrawer row={drawerRow} onClose={() => setDrawerRow(null)} />
+      <ItemDrawer
+        row={drawerRow}
+        onClose={() => setDrawerRow(null)}
+        onAssessed={() => { load(); }}
+      />
       <CreateModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}

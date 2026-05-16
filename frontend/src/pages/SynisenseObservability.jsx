@@ -5,36 +5,55 @@
  * charts — Bank QA wants clarity, not visualization.
  *
  * Backed by `GET /api/admin/synisense/observability?window_days=...`.
+ *
+ * Phase F Sub-task D adds a "Billing estimate" tab backed by
+ * `GET /api/admin/synisense/billing?window_days=...` — illustrative
+ * USD per-call estimates from the code-controlled pricing table.
  */
 import React, { useCallback, useEffect, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Loader2, ShieldCheck } from "lucide-react";
+import { Loader2, ShieldCheck, ReceiptText, Activity } from "lucide-react";
 
 
 const WINDOWS = [7, 30, 90];
+const BILLING_WINDOWS = [7, 30];
 
 
 export default function SynisenseObservability() {
+  const [tab, setTab] = useState("activity");
   const [windowDays, setWindowDays] = useState(7);
   const [snap, setSnap] = useState(null);
+  const [billing, setBilling] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async (days) => {
+  const load = useCallback(async (days, mode) => {
     setBusy(true); setError(null);
     try {
-      const { data } = await api.get(
-        `/admin/synisense/observability?window_days=${days}`,
-      );
-      setSnap(data);
+      if (mode === "billing") {
+        const { data } = await api.get(
+          `/admin/synisense/billing?window_days=${days}`,
+        );
+        setBilling(data);
+      } else {
+        const { data } = await api.get(
+          `/admin/synisense/observability?window_days=${days}`,
+        );
+        setSnap(data);
+      }
     } catch (e) {
       setError(`${e?.name || "Error"}: ${(e?.message || "").slice(0, 200)}`);
     } finally { setBusy(false); }
   }, []);
 
-  useEffect(() => { load(windowDays); }, [load, windowDays]);
+  useEffect(() => {
+    const effective = tab === "billing"
+      ? Math.min(windowDays, 30)
+      : windowDays;
+    load(effective, tab);
+  }, [load, windowDays, tab]);
 
   return (
     <AppShell>
@@ -49,8 +68,27 @@ export default function SynisenseObservability() {
           </p>
         </header>
 
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
+          <Button
+            variant={tab === "activity" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setTab("activity")}
+            data-testid="syn-obs-tab-activity"
+          >
+            <Activity className="mr-1.5 h-3.5 w-3.5" /> Activity
+          </Button>
+          <Button
+            variant={tab === "billing" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setTab("billing")}
+            data-testid="syn-obs-tab-billing"
+          >
+            <ReceiptText className="mr-1.5 h-3.5 w-3.5" /> Billing estimate
+          </Button>
+        </div>
+
         <div className="flex flex-wrap items-center gap-2">
-          {WINDOWS.map((w) => (
+          {(tab === "billing" ? BILLING_WINDOWS : WINDOWS).map((w) => (
             <Button
               key={w}
               variant={w === windowDays ? "default" : "outline"}
@@ -60,13 +98,19 @@ export default function SynisenseObservability() {
             >Last {w} days</Button>
           ))}
           <Button
-            variant="ghost" size="sm" onClick={() => load(windowDays)}
+            variant="ghost" size="sm"
+            onClick={() => load(windowDays, tab)}
             disabled={busy}
             data-testid="syn-obs-reload"
           >{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Reload"}</Button>
-          {snap && (
+          {tab === "activity" && snap && (
             <span className="ml-auto text-xs text-slate-500">
               as of {new Date(snap.as_of).toLocaleString()}
+            </span>
+          )}
+          {tab === "billing" && billing && (
+            <span className="ml-auto text-xs text-slate-500">
+              as of {new Date(billing.as_of).toLocaleString()}
             </span>
           )}
         </div>
@@ -78,7 +122,7 @@ export default function SynisenseObservability() {
           >{error}</div>
         )}
 
-        {snap && (
+        {tab === "activity" && snap && (
           <>
             <section className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="syn-obs-kpis">
               <Kpi label="Total invokes" value={snap.total_invokes} />
@@ -121,6 +165,54 @@ export default function SynisenseObservability() {
               cols={["Reason", "Count"]}
               rows={Object.entries(snap.solva_refusal_reasons || {}).map(([k, v]) => [k, v])}
               emptyMessage="No refused sessions in this window."
+            />
+          </>
+        )}
+
+        {tab === "billing" && billing && (
+          <>
+            <div
+              className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+              data-testid="syn-obs-billing-disclaimer"
+            >
+              <strong>Estimated only.</strong> Figures are illustrative,
+              derived from the code-controlled pricing table at
+              <code className="ml-1 font-mono">services/synisense/pricing.py</code>.
+              Not invoiced. Token-accurate pricing requires Phase G+
+              metering.
+            </div>
+
+            <section className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="syn-obs-billing-kpis">
+              <Kpi label="Total calls" value={billing.total_calls} />
+              <Kpi
+                label="Estimated total"
+                value={`$${(billing.estimated_total_usd || 0).toFixed(4)}`}
+              />
+              <Kpi label="Consumers" value={(billing.per_consumer || []).length} />
+              <Kpi
+                label="Pricing entries"
+                value={billing.pricing_table_signature?.entry_count || 0}
+              />
+            </section>
+
+            <Table
+              testId="syn-obs-billing-per-consumer"
+              title="Per-consumer estimate"
+              cols={["Consumer", "Calls", "Estimated USD"]}
+              rows={(billing.per_consumer || []).map((c) => [
+                c.consumer_id, c.call_count, `$${c.estimated_usd.toFixed(4)}`,
+              ])}
+              emptyMessage="No Shield calls in this window."
+            />
+
+            <Table
+              testId="syn-obs-billing-per-purpose"
+              title="Top purposes by estimated cost"
+              cols={["Purpose", "Calls", "Estimated USD"]}
+              rows={(billing.top_purposes_by_cost || []).map((p) => [
+                p.purpose, p.call_count, `$${p.estimated_usd.toFixed(4)}`,
+              ])}
+              emptyMessage="No Shield calls in this window."
             />
           </>
         )}

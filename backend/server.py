@@ -109,6 +109,7 @@ from routers import portfolio as portfolio_router  # noqa: E402  HOME sprint —
 from routers import compilations as compilations_router  # noqa: E402  Patch 2B.2 — Compilation Wizard
 from routers import home as home_router  # noqa: E402  Patch 3 — Home v2
 from routers import monitor_v2 as monitor_v2_router  # noqa: E402  Patch 5 — Objectives & Projects
+from routers import monitor_status_assessment as monitor_status_router  # noqa: E402  Phase F — Update goal
 from routers import streaming_v9 as streaming_v9_router  # noqa: E402  Patch 9 — Streaming phase events
 from routers import questions as questions_router  # noqa: E402  Patch 14 — Questions UI
 from routers import news as news_router  # noqa: E402  Patch 21 — News feed
@@ -237,6 +238,7 @@ app.include_router(portfolio_router.router)
 app.include_router(compilations_router.router)  # Patch 2B.2 — Compilation Wizard
 app.include_router(home_router.router)  # Patch 3 — Home v2
 app.include_router(monitor_v2_router.router)  # Patch 5 — Monitor v2
+app.include_router(monitor_status_router.router)  # Phase F — Monitor "Update goal"
 app.include_router(streaming_v9_router.router)  # Patch 9 — Streaming phase events
 app.include_router(questions_router.router)  # Patch 14 — Questions UI
 app.include_router(news_router.router)  # Patch 21 — News feed
@@ -396,6 +398,30 @@ async def on_startup():
         logger.info("[news] aggregator scheduled (every %s minutes)", _news_agg.NEWS_REFRESH_MINUTES)
     except Exception as e:  # noqa: BLE001
         logger.warning("[news] aggregator boot failed (continuing): %s", e)
+
+    # ─── Phase F (2026-05-16) — Synisense Engine derivation backfill ────
+    # One-shot pass on startup. Non-blocking — kicked off as a fire-
+    # and-forget task so app boot doesn't wait on derivation IO. If
+    # the pass fails for any reason, log + continue (the on-demand
+    # /api/v1/engine/admin/derive endpoint remains the canonical
+    # path; this is just a convenience refresh).
+    try:
+        import asyncio as _asyncio_boot
+        from services.synisense.engine.derivation_scheduler import (
+            run_startup_backfill as _engine_backfill,
+        )
+
+        async def _engine_backfill_task():
+            try:
+                totals = await _engine_backfill()
+                logger.info("[engine] derivation backfill done: %s", totals)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[engine] derivation backfill failed: %s: %s",
+                               type(exc).__name__, str(exc)[:200])
+
+        _asyncio_boot.create_task(_engine_backfill_task())
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[engine] derivation backfill scheduling failed: %s", e)
 
     # ─── Phase 12.1 Synisense boot guard ────────────────────────────────
     # Master key required in production. Dev escape hatch:

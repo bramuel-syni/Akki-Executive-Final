@@ -1,22 +1,28 @@
-"""FastAPI router — Synisense Engine (Phase A).
+"""FastAPI router — Synisense Engine (Phase A + Phase F).
 
 Exposes:
 - POST /api/v1/engine/signals/query
 - POST /api/v1/engine/subscriptions   (stub returns pending)
 - GET  /api/v1/engine/signal_types
 - POST /api/v1/engine/admin/reseed   (DEV-only)
+- POST /api/v1/engine/admin/derive   (Phase F — derive REAL signals
+  for the calling tenant. Available to any authenticated account
+  for their own tenant; superadmins may target other tenants via
+  `?tenant_id={id}`.)
 
 All endpoints scope on the authenticated `account_id` as `tenant_id`.
 """
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core import get_current_account
 from services.synisense.config import is_production
-from services.synisense.engine import signal_query, signal_seeder, signal_types, subscription
+from services.synisense.engine import (
+    signal_derivation, signal_query, signal_seeder, signal_types, subscription,
+)
 from services.synisense.models import (
     ErrorEnvelope, SignalQueryRequest, SignalQueryResponse,
     SignalTypeCatalogue, SubscriptionRequest, SubscriptionResponse,
@@ -97,4 +103,39 @@ async def reseed(
         "tenant_id": tenant_id,
         "signals_seeded": signal_counts,
         "tenant_entities_harvested": entity_counts,
+    }
+
+
+@router.post(
+    "/admin/derive",
+    summary="Phase F — run REAL signal derivation for the authenticated tenant.",
+)
+async def derive(
+    current: Dict[str, Any] = Depends(get_current_account),
+    target_tenant_id: Optional[str] = Query(default=None, alias="tenant_id"),
+) -> Any:
+    """Runs all 6 derivation rules against the caller's Mongo data and
+    persists `derived_from_*` signals. If derivation produces zero
+    signals, gracefully falls back to the Phase A seeder.
+
+    Superadmins MAY pass `?tenant_id=…` to derive for another tenant
+    (useful for bank-QA reproducing customer-side traces). Non-admins
+    always target their own `account_id`.
+    """
+    tenant_id = current["id"]
+    if target_tenant_id and target_tenant_id != current["id"]:
+        if (current.get("role") or "").lower() not in {"superadmin", "owner"}:
+            raise HTTPException(
+                status_code=403,
+                detail="Only superadmins may derive for other tenants.",
+            )
+        tenant_id = target_tenant_id
+
+    result = await signal_derivation.derive_or_seed_for_tenant(tenant_id)
+    return {
+        "tenant_id": tenant_id,
+        "derived": result["derived"],
+        "fallback_used": result["fallback_used"],
+        "seeded": result["seeded"],
+        "total_derived": sum(result["derived"].values()),
     }

@@ -3,6 +3,38 @@
 > Append-only history of shipped work. Newest first.
 > Detailed patch close-outs live in `/app/memory/SYSTEM_STATE.md` §4.
 
+## 2026-05-16 — Phase F + Phase E.5 (Synisense Rewrite, Phase 6 of 6 — REWRITE COMPLETE)
+
+Final phase of the architectural rewrite. The locked A → F sequence is closed; the paused 12-chunk QA sprint can resume.
+
+### Sub-task A — Phase D framing accepts `seed_payload`
+- New Pydantic `SeedPayload` model on `POST /sessions` and `POST /sessions/{sid}/framing`. References resolved against `documents`, `cycles`, `work_studio_artefacts` in the caller's context; phantom/cross-context refs silently dropped.
+- Session row gains `source_handoff: {source, source_id, source_url}` + `seed_attached_references[]` (Layer 0 evidence anchors). `schema_version` bumps 3 → 4 on seed-bearing sessions.
+- `SolvaLanding.jsx` — legacy `/app/solva/session/new` fallback REMOVED. All Solva flows (including seed-bearing) now route to `/app/solva/phase-d/session/new?...`. `SolvaPhaseDSession.jsx` reads URL seed params and pre-fills the framing.
+
+### Sub-task B — Real Engine signal derivation
+- New `services/synisense/engine/signal_derivation.py` with 6 deterministic Mongo-query rules. Every signal carries `derivation_source: "derived_from_<rule>_<collection>"` (distinguishable from Phase A `seeded_from_*` and future Phase G `real_ingestion`).
+- `derive_or_seed_for_tenant` is the consumer entry point: graceful fallback to Phase A seeder on empty workspaces.
+- New `services/synisense/engine/derivation_scheduler.py` with `run_startup_backfill()` (kicked off as fire-and-forget task in `server.py::on_startup`) and `run_hourly_pass()` (queued for APScheduler in Phase G+).
+- New endpoint `POST /api/v1/engine/admin/derive` — any authenticated tenant for self; superadmins can target other tenants via `?tenant_id=…`.
+
+### Sub-task C — Monitor "Update goal" mechanic
+- New `routers/monitor_status_assessment.py`: `POST /api/contexts/{cid}/monitor/{objective|project}/{id}/update-status`. Akki queries engine signals + recent docs, calls Shield with constrained-JSON prompt (`monitor.objective.status_assessment` / `monitor.project.status_assessment` purposes), persists `last_akki_assessment` on the item — non-overridable per locked PO default.
+- Frontend `ObjectivesProjectsPanel.jsx::ItemDrawer` — new "Update goal" card + assessment expander showing rationale, confidence, audit_id, and supporting signal/doc IDs.
+
+### Sub-task D — Per-tenant Shield billing estimate
+- New `services/synisense/pricing.py` — code-controlled 9-entry pricing table for anthropic/openai/gemini families. Same governance pattern as `ALLOWED_PURPOSES`. `flat_cost_for()` falls back to provider, then to default `$0.0020/call`.
+- New endpoint `GET /api/admin/synisense/billing?window_days=7|30&context_id={cid}` (superadmin). Returns per-consumer + per-purpose USD-estimate roll-up + `pricing_table_signature` fingerprint for bank-QA cross-checks.
+- `SynisenseObservability.jsx` extended with two-tab strip — **Activity** (existing) + **Billing estimate** (new) with amber "Estimated only" disclaimer.
+- Bug fix: observability + billing queries previously used `created_at` on `synisense_audit_log` rows but the writer only sets `timestamp` (ISO string). Switched both queries to `timestamp >= cutoff_iso` (ISO-8601 lex-sorts correctly).
+
+### Sub-task E — Final close-out + post-rewrite ramp
+- `PHASE_F_CLOSEOUT.md` — full sub-task evidence (curl traces, screenshots, diff summary).
+- `REWRITE_FINAL_CLOSEOUT.md` — 5-paragraph bank-QA briefing covering A → F architecture invariants, "privacy by structure," "single voice," "signals not narratives," + end-to-end validation steps.
+- `POST_REWRITE_RAMP.md` — resumption queue: Chunks 7-12 of the paused QA sprint, then the 14 deferred 15-May QA findings, then post-rewrite infra carryover.
+
+**648 passing pytest** (was 629, +19 net new). 0 regressions. CI guard `test_no_direct_llm_calls_outside_shield` green. Render-smoke green across 11 routes. Backend live; derivation backfill produces real signals on boot for every active tenant.
+
 ## 2026-05-16 — Phase E Fix Bundle 1 (Synisense Rewrite, Phase 5 patch)
 
 ### Phase E — Sub-task H PDF spec gaps + render-smoke gap

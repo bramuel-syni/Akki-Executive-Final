@@ -72,9 +72,43 @@ def _coll():
 # ─────────────────────────────────────────────────────────────────────
 # Request / response models.
 # ─────────────────────────────────────────────────────────────────────
+class SeedPayload(BaseModel):
+    """Phase E.5 — handoff payload from Cycle / Work Studio / Document Journal.
+
+    Pre-populates the framing text, attaches referenced docs/artefacts as
+    Layer 0 evidence anchors (real grounding, not placeholders), and
+    optionally suggests a sub_module. Source provenance lives on the
+    session as `source_handoff` for traceability.
+    """
+    model_config = ConfigDict(extra="ignore")
+    source: str = Field(min_length=1, max_length=40)
+    source_id: str = Field(min_length=1, max_length=120)
+    preview_text: str = Field(default="", max_length=4000)
+    attached_references: List[str] = Field(default_factory=list, max_length=20)
+    sub_module_hint: Optional[str] = Field(default=None, max_length=40)
+
+    @field_validator("source")
+    @classmethod
+    def _check_source(cls, v: str) -> str:
+        allowed = {"cycle", "work_studio_artefact", "document_journal"}
+        if v not in allowed:
+            raise ValueError(f"source must be one of {sorted(allowed)}")
+        return v
+
+    @field_validator("sub_module_hint")
+    @classmethod
+    def _check_sm_hint(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if v not in SUB_MODULES:
+            raise ValueError(f"sub_module_hint must be one of {SUB_MODULES}")
+        return v
+
+
 class CreateSessionIn(BaseModel):
     model_config = ConfigDict(extra="ignore")
     sub_module: str = Field(min_length=4, max_length=40)
+    seed_payload: Optional[SeedPayload] = None
 
     @field_validator("sub_module")
     @classmethod
@@ -306,15 +340,46 @@ async def create_session(
     context_id = ctx["context"]["id"]
     sid = "sol-" + uuid.uuid4().hex
     now = _utc_now()
+
+    # Phase E.5 — apply seed_payload: choose effective sub_module via
+    # `sub_module_hint` (the explicit `body.sub_module` always wins
+    # when both are set) and resolve attached references against the
+    # caller's context so we never bind to data the user can't see.
+    seed = body.seed_payload
+    effective_sub_module = body.sub_module
+    source_handoff: Optional[Dict[str, Any]] = None
+    initial_framing: Optional[str] = None
+    attached_resolved: List[Dict[str, Any]] = []
+
+    if seed is not None:
+        if seed.sub_module_hint and body.sub_module == "seek_clarity":
+            # `seek_clarity` is the wizard default — accept the hint
+            # when the caller didn't explicitly choose a different
+            # sub_module. (Validator already locked the hint to a
+            # known sub_module.)
+            effective_sub_module = seed.sub_module_hint
+        source_handoff = {
+            "source":    seed.source,
+            "source_id": seed.source_id,
+            "source_url": _build_source_url(seed.source, seed.source_id, context_id),
+        }
+        if seed.preview_text:
+            initial_framing = seed.preview_text[:4000]
+        attached_resolved = await _resolve_seed_references(
+            references=list(seed.attached_references or []),
+            context_id=context_id,
+            account_id=account["id"],
+        )
+
     row = {
         "session_id": sid,
         "user_id": account["id"],
         "account_id": account["id"],
         "context_id": context_id,
-        "sub_module": body.sub_module,
+        "sub_module": effective_sub_module,
         "status": "active",
-        "layer_state": "entry",
-        "initial_framing": None,
+        "layer_state": "framing" if initial_framing else "entry",
+        "initial_framing": initial_framing,
         "layer_0": None,
         "layer_1": None,
         "layer_2": None,
@@ -322,7 +387,10 @@ async def create_session(
         "layer_4": None,
         "synisense_audit_ids": [],
         "orchestration_audit_log": [],
-        "schema_version": 3,
+        # Phase E.5 — seed-handoff provenance + Layer 0 evidence anchors.
+        "source_handoff": source_handoff,
+        "seed_attached_references": attached_resolved,
+        "schema_version": 4 if seed is not None else 3,
         "created_at": now,
         "updated_at": now,
         "completed_at": None,
@@ -330,6 +398,68 @@ async def create_session(
     await _coll().insert_one(dict(row))
     row.pop("_id", None)
     return _serialise(row)
+
+
+def _build_source_url(source: str, source_id: str, context_id: str) -> str:
+    """Return the deep-link URL for the seed source — used by the
+    Trust panel to back-link from Solva to its origin surface."""
+    if source == "cycle":
+        return f"/app/cycle/{source_id}"
+    if source == "work_studio_artefact":
+        return f"/app/work-studio/artefact/{source_id}"
+    if source == "document_journal":
+        return f"/app/workspace?doc={source_id}"
+    return ""
+
+
+async def _resolve_seed_references(
+    *,
+    references: List[str],
+    context_id: str,
+    account_id: str,
+) -> List[Dict[str, Any]]:
+    """Resolve each reference against the caller's context. References
+    that don't exist OR are scoped to a different context are silently
+    dropped (we never error on a stale reference, but we never bind
+    Solva to data the user can't see)."""
+    resolved: List[Dict[str, Any]] = []
+    for ref in references[:20]:
+        # Try in order: documents → cycles → work_studio_artefacts.
+        doc = await db.documents.find_one(
+            {"id": ref, "context_id": context_id, "account_id": account_id},
+            {"_id": 0, "id": 1, "title": 1, "summary": 1},
+        )
+        if doc:
+            resolved.append({
+                "ref_type": "document",
+                "ref_id": doc["id"],
+                "label": doc.get("title") or doc["id"],
+            })
+            continue
+        cyc = await db.cycles.find_one(
+            {"id": ref, "context_id": context_id},
+            {"_id": 0, "id": 1, "title": 1},
+        )
+        if cyc:
+            resolved.append({
+                "ref_type": "cycle",
+                "ref_id": cyc["id"],
+                "label": cyc.get("title") or cyc["id"],
+            })
+            continue
+        art = await db.work_studio_artefacts.find_one(
+            {"id": ref, "context_id": context_id, "account_id": account_id},
+            {"_id": 0, "id": 1, "title": 1},
+        )
+        if art:
+            resolved.append({
+                "ref_type": "work_studio_artefact",
+                "ref_id": art["id"],
+                "label": art.get("title") or art["id"],
+            })
+            continue
+        # Unknown / stale ref — silently drop; never error.
+    return resolved
 
 
 @router.get("/sessions")

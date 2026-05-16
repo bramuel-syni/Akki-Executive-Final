@@ -34,13 +34,18 @@ function normalize(session) {
     sensitivityDrivers: l3.sensitivity_drivers || [],
     surfacedTensions: l3.surfaced_tensions || [],
     layer4Answers: (session.layer_4 || {}).answers || [],
+    // Phase E.5 (2026-05-16) — seed-handoff provenance + Layer 0 anchors.
+    sourceHandoff: session.source_handoff || null,
+    seedAttachedReferences: session.seed_attached_references || [],
   };
 }
 
-export async function createPhaseDSession({ contextId, subModule }) {
+export async function createPhaseDSession({ contextId, subModule, seedPayload }) {
+  const body = { sub_module: subModule };
+  if (seedPayload) body.seed_payload = seedPayload;
   const { data } = await api.post(
     `/contexts/${contextId}/solva/v2/sessions`,
-    { sub_module: subModule },
+    body,
   );
   return normalize(data);
 }

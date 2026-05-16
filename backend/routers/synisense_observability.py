@@ -13,17 +13,28 @@ Returns aggregates over the last N days from `synisense_audit_log`:
   - `reidentification_partial: true` rate.
   - Solva-specific: refusal_reason distribution.
 
+Phase F Sub-task D adds:
+
+`GET /api/admin/synisense/billing?window_days=7|30&context_id={cid}`
+
+Per-consumer + per-purpose USD-estimate roll-up using the code-
+controlled `services/synisense/pricing.py` cost table. ILLUSTRATIVE
+only — not invoiced; the UI marks every figure as "estimated".
+
 Superadmin only — uses the existing `is_superadmin` flag on the
 account record.
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core import db, get_current_account
+from services.synisense.pricing import (
+    DEFAULT_FLAT_USD_PER_CALL, PROVIDER_MODEL_PRICING, flat_cost_for,
+)
 
 
 router = APIRouter(prefix="/api/admin/synisense", tags=["admin-synisense-observability"])
@@ -43,11 +54,13 @@ async def observability_snapshot(
     _admin: Dict[str, Any] = Depends(_require_superadmin),
 ) -> Dict[str, Any]:
     cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
-    # Read all relevant audit rows since cutoff. Bounded by audit
-    # collection size; if this grows beyond ~50k/day, switch to an
-    # aggregation pipeline.
+    cutoff_iso = cutoff.isoformat()
+    # The audit log stores its row timestamp as an ISO string in
+    # `timestamp` (no `created_at`). ISO-8601 strings sort
+    # lexicographically the same as their datetime equivalents, so
+    # a `$gte` against the cutoff's ISO form is correct.
     cursor = db.synisense_audit_log.find(
-        {"created_at": {"$gte": cutoff}},
+        {"timestamp": {"$gte": cutoff_iso}},
         {"_id": 0},
     ).limit(50000)
     rows = await cursor.to_list(length=50000)
@@ -158,4 +171,102 @@ async def observability_snapshot(
         ),
         "guardrail_block_counts": solva_refusals,
         "solva_refusal_reasons": refusal_reason_distribution,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Phase F Sub-task D — per-tenant Shield billing ESTIMATE surface.
+# ─────────────────────────────────────────────────────────────────────
+@router.get("/billing")
+async def billing_estimate(
+    window_days: int = Query(default=7, ge=1, le=30),
+    context_id: Optional[str] = Query(default=None),
+    _admin: Dict[str, Any] = Depends(_require_superadmin),
+) -> Dict[str, Any]:
+    """Compose a per-consumer + per-purpose USD-estimate roll-up.
+
+    Numbers are ILLUSTRATIVE — derived from a code-controlled price
+    table (`services/synisense/pricing.py`). No tokens are recorded
+    on the Shield audit log yet; the table emits a flat-per-call
+    USD value per (provider, model) pair. The frontend MUST label
+    this surface "estimated" prominently.
+
+    Filters:
+      - `window_days`: 1..30. Audit rows since `now − window_days`.
+      - `context_id`: optional. If supplied, narrows the audit query
+        to consumers whose audit rows carry this context_id field.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
+    cutoff_iso = cutoff.isoformat()
+    query: Dict[str, Any] = {"timestamp": {"$gte": cutoff_iso}}
+    if context_id:
+        query["context_id"] = context_id
+
+    cursor = db.synisense_audit_log.find(query, {"_id": 0}).limit(50000)
+    rows = await cursor.to_list(length=50000)
+
+    per_consumer: Dict[str, Dict[str, Any]] = {}
+    per_purpose: Dict[str, Dict[str, Any]] = {}
+    grand_total = 0.0
+
+    for r in rows:
+        consumer = r.get("consumer_id") or "unknown"
+        purpose = r.get("purpose") or "unknown"
+        provider = r.get("llm_provider") or ""
+        model = r.get("llm_model") or ""
+        unit = flat_cost_for(provider, model)
+        grand_total += unit
+
+        c = per_consumer.setdefault(consumer, {
+            "consumer_id": consumer, "call_count": 0,
+            "estimated_usd": 0.0, "providers": {},
+        })
+        c["call_count"] += 1
+        c["estimated_usd"] += unit
+        prov_label = f"{provider}/{model}" if provider and model else "unknown"
+        c["providers"][prov_label] = c["providers"].get(prov_label, 0) + 1
+
+        p = per_purpose.setdefault(purpose, {
+            "purpose": purpose, "call_count": 0,
+            "estimated_usd": 0.0,
+        })
+        p["call_count"] += 1
+        p["estimated_usd"] += unit
+
+    consumers = sorted(
+        ({**v, "estimated_usd": round(v["estimated_usd"], 4)}
+         for v in per_consumer.values()),
+        key=lambda c: -c["estimated_usd"],
+    )
+    purposes = sorted(
+        ({**v, "estimated_usd": round(v["estimated_usd"], 4)}
+         for v in per_purpose.values()),
+        key=lambda p: -p["estimated_usd"],
+    )[:25]
+
+    return {
+        "window_days": window_days,
+        "context_id": context_id,
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "total_calls": len(rows),
+        "estimated_total_usd": round(grand_total, 4),
+        "per_consumer": consumers,
+        "top_purposes_by_cost": purposes,
+        "is_illustrative": True,
+        "estimate_notes": (
+            "Per-call flat USD estimates derived from a code-controlled "
+            "table (services/synisense/pricing.py). Not invoiced. "
+            "Token-accurate pricing requires Phase G+ metering."
+        ),
+        "pricing_table_signature": _pricing_signature(),
+    }
+
+
+def _pricing_signature() -> Dict[str, Any]:
+    """A short fingerprint of the live pricing table so bank QA can
+    detect if the table changed between two snapshots."""
+    return {
+        "entry_count": len(PROVIDER_MODEL_PRICING),
+        "default_flat_usd_per_call": DEFAULT_FLAT_USD_PER_CALL,
+        "providers": sorted({p for (p, _m) in PROVIDER_MODEL_PRICING}),
     }
