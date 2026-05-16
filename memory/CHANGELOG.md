@@ -3,6 +3,17 @@
 > Append-only history of shipped work. Newest first.
 > Detailed patch close-outs live in `/app/memory/SYSTEM_STATE.md` §4.
 
+## 2026-05-16 — Phase E Fix Bundle 1 (Synisense Rewrite, Phase 5 patch)
+
+### Phase E — Sub-task H PDF spec gaps + render-smoke gap
+
+- Chat privacy-report PDF now renders the **full HMAC-SHA256 trust-receipt signature** for every audit entry (was `—` placeholder). Plus version, payload_hash[:22], audit_id, receipt_id, timestamp. Verification recipe footer line ("To verify: compute HMAC-SHA256 …").
+- Per-entry PDF layout switched from tabular form to **two-section narrative prose**: 1) the same natural-language paragraph the UI audit panel composes (DRY), 2) a smaller monospaced audit references block. Aggregate footer with avg exposure_reduction + dilution.
+- New DRY composer `compose_audit_entry_prose(audit_row, receipt_row)` in `routers/chat_audit_panel.py`. UI audit-panel endpoint refactored to use it; PDF builder refactored to use it. Lock contract: UI strips `signature` + `payload_hash` (security-by-design); PDF surfaces them (verifiable artefact).
+- `render-smoke.js` extended by 3 routes covering the two new Phase E React surfaces — `/app/solva`, `/app/solva/phase-d/session/new?submodule=…`, `/app/admin/synisense-observability`. **PASS — 11 routes clean.**
+
+**629 passing pytest** (was 620 + 9 net new), 0 regressions. Close-out: `/app/memory/sprints/PHASE_E_CLOSEOUT_ADDENDUM.md`.
+
 ## 2026-05-16 — Phase E (Synisense Rewrite, Phase 5 of 6)
 
 ### Phase E — Solva Phase 2-4 + Frontend wiring + Observability

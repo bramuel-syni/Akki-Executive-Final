@@ -209,6 +209,119 @@ def _provider_pretty(provider: str, model: str) -> str:
     return base
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Shared composer — used by BOTH the audit-panel endpoint (UI) and the
+# chat-privacy-report PDF (downloadable verifiable artefact).
+#
+# Returns the natural-language prose pieces + structured references.
+# Callers choose which subset to expose:
+#   - UI panel:  hides signature + payload_hash (security-by-design).
+#   - PDF:       includes signature + payload_hash for tenant
+#                self-verification of the HMAC chain.
+# ─────────────────────────────────────────────────────────────────────
+def compose_audit_entry_prose(
+    *,
+    audit_row: Dict[str, Any],
+    receipt_row: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Pure prose composer for one audit row.
+
+    All callers MUST go through this function so the audit-panel UI
+    and the privacy-report PDF stay in lockstep when copy changes.
+    """
+    summary = audit_row.get("de_id_summary") or {}
+    provider = audit_row.get("llm_provider") or ""
+    model = audit_row.get("llm_model") or ""
+    purpose = audit_row.get("purpose") or ""
+    er = audit_row.get("exposure_reduction_score")
+    dl = audit_row.get("dilution_score")
+
+    shield_line = (
+        f"Synisense shielded {_summary_to_prose(summary)} before any LLM saw your message."
+        if summary else
+        "No sensitive identifiers were detected in this turn."
+    )
+    provider_line = (
+        f"The redacted content was read by {_provider_pretty(provider, model)}."
+        if provider else
+        "The redacted content was processed locally (mock mode — no provider call)."
+    )
+
+    er_label = (
+        "almost all sensitive content shielded" if (er or 0) >= 80 else
+        "most sensitive content shielded" if (er or 0) >= 50 else
+        "limited shielding (few entities in this turn)"
+    )
+    dl_label = (
+        "most semantic content preserved" if (dl or 0) <= 30 else
+        "moderate dilution" if (dl or 0) <= 60 else
+        "high dilution"
+    )
+    er_str = f"{er}%" if isinstance(er, (int, float)) else "—"
+    dl_str = f"{dl}%" if isinstance(dl, (int, float)) else "—"
+    scores_line = (
+        f"Exposure reduction: {er_str} ({er_label}). "
+        f"Dilution: {dl_str} ({dl_label})."
+    )
+    purpose_label = _friendly_purpose(purpose) or "Chat reply"
+    purpose_line = f"Purpose: {purpose_label}."
+
+    narrative = " ".join([shield_line, provider_line, scores_line, purpose_line])
+
+    receipt_row = receipt_row or {}
+    references = {
+        "audit_id":          audit_row.get("audit_id"),
+        "consumer":          audit_row.get("consumer_id"),
+        "purpose":           purpose,
+        "purpose_label":     purpose_label,
+        "timestamp":         audit_row.get("timestamp"),
+        "trust_receipt_id":  receipt_row.get("receipt_id"),
+        "trust_receipt_version": receipt_row.get("version"),
+        # Verification fields — kept OUT of the UI audit panel
+        # (security-by-design), surfaced ON the PDF so the tenant can
+        # verify the HMAC chain themselves.
+        "signature":         receipt_row.get("signature"),
+        "payload_hash":      receipt_row.get("payload_hash"),
+    }
+
+    return {
+        "narrative":         narrative,
+        "shielding_prose":   shield_line,
+        "provider_prose":    provider_line,
+        "scores_prose":      scores_line,
+        "purpose_prose":     purpose_line,
+        "scores": {
+            "exposure_reduction":       er,
+            "dilution":                 dl,
+            "exposure_reduction_label": er_label,
+            "dilution_label":           dl_label,
+        },
+        "references": references,
+    }
+
+
+def compose_aggregate_footer(
+    *,
+    llm_call_count: int,
+    message_count: int,
+    avg_exposure_reduction: Optional[float],
+    avg_dilution: Optional[float],
+) -> str:
+    """One-line conversation roll-up used in the PDF footer + the
+    aggregate-strip UI."""
+    head = (
+        f"Across this conversation, Synisense governed "
+        f"{_plural(llm_call_count, 'LLM call')} "
+        f"across {_plural(message_count, 'message')}."
+    )
+    if avg_exposure_reduction is not None and avg_dilution is not None:
+        head += (
+            f" Average exposure reduction: {round(avg_exposure_reduction, 1)}%. "
+            f"Average dilution: {round(avg_dilution, 1)}%."
+        )
+    return head
+
+
 def _intervention_prose(event: Optional[Dict[str, Any]]) -> str:
     """Render the protective-layer event in executive language."""
     if not event:
@@ -294,54 +407,27 @@ async def get_audit_panel(
             {"_id": 0, "payload_hash": 0},
         ) or {}
 
-    summary = audit_row.get("de_id_summary") or {}
-    provider = audit_row.get("llm_provider") or ""
-    model = audit_row.get("llm_model") or ""
-    er = audit_row.get("exposure_reduction_score")
-    dl = audit_row.get("dilution_score")
-
-    # Executive-language shielding line.
-    shield_line = (
-        f"Before any LLM saw your message, Synisense shielded {_summary_to_prose(summary)}."
-        if summary else
-        "No sensitive identifiers were detected in this turn."
-    )
-    provider_line = (
-        f"The redacted message was read by {_provider_pretty(provider, model)}."
-        if provider else
-        "The redacted message was processed locally (mock mode — no provider call)."
-    )
+    # Compose prose via the shared composer so the UI panel + the
+    # downloadable PDF stay in lockstep (Phase E Sub-task H fix bundle).
+    composed = compose_audit_entry_prose(audit_row=audit_row, receipt_row=receipt)
 
     return {
         "message_id": message_id,
         "audit_id": audit_id,
-        "shielding_prose": shield_line,
-        "provider_prose": provider_line,
-        "scores": {
-            "exposure_reduction": er,
-            "dilution": dl,
-            "exposure_reduction_label": (
-                "almost all sensitive content shielded"
-                if (er or 0) >= 80 else
-                "most sensitive content shielded"
-                if (er or 0) >= 50 else
-                "limited shielding (few entities in this turn)"
-            ),
-            "dilution_label": (
-                "most semantic content preserved"
-                if (dl or 0) <= 30 else
-                "moderate dilution"
-                if (dl or 0) <= 60 else
-                "high dilution"
-            ),
-        },
+        "shielding_prose":  composed["shielding_prose"],
+        "provider_prose":   composed["provider_prose"],
+        "scores":           composed["scores"],
         "references": {
-            "purpose": audit_row.get("purpose"),
-            "purpose_label": _friendly_purpose(audit_row.get("purpose") or ""),
-            "consumer": audit_row.get("consumer_id"),
-            "audit_id": audit_id,
-            "trust_receipt_id": receipt.get("receipt_id"),
-            "trust_receipt_version": receipt.get("version"),
+            "purpose":               composed["references"]["purpose"],
+            "purpose_label":         composed["references"]["purpose_label"],
+            "consumer":              composed["references"]["consumer"],
+            "audit_id":              composed["references"]["audit_id"],
+            "trust_receipt_id":      composed["references"]["trust_receipt_id"],
+            "trust_receipt_version": composed["references"]["trust_receipt_version"],
+            # `signature` + `payload_hash` are intentionally NOT
+            # surfaced on the UI panel — they belong to the
+            # downloadable PDF for self-verification (security-by-
+            # design).
         },
         "protective_layer_prose": _intervention_prose(matching_event),
         "protective_event": matching_event,

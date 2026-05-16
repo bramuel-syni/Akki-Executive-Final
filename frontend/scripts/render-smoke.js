@@ -43,6 +43,10 @@ const ROUTES = [
   { name: "Learn", path: "/app/learn" },
   { name: "Questions", path: "/app/questions" },
   { name: "Workspace (Documents Journal)", path: "/app/workspace" },
+  // Phase E (2026-05-16) — new React surfaces shipped in the rewrite.
+  { name: "Solva landing (Phase D-routed)", path: "/app/solva" },
+  { name: "Solva Phase D — new session", path: "/app/solva/phase-d/session/new?submodule=seek_clarity" },
+  { name: "Synisense Observability (admin)", path: "/app/admin/synisense-observability" },
 ];
 
 // Console message classes we ALWAYS fail on.

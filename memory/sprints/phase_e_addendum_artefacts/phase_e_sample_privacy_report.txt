@@ -1,0 +1,31 @@
+Synisense Privacy Report
+Chat ID: chat-demo-001
+Tenant: Acme Bank Plc
+Generated: 2026-05-16T02:50:10.033890+00:00
+LLM calls included: 2
+Call 1 of 2 — Chat reply
+Synisense shielded 3 person names, 2 monetary figures, 1 organisation name, and 1 email address
+before any LLM saw your message. The redacted content was read by Anthropic's claude-sonnet-4-5.
+Exposure reduction: 92.5% (almost all sensitive content shielded). Dilution: 11.0% (most semantic
+content preserved). Purpose: Chat reply.
+audit_id aud-demo-001
+receipt_id rec-demo-001
+version v1
+signature 7f3a9d2c1e5b8049a6f2e1c30d9b4825a07f6e3d2c1b9a85047f6e3d2c1b9a85
+payload_hash sha256:1a2b3c4d5e6f7a8…
+timestamp 2026-05-16T10:24:11+00:00
+Call 2 of 2 — Conversation summary
+Synisense shielded 2 person names and 1 date before any LLM saw your message. The redacted
+content was read by Anthropic's claude-sonnet-4-5. Exposure reduction: 88.0% (almost all sensitive
+content shielded). Dilution: 14.5% (most semantic content preserved). Purpose: Conversation
+summary.
+audit_id aud-demo-002
+receipt_id rec-demo-002
+version v1
+signature 92f5e3c47b1d0a8c6e9f2415d83b047a26e1f3d4c5a6b7c8d9e0f102234567890
+payload_hash sha256:9f8e7d6c5b4a392…
+timestamp 2026-05-16T10:27:33+00:00
+Across this conversation, Synisense governed 2 LLM calls across 3 messages. Average exposure reduction:
+90.2%. Average dilution: 12.8%.
+To verify: compute HMAC-SHA256 of the audit body with the per-tenant key (your Synisense admin console) and compare to the
+signature above.

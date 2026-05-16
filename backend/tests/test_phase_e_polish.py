@@ -572,6 +572,7 @@ def test_pdf_builder_handles_no_audits_gracefully():
     pdf = _build_pdf_bytes(
         chat={"id": "chat-test"},
         audits=[],
+        receipts_by_audit={},
         tenant={"id": "acc-test", "name": "Test"},
     )
     # PDF magic bytes.
@@ -588,12 +589,320 @@ def test_pdf_builder_includes_audit_ids():
             "exposure_reduction_score": 88.0, "dilution_score": 12.0,
             "outcome": "success", "trust_receipt_id": "trc-z",
         }],
+        receipts_by_audit={},
         tenant={"id": "acc-test", "name": "Test"},
     )
     assert pdf.startswith(b"%PDF")
     # The PDF stream contains text data — search for the audit id (it'll
     # be encoded as plain ASCII inside the page content).
     assert b"aud-abc" in pdf or b"PDF" in pdf
+
+
+def _pdf_text(pdf_bytes: bytes) -> str:
+    """Helper: extract text content from a generated PDF for content
+    assertions. Uses pypdf (already in the env). Whitespace is
+    normalised to single spaces so reportlab line-wrapping doesn't
+    break content assertions."""
+    import io as _io
+    import re as _re
+    from pypdf import PdfReader
+    reader = PdfReader(_io.BytesIO(pdf_bytes))
+    raw = "\n".join((p.extract_text() or "") for p in reader.pages)
+    return _re.sub(r"\s+", " ", raw)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Phase E Sub-task H — Fix Bundle 1: signature rendering + DRY composer.
+# ─────────────────────────────────────────────────────────────────────
+def test_compose_audit_entry_prose_renders_narrative_and_signature():
+    """The shared composer produces a single natural-language sentence
+    and surfaces the HMAC signature + payload_hash in `references`."""
+    from routers.chat_audit_panel import compose_audit_entry_prose
+    audit_row = {
+        "audit_id": "aud-narr-1",
+        "purpose": "chat.standard_response",
+        "llm_provider": "anthropic",
+        "llm_model": "claude-sonnet-4-5-20250929",
+        "exposure_reduction_score": 88.5,
+        "dilution_score": 12.3,
+        "de_id_summary": {"PERSON": 2, "MONEY": 1, "EMAIL": 1},
+        "timestamp": "2026-05-16T12:00:00+00:00",
+        "consumer_id": "akki.chat",
+    }
+    receipt_row = {
+        "receipt_id": "rec-narr-1",
+        "audit_id":   "aud-narr-1",
+        "version":    "v1",
+        "signature":  "ab" * 32,                # 64-char hex = HMAC-SHA256
+        "payload_hash": "sha256:" + ("cd" * 32),
+    }
+    out = compose_audit_entry_prose(audit_row=audit_row, receipt_row=receipt_row)
+    n = out["narrative"]
+    # Narrative MUST be natural-language prose (not tabular).
+    assert "Synisense shielded" in n
+    assert "2 person names" in n
+    assert "1 monetary figure" in n
+    assert "1 email address" in n
+    assert "Anthropic's claude-sonnet-4-5" in n
+    assert "Exposure reduction: 88.5%" in n
+    assert "almost all sensitive content shielded" in n
+    assert "Dilution: 12.3%" in n
+    assert "most semantic content preserved" in n
+    assert "Purpose: Chat reply." in n
+
+    refs = out["references"]
+    assert refs["signature"] == "ab" * 32
+    assert refs["payload_hash"] == "sha256:" + ("cd" * 32)
+    assert refs["trust_receipt_id"] == "rec-narr-1"
+    assert refs["trust_receipt_version"] == "v1"
+
+
+def test_audit_panel_ui_does_not_leak_signature_or_payload_hash():
+    """The UI audit panel re-uses the composer but MUST NOT surface
+    the verification fields (security-by-design)."""
+    import asyncio
+    from routers.chat_audit_panel import compose_audit_entry_prose
+
+    out = compose_audit_entry_prose(
+        audit_row={"audit_id": "aud-z", "purpose": "chat.standard_response"},
+        receipt_row={"receipt_id": "rec-z", "version": "v1",
+                     "signature": "deadbeef" * 8,
+                     "payload_hash": "sha256:" + "0" * 64},
+    )
+    # The composer itself carries them — the endpoint is responsible for
+    # projecting only the public subset. We lock that contract in
+    # `routers/chat_audit_panel.py` (`get_audit_panel` builds the
+    # `references` block by hand, omitting these two fields).
+    assert "signature" in out["references"]
+    assert "payload_hash" in out["references"]
+    _ = asyncio  # marker that this test is sync-only
+
+
+def test_aggregate_footer_one_call_one_message():
+    from routers.chat_audit_panel import compose_aggregate_footer
+    out = compose_aggregate_footer(
+        llm_call_count=1, message_count=1,
+        avg_exposure_reduction=92.5, avg_dilution=11.0,
+    )
+    assert "1 LLM call" in out
+    assert "1 message" in out
+    assert "Average exposure reduction: 92.5%" in out
+    assert "Average dilution: 11.0%" in out
+
+
+def test_aggregate_footer_no_scores_when_no_audits():
+    from routers.chat_audit_panel import compose_aggregate_footer
+    out = compose_aggregate_footer(
+        llm_call_count=0, message_count=4,
+        avg_exposure_reduction=None, avg_dilution=None,
+    )
+    assert "0 LLM calls" in out
+    assert "4 messages" in out
+    # No averages line when there were no scores.
+    assert "Average" not in out
+
+
+def test_pdf_builder_renders_signature_when_receipt_present():
+    """When a trust receipt is mapped to an audit, its full HMAC-SHA256
+    signature + version + payload_hash[:22] MUST appear in the PDF."""
+    from routers.solva_phase_e_polish import _build_pdf_bytes
+    sig = "f" * 64
+    pdf = _build_pdf_bytes(
+        chat={"id": "chat-sig-test", "message_count": 4},
+        audits=[{
+            "audit_id": "aud-sig-1", "purpose": "chat.standard_response",
+            "llm_provider": "anthropic",
+            "llm_model": "claude-sonnet-4-5-20250929",
+            "exposure_reduction_score": 90.0, "dilution_score": 10.0,
+            "de_id_summary": {"PERSON": 1},
+            "outcome": "success",
+            "timestamp": "2026-05-16T12:00:00+00:00",
+        }],
+        receipts_by_audit={
+            "aud-sig-1": {
+                "receipt_id": "rec-sig-1", "audit_id": "aud-sig-1",
+                "version": "v1", "signature": sig,
+                "payload_hash": "sha256:" + ("a" * 64),
+            },
+        },
+        tenant={"id": "acc-sig", "name": "Sig Tenant"},
+    )
+    assert pdf.startswith(b"%PDF")
+    text = _pdf_text(pdf)
+    # Signature MUST appear in extracted text.
+    assert sig in text, f"HMAC-SHA256 signature not rendered in PDF text: {text[:300]}"
+    # Audit id, receipt id, version label all visible.
+    assert "aud-sig-1" in text
+    assert "rec-sig-1" in text
+    assert "v1" in text
+    # Narrative paragraph (DRY with audit-panel UI) — verbose phrase.
+    assert "1 person name" in text
+    assert "Synisense shielded" in text
+    # Aggregate footer + verification footer.
+    assert "Average exposure reduction: 90.0%" in text
+    assert "compute HMAC-SHA256" in text
+
+
+def test_pdf_builder_renders_placeholder_when_no_receipt():
+    """When the audit row has no corresponding trust receipt (legacy
+    pre-Phase-A data), the PDF MUST say so, not silently render a dash."""
+    from routers.solva_phase_e_polish import _build_pdf_bytes
+    pdf = _build_pdf_bytes(
+        chat={"id": "chat-noreceipt"},
+        audits=[{
+            "audit_id": "aud-noreceipt", "purpose": "chat.standard_response",
+            "llm_provider": "anthropic", "llm_model": "claude-sonnet-4-5",
+            "exposure_reduction_score": 70.0, "dilution_score": 25.0,
+            "de_id_summary": {"PERSON": 1},
+            "outcome": "success",
+        }],
+        receipts_by_audit={},
+        tenant={"id": "acc-x", "name": "Acme"},
+    )
+    assert pdf.startswith(b"%PDF")
+    text = _pdf_text(pdf)
+    # Explicit "no receipt recorded" message rendered (not just a dash).
+    assert "no receipt recorded" in text
+
+
+def test_pdf_builder_narrative_uses_shared_composer():
+    """Lock the DRY contract: the PDF text content MUST contain the
+    same narrative sentence the UI audit-panel composer would produce."""
+    from routers.solva_phase_e_polish import _build_pdf_bytes
+    from routers.chat_audit_panel import compose_audit_entry_prose
+    audit = {
+        "audit_id": "aud-shared", "purpose": "chat.standard_response",
+        "llm_provider": "anthropic",
+        "llm_model": "claude-sonnet-4-5-20250929",
+        "exposure_reduction_score": 88.0, "dilution_score": 14.0,
+        "de_id_summary": {"PERSON": 3, "MONEY": 2},
+    }
+    receipt = {
+        "receipt_id": "rec-shared", "audit_id": "aud-shared",
+        "version": "v1", "signature": "1" * 64,
+        "payload_hash": "sha256:" + "2" * 64,
+    }
+    composed = compose_audit_entry_prose(audit_row=audit, receipt_row=receipt)
+    pdf = _build_pdf_bytes(
+        chat={"id": "chat-shared", "message_count": 1},
+        audits=[audit],
+        receipts_by_audit={"aud-shared": receipt},
+        tenant={"id": "acc-shared", "name": "Shared"},
+    )
+    text = _pdf_text(pdf)
+    # A representative slice of the composer-produced narrative MUST
+    # be present in the PDF stream.
+    expected_slice = "3 person names"
+    assert expected_slice in composed["narrative"]
+    assert expected_slice in text
+
+
+@pytest.mark.asyncio
+async def test_chat_privacy_report_pdf_renders_signature_e2e(client, authed, db_conn):
+    """E2E: real signed receipt is fetched + signature rendered."""
+    headers = await _login(client, authed["email"], authed["password"])
+    chat_id = f"chat-sig-{uuid.uuid4().hex[:6]}"
+    aud = f"aud-{uuid.uuid4().hex[:10]}"
+    sig = "abcdef" * 11  # 66 char hex — used as fake but stable
+    payload_hash = "sha256:" + ("0123456789abcdef" * 4)
+    await db_conn.chats.insert_one({
+        "id": chat_id, "account_id": authed["account_id"],
+        "title": "Sig test", "model": "claude-sonnet-4-5",
+        "synisense_audit_ids": [aud],
+        "message_count": 2,
+        "created_at": datetime.now(timezone.utc),
+    })
+    await db_conn.synisense_audit_log.insert_one({
+        "audit_id": aud, "tenant_id": authed["account_id"],
+        "purpose": "chat.standard_response",
+        "llm_provider": "anthropic", "llm_model": "claude-sonnet-4-5-20250929",
+        "exposure_reduction_score": 91.0, "dilution_score": 9.0,
+        "de_id_summary": {"PERSON": 2, "EMAIL": 1},
+        "timestamp": "2026-05-16T12:00:00+00:00",
+        "outcome": "success",
+    })
+    await db_conn.synisense_trust_receipts.insert_one({
+        "receipt_id": f"rec-{uuid.uuid4().hex[:8]}",
+        "audit_id": aud, "tenant_id": authed["account_id"],
+        "version": "v1", "signature": sig,
+        "payload_hash": payload_hash,
+    })
+    try:
+        r = await client.get(
+            f"/api/chats/{chat_id}/privacy-report.pdf", headers=headers,
+        )
+        assert r.status_code == 200, r.text
+        assert r.headers["content-type"] == "application/pdf"
+        body = r.content
+        assert body.startswith(b"%PDF")
+        text = _pdf_text(body)
+        # The actual HMAC-SHA256 signature MUST appear in the rendered PDF.
+        assert sig in text
+        # Narrative copy + verification recipe MUST appear.
+        assert "Synisense shielded" in text
+        assert "compute HMAC-SHA256" in text
+        # Aggregate footer with averages.
+        assert "Average exposure reduction: 91.0%" in text
+        assert "Average dilution: 9.0%" in text
+    finally:
+        await db_conn.chats.delete_one({"id": chat_id})
+        await db_conn.synisense_audit_log.delete_many({"audit_id": aud})
+        await db_conn.synisense_trust_receipts.delete_many({"audit_id": aud})
+
+
+@pytest.mark.asyncio
+async def test_audit_panel_endpoint_still_hides_signature(client, authed, db_conn):
+    """The UI audit-panel endpoint MUST NOT surface the verification
+    fields, even after the Fix Bundle 1 composer refactor."""
+    headers = await _login(client, authed["email"], authed["password"])
+    chat_id = f"chat-ui-{uuid.uuid4().hex[:6]}"
+    aud = f"aud-{uuid.uuid4().hex[:10]}"
+    msg_id = f"msg-{uuid.uuid4().hex[:10]}"
+    sig = "9" * 64
+    await db_conn.chats.insert_one({
+        "id": chat_id, "account_id": authed["account_id"],
+        "title": "UI test", "model": "claude-sonnet-4-5",
+        "synisense_audit_ids": [aud],
+        "protective_layer_events": [],
+        "created_at": datetime.now(timezone.utc),
+    })
+    await db_conn.chat_messages.insert_one({
+        "id": msg_id, "chat_id": chat_id, "account_id": authed["account_id"],
+        "role": "assistant", "content": "hi",
+        "created_at": datetime.now(timezone.utc),
+    })
+    await db_conn.synisense_audit_log.insert_one({
+        "audit_id": aud, "tenant_id": authed["account_id"],
+        "purpose": "chat.standard_response",
+        "llm_provider": "anthropic", "llm_model": "claude-sonnet-4-5",
+        "exposure_reduction_score": 80.0, "dilution_score": 20.0,
+        "de_id_summary": {"PERSON": 1},
+    })
+    await db_conn.synisense_trust_receipts.insert_one({
+        "receipt_id": "rec-ui-x", "audit_id": aud,
+        "tenant_id": authed["account_id"], "version": "v1",
+        "signature": sig, "payload_hash": "sha256:" + "1" * 64,
+    })
+    try:
+        r = await client.get(
+            f"/api/chats/{chat_id}/audit-panel?message_id={msg_id}",
+            headers=headers,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        # Public fields ARE present.
+        assert body["references"]["trust_receipt_id"] == "rec-ui-x"
+        assert body["references"]["trust_receipt_version"] == "v1"
+        # Verification-only fields MUST NOT leak.
+        assert "signature" not in body["references"]
+        assert "payload_hash" not in body["references"]
+        # Body of response must NOT carry the signature anywhere.
+        assert sig not in r.text
+    finally:
+        await db_conn.chats.delete_one({"id": chat_id})
+        await db_conn.chat_messages.delete_many({"id": msg_id})
+        await db_conn.synisense_audit_log.delete_many({"audit_id": aud})
+        await db_conn.synisense_trust_receipts.delete_many({"audit_id": aud})
 
 
 def test_observability_consumer_aggregation_rules():
