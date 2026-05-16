@@ -423,3 +423,203 @@ def test_invariant_scanner_catches_invalidation_terms():
     ]:
         hits = scan_for_internal_artefacts(bad)
         assert len(hits) >= 1, f"Scanner missed leak: {bad}"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Phase D Fix Bundle v2 (2026-05-16) — family-wide placeholder regex
+# + DIAGNOSE macro strip + substantive-but-thin FAR refusal fixture.
+# ─────────────────────────────────────────────────────────────────────
+def test_synthesis_strips_all_placeholder_families():
+    """The renderer must strip placeholders of EVERY Shield family,
+    not just `[[ENT_*]]`. Phase D fix bundle v2 widened the regex
+    from `[[ENT_*_NNN]]` to `[[<UPPER>_<digits>]]`."""
+    from services.solva.voice.synthesis_renderer import render_synthesis
+    output = render_synthesis(
+        sub_module="seek_clarity",
+        scenarios=[{
+            "id": "scn-a",
+            "description": (
+                "the [[DATE_1]] window opened with [[MONEY_3]] of new exposure "
+                "from the [[ORG_2]] segment, where [[PERSON_4]] flagged it"
+            ),
+            "weight": 0.55, "confidence_interval_low": 0.40, "confidence_interval_high": 0.65,
+        }, {
+            "id": "scn-b",
+            "description": (
+                "the [[GPE_1]] market shifted after [[EVENT_7]] hit "
+                "[[FAC_2]] and [[PRODUCT_5]] saw [[IBAN_3]] / [[URL_9]] activity"
+            ),
+            "weight": 0.30, "confidence_interval_low": 0.20, "confidence_interval_high": 0.45,
+        }],
+        sensitivity_drivers=[{
+            "input_name": "x", "shift_potential": 0.2,
+            "description": "fresh signal from [[EMAIL_2]] / [[IP_8]] traffic logs",
+        }],
+        surfaced_tensions=[{
+            "description": "the [[LAW_4]] reading contradicts [[NORP_1]] sentiment",
+        }],
+    )
+    # Family-wide assertion: ZERO `[[<UPPER>_<digits>]]` substrings.
+    import re as _re
+    placeholder_re = _re.compile(r"\[\[[A-Z][A-Z_]*_\d+\]\]")
+    hits = placeholder_re.findall(output)
+    assert hits == [], (
+        f"Family-wide placeholder strip leaked: {hits}\nOutput:\n{output}"
+    )
+    # Belt-and-braces: scanner agrees.
+    from services.solva.voice.invariants import scan_for_internal_artefacts
+    violations = scan_for_internal_artefacts(output)
+    assert violations == [], (
+        f"Scanner flagged: {[v.term for v in violations]}\nOutput:\n{output}"
+    )
+
+
+def test_synthesis_strips_diagnose_macro_and_siblings():
+    """LLM-hallucinated macro headers (`DIAGNOSE`, `EVIDENCE`,
+    `CANDIDATES`, etc.) must NOT appear in user prose."""
+    from services.solva.voice.synthesis_renderer import (
+        render_synthesis, _strip_macro_names,
+    )
+    # Direct helper test.
+    cleaned = _strip_macro_names(
+        "DIAGNOSE: the leading reading is X. EVIDENCE: the deck shows Y. "
+        "CANDIDATES: three remain on the table."
+    )
+    for macro in ("DIAGNOSE", "EVIDENCE", "CANDIDATES"):
+        assert macro not in cleaned, (
+            f"Macro {macro!r} not stripped from: {cleaned!r}"
+        )
+    # Plain English lowercase stays — "diagnose", "evidence" are fine.
+    plain = _strip_macro_names("We should diagnose this carefully; the evidence is clear.")
+    assert "diagnose" in plain
+    assert "evidence" in plain
+
+    # End-to-end via the renderer.
+    output = render_synthesis(
+        sub_module="seek_clarity",
+        scenarios=[{
+            "id": "scn-a",
+            "description": "DIAGNOSE: the customer mix concentrated. EVIDENCE: see Q3 deck.",
+            "weight": 0.55, "confidence_interval_low": 0.40, "confidence_interval_high": 0.65,
+        }],
+        sensitivity_drivers=[],
+        surfaced_tensions=[{
+            "description": "CANDIDATES contradict the renewal pattern in the memo.",
+        }],
+    )
+    for macro in ("DIAGNOSE", "EVIDENCE", "CANDIDATES"):
+        assert macro not in output, (
+            f"Macro {macro!r} survived rendering. Output:\n{output}"
+        )
+
+
+def test_invariant_scanner_catches_all_placeholder_families():
+    """Scanner must flag any `[[<UPPER>_<digits>]]` token + any
+    macro-name header — including categories we haven't pre-enumerated."""
+    from services.solva.voice.invariants import scan_for_internal_artefacts
+    for token in [
+        "[[ENT_PERSON_001]]", "[[DATE_4]]", "[[MONEY_12]]",
+        "[[ORG_2]]", "[[EMAIL_9]]", "[[PHONE_E164_3]]",
+        "[[IBAN_7]]", "[[ACCOUNT_NUM_4]]", "[[IP_6]]",
+        "[[URL_2]]", "[[GPE_1]]", "[[PRODUCT_5]]",
+        "[[NORP_8]]", "[[FAC_11]]", "[[EVENT_3]]",
+        "[[LAW_2]]", "[[NEW_FUTURE_CATEGORY_1]]",   # forward-compat
+    ]:
+        sentence = f"The {token} reading sits at 55%."
+        hits = scan_for_internal_artefacts(sentence)
+        assert len(hits) >= 1, f"Scanner missed placeholder: {token}"
+
+    for macro_sentence in [
+        "DIAGNOSE: the leading reading is concentration.",
+        "Here is what I'd say. EVIDENCE: the deck shows Y.",
+        "Reading 1: X. CANDIDATES: three remain.",
+        "OBSERVE — the pattern repeats.",
+    ]:
+        hits = scan_for_internal_artefacts(macro_sentence)
+        assert len(hits) >= 1, f"Scanner missed macro: {macro_sentence}"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Fixture for FAR-refusal-reachable-after-jailbreak-passes scenario.
+# Tester noted the original "yes/no/dunno/maybe/idk/shrug/tbd" inputs
+# trip the LEGACY router's safety classifier with `status="blocked_hard"`.
+# Phase D's path has NO safety classifier (Phase E pull-forward), so on
+# Phase D endpoints those inputs flow straight to the FAR refusal gate.
+# But to prove the FAR refusal path is REACHABLE in production from
+# substantive-looking executive content, this fixture uses full-sentence
+# answers that nonetheless carry no specifics / no numbers / no
+# named entities / no decision under consideration.
+# ─────────────────────────────────────────────────────────────────────
+@pytest.mark.asyncio
+async def test_far_refusal_reachable_with_substantive_but_thin_inputs(client, authed):
+    headers = await _login(client, authed["email"], authed["password"])
+    cid = authed["context_id"]
+    r = await client.post(
+        f"/api/contexts/{cid}/solva/v2/sessions",
+        json={"sub_module": "seek_clarity"},
+        headers=headers,
+    )
+    sid = r.json()["session_id"]
+    # Substantive-looking framing (full sentences, executive register)
+    # but evidence-thin: no decision, no horizon, no named source.
+    framing = (
+        "I'm not sure what to ask. There's something on my mind about the "
+        "company direction but I can't quite articulate it. The board wants "
+        "me to think about it more carefully before the next meeting."
+    )
+    r = await client.post(
+        f"/api/contexts/{cid}/solva/v2/sessions/{sid}/framing",
+        json={"framing_text": framing},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    # Substantive-looking but evidence-thin answers.
+    answers = [
+        "I think we should consider doing something soon but I'm not certain what direction would be best.",
+        "There are a few things I'm worried about but nothing specific I can put my finger on right now.",
+        "Some pressures from somewhere are pushing us to make a change of some kind in the near term.",
+        "I keep coming back to the question without ever resolving it one way or the other.",
+        "It's hard to know where to start, frankly, and I'd appreciate a sharper read on the situation.",
+        "I don't have the materials in front of me but I sense something is shifting beneath the surface.",
+        "Whenever I try to articulate the issue, the words seem to slip away from any concrete shape.",
+    ]
+    for ans in answers:
+        r = await client.post(
+            f"/api/contexts/{cid}/solva/v2/sessions/{sid}/answer",
+            json={"answer_text": ans},
+            headers=headers,
+        )
+        # 200 while still active; 409 once refused (terminal).
+        assert r.status_code in (200, 409), r.text
+        if r.status_code == 409:
+            break
+
+    r = await client.get(
+        f"/api/contexts/{cid}/solva/v2/sessions/{sid}",
+        headers=headers,
+    )
+    session = r.json()
+
+    # Locked acceptance — the FAR refusal path is REACHABLE in production
+    # from substantive-looking executive content that carries no specifics.
+    assert session["status"] == "refused", (
+        f"FAR refusal did NOT fire on substantive-but-thin inputs. "
+        f"status={session['status']}, layer_state={session['layer_state']}, "
+        f"refusal_reason={(session.get('layer_3') or {}).get('refusal_reason')}, "
+        f"layer_3={session.get('layer_3')}"
+    )
+    assert session["layer_state"] == "refused"
+    l3 = session.get("layer_3") or {}
+    assert l3.get("refusal_flag") is True
+    # rendered_synthesis MUST be None on refusal (brief contract).
+    assert l3.get("rendered_synthesis") is None
+    assert l3.get("scenarios") == []
+    # Refusal coach voice present.
+    rendering = (l3.get("refusal_rendering") or "").lower()
+    assert rendering, f"refusal_rendering missing on session: {l3}"
+    # Single-voice scan on the refusal rendering.
+    from services.solva.voice.invariants import scan_for_internal_artefacts
+    violations = scan_for_internal_artefacts(l3.get("refusal_rendering") or "")
+    assert violations == [], (
+        f"Refusal rendering leaked vocabulary: {[v.term for v in violations]}"
+    )

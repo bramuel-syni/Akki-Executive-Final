@@ -5,6 +5,15 @@
 
 ## 2026-05-16 — Phase D (Synisense Rewrite, Phase 4 of 6)
 
+### Phase D — Fix Bundle v2 (placeholder family + macro + FAR fixture)
+- Placeholder strip widened from `[[ENT_*]]` only to family-wide `[[<UPPER>_<digits>]]` — covers DATE/MONEY/PERSON/ORG/GPE/EMAIL/PHONE_E164/IBAN/ACCOUNT_NUM/IP/URL/PRODUCT/NORP/FAC/EVENT/LAW + forward-compat for any future Shield identifier categories.
+- LLM-emitted macro names (`DIAGNOSE`, `EVIDENCE`, `CANDIDATES`, etc.) stripped when they appear as standalone all-caps section headers. Plain English lowercase usage unaffected.
+- `compute_layer_2_resolved` now requires evidence markers (digit / named-doc keyword / date keyword / financial unit) in ≥2 answers — defeats fluffy executive prose that could pass v1's length-only check.
+- New substantive-but-thin FAR-refusal fixture locked. Phase D path's FAR refusal reachable from full-sentence executive content carrying no evidence specifics.
+- Jailbreak/guardrail scope clarified: Phase D code path has NO safety classifier (legacy `solva_v2.py` has its own). Phase E will reach parity.
+
+584 passing pytest, 0 regressions. Close-out: `/app/memory/sprints/PHASE_D_FIX_BUNDLE_V2.md`.
+
 ### Phase D — Fix Bundle (e1_tester defects)
 - Refusal gate now FIRES in the live pipeline (was unit-passing but integration-failing). 4 rules + a new helper now cover synthetic-fallback candidates, persistently thin Layer 2 answers, and low triangulation alignment.
 - `invalidation_condition` text removed from synthesis renderer entirely; scanner extended to catch it.

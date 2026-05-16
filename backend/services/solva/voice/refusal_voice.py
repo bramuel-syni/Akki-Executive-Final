@@ -13,7 +13,11 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from ..reasoning.refusal_logic import RefusalReason
-from .synthesis_renderer import _sanitize_internal_string, _strip_entity_placeholders
+from .synthesis_renderer import (
+    _sanitize_internal_string,
+    _strip_entity_placeholders,
+    _strip_macro_names,
+)
 
 
 _WHAT_WOULD_HELP: Dict[str, List[str]] = {
@@ -112,4 +116,5 @@ def render_refusal(
 
     body = "\n".join(lines).strip()
     body, _ = _strip_entity_placeholders(body)
+    body = _strip_macro_names(body)
     return body

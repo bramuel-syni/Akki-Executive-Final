@@ -70,17 +70,66 @@ def compute_layer_2_resolved(
     """Heuristic: did Layer 1 + Layer 2 answers surface enough substance
     to lift an 'insufficient' FAR verdict?
 
-    Two checks (both must pass):
+    Three checks (ALL must pass — Phase D fix bundle v2 2026-05-16):
       - Combined answer text ≥ MIN_RESOLVED_ANSWER_CHARS chars.
       - At least 3 of the answers are ≥ MIN_SUBSTANTIVE_ANSWER_CHARS chars
-        individually (catches "yes / no / dunno / maybe / idk / shrug /
-        tbd" pattern where total length passes but each answer is empty).
+        individually (catches the `["yes","no","dunno","maybe"]` pattern).
+      - At least 2 of the answers contain at least one EVIDENCE MARKER:
+        a digit, a named-document keyword (memo/deck/report/scorecard/
+        dashboard/financials/minutes/email/letter/paper/forecast/model/
+        analysis/dataset/log/spreadsheet), a date keyword (Q1/Q2/Q3/Q4/
+        H1/H2/FY/year/month/week/days), or a financial unit
+        ($/%/£/€/USD/EUR/GBP/bps/bn/m).
+
+      The third check is the v2 addition. Without it, fluffy executive
+      sentences like "I think we should consider doing something soon"
+      pass the first two checks but carry no actual evidence the FAR
+      could anchor against.
     """
     all_answers = list(layer_1_answers or []) + list(layer_2_answers or [])
     texts = [(a.get("text") or "").strip() for a in all_answers]
     total_chars = sum(len(t) for t in texts)
     substantive = sum(1 for t in texts if len(t) >= MIN_SUBSTANTIVE_ANSWER_CHARS)
-    return total_chars >= MIN_RESOLVED_ANSWER_CHARS and substantive >= 3
+    with_evidence = sum(1 for t in texts if _has_evidence_marker(t))
+    return (
+        total_chars >= MIN_RESOLVED_ANSWER_CHARS
+        and substantive >= 3
+        and with_evidence >= 2
+    )
+
+
+_EVIDENCE_DOC_RE = __import__("re").compile(
+    r"\b(memo|deck|report|paper|brief(?:ing)?|forecast|model|analysis|"
+    r"finding|study|scorecard|dashboard|minutes|email|letter|forecast|"
+    r"dataset|log|spreadsheet|tracker|board|review|attached)\b",
+    __import__("re").IGNORECASE,
+)
+_EVIDENCE_DATE_RE = __import__("re").compile(
+    r"\b(q[1-4]|h[12]|fy\s*\d+|fy\d{2,4}|fiscal year|"
+    r"jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|"
+    r"\d+\s*(?:days?|weeks?|months?|quarters?|years?))\b",
+    __import__("re").IGNORECASE,
+)
+_EVIDENCE_DIGIT_RE = __import__("re").compile(r"\d")
+_EVIDENCE_UNIT_RE = __import__("re").compile(
+    r"\b(usd|eur|gbp|chf|jpy|inr|bps|basis points?|percent|"
+    r"million|billion|bn|mn|m)\b",
+    __import__("re").IGNORECASE,
+)
+
+
+def _has_evidence_marker(text: str) -> bool:
+    if not text:
+        return False
+    if _EVIDENCE_DIGIT_RE.search(text):
+        return True
+    if _EVIDENCE_DOC_RE.search(text):
+        return True
+    if _EVIDENCE_DATE_RE.search(text):
+        return True
+    if _EVIDENCE_UNIT_RE.search(text):
+        return True
+    return False
 
 
 def _candidate_is_grounded(c: Dict[str, Any]) -> bool:

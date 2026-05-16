@@ -11,16 +11,24 @@ triangulation, frame audit, scenario weight, dimension, invalidation
 condition, etc.) appears in the output. Locked by
 `voice.invariants.scan_for_internal_artefacts`.
 
-CRITICAL invariant: NO Shield de-identification placeholders
-(`[[ENT_*_NNN]]`) reach user-visible prose. Stripped by
-`_strip_entity_placeholders` before assembly.
+CRITICAL invariant: NO Shield de-identification placeholders (any
+family — `[[ENT_*]]`, `[[DATE_*]]`, `[[MONEY_*]]`, `[[ORG_*]]`,
+`[[PERSON_*]]`, etc.) reach user-visible prose. Stripped by
+`_strip_entity_placeholders` before assembly AND as a final
+defensive pass.
 
-Phase D fix bundle 2026-05-16:
+CRITICAL invariant: NO standalone all-caps macro names (`DIAGNOSE`,
+`EVIDENCE`, `OBSERVE`, `DECIDE`, `CANDIDATES`, `SCENARIOS`, etc.)
+appear as user-visible section headers. Stripped by
+`_strip_macro_names` whenever they appear outside plain English
+usage.
+
+Phase D fix bundle v1 + v2 (2026-05-16):
   - `carry_forward_caveats` removed from the rendered output entirely.
-    Those are FAR-internal sensitivity flags, not user prose. Synthesis
-    derives only from weights + tensions + scenario descriptions.
-  - `[[ENT_*]]` placeholders stripped from every input string before
-    rendering — surfaced as a structural artefact (see `synthesis_had_unresolved_entities`).
+  - Placeholder regex broadened from `[[ENT_*_NNN]]` only to the
+    FAMILY-WIDE pattern `[[<UPPER>_<digits>]]`.
+  - Macro-name stripper added — catches LLM-hallucinated section
+    headers like `DIAGNOSE` / `EVIDENCE`.
 """
 from __future__ import annotations
 
@@ -40,22 +48,62 @@ _INTERNAL_TERMS_RE = re.compile(
     re.I,
 )
 
-# Shield de-identification placeholder pattern. Examples:
-#   [[ENT_PERSON_001]]   [[ENT_MONEY_42]]   [[ENT_PROJECT_007]]
-_ENT_PLACEHOLDER_RE = re.compile(r"\[\[ENT_[A-Z][A-Z_0-9]*_\d+\]\]")
+# Family-wide Shield de-identification placeholder pattern. Catches
+# `[[ENT_*_NNN]]`, `[[DATE_NNN]]`, `[[MONEY_NNN]]`, `[[ORG_NNN]]`,
+# `[[NAME_NNN]]`, `[[PERSON_NNN]]`, `[[EMAIL_NNN]]`, `[[PHONE_E164_NNN]]`,
+# `[[IBAN_NNN]]`, `[[ACCOUNT_NUM_NNN]]`, `[[IP_NNN]]`, `[[URL_NNN]]`,
+# `[[GPE_NNN]]`, `[[PRODUCT_NNN]]`, `[[NORP_NNN]]`, `[[FAC_NNN]]`,
+# `[[EVENT_NNN]]`, `[[LAW_NNN]]` and any future Shield identifier
+# categories. Format: `[[<UPPERCASE>_<digits>]]` — the leading letter
+# must be uppercase, any number of `[A-Z_]` chars, then `_<digits>]]`.
+# Phase D fix bundle v2 (2026-05-16) — was previously ENT-only.
+_PLACEHOLDER_RE = re.compile(r"\[\[[A-Z][A-Z_]*_\d+\]\]")
+
+# Single-word all-caps macro names that occasionally leak from prompt
+# templates or LLM hallucination. Stripped only when they appear in a
+# "header-ish" context — standalone on a line, or preceded/followed by
+# punctuation. Plain English usage like "Yes, that diagnosis matches"
+# is unaffected (DIAGNOSE all-caps, not lowercase).
+_MACRO_NAMES = (
+    "DIAGNOSE", "OBSERVE", "DECIDE", "EVIDENCE", "CANDIDATES",
+    "FRAMING", "SYNTHESIS", "REFUSAL", "SCENARIOS", "TENSION", "TENSIONS",
+    "RECOMMENDATION", "RECOMMENDATIONS", "LAYER", "REFLECTION",
+    "PROBABILITY", "TRIANGULATION", "WEIGHTING",
+)
+# Boundary chars before/after — line break, start/end of string, or
+# punctuation. The pattern asserts the macro isn't part of a longer
+# word.
+_MACRO_NAME_RE = re.compile(
+    r"(?:^|(?<=[\s\.\,\;\:\!\?\(\[\u2014\u2013\-]))"
+    rf"(?:{'|'.join(_MACRO_NAMES)})"
+    r"(?=$|[\s\.\,\;\:\!\?\)\]\u2014\u2013\-])",
+)
 
 
 def _strip_entity_placeholders(text: str) -> Tuple[str, int]:
-    """Strip any Shield `[[ENT_*_NNN]]` placeholders. Returns the
-    cleaned text + a count of how many placeholders were stripped.
-    The count is a structural signal — if non-zero, the upstream
-    LLM hallucinated entity tokens not present in the de-id map."""
+    """Strip any Shield de-identification placeholder (any family).
+    Returns the cleaned text + a count of how many placeholders were
+    stripped. The count is a structural signal — if non-zero, the
+    upstream re-identifier silently failed to resolve them OR the
+    LLM hallucinated tokens not present in the de-id map."""
     if not text:
         return "", 0
-    n = len(_ENT_PLACEHOLDER_RE.findall(text))
-    cleaned = _ENT_PLACEHOLDER_RE.sub("", text)
+    n = len(_PLACEHOLDER_RE.findall(text))
+    cleaned = _PLACEHOLDER_RE.sub("", text)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,;:.-")
     return cleaned, n
+
+
+def _strip_macro_names(text: str) -> str:
+    """Strip standalone all-caps macro names (`DIAGNOSE`, `EVIDENCE`,
+    etc.) that LLMs occasionally emit as section headers. Plain
+    English usage is unaffected — the regex requires word boundaries
+    AND that no lowercase letters follow."""
+    if not text:
+        return ""
+    cleaned = _MACRO_NAME_RE.sub("", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,;:.-")
+    return cleaned
 
 
 def _sanitize_internal_string(text: str) -> str:
@@ -65,6 +113,7 @@ def _sanitize_internal_string(text: str) -> str:
     if not text:
         return ""
     t, _ = _strip_entity_placeholders(text)
+    t = _strip_macro_names(t)
     t = _MARKDOWN_LABEL_RE.sub("", t)
     t = _LAYER_REF_RE.sub("the framing", t)
     t = _INTERNAL_TERMS_RE.sub("the read", t)
@@ -186,10 +235,11 @@ def render_synthesis(
     out.append("")
     out.append("That's the position I'd hold to. Push back wherever it doesn't sit right.")
 
-    # Final defensive scrub — strip any entity placeholders that snuck
-    # through (e.g. inside scenario descriptions the LLM hallucinated
-    # tokens for). The post-strip count is logged structurally above
-    # via _sanitize_internal_string.
+    # Final defensive scrub — strip any placeholders (any family) AND
+    # all-caps macro headers that snuck through (e.g. inside scenario
+    # descriptions the LLM hallucinated tokens for). Phase D fix
+    # bundle v2 — was previously ENT-only and missed macro names.
     body = "\n".join(out).strip()
     body, _ = _strip_entity_placeholders(body)
+    body = _strip_macro_names(body)
     return body
