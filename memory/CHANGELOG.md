@@ -3,6 +3,33 @@
 > Append-only history of shipped work. Newest first.
 > Detailed patch close-outs live in `/app/memory/SYSTEM_STATE.md` §4.
 
+## 2026-05-16 — Phase D (Synisense Rewrite, Phase 4 of 6)
+
+### Phase D — Solva Backend Rewrite (5-layer pipeline)
+Coach-voice executive reasoning, structurally enforced. New 5-layer
+state machine (`entry → framing → layer_0 → layer_1 → layer_2 →
+layer_3 → layer_4 → done`) + 7 Pydantic-v2 structured reasoning
+models, all Shield-routed. Single-voice presentation tier
+(`question_bank.py`, `synthesis_renderer.py`, `refusal_voice.py`)
+is the ONLY surface that emits user-facing text — reasoning artefacts
+(FAR, candidate set, triangulation results, scenario weights) are
+INTERNAL and never render to the user. The "A COUPLE OF PIECES ARE
+THIN" leak the user screenshotted is structurally impossible in
+Phase D: Layer 0 runs silently and the user lands on Layer 1 with a
+deterministic coach-voice question from `question_bank.py`.
+
+New collection `solva_phase_d_sessions`, new route prefix
+`/api/contexts/{cid}/solva/v2/`. Legacy 3027-line
+`routers/solva_v2.py` UNTOUCHED — Phase E migrates the page.
+
+Frontend changes restricted to two per brief: AuditPanel.jsx gained
+a `mode="timeline"` prop rendering a per-session vertical step-chart
+of all governed LLM calls; SolvaSession.jsx wires it in. Bank-QA
+demo headline ready.
+
+570 passing pytest, 18 net new, 0 regressions. CI guard still PASS.
+Close-out: `/app/memory/sprints/PHASE_D_CLOSEOUT.md`.
+
 ## 2026-05-12 — P0 + Follow-up Sprint (Patches 20-23)
 
 ### P0 (Patch 23) — Document upload UploadModal auth-header fix 🚨

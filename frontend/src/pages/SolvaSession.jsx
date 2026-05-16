@@ -41,6 +41,11 @@ import SolvaHeader from "@/components/solva/flow/SolvaHeader";
 import TransitionMessage from "@/components/solva/flow/TransitionMessage";
 import FrameAuditScreen from "@/components/solva/flow/FrameAuditScreen";
 import { TOKEN, FONT } from "@/components/solva/flow/tokens";
+// Phase D (2026-05-13) — Privacy provenance timeline. Renders a
+// vertical step-chart of every governed LLM call across the session.
+// Empty state ("no governed LLM calls yet") on legacy sessions; live
+// data on Phase D sessions created via /api/contexts/{cid}/solva/v2/*.
+import AuditPanel from "@/components/chat/AuditPanel";
 
 const ROUND2_QUESTION_STATES = ["DEPTH_Q1", "DEPTH_Q2", "DEPTH_Q3"];
 
@@ -467,6 +472,22 @@ export default function SolvaSession() {
       >
         {errorBanner}
         {body}
+        {/* Phase D Privacy-provenance timeline (Bank-QA demo headline).
+            Renders only when the session is bound to an active context
+            and a Solva session_id is present. Empty-state on legacy
+            sessions; live data on Phase D sessions. */}
+        {flow.sessionId && activeContext?.id && (
+          <div
+            data-testid="solva-session-privacy-provenance"
+            style={{ marginTop: 28, marginLeft: "auto", marginRight: "auto", maxWidth: 760 }}
+          >
+            <AuditPanel
+              mode="timeline"
+              solvaContextId={activeContext.id}
+              solvaSessionId={flow.sessionId}
+            />
+          </div>
+        )}
         {resumed && flow.state !== "FRAMING" && (
           <div
             style={{

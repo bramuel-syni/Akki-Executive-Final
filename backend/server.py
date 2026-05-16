@@ -169,6 +169,10 @@ app.include_router(strategic_goals_router.router)
 # the exact path first.
 from routers import chat_audit_panel as _chat_audit_panel  # noqa: E402
 app.include_router(_chat_audit_panel.router)
+# Phase D — Solva 5-layer pipeline mounted at /api/contexts/{cid}/solva/v2/*
+# Distinct from the legacy /api/solva/v2/* paths in routers/solva_v2.py.
+from routers import solva_phase_d as _solva_phase_d  # noqa: E402
+app.include_router(_solva_phase_d.router)
 app.include_router(chat_router.router)
 app.include_router(influence_map_router.router)
 app.include_router(admin_health_router.router)
