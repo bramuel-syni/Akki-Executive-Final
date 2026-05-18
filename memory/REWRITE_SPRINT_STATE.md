@@ -2,6 +2,33 @@
 
 > READ FIRST after any handoff/compression. This file is the recovery surface.
 
+## ✅ REWRITE COMPLETE — 2026-05-18
+
+**Status:** All six phases (A → F.1) shipped, verified, and documented. **662 pytest passing**, 0 regressions, CI guard green, render-smoke green (11 routes). **Deploy verdict: 🟢 READY TO SHIP** with two user-action 🟡 items (tesseract-ocr in production image, Postmark webhook URL).
+
+**Final closeout pack:**
+- `/app/memory/REWRITE_DEPLOY_READY.md` — green/yellow/red checklist
+- `/app/memory/sprints/PROD_DEPLOY_CHECKLIST.md` — env vars, system packages, migrations, rollback
+- `/app/memory/sprints/BANK_QA_EVIDENCE_PACK/` — 7-section bank-QA evidence pack with sample PDF, standalone HMAC verifier, screenshots, API contracts, test evidence
+- `/app/memory/sprints/REWRITE_FINAL_CLOSEOUT.md` — 5-paragraph bank-QA briefing
+- `/app/memory/sprints/POST_REWRITE_RAMP.md` — resumption queue for the paused 12-chunk QA sprint + 14 deferred 15-May findings
+
+**Architectural invariants in force:**
+- No direct LLM calls outside `synisense.shield.llm_router` (CI-enforced).
+- Strict tenant_id == account_id binding on every Shield surface.
+- Phase D is the only Solva engine (legacy `solva_v2` is read-only).
+- Engine signals are deterministic (no LLM), every signal carries `derivation_source`.
+- Pricing table code-controlled, NOT API-editable (same governance as `ALLOWED_PURPOSES`).
+- Trust receipts HMAC-SHA256 signed with per-tenant HKDF-derived keys.
+
+**Next dispatch options** (user picks priority):
+- 🟡 Verify tesseract-ocr in production Docker image + confirm Postmark webhook URL.
+- 🟡 Resume the paused 12-chunk QA sprint at Chunk 7.
+- 🟡 Address 14 deferred 15-May UI/UX QA findings.
+- 🟡 Plan 16-May QA new product specs (Work Studio Document Overlay etc.).
+
+---
+
 ## Sprint Goal
 Full production rewrite per the 4 developer briefs in `/app/memory/briefs/`. Replaces ad-hoc LLM integration with the Synisense gateway architecture. 12-chunk QA plan (Chunks 7-12) PAUSED until rewrite completes.
 

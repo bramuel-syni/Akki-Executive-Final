@@ -1,9 +1,32 @@
 # Post-Rewrite Ramp — Resumption Plan
 
 **Date written:** 2026-05-16
-**Status:** Ready to dispatch. Synisense rewrite A → F closed at 648 pytest passing, CI guard green, render-smoke green.
+**Updated:** 2026-05-18 (post pre-deploy hardening + Bank-QA evidence pack)
+**Status:** Rewrite definitively closed. **662 pytest passing**, CI guard green, render-smoke green, deploy verdict 🟢 READY (with two 🟡 platform-side confirmations: tesseract in prod image, Postmark webhook URL). Bank-QA evidence pack assembled at `/app/memory/sprints/BANK_QA_EVIDENCE_PACK/`.
 
 The 12-chunk QA sprint was PAUSED at Chunk 6 to make space for the rewrite. This document is the queue for what comes next.
+
+---
+
+## What's new in this update (2026-05-18)
+
+- **Track 4 has been completed** — the Bank-QA evidence pack (`BANK_QA_EVIDENCE_PACK/`) is assembled, indexed, and printable.
+- **A new pre-deploy "before bank QA walkthrough" Track 0 sits at the very top** — two 🟡 platform-side items must be confirmed (or accepted as 🟢) before bank-QA's first end-to-end pass.
+- Track 1 (Chunk 7) remains the highest-priority unblocked product work.
+
+---
+
+## Track 0 (NEW) — Pre-bank-QA platform confirmation
+
+These are user-action items that don't require code changes. Confirm before bank-QA's first verification pass.
+
+| # | Item | Risk if skipped | Action |
+|--:|------|------------------|--------|
+| 1 | Confirm `tesseract-ocr` + `tesseract-ocr-eng` are in the production Docker image | Image uploads return `status=failed` for OCR content. Graceful but bank-QA-visible. | Ask Emergent platform to bake `apt-get install -y tesseract-ocr tesseract-ocr-eng` into the Dockerfile, OR confirm it's already there. |
+| 2 | Confirm Postmark inbound webhook URL points at production | Inbound email silently doesn't work. No crash. | Log into Postmark dashboard → confirm inbound stream's webhook URL is `https://akki.syni.ai/api/inbound/postmark`. |
+| 3 | Confirm `SYNISENSE_MASTER_SECRET` is set on prod (NOT the dev fallback) | Trust receipts signed with fallback are NOT verifiable. Bank-QA verification script will FAIL. | Set a high-entropy random value in Emergent Platform secrets. Once set, do NOT rotate. |
+| 4 | Confirm `CLAMAV_HOST` / `CLAMAV_PORT` reachable from prod backend | Document upload returns 503 ClamAVUnreachable. Hard fail. | Verify ClamAV daemon is up and reachable. |
+| 5 | Run the 15-minute post-deploy smoke-test path from `PROD_DEPLOY_CHECKLIST.md` § 6 | First user reports might catch what you missed. | After deploy, run the 6-curl-probe sequence. |
 
 ---
 

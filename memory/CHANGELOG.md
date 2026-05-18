@@ -3,6 +3,40 @@
 > Append-only history of shipped work. Newest first.
 > Detailed patch close-outs live in `/app/memory/SYSTEM_STATE.md` §4.
 
+## 2026-05-18 — Pre-Deploy Hardening + Bank-QA Evidence Pack (rewrite definitively closed)
+
+Final pre-deployment sweep + Bank-QA evidence pack assembly. No new product behaviour.
+
+### Correctness sweep
+- 662 pytest passing · 0 failing · 565 skipped (pre-existing quarantines).
+- CI guard `test_no_direct_llm_calls_outside_shield` green (1 passed in 0.48s).
+- Render-smoke green across 11 routes.
+- Strict context_id + tenant_id scoping audits: clean.
+- No `repr(exc)` leaks, no blocking I/O, no synchronous pymongo in async routes.
+- Lint: 509 ruff errors all pre-existing steady-state; rewrite introduced zero new lint errors on its touched files.
+
+### Critical infrastructure finding
+Preview pod runtime `apt-get install` does NOT survive pod restarts. **Production Docker image must bake `tesseract-ocr` + `tesseract-ocr-eng` into the layer**, NOT install at boot. Same applies to ClamAV. Surfaced as 🟡 user-action item in `PROD_DEPLOY_CHECKLIST.md`. OCR tests now `pytest.skip` cleanly when tesseract binary is absent (defensive for CI / Docker variability).
+
+### Bank-QA evidence pack assembled
+`/app/memory/sprints/BANK_QA_EVIDENCE_PACK/` — 8 files:
+- `README.md` — index + reading order
+- `01_REWRITE_OVERVIEW.md` — 5-paragraph polished briefing
+- `02_ARCHITECTURE_DIAGRAM.md` — ASCII consumer → Shield → LLM flow + trust-receipt verification flow + Engine derivation flow
+- `03_SAMPLE_PRIVACY_REPORT.pdf` — real PDF (3163 bytes, 2 audit entries with full HMAC signatures + verification footer)
+- `04_TRUST_RECEIPT_VERIFICATION.py` — standalone 130-line stdlib-only HMAC verifier (PASS/FAIL exit codes, verified live with correct + wrong key)
+- `05_DEMO_SCREENSHOTS/` — 4 captures (Observability Activity, Observability Billing, Solva Phase D framing with Trust-Verified banner, mid-session attach modal)
+- `06_API_CONTRACTS.md` — every Shield + Engine endpoint extracted from live OpenAPI
+- `07_TEST_EVIDENCE.md` — 662-test summary with honest "what is tested / what is not tested" sections
+
+### Pre-deploy operational checklist
+`/app/memory/sprints/PROD_DEPLOY_CHECKLIST.md` — env vars (🔴 blockers vs 🟡 graceful), system packages, database migration safety, external integrations status, 15-min post-deploy smoke-test path, rollback plan.
+
+### Deploy-ready summary
+`/app/memory/REWRITE_DEPLOY_READY.md` — green/yellow/red checklist. **Final verdict: 🟢 READY TO SHIP** with two 🟡 items to confirm before bank-QA first walkthrough (tesseract in prod image, Postmark webhook URL).
+
+**Synisense Rewrite (A → F.1) is definitively closed.**
+
 ## 2026-05-18 — Phase F.1 — Three production gaps closed (P0 + P1 + P2)
 
 Post-rewrite capability check (read-only investigation) surfaced three real production gaps. All three closed.
