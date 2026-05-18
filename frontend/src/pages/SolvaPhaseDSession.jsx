@@ -18,10 +18,11 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import AuditPanel from "@/components/chat/AuditPanel";
+import AttachDocumentModal from "@/components/solva/AttachDocumentModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, ArrowRight, ShieldCheck } from "lucide-react";
+import { Loader2, ArrowRight, ShieldCheck, Paperclip, FileText, X } from "lucide-react";
 import {
   createPhaseDSession,
   getPhaseDSession,
@@ -54,6 +55,9 @@ export default function SolvaPhaseDSession() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState("");
+  // Phase F.1 — mid-session attach modal + last-attached confirmation.
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [lastAttached, setLastAttached] = useState(null);
 
   const ctxId = activeContext?.id;
 
@@ -202,6 +206,50 @@ export default function SolvaPhaseDSession() {
           >{error}</div>
         )}
 
+        {/* Phase F.1 — anchored documents strip (visible whenever any anchor exists). */}
+        {(session.seedAttachedReferences || []).length > 0 && (
+          <div
+            className="flex flex-wrap items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50/40 px-3 py-2 text-xs"
+            data-testid="solva-phase-d-anchors-strip"
+          >
+            <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+            <span className="font-medium text-slate-700">
+              Akki is reading {session.seedAttachedReferences.length} document
+              {session.seedAttachedReferences.length === 1 ? "" : "s"}:
+            </span>
+            {session.seedAttachedReferences.slice(0, 6).map((a, i) => (
+              <span
+                key={`${a.ref_id}-${i}`}
+                className="inline-flex items-center gap-1 rounded bg-white px-2 py-0.5 text-slate-700 ring-1 ring-emerald-200"
+                data-testid={`solva-phase-d-anchor-chip-${i}`}
+              >
+                <FileText className="h-3 w-3" />
+                {a.label}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Inline "just attached" confirmation. */}
+        {lastAttached && (
+          <div
+            className="flex items-center justify-between rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+            data-testid="solva-phase-d-attach-confirmation"
+          >
+            <span>
+              Attached: <strong>{lastAttached.label}</strong>. Akki now has the document in context.
+            </span>
+            <button
+              type="button"
+              onClick={() => setLastAttached(null)}
+              className="text-emerald-700 hover:text-emerald-900"
+              aria-label="Dismiss"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         <Body
           session={session}
           draft={draft}
@@ -209,6 +257,7 @@ export default function SolvaPhaseDSession() {
           busy={busy}
           onFraming={submitFramingAction}
           onAnswer={submitAnswerAction}
+          onAttachClick={() => setAttachOpen(true)}
         />
 
         <AuditPanel
@@ -216,13 +265,50 @@ export default function SolvaPhaseDSession() {
           solvaContextId={ctxId}
           solvaSessionId={session.sessionId}
         />
+
+        <AttachDocumentModal
+          open={attachOpen}
+          onClose={() => setAttachOpen(false)}
+          contextId={ctxId}
+          sessionId={session.sessionId}
+          onAttached={(payload) => {
+            // Backend returns { ok, mode, anchor, session }. Update the
+            // visible session row and surface the inline confirmation.
+            if (payload?.session) setSession(prev => ({ ...prev, ...{
+              raw: payload.session,
+              seedAttachedReferences: payload.session.seed_attached_references || [],
+              auditIdsCount: (payload.session.synisense_audit_ids || []).length,
+            } }));
+            if (payload?.anchor) setLastAttached(payload.anchor);
+          }}
+        />
       </div>
     </AppShell>
   );
 }
 
 
-function Body({ session, draft, setDraft, busy, onFraming, onAnswer }) {
+function PaperclipButton({ onClick, testId }) {
+  // Phase F.1 — small unobtrusive attach affordance on every answer
+  // surface. Keeps the primary CTA dominant; the paperclip lives to
+  // the left of the submit button.
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      onClick={onClick}
+      data-testid={testId}
+      className="text-slate-600 hover:text-emerald-700"
+      title="Attach a document Akki should read for this session"
+    >
+      <Paperclip className="mr-1.5 h-4 w-4" /> Attach
+    </Button>
+  );
+}
+
+
+function Body({ session, draft, setDraft, busy, onFraming, onAnswer, onAttachClick }) {
   // ENTRY / FRAMING — show framing input.
   if (session.layerState === "entry" || session.layerState === "framing") {
     return (
@@ -241,14 +327,20 @@ function Body({ session, draft, setDraft, busy, onFraming, onAnswer }) {
           onChange={(e) => setDraft(e.target.value)}
           placeholder="The situation that's been on my mind…"
         />
-        <Button
-          data-testid="solva-phase-d-framing-submit"
-          onClick={onFraming}
-          disabled={busy || draft.trim().length < 20}
-        >
-          {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRight className="mr-2 h-4 w-4" />}
-          Open it
-        </Button>
+        <div className="flex items-center justify-between">
+          <PaperclipButton
+            onClick={onAttachClick}
+            testId="solva-phase-d-attach-btn-framing"
+          />
+          <Button
+            data-testid="solva-phase-d-framing-submit"
+            onClick={onFraming}
+            disabled={busy || draft.trim().length < 20}
+          >
+            {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRight className="mr-2 h-4 w-4" />}
+            Open it
+          </Button>
+        </div>
       </section>
     );
   }
@@ -273,9 +365,15 @@ function Body({ session, draft, setDraft, busy, onFraming, onAnswer }) {
           onChange={(e) => setDraft(e.target.value)}
         />
         <div className="flex items-center justify-between">
-          <span className="text-xs text-slate-500">
-            {q.questions_asked_so_far ?? 0}/{(q.questions_asked_so_far ?? 0) + (q.questions_remaining_in_layer ?? 0)}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">
+              {q.questions_asked_so_far ?? 0}/{(q.questions_asked_so_far ?? 0) + (q.questions_remaining_in_layer ?? 0)}
+            </span>
+            <PaperclipButton
+              onClick={onAttachClick}
+              testId={`solva-phase-d-attach-btn-${session.layerState}`}
+            />
+          </div>
           <Button
             data-testid="solva-phase-d-answer-submit"
             onClick={onAnswer}

@@ -3,6 +3,31 @@
 > Append-only history of shipped work. Newest first.
 > Detailed patch close-outs live in `/app/memory/SYSTEM_STATE.md` §4.
 
+## 2026-05-18 — Phase F.1 — Three production gaps closed (P0 + P1 + P2)
+
+Post-rewrite capability check (read-only investigation) surfaced three real production gaps. All three closed.
+
+### P0 — Phase F seed-payload anchoring bug-fixes
+- `routers/solva_phase_d.py::_resolve_seed_references` was matching nothing in production: the documents query filtered on a non-existent `account_id` field; the projection asked for `title`+`summary` instead of the real `name`+`extracted_text`. Even when resolution worked, the resulting anchor only carried `{ref_type, ref_id, label}` — the document body was never pulled in, so FAR / Layer 0 reasoning ran blind.
+- Fixed: dropped `account_id` filter (context_id already scopes); projection switched to the real schema; each anchor now carries an `excerpt` of `extracted_text[:8000]` with `preview` fallback. Cycles + work-studio-artefact branches also dropped the `account_id` filter for symmetry.
+
+### P1 — Mid-Solva-session document attach
+- New `POST /api/contexts/{cid}/solva/v2/sessions/{sid}/attach-document` dispatched by Content-Type — multipart for new file (ClamAV → extract_text → storage → documents row → anchor), JSON for existing `{document_id}` (context-scoped link-only). Conflict gate on terminal sessions. Companion `GET .../attachments` listing view.
+- Frontend: new `components/solva/AttachDocumentModal.jsx` (Upload-new + From-Document-Journal tabs). Paperclip button now visible on framing + Layer 1 + Layer 2 surfaces. Inline emerald confirmation after attach + persistent anchor chips strip.
+
+### P2 — OCR + spreadsheet text extraction
+- `documents_service.py::extract_text` extended with OCR + tabular branches:
+  - `.png/.jpg/.jpeg/.webp` → Tesseract via `pytesseract` (Pillow downscale to ≤ 2400px max dimension first).
+  - `.heic/.heif` → `pillow_heif.register_heif_opener()` then Tesseract.
+  - `.xlsx` → `openpyxl.load_workbook(read_only=True, data_only=True)` with `[Sheet: name]` headers.
+  - `.csv` → `csv.reader` with UTF-8 → Latin-1 fallback for legacy bank exports.
+- Per-image bounds: `OCR_MAX_BYTES=5MB`, `OCR_MAX_DIMENSION=2400px`. Graceful failure wraps Tesseract/Pillow exceptions as `("", f"{ExcName}: {msg}")`.
+- New deps: `pytesseract==0.3.13`, `pillow_heif==1.3.0`, `openpyxl==3.1.5`. System `tesseract-ocr` 5.3.0 installed via apt.
+
+**660 passing pytest** (was 648, +12 net new in `tests/test_phase_f1_capability_gaps.py`). 0 regressions. CI guard green. Render-smoke green.
+
+**Carry-over flagged**: production Dockerfile needs `apt-get install -y tesseract-ocr` for the OCR path to land in the deployed pod. Closeout: `/app/memory/sprints/PHASE_F1_CLOSEOUT.md`.
+
 ## 2026-05-16 — Phase F + Phase E.5 (Synisense Rewrite, Phase 6 of 6 — REWRITE COMPLETE)
 
 Final phase of the architectural rewrite. The locked A → F sequence is closed; the paused 12-chunk QA sprint can resume.

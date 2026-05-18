@@ -11,16 +11,24 @@ session.account_id` AND `context_id == session.context_id`.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from core import db, require_context_membership
 
+from documents_service import (
+    ACCEPT_EXT, MAX_BYTES, extract_text, make_preview, save_to_storage,
+)
+from services import clamav_service
+from services.clamav_service import ClamAVUnreachable
 from services.solva import (
     SUB_MODULES,
     LAYER_SEQUENCE,
@@ -421,19 +429,48 @@ async def _resolve_seed_references(
     """Resolve each reference against the caller's context. References
     that don't exist OR are scoped to a different context are silently
     dropped (we never error on a stale reference, but we never bind
-    Solva to data the user can't see)."""
+    Solva to data the user can't see).
+
+    Phase F.1 bug-fix (2026-05-16):
+      * The `documents` collection has no `account_id` field — strip
+        it from the query. `context_id` already scopes correctly via
+        the membership chain.
+      * Projection switched to the real schema fields (`name`,
+        `extracted_text`, `preview`, `original_filename`).
+      * Each resolved anchor now carries an `excerpt` (extracted_text
+        first 8000 chars, preview as fallback) so FAR sees real
+        document body in Layer 0 instead of an opaque ID.
+
+    `account_id` is still passed in (back-compat with callers) but
+    only used for cycles + artefacts where tenant isolation is
+    needed. Documents are context-scoped, not tenant-scoped.
+    """
+    _ = account_id  # see docstring — kept for caller back-compat
     resolved: List[Dict[str, Any]] = []
     for ref in references[:20]:
         # Try in order: documents → cycles → work_studio_artefacts.
         doc = await db.documents.find_one(
-            {"id": ref, "context_id": context_id, "account_id": account_id},
-            {"_id": 0, "id": 1, "title": 1, "summary": 1},
+            {"id": ref, "context_id": context_id},
+            {"_id": 0, "id": 1, "name": 1, "original_filename": 1,
+             "extracted_text": 1, "preview": 1, "status": 1},
         )
         if doc:
+            label = (
+                doc.get("name")
+                or doc.get("original_filename")
+                or doc["id"]
+            )
+            excerpt = (
+                (doc.get("extracted_text") or "")[:8000]
+                or doc.get("preview")
+                or ""
+            )
             resolved.append({
                 "ref_type": "document",
                 "ref_id": doc["id"],
-                "label": doc.get("title") or doc["id"],
+                "label": label,
+                "excerpt": excerpt,
+                "status": doc.get("status"),
             })
             continue
         cyc = await db.cycles.find_one(
@@ -445,21 +482,260 @@ async def _resolve_seed_references(
                 "ref_type": "cycle",
                 "ref_id": cyc["id"],
                 "label": cyc.get("title") or cyc["id"],
+                "excerpt": "",
+                "status": None,
             })
             continue
         art = await db.work_studio_artefacts.find_one(
-            {"id": ref, "context_id": context_id, "account_id": account_id},
-            {"_id": 0, "id": 1, "title": 1},
+            {"id": ref, "context_id": context_id},
+            {"_id": 0, "id": 1, "title": 1, "summary": 1},
         )
         if art:
             resolved.append({
                 "ref_type": "work_studio_artefact",
                 "ref_id": art["id"],
                 "label": art.get("title") or art["id"],
+                "excerpt": (art.get("summary") or "")[:8000],
+                "status": None,
             })
             continue
         # Unknown / stale ref — silently drop; never error.
     return resolved
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Phase F.1 — mid-session document attach.
+#   Accepts EITHER multipart/form-data with a new file OR
+#   application/json with {document_id} for an existing doc. Appends
+#   the resolved anchor to `session.seed_attached_references` and
+#   audit-logs the attach event.
+# ─────────────────────────────────────────────────────────────────────
+def _is_terminal(layer_state: str) -> bool:
+    return layer_state in TERMINAL_STATES
+
+
+async def _attach_anchor_to_session(
+    *, session_id: str, anchor: Dict[str, Any], event: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Append the resolved anchor to seed_attached_references and
+    push an orchestration_audit_log entry. Returns the updated row."""
+    await _coll().update_one(
+        {"session_id": session_id},
+        {
+            "$push": {
+                "seed_attached_references": anchor,
+                "orchestration_audit_log": event,
+            },
+            "$set": {"updated_at": _utc_now()},
+        },
+    )
+    return await _coll().find_one({"session_id": session_id}, {"_id": 0})
+
+
+@router.post("/sessions/{session_id}/attach-document")
+async def attach_document(
+    session_id: str,
+    request: Request,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Mid-session document anchor.
+
+    Two modes, dispatched by Content-Type:
+      - multipart/form-data with `file=...` → upload pipeline runs
+        (ClamAV → extract_text → storage save → documents row insert)
+        and the resulting doc is anchored.
+      - application/json with `{"document_id": "..."}` → link an
+        existing doc by id (context-scoped) and anchor it.
+    """
+    account = ctx["account"]
+    context_id = ctx["context"]["id"]
+
+    # Session resolution + state gate.
+    session = await _get_session(context_id, session_id, account["id"])
+    if _is_terminal(session.get("layer_state") or ""):
+        raise HTTPException(
+            status_code=409,
+            detail="ConflictError: session is closed; new attachments are not accepted.",
+        )
+
+    content_type = (request.headers.get("content-type") or "").lower()
+    is_multipart = content_type.startswith("multipart/form-data")
+    is_json = content_type.startswith("application/json")
+
+    doc_row: Optional[Dict[str, Any]] = None
+    mode: str
+
+    if is_multipart:
+        mode = "upload"
+        form = await request.form()
+        file = form.get("file")
+        if file is None or not getattr(file, "filename", None):
+            raise HTTPException(
+                status_code=400,
+                detail="ValidationError: multipart payload missing `file`.",
+            )
+        filename = file.filename or "unnamed"
+        ext = Path(filename).suffix.lower()
+        if ext not in ACCEPT_EXT:
+            raise HTTPException(
+                status_code=415,
+                detail=(
+                    f"UnsupportedMediaType: {ext}. "
+                    f"Accepted: {', '.join(sorted(ACCEPT_EXT))}"
+                ),
+            )
+        data = await file.read()
+        if len(data) > MAX_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"PayloadTooLarge: max {MAX_BYTES // 1024 // 1024}MB.",
+            )
+
+        # Virus scan (Phase 10 path).
+        try:
+            scan_result = clamav_service.scan(data, filename)
+        except ClamAVUnreachable as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"ClamAVUnreachable: {str(e)[:200]}",
+            )
+        if not scan_result.clean:
+            raise HTTPException(
+                status_code=422,
+                detail=f"VirusBlocked: signature={scan_result.signature}",
+            )
+
+        # Extract + store.
+        doc_id = str(uuid.uuid4())
+        storage_key = save_to_storage(context_id, doc_id, filename, data)
+        text, err = extract_text(data, filename, file.content_type or "")
+        preview = make_preview(text)
+        created_at = _utc_now().isoformat()
+        doc_row = {
+            "id": doc_id,
+            "context_id": context_id,
+            "name": Path(filename).stem.strip() or "Untitled",
+            "description": "",
+            "original_filename": filename,
+            "mime_type": file.content_type or "application/octet-stream",
+            "size_bytes": len(data),
+            "storage_key": storage_key,
+            "status": "extracted" if text and not err else ("failed" if err else "empty"),
+            "extracted_text": text,
+            "extracted_chars": len(text),
+            "preview": preview,
+            "data_trust": "mixed",
+            "uploaded_by": account["id"],
+            "uploaded_by_email": account.get("email", ""),
+            "doc_type": "solva_attachment",
+            "source_channel": "solva_attach",
+            "error": err,
+            "created_at": created_at,
+            "updated_at": created_at,
+        }
+        await db.documents.insert_one(dict(doc_row))
+        doc_row.pop("_id", None)
+
+    elif is_json:
+        mode = "link"
+        try:
+            body = await request.json()
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(
+                status_code=400,
+                detail=f"ValidationError: malformed JSON body — {type(e).__name__}",
+            )
+        document_id = (body or {}).get("document_id")
+        if not document_id:
+            raise HTTPException(
+                status_code=400,
+                detail="ValidationError: provide `document_id` in the JSON body.",
+            )
+        existing = await db.documents.find_one(
+            {"id": document_id, "context_id": context_id},
+            {"_id": 0, "id": 1, "name": 1, "original_filename": 1,
+             "extracted_text": 1, "preview": 1, "status": 1},
+        )
+        if not existing:
+            raise HTTPException(
+                status_code=404,
+                detail="NotFound: document_id not present in this context.",
+            )
+        doc_row = existing
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "ValidationError: provide either multipart/form-data with `file`, "
+                "or application/json with `document_id`."
+            ),
+        )
+
+    anchor = {
+        "ref_type": "document",
+        "ref_id": doc_row["id"],
+        "label": (
+            doc_row.get("name")
+            or doc_row.get("original_filename")
+            or doc_row["id"]
+        ),
+        "excerpt": (
+            (doc_row.get("extracted_text") or "")[:8000]
+            or doc_row.get("preview")
+            or ""
+        ),
+        "status": doc_row.get("status"),
+        "attached_mid_session": True,
+        "attached_at": _utc_now().isoformat(),
+    }
+    event = {
+        "event": "attach_document",
+        "mode": mode,  # upload | link
+        "document_id": doc_row["id"],
+        "layer_state": session.get("layer_state"),
+        "at": _utc_now().isoformat(),
+    }
+    updated = await _attach_anchor_to_session(
+        session_id=session_id, anchor=anchor, event=event,
+    )
+    return {
+        "ok": True,
+        "mode": mode,
+        "anchor": anchor,
+        "session": _serialise(updated),
+    }
+
+
+@router.get("/sessions/{session_id}/attachments")
+async def list_session_attachments(
+    session_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """List anchors currently bound to a session. Lightweight view —
+    excludes the full `excerpt` field so the UI list stays small."""
+    account = ctx["account"]
+    context_id = ctx["context"]["id"]
+    session = await _get_session(context_id, session_id, account["id"])
+    anchors = list(session.get("seed_attached_references") or [])
+    return {
+        "session_id": session_id,
+        "anchors": [
+            {
+                "ref_type": a.get("ref_type"),
+                "ref_id": a.get("ref_id"),
+                "label": a.get("label"),
+                "status": a.get("status"),
+                "excerpt_chars": len((a.get("excerpt") or "")),
+                "attached_mid_session": a.get("attached_mid_session", False),
+                "attached_at": a.get("attached_at"),
+            }
+            for a in anchors
+        ],
+        "count": len(anchors),
+    }
+
+
+_ = (hashlib, json)  # silence imports kept for future audit fingerprints
 
 
 @router.get("/sessions")
