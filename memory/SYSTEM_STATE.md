@@ -129,6 +129,12 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Memory hygiene — `READ_FIRST.md` entry-point index created — 2026-05-18 ✅
+- New top-level `/app/memory/READ_FIRST.md` written as the single entry-point doc for any future agent or human handoff.
+- Contents: status snapshot (rewrite closed, 662 pytest, CI green), priority-ordered table of the 7 follow-on docs (REWRITE_DEPLOY_READY → POST_REWRITE_RAMP → REWRITE_SPRINT_STATE → SYSTEM_STATE → PROD_DEPLOY_CHECKLIST → BANK_QA_EVIDENCE_PACK/README → PHASE_F1_CLOSEOUT), hard rules for next agent (no direct LLM SDK imports, append to SYSTEM_STATE after every patch, no screenshot tool), 4-row platform-side carry-over table with graceful-fallback flags, architectural-invariant list, and a "deferred" line for the holistic product features review.
+- No code changed. No pytest run. No render-smoke run. Memory-only hygiene patch per user scope guard.
+- One single-page document; 78 lines.
+
 ### Pre-Deploy Hardening + Bank-QA Evidence Pack — 2026-05-18 ✅
 - **Scope**: post-Phase-F.1 pre-deployment correctness sweep + Bank-QA evidence pack assembly. No new product behavior. Only correctness, docs, and evidence.
 - **Correctness sweep**:
