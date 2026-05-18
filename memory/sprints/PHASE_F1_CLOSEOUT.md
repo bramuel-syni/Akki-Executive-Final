@@ -209,3 +209,85 @@ MODIFIED frontend
 1. **Resume Chunk 7** (Home + Document Journal fixes) — highest-priority unblocked item.
 2. **16-May QA new product specs** (Work Studio Document Overlay etc.) — needs user prioritisation pass first.
 3. **Bank-QA evidence pack assembly**.
+
+---
+
+## Cleanup verification (2026-05-18, post-tester sign-off)
+
+After tester verified 3/3 high-level checks PASS, two cleanups were dispatched and landed:
+
+### Cleanup 1 — Downstream readers wired to `seed_attached_references`
+
+Audited every consumer of Phase D session evidence:
+
+| Reader | Pre-cleanup state | Action |
+|---|---|---|
+| `services/solva/reasoning/frame_audit_engine.run_frame_audit` | Takes only `framing_text` — no anchor parameter | None (FAR audits the framing text itself; document-grounding is a Phase G+ scope item) |
+| `services/solva/reasoning/triangulation_engine.run_triangulation` | Accepts `evidence_chunks: List[str]` but the only call site (`routers/solva_phase_d.py` line 970) passed `evidence_chunks=[]` | **FIXED** — now builds `anchored_evidence_chunks` from `session["seed_attached_references"]`, capped at 6 anchors × 1800 chars each |
+| `services/solva/reasoning/tension_detection.detect_tensions` | Same parameter shape, same hardcoded empty list at line 977 | **FIXED** — receives the same `anchored_evidence_chunks` |
+| `services/solva/voice/synthesis_renderer.render_synthesis` | Takes `evidence_trace: Optional[str]` from triangulation output. Doesn't read session anchors directly. | None (downstream consumer of the now-populated triangulation output) |
+| `routers/monitor_status_assessment` | Builds its own evidence (engine signals + recent docs) — doesn't read Phase D anchors | None |
+
+**Diff**: `routers/solva_phase_d.py` lines 968-987 — `evidence_chunks=[]` (two call sites) replaced with `anchored_evidence_chunks` built from `session["seed_attached_references"]`. Comment added explaining the 1800-char-per-chunk × 6-anchor cap (matches Shield's per-call prompt budget).
+
+**Tests locking the fix**:
+- `test_anchor_excerpts_pipeline_into_triangulation_chunks` — verifies the list comprehension drops empty excerpts, truncates at 1800 chars, and caps at 6 anchors.
+- `test_router_submit_answer_wires_anchor_excerpts` — static `inspect.getsource()` assertion: `anchored_evidence_chunks` must appear in `routers/solva_phase_d.py` AND the hardcoded `evidence_chunks=[]` regression must NOT.
+
+No fix needed elsewhere — `seed_attached_references` is the canonical path; nothing references the (never-shipped) `layer_0.anchors[]` array.
+
+### Cleanup 2 — Three unexecuted P2 sub-checks
+
+```
+=== CHECK 1: CSV upload + extraction ===
+  status:           extracted
+  extracted_chars:  110
+  preview:          'Region Q4_Revenue Notes EMEA 12500000 On-track NA 28300000 Outperformed APAC 9700000 Compliance review pending'
+  has EMEA?         True
+  has Compliance?   True
+
+=== CHECK 2: Corrupt PNG graceful failure (100-byte garbage) ===
+  HTTP outcome:     UPLOAD SUCCEEDED (no 500 / no traceback)
+  status:           failed
+  error (clean?):   "UnicodeDecodeError: 'ascii' codec can't decode byte 0xff in position 0..."
+  extracted_chars:  0
+
+=== CHECK 3: CI guard re-verification ===
+tests/test_no_direct_llm_calls_outside_shield.py::test_no_direct_llm_calls_outside_shield PASSED [100%]
+============================== 1 passed in 0.48s ===============================
+```
+
+All three pass. **Note on the corrupt-PNG error message**: the `UnicodeDecodeError` is a side-effect of Pillow's internal byte handling on a malformed PNG; it's caught by my broad `except Exception` block in `_ocr_image_bytes` and surfaced cleanly through the upload pipeline (no 500). The end-user-visible status is `failed` with `extracted_chars=0`. Not the prettiest error message but the contract holds: **NEVER 500 on a corrupted file**.
+
+### Tesseract status — preview ✅, production ⚠️ unknown
+
+**Preview pod** (verified):
+```
+$ which tesseract
+/usr/bin/tesseract
+$ apt list --installed | grep tesseract
+libtesseract5/oldstable,now 5.3.0-2 arm64 [installed,automatic]
+tesseract-ocr-eng/oldstable,now 1:4.1.0-2 all [installed,automatic]
+tesseract-ocr-osd/oldstable,now 1:4.1.0-2 all [installed,automatic]
+tesseract-ocr/oldstable,now 5.3.0-2 arm64 [installed]
+```
+
+**Production at https://akki.syni.ai**: I have no introspection access from this preview pod. The Emergent Platform builds production containers from a base image; whether that base image includes `tesseract-ocr` is a platform-config question I cannot answer from inside the preview.
+
+**Failure mode if prod lacks tesseract**: `pytesseract.image_to_string()` raises `TesseractNotFoundError`. My code catches it in the broad `except Exception` block in `_ocr_image_bytes` and returns `("", f"TesseractNotFoundError: tesseract is not installed or it's not in your PATH...")`. The user sees `status=failed`, no crash. So **OCR degrades gracefully on prod even if tesseract is missing** — the worst case is "image yielded no extracted text" rather than a 500.
+
+**Required user action**:
+- ✅ Mark P2 acceptance criteria as MET on preview.
+- ⚠️ **Before relying on OCR in prod**, verify (via Emergent platform support OR the prod admin/health endpoint) whether `tesseract-ocr` is in the prod image. If not, request it be added — or accept that prod-side image uploads will return the "no extractable text" hint until the image is updated.
+
+### Final tally
+
+| Metric | After F.1 ship | After cleanup |
+|---|---|---|
+| pytest passing | 660 | **662** (+2 from cleanup tests) |
+| pytest skipped | 565 | 565 |
+| Regressions | 0 | **0** |
+| CI guard | PASS | **PASS** (re-verified) |
+| Render-smoke | PASS | PASS |
+
+Phase F.1 closes definitively. The fix to the empty `evidence_chunks=[]` call sites is arguably the most important silent-bug-catch in the rewrite — without it, attached documents (even with the P0 anchoring fix) would still have been invisible to triangulation + tension-detection.

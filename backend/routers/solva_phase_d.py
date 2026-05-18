@@ -965,16 +965,27 @@ async def submit_answer(
             narrative = "\n\n".join(
                 a.get("text", "") for a in (session.get("layer_1") or {}).get("answers", []) + answers
             )
+            # Phase F.1 cleanup (2026-05-18) — feed `seed_attached_references`
+            # excerpts into triangulation + tension detection so attached
+            # documents actually reach the reasoning engines. Cap each
+            # chunk at 1800 chars (Shield's per-call prompt budget); keep
+            # the first 6 anchors so a busy session doesn't exceed the
+            # prompt window.
+            anchored_evidence_chunks = [
+                (anchor.get("excerpt") or "")[:1800]
+                for anchor in (session.get("seed_attached_references") or [])
+                if (anchor.get("excerpt") or "").strip()
+            ][:6]
             tri = await run_triangulation(
                 narrative_text=narrative,
-                evidence_chunks=[],         # Phase D — no document retrieval yet (Phase E)
+                evidence_chunks=anchored_evidence_chunks,
                 prior_signals=[],
                 tenant_id=account["id"],
                 user_id=account["id"],
             )
             ten = await detect_tensions(
                 narrative_text=narrative,
-                evidence_chunks=[],
+                evidence_chunks=anchored_evidence_chunks,
                 tenant_id=account["id"],
                 user_id=account["id"],
             )

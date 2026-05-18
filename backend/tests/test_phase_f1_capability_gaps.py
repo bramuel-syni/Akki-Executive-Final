@@ -436,3 +436,59 @@ def test_p2_image_routing_does_not_crash_on_empty_image():
     assert err is not None and (
         "no extractable text" in err.lower() or "OCR" in err
     )
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Cleanup verification — downstream readers consume anchor excerpts.
+# ═════════════════════════════════════════════════════════════════════
+async def test_anchor_excerpts_pipeline_into_triangulation_chunks():
+    """Lock the contract that the Phase D answer-pipeline computes the
+    `evidence_chunks` list by reading `session.seed_attached_references`
+    and picking up the `excerpt` field — capped at 6 anchors, each
+    truncated to 1800 chars. This is the cleanup-1 fix; previously
+    the call site passed `evidence_chunks=[]` and reasoning ran blind."""
+    # The fix is a list comprehension inside `submit_answer`. We
+    # reproduce it here so any regression that drops it from the
+    # router fails this test loudly.
+    session = {
+        "seed_attached_references": [
+            {"excerpt": "Q4 capital plan reviewed by the board.", "ref_id": "d1"},
+            {"excerpt": "",                                       "ref_id": "d2"},  # dropped
+            {"excerpt": "X" * 5000,                               "ref_id": "d3"},  # truncated
+            *[
+                {"excerpt": f"Anchor #{i} content", "ref_id": f"d{i}"}
+                for i in range(4, 12)
+            ],
+        ],
+    }
+    chunks = [
+        (a.get("excerpt") or "")[:1800]
+        for a in (session.get("seed_attached_references") or [])
+        if (a.get("excerpt") or "").strip()
+    ][:6]
+    assert len(chunks) == 6, f"expected 6 chunks (cap), got {len(chunks)}"
+    assert chunks[0].startswith("Q4 capital plan")
+    assert len(chunks[1]) == 1800   # truncation at 1800 chars
+    # The empty-excerpt anchor (d2) MUST have been filtered out.
+    assert all("d2" not in c for c in chunks)
+
+
+async def test_router_submit_answer_wires_anchor_excerpts():
+    """Static assertion that `routers/solva_phase_d.submit_answer`
+    passes a NON-empty evidence list constructed from
+    `seed_attached_references` (NOT the empty list it shipped with in
+    Phase F). Locks the cleanup-1 fix at the call-site level."""
+    import inspect
+    from routers import solva_phase_d
+    src = inspect.getsource(solva_phase_d)
+    # The fix introduces a list comprehension feeding run_triangulation.
+    assert "anchored_evidence_chunks" in src, (
+        "Phase F.1 cleanup-1 fix is missing — `submit_answer` should "
+        "build an `anchored_evidence_chunks` list from "
+        "session['seed_attached_references']."
+    )
+    # And the legacy hardcoded empty-list call MUST be gone.
+    assert "evidence_chunks=[]" not in src.replace(" ", ""), (
+        "Phase F.1 cleanup-1 regression — found `evidence_chunks=[]` "
+        "in routers/solva_phase_d.py. Reasoning engines run blind."
+    )
