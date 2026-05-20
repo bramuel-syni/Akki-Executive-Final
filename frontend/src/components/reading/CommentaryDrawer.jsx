@@ -21,7 +21,9 @@ export default function CommentaryDrawer({
   generatingSignals = false,
   signalsStatusMessage = "",
   signalsErrorMessage = "",
+  signalsInfoMessage = "",
   onDismissSignalsError,
+  onDismissSignalsInfo,
 }) {
   const [open, setOpen] = useState(false);
   const count = items.length;
@@ -94,6 +96,25 @@ export default function CommentaryDrawer({
                       onClick={onDismissSignalsError}
                       className="text-[11px] text-[var(--muted)] underline underline-offset-2 hover:text-[var(--ink)]"
                       data-testid="commentary-drawer-signals-error-dismiss"
+                    >
+                      Dismiss
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              {/* QA-2026-05-16-007 (2026-05-18, fix-pass #2) — info state. */}
+              {!generatingSignals && !signalsErrorMessage && signalsInfoMessage ? (
+                <div
+                  className="mt-3 text-[12px] not-italic text-[var(--ink)] space-y-1.5"
+                  data-testid="commentary-drawer-signals-empty"
+                >
+                  <p>{signalsInfoMessage}</p>
+                  {onDismissSignalsInfo ? (
+                    <button
+                      type="button"
+                      onClick={onDismissSignalsInfo}
+                      className="text-[11px] text-[var(--muted)] underline underline-offset-2 hover:text-[var(--ink)]"
+                      data-testid="commentary-drawer-signals-empty-dismiss"
                     >
                       Dismiss
                     </button>

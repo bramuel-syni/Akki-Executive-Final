@@ -87,6 +87,13 @@ export default function ReadingView() {
   // flips back to false (the toast alone wasn't reliable per QA).
   const [signalsStatusMessage, setSignalsStatusMessage] = useState("");
   const [signalsErrorMessage, setSignalsErrorMessage] = useState("");
+  // QA-2026-05-16-007 (2026-05-18, fix-pass #2) — Path A from the
+  // tester's hypothesis (verified live): the job succeeds but the
+  // backend generated 0 signals referencing THIS doc (signals are
+  // context-scoped, doc-filter on the rail can return empty). Without
+  // this persistent info copy the button silently resets — looks like
+  // a no-op to the user. Surfaced as an "info" not an "error".
+  const [signalsInfoMessage, setSignalsInfoMessage] = useState("");
 
   const bodyRef = useRef(null);
   const { paragraphs, loading: paragraphsLoading, error: paragraphsError, unavailable: paragraphsUnavailable } =
@@ -121,8 +128,14 @@ export default function ReadingView() {
 
   // Fetch commentary.
   const loadCommentary = useCallback(async () => {
-    if (!contextId || !docId) return;
+    if (!contextId || !docId) return { perDocCount: 0 };
     setCommentaryLoading(true);
+    // QA-2026-05-16-007 (2026-05-18, fix-pass #2) — return the per-doc
+    // item count so handleGenerateSignals can branch on "ran fine but
+    // surfaced nothing for THIS document" (Path A — verified live:
+    // backend generates context-scoped signals; if none cite the
+    // current doc, the rail filter strips them all).
+    let perDocCount = 0;
     try {
       const [sigRes, briefRes, askRes] = await Promise.allSettled([
         api.get(`/contexts/${contextId}/signals?limit=200`),
@@ -131,26 +144,33 @@ export default function ReadingView() {
       ]);
       if (sigRes.status === "fulfilled") {
         const list = Array.isArray(sigRes.value.data) ? sigRes.value.data : [];
-        setSignals(list.filter((s) =>
+        const perDoc = list.filter((s) =>
           (s.references || s.sources || []).some((r) => r.doc_id === docId),
-        ));
+        );
+        perDocCount += perDoc.length;
+        setSignals(perDoc);
       }
       if (briefRes.status === "fulfilled") {
         const list = Array.isArray(briefRes.value.data) ? briefRes.value.data : [];
-        setBriefings(list.filter((b) =>
+        const perDoc = list.filter((b) =>
           (b.references || []).some((r) => r.doc_id === docId)
             || (b.source_doc_ids || []).includes(docId),
-        ));
+        );
+        perDocCount += perDoc.length;
+        setBriefings(perDoc);
       }
       if (askRes.status === "fulfilled") {
         const list = Array.isArray(askRes.value.data) ? askRes.value.data : [];
-        setAskMessages(list.filter((m) =>
+        const perDoc = list.filter((m) =>
           (m.references || m.sources || []).some((r) => r.doc_id === docId),
-        ));
+        );
+        perDocCount += perDoc.length;
+        setAskMessages(perDoc);
       }
     } finally {
       setCommentaryLoading(false);
     }
+    return { perDocCount };
   }, [contextId, docId]);
 
   useEffect(() => {
@@ -293,6 +313,7 @@ export default function ReadingView() {
     setGeneratingSignals(true);
     setSignalsStatusMessage("");
     setSignalsErrorMessage("");
+    setSignalsInfoMessage("");
     // QA-2026-05-16-007 (2026-05-18, fix-pass) — long-running status
     // is driven off a real setTimeout, not a stale closure inside
     // pollJob.onProgress (which only fires every 1.5-5s and depended
@@ -309,15 +330,33 @@ export default function ReadingView() {
       if (job.status === "failed") {
         throw new Error(job.error || "Signal refresh failed.");
       }
-      toast.success("Signals refreshed.");
-      await loadCommentary();
+      // QA-2026-05-16-007 (2026-05-18, fix-pass #2) — Path A guard.
+      // Backend signals are context-scoped; if none of the newly
+      // generated signals reference THIS doc, loadCommentary's
+      // doc-filter strips them all and the rail stays empty. Surface
+      // a persistent inline info so the button does NOT silently
+      // reset.
+      const { perDocCount } = (await loadCommentary()) || { perDocCount: 0 };
+      if (perDocCount === 0) {
+        setSignalsInfoMessage(
+          "Akki refreshed signals across this context but didn't surface "
+          + "anything new for this document. Try a more substantive document, "
+          + "or revisit after more context has been added."
+        );
+      } else {
+        toast.success("Signals refreshed.");
+      }
     } catch (err) {
       // QA-2026-05-16-007 (2026-05-18, fix-pass) — surface the error
-      // inline as well as via toast. The toast is the immediate
-      // attention-grab; the inline copy survives in the commentary
-      // panel so the user has actionable text after dismissing
-      // the toast.
-      const msg = apiErrorMessage(err, "Could not refresh signals.");
+      // inline as well as via toast. fix-pass #2: defensive Path B —
+      // if apiErrorMessage returns falsy (the reducer can collapse
+      // structured Error payloads to empty string), fall back to a
+      // hardcoded copy so the inline state is NEVER empty after a
+      // failure.
+      const reduced = apiErrorMessage(err, "Could not refresh signals.");
+      const msg = (typeof reduced === "string" && reduced.trim())
+        ? reduced
+        : "Signal generation failed. Please try again or contact support if this persists.";
       setSignalsErrorMessage(msg);
       toast.error(msg);
     } finally {
@@ -445,7 +484,9 @@ export default function ReadingView() {
               generatingSignals={generatingSignals}
               signalsStatusMessage={signalsStatusMessage}
               signalsErrorMessage={signalsErrorMessage}
+              signalsInfoMessage={signalsInfoMessage}
               onDismissSignalsError={() => setSignalsErrorMessage("")}
+              onDismissSignalsInfo={() => setSignalsInfoMessage("")}
             />
           </div>
         ) : null}
@@ -461,7 +502,9 @@ export default function ReadingView() {
           generatingSignals={generatingSignals}
           signalsStatusMessage={signalsStatusMessage}
           signalsErrorMessage={signalsErrorMessage}
+          signalsInfoMessage={signalsInfoMessage}
           onDismissSignalsError={() => setSignalsErrorMessage("")}
+          onDismissSignalsInfo={() => setSignalsInfoMessage("")}
         />
       </div>
     </AppShell>

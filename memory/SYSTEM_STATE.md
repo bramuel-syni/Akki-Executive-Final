@@ -131,6 +131,9 @@
 
 ### Chunk 7 fix-pass — QA-007 + QA-047 UX gaps closed — 2026-05-18 ✅
 
+> **Fix-pass #2 — QA-007 silent-reset closed — 2026-05-18 ✅**
+> Investigation against live preview confirmed Path A (job succeeds with 0 per-doc-referencing signals because backend signals are context-scoped and the LLM didn't cite the current doc — verified via `/signals/generate` → job result with 5 signals, 0 referencing target doc). Fixed by (a) `loadCommentary()` now returns `{perDocCount}`; (b) `handleGenerateSignals` checks the count and sets persistent `signalsInfoMessage` (rendered as `reading-rail-signals-empty` / `commentary-drawer-signals-empty` — info, not error) when post-job count is zero; (c) defensive Path B fallback in the catch block — if `apiErrorMessage` returns falsy, use a hardcoded copy. Files: `ReadingView.jsx`, `ReadingRail.jsx`, `CommentaryDrawer.jsx`, `scripts/render-smoke.js`. render-smoke step 8 hardened with a non-silent-reset assertion that scans up to 8 workspace rows to find a genuinely empty-rail doc and asserts post-termination state has items OR error OR empty-info. Tester sub-criteria (a)+(b) (default "Not Started" badge / no RAG picker) already locked by `test_qa_047_manual_objective_defaults_to_not_started` and the deleted `obj-create-rag-*` testids. Pytest 676 / 0 fail, render-smoke 11/11 + step 8 GREEN with `items=0, error=0, empty-info=1`. No backend changes, no other QA IDs touched.
+
 `e1_tester` ran the 6 P0s end-to-end against the deployed preview; 4 cleanly green, 2 surfaced UX gaps despite backend changes being correct. Both closed in this pass without touching other IDs.
 
 | Gap | Component the bug lived in | Root cause (one-liner) | Fix (one-liner) | Test |

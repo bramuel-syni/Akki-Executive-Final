@@ -27,7 +27,7 @@ If this table and the source ever disagree, the source wins; rebuild this table.
 | QA-2026-05-16-004 | Document Journal | Rename "Add to Work Studio" → "Work with Document" + Compose modal | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-004 |
 | QA-2026-05-16-005 | Document Journal | Add to Cycle CTA backend schema accepted document-attach payload | P0 | DONE | Chunk-7 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-005 |
 | QA-2026-05-16-006 | Document Reader | "Take into Solva" payload aligned to backend StartV2In | P0 | DONE | Chunk-7 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-006 |
-| QA-2026-05-16-007 | Document Reader | "Generate signals" parser hardened + loading state + long-running status copy | P0 | DONE | Chunk-7 (Fix-pass 2026-05-18) | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-007 |
+| QA-2026-05-16-007 | Document Reader | "Generate signals" parser hardened + loading state + long-running status copy + non-silent-reset (Path A info / Path B defensive fallback) | P0 | DONE | Chunk-7 (Fix-pass-2 2026-05-18) | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-007 |
 | QA-2026-05-16-008 | Document Reader | Ask/Solva/Studio/Cycle buttons must match Document Journal drawer parity | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-008 |
 | QA-2026-05-16-009 | Top bar | Remove the notification-bell sub-page entirely | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-009 |
 | QA-2026-05-16-010 | Document upload | Add auto-focused search bar to "link to earlier document" panel | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-010 |

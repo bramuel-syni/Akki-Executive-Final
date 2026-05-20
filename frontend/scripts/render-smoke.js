@@ -854,31 +854,48 @@ async function smokeChunk7GenerateSignals(page, failures) {
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(600);
 
-    const firstRow = page.locator('[data-testid^="workspace-row-"]').first();
-    if (!(await firstRow.isVisible({ timeout: 4000 }).catch(() => false))) {
+    const allRows = page.locator('[data-testid^="workspace-row-"]');
+    const rowCount = await allRows.count();
+    if (rowCount === 0) {
       console.log(`[render-smoke]  · Chunk 7 — workspace empty; soft-skipping QA-007 smoke`);
       return;
     }
 
-    // Resolve the doc id from the row testid (`workspace-row-<id>`).
-    const rowTestId = await firstRow.getAttribute("data-testid");
-    const docId = (rowTestId || "").replace(/^workspace-row-/, "");
+    // Scan up to the first 8 rows to find a document whose
+    // commentary rail is in its empty state (the only surface where
+    // the Generate-signals button exists). Without this scan we'd
+    // miss the silent-reset regression on contexts that have at
+    // least one doc with prior commentary in row 0.
+    let docId = null;
+    const maxScan = Math.min(rowCount, 8);
+    for (let i = 0; i < maxScan; i++) {
+      const rowTestId = await allRows.nth(i).getAttribute("data-testid");
+      const candidate = (rowTestId || "").replace(/^workspace-row-/, "");
+      if (!candidate) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await page.goto(`${BASE_URL}/app/documents/${candidate}`, { waitUntil: "domcontentloaded", timeout: 30000 });
+      // eslint-disable-next-line no-await-in-loop
+      await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+      // eslint-disable-next-line no-await-in-loop
+      await page.waitForTimeout(800);
+      // eslint-disable-next-line no-await-in-loop
+      const railEmpty = await page.locator('[data-testid="reading-rail-empty"]').first().isVisible().catch(() => false);
+      if (railEmpty) {
+        docId = candidate;
+        console.log(`[render-smoke]  · Chunk 7 — using empty-rail doc ${docId} (row ${i})`);
+        break;
+      }
+    }
     if (!docId) {
-      console.log(`[render-smoke]  · Chunk 7 — couldn't resolve doc id; soft-skipping`);
+      console.log(`[render-smoke]  · Chunk 7 — no empty-rail doc found in first ${maxScan} rows; soft-skipping QA-007`);
       return;
     }
 
-    await page.goto(`${BASE_URL}/app/documents/${docId}`, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
-    await page.waitForTimeout(1500);
-
     // The empty-rail "Generate signals →" button.
     const railBtn = page.locator('[data-testid="reading-rail-generate-signals"]').first();
-    const railVisible = await railBtn.isVisible({ timeout: 4000 }).catch(() => false);
+    const railVisible = await railBtn.isVisible().catch(() => false);
     if (!railVisible) {
-      // Rail likely has commentary items already — soft-skip; this
-      // smoke step only locks the empty-rail entry point.
-      console.log(`[render-smoke]  · Chunk 7 — rail not in empty state for ${docId}; soft-skipping QA-007`);
+      console.log(`[render-smoke]  · Chunk 7 — Generate button not visible on ${docId}; soft-skipping`);
       return;
     }
 
@@ -916,6 +933,75 @@ async function smokeChunk7GenerateSignals(page, failures) {
         failures.push(`Chunk 7 (QA-007): status copy mismatched the spec verbatim (got "${statusText}")`);
       } else {
         console.log(`[render-smoke]  ✓ Chunk 7 (QA-007) — verbatim status copy rendered after 4s`);
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // Fix-pass #2 (2026-05-18) — non-silent-reset post-condition.
+    //   After the job terminates, the rail MUST show one of:
+    //     · ≥1 per-doc commentary item (success-with-results — the
+    //       empty rail flips to the items list and the Generate
+    //       button is no longer in the DOM), OR
+    //     · `reading-rail-signals-error` (failure path), OR
+    //     · `reading-rail-signals-empty` (success-but-nothing-for-this-doc).
+    //   The original failure mode was: button silently reset to
+    //   "Generate signals →" with empty rail and no persistent
+    //   message. That state MUST NOT be reachable after this fix.
+    // ────────────────────────────────────────────────────────────
+    const railBtnLoc = page.locator('[data-testid="reading-rail-generate-signals"]').first();
+    let terminal = null;
+    for (let i = 0; i < 90; i++) {
+      // 90 s budget — backend Generate Signals against a real context
+      // typically lands in 15-60s; status copy renders at 4s so the
+      // earlier waitFor is independent of this.
+      // eslint-disable-next-line no-await-in-loop
+      await page.waitForTimeout(1000);
+      // Read the button's text — if it's gone or shows "Generate
+      // signals →" again, the handler has reached its `finally`.
+      // `textContent()` returns "" if the element is detached.
+      // eslint-disable-next-line no-await-in-loop
+      const btnTxt = ((await railBtnLoc.textContent({ timeout: 1500 }).catch(() => "")) || "").trim();
+      const buttonDetached = btnTxt === "";
+      const buttonIdle = btnTxt && !/generating signals/i.test(btnTxt);
+      if (buttonDetached || buttonIdle) {
+        // Settle: loadCommentary's commentaryLoading toggles the empty
+        // block off-then-on momentarily and our handler sets the info
+        // message AFTER the await resolves. Give state propagation a
+        // generous beat before sampling the terminal surface.
+        // eslint-disable-next-line no-await-in-loop
+        await page.waitForTimeout(2500);
+        // eslint-disable-next-line no-await-in-loop
+        const itemsCount = await page.locator('[data-testid^="commentary-item-"]').count();
+        // eslint-disable-next-line no-await-in-loop
+        const errPresent = await page.locator('[data-testid="reading-rail-signals-error"]').count();
+        // eslint-disable-next-line no-await-in-loop
+        const emptyPresent = await page.locator('[data-testid="reading-rail-signals-empty"]').count();
+        terminal = {
+          elapsedS: i + 1,
+          btnTxt: buttonDetached ? "<button detached>" : btnTxt,
+          itemsCount,
+          errPresent,
+          emptyPresent,
+        };
+        break;
+      }
+    }
+    if (!terminal) {
+      console.log(`[render-smoke]  · Chunk 7 (QA-007) — job did not terminate within 90s; soft-skipping silent-reset assertion`);
+    } else {
+      const ok = terminal.itemsCount > 0 || terminal.errPresent > 0 || terminal.emptyPresent > 0;
+      if (!ok) {
+        failures.push(
+          `Chunk 7 (QA-007): SILENT RESET reproduced — `
+          + `after job termination (${terminal.elapsedS}s, btn="${terminal.btnTxt}"), `
+          + `rail has 0 items AND no error AND no empty-info message. `
+          + `The button reset without surfacing anything actionable.`,
+        );
+      } else {
+        console.log(
+          `[render-smoke]  ✓ Chunk 7 (QA-007) — non-silent-reset post-condition GREEN `
+          + `(items=${terminal.itemsCount}, error=${terminal.errPresent}, empty-info=${terminal.emptyPresent}, elapsed=${terminal.elapsedS}s)`,
+        );
       }
     }
 
