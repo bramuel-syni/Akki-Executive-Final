@@ -81,7 +81,7 @@ Detailed reproduction steps + screenshots are stored in `/app/memory/sprints/QA_
 **Source of truth:** `/app/memory/qa_reports/QA_BACKLOG.md`
 **Verbatim spec:** `/app/memory/qa_reports/QA_REPORT_16MAY2026.md`
 
-**Priority histogram:** `P0: 6 (DONE — Chunk 7, 2026-05-18) · P1: 11 + 17 (DONE — Chunk-8 8 + Chunk-9 5 + Chunk-10 1 + Chunk-11 3, 2026-05-21) · P2: 7 + 8 (DONE — Chunk-10 6 + Chunk-11 2, 2026-05-21) · P3: 2 · SV-Crit: 3 (DONE — Chunk-9.5, 2026-05-20) · SV-04..-08: 5 (BACKLOG → Chunks 13-14)`
+**Priority histogram:** `P0: 6 (DONE — Chunk 7, 2026-05-18) · P1: 10 + 18 (DONE — Chunk-8 8 + Chunk-9 5 + Chunk-10 1 + Chunk-11 3 + Chunk-12 1, 2026-05-21) · P2: 7 + 8 (DONE — Chunk-10 6 + Chunk-11 2, 2026-05-21) · P3: 2 · SV-Crit: 3 (DONE — Chunk-9.5, 2026-05-20) · SV-04..-08: 5 (BACKLOG → Chunks 13-14)`
 
 **Chunk 8 close (2026-05-18):** all 8 Document Overlay IDs landed — see `SYSTEM_STATE.md § 4` Chunk 8 entry. Foundation + 8 visible-UX IDs + 25 new pytest + 1 render-smoke step. State machine doc: `sprints/CHUNK_8_OVERLAY_STATE.md`.
 

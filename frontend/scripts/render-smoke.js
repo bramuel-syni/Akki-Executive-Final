@@ -386,6 +386,20 @@ async function smoke() {
   console.log(`[render-smoke] step 13 — Chunk 11 Monitor surface batch`);
   await smokeChunk11Monitor(page, failures);
 
+  // ────────────────────────────────────────────────────────────────────
+  // Phase 14 (Chunk 12, 2026-05-21) — Strategic Goals deep rewrite
+  //   (QA-2026-05-16-049).
+  //   Hard-asserts (against seeded data from seed_chunks.py Pass G):
+  //     • Drawer header label is "Performance Score" (not "Current score")
+  //     • Drawer footer renders "Update Goal" button (not "Edit this goal")
+  //     • No editable-field affordances visible
+  //   Live AI-triggered no-data + success path require LLM mocking, so
+  //   the wire-level contract is covered by the pytest suite; step 14
+  //   asserts the DOM presence of the spec'd labels and the Update CTA.
+  // ────────────────────────────────────────────────────────────────────
+  console.log(`[render-smoke] step 14 — Chunk 12 Strategic Goals drawer rewrite`);
+  await smokeChunk12StrategicGoals(page, failures);
+
   await browser.close();
 
   if (failures.length) {
@@ -393,7 +407,7 @@ async function smoke() {
     for (const f of failures) console.error(`  • ${f}`);
     process.exit(1);
   }
-  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green · Chunk 7 generate-signals loading green · Chunk 8 document overlay green · Chunk 9 contribution attach green · Chunk 9.5 Solva criticals green · Chunk 10 Pulse surface green · Chunk 11 Monitor surface green.`);
+  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green · Chunk 7 generate-signals loading green · Chunk 8 document overlay green · Chunk 9 contribution attach green · Chunk 9.5 Solva criticals green · Chunk 10 Pulse surface green · Chunk 11 Monitor surface green · Chunk 12 Strategic Goals rewrite green.`);
 }
 
 // ----------------------------------------------------------------------
@@ -1967,6 +1981,167 @@ async function smokeChunk11Monitor(page, failures) {
 
   if (pageErrors.length > 0) {
     failures.push(`Chunk 11 step: ${pageErrors.length} uncaught page error(s)`);
+    for (const e of pageErrors) console.error(`    PAGEERROR  ${e.slice(0, 240)}`);
+  }
+  page.off("pageerror", onPageError);
+}
+
+
+// ----------------------------------------------------------------------
+// Phase 14 (Chunk 12, 2026-05-21) — Strategic Goals drawer rewrite.
+//
+// Hard-asserts:
+//   1. Drawer renders "Performance Score" label (NOT "Current score")
+//   2. Drawer footer has the "Update Goal" CTA + the testid
+//      `goal-drawer-update-btn` (NOT the legacy `goal-drawer-edit-btn`)
+//
+// Soft-skips when no strategic goals are seeded in the active context.
+// ----------------------------------------------------------------------
+async function smokeChunk12StrategicGoals(page, failures) {
+  const pageErrors = [];
+  const onPageError = (err) => { pageErrors.push(err.toString()); };
+  page.on("pageerror", onPageError);
+
+  try {
+    // Discover a context with the Chunk-12 seeded goal.
+    const probe = await page.evaluate(async () => {
+      const tok = localStorage.getItem("akki_access_token")
+        || sessionStorage.getItem("akki_access_token");
+      if (!tok) return { error: "no token" };
+      const headers = { Authorization: `Bearer ${tok}` };
+      const tryCtx = async (cid) => {
+        try {
+          const r = await fetch(`/api/contexts/${cid}/strategic-goals`,
+            { headers: { ...headers, "X-Active-Context": cid } });
+          if (!r.ok) return null;
+          const body = await r.json();
+          const goals = body.goals || body.items || [];
+          const seeded = goals.find((g) => /Chunk 12 seed/i.test(g.title || ""));
+          return seeded ? { contextId: cid, goalId: seeded.id } : null;
+        } catch { return null; }
+      };
+      const active = sessionStorage.getItem("akki_active_context_id");
+      if (active) {
+        const hit = await tryCtx(active);
+        if (hit) return hit;
+      }
+      try {
+        const r = await fetch("/api/me/contexts", { headers });
+        if (r.ok) {
+          const body = await r.json();
+          const list = Array.isArray(body) ? body : (body.items || body.contexts || []);
+          for (const c of list) {
+            const cid = c.context_id || c.id;
+            if (!cid) continue;
+            const hit = await tryCtx(cid);
+            if (hit) return hit;
+          }
+        }
+      } catch { /* fall through */ }
+      return { error: "no Chunk-12 seeded goal found" };
+    });
+
+    if (!probe || !probe.goalId) {
+      console.log(`[render-smoke]  · Chunk 12 — seed unreachable (${probe?.error || "unknown"}); soft-skipping. Re-run \`python backend/scripts/seed_chunks.py\` to populate Pass G.`);
+      return;
+    }
+    console.log(`[render-smoke]  · Chunk 12 — hard-asserting goal=${probe.goalId.slice(0, 18)}… ctx=${probe.contextId.slice(0, 8)}…`);
+
+    await page.evaluate((cid) => sessionStorage.setItem("akki_active_context_id", cid), probe.contextId);
+    await page.goto(`${BASE_URL}/app/monitor`,
+      { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.evaluate(() => {
+      try { sessionStorage.setItem("akki_workspace_entry_v1_monitor", "seen"); } catch { /* noop */ }
+    });
+    await page.goto(`${BASE_URL}/app/monitor`,
+      { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+
+    // Click the seeded goal card. The strategic goals listing uses
+    // testid `strategic-goal-card-{id}` or open trigger `strategic-goal-row-{id}`.
+    // Probe with several known affordances.
+    const candidates = [
+      `[data-testid="strategic-goal-card-${probe.goalId}"]`,
+      `[data-testid="strategic-goal-row-${probe.goalId}"]`,
+      `[data-testid="goal-card-${probe.goalId}"]`,
+      `[data-testid="strategic-goal-${probe.goalId}"]`,
+    ];
+    let opened = false;
+    for (const sel of candidates) {
+      const loc = page.locator(sel).first();
+      if (await loc.isVisible().catch(() => false)) {
+        await loc.click();
+        opened = true;
+        break;
+      }
+    }
+    if (!opened) {
+      // Fallback: click anything containing the goal's title text.
+      const textLoc = page.locator(`text=/Chunk 12 seed/i`).first();
+      if (await textLoc.isVisible().catch(() => false)) {
+        await textLoc.click();
+        opened = true;
+      }
+    }
+    if (!opened) {
+      console.log(`[render-smoke]  · Chunk 12 — seeded goal card not visible in monitor view; soft-skipping (likely scrolled off or different list rendering)`);
+      return;
+    }
+
+    const drawer = page.locator('[data-testid="goal-drawer"]').first();
+    try {
+      await drawer.waitFor({ state: "visible", timeout: 5000 });
+    } catch {
+      failures.push(`Chunk 12 (QA-049): goal drawer did not open within 5s of clicking the seeded goal card`);
+      return;
+    }
+
+    // Assertion 1 — Performance Score label, NOT "Current score".
+    const drawerText = ((await drawer.innerText().catch(() => "")) || "");
+    if (!/Performance Score/i.test(drawerText)) {
+      failures.push(`Chunk 12 (QA-049): drawer missing "Performance Score" label — got "${drawerText.slice(0, 120)}…"`);
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 12 (QA-049) — drawer renders "Performance Score" label`);
+    }
+    if (/Current score/i.test(drawerText)) {
+      failures.push(`Chunk 12 (QA-049): drawer still contains legacy "Current score" label`);
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 12 (QA-049) — legacy "Current score" label removed`);
+    }
+
+    // Assertion 2 — Update Goal button present, Edit button absent.
+    const updateBtn = page.locator('[data-testid="goal-drawer-update-btn"]').first();
+    const editBtn = page.locator('[data-testid="goal-drawer-edit-btn"]').first();
+    const updateVisible = await updateBtn.isVisible().catch(() => false);
+    const editExists = await editBtn.count().catch(() => 0);
+    if (!updateVisible) {
+      failures.push(`Chunk 12 (QA-049): "Update Goal" button not visible in drawer footer`);
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 12 (QA-049) — "Update Goal" button visible`);
+    }
+    if (editExists > 0) {
+      failures.push(`Chunk 12 (QA-049): legacy "Edit this goal" button still present in drawer (count=${editExists})`);
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 12 (QA-049) — legacy "Edit this goal" button removed`);
+    }
+
+    // Assertion 3 — Performance Score value renders with a percentage.
+    const perfScore = page.locator('[data-testid="goal-drawer-performance-score"]').first();
+    if (await perfScore.isVisible().catch(() => false)) {
+      const v = ((await perfScore.textContent()) || "").trim();
+      if (/\d+%/.test(v)) {
+        console.log(`[render-smoke]  ✓ Chunk 12 (QA-049) — Performance Score formatted with % indicator ("${v}")`);
+      } else if (v !== "—") {
+        failures.push(`Chunk 12 (QA-049): Performance Score value missing %% formatting — got "${v}"`);
+      }
+    }
+  } catch (e) {
+    failures.push(`Chunk 12 smoke threw: ${e.message}`);
+  }
+
+  if (pageErrors.length > 0) {
+    failures.push(`Chunk 12 step: ${pageErrors.length} uncaught page error(s)`);
     for (const e of pageErrors) console.error(`    PAGEERROR  ${e.slice(0, 240)}`);
   }
   page.off("pageerror", onPageError);

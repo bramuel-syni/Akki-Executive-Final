@@ -607,6 +607,61 @@ async def _seed_chunk11_monitor_fixture(db, context_id: str, account_id: str) ->
     return {"context_id": context_id, "objective_id": oid, "minted": True}
 
 
+async def _seed_chunk12_strategic_goal_fixture(db, context_id: str, account_id: str) -> Dict[str, Any]:
+    """Chunk 12 (QA-2026-05-16-049) — seed two strategic goals per
+    bramuel context so render-smoke step 14 can hard-assert:
+      (a) goal with documents in scope → Update flow works
+      (b) goal with NO related evidence → no-data short-circuit
+          renders the verbatim spec copy
+
+    Idempotent via `chunk12_strategic_marker="v1"`.
+    """
+    existing = await db.strategic_goals.find_one(
+        {"context_id": context_id, "chunk12_strategic_marker": "v1"},
+        {"_id": 0, "id": 1},
+    )
+    if existing:
+        return {
+            "context_id": context_id, "goal_id": existing["id"],
+            "minted": False, "reason": "already_seeded",
+        }
+    gid_a = f"goal-c12a-{uuid.uuid4().hex[:8]}"
+    gid_b = f"goal-c12b-{uuid.uuid4().hex[:8]}"
+    now_iso = _iso(_now())
+    await db.strategic_goals.insert_many([
+        {
+            "id": gid_a,
+            "context_id": context_id, "account_id": account_id,
+            "department": "cfo",
+            "title": "Lift CET1 capital ratio to 12.5% by Q3 (Chunk 12 seed)",
+            "description": "Push regulatory capital headroom against the 1.5× internal tolerance.",
+            "category": "revenue",
+            "current_score": 55, "target_score": 100, "probability": 50,
+            "status": "at_risk", "score_history": [],
+            "created_at": now_iso, "updated_at": now_iso,
+            "chunk12_strategic_marker": "v1",
+        },
+        {
+            "id": gid_b,
+            "context_id": context_id, "account_id": account_id,
+            "department": "marketing",
+            "title": "Improve brand sentiment to 80% positive (Chunk 12 no-data seed)",
+            "description": "Reframe public messaging around capital strength.",
+            "category": "people",
+            "current_score": 42, "target_score": 80, "probability": 35,
+            "status": "off_track", "score_history": [],
+            "created_at": now_iso, "updated_at": now_iso,
+            "chunk12_strategic_marker": "v1",
+        },
+    ])
+    return {
+        "context_id": context_id,
+        "goal_with_evidence_id": gid_a,
+        "goal_without_evidence_id": gid_b,
+        "minted": True,
+    }
+
+
 async def main():
     cli = AsyncIOMotorClient(os.environ["MONGO_URL"])
     db = cli[os.environ["DB_NAME"]]
@@ -626,6 +681,7 @@ async def main():
     pii_chats: List[Dict[str, Any]] = []
     pulse_signals: List[Dict[str, Any]] = []
     monitor_seeds: List[Dict[str, Any]] = []
+    strategic_seeds: List[Dict[str, Any]] = []
 
     for c in contexts:
         cid = c["id"]
@@ -678,6 +734,13 @@ async def main():
         if res.get("minted"):
             monitor_seeds.append(res)
 
+        # Pass G (Chunk 12): two strategic goals — one with associated
+        # evidence (drives Update flow success), one without (drives
+        # no-data short-circuit).
+        res = await _seed_chunk12_strategic_goal_fixture(db, cid, bid)
+        if res.get("minted"):
+            strategic_seeds.append(res)
+
     # Write a seed-log marker for visibility / forensics.
     await db.chunk8_seed_log.insert_one({
         "run_id": uuid.uuid4().hex,
@@ -723,6 +786,10 @@ async def main():
         print("[seed-chunks] Sample Achieved objectives (Chunk 11 -045):")
         for ms in monitor_seeds[:3]:
             print(f"   - ctx={ms['context_id']} obj={ms['objective_id']}")
+    if strategic_seeds:
+        print("[seed-chunks] Sample strategic goals (Chunk 12 -049):")
+        for ss in strategic_seeds[:3]:
+            print(f"   - ctx={ss['context_id']} with-evidence={ss['goal_with_evidence_id']} no-data={ss['goal_without_evidence_id']}")
 
 
 if __name__ == "__main__":

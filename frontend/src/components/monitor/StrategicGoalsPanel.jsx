@@ -172,7 +172,14 @@ export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange }) 
       <GoalDetailDrawer
         goal={drawerGoal}
         onClose={() => setDrawerGoal(null)}
-        onEdit={() => { if (drawerGoal) { setEditingId(drawerGoal.id); setDrawerGoal(null); } }}
+        contextId={contextId}
+        onGoalUpdated={(updated) => {
+          // Update the locally-rendered drawer goal AND the row in
+          // the listing so the new performance score / status surface
+          // immediately without a refetch round-trip.
+          setDrawerGoal(updated);
+          setGoals((prev) => prev.map((g) => g.id === updated.id ? { ...g, ...updated } : g));
+        }}
         isNED={isNED}
       />
 
@@ -333,10 +340,67 @@ function GoalRow({ goal, isLast, isNED, isEditing, onOpenDrawer, onEdit, onCance
  * detail surface; an `Edit` button drops the user into the inline
  * edit mode for the same goal (used by execs to update score quickly).
  */
-function GoalDetailDrawer({ goal, onClose, onEdit, isNED }) {
+function GoalDetailDrawer({ goal, onClose, contextId, onGoalUpdated, isNED }) {
+  // QA-2026-05-16-049 — "Edit this goal" replaced by "Update Goal".
+  // Update Goal calls the Shield-gateway-routed reassessment endpoint.
+  // On success: update timestamp + applied changes surface; on no-data:
+  // verbatim spec copy + Document Journal link render in-drawer.
+  const [updating, setUpdating] = useState(false);
+  const [noDataMessage, setNoDataMessage] = useState(null);
+  const [lastApplied, setLastApplied] = useState(null);
+
+  // Reset transient state whenever the drawer opens for a different goal.
+  useEffect(() => {
+    setNoDataMessage(null);
+    setLastApplied(null);
+    setUpdating(false);
+  }, [goal?.id]);
+
+  const onUpdateGoal = useCallback(async () => {
+    if (!goal || !contextId || updating) return;
+    setUpdating(true); setNoDataMessage(null); setLastApplied(null);
+    try {
+      const { data } = await api.post(
+        `/contexts/${contextId}/strategic-goals/${goal.id}/update`,
+        {},
+      );
+      if (data?.no_data) {
+        setNoDataMessage(data.message || "No additional information found for this goal. Please upload a document with updated performance data so Akki can reassess.");
+        toast.info("Akki found no new evidence for this goal.");
+        // Surface the assessment timestamp on the timeline even on no-data.
+        if (onGoalUpdated) onGoalUpdated({
+          ...goal,
+          last_akki_update: data.last_akki_update,
+        });
+      } else {
+        // Apply the returned values locally so the drawer reflects
+        // the new score/probability/status without a full refetch.
+        const applied = data.last_akki_update?.applied_changes || {};
+        setLastApplied({
+          ...applied,
+          assessed_at: data.last_akki_update?.assessed_at,
+          rationale: data.last_akki_update?.rationale,
+        });
+        toast.success("Akki updated the goal.");
+        if (onGoalUpdated) onGoalUpdated({
+          ...goal,
+          current_score: data.current_score,
+          probability: data.probability,
+          status: data.status,
+          last_akki_update: data.last_akki_update,
+        });
+      }
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setUpdating(false);
+    }
+  }, [goal, contextId, updating, onGoalUpdated]);
+
   const open = !!goal;
   const status = STATUS_STYLE[goal?.status] || STATUS_STYLE.on_track;
   const cat = CATEGORY_STYLE[goal?.category] || CATEGORY_STYLE.operations;
+  const lastUpdateTs = goal?.last_akki_update?.assessed_at;
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose && onClose()}>
       <SheetContent
@@ -372,8 +436,11 @@ function GoalDetailDrawer({ goal, onClose, onEdit, isNED }) {
         <div className="px-6 py-5 space-y-5">
           <div className="grid grid-cols-2 gap-3 border border-[var(--rule)] rounded-sm bg-white px-3 py-3">
             <div>
-              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Current score</p>
-              <p className="text-[14px] akki-serif text-[var(--ink)]">{goal?.current_score ?? "—"}</p>
+              {/* QA-2026-05-16-049 — renamed "Current score" → "Performance Score" */}
+              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Performance Score</p>
+              <p className="text-[14px] akki-serif text-[var(--ink)]" data-testid="goal-drawer-performance-score">
+                {goal?.current_score != null ? `${goal.current_score}%` : "—"}
+              </p>
             </div>
             <div>
               <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Probability</p>
@@ -388,6 +455,17 @@ function GoalDetailDrawer({ goal, onClose, onEdit, isNED }) {
               <p className="text-[14px] akki-serif text-[var(--ink)]">{goal?.target_date || "—"}</p>
             </div>
           </div>
+
+          {lastUpdateTs && (
+            <div
+              data-testid="goal-drawer-last-update-stamp"
+              className="text-[11.5px] font-mono text-[var(--muted)]"
+            >
+              Akki last reassessed · {new Date(lastUpdateTs).toLocaleString(undefined, {
+                dateStyle: "medium", timeStyle: "short",
+              })}
+            </div>
+          )}
 
           {goal?.description && (
             <div>
@@ -416,15 +494,60 @@ function GoalDetailDrawer({ goal, onClose, onEdit, isNED }) {
             )}
           </div>
 
+          {/* QA-2026-05-16-049 — verbatim no-data copy + Document Journal link.
+              Pre-fix the drawer had an "Edit this goal" button that allowed
+              manual override. The spec replaces it with "Update Goal" (AI
+              reassessment). On a no-data response, this block renders the
+              verbatim spec copy and gives the user a one-click way to upload
+              new evidence. */}
+          {noDataMessage && (
+            <div
+              data-testid="goal-drawer-no-data"
+              className="border border-amber-200 bg-amber-50 rounded-sm px-3 py-3"
+            >
+              <p className="text-[12.5px] text-amber-900 leading-relaxed">
+                {noDataMessage}
+              </p>
+              <Link
+                to="/app/workspace"
+                data-testid="goal-drawer-no-data-doc-journal-link"
+                className="inline-flex items-center gap-1 mt-2 text-[12px] underline text-amber-900 hover:text-amber-700"
+              >
+                <FileText className="w-3 h-3" /> Document Journal
+              </Link>
+            </div>
+          )}
+
+          {lastApplied && (
+            <div
+              data-testid="goal-drawer-just-applied"
+              className="border border-emerald-200 bg-emerald-50 rounded-sm px-3 py-3"
+            >
+              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-emerald-800 mb-1">
+                Akki just updated
+              </p>
+              <p className="text-[12.5px] text-emerald-900 leading-relaxed">
+                {lastApplied.rationale}
+              </p>
+            </div>
+          )}
+
           {!isNED && (
             <div className="pt-2 border-t border-[var(--rule)]">
+              {/* QA-2026-05-16-049 — "Edit this goal" → "Update Goal".
+                  All manual-edit affordances are removed; this is now
+                  the only way to modify the goal from the drawer. */}
               <Button
                 type="button"
-                onClick={onEdit}
-                className="w-full"
-                data-testid="goal-drawer-edit-btn"
+                onClick={onUpdateGoal}
+                disabled={updating}
+                aria-busy={updating}
+                className="w-full inline-flex items-center justify-center"
+                data-testid="goal-drawer-update-btn"
               >
-                <Pencil className="w-3.5 h-3.5 mr-2" /> Edit this goal
+                {updating
+                  ? <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> Updating…</>
+                  : <><Sparkles className="w-3.5 h-3.5 mr-2" /> Update Goal</>}
               </Button>
             </div>
           )}

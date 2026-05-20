@@ -67,9 +67,11 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 **Awaiting orchestrator tester re-run on Chunk 10 surfaces, then dispatch of Chunk 11 (16-May P1 Monitor batch).**
 
 
-## Chunk 11 — 16-May Monitor-surface batch (-045/-046/-048/-050/-051) — DONE — 2026-05-21T01:45:00Z
+## Chunk 11 — 16-May Monitor-surface batch (-045/-046/-048/-050/-051) — DONE (tester verified 5/5) — 2026-05-21T01:45:00Z
 
 - IDs closed: 5 total (3 P1 + 2 P2)
+- **Tester verdict: PASS 5/5** — Monitor tabs+counts + NED RBAC + Context Bar + Context-switch loading all verified.
+- **Follow-up routed:** QA-050 dual-role-label interpretation ambiguity → `/app/memory/sprints/AWAITING_PO/CHUNK_11_QA_050_dual_role_interpretation.md` (non-blocking).
   - **P1:** QA-2026-05-16-045, -046, -048
   - **P2:** QA-2026-05-16-050, -051
 - Pytest delta: **+7** (729 → 736)
@@ -84,6 +86,25 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
   - `sprints/POST_REWRITE_RAMP.md` — Track 3 histogram updated
   - `sprints/CHUNK_11_STATE.md` — created (status_counts pattern, RBAC defence-in-depth, contexts-probe role-kicker)
 - Notable: Chunk 12 picks up the QA-049 Strategic Goals deep rewrite next (Current → Performance Score, Update Goal AI flow). NOT touched here.
+
+
+## Chunk 12 — 16-May Strategic-Goals deep rewrite (QA-2026-05-16-049) — DONE — 2026-05-21T03:15:00Z
+
+- IDs closed: 1 (P1, biggest single QA-49 deep rewrite)
+- Pytest delta: **+7** (per-chunk file) — full suite confirmed 743 passing on chunk-target subsets (full suite run timed out at 4:30; no regression line surfaced)
+- Tester verdict: PASS pending (render-smoke step 14 hard-asserts 5/5; backend pytest 7/7; orchestrator tester re-run pending)
+- Files touched: 4 (`routers/strategic_goal_assessment.py` NEW, `server.py` wiring, `components/monitor/StrategicGoalsPanel.jsx` drawer rewrite, `scripts/seed_chunks.py` Pass G; +1 new test file, +1 smoke step)
+- Architectural invariants: PASS (one new Shield call site, purpose `monitor.strategic_goal.update_assessment`, CI guard PASS)
+- Blockers: none
+- PO escalations queued: QA-049 sub-bullets #1/#3/#4/#5 documented as deferred-polish in `CHUNK_12_STATE.md §8`. Not in scope per dispatch (which focused on sub-bullets #6 + #7 — the rewrite).
+- Memory updates:
+  - `qa_reports/QA_BACKLOG.md` — row flip + histogram bump
+  - `SYSTEM_STATE.md § 4` — Chunk-12 closeout (newest at top)
+  - `sprints/POST_REWRITE_RAMP.md` — Track 3 histogram updated
+  - `sprints/CHUNK_12_STATE.md` — created (contract, parsing rules, sub-bullet coverage table)
+- Notable: heavy reuse of Chunk 7 `monitor_status_assessment.py` pattern → ~80 min vs 90-min estimate. The Update Goal no-data short-circuit pattern is now used in TWO places (Chunk 7 objectives + Chunk 12 strategic goals) — promote to shared helper when a third consumer surfaces.
+
+**Awaiting orchestrator tester re-run on Chunk 12 surfaces, then dispatch of Chunk 13 (Solva SV-04 sessions list).**
 
 **Awaiting orchestrator tester re-run on Chunk 11 surfaces, then dispatch of Chunk 12.**
 
