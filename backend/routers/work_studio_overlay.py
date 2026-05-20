@@ -43,6 +43,22 @@ router = APIRouter(prefix="/api")
 
 
 # ─────────────────────────────────────────────────────────────────────
+# GET — list overlay artefacts in a context (used by render-smoke + future Work Studio list)
+# ─────────────────────────────────────────────────────────────────────
+@router.get("/contexts/{context_id}/work-studio/documents")
+async def list_documents(
+    context_id: str,
+    limit: int = 20,
+    ctx=Depends(require_context_membership()),
+):
+    rows = await db.work_studio_exports.find(
+        {"context_id": context_id},
+        {"_id": 0},
+    ).sort("updated_at", -1).limit(max(1, min(limit, 100))).to_list(limit)
+    return {"items": [overlay_payload(r) for r in rows]}
+
+
+# ─────────────────────────────────────────────────────────────────────
 # GET — overlay payload
 # ─────────────────────────────────────────────────────────────────────
 @router.get("/contexts/{context_id}/work-studio/documents/{artefact_id}")

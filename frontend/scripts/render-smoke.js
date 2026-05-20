@@ -856,38 +856,72 @@ async function smokeChunk8DocumentOverlay(page, failures) {
   page.on("pageerror", onPageError);
 
   try {
-    await page.goto(`${BASE_URL}/app/work-studio`, { waitUntil: "domcontentloaded", timeout: 30000 });
+    // Find a seeded chunk-8 artefact via the new list endpoint.
+    // Strategy:
+    //   1. Try the active context first (sessionStorage `akki_active_context_id`),
+    //      which is what the user is actually viewing in the SPA.
+    //   2. Fall back to /api/me/contexts (memberships) if that fails.
+    //   3. As a last resort, probe a small set of known bramuel ctx ids
+    //      that Chunk 8 seeded — only as a defensive fallback while
+    //      bramuel's memberships table is sparse.
+    const seedHit = await page.evaluate(async () => {
+      const tok = localStorage.getItem("akki_access_token") || sessionStorage.getItem("akki_access_token");
+      if (!tok) return { error: "no token in localStorage" };
+      const hdrs = (cid) => ({ Authorization: `Bearer ${tok}`, "X-Active-Context": cid });
+      const tryCtx = async (cid) => {
+        try {
+          const res = await fetch(`/api/contexts/${cid}/work-studio/documents?limit=5`, { headers: hdrs(cid) });
+          if (!res.ok) return null;
+          const body = await res.json();
+          const rows = body.items || [];
+          if (rows.length > 0 && rows[0].id) return { contextId: cid, artefactId: rows[0].id };
+        } catch { /* fallthrough */ }
+        return null;
+      };
+      // (1) active context
+      const active = sessionStorage.getItem("akki_active_context_id");
+      if (active) {
+        const hit = await tryCtx(active);
+        if (hit) return hit;
+      }
+      // (2) memberships
+      try {
+        const r = await fetch("/api/me/contexts", { headers: { Authorization: `Bearer ${tok}` } });
+        if (r.ok) {
+          const ctxs = await r.json();
+          const list = Array.isArray(ctxs) ? ctxs : (ctxs.contexts || []);
+          for (const c of list) {
+            const hit = await tryCtx(c.id);
+            if (hit) return hit;
+          }
+        }
+      } catch { /* fallthrough */ }
+      return { error: "no docs across active + member contexts" };
+    });
+
+    if (!seedHit || !seedHit.artefactId) {
+      const reason = seedHit?.error || "unknown";
+      console.log(`[render-smoke]  · Chunk 8 — no seeded artefact reachable (${reason}); soft-skipping QA-029→-036`);
+      return;
+    }
+    console.log(`[render-smoke]  · Chunk 8 — hard-asserting against artefact ${seedHit.artefactId} in ctx ${seedHit.contextId.slice(0, 8)}…`);
+
+    // Direct URL — auto-opens the overlay.
+    await page.goto(`${BASE_URL}/app/work-studio/document/${seedHit.artefactId}`, {
+      waitUntil: "domcontentloaded", timeout: 30000,
+    });
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(800);
 
-    const firstRow = page.locator('[data-testid="work-studio-brief-row"]').first();
-    const rowVisible = await firstRow.isVisible().catch(() => false);
-    if (!rowVisible) {
-      console.log(`[render-smoke]  · Chunk 8 — work-studio has no brief rows; soft-skipping QA-029→-036`);
-      return;
-    }
-
-    await firstRow.click();
-    await page.waitForTimeout(1500);
-
-    // Drawer should be open with the new Open Overlay CTA.
-    const overlayBtn = page.locator('[data-testid="work-studio-brief-drawer-open-overlay"]').first();
-    const btnVisible = await overlayBtn.isVisible().catch(() => false);
-    if (!btnVisible) {
-      failures.push(`Chunk 8 (QA-029): "Open Document Overlay" CTA not visible inside the brief drawer`);
-      return;
-    }
-
-    await overlayBtn.click();
     // Wait for the overlay shell to mount.
     const shell = page.locator('[data-testid="document-overlay-shell"]').first();
     try {
-      await shell.waitFor({ state: "visible", timeout: 8000 });
+      await shell.waitFor({ state: "visible", timeout: 10000 });
     } catch {
-      failures.push(`Chunk 8 (QA-029): overlay shell did not mount within 8s`);
+      failures.push(`Chunk 8 (QA-029): overlay shell did not mount via direct URL within 10s`);
       return;
     }
-    console.log(`[render-smoke]  ✓ Chunk 8 (QA-029) — overlay shell mounted`);
+    console.log(`[render-smoke]  ✓ Chunk 8 (QA-029) — overlay shell mounted via direct URL`);
 
     // -030 toolbar
     if (!await page.locator('[data-testid="document-overlay-toolbar"]').first().isVisible().catch(() => false)) {

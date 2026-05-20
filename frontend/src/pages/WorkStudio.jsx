@@ -22,7 +22,7 @@
  * v7 palette only. No hex literals.
  */
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { Link, useSearchParams, useNavigate } from "react-router-dom";
+import { Link, useSearchParams, useNavigate, useParams } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
@@ -463,8 +463,17 @@ export default function WorkStudio() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerAid, setDrawerAid] = useState(null);
   // Chunk 8 (2026-05-18) — Document Overlay state.
+  const routeParams = useParams();
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [overlayAid, setOverlayAid] = useState(null);
+  // Auto-open the overlay when the route carries `:artefactId`.
+  useEffect(() => {
+    const routeAid = routeParams?.artefactId;
+    if (routeAid) {
+      setOverlayAid(routeAid);
+      setOverlayOpen(true);
+    }
+  }, [routeParams?.artefactId]);
   useEffect(() => {
     const onOpenOverlay = (e) => {
       const aid = e?.detail?.artefactId;

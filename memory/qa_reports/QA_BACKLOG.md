@@ -49,7 +49,7 @@ If this table and the source ever disagree, the source wins; rebuild this table.
 | QA-2026-05-16-026 | Pulse | Remove document citations from signal content + bullet the context | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-026 |
 | QA-2026-05-16-027 | Pulse | Signal drawer missing New / High / Recommendation badges | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-027 |
 | QA-2026-05-16-028 | Pulse | Drawer needs resolved/bookmarked icon-state + drop "Bookmark" label | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-028 |
-| QA-2026-05-16-029 | Work Studio — Document Overlay | Overlay shell + dimmed page + close returns to list — overlay component + new GET endpoint | P1 | DONE | Chunk-8 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-029 |
+| QA-2026-05-16-029 | Work Studio — Document Overlay | Overlay shell + dimmed page + close returns to list — overlay component + new GET endpoint | P1 | DONE | Chunk-8 | Live verification ready 2026-05-18 fix-pass · `qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-029` |
 | QA-2026-05-16-030 | Work Studio — Document Overlay | Toolbar with Draft/InReview/Committed variants + Move-to-review (owner only) + lifecycle endpoints | P1 | DONE | Chunk-8 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-030 |
 | QA-2026-05-16-031 | Work Studio — Document Overlay | Intelligence card collapsed with RAG accent (≥80 green / 50-79 amber / <50 red) | P1 | DONE | Chunk-8 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-031 |
 | QA-2026-05-16-032 | Work Studio — Document Overlay | Intelligence modal — source map, per-section confidence, framing, gaps, recs, audit trail | P1 | DONE | Chunk-8 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-032 |

@@ -287,6 +287,11 @@ function App() {
           <Route path="/app/manage" element={<Gated><Manage /></Gated>} />
           <Route path="/app/enterprise" element={<Gated><Enterprise /></Gated>} />
           <Route path="/app/work-studio" element={<Gated><WorkStudio /></Gated>} />
+          {/* Chunk 8 (2026-05-18, QA-2026-05-16-029) — direct overlay URL
+              so the overlay is reachable independent of the brief-drawer
+              entry point. WorkStudio reads `:artefactId` and auto-opens
+              the overlay. */}
+          <Route path="/app/work-studio/document/:artefactId" element={<Gated><WorkStudio /></Gated>} />
           <Route path="/app/decks/:deckId" element={<Gated><Decks /></Gated>} />
           <Route path="/app/pulse" element={<Gated><Pulse /></Gated>} />
           {/* Phase F0 — Universal Search full results page. */}
