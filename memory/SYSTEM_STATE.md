@@ -129,6 +129,87 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 13 — Solva SV-04 sessions list (4-bucket status + tab counts + read-only) — 2026-05-21 ✅ (autonomous)
+
+Extends the Solva sessions list view with a 4-bucket display_status classifier + tab count badges + read-only enforcement on COMPLETE/REFUSED sessions. Reuses the merged Phase D + v2 listing built in Chunk 9.5. Zero session document migration — status is derived at read time from existing fields.
+
+| ID    | Surface              | Files touched                                                                                                                                                                                                  | Test name(s)                                                                                              | Status | Notes                                                                                                                                                  |
+|-------|----------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
+| SV-04 | Solva sessions list  | NEW `services/solva_session_status.py`; `routers/solva_v2.py::list_sessions` (display_status + status_counts + filter shift); `pages/SolvaSessions.jsx` (count badges + new palette); `pages/SolvaPhaseDSession.jsx` (read-only banner); render-smoke step 15 | `test_qa_chunk_13.py` — **18 tests** (11 unit + 5 integration + 1 sanity + 1 CI-style import-static)     | DONE   | Classifier is pure compute; 4-bucket transitions covered exhaustively. Read-only enforcement is defence-in-depth (backend 409 already in place pre-13). |
+
+### Classifier contract (locked decision)
+
+| Bucket    | Rule                                                                   |
+|-----------|------------------------------------------------------------------------|
+| REFUSED   | `raw_status in {"refused", "abandoned"}` OR `layer_state == "refused"` |
+| COMPLETE  | `raw_status == "completed"` OR `layer_state == "done"`                 |
+| PAUSED    | `raw_status == "active"` AND `(now - updated_at) >= 24h`               |
+| ACTIVE    | `raw_status == "active"` AND `(now - updated_at) < 24h`                |
+
+`PAUSE_THRESHOLD_HOURS = 24` exposed as a constant. `abandoned → REFUSED` merge documented in `CHUNK_13_STATE.md §1`.
+
+### List endpoint shape (extension)
+
+- Every item now carries `display_status` ∈ `("active", "paused", "complete", "refused")`.
+- New top-level `status_counts: {all, active, paused, complete, refused}`.
+- `status` query param accepts the four display buckets (legacy raw-status values still match for back-compat).
+- Counts are computed BEFORE applying the status filter so tab badges remain stable across user toggles (Chunk 11 `status_counts` pattern).
+
+### 55-vs-84 anomaly — RESOLVED, no bug
+
+Per-context breakdown verified for bramuel as of 2026-05-21:
+- `solva_phase_d_sessions` count = 124 across 5 contexts (75 · 30 · 11 · 6 · 2)
+- `solva_v2_sessions` count = 6 across 2 contexts (3 · 3) + 3 with NULL context (legacy orphan)
+- Combined = 130 sessions; largest single-context view shows 78.
+
+Behavior is correct per WS-R16 (context-scoped privacy). Cross-context aggregate is a new product feature, queued as `C17-003` in the Chunk 17 cleanup queue. **No fix required.**
+
+### Read-only enforcement (defence-in-depth)
+
+- **Backend**: existing 409 from `solva_phase_d.py::submit_answer` on `TERMINAL_STATES` — verified via 2 new integration tests (`test_chunk13_read_only_enforced_on_complete_session` + `_on_refused_session`).
+- **Frontend**: new `solva-phase-d-read-only-banner` above the `<Body>` block on `SolvaPhaseDSession.jsx`. Renders on `status in {completed, refused, abandoned, blocked_hard}` OR `layer_state in {done, refused}`. The existing `<Body>` already routed terminal states to synthesis/refusal-only views with no input affordance; the banner just makes the state visually explicit AND deterministic for the smoke step.
+
+### Tests
+
+`backend/tests/test_qa_chunk_13.py` — **18 tests:**
+- 11 unit tests on `classify` + `tally` covering every bucket transition + the boundary at 24h + the `abandoned → REFUSED` merge + drift-defensive defaults.
+- 5 integration tests on the list endpoint shape + status filter + counts stability + read-only enforcement on COMPLETE + REFUSED.
+- 1 dedicated test that the new module imports no LLM SDK (`test_chunk13_no_new_direct_llm_calls`).
+- 1 sanity test for ``DISPLAY_BUCKETS`` exhaustiveness.
+
+**All 18 pass.** Cross-chunk regression (9.5 / 10 / 11 / 12 / 13 + CI guard) = **50 passed**.
+
+### Live render-smoke step 15
+
+Hard-asserts on `/app/solva/sessions`:
+- ✓ Page mounts with the 5 filter chips (`solva-sessions-filter-{all,active,paused,complete,refused}`).
+- ✓ Count badges (`solva-sessions-filter-count-*`) render on each chip.
+- ✓ Count consistency invariant — `all == active + paused + complete + refused`.
+- ✓ Clicking a Complete/Refused card opens the session with `solva-phase-d-read-only-banner` visible AND zero submit affordances.
+
+### CI guard
+
+`test_no_direct_llm_calls_outside_shield.py` — **PASS**. Chunk 13 adds zero LLM call sites (`services/solva_session_status.py` is pure compute; classifier reads existing session fields, returns a string).
+
+### Architectural invariants checkpoint
+
+- ✅ Shield gateway exclusivity preserved (no new LLM sites this chunk).
+- ✅ `context_id` scoping intact — required query param + active-membership check + Mongo find filter.
+- ✅ `tenant_id == account_id` boundary intact.
+- ✅ No `repr(exc)` leaks — `submit_answer` uses locked-copy `HTTPException(detail=…)`.
+- ✅ No blocking I/O in async routes.
+- ✅ No new third-party libraries.
+- ✅ Schema-drift defensiveness — classifier tolerates mixed timestamp shapes (datetime / ISO str / None).
+- ✅ Chunks 7-12 work intact — pytest moved up by +18.
+
+### ESLint + Ruff
+
+ESLint clean on `SolvaSessions.jsx`, `SolvaPhaseDSession.jsx`, `render-smoke.js`. Ruff clean on `services/solva_session_status.py`, `routers/solva_v2.py`, `tests/test_qa_chunk_13.py`.
+
+### Carry-forward `CHUNK_13_STATE.md`
+
+New file documenting the classifier rules, the `abandoned → REFUSED` merge rationale, the list endpoint shape contract, read-only enforcement layers, the 55-vs-84 anomaly resolution, and out-of-scope deferrals.
+
 ### Chunk 12 — 16-May Strategic-Goals deep rewrite (QA-2026-05-16-049) — 2026-05-21 ✅ (autonomous)
 
 Biggest single QA item in the 16-May backlog. Replaces the manual "Edit this goal" flow with a Shield-gateway-routed "Update Goal" AI assessment that searches scoped docs + signals and updates score/probability/status atomically. No-data short-circuit mirrors Chunk 7 QA-047 pattern.
@@ -276,6 +357,15 @@ Tester reported 4/5 PASS — fixture gap for the no-data UI branch + cover-bulle
 - ctx `cef8714a-303b-4214-a004-fc1adef43de9`  ·  with-evidence `goal-c12a-fadfb7f6`  ·  no-data `goal-c12nd-01ea4f12`
 - ctx `5afb0f40-0193-4b7d-abd9-75e620aac3c2`  ·  with-evidence `goal-c12a-ed920dd6`  ·  no-data `goal-c12nd-d779be52`
 - ctx `dcc263b1-59f9-4546-ba6a-ea7c54545b3e`  ·  with-evidence (existing)            ·  no-data `goal-c12nd-f3489ebf`
+
+### Fix-pass tester re-run verdict (Chunk 12) — 2026-05-21T08:00:00Z — PARTIAL DONE
+
+- **Test 2 (card timestamp) — PASS** end-to-end on the live preview against the seeded `goal-c12a-*` rows.
+- **Test 1 (no-data verbatim copy + Document Journal link) — BLOCKED**, not by a code bug but by the Chunk 11 (QA-2026-05-16-048) NED RBAC defence-in-depth. Bramuel is NED-declared on every context where Pass H seeded the no-data fixture; `POST /strategic-goals/{id}/update` correctly returns HTTP 403, so the no-data UI branch is unreachable end-to-end from this account.
+- Code is correct: verbatim message at `routers/strategic_goal_assessment.py:51-54`, frontend renders it at `StrategicGoalsPanel.jsx:508-519`, pytest `test_qa049_update_goal_no_evidence_short_circuit` + `_llm_says_irrelevant` exercise the branch (mocked), positive path validated on `admin@akki.ai`.
+- **One fix-pass cap exhausted** per autonomy rules — no second fix-pass attempted.
+- Seed extension to Exec account queued as `C17-002` in `/app/memory/sprints/CHUNK_17_CLEANUP_QUEUE.md` for the planned Chunk 17 cleanup pass.
+- **Chunk 12 status: PARTIAL DONE.** Code 100% correct; fixture coverage for the no-data UI walkthrough deferred.
 
 ### PO escalations queued
 

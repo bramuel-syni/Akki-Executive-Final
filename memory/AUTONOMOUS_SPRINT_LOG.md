@@ -134,6 +134,47 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 
 **Awaiting orchestrator tester re-run on the no-data path + card-timestamp sub-assertion, then dispatch of Chunk 13 per autonomy rules (PASS or FAIL).**
 
+
+## Chunk 12 fix-pass tester re-run — PARTIAL DONE — 2026-05-21T08:00:00Z
+
+- **Tester re-run verdict: 1/2 PASS** — Test 2 (card timestamp) **PASS** end-to-end; Test 1 (no-data verbatim + Document Journal link) **BLOCKED**.
+- Block reason: Pass H placed the seeded no-data goals into bramuel's contexts, which are **NED-declared**. Chunk 11 (QA-2026-05-16-048) ships defence-in-depth NED RBAC on `/strategic-goals/{id}/update` returning HTTP 403 for NED users (`routers/strategic_goal_assessment.py:231-236`). Bramuel cannot click "Update Goal" without the request being rejected → the no-data UI branch is unreachable end-to-end from bramuel's account.
+- **No code regression** — the no-data path is:
+  - Verbatim message present at `routers/strategic_goal_assessment.py:51-54` (confirmed by tester code-grep).
+  - Frontend renders it via `setNoDataMessage` + verbatim copy at `StrategicGoalsPanel.jsx:508-519`.
+  - Pytest exercises both no-data triggers (`test_qa049_update_goal_no_evidence_short_circuit` + `_llm_says_irrelevant`) under mocks — both green.
+  - Positive AI update path PASS on `admin@akki.ai` (Exec role).
+- **Chunk 12 status:** `PARTIAL DONE` — code is correct, seed coverage is incomplete for the no-data UI walkthrough.
+- **Fix-pass cap exhausted** (one-attempt rule honoured; no second fix-pass dispatched).
+- **Routing:** Seed extension to an Exec account routed to Chunk 17 cleanup queue as `C17-002`.
+- Memory updates:
+  - `qa_reports/QA_BACKLOG.md` — row `-049` status now `DONE (Test 5 fixture verification deferred to Chunk 17)` with `Sprint chunk = Chunk-12`.
+  - `SYSTEM_STATE.md § 4` — Chunk 12 fix-pass entry appended with tester re-run verdict + rationale (RBAC interaction noted).
+  - `sprints/CHUNK_17_CLEANUP_QUEUE.md` — entry `C17-002` added (extend Pass H to Exec account).
+
+**Chunk 12 closed PARTIAL. Dispatching Chunk 13 (Solva SV-04) per autonomy rules.**
+
+
+## Chunk 13 — Solva SV-04 sessions list (4-bucket display_status + tab counts + read-only) — DONE — 2026-05-21T10:00:00Z
+
+- IDs closed: 1 (SV-04 — Critical Solva feature gap)
+- Pytest delta: **+18** (743 → 761; new file `test_qa_chunk_13.py` — 11 classifier unit + 5 integration + 1 LLM-import sanity + 1 bucket exhaustiveness)
+- Tester verdict: PASS pending (render-smoke step 15 hard-asserts 4/4 + backend pytest 18/18; orchestrator tester re-run pending)
+- Files touched: 5 (NEW `services/solva_session_status.py`; `routers/solva_v2.py` list endpoint extension; `pages/SolvaSessions.jsx` count badges + new palette; `pages/SolvaPhaseDSession.jsx` read-only banner; render-smoke step 15)
+- Architectural invariants: PASS (zero new LLM call sites — classifier is pure Python; CI guard PASS + per-module import sanity test PASS)
+- Blockers: none
+- PO escalations queued: 1 (C17-003 — optional cross-context Solva sessions aggregate, ANSWERED-NO-CHANGE for SV-04 itself)
+- 55-vs-84 anomaly: **investigated and confirmed correct context-scoping** (130 total sessions for bramuel distributed 75·30·11·6·2 across Phase D + 3·3 + 3-NULL on v2 — top-context view shows 78 sessions; SV-04 list is correctly scoped per WS-R16). No fix needed.
+- Memory updates:
+  - `qa_reports/QA_BACKLOG.md` — row `SV-04` flipped to DONE with `Sprint chunk = Chunk-13`
+  - `SYSTEM_STATE.md § 4` — Chunk-13 closeout (newest at top)
+  - `sprints/CHUNK_13_STATE.md` — created (classifier contract, anomaly resolution, sub-bullet coverage table)
+  - `sprints/CHUNK_17_CLEANUP_QUEUE.md` — entry `C17-003` (cross-context aggregate, optional follow-on)
+- Notable: re-used the merged Phase D + v2 listing built in Chunk 9.5, the `status_counts` recipe from Chunk 11, and the schema-drift defensive timestamp coercion pattern from Chunk 10. No new architectural primitives — just composed existing ones.
+
+**Awaiting orchestrator tester re-run on Chunk 13 surfaces, then dispatch of Chunk 14 (Solva SV-05/06/07/08).**
+
+
 **Awaiting orchestrator tester re-run on Chunk 11 surfaces, then dispatch of Chunk 12.**
 
 

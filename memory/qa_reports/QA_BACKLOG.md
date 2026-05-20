@@ -70,7 +70,7 @@ If this table and the source ever disagree, the source wins; rebuild this table.
 | QA-2026-05-16-046 | Monitor | Suggested objective/project removed from Suggested card after add | P1 | DONE | Chunk-11 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-046 |
 | QA-2026-05-16-047 | Monitor | Manual obj/proj default = not_started (was off_track); not_started/achieved added to status vocab; no-data path | P0 | DONE | Chunk-7 (Fix-pass 2026-05-18) | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-047 |
 | QA-2026-05-16-048 | Monitor | NED user cannot generate strategic goals (CTAs are Exec-only) | P1 | DONE | Chunk-11 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-048 |
-| QA-2026-05-16-049 | Monitor — Strategic Goals | Strategic cards: RAG + % + hover-full-text + filter + sort + drawer-rewrite | P1 | DONE | Chunk-12 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-049 |
+| QA-2026-05-16-049 | Monitor — Strategic Goals | Strategic cards: RAG + % + hover-full-text + filter + sort + drawer-rewrite | P1 | DONE (Test 5 fixture verification deferred to Chunk 17) | Chunk-12 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-049 |
 | QA-2026-05-16-050 | Context Bar | Exec-only account must show "Executive" only (hide NED chip) | P2 | DONE | Chunk-11 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-050 |
 | QA-2026-05-16-051 | Context switcher | Loading state when user clicks Continue switching context | P2 | DONE | Chunk-11 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-051 |
 
@@ -114,7 +114,7 @@ Source: `/app/memory/qa_reports/SOLVA_QA_BRIEF_20MAY2026.md`. Native ID scheme `
 | SV-01 | Solva landing | "How Solva Reasons" redirect goes to wrong URL | Critical | DONE | Chunk-9.5 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-01 |
 | SV-02 | Solva sessions list | "View All Sessions" returns Field Required error | Critical | DONE | Chunk-9.5 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-02 |
 | SV-03 | Solva sessions | Sessions saving + auto-title + toast + inline edit | Critical | DONE | Chunk-9.5 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-03 |
-| SV-04 | Solva sessions list | Cards + ACTIVE/PAUSED/COMPLETE/REFUSED status badges + tabs | High | BACKLOG | Chunk-13 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-04 |
+| SV-04 | Solva sessions list | Cards + ACTIVE/PAUSED/COMPLETE/REFUSED status badges + tabs | High | DONE | Chunk-13 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-04 |
 | SV-05 | Solva sessions list | Real-time search bar (title + content) | High | BACKLOG | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-05 |
 | SV-06 | Solva responses | Rich text formatting (paragraphs, lists, bold) | Medium | BACKLOG | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-06 |
 | SV-07 | Solva session UX | Output window ≥60% viewport + scroll | Medium | BACKLOG | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-07 |

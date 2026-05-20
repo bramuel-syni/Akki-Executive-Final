@@ -65,6 +65,11 @@ from services.solva_v2.engines import (
 )
 from services.solva_v2.engines.tension_detector import CrossSessionTensionInputError
 from services.solva_v2 import guardrails
+from services.solva_session_status import (
+    classify as classify_display_status,
+    tally as tally_display_statuses,
+    DISPLAY_BUCKETS as SOLVA_DISPLAY_BUCKETS,
+)
 from services.solva_v2.opinion_filter import (
     OPINION_FREE_DIRECTIVE,
     enforce_opinion_free,
@@ -1417,8 +1422,10 @@ async def list_sessions(
         "context_id": context_id,
         "version": 2,
     }
-    if status:
-        qfilter["status"] = status
+    # Chunk 13 (SV-04, 2026-05-21) — the `status` query param now
+    # filters on the COMPUTED `display_status` bucket post-merge so
+    # status_counts can be derived from the full result set. Skip
+    # the raw-status find() constraint here.
     if q and (q := q.strip()):
         qfilter["intent"] = {"$regex": re.escape(q), "$options": "i"}
     rows = await db.solva_v2_sessions.find(
@@ -1445,8 +1452,9 @@ async def list_sessions(
     pd_filter: Dict[str, Any] = {
         "account_id": account["id"], "context_id": context_id,
     }
-    if status:
-        pd_filter["status"] = status
+    # Chunk 13 (SV-04) — same rationale as the v2 find above: the
+    # status filter is applied to the computed display_status bucket
+    # post-merge, so we don't constrain the find() here.
     if q:
         # `q` was already stripped + escaped above when we built the
         # v2 regex; reapply against `initial_framing` and `title`.
@@ -1492,8 +1500,30 @@ async def list_sessions(
     merged = list(rows) + pd_mapped
     # Sort newest-first by updated_at (string ISO sort works for ISO 8601).
     merged.sort(key=lambda r: (r.get("updated_at") or ""), reverse=True)
+
+    # Chunk 13 (QA SV-04, 2026-05-21) — compute the 4-bucket
+    # `display_status` for every merged row, then compute
+    # `status_counts` honouring the `q` filter but NOT the status
+    # filter (Chunk 11 `status_counts` pattern). Counts are taken
+    # BEFORE applying the user-supplied status filter to merged so the
+    # tab badges remain stable as the user clicks between tabs.
+    for row in merged:
+        row["display_status"] = classify_display_status(row)
+    status_counts = tally_display_statuses(merged)
+
+    # Apply the status filter on the COMPUTED display_status. Accepts
+    # the four display buckets verbatim; for compatibility with any
+    # callers that still pass a raw status, we fall back to matching
+    # against `row["status"]` when the value isn't one of the four
+    # buckets.
+    if status:
+        s = status.strip().lower()
+        if s in SOLVA_DISPLAY_BUCKETS:
+            merged = [r for r in merged if r.get("display_status") == s]
+        else:
+            merged = [r for r in merged if (r.get("status") or "").lower() == s]
     merged = merged[:100]
-    return {"items": merged, "count": len(merged)}
+    return {"items": merged, "count": len(merged), "status_counts": status_counts}
 
 
 # =============================================================================

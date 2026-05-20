@@ -290,6 +290,28 @@ export default function SolvaPhaseDSession() {
           </div>
         )}
 
+        {/* Chunk 13 (SV-04, 2026-05-21) — read-only banner for terminal
+            sessions. COMPLETE/REFUSED sessions render the synthesis or
+            refusal block via the `Body` component below but never the
+            input affordances. This banner makes the read-only state
+            visually explicit + deterministic for the smoke step. */}
+        {(session.status === "completed" || session.layerState === "done"
+          || session.status === "refused" || session.layerState === "refused"
+          || session.status === "abandoned" || session.status === "blocked_hard"
+        ) && (
+          <div
+            className="flex items-center gap-2 rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+            data-testid="solva-phase-d-read-only-banner"
+            role="note"
+          >
+            <ShieldCheck className="h-3.5 w-3.5 text-slate-500" />
+            <span>
+              This session is read-only. You can review the conversation history
+              and synthesis above, but new inputs are not accepted.
+            </span>
+          </div>
+        )}
+
         <Body
           session={session}
           draft={draft}

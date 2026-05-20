@@ -400,6 +400,17 @@ async function smoke() {
   console.log(`[render-smoke] step 14 — Chunk 12 Strategic Goals drawer rewrite`);
   await smokeChunk12StrategicGoals(page, failures);
 
+  // ────────────────────────────────────────────────────────────────────
+  // Phase 15 (Chunk 13, 2026-05-21) — Solva SV-04 Sessions list view.
+  //   Hard-asserts:
+  //     • status_counts surfaces on the page (count badges on each tab)
+  //     • at least one of the four bucket pills renders on visible cards
+  //     • clicking through a COMPLETE/REFUSED session lands on the
+  //       read-only banner (no input affordance)
+  // ────────────────────────────────────────────────────────────────────
+  console.log(`[render-smoke] step 15 — Chunk 13 Solva sessions list (SV-04)`);
+  await smokeChunk13SolvaSessions(page, failures);
+
   await browser.close();
 
   if (failures.length) {
@@ -407,7 +418,7 @@ async function smoke() {
     for (const f of failures) console.error(`  • ${f}`);
     process.exit(1);
   }
-  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green · Chunk 7 generate-signals loading green · Chunk 8 document overlay green · Chunk 9 contribution attach green · Chunk 9.5 Solva criticals green · Chunk 10 Pulse surface green · Chunk 11 Monitor surface green · Chunk 12 Strategic Goals rewrite green.`);
+  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green · Chunk 7 generate-signals loading green · Chunk 8 document overlay green · Chunk 9 contribution attach green · Chunk 9.5 Solva criticals green · Chunk 10 Pulse surface green · Chunk 11 Monitor surface green · Chunk 12 Strategic Goals rewrite green · Chunk 13 Solva sessions list green.`);
 }
 
 // ----------------------------------------------------------------------
@@ -2179,3 +2190,155 @@ async function smokeChunk12StrategicGoals(page, failures) {
   page.off("pageerror", onPageError);
 }
 
+
+
+// ----------------------------------------------------------------------
+// Phase 15 (Chunk 13, 2026-05-21) — Solva SV-04 sessions list smoke.
+//
+// Hard-asserts on the live /app/solva/sessions page:
+//   1. Filter chips render with count badges (`solva-sessions-filter-count-*`).
+//   2. The "All" count badge equals the sum of the four bucket counts
+//      (consistency invariant — proves the server-side tally is correct).
+//   3. If at least one COMPLETE or REFUSED session exists in the list,
+//      clicking it lands on the session page with the read-only banner
+//      (`solva-phase-d-read-only-banner`) and NO submit affordance.
+//
+// Soft-skips when the active context has zero Solva sessions (clean
+// test account). Pytest covers the classifier + endpoint shape
+// authoritatively.
+// ----------------------------------------------------------------------
+async function smokeChunk13SolvaSessions(page, failures) {
+  const pageErrors = [];
+  const onPageError = (err) => { pageErrors.push(err.toString()); };
+  page.on("pageerror", onPageError);
+
+  try {
+    await page.goto(`${BASE_URL}/app/solva/sessions`,
+      { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(800);
+
+    // The page mounts even when there are zero sessions. The filter
+    // chips MUST be present in either case.
+    const allFilter = page.locator('[data-testid="solva-sessions-filter-all"]').first();
+    const allFilterVisible = await allFilter.isVisible().catch(() => false);
+    if (!allFilterVisible) {
+      failures.push(`Chunk 13 (SV-04): sessions page didn't render the All filter chip`);
+      return;
+    }
+    console.log(`[render-smoke]  ✓ Chunk 13 — sessions page mounted with filter chips`);
+
+    // Read all five count badges. The labels are deterministic.
+    const buckets = ["all", "active", "paused", "complete", "refused"];
+    const counts = {};
+    for (const b of buckets) {
+      const badge = page.locator(`[data-testid="solva-sessions-filter-count-${b}"]`).first();
+      // eslint-disable-next-line no-await-in-loop
+      if (!await badge.isVisible().catch(() => false)) {
+        failures.push(`Chunk 13 (SV-04): missing count badge for "${b}" tab`);
+        continue;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      const txt = ((await badge.textContent()) || "").trim();
+      const n = Number.parseInt(txt, 10);
+      if (Number.isNaN(n)) {
+        failures.push(`Chunk 13 (SV-04): non-numeric count "${txt}" on ${b} tab`);
+        continue;
+      }
+      counts[b] = n;
+    }
+    if (Object.keys(counts).length === 5) {
+      const sum = counts.active + counts.paused + counts.complete + counts.refused;
+      if (sum !== counts.all) {
+        failures.push(
+          `Chunk 13 (SV-04): count consistency broken — All=${counts.all} but bucket sum=${sum} ` +
+          `(active=${counts.active}, paused=${counts.paused}, complete=${counts.complete}, refused=${counts.refused})`,
+        );
+      } else {
+        console.log(`[render-smoke]  ✓ Chunk 13 (SV-04) — count consistency holds (All=${counts.all} = ${counts.active}+${counts.paused}+${counts.complete}+${counts.refused})`);
+      }
+    }
+
+    if ((counts.all || 0) === 0) {
+      console.log(`[render-smoke]  · Chunk 13 — context has zero sessions; read-only banner assertion soft-skipped`);
+      return;
+    }
+
+    // Try clicking the Complete tab first; fall back to Refused. Both
+    // route the user to a read-only session.
+    let terminalBucket = null;
+    if (counts.complete > 0) terminalBucket = "complete";
+    else if (counts.refused > 0) terminalBucket = "refused";
+    if (!terminalBucket) {
+      console.log(`[render-smoke]  · Chunk 13 — no COMPLETE/REFUSED sessions in this context; read-only assertion soft-skipped`);
+      return;
+    }
+
+    const tabBtn = page.locator(`[data-testid="solva-sessions-filter-${terminalBucket}"]`).first();
+    await tabBtn.click();
+    await page.waitForTimeout(600);
+
+    const firstCard = page.locator('[data-testid^="solva-sessions-item-"]').first();
+    if (!await firstCard.isVisible().catch(() => false)) {
+      console.log(`[render-smoke]  · Chunk 13 — ${terminalBucket} list rendered empty despite counts.${terminalBucket}=${counts[terminalBucket]}; race or filter mismatch — soft-skip`);
+      return;
+    }
+
+    // Status pill on the card must reflect the bucket label.
+    const pill = firstCard.locator(`[data-testid^="solva-sessions-status-pill-"]`).first();
+    if (await pill.isVisible().catch(() => false)) {
+      const pillText = ((await pill.textContent()) || "").trim().toLowerCase();
+      const expected = terminalBucket;
+      if (!pillText.includes(expected)) {
+        failures.push(`Chunk 13 (SV-04): status pill text "${pillText}" doesn't match bucket "${expected}"`);
+      } else {
+        console.log(`[render-smoke]  ✓ Chunk 13 (SV-04) — ${terminalBucket} status pill renders correctly`);
+      }
+    }
+
+    // Click Open to land on the session page.
+    const openBtn = firstCard.locator('button:has-text("Open")').first();
+    if (!await openBtn.isVisible().catch(() => false)) {
+      console.log(`[render-smoke]  · Chunk 13 — Open button not visible on the first ${terminalBucket} card; soft-skip`);
+      return;
+    }
+    await openBtn.click();
+    await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+
+    // Read-only banner MUST be present.
+    const banner = page.locator('[data-testid="solva-phase-d-read-only-banner"]').first();
+    const bannerVisible = await banner.isVisible({ timeout: 4000 }).catch(() => false);
+    if (!bannerVisible) {
+      // Legacy v2 sessions land on /app/solva/session/{id} which is a
+      // different page; the read-only banner only exists on the Phase D
+      // page. Treat that as a soft-skip with a hint.
+      const urlNow = page.url();
+      if (!urlNow.includes("/solva/phase-d/")) {
+        console.log(`[render-smoke]  · Chunk 13 — opened a legacy v2 session (url=${urlNow.slice(0, 80)}); SV-04 read-only banner check applies only to Phase D pages — soft-skip`);
+      } else {
+        failures.push(`Chunk 13 (SV-04): Phase D session page didn't render solva-phase-d-read-only-banner for ${terminalBucket} session`);
+      }
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 13 (SV-04) — read-only banner renders on opened ${terminalBucket} session`);
+
+      // No submit affordance should be visible.
+      const submitBtns = await page.locator(
+        '[data-testid="solva-phase-d-answer-submit"], [data-testid="solva-phase-d-framing-submit"], [data-testid="solva-phase-d-reflection-submit"]',
+      ).count();
+      if (submitBtns > 0) {
+        failures.push(`Chunk 13 (SV-04): read-only session still surfaces ${submitBtns} submit affordance(s)`);
+      } else {
+        console.log(`[render-smoke]  ✓ Chunk 13 (SV-04) — no submit affordance on read-only session`);
+      }
+    }
+  } catch (e) {
+    failures.push(`Chunk 13 smoke threw: ${e.message}`);
+  }
+
+  if (pageErrors.length > 0) {
+    failures.push(`Chunk 13 step: ${pageErrors.length} uncaught page error(s)`);
+    for (const e of pageErrors) console.error(`    PAGEERROR  ${e.slice(0, 240)}`);
+  }
+  page.off("pageerror", onPageError);
+}

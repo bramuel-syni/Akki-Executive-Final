@@ -24,11 +24,11 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 
 const STATUS_CHIPS = [
-  { key: "",          label: "All" },
-  { key: "active",    label: "Active" },
-  { key: "complete",  label: "Complete" },
-  { key: "refused",   label: "Refused" },
-  { key: "paused",    label: "Paused" },
+  { key: "",          label: "All",       countKey: "all" },
+  { key: "active",    label: "Active",    countKey: "active" },
+  { key: "paused",    label: "Paused",    countKey: "paused" },
+  { key: "complete",  label: "Complete",  countKey: "complete" },
+  { key: "refused",   label: "Refused",   countKey: "refused" },
 ];
 
 const SUBMODULE_LABEL = {
@@ -51,6 +51,9 @@ export default function SolvaSessions() {
   const { activeContext } = useAuth();
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
+  const [counts, setCounts] = useState({
+    all: 0, active: 0, paused: 0, complete: 0, refused: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
@@ -67,6 +70,7 @@ export default function SolvaSessions() {
     // renders the no-context empty state in the meantime.
     if (!activeContext?.id) {
       setItems([]);
+      setCounts({ all: 0, active: 0, paused: 0, complete: 0, refused: 0 });
       setLoading(false);
       return () => { cancelled = true; };
     }
@@ -75,7 +79,15 @@ export default function SolvaSessions() {
     if (debouncedQ.trim()) params.q = debouncedQ.trim();
     if (status) params.status = status;
     api.get("/solva/v2/sessions", { params })
-      .then((r) => { if (!cancelled) setItems(r.data?.items || []); })
+      .then((r) => {
+        if (cancelled) return;
+        setItems(r.data?.items || []);
+        // Chunk 13 (SV-04) — surface the server-computed
+        // `status_counts` so the tab badges show live counts.
+        setCounts(r.data?.status_counts || {
+          all: 0, active: 0, paused: 0, complete: 0, refused: 0,
+        });
+      })
       .catch((e) => { if (!cancelled) toast.error(apiErrorMessage(e)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -144,10 +156,11 @@ export default function SolvaSessions() {
           />
         </div>
 
-        {/* Filter chips */}
+        {/* Filter chips with count badges (Chunk 13 SV-04) */}
         <div data-testid="solva-sessions-filters" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 24 }}>
           {STATUS_CHIPS.map((c) => {
             const selected = status === c.key;
+            const count = Number.isFinite(counts?.[c.countKey]) ? counts[c.countKey] : 0;
             return (
               <button
                 key={c.key || "all"}
@@ -163,9 +176,23 @@ export default function SolvaSessions() {
                   fontFamily: 'Calibri, "Segoe UI", system-ui, sans-serif',
                   fontSize: 12, letterSpacing: 0.3,
                   cursor: "pointer",
+                  display: "inline-flex", alignItems: "center", gap: 8,
                 }}
               >
-                {c.label}
+                <span>{c.label}</span>
+                <span
+                  data-testid={`solva-sessions-filter-count-${c.key || "all"}`}
+                  style={{
+                    background: selected ? "rgba(139,29,44,0.12)" : "rgba(0,0,0,0.06)",
+                    color: selected ? "var(--oxblood)" : "var(--graphite)",
+                    fontSize: 11, letterSpacing: 0.2,
+                    padding: "0 7px", borderRadius: 999,
+                    minWidth: 18, textAlign: "center",
+                    fontWeight: 600,
+                  }}
+                >
+                  {count}
+                </span>
               </button>
             );
           })}
@@ -218,7 +245,7 @@ export default function SolvaSessions() {
                     >
                       {SUBMODULE_LABEL[s.submodule] || s.submodule || "Solva"}
                     </span>
-                    <StatusPill status={s.status} />
+                    <StatusPill status={s.display_status || s.status} />
                   </div>
                   {/* QA-2026-05-20 SV-03 — inline-editable title (Phase D
                        sessions only — legacy v2 sessions retain the
@@ -275,17 +302,24 @@ export default function SolvaSessions() {
 
 function StatusPill({ status }) {
   const s = (status || "").toLowerCase();
+  // Chunk 13 (SV-04) — 4-bucket palette per spec:
+  //   ACTIVE green · PAUSED amber · COMPLETE blue · REFUSED grey.
+  // Legacy raw statuses (blocked_hard, blocked_soft, abandoned) still
+  // map to a sensible chip in case a session was migrated mid-flight.
   const palette = {
-    active:        { bg: "rgba(50,100,180,0.10)", fg: "var(--graphite)", label: "Active" },
-    complete:      { bg: "rgba(50,140,90,0.10)",  fg: "var(--graphite)", label: "Complete" },
-    refused:       { bg: "rgba(139,29,44,0.10)",  fg: "var(--oxblood)", label: "Refused" },
-    paused:        { bg: "rgba(0,0,0,0.05)",       fg: "var(--graphite)", label: "Paused" },
-    blocked_hard:  { bg: "rgba(139,29,44,0.10)",  fg: "var(--oxblood)", label: "Blocked" },
-    blocked_soft:  { bg: "rgba(180,130,50,0.10)", fg: "var(--oxblood)", label: "Caution" },
-    abandoned:     { bg: "rgba(0,0,0,0.05)",       fg: "var(--graphite)", label: "Abandoned" },
-  }[s] || { bg: "rgba(0,0,0,0.05)", fg: "var(--graphite)", label: s || "—" };
+    active:        { bg: "rgba(50,140,90,0.12)",  fg: "rgb(34,90,55)",     label: "Active" },
+    paused:        { bg: "rgba(180,130,50,0.15)", fg: "rgb(120,80,15)",    label: "Paused" },
+    complete:      { bg: "rgba(50,100,180,0.12)", fg: "rgb(35,75,140)",    label: "Complete" },
+    refused:       { bg: "rgba(0,0,0,0.07)",      fg: "var(--graphite)",   label: "Refused" },
+    // Legacy raw-status fallbacks kept for forward compatibility.
+    blocked_hard:  { bg: "rgba(0,0,0,0.07)",      fg: "var(--graphite)",   label: "Refused" },
+    blocked_soft:  { bg: "rgba(180,130,50,0.15)", fg: "rgb(120,80,15)",    label: "Paused" },
+    abandoned:     { bg: "rgba(0,0,0,0.07)",      fg: "var(--graphite)",   label: "Refused" },
+    completed:     { bg: "rgba(50,100,180,0.12)", fg: "rgb(35,75,140)",    label: "Complete" },
+  }[s] || { bg: "rgba(0,0,0,0.05)", fg: "var(--graphite)", label: (s || "—").toUpperCase() };
   return (
     <span
+      data-testid={`solva-sessions-status-pill-${s || "unknown"}`}
       style={{
         display: "inline-block", padding: "1px 8px", borderRadius: 999,
         background: palette.bg, color: palette.fg,
