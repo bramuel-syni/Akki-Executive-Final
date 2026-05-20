@@ -571,6 +571,42 @@ async def _seed_chunk10_pulse_signal_fixture(db, context_id: str, account_id: st
     }
 
 
+async def _seed_chunk11_monitor_fixture(db, context_id: str, account_id: str) -> Dict[str, Any]:
+    """Chunk 11 (QA-2026-05-16-045) — seed one `achieved`-state
+    objective per bramuel context so render-smoke step 13 can
+    hard-assert the new Achieved tab + count badge. Idempotent via
+    `chunk11_monitor_marker="v1"`.
+    """
+    existing = await db.objectives.find_one(
+        {"context_id": context_id, "chunk11_monitor_marker": "v1"},
+        {"_id": 0, "id": 1},
+    )
+    if existing:
+        return {
+            "context_id": context_id, "objective_id": existing["id"],
+            "minted": False, "reason": "already_seeded",
+        }
+    oid = f"obj-c11-{uuid.uuid4().hex[:10]}"
+    now_iso = _iso(_now())
+    await db.objectives.insert_one({
+        "id": oid,
+        "context_id": context_id,
+        "account_id": account_id,
+        "kind": "objective",
+        "title": "Achieved: 100% audit-pack readiness (Chunk 11 seed)",
+        "rag_status": "achieved",
+        "score": 100,
+        "trend": "flat",
+        "source": "manual",
+        "source_refs": [],
+        "owner": {"role": "CFO"},
+        "created_at": now_iso,
+        "updated_at": now_iso,
+        "chunk11_monitor_marker": "v1",
+    })
+    return {"context_id": context_id, "objective_id": oid, "minted": True}
+
+
 async def main():
     cli = AsyncIOMotorClient(os.environ["MONGO_URL"])
     db = cli[os.environ["DB_NAME"]]
@@ -589,6 +625,7 @@ async def main():
     cycle_seeds: List[Dict[str, Any]] = []
     pii_chats: List[Dict[str, Any]] = []
     pulse_signals: List[Dict[str, Any]] = []
+    monitor_seeds: List[Dict[str, Any]] = []
 
     for c in contexts:
         cid = c["id"]
@@ -635,6 +672,12 @@ async def main():
         if res.get("minted"):
             pulse_signals.append(res)
 
+        # Pass F (Chunk 11): Achieved-state objective so render-smoke
+        # step 13 can hard-assert the new Achieved tab + count badge.
+        res = await _seed_chunk11_monitor_fixture(db, cid, bid)
+        if res.get("minted"):
+            monitor_seeds.append(res)
+
     # Write a seed-log marker for visibility / forensics.
     await db.chunk8_seed_log.insert_one({
         "run_id": uuid.uuid4().hex,
@@ -676,6 +719,10 @@ async def main():
         for ps in pulse_signals[:3]:
             print(f"   - ctx={ps['context_id']} signal={ps['signal_id']} "
                   f"comment={ps.get('comment_id')}")
+    if monitor_seeds:
+        print("[seed-chunks] Sample Achieved objectives (Chunk 11 -045):")
+        for ms in monitor_seeds[:3]:
+            print(f"   - ctx={ms['context_id']} obj={ms['objective_id']}")
 
 
 if __name__ == "__main__":

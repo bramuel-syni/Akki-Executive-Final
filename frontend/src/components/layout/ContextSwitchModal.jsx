@@ -11,7 +11,7 @@
  * which reloads the current page so all on-screen data re-fetches
  * with the new (user, context) role binding.
  */
-import React from "react";
+import React, { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -19,15 +19,28 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Building2 } from "lucide-react";
+import { Building2, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function ContextSwitchModal() {
   const { pendingSwitchModal, dismissSwitchModal } = useAuth();
   const open = !!pendingSwitchModal;
+  // QA-2026-05-16-051 — Continue button needs a loading state.
+  // Pre-fix, dismissSwitchModal() triggered a window.location.reload()
+  // synchronously, but on slow networks the click registered a few
+  // hundred ms before the navigation began — users would tap twice
+  // because they thought the first click missed. The spinner + label
+  // swap closes the perceptual gap.
+  const [continuing, setContinuing] = useState(false);
+
+  const handleContinue = () => {
+    setContinuing(true);
+    // Defer dismiss to next tick so the spinner paints first.
+    setTimeout(() => { dismissSwitchModal(); }, 50);
+  };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) dismissSwitchModal(); }}>
+    <Dialog open={open} onOpenChange={(o) => { if (!o && !continuing) dismissSwitchModal(); }}>
       <DialogContent
         className="max-w-[480px] bg-[var(--cream)] border-[var(--rule)] p-0"
         data-testid="context-switch-modal"
@@ -53,11 +66,14 @@ export default function ContextSwitchModal() {
         </div>
         <div className="px-7 py-3 border-t border-[var(--rule)] bg-white flex justify-end">
           <Button
-            onClick={dismissSwitchModal}
-            className="rounded-sm h-9 text-[13px] px-5"
+            onClick={handleContinue}
+            disabled={continuing}
+            className="rounded-sm h-9 text-[13px] px-5 inline-flex items-center gap-2"
             data-testid="context-switch-modal-continue"
+            aria-busy={continuing}
           >
-            Continue
+            {continuing && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            {continuing ? "Loading…" : "Continue"}
           </Button>
         </div>
       </DialogContent>

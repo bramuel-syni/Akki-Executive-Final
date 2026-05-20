@@ -153,6 +153,14 @@ async def create_goal(
     context_id: str, body: GoalIn,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
+    # QA-2026-05-16-048 — RBAC: NED accounts cannot create strategic
+    # goals (Exec-only action). See extract_from_document for narrative.
+    if (ctx["account"].get("declared_role") or "").lower() == "ned":
+        raise HTTPException(
+            status_code=403,
+            detail="Strategic goal generation is an Executive-only action. "
+                   "NED users have read-only access to strategic goals.",
+        )
     now_iso = _iso(_now())
     goal = {
         "id": str(uuid.uuid4()),
@@ -236,7 +244,21 @@ async def extract_from_document(
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
     """Reads the document's extracted_text and asks Claude to return board-level
-    strategic goals as a structured array, then upserts them."""
+    strategic goals as a structured array, then upserts them.
+
+    QA-2026-05-16-048 — server-enforced RBAC. NED accounts CANNOT
+    generate strategic goals (the spec is unambiguous: "the two CTAs
+    are Exec-only"). The frontend already hides the CTAs but a NED
+    could still POST directly via curl; this guard closes that gap.
+    Returns 403 with a clear message so the frontend can surface it
+    intelligibly if anything bypasses the hide-logic.
+    """
+    if (ctx["account"].get("declared_role") or "").lower() == "ned":
+        raise HTTPException(
+            status_code=403,
+            detail="Strategic goal generation is an Executive-only action. "
+                   "NED users have read-only access to strategic goals.",
+        )
     doc = await db.documents.find_one(
         {"id": body.doc_id, "context_id": context_id, "status": {"$ne": "archived"}},
         {"_id": 0, "id": 1, "name": 1, "extracted_text": 1},

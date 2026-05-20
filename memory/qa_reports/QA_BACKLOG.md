@@ -5,8 +5,8 @@ source: /app/memory/qa_reports/QA_REPORT_16MAY2026.md (16-May rows)
               + /app/memory/qa_reports/SOLVA_QA_BRIEF_20MAY2026.md (Solva rows)
 total_findings: 51 (16-May) + 8 (Solva 20-May) = 59
 total_clarifications: 2
-priority_histogram: "P0: 6 (DONE) · P1: 14 + 14 (DONE Chunk-8 8 + Chunk-9 5 + Chunk-10 1) · P2: 9 (DONE Chunk-10 6) · P3: 2 · SV-Crit: 3 (DONE Chunk-9.5) · SV-High/Med: 5 (BACKLOG)"
-maintainer: e1_main (Chunk 10 close, autonomous overnight)
+priority_histogram: "P0: 6 (DONE) · P1: 11 + 17 (DONE Chunk-8 8 + Chunk-9 5 + Chunk-10 1 + Chunk-11 3) · P2: 7 (DONE Chunk-10 6 + Chunk-11 2) · P3: 2 · SV-Crit: 3 (DONE Chunk-9.5) · SV-High/Med: 5 (BACKLOG)"
+maintainer: e1_main (Chunk 11 close, autonomous overnight)
 ---
 
 # QA Backlog — 16 May 2026 (Master Tracker)
@@ -66,13 +66,13 @@ If this table and the source ever disagree, the source wins; rebuild this table.
 | QA-2026-05-16-042 | Compile Modal | Step 2 Sources inline-upload prompt (nested-modal state preserved) | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-042 |
 | QA-2026-05-16-043 | Enhance flow | committee_pack accepted as first-class enhance kind (alongside deck/report/minutes) | P0 | DONE | Chunk-7 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-043 |
 | QA-2026-05-16-044 | Enhance flow | Enhanced document mirrors Compile-Report journey (Recent + Akki Generated) | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-044 |
-| QA-2026-05-16-045 | Monitor | All / At Risk / On Track / Off Track / Achieved tabs + badges (obj+proj only) | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-045 |
-| QA-2026-05-16-046 | Monitor | Suggested objective/project removed from Suggested card after add | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-046 |
+| QA-2026-05-16-045 | Monitor | All / At Risk / On Track / Off Track / Achieved tabs + badges (obj+proj only) | P1 | DONE | Chunk-11 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-045 |
+| QA-2026-05-16-046 | Monitor | Suggested objective/project removed from Suggested card after add | P1 | DONE | Chunk-11 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-046 |
 | QA-2026-05-16-047 | Monitor | Manual obj/proj default = not_started (was off_track); not_started/achieved added to status vocab; no-data path | P0 | DONE | Chunk-7 (Fix-pass 2026-05-18) | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-047 |
-| QA-2026-05-16-048 | Monitor | NED user cannot generate strategic goals (CTAs are Exec-only) | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-048 |
+| QA-2026-05-16-048 | Monitor | NED user cannot generate strategic goals (CTAs are Exec-only) | P1 | DONE | Chunk-11 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-048 |
 | QA-2026-05-16-049 | Monitor — Strategic Goals | Strategic cards: RAG + % + hover-full-text + filter + sort + drawer-rewrite | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-049 |
-| QA-2026-05-16-050 | Context Bar | Exec-only account must show "Executive" only (hide NED chip) | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-050 |
-| QA-2026-05-16-051 | Context switcher | Loading state when user clicks Continue switching context | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-051 |
+| QA-2026-05-16-050 | Context Bar | Exec-only account must show "Executive" only (hide NED chip) | P2 | DONE | Chunk-11 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-050 |
+| QA-2026-05-16-051 | Context switcher | Loading state when user clicks Continue switching context | P2 | DONE | Chunk-11 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-051 |
 
 ## Open clarifications (PO must answer before any dispatch picks these up)
 

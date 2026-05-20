@@ -510,11 +510,18 @@ export default function ObjectivesProjectsPanel({ contextId }) {
     return tabs;
   }, [ownerRoleCounts]);
 
+  // QA-2026-05-16-045 — filter tabs now carry per-status counts from
+  // `data.status_counts` so the user can see at a glance how many
+  // items live in each bucket. Achieved + Not Started added as new
+  // tabs (the backend already supports both states).
+  const sc = data?.status_counts || {};
   const filterTabs = [
-    { key: "all",   label: "All",        count: data.total },
-    { key: "green", label: "On Track",   count: undefined },
-    { key: "amber", label: "At Risk",    count: undefined },
-    { key: "red",   label: "Off Track",  count: undefined },
+    { key: "all",         label: "All",         count: sc.all },
+    { key: "green",       label: "On Track",    count: sc.green },
+    { key: "amber",       label: "At Risk",     count: sc.amber },
+    { key: "red",         label: "Off Track",   count: sc.red },
+    { key: "achieved",    label: "Achieved",    count: sc.achieved },
+    { key: "not_started", label: "Not Started", count: sc.not_started },
   ];
 
   return (

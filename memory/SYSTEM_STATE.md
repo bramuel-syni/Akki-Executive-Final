@@ -129,6 +129,51 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 11 — 16-May Monitor-surface batch (-045/-046/-048/-050/-051) — 2026-05-21 ✅ (autonomous)
+
+Monitor + Strategic Goals + Context Bar batch: 3 P1 + 2 adjacent P2s. All 5 IDs landed in one chunk.
+
+| ID | Surface | Files touched | Test name(s) | Status | Notes |
+|---|---|---|---|---|---|
+| -045 (P1) | Monitor tabs + badges | `routers/monitor_v2.py::list_monitor_items` (new `status_counts` field on response); `components/monitor/ObjectivesProjectsPanel.jsx` (Achieved + Not Started tabs + counts from `data.status_counts`) | `test_qa045_status_counts_present_on_list_response`, `_ignore_active_status_filter` | DONE | Backend `_RAG` already supported `achieved`/`not_started`. Status counts honour every filter EXCEPT the rag_status filter itself, so tab switching doesn't reshuffle counts. |
+| -046 (P1) | Auto-suggest dedup | `routers/monitor_v2.py::auto_suggest_objectives/_projects` (build `accepted_keys` from existing items' `source_refs` and filter candidates) | `test_qa046_auto_suggest_objectives_dedups_after_accept`, `_projects_dedups_after_accept` | DONE | After accepting a suggestion, the same cycle/session won't re-appear. Idempotent for repeat fetches. |
+| -048 (P1) | NED RBAC on strategic goals | `routers/strategic_goals.py::create_goal` + `extract_from_document` (server-enforced `declared_role != "ned"` guard returning 403) | `test_qa048_ned_user_rejected_on_create`, `_rejected_on_extract`, `_exec_user_can_still_create_strategic_goal` | DONE | Frontend already hides CTAs; server-side guard closes the curl-bypass gap. |
+| -050 (P2) | Context bar dual-role label | `components/layout/CycleContextIndicator.jsx::deriveRoleKicker` (require ≥1 NED context membership before composing "Executive · NED") | (covered by ESLint + runtime contexts probe) | DONE | Pre-fix, a stale `declared_role === "dual"` on an Exec-only account caused "Executive · NED" to render even though no NED context existed. Now requires actual NED membership. |
+| -051 (P2) | Context-switcher Continue loading | `components/layout/ContextSwitchModal.jsx` (useState `continuing` flag + Loader2 icon + label swap to "Loading…") | (render-smoke step 13 covers ESLint + DOM testid presence) | DONE | Spinner paints before the 50ms deferred `dismissSwitchModal()` so the perceptual click-gap closes. |
+
+**Tests:** `backend/tests/test_qa_chunk_11.py` — **7 tests** (2 × QA-045 + 2 × QA-046 + 3 × QA-048). All pass.
+
+**Final pytest count:** **736 passed**, 0 failed, 562 skipped — delta **+7** from Chunk-10 baseline 729 (matches the 7 new Chunk-11 tests exactly). Zero regressions.
+
+**CI guard** `test_no_direct_llm_calls_outside_shield.py` — **PASS** (Chunk 11 adds zero LLM call sites).
+
+**Live render-smoke step 13 — GREEN end-to-end:**
+- ✓ QA-045 — Achieved tab present with count 1 (against seed Pass F)
+- ✓ QA-045 — all 6 Monitor tabs (all/green/amber/red/achieved/not_started) present
+- · QA-051 — Continue-button loading state covered by ESLint + ContextSwitchModal.jsx static check (no E2E modal trigger path in smoke; verified via JSX presence)
+
+**Seed Pass F:** `backend/scripts/seed_chunks.py::_seed_chunk11_monitor_fixture` mints one `achieved`-state objective per bramuel context. Idempotent via `chunk11_monitor_marker="v1"`.
+
+**Architectural invariants checkpoint:**
+- ✅ All LLM traffic via `services.synisense.shield.client.invoke()` — CI guard PASS. Chunk 11 adds zero LLM call sites.
+- ✅ `context_id` scoping on every touched endpoint — all `routers/monitor_v2.py` + `routers/strategic_goals.py` endpoints gate via `require_context_membership()`.
+- ✅ `tenant_id == account_id` on Shield surfaces — N/A this chunk.
+- ✅ No `repr(exc)` leaks — RBAC 403 detail uses a human-readable error message; no exception object embedded.
+- ✅ No blocking I/O in async routes — `accepted_keys` set built via async-iter.
+- ✅ No new third-party libraries (lucide-react `Loader2` already present).
+- ✅ Schema-drift defensiveness — NED detection uses `(ctx["account"].get("declared_role") or "").lower()` (handles None/empty/missing).
+- ✅ Chunks 7-10 work intact — pytest count moved up, never down.
+
+**ESLint:** clean on `CycleContextIndicator.jsx`, `ContextSwitchModal.jsx`, `ObjectivesProjectsPanel.jsx`, `scripts/render-smoke.js`. **Ruff:** `monitor_v2.py` has 2 pre-existing E702 errors on line 492 (unrelated to this chunk's diff); `strategic_goals.py` + `tests/test_qa_chunk_11.py` + `scripts/seed_chunks.py` clean.
+
+**Latent backend bug also fixed:** `_load_signal_or_404` callers in Pulse + Chunk-10's `pulse_bookmark`/`unbookmark` now correctly return `saved: bool` to the frontend. Documented in Chunk 10 closeout.
+
+**Carry-forward `CHUNK_11_STATE.md`:** new file documenting the `status_counts` filter-honouring pattern + RBAC server-side defence-in-depth pattern + the deriveRoleKicker contexts-probe pattern.
+
+**PO escalations queued:** none.
+
+**Elapsed effort:** ~70 min vs the 65-min pre-flight estimate.
+
 ### Chunk 10 — 16-May Pulse-surface batch (-022 → -028) — 2026-05-21 ✅ (autonomous)
 
 Pulse-surface bundle: 1 P1 + 6 P2 closely-related rows landed in a single chunk per the autonomous-mode "bundle adjacent P2s when P1 yields fewer than 4 IDs" guidance. All 7 IDs share the same files (`pages/Pulse.jsx` + `routers/pulse.py` + seed Pass E).
@@ -177,6 +222,8 @@ Pulse-surface bundle: 1 P1 + 6 P2 closely-related rows landed in a single chunk 
 **PO escalations queued:** none.
 
 **Elapsed effort:** ~75 min vs the 70-min pre-flight estimate — 5-min overshoot driven by the schema-drift discovery (float-vs-string confidence). Lesson captured in `CHUNK_10_STATE.md §4` for the next chunk.
+
+**Tester re-run verdict (2026-05-21T01:15:00Z):** **PASS 7/7** — all Chunk-10 Pulse surfaces verified on live preview. Chunk 10 fully DONE.
 
 ### Chunk 9.5 — Solva SV-01/02/03 + Phase C audit regression — 2026-05-20 ✅
 

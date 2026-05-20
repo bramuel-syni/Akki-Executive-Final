@@ -32,14 +32,19 @@ const ROLE_LABEL = {
   member: "Member",
 };
 
-function deriveRoleKicker(activeContext, accountDeclaredRole, excoMembership) {
+function deriveRoleKicker(activeContext, accountDeclaredRole, excoMembership, contexts) {
   const role = activeContext.my_role || "member";
   let label = ROLE_LABEL[role] || role;
-  // Dual context — if the user is BOTH executive and NED in this context.
-  // Today the model has a single `my_role` per membership, so "dual" is a
-  // declared role at the account level. We compose `EXECUTIVE · NED` when
-  // the account is dual-declared AND has at least one NED context.
-  if (accountDeclaredRole === "dual" && role === "executive") {
+  // QA-2026-05-16-050 — defence in depth: only compose the dual
+  // "Executive · NED" label when the account is dual-declared
+  // AND the user actually has at least one NED-role membership.
+  // Pre-fix, a stray `declared_role === "dual"` on an Exec-only
+  // user (possible when role was downgraded or the account flag is
+  // stale) caused "Executive · NED" to render on every Exec context
+  // even though no NED context existed.
+  const hasNedContext = Array.isArray(contexts)
+    && contexts.some((c) => c?.my_role === "ned");
+  if (accountDeclaredRole === "dual" && role === "executive" && hasNedContext) {
     label = "Executive · NED";
   }
   if (excoMembership?.team_count > 0) {
@@ -87,7 +92,7 @@ export default function CycleContextIndicator() {
 
   const role = activeContext.my_role || "member";
   const RoleIcon = role === "ned" ? Landmark : Briefcase;
-  const roleKicker = deriveRoleKicker(activeContext, account?.declared_role, excoMembership);
+  const roleKicker = deriveRoleKicker(activeContext, account?.declared_role, excoMembership, contexts);
 
   return (
     <DropdownMenu>

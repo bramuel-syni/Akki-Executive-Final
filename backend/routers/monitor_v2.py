@@ -102,12 +102,35 @@ async def auto_suggest_objectives(
     context_id: str,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    """Suggest objectives derived from active cycles and Solva sessions."""
+    """Suggest objectives derived from active cycles and Solva sessions.
+
+    QA-2026-05-16-046 — filter out candidates whose source cycle/session
+    is already represented in the existing objectives collection (i.e.
+    a previous accept-suggestion already minted an objective from that
+    source). Pre-fix, refetching after accept always returned the same
+    suggestion because the seeding loop didn't know what had been
+    materialised.
+    """
+    # Pull source-ref keys for already-accepted objectives so we can
+    # filter the candidate list.
+    accepted_keys = set()
+    async for row in _coll("objective").find(
+        {"context_id": context_id, "deleted_at": {"$exists": False}},
+        {"_id": 0, "source_refs": 1},
+    ):
+        for ref in (row.get("source_refs") or []):
+            kind = ref.get("kind")
+            rid = ref.get("id")
+            if kind and rid:
+                accepted_keys.add(f"{kind}:{rid}")
+
     candidates: List[Dict[str, Any]] = []
     async for c in db.cycles.find(
         {"context_id": context_id, "status": "active"},
         {"_id": 0, "id": 1, "title": 1, "readiness_pct": 1},
     ).limit(20):
+        if f"cycle:{c['id']}" in accepted_keys:
+            continue
         readiness = c.get("readiness_pct") or 0
         rag = "green" if readiness >= 80 else "amber" if readiness >= 40 else "red"
         candidates.append({
@@ -123,6 +146,8 @@ async def auto_suggest_objectives(
         {"_id": 0, "id": 1, "topic": 1, "status": 1},
     ).limit(10):
         if not s.get("topic"):
+            continue
+        if f"solva_session:{s['id']}" in accepted_keys:
             continue
         candidates.append({
             "kind": "objective",
@@ -140,12 +165,29 @@ async def auto_suggest_projects(
     context_id: str,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    """Suggest projects from active cycles."""
+    """Suggest projects from active cycles.
+
+    QA-2026-05-16-046 — see auto_suggest_objectives for the dedup
+    pattern; identical logic against the `project` collection.
+    """
+    accepted_keys = set()
+    async for row in _coll("project").find(
+        {"context_id": context_id, "deleted_at": {"$exists": False}},
+        {"_id": 0, "source_refs": 1},
+    ):
+        for ref in (row.get("source_refs") or []):
+            kind = ref.get("kind")
+            rid = ref.get("id")
+            if kind and rid:
+                accepted_keys.add(f"{kind}:{rid}")
+
     candidates: List[Dict[str, Any]] = []
     async for c in db.cycles.find(
         {"context_id": context_id, "status": "active"},
         {"_id": 0, "id": 1, "title": 1, "readiness_pct": 1},
     ).limit(20):
+        if f"cycle:{c['id']}" in accepted_keys:
+            continue
         readiness = c.get("readiness_pct") or 0
         rag = "green" if readiness >= 80 else "amber" if readiness >= 40 else "red"
         candidates.append({
@@ -349,6 +391,37 @@ async def list_items(
     total_doc = await total_cursor.to_list(1)
     total = (total_doc[0]["n"] if total_doc else 0)
 
+    # QA-2026-05-16-045 — status_counts for the tab badges.
+    #
+    # The Monitor tab strip (All · At Risk · On Track · Off Track ·
+    # Achieved · Not Started) needs a count per status. We compute it
+    # OFF the lookup+owner_role-filtered pipeline (i.e. status_counts
+    # honour every active filter EXCEPT the status filter itself, so
+    # switching tabs doesn't re-shuffle counts).
+    #
+    # Build the counter pipeline by stripping the rag_status match
+    # (it's only present when `status` was passed) and aggregating on
+    # the resulting rows.
+    counter_match = {k: v for k, v in match.items() if k != "rag_status"}
+    counter_pipeline: List[Dict[str, Any]] = [{"$match": counter_match}]
+    # Carry the same $lookup + $addFields + $project so the owner_role
+    # filter applies identically. Skip the trailing $sort/$skip/$limit.
+    for stage in pipeline:
+        if "$match" in stage and stage["$match"] is match:
+            continue   # already handled
+        if "$sort" in stage or "$skip" in stage or "$limit" in stage:
+            continue
+        counter_pipeline.append(stage)
+    counter_pipeline.append({"$group": {"_id": "$rag_status", "n": {"$sum": 1}}})
+    status_counts: Dict[str, int] = {s: 0 for s in _RAG}
+    status_counts["all"] = 0
+    async for row in _coll(kind).aggregate(counter_pipeline):
+        bucket = row.get("_id")
+        n = int(row.get("n", 0))
+        status_counts["all"] += n
+        if bucket in status_counts:
+            status_counts[bucket] = n
+
     pipeline += [
         {"$sort": {"score": -1}},
         {"$skip": (page - 1) * page_size},
@@ -359,6 +432,7 @@ async def list_items(
         "kind": kind,
         "items": items,
         "total": total,
+        "status_counts": status_counts,
         "page": page,
         "page_size": page_size,
         "total_pages": max(1, (total + page_size - 1) // page_size),

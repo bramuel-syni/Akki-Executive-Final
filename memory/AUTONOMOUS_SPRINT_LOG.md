@@ -45,9 +45,10 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 **Awaiting tester re-run on Chunk 9.5 surfaces, then dispatch of Chunk 10.**
 
 
-## Chunk 10 — 16-May Pulse-surface batch (-022 → -028) — DONE — 2026-05-21T00:30:00Z
+## Chunk 10 — 16-May Pulse-surface batch (-022 → -028) — DONE (tester verified 7/7) — 2026-05-21T00:30:00Z
 
-- IDs closed: 7 total (1 P1 + 6 P2) — bundled per autonomous-mode "adjacent P2s when fewer than 4 P1s in surface" guidance
+- IDs closed: 7 total (1 P1 + 6 P2)
+- **Tester verdict: PASS 7/7** — all -022 → -028 surfaces verified on live preview.
   - **P1:** QA-2026-05-16-022
   - **P2:** QA-2026-05-16-023, -024, -025, -026, -027, -028
 - Pytest delta: **+7** (722 → 729; all new tests pass in full suite)
@@ -64,6 +65,27 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 - Notable: surfaced + fixed a latent backend crash (`'float' object has no attribute 'lower'`) on legacy signal rows with float confidence. Schema-drift defensiveness pattern captured for re-use.
 
 **Awaiting orchestrator tester re-run on Chunk 10 surfaces, then dispatch of Chunk 11 (16-May P1 Monitor batch).**
+
+
+## Chunk 11 — 16-May Monitor-surface batch (-045/-046/-048/-050/-051) — DONE — 2026-05-21T01:45:00Z
+
+- IDs closed: 5 total (3 P1 + 2 P2)
+  - **P1:** QA-2026-05-16-045, -046, -048
+  - **P2:** QA-2026-05-16-050, -051
+- Pytest delta: **+7** (729 → 736)
+- Tester verdict: PASS pending (render-smoke step 13 hard-asserts 2/2 + ESLint covers QA-051 modal; orchestrator tester re-run pending)
+- Files touched: 5 (`routers/monitor_v2.py`, `routers/strategic_goals.py`, `components/layout/CycleContextIndicator.jsx`, `components/layout/ContextSwitchModal.jsx`, `components/monitor/ObjectivesProjectsPanel.jsx`; +1 new seed Pass F, +1 new test file, +1 smoke step)
+- Architectural invariants: PASS
+- Blockers: none
+- PO escalations queued: none
+- Memory updates:
+  - `qa_reports/QA_BACKLOG.md` — 5 row flips + histogram bump
+  - `SYSTEM_STATE.md § 4` — Chunk-11 closeout (newest at top)
+  - `sprints/POST_REWRITE_RAMP.md` — Track 3 histogram updated
+  - `sprints/CHUNK_11_STATE.md` — created (status_counts pattern, RBAC defence-in-depth, contexts-probe role-kicker)
+- Notable: Chunk 12 picks up the QA-049 Strategic Goals deep rewrite next (Current → Performance Score, Update Goal AI flow). NOT touched here.
+
+**Awaiting orchestrator tester re-run on Chunk 11 surfaces, then dispatch of Chunk 12.**
 
 
 **Awaiting orchestrator tester verification, then dispatch of Chunk 10.**
