@@ -2016,6 +2016,14 @@ async function smokeChunk12StrategicGoals(page, failures) {
           if (!r.ok) return null;
           const body = await r.json();
           const goals = body.goals || body.items || [];
+          // Prefer the with-evidence Pass G goal (carries the baked
+          // `last_akki_update` for the Gap-2 card-timestamp sub-assertion).
+          const withEvidence = goals.find(
+            (g) => /Chunk 12 seed/i.test(g.title || "")
+              && !/no-data seed/i.test(g.title || "")
+              && g.last_akki_update?.assessed_at,
+          );
+          if (withEvidence) return { contextId: cid, goalId: withEvidence.id };
           const seeded = goals.find((g) => /Chunk 12 seed/i.test(g.title || ""));
           return seeded ? { contextId: cid, goalId: seeded.id } : null;
         } catch { return null; }
@@ -2087,6 +2095,30 @@ async function smokeChunk12StrategicGoals(page, failures) {
     if (!opened) {
       console.log(`[render-smoke]  · Chunk 12 — seeded goal card not visible in monitor view; soft-skipping (likely scrolled off or different list rendering)`);
       return;
+    }
+
+    // Sub-assertion (Chunk 12 fix-pass Gap 2) — the seeded with-evidence
+    // goal carries a pre-baked `last_akki_update`; the card row MUST
+    // render the new "Reassessed · …" timestamp affordance alongside
+    // the other inline metadata. Asserted before the drawer assertions
+    // so the drawer overlay can't mask the card-level surface. We
+    // re-locate via the testid and walk back to the parent card if
+    // the row got covered by a drawer animation in flight.
+    const cardTs = page.locator(`[data-testid="goal-card-last-update-${probe.goalId}"]`).first();
+    const cardTsCount = await cardTs.count().catch(() => 0);
+    if (cardTsCount === 0) {
+      failures.push(
+        `Chunk 12 (QA-049 fix-pass Gap 2): card-level "Reassessed · …" timestamp `
+        + `(data-testid=goal-card-last-update-${probe.goalId}) not rendered on the seeded goal-with-evidence card. `
+        + `Pass G should bake last_akki_update — re-seed via \`python backend/scripts/seed_chunks.py\` if this is stale.`,
+      );
+    } else {
+      const cardTsText = ((await cardTs.first().textContent().catch(() => "")) || "").trim();
+      if (!/reassessed/i.test(cardTsText)) {
+        failures.push(`Chunk 12 (Gap 2): card timestamp testid present but content "${cardTsText}" missing "Reassessed" prefix`);
+      } else {
+        console.log(`[render-smoke]  ✓ Chunk 12 (Gap 2) — card-level timestamp visible ("${cardTsText.slice(0, 60)}")`);
+      }
     }
 
     const drawer = page.locator('[data-testid="goal-drawer"]').first();

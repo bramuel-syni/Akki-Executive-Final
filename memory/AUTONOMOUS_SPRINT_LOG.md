@@ -106,6 +106,34 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 
 **Awaiting orchestrator tester re-run on Chunk 12 surfaces, then dispatch of Chunk 13 (Solva SV-04 sessions list).**
 
+
+## Chunk 12 fix-pass — 3 narrow items closed — DONE — 2026-05-21T05:30:00Z
+
+- Tester verdict on previous run: **4/5 PASS** (one HUMAN_REQUIRED on the no-data fixture + 2 secondary follow-ups).
+- IDs reaffirmed: QA-2026-05-16-049 (fix-pass scope = 3 narrow items; QA-049 itself remains DONE).
+- Pytest delta: **0** (existing 7 chunk-12 tests still green; verified 32 passed across chunks 9.5/10/11/12 + CI guard).
+- Tester verdict: PASS pending (orchestrator runs tester ONCE on the no-data path + card-timestamp per fix-pass dispatch rules).
+- Files touched: 4 (`backend/scripts/seed_chunks.py` Pass H + Pass G backfill; `components/monitor/StrategicGoalsPanel.jsx` card-timestamp render; `frontend/scripts/render-smoke.js` step-14 probe tightening + sub-assertion; NEW `memory/sprints/CHUNK_17_CLEANUP_QUEUE.md`).
+- Architectural invariants: PASS (no new LLM call sites; CI guard still green; no new libraries; `tenant_id`/`context_id` scoping unchanged).
+- Blockers: none.
+- PO escalations queued: none (QA-049 polish backlog still tracked in `CHUNK_12_STATE.md §8`).
+- Scope guard: ONLY the 3 dispatched items touched. Orphaned `EditGoalRow` NOT deleted (tracked in `CHUNK_17_CLEANUP_QUEUE.md` C17-001 for the planned Chunk 17 cleanup pass).
+- Seed verification:
+  - 9 contexts backfilled (9/9 with-evidence `goal-c12a-*` rows now carry `last_akki_update`).
+  - 9 no-data fixtures minted via Pass H (`goal-c12nd-*`, `seed_origin="chunk_12_no_data"`).
+  - Re-run idempotent: second invocation = 0 mints + 0 re-backfills (verified via `$exists: false` guard).
+- Memory updates:
+  - `SYSTEM_STATE.md § 4` — fix-pass note appended under the existing Chunk 12 entry (lines 257-282 of the per-patch log).
+  - `AUTONOMOUS_SPRINT_LOG.md` — this entry.
+  - `sprints/CHUNK_17_CLEANUP_QUEUE.md` — created with entry C17-001 (orphan EditGoalRow).
+- Notable: the `last_akki_update` backfill pattern (only set when missing via `$exists: false`) is now the template for future seed-side schema migrations — preserves data created by real Shield round-trips while keeping seeded fixtures in sync with new fields.
+
+**Tester targets for re-run:**
+- ctx `cef8714a-303b-4214-a004-fc1adef43de9`  ·  with-evidence `goal-c12a-fadfb7f6`  ·  no-data `goal-c12nd-01ea4f12`
+- ctx `5afb0f40-0193-4b7d-abd9-75e620aac3c2`  ·  with-evidence `goal-c12a-ed920dd6`  ·  no-data `goal-c12nd-d779be52`
+
+**Awaiting orchestrator tester re-run on the no-data path + card-timestamp sub-assertion, then dispatch of Chunk 13 per autonomy rules (PASS or FAIL).**
+
 **Awaiting orchestrator tester re-run on Chunk 11 surfaces, then dispatch of Chunk 12.**
 
 

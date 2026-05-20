@@ -310,6 +310,28 @@ function GoalRow({ goal, isLast, isNED, isEditing, onOpenDrawer, onEdit, onCance
                 <FileText className="w-3 h-3" /> source
               </Link>
             )}
+            {/* Chunk 12 fix-pass (Gap 2) — surface the "last reassessed"
+                timestamp on the card alongside other inline metadata.
+                Matches the visual weight of the existing chips/labels:
+                muted font-mono prefix, regular weight value, same
+                text size as the surrounding metadata line.
+                Renders only when the goal has been assessed at least
+                once. The drawer-level affordance lives at
+                `goal-drawer-last-update-stamp` (kept for parity). */}
+            {goal.last_akki_update?.assessed_at && (
+              <span
+                className="inline-flex items-center gap-1 text-[var(--muted)]"
+                data-testid={`goal-card-last-update-${goal.id}`}
+                title={new Date(goal.last_akki_update.assessed_at).toLocaleString(undefined, {
+                  dateStyle: "medium", timeStyle: "short",
+                })}
+              >
+                <span className="text-[var(--muted)]">Reassessed:</span>{" "}
+                {new Date(goal.last_akki_update.assessed_at).toLocaleDateString(undefined, {
+                  dateStyle: "medium",
+                })}
+              </span>
+            )}
           </div>
         </div>
 

@@ -256,6 +256,27 @@ ESLint clean on `StrategicGoalsPanel.jsx` + `render-smoke.js`. Ruff clean on `ro
 
 New file documenting the Update Goal contract (response shapes, no-data triggers, score_history append rule), the partial-LLM-response handling, and the `_parse_update_response` defensive JSON parser.
 
+### Fix-pass (Chunk 12) — 2026-05-21 (single-attempt cap exercised)
+
+Tester reported 4/5 PASS — fixture gap for the no-data UI branch + cover-bullet for the card-level timestamp. Three narrow items closed under the autonomy cap; no other surfaces touched.
+
+| Gap | What changed | File:line | Idempotency |
+|---|---|---|---|
+| 1 — Seed no-data fixture | NEW `_seed_chunk12_no_data_strategic_goal_fixture` (Pass H) inserts ONE explicitly-tagged goal per bramuel context with `title="QA Chunk 12 — no-data fixture"`, `source_document_ids=[]`, `seed_origin="chunk_12_no_data"` | `backend/scripts/seed_chunks.py:704-748` | Marker `chunk12_no_data_seed_marker="v1"` |
+| 2a — Pass G backfill | Existing Pass G now backfills `last_akki_update` on `goal-c12a-*` rows that pre-date the new field (so the card timestamp is observable on existing seeded contexts) | `backend/scripts/seed_chunks.py:620-647` (the `existing` branch) | `$exists: false` guard inside `update_many` |
+| 2b — Card timestamp | `GoalRow` now renders the "Reassessed · …" affordance on the card secondary row (font-mono prefix, light weight, matches surrounding metadata). Hover surfaces the full date-time tooltip. | `frontend/src/components/monitor/StrategicGoalsPanel.jsx:312-330` (after the `source_doc_id` link) | Renders only when `goal.last_akki_update?.assessed_at` is truthy |
+| 2c — Smoke sub-assert | Render-smoke step 14 now hard-asserts the card-level testid `goal-card-last-update-{id}` is present and carries "Reassessed" copy before any drawer interaction. Probe tightened to prefer the with-evidence goal. | `frontend/scripts/render-smoke.js:2030-2050` (probe), `:2098-2120` (assertion) | n/a |
+| 3 — Dead-code flag | `EditGoalRow` + `NumField` (lines 631-686 in `StrategicGoalsPanel.jsx`) flagged as orphaned (Chunk 12 removed the only call-site that set `editingId`). NOT removed this pass — tracked for the planned Chunk 17 cleanup. | New file `memory/sprints/CHUNK_17_CLEANUP_QUEUE.md` (entry C17-001) | n/a |
+
+**Pytest delta:** 0 (no new tests; existing 7 chunk-12 tests still green + CI guard still green; verified across `test_qa_chunk_9_5/10/11/12` + CI guard = 32 passed/0 failed).
+**ESLint:** clean on `StrategicGoalsPanel.jsx` + `render-smoke.js`. **Ruff:** clean on `scripts/seed_chunks.py`.
+**Seed re-run:** 9 contexts backfilled (9/9 with-evidence rows now carry `last_akki_update`); 9 no-data fixtures minted (Pass H first run). Subsequent runs are no-ops.
+
+**Tester targets** (sample cid + goal_id pairs):
+- ctx `cef8714a-303b-4214-a004-fc1adef43de9`  ·  with-evidence `goal-c12a-fadfb7f6`  ·  no-data `goal-c12nd-01ea4f12`
+- ctx `5afb0f40-0193-4b7d-abd9-75e620aac3c2`  ·  with-evidence `goal-c12a-ed920dd6`  ·  no-data `goal-c12nd-d779be52`
+- ctx `dcc263b1-59f9-4546-ba6a-ea7c54545b3e`  ·  with-evidence (existing)            ·  no-data `goal-c12nd-f3489ebf`
+
 ### PO escalations queued
 
 None for Chunk 12 itself. QA-049 sub-bullets that were OUT OF SCOPE per the chunk spec (RAG colouring on Strategic Goal progress bars, hover-full-text on description fields, category-filter dropdown polish, By Score sort options 0/55/85/100) were addressed in spirit by the drawer rewrite but would need a follow-up chunk if PO wants additional polish. Captured as `Future / Backlog`.

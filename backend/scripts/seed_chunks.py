@@ -614,6 +614,16 @@ async def _seed_chunk12_strategic_goal_fixture(db, context_id: str, account_id: 
       (b) goal with NO related evidence → no-data short-circuit
           renders the verbatim spec copy
 
+    Pass G — original chunk-12 fixture. Pass H (below) supplements
+    with a fixture goal carrying a deterministic
+    `seed_origin="chunk_12_no_data"` marker for the fix-pass
+    verification path (Gap 1 — tester finding 2026-05-21).
+
+    `gid_a` carries a pre-baked `last_akki_update` so render-smoke
+    step 14 can observe the new card-level "Reassessed · …"
+    timestamp affordance (Gap 2 — fix-pass) WITHOUT requiring an
+    LLM round-trip through Shield.
+
     Idempotent via `chunk12_strategic_marker="v1"`.
     """
     existing = await db.strategic_goals.find_one(
@@ -621,6 +631,30 @@ async def _seed_chunk12_strategic_goal_fixture(db, context_id: str, account_id: 
         {"_id": 0, "id": 1},
     )
     if existing:
+        # Idempotent backfill (Chunk 12 fix-pass Gap 2 — 2026-05-21):
+        # set `last_akki_update` on the with-evidence row if missing.
+        # This was added to the schema after Pass G first ran on
+        # 2026-05-21 03:15 UTC; without the backfill, existing rows
+        # don't surface the new card-level timestamp affordance and
+        # the smoke step can't verify it.
+        backfill_iso = _iso(_now())
+        await db.strategic_goals.update_many(
+            {
+                "context_id": context_id,
+                "chunk12_strategic_marker": "v1",
+                "id": {"$regex": "^goal-c12a-"},
+                "last_akki_update": {"$exists": False},
+            },
+            {"$set": {"last_akki_update": {
+                "audit_id": f"backfill-{uuid.uuid4().hex[:10]}",
+                "assessed_at": backfill_iso,
+                "no_data": False,
+                "rationale": "Backfilled baseline assessment (fix-pass Gap 2 — Q3 CET1 ratio trending toward target).",
+                "supporting_signal_ids": [],
+                "supporting_doc_ids": [],
+                "applied_changes": {"current_score": 55, "probability": 50, "status": "at_risk"},
+            }}},
+        )
         return {
             "context_id": context_id, "goal_id": existing["id"],
             "minted": False, "reason": "already_seeded",
@@ -628,6 +662,19 @@ async def _seed_chunk12_strategic_goal_fixture(db, context_id: str, account_id: 
     gid_a = f"goal-c12a-{uuid.uuid4().hex[:8]}"
     gid_b = f"goal-c12b-{uuid.uuid4().hex[:8]}"
     now_iso = _iso(_now())
+    # Pre-baked `last_akki_update` for the with-evidence goal so the
+    # card-level timestamp surface is observable on initial mount.
+    # Mirrors the shape produced by routers/strategic_goal_assessment.py
+    # on the success path (see SYSTEM_STATE.md § Chunk 12 contract).
+    baked_last_update = {
+        "audit_id": f"seeded-audit-{uuid.uuid4().hex[:10]}",
+        "assessed_at": now_iso,
+        "no_data": False,
+        "rationale": "Seeded baseline assessment — Q3 CET1 ratio trending toward target.",
+        "supporting_signal_ids": [],
+        "supporting_doc_ids": [],
+        "applied_changes": {"current_score": 55, "probability": 50, "status": "at_risk"},
+    }
     await db.strategic_goals.insert_many([
         {
             "id": gid_a,
@@ -638,6 +685,7 @@ async def _seed_chunk12_strategic_goal_fixture(db, context_id: str, account_id: 
             "category": "revenue",
             "current_score": 55, "target_score": 100, "probability": 50,
             "status": "at_risk", "score_history": [],
+            "last_akki_update": baked_last_update,
             "created_at": now_iso, "updated_at": now_iso,
             "chunk12_strategic_marker": "v1",
         },
@@ -662,6 +710,60 @@ async def _seed_chunk12_strategic_goal_fixture(db, context_id: str, account_id: 
     }
 
 
+async def _seed_chunk12_no_data_strategic_goal_fixture(
+    db, context_id: str, account_id: str,
+) -> Dict[str, Any]:
+    """Chunk 12 fix-pass (2026-05-21) — Gap 1 closure.
+
+    Tester finding: no goal-without-docs fixture is discoverable in any
+    reachable bramuel context, so the no-data UI branch can't be
+    end-to-end verified through the live preview UI. Pytest already
+    exercises the branch (`test_qa049_update_goal_no_evidence_short_circuit`
+    + `_llm_says_irrelevant`); this pass closes the gap for manual
+    tester walkthroughs.
+
+    Inserts ONE explicitly-marked goal per bramuel context that:
+      • Has `source_document_ids = []` (the schema flag tester targets)
+      • Carries `seed_origin = "chunk_12_no_data"` so tester can grep it
+      • Has a verbatim recognisable title "QA Chunk 12 — no-data fixture"
+      • Does NOT pre-populate `last_akki_update` (so the first Update
+        Goal click produces the no-data short-circuit on the LLM path)
+
+    Idempotent via `chunk12_no_data_seed_marker="v1"`.
+    """
+    existing = await db.strategic_goals.find_one(
+        {"context_id": context_id, "chunk12_no_data_seed_marker": "v1"},
+        {"_id": 0, "id": 1},
+    )
+    if existing:
+        return {
+            "context_id": context_id, "goal_id": existing["id"],
+            "minted": False, "reason": "already_seeded",
+        }
+    gid = f"goal-c12nd-{uuid.uuid4().hex[:8]}"
+    now_iso = _iso(_now())
+    await db.strategic_goals.insert_one({
+        "id": gid,
+        "context_id": context_id, "account_id": account_id,
+        "department": "cfo",
+        "title": "QA Chunk 12 — no-data fixture",
+        "description": "Seeded with no linked documents so the Update Goal flow exercises the no-data short-circuit verbatim copy + Document Journal link.",
+        "category": "operations",
+        "current_score": 30, "target_score": 80, "probability": 25,
+        "status": "off_track",
+        "score_history": [],
+        "source_document_ids": [],
+        "seed_origin": "chunk_12_no_data",
+        "chunk12_no_data_seed_marker": "v1",
+        "created_at": now_iso, "updated_at": now_iso,
+    })
+    return {
+        "context_id": context_id,
+        "goal_id": gid,
+        "minted": True,
+    }
+
+
 async def main():
     cli = AsyncIOMotorClient(os.environ["MONGO_URL"])
     db = cli[os.environ["DB_NAME"]]
@@ -682,6 +784,7 @@ async def main():
     pulse_signals: List[Dict[str, Any]] = []
     monitor_seeds: List[Dict[str, Any]] = []
     strategic_seeds: List[Dict[str, Any]] = []
+    no_data_strategic_seeds: List[Dict[str, Any]] = []
 
     for c in contexts:
         cid = c["id"]
@@ -741,6 +844,15 @@ async def main():
         if res.get("minted"):
             strategic_seeds.append(res)
 
+        # Pass H (Chunk 12 fix-pass 2026-05-21, Gap 1): explicit
+        # no-data goal fixture with `seed_origin="chunk_12_no_data"`
+        # marker + no linked documents. Lets tester walk the no-data
+        # branch end-to-end via the live UI without grepping for the
+        # incidental Pass G `gid_b` row.
+        res = await _seed_chunk12_no_data_strategic_goal_fixture(db, cid, bid)
+        if res.get("minted"):
+            no_data_strategic_seeds.append(res)
+
     # Write a seed-log marker for visibility / forensics.
     await db.chunk8_seed_log.insert_one({
         "run_id": uuid.uuid4().hex,
@@ -790,6 +902,10 @@ async def main():
         print("[seed-chunks] Sample strategic goals (Chunk 12 -049):")
         for ss in strategic_seeds[:3]:
             print(f"   - ctx={ss['context_id']} with-evidence={ss['goal_with_evidence_id']} no-data={ss['goal_without_evidence_id']}")
+    if no_data_strategic_seeds:
+        print("[seed-chunks] Sample no-data fixtures (Chunk 12 fix-pass Pass H):")
+        for ns in no_data_strategic_seeds[:5]:
+            print(f"   - ctx={ns['context_id']} goal={ns['goal_id']}")
 
 
 if __name__ == "__main__":
