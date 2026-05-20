@@ -1,24 +1,27 @@
-"""Chunk 8 — Document Overlay seed enrichment + Draft sample.
+"""Chunk seed script (renamed from `seed_chunk8_overlay.py` 2026-05-18).
 
 Idempotent. Run via:
 
-    cd /app/backend && python scripts/seed_chunk8_overlay.py
+    cd /app/backend && python scripts/seed_chunks.py
 
-Two-pass:
-  Pass A — enrich every existing `work_studio_exports` row owned by
-           bramuel@syni.ai that's missing chunk-8 fields. Adds a
-           realistic `intelligence_report`, attaches up to 3
-           context documents as `source_document_ids`, and (only
-           for non-legacy committed rows that already have a
-           rendered binary) leaves `legacy=True` if the row had no
-           structured_content captured at compile-time.
-  Pass B — mint one fresh Draft committee_pack in the first context
-           with ≥1 source document so the full editable round-trip
-           is exercisable.
+Currently seeds:
 
-Marker collection: `chunk8_seed_log` — captures `{run_id, scope,
-artefact_ids, applied_at}` to make re-runs visible without breaking
-idempotency.
+  · **Chunk 8 — Document Overlay** (QA-2026-05-16-029…-036).
+    Pass A enriches existing `work_studio_exports` rows missing
+    chunk-8 fields. Pass B mints one fresh Draft committee_pack per
+    bramuel context with ≥1 source doc.
+
+  · **Chunk 9 — Add-a-Contribution** (QA-2026-05-16-017…-021).
+    Pass C ensures bramuel's first context-with-documents has at
+    least one active cycle + one agenda item + one team member, so
+    render-smoke step 10 can hard-assert the attach flow end-to-end.
+
+Future chunks add their own pass functions here — keep them
+narrowly-scoped and idempotent (use marker fields per row).
+
+Marker collection: `chunk8_seed_log` (kept under that name to
+preserve existing audit-trail continuity; Chunk-9 rows also
+append).
 """
 from __future__ import annotations
 
@@ -254,6 +257,82 @@ async def _seed_draft_committee_pack(db, context_id: str, account_id: str,
     return {"id": aid, "context_id": context_id, "minted": True}
 
 
+async def _seed_chunk9_cycle_fixture(db, context_id: str, account_id: str,
+                                     doc_ids: List[str]) -> Dict[str, Any]:
+    """Chunk 9 (QA-2026-05-16-017→-021) — ensure the context has at
+    least one active cycle + one agenda item + one team member so
+    render-smoke step 10 can hard-assert the Add-a-Contribution
+    attach flow end-to-end. Idempotent via `chunk9_seed_marker`.
+
+    Skipped when the context already has any cycle_agendas row
+    (don't pollute live data).
+    """
+    existing_marker = await db.cycle_agendas.find_one(
+        {"context_id": context_id, "chunk9_seed_marker": "v1"},
+        {"_id": 0, "cycle_id": 1, "id": 1, "team_member_id": 1},
+    )
+    if existing_marker:
+        return {
+            "context_id": context_id,
+            "cycle_id": existing_marker.get("cycle_id"),
+            "agenda_id": existing_marker.get("id"),
+            "team_member_id": existing_marker.get("team_member_id"),
+            "minted": False,
+        }
+
+    # Don't trample any existing cycle / agenda — only seed when
+    # there are NONE in the context.
+    existing_any = await db.cycle_agendas.find_one(
+        {"context_id": context_id}, {"_id": 0, "id": 1},
+    )
+    if existing_any:
+        return {
+            "context_id": context_id, "minted": False, "reason": "context_has_cycle_data",
+        }
+
+    cycle_id = f"cyc-c9-{uuid.uuid4().hex[:8]}"
+    agenda_id = f"agi-c9-{uuid.uuid4().hex[:8]}"
+    member_id = f"tm-c9-{uuid.uuid4().hex[:8]}"
+    now_iso = _iso(_now())
+
+    await db.cycle_agendas.insert_one({
+        "id": agenda_id,
+        "cycle_id": cycle_id,
+        "context_id": context_id,
+        "title": "Q3 Risk register update",
+        "description": (
+            "Review the live risks raised at the May steering session "
+            "and confirm the capital-injection timeline."
+        ),
+        "team_member_id": member_id,
+        "owner_account_id": account_id,
+        "status": "active",
+        "chunk9_seed_marker": "v1",
+        "created_at": now_iso, "updated_at": now_iso,
+    })
+    await db.cycle_team.insert_one({
+        "id": member_id,
+        "cycle_id": cycle_id,
+        "context_id": context_id,
+        "name": "Bramuel Test Contributor",
+        "email": "bramuel-tc@syni.ai",
+        "role": "CFO",
+        "contribution_description": (
+            "Quarterly capital adequacy and provisioning coverage data, "
+            "plus a one-page risk-register commentary."
+        ),
+        "chunk9_seed_marker": "v1",
+        "created_at": now_iso,
+    })
+    return {
+        "context_id": context_id,
+        "cycle_id": cycle_id,
+        "agenda_id": agenda_id,
+        "team_member_id": member_id,
+        "minted": True,
+    }
+
+
 async def main():
     cli = AsyncIOMotorClient(os.environ["MONGO_URL"])
     db = cli[os.environ["DB_NAME"]]
@@ -269,6 +348,7 @@ async def main():
 
     enriched: List[Dict[str, Any]] = []
     minted_drafts: List[Dict[str, Any]] = []
+    cycle_seeds: List[Dict[str, Any]] = []
 
     for c in contexts:
         cid = c["id"]
@@ -296,23 +376,36 @@ async def main():
             if res.get("minted"):
                 minted_drafts.append(res)
 
+        # Pass C (Chunk 9): cycle / agenda / team-member seed.
+        if doc_ids:
+            res = await _seed_chunk9_cycle_fixture(db, cid, bid, doc_ids)
+            if res.get("minted"):
+                cycle_seeds.append(res)
+
     # Write a seed-log marker for visibility / forensics.
     await db.chunk8_seed_log.insert_one({
         "run_id": uuid.uuid4().hex,
         "applied_at": _iso(_now()),
-        "actor": "scripts.seed_chunk8_overlay",
+        "actor": "scripts.seed_chunks",
         "enriched_count": len(enriched),
         "minted_count": len(minted_drafts),
+        "cycle_seed_count": len(cycle_seeds),
         "enriched_sample": enriched[:5],
         "minted_sample": minted_drafts[:5],
+        "cycle_seed_sample": cycle_seeds[:5],
     })
 
-    print(f"[seed-chunk8] enriched {len(enriched)} existing exports across "
+    print(f"[seed-chunks] enriched {len(enriched)} existing exports across "
           f"{len(contexts)} contexts; minted {len(minted_drafts)} fresh draft "
-          f"committee packs.")
-    print("[seed-chunk8] Sample artefact IDs for tester to target:")
-    for r in (minted_drafts[:3] + enriched[:5]):
+          f"committee packs; seeded {len(cycle_seeds)} cycle/agenda fixtures.")
+    print("[seed-chunks] Sample artefact IDs for tester to target:")
+    for r in (minted_drafts[:3] + enriched[:3]):
         print(f"   - ctx={r['context_id']} aid={r['id']}")
+    if cycle_seeds:
+        print("[seed-chunks] Sample cycle/agenda fixtures (Chunk 9):")
+        for cs in cycle_seeds[:3]:
+            print(f"   - ctx={cs['context_id']} cycle={cs['cycle_id']} "
+                  f"agenda={cs['agenda_id']} member={cs['team_member_id']}")
 
 
 if __name__ == "__main__":

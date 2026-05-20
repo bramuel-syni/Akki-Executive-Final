@@ -43,7 +43,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from core import db, iso, now, require_context_membership, write_audit
 import email_service
@@ -157,6 +157,23 @@ class ContributionIn(BaseModel):
     source_doc_id: Optional[str] = None
     body_text: Optional[str] = Field(default=None, max_length=20000)
     title: Optional[str] = Field(default=None, max_length=160)
+
+    @model_validator(mode="after")
+    def _qa_021_at_least_one_input(self) -> "ContributionIn":
+        # QA-2026-05-16-021 (Chunk-9, 2026-05-18) — defensive backend
+        # echo of the frontend CTA-gating rule. The Record-Contribution
+        # button is disabled until the user provides at least one
+        # input, but the backend MUST enforce the contract too — never
+        # accept an empty contribution row that the scorer can't
+        # meaningfully grade.
+        has_body = bool((self.body_text or "").strip())
+        has_doc = bool(self.source_doc_id)
+        if not (has_body or has_doc):
+            raise ValueError(
+                "Contribution must include at least one of `body_text` or "
+                "`source_doc_id` (QA-2026-05-16-021)."
+            )
+        return self
 
 
 class ScoreIn(BaseModel):
@@ -476,7 +493,15 @@ async def score_contribution(
     """Score a contribution on relevance / fullness / readiness.
     If the request omits any dimension, the heuristic backstop fills it
     in. (LLM-driven scoring is the future-canonical path; for D1 we
-    accept manual + heuristic so tests stay deterministic.)"""
+    accept manual + heuristic so tests stay deterministic.)
+
+    QA-2026-05-16-020 (2026-05-18, Chunk-9): when the contribution
+    carries a `source_doc_id`, the scorer concatenates the document's
+    `extracted_text` after the pasted body_text — single combined
+    string, single rubric pass — so an attachment alone OR pasted
+    text alone OR both score against the same combined-content
+    fullness/relevance/readiness rubric.
+    """
     rec = await db.cycle_contributions.find_one(
         {"id": contribution_id, "context_id": context_id}, {"_id": 0},
     )
@@ -489,7 +514,16 @@ async def score_contribution(
     )
     desc = (member or {}).get("contribution_description", "")
 
-    auto = _heuristic_score(rec.get("body_text"), desc)
+    # QA-2026-05-16-020 — combined-content build: body_text + a
+    # marker + the attached doc's extracted_text. Decision (a) from
+    # the Chunk-9 dispatch: concatenate, single heuristic pass.
+    combined_text = await _build_combined_contribution_text(
+        context_id=context_id,
+        body_text=rec.get("body_text"),
+        source_doc_id=rec.get("source_doc_id"),
+    )
+
+    auto = _heuristic_score(combined_text, desc)
     scores = {
         "relevance": body.relevance if body.relevance is not None else auto["relevance"],
         "fullness":  body.fullness  if body.fullness  is not None else auto["fullness"],
@@ -503,11 +537,56 @@ async def score_contribution(
                                  or body.fullness is not None
                                  or body.readiness is not None) else "akki-heuristic"),
         "status": "scored",
+        # QA-2026-05-16-020 — surface the combined-scoring decision on
+        # the row so the UI can render "Scored: attached document +
+        # pasted text" if both contributed. Also useful for tests +
+        # any future audit.
+        "scoring_input": {
+            "has_body_text": bool((rec.get("body_text") or "").strip()),
+            "has_attachment": bool(rec.get("source_doc_id")),
+            "combined_char_count": len(combined_text),
+        },
     }
     await db.cycle_contributions.update_one(
         {"id": contribution_id}, {"$set": update},
     )
     return {**rec, **update}
+
+
+async def _build_combined_contribution_text(
+    *,
+    context_id: str,
+    body_text: Optional[str],
+    source_doc_id: Optional[str],
+) -> str:
+    """QA-2026-05-16-020 combined-content build (decision a).
+
+    Returns the pasted body_text + attached doc's extracted_text
+    concatenated with a separator. Either side may be empty — if
+    the doc lookup fails we silently fall back to body_text alone
+    (a missing attachment shouldn't 500 the score endpoint).
+    """
+    parts: List[str] = []
+    body = (body_text or "").strip()
+    if body:
+        parts.append(body)
+    if source_doc_id:
+        doc = await db.documents.find_one(
+            {"id": source_doc_id, "context_id": context_id},
+            {"_id": 0, "name": 1, "original_filename": 1, "extracted_text": 1},
+        )
+        if doc:
+            title = doc.get("name") or doc.get("original_filename") or "attached document"
+            extracted = (doc.get("extracted_text") or "").strip()
+            if extracted:
+                parts.append(f"[Attached: {title}]\n{extracted}")
+            else:
+                # Doc exists but no text extracted (e.g. binary image
+                # before OCR completes). Still surface the title so
+                # the heuristic can pick up the doc's name tokens in
+                # the relevance overlap.
+                parts.append(f"[Attached: {title}]")
+    return "\n\n".join(parts)
 
 
 # ──────────────────────────────────────────────────────────────────────

@@ -23,6 +23,7 @@
 | 5 | `/app/memory/sprints/PROD_DEPLOY_CHECKLIST.md` | Deploy-day runbook — env vars, system packages, smoke-test path |
 | 6 | `/app/memory/sprints/BANK_QA_EVIDENCE_PACK/README.md` | Bank-QA evidence index — 7 sections, sample PDF, standalone HMAC verifier |
 | 7 | `/app/memory/sprints/PHASE_F1_CLOSEOUT.md` | Most recent phase closeout (Phase F.1 + cleanup verification) |
+| 8 | `/app/backend/scripts/seed_chunks.py` | **Chunk seed script** (renamed from `seed_chunk8_overlay.py` 2026-05-18). Idempotent. Currently seeds Chunk 8 (overlay enrichment + Draft committee_pack) + Chunk 9 (cycle/agenda/team for Add-a-Contribution smoke). Re-run safe. |
 
 ## Hard rules for next agent
 

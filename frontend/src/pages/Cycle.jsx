@@ -26,6 +26,7 @@ import {
   Sparkles, ChevronLeft, ChevronRight, Plus, X, Loader2,
   Mail, FileDown, Check, AlertCircle, Users, ListChecks, CheckCircle2,
   ClipboardList, Send, Download, MessageSquare, Pencil,
+  Paperclip, FileText,
 } from "lucide-react";
 import {
   AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader,
@@ -40,6 +41,9 @@ import CycleBreadcrumb from "@/components/cycle/CycleBreadcrumb";
 import CycleStepNav from "@/components/cycle/CycleStepNav";
 import AddTeamMemberDialog from "@/components/cycle/AddTeamMemberDialog";
 import TeamCatalogueDialog from "@/components/cycle/TeamCatalogueDialog";
+// Chunk 9 (2026-05-18) — Add-a-Contribution attach feature
+// (QA-2026-05-16-017…-021). Inlined per dispatch decision #2.
+import ContributionAttachPicker from "@/components/cycle/ContributionAttachPicker";
 import { activateCycle, closeCycle, getCycle, listEligibleContributors } from "@/lib/cycleApi";
 import { takeToSolva } from "@/lib/takeToSolva";
 import WorkspaceEntryGate from "@/components/transitions/WorkspaceEntryGate";
@@ -535,9 +539,21 @@ function TeamStep({ cid, cycleId, agenda, members, refresh, onBack, onForward })
 function ContributionsStep({ cid, cycleId, agenda, members, contributions, refresh, onBack, onForward }) {
   const navigate = useNavigate();
   const items = agenda?.items || [];
-  const [draft, setDraft] = useState({ agenda_item_id: items[0]?.id || "", team_member_id: members[0]?.id || "", title: "", body_text: "", kind: "note" });
+  const [draft, setDraft] = useState({
+    agenda_item_id: items[0]?.id || "",
+    team_member_id: members[0]?.id || "",
+    title: "",
+    body_text: "",
+    kind: "note",
+    // QA-2026-05-16-017 / -018 (Chunk-9 2026-05-18) — attachment state.
+    source_doc_id: null,
+    attached_doc: null,
+    titleEditedByUser: false,
+  });
   const [busy, setBusy] = useState(false);
   const [scoringId, setScoringId] = useState(null);
+  // QA-2026-05-16-017 attach-picker modal state.
+  const [attachPickerOpen, setAttachPickerOpen] = useState(false);
 
   useEffect(() => {
     // Cycle v2 contributions tab opens at "Select an agenda item"
@@ -576,12 +592,47 @@ function ContributionsStep({ cid, cycleId, agenda, members, contributions, refre
   const contributorPool = cycleId ? eligible : members;
 
   const addContribution = async () => {
-    if (!draft.agenda_item_id || !draft.team_member_id || !draft.body_text.trim()) {
-      toast.error("Pick an agenda item, a member, and add some text."); return;
+    // QA-2026-05-16-021 (Chunk-9): same gating rule as the CTA
+    // disabled state — at least one input method MUST be present.
+    if (!draft.agenda_item_id || !draft.team_member_id) {
+      toast.error("Pick an agenda item and a contributor."); return;
+    }
+    if (!draft.body_text.trim() && !draft.attached_doc) {
+      toast.error("Add text or attach a document."); return;
     }
     setBusy(true);
-    try { await api.post(`/contexts/${cid}/cycle/contributions${qcid(cycleId)}`, draft); await refresh(); setDraft({ ...draft, title: "", body_text: "" }); toast.success("Added."); }
-    catch (e) { toast.error(apiErrorMessage(e)); } finally { setBusy(false); }
+    try {
+      // QA-2026-05-16-017 + -020: backend `ContributionIn` accepts
+      // `source_doc_id` (Chunk-7 -005 fix). When the user has only
+      // attached a doc (no body_text), we send kind="document"; when
+      // both or text-only we send kind="note" so the scorer treats
+      // the body_text as primary + attached doc as augmentation.
+      const payload = {
+        agenda_item_id: draft.agenda_item_id,
+        team_member_id: draft.team_member_id,
+        title: draft.title || null,
+        body_text: draft.body_text || null,
+        source_doc_id: draft.source_doc_id || null,
+        kind: (draft.attached_doc && !draft.body_text.trim())
+          ? "document"
+          : "note",
+      };
+      await api.post(`/contexts/${cid}/cycle/contributions${qcid(cycleId)}`, payload);
+      await refresh();
+      setDraft((p) => ({
+        ...p,
+        title: "",
+        body_text: "",
+        source_doc_id: null,
+        attached_doc: null,
+        titleEditedByUser: false,
+      }));
+      toast.success("Added.");
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const score = async (cid_contrib) => {
@@ -668,15 +719,111 @@ function ContributionsStep({ cid, cycleId, agenda, members, contributions, refre
               {contributorPool.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.email}</option>)}
             </select>
           </div>
-          <Input placeholder="Title (optional)" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} className="rounded-sm" />
-          <Textarea placeholder="Paste the contribution text here." value={draft.body_text} onChange={(e) => setDraft({ ...draft, body_text: e.target.value })} className="rounded-sm min-h-[100px]" data-testid="cycle-contrib-add-body" />
-          <Button size="sm" onClick={addContribution} disabled={busy} className="bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12.5px]" data-testid="cycle-contrib-add-submit">
+          <Input
+            placeholder="Title (optional)"
+            value={draft.title}
+            onChange={(e) => {
+              // QA-2026-05-16-018 (Chunk-9): track whether the user
+              // has manually edited the title so removing the
+              // attachment later doesn't wipe their work.
+              setDraft({ ...draft, title: e.target.value, titleEditedByUser: true });
+            }}
+            className="rounded-sm"
+            data-testid="cycle-contrib-add-title"
+          />
+
+          {/* QA-2026-05-16-017 / -018 / -019 (Chunk-9 2026-05-18):
+              attach icon + chip rendered above the paste textbox so
+              the user sees attachment options before deciding to type.
+              The paste textbox below remains available alongside any
+              attachment (per -019). */}
+          <div className="flex items-center gap-2" data-testid="cycle-contrib-add-attach-row">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setAttachPickerOpen(true)}
+              className="rounded-sm text-[12px] border-[var(--rule)] hover:border-[var(--ink)]"
+              data-testid="cycle-contrib-add-attach-btn"
+              aria-label="Attach a document"
+            >
+              <Paperclip className="w-3.5 h-3.5 mr-1" />
+              {draft.attached_doc ? "Change attachment" : "Attach document"}
+            </Button>
+            {draft.attached_doc && (
+              <div
+                className="flex items-center gap-1.5 px-2 py-1 bg-[var(--cream-deep)] border border-[var(--rule)] rounded-sm text-[12px]"
+                data-testid="cycle-contrib-add-attachment-chip"
+              >
+                <FileText className="w-3.5 h-3.5 text-[var(--muted)]" />
+                <span className="truncate max-w-[260px]" data-testid="cycle-contrib-add-attachment-name">
+                  {draft.attached_doc.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // QA-2026-05-16-018: clear the attachment AND
+                    // clear the auto-populated title ONLY if the user
+                    // hasn't manually edited it since attach.
+                    setDraft((p) => ({
+                      ...p,
+                      source_doc_id: null,
+                      attached_doc: null,
+                      title: p.titleEditedByUser ? p.title : "",
+                    }));
+                  }}
+                  className="text-[var(--muted)] hover:text-rose-700"
+                  aria-label="Remove attachment"
+                  data-testid="cycle-contrib-add-attachment-remove"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          <Textarea
+            placeholder="Paste the contribution text here."
+            value={draft.body_text}
+            onChange={(e) => setDraft({ ...draft, body_text: e.target.value })}
+            className="rounded-sm min-h-[100px]"
+            data-testid="cycle-contrib-add-body"
+          />
+          <Button
+            size="sm"
+            onClick={addContribution}
+            // QA-2026-05-16-021 (Chunk-9): CTA inactive until at least
+            // one input method is used (attachment OR pasted text).
+            disabled={busy || (!draft.body_text.trim() && !draft.attached_doc)}
+            className="bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12.5px]"
+            data-testid="cycle-contrib-add-submit"
+          >
             {busy ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Plus className="w-3.5 h-3.5 mr-1" />}
             Record contribution
           </Button>
         </div>
       )}
       <StepFooter canBack canForward onBack={onBack} onForward={onForward} />
+
+      {/* QA-2026-05-16-017 picker modal. */}
+      <ContributionAttachPicker
+        open={attachPickerOpen}
+        onClose={() => setAttachPickerOpen(false)}
+        contextId={cid}
+        onAttached={(att) => {
+          // -017 + -018: attach the doc, auto-populate Title ONLY if
+          // the user hasn't typed in the Title field. `titleEditedByUser`
+          // tracks intent — set on every Title onChange.
+          setDraft((p) => ({
+            ...p,
+            source_doc_id: att.id,
+            attached_doc: att,
+            title: (!p.titleEditedByUser && !(p.title || "").trim())
+              ? att.name
+              : p.title,
+          }));
+        }}
+      />
     </section>
   );
 }

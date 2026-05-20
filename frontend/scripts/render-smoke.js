@@ -336,6 +336,16 @@ async function smoke() {
   console.log(`[render-smoke] step 9 — Chunk 8 Document Overlay smoke`);
   await smokeChunk8DocumentOverlay(page, failures);
 
+  // ────────────────────────────────────────────────────────────────────
+  // Phase 10 (Chunk 9, 2026-05-18) — QA-2026-05-16-017…-021.
+  //   Add-a-Contribution attach feature smoke. Seeded via
+  //   `backend/scripts/seed_chunks.py`. Hard-asserts: CTA disabled →
+  //   attach picker opens → ≥1 doc listed → select → chip + auto-Title
+  //   appear → CTA enables → remove chip → CTA disables again.
+  // ────────────────────────────────────────────────────────────────────
+  console.log(`[render-smoke] step 10 — Chunk 9 Add-a-Contribution attach smoke`);
+  await smokeChunk9ContributionAttach(page, failures);
+
   await browser.close();
 
   if (failures.length) {
@@ -343,7 +353,7 @@ async function smoke() {
     for (const f of failures) console.error(`  • ${f}`);
     process.exit(1);
   }
-  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green · Chunk 7 generate-signals loading green · Chunk 8 document overlay green.`);
+  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green · Chunk 7 generate-signals loading green · Chunk 8 document overlay green · Chunk 9 contribution attach green.`);
 }
 
 // ----------------------------------------------------------------------
