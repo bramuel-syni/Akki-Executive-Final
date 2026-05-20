@@ -57,7 +57,14 @@ export default function SolvaSessions() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
-  const debouncedQ = useDebouncedValue(q, 280);
+  // Chunk 14 SV-05 (2026-05-21) — debounce dropped to 150ms per
+  // verbatim spec ("real-time filter, debounced ~150ms, no submit
+  // button"). Previously 280ms which felt sluggish on the live
+  // preview. The lower number is fine because the backend `q` regex
+  // is anchored to `intent` / `initial_framing` / `title` / synthesis
+  // and the route is account-and-context-scoped — the result-set
+  // cap is small.
+  const debouncedQ = useDebouncedValue(q, 150);
 
   useEffect(() => {
     let cancelled = false;
@@ -146,7 +153,7 @@ export default function SolvaSessions() {
             type="text"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search by framing keyword…"
+            placeholder="Search by title, framing, or synthesis content…"
             data-testid="solva-sessions-search-input"
             style={{
               border: "none", outline: "none", flex: 1,
@@ -207,16 +214,18 @@ export default function SolvaSessions() {
             style={{ color: "var(--graphite)", fontStyle: "italic", fontFamily: "Georgia, serif" }}
           >
             {/*
-             * QA-2026-05-20 SV-02 fix — verbatim copy from the
-             * Solva brief: empty state shown when the user has no
-             * saved sessions yet. Distinguishes between "no sessions
-             * have ever existed" (debouncedQ empty + status empty)
-             * and "your active filter / search matches nothing"
-             * (one of those is non-empty).
+             * Chunk 14 SV-05 — verbatim spec copy when a non-empty
+             * search query returns zero matches: "No sessions found
+             * for '[search term]'. Try a different word or phrase."
+             *
+             * QA-2026-05-20 SV-02 fix — the original verbatim copy
+             * for "no saved sessions" empty state stays untouched.
              */}
-            {(!debouncedQ.trim() && !status)
-              ? "No sessions saved yet. Complete a Solva session and it will appear here."
-              : "No sessions match."}
+            {debouncedQ.trim()
+              ? `No sessions found for "${debouncedQ.trim()}". Try a different word or phrase.`
+              : (!status
+                  ? "No sessions saved yet. Complete a Solva session and it will appear here."
+                  : "No sessions match.")}
           </p>
         ) : (
           <ul data-testid="solva-sessions-list" style={{ listStyle: "none", padding: 0, margin: 0 }}>

@@ -115,10 +115,10 @@ Source: `/app/memory/qa_reports/SOLVA_QA_BRIEF_20MAY2026.md`. Native ID scheme `
 | SV-02 | Solva sessions list | "View All Sessions" returns Field Required error | Critical | DONE | Chunk-9.5 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-02 |
 | SV-03 | Solva sessions | Sessions saving + auto-title + toast + inline edit | Critical | DONE | Chunk-9.5 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-03 |
 | SV-04 | Solva sessions list | Cards + ACTIVE/PAUSED/COMPLETE/REFUSED status badges + tabs | High | DONE | Chunk-13 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-04 |
-| SV-05 | Solva sessions list | Real-time search bar (title + content) | High | BACKLOG | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-05 |
-| SV-06 | Solva responses | Rich text formatting (paragraphs, lists, bold) | Medium | BACKLOG | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-06 |
-| SV-07 | Solva session UX | Output window ≥60% viewport + scroll | Medium | BACKLOG | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-07 |
-| SV-08 | Solva query | HTTP 422 reproduction + fix (screenshot referenced but not yet attached) | Critical | BACKLOG | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-08 |
+| SV-05 | Solva sessions list | Real-time search bar (title + content) | High | DONE | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-05 |
+| SV-06 | Solva responses | Rich text formatting (paragraphs, lists, bold) | Medium | DONE | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-06 |
+| SV-07 | Solva session UX | Output window ≥60% viewport + scroll | Medium | DONE | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-07 |
+| SV-08 | Solva query | HTTP 422 reproduction + fix (screenshot referenced but not yet attached) | Critical | DONE | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-08 |
 
 ## Phase C Audit-Panel Regression (20 May 2026)
 

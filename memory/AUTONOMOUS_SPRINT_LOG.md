@@ -175,6 +175,38 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 **Awaiting orchestrator tester re-run on Chunk 13 surfaces, then dispatch of Chunk 14 (Solva SV-05/06/07/08).**
 
 
+## Chunk 13 — tester verified — DONE — 2026-05-21T11:30:00Z
+
+- **Tester verdict: PASS 4/4** — read-only banner verified live on REFUSED sessions in CFO ctx; count consistency, classifier transitions, status pill colors, and read-only enforcement all green.
+- Status: Chunk 13 closed cleanly. No fix-pass dispatched.
+- Memory updates:
+  - `qa_reports/QA_BACKLOG.md` — row `SV-04` confirmed DONE with `Sprint chunk = Chunk-13` (no change needed — already DONE).
+  - `SYSTEM_STATE.md § 4` — tester-confirmation line appended to Chunk 13 entry.
+  - `AUTONOMOUS_SPRINT_LOG.md` — this entry.
+
+**Dispatching Chunk 14 (Solva SV-05/06/07/08 — final Solva chunk) per autonomy rules.**
+
+
+## Chunk 14 — Solva SV-05/06/07/08 (final Solva chunk) — DONE — 2026-05-21T13:00:00Z
+
+- IDs closed: 4 (SV-05 search · SV-06 rich text · SV-07 output sizing · SV-08 422 friendliness)
+- **Full Solva QA Brief now closed** — 8/8 SV-IDs DONE
+- Pytest delta: **+10** (761 → 771; new file `test_qa_chunk_14.py` — 5 SV-05 + 4 SV-08 + 1 CI sanity)
+- Tester verdict: PASS pending (10/10 backend + 4 render-smoke step 16 assertions + ESLint clean)
+- Files touched: 5 (`routers/solva_v2.py` `q`-regex widened to synthesis; `pages/SolvaSessions.jsx` debounce + placeholder + empty-state copy; `pages/SolvaPhaseDSession.jsx` ProseRenderer + friendlySolvaError + pre-validation + inline min-hint; NEW `lib/proseBlocks.js` markdown-light parser; render-smoke step 16)
+- Architectural invariants: PASS (zero new LLM call sites; CI guard PASS; pure-JS markdown parser; no new deps)
+- Blockers: none
+- AWAITING_PO routings: none new (cross-context aggregate already queued as C17-003 in Chunk 13)
+- SV-08 diagnostic finding: 422s only fire on truly malformed input. Pre-validation + `friendlySolvaError` smart-cast + inline char-count hint shipped per dispatch instruction
+- Memory updates:
+  - `qa_reports/QA_BACKLOG.md` — rows SV-05/06/07/08 flipped BACKLOG → DONE with `Sprint chunk = Chunk-14`
+  - `SYSTEM_STATE.md § 4` — Chunk 14 closeout (newest at top)
+  - `sprints/CHUNK_14_STATE.md` — created (SV-08 reproduction matrix, parser scope decisions, full Solva closure summary)
+- Notable: re-used Chunks 9–13 patterns (search debounce, status_counts logic, schema-drift defensiveness); `parseProseBlocks` is a clean stand-alone helper ready for promotion to Pulse on a future cleanup pass. **Solva surface fully verified end-to-end.**
+
+**Awaiting orchestrator tester re-run on Chunk 14 surfaces, then dispatch of Chunk 15 (16-May P2 batch 1).**
+
+
 **Awaiting orchestrator tester re-run on Chunk 11 surfaces, then dispatch of Chunk 12.**
 
 

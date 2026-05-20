@@ -30,6 +30,49 @@ import {
   submitFraming,
   submitAnswer,
 } from "@/lib/solvaPhaseDClient";
+import { parseProseBlocks } from "@/lib/proseBlocks";
+
+
+/**
+ * Chunk 14 (SV-08, 2026-05-21) — smart-cast for Pydantic 422 detail
+ * arrays. The backend's `SubmitFramingIn.framing_text` /
+ * `SubmitAnswerIn.answer_text` carry `Field(min_length=…)` which
+ * triggers a 422 with a verbose `[{type, loc, msg, input, ctx, url}]`
+ * shape. The default `apiErrorMessage` joins the raw `msg` fields
+ * which still expose the pydantic.dev URL — this helper converts
+ * the most common Solva validation errors to user-friendly copy.
+ *
+ * Pre-validation in the submit handlers means this helper only fires
+ * when a NEW required field is added on the server but the client
+ * hasn't shipped a matching guard yet (drift defence).
+ */
+function friendlySolvaError(err) {
+  const detail = err?.response?.data?.detail;
+  if (Array.isArray(detail)) {
+    for (const d of detail) {
+      const loc = Array.isArray(d?.loc) ? d.loc.join(".") : "";
+      const t = d?.type || "";
+      if (t === "string_too_short" && loc.includes("framing_text")) {
+        return "Please write at least 20 characters describing the situation before submitting.";
+      }
+      if (t === "string_too_short" && loc.includes("answer_text")) {
+        return "Please write at least 2 characters before submitting your answer.";
+      }
+      if (t === "missing" && loc.includes("framing_text")) {
+        return "A framing message is required. Please describe the situation in your own words.";
+      }
+      if (t === "missing" && loc.includes("answer_text")) {
+        return "Your answer can't be empty.";
+      }
+    }
+    // Generic 422 fallback — strip the URL and join the messages.
+    const msgs = detail.map((d) => (typeof d?.msg === "string" ? d.msg : null)).filter(Boolean);
+    if (msgs.length) return msgs.join(" · ");
+  }
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail.message === "string") return detail.message;
+  return `${err?.name || "Error"}: ${(err?.message || "").slice(0, 200)}`;
+}
 
 
 const SUB_MODULES = [
@@ -145,6 +188,17 @@ export default function SolvaPhaseDSession() {
 
   const submitFramingAction = useCallback(async () => {
     if (!session || !draft.trim()) return;
+    // Chunk 14 (SV-08, 2026-05-21) — defence-in-depth pre-validation
+    // mirroring `SubmitFramingIn.framing_text` Field(min_length=20).
+    // Short-circuit before the API call so a 422 never round-trips
+    // when the user dodges the disabled-button guard (e.g. paste +
+    // Enter mid-render). Surfaces the friendly copy in `error`
+    // instead of the raw "String should have at least 20 characters"
+    // pydantic detail.
+    if (draft.trim().length < 20) {
+      setError("Please write at least 20 characters describing the situation before submitting.");
+      return;
+    }
     setBusy(true); setError(null);
     try {
       const s = await submitFraming({
@@ -157,12 +211,22 @@ export default function SolvaPhaseDSession() {
       // "brief, 2-3 seconds, non-intrusive" requirement.
       fireSavedMarker();
     } catch (e) {
-      setError(`${e?.name || "Error"}: ${(e?.message || "").slice(0, 200)}`);
+      // Chunk 14 (SV-08) — smart-cast for Pydantic 422 detail arrays.
+      // Pre-validate above catches the common case; this handles
+      // any future drift where the server adds a new required field
+      // but the client hasn't been updated yet.
+      setError(friendlySolvaError(e));
     } finally { setBusy(false); }
   }, [session, draft, ctxId, fireSavedMarker]);
 
   const submitAnswerAction = useCallback(async () => {
     if (!session || !draft.trim()) return;
+    // Chunk 14 (SV-08) — defence-in-depth pre-validation mirroring
+    // `SubmitAnswerIn.answer_text` Field(min_length=2).
+    if (draft.trim().length < 2) {
+      setError("Please write at least 2 characters before submitting your answer.");
+      return;
+    }
     setBusy(true); setError(null);
     try {
       const s = await submitAnswer({
@@ -173,7 +237,7 @@ export default function SolvaPhaseDSession() {
       // QA-2026-05-20 SV-03 — same toast on every answer turn.
       fireSavedMarker();
     } catch (e) {
-      setError(`${e?.name || "Error"}: ${(e?.message || "").slice(0, 200)}`);
+      setError(friendlySolvaError(e));
     } finally { setBusy(false); }
   }, [session, draft, ctxId, fireSavedMarker]);
 
@@ -390,10 +454,25 @@ function Body({ session, draft, setDraft, busy, onFraming, onAnswer, onAttachCli
           placeholder="The situation that's been on my mind…"
         />
         <div className="flex items-center justify-between">
-          <PaperclipButton
-            onClick={onAttachClick}
-            testId="solva-phase-d-attach-btn-framing"
-          />
+          <div className="flex items-center gap-3">
+            <PaperclipButton
+              onClick={onAttachClick}
+              testId="solva-phase-d-attach-btn-framing"
+            />
+            {/* Chunk 14 SV-08 — inline character-count hint mirrors the
+                backend `Field(min_length=20)` constraint. Surfaces the
+                threshold so users see WHY the submit button is disabled
+                instead of having to guess. Live count flips to a green
+                checkmark once the threshold is met. */}
+            <span
+              data-testid="solva-phase-d-framing-min-hint"
+              className={`text-xs ${draft.trim().length >= 20 ? "text-emerald-600" : "text-slate-500"}`}
+            >
+              {draft.trim().length >= 20
+                ? `${draft.trim().length} characters — ready to submit`
+                : `${draft.trim().length} / 20 characters required`}
+            </span>
+          </div>
           <Button
             data-testid="solva-phase-d-framing-submit"
             onClick={onFraming}
@@ -572,13 +651,92 @@ function ExportToWorkStudioButton({ session }) {
 
 
 function ProseBlock({ title, text, testId }) {
+  // Chunk 14 SV-06 / SV-07 (2026-05-21):
+  //   • SV-06 — render markdown-light (paragraphs · `- `/`* ` bullets
+  //     · `1. ` numbered lists · `**bold**`) via parseProseBlocks
+  //     instead of the legacy `<pre>` flat block.
+  //   • SV-07 — wrap in min-h-[60vh] with overflow-y-auto. Synthesis
+  //     and refusal renderings often exceed 60vh on real responses
+  //     so the wrapper caps height + scrolls. Narrow viewports fall
+  //     back to a 400px minimum (min-h-[400px] inside the inner
+  //     container) — the outer 60vh clamp wins on desktop.
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <article
+      className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
+      data-testid={`solva-prose-block-${testId || "default"}`}
+    >
       {title && <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">{title}</h3>}
-      <pre
-        className="whitespace-pre-wrap font-sans text-base leading-relaxed text-slate-800"
+      <div
+        className="min-h-[400px] sm:min-h-[60vh] max-h-[70vh] overflow-y-auto pr-1 font-sans text-base leading-relaxed text-slate-800"
         data-testid={testId}
-      >{text}</pre>
+      >
+        <ProseRenderer text={text} />
+      </div>
     </article>
+  );
+}
+
+
+/**
+ * Chunk 14 SV-06 — render parseProseBlocks output as JSX. Pure
+ * presentational component; no state, no effects. Renders:
+ *   • paragraphs as <p>
+ *   • bullet lists as <ul><li>
+ *   • numbered lists as <ol><li>
+ *   • **bold** inline tokens as <strong>
+ *
+ * Tables / code fences / headings are deliberately not handled —
+ * documented as out-of-scope in `proseBlocks.js` JSDoc. If the
+ * backend starts emitting them (unlikely; Synisense voice files
+ * keep responses prose-only), we'll add a fallback `<pre>` block.
+ */
+function ProseRenderer({ text }) {
+  const blocks = React.useMemo(() => parseProseBlocks(text || ""), [text]);
+  if (blocks.length === 0) {
+    // Defensive fallback — if the text is non-empty but parses to
+    // zero blocks (edge case: only whitespace) we still render the
+    // raw text so we don't silently drop content.
+    return text
+      ? <p className="whitespace-pre-wrap">{text}</p>
+      : <p className="italic text-slate-500">No content.</p>;
+  }
+  return (
+    <div className="space-y-4">
+      {blocks.map((b, i) => {
+        if (b.type === "bullets") {
+          return (
+            <ul key={i} className="list-disc space-y-1 pl-6">
+              {b.items.map((item, j) => (
+                <li key={j}><Inlines tokens={item} /></li>
+              ))}
+            </ul>
+          );
+        }
+        if (b.type === "numbered") {
+          return (
+            <ol key={i} className="list-decimal space-y-1 pl-6">
+              {b.items.map((item, j) => (
+                <li key={j}><Inlines tokens={item} /></li>
+              ))}
+            </ol>
+          );
+        }
+        return <p key={i}><Inlines tokens={b.inlines} /></p>;
+      })}
+    </div>
+  );
+}
+
+
+function Inlines({ tokens }) {
+  return (
+    <>
+      {tokens.map((tok, i) => {
+        if (tok.kind === "bold") {
+          return <strong key={i} className="font-semibold text-slate-900">{tok.text}</strong>;
+        }
+        return <React.Fragment key={i}>{tok.text}</React.Fragment>;
+      })}
+    </>
   );
 }

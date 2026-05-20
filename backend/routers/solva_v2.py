@@ -1456,12 +1456,17 @@ async def list_sessions(
     # status filter is applied to the computed display_status bucket
     # post-merge, so we don't constrain the find() here.
     if q:
-        # `q` was already stripped + escaped above when we built the
-        # v2 regex; reapply against `initial_framing` and `title`.
+        # Chunk 14 (SV-05) — search applies across title AND content
+        # per the verbatim spec ("session title or session content").
+        # Phase D session content lives in `initial_framing` (the
+        # user's opening text) AND in `layer_3.rendered_synthesis`
+        # (Akki's synthesis output); both are searched. The v2 row
+        # `intent` was already covered by the v2 find above.
         rx = qfilter["intent"]["$regex"]
         pd_filter["$or"] = [
-            {"initial_framing": {"$regex": rx, "$options": "i"}},
-            {"title":           {"$regex": rx, "$options": "i"}},
+            {"initial_framing":            {"$regex": rx, "$options": "i"}},
+            {"title":                      {"$regex": rx, "$options": "i"}},
+            {"layer_3.rendered_synthesis": {"$regex": rx, "$options": "i"}},
         ]
     pd_rows = await db.solva_phase_d_sessions.find(
         pd_filter,

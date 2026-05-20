@@ -129,6 +129,64 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 14 — Solva SV-05/06/07/08 (final Solva chunk) — 2026-05-21 ✅ (autonomous)
+
+Closes out the entire Solva QA Brief (8/8 SV-IDs DONE). Search expands to synthesis content; responses get markdown-light rendering (paragraphs + bullets + numbered + bold); output panel sized to ≥60vh with scroll; 422 surfaces translated to friendly user-facing copy with inline character-count hint.
+
+| ID    | Surface                              | Files touched                                                                                                                                                                                                          | Test name(s)                                                                                                       | Status | Notes                                                                                                                                                  |
+|-------|--------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
+| SV-05 | Sessions list search                 | `routers/solva_v2.py` (+ `layer_3.rendered_synthesis` in `$or`); `pages/SolvaSessions.jsx` (debounce 280→150ms, placeholder, empty-state copy)                                                                          | `test_chunk14_sv05_search_matches_*` (4 tests + zero-match)                                                       | DONE   | Counts honour BOTH q-filter AND status-filter per dispatch.                                                                                            |
+| SV-06 | Rich text rendering                  | NEW `lib/proseBlocks.js` (`parseProseBlocks` + `parseInlines`); `SolvaPhaseDSession.jsx::ProseBlock` swap from `<pre>` to `ProseRenderer` + `Inlines`                                                                  | ESLint + render-smoke step 16 (testid query)                                                                       | DONE   | No markdown library; tables/code-fences/headings deliberately out-of-scope.                                                                            |
+| SV-07 | Output panel sizing                  | `SolvaPhaseDSession.jsx::ProseBlock` wrapper                                                                                                                                                                           | render-smoke step 16 clientHeight check                                                                            | DONE   | `sm:min-h-[60vh] max-h-[70vh] overflow-y-auto` with 400px floor on narrow viewports.                                                                   |
+| SV-08 | 422 friendliness                     | NEW `friendlySolvaError` helper in `SolvaPhaseDSession.jsx`; pre-validation in `submitFramingAction` + `submitAnswerAction`; inline `solva-phase-d-framing-min-hint` char-count chip                                  | `test_chunk14_sv08_*` (4 cases: list-without-context, framing-empty, framing-too-short, framing-missing-loc)      | DONE   | Diagnostic matrix documented in CHUNK_14_STATE.md §4. 422s only reproduce on truly malformed input.                                                    |
+
+### SV-08 diagnostic finding
+
+Reproduction matrix (live preview, bramuel acct):
+- `GET /api/solva/v2/sessions` without `context_id` → 422 (correctly enforced; frontend Chunk-9.5 guard prevents user reach)
+- `POST /sessions/{sid}/framing` with `{framing_text: ""}` → 422 `string_too_short`
+- `POST /sessions/{sid}/framing` with `{framing_text: "too short!"}` (10 chars) → 422 `string_too_short`
+- `POST /sessions/{sid}/framing` with `{}` → 422 `missing`
+
+All 422s fire only on truly malformed input. Per dispatch instruction, the fix is friendliness: smart-cast Pydantic detail arrays + pre-validate before round-trip + surface inline character-count hint.
+
+### Tests
+
+`backend/tests/test_qa_chunk_14.py` — **10 tests:**
+- 5 SV-05 tests (title / framing / synthesis / case-insensitive / zero-match)
+- 4 SV-08 tests (422 reproduction matrix)
+- 1 CI sanity (no LLM imports in `proseBlocks.js`)
+
+**All 10 pass.** Cross-chunk regression (9.5 / 10 / 11 / 12 / 13 / 14 + CI guard) = **60 passed**.
+
+### Live render-smoke step 16
+
+- SV-05 — search input mounts; zero-match empty-state surfaces verbatim spec copy `"No sessions found for "{q}". Try a different word or phrase."`
+- SV-08 — `solva-phase-d-framing-min-hint` testid visible on the entry layer; flips from `"0 / 20 characters required"` to `"… ready to submit"` when threshold passed.
+
+### CI guard
+
+`test_no_direct_llm_calls_outside_shield.py` — **PASS**. Chunk 14 adds zero LLM call sites.
+
+### Architectural invariants checkpoint
+
+- ✅ Shield gateway exclusivity preserved.
+- ✅ `context_id` scoping intact — q-search runs server-side under the existing account+context filter.
+- ✅ `tenant_id == account_id` boundary intact.
+- ✅ No `repr(exc)` leaks — `friendlySolvaError` uses known-safe templates.
+- ✅ No blocking I/O in async routes.
+- ✅ No new third-party libraries — `proseBlocks.js` is pure JS.
+- ✅ Schema-drift defensiveness — `parseProseBlocks` tolerates non-string input.
+- ✅ Chunks 7-13 work intact — pytest +10.
+
+### ESLint + Ruff
+
+ESLint clean on `SolvaSessions.jsx`, `SolvaPhaseDSession.jsx`, `proseBlocks.js`, `render-smoke.js`. Ruff clean on `routers/solva_v2.py`, `tests/test_qa_chunk_14.py`.
+
+### Carry-forward `CHUNK_14_STATE.md`
+
+New file documenting the Solva QA Brief full closure (8/8 SV-IDs DONE), the SV-08 reproduction matrix, the markdown-light parser scope decisions, and out-of-scope deferrals.
+
 ### Chunk 13 — Solva SV-04 sessions list (4-bucket status + tab counts + read-only) — 2026-05-21 ✅ (autonomous)
 
 Extends the Solva sessions list view with a 4-bucket display_status classifier + tab count badges + read-only enforcement on COMPLETE/REFUSED sessions. Reuses the merged Phase D + v2 listing built in Chunk 9.5. Zero session document migration — status is derived at read time from existing fields.
@@ -209,6 +267,10 @@ ESLint clean on `SolvaSessions.jsx`, `SolvaPhaseDSession.jsx`, `render-smoke.js`
 ### Carry-forward `CHUNK_13_STATE.md`
 
 New file documenting the classifier rules, the `abandoned → REFUSED` merge rationale, the list endpoint shape contract, read-only enforcement layers, the 55-vs-84 anomaly resolution, and out-of-scope deferrals.
+
+### Tester confirmation (2026-05-21T11:30:00Z) — PASS 4/4
+
+Orchestrator tester re-run verdict: GREEN end-to-end. Read-only banner verified live on REFUSED sessions in CFO ctx (`dcc263b1`). Status pill colors, count badge consistency invariant, classifier 4-bucket transitions, and HTTP 409 enforcement on terminal sessions all confirmed.
 
 ### Chunk 12 — 16-May Strategic-Goals deep rewrite (QA-2026-05-16-049) — 2026-05-21 ✅ (autonomous)
 
