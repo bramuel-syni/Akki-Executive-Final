@@ -538,7 +538,7 @@ export default function SolvaLanding({ variant = "auth", intakeSeed = null }) {
 
         <div style={{ marginTop: 40, textAlign: "center" }}>
           <Link
-            to="/solva/how-it-reasons"
+            to="/solva"
             data-testid="how-solva-reasons-link"
             style={{
               fontFamily: 'Calibri, "Segoe UI", system-ui, sans-serif',

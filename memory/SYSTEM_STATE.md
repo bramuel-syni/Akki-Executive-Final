@@ -129,6 +129,65 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 9.5 — Solva SV-01/02/03 + Phase C audit regression — 2026-05-20 ✅
+
+Bundled chunk dispatched as one unit per user's "don't fragment ledger flips" instruction. Two distinct surfaces — three Solva criticals + two Phase C audit-panel symptoms (third symptom resolved as no-bug during diagnostic).
+
+**Diagnostics-first per dispatch.** Each defect was reproduced + root-caused BEFORE writing remediation code. Findings:
+
+| Symptom / ID | Root cause | Verdict |
+|---|---|---|
+| Sx1 (inline 404) | Backend correctly raises 404 when `message_id` isn't found in chat's `assistant_msgs` array (e.g. user-message id passed, or audit row not yet materialised). Frontend leaks the raw AxiosError into the UI verbatim. | Frontend display bug — fix in `AuditPanel.jsx` |
+| Sx2 (zero metrics despite PII) | **`chat.created_at` is stored as STRING; `synisense_runs.ts` is stored as DATETIME (BSON Date).** `$gte` between mismatched BSON types silently returns 0 rows. Audit-panel?message_id endpoint works (filters by chat_id+message_id, not by ts), confirming Shield IS detecting + redacting; the metrics aggregation is the broken layer. | H1 (reporting gap) — fix `synisense_metrics.py` ts coercion |
+| Sx3 (truncated JSON) | Verified backend produces complete payloads via direct curl. The QA screenshot description "missing `at` field" was a misread — `at` is a top-level row field rendered ABOVE the payload `<pre>`, not inside it. JSON `<pre>` uses `whitespace-pre-wrap break-all` so no truncation. | Not a bug — documented |
+| SV-01 | `<Link to="/solva/how-it-reasons">` — that route doesn't exist in `App.js`, so the SPA fell through to root. | One-line fix to `/solva` (marketing page) |
+| SV-02 | `/api/solva/v2/sessions` requires `context_id` query parameter (WS-R16 privacy hardening). Frontend's `SolvaSessions.jsx` omitted it → FastAPI raised 422 `"Field required"`. | Frontend params fix |
+| SV-03 | Sessions ARE saved (84 Phase D rows for bramuel alone). Actual gaps: **(b)** listing endpoint context_id (= SV-02 cause), **(d)** auto-title never generated (`title=""` on every row), AND the toast UX from spec missing. The legacy v2 listing endpoint also didn't merge Phase D sessions — bramuel's 84 Phase D rows were invisible to the View-All page even after SV-02 fix. | Multi-part fix: extend v2 listing to merge phase_d rows, add Shield-gateway auto-title hook, add toast, add PATCH title endpoint, render inline-edit affordance |
+
+**Files touched (Backend):**
+- `routers/synisense_metrics.py` — added `_coerce_to_datetime()` helper + wired it into `chat_synisense_metrics`
+- `routers/solva_phase_d.py` — added `shield_invoke` import, `_generate_session_auto_title()` helper, idempotent hook in `submit_framing`, PATCH `/sessions/{sid}/title` endpoint
+- `routers/solva_v2.py` — extended `list_sessions` to merge `solva_phase_d_sessions` rows into the response (engine="phase_d" marker)
+
+**Files touched (Frontend):**
+- `components/chat/AuditPanel.jsx` — friendly 404 copy ("Audit data isn't available for this message yet…")
+- `components/solva/SolvaLanding.jsx` — `to="/solva/how-it-reasons"` → `to="/solva"` (one-line SV-01 fix)
+- `pages/SolvaSessions.jsx` — `context_id` param wired, SV-03 verbatim empty-state copy, inline-editable title row, Phase D session routing
+- `pages/SolvaPhaseDSession.jsx` — `toast.success("Session saved.", { duration: 2500 })` on framing + answer submit (matches the brief's 2-3s spec)
+- `scripts/render-smoke.js` — step 11 added (SV-01 link target / SV-02 endpoint-status / SV-03 empty-state-or-list with engine="phase_d" presence)
+
+**Tests:** `backend/tests/test_qa_chunk_9_5.py` — **10 tests** covering Sx1 (404 contract), Sx2 (string + datetime ts shapes), SV-02 (422 on missing context_id, 200 on present), SV-03 (Phase D merge, PATCH title round-trip, empty-string rejection, cross-account rejection), and an architectural-invariant static check (`_generate_session_auto_title` routes through `shield_invoke`, not direct LLM SDK).
+
+**Final pytest count:** **722 passed**, 0 failed, 566 skipped — delta **+10** from Chunk-9 baseline 712 (matches the 10 new Chunk-9.5 tests exactly). Zero regressions.
+
+**CI guard** `test_no_direct_llm_calls_outside_shield.py` — **PASS** (Chunk 9.5 adds exactly ONE LLM call site, `_generate_session_auto_title`, routed through `shield_invoke` with purpose `solva.session.auto_title`, covered by the `solva.*` wildcard in `ALLOWED_PURPOSES`).
+
+**Live render-smoke step 11 — GREEN end-to-end:**
+- ✓ Chunk 9.5 (SV-01) — How-Solva-reasons link points at /solva
+- ✓ Chunk 9.5 (SV-02) — sessions endpoint returned 200 (no 422 leakage)
+- ✓ Chunk 9.5 (SV-03) — sessions list rendered (32 items, 5 Phase D)
+
+**Architectural invariants checkpoint:**
+- ✅ No direct LLM calls outside Shield (CI guard PASS; static check in `test_chunk95_auto_title_routes_through_shield_not_direct_llm` reads the helper body and asserts no `import openai` / `import anthropic` / `import litellm` / `google.generativeai`).
+- ✅ `tenant_id == account_id == ctx.account.id` on the PATCH endpoint — `_get_session` enforces the join before update fires; cross-account hijack test passes.
+- ✅ `context_id` scoping on all three new code paths: PATCH endpoint (router prefix), v2 merge (filter on `account_id + context_id`), audit panel friendly copy (frontend-only, no scope change).
+- ✅ No `repr(exc)` leaks — `_generate_session_auto_title` logs with `type(exc).__name__: str(exc)[:300]`; AuditPanel error branch reads `e?.response?.status` then composes a copy string with no exception object embedded.
+- ✅ No blocking I/O in async routes — Shield invocation is awaited; mongo operations are Motor async.
+- ✅ No new third-party libraries (sonner + lucide-react already present).
+- ✅ Append to SYSTEM_STATE.md done.
+
+**ESLint** — clean on every touched frontend file (AuditPanel.jsx, SolvaLanding.jsx, SolvaSessions.jsx, SolvaPhaseDSession.jsx, render-smoke.js).
+
+**Side-bug surfaced during smoke wire-up — fixed inline:**
+- The original render-smoke step 11 SV-02 detection scanned `body.innerText` for the string "Field required" — this produced a false positive (some other UI copy contained the word "field"). Refactored to a deterministic response-listener that captures actual HTTP statuses from `/api/solva/v2/sessions` requests. Same defensive pattern recommended for any future smoke step that needs to confirm "no validation-error path was hit".
+- SolvaApp uses `WorkspaceEntryGate` which defers rendering by 3-5s on first mount. Step 11 now pre-marks the workspace `seen` in sessionStorage before the goto, eliminating the cold-mount race.
+
+**Carry-forward `CHUNK_9_5_STATE.md`:** new file at `/app/memory/sprints/CHUNK_9_5_STATE.md` — Phase D / v2 collection topology, auto-title prompt contract, decisions log, follow-ups.
+
+**PO escalations queued:** none.
+
+**Elapsed effort:** ~90 min vs the implicit ~60-75 min calibration. The 15-min overshoot was driven by (1) the smoke false-positive iteration and (2) the WorkspaceEntryGate timing race — both general defensive lessons captured in `CHUNK_9_5_STATE.md §7` for the next agent.
+
 ### Chunk 9 — Add-a-Contribution attach (5 IDs -017→-021) — 2026-05-18 ✅
 
 All 5 P1/P2 IDs landed in a single chunk. **Combined-scoring contract locked** (decision (a) from dispatch): the score endpoint concatenates `body_text` + an `[Attached: <name>]` marker + the attached doc's `extracted_text` into a single string, runs the existing `_heuristic_score` once, and echoes a `scoring_input` block on the row so audits can see which inputs contributed.

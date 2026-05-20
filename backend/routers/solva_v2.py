@@ -33,6 +33,7 @@ import json
 import logging
 import re
 import uuid
+from datetime import datetime  # noqa: F401  (used in QA-2026-05-20 SV-03 merge)
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -1424,9 +1425,75 @@ async def list_sessions(
         qfilter,
         {"_id": 0, "id": 1, "cluster_id": 1, "cluster_label": 1, "intent": 1,
          "layer": 1, "layer_index": 1, "status": 1, "submodule": 1,
-         "started_at": 1, "updated_at": 1, "completed_at": 1},
+         "started_at": 1, "updated_at": 1, "completed_at": 1, "title": 1},
     ).sort("updated_at", -1).to_list(length=100)
-    return {"items": rows, "count": len(rows)}
+
+    # QA-2026-05-20 SV-03 — merge Phase D sessions into the same
+    # response. Phase D writes to a separate `solva_phase_d_sessions`
+    # collection (Phase E sub-task A delivery), so the View All
+    # Sessions page was silently missing every Phase D session the
+    # user owned. Field mapping to the v2 wire shape:
+    #     id            ← session_id
+    #     intent        ← initial_framing  (matches Phase D semantics)
+    #     submodule     ← sub_module
+    #     layer         ← layer_state
+    #     started_at    ← created_at       (ISO string)
+    #     updated_at    ← updated_at       (ISO string)
+    #     completed_at  ← completed_at     (ISO string or null)
+    #     title         ← title            (auto-generated or user-edited)
+    #     cluster_id / cluster_label ← null (Phase D doesn't cluster)
+    pd_filter: Dict[str, Any] = {
+        "account_id": account["id"], "context_id": context_id,
+    }
+    if status:
+        pd_filter["status"] = status
+    if q:
+        # `q` was already stripped + escaped above when we built the
+        # v2 regex; reapply against `initial_framing` and `title`.
+        rx = qfilter["intent"]["$regex"]
+        pd_filter["$or"] = [
+            {"initial_framing": {"$regex": rx, "$options": "i"}},
+            {"title":           {"$regex": rx, "$options": "i"}},
+        ]
+    pd_rows = await db.solva_phase_d_sessions.find(
+        pd_filter,
+        {"_id": 0, "session_id": 1, "sub_module": 1, "status": 1,
+         "layer_state": 1, "initial_framing": 1, "title": 1,
+         "created_at": 1, "updated_at": 1, "completed_at": 1},
+    ).sort("updated_at", -1).to_list(length=100)
+
+    def _iso_or_none(value: Any) -> Optional[str]:
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, str) and value:
+            return value
+        return None
+
+    pd_mapped: List[Dict[str, Any]] = []
+    for pd in pd_rows:
+        pd_mapped.append({
+            "id":            pd.get("session_id"),
+            "cluster_id":    None,
+            "cluster_label": None,
+            "intent":        pd.get("initial_framing") or "",
+            "layer":         pd.get("layer_state"),
+            "layer_index":   None,
+            "status":        pd.get("status"),
+            "submodule":     pd.get("sub_module"),
+            "started_at":    _iso_or_none(pd.get("created_at")),
+            "updated_at":    _iso_or_none(pd.get("updated_at")),
+            "completed_at":  _iso_or_none(pd.get("completed_at")),
+            "title":         pd.get("title") or "",
+            # Marker so the UI can route opens through the Phase D
+            # session page instead of the legacy v2 page.
+            "engine":        "phase_d",
+        })
+
+    merged = list(rows) + pd_mapped
+    # Sort newest-first by updated_at (string ISO sort works for ISO 8601).
+    merged.sort(key=lambda r: (r.get("updated_at") or ""), reverse=True)
+    merged = merged[:100]
+    return {"items": merged, "count": len(merged)}
 
 
 # =============================================================================

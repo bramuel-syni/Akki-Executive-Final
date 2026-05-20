@@ -54,7 +54,23 @@ export default function AuditPanel({
         setData(panel);
       }
     } catch (e) {
-      setErr(`${e?.name || "Error"}: ${(e?.message || "").slice(0, 200)}`);
+      // QA-2026-05-20 Phase-C-symptom-1 fix: surface a friendly
+      // explanation when the audit row hasn't materialised yet (404 =
+      // message_id not in the chat's assistant_msgs OR the chat has
+      // no audit_ids array yet). Bubbling the raw AxiosError into the
+      // UI is a leak (the QA screenshot of 20 May 2026 showed
+      // "AxiosError: Request failed with status code 404" rendered
+      // verbatim inline, which is both confusing AND surfaces
+      // implementation detail to the user). All other errors keep the
+      // existing {name}: {message[:200]} format.
+      const status = e?.response?.status;
+      if (status === 404) {
+        setErr(
+          "Audit data isn’t available for this message yet — it usually appears within a few seconds of the response. Refresh once it has settled.",
+        );
+      } else {
+        setErr(`${e?.name || "Error"}: ${(e?.message || "").slice(0, 200)}`);
+      }
     } finally {
       setBusy(false);
     }

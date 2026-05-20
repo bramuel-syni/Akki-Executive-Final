@@ -38,6 +38,43 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _coerce_to_datetime(value: Any) -> datetime | None:
+    """QA-2026-05-20 Phase-C-symptom-2 helper.
+
+    Several historical Mongo rows persisted timestamps as ISO 8601
+    strings (e.g. `chats.created_at`) while the metrics aggregation
+    expects datetimes for `$gte`. This helper accepts either shape
+    and returns a tz-aware datetime in UTC (or None if the input is
+    empty/garbage — caller falls back to "now").
+
+    Accepts:
+      - datetime (passes through, normalised to UTC)
+      - str   (ISO 8601 with or without trailing 'Z')
+      - None / empty / unparseable → None
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    if isinstance(value, str):
+        v = value.strip()
+        if not v:
+            return None
+        # Python 3.11+ handles 'Z' natively; be defensive for older payloads.
+        if v.endswith("Z"):
+            v = v[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(v)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    return None
+
+
 async def _aggregate(query: Dict[str, Any]) -> Dict[str, Any]:
     """Run the standard count + layer-breakdown aggregation."""
     from core import db
@@ -97,13 +134,29 @@ def _build_storyline(identifiers: int, runs: int, breakdown: Dict[str, int]) -> 
 @router.get("/chats/{chat_id}/synisense-metrics")
 async def chat_synisense_metrics(chat_id: str) -> Dict[str, Any]:
     """Per-conversation metrics. Scope: chat_id's account_id +
-    chat surfaces + ts >= chat.created_at."""
+    chat surfaces + ts >= chat.created_at.
+
+    QA-2026-05-20 Phase-C-symptom-2 fix: `chats.created_at` is stored
+    as an ISO STRING (historical inconsistency — most other timestamp
+    columns are BSON Date) while `synisense_runs.ts` is a BSON Date
+    (datetime). MongoDB's `$gte` comparison between a string and a
+    datetime falls into different BSON type brackets and silently
+    matches nothing. That is the literal cause of the 20-May QA
+    screenshot showing IDENTIFIERS REDACTED = 0 / MODEL CALLS = 0 /
+    "Synisense Shield is on standby" topline on a chat that DID run
+    through Shield (verified — the audit-panel?message_id endpoint
+    on the same chat returned identifiers_shielded > 0).
+
+    Coerce the stored value to a timezone-aware datetime before the
+    comparison so the type brackets align.
+    """
     from core import db, get_current_account
     chat = await db.chats.find_one({"id": chat_id})
     if not chat:
         raise HTTPException(status_code=404, detail="chat not found")
     account_id = chat.get("account_id")
-    created_at = chat.get("created_at") or _now_utc()
+    created_at_raw = chat.get("created_at")
+    created_at = _coerce_to_datetime(created_at_raw) or _now_utc()
     query = {
         "account_id": account_id,
         "surface": {"$in": _CHAT_SURFACES},

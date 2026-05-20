@@ -1,11 +1,12 @@
 ---
 built: 2026-05-18
-last_updated: 2026-05-18 (Chunk 9 — Add-a-Contribution attach, -017→-021 flipped to DONE)
-source: /app/memory/qa_reports/QA_REPORT_16MAY2026.md
-total_findings: 51
+last_updated: 2026-05-20 (Chunk 9.5 — Solva SV-01/02/03 + Phase C audit regression closed)
+source: /app/memory/qa_reports/QA_REPORT_16MAY2026.md (16-May rows)
+              + /app/memory/qa_reports/SOLVA_QA_BRIEF_20MAY2026.md (Solva rows)
+total_findings: 51 (16-May) + 8 (Solva 20-May) = 59
 total_clarifications: 2
-priority_histogram: "P0: 6 (DONE) · P1: 15 + 13 (DONE Chunk-8 8 + Chunk-9 5) · P2: 15 · P3: 2"
-maintainer: e1_main (Chunk 9 close)
+priority_histogram: "P0: 6 (DONE) · P1: 15 + 13 (DONE Chunk-8 8 + Chunk-9 5) · P2: 15 · P3: 2 · SV-Crit: 3 (DONE Chunk-9.5) · SV-High/Med: 5 (BACKLOG)"
+maintainer: e1_main (Chunk 9.5 close)
 ---
 
 # QA Backlog — 16 May 2026 (Master Tracker)
@@ -100,3 +101,31 @@ Bundle the 6 P0s into the next chunk; they are the only items that currently thr
 6. **QA-2026-05-16-047** — Manual obj/project default status misrepresentation.
 
 P1 items are large UI rewrites (Document Overlay, Strategic Goals rewrite, Add-a-Contribution attach feature). Split into themed chunks rather than 28-in-one.
+
+
+---
+
+## Solva QA Brief (20 May 2026)
+
+Source: `/app/memory/qa_reports/SOLVA_QA_BRIEF_20MAY2026.md`. Native ID scheme `SV-NN` (kept separate from 16-May `QA-2026-05-16-NNN` rows so the two reports don't bleed).
+
+| ID | Surface | Title | Priority | Status | Sprint chunk | Spec anchor |
+|---|---|---|---|---|---|---|
+| SV-01 | Solva landing | "How Solva Reasons" redirect goes to wrong URL | Critical | DONE | Chunk-9.5 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-01 |
+| SV-02 | Solva sessions list | "View All Sessions" returns Field Required error | Critical | DONE | Chunk-9.5 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-02 |
+| SV-03 | Solva sessions | Sessions saving + auto-title + toast + inline edit | Critical | DONE | Chunk-9.5 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-03 |
+| SV-04 | Solva sessions list | Cards + ACTIVE/PAUSED/COMPLETE/REFUSED status badges + tabs | High | BACKLOG | Chunk-13 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-04 |
+| SV-05 | Solva sessions list | Real-time search bar (title + content) | High | BACKLOG | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-05 |
+| SV-06 | Solva responses | Rich text formatting (paragraphs, lists, bold) | Medium | BACKLOG | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-06 |
+| SV-07 | Solva session UX | Output window ≥60% viewport + scroll | Medium | BACKLOG | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-07 |
+| SV-08 | Solva query | HTTP 422 reproduction + fix (screenshot referenced but not yet attached) | Critical | BACKLOG | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-08 |
+
+## Phase C Audit-Panel Regression (20 May 2026)
+
+Tracked separately from the 16-May / 20-May Solva findings because the audit panel is a Phase C deliverable, not a new spec. Detailed root-cause + fix narrative in `/app/memory/qa_reports/PHASE_C_REGRESSIONS.md`.
+
+| Symptom | Surface | Title | Priority | Status | Sprint chunk |
+|---|---|---|---|---|---|
+| Sx1 | Inline audit panel | AxiosError 404 leaks verbatim into UI when audit row not ready | P0 | DONE | Chunk-9.5 |
+| Sx2 | Trust Panel topline | "On standby" + 0/0/0 counters despite chat containing PII (ts type mismatch) | P0 | DONE | Chunk-9.5 |
+| Sx3 | Audit-trail JSON payload rendering | Reported as "missing `at` field / truncated at `char_len: 100`" — verified NOT a bug (the `at` is rendered as a top-level row field, not inside the payload JSON) | N/A | RESOLVED-NO-BUG | Chunk-9.5 (diagnostic) |

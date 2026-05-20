@@ -23,6 +23,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, ArrowRight, ShieldCheck, Paperclip, FileText, X } from "lucide-react";
+import { toast } from "sonner";
 import {
   createPhaseDSession,
   getPhaseDSession,
@@ -136,6 +137,10 @@ export default function SolvaPhaseDSession() {
       });
       setSession(s);
       setDraft("");
+      // QA-2026-05-20 SV-03 — verbatim copy from the Solva brief.
+      // Toast duration locked at ~2.5s per the brief's
+      // "brief, 2-3 seconds, non-intrusive" requirement.
+      toast.success("Session saved.", { duration: 2500 });
     } catch (e) {
       setError(`${e?.name || "Error"}: ${(e?.message || "").slice(0, 200)}`);
     } finally { setBusy(false); }
@@ -150,6 +155,8 @@ export default function SolvaPhaseDSession() {
       });
       setSession(s);
       setDraft("");
+      // QA-2026-05-20 SV-03 — same toast on every answer turn.
+      toast.success("Session saved.", { duration: 2500 });
     } catch (e) {
       setError(`${e?.name || "Error"}: ${(e?.message || "").slice(0, 200)}`);
     } finally { setBusy(false); }

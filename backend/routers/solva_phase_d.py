@@ -60,6 +60,11 @@ from services.solva.guardrails import (
     run_guardrail_ladder,
     GuardrailOutcome,
 )
+# QA-2026-05-20 SV-03 (auto-title) — single Shield-gateway LLM call
+# after the first substantive exchange. CI guard
+# `test_no_direct_llm_calls_outside_shield` stays green because every
+# auto-title invocation routes through `shield_invoke`.
+from services.synisense.shield.client import invoke as shield_invoke
 
 
 logger = logging.getLogger("akki.solva.phase_d")
@@ -334,6 +339,80 @@ def _serialise(session: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(s.get(k), datetime):
             s[k] = s[k].isoformat()
     return s
+
+
+# ─────────────────────────────────────────────────────────────────────
+# QA-2026-05-20 SV-03 — auto-title generation.
+#
+# Spec (verbatim from Solva QA brief 20 May 2026):
+#   "The title is generated after the first substantive exchange…
+#    a key phrase extracted from the session content — for example,
+#    the main question or problem being worked through."
+#
+# Locked decision: single Shield gateway LLM call per session
+# (`solva.session.auto_title`). NO heuristic fallback path — if Shield
+# fails, the row keeps `title=""` and the listing renders the framing
+# excerpt instead. This keeps the CI guard
+# `test_no_direct_llm_calls_outside_shield` green and avoids a second
+# code path that would inevitably drift from the model's outputs.
+#
+# Hook point: `submit_framing` after Layer 0 (FAR + situation
+# classification) completes. That's the first AI engagement with the
+# user's input — a "substantive exchange" by the brief's definition.
+# ─────────────────────────────────────────────────────────────────────
+_AUTO_TITLE_MAX_CHARS = 80
+_AUTO_TITLE_PROMPT_TEMPLATE = (
+    "Generate a concise, board-appropriate session title (six to ten "
+    "words, no quotes, no trailing punctuation) for a Solva strategic "
+    "reasoning session whose framing is below. The title should "
+    "surface the core decision, risk, or question — not paraphrase "
+    "every detail. Reply with ONLY the title on a single line.\n\n"
+    "Framing:\n{framing}"
+)
+
+
+async def _generate_session_auto_title(
+    *,
+    framing_text: str,
+    tenant_id: str,
+    user_id: str,
+) -> Optional[str]:
+    """Returns a Shield-generated title, or None on failure.
+
+    Callers MUST treat None as "leave the row's title field empty" —
+    no heuristic fallback. Logging is best-effort; we never raise.
+    """
+    framing = (framing_text or "").strip()
+    if not framing:
+        return None
+    prompt = _AUTO_TITLE_PROMPT_TEMPLATE.format(framing=framing[:2000])
+    try:
+        result = await shield_invoke(
+            purpose="solva.session.auto_title",
+            content=prompt,
+            tenant_id=tenant_id,
+            consumer_id="solva.phase_d",
+            user_id=user_id,
+            model_preference="generative",
+        )
+    except Exception as exc:  # noqa: BLE001 — never blow up the answer flow
+        logger.warning(
+            "auto-title shield call failed: %s: %s",
+            type(exc).__name__, str(exc)[:300],
+        )
+        return None
+    raw = (result.get("response") or "").strip()
+    if not raw:
+        return None
+    # Pick first non-empty line, strip surrounding quotes/asterisks.
+    line = next((ln.strip() for ln in raw.splitlines() if ln.strip()), "")
+    line = line.strip("\"'`*“”‘’ ")
+    # Drop any trailing punctuation the model might still emit.
+    while line and line[-1] in ".!?:;,":
+        line = line[:-1]
+    if not line:
+        return None
+    return line[:_AUTO_TITLE_MAX_CHARS]
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -771,6 +850,43 @@ async def get_session(
     return payload
 
 
+# QA-2026-05-20 SV-03 — inline title edit on the session list.
+# Body shape kept deliberately narrow so future fields don't require
+# breaking the wire contract.
+class _UpdateSessionTitleIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=_AUTO_TITLE_MAX_CHARS)
+
+
+@router.patch("/sessions/{session_id}/title")
+async def update_session_title(
+    session_id: str,
+    body: _UpdateSessionTitleIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Save a user-edited session title.
+
+    Strict ownership: the underlying `_get_session` already enforces
+    `account_id == ctx.account.id` AND `context_id == ctx.context.id`
+    so cross-tenant overwrites are impossible. Stores `title_source =
+    "user"` so a future re-run of `submit_framing` won't clobber the
+    user's choice (see the idempotency guard there).
+    """
+    account = ctx["account"]
+    context_id = ctx["context"]["id"]
+    await _get_session(context_id, session_id, account["id"])
+    new_title = body.title.strip()
+    if not new_title:
+        raise HTTPException(status_code=422, detail="Title cannot be empty after trimming.")
+    await _coll().update_one(
+        {"session_id": session_id, "account_id": account["id"],
+         "context_id": context_id},
+        {"$set": {"title": new_title, "title_source": "user",
+                  "title_updated_at": _utc_now()}},
+    )
+    return {"session_id": session_id, "title": new_title, "title_source": "user"}
+
+
 @router.post("/sessions/{session_id}/framing")
 async def submit_framing(
     session_id: str,
@@ -854,6 +970,25 @@ async def submit_framing(
         },
     )
     await _push_audit(session_id, audit_ids, orch_entries)
+
+    # QA-2026-05-20 SV-03 — auto-title generation after the first
+    # substantive exchange (framing + Layer 0 == one user→AI cycle).
+    # Idempotent: only fires when the row doesn't already have a
+    # non-empty title (re-running submit_framing won't clobber a
+    # user-edited title).
+    existing_title = (session.get("title") or "").strip()
+    if not existing_title:
+        new_title = await _generate_session_auto_title(
+            framing_text=body.framing_text,
+            tenant_id=account["id"],
+            user_id=account["id"],
+        )
+        if new_title:
+            await _coll().update_one(
+                {"session_id": session_id},
+                {"$set": {"title": new_title, "title_source": "auto",
+                          "title_updated_at": _utc_now()}},
+            )
 
     refreshed = await _get_session(context_id, session_id, account["id"])
     payload = _serialise(refreshed)
