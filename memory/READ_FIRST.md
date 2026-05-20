@@ -14,6 +14,8 @@
 
 | # | File | Why open it |
 |--:|------|-------------|
+| 0 | `/app/memory/FORGETTING_MITIGATION.md` | **Read BEFORE acting.** Anti-ghost-ID + auto-compaction recovery protocol. |
+| 0.5 | `/app/memory/qa_reports/QA_BACKLOG.md` | Master QA backlog — single source of truth for 16-May findings (51 + 2 CLR). |
 | 1 | `/app/memory/REWRITE_DEPLOY_READY.md` | Ship / no-ship verdict (green / yellow / red list) |
 | 2 | `/app/memory/sprints/POST_REWRITE_RAMP.md` | What to build next — Track 0 (platform confirms) → Track 1 (Chunk 7 QA resume) |
 | 3 | `/app/memory/REWRITE_SPRINT_STATE.md` | Canonical sprint state — phase-status table + locked decisions |
@@ -24,6 +26,7 @@
 
 ## Hard rules for next agent
 
+- **Never invent IDs.** If a brief references a finding-ID and `grep -r '<ID>' /app/memory /app/backend /app/frontend` returns zero hits, STOP and ask. Never re-ask a blocker question if the user has uploaded the artefact since — resume from disk. See `FORGETTING_MITIGATION.md`.
 - **DO NOT re-litigate the Synisense Shield gateway or the Solva 5-layer pipeline.** Phases A → F.1 are CLOSED. Architectural invariants are in force.
 - **DO NOT add direct LLM SDK calls** (`import anthropic` / `from openai import` / `import google.generativeai`). All LLM traffic MUST route through `services.synisense.shield.client.invoke()`. The CI guard `tests/test_no_direct_llm_calls_outside_shield.py` fails the build if violated.
 - **DO NOT use `mcp_screenshot_tool` for verification** — it times out on the auth path in this pod. Use `pytest` + `yarn render-smoke` instead; full-page screenshots only when the user explicitly asks.

@@ -129,6 +129,15 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Forgetting-mitigation patch + QA backlog persisted — 2026-05-18 ✅
+
+- **Trigger**: 2026-05-18 ghost-ID dispatch (`HP-01`/`DJ-R01`/`DJ-R02`/`DJ-R04`/`HP-02`) referenced QA file that didn't exist on disk; subsequent corrective dispatch interrupted by auto-compaction, causing dev to re-ask the original blocker question.
+- **Files created**: `qa_reports/QA_REPORT_16MAY2026.md` (51 findings + 2 CLR, verbatim from uploaded DOCX), `qa_reports/QA_BACKLOG.md` (master tracker — single markdown table, priority histogram `P0: 6 · P1: 28 · P2: 15 · P3: 2`), `FORGETTING_MITIGATION.md` (anti-pattern protocol — never invent IDs, never re-ask resolved blockers, persist artefacts before acting, recovery procedure).
+- **Files updated**: `READ_FIRST.md` (added rows 0 + 0.5 above the priority-doc table, added hard rule "Never invent IDs"), `sprints/POST_REWRITE_RAMP.md` (Track 2 14-row 15-May table marked SUPERSEDED, NEW Track 3 added pointing at `QA_BACKLOG.md`, old Track 4 evidence-pack renamed Track 5), `qa_reports/QA_REPORT_16MAY2026.md` front-matter corrected (49 → 51 actionable + 2 CLR; honest discrepancy disclosure).
+- **Integrity verified on disk**: 53 `### QA-2026-05-16-*` headings (51 actionable IDs + 2 PO clarification IDs); structure valid; verbatim quotes intact.
+- **Scope guard honoured**: no product code, no Dockerfile, no test runs, no Chunk 7-12 work.
+- **Next**: user to assign priority order from the new backlog; dispatches resume row-by-row with verbatim quotes from the spec anchors.
+
 ### Dockerfile tesseract bake (Track 0 platform carry-over resolved) — 2026-05-18 ✅
 - **Scope**: pre-flight item for Chunk 7 dispatch. Add `tesseract-ocr` + `tesseract-ocr-eng` to the production Docker runtime stage so OCR works on the deployed pod (preview-side `apt-get install` doesn't survive pod restarts, confirmed live earlier this session).
 - **Files touched**:

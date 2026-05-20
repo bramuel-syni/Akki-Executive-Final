@@ -49,6 +49,12 @@ Original sprint document with detailed checklists is under `/app/memory/sprints/
 
 ### Track 2 (P1) — Reactivate the 14 deferred 15-May QA findings
 
+> **⚠ SUPERSEDED 2026-05-18 by `qa_reports/QA_BACKLOG.md`.**
+> The authoritative QA tracker is now the 16-May report (51 actionable findings
+> + 2 PO clarifications). The 14 rows below are retained as historical record
+> only — do NOT dispatch against this table. New work must quote IDs of the
+> form `QA-2026-05-16-NNN` from `QA_BACKLOG.md`.
+
 These were paused at the start of the rewrite ("strict scope discipline: do NOT touch during rewrite"). Each carries a reproduction step and the surface it lives on. Process them in the order below (most-blocking first):
 
 | # | Surface | Finding | Severity |
@@ -70,7 +76,25 @@ These were paused at the start of the rewrite ("strict scope discipline: do NOT 
 
 Detailed reproduction steps + screenshots are stored in `/app/memory/sprints/QA_FINDINGS_15MAY.md`.
 
-### Track 3 (P2) — Post-rewrite infra carryover
+### Track 3 (P0–P3) — 16-May QA Report Backlog (NEW canonical tracker)
+
+**Source of truth:** `/app/memory/qa_reports/QA_BACKLOG.md`
+**Verbatim spec:** `/app/memory/qa_reports/QA_REPORT_16MAY2026.md`
+
+**Priority histogram:** `P0: 6 · P1: 28 · P2: 15 · P3: 2` (51 actionable + 2 PO clarifications)
+
+The 6 P0s (current user-visible errors / data-misrepresentation):
+
+1. `QA-2026-05-16-005` — Document Journal "Add to Cycle" errors
+2. `QA-2026-05-16-006` — Document Reader "Take into Solva" errors
+3. `QA-2026-05-16-007` — Document Reader "Generate signals" errors
+4. `QA-2026-05-16-012` — Akki Chat Archive → blank page
+5. `QA-2026-05-16-043` — Enhance flow errors (minutes/Deck/Report/Committee Pack)
+6. `QA-2026-05-16-047` — Monitor manual obj/project default status misrepresentation
+
+PO to assign sprint chunks against backlog rows. Every dispatch quotes verbatim from the spec anchor. See `FORGETTING_MITIGATION.md` for protocol.
+
+### Track 4 (P2) — Post-rewrite infra carryover
 
 | # | Item | Source phase | Why | Effort |
 |--:|------|--------------|-----|--------|
@@ -80,7 +104,7 @@ Detailed reproduction steps + screenshots are stored in `/app/memory/sprints/QA_
 | 4 | Full migration of 524 orphan legacy `solva_sessions` rows | Phase E Sub-task F | Phase E shipped soft-archive; full shape migration to `solva_phase_d_sessions` is post-rewrite | Large |
 | 5 | Around-the-Goals sub_module clarification + ship | Solva backlog | Still `coming_soon: true` — needs PO clarification | Blocked on PO |
 
-### Track 4 (P2) — Bank-QA evidence pack assembly
+### Track 5 (P2) — Bank-QA evidence pack assembly
 
 Bundle every closeout doc + sample artefacts (PDF, screenshots, audit-log samples, trust-receipt verification script) into a single zip suitable for the bank reviewer. This is a "package the work we already did" exercise — no new code.
 

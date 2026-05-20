@@ -4,7 +4,8 @@ original_filename: QA Report 16th May 2026 - Copy.docx
 retrieved: 2026-05-18
 persisted_by: e1_main (Phase F.1 forgetting-mitigation patch)
 parsed_paragraphs: 267
-total_findings: 49
+total_findings: 51
+total_clarifications: 2
 parser: python-docx
 notes: |
   Verbatim persistence of the QA report uploaded 2026-05-18 by the
@@ -14,6 +15,9 @@ notes: |
   Priorities are an honest engineering call — they are NOT in the
   source doc and MUST be re-confirmed by the PO before sprint chunk
   assignment.
+  Front-matter count corrected 2026-05-18 (forgetting-mitigation
+  patch): initial pass declared 49, true count is 51 actionable +
+  2 clarification items. See "Notes on the count" at the bottom.
 ---
 
 # QA Report — 16 May 2026 (verbatim)
