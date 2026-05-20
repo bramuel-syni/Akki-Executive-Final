@@ -213,7 +213,7 @@ function ItemDrawer({ row, onClose, onAssessed }) {
                 <p>{noData.message}</p>
                 <p>
                   <Link
-                    to="/app/documents"
+                    to="/app/workspace"
                     className="text-[12.5px] text-[var(--accent)] hover:underline underline-offset-2"
                     data-testid="obj-drawer-no-data-doc-journal-link"
                   >

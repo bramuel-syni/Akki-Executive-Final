@@ -437,3 +437,129 @@ async def test_qa_047_update_status_returns_no_data_when_signals_and_docs_empty(
     assert body.get("no_data") is True, body
     assert body.get("status") == "no_data"
     assert "no relevant documents or data" in (body.get("message") or "").lower()
+
+
+# ─────────────────────────────────────────────────────────────────────
+# QA-2026-05-16-047 — fix-pass 2026-05-18 — semantic no-data path
+# ─────────────────────────────────────────────────────────────────────
+async def test_qa_047_fixpass_no_data_when_llm_returns_not_started_with_empty_refs(
+    client, authed, db_conn, monkeypatch,
+):
+    """Fix-pass: pre-flight short-circuit only fires when the WHOLE
+    context is empty. The tester's reality is the more common one:
+    a context full of docs none of which are about this specific
+    objective. The LLM signals that by returning
+    `status="not_started"` with empty `supporting_signal_ids` and
+    empty `supporting_doc_ids`. The backend must surface that as the
+    same no-data shape so the frontend renders the spec message +
+    Document Journal link rather than a generic free-text rationale.
+    """
+    headers = await _login(client, authed["email"], authed["password"])
+    cid = authed["context_id"]
+
+    # Seed an unrelated document so the pre-flight short-circuit
+    # doesn't trigger — the LLM-driven branch must fire.
+    await db_conn.documents.insert_one({
+        "id": f"doc-{uuid.uuid4().hex[:8]}",
+        "context_id": cid,
+        "account_id": authed["account_id"],
+        "name": "Unrelated market scan",
+        "extracted_text": "Industry-wide regulatory trends across Q1; nothing about our objective.",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": "extracted",
+    })
+
+    create = await client.post(
+        f"/api/contexts/{cid}/monitor/objective",
+        json={"title": "Lift safety reporting to weekly cadence — no doc covers this yet"},
+        headers=headers,
+    )
+    assert create.status_code == 200, create.text
+    obj_id = create.json()["id"]
+
+    # Force the Shield to return the exact JSON shape an LLM emits
+    # when it can't find anything relevant.
+    import routers.monitor_status_assessment as m_status
+
+    async def fake_shield_invoke(**kwargs):
+        return {
+            "response": (
+                '{"status":"not_started","confidence":0.78,'
+                '"rationale":"None of the supplied documents reference '
+                'this objective.","supporting_signal_ids":[],'
+                '"supporting_doc_ids":[]}'
+            ),
+            "audit_id": f"aud-fixpass-{uuid.uuid4().hex[:8]}",
+        }
+
+    monkeypatch.setattr(m_status, "shield_invoke", fake_shield_invoke)
+
+    r = await client.post(
+        f"/api/contexts/{cid}/monitor/objective/{obj_id}/update-status",
+        json={}, headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body.get("no_data") is True, f"expected no_data:true, got {body!r}"
+    assert body.get("status") == "no_data"
+    assert "no relevant documents or data" in (body.get("message") or "").lower()
+    # The objective row must NOT have had rag_status mutated to
+    # not_started silently — it stays whatever the user created it
+    # with (not_started by default; we don't override that here but
+    # we do persist last_akki_assessment for audit).
+    row = await db_conn.objectives.find_one({"id": obj_id}, {"_id": 0})
+    assert row["last_akki_assessment"]["no_data"] is True
+    assert row["last_akki_assessment"]["supporting_doc_ids"] == []
+    assert row["last_akki_assessment"]["supporting_signal_ids"] == []
+
+
+async def test_qa_047_fixpass_non_empty_refs_still_returns_full_assessment(
+    client, authed, db_conn, monkeypatch,
+):
+    """Fix-pass guard: when the LLM returns ANY supporting reference
+    (a signal or a doc), we must NOT collapse the response into the
+    no-data shape. The drawer should render the full rationale."""
+    headers = await _login(client, authed["email"], authed["password"])
+    cid = authed["context_id"]
+
+    real_doc_id = f"doc-{uuid.uuid4().hex[:8]}"
+    await db_conn.documents.insert_one({
+        "id": real_doc_id,
+        "context_id": cid,
+        "account_id": authed["account_id"],
+        "name": "Q3 safety metrics",
+        "extracted_text": "Weekly safety incidents tracked; reporting cadence already weekly.",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": "extracted",
+    })
+
+    create = await client.post(
+        f"/api/contexts/{cid}/monitor/objective",
+        json={"title": "Maintain weekly safety reporting cadence"},
+        headers=headers,
+    )
+    obj_id = create.json()["id"]
+
+    import routers.monitor_status_assessment as m_status
+
+    async def fake_shield_invoke(**kwargs):
+        return {
+            "response": (
+                '{"status":"on_track","confidence":0.81,'
+                '"rationale":"Q3 safety metrics doc confirms weekly cadence.",'
+                f'"supporting_signal_ids":[],"supporting_doc_ids":["{real_doc_id}"]}}'
+            ),
+            "audit_id": f"aud-fixpass-{uuid.uuid4().hex[:8]}",
+        }
+
+    monkeypatch.setattr(m_status, "shield_invoke", fake_shield_invoke)
+
+    r = await client.post(
+        f"/api/contexts/{cid}/monitor/objective/{obj_id}/update-status",
+        json={}, headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body.get("no_data") is None or body.get("no_data") is False, body
+    assert body.get("status") == "on_track"
+    assert body["assessment"]["supporting_doc_ids"] == [real_doc_id]

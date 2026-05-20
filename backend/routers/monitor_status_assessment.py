@@ -284,6 +284,59 @@ async def update_status_assessment(
         doc_ids=[d["id"] for d in docs],
     )
 
+    # QA-2026-05-16-047 (2026-05-18, fix-pass) — "no relevant material"
+    # path. The spec says: "If Akki finds no relevant material, it
+    # does not assign a status. Instead it displays a message: 'No
+    # relevant documents or data found for this <kind>…'". The
+    # pre-flight short-circuit above only catches the case where the
+    # whole context is empty. The far more common case is a context
+    # with docs but none of them are about THIS objective/project —
+    # which the LLM signals by returning `status="not_started"` with
+    # empty supporting_signal_ids AND empty supporting_doc_ids (the
+    # prompt explicitly instructs this). We surface that as the
+    # no-data path so the frontend renders the verbatim spec message
+    # + Document Journal link instead of a generic rationale.
+    sup_sigs = assessment.get("supporting_signal_ids") or []
+    sup_docs = assessment.get("supporting_doc_ids") or []
+    if assessment["status"] == "not_started" and not sup_sigs and not sup_docs:
+        # Don't mutate the row's status — the user shouldn't see this
+        # objective's badge silently flip to Not Started just because
+        # they clicked Update once with no relevant docs uploaded yet.
+        # We do record the no-data assessment on the row so the
+        # drawer can show the timestamp + audit link, but rag_status
+        # stays put.
+        no_data_assessment = {
+            "status": "not_started",
+            "rag_status": item.get("rag_status") or "not_started",
+            "confidence": round(assessment.get("confidence") or 0.0, 3),
+            "rationale": assessment.get("rationale") or "",
+            "supporting_signal_ids": [],
+            "supporting_doc_ids": [],
+            "audit_id": shield_result["audit_id"],
+            "assessed_at": _iso(_now()),
+            "no_data": True,
+        }
+        await coll.update_one(
+            {"id": rid, "context_id": context_id},
+            {"$set": {
+                "last_akki_assessment": no_data_assessment,
+                "updated_at": _iso(_now()),
+            }},
+        )
+        return {
+            "id": rid,
+            "kind": kind,
+            "rag_status": item.get("rag_status") or "not_started",
+            "status": "no_data",
+            "no_data": True,
+            "message": (
+                f"No relevant documents or data found for this {kind}. "
+                f"Please upload a document containing information about "
+                f"this {kind} so Akki can assess its status."
+            ),
+            "assessment": no_data_assessment,
+        }
+
     # Map status → rag_status.
     new_rag = _STATUS_REVERSE.get(assessment["status"]) or item.get("rag_status") or "amber"
     last_akki_assessment = {

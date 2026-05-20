@@ -79,10 +79,14 @@ export default function ReadingView() {
 
   const [generatingBrief, setGeneratingBrief] = useState(false);
   const [generatingSignals, setGeneratingSignals] = useState(false);
-  // QA-2026-05-16-007 (2026-05-18) — long-running status copy for the
-  // Generate-signals action. Empty string until the job runs past
-  // SIGNAL_STATUS_THRESHOLD_S; then the verbatim spec line.
+  // QA-2026-05-16-007 (2026-05-18, fix-pass) — long-running status copy
+  // for the Generate-signals action. Empty string until the job runs
+  // past 4 s; then the verbatim spec line. A separate inline-error
+  // state is kept so a job failure leaves a human-readable error
+  // visible inside the commentary panel even after `generatingSignals`
+  // flips back to false (the toast alone wasn't reliable per QA).
   const [signalsStatusMessage, setSignalsStatusMessage] = useState("");
+  const [signalsErrorMessage, setSignalsErrorMessage] = useState("");
 
   const bodyRef = useRef(null);
   const { paragraphs, loading: paragraphsLoading, error: paragraphsError, unavailable: paragraphsUnavailable } =
@@ -288,33 +292,40 @@ export default function ReadingView() {
     if (!contextId || generatingSignals) return;
     setGeneratingSignals(true);
     setSignalsStatusMessage("");
+    setSignalsErrorMessage("");
+    // QA-2026-05-16-007 (2026-05-18, fix-pass) — long-running status
+    // is driven off a real setTimeout, not a stale closure inside
+    // pollJob.onProgress (which only fires every 1.5-5s and depended
+    // on a value captured at click time). The verbatim spec line
+    // appears 4 s after the click and persists until the job ends.
+    const statusTimer = setTimeout(() => {
+      setSignalsStatusMessage(
+        "Akki is analysing your document. This may take a moment."
+      );
+    }, 4000);
     try {
-      // Chunk 2 (2026-05-13, DJ-R05) — async pattern. Enqueue + poll.
       const { data: enq } = await api.post(`/contexts/${contextId}/signals/generate`, {});
-      // QA-2026-05-16-007 (2026-05-18) — surface the verbatim long-
-      // running status copy from the spec after 4 seconds. pollJob's
-      // onProgress is called every poll cycle with the elapsed seconds.
-      const job = await pollJob(enq.job_id, {
-        onProgress: (_status, elapsedS) => {
-          if (elapsedS >= 4 && !signalsStatusMessage) {
-            setSignalsStatusMessage(
-              "Akki is analysing your document. This may take a moment."
-            );
-          }
-        },
-      });
+      const job = await pollJob(enq.job_id);
       if (job.status === "failed") {
         throw new Error(job.error || "Signal refresh failed.");
       }
       toast.success("Signals refreshed.");
       await loadCommentary();
     } catch (err) {
-      toast.error(apiErrorMessage(err, "Could not refresh signals."));
+      // QA-2026-05-16-007 (2026-05-18, fix-pass) — surface the error
+      // inline as well as via toast. The toast is the immediate
+      // attention-grab; the inline copy survives in the commentary
+      // panel so the user has actionable text after dismissing
+      // the toast.
+      const msg = apiErrorMessage(err, "Could not refresh signals.");
+      setSignalsErrorMessage(msg);
+      toast.error(msg);
     } finally {
+      clearTimeout(statusTimer);
       setGeneratingSignals(false);
       setSignalsStatusMessage("");
     }
-  }, [contextId, generatingSignals, signalsStatusMessage, loadCommentary]);
+  }, [contextId, generatingSignals, loadCommentary]);
 
   // Loading / error / empty states (per the rules doc: editorial copy only).
   if (docLoading) {
@@ -433,6 +444,8 @@ export default function ReadingView() {
               canGenerateSignals
               generatingSignals={generatingSignals}
               signalsStatusMessage={signalsStatusMessage}
+              signalsErrorMessage={signalsErrorMessage}
+              onDismissSignalsError={() => setSignalsErrorMessage("")}
             />
           </div>
         ) : null}
@@ -447,6 +460,8 @@ export default function ReadingView() {
           canGenerateSignals
           generatingSignals={generatingSignals}
           signalsStatusMessage={signalsStatusMessage}
+          signalsErrorMessage={signalsErrorMessage}
+          onDismissSignalsError={() => setSignalsErrorMessage("")}
         />
       </div>
     </AppShell>

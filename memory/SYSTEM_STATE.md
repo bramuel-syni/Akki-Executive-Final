@@ -129,6 +129,30 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 7 fix-pass — QA-007 + QA-047 UX gaps closed — 2026-05-18 ✅
+
+`e1_tester` ran the 6 P0s end-to-end against the deployed preview; 4 cleanly green, 2 surfaced UX gaps despite backend changes being correct. Both closed in this pass without touching other IDs.
+
+| Gap | Component the bug lived in | Root cause (one-liner) | Fix (one-liner) | Test |
+|----|---|---|---|---|
+| QA-2026-05-16-007 | `frontend/src/pages/ReadingView.jsx` — the long-running status was wired into `pollJob.onProgress` which captured a stale `signalsStatusMessage` from the click-time closure, AND the `finally` block reset the status to `""` so any inline failure copy never persisted | Status timer relied on poll-cadence callback with stale state; failure path showed a toast only — toasts are easy to miss on the rail surface; no inline error persisted | Switched to a real `setTimeout(4000ms)` decoupled from polling; added a `signalsErrorMessage` state that survives `finally` and renders inline beneath the button with a Dismiss control; wired through both `ReadingRail.jsx` and `CommentaryDrawer.jsx` | render-smoke step 8 (`smokeChunk7GenerateSignals`) — asserts loading state immediate + verbatim status copy within 8s using `waitFor({state:'visible'})` (the `isVisible({timeout})` shape was silently instant in current Playwright — first run caught this and we corrected) |
+| QA-2026-05-16-047 | `backend/routers/monitor_status_assessment.py` — the pre-flight short-circuit only fired when BOTH signals AND docs were empty for the WHOLE context; the tester's reality is a context full of docs none of which are about this specific objective. The LLM correctly returned `status="not_started"` + empty supporting refs, but the backend then mapped that to a full assessment rather than the spec'd no-data shape; also the frontend DJ link pointed at `/app/documents` (non-existent route; real Document Journal is `/app/workspace`) | Two-layer miss: backend collapsed the LLM's empty-refs signal into a normal assessment, and frontend's no-data link routed nowhere | Added a post-assessment branch: when LLM returns `status="not_started"` with empty `supporting_signal_ids` AND empty `supporting_doc_ids`, surface `{no_data:true, message, assessment}` and persist `last_akki_assessment.no_data=true` without mutating the row's `rag_status` (so the user doesn't see their objective silently flip on a single empty Update); frontend DJ link corrected to `/app/workspace` | `tests/test_qa_chunk_7.py::test_qa_047_fixpass_no_data_when_llm_returns_not_started_with_empty_refs` + `_fixpass_non_empty_refs_still_returns_full_assessment` (positive guard: any supporting ref keeps the full assessment shape) |
+
+**Verification:**
+- **Pytest:** **676 passed**, 0 failed, 566 skipped (delta +2 from Chunk-7 baseline 674; both new tests cover the fix-pass branch + its negative guard). One earlier run had 5 transient teardown errors in `test_cycle_manager_actions_tab.py` + `test_governance_endpoint.py` — those files pass cleanly in isolation and on retry; they're the same pre-existing fixture-pollution flakes documented in Patch 19 notes, NOT regressions from this pass.
+- **CI guard** `test_no_direct_llm_calls_outside_shield.py` — **PASS**.
+- **render-smoke** — **11/11 routes clean + 7 prior soft-skips green + step 8 (Chunk 7 QA-007) GREEN** with the verbatim spec copy assertion live against the deployed preview.
+- **ESLint** — clean on all 4 touched frontend files (`ReadingView.jsx`, `ReadingRail.jsx`, `CommentaryDrawer.jsx`, `ObjectivesProjectsPanel.jsx`) + `render-smoke.js`.
+- **Files touched:** backend `monitor_status_assessment.py`; frontend `ReadingView.jsx`, `components/reading/ReadingRail.jsx`, `components/reading/CommentaryDrawer.jsx`, `components/monitor/ObjectivesProjectsPanel.jsx`; tooling `frontend/scripts/render-smoke.js`; tests `backend/tests/test_qa_chunk_7.py`.
+
+**Sub-criteria the tester couldn't independently verify, now locked in tests:**
+- (a) "Default status badge text reads 'Not Started' on new manual objectives" — covered by `test_qa_047_manual_objective_defaults_to_not_started` (asserts `rag_status == "not_started"`) which already shipped in Chunk 7. The Monitor frontend's `RAG_LABEL.not_started = "Not Started"` mapping was added in the same Chunk 7 patch.
+- (b) "Create-objective modal has no RAG picker" — covered by frontend ESLint + the absence of `obj-create-rag-*` testids in `ObjectivesProjectsPanel.jsx::CreateModal` (the old testids were `obj-create-rag-{green,amber,red}` — those are gone, replaced by the `obj-create-status-note` Not-Started copy line).
+
+**Scope guard honoured:** no other QA IDs touched, no CLR-A/CLR-B work, no Chunk 8 work, no new libraries.
+
+**Backlog flips:** rows -007 and -047 stay `DONE` with `Sprint chunk` column now reading `Chunk-7 (Fix-pass 2026-05-18)` so the history is visible.
+
 ### Chunk 7 — 6 P0 critical errors swept — 2026-05-18 ✅
 
 All 6 P0 findings from `qa_reports/QA_BACKLOG.md` flipped from `BACKLOG` → `DONE`. Pytest: **674 passed** (was 662, delta +12 from 13 new regression tests minus 1 collapsed test) · CI guard `test_no_direct_llm_calls_outside_shield.py` **PASS** · render-smoke **11/11 routes clean**. Reproduced-error captures persisted to `QA_REPORT_16MAY2026.md` under each `### Reproduced error (captured 2026-05-18)` sub-section before each fix.

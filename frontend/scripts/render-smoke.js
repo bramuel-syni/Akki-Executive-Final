@@ -314,6 +314,18 @@ async function smoke() {
   console.log(`[render-smoke] step 7 — Chunk 6 Brief drawer CTA smoke`);
   await smokeChunk6BriefDrawer(page, failures);
 
+  // ────────────────────────────────────────────────────────────────────
+  // Phase 8 (Chunk 7 fix-pass, 2026-05-18) — QA-2026-05-16-007.
+  //   Generate-signals action must:
+  //     · flip the rail button to "Generating signals…" immediately;
+  //     · render the verbatim status copy "Akki is analysing your
+  //       document. This may take a moment." within ≤6s of click;
+  //     · surface an inline error if the job fails (covered by
+  //       pytest; here we lock the loading + 4s status DOM contract).
+  // ────────────────────────────────────────────────────────────────────
+  console.log(`[render-smoke] step 8 — Chunk 7 Generate-Signals loading + status copy`);
+  await smokeChunk7GenerateSignals(page, failures);
+
   await browser.close();
 
   if (failures.length) {
@@ -321,7 +333,7 @@ async function smoke() {
     for (const f of failures) console.error(`  • ${f}`);
     process.exit(1);
   }
-  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green.`);
+  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green · Chunk 7 generate-signals loading green.`);
 }
 
 // ----------------------------------------------------------------------
@@ -818,4 +830,108 @@ smoke().catch((e) => {
   console.error("[render-smoke] fatal:", e);
   process.exit(3);
 });
+
+// ----------------------------------------------------------------------
+// Phase 8 (Chunk 7 fix-pass, 2026-05-18) — QA-2026-05-16-007 smoke.
+//
+// Opens a real document from the workspace, lands on /app/documents/:id,
+// and verifies the Generate-signals empty-rail UX:
+//   1) Button changes to "Generating signals…" immediately on click.
+//   2) Verbatim status copy renders within ≤6s of the click.
+//
+// We don't wait for the job to terminate — that's a multi-minute LLM
+// call and pytest covers the failure-path inline error. Soft-skip if
+// the workspace has no docs, or if the rail isn't in its empty state
+// (i.e. the doc already has commentary signals).
+// ----------------------------------------------------------------------
+async function smokeChunk7GenerateSignals(page, failures) {
+  const pageErrors = [];
+  const onPageError = (err) => { pageErrors.push(err.toString()); };
+  page.on("pageerror", onPageError);
+
+  try {
+    await page.goto(`${BASE_URL}/app/workspace`, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const firstRow = page.locator('[data-testid^="workspace-row-"]').first();
+    if (!(await firstRow.isVisible({ timeout: 4000 }).catch(() => false))) {
+      console.log(`[render-smoke]  · Chunk 7 — workspace empty; soft-skipping QA-007 smoke`);
+      return;
+    }
+
+    // Resolve the doc id from the row testid (`workspace-row-<id>`).
+    const rowTestId = await firstRow.getAttribute("data-testid");
+    const docId = (rowTestId || "").replace(/^workspace-row-/, "");
+    if (!docId) {
+      console.log(`[render-smoke]  · Chunk 7 — couldn't resolve doc id; soft-skipping`);
+      return;
+    }
+
+    await page.goto(`${BASE_URL}/app/documents/${docId}`, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+
+    // The empty-rail "Generate signals →" button.
+    const railBtn = page.locator('[data-testid="reading-rail-generate-signals"]').first();
+    const railVisible = await railBtn.isVisible({ timeout: 4000 }).catch(() => false);
+    if (!railVisible) {
+      // Rail likely has commentary items already — soft-skip; this
+      // smoke step only locks the empty-rail entry point.
+      console.log(`[render-smoke]  · Chunk 7 — rail not in empty state for ${docId}; soft-skipping QA-007`);
+      return;
+    }
+
+    const labelBefore = ((await railBtn.textContent()) || "").trim();
+    if (!/generate signals/i.test(labelBefore)) {
+      failures.push(`Chunk 7 (QA-007): rail button has unexpected label "${labelBefore}" (expected "Generate signals →")`);
+      return;
+    }
+
+    await railBtn.click();
+    // Loading state — immediate.
+    const labelAfter = ((await railBtn.textContent()) || "").trim();
+    if (!/generating signals/i.test(labelAfter)) {
+      failures.push(`Chunk 7 (QA-007): button did NOT flip to "Generating signals…" on click (saw "${labelAfter}")`);
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 7 (QA-007) — loading state present immediately`);
+    }
+
+    // Wait for the 4s status copy; allow up to 8s for the timer + render.
+    // `locator.isVisible()` returns instantly in current Playwright; use
+    // `waitFor({state:'visible'})` to actually poll.
+    const status = page.locator('[data-testid="reading-rail-signals-status"]').first();
+    let statusVisible = false;
+    try {
+      await status.waitFor({ state: "visible", timeout: 8000 });
+      statusVisible = true;
+    } catch {
+      statusVisible = false;
+    }
+    if (!statusVisible) {
+      failures.push(`Chunk 7 (QA-007): inline status "Akki is analysing your document…" did NOT render within 8s`);
+    } else {
+      const statusText = ((await status.textContent()) || "").trim();
+      if (!/akki is analysing your document\. this may take a moment\./i.test(statusText)) {
+        failures.push(`Chunk 7 (QA-007): status copy mismatched the spec verbatim (got "${statusText}")`);
+      } else {
+        console.log(`[render-smoke]  ✓ Chunk 7 (QA-007) — verbatim status copy rendered after 4s`);
+      }
+    }
+
+    // Don't block the smoke pipeline waiting for the job to terminate —
+    // that's a 60-90s LLM call. Navigate away to abort the in-flight
+    // poll cleanly; the next request will reset state.
+    await page.goto(`${BASE_URL}/app`, { waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(300);
+  } catch (e) {
+    failures.push(`Chunk 7 (QA-007): smoke threw — ${e.message}`);
+  }
+
+  if (pageErrors.length > 0) {
+    failures.push(`Chunk 7 step: ${pageErrors.length} uncaught page error(s)`);
+    for (const e of pageErrors) console.error(`    PAGEERROR  ${e.slice(0, 240)}`);
+  }
+  page.off("pageerror", onPageError);
+}
 

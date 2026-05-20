@@ -19,6 +19,8 @@ export default function ReadingRail({
   canGenerateSignals = false,
   generatingSignals = false,
   signalsStatusMessage = "",
+  signalsErrorMessage = "",
+  onDismissSignalsError,
 }) {
   const empty = !loading && items.length === 0;
 
@@ -70,6 +72,27 @@ export default function ReadingRail({
               >
                 {signalsStatusMessage}
               </p>
+            ) : null}
+            {/* QA-2026-05-16-007 (2026-05-18, fix-pass) — persistent
+                inline error so the user has actionable copy after
+                the toast dismisses (or if it never rendered). */}
+            {!generatingSignals && signalsErrorMessage ? (
+              <div
+                className="mt-3 text-[12px] not-italic text-rose-700 space-y-1.5"
+                data-testid="reading-rail-signals-error"
+              >
+                <p>{signalsErrorMessage}</p>
+                {onDismissSignalsError ? (
+                  <button
+                    type="button"
+                    onClick={onDismissSignalsError}
+                    className="text-[11px] text-[var(--muted)] underline underline-offset-2 hover:text-[var(--ink)]"
+                    data-testid="reading-rail-signals-error-dismiss"
+                  >
+                    Dismiss
+                  </button>
+                ) : null}
+              </div>
             ) : null}
           </div>
         ) : null}
