@@ -326,6 +326,16 @@ async function smoke() {
   console.log(`[render-smoke] step 8 — Chunk 7 Generate-Signals loading + status copy`);
   await smokeChunk7GenerateSignals(page, failures);
 
+  // ────────────────────────────────────────────────────────────────────
+  // Phase 9 (Chunk 8, 2026-05-18) — QA-2026-05-16-029…-036.
+  //   Document Overlay smoke. Opens the first Work Studio row → drawer →
+  //   "Open Document Overlay" CTA → overlay shell renders, toolbar +
+  //   intelligence card + document surface DOM all present. Soft-skips
+  //   if no row exists (empty context).
+  // ────────────────────────────────────────────────────────────────────
+  console.log(`[render-smoke] step 9 — Chunk 8 Document Overlay smoke`);
+  await smokeChunk8DocumentOverlay(page, failures);
+
   await browser.close();
 
   if (failures.length) {
@@ -333,7 +343,7 @@ async function smoke() {
     for (const f of failures) console.error(`  • ${f}`);
     process.exit(1);
   }
-  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green · Chunk 7 generate-signals loading green.`);
+  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green · Chunk 7 generate-signals loading green · Chunk 8 document overlay green.`);
 }
 
 // ----------------------------------------------------------------------
@@ -830,6 +840,130 @@ smoke().catch((e) => {
   console.error("[render-smoke] fatal:", e);
   process.exit(3);
 });
+
+
+// ----------------------------------------------------------------------
+// Phase 9 (Chunk 8, 2026-05-18) — QA-2026-05-16-029…-036 smoke.
+//
+// Path: Work Studio → first brief row → drawer → "Open Document
+// Overlay" CTA → overlay shell renders with toolbar + intelligence
+// card + document surface DOM. Closes via the back arrow. Asserts no
+// uncaught page errors during the round trip.
+// ----------------------------------------------------------------------
+async function smokeChunk8DocumentOverlay(page, failures) {
+  const pageErrors = [];
+  const onPageError = (err) => { pageErrors.push(err.toString()); };
+  page.on("pageerror", onPageError);
+
+  try {
+    await page.goto(`${BASE_URL}/app/work-studio`, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(800);
+
+    const firstRow = page.locator('[data-testid="work-studio-brief-row"]').first();
+    const rowVisible = await firstRow.isVisible().catch(() => false);
+    if (!rowVisible) {
+      console.log(`[render-smoke]  · Chunk 8 — work-studio has no brief rows; soft-skipping QA-029→-036`);
+      return;
+    }
+
+    await firstRow.click();
+    await page.waitForTimeout(1500);
+
+    // Drawer should be open with the new Open Overlay CTA.
+    const overlayBtn = page.locator('[data-testid="work-studio-brief-drawer-open-overlay"]').first();
+    const btnVisible = await overlayBtn.isVisible().catch(() => false);
+    if (!btnVisible) {
+      failures.push(`Chunk 8 (QA-029): "Open Document Overlay" CTA not visible inside the brief drawer`);
+      return;
+    }
+
+    await overlayBtn.click();
+    // Wait for the overlay shell to mount.
+    const shell = page.locator('[data-testid="document-overlay-shell"]').first();
+    try {
+      await shell.waitFor({ state: "visible", timeout: 8000 });
+    } catch {
+      failures.push(`Chunk 8 (QA-029): overlay shell did not mount within 8s`);
+      return;
+    }
+    console.log(`[render-smoke]  ✓ Chunk 8 (QA-029) — overlay shell mounted`);
+
+    // -030 toolbar
+    if (!await page.locator('[data-testid="document-overlay-toolbar"]').first().isVisible().catch(() => false)) {
+      failures.push(`Chunk 8 (QA-030): overlay toolbar not visible`);
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 8 (QA-030) — toolbar rendered`);
+    }
+
+    // -030 status badge
+    const badge = page.locator('[data-testid="document-overlay-status-badge"]').first();
+    if (!await badge.isVisible().catch(() => false)) {
+      failures.push(`Chunk 8 (QA-030): status badge missing`);
+    } else {
+      const badgeText = ((await badge.textContent()) || "").trim();
+      if (!/(Draft|In Review|Committed)/.test(badgeText)) {
+        failures.push(`Chunk 8 (QA-030): status badge text "${badgeText}" doesn't match expected vocabulary`);
+      } else {
+        console.log(`[render-smoke]  ✓ Chunk 8 (QA-030) — status badge: ${badgeText}`);
+      }
+    }
+
+    // -031 intelligence card
+    const intelCard = page.locator('[data-testid="document-overlay-intelligence-card"]').first();
+    if (!await intelCard.isVisible().catch(() => false)) {
+      failures.push(`Chunk 8 (QA-031): intelligence card not visible`);
+    } else {
+      const band = await intelCard.getAttribute("data-confidence-band");
+      console.log(`[render-smoke]  ✓ Chunk 8 (QA-031) — intelligence card band=${band}`);
+    }
+
+    // -033 document surface (default read-mode)
+    if (!await page.locator('[data-testid="document-overlay-surface"]').first().isVisible().catch(() => false)) {
+      failures.push(`Chunk 8 (QA-033): document surface not visible`);
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 8 (QA-033) — document surface mounted (read mode)`);
+    }
+
+    // -035 version history modal — open from toolbar
+    const historyBtn = page.locator('[data-testid="document-overlay-history-btn"]').first();
+    if (await historyBtn.isVisible().catch(() => false)) {
+      await historyBtn.click();
+      try {
+        await page.locator('[data-testid="document-overlay-version-history-modal"]').first()
+          .waitFor({ state: "visible", timeout: 4000 });
+        console.log(`[render-smoke]  ✓ Chunk 8 (QA-035) — version history modal opens`);
+        // Close.
+        const closeBtn = page.locator('[data-testid="document-overlay-version-history-close"]').first();
+        if (await closeBtn.isVisible().catch(() => false)) await closeBtn.click();
+        await page.waitForTimeout(400);
+      } catch {
+        failures.push(`Chunk 8 (QA-035): version history modal did not open within 4s`);
+      }
+    }
+
+    // Close overlay via back arrow.
+    const back = page.locator('[data-testid="document-overlay-back"]').first();
+    if (await back.isVisible().catch(() => false)) {
+      await back.click();
+      await page.waitForTimeout(400);
+      const stillVisible = await page.locator('[data-testid="document-overlay-shell"]').first().isVisible().catch(() => false);
+      if (stillVisible) {
+        failures.push(`Chunk 8 (QA-029): overlay did not close on back-arrow click`);
+      } else {
+        console.log(`[render-smoke]  ✓ Chunk 8 (QA-029) — close via back arrow works`);
+      }
+    }
+  } catch (e) {
+    failures.push(`Chunk 8 overlay smoke threw: ${e.message}`);
+  }
+
+  if (pageErrors.length > 0) {
+    failures.push(`Chunk 8 step: ${pageErrors.length} uncaught page error(s)`);
+    for (const e of pageErrors) console.error(`    PAGEERROR  ${e.slice(0, 240)}`);
+  }
+  page.off("pageerror", onPageError);
+}
 
 // ----------------------------------------------------------------------
 // Phase 8 (Chunk 7 fix-pass, 2026-05-18) — QA-2026-05-16-007 smoke.

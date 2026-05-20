@@ -40,6 +40,8 @@ from routers import work_studio_export as work_studio_export_router  # noqa: E40
 from routers import work_studio_phase_c as work_studio_phase_c_router  # noqa: E402
 from routers import work_studio_phase_c2 as work_studio_phase_c2_router  # noqa: E402
 from routers import work_studio_from_source as work_studio_from_source_router  # noqa: E402
+# Chunk 8 (2026-05-18) — Document Overlay (QA-2026-05-16-029…-036).
+from routers import work_studio_overlay as work_studio_overlay_router  # noqa: E402
 from routers import learn as learn_router  # noqa: E402
 from routers import committees as committees_router  # noqa: E402
 from routers import simulate as simulate_router  # noqa: E402
@@ -145,6 +147,8 @@ app.include_router(work_studio_export_router.router)
 app.include_router(work_studio_phase_c_router.router)
 app.include_router(work_studio_phase_c2_router.router)
 app.include_router(work_studio_from_source_router.router)
+# Chunk 8 (2026-05-18) — Document Overlay (QA-2026-05-16-029…-036).
+app.include_router(work_studio_overlay_router.router)
 app.include_router(learn_router.router)
 app.include_router(committees_router.router)
 app.include_router(simulate_router.router)
@@ -574,6 +578,20 @@ async def on_startup():
     except Exception as exc:  # noqa: BLE001
         logging.getLogger("akki.server").warning(
             "migration runner failed at boot: %s", exc,
+        )
+
+    # Chunk 8 (2026-05-18) — Document Overlay foundation migration.
+    # Backfills `lifecycle_state="committed", legacy=True` on existing
+    # `work_studio_exports` rows. Idempotent.
+    try:
+        from services.work_studio_overlay import ensure_overlay_migration
+        stats = await ensure_overlay_migration(db)
+        logging.getLogger("akki.server").info(
+            "chunk8 overlay migration: %s", stats,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("akki.server").warning(
+            "chunk8 overlay migration failed: %s", exc,
         )
 
     # Early-access registrations (public marketing intake)

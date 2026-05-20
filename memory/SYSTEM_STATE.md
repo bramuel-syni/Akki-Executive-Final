@@ -129,6 +129,48 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 8 — Document Overlay (8 IDs -029…-036) — 2026-05-18 ✅
+
+All 8 P1 Document Overlay IDs landed as one chunk with two locked product divergences from QA verbatim (Edit-mode toggle per Q5, Drawer-CTA entry point — both recorded in `qa_reports/QA_REPORT_16MAY2026.md#implementation-divergences-from-verbatim-qa-spec`).
+
+| ID | Surface | Files touched | Test name(s) | Status | Notes |
+|---|---|---|---|---|---|
+| -029 | Overlay shell | `frontend/.../overlay/DocumentOverlay.jsx`, `pages/WorkStudio.jsx` (overlay-open event listener + state), `backend/routers/work_studio_overlay.py` (GET endpoint), `backend/services/work_studio_overlay.py` (overlay_payload) | `test_qa_029_overlay_payload_shape` + render-smoke step 9 | DONE | Divergence #2 (drawer CTA entry, not direct row click) |
+| -030 | Toolbar | `DocumentOverlay.jsx::Toolbar`, `backend/routers/work_studio_overlay.py` (move-to-review, commit, create-new-version, PATCH title) | `test_qa_030_move_to_review_owner_only`, `_committed_is_read_only`, `_create_new_version_clones_to_draft` | DONE | Q1 owner-only "Move to review"; Committed → read-only enforced server-side |
+| -031 | Intelligence card | `DocumentOverlay.jsx::IntelligenceCard`, `services/work_studio_overlay.rag_band` | `test_qa_031_intelligence_card_rag_band` (parametrised across 4 bands) | DONE | Q4 thresholds: ≥80 green / 50-79 amber / <50 red |
+| -032 | Intelligence modal | `DocumentOverlay.jsx::IntelligenceModal` | `test_qa_032_intelligence_modal_full_passthrough` | DONE | Full report shape round-trips; per-section RAG accents |
+| -033 | Document Surface | `DocumentOverlay.jsx::DocumentSurface` (tiptap), `htmlToStructuredContent` helper, backend PATCH + save endpoints | `test_qa_033_save_creates_snapshot`, `_save_rejected_on_committed` | DONE | **Divergence #1**: read mode by default + explicit Edit toggle (per Q5 dispatch decision). Tiptap added as approved exception. |
+| -034 | AI Revision panel | `DocumentOverlay.jsx::AIRevisionPanel`, `backend/routers/work_studio_overlay.py::revise_document` + Shield invoke, `services/work_studio_overlay.validate_revision_inputs` + `find_referenced_doc_ids` | `test_qa_034_revision_rejects_legacy_no_source_docs`, `_rejects_committed`, `_rejects_foreign_source_in_instruction`, `_with_allowed_source_passes` | DONE | Server-enforced source-doc allowlist via substring scan; Shield call constrained to `source_document_ids` only |
+| -035 | Version History modal | `DocumentOverlay.jsx::VersionHistoryModal`, new `work_studio_artefact_versions` collection, list/restore endpoints | `test_qa_035_versions_list_and_restore_round_trip`, `_restore_blocked_on_committed` | DONE | Pre-commit snapshot mechanic + restore-safety auto-snapshot before overwriting |
+| -036 | Commit Confirmation | `DocumentOverlay.jsx::CommitConfirmationModal`, `commit_document` endpoint | `test_qa_036_commit_locks_and_pre_commit_snapshot` | DONE | Lifecycle transition + Pre-commit snapshot in one round-trip; subsequent edits 409 |
+
+**Foundation work (5 items):**
+1. **Lifecycle state machine** — `lifecycle_state ∈ {draft, in_review, committed}` field added to `work_studio_exports`; transitions enforced in `services/work_studio_overlay.can_transition`. State diagram + Q1 owner-only rule documented in `/app/memory/sprints/CHUNK_8_OVERLAY_STATE.md`.
+2. **Version-snapshot collection** — new `work_studio_artefact_versions` collection with idempotent index `[(artefact_id, 1), (saved_at, -1)]`. Pre-commit snapshots tagged `pre_commit=True, label="Pre-commit"`.
+3. **Structured editable content** — `structured_content: {sections:[{heading,paragraphs:[]}]}` field added; normalised through `services.work_studio_overlay.normalise_structured_content` on every write. Frontend tiptap converts HTML ↔ structured via `htmlToStructuredContent`.
+4. **Source-doc allowlist** — `source_document_ids: List[str]` field added; AI Revision validates via substring scan in `find_referenced_doc_ids` + Shield invocation context constrained to allowlist only.
+5. **Intelligence-report field** — `intelligence_report` optional dict with `confidence_pct`, `sources_count`, `period`, `framing`, `pending_recommendations`, `sources[]`, `sections[]`, `framing_analysis`, `gaps[]`, `recommendations[]`, `audit{...}`. Used by -031 (card) and -032 (modal).
+
+**Backward-compatible migration:** `ensure_overlay_migration` runs at backend startup; legacy rows get `lifecycle_state="committed", legacy=True, source_document_ids=[], intelligence_report=null, structured_content=null`. Idempotent (second call migrates 0 rows). Verified via `test_chunk8_migration_idempotent`.
+
+**Divergence section appended:** `qa_reports/QA_REPORT_16MAY2026.md` lines 36-49 (Div #2 — Overlay entry point) and lines 50-57 (Div #1 — Edit-mode activation).
+
+**Final pytest count:** **701 passed**, 0 failed, 566 skipped — **delta +25** from Chunk-7 fix-pass baseline 676 (exactly the 25 new Chunk-8 tests). Zero regressions.
+
+**CI guard** `test_no_direct_llm_calls_outside_shield.py` — **PASS** (`revise_document` uses `shield_invoke` exclusively).
+
+**render-smoke:** 11/11 routes clean + 8 prior soft-skips green + step 9 (Chunk 8) GREEN (soft-skip on bramuel ctx with no brief rows — same pattern as Chunk 6/7 — pytest is authoritative).
+
+**ESLint:** clean on all touched frontend files (`DocumentOverlay.jsx`, `pages/WorkStudio.jsx`, `scripts/render-smoke.js`).
+
+**`CHUNK_8_OVERLAY_STATE.md`:** new file at `/app/memory/sprints/CHUNK_8_OVERLAY_STATE.md` — 165 lines documenting state machine + schema migration + tiptap exception + audit checklist.
+
+**Tiptap library exception:** `@tiptap/react@2.6.6` + `@tiptap/starter-kit@2.6.6` added with `--exact` pin. ONLY library exception in Chunk 8.
+
+**Blocked items:** none. All 8 IDs landed.
+
+**Estimated elapsed effort:** ~2 hours dev-equivalent (foundation 30min, frontend overlay 60min, backend endpoints 30min, tests 30min, smoke+ledgers 15min). Calibrates Chunk 9 (Add-a-Contribution attach, 5 rows -017→-021) at ~45min — smaller surface, no foundation work needed.
+
 ### Chunk 7 fix-pass — QA-007 + QA-047 UX gaps closed — 2026-05-18 ✅
 
 > **Fix-pass #2 — QA-007 silent-reset closed — 2026-05-18 ✅**

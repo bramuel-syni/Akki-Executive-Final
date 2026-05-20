@@ -29,6 +29,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import ValidatedBadge from "@/components/trust/ValidatedBadge";
 import { toast } from "sonner";
+import DocumentOverlay from "@/components/work_studio/overlay/DocumentOverlay";
 import {
   Sheet,
   SheetContent,
@@ -270,6 +271,34 @@ function BriefDrawer({ open, onClose, aid, contextId }) {
             <>
               <PerArtefactSynisenseBadge kind={detail.kind || "briefing"} artefactId={detail.id || detail.brief_id} />
 
+              {/* Chunk 8 (2026-05-18, QA-2026-05-16-029) — Open Document
+                  Overlay CTA. Per Divergence #2 (qa_reports/...), the
+                  overlay is reached via the drawer rather than directly
+                  from the row click, so the heavily-tested drawer
+                  preview surface stays intact. */}
+              <div className="mb-5 pb-4 border-b border-[var(--rule)]" data-testid="work-studio-brief-drawer-overlay-row">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    const aid = detail.id || detail.brief_id;
+                    onClose();
+                    window.dispatchEvent(new CustomEvent(
+                      "akki:open-document-overlay",
+                      { detail: { contextId, artefactId: aid } },
+                    ));
+                  }}
+                  variant="outline"
+                  className="rounded-sm border-[var(--rule)] hover:border-[var(--ink)]"
+                  data-testid="work-studio-brief-drawer-open-overlay"
+                >
+                  Open Document Overlay
+                  <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                </Button>
+                <p className="text-[11.5px] text-[var(--muted)] mt-1.5">
+                  Read · revise with AI · commit. Per QA-2026-05-16-029.
+                </p>
+              </div>
+
               {/* Chunk 6 (2026-05-13, WS-R01): primary CTA to open the
                   artefact in the block composer. The backend now emits
                   `composer_url` on every detail response; we route via
@@ -433,6 +462,19 @@ export default function WorkStudio() {
   // Drawer state.
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerAid, setDrawerAid] = useState(null);
+  // Chunk 8 (2026-05-18) — Document Overlay state.
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const [overlayAid, setOverlayAid] = useState(null);
+  useEffect(() => {
+    const onOpenOverlay = (e) => {
+      const aid = e?.detail?.artefactId;
+      if (!aid) return;
+      setOverlayAid(aid);
+      setOverlayOpen(true);
+    };
+    window.addEventListener("akki:open-document-overlay", onOpenOverlay);
+    return () => window.removeEventListener("akki:open-document-overlay", onOpenOverlay);
+  }, []);
 
   // Modal state — Export / Enhance / Compile / Create.
   const [exportOpen, setExportOpen] = useState(false);
@@ -661,6 +703,14 @@ export default function WorkStudio() {
           onClose={onCloseDrawer}
           aid={drawerAid}
           contextId={cid}
+        />
+
+        {/* Chunk 8 (2026-05-18) — Document Overlay (QA-2026-05-16-029…-036). */}
+        <DocumentOverlay
+          open={overlayOpen}
+          onClose={() => setOverlayOpen(false)}
+          contextId={cid}
+          artefactId={overlayAid}
         />
 
         <ExportModal

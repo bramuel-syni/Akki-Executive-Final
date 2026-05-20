@@ -26,6 +26,35 @@ This file is the canonical source for the 16-May QA report. Any sprint
 brief that touches a finding from this doc MUST quote the `ID` below.
 Never invent IDs (see `/app/memory/FORGETTING_MITIGATION.md`).
 
+## Implementation divergences from verbatim QA spec
+
+Knowingly approved divergences from the verbatim QA text. Each entry
+must record: the QA quote, the implemented behaviour, the rationale,
+and the date / approver. Future agents MUST NOT "fix" any of these
+as bugs — they are deliberate product decisions.
+
+### Divergence #2 — Overlay entry point (QA-2026-05-16-029)
+- **QA verbatim**: *"When a user clicks a document in the main list … the corresponding overlay opens."*
+- **Implemented behaviour**: Clicking a row in the Work Studio main list opens the existing **Brief drawer** (preserving Patch 28 / Chunk 4-6 behaviour). The drawer carries a prominent **"Open Document Overlay →"** CTA that opens the new overlay. Net effect: 2 clicks to reach the overlay (row → drawer CTA).
+- **Rationale**: The Brief drawer is a heavily-tested preview surface relied on by existing render-smoke + UX tests (Patch 28C, Chunk 4 wizard, Chunk 6 brief-drawer CTA). Replacing it wholesale in this chunk would regress those flows and balloon scope. The drawer can be retired in a future chunk once the overlay is the canonical reading surface.
+- **Date / Approver**: 2026-05-18, user (via orchestrator dispatch — accepted as part of the Chunk 8 internal split).
+
+### Divergence #1 — Document Overlay edit-mode activation (QA-2026-05-16-033)
+- **QA verbatim**: *"In Draft and In Review states the document is
+  immediately editable. The user clicks anywhere in the document and
+  types. No mode activation is required."*
+- **Implemented behaviour**: Document Surface starts in **READ MODE**
+  by default. An explicit **"Edit"** toggle button (in the subdued
+  toolbar above the document content) switches into Edit Mode where
+  the tiptap editor becomes interactive. Save / autosave / Revise
+  with AI all still work as spec'd once Edit Mode is on.
+- **Rationale**: Prevents accidental edits on review surfaces (board
+  packs / minutes / committee packs are high-stakes documents — a
+  stray keystroke on a committed-recently-flipped-to-Draft doc would
+  be a regression risk). The explicit toggle is a single click and
+  obviously labelled.
+- **Date / Approver**: 2026-05-18, user (via orchestrator dispatch).
+
 ## Portfolio
 
 ### QA-2026-05-16-001 · Portfolio renders below landing page on login
