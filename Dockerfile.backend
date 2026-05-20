@@ -67,7 +67,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Runtime apt — strict minimum to satisfy WeasyPrint (cairo+pango+pixbuf),
 # lxml (libxml2/libxslt), cryptography (libssl), pillow (jpeg/zlib/png),
 # tini (PID-1 signal handling), curl (HEALTHCHECK), tzdata (UTC pinning),
-# fonts for PDF rendering.
+# fonts for PDF rendering, tesseract for OCR on uploaded images
+# (Phase F.1 P2 — see /app/memory/sprints/PROD_DEPLOY_CHECKLIST.md).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libcairo2 \
       libpango-1.0-0 \
@@ -83,6 +84,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       shared-mime-info \
       fonts-dejavu-core \
       fonts-noto-core \
+      tesseract-ocr \
+      tesseract-ocr-eng \
       curl \
       tini \
       ca-certificates \

@@ -22,7 +22,7 @@ These are user-action items that don't require code changes. Confirm before bank
 
 | # | Item | Risk if skipped | Action |
 |--:|------|------------------|--------|
-| 1 | Confirm `tesseract-ocr` + `tesseract-ocr-eng` are in the production Docker image | Image uploads return `status=failed` for OCR content. Graceful but bank-QA-visible. | Ask Emergent platform to bake `apt-get install -y tesseract-ocr tesseract-ocr-eng` into the Dockerfile, OR confirm it's already there. |
+| 1 | ✅ **DONE (2026-05-18)** — `tesseract-ocr` + `tesseract-ocr-eng` baked into `Dockerfile.backend` runtime stage. Effective on next build. | Image uploads return `status=failed` for OCR content. Graceful but bank-QA-visible. | Resolved in repo. Next deploy will carry it. |
 | 2 | Confirm Postmark inbound webhook URL points at production | Inbound email silently doesn't work. No crash. | Log into Postmark dashboard → confirm inbound stream's webhook URL is `https://akki.syni.ai/api/inbound/postmark`. |
 | 3 | Confirm `SYNISENSE_MASTER_SECRET` is set on prod (NOT the dev fallback) | Trust receipts signed with fallback are NOT verifiable. Bank-QA verification script will FAIL. | Set a high-entropy random value in Emergent Platform secrets. Once set, do NOT rotate. |
 | 4 | Confirm `CLAMAV_HOST` / `CLAMAV_PORT` reachable from prod backend | Document upload returns 503 ClamAVUnreachable. Hard fail. | Verify ClamAV daemon is up and reachable. |

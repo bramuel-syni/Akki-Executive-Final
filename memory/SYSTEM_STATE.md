@@ -129,6 +129,28 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Dockerfile tesseract bake (Track 0 platform carry-over resolved) — 2026-05-18 ✅
+- **Scope**: pre-flight item for Chunk 7 dispatch. Add `tesseract-ocr` + `tesseract-ocr-eng` to the production Docker runtime stage so OCR works on the deployed pod (preview-side `apt-get install` doesn't survive pod restarts, confirmed live earlier this session).
+- **Files touched**:
+  - `/app/Dockerfile.backend` — runtime stage `apt-get install -y --no-install-recommends` list extended with `tesseract-ocr` and `tesseract-ocr-eng`. Comment block above the layer updated to mention Phase F.1 P2 + PROD_DEPLOY_CHECKLIST reference. ~5 added lines.
+  - `/app/memory/READ_FIRST.md` — platform-carry-over table row 1 flipped from "User / Emergent platform" to "✅ RESOLVED (2026-05-18) — Effective on next build/deploy".
+  - `/app/memory/sprints/POST_REWRITE_RAMP.md` — Track 0 row 1 flipped from action-item to DONE.
+- **Verification**: line-level diff confirmed; no code paths changed; OCR pipeline already had graceful fallback in place (`status=failed` with clean error string) so behaviour pre-deploy is unchanged.
+- **Deferred to user**: Chunk 7 itself — see entry below.
+
+### Chunk 7 dispatch — BLOCKED on missing spec — 2026-05-18 🟡
+- **Scope claim**: dispatch asked to fix QA findings **HP-01 / DJ-R01 / DJ-R02 / DJ-R04 / HP-02** sourced from a 15-May QA report.
+- **Blocker**: the referenced finding-ID document does NOT exist in the repo. Specifically:
+  - `/app/memory/sprints/QA_FINDINGS_15MAY.md` — referenced by POST_REWRITE_RAMP.md Track 2, NOT present on disk.
+  - Grep for `HP-01|HP-02|DJ-R01|DJ-R02|DJ-R04` across the entire `/app` tree returns ZERO hits.
+  - The closest spec inside POST_REWRITE_RAMP.md refers to "30-finding QA report items 14-18, 22-25" (numeric, not the HP-/DJ- code system), and that 30-finding report is also absent.
+- **Strict-scope ruling**: Phase F closeouts mandated "do NOT touch the 14 deferred QA findings". Picking 5 items from the visible 14-row table by guessing which map to HP-01 / DJ-R01 / etc. would violate that ruling AND risk fixing the wrong issues.
+- **No code changes** made for Chunk 7 itself. Dockerfile bake (above) shipped independently.
+- **Action required from user**:
+  1. Paste the 5 finding descriptions (HP-01, DJ-R01, DJ-R02, DJ-R04, HP-02) into this turn or
+  2. Provide the QA report file (drop into `/app/memory/sprints/QA_FINDINGS_15MAY.md`) or
+  3. Re-scope Chunk 7 to specific items from the 14-row table already in `POST_REWRITE_RAMP.md` Track 2.
+
 ### Memory hygiene — `READ_FIRST.md` entry-point index created — 2026-05-18 ✅
 - New top-level `/app/memory/READ_FIRST.md` written as the single entry-point doc for any future agent or human handoff.
 - Contents: status snapshot (rewrite closed, 662 pytest, CI green), priority-ordered table of the 7 follow-on docs (REWRITE_DEPLOY_READY → POST_REWRITE_RAMP → REWRITE_SPRINT_STATE → SYSTEM_STATE → PROD_DEPLOY_CHECKLIST → BANK_QA_EVIDENCE_PACK/README → PHASE_F1_CLOSEOUT), hard rules for next agent (no direct LLM SDK imports, append to SYSTEM_STATE after every patch, no screenshot tool), 4-row platform-side carry-over table with graceful-fallback flags, architectural-invariant list, and a "deferred" line for the holistic product features review.
