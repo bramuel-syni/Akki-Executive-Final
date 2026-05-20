@@ -187,6 +187,25 @@ ESLint clean on `SolvaSessions.jsx`, `SolvaPhaseDSession.jsx`, `proseBlocks.js`,
 
 New file documenting the Solva QA Brief full closure (8/8 SV-IDs DONE), the SV-08 reproduction matrix, the markdown-light parser scope decisions, and out-of-scope deferrals.
 
+### Fix-pass (Chunk 14) — 2026-05-21 (single-attempt cap exercised)
+
+Tester reported SV-05 PASS · SV-08 PASS · SV-06/SV-07 BLOCKED (no populated Phase D session reachable for rich-text + 60vh verification) · SV-05 WARN (cosmetic copy drift, non-blocking). Two narrow items closed under the autonomy cap; no other surfaces touched.
+
+| Gap | What changed | File:line | Idempotency |
+|---|---|---|---|
+| 1 — Populated Phase D session fixture | NEW `_seed_chunk14_populated_phase_d_session` (Pass I) inserts ONE fully-populated Phase D session per bramuel context with `status="completed"`, `layer_state="done"`, framing prose, three layer-1+layer-2+layer-4 answers, AND `layer_3.rendered_synthesis` containing verbatim orchestrator markdown-light prose (paragraphs · `- ` bullets · `1. ` numbered · `**bold**`) | `backend/scripts/seed_chunks.py:777-959` | Marker `chunk14_populated_seed_marker="v1"` |
+| 1 — Main-loop wire-in | Pass I added to the bramuel-context iteration loop with print of seeded cid+sid pairs | `backend/scripts/seed_chunks.py:1020-1027` + print at `1077-1080` | n/a |
+| 2 — SV-05 copy divergence | Tester observed alternate empty-state copy on the live preview; documented but no code change per dispatch | `memory/qa_reports/SOLVA_QA_BRIEF_20MAY2026.md:138-153` (new §3) + `sprints/CHUNK_14_STATE.md §7.5` | n/a |
+
+**Seed verification:** 9 contexts × 1 fixture = 9 minted. Re-run = 0 fresh mints (idempotency confirmed via marker `$exists` short-circuit). All fixtures route to COMPLETE bucket per Chunk-13 classifier, surface the read-only banner (Chunk 13), and render the markdown-light prose via `ProseBlock` (Chunk 14 SV-06).
+
+**Sample tester targets:**
+- ctx `cef8714a-303b-4214-a004-fc1adef43de9` · sid `sol-c14p-696fcebbc8424043a05a275d`
+- ctx `5afb0f40-0193-4b7d-abd9-75e620aac3c2` · sid `sol-c14p-276dd4eaaf6e44269213d3e1`
+- ctx `dcc263b1-59f9-4546-ba6a-ea7c54545b3e` · sid `sol-c14p-57be77d970fa4ee2a4cf61fe`
+
+**Pytest delta:** 0 (no new tests; cross-chunk 9.5/10/11/12/13/14 + CI guard = 60 passed / 0 failed verified). **Ruff** clean. **ESLint** unaffected (no frontend touched). **CI guard PASS.**
+
 ### Chunk 13 — Solva SV-04 sessions list (4-bucket status + tab counts + read-only) — 2026-05-21 ✅ (autonomous)
 
 Extends the Solva sessions list view with a 4-bucket display_status classifier + tab count badges + read-only enforcement on COMPLETE/REFUSED sessions. Reuses the merged Phase D + v2 listing built in Chunk 9.5. Zero session document migration — status is derived at read time from existing fields.

@@ -764,6 +764,195 @@ async def _seed_chunk12_no_data_strategic_goal_fixture(
     }
 
 
+# ----------------------------------------------------------------------
+# Pass I — Chunk 14 fix-pass (2026-05-21) — populated Phase D session
+# fixture so render-smoke + tester can verify SV-06 (markdown-light
+# rendering) and SV-07 (60vh output panel sizing) end-to-end against a
+# real session.
+#
+# Tester finding from Chunk-14 run: 76 Phase D sessions exist for
+# bramuel but every reachable one is in `entry` / `layer_1` state with
+# no substantive rendered prose. SV-06 / SV-07 acceptance requires a
+# session in `done` state with synthesis content that exercises the
+# three markdown features (paragraphs · bullets · `**bold**`).
+#
+# Scope (per dispatch):
+#   - Insert ONE fully-populated Phase D session per bramuel context
+#     (we honour "or just one context — pick executive_personal" — we
+#     pick ALL bramuel contexts because the per-context cost is small
+#     and downstream RBAC will gate reachability anyway; the
+#     identifiable title makes the fixture easy to grep).
+#   - Idempotent via `chunk14_populated_seed_marker="v1"`.
+#   - No new collections.
+# ----------------------------------------------------------------------
+
+# Verbatim governance-themed sample content from the orchestrator
+# dispatch. Used as both the framing baseline and the rendered
+# synthesis so SV-06 (paragraphs · `- ` bullets · `1. ` numbered ·
+# `**bold**`) renders against deterministic content.
+_CHUNK_14_SYNTHESIS_PROSE = """Three governance themes emerged from the prior session:
+
+- Strategic alignment between board and management on **capital allocation priorities**
+- Risk appetite ambiguity around emerging market expansion, which requires **explicit board sign-off** per the Risk Charter
+- Succession planning for the CFO role — currently **no documented successor**
+
+The Audit Committee should consider three actions:
+
+1. Commission an independent review of the **capital allocation framework**
+2. Update the Risk Charter to include emerging market thresholds
+3. Mandate a quarterly **CFO succession review**
+
+These actions align with the **2026-2028 strategic horizon** and address the most material **governance gaps** identified."""
+
+# Framing prose — 4 paragraphs of substantive governance content (the
+# dispatch requested "3-5 paragraphs of governance-themed content").
+_CHUNK_14_FRAMING_PROSE = """We're approaching the Q3 board meeting and I want to think through three governance tensions before the session.
+
+First, the audit committee has flagged that our capital allocation framework hasn't been refreshed since 2024. The current thresholds for material capex decisions feel low given the inflation-adjusted scale of our balance sheet. I'm wondering whether the board should request a refresh ahead of the FY26 budget cycle, or wait until the formal triennial review in 2027.
+
+Second, our risk charter doesn't explicitly address emerging market exposure beyond a single line about "appropriate diversification". Management has been increasingly active in two emerging markets without explicit board sign-off, which feels like a gap. The challenge is that bringing every transaction to the board would slow execution materially.
+
+Third, the CFO has been hinting at retirement within 18-24 months, and we have no documented succession plan. The chair and I have discussed informally but haven't socialised any candidate names. This feels like the most material gap of the three, but also the most politically sensitive."""
+
+
+async def _seed_chunk14_populated_phase_d_session(
+    db, context_id: str, account_id: str,
+) -> Dict[str, Any]:
+    """Mint ONE fully-populated Phase D session per context.
+
+    Schema mirrors what `routers/solva_phase_d.py::_run_layer_3` produces
+    on the natural completion path:
+      - `status = "completed"`, `layer_state = "done"`
+      - `layer_1.answers` carries 3 answer records (questions_count=3)
+      - `layer_2.answers` carries 3 answer records (questions_count=3)
+      - `layer_3.rendered_synthesis` carries the markdown-light prose
+      - `layer_4.answers` carries 3 reflection answers
+      - `completed_at` populated
+
+    Idempotency: `chunk14_populated_seed_marker="v1"`.
+    """
+    existing = await db.solva_phase_d_sessions.find_one(
+        {"context_id": context_id, "chunk14_populated_seed_marker": "v1"},
+        {"_id": 0, "session_id": 1},
+    )
+    if existing:
+        return {
+            "context_id": context_id, "session_id": existing["session_id"],
+            "minted": False, "reason": "already_seeded",
+        }
+    sid = f"sol-c14p-{uuid.uuid4().hex[:24]}"
+    now = _now()
+
+    def _ans(text: str, idx: int) -> Dict[str, Any]:
+        return {
+            "id": f"ans-{uuid.uuid4().hex[:14]}",
+            "text": text,
+            "submitted_at": _iso(now),
+            # `submitted_index` mirrors the natural-flow shape but is
+            # optional — included for forensic traceability.
+            "_seed_index": idx,
+        }
+
+    layer_1_answers = [
+        _ans("The audit committee already flagged the staleness of the capital allocation framework in the Q1 minutes — that gives us cover to act now without it looking like a one-off.", 1),
+        _ans("Management has been operating under an implicit risk appetite that isn't documented anywhere. The Q2 emerging-market deal went through without board sign-off, which the chair has privately questioned.", 2),
+        _ans("The CFO succession gap is partly because we've avoided the topic, and partly because the obvious internal candidate (Group FC) has only been in the role 14 months. Bringing it forward forces us to either commit or look elsewhere.", 3),
+    ]
+    layer_2_answers = [
+        _ans("If we leave the capital framework unchanged through FY26 and a material acquisition emerges, we'd be relying on the old thresholds — which would either be ignored or trigger an emergency rewrite, both bad governance signals.", 1),
+        _ans("On the risk charter, the cleanest fix is to add an emerging-market schedule (specific country thresholds + scale caps) rather than rewrite the whole document. That's defensible in front of the regulator.", 2),
+        _ans("For CFO succession, the politically safest path is to commission an external search in parallel with developing the internal candidate — gives optionality and signals due process to the audit committee.", 3),
+    ]
+    layer_4_answers = [
+        _ans("Yes, mildly — I'd hoped one of these would turn out to be a non-issue, but on reflection all three are real. The CFO one was the one I'd been most reluctant to confront.", 1),
+        _ans("I'd be wrong about the capital framework if a refresh now would actually introduce more rigidity than the current vague version. Worth pressure-testing with the FD.", 2),
+        _ans("If I ignore the diagnosis: six months from now we're either mid-acquisition with the wrong framework, mid-CFO-departure with no plan, or both. Neither is acceptable.", 3),
+    ]
+
+    # Layer 2 candidate set + triangulation + tensions — minimal but
+    # realistic enough that the session looks "done" from any read path.
+    layer_2_obj = {
+        "answers": layer_2_answers,
+        "questions_count": 3,
+        "refined_candidates": [
+            {"label": "Refresh capital allocation framework", "rationale": "Audit committee already flagged."},
+            {"label": "Add emerging-market schedule to risk charter", "rationale": "Closes the implicit-appetite gap."},
+            {"label": "Commission parallel CFO search + internal development", "rationale": "Optionality + due-process signal."},
+        ],
+        "triangulation_result": {
+            "overall_consistency": 0.82,
+            "divergences": [],
+            "extracted_claims": [
+                "Capital allocation thresholds last refreshed in 2024.",
+                "Risk charter lacks emerging-market schedule.",
+                "No documented CFO succession plan.",
+            ],
+        },
+        "detected_tensions": [
+            "Execution speed vs board oversight on emerging-market deals.",
+            "Internal development vs external search for CFO succession.",
+        ],
+        "tension_activation": None,
+    }
+
+    await db.solva_phase_d_sessions.insert_one({
+        "session_id": sid,
+        "user_id": account_id, "account_id": account_id, "context_id": context_id,
+        "sub_module": "seek_clarity",
+        "status": "completed",
+        "layer_state": "done",
+        "initial_framing": _CHUNK_14_FRAMING_PROSE,
+        "title": "QA Chunk 14 — populated prose fixture",
+        "created_at": now, "updated_at": now,
+        # `completed_at` populated so the classifier (Chunk 13) routes
+        # this to the COMPLETE bucket and the read-only banner fires.
+        "completed_at": now,
+        "layer_0": {
+            "situation_class": "board_governance",
+            "situation_class_confidence": 0.85,
+            "verdict": "sufficient",
+            "dimensions": [],
+            "routing_decision": {},
+            "carry_forward_caveats": [],
+        },
+        "layer_1": {
+            "answers": layer_1_answers,
+            "questions_count": 3,
+            "candidate_set": [
+                {"label": "Refresh capital allocation framework"},
+                {"label": "Update risk charter for emerging markets"},
+                {"label": "Document CFO succession plan"},
+            ],
+        },
+        "layer_2": layer_2_obj,
+        "layer_3": {
+            "scenarios": [],
+            "sensitivity_drivers": [],
+            "surfaced_tensions": layer_2_obj["detected_tensions"],
+            "evidence_trace": [],
+            "primary_diagnosis_prose": _CHUNK_14_SYNTHESIS_PROSE,
+            "refusal_flag": False,
+            "rendered_synthesis": _CHUNK_14_SYNTHESIS_PROSE,
+        },
+        "layer_4": {
+            "answers": layer_4_answers,
+            "questions_count": 3,
+        },
+        "synisense_audit_ids": [],
+        "orchestration_audit_log": [],
+        "source_handoff": None,
+        "seed_attached_references": [],
+        "schema_version": 3,
+        # Identifiability markers.
+        "seed_origin": "chunk_14_populated",
+        "chunk14_populated_seed_marker": "v1",
+    })
+    return {
+        "context_id": context_id, "session_id": sid,
+        "minted": True,
+    }
+
+
 async def main():
     cli = AsyncIOMotorClient(os.environ["MONGO_URL"])
     db = cli[os.environ["DB_NAME"]]
@@ -785,6 +974,7 @@ async def main():
     monitor_seeds: List[Dict[str, Any]] = []
     strategic_seeds: List[Dict[str, Any]] = []
     no_data_strategic_seeds: List[Dict[str, Any]] = []
+    populated_phase_d_seeds: List[Dict[str, Any]] = []
 
     for c in contexts:
         cid = c["id"]
@@ -853,6 +1043,16 @@ async def main():
         if res.get("minted"):
             no_data_strategic_seeds.append(res)
 
+        # Pass I (Chunk 14 fix-pass 2026-05-21, Gap 1): fully-populated
+        # Phase D session with markdown-light synthesis prose so
+        # tester + render-smoke step 16 can verify SV-06 (rich text
+        # rendering) and SV-07 (60vh output panel sizing) end-to-end.
+        # Status=completed → Chunk 13 classifier routes to COMPLETE
+        # bucket → read-only banner fires → ProseBlock renders.
+        res = await _seed_chunk14_populated_phase_d_session(db, cid, bid)
+        if res.get("minted"):
+            populated_phase_d_seeds.append(res)
+
     # Write a seed-log marker for visibility / forensics.
     await db.chunk8_seed_log.insert_one({
         "run_id": uuid.uuid4().hex,
@@ -906,6 +1106,10 @@ async def main():
         print("[seed-chunks] Sample no-data fixtures (Chunk 12 fix-pass Pass H):")
         for ns in no_data_strategic_seeds[:5]:
             print(f"   - ctx={ns['context_id']} goal={ns['goal_id']}")
+    if populated_phase_d_seeds:
+        print("[seed-chunks] Sample populated Phase D sessions (Chunk 14 fix-pass Pass I):")
+        for ps in populated_phase_d_seeds[:5]:
+            print(f"   - ctx={ps['context_id']} sid={ps['session_id']}")
 
 
 if __name__ == "__main__":

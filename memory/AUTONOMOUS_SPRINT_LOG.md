@@ -207,6 +207,36 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 **Awaiting orchestrator tester re-run on Chunk 14 surfaces, then dispatch of Chunk 15 (16-May P2 batch 1).**
 
 
+## Chunk 14 fix-pass — Pass I populated session fixture (autonomy single-attempt cap) — DONE — 2026-05-21T14:30:00Z
+
+- **Tester verdict on previous run:** SV-05 PASS · SV-08 PASS · SV-06/SV-07 BLOCKED (no populated Phase D session reachable) · SV-05 WARN (cosmetic copy drift).
+- IDs reaffirmed: SV-05/06/07/08 (fix-pass scope = 2 narrow items; SV-IDs themselves remain DONE).
+- Pytest delta: **0** (existing 60-across-chunks tests still green).
+- Tester verdict: PASS pending (orchestrator runs tester ONCE on SV-06 + SV-07 against populated session per fix-pass dispatch rules).
+- Files touched: 3 (`backend/scripts/seed_chunks.py` Pass I; `memory/qa_reports/SOLVA_QA_BRIEF_20MAY2026.md` divergence section; `memory/sprints/CHUNK_14_STATE.md` §7.5 + §7.6).
+- Architectural invariants: PASS (no new LLM call sites; CI guard still green; no new libraries; `tenant_id`/`context_id` scoping unchanged).
+- Blockers: none.
+- AWAITING_PO routings queued: none new.
+- Scope guard: ONLY the 2 dispatched items touched. SV-05 copy NOT modified (divergence documented per dispatch). No other Solva or 16-May rows touched.
+- Seed verification:
+  - 9 contexts × 1 populated session = 9 Phase D sessions minted via Pass I.
+  - All 9 carry `status="completed"`, `layer_state="done"`, populated `layer_3.rendered_synthesis` with verbatim orchestrator prose.
+  - Re-run idempotent: second invocation = 0 fresh mints (verified via `chunk14_populated_seed_marker="v1"` $exists guard).
+- Memory updates:
+  - `SYSTEM_STATE.md § 4` — fix-pass note appended under the existing Chunk 14 entry.
+  - `AUTONOMOUS_SPRINT_LOG.md` — this entry.
+  - `qa_reports/SOLVA_QA_BRIEF_20MAY2026.md` — new §3 "Implementation Divergences" with SV-05 copy entry.
+  - `sprints/CHUNK_14_STATE.md` — §7.5 (SV-05 divergence) + §7.6 (Pass I details).
+- Notable: Pass I is the second large seed pass added in this sprint (after Pass G+H for Chunk 12). The `chunk14_populated_seed_marker` pattern keeps cross-pass idempotency simple — every new seed pass gets a unique marker, runs `find_one + return` short-circuit if present, never $set's twice.
+
+**Tester targets for re-run:**
+- ctx `cef8714a-303b-4214-a004-fc1adef43de9`  ·  sid `sol-c14p-696fcebbc8424043a05a275d`
+- ctx `5afb0f40-0193-4b7d-abd9-75e620aac3c2`  ·  sid `sol-c14p-276dd4eaaf6e44269213d3e1`
+- ctx `dcc263b1-59f9-4546-ba6a-ea7c54545b3e`  ·  sid `sol-c14p-57be77d970fa4ee2a4cf61fe`
+
+**Awaiting orchestrator tester re-run on SV-06 / SV-07 against the Pass I populated session, then dispatch of Chunk 15 (16-May P2 batch 1) per autonomy rules (PASS or FAIL).**
+
+
 **Awaiting orchestrator tester re-run on Chunk 11 surfaces, then dispatch of Chunk 12.**
 
 

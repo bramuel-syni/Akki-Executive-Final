@@ -145,6 +145,31 @@
 - Promotion of `stripCitations` + `splitToBullets` from Pulse into the shared `proseBlocks.js` — left for a future cleanup pass to avoid scope creep.
 - Cross-context Solva sessions aggregate — queued in `CHUNK_17_CLEANUP_QUEUE.md` as C17-003.
 
+## 7.5. Divergence — SV-05 empty-state copy (2026-05-21 fix-pass)
+
+Tester observed dev's actual zero-match copy as `"No results found for "{q}". Try different keywords, or switch company to search elsewhere."` against our shipped copy `"No sessions found for "{q}". Try a different word or phrase."` (verbatim from the original Chunk-14 dispatch). Non-blocking — documented in `SOLVA_QA_BRIEF_20MAY2026.md §3` per fix-pass dispatch instruction. **No code change.**
+
+## 7.6. Fix-pass (Chunk 14) — Pass I populated session fixture (2026-05-21)
+
+Tester reported SV-06 / SV-07 acceptance was BLOCKED because no Phase D session in any reachable bramuel context carried rendered prose — every session was in `entry` / `layer_1` state. Pass I closes this gap.
+
+- **New seed function:** `_seed_chunk14_populated_phase_d_session` in `backend/scripts/seed_chunks.py:777-959` (~180 lines including the verbatim governance-themed prose constants).
+- **What it mints:** ONE fully-populated Phase D session per bramuel context with:
+  - `status="completed"`, `layer_state="done"`, `completed_at` populated → routes to COMPLETE bucket per Chunk-13 classifier
+  - `initial_framing` = 4 paragraphs of governance prose
+  - `layer_1.answers` + `layer_2.answers` + `layer_4.answers` each carry 3 answer records
+  - `layer_3.rendered_synthesis` = verbatim orchestrator-provided markdown-light prose (3 paragraphs + `- ` bullets ×3 + `1. ` numbered ×3 + multiple `**bold**` inline tokens)
+  - Identifiable title: `"QA Chunk 14 — populated prose fixture"`
+  - `seed_origin="chunk_14_populated"` + idempotency marker `chunk14_populated_seed_marker="v1"`
+- **Idempotency confirmed:** second `python scripts/seed_chunks.py` run mints zero fresh fixtures (the marker check short-circuits).
+- **9 fixtures minted across 9 bramuel contexts.**
+- **Sample tester targets:**
+  - ctx `cef8714a-303b-4214-a004-fc1adef43de9` · sid `sol-c14p-696fcebbc8424043a05a275d`
+  - ctx `5afb0f40-0193-4b7d-abd9-75e620aac3c2` · sid `sol-c14p-276dd4eaaf6e44269213d3e1`
+  - ctx `dcc263b1-59f9-4546-ba6a-ea7c54545b3e` · sid `sol-c14p-57be77d970fa4ee2a4cf61fe`
+- **Pytest delta:** 0 (existing 60-across-chunks-9.5-through-14 still green; no regressions).
+- **ESLint + Ruff:** clean.
+
 ## 8. Solva QA Brief — fully closed
 
 All 8 SV-IDs from the Solva QA Brief are now DONE:

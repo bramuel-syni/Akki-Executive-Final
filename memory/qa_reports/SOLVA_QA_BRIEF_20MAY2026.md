@@ -134,3 +134,18 @@ The output window should occupy the majority of the available vertical space on 
 **Bug · Priority (assumed): Critical** · **DEFERRED to Chunks 13-14**
 
 (Spec text in the source brief ends with "as per below screen shot" — referenced screenshot not included in this document. Deferred until the screenshot artefact is provided.)
+
+
+---
+
+## 3. Implementation Divergences (informational, not bug-reports)
+
+### SV-05 — Empty-state copy
+
+**Spec intent:** polite, non-blaming copy when a non-empty search query returns zero matches.
+
+**Shipped (Chunk 14):** `"No sessions found for "{q}". Try a different word or phrase."` — verbatim from the original Chunk-14 dispatch (`/app/memory/qa_reports/SOLVA_QA_BRIEF_20MAY2026.md` §SV-05 acceptance row → mirrored in `SolvaSessions.jsx:225`).
+
+**Tester observation (Chunk-14 fix-pass run, 2026-05-21):** the dev's actual zero-match copy reads `"No results found for "{q}". Try different keywords, or switch company to search elsewhere."` — mentions switching company (broader UX value than the verbatim brief which constrains the user to the same context).
+
+**Resolution:** Non-blocking divergence. The orchestrator-shipped copy is verbatim what the dispatch specified; the alternate copy seen by the tester is more useful but originates from a different surface (likely the topbar global Search, not the Solva sessions list empty-state). **No code change** — copy stays as shipped. Documented for trace.
