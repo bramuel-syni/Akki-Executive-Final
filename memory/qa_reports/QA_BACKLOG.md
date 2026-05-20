@@ -1,11 +1,11 @@
 ---
 built: 2026-05-18
-last_updated: 2026-05-18 (Chunk 7 — 6 P0s flipped to DONE)
+last_updated: 2026-05-18 (Chunk 9 — Add-a-Contribution attach, -017→-021 flipped to DONE)
 source: /app/memory/qa_reports/QA_REPORT_16MAY2026.md
 total_findings: 51
 total_clarifications: 2
-priority_histogram: "P0: 6 (DONE) · P1: 20 + 8 (DONE Chunk-8) · P2: 15 · P3: 2"
-maintainer: e1_main (forgetting-mitigation patch)
+priority_histogram: "P0: 6 (DONE) · P1: 15 + 13 (DONE Chunk-8 8 + Chunk-9 5) · P2: 15 · P3: 2"
+maintainer: e1_main (Chunk 9 close)
 ---
 
 # QA Backlog — 16 May 2026 (Master Tracker)
@@ -37,11 +37,11 @@ If this table and the source ever disagree, the source wins; rebuild this table.
 | QA-2026-05-16-014 | Cycle Manager | Add spacing between top menu and Agent Cycle quick-actions card | P3 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-014 |
 | QA-2026-05-16-015 | Cycle Manager | "Activate Cycle" CTA missing on tabs other than Agenda | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-015 |
 | QA-2026-05-16-016 | Cycle Manager | Two identical Back/Next bars — bottom one needs "Back to Cycle Manager" label | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-016 |
-| QA-2026-05-16-017 | Add a Contribution | Attach icon + From-Journal / Upload-External picker on contribution form | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-017 |
-| QA-2026-05-16-018 | Add a Contribution | Attached-document chip with remove icon below attach picker | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-018 |
-| QA-2026-05-16-019 | Add a Contribution | Paste-text box stays alongside attachment (do not remove) | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-019 |
-| QA-2026-05-16-020 | Add a Contribution | Record Contribution scores attached + pasted content together | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-020 |
-| QA-2026-05-16-021 | Add a Contribution | Record Contribution disabled until at least one input is supplied | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-021 |
+| QA-2026-05-16-017 | Add a Contribution | Attach icon + From-Journal / Upload-External picker on contribution form | P1 | DONE | Chunk-9 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-017 |
+| QA-2026-05-16-018 | Add a Contribution | Attached-document chip with remove icon below attach picker | P1 | DONE | Chunk-9 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-018 |
+| QA-2026-05-16-019 | Add a Contribution | Paste-text box stays alongside attachment (do not remove) | P1 | DONE | Chunk-9 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-019 |
+| QA-2026-05-16-020 | Add a Contribution | Record Contribution scores attached + pasted content together | P1 | DONE | Chunk-9 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-020 |
+| QA-2026-05-16-021 | Add a Contribution | Record Contribution disabled until at least one input is supplied | P2 | DONE | Chunk-9 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-021 |
 | QA-2026-05-16-022 | Pulse | Saved comments on signal cards do not display when re-opened | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-022 |
 | QA-2026-05-16-023 | Pulse | Save-signal icon must change state + bookmarked-tab notification | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-023 |
 | QA-2026-05-16-024 | Pulse | Saved-signal marker must appear wherever the signal surfaces | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-024 |

@@ -129,6 +129,56 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 9 — Add-a-Contribution attach (5 IDs -017→-021) — 2026-05-18 ✅
+
+All 5 P1/P2 IDs landed in a single chunk. **Combined-scoring contract locked** (decision (a) from dispatch): the score endpoint concatenates `body_text` + an `[Attached: <name>]` marker + the attached doc's `extracted_text` into a single string, runs the existing `_heuristic_score` once, and echoes a `scoring_input` block on the row so audits can see which inputs contributed.
+
+| ID | Surface | Files touched | Test name(s) | Status | Notes |
+|---|---|---|---|---|---|
+| -017 | Attach button + picker (Journal / Upload External tabs) | `frontend/src/components/cycle/ContributionAttachPicker.jsx` (new), `pages/Cycle.jsx::ContributionsStep` (attach row + state) | `test_qa_017_contribution_with_source_doc_accepted` + render-smoke step 10 | DONE | Picker inlined per dispatch decision #2 (YAGNI vs shared `DocumentAttachPicker`); dedup queued after Chunk 12 |
+| -018 | Attachment chip + remove icon + auto-Title | `Cycle.jsx::ContributionsStep` (chip, remove handler, `titleEditedByUser` tracking) | `test_qa_018_attached_doc_remains_in_journal_after_chip_removed` + render-smoke chip+title round-trip | DONE | Title auto-fills ONLY when user hasn't typed; remove clears title ONLY when user hasn't typed since attach |
+| -019 | Paste textbox preserved alongside attachment | `Cycle.jsx::ContributionsStep` (Textarea stays rendered below attach row) | `test_qa_019_paste_text_alongside_attachment_both_persisted` + render-smoke step 10 | DONE | Body text + attachment both survive backend round-trip |
+| -020 | Combined scoring (body + attached extract) | `backend/routers/cycle_manager.py::_build_combined_contribution_text` + `score_contribution` | `test_qa_020_combined_scoring_uses_both_attachment_and_pasted_text`, `_works_with_attachment_only`, `_works_with_paste_only`, `_silent_fallback_when_source_doc_missing`, `test_chunk9_combined_scoring_single_pass_with_both_inputs` | DONE | Decision (a) concatenate-and-single-pass locked; missing attachment silently falls back to body-only — never 500s |
+| -021 | CTA gating + backend echo | `Cycle.jsx::ContributionsStep` (`disabled={busy \|\| (!body_text.trim() && !attached_doc)}`), `cycle_manager.py::ContributionIn._qa_021_at_least_one_input` (Pydantic `model_validator`) | `test_qa_021_contribution_rejected_when_no_input_provided`, `test_chunk9_cta_gating_both_inputs_clear_means_reject` | DONE | Frontend disables CTA AND backend 400/422s any empty contribution — contract honest on both sides |
+
+**Foundation work (none).** Chunk 9 is pure feature delivery on top of the Chunk 7 schema (`source_doc_id` already accepted by `ContributionIn` since QA-005 fix-pass).
+
+**Seed renamed + Chunk-9 pass added.** `backend/scripts/seed_chunk8_overlay.py` → `backend/scripts/seed_chunks.py`. Pass C mints one active cycle (in `db.cycles`) + matching `cycle_agendas` row with `id == cycle_id` + one agenda item + one `cycle_team` member with `status="active"` + `owns_item_ids=[item_id]` per bramuel context that has ≥1 doc but no active cycle. Idempotent via `chunk9_seed_marker="v1"` on the `cycles` row. First run: seeded 8/9 contexts (1 ctx already had an active cycle). Re-run = 0 minted. `READ_FIRST.md` row 8 updated to point at the renamed script.
+
+**Final pytest count:** **712 passed**, 0 failed, 566 skipped — **delta +11** from Chunk-8 baseline 701 (exactly the 11 new Chunk-9 tests). Zero regressions.
+
+**CI guard** `test_no_direct_llm_calls_outside_shield.py` — **PASS** (Chunk 9 added zero LLM calls; combined-scoring is the existing deterministic heuristic).
+
+**render-smoke step 10 — GREEN end-to-end against live preview** with all 11 hard-asserts (cycle=`cyc-c9-acef6…` in bramuel ctx `dcc263b1` — Tuli Financial Group CFO):
+  1. ✓ Contributions tab + Add-form mounted
+  2. ✓ QA-021 — CTA disabled before any input
+  3. ✓ QA-017 — attach picker opens
+  4. ✓ QA-017 — journal listed ≥1 doc ("board-meeting-summary.pptx")
+  5. ✓ QA-018 — chip rendered with doc name
+  6. ✓ QA-018 — Title auto-populated to doc name
+  7. ✓ QA-021 — CTA enabled after attach
+  8. ✓ QA-018 — chip removed
+  9. ✓ QA-018 — Title cleared on chip-remove (user hadn't manually typed)
+ 10. ✓ QA-021 — CTA re-disabled after chip removal
+ 11. ✓ QA-019 — paste textbox remains visible alongside attach
+
+**One side-bug found + fixed during smoke wire-up.** The original probe walked `/api/me/contexts` body looking for `c.id`, but that endpoint returns `{items: [{context_id, …}]}` not `{contexts: [{id, …}]}`. Smoke now reads `c.context_id || c.id` defensively. Chunk-8 step 9 has the same dormant bug (its active-context path covers it; no observable failure to date) — flagged in CHUNK_9_STATE.md follow-ups; not in Chunk-9 scope to fix.
+
+**Architectural invariants checkpoint:**
+- ✅ No direct LLM calls outside Shield (CI guard PASS).
+- ✅ `tenant_id == account_id` scoping on touched endpoints (the 3 cycle endpoints all use `require_context_membership()` Depends).
+- ✅ No `repr(exc)` leaks — all error paths route through `apiErrorMessage` / `HTTPException` with the locked `{type}: {str[:300]}` format.
+
+**ESLint:** clean on all touched frontend files (`ContributionAttachPicker.jsx`, `pages/Cycle.jsx`, `scripts/render-smoke.js`).
+
+**`CHUNK_9_STATE.md`:** new file at `/app/memory/sprints/CHUNK_9_STATE.md` — picker placement decision + combined-scoring contract recorded for posterity.
+
+**No new libraries added.** Picker uses existing shadcn `Dialog` + `Input` + `Button` + lucide-react icons.
+
+**Blocked items:** none. All 5 IDs landed.
+
+**Elapsed effort:** ~50 min dev-equivalent (frontend picker 15min, Cycle.jsx integration 10min, backend combined-scoring + validator 10min, tests 10min, seed extension + smoke step 10 + ledgers 5min). Slight overshoot on the original 45min calibration — the seed-data-model alignment (`cycles` master row + `cycle_agendas.id == cycle_id` + `cycle_team.agenda_id == cycle_id`) consumed the extra time.
+
 ### Chunk 8 — Document Overlay (8 IDs -029…-036) — 2026-05-18 ✅
 
 > **Verification-blocker fix-pass — overlay seed + drawer wiring — 2026-05-18 ✅**

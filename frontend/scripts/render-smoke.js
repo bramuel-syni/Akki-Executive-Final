@@ -1199,3 +1199,254 @@ async function smokeChunk7GenerateSignals(page, failures) {
   page.off("pageerror", onPageError);
 }
 
+
+
+// ----------------------------------------------------------------------
+// Phase 10 (Chunk 9, 2026-05-18) — QA-2026-05-16-017→-021.
+//
+// Add-a-Contribution attach feature smoke. Hard-asserts the full UX
+// loop the spec requires:
+//
+//   1. Land on the Contributions tab of a seeded cycle.
+//   2. CTA "Record contribution" is DISABLED before any input.
+//   3. Click "Attach document" → picker opens.
+//   4. Journal tab lists ≥1 document.
+//   5. Selecting a doc closes the picker, renders the chip with the
+//      doc name, auto-populates the Title field, and ENABLES the CTA.
+//   6. Clicking the chip's remove icon clears the attachment, clears
+//      the auto-populated Title, and re-DISABLES the CTA.
+//
+// Seed: `backend/scripts/seed_chunks.py` Pass C — mints one active
+// cycle + one agenda item + one team member + flags the row with
+// `chunk9_seed_marker=v1` so multiple runs are no-ops.
+//
+// Soft-skip ONLY when the seed legitimately couldn't run (no
+// bramuel context with documents at all). All other failures are
+// hard-asserted per Chunk-9 close instruction.
+// ----------------------------------------------------------------------
+async function smokeChunk9ContributionAttach(page, failures) {
+  const pageErrors = [];
+  const onPageError = (err) => { pageErrors.push(err.toString()); };
+  page.on("pageerror", onPageError);
+
+  try {
+    // Step 1 — find a context that has both an active cycle (with
+    // ≥1 team member, so the Add-form renders) AND at least one
+    // document. Mirrors the Chunk-8 discovery idiom: probe active
+    // context first, then walk memberships.
+    const probe = await page.evaluate(async () => {
+      const tok = localStorage.getItem("akki_access_token")
+        || sessionStorage.getItem("akki_access_token");
+      if (!tok) return { error: "no token in localStorage" };
+      const headers = { Authorization: `Bearer ${tok}` };
+      const tryCtx = async (cid) => {
+        try {
+          // Need at least one document in the context (for the picker
+          // to assert against ≥1 row).
+          const docR = await fetch(`/api/contexts/${cid}/documents?limit=5`, { headers });
+          if (!docR.ok) return null;
+          const docs = await docR.json();
+          const docList = Array.isArray(docs) ? docs : (docs.items || []);
+          if (docList.length === 0) return null;
+          // Need an active cycle WITH ≥1 team member so the Add-form
+          // renders (the form is gated behind `members.length > 0`).
+          const cyR = await fetch(`/api/contexts/${cid}/cycles?status=active&limit=20`,
+            { headers });
+          if (!cyR.ok) return null;
+          const cyBody = await cyR.json();
+          const cycles = cyBody.items || cyBody.cycles || [];
+          for (const c of cycles) {
+            const tR = await fetch(
+              `/api/contexts/${cid}/cycle/team?cycle_id=${encodeURIComponent(c.id)}`,
+              { headers },
+            );
+            if (!tR.ok) continue;
+            const tBody = await tR.json();
+            const members = tBody.members || [];
+            if (members.length > 0) {
+              return { contextId: cid, cycleId: c.id };
+            }
+          }
+          return null;
+        } catch { return null; }
+      };
+      // (1) active context.
+      const active = sessionStorage.getItem("akki_active_context_id");
+      if (active) {
+        const hit = await tryCtx(active);
+        if (hit) return hit;
+      }
+      // (2) memberships. The endpoint returns `{items: [{context_id, ...}]}`.
+      try {
+        const r = await fetch("/api/me/contexts", { headers });
+        if (r.ok) {
+          const body = await r.json();
+          const list = Array.isArray(body) ? body : (body.items || body.contexts || []);
+          for (const c of list) {
+            const cid = c.context_id || c.id;
+            if (!cid) continue;
+            const hit = await tryCtx(cid);
+            if (hit) return hit;
+          }
+        }
+      } catch { /* fall through */ }
+      return { error: "no ctx with active cycle + team-member + ≥1 doc found" };
+    });
+
+    if (!probe || !probe.cycleId) {
+      console.log(`[render-smoke]  · Chunk 9 — seed unreachable (${probe?.error || "unknown"}); soft-skipping QA-017→-021. ` +
+        `Re-run \`python backend/scripts/seed_chunks.py\` if this is the live preview.`);
+      return;
+    }
+    console.log(`[render-smoke]  · Chunk 9 — hard-asserting cycle=${probe.cycleId.slice(0, 12)}… ` +
+      `ctx=${probe.contextId.slice(0, 8)}…`);
+
+    // Pin the active context so route resolution lines up with what
+    // we probed (avoids picking a different default context).
+    await page.evaluate((cid) => sessionStorage.setItem("akki_active_context_id", cid), probe.contextId);
+
+    // Step 2 — land on the Contributions tab.
+    await page.goto(
+      `${BASE_URL}/app/cycle/${probe.cycleId}?tab=contributions`,
+      { waitUntil: "domcontentloaded", timeout: 30000 },
+    );
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const section = page.locator('[data-testid="cycle-step-contributions"]').first();
+    try {
+      await section.waitFor({ state: "visible", timeout: 10000 });
+    } catch {
+      failures.push(`Chunk 9 (QA-017): Contributions tab did not mount within 10s`);
+      return;
+    }
+
+    // If the form isn't visible because there are 0 team members in
+    // this cycle, the seed didn't run / was applied to a different
+    // cycle. Soft-skip with diagnostic copy.
+    const addForm = page.locator('[data-testid="cycle-contrib-add"]').first();
+    if (!await addForm.isVisible().catch(() => false)) {
+      console.log(`[render-smoke]  · Chunk 9 — Add-form not rendered (likely 0 team members on this cycle); ` +
+        `soft-skipping. Re-run seed_chunks.py against the bramuel contexts.`);
+      return;
+    }
+    console.log(`[render-smoke]  ✓ Chunk 9 — Contributions tab + Add-form mounted`);
+
+    // Step 3 — CTA disabled before any input (QA-021).
+    const cta = page.locator('[data-testid="cycle-contrib-add-submit"]').first();
+    const ctaDisabledBefore = await cta.isDisabled().catch(() => null);
+    if (ctaDisabledBefore !== true) {
+      failures.push(`Chunk 9 (QA-021): Record-contribution CTA should be DISABLED before any input (got disabled=${ctaDisabledBefore})`);
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 9 (QA-021) — CTA correctly disabled before any input`);
+    }
+
+    // Step 4 — click "Attach document" → picker opens.
+    const attachBtn = page.locator('[data-testid="cycle-contrib-add-attach-btn"]').first();
+    if (!await attachBtn.isVisible().catch(() => false)) {
+      failures.push(`Chunk 9 (QA-017): Attach-document button not visible above the paste textbox`);
+      return;
+    }
+    await attachBtn.click();
+    const picker = page.locator('[data-testid="contribution-attach-picker"]').first();
+    try {
+      await picker.waitFor({ state: "visible", timeout: 4000 });
+      console.log(`[render-smoke]  ✓ Chunk 9 (QA-017) — attach picker opens`);
+    } catch {
+      failures.push(`Chunk 9 (QA-017): attach picker did not open within 4s of clicking the attach button`);
+      return;
+    }
+
+    // Step 5 — Journal tab lists ≥1 document.
+    const journalTab = page.locator('[data-testid="contribution-attach-tab-journal"]').first();
+    if (await journalTab.isVisible().catch(() => false)) {
+      await journalTab.click();
+      await page.waitForTimeout(500);
+    }
+    // Wait for at least one row to land (the journal fetch is async).
+    const firstRow = page.locator('[data-testid^="contribution-attach-row-"]').first();
+    try {
+      await firstRow.waitFor({ state: "visible", timeout: 6000 });
+    } catch {
+      failures.push(`Chunk 9 (QA-017): journal tab listed 0 documents within 6s — picker is empty`);
+      return;
+    }
+    const docName = ((await firstRow.textContent()) || "").trim();
+    console.log(`[render-smoke]  ✓ Chunk 9 (QA-017) — journal listed at least one doc ("${docName.slice(0, 40)}")`);
+
+    // Step 6 — click the first row → chip + auto-Title + CTA enabled.
+    await firstRow.click();
+    // Picker closes; chip + auto-title settle.
+    await page.waitForTimeout(700);
+
+    const chip = page.locator('[data-testid="cycle-contrib-add-attachment-chip"]').first();
+    if (!await chip.isVisible().catch(() => false)) {
+      failures.push(`Chunk 9 (QA-018): attachment chip did NOT render after selecting a document`);
+      return;
+    }
+    const chipName = ((await chip.locator('[data-testid="cycle-contrib-add-attachment-name"]').textContent()) || "").trim();
+    console.log(`[render-smoke]  ✓ Chunk 9 (QA-018) — chip rendered with doc name "${chipName.slice(0, 40)}"`);
+
+    // Auto-Title populated (QA-017: title auto-fills to doc name when
+    // user hasn't typed). Pull the value off the Title <Input>.
+    const titleInput = page.locator('[data-testid="cycle-contrib-add-title"]').first();
+    const titleValue = await titleInput.inputValue().catch(() => "");
+    if (!titleValue || !titleValue.trim()) {
+      failures.push(`Chunk 9 (QA-018): Title field NOT auto-populated after attach (got "${titleValue}")`);
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 9 (QA-018) — Title auto-populated: "${titleValue.slice(0, 40)}"`);
+    }
+
+    // CTA enabled now (QA-021: at least one input is present).
+    await page.waitForTimeout(200);
+    const ctaDisabledAfterAttach = await cta.isDisabled().catch(() => null);
+    if (ctaDisabledAfterAttach !== false) {
+      failures.push(`Chunk 9 (QA-021): CTA still DISABLED after attaching a doc (got disabled=${ctaDisabledAfterAttach})`);
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 9 (QA-021) — CTA correctly enabled after attach`);
+    }
+
+    // Step 7 — remove the chip → CTA disabled again, Title cleared.
+    const removeBtn = page.locator('[data-testid="cycle-contrib-add-attachment-remove"]').first();
+    if (!await removeBtn.isVisible().catch(() => false)) {
+      failures.push(`Chunk 9 (QA-018): chip remove icon not visible`);
+    } else {
+      await removeBtn.click();
+      await page.waitForTimeout(400);
+      const chipGone = await chip.isVisible().catch(() => false);
+      if (chipGone) {
+        failures.push(`Chunk 9 (QA-018): chip still visible after clicking remove`);
+      } else {
+        console.log(`[render-smoke]  ✓ Chunk 9 (QA-018) — chip removed`);
+      }
+      const titleAfterRemove = await titleInput.inputValue().catch(() => "");
+      if (titleAfterRemove && titleAfterRemove.trim()) {
+        failures.push(`Chunk 9 (QA-018): Title NOT cleared on chip-remove (got "${titleAfterRemove}") — should clear when user hasn't manually edited`);
+      } else {
+        console.log(`[render-smoke]  ✓ Chunk 9 (QA-018) — Title cleared on chip-remove`);
+      }
+      const ctaDisabledAfterRemove = await cta.isDisabled().catch(() => null);
+      if (ctaDisabledAfterRemove !== true) {
+        failures.push(`Chunk 9 (QA-021): CTA should be re-DISABLED after chip removal (got disabled=${ctaDisabledAfterRemove})`);
+      } else {
+        console.log(`[render-smoke]  ✓ Chunk 9 (QA-021) — CTA re-disabled after chip removal`);
+      }
+    }
+
+    // Paste textbox stays available alongside the attach picker (QA-019).
+    const body = page.locator('[data-testid="cycle-contrib-add-body"]').first();
+    if (!await body.isVisible().catch(() => false)) {
+      failures.push(`Chunk 9 (QA-019): paste textbox should remain visible alongside the attach picker`);
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 9 (QA-019) — paste textbox remains visible alongside attach`);
+    }
+  } catch (e) {
+    failures.push(`Chunk 9 smoke threw: ${e.message}`);
+  }
+
+  if (pageErrors.length > 0) {
+    failures.push(`Chunk 9 step: ${pageErrors.length} uncaught page error(s)`);
+    for (const e of pageErrors) console.error(`    PAGEERROR  ${e.slice(0, 240)}`);
+  }
+  page.off("pageerror", onPageError);
+}

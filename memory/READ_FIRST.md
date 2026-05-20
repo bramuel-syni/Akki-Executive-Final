@@ -5,9 +5,10 @@
 ## Status (snapshot)
 
 - Synisense rewrite **A → F.1 closed**.
-- **662 pytest passing** · 0 failed · 565 skipped (pre-existing quarantines).
+- **712 pytest passing** · 0 failed · 566 skipped (pre-existing quarantines).
 - **CI guard green** (`test_no_direct_llm_calls_outside_shield`).
-- **Render-smoke green** — 11/11 routes.
+- **Render-smoke green** — 11/11 routes + steps 4-10 hard-asserted/soft-skipped per scope.
+- **QA 16-May progress:** Chunks 7 (6 P0s) · 8 (8 P1s) · 9 (5 P1/P2s) **DONE**. Remaining: 15 P1 · 15 P2 · 2 P3 · 2 CLR (PO).
 - **Deploy verdict 🟢 READY** with **4 platform-side 🟡 confirmations** (see table below). No 🔴 blockers.
 
 ## Where to read next (priority order)

@@ -264,54 +264,86 @@ async def _seed_chunk9_cycle_fixture(db, context_id: str, account_id: str,
     render-smoke step 10 can hard-assert the Add-a-Contribution
     attach flow end-to-end. Idempotent via `chunk9_seed_marker`.
 
-    Skipped when the context already has any cycle_agendas row
-    (don't pollute live data).
+    Data model alignment (verified against `routers/cycles.py` +
+    `services/cycle_lifecycle.py`):
+
+      • `db.cycles`         — the master cycle row (status="active").
+      • `db.cycle_agendas`  — id == cycle_id (NOT a separate
+                              agenda_id); carries `items: [...]` for
+                              the contributions tab dropdown.
+      • `db.cycle_team`     — agenda_id == cycle_id; status="active";
+                              owns_item_ids references the seeded item
+                              so PO-decision-#2 eligible-contributors
+                              filter resolves.
+
+    Skipped when the context already has ANY active cycle row
+    (don't pollute live data — re-run-safe via marker check).
     """
-    existing_marker = await db.cycle_agendas.find_one(
+    existing_marker = await db.cycles.find_one(
         {"context_id": context_id, "chunk9_seed_marker": "v1"},
-        {"_id": 0, "cycle_id": 1, "id": 1, "team_member_id": 1},
+        {"_id": 0, "id": 1},
     )
     if existing_marker:
         return {
             "context_id": context_id,
-            "cycle_id": existing_marker.get("cycle_id"),
-            "agenda_id": existing_marker.get("id"),
-            "team_member_id": existing_marker.get("team_member_id"),
+            "cycle_id": existing_marker.get("id"),
             "minted": False,
+            "reason": "already_seeded",
         }
 
-    # Don't trample any existing cycle / agenda — only seed when
-    # there are NONE in the context.
-    existing_any = await db.cycle_agendas.find_one(
-        {"context_id": context_id}, {"_id": 0, "id": 1},
+    # Don't trample any existing cycle — only seed when there is NO
+    # active cycle in the context.
+    existing_any = await db.cycles.find_one(
+        {"context_id": context_id, "status": "active"}, {"_id": 0, "id": 1},
     )
     if existing_any:
         return {
-            "context_id": context_id, "minted": False, "reason": "context_has_cycle_data",
+            "context_id": context_id, "minted": False,
+            "reason": "context_has_active_cycle",
         }
 
     cycle_id = f"cyc-c9-{uuid.uuid4().hex[:8]}"
-    agenda_id = f"agi-c9-{uuid.uuid4().hex[:8]}"
+    item_id = f"agi-c9-{uuid.uuid4().hex[:8]}"
     member_id = f"tm-c9-{uuid.uuid4().hex[:8]}"
     now_iso = _iso(_now())
 
-    await db.cycle_agendas.insert_one({
-        "id": agenda_id,
-        "cycle_id": cycle_id,
+    # 1. db.cycles — master row (required by `resolve_implicit_cycle_id`).
+    await db.cycles.insert_one({
+        "id": cycle_id,
         "context_id": context_id,
-        "title": "Q3 Risk register update",
-        "description": (
-            "Review the live risks raised at the May steering session "
-            "and confirm the capital-injection timeline."
-        ),
-        "team_member_id": member_id,
-        "owner_account_id": account_id,
+        "account_id": account_id,
+        "title": "Q3 Capital & Risk Review",
         "status": "active",
         "chunk9_seed_marker": "v1",
-        "created_at": now_iso, "updated_at": now_iso,
+        "created_at": now_iso,
+        "activated_at": now_iso,
+        "closed_at": None,
     })
+    # 2. db.cycle_agendas — id == cycle_id, with one item so the
+    #    contributions tab's item dropdown has a selectable option.
+    await db.cycle_agendas.insert_one({
+        "id": cycle_id,
+        "cycle_id": cycle_id,
+        "context_id": context_id,
+        "account_id": account_id,
+        "title": "Q3 Capital & Risk Review",
+        "items": [{
+            "id": item_id,
+            "label": "Risk register update",
+            "owner_label": "Bramuel Test Contributor",
+        }],
+        "status": "active",
+        "chunk9_seed_marker": "v1",
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    })
+    # 3. db.cycle_team — agenda_id MUST equal cycle_id (the GET
+    #    /cycle/team query filters on that). status=active is also
+    #    required by that filter. owns_item_ids[] keeps PO-decision-#2
+    #    eligible-contributors dropdown populated.
     await db.cycle_team.insert_one({
         "id": member_id,
+        "agenda_id": cycle_id,
         "cycle_id": cycle_id,
         "context_id": context_id,
         "name": "Bramuel Test Contributor",
@@ -321,13 +353,15 @@ async def _seed_chunk9_cycle_fixture(db, context_id: str, account_id: str,
             "Quarterly capital adequacy and provisioning coverage data, "
             "plus a one-page risk-register commentary."
         ),
+        "owns_item_ids": [item_id],
+        "status": "active",
         "chunk9_seed_marker": "v1",
         "created_at": now_iso,
     })
     return {
         "context_id": context_id,
         "cycle_id": cycle_id,
-        "agenda_id": agenda_id,
+        "agenda_item_id": item_id,
         "team_member_id": member_id,
         "minted": True,
     }
@@ -405,7 +439,8 @@ async def main():
         print("[seed-chunks] Sample cycle/agenda fixtures (Chunk 9):")
         for cs in cycle_seeds[:3]:
             print(f"   - ctx={cs['context_id']} cycle={cs['cycle_id']} "
-                  f"agenda={cs['agenda_id']} member={cs['team_member_id']}")
+                  f"agenda_item={cs.get('agenda_item_id')} "
+                  f"member={cs.get('team_member_id')}")
 
 
 if __name__ == "__main__":
