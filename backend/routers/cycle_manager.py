@@ -144,8 +144,15 @@ class TeamMemberIn(BaseModel):
 
 
 class ContributionIn(BaseModel):
-    agenda_item_id: str
-    team_member_id: str
+    # QA-2026-05-16-005 (2026-05-18): doc-attached contributions from
+    # Document Journal don't carry a team_member_id or agenda_item_id
+    # at the entry point — the user picks the document first and the
+    # cycle/contributor mapping is supplied later from the dedicated
+    # 3-step modal (-005 P1 scope). Both fields are now optional and
+    # `document` is a first-class kind so the unblocking path can land
+    # immediately without the full modal redesign.
+    agenda_item_id: Optional[str] = None
+    team_member_id: Optional[str] = None
     kind: str = Field(default="note", pattern=r"^(note|document|email|chat)$")
     source_doc_id: Optional[str] = None
     body_text: Optional[str] = Field(default=None, max_length=20000)

@@ -81,7 +81,9 @@ Detailed reproduction steps + screenshots are stored in `/app/memory/sprints/QA_
 **Source of truth:** `/app/memory/qa_reports/QA_BACKLOG.md`
 **Verbatim spec:** `/app/memory/qa_reports/QA_REPORT_16MAY2026.md`
 
-**Priority histogram:** `P0: 6 · P1: 28 · P2: 15 · P3: 2` (51 actionable + 2 PO clarifications)
+**Priority histogram:** `P0: 6 (DONE — Chunk 7, 2026-05-18) · P1: 28 · P2: 15 · P3: 2` (51 actionable + 2 PO clarifications)
+
+**Chunk 7 close (2026-05-18):** all 6 P0s landed — see `SYSTEM_STATE.md § 4` Chunk 7 entry. Pytest 674 passing (+12), CI guard green, render-smoke 11/11.
 
 The 6 P0s (current user-visible errors / data-misrepresentation):
 

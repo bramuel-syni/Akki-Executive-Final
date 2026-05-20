@@ -14,7 +14,7 @@
  *             would shield and the user wants to bypass
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams, Link } from "react-router-dom";
+import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import AppShell from "@/components/layout/AppShell";
 import { api, apiErrorMessage } from "@/lib/api";
@@ -143,6 +143,7 @@ function ChatPhaseCaption({ phase }) {
 export default function Chat() {
   const { activeContext } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [models, setModels] = useState([]);
   const [defaultModel, setDefaultModel] = useState("claude-sonnet-4-5");
   const [chats, setChats] = useState([]);
@@ -1042,13 +1043,17 @@ export default function Chat() {
               );
             })}
           </div>
-          {/* Workstream B.5 — Archive entry point at sidebar bottom.
-              Hidden when already in archive view (the back button
-              is the affordance). */}
+          {/* QA-2026-05-16-012 (2026-05-18) — Archive button now
+              navigates to the dedicated `/app/chats/archived` page
+              (Restore + Permanently Delete + confirmation prompt).
+              Previously this opened an in-sidebar variant that on
+              some viewport widths rendered as a blank panel; the
+              dedicated page is the canonical destination per the
+              QA spec. */}
           {!archiveOpen && (
             <div className="border-t border-[var(--rule)] p-3 bg-white">
               <button
-                onClick={openArchive}
+                onClick={() => navigate("/app/chats/archived")}
                 className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] uppercase tracking-wider text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)]/40 rounded-sm"
                 data-testid="chat-open-archive-btn"
               >

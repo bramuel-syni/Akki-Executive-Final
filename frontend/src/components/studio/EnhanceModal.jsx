@@ -39,6 +39,10 @@ const FORMAT_OPTIONS = {
   report: [["docx", "DOCX"], ["pdf", "PDF"], ["auto", "Auto"]],
   briefing: [["docx", "DOCX"], ["pdf", "PDF"], ["auto", "Auto"]],
   brief:    [["docx", "DOCX"], ["pdf", "PDF"], ["auto", "Auto"]],
+  minutes:  [["docx", "DOCX"], ["pdf", "PDF"], ["auto", "Auto"]],
+  // QA-2026-05-16-043 (2026-05-18) — Committee Pack is a first-class
+  // enhance kind. Same shape as Report (DOCX/PDF in, DOCX out by default).
+  committee_pack: [["docx", "DOCX"], ["pdf", "PDF"], ["auto", "Auto"]],
 };
 
 const ACCEPT_BY_KIND = {
@@ -51,6 +55,9 @@ const ACCEPT_BY_KIND = {
   // `.txt` is accepted alongside `.docx`/`.pdf` because draft
   // minutes are commonly pasted from notes apps as plain text.
   minutes: ".docx,.pdf,.txt",
+  // QA-2026-05-16-043 (2026-05-18) — Committee Pack input formats
+  // mirror Report (docx/pdf).
+  committee_pack: ".docx,.pdf",
 };
 
 const KIND_LABEL = {
@@ -59,6 +66,8 @@ const KIND_LABEL = {
   minutes:  "Minutes",
   briefing: "Brief",
   brief:    "Brief",
+  // QA-2026-05-16-043 (2026-05-18) — display label.
+  committee_pack: "Committee Pack",
 };
 
 const SCOPE_OPTIONS = [

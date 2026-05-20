@@ -262,27 +262,110 @@ async def call_llm(
 
 
 def parse_json_response(text: str) -> Optional[Any]:
-    """Best-effort JSON extraction from LLM response."""
+    """Best-effort JSON extraction from LLM response.
+
+    QA-2026-05-16-007 (2026-05-18): hardened against three failure modes
+    we see in production —
+      1. ```json ... ``` fences (Claude ignores "no fences" guidance);
+      2. Trailing commentary after the closing fence;
+      3. Truncated arrays (provider hit max_tokens mid-string). In this
+         case we strip back to the last complete top-level array element
+         and close the structure so the caller still gets the signals
+         that DID land.
+    """
     if not text:
         return None
-    # Strip code fences if Claude included them
     t = text.strip()
+    # Strip leading ```json or ``` fence
     if t.startswith("```"):
         t = re.sub(r"^```(?:json)?\s*", "", t)
-        t = re.sub(r"\s*```$", "", t)
-    # Find first { or [ and last } or ]
+        # Trailing fence + any commentary the model added after it.
+        t = re.sub(r"```[\s\S]*$", "", t).rstrip()
+    # First parse attempt — clean path
     try:
         return json.loads(t)
     except Exception:
         pass
+    # Second attempt — slice between first opening and last closing
+    # bracket. Catches "Sure, here is the JSON:\n{...}\nLet me know" shapes.
     first = min([i for i in [t.find("{"), t.find("[")] if i >= 0], default=-1)
     last = max(t.rfind("}"), t.rfind("]"))
     if first >= 0 and last > first:
         try:
             return json.loads(t[first:last + 1])
         except Exception:
+            pass
+    # Third attempt — truncated-array recovery. The common production
+    # shape is `{"signals": [ {...}, {...}, {...incomplete...` because
+    # the provider cut off mid-string. We find the last fully closed
+    # object inside the array and synthesise a valid closing.
+    rebuilt = _recover_truncated_object_array(t)
+    if rebuilt is not None:
+        try:
+            return json.loads(rebuilt)
+        except Exception:
             return None
     return None
+
+
+# Conservative depth/string-aware scanner used by the truncated-JSON
+# recovery path. Walks `text` from `start_idx` tracking string literals
+# and brace/bracket depth, and returns the index immediately after the
+# last fully-balanced `{...}` whose closing brace returns depth to 1
+# (i.e. we're back inside the outer array). Returns None if no such
+# balanced object exists.
+def _last_balanced_object_end(text: str, array_start: int) -> Optional[int]:
+    depth = 1  # we enter at the '[' opening the array
+    in_str = False
+    escape = False
+    obj_open_depth: Optional[int] = None
+    last_close: Optional[int] = None
+    i = array_start + 1
+    while i < len(text):
+        ch = text[i]
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+        else:
+            if ch == '"':
+                in_str = True
+            elif ch in "[{":
+                if ch == "{" and obj_open_depth is None:
+                    obj_open_depth = depth
+                depth += 1
+            elif ch in "]}":
+                depth -= 1
+                if ch == "}" and obj_open_depth is not None and depth == obj_open_depth:
+                    last_close = i + 1
+                    obj_open_depth = None
+                if depth == 0:
+                    # Array closed — last_close is final.
+                    return last_close
+        i += 1
+    return last_close
+
+
+def _recover_truncated_object_array(text: str) -> Optional[str]:
+    """If `text` is a JSON object whose first key holds a truncated
+    array of objects, return a repaired JSON string that closes the
+    array after the last fully balanced element. Returns None if the
+    shape doesn't match this pattern."""
+    obj_start = text.find("{")
+    arr_start = text.find("[", obj_start)
+    if obj_start < 0 or arr_start < 0:
+        return None
+    end = _last_balanced_object_end(text, arr_start)
+    if end is None:
+        return None
+    repaired_inner = text[arr_start:end] + "]"
+    # Stitch: keep the prefix up to (and including) the `[` opening,
+    # replace the rest with our balanced slice + `]` + a closing `}`.
+    head = text[obj_start:arr_start]  # e.g. `{"signals": `
+    return head + repaired_inner + "}"
 
 
 # -----------------------------------------------------------------------------

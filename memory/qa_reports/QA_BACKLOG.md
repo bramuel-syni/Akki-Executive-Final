@@ -1,9 +1,10 @@
 ---
 built: 2026-05-18
+last_updated: 2026-05-18 (Chunk 7 — 6 P0s flipped to DONE)
 source: /app/memory/qa_reports/QA_REPORT_16MAY2026.md
 total_findings: 51
 total_clarifications: 2
-priority_histogram: "P0: 6 · P1: 28 · P2: 15 · P3: 2"
+priority_histogram: "P0: 6 (DONE) · P1: 28 · P2: 15 · P3: 2"
 maintainer: e1_main (forgetting-mitigation patch)
 ---
 
@@ -24,14 +25,14 @@ If this table and the source ever disagree, the source wins; rebuild this table.
 | QA-2026-05-16-002 | Document Journal | "All documents" button surfaces need correcting (PO clarification needed) | P3 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-002 |
 | QA-2026-05-16-003 | Document Journal | Add All / Uploaded / Akki-Generated tabs with badges below search | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-003 |
 | QA-2026-05-16-004 | Document Journal | Rename "Add to Work Studio" → "Work with Document" + Compose modal | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-004 |
-| QA-2026-05-16-005 | Document Journal | "Add to Cycle" CTA errors out — replace with 3-step Cycle Manager modal | P0 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-005 |
-| QA-2026-05-16-006 | Document Reader | "Take into Solva" errors out on every option | P0 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-006 |
-| QA-2026-05-16-007 | Document Reader | "Generate signals" in Akki Commentary errors + needs loading/status copy | P0 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-007 |
+| QA-2026-05-16-005 | Document Journal | Add to Cycle CTA backend schema accepted document-attach payload | P0 | DONE | Chunk-7 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-005 |
+| QA-2026-05-16-006 | Document Reader | "Take into Solva" payload aligned to backend StartV2In | P0 | DONE | Chunk-7 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-006 |
+| QA-2026-05-16-007 | Document Reader | "Generate signals" parser hardened + loading state + long-running status copy | P0 | DONE | Chunk-7 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-007 |
 | QA-2026-05-16-008 | Document Reader | Ask/Solva/Studio/Cycle buttons must match Document Journal drawer parity | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-008 |
 | QA-2026-05-16-009 | Top bar | Remove the notification-bell sub-page entirely | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-009 |
 | QA-2026-05-16-010 | Document upload | Add auto-focused search bar to "link to earlier document" panel | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-010 |
 | QA-2026-05-16-011 | Akki Chat | Chat layout overflows right — not responsive at small viewports | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-011 |
-| QA-2026-05-16-012 | Akki Chat | Archive button leads to blank page — must open Archived Chats list | P0 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-012 |
+| QA-2026-05-16-012 | Akki Chat | Archive button now navigates to dedicated /app/chats/archived page | P0 | DONE | Chunk-7 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-012 |
 | QA-2026-05-16-013 | Akki Chat | Delete chat must notify "archived, recoverable" not "deleted" | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-013 |
 | QA-2026-05-16-014 | Cycle Manager | Add spacing between top menu and Agent Cycle quick-actions card | P3 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-014 |
 | QA-2026-05-16-015 | Cycle Manager | "Activate Cycle" CTA missing on tabs other than Agenda | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-015 |
@@ -62,11 +63,11 @@ If this table and the source ever disagree, the source wins; rebuild this table.
 | QA-2026-05-16-040 | Work Studio — Document Cards | Persistent download icon on every card (source format) | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-040 |
 | QA-2026-05-16-041 | Work Studio — Right Panel | Replace Ready-to-Compile → Recents and At-Risk → Needs Attention | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-041 |
 | QA-2026-05-16-042 | Compile Modal | Step 2 Sources inline-upload prompt (nested-modal state preserved) | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-042 |
-| QA-2026-05-16-043 | Enhance flow | Enhancing minutes/Deck/Report/Committee Pack errors out | P0 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-043 |
+| QA-2026-05-16-043 | Enhance flow | committee_pack accepted as first-class enhance kind (alongside deck/report/minutes) | P0 | DONE | Chunk-7 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-043 |
 | QA-2026-05-16-044 | Enhance flow | Enhanced document mirrors Compile-Report journey (Recent + Akki Generated) | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-044 |
 | QA-2026-05-16-045 | Monitor | All / At Risk / On Track / Off Track / Achieved tabs + badges (obj+proj only) | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-045 |
 | QA-2026-05-16-046 | Monitor | Suggested objective/project removed from Suggested card after add | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-046 |
-| QA-2026-05-16-047 | Monitor | Manual obj/project default status: Off-Track → Not-Started + Update CTA | P0 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-047 |
+| QA-2026-05-16-047 | Monitor | Manual obj/proj default = not_started (was off_track); not_started/achieved added to status vocab; no-data path | P0 | DONE | Chunk-7 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-047 |
 | QA-2026-05-16-048 | Monitor | NED user cannot generate strategic goals (CTAs are Exec-only) | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-048 |
 | QA-2026-05-16-049 | Monitor — Strategic Goals | Strategic cards: RAG + % + hover-full-text + filter + sort + drawer-rewrite | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-049 |
 | QA-2026-05-16-050 | Context Bar | Exec-only account must show "Executive" only (hide NED chip) | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-050 |

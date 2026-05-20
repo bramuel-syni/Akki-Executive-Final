@@ -60,16 +60,36 @@ Never invent IDs (see `/app/memory/FORGETTING_MITIGATION.md`).
 - **Expected** (verbatim — full flow): *"Update to: User clicks Add to Cycle in the Document Reader. They are redirected to the Cycle Manager. On arrival a modal opens automatically. The modal contains: Step 1 — Select Cycle … Step 2 — Attach to Contributor … If the contributor is not in the dropdown … the user clicks an Add Contributor option which expands the modal inline to show the same input fields used in the Team Tab: name, email, role, contribution description, and assign agenda item. … Step 3 — Record Contribution The CTA is Record Contribution. Clicking it records the document as a contribution against the selected contributor in the selected cycle — following the same flow as when a contribution is recorded in the Contributions Tab of the Cycle Manager. On completion: The modal closes. The user is redirected to the Scoreboard Tab of the selected cycle. The contribution that was just added blinks on the Scoreboard to draw the user's eye to it."*
 - **Suggested priority**: **P0** (blocker — current CTA errors out)
 
+#### Reproduced error (captured 2026-05-18)
+- **Endpoint**: `POST /api/contexts/{cid}/cycle/contributions`
+- **HTTP**: 422 Unprocessable Entity
+- **Backend Pydantic violations**:
+  - `agenda_item_id` — `"Input should be a valid string"` (frontend sends `null` when no item is picked)
+  - `team_member_id` — `"Field required"` (frontend doesn't supply one in the doc-attach flow)
+  - `kind` — `"String should match pattern '^(note|document|email|chat)$'"` (frontend sends `"contribution"`)
+- **Frontend trigger**: `frontend/src/components/documents/DocumentRoutingActions.jsx::onAddToCycle` builds `{agenda_item_id, kind:"contribution", title, source_doc_id, body_text}` — three fields don't match the backend `ContributionIn` schema in `backend/routers/cycle_manager.py:146`.
+
 ### QA-2026-05-16-006 · "Take into Solva" in Document Reader throws an error (P0)
 - **Surface**: Document Reader → Take into Solva CTA
 - **Reproduction** (verbatim): *"When user clicks Take into Solva in the document reader and selects either of the options the user incurs the error below"*
 - **Suggested priority**: **P0** (blocker)
+
+#### Reproduced error (captured 2026-05-18)
+- **Endpoint**: `POST /api/solva/v2/sessions`
+- **HTTP**: 422 Unprocessable Entity
+- **Backend Pydantic violation**: `intent` — `"Field required"`. The frontend posts `{submodule, framing_text, attached_document_id}` but `StartV2In` in `backend/routers/solva_v2.py:115` requires a non-empty `intent` (min 20 chars). The frontend's `framing_text` and `attached_document_id` are not on the schema; the canonical seed shape is `intake_seed: {kind, id}`.
 
 ### QA-2026-05-16-007 · "Generate signals" in Akki Commentary throws an error (P0)
 - **Surface**: Document Reader → Akki Commentary → Generate Signals button
 - **Reproduction** (verbatim): *"When user is in the document reader and clicks on the generate signals button in the Akki Commentary, the following error occurs"*
 - **Expected** (verbatim): *"When a user clicks on the generate signals button there should be a loading state to show that signals are being generated. If the signal generation process takes longer than a few seconds, add an inline status message in the commentary panel such as 'Akki is analysing your document. This may take a moment.' to manage user expectations and prevent abandonment."*
 - **Suggested priority**: **P0** (blocker — current button errors out)
+
+#### Reproduced error (captured 2026-05-18)
+- **Endpoint**: `POST /api/contexts/{cid}/signals/generate` → enqueue OK (202 + `job_id`), then poll on `GET /api/jobs/{job_id}` returns `status="failed"`.
+- **Failure mode**: `http_502: LLM did not return a valid signals list. Mode=live. Raw: \`\`\`json\n{...truncated mid-string in summary...`
+- **Root cause**: the LLM emits the JSON inside a ```json …``` fence; `parse_json_response` strips the fence, but when the LLM response is long (multiple signal objects with full narrative summaries) the provider sometimes truncates mid-string — leaving an unterminated JSON. The parser returns `None`, the worker emits HTTP 502 with the first 500 chars of raw response and the user only sees a generic "Could not refresh signals." toast.
+- **UX gap**: no in-panel loading state, no long-running status message — user has no indication that a 60-90s LLM call is in progress.
 
 ### QA-2026-05-16-008 · Document reader buttons must behave like Document Journal drawer
 - **Surface**: Document Reader → Ask in Chat / Take into Solva / Send to Work Studio / Add to Cycle
@@ -277,6 +297,15 @@ Never invent IDs (see `/app/memory/FORGETTING_MITIGATION.md`).
 - **Surface**: Enhance flow (multiple compile outputs)
 - **Reproduction** (verbatim): *"Enhancing minutes/Deck/Report/Committee Pack surfaces the error below:"*
 - **Suggested priority**: **P0** (blocker — current flow errors out)
+
+#### Reproduced error (captured 2026-05-18)
+- **Endpoint**: `POST /api/contexts/{cid}/work-studio/enhance/{kind}`
+- Live probe (multipart, instructions + .docx file):
+  - `kind=minutes` — 200 OK, job runs to `status="complete"` in ~55s. ✅ works.
+  - `kind=deck` — accepted (per code).
+  - `kind=report` — accepted (per code).
+  - `kind=committee_pack` — **400 Bad Request**, body: `{"detail":"Unknown enhance kind. Allowed: deck, report, minutes."}`
+- **Root cause**: `_ENHANCE_KINDS = ("deck", "report", "minutes")` in `backend/routers/work_studio_export.py:133` — `committee_pack` is rejected by the kind guard at line 1622. The QA spec lists Committee Pack as a first-class enhance kind alongside Minutes/Deck/Report.
 
 ### QA-2026-05-16-044 · Enhanced document journey mirrors Compile Report
 - **Surface**: Enhance flow — completion

@@ -345,6 +345,20 @@ async def test_monitor_update_status_objective(client, authed, db_conn):
     headers = await _login(client, authed["email"], authed["password"])
     ctx_id = authed["context_id"]
 
+    # QA-2026-05-16-047 (2026-05-18) — seed a document so the
+    # no-data short-circuit doesn't fire. Pre-fix this test was
+    # passing only because the assessor invented a status when
+    # there was nothing to assess; the spec calls that a
+    # misrepresentation, so we now require at least one doc.
+    await db_conn.documents.insert_one({
+        "id": f"doc-{uuid.uuid4().hex[:8]}",
+        "context_id": ctx_id,
+        "account_id": authed["account_id"],
+        "name": "NPS Q3 update memo",
+        "extracted_text": "NPS climbed from 48 to 55 in Q3; on track for 60 by Q4.",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
     obj_id = f"obj-test-{uuid.uuid4().hex[:8]}"
     await db_conn.objectives.insert_one({
         "id": obj_id, "context_id": ctx_id,
@@ -361,8 +375,10 @@ async def test_monitor_update_status_objective(client, authed, db_conn):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["kind"] == "objective"
-    assert body["status"] in ("on_track", "at_risk", "off_track")
-    assert body["rag_status"] in ("red", "amber", "green")
+    # QA-2026-05-16-047 — status vocabulary now includes
+    # not_started + achieved; rag_status mirrors.
+    assert body["status"] in ("not_started", "on_track", "at_risk", "off_track", "achieved")
+    assert body["rag_status"] in ("red", "amber", "green", "not_started", "achieved")
     assert isinstance(body["assessment"]["rationale"], str)
     assert body["assessment"]["audit_id"].startswith("aud-")
     row = await db_conn.objectives.find_one({"id": obj_id}, {"_id": 0})
@@ -373,6 +389,21 @@ async def test_monitor_update_status_objective(client, authed, db_conn):
 async def test_monitor_update_status_project(client, authed, db_conn):
     headers = await _login(client, authed["email"], authed["password"])
     ctx_id = authed["context_id"]
+
+    # QA-2026-05-16-047 — seed a document so no-data short-circuit
+    # doesn't fire for this project assessment.
+    await db_conn.documents.insert_one({
+        "id": f"doc-{uuid.uuid4().hex[:8]}",
+        "context_id": ctx_id,
+        "account_id": authed["account_id"],
+        "name": "CDP delivery plan",
+        "extracted_text": (
+            "Customer data platform rollout is in mobilisation; "
+            "first vendor demo booked; legal review underway."
+        ),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
     proj_id = f"prj-test-{uuid.uuid4().hex[:8]}"
     await db_conn.projects.insert_one({
         "id": proj_id, "context_id": ctx_id,

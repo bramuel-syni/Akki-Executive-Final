@@ -21,7 +21,7 @@ from core import db, iso as _iso, now as _now, require_context_membership
 router = APIRouter(prefix="/api")
 
 
-_RAG = ("red", "amber", "green")
+_RAG = ("red", "amber", "green", "not_started", "achieved")
 _TREND = ("up", "flat", "down")
 _SOURCE = ("auto", "manual", "hybrid")
 _KIND = ("objective", "project")
@@ -69,8 +69,11 @@ class ObjectiveIn(BaseModel):
     description: Optional[str] = None
     owner_account_id: Optional[str] = None
     shared_with: List[str] = Field(default_factory=list)
-    rag_status: Literal["red", "amber", "green"] = "green"
-    score: int = Field(default=50, ge=0, le=100)
+    # QA-2026-05-16-047 (2026-05-18) — manual creation defaults to
+    # `not_started` (was `green`). Manual override is gone from the
+    # UI; Akki assigns red/amber/green/achieved on Update-status.
+    rag_status: Literal["red", "amber", "green", "not_started", "achieved"] = "not_started"
+    score: int = Field(default=0, ge=0, le=100)
     trend: Literal["up", "flat", "down"] = "flat"
     source: Literal["auto", "manual", "hybrid"] = "manual"
     source_refs: List[Dict[str, Any]] = Field(default_factory=list)

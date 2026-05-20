@@ -55,9 +55,14 @@ export default function DocumentRoutingActions({ contextId, doc, onActionDone })
   const onAddToCycle = async (agendaItemId) => {
     setWorking(true);
     try {
+      // QA-2026-05-16-005 (2026-05-18) — payload aligned to backend
+      // ContributionIn shape: `kind` is one of {note,document,email,
+      // chat}; this is a document-attached contribution so we send
+      // `kind:"document"`. agenda_item_id / team_member_id are now
+      // optional on the backend (full 3-step modal is the P1 follow-up).
       const payload = {
         agenda_item_id: agendaItemId || null,
-        kind: "contribution",
+        kind: "document",
         title: doc?.name || "Document",
         source_doc_id: doc?.id,
         body_text: (doc?.preview || (doc?.extracted_text || "").slice(0, 400)) || null,
@@ -86,11 +91,18 @@ export default function DocumentRoutingActions({ contextId, doc, onActionDone })
   const onTakeIntoSolva = async (submodule) => {
     setWorking(true);
     try {
-      const { data } = await api.post(`/solva/v2/sessions`, {
+      // QA-2026-05-16-006 (2026-05-18) — payload aligned to backend
+      // StartV2In: `intent` is required (min 20 chars). We compose a
+      // canonical doc-anchored intent and pass `intake_seed` so the
+      // session intake screen knows to render the source document.
+      const docTitle = (doc?.name || doc?.original_filename || "this document").trim();
+      const intent = `Work this question against ${docTitle}: what should a sharp non-executive notice on a careful read?`;
+      const payload = {
         submodule,
-        framing_text: doc?.name ? `Working from: ${doc.name}` : "",
-        attached_document_id: doc?.id,
-      });
+        intent,
+        intake_seed: doc?.id ? { kind: "document", id: doc.id } : undefined,
+      };
+      const { data } = await api.post(`/solva/v2/sessions`, payload);
       setOpen(null);
       onActionDone?.();
       const sid = data?.session?.id || data?.id;

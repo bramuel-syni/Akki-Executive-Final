@@ -79,6 +79,10 @@ export default function ReadingView() {
 
   const [generatingBrief, setGeneratingBrief] = useState(false);
   const [generatingSignals, setGeneratingSignals] = useState(false);
+  // QA-2026-05-16-007 (2026-05-18) — long-running status copy for the
+  // Generate-signals action. Empty string until the job runs past
+  // SIGNAL_STATUS_THRESHOLD_S; then the verbatim spec line.
+  const [signalsStatusMessage, setSignalsStatusMessage] = useState("");
 
   const bodyRef = useRef(null);
   const { paragraphs, loading: paragraphsLoading, error: paragraphsError, unavailable: paragraphsUnavailable } =
@@ -283,10 +287,22 @@ export default function ReadingView() {
   const handleGenerateSignals = useCallback(async () => {
     if (!contextId || generatingSignals) return;
     setGeneratingSignals(true);
+    setSignalsStatusMessage("");
     try {
       // Chunk 2 (2026-05-13, DJ-R05) — async pattern. Enqueue + poll.
       const { data: enq } = await api.post(`/contexts/${contextId}/signals/generate`, {});
-      const job = await pollJob(enq.job_id);
+      // QA-2026-05-16-007 (2026-05-18) — surface the verbatim long-
+      // running status copy from the spec after 4 seconds. pollJob's
+      // onProgress is called every poll cycle with the elapsed seconds.
+      const job = await pollJob(enq.job_id, {
+        onProgress: (_status, elapsedS) => {
+          if (elapsedS >= 4 && !signalsStatusMessage) {
+            setSignalsStatusMessage(
+              "Akki is analysing your document. This may take a moment."
+            );
+          }
+        },
+      });
       if (job.status === "failed") {
         throw new Error(job.error || "Signal refresh failed.");
       }
@@ -296,8 +312,9 @@ export default function ReadingView() {
       toast.error(apiErrorMessage(err, "Could not refresh signals."));
     } finally {
       setGeneratingSignals(false);
+      setSignalsStatusMessage("");
     }
-  }, [contextId, generatingSignals, loadCommentary]);
+  }, [contextId, generatingSignals, signalsStatusMessage, loadCommentary]);
 
   // Loading / error / empty states (per the rules doc: editorial copy only).
   if (docLoading) {
@@ -414,6 +431,8 @@ export default function ReadingView() {
               paragraphLookup={paragraphLookup}
               onGenerateSignals={handleGenerateSignals}
               canGenerateSignals
+              generatingSignals={generatingSignals}
+              signalsStatusMessage={signalsStatusMessage}
             />
           </div>
         ) : null}
@@ -426,6 +445,8 @@ export default function ReadingView() {
           paragraphLookup={paragraphLookup}
           onGenerateSignals={handleGenerateSignals}
           canGenerateSignals
+          generatingSignals={generatingSignals}
+          signalsStatusMessage={signalsStatusMessage}
         />
       </div>
     </AppShell>

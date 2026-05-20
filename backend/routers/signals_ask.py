@@ -183,9 +183,21 @@ async def _generate_signals_worker(
     parsed = parse_json_response(llm_out.get("response", ""))
     signals_raw = (parsed or {}).get("signals") if isinstance(parsed, dict) else None
     if not isinstance(signals_raw, list):
+        # QA-2026-05-16-007 (2026-05-18): user-facing copy is now
+        # actionable. The raw 500-char slice is kept for backend
+        # log/audit but the outer detail is the user-facing message
+        # the frontend toasts.
+        logger.warning(
+            "signals.generate parse failed (mode=%s, raw_len=%d): %r",
+            llm_out.get("mode"), len(llm_out.get("response", "") or ""),
+            (llm_out.get("response", "") or "")[:500],
+        )
         raise HTTPException(
             status_code=502,
-            detail=f"LLM did not return a valid signals list. Mode={llm_out.get('mode')}. Raw: {llm_out.get('response', '')[:500]}",
+            detail=(
+                "Akki couldn't extract signals from that document this time. "
+                "Try again, or upload a fresher version of the document."
+            ),
         )
 
     doc_by_id = {d["id"]: d for d in docs}

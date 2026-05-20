@@ -13,7 +13,7 @@
  * v7 palette only.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -36,8 +36,18 @@ const RAG_COLOUR = {
   green: "bg-emerald-500",   // standard semantic — non-palette ok for the dot only
   amber: "bg-amber-500",
   red:   "bg-[color:var(--oxblood)]",  // severity — oxblood explicitly allowed
+  // QA-2026-05-16-047 (2026-05-18) — extended status vocabulary.
+  not_started: "bg-slate-400",
+  achieved:    "bg-sky-600",
 };
-const RAG_LABEL = { green: "On Track", amber: "At Risk", red: "Off Track" };
+const RAG_LABEL = {
+  green: "On Track",
+  amber: "At Risk",
+  red:   "Off Track",
+  // QA-2026-05-16-047 (2026-05-18) — labels for the new statuses.
+  not_started: "Not Started",
+  achieved:    "Achieved",
+};
 const TREND_ICON = { up: TrendingUp, flat: Minus, down: TrendingDown };
 
 
@@ -95,23 +105,35 @@ function ItemDrawer({ row, onClose, onAssessed }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [assessment, setAssessment] = useState(null);
+  // QA-2026-05-16-047 (2026-05-18) — separate "no relevant data" state
+  // so the drawer can render the verbatim copy + Document Journal link
+  // instead of a generic error.
+  const [noData, setNoData] = useState(null); // { message } | null
 
   // Reset assessment state whenever a different row is opened.
   React.useEffect(() => {
     setAssessment(row?.last_akki_assessment || null);
     setError(null);
+    setNoData(null);
   }, [row?.id]);
 
   const updateGoal = async () => {
     if (!row?.id || !row?.context_id || !row?.kind) return;
-    setBusy(true); setError(null);
+    setBusy(true); setError(null); setNoData(null);
     try {
       const r = await api.post(
         `/contexts/${row.context_id}/monitor/${row.kind}/${row.id}/update-status`,
         {},
       );
-      setAssessment(r.data?.assessment || null);
-      if (onAssessed) onAssessed(r.data);
+      // QA-2026-05-16-047 — backend returns `{no_data: true, message}`
+      // when there are no signals or documents to assess against.
+      if (r.data?.no_data) {
+        setNoData({ message: r.data.message || "" });
+        setAssessment(null);
+      } else {
+        setAssessment(r.data?.assessment || null);
+        if (onAssessed) onAssessed(r.data);
+      }
     } catch (e) {
       setError(`${e?.name || "Error"}: ${(e?.message || "").slice(0, 200)}`);
     } finally {
@@ -182,6 +204,24 @@ function ItemDrawer({ row, onClose, onAssessed }) {
             {error && (
               <p className="mt-2 text-[12px] text-rose-700" data-testid="obj-drawer-update-goal-error">{error}</p>
             )}
+            {/* QA-2026-05-16-047 (2026-05-18) — "no relevant data" path. */}
+            {noData && (
+              <div
+                className="mt-3 text-[12.5px] text-[var(--ink)] space-y-2"
+                data-testid="obj-drawer-no-data"
+              >
+                <p>{noData.message}</p>
+                <p>
+                  <Link
+                    to="/app/documents"
+                    className="text-[12.5px] text-[var(--accent)] hover:underline underline-offset-2"
+                    data-testid="obj-drawer-no-data-doc-journal-link"
+                  >
+                    Open Document Journal →
+                  </Link>
+                </p>
+              </div>
+            )}
             {assessment && (
               <div className="mt-3 text-[12.5px] text-[var(--ink)] space-y-2" data-testid="obj-drawer-assessment">
                 <p>
@@ -241,13 +281,17 @@ function ItemDrawer({ row, onClose, onAssessed }) {
 
 
 function CreateModal({ open, onClose, kind, contextId, onCreated }) {
+  // QA-2026-05-16-047 (2026-05-18) — manual create no longer asks
+  // the user to pick a status. Default to `not_started`; Akki
+  // assigns the data-driven status via Update goal in the drawer
+  // once documents/signals exist. The RAG picker is gone — keeping
+  // it would let users silently misrepresent performance.
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [rag, setRag] = useState("amber");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!open) { setTitle(""); setDescription(""); setRag("amber"); }
+    if (!open) { setTitle(""); setDescription(""); }
   }, [open]);
 
   const submit = async () => {
@@ -257,8 +301,8 @@ function CreateModal({ open, onClose, kind, contextId, onCreated }) {
       const { data } = await api.post(`/contexts/${contextId}/monitor/${kind}`, {
         title: title.trim(),
         description: description.trim() || undefined,
-        rag_status: rag,
-        score: rag === "green" ? 85 : rag === "amber" ? 55 : 25,
+        rag_status: "not_started",
+        score: 0,
         trend: "flat",
         source: "manual",
       });
@@ -303,27 +347,13 @@ function CreateModal({ open, onClose, kind, contextId, onCreated }) {
               data-testid="obj-create-description"
             />
           </div>
-          <div>
-            <Label className="text-[12px] block mb-1">RAG</Label>
-            <div className="flex gap-2">
-              {["green", "amber", "red"].map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setRag(c)}
-                  className={[
-                    "px-3 py-1.5 text-[12px] rounded-sm border",
-                    rag === c
-                      ? "border-[var(--ink)] bg-white text-[var(--ink)]"
-                      : "border-[var(--rule)] text-[var(--muted)]",
-                  ].join(" ")}
-                  data-testid={`obj-create-rag-${c}`}
-                >
-                  {RAG_LABEL[c]}
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* QA-2026-05-16-047 (2026-05-18) — status is set by Akki, not by the user. */}
+          <p
+            className="text-[12px] text-[var(--muted)] italic"
+            data-testid="obj-create-status-note"
+          >
+            Status starts as <span className="font-mono">Not Started</span>. Once documents are uploaded, click <span className="font-mono">Update {kind === "project" ? "project" : "goal"}</span> in the {kind} profile to let Akki assess.
+          </p>
         </div>
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>

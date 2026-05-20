@@ -130,20 +130,29 @@ class ExportStatusOut(BaseModel):
 # artefact, so the renderer treats them as Report (docx-only output).
 # Accepted upload extensions extended to match (`.docx`, `.pdf`,
 # `.txt` — plain text is common for minutes drafts pasted from notes).
-_ENHANCE_KINDS = ("deck", "report", "minutes")
+# QA-2026-05-16-043 (2026-05-18): `committee_pack` added as a
+# first-class enhance kind. The QA spec lists "Minutes / Deck /
+# Report / Committee Pack" as the four enhance outputs. Backend-
+# wise a committee pack uses the same docx-report render path as
+# a Report — the renderer doesn't need a new code path, only the
+# kind guard.
+_ENHANCE_KINDS = ("deck", "report", "minutes", "committee_pack")
 _ENHANCE_MAX_BYTES = 25 * 1024 * 1024  # 25 MB ceiling, mirrors chat_attach
 _ENHANCE_ACCEPTED_EXT_BY_KIND = {
     "deck":    {".pptx", ".pdf"},
     "report":  {".docx", ".pdf"},
     "minutes": {".docx", ".pdf", ".txt"},
+    # QA-2026-05-16-043 — committee pack ships as DOCX/PDF input.
+    "committee_pack": {".docx", ".pdf"},
 }
 
 
 # =============================================================================
 # Output-format selection
 # =============================================================================
-_AUTO_FORMAT = {"brief": "docx", "deck": "pptx", "report": "docx", "minutes": "docx"}
-_VALID_KINDS = ("brief", "deck", "report", "minutes")
+# QA-2026-05-16-043 — committee_pack mirrors report shape (docx-out).
+_AUTO_FORMAT = {"brief": "docx", "deck": "pptx", "report": "docx", "minutes": "docx", "committee_pack": "docx"}
+_VALID_KINDS = ("brief", "deck", "report", "minutes", "committee_pack")
 
 
 def _resolve_format(kind: str, requested: str) -> str:
@@ -481,6 +490,26 @@ async def _run_two_pass_for_export(
             'decision), cites}), recommendations (list of 0-8 next '
             'actions, each phrased as "<owner> to <action> by <when>"), '
             'citations.'
+        ),
+        # QA-2026-05-16-043 (2026-05-18) — Committee Pack shape. Same
+        # underlying schema as Report (the renderer is the same) but
+        # the prompt steers the model towards a committee-meeting
+        # deliverable: cover, attendees / quorum line in subtitle,
+        # 4-6 substantive sections per agenda item, decision-oriented
+        # pullquotes, and a clean action list. Recommendations key is
+        # reused so the renderer stays untouched.
+        "committee_pack": (
+            'Required keys: title (e.g. "<Committee> Pack — <date>"), '
+            'subtitle (attendees / quorum line), classification, period, '
+            'generated_for, executive_summary (one short paragraph of '
+            'context and the committee\'s overall recommendation), '
+            'sections (4-6 items per agenda topic, each {heading, '
+            'subheading (optional, e.g. owner / decision-status), '
+            'paragraphs (list of 2-4 strings capturing the substance '
+            'and the recommendation), pullquote (optional, the verbatim '
+            'committee decision), cites}), recommendations (list of '
+            '0-8 actions for the board, each phrased as "<owner> to '
+            '<action> by <when>"), citations.'
         ),
     }[kind]
 
@@ -1177,11 +1206,19 @@ async def _run_enhance(
             # Minutes renderer can branch off this if PO later wants
             # a different visual treatment.
             data, sha, fname = _ex.render_report_docx(content_dict, ctx_meta_full)
+        elif output_format == "docx" and kind == "committee_pack":
+            # QA-2026-05-16-043 (2026-05-18) — Committee Pack uses the
+            # same DOCX renderer as Report. Same narrative shape, same
+            # output format. A bespoke renderer can branch off this
+            # once the PO finalises committee-specific styling.
+            data, sha, fname = _ex.render_report_docx(content_dict, ctx_meta_full)
         elif output_format == "pptx" and kind == "deck":
             data, sha, fname = _ex.render_deck_pptx(content_dict, ctx_meta_full)
         elif output_format == "pdf" and kind == "report":
             data, sha, fname = _ex.render_report_pdf(content_dict, ctx_meta_full)
         elif output_format == "pdf" and kind == "minutes":
+            data, sha, fname = _ex.render_report_pdf(content_dict, ctx_meta_full)
+        elif output_format == "pdf" and kind == "committee_pack":
             data, sha, fname = _ex.render_report_pdf(content_dict, ctx_meta_full)
         else:
             raise _ex.ContentValidationError(
@@ -1413,7 +1450,7 @@ async def get_studio_synisense_breakdown(
     Filter is on `artefact_id` (post-sprint sessions) with a fallback to
     account_id + surface family when no artefact_id is present (legacy
     artefacts created before the threading)."""
-    if kind not in {"briefing", "deck", "report", "brief", "minutes"}:
+    if kind not in {"briefing", "deck", "report", "brief", "minutes", "committee_pack"}:
         raise HTTPException(status_code=400, detail=f"Unknown artefact kind: {kind}")
     # Map the artefact kind → the set of surface keys we aggregate over.
     # Every kind also includes its corresponding `enhance` surface so
@@ -1424,6 +1461,9 @@ async def get_studio_synisense_breakdown(
         "report":   ["report", "enhance"],
         "brief":    ["brief", "enhance"],
         "minutes":  ["minutes", "enhance"],
+        # QA-2026-05-16-043 — committee_pack is a first-class artefact
+        # kind alongside deck/report/minutes.
+        "committee_pack": ["committee_pack", "enhance"],
     }[kind]
 
     pipeline = [

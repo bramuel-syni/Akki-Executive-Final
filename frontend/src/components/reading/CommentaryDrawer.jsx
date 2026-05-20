@@ -18,6 +18,8 @@ export default function CommentaryDrawer({
   paragraphLookup,
   onGenerateSignals,
   canGenerateSignals = false,
+  generatingSignals = false,
+  signalsStatusMessage = "",
 }) {
   const [open, setOpen] = useState(false);
   const count = items.length;
@@ -61,10 +63,21 @@ export default function CommentaryDrawer({
                 <button
                   type="button"
                   onClick={onGenerateSignals}
-                  className="mt-3 text-[12px] text-[var(--accent)] hover:underline underline-offset-2 not-italic"
+                  disabled={generatingSignals}
+                  className="mt-3 text-[12px] text-[var(--accent)] hover:underline underline-offset-2 not-italic disabled:opacity-60 disabled:cursor-wait"
+                  data-testid="commentary-drawer-generate-signals"
                 >
-                  Generate signals →
+                  {generatingSignals ? "Generating signals…" : "Generate signals →"}
                 </button>
+              ) : null}
+              {/* QA-2026-05-16-007 (2026-05-18) — long-running status. */}
+              {generatingSignals && signalsStatusMessage ? (
+                <p
+                  className="mt-3 text-[12px] text-[var(--muted)] italic"
+                  data-testid="commentary-drawer-signals-status"
+                >
+                  {signalsStatusMessage}
+                </p>
               ) : null}
             </div>
           ) : (

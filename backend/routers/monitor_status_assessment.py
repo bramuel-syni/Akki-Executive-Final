@@ -35,11 +35,18 @@ log = logging.getLogger("monitor.status_assessment")
 router = APIRouter(prefix="/api")
 
 _KIND = ("objective", "project")
-_RAG = ("red", "amber", "green")
+# QA-2026-05-16-047 (2026-05-18) — extended status vocabulary so the
+# Akki-driven assessment can return Not Started (no relevant data),
+# Achieved, plus the existing on_track / at_risk / off_track. Manual
+# creates now default to Not Started (red is no longer the silent
+# default — see the create modal frontend change).
+_RAG = ("red", "amber", "green", "not_started", "achieved")
 _STATUS_LABELS = {
     "green": "on_track",
     "amber": "at_risk",
     "red": "off_track",
+    "not_started": "not_started",
+    "achieved": "achieved",
 }
 _STATUS_REVERSE = {v: k for k, v in _STATUS_LABELS.items()}
 
@@ -133,12 +140,17 @@ def _format_assessment_prompt(
         "\n"
         "Assess the status. Return ONLY one JSON object with these "
         "exact keys:\n"
-        '{"status": "on_track" | "at_risk" | "off_track", '
+        '{"status": "not_started" | "on_track" | "at_risk" | "off_track" | "achieved", '
         '"confidence": <float 0..1>, '
         '"rationale": "<2-3 sentences>", '
         '"supporting_signal_ids": [<signal_id>, ...], '
         '"supporting_doc_ids": [<doc_id>, ...]}\n'
-        "Do not add commentary outside the JSON."
+        "Use 'not_started' ONLY when neither signals nor documents "
+        "contain ANY material relevant to this item — in which case "
+        "supporting_signal_ids and supporting_doc_ids must be empty "
+        "and the rationale must say so plainly. Use 'achieved' when "
+        "the evidence clearly shows the target/outcome has been "
+        "delivered. Do not add commentary outside the JSON."
     )
 
 
@@ -158,7 +170,7 @@ def _parse_assessment_response(
         try:
             parsed = json.loads(match.group(0))
             status = parsed.get("status")
-            if status not in ("on_track", "at_risk", "off_track"):
+            if status not in ("not_started", "on_track", "at_risk", "off_track", "achieved"):
                 raise ValueError(f"bad status: {status}")
             return {
                 "status": status,
@@ -181,7 +193,11 @@ def _parse_assessment_response(
             )
     # Heuristic fallback: scan for the phrase in the response.
     lowered = (response_text or "").lower()
-    if "off_track" in lowered or "off track" in lowered:
+    if "not_started" in lowered or "not started" in lowered:
+        status = "not_started"
+    elif "achieved" in lowered:
+        status = "achieved"
+    elif "off_track" in lowered or "off track" in lowered:
         status = "off_track"
     elif "at_risk" in lowered or "at risk" in lowered:
         status = "at_risk"
@@ -226,6 +242,26 @@ async def update_status_assessment(
     docs = await _gather_recent_docs(
         context_id=context_id, account_id=account["id"],
     )
+
+    # QA-2026-05-16-047 (2026-05-18) — "If Akki finds no relevant
+    # material, it does not assign a status." Short-circuit here so
+    # we don't burn a Shield call for a no-data assessment. The
+    # frontend renders the no-data message + Document Journal link.
+    if not signals and not docs:
+        no_data_payload = {
+            "id": rid,
+            "kind": kind,
+            "rag_status": item.get("rag_status") or "not_started",
+            "status": "no_data",
+            "no_data": True,
+            "message": (
+                f"No relevant documents or data found for this {kind}. "
+                f"Please upload a document containing information about "
+                f"this {kind} so Akki can assess its status."
+            ),
+            "assessment": None,
+        }
+        return no_data_payload
 
     purpose = f"monitor.{kind}.status_assessment"
     prompt = _format_assessment_prompt(
