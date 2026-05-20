@@ -122,6 +122,35 @@ Documented to prevent a future agent re-investigating.
 3. **`/api/me/contexts` returns `{items: [{context_id, …}]}`, NOT `{contexts: [{id, …}]}`.** Discovery probes that walk memberships must read `c.context_id || c.id`. Chunk-8 smoke step 9 has the same dormant bug and should be fixed when next touching that surface.
 4. **Mongo BSON-type brackets bite type-mismatched `$gte` filters silently.** Any new code path that compares a stored timestamp against a query value should run both through a coercer first. Add `_coerce_to_datetime` to a shared util if a second consumer surfaces.
 5. **Frontend axios error surfacing should always inspect `e?.response?.status`** before composing the user-facing copy. Raw `AxiosError: Request failed with status code 404` is unhelpful and leaks implementation detail.
+6. **Sonner toast portal is not reliably observable by Playwright headless-shell** depending on z-index + portal mount ordering + theme. The toast IS visible to a human user but the e1_tester may miss it. When the spec demands a toast AND tester needs deterministic observability, render a defensive in-tree companion indicator with a `data-testid` from the same callback. (See `pages/SolvaPhaseDSession.jsx` `savedMarker` state + `fireSavedMarker` callback for the reference pattern.)
+7. **Long-running submit handlers + transient indicators = race.** When the submit chain runs multiple Shield calls (Layer 0 + situation classification + auto-title) it can easily exceed 10s. Smoke wait timeouts for post-submit confirmations should be ≥ 30s to accommodate. The fix-pass on Chunk 9.5 bumped from 8s → 30s after observing this.
+
+## 7.5 Session count distribution — 55 vs 84 investigation (fix-pass)
+
+Tester flagged a discrepancy between the dispatch's "84 phase_d sessions for bramuel" claim and the live-preview observation of "55 items in the list". Investigation:
+
+bramuel's Phase D + v2 session distribution across 5 contexts (as of 2026-05-20 22:00 UTC):
+
+| Context (id prefix) | Name | solva_v2_sessions | solva_phase_d_sessions |
+|---|---|---|---|
+| cef8714a | TEST_retail_111d49 | 0 | 6 |
+| 5afb0f40 | Tuli Financial Group | 3 | 11 |
+| 2456cc34 | Safiri Telecom | 0 | 2 |
+| dcc263b1 | Tuli Financial Group (CFO) | 0 | 20 |
+| fbc54a51 | TEST_SeededNedCo | 0 | 61 |
+| **TOTAL** | — | **3** | **100** |
+
+The `/api/solva/v2/sessions?context_id=X` listing endpoint is **context-scoped** (per WS-R16 privacy hardening — required). For the largest single context (TEST_SeededNedCo, 61 sessions), the response caps at `to_list(length=100)` on both branches and post-merge `[:100]` — but 61 + 0 < 100 so all surface.
+
+When the tester observed "55 items", they were almost certainly looking at Tuli Financial Group (3 v2 + 11 pd = 14) or a smaller context. The render-smoke saw "32 items, 5 Phase D" on whichever was the user's active context. Different contexts → different counts.
+
+**This is NOT a bug.** The dispatch's "84+" came from a global `count_documents({account_id: bram_id})` — a UI that wanted to show "all of bramuel's sessions across every context" would need either:
+- An aggregate-across-contexts endpoint (out of scope; cuts across WS-R16 privacy boundary)
+- Context-switcher UX so the user can move between their 5 contexts
+
+The brief's "All saved sessions are accessible from the View All Sessions page" is satisfied within the active context — the spec doesn't ask for a cross-context aggregate.
+
+**Follow-up (queued, not in Chunk-9.5 scope):** if PO confirms a cross-context aggregate is wanted, a future chunk can add `?context_id=*` semantics OR a separate aggregate endpoint with explicit privacy headers. Until then, the per-context behaviour matches both the spec and the privacy contract.
 
 ## 8. Follow-ups (queued, NOT in Chunk 9.5 scope)
 

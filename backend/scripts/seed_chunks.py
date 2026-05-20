@@ -367,6 +367,123 @@ async def _seed_chunk9_cycle_fixture(db, context_id: str, account_id: str,
     }
 
 
+async def _seed_chunk95_pii_chat_fixture(db, context_id: str, account_id: str) -> Dict[str, Any]:
+    """Chunk 9.5 fix-pass (Sx2 verification) — seed one chat per
+    bramuel context that contains realistic PII so the e1_tester can
+    observe IDENTIFIERS REDACTED > 0 on the Trust Panel without
+    needing to manually drive Shield through the live UI.
+
+    Inserts:
+      • `db.chats`            — chat row with `created_at` stored as
+                                STRING (deliberately exercising the
+                                Sx2 type-coercion path). One assistant
+                                + one user message.
+      • `db.chat_messages`    — two message rows (user + assistant).
+      • `db.synisense_runs`   — one chat-surface run with realistic
+                                spans (regex won — financial account
+                                pattern + person name + currency
+                                figure). `ts` stored as a DATETIME
+                                (so the Sx2 fix's coercion is what
+                                makes the metrics query match).
+
+    Idempotent via `chunk95_pii_chat_marker="v1"` on the chat row.
+    """
+    existing = await db.chats.find_one(
+        {"context_id": context_id, "chunk95_pii_chat_marker": "v1"},
+        {"_id": 0, "id": 1},
+    )
+    if existing:
+        return {
+            "context_id": context_id, "chat_id": existing["id"],
+            "minted": False, "reason": "already_seeded",
+        }
+
+    chat_id = f"chat-c95-{uuid.uuid4().hex[:10]}"
+    user_msg_id = f"msg-{uuid.uuid4().hex[:10]}"
+    asst_msg_id = f"msg-{uuid.uuid4().hex[:10]}"
+    run_id = f"sr-c95-{uuid.uuid4().hex[:10]}"
+    audit_id = f"aud-c95-{uuid.uuid4().hex[:10]}"
+    now_dt = _now()
+    now_iso = _iso(now_dt)
+
+    user_text = (
+        "Bramuel and Udi are having dinner at Citi Bank, account number "
+        "4565789845, discussing a $2.4M deal."
+    )
+    assistant_text = (
+        "Noted. Without disclosing personal account details, I can sketch how "
+        "to approach a deal at that scale — what aspect would you like to "
+        "explore first: deal structure, capital adequacy implications, or "
+        "stakeholder framing?"
+    )
+
+    # Chat row. created_at STRING — deliberately exercises the Sx2 fix.
+    await db.chats.insert_one({
+        "id": chat_id,
+        "account_id": account_id,
+        "context_id": context_id,
+        "title": "Bramuel and Udi — Citi dinner (PII probe)",
+        "created_at": now_iso,
+        "updated_at": now_iso,
+        "message_count": 2,
+        "last_message_preview": (assistant_text[:120] + "…")[:140],
+        "synisense_audit_ids": [audit_id],
+        "chunk95_pii_chat_marker": "v1",
+    })
+
+    # User + assistant messages.
+    await db.chat_messages.insert_many([
+        {"id": user_msg_id, "chat_id": chat_id, "account_id": account_id,
+         "context_id": context_id, "role": "user", "content": user_text,
+         "content_preview": user_text[:140], "created_at": now_iso},
+        {"id": asst_msg_id, "chat_id": chat_id, "account_id": account_id,
+         "context_id": context_id, "role": "assistant", "content": assistant_text,
+         "content_preview": assistant_text[:140], "created_at": now_iso,
+         "model_id": "claude-sonnet-4-5"},
+    ])
+
+    # Synisense run — mimics what `services.synisense.shield.client.invoke`
+    # would have written for this PII-laden message. THREE detected spans
+    # (PERSON · FIN_ACCOUNT · CURRENCY); regex layer won the redaction.
+    # `ts` is a real datetime — this is the type that mismatched the
+    # STRING `chat.created_at` filter pre-fix.
+    await db.synisense_runs.insert_one({
+        "id": run_id,
+        "audit_id": audit_id,
+        "account_id": account_id,
+        "context_id": context_id,
+        "chat_id": chat_id,
+        "message_id": asst_msg_id,
+        "surface": "chat",
+        "ts": now_dt,                       # BSON Date — type bracket vs chat.created_at STRING
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5",
+        "spans": [
+            {"layer": "regex", "kind": "FIN_ACCOUNT",
+             "original": "4565789845", "token": "FIN_1"},
+            {"layer": "regex", "kind": "PERSON",
+             "original": "Bramuel",   "token": "PERSON_1"},
+            {"layer": "regex", "kind": "CURRENCY",
+             "original": "$2.4M",     "token": "CURRENCY_1"},
+        ],
+        "stats": {
+            "layer_won": "regex",
+            "exposure_reduction": 18.4,
+            "dilution": 11.2,
+            "input_chars": len(user_text),
+            "output_chars": len(assistant_text),
+        },
+    })
+
+    return {
+        "context_id": context_id,
+        "chat_id": chat_id,
+        "synisense_run_id": run_id,
+        "spans_seeded": 3,
+        "minted": True,
+    }
+
+
 async def main():
     cli = AsyncIOMotorClient(os.environ["MONGO_URL"])
     db = cli[os.environ["DB_NAME"]]
@@ -383,6 +500,7 @@ async def main():
     enriched: List[Dict[str, Any]] = []
     minted_drafts: List[Dict[str, Any]] = []
     cycle_seeds: List[Dict[str, Any]] = []
+    pii_chats: List[Dict[str, Any]] = []
 
     for c in contexts:
         cid = c["id"]
@@ -416,6 +534,12 @@ async def main():
             if res.get("minted"):
                 cycle_seeds.append(res)
 
+        # Pass D (Chunk 9.5 fix-pass): PII-laden chat so Trust Panel
+        # metrics become observable from the UI for tester verification.
+        res = await _seed_chunk95_pii_chat_fixture(db, cid, bid)
+        if res.get("minted"):
+            pii_chats.append(res)
+
     # Write a seed-log marker for visibility / forensics.
     await db.chunk8_seed_log.insert_one({
         "run_id": uuid.uuid4().hex,
@@ -424,14 +548,17 @@ async def main():
         "enriched_count": len(enriched),
         "minted_count": len(minted_drafts),
         "cycle_seed_count": len(cycle_seeds),
+        "pii_chat_count": len(pii_chats),
         "enriched_sample": enriched[:5],
         "minted_sample": minted_drafts[:5],
         "cycle_seed_sample": cycle_seeds[:5],
+        "pii_chat_sample": pii_chats[:5],
     })
 
     print(f"[seed-chunks] enriched {len(enriched)} existing exports across "
           f"{len(contexts)} contexts; minted {len(minted_drafts)} fresh draft "
-          f"committee packs; seeded {len(cycle_seeds)} cycle/agenda fixtures.")
+          f"committee packs; seeded {len(cycle_seeds)} cycle/agenda fixtures; "
+          f"seeded {len(pii_chats)} PII chats (Sx2 verification).")
     print("[seed-chunks] Sample artefact IDs for tester to target:")
     for r in (minted_drafts[:3] + enriched[:3]):
         print(f"   - ctx={r['context_id']} aid={r['id']}")
@@ -441,6 +568,11 @@ async def main():
             print(f"   - ctx={cs['context_id']} cycle={cs['cycle_id']} "
                   f"agenda_item={cs.get('agenda_item_id')} "
                   f"member={cs.get('team_member_id')}")
+    if pii_chats:
+        print("[seed-chunks] Sample PII chats (Chunk 9.5 Sx2 verification):")
+        for pc in pii_chats[:3]:
+            print(f"   - ctx={pc['context_id']} chat={pc['chat_id']} "
+                  f"spans={pc['spans_seeded']}")
 
 
 if __name__ == "__main__":

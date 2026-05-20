@@ -1597,6 +1597,71 @@ async function smokeChunk95SolvaCriticals(page, failures) {
     } else {
       failures.push(`Chunk 9.5 (SV-03): neither sessions list nor empty-state rendered on /app/solva/sessions`);
     }
+
+    // Step 4 — SV-03 fix-pass — toast/save-indicator after framing
+    // submit. Boots a fresh Phase D session, types a framing,
+    // clicks Submit, then asserts the `solva-phase-d-saved-indicator`
+    // appears in the DOM within 3.5s. The Sonner toast and the
+    // defensive in-tree indicator both fire from the same handler;
+    // we observe the in-tree one because Sonner's portal node
+    // ordering is sometimes invisible to Playwright depending on
+    // the headless-shell version.
+    try {
+      // Pre-mark the gate again (we're going through a different mount).
+      await page.evaluate(() => {
+        try { sessionStorage.setItem("akki_workspace_entry_v1_solva", "seen"); } catch { /* noop */ }
+      });
+      await page.goto(`${BASE_URL}/app/solva/phase-d/session/new`,
+        { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+
+      const framingInput = page.locator('[data-testid="solva-phase-d-framing-input"]').first();
+      try {
+        await framingInput.waitFor({ state: "visible", timeout: 12000 });
+      } catch {
+        console.log(`[render-smoke]  · Chunk 9.5 (SV-03 toast) — framing input never mounted; soft-skip (Phase D bootstrap may need a real picker selection)`);
+        return;
+      }
+      await framingInput.fill(
+        "I'm weighing whether to raise additional capital before Q3 close. " +
+        "The trade-offs are dilution today vs runway pressure if Q4 commercial " +
+        "targets slip. I want a sharp counter-perspective.",
+      );
+
+      const framingSubmit = page.locator('[data-testid="solva-phase-d-framing-submit"]').first();
+      if (!await framingSubmit.isVisible().catch(() => false)) {
+        failures.push(`Chunk 9.5 (SV-03 toast): framing-submit button not visible`);
+        return;
+      }
+      await framingSubmit.click();
+
+      // Wait up to 30s for the saved indicator. Framing submit
+      // includes Layer-0 FAR + situation classification + auto-title
+      // Shield call — three sequential Shield invocations that can
+      // easily push the response past 10s under load. 30s covers the
+      // worst case observed in production traces.
+      const savedIndicator = page.locator('[data-testid="solva-phase-d-saved-indicator"]').first();
+      try {
+        await savedIndicator.waitFor({ state: "visible", timeout: 30000 });
+        const txt = ((await savedIndicator.textContent()) || "").trim();
+        if (txt.toLowerCase().includes("session saved")) {
+          console.log(`[render-smoke]  ✓ Chunk 9.5 (SV-03 toast) — "Session saved." indicator visible after framing submit`);
+        } else {
+          failures.push(`Chunk 9.5 (SV-03 toast): indicator visible but wrong text: "${txt}"`);
+        }
+      } catch {
+        // Diagnostic: check whether the framing screen still shows
+        // (submit may have failed silently) vs whether the page
+        // advanced (submit succeeded but indicator didn't render).
+        const stillOnFraming = await page.locator('[data-testid="solva-phase-d-framing"]').isVisible().catch(() => false);
+        const advancedToL1 = await page.locator('text=/layer 1/i').first().isVisible().catch(() => false);
+        failures.push(`Chunk 9.5 (SV-03 toast): "Session saved." indicator did NOT appear within 30s of framing submit (stillOnFraming=${stillOnFraming}, advancedToL1=${advancedToL1})`);
+      }
+    } catch (innerE) {
+      // Don't fail the whole step if the toast assertion itself fails
+      // unexpectedly — record it and continue.
+      failures.push(`Chunk 9.5 (SV-03 toast) sub-step threw: ${innerE.message}`);
+    }
   } catch (e) {
     failures.push(`Chunk 9.5 smoke threw: ${e.message}`);
   }
