@@ -58,7 +58,10 @@ const FRESHNESS_FILTERS = [
   { id: "old-but-unresolved",     label: "Old · unresolved" },
   { id: "nice-to-look-into",      label: "Nice to look into" },
   { id: "for-tracking-purposes",  label: "For tracking" },
-  { id: "resolved",               label: "Resolved" },
+  // QA-2026-05-16-025 — duplicate "Resolved" entry removed.
+  // The Resolved status tab (rendered on the feed switcher) is the
+  // canonical filter; surfacing it here as well caused users to
+  // toggle two different code paths that returned different sets.
 ];
 
 const TYPE_ICON = {
@@ -108,6 +111,48 @@ function Chip({ children, tone = "default", testid }) {
       {children}
     </span>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* QA-2026-05-16-026 — document-citation stripper for inline text.    */
+/* Removes brackets like [doc.pdf:p3], [doc:14], (source: file.docx), */
+/* (p. 12), and trailing footnote markers like [1] / [12]. Keeps the  */
+/* sentence flow clean so executive readers aren't distracted by      */
+/* artefact-only references — citations belong in the Source section.*/
+/* ------------------------------------------------------------------ */
+const CITATION_PATTERNS = [
+  /\s?\[(?:doc|source|src|file)[^[\]]{0,80}\]/gi,        // [doc:N], [source:foo.pdf]
+  /\s?\([^()]*\.(?:pdf|docx|xlsx|pptx|csv)[^()]*\)/gi,    // (filename.pdf)
+  /\s?\(p\.\s*\d{1,4}(?:[\-,]\s*\d{1,4})?\)/gi,           // (p. 12), (p. 12-14)
+  /\s?\(source:[^()]*\)/gi,                                // (source: anything)
+  /\s?\[\d{1,3}\](?=[\s.,;:!?]|$)/g,                       // [1], [12] — footnote markers
+];
+function stripCitations(text) {
+  if (!text || typeof text !== "string") return text || "";
+  let out = text;
+  for (const re of CITATION_PATTERNS) out = out.replace(re, "");
+  // Collapse runs of whitespace that the strip may have left behind.
+  return out.replace(/[ \t]{2,}/g, " ").replace(/\s+([.,;:!?])/g, "$1").trim();
+}
+
+/* QA-2026-05-16-026 — splits a paragraph into bullet-able lines.
+   Honours explicit double-newlines, then falls back to single newlines,
+   then to sentence-boundary splitting when the input is one long line.
+   We avoid sentence splitting if there are < 3 sentences (no benefit
+   to bulleting two-sentence prose).
+*/
+function splitToBullets(text) {
+  const cleaned = stripCitations(text || "");
+  if (!cleaned) return [];
+  if (cleaned.includes("\n\n")) {
+    return cleaned.split(/\n\n+/).map((s) => s.trim()).filter(Boolean);
+  }
+  if (cleaned.includes("\n")) {
+    return cleaned.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  }
+  // Sentence fallback — only if ≥ 3 sentences.
+  const sentences = cleaned.split(/(?<=[.!?])\s+(?=[A-Z(])/).map((s) => s.trim()).filter(Boolean);
+  return sentences.length >= 3 ? sentences : [cleaned];
 }
 
 /* ------------------------------------------------------------------ */
@@ -274,6 +319,31 @@ function SignalCard({ card, onAction, busyAction, onOpenDrawer }) {
         </Button>
       </div>
 
+      {/* QA-2026-05-16-022 — saved private notes are rendered inline
+          on the card AS WELL AS in the drawer. Pre-fix, the card only
+          showed the composer; reopening the page would lose the
+          visible signal that "you took a note on this last time", even
+          though the backend retained the data. */}
+      {(card.comments && card.comments.length > 0) && (
+        <ul
+          className="mt-3 pt-3 border-t border-[var(--rule)] space-y-2"
+          data-testid={`pulse-card-comments-list-${card.id}`}
+        >
+          {card.comments.map((c) => (
+            <li
+              key={c.id}
+              data-testid={`pulse-card-comment-${card.id}-${c.id}`}
+              className="text-[12.5px] text-[var(--ink)] leading-[1.55] whitespace-pre-wrap border-l-2 border-[var(--accent)]/40 pl-2.5"
+            >
+              {c.note}
+              <span className="block text-[10px] uppercase tracking-wider text-[var(--muted)] mt-0.5">
+                {c.created_at ? new Date(c.created_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
       {/* Inline comment composer */}
       {showComment && (
         <div className="mt-3 pt-3 border-t border-[var(--rule)]" data-testid={`pulse-card-comment-form-${card.id}`}>
@@ -379,11 +449,22 @@ export default function Pulse() {
         const { data } = await api.post(
           `/contexts/${cid}/pulse/signals/${sigId}/comment`, payload || {},
         );
+        // QA-2026-05-16-022 — push the freshly-saved comment into the
+        // card's local `comments[]` so it renders below the action
+        // row immediately. Pre-fix, only `comments_count` advanced;
+        // the user had to refresh the feed to see their note appear.
+        const newComment = data?.comment;
         setCards((prev) => prev.map((c) => c.id === sigId
-          ? { ...c, actions_summary: {
-              ...(c.actions_summary || {}),
-              comments_count: (c.actions_summary?.comments_count || 0) + 1,
-            } }
+          ? {
+              ...c,
+              comments: newComment
+                ? [...(c.comments || []), newComment]
+                : (c.comments || []),
+              actions_summary: {
+                ...(c.actions_summary || {}),
+                comments_count: (c.actions_summary?.comments_count || 0) + 1,
+              },
+            }
           : c));
         toast.success("Note saved.");
         return data;
@@ -414,6 +495,15 @@ export default function Pulse() {
               my_saved: !!data?.saved,
             } }
           : c));
+        // QA-2026-05-16-023 — directional toast tells the user where
+        // to find the saved signal. Suppressed on un-save to avoid a
+        // misleading "find on Bookmarked tab" after the user just
+        // removed it from that tab.
+        if (data?.saved) {
+          toast.success("Saved — find it on the Bookmarked tab.");
+        } else {
+          toast.success("Removed from Bookmarked tab.");
+        }
         return data;
       }
       if (action === "resolve") {
@@ -660,14 +750,22 @@ function SignalDrawer({ card, contextId, onClose, onAction, busyAction }) {
   if (!card) return null;
   const state = (card.state || card.status || "active").toLowerCase();
   const isResolved = state === "resolved" || !!card.actions_summary?.resolved;
-  const isBookmarked = state === "bookmarked" || !!card.bookmarked_at;
+  // QA-2026-05-16-024 — saved-state derived from `my_saved` (the
+  // canonical per-account flag); legacy bookmarked_at fallback kept
+  // so older signal rows still surface the marker.
+  const isSaved = !!card.actions_summary?.my_saved || !!card.bookmarked_at;
+
+  // QA-2026-05-16-027 — mirror the card's chip cluster on the drawer.
+  // The reusable factory keeps the two surfaces visually identical so
+  // a user opening the drawer doesn't lose the at-a-glance taxonomy.
+  const TypeIcon = TYPE_ICON[card.surface_type] || Lightbulb;
 
   const handleComment = async () => {
     const text = commentDraft.trim();
     if (!text) return;
     setSubmittingComment(true);
     try {
-      await onAction("comment", card.id, { text });
+      await onAction("comment", card.id, { note: text });
       setCommentDraft("");
     } finally {
       setSubmittingComment(false);
@@ -678,6 +776,69 @@ function SignalDrawer({ card, contextId, onClose, onAction, busyAction }) {
     <Sheet open={!!card} onOpenChange={(v) => !v && onClose?.()}>
       <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col p-0" data-testid="pulse-signal-drawer">
         <SheetHeader className="px-6 py-4 border-b border-[var(--rule)]">
+          {/* QA-2026-05-16-027 — drawer now carries the same chip
+              cluster as the card (type · topic · freshness · confidence
+              · merge · synisense) so the user doesn't lose the
+              at-a-glance taxonomy when they open the drawer. */}
+          <div
+            className="flex flex-wrap items-center gap-1.5 mb-1"
+            data-testid="pulse-drawer-chips"
+          >
+            <Chip
+              tone={card.surface_type === "risk"
+                ? "bg-[color:var(--oxblood)]/10 text-[color:var(--oxblood)] border-[color:var(--oxblood)]/30"
+                : card.surface_type === "opportunity"
+                  ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                  : "bg-sky-50 text-sky-800 border-sky-200"}
+              testid="pulse-drawer-chip-type"
+            >
+              <TypeIcon className="w-3 h-3 mr-1" strokeWidth={1.7} />
+              {card.surface_type}
+            </Chip>
+            <Chip testid="pulse-drawer-chip-topic">
+              {TOPIC_LABEL[card.topic_class] || card.topic_class}
+            </Chip>
+            <Chip
+              tone={FRESHNESS_TONE[card.freshness] || "default"}
+              testid="pulse-drawer-chip-freshness"
+            >
+              {FRESHNESS_LABEL[card.freshness] || card.freshness}
+            </Chip>
+            {typeof card.confidence === "number" && (
+              <Chip testid="pulse-drawer-chip-confidence-pct">
+                confidence {Math.round(card.confidence * 100)}%
+              </Chip>
+            )}
+            {card.merge_count > 1 && (
+              <Chip
+                tone="bg-amber-50 text-amber-800 border-amber-200"
+                testid="pulse-drawer-chip-merge"
+              >
+                ×{card.merge_count} merged
+              </Chip>
+            )}
+            {/* QA-2026-05-16-024 — saved-state marker also surfaces in
+                the drawer (already shown on card; spec says it must
+                appear wherever the signal renders). */}
+            {isSaved && (
+              <Chip
+                tone="bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/30"
+                testid="pulse-drawer-chip-saved"
+              >
+                <BookmarkCheck className="w-3 h-3 mr-1" strokeWidth={1.7} />
+                Saved
+              </Chip>
+            )}
+            {isResolved && (
+              <Chip
+                tone="bg-emerald-50 text-emerald-800 border-emerald-200"
+                testid="pulse-drawer-chip-resolved"
+              >
+                <CheckCircle2 className="w-3 h-3 mr-1" strokeWidth={1.7} />
+                Resolved
+              </Chip>
+            )}
+          </div>
           <SheetTitle className="akki-serif text-[18px] text-[var(--ink)] leading-snug pr-8" data-testid="pulse-drawer-title">
             {card.headline || "(untitled)"}
           </SheetTitle>
@@ -688,7 +849,11 @@ function SignalDrawer({ card, contextId, onClose, onAction, busyAction }) {
           <section data-testid="pulse-drawer-storyline">
             <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)] akki-sans mb-2">Storyline</p>
             {card.summary && (
-              <p className="text-[13.5px] text-[var(--ink)] leading-[1.65] mb-3">{card.summary}</p>
+              <p className="text-[13.5px] text-[var(--ink)] leading-[1.65] mb-3">
+                {/* QA-2026-05-16-026 — strip document citations from
+                    inline storyline; they belong in the Source block. */}
+                {stripCitations(card.summary)}
+              </p>
             )}
             <div className="flex flex-wrap gap-2 text-[11px] text-[var(--muted)]">
               {card.confidence != null && (
@@ -732,11 +897,46 @@ function SignalDrawer({ card, contextId, onClose, onAction, busyAction }) {
 
           <section data-testid="pulse-drawer-reasoning">
             <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)] akki-sans mb-2">Reasoning</p>
-            {card.reasoning ? (
-              <p className="text-[12.5px] text-[var(--ink)] leading-[1.6] whitespace-pre-wrap">{card.reasoning}</p>
-            ) : (
-              <p className="text-[12px] text-[var(--muted)] italic">No reasoning recorded for this signal.</p>
-            )}
+            {(() => {
+              // QA-2026-05-16-026 — bullet-format each distinct point
+              // so executive readers can scan; pre-fix the whole
+              // reasoning came as one dense paragraph with no
+              // separating logic between context items.
+              const points = splitToBullets(card.reasoning);
+              if (points.length === 0) {
+                return (
+                  <p className="text-[12px] text-[var(--muted)] italic">
+                    No reasoning recorded for this signal.
+                  </p>
+                );
+              }
+              if (points.length === 1) {
+                return (
+                  <p
+                    data-testid="pulse-drawer-reasoning-single"
+                    className="text-[12.5px] text-[var(--ink)] leading-[1.6] whitespace-pre-wrap"
+                  >
+                    {points[0]}
+                  </p>
+                );
+              }
+              return (
+                <ul
+                  data-testid="pulse-drawer-reasoning-list"
+                  className="space-y-1.5 list-disc list-outside pl-5"
+                >
+                  {points.map((pt, i) => (
+                    <li
+                      key={i}
+                      data-testid={`pulse-drawer-reasoning-item-${i}`}
+                      className="text-[12.5px] text-[var(--ink)] leading-[1.55]"
+                    >
+                      {pt}
+                    </li>
+                  ))}
+                </ul>
+              );
+            })()}
           </section>
 
           <section data-testid="pulse-drawer-related">
@@ -819,32 +1019,27 @@ function SignalDrawer({ card, contextId, onClose, onAction, busyAction }) {
               <RotateCcw className="w-3.5 h-3.5" /> Unresolve
             </button>
           )}
-          {!isBookmarked ? (
-            <button
-              onClick={() => onAction("bookmark", card.id)}
-              disabled={busyAction === card.id}
-              data-testid="pulse-drawer-action-bookmark"
-              className="text-[12px] px-3 py-1.5 border border-[var(--rule)] rounded-sm hover:border-[var(--accent)] inline-flex items-center gap-1.5"
-            >
-              <Bookmark className="w-3.5 h-3.5" /> Bookmark
-            </button>
-          ) : (
-            <button
-              onClick={() => onAction("unbookmark", card.id)}
-              disabled={busyAction === card.id}
-              data-testid="pulse-drawer-action-unbookmark"
-              className="text-[12px] px-3 py-1.5 border border-[var(--rule)] rounded-sm hover:border-[var(--accent)] inline-flex items-center gap-1.5"
-            >
-              <BookmarkCheck className="w-3.5 h-3.5" /> Unbookmark
-            </button>
-          )}
+          {/* QA-2026-05-16-028 — Bookmark and Save were duplicate
+              actions on the drawer footer. The spec says merge them
+              into a single Save action and remove the Bookmark label.
+              Save is the canonical action (writes the saved/bookmarked
+              flag); the prior <button>Bookmark</button> +
+              <button>Unbookmark</button> pair is removed here. */}
           <button
             onClick={() => onAction("save", card.id)}
             disabled={busyAction === card.id}
             data-testid="pulse-drawer-action-save"
-            className="text-[12px] px-3 py-1.5 border border-[var(--rule)] rounded-sm hover:border-[var(--accent)] inline-flex items-center gap-1.5"
+            aria-pressed={isSaved}
+            className={`text-[12px] px-3 py-1.5 border rounded-sm inline-flex items-center gap-1.5 ${
+              isSaved
+                ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/5"
+                : "border-[var(--rule)] hover:border-[var(--accent)]"
+            }`}
           >
-            <Inbox className="w-3.5 h-3.5" /> Save
+            {isSaved
+              ? <BookmarkCheck className="w-3.5 h-3.5" strokeWidth={1.7} />
+              : <Inbox className="w-3.5 h-3.5" strokeWidth={1.7} />}
+            {isSaved ? "Saved" : "Save"}
           </button>
           <button
             onClick={async () => {

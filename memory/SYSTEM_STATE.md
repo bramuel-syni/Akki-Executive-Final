@@ -129,6 +129,55 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 10 — 16-May Pulse-surface batch (-022 → -028) — 2026-05-21 ✅ (autonomous)
+
+Pulse-surface bundle: 1 P1 + 6 P2 closely-related rows landed in a single chunk per the autonomous-mode "bundle adjacent P2s when P1 yields fewer than 4 IDs" guidance. All 7 IDs share the same files (`pages/Pulse.jsx` + `routers/pulse.py` + seed Pass E).
+
+| ID | Surface | Files touched | Test name(s) | Status | Notes |
+|---|---|---|---|---|---|
+| -022 (P1) | Pulse card comment panel | `pages/Pulse.jsx` (inline comments `<ul>` below action row + post-submit local-state push) | `test_qa022_pulse_feed_returns_owners_comments_inline`, `_hides_other_users_comments`, `_comment_persists_then_reappears_on_refetch` | DONE | Backend already persists per-account comments (verified at `routers/pulse.py:585-608`); fix was pure frontend display + state reconciliation. Latent bug also fixed: `handleComment` in drawer was POSTing `{text}` but endpoint accepts `{note}` — corrected. |
+| -023 (P2) | Save action toast direction | `routers/pulse.py::pulse_bookmark/_unbookmark` returns explicit `{"saved": bool}`; `pages/Pulse.jsx` action handler routes toast direction off that flag | `test_qa023_save_endpoint_returns_saved_flag` | DONE | Pre-fix the frontend read `data?.saved` (which didn't exist on the response) → `!!undefined === false` → toast always said "Removed…" regardless of action direction. Backend now returns explicit boolean. |
+| -024 (P2) | Saved-state marker on drawer | `pages/Pulse.jsx::SignalDrawer` — new "Saved" chip in chip cluster, derived from `actions_summary.my_saved` (legacy `bookmarked_at` fallback) | `test_qa024_my_saved_surfaces_in_feed_after_save`, `_save_state_is_per_account` | DONE | Drawer now mirrors card's saved-state. Cross-account privacy guard test confirms one user's save doesn't surface on another's flag. |
+| -025 (P2) | Freshness filter chips | `pages/Pulse.jsx::FRESHNESS_FILTERS` — duplicate `{id:"resolved"}` entry removed | (covered by render-smoke step 12) | DONE | Resolved status TAB elsewhere is the canonical filter. |
+| -026 (P2) | Citation stripping + bullet reasoning | `pages/Pulse.jsx::stripCitations()` (5 regex patterns) + `splitToBullets()` (paragraph / line / sentence heuristic); applied to `card.summary` (card + drawer) and `card.reasoning` (drawer) | `test_chunk10_citation_stripper_is_frontend_only` | DONE | Backend deliberately keeps citations in source payloads — they belong in the drawer's Source section (rendered from `references[]`). Stripper is pure frontend. Architectural-invariant test asserts the helper does NOT exist in backend code. |
+| -027 (P2) | Drawer chip cluster | `pages/Pulse.jsx::SignalDrawer` — mirrors card chip cluster (type · topic · freshness · confidence · merge · saved · resolved) at drawer header | (covered by render-smoke step 12) | DONE | Type/topic/freshness chips all carry distinct `data-testid` for tester observability. |
+| -028 (P2) | Drawer footer Save/Bookmark merge | `pages/Pulse.jsx::SignalDrawer` — Bookmark/Unbookmark buttons removed; single Save button with `aria-pressed` reflecting saved state | (covered by render-smoke step 12) | DONE | Save IS bookmark on the backend — they were always the same action, just rendered as two separate buttons. |
+
+**Side-bug surfaced + fixed during seeding:**
+- `routers/pulse.py:243` ranking call did `(s.get("confidence") or "medium").lower()` — crashed with `AttributeError: 'float' object has no attribute 'lower'` when a signal carried a float confidence (the chunk-10 seed initially used 0.82 because the drawer's number-format branch supports it). Added defensive `_conf_bucket()` helper that accepts BOTH strings and floats. Migrated 9 legacy float-confidence rows to string buckets via a one-line `update_many`.
+
+**Tests:** `backend/tests/test_qa_chunk_10.py` — **7 tests** (3 × QA-022 + 1 × QA-023 + 2 × QA-024 + 1 × architectural invariant). All pass.
+
+**Final pytest count:** **729 passed**, 0 failed, 566 skipped — delta **+7** from Chunk-9.5 baseline 722 (matches the 7 new Chunk-10 tests exactly).
+
+**CI guard** `test_no_direct_llm_calls_outside_shield.py` — **PASS** (Chunk 10 adds zero LLM call sites; the citation-stripping + bullet-formatting are deterministic frontend regexes).
+
+**Live render-smoke step 12 — GREEN end-to-end** (5/5 assertions) against bramuel ctx `dcc263b1` (Tuli FG CFO) with seeded signal `sig-c10-d9c1f3…`:
+- ✓ QA-025 — no duplicate "Resolved" chip under Freshness
+- ✓ QA-022 — saved comment renders inline on the card
+- ✓ QA-027 — drawer chip cluster (type + topic + freshness) renders
+- ✓ QA-026 — reasoning bullet-formatted (4 items) + citations stripped
+- ✓ QA-028 — drawer footer is Save-only (Bookmark removed)
+
+**Seed Pass E:** `backend/scripts/seed_chunks.py::_seed_chunk10_pulse_signal_fixture` mints one signal per bramuel context with a pre-populated comment, `[doc:…]` citation markers in summary/body/reasoning, and three `\n\n`-separated reasoning paragraphs. Idempotent via `chunk10_pulse_marker="v1"`. First run seeded 9 contexts; re-run = 0 minted.
+
+**Architectural invariants checkpoint:**
+- ✅ All LLM traffic via `services.synisense.shield.client.invoke()` — CI guard PASS. Chunk 10 adds zero LLM call sites.
+- ✅ `context_id` scoping on every touched endpoint — pulse_bookmark/unbookmark/comment all gate via `require_context_membership()`.
+- ✅ `tenant_id == account_id` on Shield surfaces — N/A for this chunk (no Shield calls added).
+- ✅ No `repr(exc)` leaks — all error paths route through `apiErrorMessage` / `HTTPException` with the locked format.
+- ✅ No blocking I/O in async routes.
+- ✅ No new third-party libraries (lucide-react `BookmarkCheck`/`CheckCircle2` already present).
+- ✅ Chunks 7/8/9/9.5 work intact — pytest count moved up, never down.
+
+**ESLint:** clean on `pages/Pulse.jsx` + `scripts/render-smoke.js`. **Ruff:** clean on `routers/pulse.py` + `tests/test_qa_chunk_10.py` + `scripts/seed_chunks.py`.
+
+**Carry-forward `CHUNK_10_STATE.md`:** new file documenting the citation stripper regex catalogue + bullet splitter heuristic + the schema-drift defensiveness pattern for future chunks.
+
+**PO escalations queued:** none.
+
+**Elapsed effort:** ~75 min vs the 70-min pre-flight estimate — 5-min overshoot driven by the schema-drift discovery (float-vs-string confidence). Lesson captured in `CHUNK_10_STATE.md §4` for the next chunk.
+
 ### Chunk 9.5 — Solva SV-01/02/03 + Phase C audit regression — 2026-05-20 ✅
 
 Bundled chunk dispatched as one unit per user's "don't fragment ledger flips" instruction. Two distinct surfaces — three Solva criticals + two Phase C audit-panel symptoms (third symptom resolved as no-bug during diagnostic).
@@ -219,6 +268,8 @@ Re-run safe via marker; second run minted 0. Verification via curl confirmed `id
 **Architectural invariants reconfirmed:** no new LLM call sites, no new third-party deps, `account_id == tenant_id` scoping preserved on the seed (inserts only into bramuel's own contexts), no `repr(exc)` leaks introduced. Seed is admin-script only — never invoked from a request handler.
 
 **Elapsed effort (fix-pass):** ~45 min — within the autonomy fix-pass cap.
+
+**Tester re-run verdict (2026-05-20T22:45:00Z):** **PASS 2/2** — saved indicator visible via MutationObserver on framing submit; Sx2 PII metrics endpoint returns `identifiers_redacted: 24` with non-standby storyline. Chunk 9.5 fully DONE.
 
 ### Chunk 9 — Add-a-Contribution attach (5 IDs -017→-021) — 2026-05-18 ✅
 

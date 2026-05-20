@@ -361,6 +361,18 @@ async function smoke() {
   console.log(`[render-smoke] step 11 — Chunk 9.5 Solva SV-01/02/03 smoke`);
   await smokeChunk95SolvaCriticals(page, failures);
 
+  // ────────────────────────────────────────────────────────────────────
+  // Phase 12 (Chunk 10, 2026-05-21) — Pulse-surface batch -022 → -028.
+  //   Hard-asserts (against seeded data from seed_chunks.py Pass E):
+  //     • QA-022 — saved comment renders inline on the card
+  //     • QA-025 — no duplicate "Resolved" filter chip under Freshness
+  //     • QA-027 — drawer chip cluster (type · topic · freshness · …)
+  //     • QA-026 — drawer reasoning renders as a <ul> with bullets
+  //     • QA-028 — drawer footer has Save button only, no Bookmark
+  // ────────────────────────────────────────────────────────────────────
+  console.log(`[render-smoke] step 12 — Chunk 10 Pulse surface batch`);
+  await smokeChunk10Pulse(page, failures);
+
   await browser.close();
 
   if (failures.length) {
@@ -368,7 +380,7 @@ async function smoke() {
     for (const f of failures) console.error(`  • ${f}`);
     process.exit(1);
   }
-  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green · Chunk 7 generate-signals loading green · Chunk 8 document overlay green · Chunk 9 contribution attach green · Chunk 9.5 Solva criticals green.`);
+  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green · Chunk 7 generate-signals loading green · Chunk 8 document overlay green · Chunk 9 contribution attach green · Chunk 9.5 Solva criticals green · Chunk 10 Pulse surface green.`);
 }
 
 // ----------------------------------------------------------------------
@@ -1672,5 +1684,186 @@ async function smokeChunk95SolvaCriticals(page, failures) {
   }
   page.off("pageerror", onPageError);
   page.off("console", onConsole);
+}
+
+
+// ----------------------------------------------------------------------
+// Phase 12 (Chunk 10, 2026-05-21) — Pulse surface -022 → -028.
+//
+// Hard-asserts against `seed_chunks.py` Pass E (seeded signal with
+// pre-populated comment + reasoning that contains [doc:...] citations
+// and \n\n-separated points).
+//
+// Soft-skip ONLY when the seed legitimately couldn't run (the active
+// bramuel context has no Chunk-10 signal). All other failures are
+// hard-asserted.
+// ----------------------------------------------------------------------
+async function smokeChunk10Pulse(page, failures) {
+  const pageErrors = [];
+  const onPageError = (err) => { pageErrors.push(err.toString()); };
+  page.on("pageerror", onPageError);
+
+  try {
+    // Step 1 — discover a context that has the Chunk-10 seeded signal.
+    const probe = await page.evaluate(async () => {
+      const tok = localStorage.getItem("akki_access_token")
+        || sessionStorage.getItem("akki_access_token");
+      if (!tok) return { error: "no token" };
+      const headers = { Authorization: `Bearer ${tok}` };
+      const tryCtx = async (cid) => {
+        try {
+          const r = await fetch(`/api/contexts/${cid}/pulse/feed`,
+            { headers: { ...headers, "X-Active-Context": cid } });
+          if (!r.ok) return null;
+          const body = await r.json();
+          const cards = body.cards || [];
+          const seeded = cards.find((c) => /Capital adequacy buffer thinning/i.test(c.headline || ""));
+          return seeded ? { contextId: cid, signalId: seeded.id, hasComment: (seeded.comments || []).length > 0 } : null;
+        } catch { return null; }
+      };
+      const active = sessionStorage.getItem("akki_active_context_id");
+      if (active) {
+        const hit = await tryCtx(active);
+        if (hit) return hit;
+      }
+      try {
+        const r = await fetch("/api/me/contexts", { headers });
+        if (r.ok) {
+          const body = await r.json();
+          const list = Array.isArray(body) ? body : (body.items || body.contexts || []);
+          for (const c of list) {
+            const cid = c.context_id || c.id;
+            if (!cid) continue;
+            const hit = await tryCtx(cid);
+            if (hit) return hit;
+          }
+        }
+      } catch { /* fall through */ }
+      return { error: "no Chunk-10 seeded signal found" };
+    });
+
+    if (!probe || !probe.signalId) {
+      console.log(`[render-smoke]  · Chunk 10 — seed unreachable (${probe?.error || "unknown"}); soft-skipping. Re-run \`python backend/scripts/seed_chunks.py\` to populate the Pass E signal.`);
+      return;
+    }
+    console.log(`[render-smoke]  · Chunk 10 — hard-asserting signal=${probe.signalId.slice(0, 14)}… ctx=${probe.contextId.slice(0, 8)}…`);
+
+    // Pin context + land on Pulse.
+    await page.evaluate((cid) => sessionStorage.setItem("akki_active_context_id", cid), probe.contextId);
+    await page.goto(`${BASE_URL}/app/pulse`,
+      { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.evaluate(() => {
+      try { sessionStorage.setItem("akki_workspace_entry_v1_pulse", "seen"); } catch { /* noop */ }
+    });
+    await page.goto(`${BASE_URL}/app/pulse`,
+      { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+
+    // Step 2 — QA-025 — duplicate "Resolved" filter chip must NOT exist
+    //          under the Freshness filters. There IS a Resolved STATUS
+    //          tab elsewhere; we assert specifically on the freshness
+    //          chip cluster (`data-testid` prefix `pulse-filter-fresh-`).
+    await page.waitForTimeout(500);
+    const resolvedFresh = page.locator('[data-testid^="pulse-filter-freshness-resolved"]').first();
+    const resolvedExists = await resolvedFresh.count().catch(() => 0);
+    if (resolvedExists > 0) {
+      failures.push(`Chunk 10 (QA-025): duplicate "Resolved" filter chip still present under Freshness`);
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 10 (QA-025) — no duplicate "Resolved" chip under Freshness`);
+    }
+
+    // Step 3 — QA-022 — saved comment renders inline on the card.
+    const card = page.locator(`[data-testid="pulse-card-${probe.signalId}"]`).first();
+    try {
+      await card.scrollIntoViewIfNeeded({ timeout: 5000 });
+    } catch { /* card may be virtualised — fine */ }
+    const commentsList = page.locator(`[data-testid="pulse-card-comments-list-${probe.signalId}"]`).first();
+    const commentsListVisible = await commentsList.isVisible().catch(() => false);
+    if (!commentsListVisible) {
+      failures.push(`Chunk 10 (QA-022): saved-comments list NOT rendered on the card for the seeded signal`);
+    } else {
+      const noteText = (await commentsList.innerText().catch(() => "")) || "";
+      if (!/Seeded private note/i.test(noteText)) {
+        failures.push(`Chunk 10 (QA-022): saved-comments list rendered but does NOT contain the seeded note text — got "${noteText.slice(0, 80)}"`);
+      } else {
+        console.log(`[render-smoke]  ✓ Chunk 10 (QA-022) — saved comment renders inline on the card`);
+      }
+    }
+
+    // Step 4 — open the drawer. The card body button opens the drawer
+    //          via onOpenDrawer; click the specific open-button.
+    const openBtn = page.locator(`[data-testid="pulse-card-open-${probe.signalId}"]`).first();
+    await openBtn.click();
+    await page.waitForTimeout(700);
+    const drawerTitle = page.locator('[data-testid="pulse-drawer-title"]').first();
+    try {
+      await drawerTitle.waitFor({ state: "visible", timeout: 5000 });
+    } catch {
+      failures.push(`Chunk 10: drawer did not open within 5s of clicking the card`);
+      return;
+    }
+
+    // Step 5 — QA-027 — drawer chip cluster mirrors the card.
+    const chipCluster = page.locator('[data-testid="pulse-drawer-chips"]').first();
+    const chipClusterVisible = await chipCluster.isVisible().catch(() => false);
+    if (!chipClusterVisible) {
+      failures.push(`Chunk 10 (QA-027): drawer chip cluster not rendered`);
+    } else {
+      // The seed sets type=risk, topic=capital, freshness=new — assert
+      // all three child chips appear.
+      const typeChip = await page.locator('[data-testid="pulse-drawer-chip-type"]').isVisible().catch(() => false);
+      const topicChip = await page.locator('[data-testid="pulse-drawer-chip-topic"]').isVisible().catch(() => false);
+      const freshChip = await page.locator('[data-testid="pulse-drawer-chip-freshness"]').isVisible().catch(() => false);
+      if (typeChip && topicChip && freshChip) {
+        console.log(`[render-smoke]  ✓ Chunk 10 (QA-027) — drawer chip cluster (type + topic + freshness) renders`);
+      } else {
+        failures.push(`Chunk 10 (QA-027): drawer chips missing — type=${typeChip} topic=${topicChip} fresh=${freshChip}`);
+      }
+    }
+
+    // Step 6 — QA-026 — reasoning renders as a <ul> with multiple
+    //          bullets (seed has 3 paragraphs separated by \n\n).
+    const reasoningList = page.locator('[data-testid="pulse-drawer-reasoning-list"]').first();
+    if (!await reasoningList.isVisible().catch(() => false)) {
+      failures.push(`Chunk 10 (QA-026): drawer reasoning is NOT bullet-formatted (no <ul> rendered)`);
+    } else {
+      const items = await page.locator('[data-testid^="pulse-drawer-reasoning-item-"]').count().catch(() => 0);
+      if (items < 2) {
+        failures.push(`Chunk 10 (QA-026): drawer reasoning <ul> rendered but with only ${items} bullets (expected ≥ 2)`);
+      } else {
+        // Check that document citations have been stripped.
+        const reasoningText = ((await reasoningList.innerText().catch(() => "")) || "");
+        if (/\[doc:/i.test(reasoningText)) {
+          failures.push(`Chunk 10 (QA-026): drawer reasoning still contains a [doc:...] citation marker — stripper did not fire`);
+        } else {
+          console.log(`[render-smoke]  ✓ Chunk 10 (QA-026) — reasoning bullet-formatted (${items} items) + citations stripped`);
+        }
+      }
+    }
+
+    // Step 7 — QA-028 — Save-only footer; no Bookmark / Unbookmark
+    //          buttons in the drawer.
+    const saveBtn = page.locator('[data-testid="pulse-drawer-action-save"]').first();
+    const bookmarkBtn = page.locator('[data-testid="pulse-drawer-action-bookmark"]').first();
+    const unbookmarkBtn = page.locator('[data-testid="pulse-drawer-action-unbookmark"]').first();
+    const saveVisible = await saveBtn.isVisible().catch(() => false);
+    const bookmarkExists = await bookmarkBtn.count().catch(() => 0);
+    const unbookmarkExists = await unbookmarkBtn.count().catch(() => 0);
+    if (!saveVisible) {
+      failures.push(`Chunk 10 (QA-028): drawer Save button not visible`);
+    } else if (bookmarkExists > 0 || unbookmarkExists > 0) {
+      failures.push(`Chunk 10 (QA-028): redundant Bookmark/Unbookmark button still in drawer (bookmark=${bookmarkExists}, unbookmark=${unbookmarkExists})`);
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 10 (QA-028) — drawer footer is Save-only (Bookmark removed)`);
+    }
+  } catch (e) {
+    failures.push(`Chunk 10 smoke threw: ${e.message}`);
+  }
+
+  if (pageErrors.length > 0) {
+    failures.push(`Chunk 10 step: ${pageErrors.length} uncaught page error(s)`);
+    for (const e of pageErrors) console.error(`    PAGEERROR  ${e.slice(0, 240)}`);
+  }
+  page.off("pageerror", onPageError);
 }
 

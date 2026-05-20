@@ -5,8 +5,8 @@ source: /app/memory/qa_reports/QA_REPORT_16MAY2026.md (16-May rows)
               + /app/memory/qa_reports/SOLVA_QA_BRIEF_20MAY2026.md (Solva rows)
 total_findings: 51 (16-May) + 8 (Solva 20-May) = 59
 total_clarifications: 2
-priority_histogram: "P0: 6 (DONE) · P1: 15 + 13 (DONE Chunk-8 8 + Chunk-9 5) · P2: 15 · P3: 2 · SV-Crit: 3 (DONE Chunk-9.5) · SV-High/Med: 5 (BACKLOG)"
-maintainer: e1_main (Chunk 9.5 close)
+priority_histogram: "P0: 6 (DONE) · P1: 14 + 14 (DONE Chunk-8 8 + Chunk-9 5 + Chunk-10 1) · P2: 9 (DONE Chunk-10 6) · P3: 2 · SV-Crit: 3 (DONE Chunk-9.5) · SV-High/Med: 5 (BACKLOG)"
+maintainer: e1_main (Chunk 10 close, autonomous overnight)
 ---
 
 # QA Backlog — 16 May 2026 (Master Tracker)
@@ -43,13 +43,13 @@ If this table and the source ever disagree, the source wins; rebuild this table.
 | QA-2026-05-16-019 | Add a Contribution | Paste-text box stays alongside attachment (do not remove) | P1 | DONE | Chunk-9 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-019 |
 | QA-2026-05-16-020 | Add a Contribution | Record Contribution scores attached + pasted content together | P1 | DONE | Chunk-9 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-020 |
 | QA-2026-05-16-021 | Add a Contribution | Record Contribution disabled until at least one input is supplied | P2 | DONE | Chunk-9 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-021 |
-| QA-2026-05-16-022 | Pulse | Saved comments on signal cards do not display when re-opened | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-022 |
-| QA-2026-05-16-023 | Pulse | Save-signal icon must change state + bookmarked-tab notification | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-023 |
-| QA-2026-05-16-024 | Pulse | Saved-signal marker must appear wherever the signal surfaces | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-024 |
-| QA-2026-05-16-025 | Pulse | Remove duplicate "Resolved" filter under Freshness (keep tab one) | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-025 |
-| QA-2026-05-16-026 | Pulse | Remove document citations from signal content + bullet the context | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-026 |
-| QA-2026-05-16-027 | Pulse | Signal drawer missing New / High / Recommendation badges | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-027 |
-| QA-2026-05-16-028 | Pulse | Drawer needs resolved/bookmarked icon-state + drop "Bookmark" label | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-028 |
+| QA-2026-05-16-022 | Pulse | Saved comments on signal cards do not display when re-opened | P1 | DONE | Chunk-10 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-022 |
+| QA-2026-05-16-023 | Pulse | Save-signal icon must change state + bookmarked-tab notification | P2 | DONE | Chunk-10 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-023 |
+| QA-2026-05-16-024 | Pulse | Saved-signal marker must appear wherever the signal surfaces | P2 | DONE | Chunk-10 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-024 |
+| QA-2026-05-16-025 | Pulse | Remove duplicate "Resolved" filter under Freshness (keep tab one) | P2 | DONE | Chunk-10 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-025 |
+| QA-2026-05-16-026 | Pulse | Remove document citations from signal content + bullet the context | P2 | DONE | Chunk-10 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-026 |
+| QA-2026-05-16-027 | Pulse | Signal drawer missing New / High / Recommendation badges | P2 | DONE | Chunk-10 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-027 |
+| QA-2026-05-16-028 | Pulse | Drawer needs resolved/bookmarked icon-state + drop "Bookmark" label | P2 | DONE | Chunk-10 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-028 |
 | QA-2026-05-16-029 | Work Studio — Document Overlay | Overlay shell + dimmed page + close returns to list — overlay component + new GET endpoint | P1 | DONE | Chunk-8 | Live verification ready 2026-05-18 fix-pass · `qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-029` |
 | QA-2026-05-16-030 | Work Studio — Document Overlay | Toolbar with Draft/InReview/Committed variants + Move-to-review (owner only) + lifecycle endpoints | P1 | DONE | Chunk-8 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-030 |
 | QA-2026-05-16-031 | Work Studio — Document Overlay | Intelligence card collapsed with RAG accent (≥80 green / 50-79 amber / <50 red) | P1 | DONE | Chunk-8 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-031 |

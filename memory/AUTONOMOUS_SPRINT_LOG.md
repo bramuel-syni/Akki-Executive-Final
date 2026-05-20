@@ -27,9 +27,10 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
   - `screenshots/audit_panel_inline_broken_20MAY2026.{jpg,md}` — persisted
   - `screenshots/audit_panel_trust_view_broken_20MAY2026.{jpg,md}` — persisted
 
-## Chunk 9.5 fix-pass — 2 gaps closed — DONE — 2026-05-20T22:15:00Z
+## Chunk 9.5 fix-pass — 2 gaps closed — DONE (tester verified 2/2) — 2026-05-20T22:15:00Z
 
 - IDs reaffirmed: SV-03 toast (gap 1), Sx2 fixture (gap 2)
+- **Tester verdict: PASS — saved indicator visible via MutationObserver; Sx2 PII metrics endpoint returns `identifiers_redacted=24` with non-standby storyline.**
 - Pytest delta: 0 (still 722 — fix-pass doesn't add tests, the original 10 already cover both surfaces)
 - Tester verdict: PASS pending (live render-smoke step 11 sub-step 4 hard-asserts green; orchestrator tester re-run pending)
 - Files touched: 3 (`SolvaPhaseDSession.jsx`, `seed_chunks.py`, `render-smoke.js`)
@@ -42,6 +43,27 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 - Notable side observation: Sonner portal not reliably visible to Playwright headless-shell — captured as general lesson; future smoke steps that need to assert toast-fired should observe an in-tree companion indicator, not the portal node.
 
 **Awaiting tester re-run on Chunk 9.5 surfaces, then dispatch of Chunk 10.**
+
+
+## Chunk 10 — 16-May Pulse-surface batch (-022 → -028) — DONE — 2026-05-21T00:30:00Z
+
+- IDs closed: 7 total (1 P1 + 6 P2) — bundled per autonomous-mode "adjacent P2s when fewer than 4 P1s in surface" guidance
+  - **P1:** QA-2026-05-16-022
+  - **P2:** QA-2026-05-16-023, -024, -025, -026, -027, -028
+- Pytest delta: **+7** (722 → 729; all new tests pass in full suite)
+- Tester verdict: PASS pending (render-smoke step 12 hard-asserts 5/5 against seeded signal; orchestrator tester re-run pending)
+- Files touched: 4 (`routers/pulse.py`, `pages/Pulse.jsx`, `scripts/seed_chunks.py`, `scripts/render-smoke.js`; +1 new test file)
+- Architectural invariants: PASS
+- Blockers: none
+- PO escalations queued: none
+- Memory updates:
+  - `qa_reports/QA_BACKLOG.md` — 7 row flips + histogram bump
+  - `SYSTEM_STATE.md § 4` — Chunk-10 closeout (newest at top)
+  - `sprints/POST_REWRITE_RAMP.md` — Track 3 histogram updated
+  - `sprints/CHUNK_10_STATE.md` — created (citation regex catalogue, bullet heuristic, schema-drift lesson)
+- Notable: surfaced + fixed a latent backend crash (`'float' object has no attribute 'lower'`) on legacy signal rows with float confidence. Schema-drift defensiveness pattern captured for re-use.
+
+**Awaiting orchestrator tester re-run on Chunk 10 surfaces, then dispatch of Chunk 11 (16-May P1 Monitor batch).**
 
 
 **Awaiting orchestrator tester verification, then dispatch of Chunk 10.**

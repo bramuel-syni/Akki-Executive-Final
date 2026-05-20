@@ -236,11 +236,28 @@ async def pulse_feed(
     # Phase G.3 — priority sort on Active landing: confidence × recency.
     # high=3, medium=2, low=1. Within the same confidence bucket the newer
     # signal wins. Other tabs keep recency-only ordering.
+    #
+    # QA-2026-05-16-027 (Chunk 10) — defensive: `confidence` is a STRING
+    # bucket on the canonical schema, but a small number of legacy rows
+    # carry a float (0–1 scale). Coerce defensively so the feed never
+    # 500s on schema drift; convert ≥0.66 → "high", 0.33–0.66 → "medium",
+    # <0.33 → "low".
+    def _conf_bucket(v: Any) -> str:
+        if isinstance(v, str) and v.strip():
+            return v.strip().lower()
+        if isinstance(v, (int, float)):
+            if v >= 0.66:
+                return "high"
+            if v >= 0.33:
+                return "medium"
+            return "low"
+        return "medium"
+
     if state_arg == "active":
         _CONF_RANK = {"high": 3, "medium": 2, "low": 1}
         sigs.sort(
             key=lambda s: (
-                _CONF_RANK.get((s.get("confidence") or "medium").lower(), 2),
+                _CONF_RANK.get(_conf_bucket(s.get("confidence")), 2),
                 s.get("created_at") or "",
             ),
             reverse=True,
@@ -715,7 +732,7 @@ async def pulse_bookmark(
             signal_id=signal_id, context_id=context_id,
             account_id=aid, action_type="saved", payload={},
         )
-    return {"ok": True, "state": "bookmarked", "id": signal_id}
+    return {"ok": True, "state": "bookmarked", "id": signal_id, "saved": True}
 
 
 @router.post("/contexts/{context_id}/pulse/signals/{signal_id}/unbookmark")
@@ -735,7 +752,10 @@ async def pulse_unbookmark(
         {"signal_id": signal_id, "context_id": context_id,
          "account_id": aid, "action_type": "saved"},
     )
-    return {"ok": True, "state": "active", "id": signal_id}
+    # QA-2026-05-16-023 — explicit `saved` flag so the frontend can
+    # render a deterministic icon-state + toast direction without
+    # interpreting `state` strings.
+    return {"ok": True, "state": "active", "id": signal_id, "saved": False}
 
 
 # Legacy /save toggle — kept for back-compat with the existing UI.

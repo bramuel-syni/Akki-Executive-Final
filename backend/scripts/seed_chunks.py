@@ -484,6 +484,93 @@ async def _seed_chunk95_pii_chat_fixture(db, context_id: str, account_id: str) -
     }
 
 
+async def _seed_chunk10_pulse_signal_fixture(db, context_id: str, account_id: str) -> Dict[str, Any]:
+    """Chunk 10 (QA-2026-05-16-022..-028) — seed one Pulse signal per
+    bramuel context with `comments[]` pre-populated AND a `reasoning`
+    field that contains both a document-citation pattern (so QA-026
+    stripping is visible) AND multiple distinct points separated by
+    `\\n\\n` (so QA-026 bullet formatting kicks in). Idempotent via
+    `chunk10_pulse_marker="v1"` on the signal row.
+
+    Hard-asserts in render-smoke step 12 cover:
+      • QA-022 — saved comment renders inline on the card
+      • QA-024/027 — Saved chip + chip cluster on the drawer
+      • QA-026 — reasoning section renders as a `<ul>`, citations stripped
+    """
+    existing = await db.signals.find_one(
+        {"context_id": context_id, "chunk10_pulse_marker": "v1"},
+        {"_id": 0, "id": 1},
+    )
+    if existing:
+        return {
+            "context_id": context_id, "signal_id": existing["id"],
+            "minted": False, "reason": "already_seeded",
+        }
+
+    signal_id = f"sig-c10-{uuid.uuid4().hex[:10]}"
+    comment_id = f"cm-c10-{uuid.uuid4().hex[:10]}"
+    now_dt = _now()
+    now_iso = _iso(now_dt)
+
+    await db.signals.insert_one({
+        "id": signal_id,
+        "context_id": context_id,
+        "account_id": account_id,
+        "headline": "Capital adequacy buffer thinning vs Q1 baseline",
+        "summary": (
+            "CET1 ratio drift suggests the capital buffer is "
+            "narrowing into a zone the audit committee should flag "
+            "before Q3 close. [doc:Q2_capital_pack.pdf]"
+        ),
+        "body": (
+            "CET1 has dropped 80bps quarter-on-quarter while RWA has "
+            "grown 4.2%. Headroom against the regulatory minimum is "
+            "now 1.6× — historical low for the past 8 quarters. "
+            "(source: Q2_capital_pack.pdf)"
+        ),
+        "reasoning": (
+            "The buffer is being eroded by two simultaneous pressures.\n\n"
+            "Risk-weighted assets are up 4.2% driven by the H1 lending "
+            "campaign in the SME segment — credit risk weights average "
+            "75% vs 35% for the retained portfolio. (p. 14)\n\n"
+            "Tier-1 capital has stagnated because retained earnings are "
+            "being absorbed by the deferred-tax catch-up from the FY25 "
+            "restatement. [doc:audit_report.pdf]\n\n"
+            "If both trends persist, headroom drops to 1.2× by year-end — "
+            "below the board's internal tolerance of 1.5×."
+        ),
+        "type": "risk",
+        "surface_type": "risk",
+        "signal_kind": "capital",
+        "topic_class": "capital",
+        "freshness": "new",
+        "confidence": "high",
+        "data_trust": "verified",
+        "merge_count": 1,
+        "state": "active",
+        "status": "active",
+        "created_at": now_iso,
+        "references": [
+            {"label": "Q2 capital pack", "doc_id": "stub-doc-1"},
+            {"label": "Audit report", "doc_id": "stub-doc-2"},
+        ],
+        "comments": [{
+            "id": comment_id,
+            "account_id": account_id,
+            "note": "Seeded private note — committee should ask Treasury for the contingency plan ahead of Q3.",
+            "created_at": now_iso,
+        }],
+        "chunk10_pulse_marker": "v1",
+    })
+
+    return {
+        "context_id": context_id,
+        "signal_id": signal_id,
+        "comment_id": comment_id,
+        "minted": True,
+    }
+
+
 async def main():
     cli = AsyncIOMotorClient(os.environ["MONGO_URL"])
     db = cli[os.environ["DB_NAME"]]
@@ -501,6 +588,7 @@ async def main():
     minted_drafts: List[Dict[str, Any]] = []
     cycle_seeds: List[Dict[str, Any]] = []
     pii_chats: List[Dict[str, Any]] = []
+    pulse_signals: List[Dict[str, Any]] = []
 
     for c in contexts:
         cid = c["id"]
@@ -540,6 +628,13 @@ async def main():
         if res.get("minted"):
             pii_chats.append(res)
 
+        # Pass E (Chunk 10): Pulse signal with comments + citations +
+        # multi-paragraph reasoning, so render-smoke step 12 can
+        # hard-assert QA-022/024/026/027 visuals.
+        res = await _seed_chunk10_pulse_signal_fixture(db, cid, bid)
+        if res.get("minted"):
+            pulse_signals.append(res)
+
     # Write a seed-log marker for visibility / forensics.
     await db.chunk8_seed_log.insert_one({
         "run_id": uuid.uuid4().hex,
@@ -549,16 +644,19 @@ async def main():
         "minted_count": len(minted_drafts),
         "cycle_seed_count": len(cycle_seeds),
         "pii_chat_count": len(pii_chats),
+        "pulse_signal_count": len(pulse_signals),
         "enriched_sample": enriched[:5],
         "minted_sample": minted_drafts[:5],
         "cycle_seed_sample": cycle_seeds[:5],
         "pii_chat_sample": pii_chats[:5],
+        "pulse_signal_sample": pulse_signals[:5],
     })
 
     print(f"[seed-chunks] enriched {len(enriched)} existing exports across "
           f"{len(contexts)} contexts; minted {len(minted_drafts)} fresh draft "
           f"committee packs; seeded {len(cycle_seeds)} cycle/agenda fixtures; "
-          f"seeded {len(pii_chats)} PII chats (Sx2 verification).")
+          f"seeded {len(pii_chats)} PII chats (Sx2 verification); seeded "
+          f"{len(pulse_signals)} Pulse signals (Chunk 10).")
     print("[seed-chunks] Sample artefact IDs for tester to target:")
     for r in (minted_drafts[:3] + enriched[:3]):
         print(f"   - ctx={r['context_id']} aid={r['id']}")
@@ -573,6 +671,11 @@ async def main():
         for pc in pii_chats[:3]:
             print(f"   - ctx={pc['context_id']} chat={pc['chat_id']} "
                   f"spans={pc['spans_seeded']}")
+    if pulse_signals:
+        print("[seed-chunks] Sample Pulse signals (Chunk 10 -022/-024/-026/-027):")
+        for ps in pulse_signals[:3]:
+            print(f"   - ctx={ps['context_id']} signal={ps['signal_id']} "
+                  f"comment={ps.get('comment_id')}")
 
 
 if __name__ == "__main__":
