@@ -270,3 +270,69 @@ def _pricing_signature() -> Dict[str, Any]:
         "default_flat_usd_per_call": DEFAULT_FLAT_USD_PER_CALL,
         "providers": sorted({p for (p, _m) in PROVIDER_MODEL_PRICING}),
     }
+
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Chunk 19 C19-005 — Admin cron health endpoint.
+#
+# Reads the `scheduler_runs` heartbeat collection (created in Chunk 18
+# `services/synisense/engine/scheduler_lock.py`) and surfaces the most
+# recent run per `job_id`. Bank-QA reviewers expect evidence that
+# scheduled work actually runs — this endpoint is the single read for
+# that evidence, no cross-referencing required.
+# ─────────────────────────────────────────────────────────────────────
+@router.get("/cron-health")
+async def cron_health(
+    _admin: Dict[str, Any] = Depends(_require_superadmin),
+) -> List[Dict[str, Any]]:
+    """Latest scheduler heartbeat row per registered job.
+
+    Returns a list ordered by `last_run_at` desc:
+      [
+        {
+          "job_id": "synisense_engine_hourly",
+          "last_run_at": "2026-05-21T19:00:00.123456+00:00",
+          "status": "ok" | "failed",
+          "duration_ms": 1530,
+          "summary": {...rule-family counts...},
+          "hour_bucket": "20260521-19",
+          "replica_id": "agent-env-...-3fca028d",
+          "error": null | "RuntimeError: ...",
+        },
+        ...
+      ]
+
+    Empty list when no scheduled work has run yet (e.g. fresh deploy
+    pre-top-of-hour). The shape stays the same across job types so a
+    single read covers every cron the platform owns today.
+    """
+    pipeline = [
+        {"$sort": {"started_at": -1}},
+        {"$group": {
+            "_id": "$job_id",
+            "doc": {"$first": "$$ROOT"},
+        }},
+        {"$replaceRoot": {"newRoot": "$doc"}},
+        {"$sort": {"started_at": -1}},
+    ]
+    out: List[Dict[str, Any]] = []
+    async for row in db.scheduler_runs.aggregate(pipeline):
+        started = row.get("started_at")
+        hour_bucket = None
+        try:
+            if isinstance(started, datetime):
+                hour_bucket = started.strftime("%Y%m%d-%H")
+        except Exception:  # noqa: BLE001
+            hour_bucket = None
+        out.append({
+            "job_id": row.get("job_id"),
+            "last_run_at": started.isoformat() if isinstance(started, datetime) else started,
+            "status": row.get("status"),
+            "duration_ms": row.get("duration_ms"),
+            "summary": row.get("summary") or {},
+            "hour_bucket": hour_bucket,
+            "replica_id": row.get("replica_id"),
+            "error": row.get("error"),
+        })
+    return out

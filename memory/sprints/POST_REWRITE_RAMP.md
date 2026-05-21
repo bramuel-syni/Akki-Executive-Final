@@ -115,9 +115,11 @@ Bundle every closeout doc + sample artefacts (PDF, screenshots, audit-log sample
 | PHASE_A → PHASE_F closeouts (6 docs) | `/app/memory/sprints/` | ✅ already written |
 | REWRITE_FINAL_CLOSEOUT.md | this rewrite | ✅ written |
 | Sample privacy-report PDF + text dump | `/app/memory/sprints/phase_e_addendum_artefacts/` | ✅ already saved |
-| Sample HMAC verification script (Python, 30 lines) | needs writing | queued |
-| Architecture diagram (mermaid → PNG) | needs drawing | queued |
-| Screenshot pack (Observability / Billing / Monitor Update goal / Privacy PDF) | partially in `/tmp/` | needs collation |
+| Sample HMAC verification script (Python) | `/app/memory/sprints/phase_e_addendum_artefacts/verify_trust_receipt.py` | ✅ DONE (Chunk 19, C19-001) |
+| Architecture diagram (Mermaid source + PNG export instructions) | `/app/memory/sprints/phase_e_addendum_artefacts/architecture_diagram.md` | ✅ DONE (Chunk 19, C19-002) |
+| Screenshot pack README + capture procedure | `/app/memory/sprints/phase_e_addendum_artefacts/screenshot_pack_README.md` | ✅ DONE (Chunk 19, C19-003); PNG captures themselves are an operator task per the README |
+| Holistic product features + functionality doc | `/app/memory/product/AKKI_FEATURES_AND_FUNCTIONALITY.md` | ✅ DONE (Chunk 19, C19-004) — 10 sections, 3500+ words |
+| Admin cron-health endpoint (`GET /api/admin/synisense/cron-health`) | `routers/synisense_observability.py` | ✅ DONE (Chunk 19, C19-005) |
 
 ---
 
@@ -144,4 +146,4 @@ CHUNK 7 — Home + Document Journal fixes
 
 ## Status
 
-📋 **Plan ready.** No code changes pending. Awaiting user's choice between (a) start Chunk 7, (b) skip to the 14 deferred findings, (c) work on the evidence pack instead, (d) take a beat.
+✅ **Tracks 1-5 closed.** QA-2026-05-16 sprint complete after Chunks 9.5 → 19. Only AWAITING_PO items remain: QA-050 dual-role label · QA-002 "All documents" button · C17-003 cross-context Solva sessions aggregate · Track 4 Item 5 Around-the-Goals. Sprint scorecard + morning report in `/app/memory/AUTONOMOUS_SPRINT_LOG.md`.

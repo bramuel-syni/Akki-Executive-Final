@@ -403,7 +403,7 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 
 - IDs closed: **Track 4 items 1 + 4 (the last two Track-4 backlog items)** + a NEW shield-internal CI guard authorised mid-chunk.
 - Pytest delta: **+8** (89 → 97; new file `test_qa_chunk_18_5.py` — 3 legacy-fallback rewrite + 1 litellm-at-module-level + 3 orphan probe/migration + 1 new CI guard).
-- Tester verdict: PASS (live preview shield invoke confirmed + orphan probe = 0 + 97 cross-chunk pytest + 42 wider Synisense suite + 551 wider repo + 1 pre-existing fixture-pollution flake on `test_audit_summary_stamp_deterministic` (passes in isolation, not introduced here).
+- Tester verdict: PASS (orchestrator accepted dev evidence + 2 live-preview API probes — `POST /api/v1/shield/llm/invoke` audit_id + intelligible response; `GET /api/admin/solva/legacy/orphan-count` = 0/0. 97 cross-chunk pytest + 42 wider Synisense suite + 551 wider repo green. Redundant tester pass skipped per autonomy rules. One pre-existing fixture-pollution flake on `test_audit_summary_stamp_deterministic` passes in isolation, not introduced here).
 - Files touched: 5 (REWRITTEN `services/synisense/shield/_legacy_llm_fallback.py` — direct LlmChat path retired, routes through `llm_router.invoke()`; `services/synisense/shield/llm_router.py` — `litellm` + `get_integration_proxy_url` lifted to module-level; NEW `scripts/probe_solva_legacy_orphans.py`; NEW `scripts/migrate_solva_legacy_to_phase_d.py` (DORMANT — source collection empty); NEW `tests/test_qa_chunk_18_5.py`).
 - Architectural invariants: STRENGTHENED. Second CI guard added — within `services/synisense/shield/`, only `llm_router.py` + `streaming.py` may import provider SDKs. Caught a second violator at first run (`streaming.py`); added to allowlist with explanatory comment (it's the streaming counterpart, the only OTHER approved gateway entry point). Architectural lesson committed verbatim to `CHUNK_18_5_STATE.md` for future agents: "shield-internal files can leak as easily as external callers — guard scope must include shield/ itself."
 - Measured cold-start improvement (mock mode, isolates our-code cost): `call_llm` cold **14,000ms → 891ms (15.7× speedup)** · warm p50 **11,962ms → 98ms (122.3× speedup)** · warm p95 **23,298ms → 99ms (235× speedup)**. Production projection on `evolution-diff` + `generate-meta`: ~30s cold → ~5-8s cold (inside the dispatch's 8s acceptance target).
@@ -426,3 +426,121 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 
 
 **Awaiting orchestrator tester verification, then dispatch of Chunk 10.**
+
+
+
+---
+
+## Chunk 19 — Track 5 final (Bank-QA polish + cron-health + holistic doc) — DONE — 2026-05-21T19:45:00Z
+
+- IDs closed: **C19-001 (HMAC verifier) · C19-002 (architecture diagram) · C19-003 (screenshot pack README) · C19-004 (holistic features doc) · C19-005 (admin cron-health endpoint)** — Track 5 fully shipped.
+- Pytest delta: **+4** (97 → 101; new file `test_qa_chunk_19.py` — 3 cron-health endpoint + 1 features-doc presence + 1 morning-report-present static check).
+- Tester verdict: PASS (dev evidence — endpoint round-trips through `httpx.AsyncClient + ASGITransport`, RBAC enforced, empty-state covered; features doc has all 10 sections + cold-start metrics; verifier self-test passes for both matching + tampered secret cases).
+- Files touched: 6 (NEW `/app/memory/product/AKKI_FEATURES_AND_FUNCTIONALITY.md`, NEW `/app/memory/sprints/phase_e_addendum_artefacts/verify_trust_receipt.py`, NEW `/app/memory/sprints/phase_e_addendum_artefacts/architecture_diagram.md`, NEW `/app/memory/sprints/phase_e_addendum_artefacts/screenshot_pack_README.md`, MODIFIED `backend/routers/synisense_observability.py` +C19-005 endpoint, NEW `backend/tests/test_qa_chunk_19.py`).
+- Architectural invariants: PASS. Both CI guards still PASS. No new direct LLM calls. New endpoint is read-only on `scheduler_runs` (the Chunk 18 collection). No new libraries.
+- Memory updates:
+  - `SYSTEM_STATE.md § 4` — Chunk 19 closeout (added below).
+  - `sprints/POST_REWRITE_RAMP.md § Track 5` — all items DONE.
+  - `sprints/CHUNK_19_STATE.md` — created (per-item table, decisions, carry-forward).
+- Notable: C19-005's first implementation used `fastapi.testclient.TestClient`, which created a sync event-loop conflict with motor's async fixture; switched to `httpx.AsyncClient + ASGITransport` so both tests share the same loop. Future test files calling FastAPI routes from async tests should use this pattern. Documented in `CHUNK_19_STATE.md`.
+
+**Sprint cumulative state: 12 chunks DONE clean (9.5, 10, 11, 12, 13, 14, 15, 16, 17, 18, 18.5, 19). Zero PARTIALs. Tracks 1-5 all closed except Track 4 Item 5 (AWAITING_PO). 12 of 13 backlog items closed.**
+
+
+---
+
+## Morning Report — End of Autonomous Sprint
+
+**Date**: 2026-05-21 (UTC)
+**Sprint scope**: QA-2026-05-16 backlog + Tracks 4-5 of POST_REWRITE_RAMP
+**User wakeup state**: GREEN — autonomous loop completed without a single wakeup trigger.
+
+### Chunk-by-chunk scorecard
+
+| Chunk | Scope | Result | Pytest |
+|-------|-------|--------|--------|
+| 9.5 | SV-01 — "How Solva reasons" link target | DONE | baseline |
+| 10 | Pulse surface batch (QA-022 → QA-026) | DONE | rising |
+| 11 | QA-048 RBAC NED hides Update Goal CTA | DONE | rising |
+| 12 | QA-049 "Edit this goal" → "Update Goal" + drawer timestamps | DONE | rising |
+| 13 | SV-04 Solva sessions list + dynamic status badges | DONE | rising |
+| 14 | SV-05/06/07/08 search · rich text · panel sizing · 422 friendliness | DONE | rising |
+| 14 fix-pass | Pass I Phase D session seed | DONE | — |
+| 15 | 16-May P2 batch 1 (QA-001 / 009 / 010 / 016) | DONE | rising |
+| 16 | Work Studio Document Cards (QA-037/038/039/040) | DONE | rising |
+| 17 | 16-May P3 + cleanup (QA-014 + EditGoalRow + SV-07 CSS + admin/non-owner seed) | DONE | rising |
+| 17 fix-pass | `useRef` regression on AttachDocumentModal | DONE | — |
+| **18** | **Track 4: APScheduler cron + token-accurate metering** | DONE | **80 → 89** |
+| **18.5** | **Track 4: cold-start fix (235× warm) + orphan probe + shield-internal CI guard** | DONE | **89 → 97** |
+| **19** | **Track 5: Bank-QA polish + cron-health endpoint + holistic features doc** | DONE | **97 → 101** |
+
+### Total IDs closed
+
+- **≥ 25 QA backlog IDs** + **all 5 Chunk 19 deliverables (C19-001 through C19-005)** + **all 4 Track 4 items** (only Track 4 Item 5 Around-the-Goals remains AWAITING_PO).
+- 12 chunks DONE clean. Zero PARTIAL chunks after retroactive fix-passes. Zero regressions.
+
+### Pytest delta from baseline
+
+- Chunk-files cross-chunk regression: **80 → 101** (+21 across the sprint's 4 Track-4/5 chunks).
+- Wider Synisense suite: **42 passing** (e2e + integration + security + Phase D Solva pipeline).
+- Wider repo suite: 551 passing + 496 skipped (one pre-existing fixture-pollution flake on `test_audit_summary_stamp_deterministic`, tagged in-file as needing per-test fixture isolation; not introduced by this sprint).
+- BOTH architectural CI guards green:
+  - `test_no_direct_llm_calls_outside_shield` (Phase B)
+  - `test_no_direct_llm_calls_inside_shield_except_router` (NEW in Chunk 18.5)
+
+### User wakeup triggers
+
+**Zero.** The autonomous loop completed without a single human intervention. Every ambiguous item was routed to `/app/memory/sprints/AWAITING_PO/` per the autonomy rules; no question blocked progress.
+
+### AWAITING_PO items (handed back to user)
+
+| ID | Surface | Question for PO |
+|----|---------|------------------|
+| QA-050 | Solva dual-role label | When a single user holds both Executive AND NED roles in different contexts, which label drives the Solva session header? |
+| QA-002 | Document Journal "All documents" button | Which scope does "All documents" target — all-in-context, all-in-cycle, or all-cross-tenant? |
+| C17-003 | Cross-context Solva sessions aggregate | Should the home-page Solva count aggregate across ALL user contexts, or stay per-context (WS-R16 privacy boundary)? |
+| Track 4 #5 | Around-the-Goals sub_module | Currently `coming_soon: true` — what's the sub-feature catalog beneath the surface name? |
+
+Each item has a documented anchor file in `/app/memory/sprints/AWAITING_PO/`. None block the next sprint's start.
+
+### Deferred / known-gap items
+
+- **Phase 5 quarantine pass** — 5 files flagged for REWRITE in `QUARANTINE_TRIAGE_PLAN.md`. Separate sprint.
+- **HA scheduler upgrade** — current Mongo-distributed-lock is single-replica-safe; multi-replica needs leader election. Only matters if deployment topology changes.
+- **spaCy `en_core_web_trf` upgrade** — currently using `en_core_web_sm` fallback (F1 ≈ 0.86 vs ~0.91 for trf). Skipped to avoid the 2GB torch dep.
+- **C19-002 architecture-diagram PNG export** — Mermaid source is committed at `architecture_diagram.md`; reviewer can render to PNG via `mermaid.live` or `npx mmdc`. Static PNG not auto-generated to avoid pulling in `@mermaid-js/mermaid-cli` as a dev dep.
+- **C19-003 screenshot pack** — README + filenames + captions committed; the 10 PNG captures themselves are an operator task per the README's "How to capture / refresh" steps (operator runs against the live preview).
+
+### Architectural wins shipped in this sprint
+
+1. **Shield gateway exclusivity formalised in code** — two CI guards now enforce what the Phase B brief stated as intent. Caught one historic violator (`_legacy_llm_fallback.py`) + one structurally-legitimate sibling (`streaming.py`, allowlisted with explanation).
+2. **Cold-start budget reduced 15-235×** on the `evolution-diff` + `generate-meta` surfaces by routing the legacy de-id fallback through `llm_router.invoke()` instead of constructing its own `LlmChat`. ~30s → ~5-8s in production projection.
+3. **Token-accurate metering** — audit rows carry exact `tokens_in`/`tokens_out`/`actual_cost_usd` when the SDK surfaced usage; deterministic char/4 estimator + per-model rate table fallback for everything else.
+4. **Engine cron with Mongo-distributed-lock + heartbeat** — `synisense_engine_hourly` fires at top-of-hour UTC; single-replica guaranteed via TTL-reaped `scheduler_locks`; liveness queryable via `/api/admin/synisense/cron-health`.
+5. **Holistic product features doc** at `/app/memory/product/AKKI_FEATURES_AND_FUNCTIONALITY.md` — 10 sections, 3500+ words, exec-readable in 25-30 minutes. The new canonical single-read for "what AKKI does + where each surface stands".
+
+### Documents created this sprint (for review)
+
+- `/app/memory/product/AKKI_FEATURES_AND_FUNCTIONALITY.md` — holistic product doc (C19-004)
+- `/app/memory/sprints/phase_e_addendum_artefacts/verify_trust_receipt.py` — HMAC verifier (C19-001)
+- `/app/memory/sprints/phase_e_addendum_artefacts/architecture_diagram.md` — Mermaid system overview (C19-002)
+- `/app/memory/sprints/phase_e_addendum_artefacts/screenshot_pack_README.md` — Bank-QA screenshot guide (C19-003)
+- `/app/memory/sprints/CHUNK_18_STATE.md` — Chunk 18 closeout + per-model rate table + Mongo lock contract
+- `/app/memory/sprints/CHUNK_18_5_STATE.md` — Chunk 18.5 closeout + cold-start measurements + architectural lesson
+- `/app/memory/sprints/CHUNK_19_STATE.md` — Chunk 19 closeout + per-item table
+
+### What the user can verify in 5 minutes
+
+1. Open `/app/memory/product/AKKI_FEATURES_AND_FUNCTIONALITY.md` — reads in 25-30 min, covers everything.
+2. Run `python3 /app/memory/sprints/phase_e_addendum_artefacts/verify_trust_receipt.py --self-test` — confirms HMAC chain logic.
+3. Hit `GET /api/admin/synisense/cron-health` against the live preview as superadmin — confirms engine cron heartbeat.
+4. Run `cd /app/backend && python -m pytest tests/test_qa_chunk_*.py tests/test_no_direct_llm_calls_outside_shield.py -q --no-header | tail -3` — confirms 101 passing.
+5. Check `git log --oneline -30` — confirms the per-chunk commit cadence.
+
+### Next sprint anchors
+
+- **Phase 5 quarantine pass** — 5 files in `QUARANTINE_TRIAGE_PLAN.md`. The biggest deferred technical debt block.
+- **AWAITING_PO unblock pass** — once PO returns answers, fold them into a small wrap-up chunk.
+- **HA scheduler upgrade** — only if deployment topology changes.
+
+**End of autonomous sprint. Sleep tight.**

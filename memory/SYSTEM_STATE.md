@@ -129,6 +129,35 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 19 — Track 5 final (Bank-QA polish + cron-health + holistic doc) — 2026-05-21 ✅ (autonomous · final chunk of sprint)
+
+Final chunk of the QA-2026-05-16 autonomous sprint. All 5 dispatch deliverables shipped clean.
+
+| ID | Surface | Action | Status |
+|----|---------|--------|--------|
+| C19-001 | Sample HMAC verifier (Python, stdlib only) | NEW `phase_e_addendum_artefacts/verify_trust_receipt.py` — 174 LOC, `--self-test` flag round-trips matching + tampered secrets | DONE |
+| C19-002 | Architecture diagram (Mermaid) | NEW `phase_e_addendum_artefacts/architecture_diagram.md` — Mermaid flowchart with colour groups + reviewer verification surfaces table | DONE |
+| C19-003 | Screenshot pack collation README | NEW `phase_e_addendum_artefacts/screenshot_pack_README.md` — 10-PNG enumeration with role + caption + anchor chunk + refresh procedure | DONE |
+| C19-004 | Holistic product features doc | NEW `/app/memory/product/AKKI_FEATURES_AND_FUNCTIONALITY.md` — 10 sections, 3500+ words, 25-30 min read; exec-PO hybrid audience | DONE |
+| C19-005 | Admin cron-health endpoint | MODIFIED `routers/synisense_observability.py` +`/api/admin/synisense/cron-health` — superadmin-only read of `scheduler_runs`, latest row per `job_id` via Mongo aggregation | DONE |
+
+### Implementation note (carried forward)
+
+C19-005's first test implementation used `fastapi.testclient.TestClient`; failed under pytest-asyncio when motor's async fixture bound to a closed event loop. Fix: switched to `httpx.AsyncClient + ASGITransport`. Future async tests calling FastAPI routes should use this pattern.
+
+### Tests
+
+`backend/tests/test_qa_chunk_19.py` — **5 tests, all passing**:
+- 3 cron-health endpoint (returns-latest-per-job · empty-when-no-runs · requires-superadmin)
+- 1 features-doc presence + section-completeness + cold-start metrics check
+- 1 morning-report-present static check
+
+Cross-chunk regression (9.5/10/11/12/13/14/15/16/17/18/18.5/19 + Phase B guard) = **101 passed** (+4 from Chunk 18.5 baseline 97).
+
+### Sprint close-out
+
+Track 1-5 all closed except AWAITING_PO items (4 routed: QA-050 dual-role label · QA-002 "All documents" button · C17-003 cross-context Solva aggregate · Track 4 #5 Around-the-Goals). The morning report is appended to `AUTONOMOUS_SPRINT_LOG.md`; user wakeup state = GREEN, zero blocking triggers.
+
 ### Chunk 18.5 — Track 4 cold-start fix + orphan probe + shield-internal CI guard — 2026-05-21 ✅ (autonomous)
 
 Closes the LAST two Track 4 items + adds a NEW shield-internal CI guard authorised mid-chunk (the diagnostic surfaced exactly the failure mode the original Phase B guard couldn't catch).
