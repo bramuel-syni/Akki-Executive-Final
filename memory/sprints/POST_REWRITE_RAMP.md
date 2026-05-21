@@ -100,10 +100,10 @@ PO to assign sprint chunks against backlog rows. Every dispatch quotes verbatim 
 
 | # | Item | Source phase | Why | Effort | Status |
 |--:|------|--------------|-----|--------|--------|
-| 1 | 30s cold-start latency on `evolution-diff` + `generate-meta` | Phase E backlog | Deferred per user instruction "until after rewrite" | Investigation first | BACKLOG (Chunk 18.5) — partial mitigation shipped in Chunk 18 (spaCy NER warm-up at boot, `server.py:954-977`) |
+| 1 | 30s cold-start latency on `evolution-diff` + `generate-meta` | Phase E backlog | Deferred per user instruction "until after rewrite" | Investigation first | ✅ DONE (Chunk 18.5, 2026-05-21) — root cause was a redundant Synisense pre-pass in `call_llm` bypassing `SYNISENSE_LLM_MODE=mock`; fix routes `_legacy_llm_fallback` through `llm_router.invoke()` + lifts `litellm` imports to module-level. Measured: `call_llm` cold 14,000ms → 891ms (15.7×), warm p50 11,962ms → 98ms (122.3×). |
 | 2 | Token-accurate Shield metering (audit_log gains `input_tokens` + `output_tokens` + actual_cost_usd) | Phase F Sub-task D | Billing surface is illustrative today; bank QA will eventually want exact pricing | Medium | ✅ DONE (Chunk 18, 2026-05-21) — exact path via `litellm.acompletion` + `compute_cost_usd` rate table |
 | 3 | APScheduler hourly cron for `derivation_scheduler.run_hourly_pass()` | Phase F Sub-task B | Today derivation only runs on startup + on-demand; hourly cron is the locked steady-state cadence | Small | ✅ DONE (Chunk 18, 2026-05-21) — Mongo-locked single-instance + `scheduler_runs` heartbeat |
-| 4 | Full migration of 524 orphan legacy `solva_sessions` rows | Phase E Sub-task F | Phase E shipped soft-archive; full shape migration to `solva_phase_d_sessions` is post-rewrite | Large | BACKLOG (Chunk 18.5) |
+| 4 | Full migration of 524 orphan legacy `solva_sessions` rows | Phase E Sub-task F | Phase E shipped soft-archive; full shape migration to `solva_phase_d_sessions` is post-rewrite | Large | ✅ DONE (Chunk 18.5, 2026-05-21) — orphan source collection confirmed empty on live preview (`{"pending_orphans": 0, "archived_orphans": 0}`). DORMANT migration script + read-only probe + 0-count regression test landed for the day a future seed re-introduces rows. |
 | 5 | Around-the-Goals sub_module clarification + ship | Solva backlog | Still `coming_soon: true` — needs PO clarification | Blocked on PO | AWAITING_PO |
 
 ### Track 5 (P2) — Bank-QA evidence pack assembly

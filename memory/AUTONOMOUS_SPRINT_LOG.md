@@ -399,6 +399,29 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 **Dispatching Chunk 18.5 (Track 4 items 1 + 4 — cold-start + orphan migration) per autonomy rules.**
 
 
+## Chunk 18.5 — Track 4 cold-start + orphan probe + shield-internal CI guard — DONE — 2026-05-21T19:10:00Z
+
+- IDs closed: **Track 4 items 1 + 4 (the last two Track-4 backlog items)** + a NEW shield-internal CI guard authorised mid-chunk.
+- Pytest delta: **+8** (89 → 97; new file `test_qa_chunk_18_5.py` — 3 legacy-fallback rewrite + 1 litellm-at-module-level + 3 orphan probe/migration + 1 new CI guard).
+- Tester verdict: PASS (live preview shield invoke confirmed + orphan probe = 0 + 97 cross-chunk pytest + 42 wider Synisense suite + 551 wider repo + 1 pre-existing fixture-pollution flake on `test_audit_summary_stamp_deterministic` (passes in isolation, not introduced here).
+- Files touched: 5 (REWRITTEN `services/synisense/shield/_legacy_llm_fallback.py` — direct LlmChat path retired, routes through `llm_router.invoke()`; `services/synisense/shield/llm_router.py` — `litellm` + `get_integration_proxy_url` lifted to module-level; NEW `scripts/probe_solva_legacy_orphans.py`; NEW `scripts/migrate_solva_legacy_to_phase_d.py` (DORMANT — source collection empty); NEW `tests/test_qa_chunk_18_5.py`).
+- Architectural invariants: STRENGTHENED. Second CI guard added — within `services/synisense/shield/`, only `llm_router.py` + `streaming.py` may import provider SDKs. Caught a second violator at first run (`streaming.py`); added to allowlist with explanatory comment (it's the streaming counterpart, the only OTHER approved gateway entry point). Architectural lesson committed verbatim to `CHUNK_18_5_STATE.md` for future agents: "shield-internal files can leak as easily as external callers — guard scope must include shield/ itself."
+- Measured cold-start improvement (mock mode, isolates our-code cost): `call_llm` cold **14,000ms → 891ms (15.7× speedup)** · warm p50 **11,962ms → 98ms (122.3× speedup)** · warm p95 **23,298ms → 99ms (235× speedup)**. Production projection on `evolution-diff` + `generate-meta`: ~30s cold → ~5-8s cold (inside the dispatch's 8s acceptance target).
+- Orphan migration: source collection empty on live preview (`{"pending_orphans": 0, "archived_orphans": 0}`). Dormant migration script ready for the day a future seed re-introduces rows. Regression test pins the 0-count state.
+- Blockers: none.
+- AWAITING_PO routings queued: none new.
+- Memory updates:
+  - `SYSTEM_STATE.md § 4` — Chunk 18.5 closeout (newest at top).
+  - `AUTONOMOUS_SPRINT_LOG.md` — this entry.
+  - `sprints/CHUNK_18_5_STATE.md` — created (latency table, three-collection inventory, CI guard rationale, architectural lesson).
+  - `sprints/POST_REWRITE_RAMP.md § Track 4` — items 1 + 4 → DONE; only item 5 (Around-the-Goals, AWAITING_PO) remains.
+- Notable: the cold-start root cause was NOT "lazy imports" or "model_rebuild on first request" (the candidates pre-flight listed) — it was a *redundant pre-pass* in `call_llm` that bypassed the gateway's mock-mode honoring. Documented loudly in the state doc so the next agent walking this surface sees the fix's reasoning. Also: the new shield-internal CI guard formalises an invariant the original Phase B brief implied but couldn't express in code — perfect example of a hardening that pays for itself the moment it lands (it caught the second `streaming.py` violator on first run).
+
+**Sprint cumulative state going into Chunk 19: 11 chunks DONE clean (9.5, 10, 11, 12, 13, 14, 15, 16, 17, 18, 18.5). Zero PARTIALs. 12 of 13 Track-4 items DONE (only Around-the-Goals remains AWAITING_PO).**
+
+**Dispatching Chunk 19 (Track 5 final — Bank-QA evidence pack polish + C19-005 cron-health endpoint + holistic product features doc) per autonomy rules.**
+
+
 **Awaiting orchestrator tester re-run on Chunk 11 surfaces, then dispatch of Chunk 12.**
 
 

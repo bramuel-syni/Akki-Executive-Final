@@ -129,6 +129,71 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 18.5 — Track 4 cold-start fix + orphan probe + shield-internal CI guard — 2026-05-21 ✅ (autonomous)
+
+Closes the LAST two Track 4 items + adds a NEW shield-internal CI guard authorised mid-chunk (the diagnostic surfaced exactly the failure mode the original Phase B guard couldn't catch).
+
+| Item | Surface | Action | Status |
+|------|---------|--------|--------|
+| Track 4 #1 | 30s cold-start on `evolution-diff` + `generate-meta` | REWROTE `services/synisense/shield/_legacy_llm_fallback.py::_classify_one` to route through `llm_router.invoke()` (was bypassing gateway via direct `LlmChat`); LIFTED `litellm` + `get_integration_proxy_url` imports to module-level in `llm_router.py` | DONE |
+| Track 4 #4 | 524-vs-541 orphan `solva_sessions` migration | EMPTY-STATE confirmed via probe (`{"pending_orphans": 0, "archived_orphans": 0}`). Shipped NEW `scripts/probe_solva_legacy_orphans.py` (diagnostic) + NEW `scripts/migrate_solva_legacy_to_phase_d.py` (DORMANT — idempotent + reversible + audited) + regression test pinning the 0-count state | DONE |
+| NEW | Shield-internal CI guard | `test_no_direct_llm_calls_inside_shield_except_router` — only `llm_router.py` + `streaming.py` may import provider SDKs inside `shield/`. Caught a second violator (`streaming.py`) on first run — added to allowlist as the streaming entry point. Architectural lesson documented: "shield-internal files can leak as easily as external callers — guard scope must include shield/ itself." | DONE |
+
+### Measured impact (mock mode, hermetic — isolates our-code cost from network LLM variance)
+
+| Path | Pre-fix p50 / p95 | Post-fix p50 / p95 | Speedup |
+|------|-------------------|--------------------|---------|
+| `shield_invoke` cold | 651-741ms | 605ms | 1.1× (already on fast path) |
+| `shield_invoke` warm | 5ms | 5ms | unchanged |
+| `call_llm` cold | **14,000ms** | **891ms** | **15.7×** |
+| `call_llm` warm p50 | **11,962ms** | **98ms** | **122.3×** |
+| `call_llm` warm p95 | **23,298ms** | **99ms** | **235×** |
+
+Production projection on `evolution-diff` + `generate-meta`: ~30s cold → ~5-8s cold (inside dispatch's 8s acceptance target).
+
+### Root cause
+
+`call_llm` ran the Synisense pre-pass (`_syn_shield → pipeline.dryrun`) BEFORE handing to `shield.client.invoke()`. The pre-pass's Layer-3 LLM fallback (`_legacy_llm_fallback.py::_classify_one`) called `emergentintegrations.LlmChat` directly — bypassing the gateway. This meant:
+1. `SYNISENSE_LLM_MODE=mock` was ignored → tests + dev paid 5-13s per pre-pass.
+2. Separate Anthropic/Gemini SDK pool warmed up on first use → 30s cold-start.
+3. The Phase B CI guard `test_no_direct_llm_calls_outside_shield` waived it because the file lived INSIDE `shield/`.
+
+The fix: route through `llm_router.invoke()`. Mock-mode honored. Single SDK pool. CI guard hardened so this can't recur.
+
+### Tests
+
+`backend/tests/test_qa_chunk_18_5.py` — **8 tests, all passing**:
+- 3 legacy-fallback rewrite (mock-honoring · routes-through-router · no-LlmChat-import)
+- 1 litellm-at-module-level static check
+- 3 orphan probe + migration script (zero-state · idempotent-on-empty · handles-unmappable-row)
+- 1 new shield-internal CI guard
+
+Cross-chunk regression (9.5/10/11/12/13/14/15/16/17/18/18.5 + Phase B guard) = **97 passed** (+8 from Chunk 18 baseline 89).
+
+### Three-collection Solva inventory (post-probe, for future agents)
+
+| Collection | Role | Count (live preview) |
+|------------|------|----------------------|
+| `solva_sessions` | LEGACY orphan source | 0 |
+| `solva_phase_d_sessions` | Phase D canonical | active |
+| `solva_v2_sessions` | v2 orchestration runs | 158 (per Chunk 9.5 smoke) |
+
+### Architectural invariants checkpoint
+
+- ✅ Shield gateway exclusivity STRENGTHENED. Two CI guards now in place:
+  - `test_no_direct_llm_calls_outside_shield` — bans direct LLM calls outside `shield/`.
+  - `test_no_direct_llm_calls_inside_shield_except_router` — bans direct LLM calls inside `shield/` except in `llm_router.py` + `streaming.py`.
+- ✅ `tenant_id == account_id` boundary intact.
+- ✅ No `repr(exc)` leaks. Legacy fallback rewrite preserves the locked `e.__class__.__name__` short-name shape.
+- ✅ No new third-party libraries.
+- ✅ Schema-drift defensiveness — migration `_try_map_to_phase_d` falls back to `"unknown"` for unrecognised legacy state values + preserves `legacy_state` for forensics.
+- ✅ Chunks 7-18 work intact — pytest 80 → 89 → 97 (+8).
+- ✅ Chunk-8 lifecycle state machine NOT modified.
+
+### Carry-forward
+
+Track 4 is now FULLY DONE except for Item 5 (Around-the-Goals, AWAITING_PO). Chunk 19 (Track 5 final + Bank-QA polish + C19-005 cron-health endpoint + holistic product features doc) is next.
+
 ### Chunk 18 — Track 4 infra (cron + token metering) — 2026-05-21 ✅ (autonomous)
 
 Closes 2 of the 4 Track 4 items from `POST_REWRITE_RAMP.md`. Items 1 (cold-start) + 4 (orphan migration) deferred to Chunk 18.5 per the dispatch's scope guard.

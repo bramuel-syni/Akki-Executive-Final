@@ -1,21 +1,44 @@
 """LLM fallback layer for low-confidence Presidio spans.
 
 Contract: receive a list of (text, span) tuples where span.score < 0.55,
-ask `gemini-2.5-flash` whether the span is PII in a governance context,
-return a list of decisions. Capped per-document to bound cost.
+ask the gateway-routed classifier whether the span is PII in a
+governance context, return a list of decisions. Capped per-document to
+bound cost.
 
 The LLM sees ONLY the suspicious substring plus a small surrounding
 window — never the full document. This is both a cost control and a
 privacy-leak hedge: whatever the model sees, it sees out-of-context.
+
+Chunk 18.5 (Track 4 item 1, 2026-05-21) — cold-start latency fix.
+Previously this module imported `emergentintegrations.LlmChat` directly
+and constructed a fresh chat per call. That:
+  • Bypassed `SYNISENSE_LLM_MODE=mock` (so tests + dev paid 5-13s per
+    pre-pass; the steady-state cost shown up to 20× per `call_llm`).
+  • Used a separate Anthropic/Gemini SDK init (no warm-up sharing with
+    `shield.client.invoke()`'s pool — every `call_llm` paid the cold
+    SDK init twice).
+  • Was structurally vulnerable to the same leak the public CI guard
+    `test_no_direct_llm_calls_outside_shield` blocks — this file just
+    happened to live INSIDE `shield/` so the guard didn't fire.
+
+The fix routes through `shield.llm_router.invoke()`, which is the
+single approved LLM call site inside `shield/` (now enforced by the
+companion guard `test_no_direct_llm_calls_inside_shield_except_router`).
+That gives us:
+  • Mock-mode coverage for free (router short-circuits cleanly).
+  • Shared litellm + httpx client pool with `client.invoke()` so the
+    first prod call only warms the SDK ONCE per process.
+  • Centralised credential handling (no `EMERGENT_LLM_KEY` env read in
+    this module — the router owns it).
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time as _time
-import uuid
 from typing import Any, Dict, List, Tuple
+
+from . import llm_router
 
 logger = logging.getLogger("akki.synisense.llm")
 
@@ -35,21 +58,21 @@ def _extract_window(text: str, start: int, end: int) -> Tuple[str, str, str]:
 async def _classify_one(
     text: str, span: Dict[str, Any], *, timeout_ms: int,
 ) -> Dict[str, Any]:
-    """Ask the LLM whether this span is actually PII in a governance
-    context. Returns the span dict augmented with:
+    """Ask the gateway-routed classifier whether this span is actually
+    PII in a governance context.
+
+    Returns the span dict augmented with:
         - `llm_verdict`: 'pii' | 'not_pii' | 'uncertain'
         - `llm_suggested_type`: str | None
         - `elapsed_ms`: int
     Never blocks the parent pipeline on error — falls back to
     'uncertain' so the caller decides whether to redact or pass.
+
+    Chunk 18.5 — uses `llm_router.invoke()` instead of `LlmChat` so
+    `SYNISENSE_LLM_MODE=mock` works for tests + dev, and the router's
+    shared litellm pool eliminates the per-call cold-SDK-init cost.
     """
     started = _time.monotonic()
-    emergent_key = os.environ.get("EMERGENT_LLM_KEY")
-    if not emergent_key:
-        return {**span, "llm_verdict": "uncertain",
-                "llm_suggested_type": None,
-                "elapsed_ms": int((_time.monotonic() - started) * 1000),
-                "llm_reason": "no_emergent_key"}
     before, middle, after = _extract_window(text, span["start"], span["end"])
     prompt = (
         "You are a privacy classifier for governance documents. Decide "
@@ -64,15 +87,18 @@ async def _classify_one(
         f"]]{after}...\n"
     )
     try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
-        chat = LlmChat(
-            api_key=emergent_key,
-            session_id=f"synisense-{uuid.uuid4().hex[:8]}",
-            system_message="Terse. JSON only. No commentary.",
-        ).with_model("gemini", "gemini-2.5-flash")
-        msg = UserMessage(text=prompt)
-        raw = await asyncio.wait_for(
-            chat.send_message(msg), timeout=timeout_ms / 1000.0,
+        # `model_preference="balanced"` → Gemini 2.5 Flash (the same
+        # cheap classifier the legacy LlmChat path used). The router
+        # honours `SYNISENSE_LLM_MODE=mock` + missing-key gracefully so
+        # the previous "no_emergent_key" branch is no longer needed
+        # here — the router's mock path returns deterministically.
+        raw, _provider, _model = await asyncio.wait_for(
+            llm_router.invoke(
+                prompt,
+                model_preference="balanced",
+                timeout_seconds=max(0.5, timeout_ms / 1000.0),
+            ),
+            timeout=max(0.5, (timeout_ms / 1000.0) + 0.5),
         )
         import json as _json
         import re as _re

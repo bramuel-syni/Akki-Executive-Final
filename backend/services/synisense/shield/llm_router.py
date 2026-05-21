@@ -45,6 +45,24 @@ except Exception as _exc:  # noqa: BLE001
 else:
     _EMERGENT_IMPORT_ERROR = None
 
+# Chunk 18.5 cold-start fix — lift `litellm` + `get_integration_proxy_url`
+# from per-call lazy imports to module-level. The previous code paid the
+# import-cache lookup + module init on every cold path even though both
+# are pure-python wrappers with no side-effects worth deferring.
+# Module-level matches the LlmChat probe style above + uses the same
+# `_EMERGENT_AVAILABLE` flag to short-circuit on missing deps.
+try:
+    import litellm  # noqa: WPS433
+    from emergentintegrations.llm.utils import get_integration_proxy_url  # noqa: WPS433
+    _LITELLM_AVAILABLE = True
+except Exception as _lite_exc:  # noqa: BLE001
+    litellm = None  # type: ignore[assignment]
+    get_integration_proxy_url = None  # type: ignore[assignment]
+    _LITELLM_AVAILABLE = False
+    _LITELLM_IMPORT_ERROR = f"{type(_lite_exc).__name__}: {str(_lite_exc)[:200]}"
+else:
+    _LITELLM_IMPORT_ERROR = None
+
 log = logging.getLogger("synisense.shield.llm_router")
 
 ModelPreference = Literal["analytical", "generative", "balanced"]
@@ -132,17 +150,17 @@ async def invoke_with_metering(
     # Live mode — call litellm directly so we can keep the ModelResponse
     # and pull `usage.prompt_tokens` / `usage.completion_tokens`. Module-
     # level import probe (Chunk 18 cold-start) covers the emergent SDK;
-    # litellm itself is a transitive dep that ships in the same wheel.
-    if not _EMERGENT_AVAILABLE:
+    # `_LITELLM_AVAILABLE` (Chunk 18.5) covers litellm + the proxy URL
+    # helper. Both probes run ONCE at import time.
+    if not _EMERGENT_AVAILABLE or not _LITELLM_AVAILABLE:
         log.warning(
-            "synisense.shield.llm_router: emergentintegrations unavailable (%s)",
-            _EMERGENT_IMPORT_ERROR or "unknown",
+            "synisense.shield.llm_router: SDK unavailable (emergent=%s litellm=%s)",
+            _EMERGENT_IMPORT_ERROR or "ok",
+            _LITELLM_IMPORT_ERROR or "ok",
         )
         return (_mock_invoke(de_id_content), provider + ":mock", model + ":mock", {})
 
     try:
-        import litellm  # noqa: WPS433 — local import, lighter cold path
-        from emergentintegrations.llm.utils import get_integration_proxy_url
         proxy_url = get_integration_proxy_url()
         if provider == "gemini":
             litellm_model = f"gemini/{model}"
