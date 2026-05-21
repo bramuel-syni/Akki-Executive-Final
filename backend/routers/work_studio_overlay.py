@@ -55,7 +55,19 @@ async def list_documents(
         {"context_id": context_id},
         {"_id": 0},
     ).sort("updated_at", -1).limit(max(1, min(limit, 100))).to_list(limit)
-    return {"items": [overlay_payload(r) for r in rows]}
+    # Chunk 16 (QA-2026-05-16-037/-038/-039/-040, 2026-05-21) — surface
+    # `confidence_band` on every row of the Document Cards listing so the
+    # new WorkStudio frontend section can colour the QA-039 chip without
+    # making N follow-up calls. Mirrors the singular endpoint's
+    # post-process at line 80.
+    items = []
+    for r in rows:
+        payload = overlay_payload(r)
+        intel = payload.get("intelligence_report")
+        confidence = intel.get("confidence_pct") if isinstance(intel, dict) else None
+        payload["confidence_band"] = rag_band(confidence)
+        items.append(payload)
+    return {"items": items}
 
 
 # ─────────────────────────────────────────────────────────────────────

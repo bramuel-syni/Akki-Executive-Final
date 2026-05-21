@@ -272,6 +272,36 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 **Awaiting orchestrator tester re-run on Chunk 15 surfaces, then dispatch of Chunk 16 (16-May P2 batch 2) regardless of pass/fail per autonomy rules.**
 
 
+## Chunk 15 — tester verified — DONE — 2026-05-21T18:00:00Z
+
+- **Tester verdict: PASS 4/4** — QA-001 portfolio post-login flow, QA-009 bell removal, QA-010 journal search auto-focus, QA-016 cycle nav relabel all confirmed live. The smart deferral of QA-038/040 (dependency on P1 QA-037) acknowledged as correct.
+- Status: Chunk 15 closed cleanly. No fix-pass dispatched.
+- Memory updates:
+  - `qa_reports/QA_BACKLOG.md` — rows -001/-009/-010/-016 confirmed DONE with `Sprint chunk = Chunk-15` (already DONE, no change needed)
+  - `SYSTEM_STATE.md § 4` — tester-confirmation line appended to Chunk 15 entry
+  - `AUTONOMOUS_SPRINT_LOG.md` — this entry
+
+**Dispatching Chunk 16 (Work Studio Document Cards bundle: QA-037 P1 + QA-038/-040 P2 cluster) per autonomy rules.**
+
+
+## Chunk 16 — Work Studio Document Cards bundle (QA-037 + -038 + -039 + -040) — DONE — 2026-05-21T19:30:00Z
+
+- IDs closed: 4 (QA-037 P1 status badge · QA-038 P2 lock · QA-039 P1 confidence · QA-040 P2 download)
+- Pytest delta: **+6** (72 → 78; new file `test_qa_chunk_16.py` — 3 endpoint contracts + 1 helper threshold + 1 frontend guard + 1 CI sanity)
+- Tester verdict: PASS pending (6/6 backend + 5 render-smoke step 18 assertions + ESLint clean + Ruff clean)
+- Files touched: 4 (NEW `components/work_studio/DocumentCardsSection.jsx`; `pages/WorkStudio.jsx` mount; `routers/work_studio_overlay.py` confidence_band augmentation; render-smoke step 18)
+- Architectural invariants: PASS (zero new LLM call sites; CI guard PASS; no new libraries; `tenant_id`/`context_id` scoping unchanged; Chunk-8 state machine read-only consumer)
+- Blockers: none
+- AWAITING_PO routings: none new (two divergences documented in CHUNK_16_STATE.md §3 — committed badge palette, confidence thresholds)
+- Memory updates:
+  - `qa_reports/QA_BACKLOG.md` — rows -037/-038/-039/-040 → DONE (Chunk-16)
+  - `SYSTEM_STATE.md § 4` — Chunk 16 closeout (newest at top)
+  - `sprints/CHUNK_16_STATE.md` — created (cluster scope, per-ID notes, divergences, architectural checkpoint)
+- Notable: single-component delivery for the entire 4-ID cluster. Chunk-8 listing endpoint had been built with the comment "used by render-smoke + future Work Studio list" — Chunk 16 IS that future list. The deferral of -038/-040 in Chunk 15 paid off — closing -037/-039/-038/-040 atomically delivered a coherent surface with maximal architectural reuse.
+
+**Awaiting orchestrator tester re-run on Chunk 16 surfaces, then dispatch of Chunk 17 (16-May P3 + cleanup queue) regardless of pass/fail per autonomy rules.**
+
+
 **Awaiting orchestrator tester re-run on Chunk 11 surfaces, then dispatch of Chunk 12.**
 
 

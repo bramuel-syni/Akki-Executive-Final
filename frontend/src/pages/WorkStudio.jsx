@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import ValidatedBadge from "@/components/trust/ValidatedBadge";
 import { toast } from "sonner";
 import DocumentOverlay from "@/components/work_studio/overlay/DocumentOverlay";
+import DocumentCardsSection from "@/components/work_studio/DocumentCardsSection";
 import {
   Sheet,
   SheetContent,
@@ -642,6 +643,20 @@ export default function WorkStudio() {
 
           {/* Per-tab body */}
           <div className="mt-5">
+            {/* Chunk 16 (QA-2026-05-16-037/-038/-039/-040, 2026-05-21) —
+                Document Cards section: surfaces work_studio_exports rows
+                (Chunk 8 listing endpoint, now augmented with confidence_band)
+                with status badge + lock-on-committed + confidence chip +
+                persistent download. Clicking a card body opens the
+                existing DocumentOverlay (Chunk 8 read-only consumer).
+                Renders ABOVE the aggregates listing so the surface is
+                visible without scrolling on the default tab. Returns null
+                when the context has zero work_studio_exports rows. */}
+            <DocumentCardsSection
+              contextId={cid}
+              onOpenDocument={(aid) => { setOverlayAid(aid); setOverlayOpen(true); }}
+            />
+
             <ContextActions
               kind={kind}
               onExport={onExportClick}

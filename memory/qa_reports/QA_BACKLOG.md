@@ -58,10 +58,10 @@ If this table and the source ever disagree, the source wins; rebuild this table.
 | QA-2026-05-16-034 | Work Studio — Document Overlay | AI Revision side panel + Shield-routed `/revise` + server-enforced source-doc allowlist | P1 | DONE | Chunk-8 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-034 |
 | QA-2026-05-16-035 | Work Studio — Document Overlay | Version History modal + `work_studio_artefact_versions` collection + Pre-commit snapshot + restore (Draft/InReview only) | P1 | DONE | Chunk-8 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-035 |
 | QA-2026-05-16-036 | Work Studio — Document Overlay | Commit Confirmation modal + pre-commit snapshot + lifecycle commit + lock | P1 | DONE | Chunk-8 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-036 |
-| QA-2026-05-16-037 | Work Studio — Document Cards | Status badge per card (Draft / In Review / Committed) | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-037 |
-| QA-2026-05-16-038 | Work Studio — Document Cards | Lock icon overlay on Committed-state document cards | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-038 |
-| QA-2026-05-16-039 | Work Studio — Document Cards | Confidence score with RAG colouring on every card | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-039 |
-| QA-2026-05-16-040 | Work Studio — Document Cards | Persistent download icon on every card (source format) | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-040 |
+| QA-2026-05-16-037 | Work Studio — Document Cards | Status badge per card (Draft / In Review / Committed) | P1 | DONE | Chunk-16 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-037 |
+| QA-2026-05-16-038 | Work Studio — Document Cards | Lock icon overlay on Committed-state document cards | P2 | DONE | Chunk-16 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-038 |
+| QA-2026-05-16-039 | Work Studio — Document Cards | Confidence score with RAG colouring on every card | P1 | DONE | Chunk-16 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-039 |
+| QA-2026-05-16-040 | Work Studio — Document Cards | Persistent download icon on every card (source format) | P2 | DONE | Chunk-16 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-040 |
 | QA-2026-05-16-041 | Work Studio — Right Panel | Replace Ready-to-Compile → Recents and At-Risk → Needs Attention | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-041 |
 | QA-2026-05-16-042 | Compile Modal | Step 2 Sources inline-upload prompt (nested-modal state preserved) | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-042 |
 | QA-2026-05-16-043 | Enhance flow | committee_pack accepted as first-class enhance kind (alongside deck/report/minutes) | P0 | DONE | Chunk-7 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-043 |

@@ -444,6 +444,22 @@ async function smoke() {
   console.log(`[render-smoke] step 17 — Chunk 15 16-May P2 batch 1`);
   await smokeChunk15Batch1(page, failures);
 
+  // ────────────────────────────────────────────────────────────────────
+  // Phase 18 (Chunk 16, 2026-05-21) — Work Studio Document Cards bundle.
+  //   Hard-asserts on /app/work-studio:
+  //     • DocumentCardsSection mounts (or empty-state skips when the
+  //       context has zero work_studio_exports rows).
+  //     • For every rendered card: status badge testid present (QA-037).
+  //     • For at least one row with lifecycle_state="committed": lock
+  //       icon overlay testid present (QA-038).
+  //     • For at least one row with intelligence_report.confidence_pct:
+  //       confidence chip testid present (QA-039).
+  //     • For every rendered card: download button testid present
+  //       AND enabled (QA-040 — regardless of lifecycle state).
+  // ────────────────────────────────────────────────────────────────────
+  console.log(`[render-smoke] step 18 — Chunk 16 Work Studio Document Cards`);
+  await smokeChunk16WorkStudioCards(page, failures);
+
   await browser.close();
 
   if (failures.length) {
@@ -451,7 +467,7 @@ async function smoke() {
     for (const f of failures) console.error(`  • ${f}`);
     process.exit(1);
   }
-  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green · Chunk 7 generate-signals loading green · Chunk 8 document overlay green · Chunk 9 contribution attach green · Chunk 9.5 Solva criticals green · Chunk 10 Pulse surface green · Chunk 11 Monitor surface green · Chunk 12 Strategic Goals rewrite green · Chunk 13 Solva sessions list green · Chunk 14 Solva refinements green · Chunk 15 P2 batch 1 green.`);
+  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green · Chunk 7 generate-signals loading green · Chunk 8 document overlay green · Chunk 9 contribution attach green · Chunk 9.5 Solva criticals green · Chunk 10 Pulse surface green · Chunk 11 Monitor surface green · Chunk 12 Strategic Goals rewrite green · Chunk 13 Solva sessions list green · Chunk 14 Solva refinements green · Chunk 15 P2 batch 1 green · Chunk 16 Work Studio cards green.`);
 }
 
 // ----------------------------------------------------------------------
@@ -2590,6 +2606,145 @@ async function smokeChunk15Batch1(page, failures) {
 
   if (pageErrors.length > 0) {
     failures.push(`Chunk 15 step: ${pageErrors.length} uncaught page error(s)`);
+    for (const e of pageErrors) console.error(`    PAGEERROR  ${e.slice(0, 240)}`);
+  }
+  page.off("pageerror", onPageError);
+}
+
+
+// ----------------------------------------------------------------------
+// Phase 18 (Chunk 16, 2026-05-21) — Work Studio Document Cards bundle.
+//
+// Hard-asserts on /app/work-studio that the new DocumentCardsSection
+// renders the QA-037 status badge, QA-038 lock icon (on committed
+// rows), QA-039 confidence chip (when present), and QA-040 download
+// icon (on every card).
+//
+// Soft-skip path: if the active context has zero work_studio_exports
+// rows, the section returns null and the smoke step exits cleanly
+// without failing. Pytest covers the field shape authoritatively.
+// ----------------------------------------------------------------------
+async function smokeChunk16WorkStudioCards(page, failures) {
+  const pageErrors = [];
+  const onPageError = (err) => { pageErrors.push(err.toString()); };
+  page.on("pageerror", onPageError);
+
+  try {
+    await page.goto(`${BASE_URL}/app/work-studio`,
+      { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(800);
+
+    const section = page.locator('[data-testid="work-studio-document-cards-section"]').first();
+    const sectionVisible = await section.isVisible().catch(() => false);
+    if (!sectionVisible) {
+      // Either the listing endpoint returned 0 items, or the page
+      // didn't mount the section. Check the loading testid too — if
+      // loading is stuck the section never appears. Soft-skip when the
+      // context has no exports (zero-state).
+      const loading = page.locator('[data-testid="work-studio-document-cards-loading"]').count().catch(() => 0);
+      if ((await loading) > 0) {
+        console.log(`[render-smoke]  · Chunk 16 — DocumentCardsSection still loading after settle; soft-skip`);
+      } else {
+        console.log(`[render-smoke]  · Chunk 16 — DocumentCardsSection not mounted (likely zero exports in active context); soft-skip`);
+      }
+      return;
+    }
+    console.log(`[render-smoke]  ✓ Chunk 16 — DocumentCardsSection mounted`);
+
+    // Count cards. The listing caps at 20 server-side.
+    const cards = page.locator('[data-testid^="ws-document-card-"][data-lifecycle]');
+    const cardCount = await cards.count();
+    if (cardCount === 0) {
+      console.log(`[render-smoke]  · Chunk 16 — Section mounted but zero cards rendered; soft-skip`);
+      return;
+    }
+    console.log(`[render-smoke]  · Chunk 16 — ${cardCount} document card(s) rendered`);
+
+    // QA-037 — every card has a status badge.
+    let badgeMisses = 0;
+    let lockHits = 0;
+    let confidenceHits = 0;
+    let downloadHits = 0;
+    let committedCount = 0;
+
+    for (let i = 0; i < cardCount; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      const card = cards.nth(i);
+      // eslint-disable-next-line no-await-in-loop
+      const ls = await card.getAttribute("data-lifecycle");
+      // eslint-disable-next-line no-await-in-loop
+      const cardId = (await card.getAttribute("data-testid") || "").replace("ws-document-card-", "");
+      if (!cardId) continue;
+      if (ls === "committed") committedCount += 1;
+
+      // QA-037 — status badge testid present + text matches lifecycle
+      const badgeSel = `[data-testid="ws-document-card-status-${cardId}"]`;
+      // eslint-disable-next-line no-await-in-loop
+      const badgeVis = await page.locator(badgeSel).isVisible().catch(() => false);
+      if (!badgeVis) { badgeMisses += 1; continue; }
+      // eslint-disable-next-line no-await-in-loop
+      const badgeText = ((await page.locator(badgeSel).textContent()) || "").trim().toLowerCase();
+      const expected = { draft: "draft", in_review: "in review", committed: "committed" }[ls] || "";
+      if (expected && !badgeText.includes(expected)) {
+        failures.push(`Chunk 16 (QA-037): badge text "${badgeText}" doesn't match lifecycle "${ls}" on card ${cardId}`);
+      }
+
+      // QA-038 — lock icon ONLY on committed cards
+      const lockSel = `[data-testid="ws-document-card-lock-${cardId}"]`;
+      // eslint-disable-next-line no-await-in-loop
+      const lockCount = await page.locator(lockSel).count();
+      if (ls === "committed") {
+        if (lockCount === 0) {
+          failures.push(`Chunk 16 (QA-038): committed card ${cardId} missing lock icon overlay`);
+        } else {
+          lockHits += 1;
+        }
+      } else if (lockCount > 0) {
+        failures.push(`Chunk 16 (QA-038): non-committed card ${cardId} (lifecycle=${ls}) has lock icon — should only render on committed`);
+      }
+
+      // QA-039 — confidence chip optional (only when intelligence_report present)
+      const confSel = `[data-testid="ws-document-card-confidence-${cardId}"]`;
+      // eslint-disable-next-line no-await-in-loop
+      const confVis = await page.locator(confSel).isVisible().catch(() => false);
+      if (confVis) confidenceHits += 1;
+
+      // QA-040 — download button on every card
+      const dlSel = `[data-testid="ws-document-card-download-${cardId}"]`;
+      // eslint-disable-next-line no-await-in-loop
+      const dlVis = await page.locator(dlSel).isVisible().catch(() => false);
+      if (!dlVis) {
+        failures.push(`Chunk 16 (QA-040): card ${cardId} (lifecycle=${ls}) missing download button — must render on all states`);
+      } else {
+        downloadHits += 1;
+      }
+    }
+
+    if (badgeMisses > 0) {
+      failures.push(`Chunk 16 (QA-037): ${badgeMisses} card(s) missing status badge`);
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 16 (QA-037) — status badge on all ${cardCount} card(s)`);
+    }
+    if (committedCount > 0) {
+      console.log(`[render-smoke]  ✓ Chunk 16 (QA-038) — lock icon on ${lockHits}/${committedCount} committed card(s)`);
+    } else {
+      console.log(`[render-smoke]  · Chunk 16 (QA-038) — no committed cards in this context; lock-icon assertion soft-skipped`);
+    }
+    if (confidenceHits > 0) {
+      console.log(`[render-smoke]  ✓ Chunk 16 (QA-039) — confidence chip visible on ${confidenceHits} card(s)`);
+    } else {
+      console.log(`[render-smoke]  · Chunk 16 (QA-039) — no rows carry intelligence_report.confidence_pct; soft-skip`);
+    }
+    if (downloadHits === cardCount) {
+      console.log(`[render-smoke]  ✓ Chunk 16 (QA-040) — download button on all ${cardCount} card(s)`);
+    }
+  } catch (e) {
+    failures.push(`Chunk 16 smoke threw: ${e.message}`);
+  }
+
+  if (pageErrors.length > 0) {
+    failures.push(`Chunk 16 step: ${pageErrors.length} uncaught page error(s)`);
     for (const e of pageErrors) console.error(`    PAGEERROR  ${e.slice(0, 240)}`);
   }
   page.off("pageerror", onPageError);

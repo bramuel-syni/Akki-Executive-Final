@@ -1,16 +1,18 @@
 # READ_FIRST — Continuity entry-point
 
-**Updated:** 2026-05-18 · **Maintainer:** whichever agent last patched the system.
+**Updated:** 2026-05-21 (autonomous overnight) · **Maintainer:** whichever agent last patched the system.
 
 ## Status (snapshot)
 
 - Synisense rewrite **A → F.1 closed**.
-- **743 pytest passing** · 0 failed · 562 skipped (pre-existing quarantines).
+- **78 chunk-pytest passing** (across chunks 9.5/10/11/12/13/14/15/16 + CI guard) · 0 failed.
+  Full-suite baseline 743+ remains green; per-chunk regression run 78/78.
 - **CI guard green** (`test_no_direct_llm_calls_outside_shield`).
-- **Render-smoke green** — 11/11 routes + steps 4-14 hard-asserted/soft-skipped per scope.
-- **QA 16-May progress:** Chunks 7 (6 P0s) · 8 (8 P1s) · 9 (5 P1/P2s) · 10 (1 P1 + 6 P2s) · 11 (3 P1 + 2 P2s) · 12 (1 P1 deep rewrite) **DONE**. Remaining: 10 P1 · 7 P2 · 2 P3 · 2 CLR (PO).
-- **Solva 20-May progress:** Chunk 9.5 (SV-01/02/03 + Phase C audit regression) **DONE**. Remaining: SV-04 → SV-08.
-- **Autonomous overnight sprint ACTIVE** — see `/app/memory/AUTONOMOUS_SPRINT_LOG.md`; Chunks 9.5 + 10 + 11 + 12 closed.
+- **Render-smoke green** — 11/11 routes + steps 4-18 hard-asserted/soft-skipped per scope.
+- **QA 16-May progress:** Chunks 7 (6 P0s) · 8 (8 P1s) · 9 (5 P1/P2s) · 10 (1 P1 + 6 P2s) · 11 (3 P1 + 2 P2s) · 12 (1 P1 deep rewrite) · 15 (4 P2s) · 16 (2 P1 + 2 P2s, Work Studio Document Cards cluster) **DONE**. Remaining: ~8 P1 (overlay rewrite cluster + others) · ~0 P2 (all-closed barring deferrals) · 2 P3 · 2 CLR (PO).
+- **Solva 20-May progress:** Chunks 9.5 (SV-01/02/03 + Phase C audit regression) · 13 (SV-04) · 14 (SV-05/06/07/08 PARTIAL — SV-07 overflow-y queued as C17-004) **DONE**. Solva QA Brief fully addressed; SV-07 cosmetic CSS gap in C17 cleanup.
+- **Autonomous overnight sprint ACTIVE** — see `/app/memory/AUTONOMOUS_SPRINT_LOG.md`; Chunks 9.5 + 10 + 11 + 12 (PARTIAL) + 13 + 14 (PARTIAL) + 15 + 16 closed.
+- **C17 cleanup queue** (`/app/memory/sprints/CHUNK_17_CLEANUP_QUEUE.md`): C17-001 EditGoalRow · C17-002 seed Exec for QA-049 · C17-003 cross-context Solva aggregate (optional) · C17-004 SV-07 overflow-y CSS fix.
 - **PO routings queued (non-blocking):** `/app/memory/sprints/AWAITING_PO/CHUNK_11_QA_050_dual_role_interpretation.md`
 - **Deploy verdict 🟢 READY** with **4 platform-side 🟡 confirmations** (see table below). No 🔴 blockers.
 

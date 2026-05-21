@@ -129,6 +129,62 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 16 — Work Studio Document Cards bundle (QA-037 + -038 + -039 + -040) — 2026-05-21 ✅ (autonomous)
+
+Closes the entire Work Studio Document Cards cluster in one coherent component. QA-037 (P1) + QA-038 (P2) + QA-039 (P1) + QA-040 (P2) all delivered atomically. The Chunk-15 deferral of -038/-040 was the correct scope-discipline call — Chunk 16 closes the dependency cluster end-to-end.
+
+| ID    | Surface                              | Files touched                                                                                                                                                                                                       | Test name(s)                                                                                          | Status | Notes                                                                                                                                                  |
+|-------|--------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
+| QA-037 | Document Cards — status badge        | NEW `components/work_studio/DocumentCardsSection.jsx` (BADGES + DocumentCardRow); `pages/WorkStudio.jsx` (mount); `routers/work_studio_overlay.py::list_documents` (confidence_band augmentation)                  | `test_chunk16_qa037_listing_returns_lifecycle_state_per_row`                                          | DONE   | Followed QA-037 verbatim "dark filled pill" for Committed badge over dispatch's "green chip" (Divergence A in CHUNK_16_STATE.md §3).                  |
+| QA-038 | Document Cards — Committed lock      | `DocumentCardsSection.jsx::DocumentCardRow` lock overlay                                                                                                                                                            | render-smoke step 18 positive + negative assertions                                                  | DONE   | Lock renders ONLY when `lifecycle_state === "committed"`; verified inverse (no lock on draft/in_review) by smoke.                                       |
+| QA-039 | Document Cards — confidence chip     | `DocumentCardsSection.jsx::DocumentCardRow` confidence chip; `routers/work_studio_overlay.py::list_documents` adds `confidence_band` per row                                                                       | `test_chunk16_qa039_listing_returns_confidence_band_per_row` + `_helper_thresholds`                  | DONE   | Followed dispatch's Chunk-8 thresholds (80/50) over QA spec's 75/50 to keep `rag_band` helper consistent across Pulse + Monitor + Work Studio. Divergence B documented. |
+| QA-040 | Document Cards — persistent download | `DocumentCardsSection.jsx::DocumentCardRow` download button (2-step token-mint flow)                                                                                                                                | `test_chunk16_qa040_export_get_returns_download_token` + `_download_button_visible_on_all_states`    | DONE   | Toast hint on non-complete exports ("Compile the underlying source artefact first") instead of raw 4xx.                                                |
+
+### Divergences documented
+
+- **A**: Committed badge palette — verbatim QA-037 "dark filled pill" shipped; dispatch's "green chip" wording captured in CHUNK_16_STATE.md §3.
+- **B**: Confidence thresholds — Chunk-8 (80/50) shipped via shared `rag_band` helper; QA-039 verbatim (75/50) captured. Single-helper change toggles all surfaces if PO escalates.
+
+### Tests
+
+`backend/tests/test_qa_chunk_16.py` — **6 tests:**
+- 3 endpoint contracts (lifecycle_state surfacing · confidence_band per row · download_token availability)
+- 1 helper threshold lock (`rag_band` 80/50 boundaries)
+- 1 static guard (download button is NOT lifecycle-gated)
+- 1 CI sanity (no LLM imports in DocumentCardsSection.jsx)
+
+**All 6 pass.** Cross-chunk regression (9.5/10/11/12/13/14/15/16 + CI guard) = **72 passed**.
+
+### Live render-smoke step 18
+
+Hard-asserts on `/app/work-studio`:
+- ✓ DocumentCardsSection mounts (or soft-skip on zero exports in active context)
+- ✓ QA-037 badge testid + text matches lifecycle on EVERY card
+- ✓ QA-038 lock testid present on committed rows AND absent on draft/in_review rows
+- ✓ QA-039 confidence chip when `intelligence_report.confidence_pct` present
+- ✓ QA-040 download button on every card
+
+### CI guard + ESLint + Ruff
+
+CI guard `test_no_direct_llm_calls_outside_shield.py` — **PASS** (zero new LLM call sites).
+ESLint clean on `DocumentCardsSection.jsx`, `WorkStudio.jsx`, `render-smoke.js`.
+Ruff clean on `routers/work_studio_overlay.py`, `tests/test_qa_chunk_16.py`.
+
+### Architectural invariants checkpoint
+
+- ✅ Shield gateway exclusivity preserved.
+- ✅ `context_id` scoping intact — listing endpoint already enforces membership via `require_context_membership()`.
+- ✅ `tenant_id == account_id` boundary intact.
+- ✅ No `repr(exc)` leaks — friendly download error toast.
+- ✅ No new third-party libraries.
+- ✅ Schema-drift defensive — confidence rendering checks `typeof === "number"`.
+- ✅ Chunks 7-15 work intact — pytest +6 (66 → 72).
+- ✅ Chunk-8 lifecycle state machine NOT modified — read-only consumer as required.
+
+### Carry-forward `CHUNK_16_STATE.md`
+
+New file documenting the 4-ID cluster, the read-only consumer pattern, the two divergences (badge palette + confidence thresholds), and the 2-step download flow.
+
 ### Chunk 15 — 16-May P2 batch 1 (post-login flow + UX cleanup) — 2026-05-21 ✅ (autonomous)
 
 Closes 4 P2 BACKLOG items spanning Portfolio routing, Top bar cleanup, Solva attach-document modal UX, and Cycle Manager nav labeling. Two P2 items (QA-038 + QA-040 Work Studio Document Cards) deferred to a future chunk that bundles them with their P1 prerequisites (QA-037 status badge + QA-039 confidence score).
@@ -184,6 +240,10 @@ Ruff clean on `tests/test_qa_chunk_15.py`.
 ### Carry-forward `CHUNK_15_STATE.md`
 
 New file documenting the 4 DONE + 2 deferred rows, the QA-001 routing rationale, the QA-009 minimum-scope decision (bell removed, page retained), and the QA-038/040 dependency analysis.
+
+### Tester confirmation (2026-05-21T18:00:00Z) — PASS 4/4
+
+Orchestrator tester re-run verdict: GREEN end-to-end. QA-001 post-login → /app/portfolio confirmed on the live preview; QA-009 0 ReviewBadge testid matches in top bar; QA-010 journal search auto-focus + magnifying glass icon visible; QA-016 bottom-bar "Back to Cycle Manager" routes to /app/cycle. Smart deferral of QA-038/040 acknowledged as the correct scope-discipline call.
 
 ### Chunk 14 — Solva SV-05/06/07/08 (final Solva chunk) — 2026-05-21 ✅ (autonomous)
 
