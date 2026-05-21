@@ -118,7 +118,13 @@ function PublicOnlyRoute({ children, allowSandbox = false }) {
   const { account } = useAuth();
   if (account === null) return null;
   // Sandbox users must be allowed through to /signup so they can convert.
-  if (account && !(allowSandbox && account.is_sandbox)) return <Navigate to="/app" replace />;
+  // QA-2026-05-16-001 (Chunk 15, 2026-05-21) — when an already-authed
+  // user (or a just-authed one mid-state-flush) lands here, redirect to
+  // `/app/portfolio` instead of `/app`. This matches the SignIn handler
+  // default and ensures the post-login experience always lands on Home 1
+  // (the portfolio surface) regardless of whether the React state flush
+  // racing the navigate() call wins.
+  if (account && !(allowSandbox && account.is_sandbox)) return <Navigate to="/app/portfolio" replace />;
   return children;
 }
 

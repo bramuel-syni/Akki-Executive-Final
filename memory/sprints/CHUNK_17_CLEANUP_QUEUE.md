@@ -89,3 +89,13 @@ Each entry MUST capture:
   4. Update WS-R16 documentation to explicitly carve out this exception.
 - **Source dispatch:** Chunk 13 (2026-05-21) — anomaly investigation.
 - **Risk of leaving:** LOW — current behavior is correct per spec; this is an optional ergonomic enhancement.
+
+---
+
+## C17-004 — Fix Solva session prose panel overflow-y
+
+**Source:** Chunk 14 tester re-run, 2026-05-21
+**Symptom:** Panel min-height correct (66vh ≥ the 60vh requirement) but `getComputedStyle().overflowY === "visible"` on the actual scroll container — long synthesis content pushes page chrome instead of scrolling inside the panel.
+**Likely fix:** The `overflow-y-auto` class applied in Chunk 14 landed on the inner `<div>` inside `ProseBlock` at `SolvaPhaseDSession.jsx:660`, but the actual scroll container is a parent wrapper. Identify the wrapper that contains the rendered prose (likely the parent of `ProseRenderer` — either the `<article>` element at `:653` or a layout shell ancestor) and add `overflow-y: auto` + `max-h-[70vh]` (or equivalent) directly on that element. Tailwind class spelling / breakpoint specificity may have caused the original miss.
+**Test:** render-smoke step 16 sub-assertion — synthesis panel `getComputedStyle().overflowY === "auto"` on a seeded Chunk-14 populated session (`sol-c14p-*` titles).
+**Risk:** LOW — single CSS fix, no logic change.

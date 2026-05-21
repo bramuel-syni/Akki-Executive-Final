@@ -35,6 +35,12 @@ export default function AttachDocumentModal({ open, onClose, contextId, sessionI
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  // QA-2026-05-16-010 (Chunk 15) — ref so we can auto-focus the search
+  // input the instant the journal tab activates. `autoFocus` alone is
+  // only honored at first mount; we need an effect-driven focus call
+  // for the tab switch case (user opens modal on Upload, then clicks
+  // Journal — `autoFocus` doesn't re-fire).
+  const journalSearchRef = useRef(null);
 
   // Reset modal state on every open so closing+re-opening yields a
   // clean slate.
@@ -62,6 +68,17 @@ export default function AttachDocumentModal({ open, onClose, contextId, sessionI
     })();
     return () => { cancelled = true; };
   }, [open, tab, contextId]);
+
+  // QA-2026-05-16-010 (Chunk 15) — auto-focus the search input when the
+  // journal tab activates (covers the upload→journal switch where
+  // `autoFocus` on the Input doesn't re-fire). One frame delay so the
+  // input has mounted by the time we call .focus().
+  useEffect(() => {
+    if (!open || tab !== "journal") return undefined;
+    const t = setTimeout(() => { journalSearchRef.current?.focus(); }, 40);
+    return () => clearTimeout(t);
+  }, [open, tab]);
+
 
   const handleUpload = async () => {
     if (!file) return;
@@ -174,12 +191,24 @@ export default function AttachDocumentModal({ open, onClose, contextId, sessionI
 
         {tab === "journal" && (
           <div className="space-y-3" data-testid="solva-attach-journal-panel">
-            <Input
-              placeholder="Search by name or filename…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              data-testid="solva-attach-journal-search"
-            />
+            {/* QA-2026-05-16-010 (Chunk 15, 2026-05-21) — search bar is the
+                first thing inside the open panel, carries a magnifying-glass
+                icon, and auto-focuses when the journal tab activates so the
+                user can start typing immediately without clicking. Real-time
+                filter (case-insensitive substring on name + original_filename)
+                already drives `filteredDocs` below. */}
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden />
+              <Input
+                ref={journalSearchRef}
+                placeholder="Search by name or filename…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                data-testid="solva-attach-journal-search"
+                autoFocus
+                className="pl-8"
+              />
+            </div>
             <div className="max-h-72 overflow-y-auto rounded border border-slate-200">
               {docsLoading && (
                 <p className="px-3 py-4 text-xs text-slate-500">Loading…</p>

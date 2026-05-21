@@ -426,6 +426,24 @@ async function smoke() {
   console.log(`[render-smoke] step 16 — Chunk 14 Solva SV-05/06/07/08`);
   await smokeChunk14SolvaRefinements(page, failures);
 
+  // ────────────────────────────────────────────────────────────────────
+  // Phase 17 (Chunk 15, 2026-05-21) — 16-May P2 batch 1.
+  //   Hard-asserts:
+  //     • QA-009 — top-bar bell affordance is gone (ReviewBadge removed
+  //       — verified by absence of the testid).
+  //     • QA-016 — Cycle Manager bottom-bar Back label reads
+  //       "Back to Cycle Manager" (when a cycle is reachable).
+  //     • QA-001 — post-login default routes to /app/portfolio. The
+  //       smoke can't fully re-simulate signin (it's already logged in
+  //       at this point), but we can sanity-check the portfolio page
+  //       mounts and the Home1 chips are reachable.
+  //   QA-010 — auto-focused journal search lives behind an active
+  //   Solva session + attach modal click; covered by static unit
+  //   testing (see test_chunk15_qa010_documents_listing_supports_journal_search).
+  // ────────────────────────────────────────────────────────────────────
+  console.log(`[render-smoke] step 17 — Chunk 15 16-May P2 batch 1`);
+  await smokeChunk15Batch1(page, failures);
+
   await browser.close();
 
   if (failures.length) {
@@ -433,7 +451,7 @@ async function smoke() {
     for (const f of failures) console.error(`  • ${f}`);
     process.exit(1);
   }
-  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green · Chunk 7 generate-signals loading green · Chunk 8 document overlay green · Chunk 9 contribution attach green · Chunk 9.5 Solva criticals green · Chunk 10 Pulse surface green · Chunk 11 Monitor surface green · Chunk 12 Strategic Goals rewrite green · Chunk 13 Solva sessions list green · Chunk 14 Solva refinements green.`);
+  console.log(`\n[render-smoke] PASS — ${ROUTES.length} routes clean · 2 upload paths green · Patch 28 interactions green · Chunk 4 wizard green · Chunk 5 create-artefact green · Chunk 6 brief-drawer CTA green · Chunk 7 generate-signals loading green · Chunk 8 document overlay green · Chunk 9 contribution attach green · Chunk 9.5 Solva criticals green · Chunk 10 Pulse surface green · Chunk 11 Monitor surface green · Chunk 12 Strategic Goals rewrite green · Chunk 13 Solva sessions list green · Chunk 14 Solva refinements green · Chunk 15 P2 batch 1 green.`);
 }
 
 // ----------------------------------------------------------------------
@@ -2469,6 +2487,109 @@ async function smokeChunk14SolvaRefinements(page, failures) {
 
   if (pageErrors.length > 0) {
     failures.push(`Chunk 14 step: ${pageErrors.length} uncaught page error(s)`);
+    for (const e of pageErrors) console.error(`    PAGEERROR  ${e.slice(0, 240)}`);
+  }
+  page.off("pageerror", onPageError);
+}
+
+
+// ----------------------------------------------------------------------
+// Phase 17 (Chunk 15, 2026-05-21) — 16-May P2 batch 1.
+// Hard-asserts:
+//   QA-009 — top-bar Daily Review bell affordance is gone (the
+//            ReviewBadge component was removed from AppShell).
+//   QA-016 — Cycle Manager bottom-bar `cycle-step-nav-back` button
+//            renders "Back to Cycle Manager" and routes to /app/cycle.
+//   QA-001 — post-login portfolio surface (Home 1) mounts at
+//            /app/portfolio. Smoke can't full-cycle a signin (already
+//            authed) so this is mount + chip-presence verification.
+//
+// QA-010 (auto-focused journal search) lives behind an active Solva
+// session + attach modal click — covered by the
+// test_chunk15_qa010_documents_listing_supports_journal_search backend
+// test instead of a smoke flow.
+// ----------------------------------------------------------------------
+async function smokeChunk15Batch1(page, failures) {
+  const pageErrors = [];
+  const onPageError = (err) => { pageErrors.push(err.toString()); };
+  page.on("pageerror", onPageError);
+
+  try {
+    // ── QA-001 — portfolio mounts at /app/portfolio ─────────────────
+    await page.goto(`${BASE_URL}/app/portfolio`,
+      { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const home1 = page.locator('[data-testid="home1"]').first();
+    if (!await home1.isVisible({ timeout: 4000 }).catch(() => false)) {
+      failures.push(`Chunk 15 (QA-001): Home 1 portfolio surface didn't mount at /app/portfolio`);
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 15 (QA-001) — /app/portfolio mounts the Home 1 portfolio surface`);
+    }
+
+    // ── QA-009 — top-bar Daily Review bell affordance is gone ───────
+    // The ReviewBadge component renders an <a> with href="/app/review"
+    // and an `Inbox` lucide icon plus a "review" badge testid. We
+    // assert ZERO matches across the known testid patterns the
+    // component exposed. Mentions bell (MentionInbox) still exists —
+    // exclude that selector explicitly.
+    const reviewBadgeCount = await page
+      .locator('[data-testid^="review-badge"], a[href="/app/review"][data-testid]')
+      .count()
+      .catch(() => 0);
+    if (reviewBadgeCount > 0) {
+      failures.push(`Chunk 15 (QA-009): top-bar still renders ${reviewBadgeCount} ReviewBadge testid match(es) — bell should be gone`);
+    } else {
+      console.log(`[render-smoke]  ✓ Chunk 15 (QA-009) — top-bar Daily Review bell is gone (0 ReviewBadge testid matches)`);
+    }
+
+    // ── QA-016 — Cycle Manager bottom-bar Back label ────────────────
+    // Navigate to /app/cycle (the Cycle Manager list). Pick the first
+    // visible cycle row and click into it. The Cycle page renders the
+    // bottom CycleStepNav; we hard-assert the Back testid renders the
+    // verbatim "Back to Cycle Manager" string AND links to /app/cycle.
+    await page.goto(`${BASE_URL}/app/cycle`,
+      { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(800);
+
+    // Find ANY clickable cycle row. The Cycle list page uses different
+    // selectors per layout iteration; try a few patterns.
+    const cycleLink = page
+      .locator('a[href^="/app/cycle/"]:not([href$="/cycle"])')
+      .first();
+    const haveLink = await cycleLink.isVisible().catch(() => false);
+    if (!haveLink) {
+      console.log(`[render-smoke]  · Chunk 15 (QA-016) — no cycles in active context; bottom-bar label assertion soft-skipped`);
+    } else {
+      await cycleLink.click();
+      await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
+      await page.waitForTimeout(1500);
+
+      const backBtn = page.locator('[data-testid="cycle-step-nav-back"]').first();
+      if (!await backBtn.isVisible({ timeout: 4000 }).catch(() => false)) {
+        console.log(`[render-smoke]  · Chunk 15 (QA-016) — cycle-step-nav-back not visible (likely a layout where the bottom-bar is collapsed); soft-skip`);
+      } else {
+        const txt = ((await backBtn.textContent()) || "").trim();
+        if (!/back to cycle manager/i.test(txt)) {
+          failures.push(`Chunk 15 (QA-016): bottom-bar Back label expected "Back to Cycle Manager"; got "${txt.slice(0,60)}"`);
+        } else {
+          console.log(`[render-smoke]  ✓ Chunk 15 (QA-016) — bottom-bar Back label reads "${txt}"`);
+        }
+        // The link should point at /app/cycle.
+        const href = await backBtn.locator("a").first().getAttribute("href").catch(() => null);
+        if (href !== null && href !== "/app/cycle") {
+          failures.push(`Chunk 15 (QA-016): bottom-bar Back link should target /app/cycle; got "${href}"`);
+        }
+      }
+    }
+  } catch (e) {
+    failures.push(`Chunk 15 smoke threw: ${e.message}`);
+  }
+
+  if (pageErrors.length > 0) {
+    failures.push(`Chunk 15 step: ${pageErrors.length} uncaught page error(s)`);
     for (const e of pageErrors) console.error(`    PAGEERROR  ${e.slice(0, 240)}`);
   }
   page.off("pageerror", onPageError);

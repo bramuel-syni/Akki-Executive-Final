@@ -23,7 +23,10 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import MentionInbox from "@/components/collab/MentionInbox";
-import ReviewBadge from "@/components/layout/ReviewBadge";
+// QA-2026-05-16-009 (Chunk 15) — ReviewBadge import removed; the
+// top-bar bell affordance was deleted. Component file kept at
+// `@/components/layout/ReviewBadge.jsx` for forensic reference and
+// potential future re-introduction; nothing in this file imports it.
 import UploadModal from "@/components/upload/UploadModal";
 // Patch 27 — PortfolioRail removed entirely.
 import { isSponsoredContext } from "@/lib/sponsorship";
@@ -293,11 +296,16 @@ export default function AppShell({ children }) {
           {/* Mentions bell — pulls from /mentions endpoint */}
           <MentionInbox />
 
-          {/* Daily Review badge — Phase 3 (Advisory 4). Hidden when the
-              queue is empty or we're already on /app/review. Polls every
-              60s + on tab focus. */}
-          <ReviewBadge />
-
+          {/* QA-2026-05-16-009 (2026-05-21, Chunk 15) — Daily Review bell
+              REMOVED from the top bar. The QA author flagged the
+              notification-bell sub-page reachable from this affordance
+              for removal. The underlying /app/review route remains
+              intact (direct URL access still works) — only the
+              top-bar surface is gone, matching the verbatim spec
+              "Remove the page below. User gets to this page by clicking
+              on the bell icon on the top bar". A future cleanup can
+              decide whether to remove the /app/review route + DailyReview
+              page entirely if no other entry path consumes them. */}
           {/* Phase 13.3 — Cycle context indicator. Shows the active
               context + role; click opens a dropdown of all the user's
               contexts and switches scope. Hidden below md to keep the

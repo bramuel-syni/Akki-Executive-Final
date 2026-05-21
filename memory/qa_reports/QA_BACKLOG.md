@@ -22,7 +22,7 @@ If this table and the source ever disagree, the source wins; rebuild this table.
 
 | ID | Surface | One-line summary | Suggested priority | Status | Sprint chunk | Spec anchor |
 |----|---------|------------------|--------------------|--------|--------------|-------------|
-| QA-2026-05-16-001 | Portfolio | Portfolio page should sit below landing page in post-login flow | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-001 |
+| QA-2026-05-16-001 | Portfolio | Portfolio page should sit below landing page in post-login flow | P2 | DONE | Chunk-15 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-001 |
 | QA-2026-05-16-002 | Document Journal | "All documents" button surfaces need correcting (PO clarification needed) | P3 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-002 |
 | QA-2026-05-16-003 | Document Journal | Add All / Uploaded / Akki-Generated tabs with badges below search | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-003 |
 | QA-2026-05-16-004 | Document Journal | Rename "Add to Work Studio" → "Work with Document" + Compose modal | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-004 |
@@ -30,14 +30,14 @@ If this table and the source ever disagree, the source wins; rebuild this table.
 | QA-2026-05-16-006 | Document Reader | "Take into Solva" payload aligned to backend StartV2In | P0 | DONE | Chunk-7 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-006 |
 | QA-2026-05-16-007 | Document Reader | "Generate signals" parser hardened + loading state + long-running status copy + non-silent-reset (Path A info / Path B defensive fallback) | P0 | DONE | Chunk-7 (Fix-pass-2 2026-05-18) | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-007 |
 | QA-2026-05-16-008 | Document Reader | Ask/Solva/Studio/Cycle buttons must match Document Journal drawer parity | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-008 |
-| QA-2026-05-16-009 | Top bar | Remove the notification-bell sub-page entirely | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-009 |
-| QA-2026-05-16-010 | Document upload | Add auto-focused search bar to "link to earlier document" panel | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-010 |
+| QA-2026-05-16-009 | Top bar | Remove the notification-bell sub-page entirely | P2 | DONE | Chunk-15 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-009 |
+| QA-2026-05-16-010 | Document upload | Add auto-focused search bar to "link to earlier document" panel | P2 | DONE | Chunk-15 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-010 |
 | QA-2026-05-16-011 | Akki Chat | Chat layout overflows right — not responsive at small viewports | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-011 |
 | QA-2026-05-16-012 | Akki Chat | Archive button now navigates to dedicated /app/chats/archived page | P0 | DONE | Chunk-7 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-012 |
 | QA-2026-05-16-013 | Akki Chat | Delete chat must notify "archived, recoverable" not "deleted" | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-013 |
 | QA-2026-05-16-014 | Cycle Manager | Add spacing between top menu and Agent Cycle quick-actions card | P3 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-014 |
 | QA-2026-05-16-015 | Cycle Manager | "Activate Cycle" CTA missing on tabs other than Agenda | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-015 |
-| QA-2026-05-16-016 | Cycle Manager | Two identical Back/Next bars — bottom one needs "Back to Cycle Manager" label | P2 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-016 |
+| QA-2026-05-16-016 | Cycle Manager | Two identical Back/Next bars — bottom one needs "Back to Cycle Manager" label | P2 | DONE | Chunk-15 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-016 |
 | QA-2026-05-16-017 | Add a Contribution | Attach icon + From-Journal / Upload-External picker on contribution form | P1 | DONE | Chunk-9 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-017 |
 | QA-2026-05-16-018 | Add a Contribution | Attached-document chip with remove icon below attach picker | P1 | DONE | Chunk-9 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-018 |
 | QA-2026-05-16-019 | Add a Contribution | Paste-text box stays alongside attachment (do not remove) | P1 | DONE | Chunk-9 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-019 |
@@ -117,7 +117,7 @@ Source: `/app/memory/qa_reports/SOLVA_QA_BRIEF_20MAY2026.md`. Native ID scheme `
 | SV-04 | Solva sessions list | Cards + ACTIVE/PAUSED/COMPLETE/REFUSED status badges + tabs | High | DONE | Chunk-13 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-04 |
 | SV-05 | Solva sessions list | Real-time search bar (title + content) | High | DONE | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-05 |
 | SV-06 | Solva responses | Rich text formatting (paragraphs, lists, bold) | Medium | DONE | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-06 |
-| SV-07 | Solva session UX | Output window ≥60% viewport + scroll | Medium | DONE | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-07 |
+| SV-07 | Solva session UX | Output window ≥60% viewport + scroll | Medium | PARTIAL — overflow-y container CSS gap, queued C17-004 | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-07 |
 | SV-08 | Solva query | HTTP 422 reproduction + fix (screenshot referenced but not yet attached) | Critical | DONE | Chunk-14 | qa_reports/SOLVA_QA_BRIEF_20MAY2026.md#sv-08 |
 
 ## Phase C Audit-Panel Regression (20 May 2026)

@@ -129,6 +129,62 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 15 — 16-May P2 batch 1 (post-login flow + UX cleanup) — 2026-05-21 ✅ (autonomous)
+
+Closes 4 P2 BACKLOG items spanning Portfolio routing, Top bar cleanup, Solva attach-document modal UX, and Cycle Manager nav labeling. Two P2 items (QA-038 + QA-040 Work Studio Document Cards) deferred to a future chunk that bundles them with their P1 prerequisites (QA-037 status badge + QA-039 confidence score).
+
+| ID                | Surface                              | Files touched                                                                                                                                                 | Test name(s)                                                              | Status | Notes                                                                                                                                                  |
+|-------------------|--------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
+| QA-2026-05-16-001 | Portfolio post-login flow            | `pages/SignIn.jsx:34` — default redirect → `/app/portfolio`; `App.js::PublicOnlyRoute` — already-authed redirect → `/app/portfolio`                          | `test_chunk15_qa001_me_contexts_returns_portfolio_shape`                  | DONE   | Deep-link callers via `location.state.from` still bypass the portfolio default — preserved deliberately. Live preview verified: `bramuel@syni.ai` post-signin lands on `/app/portfolio` with Home 1 chips visible. |
+| QA-2026-05-16-009 | Top bar — bell affordance removal    | `components/layout/AppShell.jsx` — remove `<ReviewBadge />` render + import                                                                                    | `_qa009_review_summary_endpoint_still_alive` + `_mentions_endpoint_still_alive` | DONE   | `ReviewBadge.jsx` component file preserved (no imports). `/app/review` route remains accessible via direct URL.                                       |
+| QA-2026-05-16-010 | Document upload — auto-focused search | `components/solva/AttachDocumentModal.jsx` — `Search` lucide icon overlay + `useRef`-driven `.focus()` on journal-tab activation                              | `_qa010_documents_listing_supports_journal_search`                        | DONE   | `autoFocus` attribute alone wasn't enough for the upload→journal tab-switch case — added effect-driven focus.                                          |
+| QA-2026-05-16-016 | Cycle Manager — bottom-bar Back relabel | `components/cycle/CycleStepNav.jsx` — Back button → `<Link to="/app/cycle">Back to Cycle Manager</Link>`                                                       | `_qa016_cycle_step_nav_label_locked`                                      | DONE   | Replaced tab-step Back with page-exit Back. Top-bar StepFooter Back (in-form) unchanged per spec.                                                      |
+
+### Deferred (P2 BACKLOG remains)
+
+- **QA-2026-05-16-038** (Work Studio Document Cards — Lock icon overlay) — tightly coupled to QA-2026-05-16-037 (P1 BACKLOG status badge). Spec frames lock as "reinforcing the Committed badge"; shipping the lock alone is half-done. Defer.
+- **QA-2026-05-16-040** (Work Studio Document Cards — Persistent download icon) — same dependency cluster as -038. Aggregate-row download semantics require coordination with QA-037 badge taxonomy. Defer.
+
+Both rows kept at `BACKLOG` in `QA_BACKLOG.md` for re-pulling once P1 -037/-039 ship.
+
+### Tests
+
+`backend/tests/test_qa_chunk_15.py` — **6 tests:**
+- QA-001 — `/api/me/contexts` returns the portfolio chip shape Home 1 expects.
+- QA-009 — `/api/me/review-summary` + `/api/contexts/{cid}/mentions` endpoints both still respond (bell removal doesn't strand surfaces).
+- QA-010 — `/api/contexts/{cid}/documents` returns `name` + `original_filename` for journal-panel filter.
+- QA-016 — static grep that `CycleStepNav.jsx` carries "Back to Cycle Manager" + `to="/app/cycle"`.
+- CI sanity — touched frontend files import no LLM SDK.
+
+**All 6 pass.** Cross-chunk regression (9.5/10/11/12/13/14/15 + CI guard) = **66 passed**.
+
+### Live render-smoke step 17
+
+Hard-asserts on `/app/portfolio` + `/app/cycle/{cid}`:
+- ✓ QA-001 — Home 1 portfolio surface mounts at `/app/portfolio` (testid `home1` visible).
+- ✓ QA-009 — top-bar Daily Review bell affordance gone (0 ReviewBadge testid matches).
+- ✓ QA-016 — Cycle Manager bottom-bar Back testid renders "Back to Cycle Manager" + routes to `/app/cycle` (soft-skips when context has no cycles).
+
+### CI guard + ESLint + Ruff
+
+CI guard `test_no_direct_llm_calls_outside_shield.py` — **PASS** (zero new LLM call sites).
+ESLint clean on `SignIn.jsx`, `AppShell.jsx`, `AttachDocumentModal.jsx`, `CycleStepNav.jsx`, `render-smoke.js`.
+Ruff clean on `tests/test_qa_chunk_15.py`.
+
+### Architectural invariants checkpoint
+
+- ✅ Shield gateway exclusivity preserved.
+- ✅ `context_id` scoping intact.
+- ✅ `tenant_id == account_id` boundary intact.
+- ✅ No `repr(exc)` leaks.
+- ✅ No new third-party libraries.
+- ✅ Schema-drift defensive — frontend accepts both list-shape and `{items:[]}` shape from `/documents` endpoint.
+- ✅ Chunks 7-14 work intact — pytest +6 (60 → 66).
+
+### Carry-forward `CHUNK_15_STATE.md`
+
+New file documenting the 4 DONE + 2 deferred rows, the QA-001 routing rationale, the QA-009 minimum-scope decision (bell removed, page retained), and the QA-038/040 dependency analysis.
+
 ### Chunk 14 — Solva SV-05/06/07/08 (final Solva chunk) — 2026-05-21 ✅ (autonomous)
 
 Closes out the entire Solva QA Brief (8/8 SV-IDs DONE). Search expands to synthesis content; responses get markdown-light rendering (paragraphs + bullets + numbered + bold); output panel sized to ≥60vh with scroll; 422 surfaces translated to friendly user-facing copy with inline character-count hint.
@@ -205,6 +261,16 @@ Tester reported SV-05 PASS · SV-08 PASS · SV-06/SV-07 BLOCKED (no populated Ph
 - ctx `dcc263b1-59f9-4546-ba6a-ea7c54545b3e` · sid `sol-c14p-57be77d970fa4ee2a4cf61fe`
 
 **Pytest delta:** 0 (no new tests; cross-chunk 9.5/10/11/12/13/14 + CI guard = 60 passed / 0 failed verified). **Ruff** clean. **ESLint** unaffected (no frontend touched). **CI guard PASS.**
+
+### Fix-pass tester re-run verdict (Chunk 14) — 2026-05-21T15:30:00Z — PARTIAL DONE
+
+- **SV-05 ✅ PASS** (with documented copy-drift divergence — non-blocking).
+- **SV-06 ✅ PASS** — on the Pass I populated session: 5 `<p>` / 1 `<ul>` / 1 `<ol>` / 7 `<strong>` / zero literal asterisks rendered.
+- **SV-07 ❌ FAIL** — viewport ratio satisfied (66% ≥ 60% requirement) but `getComputedStyle().overflowY === "visible"` on the actual scroll container; the `overflow-y-auto` class landed on the inner `<div>` inside `ProseBlock` (line 660) but the parent wrapper is what scrolls. Long synthesis content overflows out of the panel and pushes page chrome.
+- **SV-08 ✅ PASS** — friendly 422 messages + inline char-count hint + threshold-flip all confirmed.
+- **One fix-pass cap exhausted** per autonomy rules — no second fix-pass attempted.
+- Single-line CSS fix queued as `C17-004` in `/app/memory/sprints/CHUNK_17_CLEANUP_QUEUE.md` for the planned Chunk 17 cleanup pass.
+- **Chunk 14 status: PARTIAL DONE.** SV-05/06/08 closed clean; SV-07 reaches min-height correctly but scroll container CSS gap remains.
 
 ### Chunk 13 — Solva SV-04 sessions list (4-bucket status + tab counts + read-only) — 2026-05-21 ✅ (autonomous)
 

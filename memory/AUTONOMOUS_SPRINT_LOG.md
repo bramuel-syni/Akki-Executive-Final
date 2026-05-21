@@ -237,6 +237,41 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 **Awaiting orchestrator tester re-run on SV-06 / SV-07 against the Pass I populated session, then dispatch of Chunk 15 (16-May P2 batch 1) per autonomy rules (PASS or FAIL).**
 
 
+## Chunk 14 fix-pass tester re-run — PARTIAL DONE — 2026-05-21T15:30:00Z
+
+- **Tester re-run verdict:** SV-05 ✅ PASS · SV-06 ✅ PASS (5 `<p>` / 1 `<ul>` / 1 `<ol>` / 7 `<strong>` / no literal asterisks on Pass I seed) · SV-07 ❌ FAIL (viewport ratio 66% but `overflow-y: visible` on the actual scroll container — Tailwind `overflow-y-auto` class didn't land on the right wrapper) · SV-08 ✅ PASS.
+- **Block reason (SV-07):** the `overflow-y-auto` class was applied to the inner div inside `ProseBlock` (`SolvaPhaseDSession.jsx:660`), but the actual scroll container is a parent wrapper; long synthesis pushes page chrome rather than scrolling inside the panel.
+- **No code regression** — min-height correct (66vh observed against the 60vh requirement); SV-06 markdown render correct; SV-08 friendliness correct. The CSS gap is a single-line wrapper fix.
+- **Chunk 14 status:** `PARTIAL DONE` — 3/4 PASS; SV-07 CSS gap queued as `C17-004` in `CHUNK_17_CLEANUP_QUEUE.md`.
+- **Fix-pass cap exhausted** (one-attempt rule honoured; no second fix-pass dispatched).
+- **Routing:** SV-07 overflow-y fix queued for the planned Chunk 17 cleanup pass.
+- Memory updates:
+  - `qa_reports/QA_BACKLOG.md` — SV-05/06/08 rows → DONE (Chunk-14); SV-07 → `PARTIAL — overflow-y container CSS gap, queued C17-004` (Chunk-14).
+  - `SYSTEM_STATE.md § 4` — fix-pass re-run verdict appended.
+  - `sprints/CHUNK_17_CLEANUP_QUEUE.md` — new entry `C17-004`.
+
+**Chunk 14 closed PARTIAL. Dispatching Chunk 15 (16-May P2 batch 1) per autonomy rules.**
+
+
+## Chunk 15 — 16-May P2 batch 1 (post-login flow + UX cleanup) — DONE — 2026-05-21T17:00:00Z
+
+- IDs closed: 4 (QA-2026-05-16-001 portfolio post-login · QA-009 bell removal · QA-010 journal search auto-focus · QA-016 cycle nav relabel)
+- IDs deferred: 2 (QA-038 + QA-040 Work Studio Document Cards — P1 dependency on QA-037 + QA-039)
+- Pytest delta: **+6** (66 → 72; new file `test_qa_chunk_15.py` — 4 endpoint contracts + 1 static grep + 1 CI sanity)
+- Tester verdict: PASS pending (6/6 backend + 3 render-smoke step 17 assertions + ESLint clean)
+- Files touched: 5 (`pages/SignIn.jsx`; `components/layout/AppShell.jsx`; `components/solva/AttachDocumentModal.jsx`; `components/cycle/CycleStepNav.jsx`; render-smoke step 17)
+- Architectural invariants: PASS (zero new LLM call sites; CI guard PASS; no new libraries; `tenant_id`/`context_id` scoping unchanged)
+- Blockers: none
+- AWAITING_PO routings: none new (QA-038/040 deferral is internal dependency, not PO clarification)
+- Memory updates:
+  - `qa_reports/QA_BACKLOG.md` — rows -001/-009/-010/-016 → DONE (Chunk-15)
+  - `SYSTEM_STATE.md § 4` — Chunk 15 closeout (newest at top)
+  - `sprints/CHUNK_15_STATE.md` — created (per-ID notes, deferral rationale, architectural checkpoint)
+- Notable: re-used patterns from prior chunks (debounce + autofocus from Chunk 9.5 + 14, status_counts-style filter from Chunk 11). All 4 IDs shipped under their estimated S/XS complexity ratings. Scope discipline: when QA-038/040 P1 dependencies surfaced, deferred them rather than scope-creep into P1 work.
+
+**Awaiting orchestrator tester re-run on Chunk 15 surfaces, then dispatch of Chunk 16 (16-May P2 batch 2) regardless of pass/fail per autonomy rules.**
+
+
 **Awaiting orchestrator tester re-run on Chunk 11 surfaces, then dispatch of Chunk 12.**
 
 

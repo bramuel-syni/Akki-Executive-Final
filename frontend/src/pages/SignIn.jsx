@@ -31,7 +31,20 @@ export default function SignIn() {
     try {
       const { data } = await api.post("/auth/login", { email, password });
       afterAuth(data);
-      const to = location.state?.from || "/app";
+      // QA-2026-05-16-001 (Chunk 15, 2026-05-21) — post-login default
+      // routed to /app/portfolio (the Home 1 portfolio surface) instead
+      // of /app. Rationale per QA author: "make the portfolio page
+      // below the landing page when the user logs in. Once the user
+      // chooses a company user then lands on the home page of the
+      // company." Home1's company chips already call switchContext()
+      // and navigate("/app") on pick — so the user reliably sees the
+      // portfolio first, then their chosen company's workspace home,
+      // even when an activeContext was restored from the prior session.
+      //
+      // Deep-link callers that set `location.state.from` (e.g. visiting
+      // a protected URL then bouncing through signin) still resolve to
+      // their target — they bypass the portfolio default.
+      const to = location.state?.from || "/app/portfolio";
       navigate(to, { replace: true });
     } catch (err) {
       setError(apiErrorMessage(err, "Unable to sign in"));

@@ -1,11 +1,19 @@
 /**
- * CycleStepNav — Layer 2 Back / Next strip.
+ * CycleStepNav — Layer 2 page-exit strip.
+ *
+ * Sits below the in-form `StepFooter`. The in-form Back moves between
+ * steps within the cycle; this Back EXITS the current cycle and
+ * returns to the Cycle Manager section (/app/cycle, the cycle list
+ * landing). Per QA-2026-05-16-016 the label is "Back to Cycle Manager"
+ * so the destination is unambiguous when both bars are visible at
+ * the bottom of the page.
  *
  * On the Compilation tab for an active cycle, Next becomes "Close Cycle".
  * On the Compilation tab for a completed cycle, Next is replaced with
  * a disabled "Cycle Completed" label.
  */
 import React from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Lock } from "lucide-react";
 
@@ -15,10 +23,15 @@ const TAB_ORDER = ["agenda", "team", "contributions", "scoreboard", "followups",
 
 export default function CycleStepNav({ tab, status, onChange, onClose }) {
   const idx = TAB_ORDER.indexOf(tab);
-  const back = idx > 0 ? TAB_ORDER[idx - 1] : null;
+  // `back` retained for parity with the in-form StepFooter's tab
+  // ordering, but is not used as the destination — the bottom Back
+  // bar always exits to /app/cycle per QA-2026-05-16-016.
   const next = idx < TAB_ORDER.length - 1 ? TAB_ORDER[idx + 1] : null;
   const isCompilation = tab === "compilation";
   const isCompleted = status === "completed";
+  // Suppress eslint warnings — `idx` kept for readability of the
+  // surrounding logic even though we don't read `back` anymore.
+  void idx;
 
   return (
     <div
@@ -27,12 +40,13 @@ export default function CycleStepNav({ tab, status, onChange, onClose }) {
     >
       <Button
         size="sm" variant="outline"
-        disabled={!back}
-        onClick={() => back && onChange(back)}
+        asChild
         className="text-[12.5px]"
         data-testid="cycle-step-nav-back"
       >
-        <ChevronLeft className="w-3.5 h-3.5 mr-1" /> Back
+        <Link to="/app/cycle">
+          <ChevronLeft className="w-3.5 h-3.5 mr-1" /> Back to Cycle Manager
+        </Link>
       </Button>
 
       {isCompilation ? (
