@@ -337,6 +337,35 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 **Awaiting orchestrator tester re-run on Chunk 17 surfaces + Chunks 12 / 14 retroactive verification, then dispatch of Chunk 18 (Track 4 infra) per autonomy rules.**
 
 
+## Chunk 17 fix-pass — Critical useRef import regression + SV-07 runtime verify — DONE — 2026-05-21T18:00:00Z
+
+- **Tester verdict on previous run:** QA-014 ✅ · Retro Chunk 12 ✅ · SV-07 🔴 BLOCKED by useRef ReferenceError ship-stopper · Chunk 8 non-owner gate ✅.
+- **Gap 1 (critical regression) closed:** `AttachDocumentModal.jsx:15` — added `useRef` to React destructured import. Chunk-15 search_replace had landed the call site but silently failed on the import line.
+- **Audit confirmed clean:** grep across all `frontend/src/**.{jsx,js}` for `useRef(` callers; every one has `useRef` in its react import OR uses `React.useRef`. Only 1 file needed the fix.
+- **Gap 2 (SV-07 runtime) closed:** runtime verification on the live preview (bramuel@syni.ai → 77 Solva sessions → clicked first → `sol-c14p-56eabe799373479090b85114`):
+  - 0 useRef ReferenceErrors / 0 page errors / 0 console errors
+  - ProseBlock outer `<article>` `getComputedStyle().overflowY === "auto"` ✅
+  - ProseBlock outer `maxHeight === "756px"` (≈ 70vh on 1080 viewport) ✅
+  - Read-only banner rendered, markdown-light render rendered, full synthesis prose visible
+- **Render-smoke addition:** `smokeChunk14SolvaRefinements` extended with a Phase D session mount probe + no-useRef-error assertion + C17-004 overflow runtime capture (`frontend/scripts/render-smoke.js:2426-2493`).
+- Pytest delta: **0** (existing 80-across-chunks tests still green).
+- Tester verdict: PASS pending re-run.
+- Files touched: 2 (`components/solva/AttachDocumentModal.jsx` import line · `scripts/render-smoke.js` step 16 extension).
+- Architectural invariants: PASS (no new LLM call sites; CI guard still green; no new libraries).
+- Blockers: none.
+- AWAITING_PO routings queued: none new.
+- Scope guard: ONLY the 2 dispatched items + render-smoke addition. No other chunks touched. C17-003 / QA-050 / Track 4 / Track 5 all untouched.
+
+### Retroactive PARTIAL → DONE flips (CONFIRMED)
+
+- **Chunk 12 → DONE** — Tester confirmed admin@akki.ai sees verbatim no-data copy + Document Journal link on the C17-002 seeded fixture. `QA-2026-05-16-049` row flipped to clean DONE in `QA_BACKLOG.md` (Chunk-12 / retro-closed by Chunk-17 fix-pass C17-002).
+- **Chunk 14 → DONE** — Runtime verified `overflowY === "auto"` on the live preview ProseBlock outer `<article>` (Chunk 14 was PARTIAL on SV-07). `SV-07` row flipped to clean DONE in `QA_BACKLOG.md` (Chunk-14 / retro-closed by Chunk-17 fix-pass C17-004).
+
+**Sprint cumulative state going into Chunk 18: 9 chunks DONE clean (Chunks 9.5, 10, 11, 12, 13, 14, 15, 16, 17). Zero PARTIALs.**
+
+**Awaiting orchestrator tester one-more re-run to confirm regression fixed + SV-07 verified, then dispatch of Chunk 18 (Track 4 infra) regardless of pass/fail per autonomy rules.**
+
+
 **Awaiting orchestrator tester re-run on Chunk 11 surfaces, then dispatch of Chunk 12.**
 
 

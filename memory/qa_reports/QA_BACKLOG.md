@@ -70,7 +70,7 @@ If this table and the source ever disagree, the source wins; rebuild this table.
 | QA-2026-05-16-046 | Monitor | Suggested objective/project removed from Suggested card after add | P1 | DONE | Chunk-11 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-046 |
 | QA-2026-05-16-047 | Monitor | Manual obj/proj default = not_started (was off_track); not_started/achieved added to status vocab; no-data path | P0 | DONE | Chunk-7 (Fix-pass 2026-05-18) | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-047 |
 | QA-2026-05-16-048 | Monitor | NED user cannot generate strategic goals (CTAs are Exec-only) | P1 | DONE | Chunk-11 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-048 |
-| QA-2026-05-16-049 | Monitor — Strategic Goals | Strategic cards: RAG + % + hover-full-text + filter + sort + drawer-rewrite | P1 | DONE (Test 5 fixture verification deferred to Chunk 17) | Chunk-12 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-049 |
+| QA-2026-05-16-049 | Monitor — Strategic Goals | Strategic cards: RAG + % + hover-full-text + filter + sort + drawer-rewrite | P1 | DONE | Chunk-12 (retro-closed by Chunk-17 fix-pass C17-002) | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-049 |
 | QA-2026-05-16-050 | Context Bar | Exec-only account must show "Executive" only (hide NED chip) | P2 | DONE | Chunk-11 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-050 |
 | QA-2026-05-16-051 | Context switcher | Loading state when user clicks Continue switching context | P2 | DONE | Chunk-11 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-051 |
 

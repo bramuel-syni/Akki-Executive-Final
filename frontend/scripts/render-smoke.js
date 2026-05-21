@@ -2420,10 +2420,87 @@ async function smokeChunk13SolvaSessions(page, failures) {
 // ----------------------------------------------------------------------
 async function smokeChunk14SolvaRefinements(page, failures) {
   const pageErrors = [];
+  const consoleErrors = [];
   const onPageError = (err) => { pageErrors.push(err.toString()); };
+  const onConsole = (msg) => {
+    if (msg.type() === "error") consoleErrors.push(msg.text());
+  };
   page.on("pageerror", onPageError);
+  page.on("console", onConsole);
 
   try {
+    // ── Chunk 17 fix-pass (2026-05-21) — Phase D session mount probe.
+    //   Tester found a `ReferenceError: useRef is not defined` regression
+    //   on the AttachDocumentModal that crashed ANY Phase D session page.
+    //   Fixed by adding `useRef` to the React import. This sub-assertion
+    //   navigates to a seeded populated session and confirms zero
+    //   useRef-related errors on mount.
+    //
+    //   Soft-skips when the active context has no populated session
+    //   (smoke can't reliably switch contexts without breaking the
+    //   active-context cookie). When a session IS reachable, additionally
+    //   captures `getComputedStyle(<article>).overflowY` for the SV-07
+    //   runtime evidence (C17-004 runtime confirmation).
+    await page.goto(`${BASE_URL}/app/solva/sessions`,
+      { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(800);
+
+    const cards = page.locator('[data-testid^="solva-sessions-item-"]');
+    const cardCount = await cards.count();
+    if (cardCount > 0) {
+      // Click the first session card to mount a Phase D page.
+      const openBtn = cards.first().locator('button:has-text("Open")').first();
+      if (await openBtn.isVisible().catch(() => false)) {
+        await openBtn.click();
+        await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
+        await page.waitForTimeout(2500);
+
+        const useRefHits = [...pageErrors, ...consoleErrors].filter(
+          (e) => /useRef is not defined|ReferenceError.*useRef/i.test(e),
+        );
+        if (useRefHits.length > 0) {
+          failures.push(
+            `Chunk 17 fix-pass: Phase D session mount triggered ${useRefHits.length} useRef ReferenceError(s) — regression returned. Sample: ${useRefHits[0].slice(0, 200)}`,
+          );
+        } else {
+          console.log(`[render-smoke]  ✓ Chunk 17 fix-pass — Phase D session mount: 0 useRef ReferenceErrors`);
+        }
+
+        // C17-004 runtime SV-07 capture (when ProseBlock is present —
+        // requires the loaded session to have rendered synthesis).
+        const overflow = await page.evaluate(() => {
+          const els = document.querySelectorAll('[data-testid^="solva-prose-block-"]');
+          if (!els.length) return { found: false };
+          const outer = els[0];
+          const inner = outer.querySelector('div[data-testid]');
+          const cs = (n) => n ? getComputedStyle(n).overflowY : null;
+          return {
+            found: true,
+            count: els.length,
+            outerOverflowY: cs(outer),
+            innerOverflowY: cs(inner),
+          };
+        }).catch(() => ({ found: false }));
+        if (overflow.found) {
+          const okOuter = overflow.outerOverflowY === "auto";
+          const okInner = overflow.innerOverflowY === "auto";
+          if (!okOuter && !okInner) {
+            failures.push(
+              `C17-004 runtime: neither wrapper resolves overflowY to "auto". `
+              + `outer="${overflow.outerOverflowY}", inner="${overflow.innerOverflowY}"`,
+            );
+          } else {
+            console.log(`[render-smoke]  ✓ C17-004 runtime — ProseBlock overflowY: outer="${overflow.outerOverflowY}", inner="${overflow.innerOverflowY}"`);
+          }
+        } else {
+          console.log(`[render-smoke]  · C17-004 runtime — ProseBlock not present on this session (likely no synthesis rendered yet); soft-skip`);
+        }
+      }
+    } else {
+      console.log(`[render-smoke]  · Chunk 17 fix-pass — no Solva sessions visible in active context; Phase D mount probe soft-skipped`);
+    }
+
     // ── SV-05 — sessions list page: search input + zero-match copy ──
     await page.goto(`${BASE_URL}/app/solva/sessions`,
       { waitUntil: "domcontentloaded", timeout: 30000 });
@@ -2512,6 +2589,7 @@ async function smokeChunk14SolvaRefinements(page, failures) {
     for (const e of pageErrors) console.error(`    PAGEERROR  ${e.slice(0, 240)}`);
   }
   page.off("pageerror", onPageError);
+  page.off("console", onConsole);
 }
 
 

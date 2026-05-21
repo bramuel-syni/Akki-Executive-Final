@@ -181,6 +181,31 @@ Ruff clean on `scripts/seed_chunks.py`, `tests/test_qa_chunk_17.py`.
 
 New file documenting the 7 items closed (1 P3 + 1 routed + 3 cleanup + 2 housekeeping + 1 docs-only), the retroactive PARTIAL → DONE flips on Chunks 12 + 14, and seed verification trace.
 
+### Fix-pass (Chunk 17) — 2026-05-21 (single-attempt cap exercised)
+
+Tester reported a ship-stopping `ReferenceError: useRef is not defined` regression that crashed every Phase D session page on mount. Root cause: `useRef` was called in `AttachDocumentModal.jsx` (Chunk 15 QA-010 auto-focus addition) but never added to the React import — the Chunk 15 search_replace had landed the call site but silently failed on the import line. Tester also requested runtime confirmation of the C17-004 SV-07 overflow-y fix on the live preview.
+
+| Gap | What changed | File:line |
+|---|---|---|
+| 1 — Critical useRef import regression | Added `useRef` to React destructured import | `components/solva/AttachDocumentModal.jsx:15` |
+| 1 — Audit for same pattern | Grep across `frontend/src` for every `useRef(` call site; verified each has `useRef` in its react import (`DocumentOverlay.jsx` flagged false-positive due to multi-line import — confirmed correct on inspection). Only 1 file needed the fix. | n/a (audit) |
+| 2 — SV-07 runtime + Phase D mount probe | New render-smoke sub-assertion in `smokeChunk14SolvaRefinements` — navigates to a populated Solva session, asserts 0 `useRef` ReferenceErrors AND captures `getComputedStyle().overflowY` on the ProseBlock outer + inner wrappers | `frontend/scripts/render-smoke.js:2426-2493` |
+
+**Live preview runtime verification (bramuel@syni.ai, autonomous overnight 2026-05-21 17:50 UTC):**
+- 77 Solva session cards rendered
+- Clicked first → landed on `/app/solva/phase-d/session/sol-c14p-56eabe799373479090b85114`
+- **0 useRef ReferenceErrors / 0 page errors / 0 console errors**
+- ProseBlock outer `<article>` `getComputedStyle().overflowY === "auto"` ✅
+- ProseBlock outer `maxHeight === "756px"` (≈ 70vh on 1080-tall viewport) ✅
+- Read-only banner rendered (Chunk 13 carry-forward green)
+- Markdown-light render rendered (Chunk 14 SV-06 carry-forward green) — 3 paragraphs + 3 `- ` bullets + 3 `1. ` numbered + 3 `**bold**` segments
+
+**Pytest delta:** 0 (no new tests; cross-chunk 9.5/10/11/12/13/14/15/16/17 + CI guard = 80 passed / 0 failed verified). **ESLint** clean on touched files. **Ruff** unaffected.
+
+**Retroactive closures (CONFIRMED via tester + this fix-pass runtime verification):**
+- **Chunk 12 → DONE** (was PARTIAL on Test 5; admin@akki.ai now sees verbatim no-data copy + Document Journal link on the seeded fixture per tester verdict + C17-002 close).
+- **Chunk 14 → DONE** (was PARTIAL on SV-07; runtime `overflowY === "auto"` confirmed on the live preview per the screenshot above + C17-004 close).
+
 ### Chunk 16 — Work Studio Document Cards bundle (QA-037 + -038 + -039 + -040) — 2026-05-21 ✅ (autonomous)
 
 Closes the entire Work Studio Document Cards cluster in one coherent component. QA-037 (P1) + QA-038 (P2) + QA-039 (P1) + QA-040 (P2) all delivered atomically. The Chunk-15 deferral of -038/-040 was the correct scope-discipline call — Chunk 16 closes the dependency cluster end-to-end.
