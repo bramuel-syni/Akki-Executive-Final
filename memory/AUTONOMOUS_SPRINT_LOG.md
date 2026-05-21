@@ -6,6 +6,14 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 
 ---
 
+## Executive bulletin — wake-up state (read this first, ≤ 60 seconds)
+
+**Sprint succeeded.** 12 chunks DONE clean (9.5, 10, 11, 12, 13, 14, 15, 16, 17, 18, 18.5, 19), zero PARTIALs after retroactive fix-passes, zero user wakeup triggers. The highest-impact win: a 235× warm / 15.7× cold latency improvement on the `call_llm` path (touches `evolution-diff` + `generate-meta` + every Shield-routed surface), achieved by routing the legacy de-id fallback through `llm_router.invoke()` — closed a leaky abstraction that bypassed the Shield gateway. In your hands now: the holistic features doc at `/app/memory/product/AKKI_FEATURES_AND_FUNCTIONALITY.md`, the Bank-QA evidence pack (HMAC verifier + Mermaid architecture diagram + screenshot README), and the live `GET /api/admin/synisense/cron-health` endpoint. Four items still need PO attention: QA-050 dual-role label, QA-002 "All documents" button scope, C17-003 cross-context Solva aggregate, and Track 4 Item 5 Around-the-Goals — each anchored in `/app/memory/sprints/AWAITING_PO/`.
+
+For the holistic narrative open `AKKI_FEATURES_AND_FUNCTIONALITY.md`. For per-chunk detail and lessons committed for future agents, scroll down through this log. For the 5-minute wake-up verification checklist, jump to the morning report at the bottom of this file.
+
+---
+
 ## Chunk 9.5 — Solva criticals + Phase C audit regression — DONE — 2026-05-20T19:50:00Z
 
 - IDs closed:
