@@ -151,6 +151,13 @@ export default function CycleList() {
       <WorkspaceEntryGate workspace="cycle">
         <div className="akki-w-medium akki-vmedium" data-testid="cycle-list-page">
 
+          {/* Chunk 17 (QA-2026-05-16-014, 2026-05-21) — explicit
+              spacing between the top menu (AppShell topbar) and the
+              Agent Cycle Quick Actions card. Previously zero gap so
+              the QuickActionBar sat flush against the topbar bottom
+              border, creating visual crowding per the QA author. */}
+          <div className="pt-6" data-testid="cycle-list-quickactions-spacer" />
+
           <QuickActionBar contextId={activeContextId} />
 
           <ListingShell

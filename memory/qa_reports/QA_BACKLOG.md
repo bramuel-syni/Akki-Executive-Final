@@ -23,7 +23,7 @@ If this table and the source ever disagree, the source wins; rebuild this table.
 | ID | Surface | One-line summary | Suggested priority | Status | Sprint chunk | Spec anchor |
 |----|---------|------------------|--------------------|--------|--------------|-------------|
 | QA-2026-05-16-001 | Portfolio | Portfolio page should sit below landing page in post-login flow | P2 | DONE | Chunk-15 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-001 |
-| QA-2026-05-16-002 | Document Journal | "All documents" button surfaces need correcting (PO clarification needed) | P3 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-002 |
+| QA-2026-05-16-002 | Document Journal | "All documents" button surfaces need correcting (PO clarification needed) | P3 | AWAITING_PO | Chunk-17 (routed) | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-002 |
 | QA-2026-05-16-003 | Document Journal | Add All / Uploaded / Akki-Generated tabs with badges below search | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-003 |
 | QA-2026-05-16-004 | Document Journal | Rename "Add to Work Studio" → "Work with Document" + Compose modal | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-004 |
 | QA-2026-05-16-005 | Document Journal | Add to Cycle CTA backend schema accepted document-attach payload | P0 | DONE | Chunk-7 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-005 |
@@ -35,7 +35,7 @@ If this table and the source ever disagree, the source wins; rebuild this table.
 | QA-2026-05-16-011 | Akki Chat | Chat layout overflows right — not responsive at small viewports | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-011 |
 | QA-2026-05-16-012 | Akki Chat | Archive button now navigates to dedicated /app/chats/archived page | P0 | DONE | Chunk-7 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-012 |
 | QA-2026-05-16-013 | Akki Chat | Delete chat must notify "archived, recoverable" not "deleted" | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-013 |
-| QA-2026-05-16-014 | Cycle Manager | Add spacing between top menu and Agent Cycle quick-actions card | P3 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-014 |
+| QA-2026-05-16-014 | Cycle Manager | Add spacing between top menu and Agent Cycle quick-actions card | P3 | DONE | Chunk-17 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-014 |
 | QA-2026-05-16-015 | Cycle Manager | "Activate Cycle" CTA missing on tabs other than Agenda | P1 | BACKLOG |  | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-015 |
 | QA-2026-05-16-016 | Cycle Manager | Two identical Back/Next bars — bottom one needs "Back to Cycle Manager" label | P2 | DONE | Chunk-15 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-016 |
 | QA-2026-05-16-017 | Add a Contribution | Attach icon + From-Journal / Upload-External picker on contribution form | P1 | DONE | Chunk-9 | qa_reports/QA_REPORT_16MAY2026.md#qa-2026-05-16-017 |

@@ -61,12 +61,16 @@ export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange }) 
   const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [extractOpen, setExtractOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null);
   // Patch 28F — drawer state for the Strategic Goals listing. Row
   // click now opens a side drawer showing full goal context + timeline
-  // (parity with the Objectives & Projects panel). "Edit" inside the
-  // drawer drops the user into the inline-edit mode for power users
-  // who want to update score / probability quickly.
+  // (parity with the Objectives & Projects panel).
+  //
+  // Chunk 17 cleanup (C17-001, 2026-05-21) — `editingId` state was
+  // removed alongside the orphaned `EditGoalRow` component (lines
+  // 653-708 deleted). The "Edit this goal" affordance was replaced
+  // by the AI-driven "Update Goal" flow in Chunk 12 (QA-049); the
+  // inline edit path had no remaining call site and rendered as
+  // dead code.
   const [drawerGoal, setDrawerGoal] = useState(null);
 
   const load = useCallback(async () => {
@@ -152,11 +156,7 @@ export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange }) 
                   goal={g}
                   isLast={i === groups[dept].length - 1}
                   isNED={isNED}
-                  isEditing={editingId === g.id}
                   onOpenDrawer={() => setDrawerGoal(g)}
-                  onEdit={() => setEditingId(g.id)}
-                  onCancel={() => setEditingId(null)}
-                  onSaved={() => { setEditingId(null); refresh(); }}
                   contextId={contextId}
                 />
               ))}
@@ -230,16 +230,12 @@ function probabilityNarrative(value) {
   return "Unlikely without a different plan.";
 }
 
-function GoalRow({ goal, isLast, isNED, isEditing, onOpenDrawer, onEdit, onCancel, onSaved, contextId }) {
+function GoalRow({ goal, isLast, isNED, onOpenDrawer, contextId }) {
   const status = STATUS_STYLE[goal.status] || STATUS_STYLE.on_track;
   const score = typeof goal.current_score === "number" ? goal.current_score : null;
   const prob = typeof goal.probability === "number" ? goal.probability : null;
   const cat = CATEGORY_STYLE[goal.category] || CATEGORY_STYLE.operations;
   const initiatives = typeof goal.initiatives_count === "number" ? goal.initiatives_count : 0;
-
-  if (isEditing) {
-    return <EditGoalRow goal={goal} contextId={contextId} onCancel={onCancel} onSaved={onSaved} isLast={isLast} />;
-  }
 
   return (
     <div
@@ -646,63 +642,6 @@ function ScoreMethodologyTip() {
           </p>
         </div>
       )}
-    </div>
-  );
-}
-
-function EditGoalRow({ goal, contextId, onCancel, onSaved, isLast }) {
-  const [score, setScore] = useState(goal.current_score ?? "");
-  const [prob, setProb] = useState(goal.probability ?? "");
-  const [currentValue, setCurrentValue] = useState(goal.current_value || "");
-  const [status, setStatus] = useState(goal.status || "on_track");
-  const [busy, setBusy] = useState(false);
-
-  const save = async () => {
-    setBusy(true);
-    try {
-      const payload = { status };
-      if (score !== "" && !isNaN(parseInt(score))) payload.current_score = parseInt(score);
-      if (prob !== "" && !isNaN(parseInt(prob))) payload.probability = parseInt(prob);
-      if (currentValue.trim()) payload.current_value = currentValue.trim();
-      await api.patch(`/contexts/${contextId}/strategic-goals/${goal.id}`, payload);
-      toast.success("Goal updated.");
-      onSaved();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
-    finally { setBusy(false); }
-  };
-
-  return (
-    <div className={`px-5 py-4 bg-[var(--cream-deep)]/40 ${!isLast ? "border-b border-[var(--rule)]" : ""}`} data-testid={`goal-edit-row-${goal.id}`}>
-      <p className="text-[14.5px] text-[var(--ink)] font-medium mb-3">{goal.title}</p>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-        <NumField label="Score (0-100)" value={score} onChange={setScore} testid={`goal-edit-score-${goal.id}`} />
-        <NumField label="Probability (0-100)" value={prob} onChange={setProb} testid={`goal-edit-prob-${goal.id}`} />
-        <div>
-          <label className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] block mb-1">Current value</label>
-          <input value={currentValue} onChange={(e) => setCurrentValue(e.target.value)} className="w-full px-2 py-1 border border-[var(--rule)] rounded-sm text-[12.5px]" data-testid={`goal-edit-current-${goal.id}`} />
-        </div>
-        <div>
-          <label className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] block mb-1">Status</label>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full px-2 py-1 border border-[var(--rule)] rounded-sm text-[12.5px] bg-white" data-testid={`goal-edit-status-${goal.id}`}>
-            {Object.entries(STATUS_STYLE).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
-          </select>
-        </div>
-      </div>
-      <div className="flex items-center justify-end gap-2">
-        <Button size="sm" variant="ghost" onClick={onCancel} className="text-[12px] h-7" data-testid={`goal-edit-cancel-${goal.id}`}>Cancel</Button>
-        <Button size="sm" onClick={save} disabled={busy} className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white text-[12px] h-7" data-testid={`goal-edit-save-${goal.id}`}>
-          {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save"}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function NumField({ label, value, onChange, testid }) {
-  return (
-    <div>
-      <label className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] block mb-1">{label}</label>
-      <input type="number" min={0} max={100} value={value} onChange={(e) => onChange(e.target.value)} className="w-full px-2 py-1 border border-[var(--rule)] rounded-sm text-[12.5px]" data-testid={testid} />
     </div>
   );
 }

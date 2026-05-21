@@ -8,6 +8,10 @@ fixture + Chunk-8 smoke probe defensive fix).
 
 Format: oldest at top. New entries append at the bottom.
 
+**Chunk 17 status (2026-05-21):** entries C17-001 / C17-002 / C17-004
+all RESOLVED in this chunk. C17-003 remains AWAITING_PO. C17-005
+added below (Solva v2 admin dashboard helper promotion).
+
 Each entry MUST capture:
 - File path + exact line range
 - Reason the code is dead / why it should be cleaned up
@@ -17,10 +21,12 @@ Each entry MUST capture:
 
 ---
 
-## C17-001 — Orphaned `EditGoalRow` component
+## C17-001 — Orphaned `EditGoalRow` component ✅ RESOLVED in Chunk 17
+
+**Status:** Closed 2026-05-21. EditGoalRow + NumField components removed from `StrategicGoalsPanel.jsx`. State `editingId` deleted. `isEditing` prop threading removed. Test `test_chunk17_c17_001_edit_goal_row_removed` locks the deletion. Net delta: ~75 lines of dead code excised.
 
 - **File:** `/app/frontend/src/components/monitor/StrategicGoalsPanel.jsx`
-- **Lines:** 631-686 (`function EditGoalRow` + helper `NumField`)
+- **Lines (pre-deletion):** 64 (state) · 155-159 (props) · 240-241 (isEditing branch) · 653-708 (EditGoalRow + NumField)
 - **Reason for orphan:**
   - Chunk 12 (QA-2026-05-16-049) replaced the manual "Edit this goal"
     affordance with the AI-driven "Update Goal" flow. The drawer no
@@ -53,7 +59,9 @@ Each entry MUST capture:
 
 ---
 
-## C17-002 — Extend Pass H no-data seed to an Exec account
+## C17-002 — Extend Pass H no-data seed to an Exec account ✅ RESOLVED in Chunk 17
+
+**Status:** Closed 2026-05-21. `seed_chunks.py` now iterates admin@akki.ai's owned contexts and runs Pass H against each. 11 admin no-data fixtures minted; idempotency confirmed via re-run. admin@akki.ai's `declared_role="dual"` passes the NED RBAC check at `routers/strategic_goal_assessment.py:231-236`, so the Update Goal UI path is reachable — closing the Chunk-12 PARTIAL Test 5.
 
 - **File:** `/app/backend/scripts/seed_chunks.py`
 - **Lines:** 704-748 (`_seed_chunk12_no_data_strategic_goal_fixture`) + main-loop wiring at 850-854.
@@ -92,10 +100,12 @@ Each entry MUST capture:
 
 ---
 
-## C17-004 — Fix Solva session prose panel overflow-y
+## C17-004 — Fix Solva session prose panel overflow-y ✅ RESOLVED in Chunk 17
+
+**Status:** Closed 2026-05-21. `ProseBlock` restructured so BOTH the outer `<article>` and the inner content `<div>` carry `overflow-y-auto` + `max-h-[70vh]`. Defence-in-depth: either container queried via `getComputedStyle().overflowY` now returns `"auto"`. Test `test_chunk17_c17_004_solva_prose_outer_overflow_class` locks the wrapper class on the outer element. Render-smoke step 16 retains its existing assertion.
 
 **Source:** Chunk 14 tester re-run, 2026-05-21
-**Symptom:** Panel min-height correct (66vh ≥ the 60vh requirement) but `getComputedStyle().overflowY === "visible"` on the actual scroll container — long synthesis content pushes page chrome instead of scrolling inside the panel.
+**Symptom (pre-fix):** Panel min-height correct (66vh ≥ the 60vh requirement) but `getComputedStyle().overflowY === "visible"` on the actual scroll container — long synthesis content pushed page chrome instead of scrolling inside the panel.
 **Likely fix:** The `overflow-y-auto` class applied in Chunk 14 landed on the inner `<div>` inside `ProseBlock` at `SolvaPhaseDSession.jsx:660`, but the actual scroll container is a parent wrapper. Identify the wrapper that contains the rendered prose (likely the parent of `ProseRenderer` — either the `<article>` element at `:653` or a layout shell ancestor) and add `overflow-y: auto` + `max-h-[70vh]` (or equivalent) directly on that element. Tailwind class spelling / breakpoint specificity may have caused the original miss.
 **Test:** render-smoke step 16 sub-assertion — synthesis panel `getComputedStyle().overflowY === "auto"` on a seeded Chunk-14 populated session (`sol-c14p-*` titles).
 **Risk:** LOW — single CSS fix, no logic change.

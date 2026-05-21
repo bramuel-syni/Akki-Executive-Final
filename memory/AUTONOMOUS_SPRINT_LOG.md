@@ -302,6 +302,41 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 **Awaiting orchestrator tester re-run on Chunk 16 surfaces, then dispatch of Chunk 17 (16-May P3 + cleanup queue) regardless of pass/fail per autonomy rules.**
 
 
+## Chunk 16 — tester verified — DONE — 2026-05-21T21:00:00Z
+
+- **Tester verdict: PASS 4/4** — all 3 lifecycle states (Draft/In Review/Committed) verified live across admin and bramuel contexts; all 3 RAG bands (green/amber/red) rendered correctly; real file download triggered successfully via the 2-step token-mint flow.
+- Status: Chunk 16 closed cleanly. No fix-pass dispatched.
+- Memory updates:
+  - `qa_reports/QA_BACKLOG.md` — rows -037/-038/-039/-040 confirmed DONE with `Sprint chunk = Chunk-16` (no change needed)
+  - `SYSTEM_STATE.md § 4` — tester-confirmation line appended to Chunk 16 entry
+  - `AUTONOMOUS_SPRINT_LOG.md` — this entry
+
+**Dispatching Chunk 17 (16-May P3 + Cleanup Queue) per autonomy rules.**
+
+
+## Chunk 17 — 16-May P3 + Cleanup Queue (closes C17-001/002/004 + Items 5/6/7 + QA-014 + routes QA-002) — DONE — 2026-05-21T22:30:00Z
+
+- Items closed: **8 total** — 1 P3 (QA-014) + 1 routed (QA-002 → AWAITING_PO) + 3 cleanup-queue (C17-001 EditGoalRow / C17-002 admin Exec seed / C17-004 SV-07 overflow-y) + 2 housekeeping (Item 6 non-owner membership · Item 7 smoke probe defensive `||`) + 1 docs-only (Item 5 soft-skip annotation).
+- Pytest delta: **+8** (72 → 80; new file `test_qa_chunk_17.py` — 2 seed integration + 1 membership + 4 static guards + 1 CI sanity).
+- Tester verdict: PASS pending (8/8 backend + render-smoke unchanged + ESLint clean + Ruff clean).
+- Files touched: 6 (NEW `tests/test_qa_chunk_17.py`; NEW `AWAITING_PO/CHUNK_17_QA_002_all_documents_button.md`; `scripts/seed_chunks.py`; `components/monitor/StrategicGoalsPanel.jsx`; `pages/SolvaPhaseDSession.jsx`; `pages/cycle/CycleList.jsx`; `scripts/render-smoke.js`).
+- Architectural invariants: PASS (zero new LLM call sites; CI guard PASS; no new libraries; Chunk-8 state machine untouched).
+- Blockers: none.
+- AWAITING_PO routings queued: 1 new (QA-002 documents button disambiguation); C17-003 + CHUNK_11_QA_050 unchanged.
+- **Retroactive PARTIAL → DONE flips** (pending tester re-run):
+  - **Chunk 12** — C17-002 closes the Test 5 fixture gap. admin@akki.ai's Exec-aligned contexts now carry the no-data fixture; admin can trigger the UI path bramuel (NED) couldn't.
+  - **Chunk 14** — C17-004 closes the SV-07 overflow-y CSS gap. Both outer + inner ProseBlock wrappers now resolve to `overflow-y: auto`.
+- Memory updates:
+  - `qa_reports/QA_BACKLOG.md` — QA-014 → DONE (Chunk-17); QA-002 → AWAITING_PO.
+  - `SYSTEM_STATE.md § 4` — Chunk 17 closeout (newest at top).
+  - `sprints/CHUNK_17_STATE.md` — created (per-item table, retroactive flips, seed verification).
+  - `sprints/CHUNK_17_CLEANUP_QUEUE.md` — C17-001 / C17-002 / C17-004 marked RESOLVED.
+  - NEW `sprints/AWAITING_PO/CHUNK_17_QA_002_all_documents_button.md`.
+- Notable: this chunk's biggest win is the retroactive closure of Chunks 12 + 14. The dispatch predicted this as the "morning report win" — confirmed. Sprint cumulative state going into Chunk 18: 8 chunks DONE (clean) + 0 PARTIAL (after retroactive flips land).
+
+**Awaiting orchestrator tester re-run on Chunk 17 surfaces + Chunks 12 / 14 retroactive verification, then dispatch of Chunk 18 (Track 4 infra) per autonomy rules.**
+
+
 **Awaiting orchestrator tester re-run on Chunk 11 surfaces, then dispatch of Chunk 12.**
 
 

@@ -1015,7 +1015,13 @@ async function smokeChunk8DocumentOverlay(page, failures) {
           const ctxs = await r.json();
           const list = Array.isArray(ctxs) ? ctxs : (ctxs.contexts || []);
           for (const c of list) {
-            const hit = await tryCtx(c.id);
+            // Chunk 17 (item 7) — defensive coercion so the probe
+            // handles BOTH /api/me/contexts shapes: the legacy
+            // `{id, ...}` rows AND the WS-R16 rewrite that returns
+            // `{context_id, ...}`. Mirrors the same pattern already in
+            // use at lines 1400 / 1822 / 2102.
+            const cid = c.context_id || c.id;
+            const hit = await tryCtx(cid);
             if (hit) return hit;
           }
         }

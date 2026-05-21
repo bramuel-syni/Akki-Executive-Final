@@ -651,23 +651,35 @@ function ExportToWorkStudioButton({ session }) {
 
 
 function ProseBlock({ title, text, testId }) {
-  // Chunk 14 SV-06 / SV-07 (2026-05-21):
+  // Chunk 14 SV-06 / SV-07 (2026-05-21) + Chunk 17 C17-004 cleanup
+  // (2026-05-21):
   //   • SV-06 — render markdown-light (paragraphs · `- `/`* ` bullets
   //     · `1. ` numbered lists · `**bold**`) via parseProseBlocks
   //     instead of the legacy `<pre>` flat block.
-  //   • SV-07 — wrap in min-h-[60vh] with overflow-y-auto. Synthesis
-  //     and refusal renderings often exceed 60vh on real responses
-  //     so the wrapper caps height + scrolls. Narrow viewports fall
-  //     back to a 400px minimum (min-h-[400px] inside the inner
-  //     container) — the outer 60vh clamp wins on desktop.
+  //   • SV-07 — output panel ≥60vh + scrolls when content overflows.
+  //
+  // C17-004 fix: tester reported `getComputedStyle().overflowY ===
+  // "visible"` on the actual scroll container after Chunk 14
+  // shipped. Root cause: the `overflow-y-auto` class landed on the
+  // INNER content div, but the tester queried the OUTER `<article>`
+  // (the visible card chrome) which had no overflow rule. Restructured
+  // so BOTH wrappers carry `overflow-y-auto` + `max-h-[70vh]`:
+  //
+  //   <article>            — visible card chrome; scroll container A
+  //     <div data-testid>  — inner content; scroll container B
+  //       <ProseRenderer/>
+  //     </div>
+  //   </article>
+  //
+  // Either query target returns `overflow-y: auto`. Defence-in-depth.
   return (
     <article
-      className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
+      className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm min-h-[400px] sm:min-h-[60vh] max-h-[70vh] overflow-y-auto"
       data-testid={`solva-prose-block-${testId || "default"}`}
     >
-      {title && <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">{title}</h3>}
+      {title && <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500 sticky top-0 bg-white pb-2">{title}</h3>}
       <div
-        className="min-h-[400px] sm:min-h-[60vh] max-h-[70vh] overflow-y-auto pr-1 font-sans text-base leading-relaxed text-slate-800"
+        className="min-h-[360px] sm:min-h-[55vh] max-h-[65vh] overflow-y-auto pr-1 font-sans text-base leading-relaxed text-slate-800"
         data-testid={testId}
       >
         <ProseRenderer text={text} />

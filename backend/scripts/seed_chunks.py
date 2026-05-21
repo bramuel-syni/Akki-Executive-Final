@@ -42,6 +42,15 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 from motor.motor_asyncio import AsyncIOMotorClient  # noqa: E402
 
 BRAMUEL_EMAIL = "bramuel@syni.ai"
+# Chunk 17 (C17-002 / item 6, 2026-05-21) — admin@akki.ai is the
+# Executive-declared (`declared_role="dual"`) seed account whose
+# contexts must also receive the no-data Strategic Goals fixture
+# (Pass H, originally bramuel-only). The NED RBAC check in
+# `routers/strategic_goal_assessment.py:231-236` gates ONLY on
+# `declared_role == "ned"`, so `"dual"` passes — admin can reach the
+# Update Goal UI path that bramuel (NED) cannot, closing the
+# Chunk 12 PARTIAL on Test 5.
+ADMIN_EMAIL = "admin@akki.ai"
 
 
 def _iso(d: datetime) -> str:
@@ -1110,6 +1119,84 @@ async def main():
         print("[seed-chunks] Sample populated Phase D sessions (Chunk 14 fix-pass Pass I):")
         for ps in populated_phase_d_seeds[:5]:
             print(f"   - ctx={ps['context_id']} sid={ps['session_id']}")
+
+
+    # =========================================================
+    # Chunk 17 — C17-002 (admin Exec contexts) + item 6
+    # (non-owner membership). 2026-05-21.
+    # =========================================================
+    admin = await db.accounts.find_one({"email": ADMIN_EMAIL}, {"_id": 0, "id": 1, "declared_role": 1})
+    admin_no_data_seeds: List[Dict[str, Any]] = []
+    admin_membership_pass: Dict[str, Any] = {}
+    if admin:
+        admin_id = admin["id"]
+        admin_contexts = await db.contexts.find(
+            {"owner_account_id": admin_id}, {"_id": 0, "id": 1, "name": 1},
+        ).to_list(50)
+        # C17-002: insert the chunk_12_no_data fixture across every
+        # admin-owned context. Reuses the Pass H helper unchanged.
+        for c in admin_contexts:
+            res = await _seed_chunk12_no_data_strategic_goal_fixture(
+                db, c["id"], admin_id,
+            )
+            if res.get("minted"):
+                admin_no_data_seeds.append(res)
+
+        # Item 6 — non-owner seed identity. Add admin as a viewer-role
+        # member of bramuel's largest context (count-by-Phase-D-sessions
+        # which is the proxy for "most-used context"). Idempotent via
+        # marker `chunk17_non_owner_membership_marker="v1"` on the
+        # memberships collection.
+        if bid:
+            # Pick the bramuel context with the most Phase D sessions.
+            agg = await db.solva_phase_d_sessions.aggregate([
+                {"$match": {"account_id": bid}},
+                {"$group": {"_id": "$context_id", "n": {"$sum": 1}}},
+                {"$sort": {"n": -1}},
+                {"$limit": 1},
+            ]).to_list(1)
+            target_ctx_id = agg[0]["_id"] if agg else (
+                contexts[0]["id"] if contexts else None
+            )
+            if target_ctx_id and target_ctx_id != admin_id:
+                existing = await db.memberships.find_one({
+                    "account_id": admin_id,
+                    "context_id": target_ctx_id,
+                    "chunk17_non_owner_membership_marker": "v1",
+                }, {"_id": 0, "id": 1})
+                if not existing:
+                    await db.memberships.insert_one({
+                        "id": f"mem-c17-{uuid.uuid4().hex[:12]}",
+                        "account_id": admin_id,
+                        "context_id": target_ctx_id,
+                        "status": "active",
+                        "sub_role": "viewer",
+                        "created_at": _iso(_now()),
+                        "chunk17_non_owner_membership_marker": "v1",
+                    })
+                    admin_membership_pass = {
+                        "context_id": target_ctx_id,
+                        "account_id": admin_id,
+                        "minted": True,
+                    }
+                else:
+                    admin_membership_pass = {
+                        "context_id": target_ctx_id,
+                        "account_id": admin_id,
+                        "minted": False,
+                        "reason": "already_seeded",
+                    }
+
+    if admin_no_data_seeds:
+        print("[seed-chunks] Sample admin Exec no-data fixtures (Chunk 17 C17-002):")
+        for ns in admin_no_data_seeds[:5]:
+            print(f"   - ctx={ns['context_id']} goal={ns['goal_id']}")
+    if admin_membership_pass:
+        m = admin_membership_pass
+        if m.get("minted"):
+            print(f"[seed-chunks] Chunk 17 non-owner membership: admin@akki.ai → ctx={m['context_id']} (viewer role)")
+        elif m.get("reason"):
+            print(f"[seed-chunks] Chunk 17 non-owner membership already in place: ctx={m['context_id']}")
 
 
 if __name__ == "__main__":

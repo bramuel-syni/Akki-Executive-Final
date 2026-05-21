@@ -129,6 +129,58 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 17 — 16-May P3 + Cleanup Queue — 2026-05-21 ✅ (autonomous)
+
+Cleanup pass closing C17-001 + C17-002 + C17-004 from the cleanup queue, shipping QA-014 (P3), routing QA-002 (P3 — AWAITING_PO), and landing 2 housekeeping items (non-owner seed identity + smoke probe defensive fix). Closing C17-002 + C17-004 retroactively flips Chunks 12 and 14 from PARTIAL → DONE (pending tester re-run).
+
+| Item              | Surface                              | Action / Files                                                                                                                                                                            | Test                                                                | Status   |
+|-------------------|--------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------|----------|
+| QA-2026-05-16-014 | Cycle Manager spacing                | `pages/cycle/CycleList.jsx` — `cycle-list-quickactions-spacer` testid                                                                                                                     | `_qa014_cycle_quickactions_spacer_present`                          | DONE     |
+| QA-2026-05-16-002 | Document Journal "All documents"     | NEW `AWAITING_PO/CHUNK_17_QA_002_all_documents_button.md` (4 disambiguation questions)                                                                                                    | n/a (routed)                                                         | ROUTED   |
+| **C17-001**       | Strategic Goals — EditGoalRow         | DELETED ~75 lines (`StrategicGoalsPanel.jsx`): `EditGoalRow` + `NumField` components, `editingId` state, `isEditing` prop chain                                                          | `_c17_001_edit_goal_row_removed`                                    | RESOLVED |
+| **C17-002**       | Strategic Goals — Exec seed for QA-049 | `seed_chunks.py` extended with `ADMIN_EMAIL` constant + admin Pass H loop (11 fixtures minted) + Item 6 non-owner membership. admin@akki.ai's `declared_role="dual"` passes NED RBAC gate. | `_c17_002_admin_no_data_fixture_seeded` + `_seed_pass_is_idempotent` | RESOLVED |
+| **C17-004**       | Solva — SV-07 overflow-y              | `pages/SolvaPhaseDSession.jsx::ProseBlock` restructured — BOTH outer `<article>` and inner `<div>` carry `overflow-y-auto` + `max-h-[70vh]` (defence-in-depth)                            | `_c17_004_solva_prose_outer_overflow_class`                         | RESOLVED |
+| Item 6            | Non-owner seed identity              | `seed_chunks.py` adds admin@akki.ai as `sub_role="viewer"` member of bramuel's largest context (`fbc54a51-...`). Closes Chunk-8 HUMAN_REQUIRED.                                            | `_item6_admin_non_owner_membership`                                  | RESOLVED |
+| Item 7            | Smoke probe `||` defensive fix       | `render-smoke.js:1018` now uses `c.context_id || c.id` (4th call site adopting the pattern).                                                                                              | `_item7_smoke_probe_defensive_fallback`                              | RESOLVED |
+| Item 5            | Soft-skip audit                      | Annotated `READ_FIRST.md` per orchestrator pre-lock (option b). No seed changes.                                                                                                          | n/a (docs)                                                           | RESOLVED |
+
+### Retroactive PARTIAL → DONE flips (pending tester re-run)
+
+- **Chunk 12** — C17-002 closes the Test 5 fixture gap. admin@akki.ai can now reach the no-data UI path that bramuel (NED) couldn't.
+- **Chunk 14** — C17-004 closes the SV-07 overflow-y CSS gap. Both outer + inner ProseBlock wrappers now resolve `getComputedStyle().overflowY` to `"auto"`.
+
+### Tests
+
+`backend/tests/test_qa_chunk_17.py` — **8 tests** (2 seed integration · 1 membership integration · 4 static guards · 1 CI sanity).
+
+**All 8 pass.** Cross-chunk regression (9.5/10/11/12/13/14/15/16/17 + CI guard) = **80 passed**.
+
+### Seed verification
+
+- 11 admin no-data fixtures minted (1 per admin-owned context).
+- 1 non-owner membership minted (admin@akki.ai → bramuel's largest context, viewer role).
+- Re-run idempotent: 0 fresh mints on the second invocation; existing markers short-circuit.
+
+### CI guard + ESLint + Ruff
+
+CI guard `test_no_direct_llm_calls_outside_shield.py` — **PASS** (zero new LLM call sites).
+ESLint clean on `StrategicGoalsPanel.jsx`, `SolvaPhaseDSession.jsx`, `CycleList.jsx`, `render-smoke.js`.
+Ruff clean on `scripts/seed_chunks.py`, `tests/test_qa_chunk_17.py`.
+
+### Architectural invariants checkpoint
+
+- ✅ Shield gateway exclusivity preserved.
+- ✅ `context_id` scoping intact.
+- ✅ `tenant_id == account_id` boundary intact.
+- ✅ No `repr(exc)` leaks.
+- ✅ No new third-party libraries.
+- ✅ Schema-drift defensive — Item 7 IS the defensive guard.
+- ✅ Chunk-8 lifecycle state machine NOT modified.
+
+### Carry-forward `CHUNK_17_STATE.md`
+
+New file documenting the 7 items closed (1 P3 + 1 routed + 3 cleanup + 2 housekeeping + 1 docs-only), the retroactive PARTIAL → DONE flips on Chunks 12 + 14, and seed verification trace.
+
 ### Chunk 16 — Work Studio Document Cards bundle (QA-037 + -038 + -039 + -040) — 2026-05-21 ✅ (autonomous)
 
 Closes the entire Work Studio Document Cards cluster in one coherent component. QA-037 (P1) + QA-038 (P2) + QA-039 (P1) + QA-040 (P2) all delivered atomically. The Chunk-15 deferral of -038/-040 was the correct scope-discipline call — Chunk 16 closes the dependency cluster end-to-end.
@@ -184,6 +236,10 @@ Ruff clean on `routers/work_studio_overlay.py`, `tests/test_qa_chunk_16.py`.
 ### Carry-forward `CHUNK_16_STATE.md`
 
 New file documenting the 4-ID cluster, the read-only consumer pattern, the two divergences (badge palette + confidence thresholds), and the 2-step download flow.
+
+### Tester confirmation (2026-05-21T21:00:00Z) — PASS 4/4
+
+Orchestrator tester re-run verdict: GREEN end-to-end. All 3 lifecycle states (Draft/In Review/Committed) verified live across admin and bramuel contexts; all 3 RAG bands rendered correctly; real file download triggered via the 2-step token-mint flow. The two documented divergences (committed pill colour + 80/50 thresholds) accepted as-shipped.
 
 ### Chunk 15 — 16-May P2 batch 1 (post-login flow + UX cleanup) — 2026-05-21 ✅ (autonomous)
 
