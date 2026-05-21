@@ -106,7 +106,11 @@ def test_synisense_status_still_live(admin_session):
     body = r.json()
     assert body["ok"] is True
     assert body["mode"] == "live"
-    assert body["model"] == "en_core_web_sm"
+    # Phase C swap — Shield now prefers en_core_web_trf in prod and
+    # falls back to en_core_web_sm in dev (when spacy-transformers is
+    # not installed). The assertion stays compatible with both.
+    assert body["model"] in ("en_core_web_trf", "en_core_web_sm"), \
+        f"expected trf or sm, got {body['model']!r}"
     assert body["key_version"] >= 1
     # Pool is the honest "in_process" shape (12.1 deviation #1 stands).
     assert body["pool"]["mode"] in ("in_process", "process_pool")

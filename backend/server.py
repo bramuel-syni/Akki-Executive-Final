@@ -97,6 +97,7 @@ from routers import active_context as active_context_router  # noqa: E402  Phase
 from routers import studio as studio_router  # noqa: E402
 from routers import studio_blocks as studio_blocks_router  # noqa: E402
 from routers import product_features as product_features_router  # noqa: E402
+from routers import help as help_router  # noqa: E402  # Phase E — /api/help/features
 from routers import early_access as early_access_router  # noqa: E402
 from routers import cycle_config as cycle_config_router  # noqa: E402
 from routers import daily_review as daily_review_router  # noqa: E402
@@ -216,6 +217,7 @@ app.include_router(active_context_router.router)
 app.include_router(studio_router.router)
 app.include_router(studio_blocks_router.router)
 app.include_router(product_features_router.router)
+app.include_router(help_router.router)  # Phase E — /api/help/features
 app.include_router(early_access_router.router)
 app.include_router(cycle_config_router.router)
 app.include_router(daily_review_router.router)

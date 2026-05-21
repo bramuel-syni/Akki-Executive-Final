@@ -3,6 +3,55 @@
 > Append-only history of shipped work. Newest first.
 > Detailed patch close-outs live in `/app/memory/SYSTEM_STATE.md` §4.
 
+## 2026-02 — Autonomous polish sprint, Phases A → F (post-Chunk-19)
+
+Six tightly-scoped polish phases shipped back-to-back under the
+overnight autonomous-mode brief. Backend suite finished at **876 pytest
+passing · 500 skipped · 0 failing** (was 862 pre-Phase-C, +14 net new
+tests, zero regressions).
+
+### Phase A — ClamAV integration gap-fill — DONE
+- Added `CLAMAV_MAX_FILE_SIZE_MB` env-driven 413 reject path.
+- Wired `upload_scan_log` writes to all 9 upload sites.
+- Added boot guard rejecting `ALLOW_UNSAFE_UPLOADS=true` in production env.
+- State: `sprints/PHASE_E_A_CLAMAV_STATE.md`.
+
+### Phase B — Postmark inbound webhook integration — DONE
+- MailboxHash prefix routing: `session-<sid>`, `doc-<docid>`, `notify`.
+- Back-compat alias at `POST /api/webhooks/postmark/inbound`.
+- Rotated `POSTMARK_WEBHOOK_SECRET`; added `POSTMARK_BASIC_AUTH_USER`.
+- Tests: `tests/test_postmark_inbound_phase_b.py` — 10/10 green; tester-verified 4/4 live.
+- State: `sprints/PHASE_B_POSTMARK_STATE.md`.
+
+### Phase C — spaCy NER upgrade + 5 quarantine refactors — DONE
+- `spacy-transformers==1.4.0` pinned in `requirements.txt`.
+- `Dockerfile.backend` swaps baked model `en_core_web_lg` → `en_core_web_trf`; sets `ENV SYNISENSE_SPACY_MODEL=en_core_web_trf` so prod runs on trf (F1 ≈ 0.91 vs sm ≈ 0.86). Dev container stays on sm via the existing `deidentifier.py` `ImportError → sm` shim (1.7 GB dev disk can't fit torch+trf).
+- 5 Phase-5 quarantine files refactored per `QUARANTINE_TRIAGE_PLAN.md`: `test_iter27_monitor.py` → `test_monitor_v1_compat.py`; `test_iter9_refactor_smoke.py` → `test_route_existence_smoke.py`; `test_iter18_cycle_blog.py` → `test_cycle_questions_v2.py` + `test_blog_admin_v2.py`; `test_iter55_decks.py` → `test_decks_work_studio.py` + `test_decks_admin_telemetry.py` + `test_inbound_uuid_fallback.py`; `test_iter35_chat.py` → `test_chat_v2_full_flow.py`. Net 42 new in-process httpx tests replacing the legacy E2E husks.
+- Cross-cutting fix: autouse fixture in `backend/tests/conftest.py` snapshots and restores `app.dependency_overrides` per test — plugs the leak from 8 polluter files (cycle_feel_pass, cycle_assignment_handoff, cycle_assignment_privacy_wall, cycles_v2, patch_10_home_insights, patch_12_streaming_v3, patch_14_questions, patch_2b1_kinds) that previously masked auth-gate assertions under full-suite.
+- State: `sprints/PHASE_C_SPACY_QUARANTINE_STATE.md`.
+
+### Phase D — PNG evidence exports auto-generation — DONE
+- `scripts/generate_evidence_pngs.py` — single script generates the Shield-architecture diagram (PIL primitives, no graphviz/mermaid dep) and a 6-route headless Playwright screenshot pack into `/app/memory/bank_qa_evidence/png/`.
+- `Makefile` at `/app/Makefile` with `evidence-pngs`, `-diagram`, `-ui`, `-check` targets.
+- Auto-locates the installed Chromium headless-shell binary under `/pw-browsers/` so a slightly-stale dev container works without re-running `playwright install`.
+- State: `sprints/PHASE_D_EVIDENCE_PNGS_STATE.md`.
+
+### Phase E — `/help` route — DONE
+- Backend: `routers/help.py` exposes `GET /api/help/features` (JSON envelope: title / last_modified / char_count / word_count / markdown) and `GET /api/help/features.md` (raw `text/markdown`). No-auth, mirroring `/api/product-features`.
+- Frontend: `pages/HelpFeatures.jsx` — lazy-loaded at `/help`. Uses `@/lib/api` axios client (LINT_API_CLIENT_RULE.md compliant — no raw fetch). Renders the 3611-word AKKI features doc through `react-markdown` + `remark-gfm` + `rehype-highlight` with a custom `components` map that styles H2/H3/H4, lists, blockquotes, tables, inline + fenced code, and external links without pulling in `@tailwindcss/typography`.
+- Tests: `tests/test_phase_e_help_features.py` — 4/4 green.
+- State: `sprints/PHASE_E_HELP_ROUTE_STATE.md`.
+
+### Phase F — Chat boundary removal (UI chrome) — DONE
+- Removed perimeter borders / framing from the chat shell; 13/13 binary acceptance checks.
+- State: `sprints/PHASE_F_CHAT_BOUNDARY_STATE.md` (set earlier in the sprint, included here for completeness).
+
+### Phases still AWAITING_PO (not executed this sprint)
+- QA-050 dual-role label
+- QA-002 "All documents" button scope
+- C17-003 cross-context Solva aggregate
+- Track 4 Item 5 Around-the-Goals
+
 ## 2026-05-18 — Pre-Deploy Hardening + Bank-QA Evidence Pack (rewrite definitively closed)
 
 Final pre-deployment sweep + Bank-QA evidence pack assembly. No new product behaviour.

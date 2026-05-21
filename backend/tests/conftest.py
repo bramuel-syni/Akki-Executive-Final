@@ -50,3 +50,36 @@ def event_loop():
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_dependency_overrides():
+    """Snapshot + restore `app.dependency_overrides` per test.
+
+    Phase C — Several legacy tests (test_cycle_feel_pass.py,
+    test_cycle_assignment_handoff.py, test_cycles_v2.py, test_patch_*.py,
+    etc.) set `app.dependency_overrides[get_current_account] = …` from
+    inside the test body and never clean up. The pollution then bleeds
+    into any test that runs *after* them, masking auth-gate assertions
+    as 200 OK responses.
+
+    This autouse fixture snapshots the override dict at test start and
+    restores it at teardown, isolating each test without modifying the
+    polluters. Tests that legitimately set overrides inside their own
+    body keep working unchanged — only the cross-test leak is plugged.
+    """
+    # Import is local to avoid pulling FastAPI into collection-only runs.
+    try:
+        from server import app as _app  # type: ignore
+    except Exception:
+        # If `server` can't import here, the test will fail anyway with a
+        # clearer error — don't mask import-level breakage.
+        yield
+        return
+    snapshot = dict(_app.dependency_overrides)
+    try:
+        yield
+    finally:
+        _app.dependency_overrides.clear()
+        _app.dependency_overrides.update(snapshot)
+

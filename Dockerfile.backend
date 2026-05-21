@@ -106,10 +106,19 @@ RUN pip install --upgrade pip \
  && pip install --no-index --find-links=/wheels -r /tmp/requirements.txt \
  && rm -rf /wheels /tmp/requirements.txt
 
-# Bake the spaCy model so Synisense Presidio doesn't download on first
-# request. ~600 MB image-size cost; this matters for cold-start latency,
-# not for image push time. Acceptable trade-off for AKKI.
-RUN python -m spacy download en_core_web_lg
+# Bake the spaCy transformer model so Synisense Shield doesn't download
+# on first request. Phase C swap (2026-02): en_core_web_lg → en_core_web_trf
+# for higher-F1 NER (~0.91 vs ~0.86) on PERSON/ORG/GPE/PRODUCT entities.
+# The trf model weighs ~440 MB; the spacy-transformers + torch transitive
+# deps add ~2 GB to the image. Acceptable trade-off for AKKI per the
+# product brief — see /app/memory/sprints/PHASE_C_SPACY_QUARANTINE_STATE.md.
+RUN python -m spacy download en_core_web_trf
+
+# Default the Shield + Presidio NER selection to trf in the prod image.
+# Dev containers may override via .env to stay on en_core_web_sm
+# (the deidentifier loader auto-falls-back when spacy-transformers is
+# absent — keeps the dev container disk-light).
+ENV SYNISENSE_SPACY_MODEL=en_core_web_trf
 
 # App code last — most volatile layer.
 COPY --chown=akki:akki backend/ /app/backend/
