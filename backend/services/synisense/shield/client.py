@@ -64,6 +64,24 @@ async def invoke(
     request_hash = trust_receipt.hash_payload(content)
     response_hash = trust_receipt.hash_payload(response_text)
 
+    # Chunk 18 (Track 4 item 2, 2026-05-21) — token-accurate metering.
+    # The non-streaming `llm_router.invoke()` path uses
+    # `emergentintegrations.LlmChat.send_message()` which returns a
+    # string-only response with no usage payload. We therefore record
+    # estimated token counts (char/4 approximation) and flag the
+    # `metering_method` as "estimated" so downstream metering queries
+    # can opt out of these rows for billing-critical paths. The
+    # streaming path (`shield/streaming.py`) captures usage exactly
+    # from provider SDK responses and writes its own audit with
+    # `metering_method="exact"`.
+    #
+    # When the router returned a mock provider (e.g. SYNISENSE_LLM_MODE
+    # is "mock" or the SDK is unavailable), we still record the
+    # estimate so retention metrics are continuous, but flag it as
+    # "estimated" — the same as any non-streaming live call.
+    tokens_in = audit_log.estimate_tokens(content)
+    tokens_out = audit_log.estimate_tokens(response_text)
+
     await audit_log.write_audit(
         audit_id=audit_id, tenant_id=tenant_id, consumer_id=consumer_id,
         user_id=user_id, purpose=purpose, timestamp=timestamp,
@@ -73,6 +91,8 @@ async def invoke(
         llm_provider=provider, llm_model=model,
         request_hash=request_hash, response_hash=response_hash,
         outcome="success", latency_ms=latency_ms,
+        tokens_in=tokens_in, tokens_out=tokens_out,
+        metering_method="estimated",
     )
     receipt = trust_receipt.build_trust_receipt(
         receipt_id=receipt_id, audit_id=audit_id, tenant_id=tenant_id,

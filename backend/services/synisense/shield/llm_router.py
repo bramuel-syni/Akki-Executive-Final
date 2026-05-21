@@ -12,6 +12,14 @@ Phase A:
 
 Returns: `(response_text, llm_provider, llm_model)`. The Shield route
 records all three in the audit log and trust receipt.
+
+Chunk 18 (Track 4 item 1, 2026-05-21) — `emergentintegrations.LlmChat`
+moved to module-level import (was inline inside `invoke()` for the
+fallback-availability check pattern). Module-level import pays the
+~500ms-1s cost ONCE at process startup instead of on every first
+request post-deploy. The `_EMERGENT_AVAILABLE` flag preserves the
+graceful-degradation semantics — if the package isn't importable we
+still fall back to the echo path on call.
 """
 from __future__ import annotations
 
@@ -22,6 +30,21 @@ import uuid
 from typing import Literal, Tuple
 
 from services.synisense.exceptions import ServiceUnavailable
+
+# Chunk 18 cold-start fix — module-level import + availability probe.
+# This replaces the previous inline `try: from emergentintegrations.llm.chat
+# import LlmChat, UserMessage` inside invoke(). The probe runs ONCE at
+# import time; subsequent invocations skip the try/except cost.
+try:
+    from emergentintegrations.llm.chat import LlmChat, UserMessage  # noqa: WPS433
+    _EMERGENT_AVAILABLE = True
+except Exception as _exc:  # noqa: BLE001
+    LlmChat = None  # type: ignore[assignment]
+    UserMessage = None  # type: ignore[assignment]
+    _EMERGENT_AVAILABLE = False
+    _EMERGENT_IMPORT_ERROR = f"{type(_exc).__name__}: {str(_exc)[:200]}"
+else:
+    _EMERGENT_IMPORT_ERROR = None
 
 log = logging.getLogger("synisense.shield.llm_router")
 
@@ -72,12 +95,15 @@ async def invoke(
             log.info("synisense.shield.llm_router: EMERGENT_LLM_KEY absent — using echo fallback")
         return (_mock_invoke(de_id_content), provider + ":mock", model + ":mock")
 
-    # Live mode — emergentintegrations.
-    try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage  # noqa: WPS433
-    except Exception as exc:  # noqa: BLE001
-        log.warning("synisense.shield.llm_router: emergentintegrations unavailable (%s)",
-                    type(exc).__name__)
+    # Live mode — emergentintegrations. Module-level import probe at the
+    # top of this file (Chunk 18 cold-start fix) eliminates the per-call
+    # try/except import cost. Fall back to mock if the package wasn't
+    # importable at process startup.
+    if not _EMERGENT_AVAILABLE:
+        log.warning(
+            "synisense.shield.llm_router: emergentintegrations unavailable (%s)",
+            _EMERGENT_IMPORT_ERROR or "unknown",
+        )
         return (_mock_invoke(de_id_content), provider + ":mock", model + ":mock")
 
     try:

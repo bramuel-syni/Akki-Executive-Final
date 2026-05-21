@@ -951,6 +951,33 @@ async def on_startup():
     else:
         logger.info("AKKI_CRON_SECRET not set — weekly scheduler skipped.")
 
+    # Chunk 18 (Track 4 item 1, 2026-05-21) — eager-load spaCy NER so
+    # the first Shield invocation (commonly an `evolution-diff` or
+    # `generate-meta` call) doesn't pay the 1-3s lazy-load cost. The
+    # `_ensure_spacy()` helper is process-wide cached + thread-safe;
+    # calling it at startup populates the cache once. Wrapped in
+    # try/except so a spaCy failure doesn't prevent the app from
+    # serving traffic — the lazy path retains the same error
+    # handling for individual requests.
+    try:
+        import asyncio as _asyncio  # noqa: WPS433 — locally scoped
+        from services.synisense.shield import deidentifier as _deid  # noqa: WPS433
+
+        def _warm_spacy_sync():
+            try:
+                _deid._ensure_spacy()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Chunk 18 spaCy warm-up failed: %s", type(exc).__name__)
+
+        # Run spaCy load in a worker thread so the startup event
+        # finishes promptly (load itself is CPU-bound; offloading
+        # avoids blocking the event loop on a 1-3s import + load).
+        loop = _asyncio.get_running_loop()
+        loop.run_in_executor(None, _warm_spacy_sync)
+        logger.info("Chunk 18 (Track 4 item 1): spaCy NER warm-up scheduled at startup.")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Chunk 18 spaCy warm-up scheduling failed: %s", e)
+
 
 @app.on_event("shutdown")
 async def on_shutdown():
