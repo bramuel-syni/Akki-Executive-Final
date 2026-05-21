@@ -64,3 +64,8 @@
 ## Deferred
 
 - **Holistic product features & functionality review document** — deferred to end-of-work per user instruction 2026-05-18.
+
+
+## Known platform footguns
+
+- **Tailwind `border-[var(--XYZ)]/NN` opacity modifier**: arbitrary CSS-variable border colors with an opacity modifier silently fall back to `border-color: gray-200`. Use a literal RGBA — `border-[rgba(R,G,B,0.NN)]` — for any opacity-on-token border. Phase F (2026-05-21).

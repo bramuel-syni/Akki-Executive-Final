@@ -43,6 +43,12 @@ logger = logging.getLogger("akki.inbound")
 
 router = APIRouter(prefix="/api/inbound", tags=["inbound"])
 
+# Phase B (2026-05-21) — back-compat endpoint at `/api/webhooks/postmark/inbound`.
+# Operators can re-point the Postmark dashboard from
+# `/api/inbound/postmark` to this URL with no behavioural change.
+# Both routes resolve to the same `receive_postmark_inbound` handler.
+backcompat_router = APIRouter(prefix="/api", tags=["inbound"])
+
 
 # ---------------------------------------------------------------------------
 # Inbound webhook auth — three accepted modes, default HMAC.
@@ -119,6 +125,17 @@ def _verify_hmac(raw_body: bytes, sig_header: Optional[str]) -> bool:
 
 
 def _verify_basic_auth(authz_header: Optional[str]) -> bool:
+    """Verify Postmark Basic-Auth.
+
+    Phase B (2026-05-21) — optionally validates the username too via
+    `POSTMARK_BASIC_AUTH_USER`. When that env is unset, the server
+    accepts any username with a matching password (the historical
+    behaviour). When it is set, BOTH must match.
+
+    The password is always validated against `POSTMARK_WEBHOOK_SECRET`
+    (a 64-char hex value, see `.env`). One secret across HMAC + Basic-
+    Auth keeps the operator-facing config surface minimal.
+    """
     secret = _expected_secret()
     if not (secret and authz_header):
         return False
@@ -130,7 +147,10 @@ def _verify_basic_auth(authz_header: Optional[str]) -> bool:
         return False
     if ":" not in decoded:
         return False
-    _user, _, pw = decoded.partition(":")
+    user, _, pw = decoded.partition(":")
+    expected_user = os.environ.get("POSTMARK_BASIC_AUTH_USER", "").strip()
+    if expected_user and not secrets.compare_digest(user, expected_user):
+        return False
     return secrets.compare_digest(pw, secret)
 
 
@@ -186,10 +206,62 @@ def _verify_secret(provided: Optional[str]) -> None:  # noqa: D401 — legacy
 # `accounts.inbound_token` and `contexts.inbound_token`.
 # ---------------------------------------------------------------------------
 async def _resolve_mailbox(mailbox_hash: str) -> Dict[str, Any]:
+    """Resolve a Postmark MailboxHash into the routing target.
+
+    Phase B (2026-05-21) extends the historical `<account_token>` /
+    `<account_token>.<context_token>` taxonomy with three optional
+    prefix verbs that produce deep-link routing:
+
+      session-<sid>.<account_token>[.<ctx>]   → attach to Solva /
+                                                Cycle session `sid`
+      doc-<docid>.<account_token>[.<ctx>]    → attach as a new
+                                                version of document `docid`
+      notify.<account_token>[.<ctx>]         → fire notification only;
+                                                do NOT persist a document
+      <account_token>[.<context_token>]      → existing taxonomy
+                                                (unchanged)
+
+    The prefix is detected by leading-token shape and stripped before
+    the existing `account_token` / `context_token` resolution runs.
+    Resolution failures on a prefixed target collapse to the plain
+    routing path (e.g. an unknown `session-<id>` lands as if no prefix
+    was set, with the routing intent surfaced in the return dict for
+    the caller to dispatch on).
+
+    Returns:
+      {
+        "account":  <account doc>,
+        "context":  <context doc>,
+        "route":    "session" | "doc" | "notify" | "default",
+        "target_id": <sid|docid|None>,
+        "route_note": <str|None>,   # explains a fallback if one occurred
+      }
+    """
     raw = (mailbox_hash or "").strip().lower()
     if not raw:
         raise HTTPException(status_code=400, detail="Missing MailboxHash.")
-    parts = raw.split(".", 1)
+    parts = raw.split(".")
+
+    route = "default"
+    target_id: Optional[str] = None
+    route_note: Optional[str] = None
+
+    # Detect prefix verb (Phase B). The verb must be a clean leading
+    # token. Anything ambiguous falls through to the default path.
+    if parts and parts[0].startswith("session-") and len(parts) >= 2:
+        route = "session"
+        target_id = parts[0][len("session-"):]
+        parts = parts[1:]  # strip the verb
+    elif parts and parts[0].startswith("doc-") and len(parts) >= 2:
+        route = "doc"
+        target_id = parts[0][len("doc-"):]
+        parts = parts[1:]
+    elif parts and parts[0] == "notify" and len(parts) >= 2:
+        route = "notify"
+        parts = parts[1:]
+
+    if not parts:
+        raise HTTPException(status_code=400, detail="MailboxHash missing account token.")
     account_token = parts[0]
     context_token = parts[1] if len(parts) > 1 else None
 
@@ -235,7 +307,22 @@ async def _resolve_mailbox(mailbox_hash: str) -> Dict[str, Any]:
     if not membership:
         raise HTTPException(status_code=403, detail="Recipient is not a member of that context.")
 
-    return {"account": account, "context": context}
+    # If a prefix verb was set but the target doesn't resolve within
+    # this account's data, demote to default routing with a note so the
+    # caller can audit/notify. The actual target-row check happens in
+    # the dispatcher; here we just surface a route-note for "session"
+    # and "doc" routes when target_id is empty/malformed.
+    if route in {"session", "doc"} and not target_id:
+        route_note = f"{route}-prefix-missing-target-id"
+        route = "default"
+
+    return {
+        "account": account,
+        "context": context,
+        "route": route,
+        "target_id": target_id,
+        "route_note": route_note,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -588,6 +675,9 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
 
     account = resolved["account"]
     context = resolved["context"]
+    route = resolved.get("route", "default")
+    target_id = resolved.get("target_id")
+    route_note = resolved.get("route_note")
 
     # iter70 — classify the sender tier. Unknown senders get quarantined
     # into db.inbound_queue for the owner to review; known senders
@@ -595,6 +685,21 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
     tier_info = await _classify_sender_tier(from_email, account, context)
     tier = tier_info["tier"]
     reportee = tier_info.get("reportee")
+
+    # Phase B (2026-05-21) — prefix-verb routing for trusted senders.
+    # `session-<sid>` and `doc-<docid>` attach the inbound payload to
+    # an existing target row; `notify` fires an audit + return without
+    # persisting a document. Unknown senders still flow through the
+    # quarantine path below regardless of prefix (privacy invariant).
+    if route == "notify" and tier != "unknown":
+        await write_audit(
+            context["id"], account["id"],
+            "inbound_email.notify", "notify", message_id or f"notify-{uuid.uuid4().hex[:10]}",
+            {"from": from_email, "subject": subject,
+             "attachments": len(attachments_raw)},
+        )
+        return {"ok": True, "route": "notify", "trust_tier": tier,
+                "message_id": message_id or None}
 
     # Idempotency — if we've already ingested this MessageID, return early.
     if message_id:
@@ -745,6 +850,34 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
 
     is_minutes = _detect_minutes(subject, [a.get("Name") or "" for a in attachments_raw])
 
+    # Phase B (2026-05-21) — prefix-verb routing for session-attach and
+    # doc-version-attach. The document is always persisted (a forensic
+    # record + a single content-of-record); the prefix verb adds the
+    # attachment relationship + (for doc-version) the `related_doc_id`
+    # link. Unresolved targets fall back to the default ingest path and
+    # carry an `inbound_route_note` flag so the operator can replay.
+    route_attached_to_session_id: Optional[str] = None
+    route_attached_to_doc_id: Optional[str] = None
+    route_attach_note: Optional[str] = route_note
+    if route == "session" and target_id:
+        sess = await db.solva_phase_d_sessions.find_one(
+            {"id": target_id, "context_id": context["id"]},
+            {"_id": 0, "id": 1},
+        )
+        if sess:
+            route_attached_to_session_id = target_id
+        else:
+            route_attach_note = "session-target-not-found-in-context"
+    elif route == "doc" and target_id:
+        parent = await db.documents.find_one(
+            {"id": target_id, "context_id": context["id"]},
+            {"_id": 0, "id": 1},
+        )
+        if parent:
+            route_attached_to_doc_id = target_id
+        else:
+            route_attach_note = "doc-target-not-found-in-context"
+
     doc = {
         "id": doc_id,
         "context_id": context["id"],
@@ -762,8 +895,6 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
         "uploaded_by": account["id"],
         "uploaded_by_email": account.get("email"),
         "mentioned_account_ids": [],
-        "related_doc_id": None,
-        "relation_type": None,
         "error": err,
         "created_at": created_at,
         "updated_at": created_at,
@@ -781,8 +912,34 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
         "inbound_reportee_id": (reportee or {}).get("id") if reportee else None,
         "inbound_reportee_name": (reportee or {}).get("name") if reportee else None,
         "inbound_reportee_title": (reportee or {}).get("title") if reportee else None,
+        # Phase B (2026-05-21) — prefix-route attachment provenance
+        "inbound_route": route,                 # 'default' | 'session' | 'doc' | 'notify'
+        "inbound_route_target_id": target_id,
+        "inbound_route_attached_session_id": route_attached_to_session_id,
+        "inbound_route_attached_doc_id": route_attached_to_doc_id,
+        "inbound_route_note": route_attach_note,
+        # If the prefix verb was `doc-<id>` and the target resolved, set
+        # `related_doc_id` so the document journal renders this row as
+        # a new version of the parent. Default ingest leaves both None.
+        "related_doc_id": route_attached_to_doc_id,
+        "relation_type": "inbound_version" if route_attached_to_doc_id else None,
     }
     await db.documents.insert_one(doc)
+
+    # Phase B — if attached to a Solva session, write an attachment row
+    # so the session view can list inbound docs without scanning the
+    # whole documents collection.
+    if route_attached_to_session_id:
+        await db.solva_session_attachments.insert_one({
+            "id": str(uuid.uuid4()),
+            "session_id": route_attached_to_session_id,
+            "context_id": context["id"],
+            "doc_id": doc_id,
+            "source": "inbound_email",
+            "from_email": from_email or None,
+            "subject": subject,
+            "created_at": created_at,
+        })
 
     await write_audit(
         context["id"], account["id"],
@@ -794,12 +951,15 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
             "minutes": is_minutes,
             "trust_tier": tier,
             "reportee_id": (reportee or {}).get("id") if reportee else None,
+            "route": route,
+            "route_target_id": target_id,
+            "route_note": route_attach_note,
         },
     )
 
     logger.info(
-        "Postmark inbound: ingested (tier=%s) message %s from %s into ctx=%s as doc=%s",
-        tier, message_id, from_email, context["id"], doc_id,
+        "Postmark inbound: ingested (tier=%s route=%s) message %s from %s into ctx=%s as doc=%s",
+        tier, route, message_id, from_email, context["id"], doc_id,
     )
 
     return {
@@ -810,4 +970,25 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
         "minutes": is_minutes,
         "trust_tier": tier,
         "reportee_id": (reportee or {}).get("id") if reportee else None,
+        "route": route,
+        "route_target_id": target_id,
+        "route_note": route_attach_note,
+        "attached_session_id": route_attached_to_session_id,
+        "attached_doc_id": route_attached_to_doc_id,
     }
+
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Phase B (2026-05-21) — back-compat endpoint.
+# Wires `/api/webhooks/postmark/inbound` to the same handler. Operators
+# can re-point Postmark's dashboard URL without a hard cutover. Both
+# endpoints are functionally identical; the back-compat one is hidden
+# from the OpenAPI schema to avoid suggesting two distinct contracts.
+# ─────────────────────────────────────────────────────────────────────
+@backcompat_router.post("/webhooks/postmark/inbound", include_in_schema=False)
+async def receive_postmark_inbound_backcompat(
+    request: Request,
+    secret: Optional[str] = Query(None),
+):
+    return await receive_postmark_inbound(request, secret=secret)

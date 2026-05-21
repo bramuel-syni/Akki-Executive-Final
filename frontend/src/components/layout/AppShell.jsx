@@ -257,7 +257,7 @@ export default function AppShell({ children }) {
           intentionally empty so the AKKI logo + "for Executives" sit
           alone on the left, cleaner editorial spacing. */}
       <header
-        className="bg-[var(--cream)] text-[var(--ink)] border-b border-[var(--rule)] h-16 sticky top-0 z-40 flex items-center gap-4 px-6 justify-between"
+        className="bg-[var(--cream)] text-[var(--ink)] border-b border-[rgba(184,182,175,0.3)] h-16 sticky top-0 z-40 flex items-center gap-4 px-6 justify-between"
         data-testid="top-header"
       >
         {/* LEFT — logo */}
@@ -434,7 +434,7 @@ export default function AppShell({ children }) {
           brief. Hidden below 1024px (lg:flex) — mobile uses the
           hamburger drawer instead. */}
       <nav
-        className="hidden lg:flex items-stretch h-[64px] bg-[var(--cream)] border-b border-[var(--rule)] sticky top-[64px] z-40"
+        className="hidden lg:flex items-stretch h-[64px] bg-[var(--cream)] border-b border-[rgba(184,182,175,0.3)] sticky top-[64px] z-40"
         data-testid="primary-top-nav"
         aria-label="Primary"
       >

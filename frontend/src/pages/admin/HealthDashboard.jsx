@@ -33,6 +33,7 @@ const CHECK_LABEL = {
   stripe:      "Stripe (Billing)",
   scheduler:   "APScheduler (Cron)",
   cron_secret: "Cron secret",
+  clamav:      "ClamAV (Upload scanner)",
 };
 
 export default function HealthDashboard() {

@@ -875,12 +875,15 @@ export default function Chat() {
   return (
     <AppShell>
       <WorkspaceEntryGate workspace="chat">
-      <div className="h-[calc(100vh-4rem)] akki-w-medium grid grid-cols-1 lg:grid-cols-[300px_1fr] overflow-x-hidden overflow-hidden" data-testid="chat-page">
-        {/* Patch 26A — sidebar boundary removed. Two regions now read
-            as one continuous canvas with whitespace as the only
-            separator (Claude.ai-style). */}
-        <aside className="bg-[var(--cream)] flex flex-col min-h-0" data-testid="chat-sidebar">
-          <div className="p-4 border-b border-[var(--rule)] bg-white">
+      <div className="h-[calc(100vh-4rem)] akki-w-medium grid grid-cols-1 lg:grid-cols-[300px_1fr] lg:gap-12 overflow-x-hidden overflow-hidden" data-testid="chat-page">
+        {/* Phase F (2026-05-21) — boundary-removal pass. The aside
+            and the main pane now sit on a single warm parchment
+            surface with no enclosing rectangles. Hierarchy comes
+            from whitespace, two AppShell-level hairlines, and the
+            active-conversation parchment-light fill + 2px oxblood
+            left edge. */}
+        <aside className="bg-[var(--paper)] flex flex-col min-h-0" data-testid="chat-sidebar">
+          <div className="p-4">
             <div className="flex items-center justify-between mb-2">
               <p className="akki-overline flex items-center gap-1.5">
                 <MessageCircle className="w-3 h-3 text-[var(--accent)]" /> AKKI Chat
@@ -888,7 +891,7 @@ export default function Chat() {
               <Button
                 onClick={onNewChat}
                 size="sm"
-                className="h-7 text-[11px] bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white px-2.5"
+                className="h-7 text-[11px] bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white px-2.5 rounded-md shadow-none"
                 data-testid="chat-new-btn"
               >
                 <Plus className="w-3 h-3 mr-1" /> New
@@ -906,7 +909,7 @@ export default function Chat() {
                 value={searchQ}
                 onChange={(e) => setSearchQ(e.target.value)}
                 placeholder="Search conversations…"
-                className="w-full pl-7 pr-7 h-8 text-[12.5px] border border-[var(--rule)] rounded-sm bg-white focus:outline-none focus:border-[var(--accent)]/60"
+                className="w-full pl-7 pr-7 h-8 text-[12.5px] border-0 border-b border-[rgba(184,182,175,0.4)] rounded-none bg-transparent focus:outline-none focus:border-[var(--accent)]/60"
                 data-testid="chat-search-input"
               />
               {searchQ && (
@@ -927,7 +930,7 @@ export default function Chat() {
               <div data-testid="chat-archive-view">
                 <button
                   onClick={closeArchive}
-                  className="w-full flex items-center gap-1.5 px-2 py-1.5 mb-2 text-[11.5px] uppercase tracking-wider text-[var(--muted)] hover:text-[var(--ink)] border border-transparent hover:border-[var(--rule)] rounded-sm"
+                  className="w-full flex items-center gap-1.5 px-2 py-1.5 mb-2 text-[11.5px] uppercase tracking-wider text-[var(--muted)] hover:text-[var(--ink)] rounded-sm"
                   data-testid="chat-archive-back-btn"
                 >
                   <ArrowLeft className="w-3 h-3" /> Back to active chats
@@ -942,7 +945,7 @@ export default function Chat() {
                   archivedChats.map((c) => (
                     <div
                       key={c.id}
-                      className="px-3 py-2.5 rounded-sm mb-1 border border-[var(--rule)] bg-white"
+                      className="px-3 py-2.5 mb-5"
                       data-testid={`chat-archive-item-${c.id}`}
                     >
                       <p className="text-[12.5px] font-medium leading-snug line-clamp-1 text-[var(--ink)]">
@@ -990,18 +993,20 @@ export default function Chat() {
                     <button
                       key={`hit-${c.id}-${hit.matched_message_id || "title"}`}
                       onClick={() => { setActiveId(c.id); setSearchQ(""); setSearchHits(null); }}
-                      className={`w-full text-left px-3 py-2.5 rounded-sm mb-1 transition-colors border ${
-                        active ? "bg-white border-[var(--accent)]/60" : "border-transparent hover:bg-white"
+                      className={`w-full text-left px-3 py-2.5 mb-5 transition-colors ${
+                        active
+                          ? "bg-[var(--cream)] border-l-2 border-l-[var(--accent)] pl-2.5"
+                          : ""
                       }`}
                       data-testid={`chat-search-hit-${c.id}`}
                     >
-                      <p className="text-[12.5px] font-medium leading-snug line-clamp-1 text-[var(--ink)]">
+                      <p className="text-[16px] font-medium leading-snug line-clamp-1 text-[var(--ink)]">
                         {c.title}
                       </p>
-                      <p className="text-[10.5px] text-[var(--muted)] mt-0.5">
+                      <p className="text-[11.5px] text-[var(--muted)] mt-0.5">
                         {hit.match_in === "title" ? "Title match" : "Turn match"}
                       </p>
-                      <p className="text-[11px] text-[var(--deep)] line-clamp-2 mt-0.5">
+                      <p className="text-[13px] text-[var(--deep)] line-clamp-2 mt-0.5">
                         {hit.snippet || "(no snippet)"}
                       </p>
                     </button>
@@ -1028,15 +1033,17 @@ export default function Chat() {
                 <button
                   key={c.id}
                   onClick={() => setActiveId(c.id)}
-                  className={`w-full text-left px-3 py-2.5 rounded-sm mb-1 transition-colors border ${
-                    active ? "bg-white border-[var(--accent)]/60" : "border-transparent hover:bg-white"
+                  className={`w-full text-left px-3 py-2.5 mb-5 transition-colors ${
+                    active
+                      ? "bg-[var(--cream)] border-l-2 border-l-[var(--accent)] pl-2.5"
+                      : ""
                   }`}
                   data-testid={`chat-item-${c.id}`}
                 >
-                  <p className="text-[12.5px] font-medium leading-snug line-clamp-1 text-[var(--ink)]">
+                  <p className="text-[16px] font-medium leading-snug line-clamp-1 text-[var(--ink)]">
                     {c.title}
                   </p>
-                  <p className="text-[11px] text-[var(--muted)] line-clamp-1 mt-0.5">
+                  <p className="text-[13px] text-[var(--muted)] line-clamp-1 mt-0.5">
                     {c.last_message_preview || "(no messages yet)"}
                   </p>
                 </button>
@@ -1051,10 +1058,10 @@ export default function Chat() {
               dedicated page is the canonical destination per the
               QA spec. */}
           {!archiveOpen && (
-            <div className="border-t border-[var(--rule)] p-3 bg-white">
+            <div className="p-3">
               <button
                 onClick={() => navigate("/app/chats/archived")}
-                className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] uppercase tracking-wider text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)]/40 rounded-sm"
+                className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] uppercase tracking-wider text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream)]/60 rounded-sm"
                 data-testid="chat-open-archive-btn"
               >
                 <Trash2 className="w-3 h-3" /> Archive
@@ -1197,7 +1204,7 @@ function ChatHeader({ chat, models, activeModel, activeContext, onPatch, onArchi
   useEffect(() => { setTitle(chat.title); }, [chat.id, chat.title]);
 
   return (
-    <div className="border-b border-[var(--rule)] px-3 sm:px-6 py-3 bg-white flex flex-wrap items-center gap-2 sm:gap-3" data-testid="chat-header">
+    <div className="px-3 sm:px-6 py-4 flex flex-wrap items-center gap-6" data-testid="chat-header">
       <div className="flex-1 min-w-0">
         {titleEdit ? (
           <input
@@ -1206,13 +1213,13 @@ function ChatHeader({ chat, models, activeModel, activeContext, onPatch, onArchi
             onChange={(e) => setTitle(e.target.value)}
             onBlur={() => { setTitleEdit(false); if (title !== chat.title) onPatch({ title }); }}
             onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") { setTitle(chat.title); setTitleEdit(false); } }}
-            className="akki-serif text-[16px] text-[var(--ink)] bg-transparent border-b border-[var(--accent)] focus:outline-none w-full"
+            className="akki-serif text-[22px] text-[var(--ink)] bg-transparent border-b border-[var(--accent)] focus:outline-none w-full"
             data-testid="chat-title-input"
           />
         ) : (
           <button
             onClick={() => setTitleEdit(true)}
-            className="akki-serif text-[16px] text-[var(--ink)] hover:text-[var(--accent)] truncate text-left block w-full"
+            className="akki-serif text-[22px] text-[var(--ink)] hover:text-[var(--accent)] truncate text-left block w-full"
             data-testid="chat-title"
             title={chat.title /* full title in tooltip per Patch 26B */}
           >
@@ -1221,7 +1228,7 @@ function ChatHeader({ chat, models, activeModel, activeContext, onPatch, onArchi
             {truncateTitleWords(chat.title, 7)}
           </button>
         )}
-        <p className="text-[10.5px] text-[var(--muted)] mt-0.5 truncate">
+        <p className="text-[14px] text-[var(--muted)] mt-1 truncate">
           {chat.message_count || 0} messages
           {/* Patch 26C — workspace name moves from the title row into
               the meta line so the title row stays clean. */}
@@ -1299,7 +1306,11 @@ function ModelPicker({ models, value, onChange }) {
     <div className="relative" ref={ref} data-testid="chat-model-picker">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="h-8 inline-flex items-center gap-1.5 px-2 text-[12px] border border-[var(--rule)] rounded-sm bg-white hover:border-[var(--accent)]/40"
+        className={`h-8 inline-flex items-center gap-1.5 px-2 text-[12px] bg-transparent transition-colors ${
+          open
+            ? "border-0 border-b border-[var(--accent)] rounded-none"
+            : "border-0 rounded-sm hover:bg-[var(--cream)]"
+        }`}
         data-testid="chat-model-trigger"
       >
         <ModelAvatar model={active} size="xs" />
@@ -1329,11 +1340,17 @@ function ModelPicker({ models, value, onChange }) {
 }
 
 function PolicyPicker({ value, onChange }) {
+  // Phase F (2026-05-21) — boundary-removal. Native <select> is hard
+  // to style per-state for "no border at rest, hairline on focus",
+  // but `appearance-none + hover bg + focus border-b` approximates
+  // the contract closely. The browser-native open dropdown is
+  // unavoidable; that's a visual-quality tradeoff we accept rather
+  // than re-implement a custom dropdown.
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="h-8 text-[11.5px] border border-[var(--rule)] rounded-sm bg-white px-2 focus:outline-none focus:border-[var(--accent)]"
+      className="h-8 text-[11.5px] border-0 rounded-sm bg-transparent px-2 hover:bg-[var(--cream)] focus:outline-none focus:bg-transparent focus:border-b focus:border-[var(--accent)] focus:rounded-none"
       data-testid="chat-policy-picker"
       title="Synisense shielding policy for this conversation"
     >

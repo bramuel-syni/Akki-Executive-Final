@@ -201,6 +201,8 @@ app.include_router(ned_cycle_router.router)  # Phase E — NED Cycle Manager
 app.include_router(admin_signal_kpi_router.router)
 app.include_router(prepare_router.router)
 app.include_router(inbound_email_router.router)
+# Phase B (2026-05-21) — back-compat /api/webhooks/postmark/inbound mount.
+app.include_router(inbound_email_router.backcompat_router)
 app.include_router(inbound_queue_router.router)
 app.include_router(enterprise_router.router)
 app.include_router(llm_quota_router.router)
