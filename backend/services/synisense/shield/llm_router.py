@@ -26,8 +26,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import uuid
-from typing import Literal, Tuple
+from typing import Any, Dict, Literal, Tuple
 
 from services.synisense.exceptions import ServiceUnavailable
 
@@ -84,6 +83,41 @@ async def invoke(
     Returns `(response_text, provider, model)`. Raises
     `ServiceUnavailable` on hard failure (timeout / SDK exception /
     network) so the Shield can fail-closed and emit a 503.
+
+    Backwards-compatible wrapper around `invoke_with_metering`. Existing
+    callers that don't need token metering keep the 3-tuple shape. The
+    Shield client + the legacy `/api/synisense/shield/invoke` route both
+    use `invoke_with_metering` to capture exact provider usage.
+    """
+    text, provider, model, _usage = await invoke_with_metering(
+        de_id_content,
+        model_preference=model_preference,
+        timeout_seconds=timeout_seconds,
+    )
+    return (text, provider, model)
+
+
+async def invoke_with_metering(
+    de_id_content: str,
+    *,
+    model_preference: ModelPreference = "balanced",
+    timeout_seconds: float = 20.0,
+) -> Tuple[str, str, str, Dict[str, Any]]:
+    """Same contract as `invoke()` but additionally returns a usage dict.
+
+    Chunk 18 (Track 4 item 2, 2026-05-21) — token-accurate metering.
+
+    `usage` shape:
+      - Live SDK call: `{"input_tokens": int, "output_tokens": int, "method": "exact"}`
+      - Mock / fallback: `{}` (caller must fall back to estimation).
+
+    Implementation: we call `litellm.acompletion` directly instead of
+    `LlmChat.send_message` because the latter discards the
+    `ModelResponse.usage` payload. The request shape mirrors what
+    `LlmChat._execute_completion` builds (same Emergent proxy URL,
+    same `custom_llm_provider="openai"` envelope, same model name
+    transform for Gemini), so behaviour stays identical to the legacy
+    path apart from the additional usage capture.
     """
     provider, model = _provider_for(model_preference)
 
@@ -93,33 +127,71 @@ async def invoke(
     if llm_mode == "mock" or not emergent_key:
         if not emergent_key and llm_mode != "mock":
             log.info("synisense.shield.llm_router: EMERGENT_LLM_KEY absent — using echo fallback")
-        return (_mock_invoke(de_id_content), provider + ":mock", model + ":mock")
+        return (_mock_invoke(de_id_content), provider + ":mock", model + ":mock", {})
 
-    # Live mode — emergentintegrations. Module-level import probe at the
-    # top of this file (Chunk 18 cold-start fix) eliminates the per-call
-    # try/except import cost. Fall back to mock if the package wasn't
-    # importable at process startup.
+    # Live mode — call litellm directly so we can keep the ModelResponse
+    # and pull `usage.prompt_tokens` / `usage.completion_tokens`. Module-
+    # level import probe (Chunk 18 cold-start) covers the emergent SDK;
+    # litellm itself is a transitive dep that ships in the same wheel.
     if not _EMERGENT_AVAILABLE:
         log.warning(
             "synisense.shield.llm_router: emergentintegrations unavailable (%s)",
             _EMERGENT_IMPORT_ERROR or "unknown",
         )
-        return (_mock_invoke(de_id_content), provider + ":mock", model + ":mock")
+        return (_mock_invoke(de_id_content), provider + ":mock", model + ":mock", {})
 
     try:
-        chat = LlmChat(
-            api_key=emergent_key,
-            session_id=f"synisense-shield-{uuid.uuid4().hex[:8]}",
-            system_message=(
-                "You are a privacy-governed assistant. The user message contains "
-                "opaque tokens of the shape [[ENT_XXX_NNN]] — preserve them "
-                "verbatim. Do not invent meanings for them. Respond concisely."
-            ),
-        ).with_model(provider, model)
-        msg = UserMessage(text=de_id_content)
-        raw = await asyncio.wait_for(chat.send_message(msg), timeout=timeout_seconds)
-        text = raw if isinstance(raw, str) else str(raw)
-        return (text, provider, model)
+        import litellm  # noqa: WPS433 — local import, lighter cold path
+        from emergentintegrations.llm.utils import get_integration_proxy_url
+        proxy_url = get_integration_proxy_url()
+        if provider == "gemini":
+            litellm_model = f"gemini/{model}"
+        else:
+            litellm_model = model  # openai, anthropic via Emergent proxy
+        params = {
+            "model": litellm_model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a privacy-governed assistant. The user message contains "
+                        "opaque tokens of the shape [[ENT_XXX_NNN]] — preserve them "
+                        "verbatim. Do not invent meanings for them. Respond concisely."
+                    ),
+                },
+                {"role": "user", "content": de_id_content},
+            ],
+            "api_key": emergent_key,
+            "api_base": proxy_url + "/llm",
+            "custom_llm_provider": "openai",
+        }
+        response = await asyncio.wait_for(
+            litellm.acompletion(**params),
+            timeout=timeout_seconds,
+        )
+        # Extract text from the OpenAI-compatible response envelope.
+        text = ""
+        try:
+            text = response.choices[0].message.content or ""
+        except Exception:  # noqa: BLE001
+            text = str(response)
+        usage: Dict[str, Any] = {}
+        try:
+            u = getattr(response, "usage", None)
+            prompt = int(getattr(u, "prompt_tokens", 0) or 0)
+            completion = int(getattr(u, "completion_tokens", 0) or 0)
+            if prompt > 0 or completion > 0:
+                usage = {
+                    "input_tokens": prompt,
+                    "output_tokens": completion,
+                    "method": "exact",
+                }
+        except Exception:  # noqa: BLE001 — usage is best-effort; estimation path absorbs gaps
+            usage = {}
+        # Suppress unused-import warnings when emergentintegrations imports
+        # have already been done at module load.
+        _ = (LlmChat, UserMessage)
+        return (text, provider, model, usage)
     except asyncio.TimeoutError as exc:
         raise ServiceUnavailable(
             f"LLM provider timeout after {timeout_seconds}s"

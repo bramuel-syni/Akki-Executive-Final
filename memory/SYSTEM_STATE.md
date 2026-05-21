@@ -129,6 +129,69 @@
 
 ## 4. Per-Patch Close-out Log (newest at top)
 
+### Chunk 18 — Track 4 infra (cron + token metering) — 2026-05-21 ✅ (autonomous)
+
+Closes 2 of the 4 Track 4 items from `POST_REWRITE_RAMP.md`. Items 1 (cold-start) + 4 (orphan migration) deferred to Chunk 18.5 per the dispatch's scope guard.
+
+| Item | Surface | Action / Files | Test | Status |
+|------|---------|----------------|------|--------|
+| Track 4 #3 | APScheduler hourly cron for `derivation_scheduler.run_hourly_pass()` | NEW `services/synisense/engine/scheduler_lock.py` (Mongo-locked single-instance + heartbeat); `server.py` arms `AsyncIOScheduler(CronTrigger(minute=0))` after the existing weekly-secret-gated block; shutdown handler stops `app.state.engine_scheduler` | `_chunk18_scheduler_lock_runs_once_per_bucket` + `_records_failure` + `_ttl_index_present` + `_engine_hourly_cron_registered_in_server` | DONE |
+| Track 4 #2 | Token-accurate Shield metering | `services/synisense/shield/audit_log.py` (+`actual_cost_usd` field + `_RATE_TABLE` + `compute_cost_usd`); `services/synisense/shield/llm_router.py` (`invoke_with_metering` 4-tuple captures `litellm` `ModelResponse.usage`); `services/synisense/shield/client.py` (exact/estimated branch); `routers/synisense_shield.py` (legacy REST surface mirrors the same branch) | `_chunk18_compute_cost_uses_per_model_rate_table` + `_audit_log_persists_chunk18_fields` + `_shield_invoke_records_exact_metering_when_sdk_returns_usage` + `_shield_invoke_falls_back_to_estimated_when_usage_missing` | DONE |
+| Pre-flight | Render-smoke step 14 hygiene fix (Chunk 12 probe Exec preference + role-aware soft-skip) | `frontend/scripts/render-smoke.js:2071-2138` + `:2218-2243` | render-smoke green end-to-end | DONE |
+| Track 4 #1 | 30s cold-start latency | n/a (deferred to Chunk 18.5) | n/a | BACKLOG |
+| Track 4 #4 | 524 orphan `solva_sessions` migration | n/a (deferred to Chunk 18.5) | n/a | BACKLOG |
+
+### Mongo collections introduced
+
+- `scheduler_locks` — TTL-reaped coordination row, one per (job_id, hour_bucket).
+- `scheduler_runs` — durable heartbeat, one per executed run (`status` ∈ `"ok"|"failed"`, `duration_ms`, `summary`, `error`).
+
+Operator liveness query: `db.scheduler_runs.find({job_id: "synisense_engine_hourly", status: "ok"}).sort({started_at: -1}).limit(1)` — alert if `started_at` > 2h old.
+
+### Per-model rate table (per 1M tokens, USD)
+
+| Provider | Model | Input | Output |
+|----------|-------|-------|--------|
+| anthropic | claude-sonnet-4-5-20250929 | $3.00 | $15.00 |
+| openai | gpt-4o | $2.50 | $10.00 |
+| openai | gpt-5.2 | $5.00 | $20.00 |
+| gemini | gemini-2.5-flash | $0.10 | $0.40 |
+| gemini | gemini-3-flash | $0.15 | $0.60 |
+
+Unknown provider/model → `_DEFAULT_RATE` (Claude Sonnet 4.5 pricing) so the audit row still carries a numeric cost. The `:mock` suffix is stripped before lookup so mock-mode rows compute the same cost as live calls.
+
+### Tests
+
+`backend/tests/test_qa_chunk_18.py` — **9 tests** (3 cron-lock integration · 1 cron boot-wiring static · 1 cost table · 1 audit row round-trip · 2 metering end-to-end · 1 CI Shield-exclusivity guard).
+
+**All 9 pass.** Cross-chunk regression (9.5/10/11/12/13/14/15/16/17/18 + CI guard) = **89 passed** (+9 from Chunk-17 baseline 80).
+
+### Live-pod confirmation
+
+- Engine cron armed at boot: `Chunk 18 (Track 4 item 3): Synisense Engine hourly cron armed (top-of-hour UTC, Mongo-locked, replica=…).`
+- Test-fire of `run_locked + run_hourly_pass` wrote a heartbeat row with `status=ok`, `duration_ms=1530`, summary across 6 derivation rule families.
+- `services.synisense.shield.client.invoke()` in mock mode wrote audit row with `metering_method=estimated`, `actual_cost_usd=5e-06` (rate table lookup for `gemini-2.5-flash:mock`).
+
+### Architectural invariants checkpoint
+
+- ✅ Shield gateway exclusivity preserved — the new `litellm.acompletion` call site lives INSIDE the Shield's `llm_router` module (the canonical proxy entry point). CI guard `test_no_direct_llm_calls_outside_shield` PASS.
+- ✅ `tenant_id == account_id` boundary intact.
+- ✅ No `repr(exc)` leaks. Cron error path uses the locked `f"{type(exc).__name__}: {str(exc)[:200]}"` shape.
+- ✅ No new third-party libraries (APScheduler + litellm + pymongo all pre-installed).
+- ✅ Schema-drift defensiveness — `compute_cost_usd` tolerates `None`/empty/`:mock` suffix; the lock's TTL index reaps stale rows automatically.
+- ✅ Chunks 7-17 work intact — pytest +9 (80 → 89).
+- ✅ Chunk-8 lifecycle state machine NOT modified.
+
+### Smoke probe rule (forgetting-mitigation note)
+
+> Smoke probes that filter by role/context must prefer specific role first, not first-with-seed. Seed-data ordering can shift based on insertion timing across re-runs.
+
+Rule applies anywhere a probe walks `/api/me/contexts` and then makes a role-gated UI assertion (StrategicGoals / Cycle assignment / Monitor extract). When in doubt, soft-skip on the wrong-role branch and log loudly rather than fail.
+
+### Carry-forward `CHUNK_18_STATE.md`
+
+New file documenting the cron contract, the per-model rate table, the smoke probe rule, and the carry-forward backlog for Chunk 18.5.
+
 ### Chunk 17 — 16-May P3 + Cleanup Queue — 2026-05-21 ✅ (autonomous)
 
 Cleanup pass closing C17-001 + C17-002 + C17-004 from the cleanup queue, shipping QA-014 (P3), routing QA-002 (P3 — AWAITING_PO), and landing 2 housekeeping items (non-owner seed identity + smoke probe defensive fix). Closing C17-002 + C17-004 retroactively flips Chunks 12 and 14 from PARTIAL → DONE (pending tester re-run).

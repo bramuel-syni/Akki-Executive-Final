@@ -2070,12 +2070,20 @@ async function smokeChunk12StrategicGoals(page, failures) {
 
   try {
     // Discover a context with the Chunk-12 seeded goal.
+    //
+    // 2026-05-21 smoke-hygiene fix: Update Goal CTA is RBAC-gated to
+    // Exec users (Chunk 11 QA-048). The probe must prefer a context
+    // where the smoke user's `role === "executive"` so the Update Goal
+    // assertion can fire. Fall back to first-seeded only if no Exec
+    // context has the Pass G seed (then the Update Goal assertion
+    // soft-skips below — RBAC correctly hides the CTA on NED ctx).
+    // See: memory/sprints/CHUNK_18_STATE.md note on probe ordering.
     const probe = await page.evaluate(async () => {
       const tok = localStorage.getItem("akki_access_token")
         || sessionStorage.getItem("akki_access_token");
       if (!tok) return { error: "no token" };
       const headers = { Authorization: `Bearer ${tok}` };
-      const tryCtx = async (cid) => {
+      const tryCtx = async (cid, role) => {
         try {
           const r = await fetch(`/api/contexts/${cid}/strategic-goals`,
             { headers: { ...headers, "X-Active-Context": cid } });
@@ -2089,29 +2097,41 @@ async function smokeChunk12StrategicGoals(page, failures) {
               && !/no-data seed/i.test(g.title || "")
               && g.last_akki_update?.assessed_at,
           );
-          if (withEvidence) return { contextId: cid, goalId: withEvidence.id };
+          if (withEvidence) return { contextId: cid, goalId: withEvidence.id, role: role || null };
           const seeded = goals.find((g) => /Chunk 12 seed/i.test(g.title || ""));
-          return seeded ? { contextId: cid, goalId: seeded.id } : null;
+          return seeded ? { contextId: cid, goalId: seeded.id, role: role || null } : null;
         } catch { return null; }
       };
-      const active = sessionStorage.getItem("akki_active_context_id");
-      if (active) {
-        const hit = await tryCtx(active);
-        if (hit) return hit;
-      }
+      // Pull the full me/contexts list once so we can sort by role.
+      let entries = [];
       try {
         const r = await fetch("/api/me/contexts", { headers });
         if (r.ok) {
           const body = await r.json();
           const list = Array.isArray(body) ? body : (body.items || body.contexts || []);
-          for (const c of list) {
-            const cid = c.context_id || c.id;
-            if (!cid) continue;
-            const hit = await tryCtx(cid);
-            if (hit) return hit;
-          }
+          entries = list.map((c) => ({ cid: c.context_id || c.id, role: (c.role || "").toLowerCase() }))
+            .filter((e) => e.cid);
         }
       } catch { /* fall through */ }
+      const active = sessionStorage.getItem("akki_active_context_id");
+      const activeRole = (entries.find((e) => e.cid === active) || {}).role || null;
+      // Build the visit order: Exec contexts first (active first if Exec),
+      // then NED contexts (active first if NED).
+      const execs = entries.filter((e) => e.role === "executive");
+      const neds  = entries.filter((e) => e.role !== "executive");
+      const reorder = (arr, activeId) => {
+        if (!activeId) return arr;
+        const head = arr.find((e) => e.cid === activeId);
+        if (!head) return arr;
+        return [head, ...arr.filter((e) => e.cid !== activeId)];
+      };
+      const ordered = activeRole === "executive"
+        ? [...reorder(execs, active), ...neds]
+        : [...execs, ...reorder(neds, active)];
+      for (const e of ordered) {
+        const hit = await tryCtx(e.cid, e.role);
+        if (hit) return hit;
+      }
       return { error: "no Chunk-12 seeded goal found" };
     });
 
@@ -2119,7 +2139,7 @@ async function smokeChunk12StrategicGoals(page, failures) {
       console.log(`[render-smoke]  · Chunk 12 — seed unreachable (${probe?.error || "unknown"}); soft-skipping. Re-run \`python backend/scripts/seed_chunks.py\` to populate Pass G.`);
       return;
     }
-    console.log(`[render-smoke]  · Chunk 12 — hard-asserting goal=${probe.goalId.slice(0, 18)}… ctx=${probe.contextId.slice(0, 8)}…`);
+    console.log(`[render-smoke]  · Chunk 12 — hard-asserting goal=${probe.goalId.slice(0, 18)}… ctx=${probe.contextId.slice(0, 8)}… role=${probe.role || "unknown"}`);
 
     await page.evaluate((cid) => sessionStorage.setItem("akki_active_context_id", cid), probe.contextId);
     await page.goto(`${BASE_URL}/app/monitor`,
@@ -2209,11 +2229,19 @@ async function smokeChunk12StrategicGoals(page, failures) {
     }
 
     // Assertion 2 — Update Goal button present, Edit button absent.
+    //
+    // RBAC gate (Chunk 11 QA-048): Update Goal CTA is hidden on NED
+    // contexts. The probe above prefers Exec contexts; if it landed
+    // on a NED context (because no Exec context carried the Pass G
+    // seed), the assertion soft-skips with a clear log line — the
+    // RBAC hiding behaviour is the correct outcome, not a regression.
     const updateBtn = page.locator('[data-testid="goal-drawer-update-btn"]').first();
     const editBtn = page.locator('[data-testid="goal-drawer-edit-btn"]').first();
     const updateVisible = await updateBtn.isVisible().catch(() => false);
     const editExists = await editBtn.count().catch(() => 0);
-    if (!updateVisible) {
+    if (probe.role !== "executive") {
+      console.log(`[render-smoke]  · Chunk 12 (QA-049): Update Goal assertion skipped — landed on ${probe.role || "non-executive"} context, RBAC correctly hides CTA`);
+    } else if (!updateVisible) {
       failures.push(`Chunk 12 (QA-049): "Update Goal" button not visible in drawer footer`);
     } else {
       console.log(`[render-smoke]  ✓ Chunk 12 (QA-049) — "Update Goal" button visible`);

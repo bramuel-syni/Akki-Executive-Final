@@ -52,7 +52,7 @@ async def invoke(
 
     started = time.perf_counter()
     de_id = await deidentifier.deidentify(content, tenant_id=tenant_id)
-    llm_text, provider, model = await llm_router.invoke(
+    llm_text, provider, model, usage = await llm_router.invoke_with_metering(
         de_id.redacted_text, model_preference=model_preference,
     )
     response_text = reidentifier.reidentify(llm_text, de_id.token_map)
@@ -65,22 +65,25 @@ async def invoke(
     response_hash = trust_receipt.hash_payload(response_text)
 
     # Chunk 18 (Track 4 item 2, 2026-05-21) — token-accurate metering.
-    # The non-streaming `llm_router.invoke()` path uses
-    # `emergentintegrations.LlmChat.send_message()` which returns a
-    # string-only response with no usage payload. We therefore record
-    # estimated token counts (char/4 approximation) and flag the
-    # `metering_method` as "estimated" so downstream metering queries
-    # can opt out of these rows for billing-critical paths. The
-    # streaming path (`shield/streaming.py`) captures usage exactly
-    # from provider SDK responses and writes its own audit with
-    # `metering_method="exact"`.
-    #
-    # When the router returned a mock provider (e.g. SYNISENSE_LLM_MODE
-    # is "mock" or the SDK is unavailable), we still record the
-    # estimate so retention metrics are continuous, but flag it as
-    # "estimated" — the same as any non-streaming live call.
-    tokens_in = audit_log.estimate_tokens(content)
-    tokens_out = audit_log.estimate_tokens(response_text)
+    # `llm_router.invoke_with_metering` returns `usage = {"input_tokens",
+    # "output_tokens", "method": "exact"}` when the provider SDK
+    # surfaced a usage payload (live `litellm.acompletion` path). On
+    # mock-mode or any path where usage is empty we fall back to the
+    # char/4 estimator. The audit row carries both the token counts
+    # and the provenance flag so downstream metering queries can opt
+    # out of estimated rows for billing-critical paths.
+    if usage and usage.get("method") == "exact":
+        tokens_in = int(usage.get("input_tokens") or 0)
+        tokens_out = int(usage.get("output_tokens") or 0)
+        metering_method = "exact"
+    else:
+        tokens_in = audit_log.estimate_tokens(content)
+        tokens_out = audit_log.estimate_tokens(response_text)
+        metering_method = "estimated"
+    actual_cost_usd = audit_log.compute_cost_usd(
+        provider=provider, model=model,
+        tokens_in=tokens_in, tokens_out=tokens_out,
+    )
 
     await audit_log.write_audit(
         audit_id=audit_id, tenant_id=tenant_id, consumer_id=consumer_id,
@@ -92,7 +95,8 @@ async def invoke(
         request_hash=request_hash, response_hash=response_hash,
         outcome="success", latency_ms=latency_ms,
         tokens_in=tokens_in, tokens_out=tokens_out,
-        metering_method="estimated",
+        metering_method=metering_method,
+        actual_cost_usd=actual_cost_usd,
     )
     receipt = trust_receipt.build_trust_receipt(
         receipt_id=receipt_id, audit_id=audit_id, tenant_id=tenant_id,

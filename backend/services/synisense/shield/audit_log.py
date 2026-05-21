@@ -13,7 +13,7 @@ that the row is on disk. Mongo write concern uses the driver default.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from core import db
 
@@ -48,19 +48,22 @@ async def write_audit(
     tokens_in: Optional[int] = None,
     tokens_out: Optional[int] = None,
     metering_method: Optional[str] = None,  # "exact" | "estimated" | None
+    actual_cost_usd: Optional[float] = None,
 ) -> None:
     """Persist a Shield audit log row.
 
     Chunk 18 additive fields:
       - `tokens_in` / `tokens_out`: token counts for this invocation.
         - "exact" — sourced from provider response payload's
-          `usage.input_tokens` / `output_tokens` (streaming path).
-        - "estimated" — char/4 approximation (non-streaming path,
-          since `emergentintegrations.LlmChat.send_message()` returns
-          string only with no usage data).
+          `usage.prompt_tokens` / `usage.completion_tokens` (live SDK).
+        - "estimated" — char/4 approximation (mock-mode + legacy paths
+          where the SDK returned no usage payload).
         - None — no metering attempted (legacy rows + early-return paths).
       - `metering_method`: provenance flag distinguishing exact vs estimated
         counts at query time.
+      - `actual_cost_usd`: USD cost computed from the per-model rate table
+        (`_RATE_TABLE`). Always populated when tokens_in / tokens_out are
+        non-None; falls to None for legacy rows + early-return paths.
 
     Char/4 estimation matches GPT/Claude/Gemini tokenizers on English
     prose within ±10%. Caller decides whether estimation is acceptable
@@ -85,8 +88,60 @@ async def write_audit(
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
         "metering_method": metering_method,
+        "actual_cost_usd": actual_cost_usd,
     }
     await db[AUDIT_COLLECTION].insert_one(row)
+
+
+# Chunk 18 (Track 4 item 2, 2026-05-21) — per-model USD rate table.
+#
+# Numbers are public list prices as of 2026-05 for the providers we
+# proxy through Emergent integrations. Values are USD per 1M tokens.
+# Adding a new model: append a row using the SAME provider:model
+# composite key shape `client.py` writes into the audit log (the
+# `:mock` suffix is stripped before lookup).
+#
+# When a provider/model pair is unknown the lookup returns the
+# `_DEFAULT_RATE` (Claude Sonnet 4.5 pricing) so the audit row still
+# carries a numeric cost — flagged as estimated since we couldn't
+# resolve the exact rate.
+_RATE_TABLE: Dict[Tuple[str, str], Tuple[float, float]] = {
+    # provider, model: (input_per_M_usd, output_per_M_usd)
+    ("anthropic", "claude-sonnet-4-5-20250929"): (3.00, 15.00),
+    ("openai",    "gpt-4o"):                     (2.50, 10.00),
+    ("openai",    "gpt-5.2"):                    (5.00, 20.00),
+    ("gemini",    "gemini-2.5-flash"):           (0.10,  0.40),
+    ("gemini",    "gemini-3-flash"):             (0.15,  0.60),
+}
+
+_DEFAULT_RATE: Tuple[float, float] = (3.00, 15.00)
+
+
+def _strip_mock_suffix(value: str) -> str:
+    return value.split(":", 1)[0] if ":" in value else value
+
+
+def compute_cost_usd(
+    *,
+    provider: str,
+    model: str,
+    tokens_in: Optional[int],
+    tokens_out: Optional[int],
+) -> Optional[float]:
+    """Return USD cost using `_RATE_TABLE`. None if no tokens supplied.
+
+    Provider / model strings may carry a `:mock` suffix from the mock
+    path — stripped before lookup so the same key works for live + mock
+    rows in metering queries.
+    """
+    if tokens_in is None and tokens_out is None:
+        return None
+    p = _strip_mock_suffix(provider or "").lower()
+    m = _strip_mock_suffix(model or "")
+    rate_in, rate_out = _RATE_TABLE.get((p, m), _DEFAULT_RATE)
+    cost = ((tokens_in or 0) * rate_in + (tokens_out or 0) * rate_out) / 1_000_000.0
+    # Avoid -0.0 in the persisted row.
+    return round(cost, 8) if cost else 0.0
 
 
 def estimate_tokens(text: str) -> int:

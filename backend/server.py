@@ -978,12 +978,60 @@ async def on_startup():
     except Exception as e:  # noqa: BLE001
         logger.warning("Chunk 18 spaCy warm-up scheduling failed: %s", e)
 
+    # ── Chunk 18 (Track 4 item 3, 2026-05-21) — Synisense Engine hourly cron ──
+    # Single-instance Mongo-locked APScheduler job that fires
+    # `derivation_scheduler.run_hourly_pass()` at the top of every hour
+    # UTC. Replicas race to claim the per-(job_id, hour_bucket) lock in
+    # `scheduler_locks`; the winner runs the pass and writes a heartbeat
+    # row to `scheduler_runs`. Operators can verify liveness via
+    # `db.scheduler_runs.find({job_id: "synisense_engine_hourly"})`.
+    #
+    # Runs INDEPENDENT of AKKI_CRON_SECRET because it's an internal
+    # background pass, not a webhook-triggered cron.
+    try:
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler as _EngSched
+        from apscheduler.triggers.cron import CronTrigger as _EngCron
+        from services.synisense.engine import scheduler_lock as _engine_lock
+        from services.synisense.engine.derivation_scheduler import (
+            run_hourly_pass as _engine_hourly,
+        )
+
+        await _engine_lock.ensure_indexes()
+
+        async def _fire_engine_hourly_pass():
+            await _engine_lock.run_locked(
+                job_id="synisense_engine_hourly",
+                fn=_engine_hourly,
+                bucket=_engine_lock.current_hour_bucket(),
+                lease_seconds=3600,
+            )
+
+        engine_sched = _EngSched(timezone="UTC")
+        engine_sched.add_job(
+            _fire_engine_hourly_pass,
+            _EngCron(minute=0),  # top of every hour UTC
+            id="synisense_engine_hourly",
+            replace_existing=True,
+        )
+        engine_sched.start()
+        app.state.engine_scheduler = engine_sched
+        logger.info(
+            "Chunk 18 (Track 4 item 3): Synisense Engine hourly cron armed (top-of-hour UTC, Mongo-locked, replica=%s).",
+            _engine_lock.replica_id(),
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Chunk 18 engine hourly cron arm failed: %s: %s", type(e).__name__, e)
+
 
 @app.on_event("shutdown")
 async def on_shutdown():
     sched = getattr(app.state, "scheduler", None)
     if sched:
         sched.shutdown(wait=False)
+    # Chunk 18 (Track 4 item 3) — stop the engine hourly scheduler too.
+    engine_sched = getattr(app.state, "engine_scheduler", None)
+    if engine_sched:
+        engine_sched.shutdown(wait=False)
     # Phase 15.1: skip closing Motor when running under pytest. Tests use
     # httpx.ASGITransport(app=app) and exit their `async with` block per
     # test, which fires this shutdown event. Closing the module-singleton

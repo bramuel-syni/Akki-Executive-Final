@@ -366,6 +366,30 @@ The orchestrator reads the latest entry to decide whether to dispatch the next c
 **Awaiting orchestrator tester one-more re-run to confirm regression fixed + SV-07 verified, then dispatch of Chunk 18 (Track 4 infra) regardless of pass/fail per autonomy rules.**
 
 
+## Chunk 18 — Track 4 infra (cron + token metering) — DONE — 2026-05-21T18:35:00Z
+
+- IDs closed: **2 of 4 Track 4 items** (Item 3 hourly cron · Item 2 token-accurate metering). Items 1 (cold-start) + 4 (orphan migration) deferred to Chunk 18.5 per dispatch scope guard.
+- Pytest delta: **+9** (80 → 89; new file `test_qa_chunk_18.py` — 3 cron-lock integration + 1 cron boot-wiring static + 1 cost table + 1 audit row round-trip + 2 metering end-to-end + 1 CI Shield-exclusivity).
+- Tester verdict: PASS pending (render-smoke step 14 hygiene fix already verified GREEN end-to-end; orchestrator tester re-run pending).
+- Files touched: 6 (NEW `services/synisense/engine/scheduler_lock.py`; NEW `tests/test_qa_chunk_18.py`; `services/synisense/shield/audit_log.py` +`actual_cost_usd` + `_RATE_TABLE` + `compute_cost_usd`; `services/synisense/shield/llm_router.py` rewritten around new `invoke_with_metering` 4-tuple; `services/synisense/shield/client.py` exact/estimated branch; `routers/synisense_shield.py` legacy REST surface mirrors the same branch; `server.py` engine cron arm + shutdown stop hook).
+- Architectural invariants: PASS (CI Shield-exclusivity guard PASS; the new `litellm.acompletion` call lives INSIDE the Shield's `llm_router` — no new direct LLM call sites; no new libraries; `tenant_id`/`context_id` scoping unchanged).
+- Blockers: none.
+- AWAITING_PO routings queued: none new.
+- Pre-Chunk-18 smoke hygiene fix (`render-smoke.js` step 14 Chunk 12 probe): Exec-context preference + soft-skip Update Goal assertion when role!=executive. Self-verified: all 18 render-smoke steps GREEN, probe now lands on `dcc263b1` (Tuli FG CFO, role=executive).
+- Live-pod end-to-end verification:
+  - Engine cron armed at boot: `Chunk 18 (Track 4 item 3): Synisense Engine hourly cron armed (top-of-hour UTC, Mongo-locked, replica=…)`
+  - Test-fire of `run_locked` + `run_hourly_pass` landed a heartbeat row with `status=ok`, `duration_ms=1530`, summary across 6 derivation rule families.
+  - Shield invocation in mock mode wrote audit row with `metering_method=estimated`, `actual_cost_usd=5e-06` (via rate table for `gemini-2.5-flash:mock`).
+- Memory updates:
+  - `SYSTEM_STATE.md § 4` — Chunk 18 closeout (newest at top).
+  - `AUTONOMOUS_SPRINT_LOG.md` — this entry.
+  - `sprints/CHUNK_18_STATE.md` — created (item-by-item table, contract docs, smoke probe note, carry-forward backlog).
+  - `sprints/POST_REWRITE_RAMP.md § Track 4` — items 2 + 3 → DONE; items 1 + 4 remain BACKLOG for Chunk 18.5.
+- Notable: this chunk's biggest reuse is the smoke probe pattern fix — formalised as a rule in `CHUNK_18_STATE.md` §3 for future agents grepping forgetting docs. The Mongo-lock pattern (insert with DuplicateKeyError as lose-the-race signal + TTL index reaper) is a clean template for any future single-instance cron we add.
+
+**Awaiting orchestrator tester re-run on Chunk 18 surfaces (engine_scheduler row + exact-metering audit row probe), then dispatch of Chunk 18.5 (Track 4 items 1 + 4) per autonomy rules.**
+
+
 **Awaiting orchestrator tester re-run on Chunk 11 surfaces, then dispatch of Chunk 12.**
 
 

@@ -114,7 +114,7 @@ async def invoke(
 
     # ── Outbound LLM call ──
     try:
-        llm_text, provider, model = await llm_router.invoke(
+        llm_text, provider, model, usage = await llm_router.invoke_with_metering(
             de_id.redacted_text, model_preference=body.model_preference,
         )
     except ServiceUnavailable as exc:
@@ -129,6 +129,25 @@ async def invoke(
     request_hash = trust_receipt.hash_payload(body.content)
     response_hash = trust_receipt.hash_payload(response_text)
 
+    # Chunk 18 (Track 4 item 2, 2026-05-21) — token-accurate metering.
+    # Same selection rule as `services.synisense.shield.client.invoke`:
+    # prefer the provider SDK usage payload; estimate via char/4 if
+    # missing. The audit row records `metering_method` + `actual_cost_usd`
+    # so reviewers can opt out of estimated rows for billing-critical
+    # queries.
+    if usage and usage.get("method") == "exact":
+        tokens_in = int(usage.get("input_tokens") or 0)
+        tokens_out = int(usage.get("output_tokens") or 0)
+        metering_method = "exact"
+    else:
+        tokens_in = audit_log.estimate_tokens(body.content)
+        tokens_out = audit_log.estimate_tokens(response_text)
+        metering_method = "estimated"
+    actual_cost_usd = audit_log.compute_cost_usd(
+        provider=provider, model=model,
+        tokens_in=tokens_in, tokens_out=tokens_out,
+    )
+
     try:
         await audit_log.write_audit(
             audit_id=audit_id, tenant_id=body.tenant_id,
@@ -140,6 +159,9 @@ async def invoke(
             llm_provider=provider, llm_model=model,
             request_hash=request_hash, response_hash=response_hash,
             outcome="success", latency_ms=latency_ms,
+            tokens_in=tokens_in, tokens_out=tokens_out,
+            metering_method=metering_method,
+            actual_cost_usd=actual_cost_usd,
         )
         receipt = trust_receipt.build_trust_receipt(
             receipt_id=receipt_id, audit_id=audit_id, tenant_id=body.tenant_id,

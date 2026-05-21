@@ -98,13 +98,13 @@ PO to assign sprint chunks against backlog rows. Every dispatch quotes verbatim 
 
 ### Track 4 (P2) — Post-rewrite infra carryover
 
-| # | Item | Source phase | Why | Effort |
-|--:|------|--------------|-----|--------|
-| 1 | 30s cold-start latency on `evolution-diff` + `generate-meta` | Phase E backlog | Deferred per user instruction "until after rewrite" | Investigation first |
-| 2 | Token-accurate Shield metering (audit_log gains `input_tokens` + `output_tokens` + actual_cost_usd) | Phase F Sub-task D | Billing surface is illustrative today; bank QA will eventually want exact pricing | Medium |
-| 3 | APScheduler hourly cron for `derivation_scheduler.run_hourly_pass()` | Phase F Sub-task B | Today derivation only runs on startup + on-demand; hourly cron is the locked steady-state cadence | Small |
-| 4 | Full migration of 524 orphan legacy `solva_sessions` rows | Phase E Sub-task F | Phase E shipped soft-archive; full shape migration to `solva_phase_d_sessions` is post-rewrite | Large |
-| 5 | Around-the-Goals sub_module clarification + ship | Solva backlog | Still `coming_soon: true` — needs PO clarification | Blocked on PO |
+| # | Item | Source phase | Why | Effort | Status |
+|--:|------|--------------|-----|--------|--------|
+| 1 | 30s cold-start latency on `evolution-diff` + `generate-meta` | Phase E backlog | Deferred per user instruction "until after rewrite" | Investigation first | BACKLOG (Chunk 18.5) — partial mitigation shipped in Chunk 18 (spaCy NER warm-up at boot, `server.py:954-977`) |
+| 2 | Token-accurate Shield metering (audit_log gains `input_tokens` + `output_tokens` + actual_cost_usd) | Phase F Sub-task D | Billing surface is illustrative today; bank QA will eventually want exact pricing | Medium | ✅ DONE (Chunk 18, 2026-05-21) — exact path via `litellm.acompletion` + `compute_cost_usd` rate table |
+| 3 | APScheduler hourly cron for `derivation_scheduler.run_hourly_pass()` | Phase F Sub-task B | Today derivation only runs on startup + on-demand; hourly cron is the locked steady-state cadence | Small | ✅ DONE (Chunk 18, 2026-05-21) — Mongo-locked single-instance + `scheduler_runs` heartbeat |
+| 4 | Full migration of 524 orphan legacy `solva_sessions` rows | Phase E Sub-task F | Phase E shipped soft-archive; full shape migration to `solva_phase_d_sessions` is post-rewrite | Large | BACKLOG (Chunk 18.5) |
+| 5 | Around-the-Goals sub_module clarification + ship | Solva backlog | Still `coming_soon: true` — needs PO clarification | Blocked on PO | AWAITING_PO |
 
 ### Track 5 (P2) — Bank-QA evidence pack assembly
 
