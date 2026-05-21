@@ -183,10 +183,11 @@ async def admin_health_full(
     )
     sched = await _check_scheduler(request)
     cron = _check_cron_secret()
+    clamav = await _check_clamav()
 
     checks = {
         "mongo": mongo, "llm": llm, "resend": resend_, "stripe": stripe_,
-        "scheduler": sched, "cron_secret": cron,
+        "scheduler": sched, "cron_secret": cron, "clamav": clamav,
     }
     statuses: List[str] = [c["status"] for c in checks.values()]
     overall = (
@@ -204,3 +205,39 @@ async def admin_health_full(
             "node": os.environ.get("HOSTNAME") or "unknown",
         },
     }
+
+
+# Phase E.A — ClamAV health check surfaces the sidecar status + the
+# `upload_scan_log` row count from the last 24h so reviewers can
+# verify the scanner is running AND actively servicing uploads.
+async def _check_clamav() -> Dict[str, Any]:
+    try:
+        from services import clamav_service
+        from core import db
+        from datetime import timedelta
+        health = clamav_service.healthcheck()
+        # Count scans in the last 24h, broken down by result.
+        cutoff = (_now() - timedelta(hours=24)).isoformat()
+        pipeline = [
+            {"$match": {"scanned_at": {"$gte": cutoff}}},
+            {"$group": {"_id": "$scan_result", "n": {"$sum": 1}}},
+        ]
+        recent: Dict[str, int] = {}
+        async for row in db[clamav_service.UPLOAD_SCAN_LOG_COLLECTION].aggregate(pipeline):
+            recent[row["_id"]] = row["n"]
+
+        status = "pass"
+        if not health.get("ok"):
+            status = "warn" if health.get("mode") == "dev-bypass" else "fail"
+        return {
+            "status": status,
+            "mode": health.get("mode"),
+            "host": health.get("host"),
+            "port": health.get("port"),
+            "version": health.get("version"),
+            "max_file_size_mb": health.get("max_file_size_mb"),
+            "scans_24h": recent,
+            "error": health.get("error"),
+        }
+    except Exception as e:  # noqa: BLE001
+        return {"status": "fail", "error": f"{type(e).__name__}: {str(e)[:200]}"}

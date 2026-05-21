@@ -69,7 +69,7 @@ async def _create_context(client: AsyncClient, token: str) -> str:
 # ---------------------------------------------------------------------------
 async def test_upload_ok_happy_path(client, monkeypatch):
     """Mock scan to return clean → upload succeeds with status 200."""
-    def fake_scan(data, filename=None):
+    async def fake_scan(data, filename=None, *, file_id=None, user_id=None):
         return clamav_service.ScanResult(clean=True, signature=None, scan_ms=5)
     monkeypatch.setattr(clamav_service, "scan", fake_scan)
 
@@ -91,7 +91,7 @@ async def test_upload_ok_happy_path(client, monkeypatch):
 # ---------------------------------------------------------------------------
 async def test_upload_infected_returns_422(client, monkeypatch):
     """Mock scan to return FOUND → upload rejected with 422 + signature."""
-    def fake_scan(data, filename=None):
+    async def fake_scan(data, filename=None, *, file_id=None, user_id=None):
         return clamav_service.ScanResult(
             clean=False,
             signature="Eicar-Test-Signature",
@@ -121,11 +121,9 @@ async def test_upload_infected_returns_422(client, monkeypatch):
 async def test_upload_error_in_dev_bypass_allows(client, monkeypatch):
     """When ALLOW_UNSAFE_UPLOADS=true (dev pod default), the scanner
     is bypassed and the upload proceeds even if clamd would have been
-    unreachable. We verify by monkeypatching `scan` to return the
-    clean+unsafe-mode path identical to what the live service does
-    when ALLOW_UNSAFE_UPLOADS is set."""
-    # Force the bypass path on the live service module.
+    unreachable."""
     monkeypatch.setattr(clamav_service, "ALLOW_UNSAFE_UPLOADS", True, raising=False)
+    monkeypatch.setattr(clamav_service, "AKKI_ENV", "", raising=False)
 
     token, _ = await _register(client)
     cid = await _create_context(client, token)
@@ -145,7 +143,7 @@ async def test_upload_error_in_dev_bypass_allows(client, monkeypatch):
 async def test_upload_unreachable_in_prod_returns_503(client, monkeypatch):
     monkeypatch.setattr(clamav_service, "ALLOW_UNSAFE_UPLOADS", False, raising=False)
 
-    def fake_scan(data, filename=None):
+    async def fake_scan(data, filename=None, *, file_id=None, user_id=None):
         raise clamav_service.ClamAVUnreachable("simulated clamd down")
     monkeypatch.setattr(clamav_service, "scan", fake_scan)
 
@@ -167,6 +165,8 @@ async def test_upload_unreachable_in_prod_returns_503(client, monkeypatch):
 # ---------------------------------------------------------------------------
 def test_healthcheck_reports_unsafe_mode(monkeypatch):
     monkeypatch.setattr(clamav_service, "ALLOW_UNSAFE_UPLOADS", True, raising=False)
+    monkeypatch.setattr(clamav_service, "AKKI_ENV", "", raising=False)
     h = clamav_service.healthcheck()
     assert h["ok"] is False
-    assert h["mode"] == "unsafe"
+    # Phase E.A renamed "unsafe" → "dev-bypass".
+    assert h["mode"] == "dev-bypass"

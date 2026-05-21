@@ -700,7 +700,7 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
             return {"ok": False, "error": "bad_attachment"}
         filename = primary_att.get("Name") or "attachment"
         try:
-            scan_result = clamav_service.scan(data, filename)
+            scan_result = await clamav_service.scan(data, filename, file_id=message_id, user_id=account["id"])
         except ClamAVUnreachable as e:
             # For the Postmark webhook we must return 200 (Postmark retries
             # on non-2xx and we don't want infinite replays) but we record

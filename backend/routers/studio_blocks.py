@@ -934,7 +934,7 @@ async def upload_image(
     from services import clamav_service
     from services.clamav_service import ClamAVUnreachable
     try:
-        scan_result = clamav_service.scan(raw, body.filename)
+        scan_result = await clamav_service.scan(raw, body.filename, file_id=artefact_id, user_id=current["id"])
     except ClamAVUnreachable as e:
         await write_audit(
             artefact["context_id"], current["id"],

@@ -1,0 +1,95 @@
+# AKKI local-dev docker compose (Phase E.A — 2026-05-21).
+#
+# For PROD deployment use `docker-compose.prod.yml`; this file is the
+# minimal scaffold a developer needs to bring up the dependencies the
+# backend talks to (Mongo + Mongo Express + MinIO + ClamAV sidecar).
+# The backend itself runs under supervisor in the pod / dev environment
+# — it is NOT containerised here so hot reload + breakpoints work.
+#
+# Bring everything up:
+#     docker compose up -d
+# Confirm clamd is healthy before the backend depends on it:
+#     docker compose ps clamd          # STATUS: healthy
+#     docker exec akki-clamd-dev clamdcheck.sh
+#
+# The clamd healthcheck runs every 30s after a 240s start_period so
+# the daemon has time to pull its signature database on first boot.
+# Until `STATUS=healthy`, backend uploads will receive 503 from the
+# scan path — this is the correct fail-closed behaviour.
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: akki-mongo-dev
+    ports:
+      - "27017:27017"
+    volumes:
+      - akki-mongo-data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: akki-mongo-express-dev
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_BASICAUTH_USERNAME: dev
+      ME_CONFIG_BASICAUTH_PASSWORD: dev
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: akki-minio-dev
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - akki-minio-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ─── Phase E.A — ClamAV sidecar (real, not mock) ─────────────────────
+  # Service name MUST be `clamd` (matches the new `CLAMAV_HOST` default
+  # in services/clamav_service.py). Backend resolves the hostname over
+  # the docker network.
+  clamd:
+    image: clamav/clamav:stable
+    container_name: akki-clamd-dev
+    ports:
+      - "3310:3310"
+    # First boot: freshclam pulls signature DB (~250 MB), takes ~2 min.
+    # Signature volume persists across restarts so subsequent boots
+    # are fast — see start_period below.
+    volumes:
+      - akki-clamav-sigs:/var/lib/clamav
+    environment:
+      CLAMAV_NO_MILTERD: "true"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 240s
+      retries: 3
+
+volumes:
+  akki-mongo-data:
+  akki-minio-data:
+  akki-clamav-sigs:

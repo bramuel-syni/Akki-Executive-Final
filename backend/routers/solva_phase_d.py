@@ -672,7 +672,7 @@ async def attach_document(
 
         # Virus scan (Phase 10 path).
         try:
-            scan_result = clamav_service.scan(data, filename)
+            scan_result = await clamav_service.scan(data, filename, file_id=session_id, user_id=ctx["account"]["id"])
         except ClamAVUnreachable as e:
             raise HTTPException(
                 status_code=503,

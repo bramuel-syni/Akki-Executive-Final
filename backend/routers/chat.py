@@ -527,7 +527,7 @@ async def attach_to_chat(
     from services import clamav_service
     from services.clamav_service import ClamAVUnreachable
     try:
-        scan = clamav_service.scan(data, filename)
+        scan = await clamav_service.scan(data, filename, file_id=doc_id, user_id=current["id"])
     except ClamAVUnreachable as exc:
         raise HTTPException(
             status_code=503,

@@ -987,7 +987,7 @@ async def _resolve_enhance_source(
         # ClamAV scan with the same dev escape hatch as chat_attach.
         try:
             from services import clamav_service
-            scan_res = clamav_service.scan(data, file.filename)
+            scan_res = await clamav_service.scan(data, file.filename, user_id=account_id)
             if not scan_res.clean:
                 raise HTTPException(
                     status_code=400,

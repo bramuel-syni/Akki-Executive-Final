@@ -324,6 +324,23 @@ logger.info(
 # -----------------------------------------------------------------------------
 @app.on_event("startup")
 async def on_startup():
+    # ─── Phase E.A — ClamAV boot guard ──────────────────────────────────
+    # Refuses to start when AKKI_ENV=production AND
+    # ALLOW_UNSAFE_UPLOADS=true. Returns the active mode so we can log
+    # it explicitly — operators should see exactly one of these lines
+    # in startup logs:
+    #     "clamav: enforce mode (prod)"
+    #     "clamav: dev escape hatch ARMED — uploads will bypass scan if clamd unreachable"
+    from services.clamav_service import assert_safe_boot as _clamav_assert_safe_boot
+    _clamav_mode = _clamav_assert_safe_boot()
+    if _clamav_mode == "enforce":
+        logging.getLogger("akki").info("clamav: enforce mode (prod)")
+    else:
+        logging.getLogger("akki").warning(
+            "clamav: dev escape hatch ARMED — uploads will bypass scan if "
+            "clamd unreachable (AKKI_ENV=%r)", os.environ.get("AKKI_ENV") or "(unset)",
+        )
+
     # ─── Phase 10 boot-level guards ─────────────────────────────────────
     billing_enabled = (os.environ.get("BILLING_ENABLED") or "").lower() in ("1", "true", "yes")
     if billing_enabled and not (os.environ.get("STRIPE_SECRET_KEY") or os.environ.get("STRIPE_API_KEY")):

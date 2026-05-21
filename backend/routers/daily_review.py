@@ -474,7 +474,7 @@ async def _approve_inbound(qid: str, account: Dict[str, Any], note: Optional[str
         filename = primary.get("Name") or "attachment"
         # Real virus scan (Phase 10). Unreachable → 503 + audit; block on match.
         try:
-            scan_result = clamav_service.scan(data, filename)
+            scan_result = await clamav_service.scan(data, filename, file_id=qid, user_id=account["id"])
         except ClamAVUnreachable as e:
             await write_audit(
                 row["context_id"], account["id"],

@@ -213,10 +213,14 @@ async def upload_document(
     if len(data) > MAX_BYTES:
         raise HTTPException(status_code=413, detail=f"File too large. Max {MAX_BYTES // 1024 // 1024}MB.")
 
+    # Generate the doc_id up front so the clamav `upload_scan_log` row
+    # carries the same identifier the persisted document row will use.
+    doc_id = str(uuid.uuid4())
+
     # Real virus scanning (Phase 10). clamd unreachable → 503 + audit.
     # Signature match → 422 + audit. Neither branch persists the file.
     try:
-        scan_result = clamav_service.scan(data, filename)
+        scan_result = await clamav_service.scan(data, filename, file_id=doc_id, user_id=ctx["account"]["id"])
     except ClamAVUnreachable as e:
         await write_audit(
             context_id, ctx["account"]["id"],
@@ -266,7 +270,6 @@ async def upload_document(
             ).to_list(100)
             mention_ids = [v["account_id"] for v in valid]
 
-    doc_id = str(uuid.uuid4())
     storage_key = save_to_storage(context_id, doc_id, filename, data)
     text, err = extract_text(data, filename, file.content_type or "")
     preview = make_preview(text)

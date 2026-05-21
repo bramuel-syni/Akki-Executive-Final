@@ -141,7 +141,7 @@ async def get_inbound_queue_item(
                 # suppress the preview. The accept path performs the
                 # blocking scan with audit rows.
                 try:
-                    scan_result = clamav_service.scan(data, filename)
+                    scan_result = await clamav_service.scan(data, filename, file_id=row.get("id"), user_id=ctx["account"]["id"])
                     if scan_result.clean:
                         text, _err = extract_text(data, filename, primary.get("ContentType") or "")
                         if text:
@@ -202,7 +202,7 @@ async def accept_inbound_queue_item(
             raise HTTPException(status_code=400, detail="Attachment payload corrupt.") from None
         filename = primary.get("Name") or "attachment"
         try:
-            scan_result = clamav_service.scan(data, filename)
+            scan_result = await clamav_service.scan(data, filename, file_id=queue_id, user_id=ctx["account"]["id"])
         except ClamAVUnreachable as e:
             await write_audit(
                 context_id, ctx["account"]["id"],
