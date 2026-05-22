@@ -53,6 +53,42 @@ log = logging.getLogger("synisense.shield.deidentifier")
 # Regex layer — Phase A locked patterns.
 # Token type labels follow the brief verbatim (uppercase).
 # ─────────────────────────────────────────────────────────────────────
+#
+# Demo-blocker patch (2026-02): added Luhn-validated CREDIT_CARD layer
+# (runs BEFORE ACCOUNT_NUM so 13-19 digit Luhn-valid runs are tagged
+# correctly), UK_NI_NUMBER, and API_KEY families. The audit panel
+# label map in `routers/chat_audit_panel.py:_ENTITY_LABEL` carries the
+# user-visible prose for each new type.
+
+def _luhn_valid(digits_only: str) -> bool:
+    """Standard mod-10 Luhn check. `digits_only` must already be a
+    digit-only string (callers normalise away spaces/dashes). Returns
+    True iff the run passes Luhn — i.e. is a plausible payment-card
+    PAN rather than a generic 13-19 digit number."""
+    if not digits_only or not digits_only.isdigit():
+        return False
+    total = 0
+    parity = len(digits_only) % 2
+    for i, ch in enumerate(digits_only):
+        d = int(ch)
+        if i % 2 == parity:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return total % 10 == 0
+
+
+# Patterns whose hits are POST-FILTERED by an extra predicate before
+# being treated as redactions. Keys map the entity type to a predicate
+# that takes the raw match text and returns True iff it should redact.
+_REGEX_VALIDATORS: Dict[str, Any] = {
+    # CREDIT_CARD: digits-only Luhn check. Filters out random 13-19
+    # digit runs (order numbers, IDs) that happen to match the shape.
+    "CREDIT_CARD": lambda raw: _luhn_valid(re.sub(r"[\s\-]", "", raw)),
+}
+
+
 _REGEX_PATTERNS: List[Tuple[str, re.Pattern]] = [
     # MONEY — currency symbols + amount, or amount + ISO code. Capture
     # the whole match including currency. Order matters: this MUST run
@@ -62,16 +98,50 @@ _REGEX_PATTERNS: List[Tuple[str, re.Pattern]] = [
         r"\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?\s?(?:USD|EUR|GBP|JPY|INR|CHF|CAD|AUD|NZD))"
     )),
     ("EMAIL", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")),
+    # API_KEY — runs early so a Bearer/JWT/AKIA token isn't shredded by
+    # a more permissive downstream pattern. Several distinct families
+    # in one combined alternation; ALL families produce the same
+    # token type ("API_KEY") with the same redacted placeholder.
+    ("API_KEY", re.compile(
+        # AWS access-key ids (always 20 chars, AKIA prefix).
+        r"\bAKIA[0-9A-Z]{16}\b"
+        # Stripe-style secret/publishable keys (sk_live_, sk_test_, pk_live_, pk_test_, rk_).
+        r"|\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b"
+        # GitHub personal-access / fine-grained / app tokens.
+        r"|\bgh[ps]_[A-Za-z0-9]{36,}\b"
+        # SendGrid (SG.<22-char>.<43-char>).
+        r"|\bSG\.[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{20,}\b"
+        # Slack tokens (xoxb-, xoxa-, xoxp-, xoxr-, xoxs-).
+        r"|\bxox[abprso]-[A-Za-z0-9\-]{10,}\b"
+        # JWTs (header.payload.signature, all base64url).
+        r"|\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b"
+        # `Bearer <opaque>` — keep the Bearer prefix in the match so
+        # the placeholder fully replaces it.
+        r"|\bBearer\s+[A-Za-z0-9._\-]{20,}\b"
+        # OpenAI-style sk-... keys (covers both classic and project keys).
+        r"|\bsk-[A-Za-z0-9_\-]{20,}\b"
+    )),
     # PHONE_E164 — E.164-ish (+ prefix, 10–15 digits with optional
     # spaces/dashes/parens). The course correction names this explicitly.
     ("PHONE_E164", re.compile(
         r"\+\d{1,3}[\s.\-]?\(?\d{2,4}\)?[\s.\-]?\d{3,4}[\s.\-]?\d{3,4}"
     )),
     ("IBAN", re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{10,30}\b")),
+    # CREDIT_CARD — 13 to 19 digits with optional space/dash
+    # separators. Luhn-validated downstream via _REGEX_VALIDATORS so
+    # non-card 16-digit numbers (order ids, etc.) don't false-positive.
+    # MUST run BEFORE ACCOUNT_NUM so Luhn-valid runs claim the span
+    # first (same priority + same span → first emitter wins).
+    ("CREDIT_CARD", re.compile(r"\b(?:\d[\s\-]?){12,18}\d\b")),
     # ACCOUNT_NUM — bank-account-shaped runs of 8–17 digits. Matched
-    # AFTER MONEY so prices aren't swallowed. We accept optional
-    # dash/space separators.
+    # AFTER MONEY and CREDIT_CARD so prices and PANs aren't swallowed.
     ("ACCOUNT_NUM", re.compile(r"\b\d{8,17}\b")),
+    # UK_NI_NUMBER — National Insurance Number, two prefix letters
+    # (with several disallowed letters per HMRC rules), six digits,
+    # one trailing letter A-D. Case-insensitive in practice.
+    ("UK_NI_NUMBER", re.compile(
+        r"\b[A-CEGHJ-PR-TW-Z]{2}\d{6}[A-D]\b", re.IGNORECASE,
+    )),
     ("SSN", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
     ("DATE_ISO", re.compile(r"\b\d{4}-\d{2}-\d{2}\b")),
     ("IP", re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")),
@@ -229,10 +299,18 @@ async def deidentify(content: str, *, tenant_id: str) -> DeIdResult:
 
     # Layer 1 — regex.
     for label, pat in _REGEX_PATTERNS:
+        validator = _REGEX_VALIDATORS.get(label)
         for m in pat.finditer(original):
+            raw_match = m.group(0)
+            if validator is not None and not validator(raw_match):
+                # E.g. CREDIT_CARD shape matched but Luhn failed —
+                # drop the hit so a downstream pattern (ACCOUNT_NUM)
+                # can still claim the span if it overlaps. Hits with
+                # no validator pass through unchanged.
+                continue
             hits.append({
                 "start": m.start(), "end": m.end(),
-                "type": label, "match": m.group(0), "priority": 1,
+                "type": label, "match": raw_match, "priority": 1,
             })
 
     # Layer 2 — tenant entity dictionary.

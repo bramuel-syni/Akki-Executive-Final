@@ -52,7 +52,11 @@ _ENTITY_LABEL = {
     "DATE_ISO":    "date",
     "IP":          "IP address",
     "URL":         "web address",
-    "SSN":         "national identifier",
+    "SSN":         "national identifier (US SSN)",
+    # Demo-blocker patch (2026-02) — new Shield regex entity families.
+    "CREDIT_CARD":   "payment card number",
+    "UK_NI_NUMBER":  "UK national insurance number",
+    "API_KEY":       "API key / credential token",
 }
 
 _PROVIDER_PRETTY = {

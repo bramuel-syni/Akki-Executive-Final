@@ -1485,6 +1485,25 @@ async def send_message(
                 "version": "synisense-shield-v1",
                 "audit_id": shield_audit_id,
             }
+            # Demo-blocker patch (2026-02) — propagate Shield's actual
+            # de-id counts back onto the persisted user_message row.
+            # Without this, the user_message bubble in the UI shows
+            # `identifiers_masked: 0` even when Shield redacted PII,
+            # because user_msg was inserted BEFORE Shield ran.
+            user_msg["shielding"] = detected
+            user_msg["synisense_stats"] = syn_stats
+            user_msg["shielded"] = has_identifiers or will_shield
+            try:
+                await db.chat_messages.update_one(
+                    {"id": user_msg["id"], "account_id": current["id"]},
+                    {"$set": {
+                        "shielding": detected,
+                        "synisense_stats": syn_stats,
+                        "shielded": user_msg["shielded"],
+                    }},
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("failed to back-fill user_msg shielding counts")
         except Exception:  # noqa: BLE001 — non-fatal; audit failure shouldn't break reply
             logger.warning("failed to $push synisense_audit_id to chat session")
 
