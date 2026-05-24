@@ -7,6 +7,39 @@ v4.0 (Build Sequence — 18 modules across 5 streams with prescriptive design ma
 The user selected **Path A (v4.0 Free Tier)**: follow v4.0 module boundaries but skip any
 module that requires a paid/external service.
 
+## H3 — Trust Center v1 — 2026-05-24 ✅
+Visible artifact of the entire Shield architecture. Two views,
+one drill-down, one plaintext modal, one standards-aligned footer.
+
+- **Backend** — `routers/trust_center.py` (4 endpoints):
+  * `GET /api/trust-center/session/{chat_id}` — promise summary +
+    per-turn list, with strict context-scope guard.
+  * `GET /api/trust-center/session/{chat_id}/turn/{message_id}` —
+    full evidence: input SHA-256 + tokenized prompt + LLM response
+    (tokenized) + re-identified visible text + redactions +
+    audit chain.
+  * `GET /api/trust-center/session/{chat_id}/turn/{message_id}/plaintext`
+    — ONLY surface returning raw plaintext. Owner-OR-context-superadmin
+    gated. Writes `trust_center.plaintext_viewed` audit row on every
+    read.
+  * `GET /api/trust-center/activity` + `/activity/export` —
+    cross-conversation aggregate, server-side context scoping.
+- **Frontend** — `pages/TrustCenter.jsx` at route `/app/trust-center`.
+  Top-bar entry added between Documents and the workspace pill.
+- **Tests** — `tests/test_trust_center.py` 9 wire-level tests
+  (owner reads, cross-context 403, drill-down shows tokenized NOT
+  raw PAN, plaintext owner 200+audit-row, non-owner same-context 403,
+  context-superadmin 200+audit-row, activity cross-context 403,
+  activity no-leakage, pre-Shield-v1.x empty state).
+- **Conservative plaintext policy enforced**: no new collections,
+  no plaintext duplication. SHA surfaced everywhere except the
+  explicit plaintext endpoint.
+- **Standards footer**: SOC2 CC4/CC6/CC7 · GDPR Art. 5/25/28/32 ·
+  ISO 27001 A.8.2 + A.12.4.1 · NIST AI RMF Map-3.4 · EU AI Act Art. 50.
+  Each segment tooltipped.
+- **Regression**: 222/223 GREEN (+9 H3, 1 pre-existing skip).
+
+
 ## H2.5 FINAL Consolidated Closeout (H1 + H2.5) — 2026-05-24 ✅
 Independent `e1_tester` cleared H2.5 at 5/5 GREEN and surfaced two
 cleanup warnings; both shipped in this follow-up.

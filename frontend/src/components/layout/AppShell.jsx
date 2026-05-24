@@ -335,6 +335,21 @@ export default function AppShell({ children }) {
             <span className="hidden sm:inline">Documents</span>
           </button>
 
+          {/* H3 — Trust Center entry. American spelling. Sits between
+              Documents and the workspace pill so the privacy promise
+              is visible without leaving the parchment aesthetic. */}
+          <button
+            type="button"
+            onClick={() => navigate("/app/trust-center")}
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 text-[12.5px] text-[var(--deep)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
+            aria-label="Open Trust Center"
+            data-testid="topbar-trust-center-btn"
+            title="Open Trust Center"
+          >
+            <ShieldCheck className="w-4 h-4" strokeWidth={1.7} />
+            <span className="hidden sm:inline">Trust Center</span>
+          </button>
+
           {/* Phase 13.3 — discoverable shortcut overlay trigger. Press ?
               keyboard-side achieves the same; this gives mouse users a
               way to find the shortcuts list without trying random keys. */}

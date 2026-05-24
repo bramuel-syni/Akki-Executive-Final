@@ -45,6 +45,7 @@ const WebsiteProductCycle = lazy(() => import("@/website/pages/product/CycleMana
 const WebsiteProductMonitor = lazy(() => import("@/website/pages/product/Monitor"));
 const WebsiteProductPulse = lazy(() => import("@/website/pages/product/Pulse"));
 const WebsiteProductJournal = lazy(() => import("@/website/pages/product/DocumentJournal"));
+const TrustCenter = lazy(() => import("@/pages/TrustCenter"));  // H3
 const WebsiteForExecutives = lazy(() => import("@/website/pages/ForExecutives"));
 const WebsiteForExco = lazy(() => import("@/website/pages/ForExco"));
 const WebsiteForNeds = lazy(() => import("@/website/pages/ForNeds"));
@@ -282,6 +283,7 @@ function App() {
           <Route path="/app/simulate" element={<Gated><Simulate /></Gated>} />
           <Route path="/app/lens" element={<Gated><LensRoom /></Gated>} />
           <Route path="/app/chat" element={<Gated><Chat /></Gated>} />
+          <Route path="/app/trust-center" element={<Gated><TrustCenter /></Gated>} />  {/* H3 */}
           <Route path="/app/chats/archived" element={<Gated><ArchivedChats /></Gated>} />
           <Route path="/app/influence" element={<Gated><InfluenceMap /></Gated>} />
           <Route path="/admin/health" element={<ProtectedRoute><HealthDashboard /></ProtectedRoute>} />
