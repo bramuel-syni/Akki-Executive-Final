@@ -859,6 +859,98 @@ async def test_wire_admin_audit_invariant_violations_endpoint_exists(client):
     assert set(summary.keys()) >= {"since", "total", "by_kind"}, summary
 
 
+async def test_wire_stream_envelope_audit_id_resolves_to_shield_row(client):
+    """**Warning #1 fix verification.** The streaming `message`
+    envelope's ``audit_id`` field must carry the Shield audit_id
+    (with ``aud-`` prefix) so ``GET /api/v1/shield/audit/{audit_id}``
+    resolves to 200 — not the bare-uuid chat_audit_log row id that
+    hits 404.
+
+    Independent re-run::
+
+        # Send a streaming message and parse the trailing
+        # `type: message` event to extract the envelope audit_id:
+        ENVELOPE_AUDIT=$(grep '"type": "message"' /tmp/sse.txt \\
+            | python3 -c "import sys,json; \\
+              line=sys.stdin.read().split('data: ')[-1]; \\
+              print(json.loads(line)['audit_id'])")
+        # Resolve it against the Shield audit endpoint:
+        curl -s "$API/api/v1/shield/audit/$ENVELOPE_AUDIT" \\
+            -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+        # Expect: 200 + a row with `audit_id` matching the envelope
+        # NOT: 404 "audit not found"
+    """
+    from services import llm_streaming as _ls
+    from collections import namedtuple
+
+    token, ctx_id, chat_id, account_id, hdrs = await _login_and_chat(client)
+    _Chunk = namedtuple("_Chunk", "kind text provider_used fallback_triggered error")
+
+    async def _fake_stream(*, provider, model_id, system_msg, user_text, session_id):
+        yield _Chunk("delta", "Acknowledged.", provider, False, None)
+        yield _Chunk("done", "", provider, False, None)
+
+    with mock.patch.object(_ls, "stream_llm_direct", side_effect=_fake_stream):
+        body = {
+            "content": "My card is 4111111111111111 please charge it.",
+            "shielding_policy": "always",
+        }
+        async with client.stream(
+            "POST", f"/api/chats/{chat_id}/messages/stream",
+            json=body, headers=hdrs, timeout=30.0,
+        ) as resp:
+            chunks = []
+            async for chunk in resp.aiter_bytes():
+                chunks.append(chunk)
+            assert resp.status_code == 200
+            body_text = b"".join(chunks).decode("utf-8", "replace")
+
+    # Parse the trailing `type: message` SSE event.
+    message_event = None
+    for line in body_text.split("\n\n"):
+        if '"type": "message"' in line:
+            payload = line.split("data: ", 1)[-1].strip()
+            import json as _json
+            message_event = _json.loads(payload)
+            break
+    assert message_event is not None, (
+        f"no type=message SSE event in stream body: {body_text[:500]!r}"
+    )
+
+    envelope_audit_id = message_event.get("audit_id")
+    assert envelope_audit_id, (
+        f"Warning #1: envelope.audit_id is empty: {message_event!r}"
+    )
+    # Must be Shield-shaped, not chat_audit_log-shaped.
+    assert envelope_audit_id.startswith("aud-"), (
+        f"Warning #1: envelope.audit_id must start with 'aud-' "
+        f"(Shield row id). Got: {envelope_audit_id!r}"
+    )
+
+    # ── (THE) wire-level resolve check ──
+    resp = await client.get(
+        f"/api/v1/shield/audit/{envelope_audit_id}", headers=hdrs,
+    )
+    assert resp.status_code == 200, (
+        f"Warning #1: envelope.audit_id={envelope_audit_id!r} does "
+        f"NOT resolve via GET /api/v1/shield/audit/{{id}}. "
+        f"Status={resp.status_code}, body={resp.text[:300]!r}"
+    )
+    row = resp.json()
+    assert row.get("audit_id") == envelope_audit_id, row
+
+    # ── Backward-compat: the chat_audit_log row id is still
+    # exposed under `chat_audit_id` for callers that need it ──
+    chat_audit_id = message_event.get("chat_audit_id")
+    assert chat_audit_id is not None, (
+        f"Warning #1: chat_audit_id companion field missing. "
+        f"Envelope: {message_event!r}"
+    )
+    assert chat_audit_id != envelope_audit_id, (
+        f"chat_audit_id and audit_id must be DIFFERENT ids."
+    )
+
+
 # ═════════════════════════════════════════════════════════════════════
 # Independent re-run recipe (for `e1_tester` / human auditors)
 # ═════════════════════════════════════════════════════════════════════
@@ -874,6 +966,8 @@ async def test_wire_admin_audit_invariant_violations_endpoint_exists(client):
 #       — the H2.5 follow-up F#2 fix
 #   (h) /api/admin/audit-invariant-violations exists & is gated
 #       — the H2.5 follow-up F#3 fix
+#   (i) envelope.audit_id resolves via GET /api/v1/shield/audit/{id}
+#       — the H2.5 follow-up Warning #1 fix
 #
 # To re-run outside pytest (against the deployed preview):
 #

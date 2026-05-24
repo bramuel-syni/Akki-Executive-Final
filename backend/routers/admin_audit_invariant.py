@@ -60,10 +60,26 @@ async def list_audit_invariant_violations(
             "``luhn_pan_in_shielded_prompt``. Empty string returns all kinds."
         ),
     ),
+    include_test: bool = Query(
+        False,
+        description=(
+            "Include rows produced by pytest fixtures (accounts with "
+            "``@example.com`` or ``test+`` email patterns). Defaults to "
+            "false so the operator view shows real-user violations only."
+        ),
+    ),
     limit: int = Query(500, ge=1, le=5000),
     _admin: Dict[str, Any] = Depends(_require_superadmin),
 ) -> Dict[str, Any]:
     """List recent audit-invariant violations. Read-only.
+
+    H2.5 follow-up (2026-05-24) — ``include_test=false`` by default
+    suppresses test-residue rows so the operator's view shows only
+    violations on real user accounts. The pytest suite mocks
+    ``deidentifier.deidentify`` to raise ``RuntimeError`` and triggers
+    exactly one ``shield_failure_at_entry`` row per run; with
+    ``include_test=false`` those rows are hidden from the
+    real-traffic view.
 
     Response shape::
 
@@ -91,6 +107,26 @@ async def list_audit_invariant_violations(
     rows: List[Dict[str, Any]] = await db.audit_invariant_violations.find(
         match, {"_id": 0},
     ).sort("ts", -1).to_list(length=limit)
+
+    # H2.5 follow-up — suppress test-residue rows. Pytest fixtures
+    # register accounts under ``@example.com``; the suite's
+    # ``test_wire_shield_unavailable_returns_503`` deliberately raises
+    # RuntimeError to verify the 503 path, which writes one row per
+    # test invocation. Filtering by account email keeps the operator
+    # alarm honest.
+    if not include_test:
+        candidate_ids = sorted({
+            r.get("account_id") for r in rows if r.get("account_id")
+        })
+        if candidate_ids:
+            test_accounts = await db.accounts.find(
+                {"id": {"$in": list(candidate_ids)},
+                 "email": {"$regex": "@example\\.com$|^test\\+", "$options": "i"}},
+                {"_id": 0, "id": 1},
+            ).to_list(length=len(candidate_ids))
+            test_ids = {a["id"] for a in test_accounts}
+            if test_ids:
+                rows = [r for r in rows if r.get("account_id") not in test_ids]
 
     by_kind: Dict[str, int] = {}
     for r in rows:

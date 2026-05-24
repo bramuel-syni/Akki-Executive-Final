@@ -7,30 +7,28 @@ v4.0 (Build Sequence — 18 modules across 5 streams with prescriptive design ma
 The user selected **Path A (v4.0 Free Tier)**: follow v4.0 module boundaries but skip any
 module that requires a paid/external service.
 
-## H2.5 Follow-Up — Shield Uniformity (3-failure fix) — 2026-05-24 ✅
-Independent `e1_tester` caught three live-surface failures after the
-H2.5 corrective sprint landed (pytest was green but the live preview
-still leaked / lied / lacked the admin endpoint).
+## H2.5 FINAL Consolidated Closeout (H1 + H2.5) — 2026-05-24 ✅
+Independent `e1_tester` cleared H2.5 at 5/5 GREEN and surfaced two
+cleanup warnings; both shipped in this follow-up.
 
-- **F#1 — `/synisense-metrics` returned 0 on PAN-containing turns** ←
-  fixed by canonical `mint_chat_outcome()` mint
-  (`services/synisense/shield/canonical.py`). All chat surfaces
-  (chat_audit_log, synisense_runs, /synisense-metrics, user_msg
-  envelope) now derive from ONE `deidentifier.deidentify(user_text)`
-  pass keyed on the actual (account_id, chat_id, message_id).
-- **F#2 — Sync used `synisense-shield-v1` UPPERCASE, stream
-  envelope used `synisense-pipeline` lowercase** ← fixed by routing
-  BOTH sync and stream through `mint_chat_outcome()`. Vocabulary
-  is now UPPERCASE everywhere (`CREDIT_CARD`, `PERSON`, `EMAIL` …)
-  with `shielded_by="synisense-shield-v1"`.
-- **F#3 — Admin endpoint `/api/admin/audit-invariant-violations`
-  returned 404** ← fixed by new `routers/admin_audit_invariant.py`
-  (two superadmin-gated endpoints: list + summary).
-
-Wire-level verification: `pytest tests/test_h2_5_shield_uniformity.py`
-21/21 GREEN (3 new regression tests added with independent-rerun
-curl recipes in docstrings). Broader regression 201/202 GREEN. Live
-curl evidence in `/app/memory/sprints/H2_5_FOLLOWUP_CLOSEOUT.md`.
+- **Warning #1 — Envelope `audit_id` resolved to 404** ← fixed by
+  surfacing the Shield `aud-<32-char>` id in the streaming
+  `message` envelope. Added `chat_audit_id` companion field for
+  backward compatibility. Wire-level test
+  `test_wire_stream_envelope_audit_id_resolves_to_shield_row`
+  asserts the envelope id resolves via `GET /api/v1/shield/audit/{id}`
+  to 200 with matching audit_id. Live preview verified.
+- **Warning #2 — Baseline `shield_failure_at_entry` rows** ←
+  diagnosed as 100% pytest residue (`h2-5-wire-*@example.com`).
+  Admin endpoint now defaults `include_test=false` so the real-user
+  view shows zero violations; auditors can opt in with
+  `?include_test=true`. Documented in
+  `/app/memory/sprints/H2_5_FINAL_CLOSEOUT.md`.
+- **4 H2.5 screenshots captured** at `/app/memory/screenshots/h2_5/`:
+  streaming PAN redaction, audit panel modal, 503 banner, mode
+  contract markdown.
+- **Final test ledger**: 22/22 H2.5, 87/87 H1, 202/203 across all
+  H2.5-adjacent suites (1 pre-existing skip on Solva v2 invariant).
 
 
 

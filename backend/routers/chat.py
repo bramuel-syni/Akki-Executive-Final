@@ -2147,7 +2147,18 @@ async def stream_message(
                     "message_id": reply_id,
                     "assistant_text": visible_reply,
                     "model": chat["model_id"],
-                    "audit_id": audit_row["id"] if audit_row else None,
+                    # H2.5 follow-up (2026-05-24) — `audit_id` field
+                    # now carries the Shield `aud-<32-char>` id so
+                    # `GET /api/v1/shield/audit/{id}` resolves. Thin-
+                    # input refusal is a deterministic template — no
+                    # Shield call ran on the user text path beyond
+                    # the canonical mint upstream, so this envelope
+                    # carries None for the Shield id and exposes the
+                    # chat_audit row id separately under
+                    # `chat_audit_id` for parity with the
+                    # full-response envelope below.
+                    "audit_id": None,
+                    "chat_audit_id": audit_row["id"] if audit_row else None,
                     "citations": [],
                     "shielding": detected,
                     "will_shield": will_shield,
@@ -2306,6 +2317,17 @@ async def stream_message(
         started_ms = time.monotonic()
         raw_text = ""
         mode = "live"
+        # H2.5 follow-up (2026-05-24) — emit the Shield audit_id (with
+        # `aud-` prefix) in the assistant `message` envelope so the
+        # `GET /api/v1/shield/audit/{audit_id}` endpoint resolves to
+        # the actual Shield row. Previously the envelope emitted
+        # `audit_row["id"]` (the bare-uuid chat_audit_log row id),
+        # which downstream tooling tried to resolve via the Shield
+        # audit endpoint and hit 404. Initialised to None and set by
+        # whichever Shield invocation produced the assistant turn —
+        # strategic_deliverable Pass 2, the streaming
+        # `shield_finalize`, or the post-process retry.
+        emitted_shield_audit_id: Optional[str] = None
         # Phase B.1 — cancel handling. Tracks chars actually emitted to
         # the client so the cancel-path persistence captures only what
         # the user saw, not the full LLM reply that might never have
@@ -2480,6 +2502,9 @@ async def stream_message(
                 )
                 raw_text = p2_sr.get("response") or ""
                 mode = "live"
+                # H2.5 follow-up — surface Pass 2's Shield audit_id
+                # on the envelope so external tooling can resolve it.
+                emitted_shield_audit_id = p2_sr.get("audit_id") or emitted_shield_audit_id
             except Exception as _ex:
                 logger.exception("Strategic-deliverable Shield call failed")
                 raw_text = f"(LLM error: {type(_ex).__name__}: {str(_ex)[:200]})"
@@ -2673,6 +2698,11 @@ async def stream_message(
                             {"id": chat_id, "account_id": current["id"]},
                             {"$push": {"synisense_audit_ids": _stream_audit_id}},
                         )
+                        # H2.5 follow-up — surface the Shield audit_id
+                        # (with `aud-` prefix) on the envelope so
+                        # `GET /api/v1/shield/audit/{audit_id}` resolves
+                        # to the actual Shield row.
+                        emitted_shield_audit_id = _stream_audit_id or emitted_shield_audit_id
                     except Exception:  # noqa: BLE001
                         logger.warning("shield_finalize on stream success failed")
                     # Phase A.2 — track that real-time deltas already
@@ -2744,6 +2774,10 @@ async def stream_message(
                     internal_caller=True,
                 )
                 retry_text = retry_sr.get("response") or ""
+                # H2.5 follow-up — supersede the envelope audit_id
+                # with the retry's Shield audit_id when the retry
+                # composed the final reply (i.e. didn't second-violate).
+                _retry_audit_id = retry_sr.get("audit_id")
                 second_hit = _detect_voice_violation(retry_text)
                 if second_hit:
                     # Retry failed; ship original AND record violation.
@@ -2771,6 +2805,11 @@ async def stream_message(
                         "after_text": (retry_text or "")[:600],
                     }
                     raw_text = retry_text
+                    # H2.5 follow-up — supersede the envelope audit_id
+                    # with the retry's Shield row when the retry text
+                    # is the one that shipped.
+                    if _retry_audit_id:
+                        emitted_shield_audit_id = _retry_audit_id
             except Exception as e:  # noqa: BLE001
                 logger.warning(
                     "banned-word retry failed (%s); shipping original",
@@ -3067,7 +3106,16 @@ async def stream_message(
                 "message_id": reply_id,
                 "assistant_text": cleaned_reply,
                 "model": chat["model_id"],
-                "audit_id": audit_row["id"] if audit_row else None,
+                # H2.5 follow-up (2026-05-24) — emit the Shield
+                # audit_id (with `aud-` prefix). Was emitting
+                # `audit_row["id"]` (the bare-uuid chat_audit_log
+                # row id), which downstream tooling tried to resolve
+                # via `GET /api/v1/shield/audit/{id}` and hit 404.
+                # `chat_audit_id` carries the chat_audit_log row id
+                # for callers that still need it (UI history fetcher,
+                # bank-auditor chain verifier).
+                "audit_id": emitted_shield_audit_id,
+                "chat_audit_id": audit_row["id"] if audit_row else None,
                 "citations": citations,
                 "shielding": detected,
                 "will_shield": will_shield,
