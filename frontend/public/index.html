@@ -19,7 +19,18 @@
         work correctly both with client-side routing and a non-root public URL.
         Learn how to configure a non-root public URL by running `npm run build`.
         -->
-        <title>Emergent | Fullstack App</title>
+        <title>Akki for Executives</title>
+        <!-- H1 (2026-05-24) — Open Graph + Twitter card metadata so link
+             previews don't display the old "Emergent | Fullstack App"
+             default. WebsiteShell.jsx may overwrite per-page; this is
+             the SPA-wide default. -->
+        <meta property="og:title" content="Akki for Executives" />
+        <meta property="og:site_name" content="Akki for Executives" />
+        <meta property="og:type" content="website" />
+        <meta property="og:description" content="Safe AI for executive work — from Syni.ai, Nairobi." />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="Akki for Executives" />
+        <meta name="twitter:description" content="Safe AI for executive work — from Syni.ai, Nairobi." />
         <script>window.addEventListener("error",function(e){if(e.error instanceof DOMException&&e.error.name==="DataCloneError"&&e.message&&e.message.includes("PerformanceServerTiming")){e.stopImmediatePropagation();e.preventDefault()}},true);</script>
         <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
     </head>

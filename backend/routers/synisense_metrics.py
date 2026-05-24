@@ -34,6 +34,30 @@ router = APIRouter(prefix="/api", tags=["synisense_metrics"])
 _CHAT_SURFACES = ["chat", "chat_classifier", "chat_four_check", "chat_evidence_list"]
 
 
+# H1 (2026-05-24) — Shield v1.x deploy timestamp. Chats created BEFORE
+# this point predate the audit-id back-fill patch; their topline counters
+# can't accurately reflect Shield activity, so the storyline switches to
+# a transparent "this conversation predates Shield v1.x" indicator
+# instead of the misleading "Synisense Shield is on standby" copy.
+#
+# Override via env `SHIELD_V1_DEPLOY_TIMESTAMP` (ISO 8601, e.g.
+# `2026-05-22T07:00:00Z`). H4 will back-fill these old chats; once that
+# completes, the env var can be cleared and the gate goes inert.
+import os as _os
+_SHIELD_V1_DEPLOY_TIMESTAMP_STR = _os.environ.get(
+    "SHIELD_V1_DEPLOY_TIMESTAMP",
+    "2026-05-22T07:00:00Z",
+)
+
+
+def _shield_v1_cutoff() -> datetime | None:
+    """Parse the configured cutoff to a tz-aware datetime. Returns None
+    if the env value is malformed — callers then skip the pre-v1 gate
+    (fail-open into the normal storyline rather than silently mis-label
+    every conversation)."""
+    return _coerce_to_datetime(_SHIELD_V1_DEPLOY_TIMESTAMP_STR)
+
+
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -113,9 +137,18 @@ async def _aggregate(query: Dict[str, Any]) -> Dict[str, Any]:
 
 def _build_storyline(identifiers: int, runs: int, breakdown: Dict[str, int]) -> str:
     """One editorial sentence synthesising the redaction record. Voice
-    is senior peer, no superlatives."""
+    is senior peer, no superlatives.
+
+    H1 (2026-05-24) — Dropped the "Synisense Shield is on standby" copy
+    for the zero-counter case. Reads as if Shield isn't doing anything,
+    when the truth is the conversation simply hasn't contained any
+    identifiers yet. The new copy is neutral and accurate. The
+    "predates Shield v1.x" case is decided one level up in the handler
+    (it needs `chat.created_at`, not just counts) and emitted via the
+    `_pre_shield_v1_storyline()` helper below.
+    """
     if identifiers == 0 and runs == 0:
-        return "Nothing has needed redaction in this conversation yet — Synisense Shield is on standby."
+        return "No identifiers needed shielding in this conversation yet."
     layers_used = [k for k, v in breakdown.items() if v > 0]
     layer_phrase = (
         "three layers" if len(layers_used) >= 3
@@ -128,6 +161,26 @@ def _build_storyline(identifiers: int, runs: int, breakdown: Dict[str, int]) -> 
         f"— names, emails, account numbers and similar — "
         f"{'were' if identifiers != 1 else 'was'} masked deterministically across {runs} model call{'s' if runs != 1 else ''}. "
         f"Nothing left your tenant."
+    )
+
+
+def _pre_shield_v1_storyline() -> str:
+    """Honest copy for chats that predate the Shield v1.x deploy.
+
+    These conversations DID run through earlier Shield versions, but
+    their `chat.synisense_audit_ids` array was never populated — so
+    today's metrics aggregation reports zero counters even though
+    Shield was active at the time. H4 will back-fill; until then, we
+    surface the truth instead of the misleading "on standby" copy.
+    """
+    cutoff = _shield_v1_cutoff()
+    if cutoff is None:
+        # Env value malformed — fall back to the normal zero copy.
+        return "No identifiers needed shielding in this conversation yet."
+    return (
+        f"This conversation predates Shield v1.x. Counters and audit "
+        f"trail begin from {cutoff.strftime('%Y-%m-%d')} — earlier "
+        f"chats will be back-filled in an upcoming maintenance window."
     )
 
 
@@ -163,13 +216,33 @@ async def chat_synisense_metrics(chat_id: str) -> Dict[str, Any]:
         "ts": {"$gte": created_at},
     }
     agg = await _aggregate(query)
-    storyline = _build_storyline(agg["identifiers"], agg["runs"], agg["layer_breakdown"])
+    # H1 (2026-05-24) — Decide whether to render the "predates Shield
+    # v1.x" honest indicator. Per the H1 brief, the gate is two-part:
+    #   1. `chat.created_at < SHIELD_V1_DEPLOY_TIMESTAMP` (env-configured)
+    #   2. The chat has no `synisense_audit_ids` attached.
+    # The second leg is CHAT-SPECIFIC (whereas `agg` above is scoped to
+    # the account + surface, not the chat — pre-existing semantic). Using
+    # the chat-level audit-id array gives an accurate pre-v1 signal: it's
+    # the same array the audit-panel endpoints resolve against, and it's
+    # the array H4's back-fill will populate.
+    cutoff = _shield_v1_cutoff()
+    chat_audit_ids = chat.get("synisense_audit_ids") or []
+    pre_v1 = (
+        cutoff is not None
+        and created_at < cutoff
+        and len(chat_audit_ids) == 0
+    )
+    if pre_v1:
+        storyline = _pre_shield_v1_storyline()
+    else:
+        storyline = _build_storyline(agg["identifiers"], agg["runs"], agg["layer_breakdown"])
     return {
         "chat_id": chat_id,
         "identifiers_redacted": agg["identifiers"],
         "model_calls": agg["runs"],
         "layer_breakdown": agg["layer_breakdown"],
         "storyline": storyline,
+        "pre_shield_v1": pre_v1,
     }
 
 

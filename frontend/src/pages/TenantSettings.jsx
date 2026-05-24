@@ -790,7 +790,7 @@ export default function Settings() {
             <section className="bg-white border border-[#E1E6ED] rounded-sm" data-testid="trust-centre">
               <div className="px-6 py-4 border-b border-[#E1E6ED]">
                 <p className="text-sm font-medium text-[var(--ink)] flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-[var(--chrome)]" /> Trust centre
+                  <ShieldCheck className="w-4 h-4 text-[var(--chrome)]" /> Trust Center
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
                   Four promises AKKI keeps. Each is enforced in code, not marketing.

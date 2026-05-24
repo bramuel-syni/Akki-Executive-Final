@@ -827,7 +827,7 @@ export default function AppShell({ children }) {
               className="ml-auto hover:text-[var(--ink)] transition-colors cursor-pointer bg-transparent border-0 p-0 m-0 font-mono uppercase tracking-wider text-[10.5px] text-[var(--muted)]"
               data-testid="trust-footer-link"
             >
-              Trust centre →
+              Trust Center →
             </button>
           </footer>
         </main>

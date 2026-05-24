@@ -24,7 +24,11 @@ const OG_IMAGE = "/static/media/home-hero.webp";
 export default function WebsiteShell({ children, title, description, pathname, ogImage }) {
   // Per-page meta + canonical.
   useEffect(() => {
-    if (title) document.title = title;
+    // H1 (2026-05-24) — Browser tab title is uniform across every
+    // page of the website: "Akki for Executives". Per-page distinction
+    // moves into og:title / twitter:title so link previews stay
+    // descriptive; the browser tab itself just identifies the brand.
+    document.title = "Akki for Executives";
     const setMeta = (name, content) => {
       if (!content) return;
       let m = document.querySelector(`meta[name="${name}"]`);
