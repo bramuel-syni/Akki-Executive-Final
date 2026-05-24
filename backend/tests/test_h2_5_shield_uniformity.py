@@ -538,11 +538,20 @@ async def test_wire_audit_invariant_violations_collection_empty_for_normal_flow(
 
 
 async def test_wire_shield_unavailable_returns_503(client):
-    """Fix #3 strict-raise: if the legacy `_syn_shield` pipeline
-    raises in the streaming entry, the endpoint returns 503 + the
-    documented body, AND `audit_invariant_violations` logs the
-    shield_failure_at_entry kind."""
-    from services.synisense import adapter
+    """Fix #3 strict-raise: if Shield's de-identifier raises in the
+    streaming entry, the endpoint returns 503 + the documented body,
+    AND `audit_invariant_violations` logs the shield_failure_at_entry
+    kind.
+
+    H2.5 follow-up (2026-05-24) — chat-family surfaces now route
+    through `services.synisense.shield.canonical.mint_chat_outcome`
+    which calls `deidentifier.deidentify` directly (not the legacy
+    adapter → pipeline.run/dryrun). Patching the de-identifier
+    surfaces the failure at the same point the legacy adapter did,
+    so the route's `except ShieldFailure → 503` translation still
+    fires.
+    """
+    from services.synisense.shield import deidentifier
     from core import db
 
     token, ctx_id, chat_id, account_id, hdrs = await _login_and_chat(client)
@@ -550,12 +559,10 @@ async def test_wire_shield_unavailable_returns_503(client):
         {"account_id": account_id, "kind": "shield_failure_at_entry"},
     )
 
-    # Patch BOTH pipeline.run and pipeline.dryrun (adapter routes to
-    # one or the other based on surface).
-    with mock.patch.object(adapter._pipeline, "run",
-                           side_effect=RuntimeError("simulated presidio collapse")), \
-         mock.patch.object(adapter._pipeline, "dryrun",
-                           side_effect=RuntimeError("simulated presidio collapse")):
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("simulated presidio collapse")
+
+    with mock.patch.object(deidentifier, "deidentify", side_effect=_boom):
         body = {
             "content": "Bramuel left his card no 4356789800057689 in KPMG head office.",
             "shielding_policy": "always",
@@ -582,6 +589,277 @@ async def test_wire_shield_unavailable_returns_503(client):
 
 
 # ═════════════════════════════════════════════════════════════════════
+# H2.5 follow-up tests (post `e1_tester` 2/5 PASS finding, 2026-05-24)
+# Three failures the prior pytest suite did NOT cover, asserted here:
+#   F#1 — synisense-metrics + synisense-runs were lying (return 0
+#         identifiers even when shield + chat-audit agree ≥ 1 were
+#         redacted). Assert 3-way agreement on the boolean.
+#   F#2 — sync and stream used different shielders with different
+#         vocabularies (synisense-pipeline / lowercase vs
+#         synisense-shield-v1 / UPPERCASE). Assert by_category parity
+#         on the exact live-tester input string.
+#   F#3 — admin endpoint /api/admin/audit-invariant-violations did
+#         not exist (404). Assert it gates on superadmin AND returns
+#         the documented shape.
+# ═════════════════════════════════════════════════════════════════════
+async def _superadmin_token(client):
+    """Helper — return a superadmin Authorization header dict by
+    logging in as the canonical admin (`admin@akki.ai`). Tests run
+    against the live admin seeded by ``server.startup``."""
+    r = await client.post("/api/auth/login", json={
+        "email": "admin@akki.ai", "password": "AkkiAdmin2026!",
+    })
+    assert r.status_code == 200, (r.status_code, r.text[:300])
+    token = r.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def test_wire_three_way_agreement_metrics_audit_chat(client):
+    """**F#1 fix verification.** Stream a PAN-containing message,
+    then assert all three surfaces report a non-zero count AND
+    surface the SAME UPPERCASE category (``CREDIT_CARD``) for
+    ``shielded_by="synisense-shield-v1"``:
+
+      (a) ``GET /api/chats/{id}/synisense-metrics`` ← aggregates over
+          ``db.synisense_runs``. Was returning 0 before this fix
+          because the streaming pre-pass wrote rows with
+          ``account_id=None`` and a phantom message_id.
+      (b) ``db.synisense_audit_log`` row attached via
+          ``chats.synisense_audit_ids[]``. UPPERCASE keys.
+      (c) ``db.chat_audit_log`` row's ``payload.by_category`` /
+          ``identifiers_detected`` / ``shielded_for_llm``.
+
+    Independent re-run (PROD smoke):
+
+        API=$REACT_APP_BACKEND_URL
+        TOKEN=$(curl -s -X POST "$API/api/auth/login" \\
+            -H 'Content-Type: application/json' \\
+            -d '{"email":"bramuel@syni.ai","password":"Bramuel2026!"}' \\
+            | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+        CTX=$(curl -s "$API/api/auth/me" -H "Authorization: Bearer $TOKEN" \\
+            | python3 -c "import sys,json;print(json.load(sys.stdin)['contexts'][0]['id'])")
+        CHAT=$(curl -s -X POST "$API/api/chats" -H "Authorization: Bearer $TOKEN" \\
+            -H "X-Active-Context: $CTX" -H "Content-Type: application/json" \\
+            -d '{"title":"3-way agreement"}' \\
+            | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
+        curl -s -N -X POST "$API/api/chats/$CHAT/messages/stream" \\
+            -H "Authorization: Bearer $TOKEN" -H "X-Active-Context: $CTX" \\
+            -H "Content-Type: application/json" \\
+            -d '{"content":"My card is 4111111111111111","shielding_policy":"always"}' \\
+            > /dev/null
+        curl -s "$API/api/chats/$CHAT/synisense-metrics" \\
+            -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+        # expect identifiers_redacted ≥ 1
+    """
+    from services import llm_streaming as _ls
+    from core import db
+    from collections import namedtuple
+
+    token, ctx_id, chat_id, account_id, hdrs = await _login_and_chat(client)
+
+    _Chunk = namedtuple("_Chunk", "kind text provider_used fallback_triggered error")
+
+    async def _fake_stream(*, provider, model_id, system_msg, user_text, session_id):
+        yield _Chunk("delta", "Acknowledged.", provider, False, None)
+        yield _Chunk("done", "", provider, False, None)
+
+    pan = "4111111111111111"  # canonical Luhn-valid PAN (Visa test card)
+    with mock.patch.object(_ls, "stream_llm_direct", side_effect=_fake_stream):
+        body = {
+            "content": f"My card is {pan} please charge it.",
+            "shielding_policy": "always",
+        }
+        async with client.stream(
+            "POST", f"/api/chats/{chat_id}/messages/stream",
+            json=body, headers=hdrs, timeout=30.0,
+        ) as resp:
+            async for _ in resp.aiter_bytes():
+                pass
+            assert resp.status_code == 200
+
+    # ── (a) synisense-metrics ── must report ≥ 1 ──
+    metrics_resp = await client.get(
+        f"/api/chats/{chat_id}/synisense-metrics", headers=hdrs,
+    )
+    assert metrics_resp.status_code == 200, metrics_resp.text[:300]
+    metrics = metrics_resp.json()
+    metrics_total = int(metrics.get("identifiers_redacted") or 0)
+    assert metrics_total > 0, (
+        f"F#1: /synisense-metrics still returns 0 identifiers_redacted "
+        f"for a PAN-containing turn. Response: {metrics}"
+    )
+
+    # ── (b) Shield audit row ── must carry CREDIT_CARD (UPPERCASE) ──
+    chat_doc = await db.chats.find_one(
+        {"id": chat_id}, {"_id": 0, "synisense_audit_ids": 1},
+    )
+    audit_ids = (chat_doc or {}).get("synisense_audit_ids") or []
+    assert audit_ids, f"no synisense_audit_ids attached: {chat_doc}"
+    shield_rows = await db.synisense_audit_log.find(
+        {"audit_id": {"$in": audit_ids}}, {"_id": 0},
+    ).to_list(None)
+    shield_summaries = [r.get("de_id_summary", {}) for r in shield_rows]
+    shield_total = sum(sum(s.values()) for s in shield_summaries)
+    assert shield_total > 0, shield_summaries
+    assert any("CREDIT_CARD" in s for s in shield_summaries), (
+        f"F#2: synisense_audit_log MUST carry UPPERCASE 'CREDIT_CARD' key. "
+        f"Got: {shield_summaries}"
+    )
+
+    # ── (c) chat_audit row ── must carry CREDIT_CARD (UPPERCASE) ──
+    chat_audits = await db.chat_audit_log.find(
+        {"chat_id": chat_id, "action": "message.sent"}, {"_id": 0},
+    ).to_list(None)
+    assert len(chat_audits) == 1, chat_audits
+    chat_payload = chat_audits[0].get("payload", {})
+    chat_total = int(chat_payload.get("identifiers_detected") or 0)
+    chat_by_cat = chat_payload.get("by_category") or {}
+    assert chat_total > 0, chat_payload
+    assert "CREDIT_CARD" in chat_by_cat, (
+        f"F#2: chat_audit MUST carry UPPERCASE 'CREDIT_CARD' key, "
+        f"NOT lowercase 'card'. Got by_category={chat_by_cat}"
+    )
+
+    # ── Three-way agreement on the BOOLEAN ──
+    assert (metrics_total > 0) == (shield_total > 0) == (chat_total > 0), (
+        f"F#1: Three-way disagreement! "
+        f"metrics={metrics_total}, shield={shield_total}, chat={chat_total}"
+    )
+
+
+async def test_wire_chat_envelope_uses_uppercase_shield_v1_vocabulary(client):
+    """**F#2 fix verification.** Send the live-tester input string
+    `"My card is 4111111111111111..."` and assert the chat envelope
+    (``chat_audit_log.payload.by_category`` + the user_msg's
+    ``shielding.by_category``) carry UPPERCASE keys and
+    ``shielded_by='synisense-shield-v1'`` (NOT lowercase
+    ``card`` / ``synisense-pipeline`` from the legacy adapter).
+
+    Independent re-run (PROD smoke)::
+
+        curl -s -N -X POST "$API/api/chats/$CHAT/messages/stream" \\
+            -H "Authorization: Bearer $TOKEN" -H "X-Active-Context: $CTX" \\
+            -H "Content-Type: application/json" \\
+            -d '{"content":"My card is 4111111111111111","shielding_policy":"always"}' \\
+            > /dev/null
+        # Pull the latest chat message and inspect shielding shape:
+        curl -s "$API/api/chats/$CHAT/messages?limit=2" \\
+            -H "Authorization: Bearer $TOKEN" \\
+            | python3 -c "import sys,json; m=json.load(sys.stdin); \\
+                          print([x['shielding'] for x in m['messages'] if x['role']=='user'][-1])"
+        # expected: {'identifiers_masked': 1, 'by_category': {'CREDIT_CARD': 1},
+        #            'shielded_by': 'synisense-shield-v1'}
+    """
+    from services import llm_streaming as _ls
+    from core import db
+    from collections import namedtuple
+
+    token, ctx_id, chat_id, account_id, hdrs = await _login_and_chat(client)
+    _Chunk = namedtuple("_Chunk", "kind text provider_used fallback_triggered error")
+
+    async def _fake_stream(*, provider, model_id, system_msg, user_text, session_id):
+        yield _Chunk("delta", "Acknowledged.", provider, False, None)
+        yield _Chunk("done", "", provider, False, None)
+
+    with mock.patch.object(_ls, "stream_llm_direct", side_effect=_fake_stream):
+        body = {
+            "content": "My card is 4111111111111111, please charge it.",
+            "shielding_policy": "always",
+        }
+        async with client.stream(
+            "POST", f"/api/chats/{chat_id}/messages/stream",
+            json=body, headers=hdrs, timeout=30.0,
+        ) as resp:
+            async for _ in resp.aiter_bytes():
+                pass
+            assert resp.status_code == 200
+
+    # ── chat_audit_log envelope ──
+    chat_audits = await db.chat_audit_log.find(
+        {"chat_id": chat_id, "action": "message.sent"}, {"_id": 0},
+    ).to_list(None)
+    assert chat_audits, chat_audits
+    payload = chat_audits[0]["payload"]
+    by_cat = payload.get("by_category") or {}
+    # F#2 — UPPERCASE only. The OLD lowercase `card` shape MUST be gone.
+    assert "card" not in by_cat, (
+        f"F#2: chat_audit still has lowercase 'card' key. "
+        f"Vocabulary divergence not fixed. by_category={by_cat}"
+    )
+    assert "CREDIT_CARD" in by_cat, (
+        f"F#2: chat_audit MUST carry UPPERCASE 'CREDIT_CARD'. "
+        f"by_category={by_cat}"
+    )
+
+    # ── user_message.shielding envelope ──
+    user_msg = await db.chat_messages.find_one(
+        {"chat_id": chat_id, "role": "user"}, {"_id": 0},
+    )
+    assert user_msg is not None
+    shielding = user_msg.get("shielding") or {}
+    assert shielding.get("shielded_by") == "synisense-shield-v1", (
+        f"F#2: user_msg.shielding.shielded_by must be "
+        f"'synisense-shield-v1' (NOT 'synisense-pipeline'). "
+        f"Got: {shielding}"
+    )
+    msg_by_cat = shielding.get("by_category") or {}
+    assert "card" not in msg_by_cat and "CREDIT_CARD" in msg_by_cat, (
+        f"F#2: user_msg.shielding.by_category must be UPPERCASE. "
+        f"Got: {msg_by_cat}"
+    )
+
+
+async def test_wire_admin_audit_invariant_violations_endpoint_exists(client):
+    """**F#3 fix verification.** The admin endpoint
+    ``/api/admin/audit-invariant-violations`` MUST exist (was 404
+    before this fix), gate on superadmin (403 for non-admins), and
+    return the documented response shape.
+
+    Independent re-run::
+
+        ADMIN_TOKEN=$(curl -s -X POST "$API/api/auth/login" \\
+            -H 'Content-Type: application/json' \\
+            -d '{"email":"admin@akki.ai","password":"AkkiAdmin2026!"}' \\
+            | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+        curl -s "$API/api/admin/audit-invariant-violations?hours=24" \\
+            -H "Authorization: Bearer $ADMIN_TOKEN" \\
+            | python3 -m json.tool
+        # Expect: {"since": "...", "total": <int>, "by_kind": {...}, "rows": [...]}
+    """
+    # ── (1) 401 unauthenticated ──
+    r = await client.get("/api/admin/audit-invariant-violations")
+    assert r.status_code in (401, 403), (r.status_code, r.text[:300])
+
+    # ── (2) 403 for non-superadmin user ──
+    _t, _c, _ch, _a, hdrs = await _login_and_chat(client)
+    r = await client.get(
+        "/api/admin/audit-invariant-violations", headers=hdrs,
+    )
+    assert r.status_code == 403, (r.status_code, r.text[:300])
+
+    # ── (3) 200 for superadmin with documented shape ──
+    admin_hdrs = await _superadmin_token(client)
+    r = await client.get(
+        "/api/admin/audit-invariant-violations?hours=24", headers=admin_hdrs,
+    )
+    assert r.status_code == 200, (r.status_code, r.text[:300])
+    body = r.json()
+    assert set(body.keys()) >= {"since", "total", "by_kind", "rows"}, body
+    assert isinstance(body["total"], int)
+    assert isinstance(body["by_kind"], dict)
+    assert isinstance(body["rows"], list)
+
+    # ── (4) Summary tile endpoint ──
+    r = await client.get(
+        "/api/admin/audit-invariant-violations/summary?hours=24",
+        headers=admin_hdrs,
+    )
+    assert r.status_code == 200, r.text[:300]
+    summary = r.json()
+    assert set(summary.keys()) >= {"since", "total", "by_kind"}, summary
+
+
+# ═════════════════════════════════════════════════════════════════════
 # Independent re-run recipe (for `e1_tester` / human auditors)
 # ═════════════════════════════════════════════════════════════════════
 # The wire-level tests above prove the streaming chat endpoint:
@@ -590,6 +868,12 @@ async def test_wire_shield_unavailable_returns_503(client):
 #   (c) writes a chat_audit row whose `identifiers_detected > 0`
 #   (d) keeps `audit_invariant_violations` empty during normal flow
 #   (e) returns 503 + invariant-log row when the pipeline fails
+#   (f) /api/chats/{id}/synisense-metrics agrees with (b) and (c)
+#       on the boolean — the H2.5 follow-up F#1 fix
+#   (g) chat envelope carries UPPERCASE CREDIT_CARD + synisense-shield-v1
+#       — the H2.5 follow-up F#2 fix
+#   (h) /api/admin/audit-invariant-violations exists & is gated
+#       — the H2.5 follow-up F#3 fix
 #
 # To re-run outside pytest (against the deployed preview):
 #

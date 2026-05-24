@@ -7,6 +7,33 @@ v4.0 (Build Sequence — 18 modules across 5 streams with prescriptive design ma
 The user selected **Path A (v4.0 Free Tier)**: follow v4.0 module boundaries but skip any
 module that requires a paid/external service.
 
+## H2.5 Follow-Up — Shield Uniformity (3-failure fix) — 2026-05-24 ✅
+Independent `e1_tester` caught three live-surface failures after the
+H2.5 corrective sprint landed (pytest was green but the live preview
+still leaked / lied / lacked the admin endpoint).
+
+- **F#1 — `/synisense-metrics` returned 0 on PAN-containing turns** ←
+  fixed by canonical `mint_chat_outcome()` mint
+  (`services/synisense/shield/canonical.py`). All chat surfaces
+  (chat_audit_log, synisense_runs, /synisense-metrics, user_msg
+  envelope) now derive from ONE `deidentifier.deidentify(user_text)`
+  pass keyed on the actual (account_id, chat_id, message_id).
+- **F#2 — Sync used `synisense-shield-v1` UPPERCASE, stream
+  envelope used `synisense-pipeline` lowercase** ← fixed by routing
+  BOTH sync and stream through `mint_chat_outcome()`. Vocabulary
+  is now UPPERCASE everywhere (`CREDIT_CARD`, `PERSON`, `EMAIL` …)
+  with `shielded_by="synisense-shield-v1"`.
+- **F#3 — Admin endpoint `/api/admin/audit-invariant-violations`
+  returned 404** ← fixed by new `routers/admin_audit_invariant.py`
+  (two superadmin-gated endpoints: list + summary).
+
+Wire-level verification: `pytest tests/test_h2_5_shield_uniformity.py`
+21/21 GREEN (3 new regression tests added with independent-rerun
+curl recipes in docstrings). Broader regression 201/202 GREEN. Live
+curl evidence in `/app/memory/sprints/H2_5_FOLLOWUP_CLOSEOUT.md`.
+
+
+
 ## User personas
 - **Non-Executive Director (NED)** — Serves on one or more boards. Needs cross-board
   pattern awareness, pre-board briefings, and open-thread tracking.

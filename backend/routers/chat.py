@@ -1294,14 +1294,54 @@ async def send_message(
     syn_stats: Dict[str, Any] = {"spans_redacted": 0, "by_type": {}, "elapsed_ms": 0}
     will_shield = True
     bypass_reason = None
-    detected = {"identifiers_masked": 0, "by_category": {}, "shielded_by": "synisense-shield-v1"}
-    has_identifiers = False  # populated post-Shield invoke below
-    shielded_text = text  # historical alias — same as `text` now
-
-    # ── Persist the user message FIRST (so we have a provable record
-    # even if the LLM call fails).
+    # H2.5 follow-up (2026-05-24) — canonical ShieldOutcome mint for
+    # the SYNC chat path. Same source-of-truth discipline as the
+    # streaming path: the chat envelope, the chat_audit row, AND the
+    # synisense_runs row that `/synisense-metrics` aggregates over
+    # all derive from this single `deidentifier.deidentify(text)`
+    # call. The Shield audit row that `shield_invoke()` writes later
+    # on the FULL prompt (history + grounding + user text) carries
+    # the same UPPERCASE vocabulary so the three surfaces agree on
+    # the boolean *"did Shield detect anything this turn?"*.
+    #
+    # msg_id is pre-generated here so the synisense_runs row keys
+    # match the user message id chat_messages will persist.
     msg_id = str(uuid.uuid4())
     user_at = _iso(_now())
+    try:
+        from services.synisense.shield.canonical import mint_chat_outcome
+        outcome = await mint_chat_outcome(
+            user_text=text, tenant_id=current["id"],
+            account_id=current["id"], chat_id=chat_id,
+            message_id=msg_id, context_id=chat.get("context_id"),
+        )
+        detected = outcome.envelope()
+        shielded_text = outcome.redacted_text
+        shield_map = outcome.token_map
+        has_identifiers = detected["identifiers_masked"] > 0
+    except Exception as _shield_exc:  # noqa: BLE001
+        from services.synisense.shield.exceptions import ShieldFailure
+        if isinstance(_shield_exc, ShieldFailure):
+            try:
+                await db.audit_invariant_violations.insert_one({
+                    "id": "iv-" + uuid.uuid4().hex,
+                    "kind": "shield_failure_at_entry",
+                    "surface": "chat", "channel": "sync",
+                    "error_class": _shield_exc.error_class,
+                    "account_id": current["id"], "chat_id": chat_id,
+                    "ts": _iso(_now()),
+                })
+            except Exception:  # noqa: BLE001
+                pass
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "shield_unavailable",
+                    "action": "retry",
+                    "message": "Synisense Shield is temporarily unavailable. Your message has not been sent. Please retry.",
+                },
+            )
+        raise
     content_sha = hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest()
     user_msg = {
         "id": msg_id,
@@ -1467,43 +1507,44 @@ async def send_message(
                 {"id": chat_id, "account_id": current["id"]},
                 {"$push": {"synisense_audit_ids": shield_audit_id}},
             )
-            # Update local has_identifiers / detected from Shield's
-            # de_id_summary so the persisted message record reflects
-            # what Shield ACTUALLY masked (not the removed legacy
-            # pipeline's view).
-            total_masked = sum(shield_de_id_summary.values())
-            has_identifiers = total_masked > 0
-            detected = {
-                "identifiers_masked": total_masked,
-                "by_category": shield_de_id_summary,
-                "shielded_by": "synisense-shield-v1",
-            }
+            # H2.5 follow-up (2026-05-24) — `user_msg.shielding` and
+            # `synisense_stats` are now sourced from the canonical
+            # ``mint_chat_outcome()`` call at the top of this handler,
+            # NOT from ``shield_invoke``'s full-prompt de_id_summary.
+            #
+            # Rationale: the user_msg envelope (which the chat UI's
+            # redaction badge reads) reflects identifiers DETECTED in
+            # the USER's CURRENT MESSAGE. `shield_invoke` runs over
+            # `full_prompt` — user text + history + grounding — and
+            # its `de_id_summary` is a superset that double-counts
+            # prior-turn identifiers (e.g. "Bramuel" mentioned in
+            # turn 1 appears redacted in turn 2's history view too).
+            # That superset belongs to ``synisense_audit_log`` (the
+            # full-trail audit) but NOT to the per-turn envelope.
+            #
+            # `chat_audit_log.identifiers_detected` and
+            # `synisense_runs.spans[]` now BOTH derive from the
+            # canonical mint above. The full-trail audit row that
+            # shield_invoke writes carries the larger numeric — the
+            # three surfaces agree on the BOOLEAN "did Shield detect
+            # anything this turn?" without lying about per-turn count.
+            #
+            # Record only the audit id + latency on syn_stats so the
+            # UI can deep-link to the full-trail audit row when the
+            # user opens the audit panel.
             syn_stats = {
-                "spans_redacted": total_masked,
-                "by_type": shield_de_id_summary,
+                **syn_stats,
                 "elapsed_ms": latency_ms,
                 "version": "synisense-shield-v1",
                 "audit_id": shield_audit_id,
             }
-            # Demo-blocker patch (2026-02) — propagate Shield's actual
-            # de-id counts back onto the persisted user_message row.
-            # Without this, the user_message bubble in the UI shows
-            # `identifiers_masked: 0` even when Shield redacted PII,
-            # because user_msg was inserted BEFORE Shield ran.
-            user_msg["shielding"] = detected
-            user_msg["synisense_stats"] = syn_stats
-            user_msg["shielded"] = has_identifiers or will_shield
             try:
                 await db.chat_messages.update_one(
                     {"id": user_msg["id"], "account_id": current["id"]},
-                    {"$set": {
-                        "shielding": detected,
-                        "synisense_stats": syn_stats,
-                        "shielded": user_msg["shielded"],
-                    }},
+                    {"$set": {"synisense_stats": syn_stats}},
                 )
             except Exception:  # noqa: BLE001
-                logger.warning("failed to back-fill user_msg shielding counts")
+                logger.warning("failed to back-fill user_msg synisense_stats")
         except Exception:  # noqa: BLE001 — non-fatal; audit failure shouldn't break reply
             logger.warning("failed to $push synisense_audit_id to chat session")
 
@@ -1681,37 +1722,40 @@ async def stream_message(
     # invokes Shield's streaming wrapper under `services.synisense.
     # shield.streaming`).
     text = body.content.strip()
-    syn_stats: Dict[str, Any] = {"spans_redacted": 0, "by_type": {}, "elapsed_ms": 0}
-    # H2.5 Fix #7 (2026-05-24) — Root-cause diagnosis. PRIOR behaviour
-    # initialised `shield_map = {}` here and never called the legacy
-    # `_syn_shield()` pre-pass that the sync path uses at chat.py:1429
-    # via `shield_invoke`. As a result `detected["identifiers_masked"]`
-    # always reported 0, the chat_audit row at line 1733 wrote
-    # `shielded_for_llm=False, identifiers_detected=0, bypass_reason=
-    # "no_identifiers"`, AND THEN later in the same turn the
-    # strategic-deliverable branch (chat.py:2351-2383) called
-    # `shield_invoke` which DID detect identifiers and wrote a Shield
-    # audit row carrying e.g. `de_id_summary={CREDIT_CARD: 1}`. The two
-    # audit rows therefore contradicted each other for the same turn
-    # — chat_audit said "Shield didn't run / no identifiers" while
-    # Shield's own audit said "I redacted 1 credit card." Independent
-    # e1_tester verification caught this.
+    # H2.5 follow-up (2026-05-24) — canonical ShieldOutcome mint.
+    # The chat envelope (`user_msg.shielding`), the chat_audit row
+    # (`identifiers_detected` / `by_category` / `shielded_for_llm`),
+    # the `synisense_runs` row (the source `/synisense-metrics` and
+    # `/synisense-runs` aggregate over), AND the `synisense_audit_log`
+    # row written by `prepare_for_streaming.finalize` later in this
+    # request MUST agree on the boolean *"did Shield detect any
+    # identifier on this turn?"* AND on the category vocabulary
+    # (UPPERCASE — `CREDIT_CARD`, `PERSON`, `EMAIL` …, NOT lowercase
+    # `card`/`person`/`email` from the legacy `synisense-pipeline`).
     #
-    # Fix: call `_syn_shield(text)` here to populate `shield_map` from
-    # the same legacy detection path the sync handler uses. This makes
-    # `detected["identifiers_masked"]` accurate at the chat_audit
-    # write-point. Both audit row families now derive from a shared
-    # detection step. Failure surface inherits the H2.5 Fix #3 strict-
-    # raise semantics (chat-family surface → ShieldFailure → 503).
+    # `mint_chat_outcome()` runs one `deidentifier.deidentify(text)`
+    # pass and writes the matching `synisense_runs` row keyed on
+    # (account_id, chat_id, message_id, surface='chat') so the
+    # metrics aggregation actually finds it. This replaces the
+    # previous dual-engine pre-pass (`_syn_shield → pipeline.run`
+    # with `account_id=None, message_id=PHANTOM`) that left
+    # `/synisense-metrics` reporting zero on PAN-containing turns.
+    #
+    # The msg_id used below is the FINAL user-message id (was
+    # generated later in the legacy code); we mint it up here so the
+    # synisense_runs row is keyed on the same id that
+    # `chat_messages._id` and the chat_audit row use.
+    msg_id = str(uuid.uuid4())
+    user_at = _iso(_now())
+    syn_stats: Dict[str, Any] = {"spans_redacted": 0, "by_type": {}, "elapsed_ms": 0}
     try:
-        _msg_id_for_shield_pre = str(uuid.uuid4())
-        shielded_text, shield_map = await _syn_shield(
-            text, context_id=str(current.get("id") or ""),
-            surface="chat", message_id=_msg_id_for_shield_pre,
+        from services.synisense.shield.canonical import mint_chat_outcome
+        outcome = await mint_chat_outcome(
+            user_text=text, tenant_id=current["id"],
+            account_id=current["id"], chat_id=chat_id,
+            message_id=msg_id, context_id=chat.get("context_id"),
         )
     except Exception as _shield_exc:  # noqa: BLE001
-        # adapter.shield_payload_async raises ShieldFailure for chat
-        # surface. Translate to HTTP 503 per the H2.5 mode contract.
         from services.synisense.shield.exceptions import ShieldFailure
         if isinstance(_shield_exc, ShieldFailure):
             try:
@@ -1735,7 +1779,9 @@ async def stream_message(
             )
         raise
 
-    detected = _syn_report(shield_map)
+    shielded_text = outcome.redacted_text
+    shield_map = outcome.token_map
+    detected = outcome.envelope()
     has_identifiers = detected["identifiers_masked"] > 0
 
     # Policy gate (same as sync path).
@@ -1763,8 +1809,9 @@ async def stream_message(
             will_shield, bypass_reason = False, "no_identifiers"
 
     # Persist user message + audit BEFORE streaming starts.
-    msg_id = str(uuid.uuid4())
-    user_at = _iso(_now())
+    # NOTE: `msg_id` and `user_at` were pre-generated above the shield
+    # mint so the synisense_runs row is keyed on the actual user
+    # message id. Do NOT regenerate them here.
     content_sha = hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest()
     user_msg = {
         "id": msg_id, "chat_id": chat_id, "account_id": current["id"],

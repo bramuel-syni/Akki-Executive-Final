@@ -93,6 +93,7 @@ from routers import decks as decks_router  # noqa: E402
 from routers import walkin as walkin_router  # noqa: E402
 from routers import admin_auth_events as admin_auth_events_router  # noqa: E402
 from routers import admin_journal as admin_journal_router  # noqa: E402
+from routers import admin_audit_invariant as admin_audit_invariant_router  # noqa: E402  H2.5
 from routers import active_context as active_context_router  # noqa: E402  Phase A — Roles & Company Navigation
 from routers import studio as studio_router  # noqa: E402
 from routers import studio_blocks as studio_blocks_router  # noqa: E402
@@ -213,6 +214,7 @@ app.include_router(decks_router.router)
 app.include_router(walkin_router.router)
 app.include_router(admin_auth_events_router.router)
 app.include_router(admin_journal_router.router)
+app.include_router(admin_audit_invariant_router.router)  # H2.5 — Audit-invariant violations panel
 app.include_router(active_context_router.router)
 app.include_router(studio_router.router)
 app.include_router(studio_blocks_router.router)
