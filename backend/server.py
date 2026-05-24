@@ -94,6 +94,7 @@ from routers import walkin as walkin_router  # noqa: E402
 from routers import admin_auth_events as admin_auth_events_router  # noqa: E402
 from routers import admin_journal as admin_journal_router  # noqa: E402
 from routers import admin_audit_invariant as admin_audit_invariant_router  # noqa: E402  H2.5
+from routers import healthz_shield as healthz_shield_router  # noqa: E402  H2.5 follow-up Part B
 from routers import active_context as active_context_router  # noqa: E402  Phase A — Roles & Company Navigation
 from routers import studio as studio_router  # noqa: E402
 from routers import studio_blocks as studio_blocks_router  # noqa: E402
@@ -215,6 +216,7 @@ app.include_router(walkin_router.router)
 app.include_router(admin_auth_events_router.router)
 app.include_router(admin_journal_router.router)
 app.include_router(admin_audit_invariant_router.router)  # H2.5 — Audit-invariant violations panel
+app.include_router(healthz_shield_router.router)  # H2.5 follow-up Part B — Shield readiness probe
 app.include_router(active_context_router.router)
 app.include_router(studio_router.router)
 app.include_router(studio_blocks_router.router)
@@ -346,6 +348,16 @@ async def on_startup():
             "clamav: dev escape hatch ARMED — uploads will bypass scan if "
             "clamd unreachable (AKKI_ENV=%r)", os.environ.get("AKKI_ENV") or "(unset)",
         )
+
+    # ─── H2.5 follow-up Part B (2026-05-24) — Shield boot-time warmup ──
+    # Loads spaCy + runs a trivial deidentify probe. If ANY exception
+    # fires, the process dies and supervisor restarts it. Crash-looping
+    # is the CORRECT behaviour when Shield can't initialise — the
+    # alternative is silently forwarding PAN to the LLM. Operators can
+    # check `/api/healthz/shield` to see the most-recent warmup state.
+    if (os.environ.get("AKKI_SKIP_SHIELD_WARMUP") or "").lower() not in ("1", "true", "yes"):
+        from services.synisense.shield.deidentifier import warmup_or_die
+        await warmup_or_die()
 
     # ─── Phase 10 boot-level guards ─────────────────────────────────────
     billing_enabled = (os.environ.get("BILLING_ENABLED") or "").lower() in ("1", "true", "yes")

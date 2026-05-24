@@ -53,13 +53,15 @@ def _ensure_spacy_model(model_name: str) -> None:
         import spacy
         spacy.load(model_name)
         return
-    except OSError:
-        # Model not installed — fall through to the download path.
-        pass
-    except ImportError:
-        # spaCy itself isn't installed — let _build_analyzer raise its
-        # own clearer ImportError below; nothing we can do here.
-        return
+    except Exception as exc:  # noqa: BLE001
+        # H2.5 follow-up Part A (2026-05-24) — broadened from
+        # `except OSError` so MemoryError / RuntimeError / corrupted-
+        # wheel ImportError also route to the download retry path.
+        # Fail-CLOSED beats fail-open on any unexpected exception.
+        logger.warning(
+            "spaCy %s load raised %s: %s — attempting download",
+            model_name, type(exc).__name__, str(exc)[:200],
+        )
 
     logger.warning(
         "spaCy model %s not present; running 'python -m spacy download %s'…",

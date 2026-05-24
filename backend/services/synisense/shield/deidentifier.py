@@ -171,7 +171,18 @@ def _attempt_load(model_name: str):
     model we ONLY attempt loading if `spacy-transformers` is already
     importable — otherwise we'd kick off a ~2GB torch+transformers
     install that doesn't fit the dev container. The Phase A brief
-    explicitly permits the `en_core_web_sm` fallback in that case."""
+    explicitly permits the `en_core_web_sm` fallback in that case.
+
+    H2.5 follow-up Part A (2026-05-24) — broadened ``except OSError``
+    to ``except Exception``. Asymmetric cost analysis: the regulatory
+    cost of fail-OPEN (PAN leaking to the LLM because the model load
+    raised something we didn't expect — e.g. ``MemoryError`` at OOM,
+    ``ImportError`` on a corrupt wheel, ``RuntimeError`` from a
+    miswired spaCy plugin) vastly outweighs the UX cost of
+    fail-CLOSED on benign exceptions. The caller catches this
+    Exception and reroutes to the ``en_core_web_sm`` retry path; if
+    THAT also raises, ``_ensure_spacy`` returns ``None`` and the
+    pipeline raises ``ServiceUnavailable`` → HTTP 503."""
     import spacy  # noqa: WPS433 — lazy by design
     if model_name == "en_core_web_trf":
         try:
@@ -183,9 +194,16 @@ def _attempt_load(model_name: str):
             ) from exc
     try:
         return spacy.load(model_name)
-    except OSError:
-        # sm fallback only — install if absent.
-        log.warning("synisense.shield: %s not installed, attempting download", model_name)
+    except Exception as exc:  # noqa: BLE001 — see docstring; fail-closed by design
+        # Originally `except OSError` — broadened to Exception so a
+        # MemoryError / ImportError / RuntimeError at load time also
+        # routes to the sm fallback (and ultimately to 503) instead of
+        # bubbling unhandled out of `_ensure_spacy` and silently
+        # leaving the cache empty.
+        log.warning(
+            "synisense.shield: %s load raised %s: %s — attempting download",
+            model_name, type(exc).__name__, str(exc)[:200],
+        )
         subprocess.run(  # noqa: S603 — known model, no shell
             [sys.executable, "-m", "spacy", "download", model_name],
             check=True, capture_output=True, timeout=120,
@@ -226,6 +244,41 @@ def _ensure_spacy() -> Any:
                 last = f"{type(exc).__name__}: {str(exc)[:200]}"
                 log.warning("synisense.shield: %s failed (%s)", candidate, last)
                 _SPACY_LOAD_ERROR = last
+                # H2.5 follow-up Part A (2026-05-24) — log shield-init
+                # failures to `audit_invariant_violations` so operators
+                # see WHICH exception class is hitting the wild (the
+                # admin endpoint surfaces this collection).
+                # Best-effort; failure here must NOT mask the fail-
+                # closed contract.
+                try:
+                    import uuid as _uuid
+                    from datetime import datetime as _dt, timezone as _tz
+                    from core import db as _db
+                    import asyncio as _asyncio
+                    _coro = _db.audit_invariant_violations.insert_one({
+                        "id": "iv-" + _uuid.uuid4().hex,
+                        "kind": "shield_init_failure",
+                        "surface": "shield.deidentifier",
+                        "channel": "boot_or_lazy",
+                        "model_candidate": candidate,
+                        "error_class": type(exc).__name__,
+                        "error_message": str(exc)[:400],
+                        "ts": _dt.now(_tz.utc).isoformat(),
+                    })
+                    # `_ensure_spacy` is sync; the Motor call returns
+                    # a coroutine. Schedule it on the running loop if
+                    # one exists; otherwise skip (test contexts often
+                    # call this from threads without a loop).
+                    try:
+                        loop = _asyncio.get_event_loop()
+                        if loop.is_running():
+                            _asyncio.ensure_future(_coro)
+                        else:
+                            loop.run_until_complete(_coro)
+                    except Exception:  # noqa: BLE001
+                        _coro.close()
+                except Exception:  # noqa: BLE001
+                    pass
                 continue
         return None
 
@@ -238,6 +291,90 @@ def get_spacy_model_name() -> Optional[str]:
 def get_spacy_load_error() -> Optional[str]:
     """Test/admin probe."""
     return _SPACY_LOAD_ERROR
+
+
+# ─────────────────────────────────────────────────────────────────────
+# H2.5 follow-up Part B (2026-05-24) — Boot-time Shield warmup.
+# ─────────────────────────────────────────────────────────────────────
+# Called from FastAPI's startup event. On failure, raises so the
+# process dies; supervisor restarts it and keeps crash-looping until
+# ops fixes the model. Plus exposes the latest warmup state so
+# `GET /api/healthz/shield` can answer truthfully without re-running
+# the load.
+# ─────────────────────────────────────────────────────────────────────
+_WARMUP_AT: Optional[str] = None
+_WARMUP_DURATION_MS: Optional[int] = None
+_WARMUP_OK: bool = False
+_WARMUP_ERROR: Optional[str] = None
+
+
+def get_warmup_state() -> Dict[str, Any]:
+    """Snapshot of the latest warmup outcome for the healthz endpoint."""
+    import importlib
+    model_version: Optional[str] = None
+    try:
+        if _SPACY_MODEL_NAME:
+            pkg = importlib.import_module(_SPACY_MODEL_NAME)
+            model_version = getattr(pkg, "__version__", None) or None
+    except Exception:  # noqa: BLE001
+        model_version = None
+    return {
+        "ready": _WARMUP_OK and _SPACY_NLP is not None,
+        "model_loaded": _SPACY_NLP is not None,
+        "model_name": _SPACY_MODEL_NAME,
+        "model_version": model_version,
+        "last_warmup_at": _WARMUP_AT,
+        "last_warmup_duration_ms": _WARMUP_DURATION_MS,
+        "last_warmup_error": _WARMUP_ERROR,
+    }
+
+
+async def warmup_or_die() -> None:
+    """Boot-time gate. Loads spaCy + runs a no-op deidentify on a
+    trivial string. On ANY exception, raises so the process dies and
+    supervisor restarts it — crash-looping is correct behaviour when
+    Shield can't initialise, because the alternative is silently
+    forwarding PAN to the LLM.
+
+    Sets module-level ``_WARMUP_*`` globals so
+    ``GET /api/healthz/shield`` reads the most recent warmup snapshot
+    without re-running the load on every hit.
+    """
+    from datetime import datetime as _dt, timezone as _tz
+    global _WARMUP_AT, _WARMUP_DURATION_MS, _WARMUP_OK, _WARMUP_ERROR
+
+    started = time.perf_counter()
+    try:
+        nlp = _ensure_spacy()
+        if nlp is None:
+            raise RuntimeError(
+                f"Shield warmup: spaCy model unavailable "
+                f"({_SPACY_LOAD_ERROR or 'unknown'})"
+            )
+        # Trivial round-trip — proves the pipeline actually runs.
+        result = await deidentify("warmup probe", tenant_id="__warmup__")
+        if not isinstance(result.redacted_text, str):
+            raise RuntimeError(
+                f"Shield warmup: unexpected DeIdResult shape: {type(result)!r}"
+            )
+        _WARMUP_OK = True
+        _WARMUP_ERROR = None
+        _WARMUP_DURATION_MS = int((time.perf_counter() - started) * 1000)
+        _WARMUP_AT = _dt.now(_tz.utc).isoformat()
+        log.info(
+            "synisense.shield: warmup OK (model=%s, %d ms)",
+            _SPACY_MODEL_NAME, _WARMUP_DURATION_MS,
+        )
+    except Exception as exc:  # noqa: BLE001 — see docstring; re-raised
+        _WARMUP_OK = False
+        _WARMUP_ERROR = f"{type(exc).__name__}: {str(exc)[:300]}"
+        _WARMUP_DURATION_MS = int((time.perf_counter() - started) * 1000)
+        _WARMUP_AT = _dt.now(_tz.utc).isoformat()
+        log.error(
+            "synisense.shield: WARMUP FAILED (%s) — process will exit",
+            _WARMUP_ERROR,
+        )
+        raise
 
 
 def _force_clear_cache_for_test() -> None:

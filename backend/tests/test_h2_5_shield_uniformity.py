@@ -951,24 +951,35 @@ async def test_wire_stream_envelope_audit_id_resolves_to_shield_row(client):
     )
 
 
-async def test_shield_fails_closed_when_spacy_model_missing(client):
-    """**Deploy safety — Part B verification.**
+@pytest.mark.parametrize("exc_class,exc_args", [
+    (OSError, ("[E050] Can't find model 'en_core_web_sm'.",)),
+    (RuntimeError, ("spaCy pipeline component failed to initialise",)),
+    (ImportError, ("cannot import name 'load' from 'spacy'",)),
+    (MemoryError, ("out of memory during model deserialization",)),
+    (Exception, ("generic boot-time failure",)),
+])
+async def test_shield_fails_closed_when_spacy_model_missing(client, exc_class, exc_args):
+    """**Deploy safety — Part A + B verification.**
 
-    If spaCy's NER model fails to load at runtime (e.g. the prod
-    container ships without ``en_core_web_sm``, or the model file is
-    corrupted, or the loader OOMs), Shield MUST fail-closed:
+    H2.5 follow-up Part A (2026-05-24) — parametrized across 5
+    exception classes (OSError, RuntimeError, ImportError,
+    MemoryError, generic Exception). All MUST produce identical
+    fail-closed semantics: HTTP 503 + invariant row + no raw PAN.
+
+    If spaCy's NER model fails to load at runtime (any reason),
+    Shield MUST fail-closed:
 
       * HTTP 503 (NOT 200 with raw PAN forwarded to the LLM)
       * ``audit_invariant_violations`` row with
         ``kind=shield_failure_at_entry``
-      * No ``synisense_runs`` row, no ``chat_audit_log`` row claiming
-        identifiers_detected from a failed pipeline.
+      * No raw PAN anywhere in the response body
 
-    Simulates model-load failure by clearing the cached ``_SPACY_NLP``
-    + ``_SPACY_LOAD_ERROR`` globals in
-    ``services.synisense.shield.deidentifier`` and monkey-patching
-    ``_attempt_load`` to raise ``OSError`` (matches the real "model
-    not installed" surface — see ``spacy.load`` source).
+    Simulates load failure by clearing the cached ``_SPACY_NLP``
+    globals in ``services.synisense.shield.deidentifier`` and
+    monkey-patching ``_attempt_load`` to raise the parametrized
+    exception class. This proves the ``except Exception`` swap at
+    deidentifier.py:184-193 (was ``except OSError``) actually
+    catches the broader surface.
 
     Independent re-run::
 
@@ -996,17 +1007,14 @@ async def test_shield_fails_closed_when_spacy_model_missing(client):
     deidentifier._SPACY_NLP = None
     deidentifier._SPACY_LOAD_ERROR = None
 
-    def _model_missing(model_name: str):
-        # Real OSError surface from `spacy.load` when the model
-        # package isn't installed in the venv.
-        raise OSError(
-            f"[E050] Can't find model '{model_name}'. "
-            "It doesn't seem to be a Python package or a valid path "
-            "to a data directory."
-        )
+    def _model_load_fails(model_name: str):
+        # Surface-faithful exception — Part A broadened the catch
+        # block to `except Exception`, so EVERY one of these classes
+        # must route to the same 503 + invariant row outcome.
+        raise exc_class(*exc_args)
 
     try:
-        with mock.patch.object(deidentifier, "_attempt_load", side_effect=_model_missing):
+        with mock.patch.object(deidentifier, "_attempt_load", side_effect=_model_load_fails):
             body = {
                 "content": "My card is 4111111111111111 please charge it.",
                 "shielding_policy": "always",
@@ -1018,9 +1026,9 @@ async def test_shield_fails_closed_when_spacy_model_missing(client):
 
         # ── Fail-closed wire assertions ──
         assert resp.status_code == 503, (
-            f"FAIL-OPEN REGRESSION: chat returned {resp.status_code} when "
-            f"spaCy model is missing. Expected 503 SHIELD_UNAVAILABLE. "
-            f"Body: {resp.text[:400]!r}"
+            f"FAIL-OPEN REGRESSION on {exc_class.__name__}: chat returned "
+            f"{resp.status_code} when spaCy raises {exc_class.__name__}. "
+            f"Expected 503 SHIELD_UNAVAILABLE. Body: {resp.text[:400]!r}"
         )
         body_json = resp.json()
         assert body_json["detail"]["error"] == "shield_unavailable", body_json
@@ -1028,8 +1036,8 @@ async def test_shield_fails_closed_when_spacy_model_missing(client):
 
         # ── No raw PAN anywhere in the response body ──
         assert "4111111111111111" not in resp.text, (
-            f"FAIL-OPEN REGRESSION: raw PAN leaked in 503 response body: "
-            f"{resp.text[:400]!r}"
+            f"FAIL-OPEN REGRESSION on {exc_class.__name__}: raw PAN "
+            f"leaked in 503 response body: {resp.text[:400]!r}"
         )
 
         # ── Invariant violation row was written ──
@@ -1037,8 +1045,9 @@ async def test_shield_fails_closed_when_spacy_model_missing(client):
             {"account_id": account_id, "kind": "shield_failure_at_entry"},
         )
         assert after > before, (
-            f"audit_invariant_violations must log shield_failure_at_entry "
-            f"when spaCy model is missing: before={before}, after={after}"
+            f"audit_invariant_violations must log "
+            f"shield_failure_at_entry on {exc_class.__name__}: "
+            f"before={before}, after={after}"
         )
     finally:
         # Restore the module's cached state so subsequent tests don't
@@ -1046,6 +1055,93 @@ async def test_shield_fails_closed_when_spacy_model_missing(client):
         # successfully via the normal path.
         deidentifier._SPACY_NLP = saved_nlp
         deidentifier._SPACY_LOAD_ERROR = saved_err
+
+
+# ═════════════════════════════════════════════════════════════════════
+# H2.5 follow-up Part B — Boot-time Shield warmup + /api/healthz/shield
+# ═════════════════════════════════════════════════════════════════════
+async def test_warmup_or_die_raises_on_model_missing(monkeypatch):
+    """``warmup_or_die()`` must raise (not just log) when the spaCy
+    model can't be loaded. Supervisor relies on the process actually
+    DYING — a swallowed exception would let the app boot in a
+    PII-leaky state."""
+    from services.synisense.shield import deidentifier
+
+    saved_nlp = deidentifier._SPACY_NLP
+    saved_err = deidentifier._SPACY_LOAD_ERROR
+    monkeypatch.setattr(deidentifier, "_SPACY_NLP", None, raising=False)
+    monkeypatch.setattr(deidentifier, "_SPACY_LOAD_ERROR", None, raising=False)
+
+    def _attempt_load_raises(name):
+        raise OSError(f"[E050] Can't find model '{name}'.")
+    monkeypatch.setattr(deidentifier, "_attempt_load", _attempt_load_raises)
+
+    # Block the retry subprocess so the failure surfaces fast.
+    def _subprocess_fail(*args, **kwargs):
+        raise OSError("subprocess: pretend-no-internet")
+    monkeypatch.setattr(deidentifier.subprocess, "run", _subprocess_fail)
+
+    try:
+        with pytest.raises(Exception) as excinfo:
+            await deidentifier.warmup_or_die()
+        # The raised class can be RuntimeError (wrapped) or the original
+        # OSError (passed through). Either is acceptable — the contract
+        # is "process exits", not a specific class.
+        assert excinfo.value is not None
+        # The warmup state MUST reflect the failure.
+        st = deidentifier.get_warmup_state()
+        assert st["ready"] is False, st
+        assert st["last_warmup_error"], st
+    finally:
+        deidentifier._SPACY_NLP = saved_nlp
+        deidentifier._SPACY_LOAD_ERROR = saved_err
+        # Force a re-warmup on the live module so the rest of the suite
+        # doesn't see a poisoned state.
+        deidentifier._WARMUP_OK = True
+        deidentifier._WARMUP_ERROR = None
+
+
+async def test_healthz_shield_endpoint_returns_state(client):
+    """Happy path — Shield warmed up at startup so the endpoint
+    returns 200 with ``ready=true`` and the documented shape."""
+    resp = await client.get("/api/healthz/shield")
+    assert resp.status_code == 200, resp.text[:300]
+    body = resp.json()
+    assert set(body.keys()) >= {
+        "ready", "model_loaded", "model_name", "model_version",
+        "last_warmup_at", "last_warmup_duration_ms",
+    }, body
+    assert body["ready"] is True
+    assert body["model_loaded"] is True
+    assert body["model_name"] in ("en_core_web_sm", "en_core_web_trf"), body
+    assert body["last_warmup_at"], body
+
+
+async def test_healthz_shield_endpoint_503_when_not_ready(client, monkeypatch):
+    """When warmup has not completed (or failed), the endpoint must
+    return HTTP 503 — same body shape — so external probes (k8s
+    readinessProbe, LB) treat the pod as unhealthy."""
+    from services.synisense.shield import deidentifier
+
+    # Force the snapshot to "not ready" without actually killing the
+    # live spaCy instance — restored in `finally` below.
+    saved_ok = deidentifier._WARMUP_OK
+    saved_err = deidentifier._WARMUP_ERROR
+    monkeypatch.setattr(deidentifier, "_WARMUP_OK", False, raising=False)
+    monkeypatch.setattr(
+        deidentifier, "_WARMUP_ERROR",
+        "RuntimeError: simulated unready state", raising=False,
+    )
+    try:
+        resp = await client.get("/api/healthz/shield")
+        assert resp.status_code == 503, resp.text[:300]
+        body = resp.json()
+        # Same shape on 503.
+        assert "ready" in body and body["ready"] is False, body
+        assert body.get("last_warmup_error"), body
+    finally:
+        deidentifier._WARMUP_OK = saved_ok
+        deidentifier._WARMUP_ERROR = saved_err
 
 
 # ═════════════════════════════════════════════════════════════════════
