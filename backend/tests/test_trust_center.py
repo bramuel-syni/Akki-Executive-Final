@@ -130,7 +130,14 @@ async def test_turn_drilldown_shows_tokenized_not_raw(client):
     """Independent re-run::
         curl "$API/api/trust-center/session/$CHAT/turn/$MID" \\
             -H "Authorization: Bearer $TOKEN" | grep -c "4111111111111111"
-        # expect: 0
+        # expect: 0 raw PAN AND non-empty placeholders in all 3 text fields
+
+    Cycle-2 discipline upgrade: NEGATIVE assertions alone (raw PAN
+    absent) pass on empty strings. Every text field must ALSO be
+    proven non-empty AND proven to contain a recognizable Shield
+    placeholder. This catches the H3 cycle-1 bug where the
+    response carried correct counters but the three evidence
+    strings were empty.
     """
     _t, _c, _a, hdrs = await _register(client)
     chat_id, mid = await _new_chat_with_pan_turn(client, hdrs)
@@ -145,18 +152,63 @@ async def test_turn_drilldown_shows_tokenized_not_raw(client):
     assert "what_synisense_sent_to_llm" in body
     assert "what_llm_returned" in body
     assert "what_you_saw" in body
-    # CRITICAL: raw PAN MUST NOT appear in any field of this response.
+
+    # ── NEGATIVE: raw PAN MUST NOT appear in any field ──
     blob = r.text
     assert "4111111111111111" not in blob, (
         f"FAIL-OPEN: raw PAN leaked in Trust Center drill-down: "
         f"{blob[:400]!r}"
     )
+
+    # ── POSITIVE: all three evidence text fields must be non-empty AND
+    # carry placeholder content the user can actually inspect ──
+    sent_to_llm = body["what_synisense_sent_to_llm"]
+    llm_returned = body["what_llm_returned"]
+    user_saw = body["what_you_saw"]
+
+    assert isinstance(sent_to_llm, str) and len(sent_to_llm) > 20, (
+        f"what_synisense_sent_to_llm must be non-empty and contain "
+        f"the redacted prompt. Got len={len(sent_to_llm)}, "
+        f"value={sent_to_llm!r}"
+    )
+    assert "[[ENT_CREDIT_CARD" in sent_to_llm or "[[ENT_" in sent_to_llm, (
+        f"what_synisense_sent_to_llm must carry the deidentifier "
+        f"placeholder shape (e.g. [[ENT_CREDIT_CARD_001]]). Got: "
+        f"{sent_to_llm!r}"
+    )
+
+    assert isinstance(llm_returned, str) and llm_returned.strip(), (
+        f"what_llm_returned must be a truthy non-empty string. "
+        f"Got: {llm_returned!r}"
+    )
+
+    assert isinstance(user_saw, str) and user_saw.strip(), (
+        f"what_you_saw must be a truthy non-empty string. "
+        f"Got: {user_saw!r}"
+    )
+    # The user-visible reply must mention the masked placeholder OR
+    # an explicit refusal — proving the chat surface re-identified
+    # without leaking the raw card.
+    assert (
+        "PAYMENT_CARD" in user_saw
+        or "••••" in user_saw
+        or "cannot" in user_saw.lower()
+        or "[[ENT_" in user_saw
+    ), (
+        f"what_you_saw must show that the chat surface either "
+        f"masked the PAN or refused to process it. Got: {user_saw!r}"
+    )
+
     # The hash MUST be present + 64 hex chars.
     sha = body["what_you_sent_sha256"]
     assert len(sha) == 64 and all(c in "0123456789abcdef" for c in sha), sha
     # The CREDIT_CARD redaction must be visible.
     classes = [r["class"] for r in body["redactions"]]
     assert "CREDIT_CARD" in classes, body["redactions"]
+    # Derivation-note must explicitly disclose the re-derivation policy
+    # so auditors know nothing was secretly stored.
+    assert body.get("derivation_note"), body
+    assert "re-derived" in body["derivation_note"], body
 
 
 # ─────────────────────────────────────────────────────────────────────

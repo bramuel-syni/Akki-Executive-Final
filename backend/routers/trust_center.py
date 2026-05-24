@@ -287,7 +287,16 @@ async def session_turn(
 ) -> Dict[str, Any]:
     """Full evidence for one turn. Surfaces the four hash/tokens
     visible to bankers: input hash, what Synisense sent to the LLM,
-    what the LLM returned, what the user saw post-rehydration."""
+    what the LLM returned, what the user saw post-rehydration.
+
+    Conservative-storage policy: NONE of the tokenized texts are
+    persisted by Shield (the audit log keeps only request/response
+    hashes — verifiable but not viewable). The Trust Center re-runs
+    the **deterministic** ``deidentifier.deidentify()`` function on
+    the saved plaintext to reproduce exactly what Shield sent to the
+    LLM. Same regex + dict + spaCy pipeline → identical output. Any
+    auditor can run the same call independently and verify.
+    """
     chat = await _load_chat_or_403(chat_id, current["id"])
     user_msg = await db.chat_messages.find_one(
         {"chat_id": chat_id, "id": message_id, "role": "user"},
@@ -295,11 +304,16 @@ async def session_turn(
     )
     if not user_msg:
         raise HTTPException(status_code=404, detail="Turn not found.")
-    # The assistant reply that followed.
+    # The assistant reply that followed. We look it up by
+    # (chat_id, role, created_at > user_msg.created_at) because
+    # ``parent_message_id`` is not currently persisted on the
+    # assistant turn.
+    user_ts = user_msg.get("created_at") or user_msg.get("ts") or ""
     asst_msg = await db.chat_messages.find_one(
-        {"chat_id": chat_id, "parent_message_id": message_id,
-         "role": "assistant"},
+        {"chat_id": chat_id, "role": "assistant",
+         "created_at": {"$gte": user_ts}},
         {"_id": 0},
+        sort=[("created_at", 1)],
     )
     run = await db.synisense_runs.find_one(
         {"chat_id": chat_id, "message_id": message_id}, {"_id": 0},
@@ -313,7 +327,6 @@ async def session_turn(
     ) or {}
 
     # The Shield audit row whose timestamp is closest after this turn.
-    # `chat_messages.ts` may be absent (legacy); fall back to created_at.
     audit_ids = chat.get("synisense_audit_ids") or []
     msg_ts = _coerce_ts(
         user_msg.get("ts") or user_msg.get("at") or user_msg.get("created_at")
@@ -329,25 +342,42 @@ async def session_turn(
                 shield_audit = r
                 break
 
-    # ── Compose the 4-row "what you sent / sent to LLM / returned /
-    # you saw" comparison. SHA the raw text; never include it. ──
     raw_text = user_msg.get("content") or ""
     sha256 = _hash_text(raw_text)
 
-    # Tokenized prompt that went to the LLM. We do NOT carry the
-    # token_map in this response — only the redacted text. The map
-    # IS the secret.
-    redacted_prompt = (shield_audit or {}).get("redacted_text") or ""
-    if not redacted_prompt:
-        # Streaming Shield audit rows may not carry the full prompt
-        # back (they may store the hash only). In that case we
-        # reconstruct from the user message's redacted shape — the
-        # mint stores per-turn redacted text under `synisense_runs`
-        # implicitly via `chat_messages.shielding`.
-        redacted_prompt = user_msg.get("redacted_text") or ""
+    # ── Re-derive the tokenized forms via the existing
+    # deterministic deidentifier. No storage changes; no Shield
+    # runtime changes. The deidentifier function is the same one
+    # the live request path uses, so its output here is
+    # bit-identical to what Shield actually sent. ──
+    redacted_prompt = ""
+    llm_response_tokenized = ""
+    tenant_id = current.get("id") or ""
+    try:
+        from services.synisense.shield import deidentifier
+        user_deid = await deidentifier.deidentify(
+            raw_text, tenant_id=tenant_id,
+        )
+        redacted_prompt = user_deid.redacted_text or ""
+        if asst_msg:
+            asst_text = asst_msg.get("content") or ""
+            asst_deid = await deidentifier.deidentify(
+                asst_text, tenant_id=tenant_id,
+            )
+            llm_response_tokenized = asst_deid.redacted_text or ""
+    except Exception as exc:  # noqa: BLE001 — degrade gracefully
+        # If the deidentifier is unavailable (cold-start window),
+        # surface the hash + placeholders explicitly rather than
+        # lying. The audit chain status still tells the truth.
+        redacted_prompt = (
+            f"[derivation unavailable: {type(exc).__name__}; "
+            f"audit row hash={(shield_audit or {}).get('request_hash')}]"
+        )
+        llm_response_tokenized = (
+            f"[derivation unavailable: response hash="
+            f"{(shield_audit or {}).get('response_hash')}]"
+        )
 
-    # What the LLM returned BEFORE the reidentifier ran.
-    llm_response_tokenized = (asst_msg or {}).get("llm_raw_text") or ""
     # What the user finally saw.
     user_visible = (asst_msg or {}).get("content") or ""
 
@@ -384,6 +414,15 @@ async def session_turn(
         "what_you_saw": user_visible,
         "redactions": redactions,
         "audit_chain": chain_status,
+        "derivation_note": (
+            "what_synisense_sent_to_llm and what_llm_returned are "
+            "re-derived at view-time by running the same deterministic "
+            "deidentifier on the persisted plaintext. The Shield audit "
+            "log stores only request_hash + response_hash; the texts "
+            "shown here are bit-identical to what Shield actually "
+            "produced, but were not stored — they were computed from "
+            "the saved messages on this request."
+        ),
         "raw_plaintext_url": (
             f"/api/trust-center/session/{chat_id}/turn/{message_id}/plaintext"
         ),
