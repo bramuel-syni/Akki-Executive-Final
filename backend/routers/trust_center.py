@@ -108,9 +108,16 @@ def _hash_text(text: str) -> str:
 
 
 def _classify_chat_shield_status(chat: Dict[str, Any]) -> str:
-    """One of ``active`` / ``pre_shield_v1`` / ``boot_warning``."""
+    """One of ``active`` / ``backfilled`` / ``pre_shield_v1`` /
+    ``boot_warning``.
+
+    H4 (2026-05-24) — chats carrying ``backfill_metadata.partial=false``
+    are classified as ``backfilled`` so Trust Center can show the
+    "back-filled on <date>" copy instead of the pre-v1 empty state."""
+    bf = (chat.get("backfill_metadata") or {})
+    if bf and bf.get("partial") is False:
+        return "backfilled"
     if not chat.get("synisense_audit_ids"):
-        # Conversation pre-dates Shield instrumentation.
         return "pre_shield_v1"
     return "active"
 
@@ -237,6 +244,13 @@ async def session(
             "audit_id": nearest_audit_id,
             "chat_audit_id": chat_audit_row.get("id"),
             "hash_chain_status": "verified" if chat_audit_row.get("row_hash") else "missing",
+            # H4 — per-turn back-fill marker so the UI can show a
+            # "back-filled" badge on turns originating from the
+            # historical-data sweep. Derived from the synisense_runs
+            # row that the back-fill engine wrote.
+            "is_backfill": bool((run or {}).get("is_backfill")),
+            "backfill_batch_id": (run or {}).get("backfill_batch_id"),
+            "original_message_ts": (run or {}).get("original_message_ts"),
         })
 
     context = await db.contexts.find_one(
@@ -249,6 +263,10 @@ async def session(
         "context_id": chat.get("context_id"),
         "context_name": context.get("name"),
         "shield_status": shield_status,
+        # H4 — When the chat has been back-filled, surface the
+        # metadata block so the UI can show the "back-filled on
+        # <date>" copy AND auditors can verify the batch ID.
+        "backfill_metadata": chat.get("backfill_metadata"),
         "promise_summary": {
             "total_turns": len([m for m in messages if m.get("role") == "user"]),
             "turns_with_redaction": turns_with_redaction,

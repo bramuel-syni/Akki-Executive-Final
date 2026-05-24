@@ -366,6 +366,8 @@ function SessionView({ chatId }) {
   }
 
   const ps = data.promise_summary || {};
+  const isBackfilled = data.shield_status === "backfilled";
+  const bfMeta = data.backfill_metadata || {};
 
   return (
     <div data-testid="tc-session-view" className="space-y-6">
@@ -381,6 +383,36 @@ function SessionView({ chatId }) {
           Context: {data.context_name || "—"}
         </div>
       </div>
+
+      {/* H4 — Back-fill banner. Shows when the chat was reconstructed
+          via the maintenance back-fill rather than recorded live. */}
+      {isBackfilled && (
+        <div
+          data-testid="tc-backfill-banner"
+          className="bg-amber-50/60 border border-amber-200 rounded-lg p-4 space-y-1"
+        >
+          <div className="text-[12.5px] text-[var(--ink)]">
+            This conversation was back-filled through Shield v1.x on{" "}
+            <span className="font-medium">
+              {bfMeta.completed_at
+                ? new Date(bfMeta.completed_at).toLocaleDateString()
+                : "—"}
+            </span>
+            .{" "}
+            <span className="text-[var(--deep)]">
+              {ps.identifiers_shielded_total ?? 0} identifier
+              {ps.identifiers_shielded_total === 1 ? "" : "s"} detected
+              in the historical content.
+            </span>
+          </div>
+          <div className="text-[11px] text-[var(--muted)]">
+            Back-fill batch:{" "}
+            <span className="font-mono">{bfMeta.batch_id || "—"}</span>{" "}
+            · Audit rows derive from a separate ``backfill_chain_v1``
+            so the live audit chain stays clean.
+          </div>
+        </div>
+      )}
 
       {/* Counters grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="tc-promise-counters">
@@ -450,6 +482,15 @@ function SessionView({ chatId }) {
                 {!t.shielded && (
                   <span className="ml-3 text-[var(--muted)] text-[11.5px]">
                     no identifiers detected
+                  </span>
+                )}
+                {t.is_backfill && (
+                  <span
+                    data-testid="tc-turn-backfill-badge"
+                    title={`Back-filled in batch ${t.backfill_batch_id || ""} from original ts ${t.original_message_ts || ""}`}
+                    className="ml-3 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-[var(--deep)] border border-[var(--cream-deep)] rounded"
+                  >
+                    back-filled
                   </span>
                 )}
               </div>

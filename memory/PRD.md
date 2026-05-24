@@ -7,8 +7,48 @@ v4.0 (Build Sequence — 18 modules across 5 streams with prescriptive design ma
 The user selected **Path A (v4.0 Free Tier)**: follow v4.0 module boundaries but skip any
 module that requires a paid/external service.
 
+## H4 — Back-fill pre-Shield-v1.x chats — 2026-05-24 ✅
+Closes the historical-data gap so Trust Center honors the same
+product promise for the WHOLE record, not just the post-deploy slice.
+
+- **Back-fill engine** — `services/backfill_shield_v1.py`. Replays
+  pre-2026-05-15 chats through `deidentifier.deidentify()` → writes
+  audit rows to `synisense_audit_log`, `synisense_runs`, and a
+  separate `backfill_chain_v1` hash chain in `chat_audit_log` so
+  the live chain stays clean.
+- **Admin endpoints** — `routers/admin_shield_backfill.py`:
+  * `POST /api/admin/shield/backfill` — async kick-off, returns
+    `job_id` immediately; refuses to overlap with an in-flight job.
+  * `GET /api/admin/shield/backfill/status` — latest summary +
+    pending count + ETA.
+  * `GET /api/admin/shield/backfill/{job_id}/status` + `/log` —
+    per-job detail.
+- **CLI** — `scripts/backfill_shield_v1.py` with
+  `--batch-size --sleep-ms --dry-run --limit` flags.
+- **Idempotency** — chats marked `backfill_metadata.partial=False`
+  are skipped on re-run; mid-chat failures leave `partial=true` so
+  retries target only the broken ones.
+- **Honesty markers** — every back-fill audit row carries
+  `is_backfill: true`, `backfill_batch_id`, AND `original_message_ts`.
+- **Trust Center integration** — chats with `partial=False`
+  surface `shield_status: "backfilled"` + a full `backfill_metadata`
+  block. Frontend renders an amber "back-filled on <date>" banner
+  + per-turn "back-filled" badges with batch_id + original_ts tooltips.
+- **Real-corpus results on preview** (idempotent):
+  * 458 chats back-filled
+  * 211 had actual messages (rest were empty/abandoned)
+  * 104 chats had pre-v1.x PII detected (≈ 49% of non-empty)
+  * 639 audit rows written (synisense_audit_log + synisense_runs +
+    chat_audit_log, all 3 carry the backfill markers)
+  * Zero errors
+- **Tests** — `tests/test_h4_backfill.py` 8/8 GREEN:
+  end-to-end, idempotency, partial-failure recovery, rate limiting,
+  Trust Center post-backfill, is_backfill markers, separate hash
+  chain, admin status endpoint.
+- **Regression** — 230/231 GREEN (+8 H4, 1 pre-existing skip).
+
+
 ## H3 — Trust Center v1 — 2026-05-24 ✅
-Visible artifact of the entire Shield architecture. Two views,
 one drill-down, one plaintext modal, one standards-aligned footer.
 
 - **Backend** — `routers/trust_center.py` (4 endpoints):
