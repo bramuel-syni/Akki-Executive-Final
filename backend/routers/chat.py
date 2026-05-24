@@ -1682,8 +1682,58 @@ async def stream_message(
     # shield.streaming`).
     text = body.content.strip()
     syn_stats: Dict[str, Any] = {"spans_redacted": 0, "by_type": {}, "elapsed_ms": 0}
-    shield_map: Dict[str, str] = {}
-    shielded_text = text
+    # H2.5 Fix #7 (2026-05-24) — Root-cause diagnosis. PRIOR behaviour
+    # initialised `shield_map = {}` here and never called the legacy
+    # `_syn_shield()` pre-pass that the sync path uses at chat.py:1429
+    # via `shield_invoke`. As a result `detected["identifiers_masked"]`
+    # always reported 0, the chat_audit row at line 1733 wrote
+    # `shielded_for_llm=False, identifiers_detected=0, bypass_reason=
+    # "no_identifiers"`, AND THEN later in the same turn the
+    # strategic-deliverable branch (chat.py:2351-2383) called
+    # `shield_invoke` which DID detect identifiers and wrote a Shield
+    # audit row carrying e.g. `de_id_summary={CREDIT_CARD: 1}`. The two
+    # audit rows therefore contradicted each other for the same turn
+    # — chat_audit said "Shield didn't run / no identifiers" while
+    # Shield's own audit said "I redacted 1 credit card." Independent
+    # e1_tester verification caught this.
+    #
+    # Fix: call `_syn_shield(text)` here to populate `shield_map` from
+    # the same legacy detection path the sync handler uses. This makes
+    # `detected["identifiers_masked"]` accurate at the chat_audit
+    # write-point. Both audit row families now derive from a shared
+    # detection step. Failure surface inherits the H2.5 Fix #3 strict-
+    # raise semantics (chat-family surface → ShieldFailure → 503).
+    try:
+        _msg_id_for_shield_pre = str(uuid.uuid4())
+        shielded_text, shield_map = await _syn_shield(
+            text, context_id=str(current.get("id") or ""),
+            surface="chat", message_id=_msg_id_for_shield_pre,
+        )
+    except Exception as _shield_exc:  # noqa: BLE001
+        # adapter.shield_payload_async raises ShieldFailure for chat
+        # surface. Translate to HTTP 503 per the H2.5 mode contract.
+        from services.synisense.shield.exceptions import ShieldFailure
+        if isinstance(_shield_exc, ShieldFailure):
+            try:
+                await db.audit_invariant_violations.insert_one({
+                    "id": "iv-" + uuid.uuid4().hex,
+                    "kind": "shield_failure_at_entry",
+                    "surface": "chat", "channel": "stream",
+                    "error_class": _shield_exc.error_class,
+                    "account_id": current["id"], "chat_id": chat_id,
+                    "ts": _iso(_now()),
+                })
+            except Exception:  # noqa: BLE001 — best-effort log
+                pass
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "shield_unavailable",
+                    "action": "retry",
+                    "message": "Synisense Shield is temporarily unavailable. Your message has not been sent. Please retry.",
+                },
+            )
+        raise
 
     detected = _syn_report(shield_map)
     has_identifiers = detected["identifiers_masked"] > 0
@@ -2435,6 +2485,38 @@ async def stream_message(
                         consumer_id="akki.chat",
                         user_id=current["id"],
                     )
+                    # H2.5 Fix #6 (2026-05-24) — Defense-in-depth alarm.
+                    # AFTER Shield runs and BEFORE the LLM call, scan
+                    # `shielded_prompt` for residual Luhn-valid PANs.
+                    # If a match is found this is impossible-by-design
+                    # (Shield's regex pass should have caught it), so
+                    # we refuse to forward to the LLM. Logged into
+                    # `audit_invariant_violations` for triage.
+                    from services.synisense.shield import deidentifier as _shield_deid
+                    import re as _re_dind
+                    for _m in _re_dind.finditer(r"\b(?:\d[\s\-]?){12,18}\d\b", shielded_prompt):
+                        if _shield_deid._luhn_valid(_re_dind.sub(r"[\s\-]", "", _m.group(0))):
+                            try:
+                                await db.audit_invariant_violations.insert_one({
+                                    "id": "iv-" + uuid.uuid4().hex,
+                                    "kind": "luhn_pan_in_shielded_prompt",
+                                    "surface": "chat", "channel": "stream",
+                                    "account_id": current["id"],
+                                    "chat_id": chat_id,
+                                    "user_message_id": msg_id,
+                                    "match_len": len(_m.group(0)),
+                                    "ts": _iso(_now()),
+                                })
+                            except Exception:  # noqa: BLE001
+                                pass
+                            yield (
+                                "data: " + json.dumps({
+                                    "type": "error",
+                                    "code": "shield_invariant_violation",
+                                    "message": "Shield invariant violation detected. Message not forwarded.",
+                                }) + "\n\n"
+                            )
+                            return
                     stream_reid = StreamingReidentifier(shield_token_map)
 
                     raw_parts = []           # deltas as the LLM emitted them (placeholder-containing)

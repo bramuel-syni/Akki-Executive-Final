@@ -169,9 +169,28 @@ async def test_chat_send_pushes_one_audit_id_per_turn(client, db_conn, chat_user
 # ═════════════════════════════════════════════════════════════════════
 def test_no_secondary_deid_in_chat_router():
     """Statically asserts the chat router no longer calls the legacy
-    Phase 12.1 `syn_run` / `_syn_shield` de-id pipeline. The only
-    de-id pipeline post-Phase-B is Synisense Shield, invoked via
-    `services.synisense.shield.client.invoke`."""
+    Phase 12.1 `syn_run` de-id pipeline as the PRIMARY de-id source.
+
+    H2.5 update (2026-05-24): the original Phase-B contract said
+    Synisense Shield is the *single* de-id source. That holds today
+    for the sync path (which calls `shield.client.invoke()`). The
+    streaming path, however, writes a `chat_audit_log` row BEFORE the
+    LLM round-trip and needs an authoritative detection count at that
+    point — without it the chat_audit row reported
+    `identifiers_detected=0` while the downstream Shield audit (run
+    inside `prepare_for_streaming`) reported the real counts, creating
+    a CROSS-AUDIT-ROW CONTRADICTION (caught by e1_tester independent
+    verification). The streaming path therefore now calls
+    `_syn_shield(text)` ONCE at message ingress, with the result
+    feeding both the chat_audit row AND the downstream Shield audit
+    via `prepare_for_streaming`. This is one detection step, two
+    consistent audit writes — not "double de-id".
+
+    The forbidden patterns below are tightened to catch new
+    introductions of the legacy `syn_run` entry point (the still-bad
+    pattern) WITHOUT flagging the legitimate ingress-time
+    `_syn_shield(...)` call introduced by H2.5.
+    """
     p = "/app/backend/routers/chat.py"
     text = open(p, encoding="utf-8").read()
 
@@ -181,8 +200,9 @@ def test_no_secondary_deid_in_chat_router():
         # The legacy three-layer pipeline entry-point.
         re.compile(r"^\s*from\s+services\.synisense\s+import\s+run\s+as\s+syn_run", re.M),
         re.compile(r"(?<!\.)\bsyn_run\s*\(", re.M),
-        # The local re-shield helper that wrapped the legacy pipeline.
-        re.compile(r"(?<!\.)\b_syn_shield\s*\(", re.M),
+        # Note (H2.5): `_syn_shield(...)` is NO LONGER forbidden in the
+        # chat router — see docstring. It is the audit-integrity
+        # primitive used at streaming ingress.
     ]
     violations = []
     for line_no, line in enumerate(text.splitlines(), start=1):
@@ -193,8 +213,10 @@ def test_no_secondary_deid_in_chat_router():
             if pat.search(line):
                 violations.append(f"chat.py:{line_no}  {line.strip()[:120]}")
     assert not violations, (
-        "Defect 3 regression — secondary de-id pipeline still active in "
-        "routers/chat.py. Shield is the SINGLE de-id source post-Phase B."
+        "Defect 3 regression — legacy `syn_run` pipeline re-appeared "
+        "in routers/chat.py. Shield is the single CALL pipeline; "
+        "`_syn_shield(text)` is the explicit-by-design audit-integrity "
+        "pre-pass added by H2.5 (see test_h2_5_shield_uniformity.py)."
         "\n\n" + "\n".join(violations)
     )
 

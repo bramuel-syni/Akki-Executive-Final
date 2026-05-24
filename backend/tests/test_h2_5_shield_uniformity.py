@@ -335,3 +335,304 @@ async def test_fork_a_skip_list_still_redacts_pan_in_user_visible_reply():
     )
     assert "[PAYMENT_CARD_••••7689]" in out
     assert "4356789800057689" not in out
+
+
+# ═════════════════════════════════════════════════════════════════════
+# WIRE-LEVEL TESTS (post-tester-feedback, 2026-05-24)
+# Every assertion below captures bytes that ACTUALLY reach the cloud
+# LLM SDK (via monkeypatched `stream_llm_direct`). Watching the
+# user-visible reply alone is insufficient — the audit row could lie
+# about what the LLM saw. These tests prove the wire-level reality.
+# ═════════════════════════════════════════════════════════════════════
+async def _login_and_chat(client: httpx.AsyncClient):
+    """Register a fresh tenant + create a chat. Returns (token, ctx_id,
+    chat_id, account_id)."""
+    email = f"h2-5-wire-{uuid.uuid4().hex[:10]}@example.com"
+    r = await client.post("/api/auth/register", json={
+        "email": email, "password": "H2-5-Wire-2026!", "name": "H2.5 Wire",
+    })
+    assert r.status_code == 200, r.text[:300]
+    token = r.json()["access_token"]
+    me = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    account_id = me.json()["account"]["id"]
+    ctx_id = me.json()["contexts"][0]["id"]
+    hdrs = {"Authorization": f"Bearer {token}", "X-Active-Context": ctx_id}
+    chat_r = await client.post("/api/chats", json={"title": "H2.5 wire probe"}, headers=hdrs)
+    assert chat_r.status_code in (200, 201)
+    return token, ctx_id, chat_r.json()["id"], account_id, hdrs
+
+
+async def test_wire_streaming_llm_receives_redacted_prompt_not_raw_pan(client):
+    """**THE** binary fix-verification test. Submit a Luhn-valid PAN
+    over the streaming endpoint; capture what `stream_llm_direct`
+    actually receives; assert the raw 16-digit PAN is absent from
+    the captured bytes, AND a `[[ENT_CREDIT_CARD_…]]` placeholder is
+    present in its place."""
+    from services import llm_streaming as _ls
+    from collections import namedtuple
+
+    token, ctx_id, chat_id, account_id, hdrs = await _login_and_chat(client)
+
+    captured = {"user_text": None}
+    _Chunk = namedtuple("_Chunk", "kind text provider_used fallback_triggered error")
+
+    async def _fake_stream(*, provider, model_id, system_msg, user_text, session_id):
+        # CAPTURE WHAT THE LLM SDK WOULD HAVE SEEN.
+        captured["user_text"] = user_text
+        # Echo the redacted prompt back as a single delta so the
+        # streaming reidentifier has something to rehydrate.
+        # (We yield a single chunk containing the placeholders.)
+        # Extract just the user-message portion (after "USER: ").
+        body_portion = user_text.split("USER:", 1)[-1].strip() if "USER:" in user_text else user_text
+        yield _Chunk(kind="delta", text=f"You wrote: {body_portion}",
+                     provider_used=provider, fallback_triggered=False, error=None)
+        yield _Chunk(kind="done", text="", provider_used=provider,
+                     fallback_triggered=False, error=None)
+
+    with mock.patch.object(_ls, "stream_llm_direct", side_effect=_fake_stream):
+        # Submit a message containing the Bramuel PAN to the stream endpoint.
+        pan = "4356789800057689"  # Luhn-valid (Bramuel demo)
+        body = {
+            "content": f"Bramuel left his card no {pan} in KPMG head office.",
+            "shielding_policy": "always",
+        }
+        async with client.stream(
+            "POST", f"/api/chats/{chat_id}/messages/stream",
+            json=body, headers=hdrs, timeout=30.0,
+        ) as resp:
+            # Drain the response so the route's generator runs to completion.
+            body_bytes = b""
+            async for chunk in resp.aiter_bytes():
+                body_bytes += chunk
+            assert resp.status_code == 200, (resp.status_code, body_bytes[:300])
+
+    # ── WIRE-LEVEL ASSERTION ── what the cloud LLM SDK actually saw
+    captured_user_text = captured["user_text"] or ""
+    assert pan not in captured_user_text, (
+        f"WIRE-LEVEL LEAK: raw PAN {pan!r} reached stream_llm_direct's "
+        f"`user_text` argument. Captured: {captured_user_text[:500]!r}"
+    )
+    assert "[[ENT_CREDIT_CARD_" in captured_user_text, (
+        f"Expected [[ENT_CREDIT_CARD_…]] placeholder in what the LLM "
+        f"received. Captured: {captured_user_text[:500]!r}"
+    )
+
+    # ── User-visible reply MUST NOT contain raw PAN either ──
+    body_text = body_bytes.decode("utf-8", "replace")
+    assert pan not in body_text, (
+        f"Raw PAN leaked to user via SSE stream: {body_text[:500]!r}"
+    )
+
+
+async def test_wire_audit_integrity_invariant_holds(client):
+    """**THE** audit-integrity test. Submit a PAN, then verify the
+    chat_audit row AND the shield_audit row both agree on the
+    boolean question 'did Shield detect identifiers on this turn?'.
+    Disagreement = invariant violation."""
+    from services import llm_streaming as _ls
+    from core import db
+    from collections import namedtuple
+
+    token, ctx_id, chat_id, account_id, hdrs = await _login_and_chat(client)
+
+    _Chunk = namedtuple("_Chunk", "kind text provider_used fallback_triggered error")
+    async def _fake_stream(*, provider, model_id, system_msg, user_text, session_id):
+        yield _Chunk("delta", "Acknowledged.", provider, False, None)
+        yield _Chunk("done", "", provider, False, None)
+
+    with mock.patch.object(_ls, "stream_llm_direct", side_effect=_fake_stream):
+        body = {
+            "content": "Bramuel left his card no 4356789800057689 in KPMG head office.",
+            "shielding_policy": "always",
+        }
+        async with client.stream(
+            "POST", f"/api/chats/{chat_id}/messages/stream",
+            json=body, headers=hdrs, timeout=30.0,
+        ) as resp:
+            async for _ in resp.aiter_bytes():
+                pass
+            assert resp.status_code == 200
+
+    # ── Pull the chat_audit row(s) ──
+    chat_audits = await db.chat_audit_log.find(
+        {"chat_id": chat_id, "action": "message.sent"}, {"_id": 0},
+    ).to_list(None)
+    assert len(chat_audits) == 1, chat_audits
+    chat_audit_row = chat_audits[0]
+    chat_audit_payload = chat_audit_row.get("payload", {})
+    chat_detected = chat_audit_payload.get("identifiers_detected", 0)
+    chat_shielded = chat_audit_payload.get("shielded_for_llm", False)
+    chat_by_cat = chat_audit_payload.get("by_category", {})
+
+    # ── Pull the Shield audit row(s) for this chat ──
+    chat_doc = await db.chats.find_one({"id": chat_id}, {"_id": 0, "synisense_audit_ids": 1})
+    audit_ids = (chat_doc or {}).get("synisense_audit_ids") or []
+    assert len(audit_ids) >= 1, f"no synisense_audit_ids attached to chat: {chat_doc}"
+    shield_rows = await db.synisense_audit_log.find(
+        {"audit_id": {"$in": audit_ids}}, {"_id": 0},
+    ).to_list(None)
+    shield_summaries = [r.get("de_id_summary", {}) for r in shield_rows]
+    shield_total = sum(sum(s.values()) for s in shield_summaries)
+
+    # ── INVARIANT — chat_audit and shield_audit MUST agree on the
+    # BOOLEAN: did Shield detect anything this turn? ──
+    chat_audit_says_detected = chat_detected > 0
+    shield_audit_says_detected = shield_total > 0
+    assert chat_audit_says_detected == shield_audit_says_detected, (
+        f"AUDIT INVARIANT VIOLATION: "
+        f"chat_audit.identifiers_detected={chat_detected} (by_category={chat_by_cat}) "
+        f"vs shield_audit total={shield_total} (summaries={shield_summaries}). "
+        f"For the same turn, these MUST agree on the boolean."
+    )
+
+    # Hard requirement: with a PAN-containing input on `always` mode,
+    # BOTH must say detected > 0.
+    assert chat_audit_says_detected, (
+        f"chat_audit says no detection but input was a PAN. payload={chat_audit_payload}"
+    )
+    assert shield_audit_says_detected, (
+        f"shield_audit says no detection but input was a PAN. summaries={shield_summaries}"
+    )
+    # CREDIT_CARD specifically must appear in shield_audit.
+    assert any("CREDIT_CARD" in s for s in shield_summaries), shield_summaries
+
+
+async def test_wire_audit_invariant_violations_collection_empty_for_normal_flow(client):
+    """After a normal Shield-protected stream, NO row should be
+    written to `audit_invariant_violations`. The collection is the
+    canary-in-the-coal-mine; any rows = a real defect."""
+    from services import llm_streaming as _ls
+    from core import db
+    from collections import namedtuple
+
+    _Chunk = namedtuple("_Chunk", "kind text provider_used fallback_triggered error")
+    async def _fake_stream(*, provider, model_id, system_msg, user_text, session_id):
+        yield _Chunk("delta", "Acknowledged.", provider, False, None)
+        yield _Chunk("done", "", provider, False, None)
+
+    token, ctx_id, chat_id, account_id, hdrs = await _login_and_chat(client)
+    before = await db.audit_invariant_violations.count_documents(
+        {"account_id": account_id},
+    )
+
+    with mock.patch.object(_ls, "stream_llm_direct", side_effect=_fake_stream):
+        body = {
+            "content": "Bramuel left his card no 4356789800057689 in KPMG head office.",
+            "shielding_policy": "always",
+        }
+        async with client.stream(
+            "POST", f"/api/chats/{chat_id}/messages/stream",
+            json=body, headers=hdrs, timeout=30.0,
+        ) as resp:
+            async for _ in resp.aiter_bytes():
+                pass
+            assert resp.status_code == 200
+
+    after = await db.audit_invariant_violations.count_documents(
+        {"account_id": account_id},
+    )
+    assert after == before, (
+        f"audit_invariant_violations grew during a normal stream: "
+        f"before={before}, after={after}. Investigate latest row."
+    )
+
+
+async def test_wire_shield_unavailable_returns_503(client):
+    """Fix #3 strict-raise: if the legacy `_syn_shield` pipeline
+    raises in the streaming entry, the endpoint returns 503 + the
+    documented body, AND `audit_invariant_violations` logs the
+    shield_failure_at_entry kind."""
+    from services.synisense import adapter
+    from core import db
+
+    token, ctx_id, chat_id, account_id, hdrs = await _login_and_chat(client)
+    before = await db.audit_invariant_violations.count_documents(
+        {"account_id": account_id, "kind": "shield_failure_at_entry"},
+    )
+
+    # Patch BOTH pipeline.run and pipeline.dryrun (adapter routes to
+    # one or the other based on surface).
+    with mock.patch.object(adapter._pipeline, "run",
+                           side_effect=RuntimeError("simulated presidio collapse")), \
+         mock.patch.object(adapter._pipeline, "dryrun",
+                           side_effect=RuntimeError("simulated presidio collapse")):
+        body = {
+            "content": "Bramuel left his card no 4356789800057689 in KPMG head office.",
+            "shielding_policy": "always",
+        }
+        # The endpoint should raise → starlette converts to HTTP response.
+        # Use plain `post`, not `stream`, because the failure happens BEFORE
+        # the SSE generator starts yielding.
+        resp = await client.post(
+            f"/api/chats/{chat_id}/messages/stream",
+            json=body, headers=hdrs, timeout=30.0,
+        )
+    assert resp.status_code == 503, (resp.status_code, resp.text[:300])
+    body_json = resp.json()
+    assert body_json["detail"]["error"] == "shield_unavailable", body_json
+    assert body_json["detail"]["action"] == "retry"
+
+    after = await db.audit_invariant_violations.count_documents(
+        {"account_id": account_id, "kind": "shield_failure_at_entry"},
+    )
+    assert after > before, (
+        f"audit_invariant_violations must log the shield-failure event: "
+        f"before={before}, after={after}"
+    )
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Independent re-run recipe (for `e1_tester` / human auditors)
+# ═════════════════════════════════════════════════════════════════════
+# The wire-level tests above prove the streaming chat endpoint:
+#   (a) sends a REDACTED prompt to the LLM SDK (no raw PAN)
+#   (b) writes a Shield audit row whose `de_id_summary` is non-empty
+#   (c) writes a chat_audit row whose `identifiers_detected > 0`
+#   (d) keeps `audit_invariant_violations` empty during normal flow
+#   (e) returns 503 + invariant-log row when the pipeline fails
+#
+# To re-run outside pytest (against the deployed preview):
+#
+#   API=https://akki-executive.preview.emergentagent.com
+#   TOKEN=$(curl -s -X POST "$API/api/auth/login" -H "Content-Type: application/json" \
+#     -d '{"email":"bramuel@syni.ai","password":"Bramuel2026!"}' \
+#     | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+#   CTX=$(curl -s "$API/api/auth/me" -H "Authorization: Bearer $TOKEN" \
+#     | python3 -c "import sys,json;print(json.load(sys.stdin)['contexts'][0]['id'])")
+#   CHAT=$(curl -s -X POST "$API/api/chats" -H "Authorization: Bearer $TOKEN" \
+#     -H "X-Active-Context: $CTX" -H "Content-Type: application/json" \
+#     -d '{"title":"H2.5 streaming verify"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
+#
+#   # Send a streaming PAN message, save the SSE body to disk.
+#   curl -s -N -X POST "$API/api/chats/$CHAT/messages/stream" \
+#     -H "Authorization: Bearer $TOKEN" -H "X-Active-Context: $CTX" \
+#     -H "Content-Type: application/json" \
+#     -d '{"content":"Bramuel left his card no 4356789800057689 in KPMG head office.","shielding_policy":"always"}' \
+#     | tee /tmp/sse_body.txt
+#
+#   # The raw PAN must NOT appear in the SSE deltas (re-id is in effect).
+#   grep -c "4356789800057689" /tmp/sse_body.txt    # expect 0
+#   grep -c "PAYMENT_CARD" /tmp/sse_body.txt        # expect ≥ 1
+#
+#   # Audit row check (via the audit panel endpoint):
+#   curl -s "$API/api/chats/$CHAT/audit-panel/aggregate" \
+#     -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+#   # Expect identifiers_shielded > 0, llm_calls ≥ 1
+#
+# Mongo-level checks (run inside the backend container):
+#
+#   python3 -c "
+#   import asyncio
+#   from dotenv import load_dotenv; load_dotenv('/app/backend/.env')
+#   from core import db
+#   async def main():
+#       chat = await db.chats.find_one({'id': '$CHAT'}, {'_id': 0, 'synisense_audit_ids': 1})
+#       print('audit_ids:', chat.get('synisense_audit_ids', []))
+#       for aid in chat.get('synisense_audit_ids', []):
+#           row = await db.synisense_audit_log.find_one({'audit_id': aid}, {'_id': 0, 'de_id_summary': 1, 'outcome': 1, 'mode': 1})
+#           print(aid, '→', row)
+#       vio = await db.audit_invariant_violations.count_documents({'chat_id': '$CHAT'})
+#       print('invariant violations for this chat:', vio)
+#   asyncio.run(main())
+#   "
+
