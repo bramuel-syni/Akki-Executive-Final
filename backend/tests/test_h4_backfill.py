@@ -290,7 +290,9 @@ async def test_trust_center_post_backfill(client):
     assert user_turn["backfill_batch_id"], user_turn
     assert user_turn["original_message_ts"], user_turn
 
-    # ── Per-turn drill-down: raw PAN absent, placeholders present ──
+    # ── Per-turn drill-down: raw PAN absent, placeholders present,
+    # AND the three back-fill markers MUST be populated (H4 cycle-2
+    # serializer-gap regression). ──
     mid = user_turn["message_id"]
     r2 = await client.get(
         f"/api/trust-center/session/{chat_id}/turn/{mid}", headers=hdrs,
@@ -304,6 +306,20 @@ async def test_trust_center_post_backfill(client):
     sent = drill["what_synisense_sent_to_llm"]
     assert "[[ENT_CREDIT_CARD" in sent or "[[ENT_" in sent, (
         f"drilldown must show tokenized placeholder: {sent!r}"
+    )
+    # ── POSITIVE: per-turn endpoint must surface the three
+    # back-fill markers (was returning null before cycle 2). ──
+    assert drill["is_backfill"] is True, (
+        f"per-turn drill-down must mark back-filled turns as "
+        f"is_backfill=true. Got: {drill.get('is_backfill')!r}"
+    )
+    assert drill["backfill_batch_id"], (
+        f"per-turn drill-down must surface backfill_batch_id "
+        f"(non-empty). Got: {drill.get('backfill_batch_id')!r}"
+    )
+    assert drill["original_message_ts"], (
+        f"per-turn drill-down must surface original_message_ts "
+        f"(non-empty). Got: {drill.get('original_message_ts')!r}"
     )
 
 

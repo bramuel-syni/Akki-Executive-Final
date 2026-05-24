@@ -432,6 +432,16 @@ async def session_turn(
         "what_you_saw": user_visible,
         "redactions": redactions,
         "audit_chain": chain_status,
+        # H4 cycle-2 (2026-05-24) — back-fill markers were populated on
+        # the session-level ``turns[]`` array but missing from the
+        # per-turn drill-down. Pull them from the synisense_runs row
+        # (the canonical per-turn source the back-fill engine writes
+        # to) and surface them so auditors can distinguish a
+        # reconstructed turn from a live one without leaving this
+        # endpoint.
+        "is_backfill": bool(run.get("is_backfill")),
+        "backfill_batch_id": run.get("backfill_batch_id"),
+        "original_message_ts": run.get("original_message_ts"),
         "derivation_note": (
             "what_synisense_sent_to_llm and what_llm_returned are "
             "re-derived at view-time by running the same deterministic "
