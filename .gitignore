@@ -139,48 +139,12 @@ frontend/node_modules/.cache/default-development/91.pack
 frontend/node_modules/.cache/default-development/94.pack
 frontend/node_modules/.cache/default-development/89.pack
 frontend/node_modules/.cache/default-development/92.pack
--e 
-# Environment and credential files
-.env
-.env.*
-*.env
+# H2.5 deploy hygiene (2026-05-24) — the .env-blocking blocks below
+# were removed so Emergent deployment can inject production env vars
+# into backend/.env and frontend/.env. Credentials (*.pem, *.key,
+# credentials.json) are still ignored individually.
 credentials.json
 *.pem
 *.key
 .credentials
--e 
-# Environment and credential files
-.env
-.env.*
-*.env
-credentials.json
-*.pem
-*.key
-.credentials
--e 
-# Environment and credential files
-.env
-.env.*
-*.env
-credentials.json
-*.pem
-*.key
-.credentials
--e 
-# Environment and credential files
-.env
-.env.*
-*.env
-credentials.json
-*.pem
-*.key
-.credentials
--e 
-# Environment and credential files
-.env
-.env.*
-*.env
-credentials.json
-*.pem
-*.key
-.credentials
+
