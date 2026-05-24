@@ -329,16 +329,39 @@ def get_warmup_state() -> Dict[str, Any]:
     }
 
 
-async def warmup_or_die() -> None:
-    """Boot-time gate. Loads spaCy + runs a no-op deidentify on a
-    trivial string. On ANY exception, raises so the process dies and
-    supervisor restarts it — crash-looping is correct behaviour when
-    Shield can't initialise, because the alternative is silently
-    forwarding PAN to the LLM.
+async def warmup_or_warn() -> None:
+    """Boot-time Shield warmup. Loads spaCy + runs a no-op deidentify
+    on a trivial string to verify the pipeline actually executes.
+
+    H2.5 P0 hotfix (2026-05-24, post-prod-deploy outage) — was
+    previously named ``warmup_or_die``. Renamed and DOWNGRADED from
+    "raise on failure → process exits → supervisor crash-loops" to
+    "log SEVERE + write a boot-time invariant row → return".
+
+    **Why downgrade**: a hard ``warmup_or_die`` couples liveness to
+    boot-time model availability. When the prod build dropped the
+    ``en_core_web_sm`` wheel (transitive of a URL-pin format that
+    Emergent's pip-compile rewrote), the backend pod crash-looped
+    and every ``/api/*`` route returned 502. Observably-broken (LB
+    sees pod up, ``healthz/shield`` returns 503, every chat fails-
+    closed at runtime via Part A's broadened exception coverage) is
+    safer than silently dead.
+
+    **What still holds**:
+      * Per-request fail-closed contract — Part A's broadened catch
+        in ``_attempt_load`` and ``_ensure_spacy`` still raises
+        ``ServiceUnavailable`` → HTTP 503 → ``audit_invariant_violations``
+        row on every PAN-containing chat when the model is missing.
+      * Observability — ``/api/healthz/shield`` returns ``ready=false``
+        with the diagnostic state, so external probes / k8s
+        readinessProbes / load balancers can see the failure.
+      * Boot trail — this function writes an
+        ``audit_invariant_violations`` row with
+        ``kind=shield_unavailable_at_boot`` so operators get a
+        permanent record of the boot-time outage.
 
     Sets module-level ``_WARMUP_*`` globals so
-    ``GET /api/healthz/shield`` reads the most recent warmup snapshot
-    without re-running the load on every hit.
+    ``GET /api/healthz/shield`` reads the most recent warmup snapshot.
     """
     from datetime import datetime as _dt, timezone as _tz
     global _WARMUP_AT, _WARMUP_DURATION_MS, _WARMUP_OK, _WARMUP_ERROR
@@ -365,16 +388,48 @@ async def warmup_or_die() -> None:
             "synisense.shield: warmup OK (model=%s, %d ms)",
             _SPACY_MODEL_NAME, _WARMUP_DURATION_MS,
         )
-    except Exception as exc:  # noqa: BLE001 — see docstring; re-raised
+    except Exception as exc:  # noqa: BLE001 — see docstring; NOT re-raised
         _WARMUP_OK = False
         _WARMUP_ERROR = f"{type(exc).__name__}: {str(exc)[:300]}"
         _WARMUP_DURATION_MS = int((time.perf_counter() - started) * 1000)
         _WARMUP_AT = _dt.now(_tz.utc).isoformat()
-        log.error(
-            "synisense.shield: WARMUP FAILED (%s) — process will exit",
+        # SEVERE: louder than .error so the line shows up in any log
+        # filter that grep's for production alarms.
+        log.critical(
+            "synisense.shield: ⚠️  WARMUP FAILED (%s) — backend will "
+            "boot anyway, BUT every Shield call will return 503 until "
+            "the model loads. Check /api/healthz/shield. Per-request "
+            "fail-closed semantics remain enforced — no PII can reach "
+            "the LLM in this state.",
             _WARMUP_ERROR,
         )
-        raise
+        # Write a boot-time invariant row so ops gets a permanent
+        # record. Best-effort: a Mongo failure during boot must NOT
+        # block startup either.
+        try:
+            import uuid as _uuid
+            from core import db as _db
+            await _db.audit_invariant_violations.insert_one({
+                "id": "iv-" + _uuid.uuid4().hex,
+                "kind": "shield_unavailable_at_boot",
+                "surface": "shield.warmup",
+                "channel": "boot",
+                "error_class": type(exc).__name__,
+                "error_message": str(exc)[:400],
+                "warmup_duration_ms": _WARMUP_DURATION_MS,
+                "ts": _WARMUP_AT,
+            })
+        except Exception as _persist_exc:  # noqa: BLE001
+            log.critical(
+                "synisense.shield: also failed to persist "
+                "shield_unavailable_at_boot row: %s",
+                _persist_exc,
+            )
+
+
+# Back-compat alias — `server.py:on_startup` still imports the old
+# name. Kept until a follow-up cleans the import site too.
+warmup_or_die = warmup_or_warn
 
 
 def _force_clear_cache_for_test() -> None:

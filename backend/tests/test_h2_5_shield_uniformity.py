@@ -1061,14 +1061,25 @@ async def test_shield_fails_closed_when_spacy_model_missing(client, exc_class, e
 # H2.5 follow-up Part B — Boot-time Shield warmup + /api/healthz/shield
 # ═════════════════════════════════════════════════════════════════════
 async def test_warmup_or_die_raises_on_model_missing(monkeypatch):
-    """``warmup_or_die()`` must raise (not just log) when the spaCy
-    model can't be loaded. Supervisor relies on the process actually
-    DYING — a swallowed exception would let the app boot in a
-    PII-leaky state."""
+    """``warmup_or_warn()`` (formerly ``warmup_or_die``) must
+    capture the failure in the warmup-state snapshot WITHOUT raising.
+
+    H2.5 P0 hotfix (2026-05-24, post-prod-deploy outage) — the
+    semantics changed from "raise → process dies → supervisor
+    crash-loops" to "log SEVERE + write a boot-time invariant row
+    + flip the snapshot to ready=false". Per-request fail-closed
+    still applies via the chat route's runtime catches.
+
+    The test name retains ``or_die`` for git-blame continuity; the
+    assertion now matches the corrected contract.
+    """
     from services.synisense.shield import deidentifier
+    from core import db
 
     saved_nlp = deidentifier._SPACY_NLP
     saved_err = deidentifier._SPACY_LOAD_ERROR
+    saved_ok = deidentifier._WARMUP_OK
+    saved_warmup_err = deidentifier._WARMUP_ERROR
     monkeypatch.setattr(deidentifier, "_SPACY_NLP", None, raising=False)
     monkeypatch.setattr(deidentifier, "_SPACY_LOAD_ERROR", None, raising=False)
 
@@ -1081,29 +1092,47 @@ async def test_warmup_or_die_raises_on_model_missing(monkeypatch):
         raise OSError("subprocess: pretend-no-internet")
     monkeypatch.setattr(deidentifier.subprocess, "run", _subprocess_fail)
 
+    boot_rows_before = await db.audit_invariant_violations.count_documents(
+        {"kind": "shield_unavailable_at_boot"},
+    )
+
     try:
-        with pytest.raises(Exception) as excinfo:
-            await deidentifier.warmup_or_die()
-        # The raised class can be RuntimeError (wrapped) or the original
-        # OSError (passed through). Either is acceptable — the contract
-        # is "process exits", not a specific class.
-        assert excinfo.value is not None
-        # The warmup state MUST reflect the failure.
+        # Must NOT raise (the whole point of the P0 hotfix).
+        await deidentifier.warmup_or_warn()
+
+        # State snapshot must reflect the failure.
         st = deidentifier.get_warmup_state()
         assert st["ready"] is False, st
         assert st["last_warmup_error"], st
+        assert "OSError" in (st["last_warmup_error"] or ""), st
+
+        # And a boot-time invariant row must have been written.
+        boot_rows_after = await db.audit_invariant_violations.count_documents(
+            {"kind": "shield_unavailable_at_boot"},
+        )
+        assert boot_rows_after > boot_rows_before, (
+            f"shield_unavailable_at_boot row missing: "
+            f"before={boot_rows_before}, after={boot_rows_after}"
+        )
     finally:
         deidentifier._SPACY_NLP = saved_nlp
         deidentifier._SPACY_LOAD_ERROR = saved_err
-        # Force a re-warmup on the live module so the rest of the suite
-        # doesn't see a poisoned state.
-        deidentifier._WARMUP_OK = True
-        deidentifier._WARMUP_ERROR = None
+        deidentifier._WARMUP_OK = saved_ok
+        deidentifier._WARMUP_ERROR = saved_warmup_err
 
 
 async def test_healthz_shield_endpoint_returns_state(client):
-    """Happy path — Shield warmed up at startup so the endpoint
-    returns 200 with ``ready=true`` and the documented shape."""
+    """Happy path — once warmup has run, the endpoint returns 200
+    with ``ready=true`` and the documented shape.
+
+    Note: ``httpx.AsyncClient(ASGITransport)`` does NOT fire the
+    FastAPI lifespan/on_startup hooks by default, so this test
+    triggers warmup explicitly. In real boot (supervisor →
+    uvicorn → FastAPI startup), ``server.py:on_startup`` calls
+    ``warmup_or_warn`` before the first request lands."""
+    from services.synisense.shield.deidentifier import warmup_or_warn
+    await warmup_or_warn()
+
     resp = await client.get("/api/healthz/shield")
     assert resp.status_code == 200, resp.text[:300]
     body = resp.json()
