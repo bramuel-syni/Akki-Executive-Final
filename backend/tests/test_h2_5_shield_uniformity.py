@@ -951,6 +951,103 @@ async def test_wire_stream_envelope_audit_id_resolves_to_shield_row(client):
     )
 
 
+async def test_shield_fails_closed_when_spacy_model_missing(client):
+    """**Deploy safety — Part B verification.**
+
+    If spaCy's NER model fails to load at runtime (e.g. the prod
+    container ships without ``en_core_web_sm``, or the model file is
+    corrupted, or the loader OOMs), Shield MUST fail-closed:
+
+      * HTTP 503 (NOT 200 with raw PAN forwarded to the LLM)
+      * ``audit_invariant_violations`` row with
+        ``kind=shield_failure_at_entry``
+      * No ``synisense_runs`` row, no ``chat_audit_log`` row claiming
+        identifiers_detected from a failed pipeline.
+
+    Simulates model-load failure by clearing the cached ``_SPACY_NLP``
+    + ``_SPACY_LOAD_ERROR`` globals in
+    ``services.synisense.shield.deidentifier`` and monkey-patching
+    ``_attempt_load`` to raise ``OSError`` (matches the real "model
+    not installed" surface — see ``spacy.load`` source).
+
+    Independent re-run::
+
+        # In a container WITHOUT en_core_web_sm installed:
+        curl -s -X POST "$API/api/chats/$CHAT/messages/stream" \\
+            -H "Authorization: Bearer $TOKEN" \\
+            -H "X-Active-Context: $CTX" \\
+            -H "Content-Type: application/json" \\
+            -d '{"content":"My card is 4111111111111111","shielding_policy":"always"}'
+        # expect: HTTP 503, body.detail.error="shield_unavailable"
+    """
+    from services.synisense.shield import deidentifier
+    from core import db
+
+    token, ctx_id, chat_id, account_id, hdrs = await _login_and_chat(client)
+    before = await db.audit_invariant_violations.count_documents(
+        {"account_id": account_id, "kind": "shield_failure_at_entry"},
+    )
+
+    # Reset the module-level cache so the patched loader takes effect.
+    # The loader is idempotent + thread-safe; clearing both globals is
+    # the documented way to force a re-load on the next call.
+    saved_nlp = deidentifier._SPACY_NLP
+    saved_err = deidentifier._SPACY_LOAD_ERROR
+    deidentifier._SPACY_NLP = None
+    deidentifier._SPACY_LOAD_ERROR = None
+
+    def _model_missing(model_name: str):
+        # Real OSError surface from `spacy.load` when the model
+        # package isn't installed in the venv.
+        raise OSError(
+            f"[E050] Can't find model '{model_name}'. "
+            "It doesn't seem to be a Python package or a valid path "
+            "to a data directory."
+        )
+
+    try:
+        with mock.patch.object(deidentifier, "_attempt_load", side_effect=_model_missing):
+            body = {
+                "content": "My card is 4111111111111111 please charge it.",
+                "shielding_policy": "always",
+            }
+            resp = await client.post(
+                f"/api/chats/{chat_id}/messages/stream",
+                json=body, headers=hdrs, timeout=30.0,
+            )
+
+        # ── Fail-closed wire assertions ──
+        assert resp.status_code == 503, (
+            f"FAIL-OPEN REGRESSION: chat returned {resp.status_code} when "
+            f"spaCy model is missing. Expected 503 SHIELD_UNAVAILABLE. "
+            f"Body: {resp.text[:400]!r}"
+        )
+        body_json = resp.json()
+        assert body_json["detail"]["error"] == "shield_unavailable", body_json
+        assert body_json["detail"]["action"] == "retry", body_json
+
+        # ── No raw PAN anywhere in the response body ──
+        assert "4111111111111111" not in resp.text, (
+            f"FAIL-OPEN REGRESSION: raw PAN leaked in 503 response body: "
+            f"{resp.text[:400]!r}"
+        )
+
+        # ── Invariant violation row was written ──
+        after = await db.audit_invariant_violations.count_documents(
+            {"account_id": account_id, "kind": "shield_failure_at_entry"},
+        )
+        assert after > before, (
+            f"audit_invariant_violations must log shield_failure_at_entry "
+            f"when spaCy model is missing: before={before}, after={after}"
+        )
+    finally:
+        # Restore the module's cached state so subsequent tests don't
+        # see a poisoned loader. The next caller will re-load the model
+        # successfully via the normal path.
+        deidentifier._SPACY_NLP = saved_nlp
+        deidentifier._SPACY_LOAD_ERROR = saved_err
+
+
 # ═════════════════════════════════════════════════════════════════════
 # Independent re-run recipe (for `e1_tester` / human auditors)
 # ═════════════════════════════════════════════════════════════════════
