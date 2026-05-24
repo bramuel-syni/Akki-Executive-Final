@@ -50,8 +50,28 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import pipeline as _pipeline
+from .shield.exceptions import ShieldFailure
 
 logger = logging.getLogger("akki.synisense.adapter")
+
+
+# H2.5 (2026-05-24) — Surfaces that are still allowed to degrade open
+# when the de-id pipeline raises. Chat-family is INTENTIONALLY excluded
+# (chat must fail-closed; the route translates the raised
+# `ShieldFailure` into HTTP 503). This list mirrors the
+# `services.solva_v2.llm_adapter.shielded_call` discipline — strict by
+# default, explicit opt-out only.
+_SURFACES_ALLOWING_DEGRADED_OPEN: frozenset[str] = frozenset({
+    # Background / batch / admin surfaces where degraded-open is
+    # historically expected and the worst case is "no redaction badge
+    # rendered" rather than "raw PII reaches the LLM".
+    "ingest",      # document ingestion (already pre-redacted at upload)
+    "briefing",    # batch briefing generation
+    "deck",        # deck export pre-pass
+    "report",      # admin report generator
+    "enhance",     # work-studio export enhance step
+    "sandbox",     # admin sandbox demo-content generator
+})
 
 
 async def shield_payload_async(
@@ -109,14 +129,24 @@ async def shield_payload_async(
                 context_people=context_people,
             )
     except Exception as exc:  # noqa: BLE001
-        # Defensive — if the pipeline raises (bad surface, presidio
-        # collapse, etc.), fall through with the unshielded text but
-        # log loudly so ops sees it. Solva v2 surfaces use the strict
-        # adapter and DO refuse on this same condition; chat-style
-        # surfaces have historically degraded rather than refusing
-        # (matches old llm_service.shield_payload behaviour).
-        logger.error("synisense.adapter: pipeline failed surface=%s err=%s",
-                     surface, exc)
+        # H2.5 (2026-05-24) — surface-aware fail mode. Chat-family
+        # and any other surface NOT explicitly enumerated in
+        # `_SURFACES_ALLOWING_DEGRADED_OPEN` now FAIL CLOSED: raise
+        # `ShieldFailure` so the route returns 503 instead of shipping
+        # raw text to the LLM. The legacy degraded-open behaviour
+        # remains for background / batch / admin surfaces where the
+        # downstream LLM call already operates on pre-redacted text
+        # (ingest), or where the operator has explicitly opted in
+        # (briefing/deck/report/enhance/sandbox).
+        logger.error(
+            "synisense.adapter: pipeline failed surface=%s err=%s",
+            surface, exc,
+        )
+        if surface not in _SURFACES_ALLOWING_DEGRADED_OPEN:
+            raise ShieldFailure(
+                f"Synisense Shield pipeline failed for surface={surface!r}",
+                original=exc, surface=surface,
+            ) from exc
         return text, {}
 
     redacted: str = out.get("redacted_text") or text

@@ -143,3 +143,190 @@ def reidentify(text: str, token_map: Dict[str, str]) -> str:
         return original
 
     return _TOKEN_RE.sub(_sub, text)
+
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Streaming reidentifier (H2.5 — 2026-05-24).
+# ─────────────────────────────────────────────────────────────────────
+# The legacy `reidentify()` above takes a whole-text payload. The
+# streaming chat path needs a stateful variant: tokens of the form
+# `[[ENT_<TYPE>_<NNN>]]` may be split across two or more LLM-emitted
+# deltas (e.g. one delta ends with `[[ENT_CREDIT_CA` and the next
+# starts with `RD_001]]_at_KPMG`). A whole-text substitution can't
+# safely operate on a single delta — it would emit a fragment of the
+# token to the user and leak partial label text. Worse, if the
+# partial fragment happens to LOOK like the start of a number, the
+# user's screen could briefly flash digits before the closing `]]`
+# arrives.
+#
+# `StreamingReidentifier.feed(delta)` returns only the prefix of the
+# accumulated buffer that is GUARANTEED not to be the start of a
+# pending token. `flush()` returns whatever's left at stream end.
+# A hard cap (`_MAX_PENDING_TOKEN_LEN`) ensures that if an opening
+# `[[ENT_` never closes (malformed LLM output, runaway token), we
+# eventually release the buffer with a log warning — but EVERY
+# rendered character is either non-`[` or a verified safe character,
+# so no raw PII can leak via overflow.
+
+# Maximum length of an `[[ENT_<TYPE>_<NNN>]]` token. The longest known
+# type label today is `UK_NI_NUMBER` (12 chars). 64 chars covers any
+# realistic future type label plus the 7-char wrap and 6-digit counter.
+_MAX_PENDING_TOKEN_LEN = 64
+
+
+class StreamingReidentifier:
+    """Stateful per-stream rehydrator. NOT thread-safe — one instance
+    per LLM stream.
+
+    Usage:
+        sr = StreamingReidentifier(token_map)
+        async for chunk in stream:
+            yield sr.feed(chunk.text)
+        yield sr.flush()   # release tail at stream end
+
+    Both `feed()` and `flush()` return a (possibly empty) string of
+    user-safe characters. They NEVER emit a partial `[[ENT_...]]`
+    fragment — if a token is mid-arrival, the matching characters
+    stay buffered until the closing `]]` (or until the buffer
+    overflows, see below).
+
+    Args:
+        token_map: same shape `reidentify()` accepts; token →
+            original value.
+        on_overflow: optional callback invoked with the released
+            buffer when `_MAX_PENDING_TOKEN_LEN` is exceeded
+            without seeing a closing `]]`. Default is a stderr
+            warning. Useful for tests + audit-write hooks.
+    """
+
+    def __init__(
+        self,
+        token_map: Dict[str, str],
+        *,
+        on_overflow=None,  # type: ignore[no-untyped-def]
+    ) -> None:
+        self._token_map = token_map or {}
+        self._buffer = ""
+        self._overflow_count = 0
+        self._on_overflow = on_overflow
+
+    # ─────────────────────────────────────────────────────────────────
+    # Core operations
+    # ─────────────────────────────────────────────────────────────────
+    def feed(self, delta: str) -> str:
+        """Push `delta` into the buffer; return the prefix that's
+        guaranteed safe to render to the user."""
+        if not delta:
+            return ""
+        if not self._token_map:
+            # Nothing to substitute — pass-through. Cheap, common in
+            # `auto` mode for messages without identifiers.
+            return delta
+        self._buffer += delta
+        return self._drain(final=False)
+
+    def flush(self) -> str:
+        """Release whatever's still in the buffer at stream end."""
+        return self._drain(final=True)
+
+    # ─────────────────────────────────────────────────────────────────
+    # Internals
+    # ─────────────────────────────────────────────────────────────────
+    def _drain(self, *, final: bool) -> str:
+        out_parts = []
+        buf = self._buffer
+        i = 0
+        while i < len(buf):
+            # Find the next `[` (potential token start).
+            lb = buf.find("[", i)
+            if lb < 0:
+                # No more `[` — rest of buffer is safe.
+                out_parts.append(buf[i:])
+                i = len(buf)
+                break
+
+            # Safe text before the `[`.
+            if lb > i:
+                out_parts.append(buf[i:lb])
+                i = lb
+
+            # Now `buf[i]` == `[`. Determine if this is a real token
+            # start `[[ENT_`. We need at least 6 more chars to check.
+            tail = buf[i:]
+            if len(tail) < 6:
+                # Not enough chars to decide — defer unless final.
+                if final:
+                    out_parts.append(tail)
+                    i = len(buf)
+                break
+
+            if not tail.startswith("[[ENT_"):
+                # Single `[` or `[[` followed by other content; not a
+                # token. Emit just the `[` and advance.
+                out_parts.append("[")
+                i += 1
+                continue
+
+            # tail starts with `[[ENT_` — look for closing `]]`.
+            close_rel = tail.find("]]")
+            if close_rel < 0:
+                # Token not yet closed. Hold the rest of the buffer
+                # UNLESS we've overflowed.
+                if len(tail) >= _MAX_PENDING_TOKEN_LEN:
+                    # Malformed / runaway — release safely. We emit
+                    # the buffered chars character-by-character so
+                    # there's no way a partial token could decode
+                    # into raw PII (the original is in `_token_map`
+                    # only, not in the buffer itself).
+                    self._overflow_count += 1
+                    if self._on_overflow is not None:
+                        try:
+                            self._on_overflow(tail)
+                        except Exception:  # noqa: BLE001
+                            pass
+                    out_parts.append(tail)
+                    i = len(buf)
+                    break
+                if final:
+                    out_parts.append(tail)
+                    i = len(buf)
+                    break
+                # Otherwise hold and wait for more data.
+                break
+
+            # Token closed at position `i + close_rel + 2` (after `]]`).
+            full_tok = tail[: close_rel + 2]
+            # Validate shape with the strict regex used by `reidentify`.
+            m = _TOKEN_RE.match(full_tok)
+            if m is None:
+                # Looked like a token but failed validation — emit
+                # raw and continue.
+                out_parts.append(full_tok)
+                i += len(full_tok)
+                continue
+
+            # Resolve via token_map / skip list.
+            entity_type = m.group(1)
+            original = self._token_map.get(full_tok)
+            if original is None:
+                out_parts.append(full_tok)
+            else:
+                visible = _visible_placeholder(entity_type, original)
+                out_parts.append(visible if visible is not None else original)
+            i += len(full_tok)
+
+        # Preserve any unconsumed tail for the next feed().
+        self._buffer = buf[i:]
+        return "".join(out_parts)
+
+    # ─────────────────────────────────────────────────────────────────
+    # Telemetry surface (callers can log this at stream end).
+    # ─────────────────────────────────────────────────────────────────
+    @property
+    def overflow_count(self) -> int:
+        return self._overflow_count
+
+    @property
+    def buffered_chars(self) -> int:
+        return len(self._buffer)

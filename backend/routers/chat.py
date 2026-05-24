@@ -2389,16 +2389,56 @@ async def stream_message(
                 mode = "error"
         else:
             try:
-                    # Phase B.3 — real token streaming via direct provider SDKs.
-                    # Synisense Shield only fires on the ASSEMBLED final reply
-                    # below (see `cleaned_reply` rehydration). Streaming the
-                    # raw deltas to the client during generation is intentional:
-                    # each delta is a token-fragment and Shield is built for
-                    # whole-text payloads. The `done` event below substitutes
-                    # the canonical shielded text for what the user sees.
+                    # H2.5 (2026-05-24) — Streaming carve-out fix.
+                    # The previous behaviour shipped `full_prompt` (raw
+                    # user text + history) directly to Anthropic /
+                    # Gemini / OpenAI via `stream_llm_direct`. The
+                    # cloud LLM provider therefore saw un-redacted PII
+                    # — the exact violation H2 §3 P0 #1 identified.
+                    #
+                    # New flow:
+                    #   1. `prepare_for_streaming` de-identifies the
+                    #      prompt and returns (redacted, token_map,
+                    #      finalize). The audit-id is minted at this
+                    #      point so the row is reserved BEFORE the LLM
+                    #      sees anything.
+                    #   2. `stream_llm_direct` receives the REDACTED
+                    #      prompt — placeholders only.
+                    #   3. Each LLM-emitted delta passes through a
+                    #      `StreamingReidentifier` that handles tokens
+                    #      split across delta boundaries (it buffers
+                    #      partial `[[ENT_…` matches until the closing
+                    #      `]]` arrives, then substitutes the visible
+                    #      placeholder or the original per Fork A's
+                    #      skip list).
+                    #   4. `finalize(...)` writes the synisense_audit_log
+                    #      row + trust receipt mirroring the sync-path
+                    #      `shield.client.invoke()` write — so the
+                    #      Trust Center / audit panel render the
+                    #      streaming turn identically.
+                    #
+                    # See `/app/memory/sprints/H2_5_STREAMING_PII_FIX_STATE.md`.
                     from services.llm_streaming import stream_llm_direct, provider_for_model
+                    from services.synisense.shield.client import prepare_for_streaming as _shield_prepare_streaming
+                    from services.synisense.shield.reidentifier import StreamingReidentifier
                     stream_provider = provider_for_model(model_def["model"])
-                    raw_parts = []
+
+                    # ── Step 1 — de-id prompt + reserve audit id ──
+                    (
+                        shielded_prompt,
+                        shield_token_map,
+                        shield_finalize,
+                    ) = await _shield_prepare_streaming(
+                        purpose="chat.send_message_stream",
+                        content=full_prompt,
+                        tenant_id=current["id"],
+                        consumer_id="akki.chat",
+                        user_id=current["id"],
+                    )
+                    stream_reid = StreamingReidentifier(shield_token_map)
+
+                    raw_parts = []           # deltas as the LLM emitted them (placeholder-containing)
+                    visible_parts = []       # deltas after rehydration (what the user sees)
                     stream_provider_used = ""
                     stream_fallback = False
                     stream_error = None
@@ -2406,17 +2446,20 @@ async def stream_message(
                         provider=stream_provider,
                         model_id=model_def["model"],
                         system_msg=system_msg,
-                        user_text=full_prompt,
+                        user_text=shielded_prompt,
                         session_id=f"akki-chat-{chat_id}",
                     ):
                         if _chunk.kind == "delta":
                             raw_parts.append(_chunk.text)
-                            yield (
-                                "data: " + json.dumps({
-                                    "type": "delta",
-                                    "text": _chunk.text,
-                                }) + "\n\n"
-                            )
+                            visible_delta = stream_reid.feed(_chunk.text)
+                            if visible_delta:
+                                visible_parts.append(visible_delta)
+                                yield (
+                                    "data: " + json.dumps({
+                                        "type": "delta",
+                                        "text": visible_delta,
+                                    }) + "\n\n"
+                                )
                             # Phase A.2 — yield control to the event loop so
                             # uvicorn flushes each delta to the TCP socket
                             # immediately. Without this, multiple yields
@@ -2437,10 +2480,28 @@ async def stream_message(
                             stream_error = _chunk.error or "stream_interrupted"
                             stream_provider_used = _chunk.provider_used
                             stream_fallback = _chunk.fallback_triggered
+                    # Flush any token still buffered (e.g. delta ended
+                    # mid-token but stream closed cleanly).
+                    tail = stream_reid.flush()
+                    if tail:
+                        visible_parts.append(tail)
+                        yield "data: " + json.dumps({"type": "delta", "text": tail}) + "\n\n"
+
                     if stream_error:
-                        # Mid-stream failure (with content already partly
-                        # emitted) OR proxy fallback also failed.
-                        # DO NOT persist a partial assistant message.
+                        # Mid-stream failure. Finalize the Shield
+                        # audit row with `outcome=stream_error` so the
+                        # row is still mintable and the audit chain
+                        # stays append-only.
+                        try:
+                            await shield_finalize(
+                                response_text="".join(visible_parts),
+                                provider=stream_provider_used or stream_provider,
+                                model=model_def["model"],
+                                usage=None,
+                                outcome="stream_error",
+                            )
+                        except Exception:  # noqa: BLE001
+                            logger.warning("shield_finalize on stream_error failed")
                         yield (
                             "data: " + json.dumps({
                                 "type": "error",
@@ -2466,7 +2527,25 @@ async def stream_message(
                         except Exception:  # noqa: BLE001
                             pass
                         return
-                    raw_text = "".join(raw_parts)
+                    raw_text = "".join(visible_parts)  # rehydrated text — what the user saw
+                    # Finalize the Shield audit row now that the
+                    # stream completed successfully. The minted
+                    # audit_id is pushed onto chat.synisense_audit_ids
+                    # so the audit-panel endpoints resolve this turn.
+                    try:
+                        _stream_audit_id = await shield_finalize(
+                            response_text=raw_text,
+                            provider=stream_provider_used or stream_provider,
+                            model=model_def["model"],
+                            usage=None,  # token usage not surfaced by stream_llm_direct
+                            outcome="success",
+                        )
+                        await db.chats.update_one(
+                            {"id": chat_id, "account_id": current["id"]},
+                            {"$push": {"synisense_audit_ids": _stream_audit_id}},
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.warning("shield_finalize on stream success failed")
                     # Phase A.2 — track that real-time deltas already
                     # reached the client. The post-process re-chunker
                     # below MUST NOT re-emit the same content.
