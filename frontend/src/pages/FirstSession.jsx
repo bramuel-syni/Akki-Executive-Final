@@ -593,7 +593,7 @@ function FirstSessionDone({ artefact }) {
 // Root page
 // ---------------------------------------------------------------------------
 export default function FirstSession() {
-  const { refreshContexts, bootstrap, account } = useAuth();
+  const { bootstrap, account } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [state, setState] = useState(null);
@@ -634,9 +634,15 @@ export default function FirstSession() {
 
   const onIntakeSubmitted = useCallback(async (newState) => {
     setState(newState);
-    // Refresh account's first_session so AuthContext is in sync.
-    try { await refreshContexts(); } catch { /* noop */ }
-  }, [refreshContexts]);
+    // Hardening Step 2 (2026-05-25, P3/J2.3 false-green fix) —
+    // `bootstrap()` re-fetches `/auth/me` so `account.first_session`
+    // is fresh after the intake POST mutated it server-side. The
+    // prior `refreshContexts()` only refreshed the contexts list,
+    // leaving the AuthContext's `account.first_session.{intake,
+    // current_step}` stale → any subsequent route guard would see
+    // pre-intake state. Same J2.3 recurrence as the choose-door fix.
+    try { await bootstrap(); } catch { /* noop */ }
+  }, [bootstrap]);
 
   const onDoorChosen = useCallback((door) => {
     setState((prev) => ({ ...(prev || {}), current_step: "working", door_taken: door }));
@@ -646,22 +652,29 @@ export default function FirstSession() {
     try {
       const { data } = await api.post("/me/first-session/complete", { artefact });
       setState(data.state);
-      try { await refreshContexts(); } catch { /* noop */ }
+      // Hardening Step 2 (P3/J2.3) — `bootstrap()` updates
+      // `account.first_session.status: "completed"` so the
+      // FirstSessionGuard at `/app/*` sees the new state and
+      // doesn't bounce back to /app/first-session.
+      try { await bootstrap(); } catch { /* noop */ }
     } catch (e) {
       // If the artefact couldn't be validated, don't block — take user home
       // with the partial state. We log the error softly.
       toast.error(apiErrorMessage(e, "Couldn't finalise — heading home."));
       navigate("/app", { replace: true });
     }
-  }, [refreshContexts, navigate]);
+  }, [bootstrap, navigate]);
 
   const onSkip = useCallback(async () => {
     try {
       await api.post("/me/first-session/skip");
-      try { await refreshContexts(); } catch { /* noop */ }
+      // Hardening Step 2 (P3/J2.3) — `bootstrap()` updates
+      // `account.first_session.status: "skipped"` so the
+      // FirstSessionGuard at `/app/*` doesn't redirect back.
+      try { await bootstrap(); } catch { /* noop */ }
     } catch { /* noop */ }
     navigate("/app", { replace: true });
-  }, [navigate, refreshContexts]);
+  }, [navigate, bootstrap]);
 
   const step = state?.current_step || "intake";
 

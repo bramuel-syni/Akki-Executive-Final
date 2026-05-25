@@ -16,7 +16,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Upload, FileText, FolderOpen } from "lucide-react";
+import { Loader2, Upload, FileText, FolderOpen, Search } from "lucide-react";
 import { api } from "@/lib/api";
 
 

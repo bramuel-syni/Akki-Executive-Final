@@ -411,7 +411,18 @@ export default function AppShell({ children }) {
 
           {/* H3 — Trust Center entry. American spelling. Sits between
               Documents and the workspace pill so the privacy promise
-              is visible without leaving the parchment aesthetic. */}
+              is visible without leaving the parchment aesthetic.
+
+              Hardening Step 2 (2026-05-25, P1/T2.3 false-green fix) —
+              DOM-unconditional rule (§5.7). The tooltip wrapper renders
+              on every page load; visibility is governed by the
+              `data-tooltip-visible` attribute + CSS classes that flip
+              between `pointer-events-auto opacity-100` and
+              `pointer-events-none invisible opacity-0`. Mirrors the
+              J4 G31 ratified pattern applied to the help-tooltip below.
+              This lets tests assert the tooltip DOM exists regardless
+              of `onbStatus?.trust_center_tooltip?.show` state at first
+              paint. */}
           <div className="relative">
             <button
               type="button"
@@ -429,22 +440,26 @@ export default function AppShell({ children }) {
               <ShieldCheck className="w-4 h-4" strokeWidth={1.7} />
               <span className="hidden sm:inline">Trust Center</span>
             </button>
-            {onbStatus?.trust_center_tooltip?.show && (
-              <div
-                role="tooltip"
-                data-testid="trust-center-tooltip"
-                className="absolute top-full mt-2 right-0 w-64 bg-[var(--ink)] text-[var(--cream)] text-[11.5px] px-3 py-2 rounded-md shadow-lg z-50"
-              >
-                <div className="font-medium mb-0.5">New</div>
-                <div className="text-[var(--cream)]/85 leading-snug">
-                  This is your Trust Center. We've recorded what Shield touched on your first upload — take a look.
-                </div>
-                <div
-                  className="absolute -top-1 right-6 w-2 h-2 bg-[var(--ink)] rotate-45"
-                  aria-hidden="true"
-                />
+            <div
+              role="tooltip"
+              data-testid="trust-center-tooltip"
+              data-tooltip-visible={onbStatus?.trust_center_tooltip?.show ? "true" : "false"}
+              className={
+                "absolute top-full mt-2 right-0 w-64 bg-[var(--ink)] text-[var(--cream)] text-[11.5px] px-3 py-2 rounded-md shadow-lg z-50 " +
+                (onbStatus?.trust_center_tooltip?.show
+                  ? "pointer-events-auto opacity-100"
+                  : "pointer-events-none invisible opacity-0")
+              }
+            >
+              <div className="font-medium mb-0.5">New</div>
+              <div className="text-[var(--cream)]/85 leading-snug">
+                This is your Trust Center. We've recorded what Shield touched on your first upload — take a look.
               </div>
-            )}
+              <div
+                className="absolute -top-1 right-6 w-2 h-2 bg-[var(--ink)] rotate-45"
+                aria-hidden="true"
+              />
+            </div>
           </div>
 
           {/* J1 — Help link in the top-bar. The /help page (Phase E)

@@ -29,6 +29,17 @@ let webpackConfig = {
       rules: {
         "react-hooks/rules-of-hooks": "error",
         "react-hooks/exhaustive-deps": "warn",
+        // ─── Hardening Step 2 Phase C (2026-05-25) — B3 pattern ─────
+        // `react/jsx-no-undef` + `no-undef` catch the case from B3
+        // (closeout §5.6 import-survival rule) where a JSX symbol
+        // referenced inside a conditional branch isn't declared /
+        // imported. Without these rules, the broken branch hides
+        // behind the condition gate at unit-test time and only
+        // surfaces at runtime when the gate fires. Tooling-level
+        // pin for the audit-ledger Pattern 2 class. See
+        // /app/memory/sprints/FALSE_GREEN_AUDIT_LEDGER.md.
+        "react/jsx-no-undef": "error",
+        "no-undef": "error",
         // Code-hygiene rules (formerly .eslintrc.js, consolidated here
         // because craco's eslint.configure REPLACES the rc-file config).
         "no-duplicate-imports": ["error", { includeExports: true }],

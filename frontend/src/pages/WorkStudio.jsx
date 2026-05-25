@@ -431,6 +431,14 @@ export default function WorkStudio() {
   const { activeContext } = useAuth();
   const cid = activeContext?.id;
   const [searchParams, setSearchParams] = useSearchParams();
+  // T3.3 G8 ratified routing — Board/Committee Pack cards navigate to
+  // the dedicated `/app/work-studio/document/{aid}` page. Hardening
+  // Step 2 Phase B (2026-05-25, B3 false-green fix) — the `navigate`
+  // hook was previously missing from this component scope, so the
+  // call site at line 669 (`navigate(\`/app/work-studio/document/${aid}\`)`)
+  // would throw `ReferenceError` at runtime. Caught by the new
+  // `no-undef` ESLint rule (Step 2 Phase C).
+  const navigate = useNavigate();
 
   // Tab state — URL-backed.
   const initialKind = (() => {

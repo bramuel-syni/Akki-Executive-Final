@@ -112,3 +112,103 @@ HTTP 200. No `debug` key (correctly suppressed on the unreachable path). This pr
 ### Status
 
 **Step 1 IN PROGRESS.** Implementation + tests landed; pending e1_tester verification.
+
+---
+
+## 2026-05-25 — Step 1 closure
+
+**e1_tester verdict: 3/3 PASS.** Endpoint returns canonical schema in all branches. Live preview-env probe correctly classifies as `unreachable` after the `clamd.ConnectionError` regression-fix. HTTP 200 + no `debug` key on the unreachable path. 24h histogram + most-recent-scan timestamp behave correctly.
+
+**Git tag `v-post-hardening-step-1`** created (local-only). Marks the post-Step-1 worktree boundary; Phase A audit reads against this tag.
+
+**User runs `/api/healthz/clamav` against prod independently** — agent doesn't block on this; user will surface findings if any.
+
+**Step 1 status: CLOSED.**
+
+---
+
+## Step 2 — False-green pattern sweep (audit + surgical fixes)
+
+### Goal
+
+Find and fix the same class of bugs we caught at T2.3, B3, and J2.3 before they bite real users on the cold onboarding surface. Three known patterns from the closeout doc lessons (§5.6, §5.7, §5.8).
+
+### Phase A — Read-only audit
+
+Static-analysis script at `/app/scripts/hardening_step2_phase_a_audit.py`. Ledger at `/app/memory/sprints/FALSE_GREEN_AUDIT_LEDGER.md`.
+
+**Raw sweep counts:**
+
+| Pattern | Total raw hits | Real findings (post-triage) | False-positive / legitimate-conditional |
+| --- | --- | --- | --- |
+| P1 — T2.3 (conditional render hiding spec sections) | 246 | **1** (`AppShell.jsx:432` trust-center-tooltip) | 245 (legitimate conditional UI) |
+| P2 — B3 (undefined-symbol-in-conditional) | 4 | **0** (all 4 false positives — locally-destructured props) | 4 |
+| P3 — J2.3 (auth-writer-without-refresh) | 5 | **3** (FirstSession::onIntakeSubmitted / onArtefactReady / onSkip) | 2 (SignIn/SignUp correctly call `afterAuth`) |
+
+**4 real findings from the static audit** — all P0 (onboarding hot path).
+
+### Phase B — Surgical fixes
+
+**Fix 1 — `AppShell.jsx:432` trust-center-tooltip DOM-unconditional** (P1/T2.3, mirrors J4 G31 pattern).
+- Removed the `{onbStatus?.trust_center_tooltip?.show && (...)}` JSX gate.
+- Wrapper now renders unconditionally with `data-tooltip-visible="true|false"` + CSS class flip (`pointer-events-auto opacity-100` vs. `pointer-events-none invisible opacity-0`).
+- Test: `S2.A` — 3-anchor chain (no `&& (` gate · `data-tooltip-visible` attribute · class flip both directions).
+
+**Fix 2-4 — `FirstSession.jsx` auth-writer paths** (P3/J2.3 recurrence).
+- `onIntakeSubmitted`, `onArtefactReady`, `onSkip` — all three switched from `refreshContexts()` to `bootstrap()`. `bootstrap()` re-fetches `/auth/me` so `account.first_session.*` stays fresh after the auth-mutating endpoints fire. `refreshContexts()` only touches the contexts list and leaves `account` state stale.
+- Tests: `S2.B`, `S2.C`, `S2.D` (per-callback anchor-chains) + `S2.E` (cross-file confirmation that `bootstrap` is destructured from `useAuth()` in the FirstSession component).
+
+### Phase C — Generalized ESLint rule
+
+Added two rules to `craco.config.js::ESLintPlugin`:
+- `"react/jsx-no-undef": "error"` — catches any JSX symbol not in scope.
+- `"no-undef": "error"` — catches any plain-JS identifier not in scope.
+
+Both fire at webpack build time. Together they pin the B3 pattern at CI level — closer to source than the post-hoc grep audit.
+
+**Phase C immediately surfaced TWO additional real B3 sites** that my static audit script missed (because regex can't walk JS scope chains):
+
+| Site | Symbol | Impact |
+| --- | --- | --- |
+| `frontend/src/components/solva/AttachDocumentModal.jsx:201` | `<Search />` lucide icon | Not imported. `ReferenceError` whenever the empty-state JSX for the journal tab rendered. |
+| `frontend/src/pages/WorkStudio.jsx:669` | `navigate(...)` | Top-level `WorkStudio` never called `useNavigate()`. The line-213 `navigate` belongs to the sibling `BriefDrawer` scope. `ReferenceError` whenever a user clicked a Board Pack / Committee Pack card (G8-ratified routing). |
+
+Both fixed in the same chunk:
+- AttachDocumentModal.jsx — added `Search` to the `lucide-react` named-import list.
+- WorkStudio.jsx — added `const navigate = useNavigate();` at the top of the `WorkStudio()` body.
+
+Tests: `S2.F` (rules pinned in craco config), `S2.G` (Search import pinned), `S2.H` (WorkStudio useNavigate pinned).
+
+### Tests
+
+| Test | Anchor | Pre-fix |
+| --- | --- | --- |
+| `S2.A` test_s2_a_trust_center_tooltip_dom_unconditional | no-gate regex · `data-tooltip-visible` · class-flip CSS | FAIL |
+| `S2.B` test_s2_b_on_intake_submitted_calls_bootstrap | setState · bootstrap() · no refreshContexts() | FAIL |
+| `S2.C` test_s2_c_on_artefact_ready_calls_bootstrap | POST URL · setState(data.state) · bootstrap() · no refreshContexts() | FAIL |
+| `S2.D` test_s2_d_on_skip_calls_bootstrap | POST URL · bootstrap() · no refreshContexts() · navigate("/app") | FAIL |
+| `S2.E` test_s2_e_first_session_landing_destructures_bootstrap | useAuth() destructure carries `bootstrap` | PASS (J2.3 already wired it) |
+| `S2.F` test_s2_f_craco_eslint_pins_b3_pattern | `react/jsx-no-undef: error` + `no-undef: error` in craco | FAIL |
+| `S2.G` test_s2_g_attach_document_modal_imports_search_icon | `Search` in lucide-react named imports + used in JSX | FAIL |
+| `S2.H` test_s2_h_work_studio_top_level_has_use_navigate | `const navigate = useNavigate();` inside WorkStudio body | FAIL |
+
+**7/8 fail pre-fix vs `v-post-hardening-step-1`.** 8/8 PASS post-fix.
+
+### Full pytest
+
+```
+$ cd /app/backend && python -m pytest -q --no-header --tb=no
+1 failed · 1224 passed · 490 skipped · 88 warnings in 256.78s (4:16)
+```
+
+- Post-Step-2 passing count: **1224** (= 1216 prior post-Step-1 + 8 new Step-2 tests).
+- Zero regressions.
+- The 1 failure is the same pre-existing `test_real_requirements_file_is_clean`.
+
+### Phase C pinning value
+
+Phase C's ESLint rules immediately surfaced 2 real bugs my static-analysis script couldn't detect. Going forward, ANY future cherry-pick or new component that smuggles a B3-pattern bug will break the webpack build instead of silently waiting for a user to hit the conditional branch. This is a permanent quality gate — recommend NEVER demoting these rules from `error` to `warn`.
+
+### Status
+
+**Step 2 IN PROGRESS.** Implementation + tests landed; pending e1_tester verification.
