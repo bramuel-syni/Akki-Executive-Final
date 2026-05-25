@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"account_id":{"$numberInt":"1"},"context_id":{"$numberInt":"1"}},"name":"account_id_1_context_id_1","unique":true}],"uuid":"7186a5a0a90d4ee98b70abee92ec3314","collectionName":"user_context_visits","type":"collection"}

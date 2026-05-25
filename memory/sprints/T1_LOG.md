@@ -95,3 +95,24 @@ Existing cycle test suite (24 tests) regression-clean after the change.
 | G6 PPTX format NOT touched | ✅ Confirmed not pulled forward | No changes under `Compile` flow; T2/T3 scope. |
 | T1.2 regex (`/T:[a-zA-Z_0-9]+/`, `/\[T:/`) | ✅ Untouched | Per PO instruction — e1_tester swept 4/4 PASS on 24 May 2026. |
 
+
+
+
+---
+
+## T1 closure — e1_tester verdict 2026-05-25
+
+**Verdict: 5/5 PASS.** All T1 items verified by e1_tester on 2026-05-25 against the v1.1 contract.
+
+| Item | Spec ref | Tester result |
+| --- | --- | --- |
+| T1.1 — Chat responsive + sticky composer | §4.D → X2 | PASS |
+| T1.2 — `T:*` tag strip | (closed pre-flight, 4/4 sweep) | PASS |
+| T1.3 — Context switch lands on Home | §4.A → D1 | PASS |
+| T1.4 — Generate Brief visibility + G3 toast | §4.A → D8 + §6 G3 | PASS |
+| T1.5 — "All documents" routing | §4.A → D2 | PASS |
+| T1.6 — Add to Cycle (G1 ratified) | §4.A → D6 + §6 G1 | PASS |
+
+**Git tag `v-pre-T1`**: local only (commit `fbea67fd05125148564d13fd4e314a26c0793837`). Pushing to `origin` requires the user's "Save to Github" feature; the local tag remains the on-pod rollback point (`git checkout v-pre-T1`).
+
+**T1 status: CLOSED.**

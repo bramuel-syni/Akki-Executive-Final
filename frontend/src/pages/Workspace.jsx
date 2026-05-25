@@ -85,6 +85,16 @@ function JournalDrawer({ doc, loading, onClose, onOpenStructuralDetail, contextI
                     formatBytes(doc?.size_bytes),
                     doc?.doc_kind,
                     (doc?.sensitivity_band || "").toLowerCase(),
+                    /* T2.1 (2026-05-25) — D4 drawer metadata line origin
+                       badge. The drawer fetches the doc directly so it
+                       already has `source_channel`. Apply the same
+                       derivation as the listing. */
+                    (() => {
+                      const ch = (doc?.source_channel || "").toLowerCase();
+                      const AKKI = new Set(["cycle_compilation", "work_studio_export"]);
+                      if (AKKI.has(ch)) return "Akki Generated";
+                      return "Uploaded";
+                    })(),
                   ].filter(Boolean).join(" · ")}
                 </p>
               </>
@@ -203,26 +213,49 @@ export default function Workspace() {
   const [drawerDoc, setDrawerDoc] = useState(null);
   const [drawerLoading, setDrawerLoading] = useState(false);
 
+  // T2.1 (2026-05-25) — Document Journal filter tabs per spec §4.A → D3.
+  // Briefings live in `db.boardpacks` (their own collection) so we fetch
+  // them in parallel with the documents listing and tag the merged rows
+  // with one of three origins:
+  //   • briefing       — every row from /briefings
+  //   • akki_generated — `docs` rows whose source_channel is one of the
+  //                      Akki-generated channels (cycle compilation,
+  //                      Work Studio export)
+  //   • uploaded       — everything else (the user-uploaded set)
+  const [briefings, setBriefings] = useState([]);
+  // Active filter tab. Default "all" per D3 step 4.
+  const [filterTab, setFilterTab] = useState("all");
+
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   // Phase H1 (2026-05-11) — drag-and-drop on the library landing.
   const [dragOver, setDragOver] = useState(false);
 
-  /* Initial listing */
+  /* Initial listing — docs + briefings fetched in parallel. */
   useEffect(() => {
     if (!cid) return;
     let cancelled = false;
     (async () => {
       try {
         setLoading(true);
-        const { data } = await api.get(`/contexts/${cid}/documents`, { params: { limit: 500 } });
+        const [docsResp, briefingsResp] = await Promise.all([
+          api.get(`/contexts/${cid}/documents`, { params: { limit: 500 } }),
+          api.get(`/contexts/${cid}/briefings`, { params: { limit: 500 } })
+            .catch(() => ({ data: { briefings: [] } })),
+        ]);
         if (cancelled) return;
         // Newest first
-        const sorted = [...(data || [])].sort((a, b) =>
+        const sorted = [...(docsResp.data || [])].sort((a, b) =>
           (b.created_at || "").localeCompare(a.created_at || "")
         );
         setDocs(sorted);
+        // T2.1 — briefings come from boardpacks; payload shape is
+        // `{briefings: [...]}` per the briefings router.
+        const briefRows = (briefingsResp.data?.briefings || []).sort((a, b) =>
+          (b.created_at || "").localeCompare(a.created_at || "")
+        );
+        setBriefings(briefRows);
         setError(null);
       } catch (e) {
         if (!cancelled) setError(apiErrorMessage(e));
@@ -294,7 +327,24 @@ export default function Workspace() {
     }
   };
 
-  /* Listing rows: search hits OR all docs */
+  /* T2.1 (2026-05-25) — origin derivation for D3 filter tabs.
+   * source_channel values today:
+   *   upload, inbound_email, chat_attach, solva_attach, sandbox → uploaded
+   *   cycle_compilation, work_studio_export                     → akki_generated
+   * If source_channel is missing we treat the row as `uploaded` (safer
+   * default — pre-T2 rows pre-date the canonical channel taxonomy).
+   */
+  const AKKI_CHANNELS = new Set(["cycle_compilation", "work_studio_export"]);
+  const deriveOrigin = (d) => {
+    const ch = (d.source_channel || "").toLowerCase();
+    return AKKI_CHANNELS.has(ch) ? "akki_generated" : "uploaded";
+  };
+
+  /* Listing rows: search hits OR all docs (+ briefings merged in).
+     Each row carries an `origin` of `uploaded | akki_generated | briefing`
+     so the D3 filter tabs can slice the list. The 4 D3 tabs are derived
+     from THIS array (counts + filter) — the search-hits path is unaffected
+     because search hits override the listing entirely. */
   const listingRows = useMemo(() => {
     if (searchHits !== null) {
       return searchHits.map((h) => ({
@@ -306,6 +356,10 @@ export default function Workspace() {
         size_bytes: h.size_bytes,
         snippet: h.snippet,
         score: h.score,
+        // Search hits carry no source_channel; default to uploaded so
+        // the row still renders cleanly. T1.5 ratification puts the
+        // canonical listing surface here, but search is global to it.
+        origin: "uploaded",
       }));
     }
     // Patch 28D — non-search listing also carries a snippet so every row
@@ -313,7 +367,7 @@ export default function Workspace() {
     // generated server-side at upload time) if available; otherwise fall
     // back to the user-set description; otherwise null and the row will
     // render the muted placeholder.
-    return docs.map((d) => {
+    const docRows = docs.map((d) => {
       const raw = (d.preview || d.description || "").trim();
       const snippet = raw ? raw.replace(/\s+/g, " ").slice(0, 220) : null;
       return {
@@ -325,9 +379,47 @@ export default function Workspace() {
         size_bytes: d.size_bytes,
         snippet,
         score: null,
+        origin: deriveOrigin(d),
       };
     });
-  }, [searchHits, docs]);
+    // T2.1 — briefings merged in as their own origin. Briefing rows
+    // have a `briefing-` prefix so they never collide with document IDs
+    // (board-pack id space is independent from documents).
+    const briefRows = briefings.map((b) => ({
+      id: `briefing-${b.id}`,
+      name: b.title || "(untitled briefing)",
+      created_at: b.created_at,
+      doc_kind: "briefing",
+      sensitivity_band: null,
+      size_bytes: null,
+      snippet: b.summary || null,
+      score: null,
+      origin: "briefing",
+    }));
+    return [...docRows, ...briefRows].sort((a, b) =>
+      (b.created_at || "").localeCompare(a.created_at || "")
+    );
+  }, [searchHits, docs, briefings]);
+
+  // T2.1 — D3 filter-tab counts derived from the listingRows.
+  const tabCounts = useMemo(() => ({
+    all: listingRows.length,
+    uploaded:        listingRows.filter((r) => r.origin === "uploaded").length,
+    akki_generated:  listingRows.filter((r) => r.origin === "akki_generated").length,
+    briefings:       listingRows.filter((r) => r.origin === "briefing").length,
+  }), [listingRows]);
+
+  // T2.1 — Filter applied to listingRows. Search hits skip the filter
+  // (search is global by design); D3 tabs only narrow the unfiltered list.
+  const filteredRows = useMemo(() => {
+    if (searchHits !== null) return listingRows;
+    if (filterTab === "all") return listingRows;
+    const target =
+      filterTab === "uploaded"       ? "uploaded" :
+      filterTab === "akki_generated" ? "akki_generated" :
+      filterTab === "briefings"      ? "briefing" : null;
+    return target ? listingRows.filter((r) => r.origin === target) : listingRows;
+  }, [searchHits, listingRows, filterTab]);
 
   if (!cid) {
     return (
@@ -441,6 +533,59 @@ export default function Workspace() {
           )}
         </div>
 
+        {/* T2.1 (2026-05-25) — D3 filter tabs: All / Uploaded / Akki Generated /
+            Briefings. Counts come from `tabCounts` derived over `listingRows`
+            (the unfiltered, merged set). Active tab paints in ink-on-cream;
+            inactive tabs sit on transparent. Tabs are suppressed while a
+            search query is active because search is the global filter
+            (D3 step 5 says tab change "filters the document list without
+            page reload" — i.e. tabs operate on the in-page listing).
+            All is selected by default per D3 step 4. */}
+        {searchHits === null && (
+          <div
+            className="mb-5 flex items-center gap-1 flex-wrap border-b border-[var(--rule)] pb-2"
+            data-testid="workspace-filter-tabs"
+            role="tablist"
+            aria-label="Filter documents by origin"
+          >
+            {[
+              { key: "all",            label: "All",            count: tabCounts.all },
+              { key: "uploaded",       label: "Uploaded",       count: tabCounts.uploaded },
+              { key: "akki_generated", label: "Akki Generated", count: tabCounts.akki_generated },
+              { key: "briefings",      label: "Briefings",      count: tabCounts.briefings },
+            ].map((t) => {
+              const active = filterTab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setFilterTab(t.key)}
+                  className={[
+                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[12.5px] transition-colors",
+                    active
+                      ? "bg-[var(--ink)] text-[var(--parchment)]"
+                      : "text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)]/40",
+                  ].join(" ")}
+                  data-testid={`workspace-filter-tab-${t.key}`}
+                >
+                  <span>{t.label}</span>
+                  <span
+                    className={[
+                      "font-mono text-[10px] px-1 rounded-sm",
+                      active ? "bg-[var(--parchment)]/20" : "text-[var(--muted)]",
+                    ].join(" ")}
+                    data-testid={`workspace-filter-tab-${t.key}-count`}
+                  >
+                    {t.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Listing */}
         {error && (
           <p className="text-[12.5px] text-amber-900 bg-amber-50 border border-amber-100 rounded-sm px-3 py-2 mb-3">{error}</p>
@@ -450,20 +595,28 @@ export default function Workspace() {
             <Loader2 className="w-4 h-4 mx-auto animate-spin text-[var(--accent)]" />
           </div>
         )}
-        {!loading && listingRows.length === 0 && searchHits === null && (
+        {!loading && filteredRows.length === 0 && searchHits === null && tabCounts.all === 0 && (
           <div className="py-16 text-center" data-testid="workspace-empty">
             <p className="akki-serif text-[18px] text-[var(--ink)] mb-1">No documents yet.</p>
             <p className="akki-meta text-[var(--muted)]">Use Upload or Camera in the title bar to add one.</p>
           </div>
         )}
-        {!loading && listingRows.length === 0 && searchHits !== null && (
+        {/* T2.1 (2026-05-25) — empty state when a filter tab has zero rows
+            (but the journal isn't itself empty). Distinct testid so the
+            "no documents at all" state above stays unambiguous. */}
+        {!loading && filteredRows.length === 0 && searchHits === null && tabCounts.all > 0 && (
+          <div className="py-12 text-center text-[var(--muted)] text-[13px]" data-testid="workspace-empty-filter">
+            No documents in this category yet.
+          </div>
+        )}
+        {!loading && filteredRows.length === 0 && searchHits !== null && (
           <div className="py-12 text-center text-[var(--muted)] text-[13px]" data-testid="workspace-no-search-hits">
             No documents match <span className="font-mono">{JSON.stringify(q)}</span> in this workspace.
           </div>
         )}
-        {!loading && listingRows.length > 0 && (
+        {!loading && filteredRows.length > 0 && (
           <ul className="border border-[var(--rule)] divide-y divide-[var(--rule)] rounded-md bg-white" data-testid="workspace-list">
-            {listingRows.map((row) => (
+            {filteredRows.map((row) => (
               <li key={row.id}>
                 <button
                   type="button"
@@ -476,7 +629,21 @@ export default function Workspace() {
                       {row.name}
                     </p>
                     <p className="akki-meta text-[11px] text-[var(--muted)] font-mono shrink-0">
-                      {[formatDate(row.created_at), formatBytes(row.size_bytes), row.doc_kind, (row.sensitivity_band || "").toLowerCase()].filter(Boolean).join(" · ")}
+                      {[
+                        formatDate(row.created_at),
+                        formatBytes(row.size_bytes),
+                        row.doc_kind,
+                        (row.sensitivity_band || "").toLowerCase(),
+                        /* T2.1 (2026-05-25) — D4 origin badges. Briefing
+                           rows are surfaced verbatim as `Briefing`; doc
+                           rows show `Uploaded` or `Akki Generated` per
+                           the derived origin. The string sits in the
+                           same dot-separated meta line as date · size ·
+                           kind to match D4's metadata-line rule. */
+                        row.origin === "briefing"       ? "Briefing"       :
+                        row.origin === "akki_generated" ? "Akki Generated" :
+                                                          "Uploaded",
+                      ].filter(Boolean).join(" · ")}
                     </p>
                   </div>
                   {/* Patch 28D — Document Journal description line.

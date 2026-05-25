@@ -109,12 +109,20 @@ function ItemDrawer({ row, onClose, onAssessed }) {
   // so the drawer can render the verbatim copy + Document Journal link
   // instead of a generic error.
   const [noData, setNoData] = useState(null); // { message } | null
+  // T2.3 (2026-05-25) — X5 step 3 "no relevant docs" branch now opens
+  // the file-upload modal directly (replacing the Document Journal
+  // link). The hidden <input type="file"> is triggered by the button
+  // and on successful upload we re-run the assessment immediately so
+  // the agent uses the newly-uploaded document.
+  const fileInputRef = React.useRef(null);
+  const [uploading, setUploading] = useState(false);
 
   // Reset assessment state whenever a different row is opened.
   React.useEffect(() => {
     setAssessment(row?.last_akki_assessment || null);
     setError(null);
     setNoData(null);
+    setUploading(false);
   }, [row?.id]);
 
   const updateGoal = async () => {
@@ -138,6 +146,26 @@ function ItemDrawer({ row, onClose, onAssessed }) {
       setError(`${e?.name || "Error"}: ${(e?.message || "").slice(0, 200)}`);
     } finally {
       setBusy(false);
+    }
+  };
+
+  // T2.3 (2026-05-25) — X5 step 3: upload-and-reassess.
+  const onUploadAndReassess = async (file) => {
+    if (!file || !row?.context_id) return;
+    setUploading(true); setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      await api.post(`/contexts/${row.context_id}/documents`, fd);
+      // Document journal now has at least one new doc — re-run the
+      // assessment so the agent picks it up.
+      setNoData(null);
+      await updateGoal();
+    } catch (e) {
+      setError(`Upload failed: ${(e?.message || "").slice(0, 200)}`);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -168,6 +196,12 @@ function ItemDrawer({ row, onClose, onAssessed }) {
           </button>
         </div>
         <div className="px-6 py-5 space-y-5">
+          {/* T2.3 (2026-05-25) — X5 redesign: drawer order is
+              Status → Description → Update CTA → (Citations Card after
+              update) → Timeline. The pre-T2 "Akki Status" subcard
+              wrapper around the Update button was deleted; the CTA
+              now sits as a single button directly under the
+              description, per X5 step 3. */}
           <div className="grid grid-cols-3 gap-3 border border-[var(--rule)] rounded-sm bg-white px-3 py-3">
             <div>
               <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Status</p>
@@ -183,46 +217,68 @@ function ItemDrawer({ row, onClose, onAssessed }) {
             </div>
           </div>
 
-          {/* Phase F (2026-05-16) — "Update goal" mechanic. Non-overridable; */}
-          {/* status is set by Akki from engine signals + recent docs.       */}
-          <div className="border border-[var(--rule)] rounded-sm bg-white px-3 py-3" data-testid="obj-drawer-update-goal">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">Akki status</p>
-                <p className="text-[12px] text-[var(--muted)]">Reads recent engine signals + documents.</p>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={updateGoal}
-                disabled={busy}
-                data-testid="obj-drawer-update-goal-btn"
-              >
-                {busy ? "Analysing…" : "Update goal"}
-              </Button>
+          {row?.description && (
+            <div data-testid="obj-drawer-description">
+              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--ink)] mb-2">Description</p>
+              <p className="akki-serif text-[13.5px] text-[var(--ink)] leading-snug whitespace-pre-wrap">{row.description}</p>
             </div>
+          )}
+
+          {/* T2.3 — X5 step 3: single Update CTA. The label is
+              "Update Objective" or "Update Project" depending on the
+              row kind. Aria-busy + disabled while the assessment is
+              running; while the upload sub-flow is active we surface
+              that as the busy state too. */}
+          <div data-testid="obj-drawer-update-block">
+            <Button
+              type="button"
+              onClick={updateGoal}
+              disabled={busy || uploading}
+              aria-busy={busy || uploading}
+              className="w-full bg-[var(--ink)] hover:bg-[var(--ink)]/90 text-[var(--parchment)] rounded-sm"
+              data-testid="obj-drawer-update-goal-btn"
+            >
+              {busy
+                ? <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> Analysing…</>
+                : uploading
+                ? <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> Uploading…</>
+                : (row?.kind === "project" ? "Update Project" : "Update Objective")}
+            </Button>
             {error && (
               <p className="mt-2 text-[12px] text-rose-700" data-testid="obj-drawer-update-goal-error">{error}</p>
             )}
-            {/* QA-2026-05-16-047 (2026-05-18) — "no relevant data" path. */}
+            {/* T2.3 — X5 step 3: when the agent finds no relevant docs,
+                surface an inline "Upload Document" CTA that opens the
+                file picker directly. On successful upload, the
+                assessment is re-run so the new document is used. */}
             {noData && (
               <div
                 className="mt-3 text-[12.5px] text-[var(--ink)] space-y-2"
                 data-testid="obj-drawer-no-data"
               >
                 <p>{noData.message}</p>
-                <p>
-                  <Link
-                    to="/app/workspace"
-                    className="text-[12.5px] text-[var(--accent)] hover:underline underline-offset-2"
-                    data-testid="obj-drawer-no-data-doc-journal-link"
-                  >
-                    Open Document Journal →
-                  </Link>
-                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.docx,.pptx,.txt,.md,.csv,.xlsx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/markdown,text/csv"
+                  className="hidden"
+                  onChange={(e) => onUploadAndReassess(e.target.files?.[0])}
+                  data-testid="obj-drawer-no-data-upload-input"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={busy || uploading}
+                  className="text-[12px]"
+                  data-testid="obj-drawer-no-data-upload-btn"
+                >
+                  Upload Document
+                </Button>
               </div>
             )}
-            {assessment && (
+            {assessment && !noData && (
               <div className="mt-3 text-[12.5px] text-[var(--ink)] space-y-2" data-testid="obj-drawer-assessment">
                 <p>
                   <span className="font-mono uppercase tracking-[0.16em] text-[10.5px] text-[var(--muted)]">Rationale · </span>
@@ -238,22 +294,41 @@ function ItemDrawer({ row, onClose, onAssessed }) {
                     <span data-testid="obj-drawer-assessment-signals" className="font-mono">{(assessment.supporting_signal_ids || []).join(", ")}</span>
                   </p>
                 )}
-                {((assessment.supporting_doc_ids || []).length > 0) && (
-                  <p className="text-[11px]">
-                    <span className="text-[var(--muted)]">Docs: </span>
-                    <span data-testid="obj-drawer-assessment-docs" className="font-mono">{(assessment.supporting_doc_ids || []).join(", ")}</span>
-                  </p>
-                )}
               </div>
             )}
           </div>
 
-          {row?.description && (
-            <div>
-              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--ink)] mb-2">Description</p>
-              <p className="akki-serif text-[13.5px] text-[var(--ink)] leading-snug whitespace-pre-wrap">{row.description}</p>
+          {/* T2.3 (2026-05-25) — X5 step 5: Citations Card. Renders only
+              AFTER an update has been processed and only when the
+              assessment carries at least one supporting document.
+              Document names are name-resolved server-side (see
+              monitor_status_assessment.py — `supporting_docs` block). */}
+          {assessment && !noData && (assessment.supporting_docs || []).length > 0 && (
+            <div
+              className="border border-[var(--rule)] rounded-sm bg-white px-3 py-3"
+              data-testid="obj-drawer-citations"
+            >
+              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--ink)] mb-2">Citations</p>
+              <ul className="space-y-1.5">
+                {(assessment.supporting_docs || []).map((d) => (
+                  <li
+                    key={d.id}
+                    className="flex items-start gap-2 text-[12.5px] text-[var(--ink)]"
+                    data-testid={`obj-drawer-citation-${d.id}`}
+                  >
+                    <FileText className="w-3.5 h-3.5 mt-0.5 text-[var(--muted)]" strokeWidth={1.7} />
+                    <Link
+                      to={`/app/documents/${d.id}`}
+                      className="hover:underline underline-offset-2"
+                    >
+                      {d.name}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
+
           <div data-testid="obj-drawer-timeline">
             <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--ink)] mb-2">Timeline</p>
             {(!row?.timeline_events || row.timeline_events.length === 0) ? (

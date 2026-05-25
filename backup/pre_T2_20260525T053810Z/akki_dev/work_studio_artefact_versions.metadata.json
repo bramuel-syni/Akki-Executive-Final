@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"artefact_id":{"$numberInt":"1"},"saved_at":{"$numberInt":"-1"}},"name":"artefact_id_1_saved_at_-1"}],"uuid":"8e272a4b8a8c4ac3bf4d0ca5000a9a78","collectionName":"work_studio_artefact_versions","type":"collection"}

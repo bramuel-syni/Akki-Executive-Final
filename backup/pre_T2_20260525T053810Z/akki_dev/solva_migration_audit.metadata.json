@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"b9c746f024cc4b698a75083e6d7d0693","collectionName":"solva_migration_audit","type":"collection"}

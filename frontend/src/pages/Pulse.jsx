@@ -243,11 +243,38 @@ function SignalCard({ card, onAction, busyAction, onOpenDrawer }) {
       <h2 className="akki-serif text-[16px] text-[var(--ink)] leading-snug mb-1" data-testid={`pulse-card-headline-${card.id}`}>
         {card.headline}
       </h2>
-      {card.summary && (
-        <p className="text-[13px] text-[var(--ink)] leading-[1.65] mb-3" data-testid={`pulse-card-summary-${card.id}`}>
-          {card.summary}
-        </p>
-      )}
+      {card.summary && (() => {
+        /* T2.2 (2026-05-25) — X3 step 2: signal cards strip document
+           citations from the body and restructure the content into
+           concise bullet points when there are two or more distinct
+           points. Single-point bodies render as a paragraph to avoid
+           bulleting a single sentence (which reads worse than prose).
+           The exact same `stripCitations` + `splitToBullets` helpers
+           are already used on the drawer body, keeping the two
+           surfaces consistent per X3 step 2. */
+        const points = splitToBullets(card.summary);
+        if (points.length === 0) return null;
+        if (points.length === 1) {
+          return (
+            <p
+              className="text-[13px] text-[var(--ink)] leading-[1.65] mb-3"
+              data-testid={`pulse-card-summary-${card.id}`}
+            >
+              {points[0]}
+            </p>
+          );
+        }
+        return (
+          <ul
+            className="list-disc pl-5 mb-3 space-y-1 text-[13px] text-[var(--ink)] leading-[1.65]"
+            data-testid={`pulse-card-summary-${card.id}`}
+          >
+            {points.map((pt, i) => (
+              <li key={i} data-testid={`pulse-card-summary-bullet-${card.id}-${i}`}>{pt}</li>
+            ))}
+          </ul>
+        );
+      })()}
       </button>
 
       {/* Action row */}

@@ -339,6 +339,26 @@ async def update_status_assessment(
 
     # Map status → rag_status.
     new_rag = _STATUS_REVERSE.get(assessment["status"]) or item.get("rag_status") or "amber"
+    # T2.3 (2026-05-25) — X5 step 5: Citations Card needs document
+    # names, not just IDs. We resolve each `supporting_doc_id` to its
+    # stored `name` so the drawer can render a verifiable reference
+    # list. Order is preserved; missing docs are skipped.
+    supporting_docs: List[Dict[str, str]] = []
+    if assessment["supporting_doc_ids"]:
+        cursor = db.documents.find(
+            {"context_id": context_id, "id": {"$in": assessment["supporting_doc_ids"]}},
+            {"_id": 0, "id": 1, "name": 1, "original_filename": 1},
+        )
+        by_id = {row["id"]: row async for row in cursor}
+        for did in assessment["supporting_doc_ids"]:
+            r = by_id.get(did)
+            if not r:
+                continue
+            supporting_docs.append({
+                "id": r["id"],
+                "name": r.get("name") or r.get("original_filename") or did,
+            })
+
     last_akki_assessment = {
         "status": assessment["status"],
         "rag_status": new_rag,
@@ -346,6 +366,8 @@ async def update_status_assessment(
         "rationale": assessment["rationale"],
         "supporting_signal_ids": assessment["supporting_signal_ids"],
         "supporting_doc_ids": assessment["supporting_doc_ids"],
+        # T2.3 — name-resolved citations for the drawer's Citations Card.
+        "supporting_docs": supporting_docs,
         "audit_id": shield_result["audit_id"],
         "assessed_at": _iso(_now()),
     }

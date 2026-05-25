@@ -34,7 +34,58 @@ const STATUS_STYLE = {
   off_track: { label: "Off track",  tone: "text-red-700 bg-red-50 border-red-200" },
   achieved:  { label: "Achieved",   tone: "text-blue-700 bg-blue-50 border-blue-200" },
   abandoned: { label: "Abandoned",  tone: "text-slate-600 bg-slate-100 border-slate-200" },
+  not_started: { label: "Not Started", tone: "text-slate-700 bg-slate-100 border-slate-300" },
 };
+
+// T2.4 (2026-05-25) — X8 status filter tabs (6 buckets).
+// Order matches spec verbatim: All / On Track / At Risk / Off Track /
+// Achieved / Not Started. `key` is the goal.status backing value; "all"
+// is the no-filter sentinel.
+const STATUS_FILTER_TABS = [
+  { key: "all",         label: "All" },
+  { key: "on_track",    label: "On Track" },
+  { key: "at_risk",     label: "At Risk" },
+  { key: "off_track",   label: "Off Track" },
+  { key: "achieved",    label: "Achieved" },
+  { key: "not_started", label: "Not Started" },
+];
+
+// T2.4 (2026-05-25) — X6 G11 ratified: dual RAG bars.
+// Performance bar follows the goal STATUS:
+//   On Track / Achieved → green
+//   At Risk             → amber
+//   Off Track           → red
+// Probability bar follows the G11 numeric bands:
+//   ≥ 70  → green   (High confidence)
+//   40-69 → amber   (Moderate confidence)
+//   < 40  → red     (Low confidence)
+function statusBarClass(status) {
+  if (status === "on_track" || status === "achieved") return "bg-emerald-600";
+  if (status === "at_risk") return "bg-amber-500";
+  if (status === "off_track") return "bg-[color:var(--oxblood)]";
+  // not_started + abandoned have no semantic colour weight; render as muted.
+  return "bg-slate-400";
+}
+function probabilityBarClass(value) {
+  if (value === null || value === undefined) return "bg-slate-400";
+  if (value >= 70) return "bg-emerald-600";
+  if (value >= 40) return "bg-amber-500";
+  return "bg-[color:var(--oxblood)]";
+}
+
+// T2.4 (2026-05-25) — X8 G12 ratified: category filter source.
+// Source from the active context's strategic_goals.department distinct
+// values; fall back to the fixed example list (verbatim from G12) if
+// no department values exist on the data.
+const G12_FALLBACK_CATEGORIES = ["Operations", "People", "Compliance", "Product", "Commercial"];
+function deriveCategoryOptions(goals) {
+  const seen = new Set();
+  for (const g of goals || []) {
+    if (g.department) seen.add(g.department);
+  }
+  if (seen.size === 0) return G12_FALLBACK_CATEGORIES;
+  return Array.from(seen);
+}
 
 const DEPT_LABEL = {
   ceo: "CEO", cfo: "CFO", coo: "COO", commercial: "Commercial", board: "Board",
@@ -72,6 +123,11 @@ export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange }) 
   // inline edit path had no remaining call site and rendered as
   // dead code.
   const [drawerGoal, setDrawerGoal] = useState(null);
+  // T2.4 (2026-05-25) — X8 ratified filter state: status tab + category
+  // dropdown. Both apply over `visibleGoalsForFunction` (the role-
+  // filtered set) and combine — selecting both narrows the list.
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
 
   const load = useCallback(async () => {
     if (!contextId) return;
@@ -85,7 +141,38 @@ export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange }) 
   useEffect(() => { load(); }, [load]);
 
   const visible = useMemo(() => visibleGoalsForFunction(goals, fn, isNED), [goals, fn, isNED]);
-  const groups = useMemo(() => groupByDepartment(visible), [visible]);
+
+  // T2.4 — X8 G12 ratified category source. The dropdown options are
+  // derived from the role-filtered goals set so the user only sees
+  // categories actually populated within their function's scope. Falls
+  // back to the G12 fixed list when no department values exist.
+  const categoryOptions = useMemo(() => deriveCategoryOptions(visible), [visible]);
+
+  // T2.4 — apply status + category filters in combination.
+  const filtered = useMemo(() => {
+    return visible.filter((g) => {
+      if (statusFilter !== "all" && g.status !== statusFilter) return false;
+      if (categoryFilter !== "all" && g.department !== categoryFilter) return false;
+      return true;
+    });
+  }, [visible, statusFilter, categoryFilter]);
+
+  // T2.4 — per-tab live counts derived from the role-filtered set
+  // (NOT the post-status-filter set) so each tab always reflects the
+  // total in its bucket regardless of the currently active tab.
+  const statusCounts = useMemo(() => {
+    const c = { all: visible.length };
+    for (const t of STATUS_FILTER_TABS) {
+      if (t.key === "all") continue;
+      c[t.key] = visible.filter((g) =>
+        (categoryFilter === "all" || g.department === categoryFilter) &&
+        g.status === t.key,
+      ).length;
+    }
+    return c;
+  }, [visible, categoryFilter]);
+
+  const groups = useMemo(() => groupByDepartment(filtered), [filtered]);
 
   const orderedDepartments = ["board", "ceo", "cfo", "coo", "commercial"]
     .filter((d) => groups[d]?.length > 0);
@@ -143,7 +230,85 @@ export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange }) 
         </div>
       </div>
 
+      {/* T2.4 (2026-05-25) — X8 status filter tabs + category dropdown.
+          Both controls sit on a single horizontal line above the
+          goal groupings, per spec §4.D → X8: "On the same line as the
+          filter tabs, add a category filter on the right side." Tabs
+          and the dropdown combine — selecting both narrows the list. */}
+      <div
+        className="mb-4 pb-2 border-b border-[var(--rule)] flex items-center gap-2 flex-wrap"
+        data-testid="strategic-goals-filters"
+      >
+        <div className="flex items-center gap-1 flex-wrap" role="tablist" aria-label="Filter strategic goals by status">
+          {STATUS_FILTER_TABS.map((t) => {
+            const active = statusFilter === t.key;
+            const count = statusCounts[t.key] ?? 0;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setStatusFilter(t.key)}
+                className={[
+                  "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[11.5px] transition-colors",
+                  active
+                    ? "bg-[var(--ink)] text-[var(--parchment)]"
+                    : "text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)]/40",
+                ].join(" ")}
+                data-testid={`strategic-goals-status-tab-${t.key}`}
+              >
+                <span>{t.label}</span>
+                <span
+                  className={[
+                    "font-mono text-[10px] px-1 rounded-sm",
+                    active ? "bg-[var(--parchment)]/20" : "text-[var(--muted)]",
+                  ].join(" ")}
+                  data-testid={`strategic-goals-status-tab-${t.key}-count`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <label htmlFor="strategic-goals-category" className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">
+            Category
+          </label>
+          <select
+            id="strategic-goals-category"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            data-testid="strategic-goals-category-select"
+            className="text-[12.5px] px-2 py-1 border border-[var(--rule)] rounded-sm bg-white text-[var(--ink)] focus:outline-none focus:border-[var(--accent)]"
+          >
+            <option value="all">All categories</option>
+            {categoryOptions.map((c) => (
+              <option key={c} value={c} data-testid={`strategic-goals-category-option-${c}`}>
+                {DEPT_LABEL[c] || c}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       <div className="space-y-5" data-testid="strategic-goals-groups">
+        {/* T2.4 (2026-05-25) — empty state when status+category filters
+            narrow the list to zero matches, but goals do exist in the
+            unfiltered set. Distinct testid from the "no goals at all"
+            EmptyState above. */}
+        {filtered.length === 0 && (
+          <div
+            className="border border-dashed border-[var(--rule)] rounded-sm bg-[var(--parchment)] px-6 py-8 text-center"
+            data-testid="strategic-goals-filtered-empty"
+          >
+            <p className="akki-serif text-[14px] text-[var(--ink)]">No goals match this filter.</p>
+            <p className="text-[12px] text-[var(--muted)] mt-1">
+              Try a different status tab or pick a different category.
+            </p>
+          </div>
+        )}
         {orderedDepartments.map((dept) => (
           <div key={dept}>
             <p className="text-[10.5px] uppercase tracking-[0.2em] text-[var(--muted)] font-mono mb-2">
@@ -273,13 +438,20 @@ function GoalRow({ goal, isLast, isNED, onOpenDrawer, contextId }) {
           <ScoreBar
             label="Performance"
             value={score}
-            barClass={cat.bar}
+            /* T2.4 (2026-05-25) — X6 G11: performance bar now follows the
+               status RAG (was previously the category colour). Status
+               and probability are independent — a goal can have low
+               probability while sitting On Track on performance and
+               vice versa, so they must paint independently. */
+            barClass={statusBarClass(goal.status)}
             testId={`goal-perf-bar-${goal.id}`}
           />
           <ScoreBar
             label="Probability"
             value={prob}
-            barClass="bg-[var(--ink)]"
+            /* T2.4 (2026-05-25) — X6 G11: probability bar follows the
+               numeric bands: ≥70 green, 40–69 amber, <40 red. */
+            barClass={probabilityBarClass(prob)}
             testId={`goal-prob-bar-${goal.id}`}
           />
         </div>

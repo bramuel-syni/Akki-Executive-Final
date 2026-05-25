@@ -49,6 +49,15 @@ def sanitize_doc(d: Dict[str, Any]) -> Dict[str, Any]:
         "error": d.get("error"),
         "created_at": d.get("created_at"),
         "doc_type": d.get("doc_type"),
+        # T2.1 (2026-05-25) — surface `source_channel` (and the
+        # adjacent `doc_kind`) so the Document Journal listing can
+        # derive a per-row origin tag (Uploaded vs Akki Generated)
+        # per spec §4.A → D3/D4. `source_channel` is the canonical
+        # discriminator: cycle_compilation + work_studio_export are
+        # Akki-Generated origins; everything else (upload, inbound_email,
+        # chat_attach, solva_attach, sandbox) is user-Uploaded.
+        "source_channel": d.get("source_channel"),
+        "doc_kind": d.get("doc_kind"),
         # Inbound email provenance (iter51) + trust tier (iter70)
         "source": d.get("source"),
         "inbound_from_email": d.get("inbound_from_email"),
