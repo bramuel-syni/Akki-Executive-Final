@@ -32,11 +32,13 @@ frontend/build/
 frontend/.cache/
 frontend/coverage/
 
-# Local env files (NEVER bake into images)
-backend/.env
-backend/.env.local
-frontend/.env
-frontend/.env.local
+# J1 deploy hygiene (2026-05-24) — Emergent deployment injects
+# production .env values into these paths at deploy time, so the
+# build context MUST include them (it overwrites at injection).
+# Excluding them caused a prod 502 outage previously. Credentials
+# (*.pem, *.key, credentials.json) remain individually ignored
+# below.
+# (was: backend/.env, backend/.env.local, frontend/.env, frontend/.env.local)
 
 # Local-disk storage from dev runs
 backend/uploads/

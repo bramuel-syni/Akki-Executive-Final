@@ -694,6 +694,24 @@ export default function TrustCenter() {
   const initialChatId = searchParams.get("chat_id") || location.state?.chatId || null;
   const [chatId, setChatId] = useState(initialChatId);
   const [tab, setTab] = useState(initialChatId ? "session" : "activity");
+  // J1 — Re-intro deep-link from the AppShell banner. The banner calls
+  // /acknowledge BEFORE navigating, so by the time we render this
+  // page the user is already permanently opted-in to "I've seen this".
+  // The intro card is purely informational — dismissable via X or
+  // navigation away.
+  const showIntroCard = searchParams.get("intro") === "shield";
+  const [introDismissed, setIntroDismissed] = useState(false);
+  const hdrs = useAuthHeaders();
+  const acknowledgeIntro = useCallback(async () => {
+    try {
+      await axios.post(
+        `${API}/api/users/me/onboarding-status/acknowledge`,
+        {},
+        { headers: hdrs },
+      );
+    } catch (_e) { /* non-fatal */ }
+    setIntroDismissed(true);
+  }, [hdrs]);
 
   return (
     <div
@@ -713,6 +731,37 @@ export default function TrustCenter() {
             beforehand, and the audit chain behind each answer.
           </p>
         </header>
+
+        {/* J1 — One-time intro card shown when user arrives here via
+            the re-intro banner (?intro=shield). Acknowledge is implicit
+            on first view; the X just hides the card. */}
+        {showIntroCard && !introDismissed && (
+          <div
+            data-testid="tc-intro-card"
+            className="mb-6 bg-amber-50/60 border border-amber-200 rounded-lg p-4 flex items-start gap-4"
+          >
+            <div className="flex-1">
+              <div className="text-[13.5px] text-[var(--ink)] font-medium">
+                You're seeing Trust Center for the first time.
+              </div>
+              <div className="text-[12.5px] text-[var(--deep)] mt-1 leading-relaxed">
+                This page shows every Shield interaction — what you sent,
+                what the LLM saw, what came back, and the cryptographic
+                audit chain proving it. Pick "All activity" to scan your
+                history, or pass a chat ID to inspect a single
+                conversation in detail.
+              </div>
+            </div>
+            <button
+              onClick={acknowledgeIntro}
+              data-testid="tc-intro-dismiss"
+              className="text-[var(--muted)] hover:text-[var(--ink)] transition-colors"
+              aria-label="Dismiss intro"
+            >
+              <X className="w-4 h-4" strokeWidth={1.7} />
+            </button>
+          </div>
+        )}
 
         <div className="flex items-center gap-1 mb-6 border-b border-[var(--cream-deep)]">
           <TabButton active={tab === "session"} disabled={!chatId} onClick={() => setTab("session")} testid="tc-tab-session">
