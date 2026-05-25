@@ -551,3 +551,102 @@ $ cd /app/backend && python -m pytest -q --no-header --tb=no
 - The 1 failure is the same pre-existing `test_real_requirements_file_is_clean`.
 
 **J2.3 false-green fix status: READY FOR e1_tester re-verification (J2.3 only).**
+
+---
+
+## 2026-05-25 — J2.3-fix.A + D — Frontend stale-auth-state defect
+
+### e1_tester verdict on first J2.3 fix
+
+**1 PASS (B — audit + status flip backend), 1 FAIL (A — frontend wiring), 1 N/A (D depends on A), 1 SKIP (C dead code).**
+
+Backend status flip was correct. **A new defect surfaced in the frontend cycle-door click handler**: it only calls `refreshContexts()`, not the full `/auth/me` bootstrap. `FirstSessionGuard` reads stale `in_progress` from AuthContext and redirects `/app/cycle*` back to `/app/first-session`.
+
+### Root cause confirmed in source
+
+`FirstSession.jsx` L686 (pre-fix) bound `refreshAuth={refreshContexts}`. `refreshContexts` only updates `contexts` state (`AuthContext.jsx::L267-272`); it does NOT call `/auth/me` and does NOT update `account.first_session.*`. The `FirstSessionGuard` reads `account.first_session.status` from AuthContext — which stayed stale `in_progress` after the click handler.
+
+The 3 door branches (cycle, solve, demo) all share this prop. Each branch correctly awaits `refreshAuth()` BEFORE `navigate(...)` — but the awaited function was the wrong refresh, so the auth state never updated.
+
+### Solve / demo alignment audit
+
+Per orchestrator brief: the same wiring bug existed in solve + demo branches, but they "worked incidentally" per tester report. Audit findings:
+
+- **Solve branch**: navigate target `/app/solva${q}`. Pre-fix: `account.first_session.status == "in_progress"` would have triggered the FirstSessionGuard redirect. But the backend solve-door branch flips state to `completed` and the SOLVE page itself triggers an auth refresh on mount (timing race). Sometimes works, sometimes not.
+- **Demo branch**: navigate target `/app/cycle/{landing_cycle_id}`. Same Guard, same race. Pre-fix demo worked in some browser sessions; in others it bounced to first-session and the user had to manually click "Skip" or wait for the artefact-ready poller.
+- **Cycle branch**: navigate target `/app/cycle?wizard=1&intake_seed=1`. Same Guard, same race — but the cycle path has no "Working…" fallback poller, so when it bounces, the user just sits on the FirstSession page with no progress.
+
+**Fix is unified for all three**: bind `refreshAuth={bootstrap}` so all three branches await the canonical `/auth/me` bootstrap before navigating. Consistency over cleverness per orchestrator brief.
+
+### Per-defect fix
+
+**`frontend/src/pages/FirstSession.jsx`:**
+
+- **L590**: `const { refreshContexts, account } = useAuth();` → `const { refreshContexts, bootstrap, account } = useAuth();`
+- **L686**: `refreshAuth={refreshContexts}` → `refreshAuth={bootstrap}`
+
+Two-line change. The 3 door branches in `FirstSessionDoor.choose()` already `await refreshAuth()` before `navigate(...)`; they now correctly receive the full me-refresh closure.
+
+### Tests written — behavior, not labels
+
+**File:** `backend/tests/test_j2_3_fix_a_d_auth_refresh.py` (NEW). 6 control-flow chain tests:
+
+| Test | Asserts (BEHAVIOR — not labels) |
+| --- | --- |
+| `test_j2_3_fix_a_parent_destructures_bootstrap_from_useAuth` | `const { … bootstrap … } = useAuth()` regex match — proves the function is in scope |
+| `test_j2_3_fix_a_first_session_door_refresh_auth_prop_bound_to_bootstrap` | `<FirstSessionDoor … refreshAuth={bootstrap}>` — positive bind AND `refreshAuth={refreshContexts}` NOT present |
+| `test_j2_3_fix_a_cycle_branch_awaits_refresh_before_navigate` | Inside the `if (door === "cycle")` branch of the `choose` useCallback, `await refreshAuth()` index < `navigate(` index |
+| `test_j2_3_fix_d_solve_branch_awaits_refresh_before_navigate` | Same for solve branch |
+| `test_j2_3_fix_d_demo_branch_awaits_refresh_before_navigate` | Same for demo branch |
+| `test_j2_3_fix_a_no_residual_refreshcontexts_binding_for_door_refresh` | Anti-residual sweep — `refreshAuth={refreshContexts}` NOT in source |
+
+The branch-body extractor `_branch_body(choose_body, door)` uses a regex to slice just the `if (door === "<door>") { ... }` block so the refresh-before-navigate order assertion is scoped tightly. A future agent cannot pass these tests by adding the `await refreshAuth()` call OUTSIDE the branch — it must be INSIDE.
+
+### Pre-fix anti-false-green evidence
+
+```
+$ cd /app && git checkout v-post-j1 -- frontend/src/pages/FirstSession.jsx
+$ cd /app/backend && python -m pytest tests/test_j2_3_fix_a_d_auth_refresh.py -q
+5 failed, 1 passed, 7 warnings in 3.24s
+```
+
+**5/6 FAIL pre-fix.** The 1 that passes is the solve branch refresh-before-navigate order test — solve has always had `await refreshAuth()` before `navigate()` in the choose handler (legacy code); the bug was that `refreshAuth` was bound to the wrong refresh function. The other 5 tests catch the wiring bug at every angle: `bootstrap` not destructured, `refreshAuth` prop not bound to `bootstrap`, cycle branch missing the await (no branch at all in v-post-j1), demo branch missing the await (no branch at all in v-post-j1), residual `refreshAuth={refreshContexts}` binding still present.
+
+### Post-fix evidence
+
+```
+$ pytest tests/test_j2_3_fix_a_d_auth_refresh.py tests/test_j2_3_cycle_door_behavior.py \
+    tests/test_j2_stage_3.py tests/test_j1_stages_1_2.py tests/test_j1_onboarding.py
+56 passed, 7 warnings in 11.85s
+```
+
+**56/56 PASS** (J1=24 + J2=22 + J2.3 backend=4 + J2.3-fix.A/D frontend=6).
+
+### Files changed (J2.3-fix.A + D — final inventory)
+
+**Frontend:**
+- `frontend/src/pages/FirstSession.jsx` — 2-line surgical change (destructure `bootstrap` + bind it to `refreshAuth` prop).
+
+**Backend:**
+- `backend/tests/test_j2_3_fix_a_d_auth_refresh.py` — NEW (6 behavior tests).
+
+**Documentation:**
+- `memory/sprints/A_LOG.md` — this entry.
+
+**Backend behaviour code touched: 0.** No guardrail file modified. Verified by `git diff --name-only HEAD~1 HEAD` — only `frontend/src/pages/FirstSession.jsx` + the new test file.
+
+### Full pytest
+
+```
+$ cd /app/backend && python -m pytest -q --no-header --tb=no
+1 failed, 1166 passed, 490 skipped, 86 warnings in 259.31s (4:19)
+```
+
+**1166 passed · 490 skipped · 1 failed.**
+
+- Pre-J2.3-fix.A/D baseline (post-J2.3 backend fix): 1160 passed.
+- Post-J2.3-fix.A/D: **1166 passed (+6 — exactly the 6 new test_j2_3_fix_a_d_auth_refresh.py tests).** Zero regressions.
+- 490 skipped — UNCHANGED.
+- The 1 failure is the same pre-existing `test_real_requirements_file_is_clean`.
+
+**J2.3-fix.A/D status: READY FOR e1_tester re-verification (J2.3-fix.A and J2.3-fix.D only).**

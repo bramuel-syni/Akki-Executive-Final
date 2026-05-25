@@ -587,7 +587,7 @@ function FirstSessionDone({ artefact }) {
 // Root page
 // ---------------------------------------------------------------------------
 export default function FirstSession() {
-  const { refreshContexts, account } = useAuth();
+  const { refreshContexts, bootstrap, account } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [state, setState] = useState(null);
@@ -683,7 +683,7 @@ export default function FirstSession() {
           intake={state.intake}
           onDoorChosen={onDoorChosen}
           onSkip={onSkip}
-          refreshAuth={refreshContexts}
+          refreshAuth={bootstrap}
         />
       )}
       {step === "working" && (
