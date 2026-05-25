@@ -97,6 +97,7 @@ const SharedArtefact = lazy(() => import("@/pages/SharedArtefact"));
 const InboundQueue = lazy(() => import("@/pages/InboundQueue"));
 const StudioComposerPage = lazy(() => import("@/pages/StudioComposerPage"));
 const WorkStudio = lazy(() => import("@/pages/WorkStudio"));
+const WorkStudioDocumentPage = lazy(() => import("@/pages/WorkStudioDocumentPage"));
 const Pulse = lazy(() => import("@/pages/Pulse"));
 const SearchResults = lazy(() => import("@/pages/SearchResults"));
 const NedMeeting = lazy(() => import("@/pages/ned/NedMeeting"));
@@ -297,11 +298,13 @@ function App() {
           <Route path="/app/manage" element={<Gated><Manage /></Gated>} />
           <Route path="/app/enterprise" element={<Gated><Enterprise /></Gated>} />
           <Route path="/app/work-studio" element={<Gated><WorkStudio /></Gated>} />
-          {/* Chunk 8 (2026-05-18, QA-2026-05-16-029) — direct overlay URL
-              so the overlay is reachable independent of the brief-drawer
-              entry point. WorkStudio reads `:artefactId` and auto-opens
-              the overlay. */}
-          <Route path="/app/work-studio/document/:artefactId" element={<Gated><WorkStudio /></Gated>} />
+          {/* T3.3 (2026-05-25) — G8 ratified dedicated full-page
+              surface for Board Packs + Committee Packs. The pre-T3
+              route here pointed to <WorkStudio /> and auto-opened
+              the overlay; per G8 these two kinds now render as a
+              standalone page (W3), while Minutes / Decks / Reports
+              still open the overlay drawer from the listing (W4). */}
+          <Route path="/app/work-studio/document/:artefactId" element={<Gated><WorkStudioDocumentPage /></Gated>} />
           <Route path="/app/decks/:deckId" element={<Gated><Decks /></Gated>} />
           <Route path="/app/pulse" element={<Gated><Pulse /></Gated>} />
           {/* Phase F0 — Universal Search full results page. */}

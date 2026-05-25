@@ -136,3 +136,20 @@ $ pytest backend/tests/test_t1_add_to_cycle_g1.py backend/tests/test_t1_frontend
 | No guardrail files modified | ✅ | `git diff --name-only HEAD` excludes `backend/services/synisense/**`, `backend/services/clamav_service.py`, `backend/routers/inbound_email.py`, `backend/routers/trust_center.py`, `backend/routers/admin_audit_invariant.py`. `monitor_status_assessment.py` IS modified but it's not a guardrail file — it's the Monitor assessment endpoint (already Shield-routed; we only added doc-name resolution for the response). |
 | No T3/T4/T5 scope pulled forward | ✅ | Compile flow untouched (G6 PPTX deferred). Cycle wizard untouched. Work Studio drawer/page (W3/W4/W5) untouched. |
 
+
+
+
+---
+
+## T2 closure — e1_tester re-verdict 2026-05-25
+
+**Re-verdict for T2.3 (after fix-2): 2/2 PASS, 1 SKIP** (skip = no seeded objective/project carrying populated `supporting_docs`, so the Citations-links-mode could not be exercised in this pass; not a failure — logged as seed-data coverage gap in `POST_T5_BACKLOG.md`).
+
+| Item | Spec ref | Tester result |
+| --- | --- | --- |
+| T2.1 — Document Journal filter tabs | §4.A → D3 + D4 | PASS (first pass) |
+| T2.2 — Pulse Resolved tab + card body | §4.D → X3 | PASS (first pass) |
+| T2.3 — Monitor drawer redesign | §4.D → X5 | PASS / SKIP after fix-2 |
+| T2.4 — Strategic Goals filters | §4.D → X6 G11 + X8 G12 | PASS (first pass) |
+
+**T2 status: CLOSED.**

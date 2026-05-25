@@ -654,7 +654,24 @@ export default function WorkStudio() {
                 when the context has zero work_studio_exports rows. */}
             <DocumentCardsSection
               contextId={cid}
-              onOpenDocument={(aid) => { setOverlayAid(aid); setOverlayOpen(true); }}
+              onOpenDocument={(aid, exportKind) => {
+                /* T3.3 (2026-05-25) — G8 ratified card-kind routing.
+                 * Board Pack + Committee Pack → dedicated full-page
+                 * surface (`/app/work-studio/document/{artefactId}`).
+                 * The other three kinds (Minutes / Deck / Report)
+                 * open the existing side drawer overlay on this page.
+                 * The spec frames the dedicated page as W3 ("Compiled
+                 * Document page") and the drawer as W4 ("Pack side
+                 * drawer"); G8 ratification splits them by card kind. */
+                const k = (exportKind || "").toLowerCase();
+                if (k === "cycle_board_pack" || k === "board_pack" ||
+                    k === "cycle_committee_pack" || k === "committee_pack") {
+                  navigate(`/app/work-studio/document/${aid}`);
+                  return;
+                }
+                setOverlayAid(aid);
+                setOverlayOpen(true);
+              }}
             />
 
             <ContextActions

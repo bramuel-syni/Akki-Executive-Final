@@ -585,3 +585,134 @@ async def create_work_studio_artefact(
         "document_id": document_id,
         "redirect_url": f"/app/studio/composer/{body.kind}/{artefact_id}",
     }
+
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# T3.1 (2026-05-25) — Add to Work Studio from a Document Journal item.
+#
+# Implements spec §4.A → D5: the Document Journal "Add to Work Studio"
+# modal asks the user to choose one of five artefact types and creates
+# a draft artefact card seeded from the chosen document. Differs from
+# `/work-studio/artefacts` above (which is deck/report only) in that
+# the new endpoint accepts the full 5-kind taxonomy from D5 — Board
+# Pack, Minutes, Committee Pack, Deck, Report — and lands the row in
+# the unified `work_studio_exports` aggregate so the Work Studio
+# listing surfaces the card immediately (DocumentCardsSection reads
+# from this same collection).
+#
+# G8 ratified routing is handled CLIENT-SIDE on the redirect_url: the
+# frontend post-modal navigation routes Board Pack + Committee Pack to
+# the dedicated page (`/app/work-studio/document/{aid}`) and the
+# remaining three to the listing with `?pulse=<aid>` so the new card
+# pulses on arrival.
+# ═════════════════════════════════════════════════════════════════════════
+_VALID_FROM_DOC_KINDS = {
+    "board_pack", "committee_pack", "minutes", "deck", "report",
+}
+
+
+class FromDocumentRequest(BaseModel):
+    kind: Literal["board_pack", "committee_pack", "minutes", "deck", "report"]
+    source_doc_id: str = Field(..., min_length=1, max_length=128)
+
+
+@router.post(
+    "/contexts/{context_id}/work-studio/from-document",
+    status_code=201,
+)
+async def create_work_studio_from_document(
+    context_id: str,
+    body: FromDocumentRequest,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Create a Draft Work Studio artefact seeded from a Document
+    Journal item.
+
+    422 paths:
+      - `kind` not in the D5 5-kind set (Pydantic Literal blocks first)
+
+    404 paths:
+      - `source_doc_id` doesn't resolve in this context
+    """
+    if body.kind not in _VALID_FROM_DOC_KINDS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Unsupported kind `{body.kind}`. "
+                f"D5 accepts: {sorted(_VALID_FROM_DOC_KINDS)}."
+            ),
+        )
+
+    account = ctx["account"]
+    account_id = account["id"]
+
+    doc = await db.documents.find_one(
+        {"id": body.source_doc_id, "context_id": context_id},
+        {"_id": 0, "id": 1, "name": 1, "original_filename": 1},
+    )
+    if not doc:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Document `{body.source_doc_id}` not found in this workspace."
+            ),
+        )
+    doc_title = doc.get("name") or doc.get("original_filename") or "Document"
+
+    artefact_id = str(uuid.uuid4())
+    now = _now_iso()
+    row = {
+        "id": artefact_id,
+        "context_id": context_id,
+        "account_id": account_id,
+        # D5 lands the new artefact as Draft. Lifecycle moves to
+        # in_review when the user opens it; committed via the
+        # commit-pack flow (W3/W5, deferred to T4).
+        "kind": body.kind,
+        "title": doc_title,
+        "status": "draft",
+        "lifecycle_state": "draft",
+        "output_format": "docx",
+        "source_document_ids": [doc["id"]],
+        "structured_content": None,
+        "origin": {
+            "source": "document_journal_add",
+            "document_id": doc["id"],
+        },
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.work_studio_exports.insert_one(row)
+
+    try:
+        await write_audit(
+            context_id=context_id, account_id=account_id,
+            action="work_studio.artefact.created_from_document",
+            resource_type=f"work_studio_artefact.{body.kind}",
+            resource_id=artefact_id,
+            metadata={
+                "kind": body.kind,
+                "source": "document_journal_add",
+                "document_id": doc["id"],
+                "title": doc_title,
+            },
+        )
+    except Exception:
+        logger.exception(
+            "create_work_studio_from_document: audit write failed (non-fatal)"
+        )
+
+    # G8 ratified routing (frontend honours this redirect_url unless
+    # it wants to land on the listing-with-pulse experience instead).
+    if body.kind in {"board_pack", "committee_pack"}:
+        redirect_url = f"/app/work-studio/document/{artefact_id}"
+    else:
+        redirect_url = f"/app/work-studio?kind={body.kind}&pulse={artefact_id}"
+
+    return {
+        "kind": body.kind,
+        "artefact_id": artefact_id,
+        "title": doc_title,
+        "redirect_url": redirect_url,
+    }

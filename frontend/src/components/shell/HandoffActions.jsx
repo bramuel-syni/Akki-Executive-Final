@@ -27,10 +27,17 @@ import { toast } from "sonner";
 import { api, apiErrorMessage } from "@/lib/api";
 import { takeToSolva } from "@/lib/takeToSolva";
 import { Sparkles, Presentation, ListPlus, Loader2, MessageSquare } from "lucide-react";
+import AddToCycleModal from "@/components/shared/AddToCycleModal";
 
 export default function HandoffActions({ kind, id, contextId, title, className = "" }) {
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
+  // T3.2 (2026-05-25) — for the document case, the Add-to-Cycle CTA
+  // now uses the shared G1 Select-Cycle modal. For other artefact
+  // kinds (briefing / deck / signal) the existing question-bank flow
+  // is preserved — those are a different journey (cycle dispatch
+  // seeding) and G1 doesn't apply.
+  const [cycleModalOpen, setCycleModalOpen] = useState(false);
   const seed = kind && id ? `${kind}:${id}` : null;
 
   // Workstream B.6 (2026-05-10) — Ask in Chat handoff. Only meaningful
@@ -62,6 +69,14 @@ export default function HandoffActions({ kind, id, contextId, title, className =
   }, [kind, id, seed, navigate]);
 
   const onAddToCycle = useCallback(async () => {
+    // T3.2 (2026-05-25) — G1 parity fix. For documents, route through
+    // the shared Select-Cycle modal that posts to /cycle/contributions
+    // with G1's verbatim wire format. For other kinds we keep the
+    // pre-T3 question-bank flow (a different journey, not a G1 use case).
+    if (kind === "document" && id) {
+      setCycleModalOpen(true);
+      return;
+    }
     if (!contextId) {
       toast.error("No active context — pick one before adding to a cycle.");
       return;
@@ -132,6 +147,14 @@ export default function HandoffActions({ kind, id, contextId, title, className =
         {adding ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <ListPlus className="w-3.5 h-3.5 mr-1.5" strokeWidth={1.7} />}
         Add to Cycle
       </Button>
+      {kind === "document" && id && (
+        <AddToCycleModal
+          open={cycleModalOpen}
+          onOpenChange={setCycleModalOpen}
+          contextId={contextId}
+          doc={{ id, name: title }}
+        />
+      )}
     </div>
   );
 }

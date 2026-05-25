@@ -89,7 +89,10 @@ def test_t1_5_workspace_route_is_registered():
 
 # ── T1.6 ────────────────────────────────────────────────────────────
 def test_t1_6_doc_routing_uses_g1_payload_shape():
-    src = _read("frontend/src/components/documents/DocumentRoutingActions.jsx")
+    # T3.2 (2026-05-25) refactor — Select-Cycle modal logic was
+    # extracted to `components/shared/AddToCycleModal.jsx`. The G1
+    # contract lives there now; DocumentRoutingActions just mounts it.
+    src = _read("frontend/src/components/shared/AddToCycleModal.jsx")
     # G1 wire format: body carries cycle_id + kind:"document" +
     # source_doc_id + title; same cycle_id is also passed as query.
     assert 'cycle_id: selectedCycleId' in src
@@ -101,17 +104,18 @@ def test_t1_6_doc_routing_uses_g1_payload_shape():
 
 
 def test_t1_6_modal_lists_active_and_draft_cycles():
-    src = _read("frontend/src/components/documents/DocumentRoutingActions.jsx")
+    src = _read("frontend/src/components/shared/AddToCycleModal.jsx")
     # Two parallel GETs by status, then merge — this is how the modal
     # populates the Select Cycle dropdown.
     assert 'status: "active"' in src
     assert 'status: "draft"' in src
-    # Old agenda-picker path must be gone.
+    # Old agenda-picker path must be gone (no /cycle/agenda fetch
+    # anywhere in the extracted modal).
     assert "/cycle/agenda" not in src
 
 
 def test_t1_6_modal_surfaces_human_readable_error_toasts():
-    src = _read("frontend/src/components/documents/DocumentRoutingActions.jsx")
+    src = _read("frontend/src/components/shared/AddToCycleModal.jsx")
     # 423 cycle locked, 422 validation, 400 generic — each with a
     # bespoke copy. Plus the D6 generic failure copy.
     assert "423" in src

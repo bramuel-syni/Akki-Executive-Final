@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"d7eb185da4dd4572914f590192e89a3e","collectionName":"synisense_trust_receipts","type":"collection"}

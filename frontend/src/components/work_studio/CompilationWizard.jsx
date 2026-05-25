@@ -117,6 +117,18 @@ export default function CompilationWizard({ open, onClose, contextId,
   const [sourceLoading, setSourceLoading] = useState(false);
   const [selectedSourceIds, setSelectedSourceIds] = useState(new Set());
 
+  // T3.4 (2026-05-25) — Spec §4.C → W8: nested file-upload affordance
+  // for the Sources step. Lets the user upload a doc that isn't yet
+  // in the Document Journal without leaving the Compile wizard. G9
+  // ratified handles failures with verbatim toasts:
+  //   • ClamAV reject → "We couldn't upload that file. It was rejected by virus scanning."
+  //   • Other failure → "Upload failed. Please try again."
+  // Both close ONLY the nested modal — the parent Compile modal and
+  // any existing source-item selection are preserved.
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const uploadInputRef = React.useRef(null);
+
   // Step 3 state — contributors derived from sources + manual exclusions
   const [excludedContribIds, setExcludedContribIds] = useState(new Set());
 
@@ -226,6 +238,75 @@ export default function CompilationWizard({ open, onClose, contextId,
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  };
+
+  /* T3.4 (2026-05-25) — Spec §4.C → W8 nested file upload.
+   * The user can land here without the document already being in the
+   * Document Journal. We give them an inline "Upload it here" affordance
+   * that opens a nested modal with a file picker. On success: the doc is
+   * persisted to /documents and the wizard's source list is refreshed
+   * so the new doc shows up under the existing artefact-type filter.
+   * On failure: G9 ratified toasts (verbatim) and the parent Compile
+   * modal stays open with the existing source-item selection intact. */
+  const refetchSources = React.useCallback(() => {
+    if (!open || !artefact || !contextId) return;
+    setSourceLoading(true);
+    api
+      .get(`/contexts/${contextId}/briefings/aggregates`, {
+        params: { kind: artefact.kind, sort: "recent", page_size: 50 },
+      })
+      .then(({ data }) => {
+        const items = data?.items || [];
+        const enriched = items.map((it) => ({
+          ...it,
+          readiness_pct: typeof it.readiness_pct === "number"
+            ? it.readiness_pct
+            : Math.min(100, (it.document_count || 0) * 12 + (it.contributor_count || 0) * 10),
+        }));
+        enriched.sort((a, b) => (b.readiness_pct || 0) - (a.readiness_pct || 0));
+        setSourceItems(enriched);
+      })
+      .catch(() => { /* surfacing already happens via the parent fetch */ })
+      .finally(() => setSourceLoading(false));
+  }, [open, artefact, contextId]);
+
+  const onUploadFile = async (file) => {
+    if (!file || !contextId) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      await api.post(`/contexts/${contextId}/documents`, fd);
+      // Spec W8 step 4: uploaded doc lands in the Document Journal +
+      // appears in the source list. We refresh the list (the new doc
+      // surfaces under whatever aggregate accepts it — selection is
+      // user-driven from there).
+      setUploadOpen(false);
+      toast.success("Document added to your library.");
+      refetchSources();
+    } catch (err) {
+      // G9 ratified failure handling — verbatim toasts.
+      const detail = (
+        err?.response?.data?.detail
+        || err?.response?.data?.error
+        || err?.response?.data?.message
+        || ""
+      );
+      const looksClamAv = /clamav|virus|infected|malware/i.test(
+        typeof detail === "string" ? detail : JSON.stringify(detail)
+      );
+      if (looksClamAv) {
+        toast.error("We couldn't upload that file. It was rejected by virus scanning.");
+      } else {
+        toast.error("Upload failed. Please try again.");
+      }
+      // Close ONLY the nested upload modal — preserve the parent
+      // Compile modal + existing selection per the user's directive.
+      setUploadOpen(false);
+    } finally {
+      setUploading(false);
+      if (uploadInputRef.current) uploadInputRef.current.value = "";
+    }
   };
 
   // Contributors derived from the selected sources (deduplicated by id).
@@ -443,6 +524,30 @@ export default function CompilationWizard({ open, onClose, contextId,
                 );
               })}
             </div>
+            {/* T3.4 (2026-05-25) — W8 inline upload affordance.
+                Always rendered (T2.3 DOM-unconditional rule) so the
+                spec-required CTA is visible even when sourceLoading
+                is true or the list is empty. */}
+            <div
+              className="mt-2 flex items-center justify-between gap-3 text-[12.5px] border-t border-[var(--rule)] pt-3"
+              data-testid="wizard-source-upload-prompt"
+            >
+              <span className="text-[var(--muted)]">
+                Can't find your document? Upload it here.
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setUploadOpen(true)}
+                disabled={uploading}
+                className="text-[12px] rounded-sm border-[var(--rule)]"
+                data-testid="wizard-source-upload-btn"
+              >
+                {uploading ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+                Upload
+              </Button>
+            </div>
           </div>
         )}
 
@@ -633,6 +738,50 @@ export default function CompilationWizard({ open, onClose, contextId,
           )}
         </DialogFooter>
       </DialogContent>
+      {/* T3.4 (2026-05-25) — Spec §4.C → W8: nested file-upload modal.
+          Sits OUTSIDE the parent DialogContent so closing it does not
+          dismiss the parent Compile modal (the wizard's
+          DialogContent.onOpenChange is gated by `onClose` which only
+          fires when the parent is dismissed). Failure handling per
+          G9 ratified is in `onUploadFile` — verbatim ClamAV and
+          generic toasts; only the nested modal closes on failure,
+          parent selection stays intact. */}
+      <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+        <DialogContent className="rounded-sm max-w-md" data-testid="wizard-source-upload-modal">
+          <DialogHeader>
+            <DialogTitle>Upload a document</DialogTitle>
+            <DialogDescription>
+              We'll add it to your Document Journal and bring you back to source selection.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 space-y-2" data-testid="wizard-source-upload-body">
+            <input
+              ref={uploadInputRef}
+              type="file"
+              accept=".pdf,.docx,.pptx,.txt,.md,.csv,.xlsx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/markdown,text/csv"
+              className="block w-full text-[12.5px]"
+              disabled={uploading}
+              onChange={(e) => onUploadFile(e.target.files?.[0])}
+              data-testid="wizard-source-upload-input"
+            />
+            <p className="text-[11px] text-[var(--muted)]">
+              PDF, Word, PowerPoint, Excel, or plain-text files.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setUploadOpen(false)}
+              disabled={uploading}
+              className="text-[12px]"
+              data-testid="wizard-source-upload-cancel"
+            >
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

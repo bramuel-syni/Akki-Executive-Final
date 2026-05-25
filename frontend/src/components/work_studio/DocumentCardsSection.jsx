@@ -156,7 +156,7 @@ export default function DocumentCardsSection({ contextId, onOpenDocument }) {
           <DocumentCardRow
             key={it.id}
             item={it}
-            onOpen={() => onOpenDocument && onOpenDocument(it.id)}
+            onOpen={() => onOpenDocument && onOpenDocument(it.id, it.export_kind)}
             onDownload={() => onDownload(it)}
             downloading={downloading === it.id}
           />
