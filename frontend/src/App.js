@@ -260,14 +260,6 @@ function App() {
           <Route path="/sandbox" element={<SandboxApp />} />
           <Route path="/legacy-sandbox" element={<SandboxV2 />} />
           <Route path="/legacy-sandbox/resume" element={<SandboxV2 />} />
-          {/* J1 (2026-05-24) — public alias for the Trust Center page so
-              marketing / external links land on the real surface without
-              needing to know the /app prefix. Forwards any querystring
-              (e.g. ?intro=shield) verbatim. */}
-          <Route
-            path="/trust-center"
-            element={<Navigate to={`/app/trust-center${window.location.search}`} replace />}
-          />
 
           <Route path="/app/first-session" element={<ProtectedRoute><FirstSession /></ProtectedRoute>} />
           <Route path="/app" element={<Gated><AppHome /></Gated>} />

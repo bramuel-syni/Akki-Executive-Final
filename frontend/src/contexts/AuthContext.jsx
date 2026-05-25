@@ -237,18 +237,30 @@ export function AuthProvider({ children }) {
         fromContextId: fromContextId || activeContextId || null,
         toRole: data.role,
       });
+    } else if (!silent) {
+      // T1.3 (2026-05-24) — explicit user switch with no role-change
+      // modal: still navigate to Home of the newly selected account
+      // per Document Journal report item 1. Silent switches (boot
+      // hydration, etc.) keep the previous behaviour of NOT
+      // touching the URL.
+      if (typeof window !== "undefined") {
+        window.location.href = "/app";
+      }
     }
     return data;
   }, [activeContextId, persistActiveContext]);
 
   const dismissSwitchModal = useCallback(() => {
-    // Per memo Item 5: dismissing reloads the page so all on-screen
-    // data is re-fetched with the new role. Reload happens here, NOT
-    // in switchContext — that way calls that explicitly want silent
-    // switches (boot auto-pick) don't trigger a reload.
+    // T1.3 (2026-05-24) — Per Document Journal report item 1: every
+    // context switch must land on Home of the newly selected
+    // account, NOT on the previous path. Replacing the prior
+    // `window.location.reload()` (which preserved URL) with a hard
+    // navigation to `/app` forces both (a) the canonical home route
+    // AND (b) a fresh data-fetch cycle (because the route component
+    // re-mounts under the new active-context header).
     setPendingSwitchModal(null);
     if (typeof window !== "undefined") {
-      window.location.reload();
+      window.location.href = "/app";
     }
   }, []);
 

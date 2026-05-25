@@ -1071,7 +1071,7 @@ export default function Chat() {
         </aside>
 
         {/* Main */}
-        <main className="flex flex-col min-h-0 bg-white" data-testid="chat-main">
+        <main className="flex flex-col min-h-0 min-w-0 bg-white" data-testid="chat-main">
           {!activeChat ? (
             <div className="flex-1 flex items-center justify-center text-center p-12">
               <div className="max-w-md">
@@ -1109,7 +1109,7 @@ export default function Chat() {
               <div
                 ref={scrollContainerRef}
                 onScroll={onMessagesScroll}
-                className="flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5 md:px-8 md:py-6 relative"
+                className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-6 sm:py-5 md:px-8 md:py-6 relative"
                 data-testid="chat-messages"
               >
                 {/* Patch 4A — chat horizontal-clipping fix: centred
@@ -1595,7 +1595,14 @@ function Composer({ value, onChange, onSubmit, sending, policy, onCancel, attach
   const ta = useRef(null);
   const fileInputRef = useRef(null);
   return (
-    <div className="border-t border-[var(--rule)] p-3 bg-white" data-testid="chat-composer">
+    /* T1.1 (2026-05-24) — sticky bottom-0 + z-10 anchors the composer
+       to the bottom of the chat pane regardless of message length or
+       viewport size. The parent `<main>` is `flex flex-col min-h-0`
+       so the scroll container above takes `flex-1` and the composer
+       sits below it. `sticky bottom-0` is the belt-and-braces guard
+       in case a deeper flex child breaks the layout contract on
+       narrow viewports. */
+    <div className="sticky bottom-0 z-10 border-t border-[var(--rule)] p-3 bg-white" data-testid="chat-composer">
       {/* Phase B.1 — attached-file chips. Each chip shows name + size +
           sensitivity band; click X to remove. The chips travel with
           the next send and are cleared on success/cancel. */}
