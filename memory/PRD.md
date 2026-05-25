@@ -3639,11 +3639,78 @@ Full closeout: `/app/memory/sprints/T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md` §11.
 ## Post-onboarding-sprint Backlog
 
 - **P0:** None.
-- **P1 (in flight):** Chunk (e) GitHub push readiness (see `/app/memory/sprints/PUSH_READINESS.md`); chunk (c) Stripe "Billing — Coming Soon" UX.
+- **P1:** Chunk (e) GitHub push (user action via "Save to Github" UI).
 - **P2:** ClamAV EICAR spot-check (deferred — `clamd` sidecar STOPPED in preview env).
 - **P2:** Demo seeds auto-apply on pod boot (decision-pending — see `POST_T5_BACKLOG.md`).
 - **P2:** Demo visibility widening across Document Journal / Work Studio / Monitor list endpoints (parked at J5).
 - **P2:** Cycle Setup Wizard `intake_seed=1` Q3 fallback prefill (parked at J5).
-- **P2:** Onboarding Health admin dashboard — single-page view of per-account journey state (5 flags + complete rollup). Parked in `POST_T5_BACKLOG.md`.
+- **P2:** Onboarding Health admin dashboard — per-account journey state. Parked in `POST_T5_BACKLOG.md`.
+- **P2:** Coming-Soon analytics admin view — `billing_launch_interest` daily rollup. Parked in `POST_T5_BACKLOG.md`.
+- **P2:** Launch-day email blast CRON — when billing actually ships. Parked in `POST_T5_BACKLOG.md`.
 - **P3:** X4 — Monitor objective/project filter tab removal (parked from T2.3 scope wording).
+- **P3:** Stripe library removal from `backend/requirements.txt` — no live callers post-(c.1)(c). Parked in `POST_T5_BACKLOG.md`.
+
+---
+
+## Chunk (c) — Stripe "Billing — Coming Soon" UX (2026-05-25) — CLOSED
+
+**Scope:** Replace §M4 Stripe checkout with an honest Coming-Soon surface. User explicitly opted for this over a silent-fake-success mock.
+
+**Implementation:**
+- `backend/routers/billing.py` — FULL REWRITE. All 4 existing endpoints return `{coming_soon: true, message: <verbatim>}`. Webhook stub returns 200 + dead-letters. NEW `/api/notify-billing-launch` — idempotent set-if-not-exists into `billing_launch_interest` collection.
+- `frontend/src/components/settings/BillingTab.jsx` — REWRITTEN as Coming-Soon hero with notify-me CTA + read-only plan catalog preview.
+- `frontend/src/components/depth/UpgradeModal.jsx` — REWRITTEN — primary "NOTIFY ME WHEN READY" CTA routes to `/app/settings/billing`.
+
+**Verbatim copy** (single source of truth — `routers/billing.py` constants):
+- Heading: *"Billing & Subscription — Coming Soon"*
+- Body: *"We're finalizing our subscription tiers. Your account is fully active during this preview period; billing will roll out in a future release."*
+- CTA: *"Notify me when this is ready"*
+
+**Initial e1_tester verdict: 3/4 PASS.** FAIL on (c.1)(c) — dead `import stripe` inside `backend/services/stripe_webhook.py::verify_and_parse_event`. No runtime callers, but violated the strict zero-Stripe-SDK invariant grep audit.
+
+**(c.1)(c) surgical fix:** Deleted `verify_and_parse_event` + `SignatureInvalid` symbols. Added regression test `test_chunk_c_no_stripe_sdk_import.py` that pins the invariant via `subprocess.run(["grep", -rn, ...])` mirroring the e1_tester audit pattern. Pre-fix grep: 1 hit. Post-fix grep: 0 hits.
+
+**Re-verification verdict: 4/4 PASS.**
+
+**Tests:** 15 new total — 13 chunk (c) anchor-chain tests + 2 (c.1)(c) regression tests.
+
+**Git tags:** `v-pre-c` + `v-post-c`. Both local-only.
+
+**Status: CLOSED 2026-05-25.**
+
+---
+
+## Full session closeout (2026-05-25)
+
+All implementation chunks in the user-approved sequence (b → d → a → e → c) are now complete except (e) GitHub push, which is a user action via the "Save to Github" UI.
+
+| Order | Chunk | Verdict |
+| --- | --- | --- |
+| 1 | T1 (horizontal) | 5/5 PASS |
+| 2 | T2 (incl. T2.3 fix-pass) | 4/4 + 2/2 PASS |
+| 3 | T3 | 4/4 PASS |
+| 4 | T4 | 5/5 PASS |
+| 5 | T5 | 4/4 PASS |
+| 6 | backlog-b + b1/b2/b3 fix-passes | 3 fixes + seeds green |
+| 7 | chunk (d) — Trust Center methodology + skip-audit + 10 re-enables | doc-only + 10 tests green |
+| 8 | chunk (a) — J1 | 4/4 PASS |
+| 9 | chunk (a) — J2 + two J2.3 fix-passes | 3/4 → 4/4 PASS |
+| 10 | chunk (a) — J3 | 4/4 PASS |
+| 11 | chunk (a) — J4 | 4/4 PASS |
+| 12 | chunk (c) + (c.1)(c) surgical fix | 3/4 → 4/4 PASS |
+| 13 | chunk (e) — GitHub push | DEFERRED to user action |
+
+**31/31 PO-ratified gaps shipped (G1-G31).**
+**9 durable lessons banked (§5.1-§5.9 in `T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md`).**
+**18 local-only git tags ready for GitHub push.**
+**Final pytest: 1208 passed · 490 skipped · 1 pre-existing failure (`test_real_requirements_file_is_clean`, unrelated).**
+**Net delta across the session: +125 passing tests, zero regressions, zero guardrail file changes.**
+
+**Outstanding items:**
+- **chunk (e) — GitHub push** — user action. Push-readiness artifact at `/app/memory/sprints/PUSH_READINESS.md` carries the tag inventory + commit summary + suggested commit message + pre-push checklist.
+- **ClamAV EICAR spot-check** — optional, deferred because `clamd` sidecar is STOPPED in this preview pod.
+
+Full closeout: `T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md` §12 "Full session closeout".
+
+**Status: ALL IMPLEMENTATION CHUNKS CLOSED. Standing by for next instruction.**
 

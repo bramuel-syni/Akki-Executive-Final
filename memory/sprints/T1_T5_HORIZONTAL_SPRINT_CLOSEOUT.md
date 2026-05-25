@@ -232,6 +232,21 @@ This sub-rule is binding for J1-J4 onboarding and every future tier:
 
 > Info-affordances, helper popovers, and ancillary explanatory copy live next to the data they describe, NOT at the page chrome level. The DOM-unconditional rule constrains structural elements within their parent rendering context.
 
+### 5.9 The grep-audit-on-import-statements invariant (during chunk (c.1)(c), 2026-05-25)
+
+When pinning a "this dependency is gone" contract (Stripe SDK removal in chunk (c)), source-level grep audits MUST be enforced by a behavior-level regression test in the repository — NOT just by the e1_tester running a one-off command. Otherwise, dead code that contains the forbidden import will slip through any code-only review because it has no runtime callers and pytest never executes it.
+
+In concrete terms: chunk (c) shipped a Coming-Soon Billing UX that returned `{coming_soon: true}` from `/billing/checkout` and dead-lettered raw webhook bodies. All Stripe SDK calls in `routers/billing.py` were deleted. But `backend/services/stripe_webhook.py::verify_and_parse_event` (a helper introduced in the old §M4 implementation) still carried `import stripe` inside its body. It had no runtime callers — the new webhook stub writes to `db.stripe_dead_letter` directly without invoking the helper — so pytest never exercised the dead branch and never tripped `ImportError` or any other runtime signal. The e1_tester caught it by running the user's exact grep pattern. The fix:
+
+1. Delete the dead function + its companion exception class.
+2. Add a regression test (`test_chunk_c_no_stripe_sdk_import.py`) that runs the SAME `subprocess.run(["grep", ...])` audit and asserts 0 hits.
+
+The test now pins the invariant: any future "lazy `import stripe`" smuggled back in (intentional or accidental) will break the test in pytest, and the verbatim grep pattern matches what the orchestrator's e1_tester will check.
+
+This sub-rule is binding for any future dependency-removal claim:
+
+> If a chunk's contract is "library X is gone" or "this SDK is no longer used," a `subprocess.run(["grep", -rn, "import X", scope_dirs])` regression test MUST be added at the same time as the deletion. Dead code with the forbidden symbol is invisible to pytest unless an explicit grep test enforces the invariant.
+
 ---
 
 ## 6. Full-repo pytest status
@@ -463,3 +478,152 @@ All local-only; pushing to `origin` requires the user's "Save to Github" feature
 ### 11.9 Final closure statement (onboarding sprint)
 
 **Onboarding sprint J1–J4 closed. Spec v1.1 locked, 19/19 gaps shipped, 16/16 user-verified verdicts, +110 passing tests, zero guardrail file changes. Awaiting next instruction.**
+
+---
+
+## 12. Full session closeout (2026-05-25)
+
+This section closes the entire session — both the horizontal UI-reshape sprint (T1–T5 + backlog-b + chunk-d) AND the onboarding vertical (J1–J4) AND the Stripe Coming-Soon chunk (c). All implementation chunks in the user-approved sequence (b → d → a → e → c) are now complete except (e) GitHub push, which is a user action via the "Save to GitHub" UI.
+
+### 12.1 All completed chunks
+
+| Order | Chunk | Scope | Verdict | Closure tag |
+| --- | --- | --- | --- | --- |
+| 1 | **T1** | Chat sticky + Context Switch + Generate Brief + "All documents" routing + Add to Cycle (G1) | 5/5 PASS | — |
+| 2 | **T2** | Document Journal filter tabs + Pulse Resolved tab + Monitor drawer redesign + Strategic Goals filters (G11 + G12) | 4/4 PASS | — |
+| 2.1 | **T2.3 fix-pass** | False-green correction — Monitor drawer FileText crash + Update assessment routing | 2/2 PASS | — |
+| 3 | **T3** | Add to Work Studio modal (G8) + Add to Cycle parity + Work Studio kind routing + Compile modal nested upload (G9) | 4/4 PASS | — |
+| 4 | **T4** | W3 compiled doc toolbar + DOCX/PDF/PPTX (G6) + Refine failure (G7) + W5 committed + Enhance flow + W10 refine failure (G10) | 5/5 PASS | — |
+| 5 | **T5** | Cycle Manager landing (C1) + Setup Wizard (C2 G4 + C3 G5 + C4) + Cycle Page Compile parity (C5 G6) + Draft Journal (C7) + Ready Journal (C8) | 4/4 PASS | `v-post-T5-horizontal-closed` |
+| 6 | **backlog-b** | Demo seed packs (Board + Committee + Cycle compilation) + 3 production bug fixes (Work Studio titles, Cycle page G6 chips, Monitor drawer FileText crash) | 3 fixes + seeds tested green | `v-post-backlog-b` |
+| 6.1 | **b1/b2/b3 fix-passes** | Companion fix-passes triggered by backlog-b test surface | All green | — |
+| 7 | **chunk (d)** | Trust Center session-deviation note + `TRUST_CENTER_METHODOLOGY.md` + Skip-Audit (500 skipped tests classified in `SKIP_LEDGER.md`) + 10 guardrail-adjacent tests re-enabled | doc-only + 10 re-enabled tests green | `v-post-d` |
+| 8 | **chunk (a) — J1** | Stages 1-2 (intake + auth + b48ee23 onboarding-status cherry-pick) · G14-G20 | 4/4 PASS | `v-post-j1` |
+| 9 | **chunk (a) — J2** | Stage 3 (4-door layout · demo-attach · cycle prefill) · G21-G23 | 3/4 PASS first pass | — |
+| 9.1 | **J2.3 fix-pass 1** | Cycle-door behavior — missing query params + route guard | 4/4 PASS | — |
+| 9.2 | **J2.3 fix-pass 2** | Auth-refresh routing — stale AuthContext blocking navigate after door-take | 6/6 PASS | `v-post-j2` |
+| 10 | **chunk (a) — J3** | Stages 4-5 (first-doc upload through ClamAV + Shield · Trust Center 3-stop intro tour) · G24-G28 | 4/4 PASS | `v-post-j3` |
+| 11 | **chunk (a) — J4** | Stage 6 (first Akki Chat / Solva session) · G29-G31 | 4/4 PASS | `v-post-j4` + `v-post-onboarding-sprint-closed` |
+| 12 | **chunk (c)** | Stripe "Billing — Coming Soon" UX | 3/4 PASS first pass | — |
+| 12.1 | **chunk (c.1)(c) surgical fix** | Zero-Stripe-SDK invariant — dead `import stripe` in `stripe_webhook.py` deleted | 4/4 PASS | `v-post-c` |
+| 13 | **chunk (e) — GitHub push** | DEFERRED to user action via "Save to GitHub" UI | — | — |
+
+### 12.2 All ratified gaps shipped — G1 through G31 (31/31)
+
+**Horizontal sprint (G1-G12)** — see §1 above for the full ratified-summary table. All consumed by T1-T5.
+
+**Onboarding sprint (G13-G31)** — see §11.1 above for the full ratified-summary table. All consumed by J1-J4.
+
+**Cumulative: 31/31 PO-ratified gaps implemented + code-verified + e1_tester-verified across two sprints.**
+
+### 12.3 All durable lessons banked
+
+Recorded in §5 above. Nine sub-rules now binding for all future sprints:
+
+| Lesson | Where banked | Triggering chunk |
+| --- | --- | --- |
+| §5.1 | DOM-unconditional rendering rule | T2.3 false-green fix |
+| §5.2 | Code-verified vs. live-verified distinction | T-series sprint open |
+| §5.3 | Verbatim-spec-copy invariant | T-series sprint open |
+| §5.4 | Per-tier hygiene discipline | T-series sprint open |
+| §5.5 | Pre-fix anti-false-green check | T-series sprint open |
+| §5.6 | Import-survival rule | backlog-b T2.3 |
+| §5.7 | DOM-unconditional rule scope clarification | chunk (d) |
+| §5.8 | Source-string assertions ≠ behavior verification (anchor-chain rule) | J2.3 false-clean |
+| §5.9 | Grep-audit-on-import-statements invariant | chunk (c.1)(c) |
+
+### 12.4 POST-T5 backlog at session close (classified by priority)
+
+Pulled from `POST_T5_BACKLOG.md` and re-grouped:
+
+**P2 ENHANCEMENTS (admin tooling / launch readiness)**
+
+- Onboarding Health admin dashboard — single-page view of per-account journey state (5 J-sprint status flags + complete rollup). Source: J4 finish suggestion.
+- Coming-Soon analytics admin view — `billing_launch_interest` daily rollup. Source: chunk (c) finish suggestion.
+- Launch-day email blast CRON — emails every `billing_launch_interest` account when billing actually ships. Source: chunk (c.1) finish suggestion.
+
+**P2 PRODUCT (parked for J5 / future product sprints)**
+
+- Demo visibility widening across Document Journal / Work Studio / Monitor list endpoints. Parked at J5 boundary.
+- Cycle Setup Wizard `intake_seed=1` Q3 fallback prefill. Parked at J5 boundary.
+- C4 Project Brief LLM step — Review / Save-as-Draft branches with Shield-routed `agent_cycle_summary` regeneration via `llm_router.invoke()` + `deidentifier.deidentify()`. Parked at T5 boundary.
+
+**P2 OPERATIONAL (preview-env-bound)**
+
+- Demo seeds auto-apply on preview pod boot (decision-pending: auto vs manual). Park decision deferred to future demo-pipeline sprint.
+- ClamAV EICAR spot-check — live-verify G9 reject path. Deferred because `clamd` sidecar is STOPPED in this preview environment.
+
+**P3 CLEANUP**
+
+- Stripe library removal from `backend/requirements.txt` — no live callers post-(c.1)(c). Verification baseline: `test_chunk_c_no_stripe_sdk_import.py` pins the invariant.
+- X4 — Remove Monitor objective/project filter tabs (spec L687–L695). Outside T2.3 scope wording.
+
+### 12.5 Final pytest at session close
+
+```
+$ cd /app/backend && python -m pytest -q --no-header --tb=no
+1 failed · 1208 passed · 490 skipped · 86 warnings in 263.70s (4:23)
+```
+
+| Boundary | Passed | Skipped | Failed |
+| --- | --- | --- | --- |
+| Pre-session baseline (pre-`v-pre-T1`) | ~1083 | ~490 | 1 (pre-existing requirements-file test) |
+| Post-T5 horizontal close | 1083 | 490 | 1 |
+| Post-backlog-b | 1083+ (incl. backlog-b seed tests) | 490 | 1 |
+| Post-chunk-d (10 guardrail re-enables) | 1083+ | 490 | 1 |
+| Post-onboarding-sprint (J1–J4) | 1193 | 490 | 1 |
+| Post-chunk-(c) initial | 1206 (+13) | 490 | 1 |
+| Post-chunk-(c.1)(c) fix | **1208** (+2 regression tests) | 490 | 1 |
+
+**Net delta across the entire session: +125 passing tests.** Zero regressions from the pre-session baseline. The single pre-existing failure (`test_real_requirements_file_is_clean`) is unchanged — parked, unrelated.
+
+### 12.6 Guardrails honored throughout the session
+
+Zero files in any of these locations were modified at any point in the session:
+
+- `backend/services/synisense/*`
+- `backend/services/llm_router.py`
+- `backend/services/clamav_service.py`
+- `backend/services/inbound_email.py`
+- `backend/routers/trust_center.py`
+- `backend/services/trust_center.py`
+- `backend/routers/admin_audit_invariant.py`
+
+Verified by `git diff --name-only v-pre-T1..v-post-c -- <each path>` returning empty.
+
+### 12.7 Git tag ledger at session close (chronological)
+
+```
+2026-05-25  v-pre-T1
+2026-05-25  v-pre-T2
+2026-05-25  v-pre-T3
+2026-05-25  v-pre-T4
+2026-05-25  v-pre-T5
+2026-05-25  v-post-T5-horizontal-closed
+2026-05-25  v-pre-backlog-b
+2026-05-25  v-post-backlog-b
+2026-05-25  v-pre-d
+2026-05-25  v-post-d
+2026-05-25  v-pre-a
+2026-05-25  v-post-j1
+2026-05-25  v-post-j2
+2026-05-25  v-post-j3
+2026-05-25  v-post-j4
+2026-05-25  v-post-onboarding-sprint-closed   (annotated, message: "onboarding sprint J1-J4 closed, spec v1.1")
+2026-05-25  v-pre-c
+2026-05-25  v-post-c
+```
+
+**18 tags total** — all local-only until the operator triggers the GitHub push for chunk (e).
+
+### 12.8 The two outstanding things
+
+| Item | Class | Note |
+| --- | --- | --- |
+| **chunk (e) — GitHub push** | User action | Requires the operator to click "Save to Github" in the Emergent chat input. The agent cannot push from inside the pod. Full push-readiness artifact at `/app/memory/sprints/PUSH_READINESS.md` carries the tag inventory + commit summary + suggested commit message + pre-push checklist. |
+| **ClamAV EICAR spot-check** | Optional environment-bound | The `clamd` sidecar is STOPPED in this preview pod (production stance — clamd doesn't run here), so `clamav_service.scan()` raises `ClamAVUnreachable` → 503 instead of producing the `INFECTED + signature` reply needed to exercise the G9 reject path live. Deferred to a follow-on environment where `clamd` is live. The G9 toast wording is verified in source by `e1_tester` already. |
+
+### 12.9 Final closure statement (full session)
+
+**Full session closed. 31/31 PO-ratified gaps shipped across two sprints + one Coming-Soon chunk. 9 durable lessons banked. 18 local-only git tags ready for GitHub push. 1208 passing tests. Zero regressions. Zero guardrail file changes. Awaiting operator's "Save to Github" trigger for (e) and next instruction.**
+

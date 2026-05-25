@@ -70,3 +70,23 @@ T1 ran clean against the spec. No off-scope issues surfaced.
   - Idea source: J4 finish suggestion (orchestrator parked it explicitly at P2 — "we're closing scope, not expanding").
   - Sketch: `/app/admin/onboarding-health` route, table with rows per account, columns per flag (✓/–), filter by "stuck at stage X". Backend: `GET /api/admin/onboarding-health` aggregating `accounts.first_session.*` projection.
   - Not in flight. Pick up when admin tooling sprint surfaces.
+
+
+## Chunk (c) closure observations (2026-05-25) — P2 ENHANCEMENTS
+
+- **Coming-Soon analytics admin view** — surface `billing_launch_interest` row counts per day / per week so the operator can see the demand shape ahead of actually shipping billing. Trivial to add as part of a future admin tooling sprint. Lives alongside the Onboarding Health dashboard idea.
+  - Idea source: chunk (c) finish suggestion (orchestrator parked it explicitly at P2).
+  - Sketch: `/app/admin/billing-launch-interest` route, daily rollup line chart, CSV export. Backend: `GET /api/admin/billing-launch-interest/summary` aggregating `billing_launch_interest` rows by `subscribed_at` date bucket.
+  - Not in flight.
+
+- **Launch-day email blast CRON** — when billing actually ships, a 4-line CRON job that emails every account in `billing_launch_interest` closes the loop on the Notify-me CTA promise. Trivial to add at launch time.
+  - Idea source: chunk (c.1) finish suggestion (orchestrator parked it as a post-launch follow-on).
+  - Sketch: re-use the existing Resend mailer. `scripts/notify_billing_launch.py` reads `billing_launch_interest`, sends one email per account, marks each row with `notified_at: <iso>` to prevent duplicate sends. Idempotent via the `notified_at` flag.
+  - Not in flight.
+
+## Chunk (c.1) closure observation (2026-05-25) — P3 CLEANUP
+
+- **Stripe library removal from `backend/requirements.txt`** — the `stripe` package + `emergentintegrations.payments.stripe.*` are no longer imported anywhere in the codebase post-chunk-(c.1)(c). Removing them from the pinned requirements is a defensible cleanup. Deferred per the user's "leave it for now (removal is a separate cleanup chunk)" directive at chunk (c) dispatch.
+  - Files to touch: `backend/requirements.txt`.
+  - Verification: `pip uninstall stripe` + `pytest -q` should remain green (regression test `test_chunk_c_no_stripe_sdk_import.py` pins the invariant at the import level).
+  - Not in flight.

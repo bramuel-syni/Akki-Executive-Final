@@ -1115,3 +1115,34 @@ $ pytest tests/test_chunk_c_no_stripe_sdk_import.py tests/test_chunk_c_billing_c
 - Guardrails: zero modifications to `services/synisense/*`, `services/llm_router.py`, `services/clamav_service.py`, `services/inbound_email.py`, `routers/trust_center.py`, `services/trust_center.py`, `routers/admin_audit_invariant.py`.
 
 **Chunk (c.1)(c) status: READY FOR e1_tester re-verification of (c.1)(c) only.**
+
+---
+
+## 2026-05-25 — Chunk (c) closure
+
+**e1_tester (c.1)(c) re-verification verdict: PASS.** The zero-Stripe-SDK invariant grep audit returns 0 hits across `backend/routers/` + `backend/services/`. The deleted `verify_and_parse_event` + `SignatureInvalid` symbols stay deleted. The Mongo-side plumbing (`is_replay`, `record_event`, `ensure_indexes`, `dead_letter`, `configured`) continues to boot cleanly via `server.py::ensure_indexes` import path. Full chunk-c suite: **4/4 PASS** (3 from initial pass + (c.1)(c) re-verified clean after surgical fix).
+
+**Git tag `v-post-c`** created at HEAD (local-only). Chunk (c) Coming-Soon Billing UX is now fully shipped + verified.
+
+**Chunk (c) status: CLOSED.**
+
+---
+
+## 2026-05-25 — Full session closeout
+
+All implementation chunks in the user-approved sequence (b → d → a → e → c) are now complete except (e) GitHub push, which is a user action via the "Save to GitHub" UI.
+
+| Chunk | Scope | Verdict |
+| --- | --- | --- |
+| T1–T5 horizontal | UI reshape · G1–G12 | 22/22 PASS across 5 tiers |
+| backlog-b | Demo seeds + 3 production bug fixes | 3/3 fixes verified + seeds tested green |
+| (b1/b2/b3 fix-passes) | Companion fix-passes triggered by backlog-b test surface | All green |
+| chunk (d) | Trust Center methodology + Skip-Audit + 10 guardrail re-enables | doc-only + 10 re-enabled tests green |
+| chunk (a) — J1 | Stages 1-2 · G14-G20 | 4/4 PASS |
+| chunk (a) — J2 | Stage 3 · G21-G23 + 2 J2.3 fix-passes | 3/4 → 4/4 PASS |
+| chunk (a) — J3 | Stages 4-5 · G24-G28 | 4/4 PASS |
+| chunk (a) — J4 | Stage 6 · G29-G31 | 4/4 PASS |
+| chunk (c) | Stripe "Billing — Coming Soon" UX | 3/4 → 4/4 PASS (after (c.1)(c) fix) |
+| chunk (e) | GitHub push | DEFERRED to user action |
+
+**31/31 ratified gaps shipped** (G1-G31). **Two sprints closed.** Documentation centralized at `T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md` §11 (onboarding) + new §12 (full session closeout). Push readiness artifact at `PUSH_READINESS.md`.
