@@ -56,6 +56,11 @@ CYCLE_ID = "demo-t5backlog-cycle-001"
 CYCLE_COMPILATION_ID = "demo-t5backlog-cycle-compile-001"
 OBJECTIVE_ID = "demo-t5backlog-obj-001"
 PROJECT_ID = "demo-t5backlog-prj-001"
+# Blocker 2 (2026-05-25, backlog-b) — the cycle linkage shell row in
+# `cycle_agendas` must share the cycle's ID so the legacy single-cycle
+# endpoints continue to resolve it. The Cycle Page renders only when
+# the agenda shell is present alongside the cycles row.
+CYCLE_AGENDA_ID = CYCLE_ID
 
 # Bramuel accounts + contexts. These are the live tester accounts
 # documented in `/app/memory/test_credentials.md`; seeding here makes
@@ -320,12 +325,41 @@ async def _seed_cycle_and_compilation(db) -> Dict[str, Any]:
         {"id": CYCLE_ID}, {"$set": cycle_doc}, upsert=True
     )
 
+    # Blocker 2 (2026-05-25, backlog-b) — also upsert the matching
+    # `cycle_agendas` shell row so the legacy single-cycle endpoints
+    # (which the Cycle Page detail surface still reads) can resolve
+    # the linkage and the agenda count surfaces correctly. The shell
+    # IS the contract for `_persist_agenda_shell` in routers/cycles.py.
+    agenda_doc = {
+        "id": CYCLE_AGENDA_ID,
+        "cycle_id": CYCLE_ID,
+        "context_id": BRAMUEL_NED_TULI_CTX,
+        "account_id": BRAMUEL_ACCOUNT_ID,
+        "title": cycle_doc["title"],
+        "items": [
+            {"id": "demo-t5backlog-agenda-item-1",
+             "title": "[DEMO] Strategy update"},
+            {"id": "demo-t5backlog-agenda-item-2",
+             "title": "[DEMO] Q1 financial review"},
+            {"id": "demo-t5backlog-agenda-item-3",
+             "title": "[DEMO] FY26 risk appetite refresh"},
+        ],
+        "status": "active",
+        "created_at": _iso(now),
+        "updated_at": _iso(now),
+        "seed_marker": SEED_MARKER,
+    }
+    await db.cycle_agendas.update_one(
+        {"id": CYCLE_AGENDA_ID}, {"$set": agenda_doc}, upsert=True
+    )
+
     compile_doc = {
         "id": CYCLE_COMPILATION_ID,
         "context_id": BRAMUEL_NED_TULI_CTX,
         "account_id": BRAMUEL_ACCOUNT_ID,
         "kind": "cycle_board_pack",
         "title": "[DEMO] Q2 2026 Tuli Cycle Compilation",
+        "file_name": "demo_q2_2026_tuli_cycle_compilation.docx",
         "status": "complete",
         "lifecycle_state": "in_review",
         "output_format": "docx",
@@ -494,6 +528,9 @@ async def seed_async(verbose: bool = True) -> Dict[str, Any]:
         "cycles.demo": await db.cycles.count_documents(
             {"seed_marker": SEED_MARKER}
         ),
+        "cycle_agendas.demo": await db.cycle_agendas.count_documents(
+            {"seed_marker": SEED_MARKER}
+        ),
         "objectives.demo": await db.objectives.count_documents(
             {"seed_marker": SEED_MARKER}
         ),
@@ -514,6 +551,9 @@ async def seed_async(verbose: bool = True) -> Dict[str, Any]:
             {"seed_marker": SEED_MARKER}
         ),
         "cycles.demo": await db.cycles.count_documents(
+            {"seed_marker": SEED_MARKER}
+        ),
+        "cycle_agendas.demo": await db.cycle_agendas.count_documents(
             {"seed_marker": SEED_MARKER}
         ),
         "objectives.demo": await db.objectives.count_documents(

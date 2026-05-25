@@ -98,6 +98,7 @@ async def _hydrate_cycle(row: Dict[str, Any]) -> Dict[str, Any]:
         readiness_pct = int((covered * 100) // agenda_count) if agenda_count else 0
     # Last activity = most recent updated_at across the cycle-scoped
     # collections, falling back to the cycle's own created_at.
+    # collections, falling back to the cycle's own created_at.
     last_act = row.get("updated_at") or row.get("created_at")
     for coll, ts_field in (
         ("cycle_contributions", "created_at"),
@@ -128,6 +129,79 @@ async def _hydrate_cycle(row: Dict[str, Any]) -> Dict[str, Any]:
         next_hint = "Score available" if scored_count > 0 else "Ready to score"
     else:
         next_hint = "Ready to compile" if not row.get("compiled_brief_id") else "Ready to close"
+
+    # Blocker 2 (2026-05-25, backlog-b) — multi-path compilation
+    # linkage lookup. Pre-backlog-b, the Cycle Page's CompilationStep
+    # only knew about a compiled artefact when the user clicked
+    # "Produce draft compilation" and received the response payload
+    # holding {export_id, file_name}. Cycles compiled in a prior
+    # session, restored from seeds, or arriving via the v-pre-Cycle-v2
+    # migration showed NO download chips — the UI treated them as
+    # uncompiled.
+    #
+    # The defensive lookup below tries three independent linkage paths
+    # in order so the chips render reliably regardless of which path
+    # the upstream write took:
+    #   1. cycles.compilation_export_id  — populated by seeds + tests.
+    #   2. cycles.compiled_brief_id      — legacy field already read
+    #      above for `next_hint`.
+    #   3. work_studio_exports query     — kind=cycle_board_pack rows
+    #      where the source_cycle_id maps back to this cycle.
+    # Whichever path resolves first wins; the lookup is short-circuit
+    # and reads at most two collections.
+    compilation = None
+    candidate_export_id = (
+        row.get("compilation_export_id")
+        or row.get("compiled_brief_id")
+    )
+    if candidate_export_id:
+        export_row = await db.work_studio_exports.find_one(
+            {"id": candidate_export_id, "context_id": row["context_id"]},
+            {"_id": 0, "id": 1, "kind": 1, "title": 1, "file_name": 1,
+             "output_format": 1, "lifecycle_state": 1, "status": 1,
+             "structured_content": 1},
+        )
+        if export_row and (export_row.get("structured_content") or {}).get("sections"):
+            compilation = {
+                "export_id": export_row["id"],
+                "file_name": export_row.get("file_name")
+                             or export_row.get("title")
+                             or "cycle-compilation",
+                "output_format": export_row.get("output_format") or "docx",
+                "kind": export_row.get("kind"),
+                "lifecycle_state": export_row.get("lifecycle_state"),
+                "linkage_path": "cycles.compilation_export_id"
+                                if row.get("compilation_export_id")
+                                else "cycles.compiled_brief_id",
+            }
+    if compilation is None:
+        # Path 3 — direct work_studio_exports query. Picks up any cycle
+        # compilation that wasn't written back to the cycles row but
+        # left a tagged work_studio_exports trail (e.g. compile flow
+        # crash between insert + cycles.update).
+        ws_row = await db.work_studio_exports.find_one(
+            {
+                "context_id": row["context_id"],
+                "kind": "cycle_board_pack",
+                "source_cycle_id": cycle_id,
+                "structured_content.sections": {"$exists": True, "$ne": []},
+            },
+            {"_id": 0, "id": 1, "title": 1, "file_name": 1,
+             "output_format": 1, "lifecycle_state": 1, "kind": 1},
+            sort=[("updated_at", -1)],
+        )
+        if ws_row:
+            compilation = {
+                "export_id": ws_row["id"],
+                "file_name": ws_row.get("file_name")
+                             or ws_row.get("title")
+                             or "cycle-compilation",
+                "output_format": ws_row.get("output_format") or "docx",
+                "kind": ws_row.get("kind"),
+                "lifecycle_state": ws_row.get("lifecycle_state"),
+                "linkage_path": "work_studio_exports.source_cycle_id",
+            }
+
     return {
         **row,
         "agenda_count": agenda_count,
@@ -137,6 +211,7 @@ async def _hydrate_cycle(row: Dict[str, Any]) -> Dict[str, Any]:
         "readiness_score": readiness,
         "last_activity_at": last_act,
         "next_action_hint": next_hint,
+        "compilation": compilation,
     }
 
 

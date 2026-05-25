@@ -951,6 +951,26 @@ function CompilationStep({ cid, cycleId, cycle, onBack }) {
   const [progress, setProgress] = useState(null);
   const navigate = useNavigate();
 
+  // Blocker 2 (2026-05-25, backlog-b) — pre-populate `out` from the
+  // backend's defensive linkage lookup so the DOCX/PDF/PPTX chips
+  // surface for cycles that were compiled in a prior session (or
+  // seeded). The cycles.GET endpoint computes `compilation` from up to
+  // three linkage paths; we use whichever one resolved.
+  useEffect(() => {
+    if (out || busy) return;
+    const compilation = cycle?.compilation;
+    if (compilation?.export_id) {
+      setOut({
+        export_id: compilation.export_id,
+        file_name: compilation.file_name,
+        output_format: compilation.output_format,
+        byte_len: 0,
+        sha256: "",
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cycle?.compilation?.export_id]);
+
   const compile = async () => {
     setBusy(true); setOut(null); setProgress(null);
     try {

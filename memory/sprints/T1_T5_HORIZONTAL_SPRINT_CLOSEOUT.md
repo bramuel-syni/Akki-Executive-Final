@@ -151,6 +151,29 @@ All tags are local-only; `git push origin` requires the user's "Save to Github" 
 
 For T3 / T4 / T5, the newly-written tests were run against the pre-tier worktree (`git checkout v-pre-T<n>`) and confirmed to **fail before the fix**. This proves the tests detect the regression rather than trivially passing. Per-tier logs cite the pre-fix failure counts.
 
+### 5.6 Import-survival rule — code-verified is NOT enough for conditionally-rendered branches (T2.3 false-clean — backlog-b)
+
+**Lesson:** when a spec-required UI element is rendered inside a data-conditional branch (e.g. "render `<FileText>` only if `supporting_docs.length >= 1`"), code-verifying the JSX is NOT sufficient. The verification must ALSO confirm that every identifier used inside the branch (icons, sub-components, hooks) is imported at the top of the file. If the conditional branch never runs during the live walkthrough because no seed data triggers it, a missing import will pass code-verify and live-verify simultaneously, then crash the moment real data lights up the branch.
+
+**Origin:** T2.3 (Citations Card inside Monitor drawer). The redesign imported `ArrowRight, Plus, Sparkles, TrendingUp, TrendingDown, Minus, Target, Layers, Loader2, X as XIcon` but used `<FileText>` at L306 inside the `supporting_docs.length >= 1` conditional branch. The T2.3 tester passed because:
+1. The Citations card structure was code-verified (the `<FileText>` JSX *was* present in source).
+2. The live walkthrough never lit up the conditional branch because no objective/project in the seed had `supporting_docs` populated.
+3. The bug was therefore data-gated — invisible until backlog-b's seed step populated `supporting_docs`, at which point the drawer crashed with `ReferenceError: FileText is not defined` for every drawer open.
+
+The fix was a one-line import addition. The lesson is procedural:
+
+> **Code-verify is not enough when the conditional render itself imports undefined symbols. Future code-verify checks must also confirm symbol imports for any conditionally-rendered branch.**
+
+**Enforcement (concrete):**
+
+1. **Import-sweep test pattern** — `tests/test_backlog_b_blocker_3_monitor_filetext.py::test_no_lucide_jsx_identifiers_are_unimported` is the template. It greps every `<PascalCase` identifier used in JSX against the lucide-react import block. Any lucide-shaped JSX identifier not in the import block fails the test. This guard belongs in every spec-required component file that uses an icon library.
+
+2. **Seed-data parity rule** — before declaring any conditional-render redesign GREEN, the seed must populate AT LEAST ONE row that triggers the conditional branch. If the seed doesn't trigger it, the test rig must inject a synthetic row that does. The T2.3 redesign should have included a seed extension to populate `supporting_docs ≥ 1` on at least one objective and one project — that omission was the deeper root cause.
+
+3. **Pre-fix proof anchor** — pair every import-survival fix with a "pre-fix proof anchor" test (e.g. `test_blocker_3_pre_fix_proof_anchor`) that surfaces the literal string `FileText` (or whatever symbol was missing) in the import block. This is a sentry against silent reverts in long-term maintenance.
+
+**Scope:** the rule applies to every React component that renders icons or sub-components inside a data-gated branch. It does NOT require eager imports for non-conditional rendering paths (those are caught at build time by ESLint's `no-undef`).
+
 ---
 
 ## 6. Full-repo pytest status

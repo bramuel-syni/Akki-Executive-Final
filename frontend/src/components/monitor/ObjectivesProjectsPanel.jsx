@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/sheet";
 import {
   ArrowRight, Plus, Sparkles, TrendingUp, TrendingDown, Minus,
-  Target, Layers, Loader2, X as XIcon,
+  Target, Layers, Loader2, X as XIcon, FileText,
 } from "lucide-react";
 import ListingShell from "@/components/common/ListingShell";
 

@@ -253,10 +253,40 @@ async def validate_revision_inputs(
 # ── Read-time overlay payload assembly ─────────────────────────────
 def overlay_payload(row: Dict[str, Any]) -> Dict[str, Any]:
     """Shape returned by the overlay GET endpoint. Drops Mongo _id
-    (callers should have already projected it out)."""
+    (callers should have already projected it out).
+
+    Title fallback chain (Blocker 1, 2026-05-25): the pre-backlog-b
+    implementation read `document_title → name → file_name → "Untitled
+    document"` and silently swallowed the top-level `title` field. Real
+    Board/Committee Packs created by the Compile flow at L1374 of
+    `routers/work_studio_export.py` only populate `file_name`, but the
+    Enhance flow + seeds + any direct-insert path populate the
+    top-level `title`. The fallback chain now covers every documented
+    spot the title can live so no row ever renders as "Untitled
+    document" when a name is in fact present somewhere on the row.
+
+    Order (first non-empty wins):
+      1. `structured_content.title`  — populated by overlay PATCH and
+         by the compile-pass-2 enrichment step.
+      2. `intelligence_report.title` — populated by the Document
+         Intelligence enrichment when it pre-names the artefact.
+      3. `row.title`                  — top-level title field (the
+         field seeds + direct inserts write).
+      4. `row.document_title`         — legacy back-compat field.
+      5. `row.name`                   — legacy back-compat alias.
+      6. extension-stripped `row.file_name`.
+      7. "Untitled document"          — true-empty fallback.
+    """
+    structured = row.get("structured_content") or {}
+    intel_report = row.get("intelligence_report") or {}
+    sc_title = structured.get("title") if isinstance(structured, dict) else None
+    intel_title = intel_report.get("title") if isinstance(intel_report, dict) else None
     title = (
-        row.get("document_title")
-        or row.get("name")
+        (sc_title or "").strip()
+        or (intel_title or "").strip()
+        or (row.get("title") or "").strip()
+        or (row.get("document_title") or "").strip()
+        or (row.get("name") or "").strip()
         or _strip_extension(row.get("file_name") or "")
         or "Untitled document"
     )
