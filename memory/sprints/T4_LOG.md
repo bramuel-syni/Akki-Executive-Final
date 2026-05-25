@@ -124,3 +124,21 @@ $ pytest backend/tests/test_t1_*.py backend/tests/test_t2_*.py backend/tests/tes
 | **No guardrail files modified** | ✅ `git diff` excludes `services/synisense/**`, `services/clamav_service.py`, `inbound_email.py`, `trust_center.py`, `admin_audit_invariant.py`, `llm_router.py`. New file `work_studio_render.py` only reads `db.work_studio_exports` + emits an audit row via the public `write_audit` helper. |
 | **No T5 scope pulled forward** | ✅ Cycle Manager landing surface, setup wizard, and Cycle Page (C1–C8) untouched. No new code under `pages/Cycle*` or `pages/cycle/`. |
 
+
+
+---
+
+## T4 closure — e1_tester verdict 2026-05-25
+
+**Verdict: 5/5 PASS.** All T4 items verified by e1_tester on 2026-05-25 against the v1.1 contract.
+
+| Item | Spec ref | Tester result |
+| --- | --- | --- |
+| T4.1 — W3 toolbar + DOCX/PDF/PPTX (G6) | §4.C → W3 + §6 G6 | PASS — live byte-magic, content-types, and X-AKKI-Sensitivity-Band confirmed on all 3 formats |
+| T4.2 — W3 Refine failure (G7) | §4.C → W3 step 5 + §6 G7 | PASS (code-verified verbatim) |
+| T4.3 — W5 Committed state | §4.C → W5 | PASS |
+| T4.4 — W7 + W9 Enhance flow | §4.C → W7, W9 | PASS |
+| T4.5 — W10 Refine failure (G10) | §4.C → W10 + §6 G10 | PASS (code-verified verbatim) |
+
+**T4 status: CLOSED.**
+

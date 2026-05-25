@@ -89,6 +89,9 @@ const SolvaPhaseDSession = lazy(() => import("@/pages/SolvaPhaseDSession"));
 const SynisenseObservability = lazy(() => import("@/pages/SynisenseObservability"));
 const Cycle = lazy(() => import("@/pages/Cycle"));
 const CycleList = lazy(() => import("@/pages/cycle/CycleList"));
+// T5 (2026-05-25) — C7 Draft Journal + C8 Ready to Compile Journal.
+const CycleDraftJournal = lazy(() => import("@/pages/cycle/CycleDraftJournal"));
+const CycleReadyJournal = lazy(() => import("@/pages/cycle/CycleReadyJournal"));
 const Monitor = lazy(() => import("@/pages/Monitor"));
 const PlaysLibrary = lazy(() => import("@/pages/PlaysLibrary"));
 const PlayView = lazy(() => import("@/pages/PlayView"));
@@ -269,6 +272,9 @@ function App() {
           <Route path="/app/cycle/:cycleId/questions" element={<Gated><Questions /></Gated>} />
           <Route path="/app/portfolio" element={<Gated><PortfolioRoute /></Gated>} />
           <Route path="/app/cycle" element={<Gated><CycleList /></Gated>} />
+          {/* T5 (2026-05-25) — Spec §4.B → C6/C7 Journals. */}
+          <Route path="/app/cycle/drafts" element={<Gated><CycleDraftJournal /></Gated>} />
+          <Route path="/app/cycle/ready" element={<Gated><CycleReadyJournal /></Gated>} />
           <Route path="/app/cycle/:cycleId" element={<Gated><Cycle /></Gated>} />
           {/* Phase E — NED Cycle Manager */}
           <Route path="/app/ned/meeting/:id" element={<Gated><NedMeeting /></Gated>} />

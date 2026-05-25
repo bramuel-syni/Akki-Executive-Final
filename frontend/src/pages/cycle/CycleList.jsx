@@ -26,6 +26,7 @@ import WorkspaceEntryGate from "@/components/transitions/WorkspaceEntryGate";
 import ListingShell from "@/components/common/ListingShell";
 import CycleCard from "@/components/cycle/CycleCard";
 import QuickActionBar from "@/components/cycle/QuickActionBar";
+import CycleSetupWizard from "@/components/cycle/CycleSetupWizard";
 import { api } from "@/lib/api";
 
 
@@ -148,10 +149,11 @@ export default function CycleList() {
     { key: "completed", label: "Completed", count: cbs.completed },
   ];
 
-  // Patch 2B.1 — "Add Cycle" → "+ Add Agenda". UI label only; backend stays
-  // on `cycles`. Primary parchment/ink style (no oxblood — reserved for
-  // severity). Mounted in the search-bar row via ListingShell's
-  // `controlsRight` slot.
+  // T5 (2026-05-25) — spec §4.B → C1 step 2: the primary CTA must be
+  // labelled `Add Cycle`. Clicking it opens the CycleSetupWizard (C2/C3).
+  // The pre-T5 button text was "Add Agenda" (a holdover from the
+  // P2 internal naming) and the modal was a single-field title prompt
+  // that bypassed the full setup flow.
   const addAgendaButton = (
     <Button
       size="sm"
@@ -159,7 +161,7 @@ export default function CycleList() {
       className="bg-[var(--ink)] hover:bg-[var(--ink)]/90 text-[var(--parchment)] rounded-sm"
       data-testid="cycle-list-add-cycle"
     >
-      <Plus className="w-3.5 h-3.5 mr-1" /> Add Agenda
+      <Plus className="w-3.5 h-3.5 mr-1" /> Add Cycle
     </Button>
   );
 
@@ -168,9 +170,10 @@ export default function CycleList() {
       className="border border-dashed border-[var(--rule)] bg-[var(--parchment)] rounded-sm px-6 py-12 text-center"
       data-testid="cycle-list-empty"
     >
-      <p className="akki-serif text-[16px] text-[var(--ink)]">No agendas yet.</p>
+      <p className="akki-serif text-[16px] text-[var(--ink)]">No cycles yet.</p>
       <p className="akki-meta text-[12.5px] mt-2 max-w-prose mx-auto">
-        Use a Quick Action above to start with a structured template, or add a new agenda from the top-right of the list.
+        Use a Quick Action above to start with a structured template, or
+        click <span className="font-medium">Add Cycle</span> on the right.
       </p>
     </div>
   );
@@ -229,37 +232,88 @@ export default function CycleList() {
             </div>
           </ListingShell>
 
-          <AlertDialog open={addOpen} onOpenChange={setAddOpen}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle className="akki-serif">Start a new cycle</AlertDialogTitle>
-                <AlertDialogDescription className="akki-meta">
-                  Give it a name. You can rename, add agenda items, and activate from inside.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <Input
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && newTitle.trim()) create(); }}
-                placeholder="e.g. Q1 2026 Board Cycle"
-                className="rounded-sm text-[13.5px]"
-                data-testid="cycle-list-new-title"
-                autoFocus
-              />
-              <AlertDialogFooter>
-                <AlertDialogCancel disabled={creating} data-testid="cycle-list-new-cancel">Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={(e) => { e.preventDefault(); create(); }}
-                  disabled={creating || !newTitle.trim()}
-                  className="bg-[color:var(--oxblood)] hover:bg-[color:var(--oxblood-deep)] text-white"
-                  data-testid="cycle-list-new-create"
-                >
-                  {creating ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
-                  Create
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
+          <AlertDialog open={false} onOpenChange={() => {}}>
+            <AlertDialogContent />
           </AlertDialog>
+
+          {/* T5 (2026-05-25) — Cycle Setup Wizard replaces the prior
+              single-input AlertDialog. Spec §4.B → C2 + C3 with G4
+              field-validation + G5 email-regex + dupe-block invariants.
+              On finish, the wizard creates the cycle via the existing
+              POST /contexts/{cid}/cycles endpoint then routes the
+              user into the new cycle's page. */}
+          <CycleSetupWizard
+            open={addOpen}
+            onOpenChange={setAddOpen}
+            contextId={activeContextId}
+            onCycleCreated={({ id }) => {
+              navigate(`/app/cycle/${id}?tab=agenda&attached=${encodeURIComponent(id)}`);
+            }}
+          />
+
+          {/* T5 (2026-05-25) — C6 side panel. Two cards: Ready to
+              Compile + Drafts Waiting for You. Counts come from
+              existing cycle endpoints; "View More" links route to the
+              C7 Draft Journal and C8 Ready Journal respectively. */}
+          <aside
+            className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4"
+            data-testid="cycle-list-side-panel"
+          >
+            <div
+              className="border border-[var(--rule)] rounded-sm bg-white px-4 py-3"
+              data-testid="cycle-list-side-panel-ready"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[12px] uppercase tracking-[0.16em] font-mono text-[var(--ink)]">
+                  Ready to Compile
+                </p>
+                <span
+                  className="text-[12px] text-[var(--muted)] font-mono"
+                  data-testid="cycle-list-side-panel-ready-count"
+                >
+                  {cbs.active || 0}
+                </span>
+              </div>
+              <p className="text-[12px] text-[var(--muted)]" data-testid="cycle-list-side-panel-ready-empty">
+                Active cycles meeting your readiness target will surface here.
+              </p>
+              <button
+                type="button"
+                onClick={() => navigate("/app/cycle/ready")}
+                className="text-[12px] text-[var(--accent)] hover:underline underline-offset-2 mt-2"
+                data-testid="cycle-list-side-panel-ready-view-more"
+              >
+                View More →
+              </button>
+            </div>
+            <div
+              className="border border-[var(--rule)] rounded-sm bg-white px-4 py-3"
+              data-testid="cycle-list-side-panel-drafts"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[12px] uppercase tracking-[0.16em] font-mono text-[var(--ink)]">
+                  Drafts Waiting for You
+                </p>
+                <span
+                  className="text-[12px] text-[var(--muted)] font-mono"
+                  data-testid="cycle-list-side-panel-drafts-count"
+                >
+                  {cbs.draft || 0}
+                </span>
+              </div>
+              <p className="text-[12px] text-[var(--muted)]" data-testid="cycle-list-side-panel-drafts-empty">
+                Follow-up emails drafted by the agent cycle awaiting your approval.
+              </p>
+              <button
+                type="button"
+                onClick={() => navigate("/app/cycle/drafts")}
+                className="text-[12px] text-[var(--accent)] hover:underline underline-offset-2 mt-2"
+                data-testid="cycle-list-side-panel-drafts-view-more"
+              >
+                View More →
+              </button>
+            </div>
+          </aside>
         </div>
       </WorkspaceEntryGate>
     </AppShell>

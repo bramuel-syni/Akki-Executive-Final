@@ -995,6 +995,42 @@ function CompilationStep({ cid, cycleId, cycle, onBack }) {
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
+  // T5 (2026-05-25) — C5 + G6 parity: per-format download wired to the
+  // T4.1 on-the-fly render endpoint. The cycle compile result's
+  // `export_id` IS the same identifier as `work_studio_exports.id`
+  // (the row schema is shared — verified in work_studio_export.py
+  // L243 + L596). Each click streams a server-produced binary.
+  const downloadFormat = async (fmt) => {
+    if (!out?.export_id) return;
+    const format = (fmt || "docx").toLowerCase();
+    try {
+      const resp = await api.get(
+        `/contexts/${cid}/work-studio/documents/${out.export_id}/render`,
+        { params: { format }, responseType: "blob" }
+      );
+      const blob = new Blob([resp.data], {
+        type: resp.headers?.["content-type"] || "application/octet-stream",
+      });
+      const url = window.URL.createObjectURL(blob);
+      const cd = resp.headers?.["content-disposition"] || "";
+      const match = cd.match(/filename="?([^";]+)"?/);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = match ? match[1] : `cycle-compilation.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status === 409) {
+        toast.error("This artefact has no compiled content yet.");
+      } else {
+        toast.error(apiErrorMessage(e, `Couldn't download ${format.toUpperCase()} file.`));
+      }
+    }
+  };
+
   return (
     <section data-testid="cycle-step-compilation">
       <h2 className="akki-serif text-[18px] text-[var(--ink)] mb-1">Draft Compilation Output.</h2>
@@ -1026,8 +1062,46 @@ function CompilationStep({ cid, cycleId, cycle, onBack }) {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button size="sm" onClick={download} className="bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12.5px]" data-testid="cycle-compile-download">
-              <Download className="w-3.5 h-3.5 mr-1" /> Download .docx
+            {/* T5 (2026-05-25) — C5 + G6 parity: replace the single
+                "Download .docx" button with the three G6-ratified
+                format buttons (DOCX/PDF/PPTX). All three call the
+                T4.1 on-the-fly render endpoint at
+                `/work-studio/documents/{export_id}/render?format=...`
+                which already verifies Content-Type, Content-Disposition,
+                and X-AKKI-Sensitivity-Band on each response. Buttons
+                emit DOM unconditionally per T2.3 rule; disable only
+                while the original compile is busy. */}
+            <Button
+              size="sm"
+              onClick={() => downloadFormat("docx")}
+              disabled={busy}
+              className="bg-[var(--accent)] hover:bg-[var(--accent-dark)] text-white text-[12.5px]"
+              data-testid="cycle-compile-download-docx"
+              aria-label="Download DOCX"
+            >
+              <Download className="w-3.5 h-3.5 mr-1" /> DOCX
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => downloadFormat("pdf")}
+              disabled={busy}
+              className="text-[12.5px]"
+              data-testid="cycle-compile-download-pdf"
+              aria-label="Download PDF"
+            >
+              <Download className="w-3.5 h-3.5 mr-1" /> PDF
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => downloadFormat("pptx")}
+              disabled={busy}
+              className="text-[12.5px]"
+              data-testid="cycle-compile-download-pptx"
+              aria-label="Download PPTX"
+            >
+              <Download className="w-3.5 h-3.5 mr-1" /> PPTX
             </Button>
             {/* Workstream B.7 — Continue in Chat. The compilation
                 endpoint mints a chat tethered to the active context
