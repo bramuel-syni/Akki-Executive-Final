@@ -476,11 +476,11 @@ export default function AppShell({ children }) {
               <div
                 role="tooltip"
                 data-testid="help-tooltip"
-                className="absolute top-full mt-2 right-0 w-56 bg-[var(--ink)] text-[var(--cream)] text-[11.5px] px-3 py-2 rounded-md shadow-lg z-50"
+                className="absolute top-full mt-2 right-0 w-64 bg-[var(--ink)] text-[var(--cream)] text-[11.5px] px-3 py-2 rounded-md shadow-lg z-50"
               >
-                <div className="font-medium mb-0.5">Read about every feature</div>
+                <div className="font-medium mb-0.5">Help is one click away</div>
                 <div className="text-[var(--cream)]/85 leading-snug">
-                  Full reference of what Akki can do.
+                  Tap Help any time. Akki has a built-in tour of every screen.
                 </div>
                 <div
                   className="absolute -top-1 right-6 w-2 h-2 bg-[var(--ink)] rotate-45"

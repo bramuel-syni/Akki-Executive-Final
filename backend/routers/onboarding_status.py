@@ -123,6 +123,13 @@ async def _compute_status(account: Dict[str, Any]) -> Dict[str, Any]:
     tc_introduced = bool(fs.get("trust_center_introduced"))
     show_tc_tour = first_doc_uploaded and not tc_introduced
 
+    # J4 (2026-05-25, ratified spec §3 Stage 6) — onboarding sprint
+    # completion. The full J1-J4 journey is complete when the user
+    # has both seen the Trust Center tour AND landed on the chat
+    # composer at least once.
+    first_chat_seen = bool(fs.get("first_chat_seen"))
+    onboarding_complete = bool(tc_introduced and first_chat_seen)
+
     return {
         "needs_reintro": needs_reintro,
         "reason": reason,
@@ -141,6 +148,12 @@ async def _compute_status(account: Dict[str, Any]) -> Dict[str, Any]:
             "show": show_tc_tour,
             "first_doc_uploaded": first_doc_uploaded,
             "trust_center_introduced": tc_introduced,
+        },
+        "onboarding_journey": {
+            "first_doc_uploaded": first_doc_uploaded,
+            "trust_center_introduced": tc_introduced,
+            "first_chat_seen": first_chat_seen,
+            "complete": onboarding_complete,
         },
         "shield_v1_deploy_at": SHIELD_V1_DEPLOY_ISO,
     }
@@ -223,6 +236,37 @@ async def dismiss_help_tooltip(
     )
     current["help_tooltip_dismissed_at"] = now
     return await _compute_status(current)
+
+
+@router.post("/first-chat-seen")
+async def mark_first_chat_seen(
+    current: Dict[str, Any] = Depends(get_current_account),
+) -> Dict[str, Any]:
+    """J4 (2026-05-25, ratified spec §3 Stage 6) — Mark that the
+    user has seen the chat composer at least once. Idempotent.
+    Flips `accounts.{id}.first_session.first_chat_seen = true` with
+    an ISO timestamp.
+
+    Called on first mount of the Solva Phase D framing surface. The
+    flag gates the onboarding completion celebration: J-sprint is
+    considered complete once `first_chat_seen == true` AND
+    `trust_center_introduced == true` (the latter set by the J3
+    tour-dismiss endpoint).
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    await db.accounts.update_one(
+        {"id": current["id"]},
+        {"$set": {
+            "first_session.first_chat_seen": True,
+            "first_session.first_chat_seen_at": now,
+        }},
+    )
+    fs = dict(current.get("first_session") or {})
+    fs["first_chat_seen"] = True
+    fs["first_chat_seen_at"] = now
+    current["first_session"] = fs
+    return await _compute_status(current)
+
 
 
 @router.post("/trust-center-tour/dismiss")
