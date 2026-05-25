@@ -1,8 +1,12 @@
 # AKKI Product Spec
 
-**Version:** 1.0
+**Version:** 1.1
 **Date:** 24 May 2026
 **Authoring note:** Derived from the four QA reports dated 24 May 2026 + the guardrail services on disk as of this date. This document is a fresh clean-break — it does **not** merge from, supersede, or reference `/app/memory/product/AKKI_FEATURES_AND_FUNCTIONALITY.md` (which has no authority for this spec).
+
+**Change log:**
+- v1.0 — 24 May 2026 — Initial spec derived from the four 24 May 2026 QA reports.
+- v1.1 — 24 May 2026 — PO ratified G1–G12; G2 + G6 amended.
 
 ---
 
@@ -211,11 +215,11 @@ Each journey below is transcribed verbatim from its QA source where possible. Wh
 - **Acceptance / done state**: cycle card representing the destination cycle is pulsed on the All tab; document is attached server-side.
 - **Edge cases / errors**: failure toast above. Current 422 error path (`agenda_item_id` invalid, `team_member_id` required, `kind` wrong) is replaced by the new modal contract — see Aggregated QA gap notes in §4.D for backend payload alignment.
 
-- **GAP — proposed fill (awaiting PO sign-off)** — *Backend wire format*
-  > The QA prescribes a Select-Cycle-only modal; the existing backend `POST /api/contexts/{cid}/cycle/contributions` requires `cycle_id` (resolved via path or query) plus a `kind` in `{note, document, email, chat}`. **Proposed minimal fill**: when the user submits the new modal, the frontend posts `{cycle_id: <selected>, kind: "document", source_doc_id: <doc.id>, title: <doc.name>}` to `/api/contexts/{cid}/cycle/contributions?cycle_id=<selected>`. `agenda_item_id` and `team_member_id` remain optional per the existing `ContributionIn` schema; the document attaches at the cycle root with no agenda-item/contributor binding (which the QA's Select-Cycle-only flow allows). PO: confirm or specify a different wire shape.
+- **RATIFIED — PO decision 24 May 2026** — *Backend wire format*
+  > When the user submits the new modal, the frontend posts `{cycle_id: <selected>, kind: "document", source_doc_id: <doc.id>, title: <doc.name>}` to `/api/contexts/{cid}/cycle/contributions?cycle_id=<selected>`. `agenda_item_id` and `team_member_id` remain optional per the existing `ContributionIn` schema; the document attaches at the cycle root with no agenda-item/contributor binding (which the QA's Select-Cycle-only flow allows).
 
 - **Guardrail touchpoints**: ClamAV (the underlying document was already scanned at upload); Shield (no LLM call in this journey itself); Trust Center (server emits an audit row for the attach operation via the existing `write_audit` helper).
-- **Status**: Per QA spec for the user-facing flow; `GAP — proposed fill` on the backend wire format.
+- **Status**: Per QA spec for the user-facing flow; backend wire format **ratified** per G1 (24 May 2026).
 
 #### Journey D7 — Take into Solva (from Document Journal side drawer)
 
@@ -224,13 +228,13 @@ Each journey below is transcribed verbatim from its QA source where possible. Wh
 - **Trigger / entry point**: user clicks "Take into Solva" in the document side drawer (currently throws the error in Figure 9)
 - **Steps**: the QA states *"Fix the error captured in figure 9"* without redefining the journey beyond that error fix.
 
-- **GAP — proposed fill (awaiting PO sign-off)** — *Behaviour after the error is fixed*
-  > QA prescribes "fix the error" but does not redesign the post-fix flow. **Proposed minimal fill**: preserve the existing behaviour — clicking "Take into Solva" opens the Solva mode-picker (4 modes: Seek Clarity / Develop Strategy / Simulate Hypothesis / Get Perspective), the user selects a mode, the system creates a Solva session pre-seeded with the document as grounding material, and routes the user to that session. The 422 error is fixed by aligning the frontend payload to the backend `StartV2In` schema (`intent` required, ≥20 chars, plus `intake_seed: {kind: "document", id: <doc.id>}`). PO: confirm or supply the intended journey.
+- **RATIFIED — PO decision 24 May 2026** — *Behaviour after the error is fixed (with explicit continuity guarantee)*
+  > Clicking "Take into Solva" opens the Solva mode-picker (4 modes: Seek Clarity / Develop Strategy / Simulate Hypothesis / Get Perspective). After the user selects a mode, the system creates a Solva session and **the source document is automatically loaded as grounding material into that new session**. The user MUST NOT have to re-select, re-upload, or restart anything — the document carries through as-is, and the new session opens already grounded on it. The 422 error is fixed by aligning the frontend payload to the backend `StartV2In` schema (`intent` required, ≥20 chars, plus `intake_seed: {kind: "document", id: <doc.id>}`). The session then routes the user to that Solva session.
 
-- **Acceptance / done state**: Solva session opens with the document attached as grounding.
+- **Acceptance / done state**: Solva session opens with the document already attached as grounding; the user lands directly inside the session with no further input required to bring the document along.
 - **Edge cases / errors**: not specified in QA beyond fixing the captured error.
 - **Guardrail touchpoints**: Shield (Solva LLM calls); Trust Center (audit rows).
-- **Status**: `GAP — proposed fill` on post-fix behaviour.
+- **Status**: **Ratified** per G2 (24 May 2026), with continuity guarantee binding.
 
 #### Journey D8 — Document Reader: Send to Work Studio / Add to Cycle / Generate Brief / Resolve Signals (Figure 10 + Figure 12)
 
@@ -259,9 +263,9 @@ Each journey below is transcribed verbatim from its QA source where possible. Wh
 - **Acceptance / done state**: Generate Brief produces a card in the Briefings tab that pulses on arrival; Resolve Signals lands the user on Pulse with the prescribed filters; Send-to-Work-Studio and Add-to-Cycle mirror **D5** and **D6** exactly.
 - **Edge cases / errors**:
   - Generate Brief failure path: not specified in QA.
-  - **GAP — proposed fill (awaiting PO sign-off)** — *Generate Brief failure*: on failure, re-enable the Generate Brief button, dismiss the loading state, and show an error toast: *"We couldn't generate a brief from this document. Please try again."* PO: confirm wording.
+  - **RATIFIED — PO decision 24 May 2026** — *Generate Brief failure*: on failure, re-enable the Generate Brief button, dismiss the loading state, and show an error toast: *"We couldn't generate a brief from this document. Please try again."*
 - **Guardrail touchpoints**: Shield (Generate Brief is an LLM call); Trust Center (audit row per call); ClamAV (already enforced at upload).
-- **Status**: Per QA spec for items 1–8; `GAP — proposed fill` on the Generate Brief failure toast.
+- **Status**: Per QA spec for items 1–8; Generate Brief failure toast **ratified** per G3 (24 May 2026).
 
 ---
 
@@ -305,9 +309,9 @@ Each journey below is transcribed verbatim from its QA source where possible. Wh
   5. `Next` advances to Step 2. `Cancel` closes the wizard without saving.
 - **Acceptance / done state**: clicking Next opens Step 2.
 - **Edge cases / errors**: not specified in QA (e.g. validation rules per field).
-- **GAP — proposed fill (awaiting PO sign-off)** — *Required-field validation*: each of the four fields is required; `Next` is disabled until all four are non-empty and Due Date is in the future. PO: confirm or override.
+- **RATIFIED — PO decision 24 May 2026** — *Required-field validation*: each of the four fields is required; `Next` is disabled until all four are non-empty and Due Date is in the future.
 - **Guardrail touchpoints**: none (LLM is not invoked until the Project Brief step, **C4**).
-- **Status**: Per QA spec; `GAP — proposed fill` on field-level validation.
+- **Status**: Per QA spec; field-level validation **ratified** per G4 (24 May 2026).
 
 #### Journey C3 — Add Cycle setup wizard (Step 2 — build the team)
 
@@ -325,9 +329,9 @@ Each journey below is transcribed verbatim from its QA source where possible. Wh
      - **Review Project Brief** — saves the current contributor's details and triggers the agent cycle to generate a **Project Brief** (a summary of the cycle based on Steps 1 and 2). A toast confirms the contributor has been added; Step 2 modal closes; the **Project Brief modal** opens (Journey **C4**).
 - **Acceptance / done state**: the team is captured and the Project Brief modal opens.
 - **Edge cases / errors**: not specified in QA.
-- **GAP — proposed fill (awaiting PO sign-off)** — *Email validation & duplicate handling*: emails must match a valid-email regex; adding a contributor whose email matches one already added warns inline (*"This contributor is already on the team."*) and prevents the duplicate. PO: confirm or override.
+- **RATIFIED — PO decision 24 May 2026** — *Email validation & duplicate handling*: emails must match a valid-email regex; adding a contributor whose email matches one already added warns inline (*"This contributor is already on the team."*) and prevents the duplicate.
 - **Guardrail touchpoints**: Shield (the Project Brief generation triggered by `Review Project Brief` is an LLM call routed through Shield).
-- **Status**: Per QA spec; `GAP — proposed fill` on email validation/duplicates.
+- **Status**: Per QA spec; email validation + duplicate handling **ratified** per G5 (24 May 2026).
 
 #### Journey C4 — Project Brief modal (Commission / Review / Save as Draft)
 
@@ -379,9 +383,9 @@ Each journey below is transcribed verbatim from its QA source where possible. Wh
 - **Acceptance / done state**: each action above completes with the prescribed toast/state change.
 - **Edge cases / errors**:
   - **Add Contribution** — the QA does not specify the wire format (cf. **D6** GAP).
-  - **GAP — proposed fill (awaiting PO sign-off)** — *Compile output format options*: the QA states "the user is presented with download options" but does not enumerate them. **Proposed minimal fill**: at minimum DOCX and PDF download buttons in the post-compile state, both produced server-side. PO: confirm or expand.
+  - **RATIFIED — PO decision 24 May 2026** — *Compile output format options*: the QA states "the user is presented with download options" but does not enumerate them. The post-compile state presents three download buttons — **DOCX**, **PDF**, and **PPTX** — all produced server-side.
 - **Guardrail touchpoints**: ClamAV (each `Add Contribution` attachment is scanned); Shield (Compile is an LLM call; the agent-cycle follow-up drafter is also Shield-routed); Trust Center (audit rows for every LLM step); Postmark (follow-up emails leave via Postmark; MailboxHash routes replies back to the cycle).
-- **Status**: Per QA spec; `GAP — proposed fill` on Compile output format options.
+- **Status**: Per QA spec; Compile output formats (DOCX / PDF / PPTX) **ratified** per G6 (24 May 2026).
 
 #### Journey C6 — Landing-page side panel (Ready to Compile + Drafts Waiting for You)
 
@@ -430,7 +434,7 @@ Each journey below is transcribed verbatim from its QA source where possible. Wh
   1. A back button at the top returns the user to the Cycle Manager landing page.
   2. Cycles are displayed as cards. Each shows: cycle title, due date, status badge (Active / Draft / Completed), compilation readiness score, agenda item count (e.g. *3 agendas*), contributor count (e.g. *2 contributors*).
   3. **Cycle Card side drawer** — clicking a card opens a side drawer with: cycle title, compilation readiness score, due date, list of contributors and their respective agenda items.
-  4. CTA in the side drawer is **Compile**. Clicking it triggers the agent cycle to compile the document. A loading state appears while the agent processes. On completion, the user is presented with download options for the compiled document — the **same options** available from the Compile button on the Cycle Page (subject to **C5** GAP for enumerated formats).
+  4. CTA in the side drawer is **Compile**. Clicking it triggers the agent cycle to compile the document. A loading state appears while the agent processes. On completion, the user is presented with download options for the compiled document — the **same options** available from the Compile button on the Cycle Page (DOCX / PDF / PPTX per G6).
 - **Acceptance / done state**: side drawer opens; Compile produces downloadable outputs.
 - **Edge cases / errors**: not specified in QA.
 - **Guardrail touchpoints**: Shield (Compile is a Shield-routed LLM call); Trust Center (audit rows).
@@ -499,9 +503,9 @@ Each journey below is transcribed verbatim from its QA source where possible. Wh
        - **Commit** — version-locks the pack. A confirmation modal appears informing the user that the pack will be locked and cannot be refined further once committed. Two options: **Confirm** and **Cancel**. On confirm: page closes; user returns to the tab; the committed card appears at the top of the list with a **pulse animation** and a **lock icon overlay** on the document icon; the card badge updates to **Committed**.
 - **Acceptance / done state**: lifecycle transitions occur correctly; the committed card appears at the top of the tab with pulse + lock overlay.
 - **Edge cases / errors**: not specified in QA (e.g. failure during Refine).
-- **GAP — proposed fill (awaiting PO sign-off)** — *Refine failure path*: if the Shield-routed Refine call fails, show an inline error in the footer (*"We couldn't apply that refinement. Please try again."*) and leave the recommendation in place so the user can retry. PO: confirm wording.
+- **RATIFIED — PO decision 24 May 2026** — *Refine failure path*: if the Shield-routed Refine call fails, show an inline error in the footer (*"We couldn't apply that refinement. Please try again."*) and leave the recommendation in place so the user can retry.
 - **Guardrail touchpoints**: Shield (Refine is a Shield-routed LLM call; Document Intelligence is Shield-routed); Trust Center (audit rows for every LLM step); ClamAV (the file-upload modal under Refine scans the uploaded file).
-- **Status**: Per QA spec; `GAP — proposed fill` on Refine failure path.
+- **Status**: Per QA spec; Refine failure path **ratified** per G7 (24 May 2026).
 
 #### Journey W4 — Pack side drawer (alternate review surface)
 
@@ -509,7 +513,7 @@ Each journey below is transcribed verbatim from its QA source where possible. Wh
 - **Actors**: any user viewing a pack card
 - **Trigger / entry point**: opening the side drawer for a pack card
 
-- **GAP — proposed fill (awaiting PO sign-off)** — *Drawer-vs-page disambiguation*: QA describes both a **dedicated document page** (W3 above) and a **side drawer** with a Document Intelligence section and scrollable content. **Proposed minimal fill**: the dedicated page is the canonical surface for Board Packs and Committee Packs (W3); the side drawer is the canonical surface for Minutes, Decks, and Reports cards opened from the Recents panel or directly from those tabs. PO: confirm or clarify the drawer's entry points and which card kinds trigger it.
+- **RATIFIED — PO decision 24 May 2026** — *Drawer-vs-page disambiguation*: the dedicated document page is the canonical surface for **Board Packs** and **Committee Packs** (W3); the side drawer is the canonical surface for **Minutes**, **Decks**, and **Reports** cards opened from the Recents panel or directly from those tabs.
 
 - **Steps** (drawer when used):
   1. Title at the top of the drawer is inline editable.
@@ -519,7 +523,7 @@ Each journey below is transcribed verbatim from its QA source where possible. Wh
 - **Acceptance / done state**: drawer renders the four blocks above and remains scrollable.
 - **Edge cases / errors**: not specified.
 - **Guardrail touchpoints**: Shield + Trust Center as in W3.
-- **Status**: `GAP — proposed fill` on entry points / which kinds trigger the drawer; otherwise per QA spec for the drawer contents.
+- **Status**: Drawer-vs-page disambiguation **ratified** per G8 (24 May 2026); otherwise per QA spec for the drawer contents.
 
 #### Journey W5 — Committed pack behaviour
 
@@ -581,9 +585,9 @@ Each journey below is transcribed verbatim from its QA source where possible. Wh
   5. The user returns to the Sources step with the uploaded document already selected.
 - **Acceptance / done state**: nested upload preserves the user's place in the compile flow; the uploaded document is selected on return.
 - **Edge cases / errors**: not specified in QA.
-- **GAP — proposed fill (awaiting PO sign-off)** — *Upload failure inside the compile modal*: if the nested upload fails (e.g. ClamAV reject), close only the file-upload modal, return the user to the Select Source Items step with the existing selection intact, and surface a toast: *"We couldn't upload that file. It was rejected by virus scanning."* (or generic *"Upload failed. Please try again."* for non-CLAMAV failures). PO: confirm wording.
+- **RATIFIED — PO decision 24 May 2026** — *Upload failure inside the compile modal*: if the nested upload fails (e.g. ClamAV reject), close only the file-upload modal, return the user to the Select Source Items step with the existing selection intact, and surface a toast: *"We couldn't upload that file. It was rejected by virus scanning."* (or generic *"Upload failed. Please try again."* for non-ClamAV failures).
 - **Guardrail touchpoints**: ClamAV (upload is scanned); Shield + Trust Center as in W3 once Compile fires.
-- **Status**: Per QA spec; `GAP — proposed fill` on upload failure in the nested modal.
+- **Status**: Per QA spec; upload-failure path **ratified** per G9 (24 May 2026).
 
 #### Journey W9 — Enhance flow (Minutes / Decks / Reports tabs)
 
@@ -628,9 +632,9 @@ Each journey below is transcribed verbatim from its QA source where possible. Wh
      - **Delete** — triggers a confirmation modal with **Cancel** and **Delete**. Any changes made in the side drawer (including title edits and deletions) are reflected immediately on the corresponding entry in the **Document Journal**.
 - **Acceptance / done state**: drawer renders the five Document Intelligence sub-sections + the three CTAs with the prescribed gating.
 - **Edge cases / errors**: not specified for Refine failure within the drawer.
-- **GAP — proposed fill (awaiting PO sign-off)** — *Refine failure inside the drawer*: on Refine failure, leave the existing enhanced content + intelligence in place and show an inline error inside the drawer (*"We couldn't refine this version. Please try again."*). PO: confirm wording.
+- **RATIFIED — PO decision 24 May 2026** — *Refine failure inside the drawer*: on Refine failure, leave the existing enhanced content + intelligence in place and show an inline error inside the drawer (*"We couldn't refine this version. Please try again."*).
 - **Guardrail touchpoints**: Shield (Refine is a Shield-routed LLM call); Trust Center (audit rows).
-- **Status**: Per QA spec; `GAP — proposed fill` on Refine failure inside the drawer.
+- **Status**: Per QA spec; Refine-failure-in-drawer path **ratified** per G10 (24 May 2026).
 
 ---
 
@@ -732,9 +736,9 @@ Each journey below is transcribed verbatim from its QA source where possible. Wh
      - **Low confidence** — red
 - **Acceptance / done state**: each bar's colour reflects its independent status.
 - **Edge cases / errors**: not specified.
-- **GAP — proposed fill (awaiting PO sign-off)** — *Probability bands thresholds*: the QA names the band labels (High / Moderate / Low confidence) but does not state numeric thresholds. **Proposed minimal fill**: align with the existing strategic-goal `probability` field — High ≥ 70, Moderate 40–69, Low < 40. PO: confirm or specify thresholds.
+- **RATIFIED — PO decision 24 May 2026** — *Probability bands thresholds*: align with the existing strategic-goal `probability` field — **High ≥ 70**, **Moderate 40–69**, **Low < 40**.
 - **Guardrail touchpoints**: Shield (probability + performance are derived from Shield-routed Update calls); Trust Center (audit rows).
-- **Status**: Per QA spec for the colour rule; `GAP — proposed fill` on numeric thresholds for the probability bands.
+- **Status**: Per QA spec for the colour rule; numeric thresholds for probability bands **ratified** per G11 (24 May 2026).
 
 #### Journey X7 — Strategic Goals: "Document journal link" → "Upload Document" link
 
@@ -758,9 +762,9 @@ Each journey below is transcribed verbatim from its QA source where possible. Wh
   3. The category filter and status tabs **work in combination** — the user can select a status tab and a category simultaneously to narrow the list to a specific subset.
 - **Acceptance / done state**: status tabs + category filter both render with live counts and combine for narrower filtering.
 - **Edge cases / errors**: not specified.
-- **GAP — proposed fill (awaiting PO sign-off)** — *Category source list*: the QA gives example categories (Operations, People, Compliance, Product, Commercial) but does not state the canonical full set or how categories are sourced. **Proposed minimal fill**: source from the existing `strategic_goals` collection's `department` field values for the active context, plus the example labels as fixed options if no department values exist. PO: confirm or supply the canonical list.
+- **RATIFIED — PO decision 24 May 2026** — *Category source list*: source from the existing `strategic_goals` collection's `department` field values for the active context, plus the example labels as fixed options if no department values exist.
 - **Guardrail touchpoints**: none for the tabs themselves; X5 / X7 guardrails apply when goals are updated.
-- **Status**: Per QA spec for the tabs + category filter behaviour; `GAP — proposed fill` on the canonical category list.
+- **Status**: Per QA spec for the tabs + category filter behaviour; canonical category list **ratified** per G12 (24 May 2026).
 
 ---
 
@@ -777,26 +781,26 @@ The following surfaces exist in product but are **not covered by the four 24 May
 
 ---
 
-## 6. Open questions for PO (consolidated `GAP — proposed fill` index)
+## 6. PO decisions on §6 gaps (ratified)
 
-Every `GAP — proposed fill` block from §4 is re-listed here so the PO has a single review surface. Format: **Gap ID · journey · short title · cross-ref**.
+Every `GAP — proposed fill` block from §4 was ratified by the PO on **24 May 2026**. The table below is the consolidated decision surface; the inline ratification copy lives in §4 for each journey.
 
-| Gap ID | Journey | Surface | Short title | Cross-ref |
-| --- | --- | --- | --- | --- |
-| G1 | D6 | Document Journal | Add to Cycle — backend wire format for the new Select-Cycle-only modal | §4.A → D6 |
-| G2 | D7 | Document Journal | Take into Solva — behaviour after the 422 error is fixed | §4.A → D7 |
-| G3 | D8 | Document Journal | Generate Brief — failure-state toast wording | §4.A → D8 |
-| G4 | C2 | Cycle Manager | Setup Wizard Step 1 — required-field validation rules | §4.B → C2 |
-| G5 | C3 | Cycle Manager | Setup Wizard Step 2 — email validation + duplicate handling | §4.B → C3 |
-| G6 | C5 | Cycle Manager | Compile — enumerated download output formats | §4.B → C5 |
-| G7 | W3 | Work Studio | Compiled Document page — Refine failure path | §4.C → W3 |
-| G8 | W4 | Work Studio | Side drawer vs dedicated page — entry-point disambiguation by card kind | §4.C → W4 |
-| G9 | W8 | Work Studio | Compile modal — failure inside the nested file-upload modal | §4.C → W8 |
-| G10 | W10 | Work Studio | Enhanced-document drawer — Refine failure inside the drawer | §4.C → W10 |
-| G11 | X6 | Aggregated / Monitor | Strategic Goals — numeric thresholds for probability bands | §4.D → X6 |
-| G12 | X8 | Aggregated / Monitor | Strategic Goals — canonical category source list | §4.D → X8 |
+| Gap ID | Journey | Surface | Short title | Cross-ref | Decision | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| G1 | D6 | Document Journal | Add to Cycle — backend wire format for the new Select-Cycle-only modal | §4.A → D6 | Approved | Ratified by PO — 24 May 2026 |
+| G2 | D7 | Document Journal | Take into Solva — behaviour after the 422 error is fixed | §4.A → D7 | Approved + amended (continuity guarantee: source document MUST be auto-loaded as grounding into the new Solva session — no re-select / re-upload / restart) | Ratified by PO — 24 May 2026 |
+| G3 | D8 | Document Journal | Generate Brief — failure-state toast wording | §4.A → D8 | Approved | Ratified by PO — 24 May 2026 |
+| G4 | C2 | Cycle Manager | Setup Wizard Step 1 — required-field validation rules | §4.B → C2 | Approved | Ratified by PO — 24 May 2026 |
+| G5 | C3 | Cycle Manager | Setup Wizard Step 2 — email validation + duplicate handling | §4.B → C3 | Approved | Ratified by PO — 24 May 2026 |
+| G6 | C5 | Cycle Manager | Compile — enumerated download output formats | §4.B → C5 | Approved + amended (PPTX added; final set is **DOCX / PDF / PPTX**, all server-produced) | Ratified by PO — 24 May 2026 |
+| G7 | W3 | Work Studio | Compiled Document page — Refine failure path | §4.C → W3 | Approved | Ratified by PO — 24 May 2026 |
+| G8 | W4 | Work Studio | Side drawer vs dedicated page — entry-point disambiguation by card kind | §4.C → W4 | Approved | Ratified by PO — 24 May 2026 |
+| G9 | W8 | Work Studio | Compile modal — failure inside the nested file-upload modal | §4.C → W8 | Approved | Ratified by PO — 24 May 2026 |
+| G10 | W10 | Work Studio | Enhanced-document drawer — Refine failure inside the drawer | §4.C → W10 | Approved | Ratified by PO — 24 May 2026 |
+| G11 | X6 | Aggregated / Monitor | Strategic Goals — numeric thresholds for probability bands | §4.D → X6 | Approved | Ratified by PO — 24 May 2026 |
+| G12 | X8 | Aggregated / Monitor | Strategic Goals — canonical category source list | §4.D → X8 | Approved | Ratified by PO — 24 May 2026 |
 
-**Total GAPs requiring PO sign-off: 12.**
+**Total ratified GAPs: 12 (10 Approved as proposed, 2 Approved + amended — G2 and G6).**
 
 ---
 
