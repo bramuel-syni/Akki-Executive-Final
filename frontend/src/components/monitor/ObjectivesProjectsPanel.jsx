@@ -196,39 +196,48 @@ function ItemDrawer({ row, onClose, onAssessed }) {
           </button>
         </div>
         <div className="px-6 py-5 space-y-5">
-          {/* T2.3 (2026-05-25) — X5 redesign: drawer order is
-              Status → Description → Update CTA → (Citations Card after
-              update) → Timeline. The pre-T2 "Akki Status" subcard
-              wrapper around the Update button was deleted; the CTA
-              now sits as a single button directly under the
-              description, per X5 step 3. */}
-          <div className="grid grid-cols-3 gap-3 border border-[var(--rule)] rounded-sm bg-white px-3 py-3">
-            <div>
-              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Status</p>
-              <p className="text-[14px] akki-serif text-[var(--ink)]" data-testid="obj-drawer-rag">{RAG_LABEL[row?.rag_status]}</p>
-            </div>
-            <div>
-              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Score</p>
-              <p className="text-[14px] akki-serif text-[var(--ink)]">{row?.score ?? 0}</p>
-            </div>
-            <div>
-              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Trend</p>
-              <p className="text-[14px] akki-serif text-[var(--ink)]">{row?.trend || "flat"}</p>
-            </div>
+          {/* T2.3 (2026-05-25, fix-2 after tester re-open) — X5 spec order
+              is Status → Description → Update CTA → Citations → Timeline.
+              ALL sections emit DOM unconditionally; only their internal
+              content is data-conditional. This is deliberate: the spec
+              requires the section structure to be visible at all times
+              (empty states are part of the contract). The prior fix
+              hid Description and Citations behind data gates, which
+              the tester correctly flagged as the false-green pattern. */}
+
+          {/* Status Card — single pill (PO directive removed the Score
+              + Trend cells from the drawer; the badge alone carries
+              the lifecycle state. Score/Trend remain visible on the
+              listing row itself — out of scope for this drawer fix). */}
+          <div
+            className="border border-[var(--rule)] rounded-sm bg-white px-3 py-3 flex items-center justify-between gap-3"
+            data-testid="obj-drawer-status-card"
+          >
+            <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">Status</p>
+            <p
+              className="text-[13px] akki-serif text-[var(--ink)]"
+              data-testid="obj-drawer-rag"
+            >
+              {RAG_LABEL[row?.rag_status]}
+            </p>
           </div>
 
-          {row?.description && (
-            <div data-testid="obj-drawer-description">
-              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--ink)] mb-2">Description</p>
+          {/* Description — always rendered. Placeholder when the row
+              carries no description so the section is still visibly
+              present in the drawer DOM. */}
+          <div data-testid="obj-drawer-description">
+            <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--ink)] mb-2">Description</p>
+            {row?.description ? (
               <p className="akki-serif text-[13.5px] text-[var(--ink)] leading-snug whitespace-pre-wrap">{row.description}</p>
-            </div>
-          )}
+            ) : (
+              <p className="text-[12.5px] text-[var(--muted)] italic" data-testid="obj-drawer-description-empty">
+                No description recorded for this {row?.kind === "project" ? "project" : "objective"}.
+              </p>
+            )}
+          </div>
 
-          {/* T2.3 — X5 step 3: single Update CTA. The label is
-              "Update Objective" or "Update Project" depending on the
-              row kind. Aria-busy + disabled while the assessment is
-              running; while the upload sub-flow is active we surface
-              that as the busy state too. */}
+          {/* Update CTA — kind-aware label per spec X5 step 3. Always
+              rendered. busy and uploading both flip aria-busy + disable. */}
           <div data-testid="obj-drawer-update-block">
             <Button
               type="button"
@@ -246,37 +255,6 @@ function ItemDrawer({ row, onClose, onAssessed }) {
             </Button>
             {error && (
               <p className="mt-2 text-[12px] text-rose-700" data-testid="obj-drawer-update-goal-error">{error}</p>
-            )}
-            {/* T2.3 — X5 step 3: when the agent finds no relevant docs,
-                surface an inline "Upload Document" CTA that opens the
-                file picker directly. On successful upload, the
-                assessment is re-run so the new document is used. */}
-            {noData && (
-              <div
-                className="mt-3 text-[12.5px] text-[var(--ink)] space-y-2"
-                data-testid="obj-drawer-no-data"
-              >
-                <p>{noData.message}</p>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.docx,.pptx,.txt,.md,.csv,.xlsx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/markdown,text/csv"
-                  className="hidden"
-                  onChange={(e) => onUploadAndReassess(e.target.files?.[0])}
-                  data-testid="obj-drawer-no-data-upload-input"
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={busy || uploading}
-                  className="text-[12px]"
-                  data-testid="obj-drawer-no-data-upload-btn"
-                >
-                  Upload Document
-                </Button>
-              </div>
             )}
             {assessment && !noData && (
               <div className="mt-3 text-[12.5px] text-[var(--ink)] space-y-2" data-testid="obj-drawer-assessment">
@@ -296,19 +274,28 @@ function ItemDrawer({ row, onClose, onAssessed }) {
                 )}
               </div>
             )}
+            {noData && (
+              <p
+                className="mt-3 text-[12.5px] text-[var(--ink)]"
+                data-testid="obj-drawer-no-data"
+              >
+                {noData.message}
+              </p>
+            )}
           </div>
 
-          {/* T2.3 (2026-05-25) — X5 step 5: Citations Card. Renders only
-              AFTER an update has been processed and only when the
-              assessment carries at least one supporting document.
-              Document names are name-resolved server-side (see
-              monitor_status_assessment.py — `supporting_docs` block). */}
-          {assessment && !noData && (assessment.supporting_docs || []).length > 0 && (
-            <div
-              className="border border-[var(--rule)] rounded-sm bg-white px-3 py-3"
-              data-testid="obj-drawer-citations"
-            >
-              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--ink)] mb-2">Citations</p>
+          {/* Citations Card — ALWAYS rendered. Two modes:
+              • supporting_docs > 0  → links to /app/documents/{id}
+              • supporting_docs == 0 → explanatory copy + Upload Document button
+              The Upload Document button wires the same `onUploadAndReassess`
+              flow as the original no-data branch: file picker → POST
+              /documents → re-run updateGoal(). */}
+          <div
+            className="border border-[var(--rule)] rounded-sm bg-white px-3 py-3"
+            data-testid="obj-drawer-citations"
+          >
+            <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--ink)] mb-2">Citations</p>
+            {((assessment && assessment.supporting_docs) || []).length > 0 ? (
               <ul className="space-y-1.5">
                 {(assessment.supporting_docs || []).map((d) => (
                   <li
@@ -317,17 +304,42 @@ function ItemDrawer({ row, onClose, onAssessed }) {
                     data-testid={`obj-drawer-citation-${d.id}`}
                   >
                     <FileText className="w-3.5 h-3.5 mt-0.5 text-[var(--muted)]" strokeWidth={1.7} />
-                    <Link
-                      to={`/app/documents/${d.id}`}
+                    <a
+                      href={`/app/documents/${d.id}`}
                       className="hover:underline underline-offset-2"
                     >
                       {d.name}
-                    </Link>
+                    </a>
                   </li>
                 ))}
               </ul>
-            </div>
-          )}
+            ) : (
+              <div className="space-y-2" data-testid="obj-drawer-citations-empty">
+                <p className="text-[12.5px] text-[var(--muted)]">
+                  No supporting documents yet. Upload one so the agent can ground its next assessment.
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.docx,.pptx,.txt,.md,.csv,.xlsx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/markdown,text/csv"
+                  className="hidden"
+                  onChange={(e) => onUploadAndReassess(e.target.files?.[0])}
+                  data-testid="obj-drawer-citations-upload-input"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={busy || uploading}
+                  className="text-[12px]"
+                  data-testid="obj-drawer-citations-upload-btn"
+                >
+                  Upload Document
+                </Button>
+              </div>
+            )}
+          </div>
 
           <div data-testid="obj-drawer-timeline">
             <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--ink)] mb-2">Timeline</p>

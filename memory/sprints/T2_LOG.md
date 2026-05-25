@@ -21,7 +21,37 @@ Note: tag local-only. `git push origin v-pre-T2` requires the user's "Save to Gi
 
 ---
 
-## Disk re-verification + implementation (per item)
+## T2.3 RE-OPEN — Tester 1/4 FAIL on 2026-05-25
+
+**False-green diagnosis (do NOT repeat this pattern):**
+
+The first T2.3 implementation shipped the new layout in source, but **three of the five sections were behind conditional render gates**:
+
+1. **Description card** — wrapped in `{row?.description && (...)}`. Test rows without a `description` field never rendered it. Source position was correct (between Status Card and Update CTA), but DOM emission depended on data.
+2. **Citations card** — wrapped in `{assessment && !noData && (assessment.supporting_docs || []).length > 0 && (...)}`. The user has to (a) click Update, (b) receive an assessment with non-empty supporting_docs. First-time-open drawers therefore never showed the card.
+3. **"Upload Document" empty-state button** — nested inside `{noData && (...)}`, which only sets when the backend explicitly returns `{no_data: true}`. On a happy-path Update or a fresh drawer, the button was unreachable.
+
+The tester (correctly) observed the rendered DOM had only Status-grid + Update CTA + Timeline, with Description / Citations / Upload all missing. My prior diff narrative was technically correct ("sections added in spec order") but practically empty because the gates dropped them at render time. **Lesson: spec-required sections MUST emit DOM unconditionally; only their internal content is data-conditional. Empty states are part of the contract, not a fallback.**
+
+**Component identity check:** `ObjectivesProjectsPanel.jsx` IS the live drawer for both objective and project rows. There is exactly one drawer file in `frontend/src/components/monitor/` — confirmed by `grep "Trend"`, `grep "Score" label`, and `find -iname "*drawer*"`. No sibling/legacy drawer routed to.
+
+**Status Card scope clarification from PO:** the prior 3-column grid (Status / Score / Trend cells) is being collapsed to a single Status pill per the fix-scope directive. The score + trend info is no longer rendered in dedicated drawer cells; the Status badge alone carries the lifecycle state.
+
+---
+
+## T2.3 fix — 2026-05-25
+
+**Files changed:**
+- `frontend/src/components/monitor/ObjectivesProjectsPanel.jsx` — drawer body:
+  - **Status Card** flattened: 3-column grid (Status / Score / Trend) replaced by a single labelled status pill. Score and Trend cells removed. The pill uses the existing `RAG_LABEL` mapping.
+  - **Description card** now renders unconditionally with placeholder copy when the row has no description.
+  - **Citations Card** now renders unconditionally beneath the Update CTA. Two modes:
+    - When `supporting_docs.length > 0`: renders each as `<a href="/app/documents/{id}">{name}</a>` per the fix-scope directive.
+    - When empty (no assessment yet OR assessment returned zero docs): renders an explanatory line + `Upload Document` button that triggers a real hidden `<input type="file">` picker. Wired through to the existing `onUploadAndReassess` flow (POST `/contexts/{cid}/documents` → re-run assessment).
+  - The old `{noData && ...}` block (Document-Journal-empty branch) collapses into the new always-on Citations Card empty state — single source of truth for "upload more grounding material".
+- `backend/tests/test_t2_frontend_wire.py` — added new regression tests asserting Description / Citations / Upload-button are emitted unconditionally (no data gate) so a future false-green diff fails the test, not the tester.
+
+
 
 ### T2.1 — Document Journal filter tabs (D3 + D4)
 Spec ref: `AKKI_PRODUCT_SPEC.md` v1.1 L127–L159 (§4.A → D3 + D4).
