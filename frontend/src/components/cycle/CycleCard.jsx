@@ -61,7 +61,7 @@ const STATUS_TONE = {
 };
 
 
-export default function CycleCard({ cycle }) {
+export default function CycleCard({ cycle, highlight = false }) {
   const status = (cycle.status || "draft").toLowerCase();
   const tone = STATUS_TONE[status] || STATUS_TONE.draft;
   const isCompleted = status === "completed";
@@ -75,6 +75,7 @@ export default function CycleCard({ cycle }) {
     <Link
       to={`/app/cycle/${cycle.id}?tab=agenda`}
       data-testid={`cycle-card-${cycle.id}`}
+      data-pulse={highlight ? "true" : undefined}
       title={isCompleted
         ? "Compilation document can be re-generated from the Compilation tab."
         : undefined}
@@ -83,6 +84,10 @@ export default function CycleCard({ cycle }) {
         "transition-colors duration-150",
         tone,
         isCompleted ? "opacity-90" : "",
+        /* T1.6 (2026-05-25) — D6 step 5: pulse the just-attached card
+           in the platform accent colour for ~1.5 s before settling. The
+           `.cycle-card-pulse` keyframe lives in index.css. */
+        highlight ? "cycle-card-pulse" : "",
       ].join(" ")}
     >
       {/* Top line: title (flex-grow) + status badge + readiness + created date + chevron */}

@@ -96,7 +96,16 @@ export default function ReadingTopBar({
         <Button
           onClick={onGenerateBrief}
           disabled={generatingBrief}
-          className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white akki-overline tracking-[0.16em] text-[11px] h-8 px-3.5 rounded-sm"
+          /* T1.4 (2026-05-25) — replaced `akki-overline` with explicit
+             uppercase/tracking utilities. `.akki-overline` is declared
+             AFTER `@tailwind utilities` in `index.css` (line 165) and
+             sets `color: var(--oxblood)`, which silently overrode the
+             Tailwind `text-white` here (same specificity, later in the
+             cascade) and rendered the button text in a dark warm tone
+             against the accent fill — i.e. the "Generate Brief"
+             visibility regression. Spec §4.A → D8 calls for the button
+             text to be clearly visible. */
+          className="bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white uppercase font-semibold tracking-[0.16em] text-[11px] h-8 px-3.5 rounded-sm"
           data-testid="reading-generate-brief-btn"
         >
           {generatingBrief ? (

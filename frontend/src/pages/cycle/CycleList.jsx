@@ -43,6 +43,35 @@ export default function CycleList() {
   const sort = search.get("sort") || "recent";
   const page = parseInt(search.get("page") || "1", 10) || 1;
   const pageSize = 10;
+  // T1.6 (2026-05-25) — D6 step 5: when navigating here from the
+  // "Add to Cycle" attach flow, pulse-highlight the destination card.
+  // The attaching component appends `?attached=<cycleId>` so we read
+  // it here and forward to <CycleCard>. We clear the param ~1.5 s
+  // later (the pulse window) so refresh/back doesn't re-pulse, and we
+  // also force-flip to the All tab per spec D6 step 5a if the user is
+  // on a different filter tab.
+  const attachedCycleId = search.get("attached") || "";
+  useEffect(() => {
+    if (!attachedCycleId) return;
+    // Clear the highlight query param after the pulse window settles.
+    const t = setTimeout(() => {
+      const next = new URLSearchParams(search);
+      next.delete("attached");
+      setSearch(next, { replace: true });
+    }, 1700);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attachedCycleId]);
+  // Force-flip to All tab on arrival from the attach flow (spec D6 5a).
+  useEffect(() => {
+    if (!attachedCycleId) return;
+    if ((search.get("status") || "all") !== "all") {
+      const next = new URLSearchParams(search);
+      next.delete("status");
+      setSearch(next, { replace: true });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attachedCycleId]);
 
   const setParam = (k, v, opts = {}) => {
     const next = new URLSearchParams(search);
@@ -191,7 +220,11 @@ export default function CycleList() {
               data-testid="cycle-list-grid"
             >
               {(data.cycles || []).map((c) => (
-                <CycleCard key={c.id} cycle={c} />
+                <CycleCard
+                  key={c.id}
+                  cycle={c}
+                  highlight={attachedCycleId && c.id === attachedCycleId}
+                />
               ))}
             </div>
           </ListingShell>

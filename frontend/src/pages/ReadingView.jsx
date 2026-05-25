@@ -296,12 +296,10 @@ export default function ReadingView() {
         navigate("/app/prepare");
       }
     } catch (err) {
-      toast.error(
-        apiErrorMessage(
-          err,
-          "AKKI couldn’t draft a briefing right now. Check your signals and try again.",
-        ),
-      );
+      // T1.4 (2026-05-25) — G3-ratified failure copy: spec §4.A → D8.
+      // The button is re-enabled in the `finally` block below (loading
+      // state dismissed) so the user can immediately retry.
+      toast.error("We couldn't generate a brief from this document. Please try again.");
     } finally {
       setGeneratingBrief(false);
     }

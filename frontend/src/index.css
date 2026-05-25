@@ -421,3 +421,27 @@ body {
 .akki-w-narrow { max-width: var(--w-narrow); }
 .akki-w-medium { max-width: var(--w-medium); }
 .akki-w-wide   { max-width: var(--w-wide); }
+
+
+/* ---------------------------------------------------------------------
+ * T1.6 (2026-05-25) — Cycle-card pulse highlight.
+ *
+ * Spec §4.A → D6 step 5: when the user attaches a document to a cycle
+ * from the Document Journal "Add to Cycle" flow, the destination card
+ * on the Cycle Manager listing pulses 2–3 times in the platform accent
+ * colour and then settles into its default state.
+ *
+ * The animation runs once (1.5s total, 3 cycles of 0.5s each) when the
+ * `cycle-card-pulse` class is applied. The CycleList component reads
+ * `?attached=<cycleId>` from the URL and removes the query param 1.7s
+ * later so refresh/back/forward navigation does not re-pulse the card.
+ * Accent colour comes from `var(--accent)` to stay aligned with the
+ * platform token set.
+ * ------------------------------------------------------------------- */
+@keyframes cycle-card-pulse-kf {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
+  50%      { box-shadow: 0 0 0 4px var(--accent); }
+}
+.cycle-card-pulse {
+  animation: cycle-card-pulse-kf 0.5s ease-in-out 3;
+}

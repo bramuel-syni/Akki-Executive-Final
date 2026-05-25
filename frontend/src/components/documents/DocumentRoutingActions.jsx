@@ -3,13 +3,21 @@
  *
  * Three CTAs surfaced from the document side-drawer + Reading View
  * footer:
- *   1) Add to Cycle      → opens an agenda-item picker → POST contribution
+ *   1) Add to Cycle      → opens a Select-Cycle dropdown → POST contribution
  *   2) Add to Work Studio → routes to /app/work-studio + preloads source
  *   3) Take into Solva   → opens a 4-mode picker → POST solva session
  *
  * All three write an audit row server-side. Continue in Chat /
  * Ask in Chat are left in place — this component adds the missing
  * three.
+ *
+ * T1.6 (2026-05-25) — Add to Cycle rebuilt per spec §4.A → D6 with
+ * G1-ratified wire format: the modal lists Active + Draft cycles for
+ * the active context (GET /contexts/{cid}/cycles), the user picks one,
+ * and the frontend POSTs `{cycle_id, kind:"document", source_doc_id,
+ * title}` to /contexts/{cid}/cycle/contributions?cycle_id=<selected>.
+ * Document attaches at the cycle root (no agenda/contributor binding).
+ * Backend errors (400/422/423) surface as human-readable toasts.
  */
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -28,53 +36,97 @@ const SOLVA_MODES = [
   { id: "get_perspective",    label: "Get Perspective",   desc: "Sit with a senior counter-view." },
 ];
 
+// T1.6 (2026-05-25) — D6 step 2 lists Active and Draft cycles only.
+const CYCLE_SELECTABLE_STATUSES = ["active", "draft"];
+
 export default function DocumentRoutingActions({ contextId, doc, onActionDone }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(null);   // 'cycle' | 'solva' | null
   const [working, setWorking] = useState(false);
-  const [agenda, setAgenda] = useState(null);
-  const [chosenItem, setChosenItem] = useState(null);
+  const [cycles, setCycles] = useState(null); // null=loading, []=empty, [...]=loaded
+  const [selectedCycleId, setSelectedCycleId] = useState("");
+  const [cyclesError, setCyclesError] = useState(null);
 
-  // Lazy-load the current cycle's agenda when the cycle modal opens.
+  // T1.6 (2026-05-25) — Load Active + Draft cycles when the Add to
+  // Cycle modal opens. Spec D6 step 2: dropdown lists ALL Active and
+  // Draft cycles for the active context. We issue two parallel GETs
+  // (one per status filter) and merge — the cycles endpoint accepts a
+  // single `status` filter at a time.
   useEffect(() => {
     if (open !== "cycle" || !contextId) return;
     let alive = true;
+    setCycles(null);
+    setCyclesError(null);
+    setSelectedCycleId("");
     (async () => {
       try {
-        const { data } = await api.get(`/contexts/${contextId}/cycle/agenda`);
+        const [activeResp, draftResp] = await Promise.all([
+          api.get(`/contexts/${contextId}/cycles`, { params: { status: "active", page_size: 60 } }),
+          api.get(`/contexts/${contextId}/cycles`, { params: { status: "draft",  page_size: 60 } }),
+        ]);
         if (!alive) return;
-        setAgenda(data?.agenda || data);
+        const merged = [
+          ...((activeResp.data?.cycles) || []),
+          ...((draftResp.data?.cycles)  || []),
+        ];
+        setCycles(merged);
       } catch (e) {
-        toast.error("Couldn't load cycle agenda.");
+        if (!alive) return;
+        setCyclesError(true);
+        setCycles([]);
       }
     })();
     return () => { alive = false; };
   }, [open, contextId]);
 
   // ---------------- Action handlers ----------------
-  const onAddToCycle = async (agendaItemId) => {
+  const onAddToCycle = async () => {
+    if (!selectedCycleId) return;
     setWorking(true);
+    const cycle = (cycles || []).find((c) => c.id === selectedCycleId);
+    const cycleName = cycle?.title || "the cycle";
     try {
-      // QA-2026-05-16-005 (2026-05-18) — payload aligned to backend
-      // ContributionIn shape: `kind` is one of {note,document,email,
-      // chat}; this is a document-attached contribution so we send
-      // `kind:"document"`. agenda_item_id / team_member_id are now
-      // optional on the backend (full 3-step modal is the P1 follow-up).
+      // T1.6 (2026-05-25) — G1 ratified wire format (verbatim from
+      // spec §4.A → D6 → ratification block): body carries `cycle_id`,
+      // `kind: "document"`, `source_doc_id`, `title`; the same
+      // `cycle_id` is also passed as the query param so the backend
+      // `_get_or_init_agenda` resolver picks up the right cycle row.
+      // `agenda_item_id` and `team_member_id` are intentionally
+      // omitted — the document attaches at the cycle root with no
+      // agenda-item / contributor binding, per the Select-Cycle-only
+      // flow D6 specifies.
       const payload = {
-        agenda_item_id: agendaItemId || null,
+        cycle_id: selectedCycleId,
         kind: "document",
-        title: doc?.name || "Document",
         source_doc_id: doc?.id,
-        body_text: (doc?.preview || (doc?.extracted_text || "").slice(0, 400)) || null,
+        title: doc?.name || "Document",
       };
-      await api.post(`/contexts/${contextId}/cycle/contributions`, payload);
-      toast.success("Added to cycle", {
-        action: { label: "Open cycle", onClick: () => navigate("/app/cycle") },
-      });
+      await api.post(
+        `/contexts/${contextId}/cycle/contributions?cycle_id=${encodeURIComponent(selectedCycleId)}`,
+        payload,
+      );
+      // D6 step 3 — success toast (verbatim copy from spec).
+      toast.success(`Your document has been added to Cycle Manager in ${cycleName}.`);
       setOpen(null);
       onActionDone?.();
+      // D6 step 5 — navigate to the Cycle Manager listing All tab,
+      // passing the attached cycle id so the listing can pulse the
+      // matching card per the highlight rule.
+      navigate(`/app/cycle?attached=${encodeURIComponent(selectedCycleId)}`);
     } catch (e) {
-      toast.error("Couldn't add to cycle.");
+      // T1.6 — surface backend errors (422 validation, 423 cycle
+      // locked, 400 generic) with human-readable toasts. Per spec D6
+      // step 4 the generic failure copy is verbatim.
+      const status = e?.response?.status;
+      if (status === 423) {
+        toast.error("This cycle is locked and can't accept new contributions.");
+      } else if (status === 422) {
+        toast.error("This document can't be added — required details are missing.");
+      } else if (status === 400) {
+        toast.error("This document can't be added to the selected cycle.");
+      } else {
+        toast.error("We couldn't add this document to the cycle. Please try again.");
+      }
     } finally {
       setWorking(false);
     }
@@ -143,38 +195,53 @@ export default function DocumentRoutingActions({ contextId, doc, onActionDone })
         <Compass className="w-3.5 h-3.5" strokeWidth={1.8} /> Take into Solva
       </button>
 
-      {/* Add-to-Cycle modal — agenda-item picker */}
+      {/* Add-to-Cycle modal — Select-Cycle dropdown (G1 ratified, D6) */}
       <Dialog open={open === "cycle"} onOpenChange={(v) => !v && setOpen(null)}>
         <DialogContent className="rounded-sm max-w-lg" data-testid="add-to-cycle-modal">
           <DialogHeader>
-            <DialogTitle>Add to current cycle</DialogTitle>
+            <DialogTitle>Add to Cycle</DialogTitle>
             <DialogDescription>
-              Choose which agenda item this document contributes to.
-              You can re-assign later from the Cycle tab.
+              Choose which cycle this document contributes to.
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-72 overflow-y-auto -mx-2">
-            {(agenda?.items || []).map((it) => (
-              <button
-                key={it.id}
-                onClick={() => { setChosenItem(it.id); onAddToCycle(it.id); }}
-                disabled={working}
-                data-testid={`add-to-cycle-item-${it.id}`}
-                className="w-full text-left px-3 py-2 hover:bg-slate-50 border-b border-[#F0F2F5] last:border-b-0 disabled:opacity-50 flex items-start gap-2"
-              >
-                <Layers className="w-3.5 h-3.5 mt-1 text-slate-400" strokeWidth={1.6} />
-                <div>
-                  <p className="text-sm text-[var(--ink)]">{it.title || "(untitled item)"}</p>
-                  {it.summary && (
-                    <p className="text-[11.5px] text-slate-500 mt-0.5">{it.summary}</p>
-                  )}
-                </div>
-              </button>
-            ))}
-            {(!agenda || !(agenda.items || []).length) && (
-              <p className="text-[12px] text-slate-500 px-3 py-4 italic">
-                {agenda ? "No agenda items yet — open the Cycle tab to set up." : "Loading agenda…"}
+          <div className="py-2">
+            <label
+              htmlFor="add-to-cycle-select"
+              className="block text-[11.5px] uppercase tracking-[0.14em] text-[var(--muted)] mb-1.5"
+            >
+              Select cycle
+            </label>
+            {cycles === null ? (
+              <p className="text-[12px] text-slate-500 italic py-2" data-testid="add-to-cycle-loading">
+                Loading cycles…
               </p>
+            ) : cyclesError ? (
+              <p className="text-[12px] text-red-700 py-2" data-testid="add-to-cycle-error">
+                Couldn't load your cycles. Please try again.
+              </p>
+            ) : cycles.length === 0 ? (
+              <p className="text-[12px] text-slate-500 italic py-2" data-testid="add-to-cycle-empty">
+                You have no active or draft cycles. Create one from the Cycle Manager first.
+              </p>
+            ) : (
+              <select
+                id="add-to-cycle-select"
+                value={selectedCycleId}
+                onChange={(e) => setSelectedCycleId(e.target.value)}
+                disabled={working}
+                data-testid="add-to-cycle-select"
+                className="w-full text-[13px] px-3 py-2 border border-[var(--rule)] rounded-sm bg-white text-[var(--ink)] focus:outline-none focus:border-[var(--accent)]"
+              >
+                <option value="">— Choose a cycle —</option>
+                {cycles.map((c) => (
+                  <option key={c.id} value={c.id} data-testid={`add-to-cycle-option-${c.id}`}>
+                    {c.title}
+                    {CYCLE_SELECTABLE_STATUSES.includes((c.status || "").toLowerCase())
+                      ? ` (${(c.status || "").toLowerCase()})`
+                      : ""}
+                  </option>
+                ))}
+              </select>
             )}
           </div>
           <DialogFooter>
@@ -186,13 +253,13 @@ export default function DocumentRoutingActions({ contextId, doc, onActionDone })
               Cancel
             </button>
             <button
-              onClick={() => onAddToCycle(null)}
-              disabled={working}
+              onClick={onAddToCycle}
+              disabled={working || !selectedCycleId}
               className="text-[12.5px] px-3 py-1.5 bg-[var(--accent)] text-white rounded-sm hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1.5"
-              data-testid="add-to-cycle-skip-item"
+              data-testid="add-to-cycle-attach"
             >
               {working ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowRight className="w-3 h-3" />}
-              Attach to cycle (no specific item)
+              Attach to cycle
             </button>
           </DialogFooter>
         </DialogContent>
