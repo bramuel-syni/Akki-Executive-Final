@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"325434b690934be580857076e6e877f5","collectionName":"synisense_tenant_entities","type":"collection"}

@@ -96,6 +96,7 @@ from routers import admin_auth_events as admin_auth_events_router  # noqa: E402
 from routers import admin_journal as admin_journal_router  # noqa: E402
 from routers import admin_audit_invariant as admin_audit_invariant_router  # noqa: E402  H2.5
 from routers import healthz_shield as healthz_shield_router  # noqa: E402  H2.5 follow-up Part B
+from routers import healthz_clamav as healthz_clamav_router  # noqa: E402  Hardening Step 1
 from routers import trust_center as trust_center_router  # noqa: E402  H3
 from routers import admin_shield_backfill as admin_shield_backfill_router  # noqa: E402  H4
 from routers import onboarding_status as onboarding_status_router  # noqa: E402  J1
@@ -222,6 +223,7 @@ app.include_router(admin_auth_events_router.router)
 app.include_router(admin_journal_router.router)
 app.include_router(admin_audit_invariant_router.router)  # H2.5 — Audit-invariant violations panel
 app.include_router(healthz_shield_router.router)  # H2.5 follow-up Part B — Shield readiness probe
+app.include_router(healthz_clamav_router.router)  # Hardening Step 1 — ClamAV daemon status probe
 app.include_router(trust_center_router.router)  # H3 — Trust Center v1
 app.include_router(admin_shield_backfill_router.router)  # H4 — Shield back-fill
 app.include_router(onboarding_status_router.router)  # J1 — re-intro banner + tooltips
