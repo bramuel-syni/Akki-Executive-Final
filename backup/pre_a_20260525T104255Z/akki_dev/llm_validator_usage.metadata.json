@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"day_utc":{"$numberInt":"1"},"surface":{"$numberInt":"1"}},"name":"day_utc_1_surface_1","unique":true}],"uuid":"e5e6ecb4d8ce4696b0f1ea90a398951d","collectionName":"llm_validator_usage","type":"collection"}

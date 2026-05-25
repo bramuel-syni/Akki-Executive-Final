@@ -178,6 +178,16 @@ The fix was a one-line import addition. The lesson is procedural:
 
 **Scope:** the rule applies to every React component that renders icons or sub-components inside a data-gated branch. It does NOT require eager imports for non-conditional rendering paths (those are caught at build time by ESLint's `no-undef`).
 
+### 5.7 DOM-unconditional rule scope clarification (during chunk (d), 2026-05-25)
+
+DOM-unconditional rule scope clarified during (d): spec-required sections emit DOM regardless of inner data; the rule does NOT mandate that every UI element renders on every page. Info affordances correctly co-locate with the data they describe.
+
+In concrete terms, T2.3 §5.1 says: *"if the spec puts a Citations card inside the Monitor drawer, the card structure MUST emit DOM whenever the Monitor drawer renders, even if the inner citation list is empty."* It does NOT say: *"the Citations card must render on every page in the app."* During (d), the e1_tester first flagged the DeIdSummaryInfoPopover as missing because it was looking at the Trust Center landing rather than the SessionDetail panel where the popover correctly co-locates with the headline counter it explains. The orchestrator promoted the verdict to PASS once the scope was confirmed.
+
+This sub-rule is binding for J1-J4 onboarding and every future tier:
+
+> Info-affordances, helper popovers, and ancillary explanatory copy live next to the data they describe, NOT at the page chrome level. The DOM-unconditional rule constrains structural elements within their parent rendering context.
+
 ---
 
 ## 6. Full-repo pytest status

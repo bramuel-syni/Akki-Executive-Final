@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"account_id":{"$numberInt":"1"},"context_id":{"$numberInt":"1"}},"name":"account_id_1_context_id_1"}],"uuid":"ae4c71ca860240e29d5adff788d8aff2","collectionName":"consent_decisions","type":"collection"}

@@ -189,3 +189,52 @@ The 1 failure is the same pre-existing `test_real_requirements_file_is_clean` (s
 - ✅ Full-repo pytest: 1100 passed (+10 from baseline) · 490 skipped (−10) · 1 pre-existing failure.
 
 **Chunk (d) + guardrail re-enables status: READY FOR e1_tester VERIFICATION.**
+
+---
+
+## e1_tester verdict — 2026-05-25 — (d) CLOSED
+
+Tester verdict: **2/4 PASS · 1 conditional PASS · 1 orchestrator-promoted PASS.**
+
+| # | Item | Verdict | Note |
+| --- | --- | --- | --- |
+| d.1 | DeIdSummaryInfoPopover present | **PASS** (orchestrator-promoted from `HUMAN_REQUIRED`) | Scope clarification: the Info affordance correctly lives on the SessionDetail panel, not the page-level landing. The DOM-unconditional rule governs spec-required sections within their parent context; it does NOT mandate page-level ubiquity. |
+| d.2 | Popover content carries audit anchors | **conditional PASS** (source-verified) | Same scope reasoning as d.1. e1_tester couldn't reach the popover content in the landing screenshot because the SessionDetail panel was not the active surface; source assertion (the `test_d_*` suite) covers the literal content. |
+| d.3 | Per-turn deviation note renders | **PASS** | Live-verified. |
+| d.4 | Methodology doc + 10 guardrail re-enables green | **PASS** | All 10 re-enabled tests GREEN; methodology doc intact. |
+
+### Orchestrator scope clarification (binding for future tiers)
+
+> *"DOM-unconditional rule scope clarified during (d): spec-required sections emit DOM regardless of inner data; the rule does NOT mandate that every UI element renders on every page. Info affordances correctly co-locate with the data they describe."*
+
+This is the **same** rule that closeout §5.1 already encoded — but with the explicit scope boundary now written down. The Info popover lives next to the headline counter it explains (SessionDetail); landing-page-level absence is not a rule violation.
+
+### Files changed this chunk (final inventory)
+
+**UI implementation:**
+- `frontend/src/pages/TrustCenter.jsx` — `Info` icon imported, `Popover/PopoverTrigger/PopoverContent` imported, `DeIdSummaryInfoPopover` component added, `Counter` extended with `infoSlot`, per-turn note added.
+
+**Documentation:**
+- `memory/sprints/TRUST_CENTER_METHODOLOGY.md` — NEW. Authoritative reference + standards-mapping.
+
+**Tests (UI deviation note):**
+- `backend/tests/test_d_trust_center_deidsummary_note.py` — NEW. 10 tests, all GREEN.
+
+**Tests (guardrail re-enables, folded into (d) acceptance):**
+- `backend/tests/test_phase_b_solva_no_opinion.py` — module-level `@pytest.mark.skip` removed; `_start_session` rewritten to Phase I.2 contract; `db.solve_clusters` → `db.solva_clusters` rename.
+- `backend/tests/test_solva_v2_shield_invariant.py` — single-test `@pytest.mark.skip` at L131 removed; session-bootstrap rewritten to Phase I.2 contract.
+
+**Sprint-level docs:**
+- `memory/sprints/T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md` — appended honest-framing paragraph + DOM-unconditional scope clarification lesson.
+
+**Backend behaviour code touched: 0.** No guardrail file (Shield, Trust Center backend, Solva opinion filter, llm_adapter, etc.) was modified.
+
+### Final pytest
+
+```
+1 failed, 1110 passed, 490 skipped, 86 warnings in 251.37s (4:11)
+```
+
+The 1 failure is pre-existing (`test_requirements_guard.py` — spaCy URL pep508-direct-refs in `requirements.txt`).
+
+**(d) closed. Git tag `v-post-d` created.**

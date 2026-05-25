@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"b3206ebaf3f24356bc66b329b797b6b0","collectionName":"synisense_signals","type":"collection"}
