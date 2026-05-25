@@ -98,6 +98,7 @@ from routers import admin_audit_invariant as admin_audit_invariant_router  # noq
 from routers import healthz_shield as healthz_shield_router  # noqa: E402  H2.5 follow-up Part B
 from routers import trust_center as trust_center_router  # noqa: E402  H3
 from routers import admin_shield_backfill as admin_shield_backfill_router  # noqa: E402  H4
+from routers import onboarding_status as onboarding_status_router  # noqa: E402  J1
 from routers import active_context as active_context_router  # noqa: E402  Phase A — Roles & Company Navigation
 from routers import studio as studio_router  # noqa: E402
 from routers import studio_blocks as studio_blocks_router  # noqa: E402
@@ -223,6 +224,7 @@ app.include_router(admin_audit_invariant_router.router)  # H2.5 — Audit-invari
 app.include_router(healthz_shield_router.router)  # H2.5 follow-up Part B — Shield readiness probe
 app.include_router(trust_center_router.router)  # H3 — Trust Center v1
 app.include_router(admin_shield_backfill_router.router)  # H4 — Shield back-fill
+app.include_router(onboarding_status_router.router)  # J1 — re-intro banner + tooltips
 app.include_router(active_context_router.router)
 app.include_router(studio_router.router)
 app.include_router(studio_blocks_router.router)

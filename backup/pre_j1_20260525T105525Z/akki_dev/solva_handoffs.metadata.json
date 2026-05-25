@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"session_id":{"$numberInt":"1"},"target":{"$numberInt":"1"}},"name":"session_id_1_target_1"}],"uuid":"c153c0b4d9784a1e90929f1d4ff53ae1","collectionName":"solva_handoffs","type":"collection"}

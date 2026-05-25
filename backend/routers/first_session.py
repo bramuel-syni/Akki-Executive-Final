@@ -15,9 +15,30 @@ State lives on `db.accounts.{id}.first_session`:
     }
 
 Every transition writes an audit row with action `first_session.{step}`.
+
+J1 (2026-05-25) additions — ratified spec gaps:
+  * **G18 — Shield routing on `top_of_mind`**. The Q3 intake answer is
+    routed through `deidentifier.deidentify()` BEFORE it is persisted
+    to `context_objects.answers`. The redacted text is stored in
+    `top_of_mind`; the token-map is stored alongside in
+    `top_of_mind_token_map` so re-identification at presentation time
+    remains possible. If Shield is `ServiceUnavailable`, the intake
+    POST fails closed with HTTP 503 (matching the Shield audit chain
+    semantics).
+  * **G20 — Context-type emission per role**. `ned` and `chair` roles
+    emit a context of type `ned_personal`; `executive` and `dual`
+    continue to emit `executive_personal`. The default context was
+    provisioned at register time as `executive_personal`; this hook
+    re-types it on intake submission when the declared role implies
+    `ned_personal`.
+
+Both additions route through existing guardrail code paths
+(`deidentifier`, `db.contexts` writes) without modifying any
+guardrail file.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -31,6 +52,20 @@ from core import (
     provision_default_context,
     write_audit,
 )
+from services.synisense.exceptions import ServiceUnavailable
+from services.synisense.shield import deidentifier as _shield_deidentifier
+
+log = logging.getLogger("akki.first_session")
+
+# G20 — context-type mapping per declared role (ratified 2026-05-25).
+# `ned` and `chair` produce `ned_personal`; `executive` and `dual`
+# (current default) produce `executive_personal`.
+_ROLE_TO_CONTEXT_TYPE = {
+    "executive": "executive_personal",
+    "ned": "ned_personal",
+    "chair": "ned_personal",
+    "dual": "executive_personal",
+}
 
 router = APIRouter(prefix="/api/me/first-session", tags=["first-session"])
 
@@ -173,6 +208,12 @@ async def _write_context_object_from_intake(
                 "role": role,
                 "primary_context_name": intake["primary_context_name"],
                 "top_of_mind": intake["top_of_mind"],
+                # G18 (2026-05-25, ratified) — store the Shield token-map
+                # + summary alongside the redacted text so re-identification
+                # at presentation time remains possible. The raw answer is
+                # NEVER persisted.
+                "top_of_mind_token_map": intake.get("top_of_mind_token_map") or {},
+                "top_of_mind_shield_summary": intake.get("top_of_mind_shield_summary") or {},
             }
         },
         "step": 1,
@@ -242,10 +283,37 @@ async def submit_intake(
         return {"state": state}
 
     ctx_id = await _get_or_provision_context_id(current)
+
+    # G18 (2026-05-25) — Shield routing on `top_of_mind`. The Q3 answer
+    # is routed through `deidentifier.deidentify()` BEFORE storage so
+    # any future LLM access automatically operates on a Shield-clean
+    # copy (defence-in-depth on top of the `llm_router` boundary).
+    raw_top_of_mind = body.top_of_mind.strip()
+    try:
+        shield_result = await _shield_deidentifier.deidentify(
+            raw_top_of_mind, tenant_id=ctx_id,
+        )
+    except ServiceUnavailable as exc:
+        # Shield is fail-closed per services/synisense/shield/deidentifier.py
+        # — bubble up as 503 so the user can retry. NEVER persist the raw
+        # answer when Shield can't reach a clean state.
+        log.warning(
+            "first_session.intake — Shield unavailable for account=%s ctx=%s",
+            current["id"], ctx_id,
+        )
+        raise HTTPException(status_code=503, detail=str(exc))
+
     intake = {
         "role": body.role,
         "primary_context_name": body.primary_context_name.strip(),
-        "top_of_mind": body.top_of_mind.strip(),
+        "top_of_mind": shield_result.redacted_text,
+        "top_of_mind_token_map": shield_result.token_map,
+        "top_of_mind_shield_summary": {
+            "de_id_summary": shield_result.de_id_summary,
+            "dilution_score": shield_result.dilution_score,
+            "exposure_reduction_score": shield_result.exposure_reduction_score,
+            "elapsed_ms": shield_result.elapsed_ms,
+        },
     }
     await _write_context_object_from_intake(current["id"], ctx_id, intake)
 
@@ -260,6 +328,33 @@ async def submit_intake(
         {"id": current["id"]},
         {"$set": {"declared_role": declared}},
     )
+
+    # G20 (2026-05-25) — re-type the user's default context if the
+    # declared role implies a NED workspace. Default contexts are
+    # provisioned at register time as `executive_personal`; this hook
+    # promotes them to `ned_personal` when role ∈ {ned, chair}. The
+    # change is idempotent (set-if-different) and audited.
+    new_type = _ROLE_TO_CONTEXT_TYPE.get(body.role, "executive_personal")
+    ctx_row = await db.contexts.find_one(
+        {"id": ctx_id}, {"_id": 0, "id": 1, "type": 1, "name": 1},
+    )
+    if ctx_row and ctx_row.get("type") != new_type:
+        await db.contexts.update_one(
+            {"id": ctx_id},
+            {"$set": {"type": new_type}},
+        )
+        # Also update the matching membership role so role-gated
+        # surfaces (NED inbox, committee surfaces) light up.
+        if body.role in ("ned", "chair"):
+            await db.memberships.update_one(
+                {"context_id": ctx_id, "account_id": current["id"]},
+                {"$set": {"role": "ned"}},
+            )
+        await write_audit(
+            ctx_id, current["id"], "context.retyped",
+            "context", ctx_id,
+            {"from": ctx_row.get("type"), "to": new_type, "reason": "G20_role_intake"},
+        )
 
     state["status"] = "in_progress"
     state["current_step"] = "door"

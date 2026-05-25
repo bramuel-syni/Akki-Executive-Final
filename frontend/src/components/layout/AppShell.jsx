@@ -13,7 +13,7 @@ import {
   Settings, LogOut, ChevronDown, CheckCircle2, Lock,
   Briefcase, Landmark, Search, ScrollText, Target, Eye, Plus, BookOpenCheck,
   Users, Building2, ShieldCheck, Send, Compass, Activity, MessageCircle,
-  Presentation, Menu, X, Keyboard,
+  Presentation, Menu, X, Keyboard, BookOpen,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
@@ -178,6 +178,44 @@ export default function AppShell({ children }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
+  // J1 (2026-05-24) — Onboarding status: re-intro banner + Trust
+  // Center / Help one-shot tooltips for grandfathered users. Read
+  // from `/api/users/me/onboarding-status`. Banner + tooltips are
+  // purely additive surfaces — they DO NOT block any flow.
+  const [onbStatus, setOnbStatus] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = localStorage.getItem("akki_token");
+        if (!token) return;
+        const r = await fetch(
+          `${process.env.REACT_APP_BACKEND_URL}/api/users/me/onboarding-status`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!r.ok) return;
+        const data = await r.json();
+        if (!cancelled) setOnbStatus(data);
+      } catch (_e) {
+        /* non-fatal: shell still renders without banner */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const postOnb = async (suffix) => {
+    try {
+      const token = localStorage.getItem("akki_token");
+      const r = await fetch(
+        `${process.env.REACT_APP_BACKEND_URL}/api/users/me/onboarding-status${suffix}`,
+        { method: "POST", headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (r.ok) setOnbStatus(await r.json());
+    } catch (_e) {
+      /* non-fatal */
+    }
+  };
+
   // Phase 13.3 — global keyboard shortcuts hook (⌘K / ⌘J / ⌘S / ?).
   // Phase F0 — Cmd+K now opens UniversalSearchDialog. The dialog
   // listens for `akki:open-search`; the keyboard hook still fires
@@ -246,6 +284,46 @@ export default function AppShell({ children }) {
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--cream)]">
+      {/* J1 — Re-intro banner for grandfathered users. Single-line,
+          parchment background, non-blocking, dismissable. Disappears
+          on acknowledge or after 3 dismissals. */}
+      {onbStatus && onbStatus.needs_reintro && (
+        <div
+          data-testid="reintro-banner"
+          className="bg-[var(--cream-deep)]/60 border-b border-[rgba(184,182,175,0.4)] px-6 py-2.5"
+        >
+          <div className="max-w-7xl mx-auto flex items-center gap-4 text-[12.5px]">
+            <ShieldCheck className="w-4 h-4 text-emerald-700 flex-shrink-0" strokeWidth={1.7} />
+            <div className="flex-1 text-[var(--ink)]">
+              <span className="font-medium">Akki has evolved significantly.</span>{" "}
+              <span className="text-[var(--deep)]">
+                In 90 seconds, see how Shield keeps your confidential
+                data off the LLM and how Trust Center makes it provable.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                postOnb("/acknowledge");
+                navigate("/app/trust-center?intro=shield");
+              }}
+              className="px-3 py-1 text-[12px] text-[var(--cream)] bg-[var(--oxblood,#7a2a2a)] hover:opacity-90 rounded-md transition-opacity"
+              data-testid="reintro-banner-see-btn"
+            >
+              See what's new
+            </button>
+            <button
+              type="button"
+              onClick={() => postOnb("/dismiss")}
+              className="px-3 py-1 text-[12px] text-[var(--deep)] hover:text-[var(--ink)] underline decoration-dotted underline-offset-2 transition-colors"
+              data-testid="reintro-banner-later-btn"
+            >
+              Maybe later
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* M.4: legacy SandboxBanner / SandboxEmailCapture removed —
           no live context now carries type='sandbox' (Sandbox v2 is
           pre-auth at /sandbox). */}
@@ -338,17 +416,79 @@ export default function AppShell({ children }) {
           {/* H3 — Trust Center entry. American spelling. Sits between
               Documents and the workspace pill so the privacy promise
               is visible without leaving the parchment aesthetic. */}
-          <button
-            type="button"
-            onClick={() => navigate("/app/trust-center")}
-            className="inline-flex items-center gap-1.5 h-8 px-2.5 text-[12.5px] text-[var(--deep)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
-            aria-label="Open Trust Center"
-            data-testid="topbar-trust-center-btn"
-            title="Open Trust Center"
-          >
-            <ShieldCheck className="w-4 h-4" strokeWidth={1.7} />
-            <span className="hidden sm:inline">Trust Center</span>
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                if (onbStatus?.trust_center_tooltip?.show) {
+                  postOnb("/tooltips/trust-center/dismiss");
+                }
+                navigate("/app/trust-center");
+              }}
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 text-[12.5px] text-[var(--deep)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
+              aria-label="Open Trust Center"
+              data-testid="topbar-trust-center-btn"
+              title="Open Trust Center"
+            >
+              <ShieldCheck className="w-4 h-4" strokeWidth={1.7} />
+              <span className="hidden sm:inline">Trust Center</span>
+            </button>
+            {onbStatus?.trust_center_tooltip?.show && (
+              <div
+                role="tooltip"
+                data-testid="trust-center-tooltip"
+                className="absolute top-full mt-2 right-0 w-56 bg-[var(--ink)] text-[var(--cream)] text-[11.5px] px-3 py-2 rounded-md shadow-lg z-50"
+              >
+                <div className="font-medium mb-0.5">New</div>
+                <div className="text-[var(--cream)]/85 leading-snug">
+                  See how your data is protected.
+                </div>
+                <div
+                  className="absolute -top-1 right-6 w-2 h-2 bg-[var(--ink)] rotate-45"
+                  aria-hidden="true"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* J1 — Help link in the top-bar. The /help page (Phase E)
+              renders AKKI_FEATURES_AND_FUNCTIONALITY.md so users have
+              an in-app reference to every feature. First-time tooltip
+              suppressed by ``help_tooltip_dismissed_at``. */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                if (onbStatus?.help_tooltip?.show) {
+                  postOnb("/tooltips/help/dismiss");
+                }
+                navigate("/help");
+              }}
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 text-[12.5px] text-[var(--deep)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
+              aria-label="Open Help"
+              data-testid="topbar-help-btn"
+              title="Open Help"
+            >
+              <BookOpen className="w-4 h-4" strokeWidth={1.7} />
+              <span className="hidden sm:inline">Help</span>
+            </button>
+            {onbStatus?.help_tooltip?.show && (
+              <div
+                role="tooltip"
+                data-testid="help-tooltip"
+                className="absolute top-full mt-2 right-0 w-56 bg-[var(--ink)] text-[var(--cream)] text-[11.5px] px-3 py-2 rounded-md shadow-lg z-50"
+              >
+                <div className="font-medium mb-0.5">Read about every feature</div>
+                <div className="text-[var(--cream)]/85 leading-snug">
+                  Full reference of what Akki can do.
+                </div>
+                <div
+                  className="absolute -top-1 right-6 w-2 h-2 bg-[var(--ink)] rotate-45"
+                  aria-hidden="true"
+                />
+              </div>
+            )}
+          </div>
 
           {/* Phase 13.3 — discoverable shortcut overlay trigger. Press ?
               keyboard-side achieves the same; this gives mouse users a

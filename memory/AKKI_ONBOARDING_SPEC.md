@@ -1,6 +1,6 @@
 # AKKI Onboarding Spec v1.0
 
-**Status:** DRAFT v1.0 — derived spec, pending PO ratification of the 8 gap-fills in §6.
+**Status:** v1.1 — ratified by orchestrator on user authority — 2026-05-25. All 19 gap-fills (G13-G31) approved verbatim.
 **Authored:** 2026-05-25.
 **Boundary:** This document defines the J1-J4 onboarding sprint contract. T1-T5 + backlog-b + chunk (d) are CLOSED — see `/app/memory/sprints/T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md` for that contract.
 **Scope discipline:** spec-verbatim + DOM-unconditional + import-survival + DOM-unconditional scope clarification (closeout §§5.1-5.7).
@@ -271,25 +271,25 @@ Numbered to continue the G1-G12 sequence from the product spec. Each gap has a p
 
 | # | Gap | Surface | Proposed fill (minimal) | PO decision |
 | --- | --- | --- | --- | --- |
-| **G13** | Single tenant_name vs personal_context distinction | Stage 1 SignUp form | Keep single `tenant_name` field as-is (currently used to override the default `"{first_name}'s Context"`). Don't ask org-name twice. | TBD |
-| **G14** | Should SignUp require a non-empty tenant_name? | Stage 1 SignUp form | Keep optional — falls back to `"{first_name}'s Context"`. | TBD |
-| **G15** | Password-reset flow | Stage 1 | Defer to J1 v1.1 (out of scope for J1). Add `POST /auth/forgot-password` + magic-link email later. | TBD |
-| **G16** | Email verification before activation | Stage 1 | Defer to J1 v1.1. (Currently registration is immediately active.) | TBD |
-| **G17** | OAuth / SSO | Stage 1 | Defer to J1 v1.1. Emergent-managed Google Auth available when added. | TBD |
-| **G18** | Shield de-identification of `top_of_mind` intake answer | Stage 2 | Route the Q3 answer through `deidentifier.deidentify()` before writing to `context_objects.answers`. One-line server-side change in `routers/first_session.py:248`. | TBD |
-| **G19** | `auth.register` audit row | Stage 1 | Emit `audit_log` action `auth.register` with `resource_type: account`, `target_id: new_account_id`, `metadata: {email_domain, tenant_name}`. Backfill not required. | TBD |
-| **G20** | Context type emission per role | Stage 2 | `executive` / `dual` → `executive_personal`; `ned` / `chair` → `ned_personal`. Currently always `executive_personal` (`core.py:374`). | TBD |
-| **G21** | First-session door layout 3→4 doors | Stage 3 | Add Door A (`cycle`) and Door D (`demo`); keep existing `upload` + `solve` doors; retire `email` door (rarely used per audit). | TBD |
-| **G22** | Demo-attach mechanic | Stage 3 | Add `seed_marker_visible_for: [account_id]` field on the 6 backlog-b seed rows; filter Cycle Manager / Document Journal / Work Studio listings to include rows where `seed_marker_visible_for` contains the current account_id. Idempotent. | TBD |
-| **G23** | Demo door fallback toast | Stage 3 | Verbatim *"Demo unavailable right now. Try uploading a document instead."* | TBD |
-| **G24** | Empty-document upload error | Stage 4 | Verbatim *"That file doesn't have any text we can read. Please upload a different file."* | TBD |
-| **G25** | Oversized-file upload error | Stage 4 | Verbatim *"That file is larger than 50 MB. Please split it or upload a smaller version."* | TBD |
-| **G26** | Trust Center one-shot tooltip restoration | Stage 5 | Cherry-pick `b48ee23` reconciled against post-T5 `AppShell.jsx`. Surface = top-bar Trust Center icon. | TBD |
-| **G27** | Trust Center tooltip copy | Stage 5 | Verbatim *"This is your Trust Center. We've recorded what Shield touched on your first upload — take a look."* | TBD |
-| **G28** | Trust Center empty-state copy | Stage 5 | Verbatim *"No sessions yet. Upload a document or chat with Akki to begin."* | TBD |
-| **G29** | Help tooltip copy | Stage 6 | Verbatim *"Tap Help any time. Akki has a built-in tour of every screen."* | TBD |
-| **G30** | Chat starter-prompt seeding | Stage 6 | Read `accounts.first_session.intake.top_of_mind` on home mount; pre-populate the chat composer. User can edit before submit. | TBD |
-| **G31** | Help tooltip restoration | Stage 6 | Cherry-pick `b48ee23` Help tooltip JSX reconciled against post-T5 `AppShell.jsx`. | TBD |
+| **G13** | Single tenant_name vs personal_context distinction | Stage 1 SignUp form | Keep single `tenant_name` field as-is (currently used to override the default `"{first_name}'s Context"`). Don't ask org-name twice. | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G14** | Should SignUp require a non-empty tenant_name? | Stage 1 SignUp form | Keep optional — falls back to `"{first_name}'s Context"`. | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G15** | Password-reset flow | Stage 1 | Defer to J1 v1.1 (out of scope for J1). Add `POST /auth/forgot-password` + magic-link email later. | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G16** | Email verification before activation | Stage 1 | Defer to J1 v1.1. (Currently registration is immediately active.) | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G17** | OAuth / SSO | Stage 1 | Defer to J1 v1.1. Emergent-managed Google Auth available when added. | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G18** | Shield de-identification of `top_of_mind` intake answer | Stage 2 | Route the Q3 answer through `deidentifier.deidentify()` before writing to `context_objects.answers`. One-line server-side change in `routers/first_session.py:248`. | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G19** | `auth.register` audit row | Stage 1 | Emit `audit_log` action `auth.register` with `resource_type: account`, `target_id: new_account_id`, `metadata: {email_domain, tenant_name}`. Backfill not required. | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G20** | Context type emission per role | Stage 2 | `executive` / `dual` → `executive_personal`; `ned` / `chair` → `ned_personal`. Currently always `executive_personal` (`core.py:374`). | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G21** | First-session door layout 3→4 doors | Stage 3 | Add Door A (`cycle`) and Door D (`demo`); keep existing `upload` + `solve` doors; retire `email` door (rarely used per audit). | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G22** | Demo-attach mechanic | Stage 3 | Add `seed_marker_visible_for: [account_id]` field on the 6 backlog-b seed rows; filter Cycle Manager / Document Journal / Work Studio listings to include rows where `seed_marker_visible_for` contains the current account_id. Idempotent. | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G23** | Demo door fallback toast | Stage 3 | Verbatim *"Demo unavailable right now. Try uploading a document instead."* | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G24** | Empty-document upload error | Stage 4 | Verbatim *"That file doesn't have any text we can read. Please upload a different file."* | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G25** | Oversized-file upload error | Stage 4 | Verbatim *"That file is larger than 50 MB. Please split it or upload a smaller version."* | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G26** | Trust Center one-shot tooltip restoration | Stage 5 | Cherry-pick `b48ee23` reconciled against post-T5 `AppShell.jsx`. Surface = top-bar Trust Center icon. | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G27** | Trust Center tooltip copy | Stage 5 | Verbatim *"This is your Trust Center. We've recorded what Shield touched on your first upload — take a look."* | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G28** | Trust Center empty-state copy | Stage 5 | Verbatim *"No sessions yet. Upload a document or chat with Akki to begin."* | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G29** | Help tooltip copy | Stage 6 | Verbatim *"Tap Help any time. Akki has a built-in tour of every screen."* | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G30** | Chat starter-prompt seeding | Stage 6 | Read `accounts.first_session.intake.top_of_mind` on home mount; pre-populate the chat composer. User can edit before submit. | Ratified by orchestrator on user authority — 2026-05-25 |
+| **G31** | Help tooltip restoration | Stage 6 | Cherry-pick `b48ee23` Help tooltip JSX reconciled against post-T5 `AppShell.jsx`. | Ratified by orchestrator on user authority — 2026-05-25 |
 
 ---
 
@@ -310,6 +310,7 @@ Numbered to continue the G1-G12 sequence from the product spec. Each gap has a p
 ## 8. Spec versioning + change-control
 
 - **v1.0** (2026-05-25): initial derived spec, 19 gap-fills G13-G31 pending PO ratification.
+- **v1.1** (2026-05-25): orchestrator ratified G13-G31 on user authority. All 19 gap-fills approved verbatim. PO decision burden delegated by user.
 - Any spec change after PO ratification is a v1.x bump and gets a one-line entry in `A_LOG.md`.
 - Mid-build amendments require PO sign-off in chat; the spec file is updated immediately and the chunk LOG records the amendment in its run-results section.
 
