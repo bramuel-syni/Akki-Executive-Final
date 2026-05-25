@@ -7,6 +7,49 @@ v4.0 (Build Sequence — 18 modules across 5 streams with prescriptive design ma
 The user selected **Path A (v4.0 Free Tier)**: follow v4.0 module boundaries but skip any
 module that requires a paid/external service.
 
+## T1–T5 — Horizontal UI reshaping sprint — 2026-05-25 ✅
+Five-tier sprint against `AKKI_PRODUCT_SPEC.md` **v1.1** (locked,
+ratified with all 12 PO-approved gaps G1–G12).
+
+- **Per-tier verdicts** (all by e1_tester on 2026-05-25):
+  * T1 — 5/5 PASS (Chat sticky · Context Switch · Generate Brief
+    visibility + G3 toast · "All documents" routing · Add to Cycle G1
+    wire)
+  * T2 — 4/4 PASS (incl. T2.3 re-verified after the DOM-conditional
+    false-green fix — Document Journal tabs · Pulse Resolved · Monitor
+    drawer · Strategic Goals filters G11 + G12)
+  * T3 — 4/4 PASS (Add to Work Studio + Add to Cycle parity + Work
+    Studio kind routing G8 + Compile-modal nested upload G9)
+  * T4 — 5/5 PASS (W3 toolbar + DOCX/PDF/PPTX G6 · Refine G7 · W5
+    Committed · Enhance flow W7/W9 · W10 Refine G10)
+  * T5 — 4/4 PASS (Cycle Manager landing C1 · Setup Wizard C2 G4 +
+    C3 G5 + C4 · Cycle Page Compile parity C5 G6 · Draft Journal C7 ·
+    Ready Journal C8)
+- **Targeted-suite roll-up: 89/89 GREEN** (T1=11 · T2=23 · T3=20 ·
+  T4=15 · T5=20).
+- **Key durable lessons** (full record in
+  `/app/memory/sprints/T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md`):
+  * **DOM-unconditional rendering rule** (T2.3 fix) — spec-required
+    structural sections MUST emit DOM unconditionally; only their
+    internal content is data-conditional. Empty states are part of the
+    contract.
+  * **Code-verified vs live-verified distinction** — failure-toast
+    catch blocks / ClamAV reject paths cannot always be live-exercised
+    by browser-use; literal in catch site is the canonical evidence.
+    Per-tier ledgers explicitly tag these surfaces.
+  * **Verbatim-spec-copy invariant** — every toast / label / helper
+    paragraph / validation message is treated as a literal. `assert
+    "<literal>" in src` for every G1–G12 verbatim string.
+- **Pre-tier hygiene** — five git tags + five mongodumps; closure
+  tag `v-post-T5-horizontal-closed` at sprint close.
+- **Backlog** — three minor seed-data gaps + one deferred C4 LLM step
+  + one optional EICAR spot-check, all in
+  `/app/memory/sprints/POST_T5_BACKLOG.md`. None block J1–J4.
+- **Hold position** — J1–J4 onboarding sprint is P1 but EXPLICITLY
+  gated on user sign-off. Do NOT pull forward.
+
+
+
 ## H4 — Back-fill pre-Shield-v1.x chats — 2026-05-24 ✅
 Closes the historical-data gap so Trust Center honors the same
 product promise for the WHOLE record, not just the post-deploy slice.
