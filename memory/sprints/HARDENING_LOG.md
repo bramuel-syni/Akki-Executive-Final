@@ -212,3 +212,88 @@ Phase C's ESLint rules immediately surfaced 2 real bugs my static-analysis scrip
 ### Status
 
 **Step 2 IN PROGRESS.** Implementation + tests landed; pending e1_tester verification.
+
+---
+
+## 2026-05-25 — Step 2 closure
+
+**e1_tester verdict: 4/4 PASS.** All 8 anchor-chain tests verified live. The two ESLint-caught latent bugs (Search icon in AttachDocumentModal, navigate scope in WorkStudio) confirmed fixed at source — webpack compiles clean. Trust-center-tooltip DOM-unconditional refactor verified rendering in both visible and hidden states. FirstSession bootstrap-after-mutation chain verified across all three auth-writer callbacks.
+
+**Git tag `v-post-hardening-step-2`** created (local-only). Marks the post-Step-2 worktree boundary; Step 3's anti-false-green tests will diff against this tag.
+
+**Step 2 status: CLOSED.**
+
+---
+
+## Step 3 — Demo seeds auto-apply on pod boot
+
+### Goal
+
+A fresh preview pod (or restarted prod pod) should automatically carry the `DEMO_T5_BACKLOG` seed data so demos don't require manual `python -m scripts.seed_backlog_b_demo` invocation. Item was parked in `POST_T5_BACKLOG.md` after backlog-b; promoted to Step 3 of the hardening sprint per orchestrator brief 2026-05-25.
+
+### Implementation
+
+**Boot hook in `backend/server.py`** — added as a SEPARATE `@app.on_event("startup")` handler (named `on_startup_demo_seed`) immediately after the existing `on_startup` (Mongo indexes / scheduler / spaCy warmup) and before `on_shutdown`. Multiple startup handlers run in registration order; this lets the seed call sit AFTER Mongo init and AFTER all index-ensuring helpers without modifying the existing handler.
+
+```python
+@app.on_event("startup")
+async def on_startup_demo_seed():
+    # 1. Honour DISABLE_DEMO_SEED env-flag (opt-out for prod).
+    # 2. Lazy-import `scripts.seed_backlog_b_demo`.
+    # 3. Call `seed_async(verbose=False)`, classify result by
+    #    (total_delta, total_post) tuple.
+    # 4. Operator-readable log line in each branch.
+    # 5. Catch-all `except Exception` swallows the error, logs it,
+    #    pod keeps booting (fail-soft contract).
+```
+
+### Env-var guard — IMPLEMENTED
+
+`DISABLE_DEMO_SEED=1` (or `true`, `yes`, `on`) skips the hook entirely. Default = run. Rationale: prod tenants who don't want demo data tagged in their Mongo can opt out without a code change; the seed pack's row count is small (7 across 5 collections in this preview env) but the principle stands.
+
+Log line on opt-out: `seed_backlog_b_demo: DISABLE_DEMO_SEED='1' — skipping`.
+
+### Boot-time ordering
+
+The new handler is the SECOND `@app.on_event("startup")` declaration. FastAPI runs them in registration order:
+1. `on_startup` (line 343) — Mongo index ensures (stripe_webhook, synisense audit log, engine state), spaCy NER warm-up, hourly cron arm.
+2. **`on_startup_demo_seed` (line 1071) — new in Step 3.**
+3. ...
+
+Mongo connection is established at module import time via `core.db = AsyncIOMotorClient(...)[DB_NAME]`, so it's already live before either handler runs. No race.
+
+### Operator-readable log output (literal lines from preview-pod reboots, 2026-05-25)
+
+```
+2026-05-25 17:39:19,342 - akki.startup - INFO - seed_backlog_b_demo: seeds present, skipping (rows=7, delta=0)
+2026-05-25 17:39:58,228 - akki.startup - INFO - seed_backlog_b_demo: seeds present, skipping (rows=7, delta=0)
+2026-05-25 17:43:51,308 - akki.startup - INFO - seed_backlog_b_demo: seeds present, skipping (rows=7, delta=0)
+2026-05-25 17:44:51,139 - akki.startup - INFO - seed_backlog_b_demo: seeds present, skipping (rows=7, delta=0)
+2026-05-25 17:49:41,514 - akki.startup - INFO - seed_backlog_b_demo: seeds present, skipping (rows=7, delta=0)
+```
+
+5 consecutive supervisor restarts confirmed:
+- Hook fires on every boot.
+- Operator-readable INFO line with row count + delta.
+- Idempotent — every run after the first reports `delta=0`.
+- No errors, no boot-loop.
+
+### Tests (anti-false-green discipline)
+
+| Test | Anchor chain | Pre-fix |
+| --- | --- | --- |
+| `S3.A` test_s3_a_startup_hook_seeds_all_five_collections | clean DB → run hook → 5 collections each carry ≥1 `seed_marker: DEMO_T5_BACKLOG` row | FAIL |
+| `S3.B` test_s3_b_startup_hook_idempotent_on_second_call | rows present → run hook again → row counts UNCHANGED across all 5 collections | FAIL |
+| `S3.C` test_s3_c_startup_hook_fails_soft_on_seed_error | monkeypatch `seed_async` → raise `RuntimeError` → hook MUST NOT re-raise; ERROR log line emitted with exception class name | FAIL |
+| `S3.D` test_s3_d_disable_demo_seed_env_var_skips_hook | set `DISABLE_DEMO_SEED=1` → hook MUST NOT call `seed_async`; skip log line emitted | FAIL |
+| `S3.E` test_s3_e_hook_registered_with_fastapi_startup_event | `app.router.on_startup` contains `on_startup_demo_seed` (registration anchor) | FAIL |
+
+**5/5 fail against `v-post-hardening-step-2`.** 5/5 PASS post-Step-3.
+
+### Full pytest
+
+Pending the running suite. Expected count: 1229 (= 1224 prior + 5 new Step-3 tests). Zero regressions expected; the hook is additive and pre-existing tests don't depend on `DEMO_T5_BACKLOG` row presence.
+
+### Status
+
+**Step 3 IN PROGRESS.** Implementation + tests landed; pending e1_tester verification.

@@ -1068,6 +1068,65 @@ async def on_startup():
         logger.warning("Chunk 18 engine hourly cron arm failed: %s: %s", type(e).__name__, e)
 
 
+@app.on_event("startup")
+async def on_startup_demo_seed():
+    """Hardening Step 3 (2026-05-25) — auto-apply the
+    ``DEMO_T5_BACKLOG`` seed pack on every pod boot so fresh
+    preview / restarted prod pods don't require a manual
+    ``python -m scripts.seed_backlog_b_demo`` invocation.
+
+    Idempotency: the seed script uses upsert by deterministic
+    ``demo-t5backlog-*`` ids, so re-running is safe (delta = 0).
+
+    Fail-soft: every exception is logged and swallowed. The pod
+    MUST continue serving traffic even if seeding fails — demo
+    data unavailability is preferable to a boot loop.
+
+    Env-guard: ``DISABLE_DEMO_SEED=1`` (or ``true``) skips the
+    hook entirely. Default = run. Honours the operator's opt-out
+    so prod tenants who don't want demo data tagged in their DB
+    can set the flag without a code change.
+    """
+    log = logging.getLogger("akki.startup")
+    disable_flag = (os.environ.get("DISABLE_DEMO_SEED") or "").strip().lower()
+    if disable_flag in ("1", "true", "yes", "on"):
+        log.info("seed_backlog_b_demo: DISABLE_DEMO_SEED=%r — skipping",
+                 os.environ.get("DISABLE_DEMO_SEED"))
+        return
+    try:
+        # Local-import so the seed module + its motor client init are
+        # only paid for when seeding runs. Outside the try block,
+        # nothing in the module touches Mongo or other shared state.
+        from scripts import seed_backlog_b_demo as _seed_mod
+        result = await _seed_mod.seed_async(verbose=False)
+        deltas = result.get("delta") or {}
+        post_counts = result.get("post_counts") or {}
+        total_delta = sum(deltas.values())
+        total_post = sum(post_counts.values())
+        if total_delta == 0 and total_post > 0:
+            log.info(
+                "seed_backlog_b_demo: seeds present, skipping "
+                "(rows=%d, delta=0)", total_post,
+            )
+        elif total_delta > 0:
+            log.info(
+                "seed_backlog_b_demo: seeds applied (%d rows inserted "
+                "or updated across %d collections; total now %d)",
+                total_delta, len([d for d in deltas.values() if d > 0]),
+                total_post,
+            )
+        else:
+            log.info(
+                "seed_backlog_b_demo: ran but no rows present "
+                "(delta=0, post=0) — check seed source data",
+            )
+    except Exception as exc:  # noqa: BLE001 — fail-soft contract
+        log.error(
+            "seed_backlog_b_demo: ERROR — %s %s",
+            type(exc).__name__, str(exc)[:300],
+        )
+
+
 @app.on_event("shutdown")
 async def on_shutdown():
     sched = getattr(app.state, "scheduler", None)

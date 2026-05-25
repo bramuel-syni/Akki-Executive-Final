@@ -35,13 +35,12 @@ T1 ran clean against the spec. No off-scope issues surfaced.
 
 - **C4 Project Brief LLM step deferred** — the wizard ships with the direct create-and-commission path. The full C4 Review / Save-as-Draft branches (with Shield-routed agent-cycle summary regeneration via `llm_router.invoke()` + `deidentifier.deidentify()`) are not in this tier. Follow-on sprint should add the brief-generation endpoint + the `Review` + `Save as Draft` CTAs alongside `Commission Cycle`.
 
-## Backlog-b deployment-pipeline gap (25 May 2026) — LOW PRIORITY
+## Backlog-b deployment-pipeline gap (25 May 2026) — RESOLVED at Hardening Step 3
 
-- **Demo seeds are NOT auto-applied on preview pod boot.** During the backlog-b verification, e1_tester had to manually run `cd /app/backend && python -m scripts.seed_backlog_b_demo` on a fresh preview pod. The seed itself is idempotent and safe; the gap is procedural.
-  - **Park decision** (deferred to future sprint): *"Decide whether demo seeds should auto-apply on preview pod boot (e.g. via an idempotent startup hook), or remain manual to keep prod-like environments lean."* Defensible both ways:
-    - **Auto-apply** — faster tester ramp-up, predictable demo state.
-    - **Manual** — keeps preview pods prod-like, avoids leaking `[DEMO]` rows into any audit chain by accident.
-  - Decision intentionally NOT made in backlog-b. Owned by a future sprint that scopes the demo-pipeline question.
+- ~~**Demo seeds are NOT auto-applied on preview pod boot.** During the backlog-b verification, e1_tester had to manually run `cd /app/backend && python -m scripts.seed_backlog_b_demo` on a fresh preview pod. The seed itself is idempotent and safe; the gap is procedural.~~
+  - ~~**Park decision** (deferred to future sprint): *"Decide whether demo seeds should auto-apply on preview pod boot (e.g. via an idempotent startup hook), or remain manual to keep prod-like environments lean."*~~
+
+  **RESOLVED 2026-05-25 at Hardening Step 3.** Auto-apply implemented via a FastAPI `@app.on_event("startup")` handler in `backend/server.py::on_startup_demo_seed`. Fail-soft (exception logged, pod keeps booting). Operator opt-out via `DISABLE_DEMO_SEED=1` env-flag. Live boot log over 5 consecutive supervisor restarts confirms idempotency (`rows=7, delta=0`). See `HARDENING_LOG.md` Step 3.
 
 
 
