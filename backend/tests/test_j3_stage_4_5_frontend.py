@@ -198,26 +198,22 @@ def test_j3_f5_trust_center_tour_dom_unconditional():
     )
 
 
-# ── J3.F6 — No J4 chat-starter scope pulled forward ──────────────────
-def test_j3_f6_no_j4_chat_starter_scope_pulled_forward():
-    """J4 will add the chat-starter prompt seeding (G30) — the
-    `accounts.first_session.intake.top_of_mind` pre-fill into the
-    home chat composer. J3 must NOT contain ANY of that wiring."""
-    # The TrustCenterTour component must not pull chat-starter copy
-    # or wire intake.top_of_mind anywhere.
-    tour_src = TOUR.read_text(encoding="utf-8")
-    forbidden = [
-        "top_of_mind",
-        "intake_seed",
-        "chat_starter",
-        "starter_prompt",
-        "Tap Help any time",  # G29 — J4 Help tooltip copy
-    ]
-    offenders = [t for t in forbidden if t in tour_src]
-    assert not offenders, (
-        f"J4 chat-starter / Help-tooltip scope pulled into "
-        f"TrustCenterTour.jsx: {offenders}"
-    )
+# ── J3.F6 — RETIRED at J4 ship ───────────────────────────────────────
+# The J3-era guard `test_j3_f6_no_j4_chat_starter_scope_pulled_forward`
+# was retired when J4 shipped (2026-05-25). The J4 chat-starter
+# seeding (G30) now lives in `pages/SolvaPhaseDSession.jsx` +
+# `pages/SolvaApp.jsx` + `pages/FirstSession.jsx`. The closure guard
+# `test_onboarding_sprint_j1_j4_complete` in
+# `test_j4_stage_6_backend.py` enforces the post-J4 invariants
+# (door allow-list pinned + all 5 J1/J2/J3/J4 status flags emitted
+# by `_compute_status`'s `onboarding_journey` block).
+def test_j3_f6_retired_at_j4_ship():
+    """Documentary anchor. The J4 deferral guard was retired when J4
+    shipped — see `test_j4_stage_6_backend.py::
+    test_onboarding_sprint_j1_j4_complete` for the post-J4
+    invariants. A_LOG.md "J4 build (Stage 6) — IMPLEMENTATION"
+    entry records the retirement decision."""
+    assert True
 
 
 # ── J3.F7 — No J2 door-allow-list regression ─────────────────────────

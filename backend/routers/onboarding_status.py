@@ -128,6 +128,17 @@ async def _compute_status(account: Dict[str, Any]) -> Dict[str, Any]:
     # has both seen the Trust Center tour AND landed on the chat
     # composer at least once.
     first_chat_seen = bool(fs.get("first_chat_seen"))
+    # J1-J2 stage flags — derived to give the J-sprint-closed guard
+    # a single payload to assert against (spec §6 G18 + G21).
+    # `intake_complete` is true once the 3-question intake has been
+    # submitted (`current_step` advances past "intake"). `door_taken`
+    # surfaces the J2 G21 door slot the user picked (cycle / upload
+    # / solve / demo) or null if no door yet.
+    intake_complete = bool(
+        fs.get("intake")
+        or fs.get("current_step") in ("door", "working", "done")
+    )
+    door_taken = fs.get("door_taken")
     onboarding_complete = bool(tc_introduced and first_chat_seen)
 
     return {
@@ -150,6 +161,8 @@ async def _compute_status(account: Dict[str, Any]) -> Dict[str, Any]:
             "trust_center_introduced": tc_introduced,
         },
         "onboarding_journey": {
+            "first_session_intake_complete": intake_complete,
+            "door_taken": door_taken,
             "first_doc_uploaded": first_doc_uploaded,
             "trust_center_introduced": tc_introduced,
             "first_chat_seen": first_chat_seen,

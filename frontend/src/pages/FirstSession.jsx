@@ -307,9 +307,15 @@ function FirstSessionDoor({ intake, onDoorChosen, onSkip, refreshAuth }) {
         // the door key remains "solve" to keep prior intake records
         // matchable; only the navigation target reflects the Phase 13.1
         // rename.
+        //
+        // J4 (2026-05-25, G30 ratified) — pass the de-identified Q3
+        // intake answer as `?starter=` so the Solva framing surface
+        // pre-populates the composer per spec §3 Stage 6 step 1.
+        // `intake.top_of_mind` is the Shield-redacted value persisted
+        // by J1's G18 wiring, NEVER the raw text.
         try { if (refreshAuth) await refreshAuth(); } catch { /* noop */ }
-        const intent = intake?.top_of_mind || "";
-        const q = intent ? `?intent=${encodeURIComponent(intent)}` : "";
+        const starter = intake?.top_of_mind || "";
+        const q = starter ? `?starter=${encodeURIComponent(starter)}` : "";
         navigate(`/app/solva${q}`);
         return;
       }

@@ -53,4 +53,12 @@ T1 ran clean against the spec. No off-scope issues surfaced.
 
 ## J2 closure observation (2026-05-25) — LOW PRIORITY
 
-- **Transient dev-server ESLint overlay in `AppShell.jsx` intermittently obscures UI during manual QA.** Non-blocking, dev-only. Schedule a lint cleanup pass when convenient. Production builds are unaffected (the overlay only renders when CRA's `WDS_SOCKET_HOST` dev hot-reload signals an ESLint error).
+- ~~**Transient dev-server ESLint overlay in `AppShell.jsx` intermittently obscures UI during manual QA.** Non-blocking, dev-only. Schedule a lint cleanup pass when convenient. Production builds are unaffected (the overlay only renders when CRA's `WDS_SOCKET_HOST` dev hot-reload signals an ESLint error).~~
+
+  **RESOLVED 2026-05-25 at J4 ship.** The two raw-`fetch()` calls in `AppShell.jsx::onbStatus`+`postOnb` (legacy from the J1 b48ee23 cherry-pick) were migrated to the project's `api` client per `memory/sprints/LINT_API_CLIENT_RULE.md`. Dev overlay now compiles clean.
+
+## J3 closure observation (2026-05-25) — RESOLVED at J4 ship
+
+- ~~`TrustCenterTour.jsx` line 27 imports `api` as a default export (`import api from "../../lib/api"`) but `lib/api.js` exports `api` as a NAMED export only. This caused a hard compile error visible in the dev-server overlay on every page mount.~~
+
+  **RESOLVED 2026-05-25 at J4 ship.** Import switched to `import { api } from "../../lib/api"`. Module compiles clean.

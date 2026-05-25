@@ -344,7 +344,7 @@ function RecentSessionsCollapsible({ sessions, onResume, onDiscard, onStartGuide
 }
 
 
-export default function SolvaLanding({ variant = "auth", intakeSeed = null }) {
+export default function SolvaLanding({ variant = "auth", intakeSeed = null, intakeStarter = null }) {
   const navigate = useNavigate();
   const [recent, setRecent] = useState([]);
   const [focusIdx, setFocusIdx] = useState(-1);
@@ -376,6 +376,13 @@ export default function SolvaLanding({ variant = "auth", intakeSeed = null }) {
         params.set("seed_kind", intakeSeed.kind);
         params.set("seed_id", intakeSeed.id);
         if (intakeSeed.preview) params.set("seed_preview", intakeSeed.preview);
+      }
+      // J4 (2026-05-25, G30 ratified) — forward the de-identified
+      // first-session "starter" (intake.top_of_mind, Shield-redacted
+      // by J1's G18) onto the framing surface so the Phase D composer
+      // pre-fills with the user's stated concern.
+      if (intakeStarter) {
+        params.set("starter", intakeStarter);
       }
       navigate(`/app/solva/phase-d/session/new?${params.toString()}`);
     } else {

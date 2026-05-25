@@ -24,7 +24,7 @@
  */
 import React, { useState, useCallback, useEffect } from "react";
 import { X as XIcon, ArrowRight, ArrowLeft, ShieldCheck } from "lucide-react";
-import api from "../../lib/api";
+import { api } from "../../lib/api";
 
 // Spec §3 Stage 5 — verbatim tour-stop copy. Each entry is treated
 // as a literal by tests (see test_j3_stage_5_trust_center_tour).

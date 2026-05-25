@@ -4,6 +4,7 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 // nav entrance caused a first-paint flash and added zero value after the
 // initial visit. Plain divs render instantly.
 import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
 import Logo from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -182,20 +183,19 @@ export default function AppShell({ children }) {
   // Center / Help one-shot tooltips for grandfathered users. Read
   // from `/api/users/me/onboarding-status`. Banner + tooltips are
   // purely additive surfaces — they DO NOT block any flow.
+  //
+  // J4 (2026-05-25) — Migrated from raw `fetch()` to the project's
+  // `api` client per `memory/sprints/LINT_API_CLIENT_RULE.md`
+  // (Patch 24B). The previous `fetch()` calls bypassed the bearer-
+  // token + X-Active-Context interceptors and triggered ESLint
+  // overlays in dev. The `api` client carries them automatically.
   const [onbStatus, setOnbStatus] = useState(null);
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const token = localStorage.getItem("akki_token");
-        if (!token) return;
-        const r = await fetch(
-          `${process.env.REACT_APP_BACKEND_URL}/api/users/me/onboarding-status`,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-        if (!r.ok) return;
-        const data = await r.json();
-        if (!cancelled) setOnbStatus(data);
+        const r = await api.get("/users/me/onboarding-status");
+        if (!cancelled) setOnbStatus(r.data);
       } catch (_e) {
         /* non-fatal: shell still renders without banner */
       }
@@ -205,12 +205,8 @@ export default function AppShell({ children }) {
 
   const postOnb = async (suffix) => {
     try {
-      const token = localStorage.getItem("akki_token");
-      const r = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/users/me/onboarding-status${suffix}`,
-        { method: "POST", headers: { Authorization: `Bearer ${token}` } },
-      );
-      if (r.ok) setOnbStatus(await r.json());
+      const r = await api.post(`/users/me/onboarding-status${suffix}`);
+      setOnbStatus(r.data);
     } catch (_e) {
       /* non-fatal */
     }
@@ -454,7 +450,15 @@ export default function AppShell({ children }) {
           {/* J1 — Help link in the top-bar. The /help page (Phase E)
               renders AKKI_FEATURES_AND_FUNCTIONALITY.md so users have
               an in-app reference to every feature. First-time tooltip
-              suppressed by ``help_tooltip_dismissed_at``. */}
+              suppressed by ``help_tooltip_dismissed_at``.
+
+              J4 (2026-05-25, G31 ratified) — DOM-unconditional rule
+              (closeout §5.1, §5.7). The tooltip wrapper renders on
+              every page load; visibility is governed by the
+              `data-tooltip-visible` attribute + CSS classes that flip
+              between `pointer-events-auto` and `pointer-events-none
+              invisible opacity-0`. This lets tests assert the tooltip
+              DOM exists regardless of timing. */}
           <div className="relative">
             <button
               type="button"
@@ -472,22 +476,26 @@ export default function AppShell({ children }) {
               <BookOpen className="w-4 h-4" strokeWidth={1.7} />
               <span className="hidden sm:inline">Help</span>
             </button>
-            {onbStatus?.help_tooltip?.show && (
-              <div
-                role="tooltip"
-                data-testid="help-tooltip"
-                className="absolute top-full mt-2 right-0 w-64 bg-[var(--ink)] text-[var(--cream)] text-[11.5px] px-3 py-2 rounded-md shadow-lg z-50"
-              >
-                <div className="font-medium mb-0.5">Help is one click away</div>
-                <div className="text-[var(--cream)]/85 leading-snug">
-                  Tap Help any time. Akki has a built-in tour of every screen.
-                </div>
-                <div
-                  className="absolute -top-1 right-6 w-2 h-2 bg-[var(--ink)] rotate-45"
-                  aria-hidden="true"
-                />
+            <div
+              role="tooltip"
+              data-testid="help-tooltip"
+              data-tooltip-visible={onbStatus?.help_tooltip?.show ? "true" : "false"}
+              className={
+                "absolute top-full mt-2 right-0 w-64 bg-[var(--ink)] text-[var(--cream)] text-[11.5px] px-3 py-2 rounded-md shadow-lg z-50 " +
+                (onbStatus?.help_tooltip?.show
+                  ? "pointer-events-auto opacity-100"
+                  : "pointer-events-none invisible opacity-0")
+              }
+            >
+              <div className="font-medium mb-0.5">Help is one click away</div>
+              <div className="text-[var(--cream)]/85 leading-snug">
+                Tap Help any time. Akki has a built-in tour of every screen.
               </div>
-            )}
+              <div
+                className="absolute -top-1 right-6 w-2 h-2 bg-[var(--ink)] rotate-45"
+                aria-hidden="true"
+              />
+            </div>
           </div>
 
           {/* Phase 13.3 — discoverable shortcut overlay trigger. Press ?

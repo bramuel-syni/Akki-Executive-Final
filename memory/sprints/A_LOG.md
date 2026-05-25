@@ -826,3 +826,168 @@ $ cd /app/backend && python -m pytest -q --no-header --tb=no
 - The 1 failure is the same pre-existing `test_real_requirements_file_is_clean`.
 
 **J3 chunk status: READY FOR e1_tester binary verification.**
+
+---
+
+## 2026-05-25 — J3 closure
+
+**e1_tester verdict: 4/4 PASS.** Stage 4 first-doc-uploaded flag flip live-verified. G24 verbatim 400 + G25 verbatim 413 confirmed against real upload pipeline. Stage 5 Trust Center 3-stop tour overlay verified with G27 tooltip refinement, G28 empty-state copy, and DOM-unconditional root. Dismiss endpoint flips flag and the tour does not re-appear.
+
+**Git tag `v-post-j3`** created (commit at J3-closed boundary; local-only).
+
+**J3 status: CLOSED.**
+
+---
+
+## 2026-05-25 — J4 build (Stage 6) — IMPLEMENTATION
+
+### Pre-J4 hygiene
+| Artifact | Path | UTC timestamp |
+| --- | --- | --- |
+| Git tag | `v-pre-a` (still in force) + `v-post-j3` (J3 boundary, local-only) | — |
+| Mongo dump | `/app/backup/pre_j4_20260525T133436Z/` (73 MB, 240 collections) | 2026-05-25T13:34:36Z |
+
+### G30 — Chat starter-prompt seeding from intake.top_of_mind
+
+Spec §3 Stage 6 step 1 + ratified §6 G30. The de-identified Q3 intake answer (Shield-redacted by J1's G18 wiring) is forwarded to the Solva framing composer as the verbatim starter prompt. User can edit or submit as-is.
+
+**Frontend (composition — three files, NO guardrail file touched):**
+
+| File | Change |
+| --- | --- |
+| `frontend/src/pages/FirstSession.jsx` | Door C `choose` branch — rename URL param from `?intent=<top_of_mind>` to `?starter=<top_of_mind>` (spec verbatim). The seed value is `intake?.top_of_mind` — already de-identified by G18 backend wiring. |
+| `frontend/src/pages/SolvaApp.jsx` | New `useMemo` reads `params.get("starter")` once on mount; state-held `starter` is forwarded via the `intakeStarter={starter}` prop to `SolvaLanding`. The URL param is stripped after capture (history.replace) so refresh doesn't re-seed. |
+| `frontend/src/components/solva/SolvaLanding.jsx` | New `intakeStarter` prop accepted on the default-export. `onSelectCard` propagates the starter onto the phase-d/session/new URL via `params.set("starter", ...)`. |
+| `frontend/src/pages/SolvaPhaseDSession.jsx` | Boot useEffect: reads `searchParams.get("starter")` AND falls back to `api.get("/me/first-session")` AND calls `setDraft(...)` with the resolved value. The fallback path covers the spec §3 Stage 6 "OR auto-populates from `accounts.first_session.intake.top_of_mind` on home mount" branch. Same effect POSTs `/users/me/onboarding-status/first-chat-seen` so the J-sprint completion flag rolls true. |
+
+**CRITICAL Shield invariant** — verified across the chain:
+- The seed flows from `accounts.first_session.intake.top_of_mind` which J1's G18 wired through `deidentifier.deidentify()`. The raw text never crossed the Shield boundary at intake time.
+- The forwarded URL param `?starter=` carries the already-de-identified value (e.g. `Email me at [[ENT_EMAIL_001]] about ...`).
+- The Phase D `submit_framing` handler routes the framing text through `classify_situation` + `run_frame_audit`, both of which invoke `invoke_via_shield`. Source-level chain verified by `test_j4_b4_phase_d_submit_framing_chain_through_shield`.
+
+### G29 + G31 — Help tooltip refinement + restoration
+
+Spec §3 Stage 6 step 6 + ratified §6 G29 + G31. The Help top-bar tooltip wrapper was restored in J1 from the b48ee23 cherry-pick. J4 applies the G29 verbatim copy refinement AND completes the G31 restoration by enforcing DOM-unconditional rendering (closeout §5.1, §5.7).
+
+**Frontend (`frontend/src/components/layout/AppShell.jsx`):**
+
+- G29 verbatim copy applied: *"Tap Help any time. Akki has a built-in tour of every screen."* (was the b48ee23 placeholder *"Full reference of what Akki can do."*). Heading is *"Help is one click away"*.
+- G31 DOM-unconditional refactor: the `data-testid="help-tooltip"` wrapper now ALWAYS emits. Visibility is governed by the `data-tooltip-visible="true|false"` attribute plus CSS class flip between `pointer-events-auto opacity-100` (shown) and `pointer-events-none invisible opacity-0` (hidden). The previous `{onbStatus?.help_tooltip?.show && (...)}` conditional gate is gone. The same JSX pattern as J3's `TrustCenterTour` root.
+- Tooltip wrapper width bumped from `w-56` to `w-64` to accommodate the longer ratified G29 copy.
+
+### Onboarding completion / `first_chat_seen`
+
+Spec §3 Stage 6 acceptance — the J-sprint is considered complete once both `trust_center_introduced` AND `first_chat_seen` are true. The spec does NOT define a celebration string; the J4 implementation introduces NONE.
+
+**Backend (`backend/routers/onboarding_status.py`):**
+
+- `_compute_status` extended: the `onboarding_journey` payload block now carries all 5 J1/J2/J3/J4 status flags — `first_session_intake_complete` (J1, derived from `intake != null` OR `current_step` past "intake"), `door_taken` (J2), `first_doc_uploaded` (J3), `trust_center_introduced` (J3), `first_chat_seen` (J4), plus the rollup `complete` flag.
+- `POST /api/users/me/onboarding-status/first-chat-seen` was added in a pre-J4 cherry-forward stash and is unchanged. Idempotent. Frontend boots Phase D session, the boot useEffect fires the POST.
+
+### Tests written
+
+| File | Lines | Purpose |
+| --- | --- | --- |
+| `backend/tests/test_j4_stage_6_backend.py` | 260 | 5 tests — first-chat-seen idempotent flag flip; G30 intake top_of_mind de-identified at the J4 boundary; GET /me/first-session exposes the de-identified seed; Phase D submit_framing routes through invoke_via_shield (cross-file source chain); `test_onboarding_sprint_j1_j4_complete` — the final J-sprint closure guard (ALLOWED_DOORS pinned + 5 status flags emitted). |
+| `backend/tests/test_j4_stage_6_frontend.py` | 290 | 9 tests — Door C `?starter=` URL param chain (intake.top_of_mind → encoded → /app/solva); SolvaApp captures `?starter=` and forwards via prop; SolvaLanding propagates starter onto Phase D URL; Phase D boot reads `?starter=` AND falls back to `/me/first-session` AND calls setDraft; Phase D boot POSTs `/first-chat-seen`; G29 verbatim Help tooltip copy + anti-regression; G31 DOM-unconditional Help tooltip (no `&& (` gate); J4.F8 — no non-spec celebration copy; J4.F9 — anti-regression: no `?intent=` residue. |
+
+**Also updated:**
+
+- `backend/tests/test_j3_stage_4_5_frontend.py` — the J3.F6 J4-deferral guard test (`test_j3_f6_no_j4_chat_starter_scope_pulled_forward`) was retired at J4 ship per orchestrator brief. Replaced with `test_j3_f6_retired_at_j4_ship` as a documentary anchor that records the retirement decision (closeout §5.8 — TEST-LEDGER discipline).
+
+### Pre-fix anti-false-green evidence
+
+```
+$ cd /app && git checkout v-post-j3 -- \
+    frontend/src/pages/FirstSession.jsx \
+    frontend/src/pages/SolvaApp.jsx \
+    frontend/src/components/solva/SolvaLanding.jsx \
+    frontend/src/pages/SolvaPhaseDSession.jsx \
+    frontend/src/components/layout/AppShell.jsx \
+    backend/routers/onboarding_status.py
+$ cd /app/backend && pytest tests/test_j4_stage_6_*.py
+FAILED tests/test_j4_stage_6_frontend.py::test_j4_f1_first_session_solve_door_uses_starter_param_chain
+FAILED tests/test_j4_stage_6_frontend.py::test_j4_f2_solva_app_captures_starter_and_forwards_to_landing
+FAILED tests/test_j4_stage_6_frontend.py::test_j4_f3_solva_landing_forwards_starter_to_phase_d_url
+FAILED tests/test_j4_stage_6_frontend.py::test_j4_f4_phase_d_session_reads_starter_and_sets_draft
+FAILED tests/test_j4_stage_6_frontend.py::test_j4_f5_phase_d_session_posts_first_chat_seen_on_mount
+FAILED tests/test_j4_stage_6_frontend.py::test_j4_f6_g29_verbatim_help_tooltip_copy
+FAILED tests/test_j4_stage_6_frontend.py::test_j4_f7_help_tooltip_dom_unconditional
+FAILED tests/test_j4_stage_6_frontend.py::test_j4_f9_no_intent_param_residue_in_solve_branch
+FAILED tests/test_j4_stage_6_backend.py::test_j4_b1_first_chat_seen_endpoint_flips_flag_idempotent
+FAILED tests/test_j4_stage_6_backend.py::test_onboarding_sprint_j1_j4_complete
+10 failed, 4 passed
+```
+
+**10/14 FAIL pre-fix.** The 4 that pass are the J4-boundary invariants that should already be green pre-J4: J4.B2 (G18 intake redaction — J1 territory), J4.B3 (GET first-session exposes redacted — J1 territory), J4.B4 (Shield wiring on Phase D submit_framing — pre-existing call chain), J4.F8 (no celebration copy — pre-J4 has none).
+
+### Post-fix evidence
+
+```
+$ pytest tests/test_j4_*.py tests/test_j3_*.py tests/test_j2_*.py tests/test_j1_*.py
+83 passed, 7 warnings in 14.14s
+```
+
+**83/83 PASS** (J1=24 + J2=22 + J2.3 backend=4 + J2.3-fix.A/D=6 + J3=13 + J4=14).
+
+### Files changed (J4 — final inventory)
+
+**Backend (composition — no guardrail file touched):**
+- `backend/routers/onboarding_status.py` — `_compute_status` extended with `first_session_intake_complete` + `door_taken` in the `onboarding_journey` block.
+- `backend/tests/test_j4_stage_6_backend.py` — NEW (5 tests).
+- `backend/tests/test_j4_stage_6_frontend.py` — NEW (9 tests).
+- `backend/tests/test_j3_stage_4_5_frontend.py` — J3.F6 J4-deferral guard retired in place (documentary anchor remains).
+
+**Frontend (composition):**
+- `frontend/src/pages/FirstSession.jsx` — Door C `?intent=` → `?starter=` rename.
+- `frontend/src/pages/SolvaApp.jsx` — `?starter=` capture + forward via prop.
+- `frontend/src/components/solva/SolvaLanding.jsx` — `intakeStarter` prop + propagation onto Phase D URL.
+- `frontend/src/pages/SolvaPhaseDSession.jsx` — boot useEffect reads `?starter=` + fallback `/me/first-session` + POSTs `/first-chat-seen`.
+- `frontend/src/components/layout/AppShell.jsx` — Help tooltip DOM-unconditional refactor (G31).
+
+**Documentation:**
+- `memory/sprints/A_LOG.md` — this entry.
+
+**Backend guardrail files touched: 0.** Verified by `git diff --name-only v-post-j3..HEAD` excluding `services/synisense/*`, `services/llm_router.py`, `services/clamav_service.py`, `routers/trust_center.py`, `services/trust_center.py`, `routers/admin_audit_invariant.py` — none modified.
+
+### J5 / future scope NOT pulled forward
+
+- Demo visibility across Document Journal / Work Studio / Monitor list endpoints — still parked at J5.
+- Cycle Setup Wizard `intake_seed=1` Q3 fallback prefill — still parked at J5.
+- Re-engagement nudge after N days — still parked at J5.
+- Onboarding celebration copy — NOT introduced (spec doesn't define one; J4.F8 enforces).
+
+### Full pytest
+
+```
+$ cd /app/backend && python -m pytest -q --no-header --tb=no
+1 failed, 1193 passed, 490 skipped, 86 warnings in 245.65s (4:05)
+```
+
+**1193 passed · 490 skipped · 1 failed.**
+
+- Pre-J4 baseline (post-J3): 1179 passed.
+- Post-J4: **1193 passed (+14 — exactly the 14 new test_j4_stage_6_*.py tests).** Zero regressions.
+- 490 skipped — UNCHANGED.
+- The 1 failure is the same pre-existing `test_real_requirements_file_is_clean`.
+
+### Spec invariants check
+- G30 starter prompt verbatim + de-identified seeding: ✓ (J4.B2 + J4.B3 + J4.F1 + J4.F2 + J4.F3 + J4.F4 cover it end-to-end).
+- G29 Help tooltip verbatim: ✓ (J4.F6).
+- G31 restoration refinement (DOM-unconditional): ✓ (J4.F7).
+- Chat send still routes through Shield + llm_router: ✓ (J4.B4 cross-file source chain).
+- DOM-unconditional Help tooltip + completion state: ✓ (J4.F7 + J4.F8).
+- No guardrail files modified: ✓ (documentary anchor + git diff verified).
+- J-sprint-closed guard test passes: ✓ (`test_onboarding_sprint_j1_j4_complete`).
+
+**J4 chunk status: READY FOR e1_tester binary verification of J4.**
+
+### Late-pass backlog hygiene (smoke-screenshot triggered, in-scope minor)
+
+Smoke screenshot caught two pre-existing dev-server overlay issues (both predated J4 — see `POST_T5_BACKLOG.md`):
+
+1. `TrustCenterTour.jsx` (J3 cherry-pick) used a default `import api` against `lib/api`'s named-only export — hard compile error on every page mount. Fix: switched to `import { api } from "../../lib/api"`.
+2. `AppShell.jsx::onbStatus` + `postOnb` (J1 cherry-pick from b48ee23) used raw `fetch()` calls — ESLint overlay triggered by `no-restricted-syntax` per `LINT_API_CLIENT_RULE.md`. Fix: migrated both calls to the project's `api` client.
+
+Both fixes are surgical and have no behavior change beyond clearing the dev overlay. `POST_T5_BACKLOG.md` entries marked RESOLVED. All J-suite tests still 83/83 green post-fix.
+

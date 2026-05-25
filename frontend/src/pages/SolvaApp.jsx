@@ -30,12 +30,24 @@ export default function SolvaApp() {
   }, []);
   const [seed] = useState(initialSeed);
 
+  // J4 (2026-05-25, G30 ratified spec §3 Stage 6) — capture the
+  // de-identified Q3 intake "starter" once on mount. Used by Phase D
+  // framing to pre-populate the composer. Flows through state so a
+  // URL refresh doesn't re-seed; SolvaLanding propagates it onto the
+  // phase-d/session/new URL when the user picks a card.
+  const initialStarter = useMemo(() => {
+    return (params.get("starter") || "").trim() || null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [starter] = useState(initialStarter);
+
   // Strip the params from the URL so refresh doesn't re-seed.
   useEffect(() => {
-    if (initialSeed) {
+    if (initialSeed || initialStarter) {
       const next = new URLSearchParams(params);
       next.delete("seed_kind");
       next.delete("seed_id");
+      next.delete("starter");
       setParams(next, { replace: true });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -62,7 +74,7 @@ export default function SolvaApp() {
             View audit timeline →
           </a>
         </div>
-        <SolvaLanding variant="auth" intakeSeed={seed} />
+        <SolvaLanding variant="auth" intakeSeed={seed} intakeStarter={starter} />
       </WorkspaceEntryGate>
     </AppShell>
   );

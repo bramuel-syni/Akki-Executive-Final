@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, ArrowRight, ShieldCheck, Paperclip, FileText, X } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
 import {
   createPhaseDSession,
   getPhaseDSession,
@@ -137,6 +138,19 @@ export default function SolvaPhaseDSession() {
   // pass it to the create endpoint. The Phase D backend pre-populates
   // the framing field, attaches references to Layer 0, and stores
   // `source_handoff` provenance on the session.
+  //
+  // J4 (2026-05-25, G30 ratified spec §3 Stage 6) — when the URL
+  // carries `?starter=<text>` (forwarded by FirstSession Door C via
+  // SolvaApp+SolvaLanding) the framing composer pre-populates with
+  // that string. Falls back to fetching `accounts.first_session.
+  // intake.top_of_mind` (the Shield-redacted Q3 answer persisted by
+  // J1's G18 wiring) when the URL is bare but the user hasn't yet
+  // had a chat. Either way, the seed flowing through is ALREADY
+  // de-identified; the raw text never crossed the Shield boundary.
+  //
+  // On first mount of a fresh session we also POST
+  // `/users/me/onboarding-status/first-chat-seen` so the J-sprint
+  // completion flag flips. Idempotent server-side.
   useEffect(() => {
     let cancelled = false;
     async function boot() {
@@ -149,6 +163,7 @@ export default function SolvaPhaseDSession() {
       const seedKind = (searchParams.get("seed_kind") || "").trim();
       const seedId = (searchParams.get("seed_id") || "").trim();
       const seedPreview = (searchParams.get("seed_preview") || "").trim();
+      const urlStarter = (searchParams.get("starter") || "").trim();
       let seedPayload = null;
       if (seedKind && seedId) {
         // Map URL `seed_kind` short labels to the backend's source enum.
@@ -174,13 +189,39 @@ export default function SolvaPhaseDSession() {
         });
         if (cancelled) return;
         setSession(fresh);
-        if (seedPayload && fresh.initialFraming) setDraft(fresh.initialFraming);
+        // J4 G30 — populate draft from (a) backend-resolved
+        // initialFraming from a seedPayload, else (b) the URL
+        // `?starter=` value, else (c) the de-identified
+        // `intake.top_of_mind` from the user's first-session intake.
+        // All three sources are Shield-clean before they reach the
+        // composer: seedPayload preview is Shield-deidentified by the
+        // backend pipeline; the URL `?starter=` is forwarded from
+        // FirstSession.jsx which reads `intake.top_of_mind` (G18 wires
+        // Shield on intake submit); the API fallback reads the same
+        // field. Raw text never touches this composer.
+        if (seedPayload && fresh.initialFraming) {
+          setDraft(fresh.initialFraming);
+        } else if (urlStarter) {
+          setDraft(urlStarter);
+        } else {
+          try {
+            const fs = await api.get("/me/first-session");
+            const fallback = (fs?.data?.state?.intake?.top_of_mind || "").trim();
+            if (!cancelled && fallback) setDraft(fallback);
+          } catch { /* swallow — leave composer blank if fetch fails */ }
+        }
         navigate(`/app/solva/phase-d/session/${fresh.sessionId}`, { replace: true });
       } catch (e) {
         setError(`${e?.name || "Error"}: ${(e?.message || "").slice(0, 200)}`);
       } finally {
         if (!cancelled) setBusy(false);
       }
+      // J4 G30 — mark first chat seen. Idempotent on the server.
+      // Fire-and-forget — flip is purely accounting and must NEVER
+      // block the user from typing.
+      try {
+        await api.post("/users/me/onboarding-status/first-chat-seen");
+      } catch { /* non-fatal */ }
     }
     boot();
     return () => { cancelled = true; };
