@@ -425,3 +425,74 @@ Pending the running suite. Expected count change:
 ### Status
 
 **Step 4 IN PROGRESS.** Implementation + tests landed; pending e1_tester verification.
+
+---
+
+## 2026-05-25 — Step 4 closure
+
+**e1_tester verdict: 4/4 PASS.** Pytest counts consistent (1248 passing / 453 skipped). Archived files correctly excluded from pytest discovery (the `.py.archived` extension is not collected). No assertion weakening detected across the 19 new tests. The unrelated pre-existing `test_real_requirements_file_is_clean` failure logged for a future housekeeping pass (see `POST_T5_BACKLOG.md`).
+
+**Git tag `v-post-hardening-step-4`** created (local-only). Marks the post-Step-4 worktree boundary; Step 5 (pure docs) starts here.
+
+**Step 4 status: CLOSED.**
+
+---
+
+## Step 5 — Friendly-tester rollout checklist (pure docs)
+
+### Goal
+
+A one-page operator checklist for running a controlled rollout of the onboarding flow to 5–10 friendly testers, catching breakage early, and triaging what comes back. Closes the "honest answer" gap from the orchestrator brief — onboarding has been code-verified (1248 tests) but never seen by real users.
+
+### Deliverable
+
+**Created:** `/app/memory/sprints/FRIENDLY_TESTER_ROLLOUT_CHECKLIST.md` (~190 lines, 7 sections).
+
+### Sections
+
+1. **Pre-rollout checklist** — 6 checks the operator runs before sending invites (prod ClamAV state, demo seeds, tag inventory, Mongo snapshot, pytest baseline, spec version pin).
+2. **Tester invite template** — short copy-paste email, 4 must-call-outs (preview build, Coming-Soon billing, Shield promise, feedback channel).
+3. **Per-stage watch-list** — failure modes per onboarding stage 1–6, prioritised by likely user impact. PII-leak invariant flagged as the highest priority (Stage 2 + Stage 6 G30).
+4. **What to capture on every reported issue** — 5-item triage capture template (console output, URL, account email, exact step, screenshot).
+5. **Operator triage decision tree** — 8 symptom→priority→first-action rows. PII leak classified as `P0 CRITICAL — STOP THE ROLLOUT`.
+6. **Post-rollout closeout** — git tag, Mongo snapshot, findings aggregation, widen-vs-iterate verdict.
+7. **Quick references** — table of signup URL, probe endpoint, log paths, spec file, sprint logs.
+
+### Status
+
+**Step 5 status: CLOSED on landing.** Pure docs — no code, no tests, no e1_tester required.
+
+---
+
+## Hardening sprint — full closure
+
+All 5 steps of the production-hardening sprint are complete and verified.
+
+| Step | Scope | Verdict | Tag |
+| --- | --- | --- | --- |
+| **1** | ClamAV prod-status verification endpoint (`GET /api/healthz/clamav`) | e1_tester 3/3 PASS | `v-post-hardening-step-1` |
+| **2** | False-green pattern sweep (DOM-unconditional fix + auth-refresh fix + ESLint pinning + 2 latent B3 bugs caught) | e1_tester 4/4 PASS | `v-post-hardening-step-2` |
+| **3** | Demo seeds auto-apply on pod boot (idempotent, fail-soft, env-flag opt-out) | e1_tester 4/4 PASS | `v-post-hardening-step-3` |
+| **4** | Coverage-loss test triage (4 originals archived · 3 new in-process files · 19 new tests covering all 4 unbacked tier verdicts) | e1_tester 4/4 PASS | `v-post-hardening-step-4` |
+| **5** | Friendly-tester rollout checklist (pure docs) | doc-only | — |
+
+**Cumulative hardening-sprint verdict: 5/5 chunks CLOSED · 15 user-verified verdicts · +40 passing tests (1208 → 1248) · 37 skipped tests retired · zero regressions · zero guardrail file changes.**
+
+### Final post-hardening artefacts
+
+- `/app/memory/sprints/HARDENING_LOG.md` — this file, full per-step diary.
+- `/app/memory/sprints/FALSE_GREEN_AUDIT_LEDGER.md` — Step 2 audit + triage outcome.
+- `/app/scripts/hardening_step2_phase_a_audit.py` — Step 2 static-analysis script (preserved as a one-shot tool).
+- `/app/backend/routers/healthz_clamav.py` — Step 1 endpoint.
+- `/app/backend/tests/test_hardening_step{1,2,3,4}_*.py` — 22 anchor-chain tests pinning the hardening invariants.
+- `/app/backend/tests/_archived_coverage_loss/` — 4 archived E2E shells (Step 4) + README.
+- `/app/backend/tests/test_iter40_goals_kpi_in_process.py` + `test_iter41_signal_actions_in_process.py` + `test_iter19_polish_committee_blog_in_process.py` — 19 new in-process tests covering T1 D7 / T2.2 / T2.4 G11-G12 / T3.3 G8.
+- `/app/memory/sprints/FRIENDLY_TESTER_ROLLOUT_CHECKLIST.md` — Step 5 operator checklist.
+
+### Outstanding items (parked, not part of hardening)
+
+- `test_real_requirements_file_is_clean` — pre-existing failure, spaCy direct-URL refs at lines 33/34/185 of `backend/requirements.txt`. P3 housekeeping, parked in `POST_T5_BACKLOG.md`.
+- Friendly-tester batch 1 invite — operator action, follows the new checklist.
+- `SKIP_LEDGER` amnesty sprint — Step 4's harness-rewrite pattern could resurrect ~60-100 more skipped tests if a future sprint scopes the work. Not in flight.
+
+**Hardening sprint closed. Standing by for orchestrator dispatch of the next sprint.**

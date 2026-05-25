@@ -97,3 +97,15 @@ T1 ran clean against the spec. No off-scope issues surfaced.
   - Sketch: store the most recent seed-run result on a module global (or a single Mongo row in `boot_seed_status`) at the end of `on_startup_demo_seed`. New router `routers/healthz_boot_seed.py` exposes `GET /api/healthz/boot-seed` returning `{ran_at_utc, rows, delta, ok, error?}`. No auth (mirrors the clamav probe surface).
   - Not in flight. Pick up if/when a future admin-tooling sprint needs the wire format.
 
+
+## Hardening Step 4 closure observation (2026-05-25) — P3 HOUSEKEEPING
+
+- **spaCy `requirements.txt` cleanup** — the pre-existing `tests/test_requirements_guard.py::test_real_requirements_file_is_clean` fails because `requirements.txt` lines 33/34/185 carry direct-URL refs to `en_core_web_lg` / `en_core_web_sm`. This is the Patch-30 hotfix regression (the wheel pattern was set up earlier and the test never caught up).
+  - Files to touch: `backend/requirements.txt` (or the test itself — `tests/test_requirements_guard.py`).
+  - Two valid resolutions:
+    1. **Test-side fix** — rewrite the guard to allow the spaCy-wheel direct-URL pattern (the wheel reference IS the canonical way to pin a spaCy model version, so blocking it is the guard being too strict).
+    2. **Requirements-side fix** — switch to the `spacy download en_core_web_sm` post-install pattern (more fragile, less reproducible).
+  - **Recommended:** test-side fix. Verify spaCy model loading still works (Shield's de-identification uses `en_core_web_sm`; regression here would break G18).
+  - Carried forward from before the hardening sprint. Has been the sole pytest failure across Steps 1-4 (1248 passed · 1 pre-existing failure).
+  - Not in flight. Resolve in a future housekeeping pass.
+
