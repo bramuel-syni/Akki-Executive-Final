@@ -290,16 +290,31 @@ async def list_cycles(
     extended each row with intel fields for the Cycle Card visual:
     `agenda_count`, `team_count`, `readiness_pct`, `last_activity_at`,
     `next_action_hint`.
+
+    J2 (2026-05-25, G22 ratified): OR-includes rows where the
+    requesting account_id is in `seed_marker_visible_for` — the
+    demo-attached user sees the seeded `DEMO_T5_BACKLOG` cycle(s)
+    alongside their own without copying or mutating cross-context
+    ownership.
     """
-    filt: Dict[str, Any] = {"context_id": context_id}
+    account_id = ctx["account"]["id"]
+    # G22 — primary scope (user's own context) OR demo-visible rows.
+    primary_filter: Dict[str, Any] = {"context_id": context_id}
+    demo_filter: Dict[str, Any] = {"seed_marker_visible_for": account_id}
+    filt: Dict[str, Any] = {"$or": [primary_filter, demo_filter]}
     if q:
-        filt["title"] = {"$regex": re.escape(q.strip()), "$options": "i"}
+        title_re = {"$regex": re.escape(q.strip()), "$options": "i"}
+        primary_filter["title"] = title_re
+        demo_filter["title"] = title_re
 
     # Counts pre-status-filter (the filter-tab badges show the full
     # picture, not the post-filter result).
-    counts_filt = {"context_id": context_id}
-    if q:
-        counts_filt["title"] = filt["title"]
+    counts_filt: Dict[str, Any] = {
+        "$or": [
+            {"context_id": context_id, **({"title": primary_filter["title"]} if q else {})},
+            {"seed_marker_visible_for": account_id, **({"title": demo_filter["title"]} if q else {})},
+        ],
+    }
     counts_by_status = {
         "all":       await db.cycles.count_documents(counts_filt),
         "active":    await db.cycles.count_documents({**counts_filt, "status": "active"}),
@@ -308,7 +323,8 @@ async def list_cycles(
     }
 
     if status and status != "all":
-        filt["status"] = status
+        primary_filter["status"] = status
+        demo_filter["status"] = status
 
     total = await db.cycles.count_documents(filt)
 
@@ -351,7 +367,22 @@ async def get_cycle(
     cycle_id: str,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    row = await get_cycle_or_404(context_id, cycle_id)
+    # J2 (2026-05-25, G22 ratified) — demo-visibility read-through.
+    # If the cycle isn't in the user's own context but is tagged
+    # `seed_marker_visible_for: [account_id]`, return it as a demo
+    # read. No mutation rights — the user can VIEW but not edit
+    # demo rows.
+    row = await db.cycles.find_one(
+        {"id": cycle_id, "context_id": context_id}, {"_id": 0},
+    )
+    if not row:
+        account_id = ctx["account"]["id"]
+        row = await db.cycles.find_one(
+            {"id": cycle_id, "seed_marker_visible_for": account_id},
+            {"_id": 0},
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Cycle not found.")
     return await _hydrate_cycle(row)
 
 

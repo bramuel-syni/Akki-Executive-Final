@@ -35,6 +35,16 @@ J1 (2026-05-25) additions — ratified spec gaps:
 Both additions route through existing guardrail code paths
 (`deidentifier`, `db.contexts` writes) without modifying any
 guardrail file.
+
+J2 (2026-05-25) additions — ratified spec gaps:
+  * **G21 — 4-door layout**. `ALLOWED_DOORS` becomes
+    `{cycle, upload, solve, demo}`; the legacy `email` door is
+    retired per spec §6 G21.
+  * **G22 — Demo-attach mechanic**. Picking the `demo` door calls
+    `_attach_demo_to_account(account_id)` which $addToSet's the
+    account_id onto `seed_marker_visible_for` on every row tagged
+    `seed_marker = "DEMO_T5_BACKLOG"`. Idempotent. Writes the
+    `onboarding.demo_attached` audit row.
 """
 from __future__ import annotations
 
@@ -93,7 +103,45 @@ class CompleteIn(BaseModel):
 
 
 ALLOWED_ROLES = {"executive", "ned", "chair", "dual"}
-ALLOWED_DOORS = {"email", "upload", "solve"}
+ALLOWED_DOORS = {"cycle", "upload", "solve", "demo"}
+
+# J2 (2026-05-25, G22 ratified) — demo-attach seed-marker constant.
+# Matches the marker stamped by `scripts/seed_backlog_b_demo.py` and
+# governs which rows the `_attach_demo_to_account` helper updates.
+DEMO_SEED_MARKER = "DEMO_T5_BACKLOG"
+DEMO_LANDING_CYCLE_ID = "demo-t5backlog-cycle-001"
+
+# Collections that carry the DEMO_T5_BACKLOG seed marker. Update this
+# list when new demo-tagged collections are added by future seeds.
+DEMO_BEARING_COLLECTIONS = (
+    "work_studio_exports",
+    "cycles",
+    "cycle_agendas",
+    "objectives",
+    "projects",
+)
+
+
+async def _attach_demo_to_account(account_id: str) -> Dict[str, int]:
+    """G22 — Demo-attach mechanic.
+
+    Stamps `seed_marker_visible_for` on every row tagged
+    `seed_marker: "DEMO_T5_BACKLOG"`. Uses `$addToSet` so re-clicking
+    the demo door is idempotent (the per-collection update count is
+    the row count, but each row's `seed_marker_visible_for` array
+    does NOT duplicate the account_id).
+
+    Returns a per-collection summary `{collection: rows_touched}` for
+    the audit row's `metadata`.
+    """
+    summary: Dict[str, int] = {}
+    for coll_name in DEMO_BEARING_COLLECTIONS:
+        result = await db[coll_name].update_many(
+            {"seed_marker": DEMO_SEED_MARKER},
+            {"$addToSet": {"seed_marker_visible_for": account_id}},
+        )
+        summary[coll_name] = result.modified_count
+    return summary
 ALLOWED_ARTEFACTS = {"briefing", "solve_session"}
 
 
@@ -402,7 +450,45 @@ async def choose_door(
         )
         return {"state": state}
 
-    # email / upload — normal working-step flow.
+    # J2 (2026-05-25, G22 ratified) — demo door.
+    # Same exit semantics as `solve`: the user has reached an
+    # onboarded state because the demo cycle is already reachable.
+    # Stamps `seed_marker_visible_for` on every DEMO_T5_BACKLOG row
+    # (idempotent — $addToSet). Writes `onboarding.demo_attached`
+    # audit row per spec §3 Stage 3 guardrails.
+    if body.door == "demo":
+        attach_summary = await _attach_demo_to_account(current["id"])
+        state["door_taken"] = "demo"
+        state["current_step"] = "done"
+        state["status"] = "completed"
+        state["completed_at"] = _iso(_now())
+        state["artefact"] = {
+            "kind": "demo",
+            "id": DEMO_LANDING_CYCLE_ID,
+        }
+        await _persist_state(current["id"], state)
+        await write_audit(
+            ctx_id, current["id"], "first_session.door_demo",
+            "account", current["id"], {"door": "demo"},
+        )
+        await write_audit(
+            ctx_id, current["id"], "onboarding.demo_attached",
+            "cycle", DEMO_LANDING_CYCLE_ID,
+            {
+                "seed_marker": DEMO_SEED_MARKER,
+                "rows_visible_for_account": attach_summary,
+            },
+        )
+        await write_audit(
+            ctx_id, current["id"], "first_session.completed",
+            "account", current["id"], {"door": "demo", "exit": "demo_door"},
+        )
+        return {"state": state, "landing_cycle_id": DEMO_LANDING_CYCLE_ID}
+
+    # cycle / upload — normal working-step flow. Cycle door routes the
+    # user to the T5 Cycle Setup Wizard; upload door routes to the
+    # Document Journal upload sheet. Both leave `first_session` in
+    # `in_progress` until `/complete` is called.
     state["status"] = "in_progress"
     state["door_taken"] = body.door
     state["current_step"] = "working"

@@ -314,18 +314,17 @@ async def test_stage_2_invalid_role_returns_verbatim_message():
 
 
 # ── Guardrail invariant — no J2/J3/J4 scope pulled forward ──────────
-def test_no_j2_j3_j4_door_layout_changes_yet():
-    """J2's 4-door layout (G21) is NOT part of J1. The first-session
-    door step remains the 3-door `email|upload|solve` until J2 ships."""
+def test_no_j3_j4_door_layout_changes_yet():
+    """J2 has expanded the door allow-list to 4 doors per spec §3
+    Stage 3 (G21). J3/J4 do not introduce further door surfaces;
+    keep the contract pinned at the 4-door catalogue."""
     import routers.first_session as fs
-    # Current door allow-list — the cherry-pick + J1 work preserves
-    # the existing 3-door catalogue. The collection type is `set` per
-    # the existing module-level constant; assert membership rather than
-    # ordered equality.
-    assert set(fs.ALLOWED_DOORS) == {"email", "upload", "solve"}, fs.ALLOWED_DOORS
-    # NEGATIVE — none of the J2 door names exist yet.
-    assert "cycle" not in fs.ALLOWED_DOORS
-    assert "demo" not in fs.ALLOWED_DOORS
+    # Post-J2 contract: `{cycle, upload, solve, demo}`. The legacy
+    # `email` door is retired per spec §6 G21.
+    assert set(fs.ALLOWED_DOORS) == {"cycle", "upload", "solve", "demo"}, fs.ALLOWED_DOORS
+    assert "email" not in fs.ALLOWED_DOORS, (
+        "Legacy `email` door should be retired post-J2 per spec §6 G21."
+    )
 
 
 def test_no_guardrail_files_modified_in_j1():

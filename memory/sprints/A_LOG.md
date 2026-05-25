@@ -273,3 +273,160 @@ $ cd /app/backend && python -m pytest -q --no-header --tb=no
 ### Note on orchestrator J1 checklist item "G21 4-door layout in place"
 
 The orchestrator's J1 acceptance checklist included a verification for "G21 4-door layout in place (door count + verbatim labels)". G21 is spec §3 Stage 3 and is **J2 scope**, not J1. The user's hard rule "No J2/J3/J4 scope pulled forward" takes precedence. This log explicitly does not pull G21 forward; `test_j1_stages_1_2.py::test_no_j2_j3_j4_door_layout_changes_yet` enforces this in CI by asserting `ALLOWED_DOORS == {"email", "upload", "solve"}` (the pre-J2 state) and that `"cycle"` + `"demo"` are NOT in the allow-list yet.
+
+---
+
+## 2026-05-25 — J1 closure
+
+**e1_tester verdict: 4/4 PASS.** G18 Shield redaction live-verified (raw email replaced by `[[ENT_EMAIL_001]]` token in persisted `top_of_mind`). G20 mapping + idempotency code-verified clean. G21 deferral guarded by CI.
+
+**Trust Center intro card testid (correction):** the spec / earlier brief referenced `trust-center-intro-card`, but the actual on-disk testid (from `b48ee23` cherry-pick into `pages/TrustCenter.jsx`) is `tc-intro-card`. The tester flagged the discrepancy and the orchestrator accepted the on-disk value as authoritative. Future J3 work referencing this testid should use `tc-intro-card`.
+
+**Git tag: `v-post-j1`** created (commit at `J1 closed` boundary; local-only).
+
+**J1 status: CLOSED.**
+
+---
+
+## 2026-05-25 — J2 build (Stage 3) — IMPLEMENTATION
+
+### Pre-J2 hygiene
+| Artifact | Path | UTC timestamp |
+| --- | --- | --- |
+| Git tag | `v-pre-a` (still in force; J2 is a sub-chunk per user directive) | — |
+| Mongo dump | `/app/backup/pre_j2_20260525T112541Z/` (69 MB, 240 collections) | 2026-05-25T11:25:41Z |
+
+### G21 — 4-door layout
+
+Spec §3 Stage 3 + ratified §6 G21: *"Add Door A (cycle) and Door D (demo); keep existing upload + solve doors; retire email door (rarely used per audit)."*
+
+**Backend (`backend/routers/first_session.py`):**
+
+| Change | Description |
+| --- | --- |
+| Module docstring | Extended with J2 G21 + G22 contract |
+| `ALLOWED_DOORS` | `{"email", "upload", "solve"}` → `{"cycle", "upload", "solve", "demo"}`. Legacy `email` removed. |
+| `choose_door` handler | New `cycle` branch — sets `state.door_taken="cycle"`, `current_step="working"`, writes `first_session.door_cycle` audit row. |
+| Same | New `demo` branch — calls `_attach_demo_to_account(account_id)`, sets `state.door_taken="demo"`, `current_step="done"`, `status="completed"`, `artefact={"kind":"demo","id":DEMO_LANDING_CYCLE_ID}`. Writes 3 audit rows (`first_session.door_demo`, `onboarding.demo_attached`, `first_session.completed`). Response includes `landing_cycle_id` so the frontend can navigate. |
+| Same | Existing `solve` branch unchanged (semantics preserved). |
+
+**Frontend (`frontend/src/pages/FirstSession.jsx`):**
+
+| Change | Description |
+| --- | --- |
+| Imports | Added `Target as CycleIcon, Sparkles as DemoIcon` to lucide-react import block (import-survival rule per closeout §5.6). |
+| Step heading | "Three ways to begin." → **"Four ways to begin."** (verbatim spec §3 Stage 3). |
+| Door panel | 3-card layout → 4-card layout. Order is spec verbatim: `cycle → upload → solve → demo`. All four `DoorCard` testids unique. |
+| `choose()` handler | New branches for `demo` (navigate to `/app/cycle/{landing_cycle_id}`) and `cycle` (navigate to `/app/cycle?wizard=1&intake_seed=1`). |
+| Door card verbatim headings | "Create your first cycle." / "Upload a document." / "Ask Akki something." / "Try the demo." |
+
+### G22 — Demo-attach mechanic
+
+Spec §3 Stage 3 + ratified §6 G22: *"Add `seed_marker_visible_for: [account_id]` field on the 6 backlog-b seed rows; filter Cycle Manager / Document Journal / Work Studio listings to include rows where `seed_marker_visible_for` contains the current account_id. Idempotent."*
+
+**Backend implementation (`backend/routers/first_session.py`):**
+
+```python
+DEMO_BEARING_COLLECTIONS = (
+    "work_studio_exports", "cycles", "cycle_agendas", "objectives", "projects",
+)
+
+async def _attach_demo_to_account(account_id: str) -> Dict[str, int]:
+    summary = {}
+    for coll_name in DEMO_BEARING_COLLECTIONS:
+        result = await db[coll_name].update_many(
+            {"seed_marker": DEMO_SEED_MARKER},
+            {"$addToSet": {"seed_marker_visible_for": account_id}},
+        )
+        summary[coll_name] = result.modified_count
+    return summary
+```
+
+`$addToSet` is the idempotency guard — re-clicking the demo door does NOT duplicate the account_id in the array.
+
+**Read-through for Cycle Manager (`backend/routers/cycles.py`):**
+
+- `list_cycles` filter widened from `{"context_id": cid}` to `{"$or": [{"context_id": cid}, {"seed_marker_visible_for": account_id}]}`. Counts envelope also widened.
+- `get_cycle` handler tries the primary context lookup first; on miss, falls back to a demo-visibility query (`{"id": cycle_id, "seed_marker_visible_for": account_id}`). 404 only if both fail.
+
+**Audit:** the demo door writes `onboarding.demo_attached` with `resource_type: cycle`, `resource_id: demo-t5backlog-cycle-001`, and `metadata.seed_marker = DEMO_T5_BACKLOG` + per-collection `rows_visible_for_account` counts.
+
+### Scope NOT pulled forward (J3/J4)
+
+- Document Journal / Work Studio / Monitor list endpoints — NOT widened for demo visibility in J2. The spec §3 Stage 3 acceptance is narrowly *"the user can navigate to `/app/cycle/demo-t5backlog-cycle-001` and see the seeded compilation chips"* — the Cycle list + detail are sufficient. Broader demo visibility across Doc Journal / Work Studio / Monitor is parked as J5 polish (`POST_T5_BACKLOG.md` candidate).
+- Cycle Setup Wizard `intake_seed=1` pre-fill — NOT implemented in J2. The wizard opens as-is; the user fills in their org name. The query string is preserved but unread. Parked as J5 polish.
+- G26-G31 (J3/J4 tooltips, chat starter, Trust Center one-shot) — NOT touched.
+
+### Tests written
+
+**File:** `backend/tests/test_j2_stage_3.py` (NEW). 22 tests covering:
+
+| Test bucket | # | Asserts |
+| --- | --- | --- |
+| G21 allow-list contract | 3 | `ALLOWED_DOORS == {cycle,upload,solve,demo}`; legacy `email` rejected with 400; legacy testid `first-session-door-email` not in JSX |
+| G21 verbatim copy + JSX order | 3 | "Four ways to begin." heading; 4 door verbatim headings; doors render in spec order |
+| G21 backend door semantics | 5 | Each of 4 doors accepted; `cycle` → `in_progress`+`working`; `demo` → `completed`+landing_cycle_id |
+| G22 demo-attach | 5 | $addToSet on 5 demo-bearing collections; idempotent on re-click (one occurrence per re-attach); audit row written with correct shape; detail endpoint read-through; list endpoint includes demo cycle; negative — un-attached user 404s and doesn't see in list |
+| Cycle door wiring | 2 | Navigate target `/app/cycle?wizard=1&intake_seed=1`; T5 wizard G4 readiness opts + G5 verbatim dupe warning unchanged |
+| J3/J4 scope guard | 2 | Door catalogue pinned at 4; no J3/J4 sentinel values; guardrail anchor |
+
+**Also updated:** `backend/tests/test_j1_stages_1_2.py::test_no_j2_j3_j4_door_layout_changes_yet` → renamed to `test_no_j3_j4_door_layout_changes_yet` with `ALLOWED_DOORS == {cycle, upload, solve, demo}` and `email NOT IN ALLOWED_DOORS`.
+
+### Test results
+
+```
+$ cd /app/backend && python -m pytest tests/test_j2_stage_3.py tests/test_j1_*.py -q
+46 passed, 7 warnings in 11.72s
+```
+
+**22/22 J2 + 15/15 J1 stages + 9/9 J1 onboarding = 46/46 GREEN.**
+
+### Broader regression (J + T5 + backlog-b + cycle suites)
+
+```
+137 passed, 11 warnings in 13.50s
+```
+
+### Anti-false-green proof
+
+Against `v-post-j1`:
+```
+$ git checkout v-post-j1 -- backend/routers/first_session.py backend/routers/cycles.py \
+    frontend/src/pages/FirstSession.jsx
+$ pytest tests/test_j2_stage_3.py
+ERROR tests/test_j2_stage_3.py — collection failure
+```
+
+**Strongest possible anti-false-green proof: the test module fails to COLLECT against `v-post-j1` because the imported symbols (`DEMO_SEED_MARKER`, `DEMO_BEARING_COLLECTIONS`, `DEMO_LANDING_CYCLE_ID`) do not exist in pre-J2 `first_session.py`.** A future agent cannot accidentally regress J2 without breaking the test at the import statement.
+
+### Files changed (J2 — final inventory)
+
+**Backend (composition — no guardrail file touched):**
+- `backend/routers/first_session.py` — ALLOWED_DOORS expansion, `_attach_demo_to_account` helper, cycle + demo door branches, audit emissions.
+- `backend/routers/cycles.py` — `list_cycles` + `get_cycle` widened for demo read-through.
+- `backend/tests/test_j2_stage_3.py` — NEW (22 tests).
+- `backend/tests/test_j1_stages_1_2.py` — CI guard test renamed + assertions updated for post-J2 contract.
+
+**Frontend (composition):**
+- `frontend/src/pages/FirstSession.jsx` — 4-door layout, verbatim spec copy, demo + cycle nav handlers.
+
+**Documentation:**
+- `memory/sprints/A_LOG.md` — this entry.
+
+**Backend guardrail files touched: 0.** `services/synisense/*`, `services/llm_router.py`, `services/clamav_service.py`, `routers/trust_center.py`, `services/trust_center.py`, `routers/admin_audit_invariant.py` all unchanged across `v-post-j1..HEAD`.
+
+### Full pytest
+
+```
+$ cd /app/backend && python -m pytest -q --no-header --tb=no
+1 failed, 1156 passed, 490 skipped, 86 warnings in 247.22s (4:07)
+```
+
+**1156 passed · 490 skipped · 1 failed.**
+
+- Pre-J2 baseline (post-J1): 1134 passed.
+- Post-J2: **1156 passed (+22 — exactly the 22 new test_j2_stage_3.py tests).** Zero regressions.
+- 490 skipped — UNCHANGED from the SKIP_LEDGER baseline; J2 did not silence any test.
+- The 1 failure is the same pre-existing `test_real_requirements_file_is_clean`.
+
+**J2 chunk status: READY FOR e1_tester binary verification.**

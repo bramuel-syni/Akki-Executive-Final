@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { api, apiErrorMessage } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
-import { Upload as UploadIcon, Mail as MailIcon, HelpCircle as SolveIcon, Copy as CopyIcon, ArrowLeft, ArrowRight } from "lucide-react";
+import { Upload as UploadIcon, Mail as MailIcon, HelpCircle as SolveIcon, Copy as CopyIcon, ArrowLeft, ArrowRight, Target as CycleIcon, Sparkles as DemoIcon } from "lucide-react";
 
 const ROLE_OPTIONS = [
   { value: "executive", label: "Executive" },
@@ -299,7 +299,7 @@ function FirstSessionDoor({ intake, onDoorChosen, onSkip, refreshAuth }) {
     if (picking) return;
     setPicking(door);
     try {
-      await api.post("/me/first-session/choose-door", { door });
+      const res = await api.post("/me/first-session/choose-door", { door });
       if (door === "solve") {
         // Backend flipped status → completed. Refresh AuthContext BEFORE
         // navigating so `FirstSessionGuard` on `/app/solva` sees the new
@@ -311,6 +311,25 @@ function FirstSessionDoor({ intake, onDoorChosen, onSkip, refreshAuth }) {
         const intent = intake?.top_of_mind || "";
         const q = intent ? `?intent=${encodeURIComponent(intent)}` : "";
         navigate(`/app/solva${q}`);
+        return;
+      }
+      if (door === "demo") {
+        // J2 (G22) — backend stamped `seed_marker_visible_for` on the
+        // DEMO_T5_BACKLOG rows and flipped status → completed. Drop
+        // the user on the seeded demo cycle so the compilation chips
+        // are immediately reachable.
+        try { if (refreshAuth) await refreshAuth(); } catch { /* noop */ }
+        const landing = res?.data?.landing_cycle_id || "demo-t5backlog-cycle-001";
+        navigate(`/app/cycle/${landing}`);
+        return;
+      }
+      if (door === "cycle") {
+        // J2 (G21) — Door A routes to the T5 Cycle Setup Wizard.
+        // Backend left status in `in_progress`; the Setup Wizard
+        // owns the next-step UX. `intake_seed=1` cues the wizard to
+        // pre-fill the cycle name from the user's Q2 intake answer.
+        try { if (refreshAuth) await refreshAuth(); } catch { /* noop */ }
+        navigate(`/app/cycle?wizard=1&intake_seed=1`);
         return;
       }
       onDoorChosen(door);
@@ -325,27 +344,22 @@ function FirstSessionDoor({ intake, onDoorChosen, onSkip, refreshAuth }) {
   return (
     <div data-testid="first-session-door">
       <Overline>STEP 2 OF 4</Overline>
-      <H1>Three ways to begin.</H1>
+      <H1>Four ways to begin.</H1>
       <SubHead>Pick whichever's closest at hand. AKKI can take it from any of these.</SubHead>
 
       <div className={`flex flex-col gap-3 md:gap-4 ${isMobile ? "" : ""}`}>
-        {/* Email — mobile-emphasised, shown first on mobile */}
+        {/* Door A — Cycle (G21) */}
         <DoorCard
-          testId="first-session-door-email"
-          icon={MailIcon}
-          heading="Forward me your most recent board pack."
-          body="Forward any email — pack, minutes, KPI deck, or supplier note — to your inbound address. AKKI reads it, files it, and shows you what it spots."
-          cta="I'll forward one now"
-          onClick={() => choose("email")}
-          disabled={picking && picking !== "email"}
-        >
-          <InboundAddressBlock />
-          <p className="text-[12px] text-[var(--muted)] mt-3">
-            Once your email arrives, we'll pick up here.
-          </p>
-        </DoorCard>
+          testId="first-session-door-cycle"
+          icon={CycleIcon}
+          heading="Create your first cycle."
+          body="Set up a board or committee cycle in two minutes. Invite your team, choose the readiness target, and AKKI keeps the cadence."
+          cta="Set up a cycle"
+          onClick={() => choose("cycle")}
+          disabled={picking && picking !== "cycle"}
+        />
 
-        {/* Upload — de-emphasised on mobile */}
+        {/* Door B — Upload (existing) */}
         <DoorCard
           testId="first-session-door-upload"
           icon={UploadIcon}
@@ -358,15 +372,26 @@ function FirstSessionDoor({ intake, onDoorChosen, onSkip, refreshAuth }) {
           note={isMobile ? "Easier from desktop." : null}
         />
 
-        {/* Solva */}
+        {/* Door C — Ask Akki (existing solve door, retained semantics) */}
         <DoorCard
           testId="first-session-door-solve"
           icon={SolveIcon}
-          heading="Run Solva on what's on your mind."
+          heading="Ask Akki something."
           body="Take the sentence you just gave us into a 4-phase Solva session. AKKI surfaces, deepens, synthesises, locks in."
-          cta="Start a Solva session"
+          cta="Ask Akki"
           onClick={() => choose("solve")}
           disabled={picking && picking !== "solve"}
+        />
+
+        {/* Door D — Demo (G22) */}
+        <DoorCard
+          testId="first-session-door-demo"
+          icon={DemoIcon}
+          heading="Try the demo."
+          body="Skip the setup and walk straight into a sample board cycle with seeded papers, contributors, and a compiled board pack."
+          cta="Try the demo"
+          onClick={() => choose("demo")}
+          disabled={picking && picking !== "demo"}
         />
       </div>
 
