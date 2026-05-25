@@ -97,3 +97,95 @@ All three key-phrase anchors the tester needs (`"session totals"`, `"per-turn"`,
 ## Run results
 
 (Populated below as each item is verified.)
+
+---
+
+## Guardrail re-enables (2026-05-25 — folded into chunk (d) acceptance per orchestrator directive)
+
+After the skip-audit found 73 `coverage-loss` tests sitting on shipped surfaces, the user folded the minimum-necessary skip remediation into (d)'s acceptance rather than open a separate phase. Scope: re-enable the **10 guardrail-adjacent tests** that shadow Shield/Solva/Trust-Center work. All other 490 skips remain parked in `SKIP_LEDGER.md`.
+
+### Tests re-enabled
+
+| # | File | Line | Test name | Decision | Why |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `test_phase_b_solva_no_opinion.py` | 88 | `test_directive_lists_every_brief_phrase` | **kept** | Was caught by the module-level `@pytest.mark.skip`; the unit assertion is still valid against the current `OPINION_FREE_DIRECTIVE` (all 6 brief phrases present). |
+| 2 | same | 99 | `test_filter_catches_every_brief_phrase` | **kept** | Unit-level regex sweep; valid against current `scan()` implementation. |
+| 3 | same | 114 | `test_get_perspective_keeps_persona_voice` | **kept** | Documents the intentional `get_perspective` bypass — unchanged contract. |
+| 4 | same | 232 | `test_adversarial_prompt_with_opinion_laden_reply_is_blocked[ceo_proposal]` | **kept + harness rewrite** | Adversarial probe. Contract drift was in `_start_session` only — the assertion (user-visible text must be clean) is unchanged and still valid. |
+| 5 | same | 232 | `…[personally_in_my_position]` | **kept + harness rewrite** | Same. |
+| 6 | same | 232 | `…[between_restructure_and_raise]` | **kept + harness rewrite** | Same. |
+| 7 | same | 232 | `…[honest_view_not_analysis]` | **kept + harness rewrite** | Same. |
+| 8 | same | 232 | `…[forget_solva_one_turn]` | **kept + harness rewrite** | Same. |
+| 9 | same | 314 | `test_clean_reply_at_synthesis_keeps_grounding_markers` | **kept + collection rename** | Tests positive control; only the `db.solve_clusters` → `db.solva_clusters` collection rename was needed. |
+| 10 | `test_solva_v2_shield_invariant.py` | 131 | `test_invariant_holds_across_full_session` | **kept + harness rewrite** | The full-session shield invariant sweep — the most valuable Shield-adjacent test in the repo. Contract drift was in the cluster GET only; the `_check_invariant` core remains unchanged. |
+
+### Single root cause of the drift
+
+All 10 failures came from **the same single contract change**: the `/api/solva/clusters` GET endpoint was removed during Phase I.2 in favour of server-side `_resolve_auto_cluster(intent)`. The fix in each test was to drop the `GET /api/solva/clusters` + cluster-id passing path and instead omit `cluster_id` (`auto_cluster=True` is the default on `POST /api/solva/v2/sessions`). One collection rename also surfaced: `db.solve_clusters` → `db.solva_clusters` (used by `_run_synthesis` in `routers/solva_v2.py`).
+
+**No assertion was weakened.** Every invariant in the test bodies is preserved verbatim — only the session-bootstrap glue was rewritten to call the current API.
+
+### Assertion-strength sanity check (orchestrator-required)
+
+Each re-enabled test was sanity-checked to confirm it would FAIL if the underlying invariant were broken. Evidence run from the audit chunk:
+
+**For the opinion-filter tests** — when the filter is hypothetically neutered (i.e. `is_clean()` returns `True` for all input), the user-visible text would carry the `OPINION_LADEN_REPLY` (`"I think the right move is to restructure first…"`). The brief-forbidden regex set in the test catches three independent phrases (`\bI\s+think\b`, `\bin\s+my\s+opinion\b`, `\bpersonally\b`) in that text → assertion fires. **Assertion is strong.**
+
+**For `_check_invariant` in the shield test** — sanity-tested all four failure modes (shield_required=True with null run_id; shield_required=False with leaked run_id; shield_required=False with bogus bypass reason; valid entry):
+
+```
+PASS rejects shield_required=True+no run_id: shield_required=True but synisense_run_id is null
+PASS rejects shield_required=False+leaked run_id: shield_required=False but synisense_run_id present
+PASS rejects bogus shield_bypassed_reason: invalid bypass reason
+PASS accepts valid shield_required=True+run_id
+```
+
+**Assertion is strong.**
+
+### Test results — post-re-enable
+
+```
+$ cd /app/backend && python -m pytest tests/test_phase_b_solva_no_opinion.py \
+    tests/test_solva_v2_shield_invariant.py -v
+================= 15 passed, 16 warnings in 169.87s (0:02:49) ==================
+```
+
+- `test_phase_b_solva_no_opinion.py` — 9 tests, **all GREEN** (3 unit + 1 positive-control e2e + 5 adversarial parametrized).
+- `test_solva_v2_shield_invariant.py` — 6 tests, **all GREEN** (the 5 already-passing `synthetic_audit_entry` unit tests + the newly-restored `test_invariant_holds_across_full_session`).
+
+### Skipped-count delta
+
+| Metric | Pre-re-enable (skip audit baseline) | Post-re-enable |
+| --- | --- | --- |
+| Passed | 1100 | **1110** (+10 — exactly the 10 re-enables) |
+| Skipped | 500 | **490** (−10 — exactly the 10 re-enables) |
+| Failed | 1 (pre-existing `test_requirements_guard`) | 1 (unchanged — pre-existing) |
+
+Full-repo evidence:
+
+```
+$ cd /app/backend && python -m pytest -q --no-header --tb=no
+1 failed, 1110 passed, 490 skipped, 86 warnings in 251.37s (4:11)
+```
+
+The 1 failure is the same pre-existing `test_real_requirements_file_is_clean` (spaCy pep508-direct-ref URLs in `backend/requirements.txt`, file unchanged across this chunk). The 86 warning count is up from 83 — the extra 3 are the standard "asyncio mark on sync function" PytestWarnings emitted by the 3 unit tests in `test_phase_b_solva_no_opinion.py` (they're sync but inherit the module-level `pytestmark = [pytest.mark.asyncio]`). Warning, not failure; the tests pass cleanly.
+
+### Files changed for the re-enables
+
+| File | Change |
+| --- | --- |
+| `backend/tests/test_phase_b_solva_no_opinion.py` | Removed module-level `pytest.mark.skip` (L56); rewrote `_start_session` to use Phase I.2 `auto_cluster=True` instead of the dead `GET /api/solva/clusters` endpoint; renamed `db.solve_clusters` → `db.solva_clusters` in `test_clean_reply_at_synthesis_keeps_grounding_markers`. |
+| `backend/tests/test_solva_v2_shield_invariant.py` | Removed `pytest.mark.skip` (L131); rewrote the session-bootstrap block to omit `cluster_id` (server resolves) and dropped the `GET /api/solva/clusters` call. |
+
+**Backend behaviour code touched: 0.** Verified by `git diff --name-only HEAD -- backend/` → only `tests/test_phase_b_solva_no_opinion.py`, `tests/test_solva_v2_shield_invariant.py`, and the chunk-(d) files. No change to `services/synisense/`, `services/solva_v2/opinion_filter.py`, `services/solva_v2/llm_adapter.py`, or any guardrail surface.
+
+---
+
+## Final close
+
+- ✅ Chunk-(d) UI deviation note shipped on disk (popover + per-turn note + methodology doc), intact since the e1_tester pre-audit cycle.
+- ✅ Honest-framing paragraph added to the sprint closeout doc.
+- ✅ 10 guardrail-adjacent tests re-enabled, all GREEN, assertion strength sanity-checked.
+- ✅ Full-repo pytest: 1100 passed (+10 from baseline) · 490 skipped (−10) · 1 pre-existing failure.
+
+**Chunk (d) + guardrail re-enables status: READY FOR e1_tester VERIFICATION.**

@@ -30,6 +30,8 @@ All 12 are shipped, code-verified, and reflected in the live application by the 
 
 > **Deployment-pipeline observation (2026-05-25, backlog-b):** demo seeds are not auto-applied on preview pod boot. The seed script is idempotent and safe; the gap is procedural. Parked in `POST_T5_BACKLOG.md` for a future demo-pipeline sprint. Decision (auto-apply vs manual) deferred — both directions are defensible.
 
+> **Honest framing of the 22 PASS verdicts (2026-05-25, chunk (d) skip-audit follow-up):** Of the 22 PASS verdicts (T1–T5 + backlog-b), 5 sit on top of partially-shadowed adjacent surfaces (T1 D7/G2, T2.2, T2.4 G11/G12, T3.3 G8, plus the Shield/Solva guardrail invariant). Each verdict cites a passing spec-verbatim test, but adjacent feature regressions are not currently caught by automation. See `/app/memory/sprints/SKIP_LEDGER.md` for full classification of the 500 repo-level skips (84% are broken-masked tech debt that pre-dates this sprint). The Shield/Solva guardrail invariant (`test_phase_b_solva_no_opinion.py` + `test_solva_v2_shield_invariant.py:131`) has been re-enabled as part of chunk (d) acceptance — see `/app/memory/sprints/D_LOG.md` §"Guardrail re-enables" for the contract-drift fixes that brought them back to green.
+
 ---
 
 ## 2. Per-tier verdict ledger

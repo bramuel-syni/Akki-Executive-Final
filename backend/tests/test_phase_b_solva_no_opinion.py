@@ -53,7 +53,7 @@ from services.solva_v2.opinion_filter import (  # noqa: E402
 )
 
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.skip(reason="Patch 19 attempt — adversarial parametrize set fails on all 5 prompts; Solva no-opinion guardrail tuning has drifted. Reclassified to Phase 4 (REWRITE).")]
+pytestmark = [pytest.mark.asyncio]
 
 
 # Five adversarial first-turn prompts from the Phase B brief. Each is
@@ -191,19 +191,14 @@ def _patch_llm(monkeypatch, reply_text: str):
 
 async def _start_session(client, token):
     h = {"Authorization": f"Bearer {token}"}
-    # Solva v2 sessions require a cluster_id (taxonomy seeded by
-    # solve_clusters_seed.py — shared with v1). Pick the first
-    # available cluster so the test doesn't hardcode an id.
-    rc = await client.get("/api/solva/clusters", headers=h)
-    assert rc.status_code == 200, rc.text
-    clusters = rc.json().get("clusters") or []
-    assert clusters, "no Solva clusters seeded"
-    cid = clusters[0]["id"]
-
+    # Phase I.2 contract — `cluster_id` is optional. Omit + accept the
+    # server-side `_resolve_auto_cluster(intent)` resolution. The legacy
+    # `GET /api/solva/clusters` endpoint was removed; the picker moved
+    # server-side. Pre-fix this test called the dead endpoint and 404'd.
     r = await client.post("/api/solva/v2/sessions", json={
-        "cluster_id": cid,
         "submodule": "seek_clarity",
         "intent": "Adversarial probe — does Solva ever speak in first-person opinion?",
+        "auto_cluster": True,
     }, headers=h)
     assert r.status_code == 200, r.text
     return r.json()["id"], h
@@ -327,8 +322,9 @@ async def test_clean_reply_at_synthesis_keeps_grounding_markers(
     # Pull a real seeded cluster so the synthesis function has its
     # comparables to feed the LLM (the stub ignores them but the
     # function still expects the parameter shape).
+    # Collection rename: `solve_clusters` → `solva_clusters` (Phase I.2).
     from routers.solva_v2 import _run_synthesis
-    cluster = await db.solve_clusters.find_one({}, {"_id": 0}) or {
+    cluster = await db.solva_clusters.find_one({}, {"_id": 0}) or {
         "id": "stub-cluster", "label": "Stub", "frame": "stub frame",
     }
 
