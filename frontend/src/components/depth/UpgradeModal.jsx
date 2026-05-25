@@ -1,15 +1,19 @@
 /**
- * UpgradeModal — opens when a free-plan user clicks a Pro-gated CTA.
+ * UpgradeModal — surfaces the "Billing & Subscription — Coming Soon"
+ * state when a free-plan user clicks a Pro-gated CTA.
  *
- * No fake pricing, no comparison table, no feature-matrix. One sentence,
- * two CTAs: mailto enterprise, or go to /plans. Radix Dialog, cream
- * surface, Georgia-serif heading.
+ * Chunk c (2026-05-25): no fake pricing, no checkout, no marketing
+ * push. One sentence of honest framing + a direct route to the
+ * Coming-Soon billing surface where the Notify-me CTA lives. An
+ * optional secondary mailto for users who want a human touch (kept
+ * because some Pro-gated CTAs come from board/enterprise prospects).
  *
  * Controlled externally by a parent; exposes a tiny context provider
  * via `openUpgradeModal()` for convenience where passing state down is
- * awkward (right now: HomeV2 offer card). If a consumer renders its own
- * instance inline that still works — the module-level event bus lets
- * any Pro-gated CTA `openUpgradeModal()` without threading props.
+ * awkward (HomeV2 offer card, AppShell sidebar). If a consumer renders
+ * its own instance inline that still works — the module-level event
+ * bus lets any Pro-gated CTA `openUpgradeModal()` without threading
+ * props.
  */
 import React, { useEffect, useState } from "react";
 import {
@@ -26,6 +30,13 @@ export function openUpgradeModal(source = "unknown") {
     try { fn(source); } catch { /* noop */ }
   });
 }
+
+// Spec-verbatim copy — must match `routers/billing.py` and
+// `components/settings/BillingTab.jsx` exactly.
+const COMING_SOON_BODY =
+  "We're finalizing our subscription tiers. Your account is fully " +
+  "active during this preview period; billing will roll out in a " +
+  "future release.";
 
 export default function UpgradeModal({ controlledOpen, onOpenChange }) {
   const [open, setOpen] = useState(false);
@@ -53,39 +64,50 @@ export default function UpgradeModal({ controlledOpen, onOpenChange }) {
 
   return (
     <Dialog open={actualOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="bg-[var(--cream)] max-w-[500px]" data-testid="upgrade-modal">
+      <DialogContent
+        className="bg-[var(--cream)] max-w-[500px]"
+        data-testid="upgrade-modal"
+      >
         <DialogHeader>
-          <DialogTitle className="akki-serif text-[22px] font-normal text-[var(--ink)]">
-            AKKI Pro
+          <DialogTitle
+            className="akki-serif text-[22px] font-normal text-[var(--ink)]"
+            data-testid="upgrade-modal-heading"
+          >
+            Billing & Subscription — Coming Soon
           </DialogTitle>
         </DialogHeader>
         <div className="mt-2">
-          <p className="text-[14px] text-[var(--muted)] leading-[1.65] mb-5 max-w-[56ch]">
-            Run depth analyses, generate decks with the deeper model, get
-            longer Solva sessions. Pricing is on request — talk to us.
+          <p
+            className="text-[14px] text-[var(--muted)] leading-[1.65] mb-5 max-w-[56ch]"
+            data-testid="upgrade-modal-body"
+          >
+            {COMING_SOON_BODY}
           </p>
           {source ? (
-            <p className="text-[11px] text-[var(--muted)]/80 mb-4 akki-overline tracking-[0.18em]" data-testid="upgrade-modal-source">
+            <p
+              className="text-[11px] text-[var(--muted)]/80 mb-4 akki-overline tracking-[0.18em]"
+              data-testid="upgrade-modal-source"
+            >
               REQUESTED FROM · {String(source).toUpperCase()}
             </p>
           ) : null}
           <div className="flex flex-col-reverse md:flex-row gap-3 md:items-center md:justify-end">
-            <Link
-              to="/plans"
-              onClick={() => handleOpenChange(false)}
-              className="text-[12px] text-[var(--muted)] hover:text-[var(--ink)] underline-offset-2 hover:underline text-center md:text-left"
-              data-testid="upgrade-modal-plans"
-            >
-              Go to Plans
-            </Link>
             <a
               href="mailto:enterprise@akki.ai?subject=AKKI%20Pro%20-%20interested"
               onClick={() => handleOpenChange(false)}
-              className="akki-overline tracking-[0.16em] text-[11px] text-white bg-[var(--accent)] hover:bg-[var(--accent)]/90 px-4 py-2.5 text-center"
+              className="text-[12px] text-[var(--muted)] hover:text-[var(--ink)] underline-offset-2 hover:underline text-center md:text-left"
               data-testid="upgrade-modal-talk"
             >
-              TALK TO THE TEAM
+              Talk to the team
             </a>
+            <Link
+              to="/app/settings/billing"
+              onClick={() => handleOpenChange(false)}
+              className="akki-overline tracking-[0.16em] text-[11px] text-white bg-[var(--accent)] hover:bg-[var(--accent)]/90 px-4 py-2.5 text-center"
+              data-testid="upgrade-modal-billing-cta"
+            >
+              NOTIFY ME WHEN READY
+            </Link>
           </div>
         </div>
       </DialogContent>

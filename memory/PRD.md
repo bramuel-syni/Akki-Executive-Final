@@ -3611,35 +3611,39 @@ Findings`. Do NOT touch during rewrite phases.
 
 ---
 
-## J4 — Stage 6 Onboarding (2026-05-25) — IMPLEMENTED, pending e1_tester
+## J4 — Stage 6 Onboarding (2026-05-25) — CLOSED
 
 **Scope:** First Akki Chat / Solva session — chat-starter prompt seeding (G30) + Help tooltip refinement (G29) + DOM-unconditional refactor (G31). Spec ref: `/app/memory/AKKI_ONBOARDING_SPEC.md` v1.1 §3 Stage 6 + ratified §6 G29-G31.
 
-**Implementation:**
-- `FirstSession.jsx` Door C: URL param `?intent=` → `?starter=` (spec verbatim).
-- `SolvaApp.jsx`: captures `?starter=` once on mount, forwards via `intakeStarter` prop.
-- `SolvaLanding.jsx`: `onSelectCard` propagates starter onto Phase D URL via `params.set("starter", ...)`.
-- `SolvaPhaseDSession.jsx`: boot useEffect reads `?starter=`, falls back to `api.get("/me/first-session")`, sets the framing draft, then POSTs `/first-chat-seen` for J-sprint completion accounting.
-- `AppShell.jsx`: Help tooltip G29 verbatim copy applied + DOM-unconditional refactor (G31). Visibility governed by `data-tooltip-visible` attribute + CSS classes (same pattern as J3 `TrustCenterTour`).
-- `onboarding_status.py::_compute_status`: `onboarding_journey` payload extended with `first_session_intake_complete` + `door_taken`. All 5 J1/J2/J3/J4 status flags now emitted.
+**e1_tester verdict: 4/4 PASS.** First pass. G30 starter seeding chain verified end-to-end. G29 verbatim copy applied. G31 DOM-unconditional refactor confirmed. Shield invariant on seed value preserved.
 
-**Shield invariant verified:** The starter seed flows from `accounts.first_session.intake.top_of_mind`, which J1's G18 wired through `deidentifier.deidentify()` at intake time. Raw text never crosses the Shield boundary into the chat composer.
+**Git tags:** `v-post-j4` + `v-post-onboarding-sprint-closed`. Both local-only.
 
-**Tests:** 14 new tests across `test_j4_stage_6_backend.py` (5) + `test_j4_stage_6_frontend.py` (9), including the final J-sprint-closed guard `test_onboarding_sprint_j1_j4_complete`. Anti-false-green: 10/14 fail against `v-post-j3`. Full pytest: 1193 passed (+14), 490 skipped, 1 unrelated failure.
+**Status: CLOSED 2026-05-25.**
 
-**Late-pass backlog hygiene:** Two pre-existing dev-overlay issues resolved during J4 smoke (`TrustCenterTour` default-import + `AppShell` raw-fetch).
+## Onboarding sprint J1-J4 — CLOSED
 
-**Status:** J4 implementation complete, full pytest green, awaiting orchestrator dispatch of e1_tester for binary verification. Once verified, the entire J1-J4 onboarding sprint closes.
+The entire onboarding sprint (chunk `a` per orchestrator chunk index) is complete.
 
-**Git tags:** `v-pre-a` (sprint start), `v-post-j1`, `v-post-j2`, `v-post-j3` (all local-only). `v-post-j4` to be tagged at J4 closure.
+| Chunk | Verdict | Date |
+| --- | --- | --- |
+| J1 (Stages 1-2) | 4/4 PASS | 2026-05-25 |
+| J2 (Stage 3) | 3/4 → 4/4 (after J2.3 fix-passes) | 2026-05-25 |
+| J3 (Stages 4-5) | 4/4 PASS | 2026-05-25 |
+| J4 (Stage 6) | 4/4 PASS | 2026-05-25 |
 
-## Post-J4 Backlog
+**19 ratified gaps G13-G31 implemented · 16 user-verified verdicts · +110 passing tests · 0 regressions · 0 guardrail file changes.**
 
-- **P0:** None. J1-J4 onboarding sprint complete on implementation; awaiting e1_tester.
-- **P1 (post-onboarding-sprint):** GitHub push (chunk e) after J4 verified clean.
+Full closeout: `/app/memory/sprints/T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md` §11.
+
+## Post-onboarding-sprint Backlog
+
+- **P0:** None.
+- **P1 (in flight):** Chunk (e) GitHub push readiness (see `/app/memory/sprints/PUSH_READINESS.md`); chunk (c) Stripe "Billing — Coming Soon" UX.
 - **P2:** ClamAV EICAR spot-check (deferred — `clamd` sidecar STOPPED in preview env).
 - **P2:** Demo seeds auto-apply on pod boot (decision-pending — see `POST_T5_BACKLOG.md`).
 - **P2:** Demo visibility widening across Document Journal / Work Studio / Monitor list endpoints (parked at J5).
 - **P2:** Cycle Setup Wizard `intake_seed=1` Q3 fallback prefill (parked at J5).
+- **P2:** Onboarding Health admin dashboard — single-page view of per-account journey state (5 flags + complete rollup). Parked in `POST_T5_BACKLOG.md`.
 - **P3:** X4 — Monitor objective/project filter tab removal (parked from T2.3 scope wording).
 

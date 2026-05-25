@@ -62,3 +62,11 @@ T1 ran clean against the spec. No off-scope issues surfaced.
 - ~~`TrustCenterTour.jsx` line 27 imports `api` as a default export (`import api from "../../lib/api"`) but `lib/api.js` exports `api` as a NAMED export only. This caused a hard compile error visible in the dev-server overlay on every page mount.~~
 
   **RESOLVED 2026-05-25 at J4 ship.** Import switched to `import { api } from "../../lib/api"`. Module compiles clean.
+
+
+## J4 closure observation (2026-05-25) — P2 ENHANCEMENT
+
+- **Onboarding Health admin dashboard** — single page that surfaces per-account journey state (the 5 J1/J2/J3/J4 status flags `first_session_intake_complete` · `door_taken` · `first_doc_uploaded` · `trust_center_introduced` · `first_chat_seen` + the `complete` rollup) for the operator. Today the same data is only readable per-user via `GET /api/users/me/onboarding-status`; an admin view would slash tester ramp-up time and make demo prep one click.
+  - Idea source: J4 finish suggestion (orchestrator parked it explicitly at P2 — "we're closing scope, not expanding").
+  - Sketch: `/app/admin/onboarding-health` route, table with rows per account, columns per flag (✓/–), filter by "stuck at stage X". Backend: `GET /api/admin/onboarding-health` aggregating `accounts.first_session.*` projection.
+  - Not in flight. Pick up when admin tooling sprint surfaces.

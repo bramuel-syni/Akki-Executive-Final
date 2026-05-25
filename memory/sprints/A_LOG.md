@@ -991,3 +991,32 @@ Smoke screenshot caught two pre-existing dev-server overlay issues (both predate
 
 Both fixes are surgical and have no behavior change beyond clearing the dev overlay. `POST_T5_BACKLOG.md` entries marked RESOLVED. All J-suite tests still 83/83 green post-fix.
 
+---
+
+## 2026-05-25 — J4 closure
+
+**e1_tester verdict: 4/4 PASS.** G30 starter-prompt seeding from intake.top_of_mind live-verified across the FirstSession → SolvaApp → SolvaLanding → SolvaPhaseDSession chain. G29 verbatim Help tooltip copy confirmed. G31 DOM-unconditional refactor confirmed (data-tooltip-visible attribute + CSS class flip). Onboarding completion flag rolls true once both trust_center_introduced AND first_chat_seen are set. Shield invariant on the seed value preserved end-to-end.
+
+**Git tag `v-post-j4`** to be created (local-only) AND `v-post-onboarding-sprint-closed` marking the close of the entire J1-J4 sprint.
+
+**J4 status: CLOSED.**
+
+---
+
+## 2026-05-25 — Onboarding sprint J1-J4 CLOSED
+
+The full onboarding sprint (chunk `a` per the orchestrator's chunk index) is complete.
+
+| Chunk | Verdict | Notes |
+| --- | --- | --- |
+| J1 (Stages 1-2, intake + auth) | **4/4 PASS** | First pass. |
+| J2 (Stage 3, 4-door layout) | **3/4 then 4/4 PASS** | J2.3 false-green fixed in two follow-up passes (cycle-door behavior + auth-refresh routing). |
+| J3 (Stages 4-5, doc upload + Trust Center tour) | **4/4 PASS** | First pass. |
+| J4 (Stage 6, first chat + G29/G30/G31) | **4/4 PASS** | First pass. |
+
+**Cumulative onboarding sprint verdict: 19/19 ratified gaps (G13-G31) implemented, code-verified by 83 J-suite tests + 6 chunk-specific late-pass fix-up tests + the final J-sprint-closure guard `test_onboarding_sprint_j1_j4_complete`.**
+
+Spec lock: `/app/memory/AKKI_ONBOARDING_SPEC.md` v1.1 (ratified 2026-05-25).
+
+Full sprint summary appended to `T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md` §11 "Onboarding sprint J1-J4 closeout".
+
