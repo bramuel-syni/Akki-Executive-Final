@@ -401,3 +401,26 @@ Confirmed: extended seed (incl. the new `cycle_agendas` shell row) is fully idem
 - `frontend/src/pages/Cycle.jsx` — `CompilationStep` useEffect pre-populates `out` from `cycle.compilation` (Blocker 2 wire).
 
 **Backlog-b chunk status: ALL THREE BLOCKERS RESOLVED.** Ready for e1_tester re-verification (tests 1, 2, 3 only).
+
+---
+
+## e1_tester verdict 2 + 3 — 2026-05-25 — CLEAN
+
+Two e1_tester passes confirmed all three blockers fixed and live-verified:
+
+- **Pass 1** (backend + browser): test 4 (seed integrity + PII) PASS · B1 backend (titles + 3-format API render with sensitivity band) PASS.
+- **Pass 2** (browser-focused): B1 click-through PASS · B2 PASS · B3 PASS.
+
+**Backlog-b status: CLOSED.** Git tag `v-post-backlog-b` recorded at sprint close.
+
+### Deployment-pipeline observation (parked, NOT fixed in this chunk)
+
+During the tester runs, e1_tester reported that the seed script had to be **manually run on a fresh preview pod** (`cd /app/backend && python -m scripts.seed_backlog_b_demo`). This is a deployment-pipeline gap, not a code bug — the seed is idempotent and safe, but it isn't wired into preview pod boot.
+
+**Parked in `POST_T5_BACKLOG.md`** at low priority for a future decision: *"Decide whether demo seeds should auto-apply on preview pod boot (e.g. via an idempotent startup hook), or remain manual to keep prod-like environments lean."*
+
+Decision is intentionally NOT made in this chunk — both directions are defensible:
+- **Auto-apply**: faster tester ramp-up, predictable demo state.
+- **Manual**: keeps preview pods prod-like, avoids leaking `[DEMO]` rows into any audit chain by accident.
+
+Logged for a future sprint that owns the demo-pipeline question.

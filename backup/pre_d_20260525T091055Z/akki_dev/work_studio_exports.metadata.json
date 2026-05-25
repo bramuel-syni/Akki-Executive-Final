@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"context_id":{"$numberInt":"1"},"lifecycle_state":{"$numberInt":"1"}},"name":"context_id_1_lifecycle_state_1"}],"uuid":"65da89e603d34b23ad60155b122e45ae","collectionName":"work_studio_exports","type":"collection"}

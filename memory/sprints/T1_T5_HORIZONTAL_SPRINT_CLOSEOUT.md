@@ -28,6 +28,8 @@ The sprint was bound to **`AKKI_PRODUCT_SPEC.md` v1.1**. The spec carries 12 PO-
 
 All 12 are shipped, code-verified, and reflected in the live application by the per-tier e1_tester verdicts below.
 
+> **Deployment-pipeline observation (2026-05-25, backlog-b):** demo seeds are not auto-applied on preview pod boot. The seed script is idempotent and safe; the gap is procedural. Parked in `POST_T5_BACKLOG.md` for a future demo-pipeline sprint. Decision (auto-apply vs manual) deferred — both directions are defensible.
+
 ---
 
 ## 2. Per-tier verdict ledger

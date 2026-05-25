@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"email":{"$numberInt":"1"}},"name":"email_1","unique":true},{"v":{"$numberInt":"2"},"key":{"created_at":{"$numberInt":"-1"}},"name":"created_at_-1"}],"uuid":"8c1dcee44c7841c98280d8bba43ab392","collectionName":"early_access_registrations","type":"collection"}

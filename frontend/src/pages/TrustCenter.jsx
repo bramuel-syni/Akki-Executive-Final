@@ -22,9 +22,12 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ShieldCheck, Hash, ChevronRight, ChevronDown, Download,
-  Eye, AlertTriangle, FileSearch, X, Filter, Lock,
+  Eye, AlertTriangle, FileSearch, X, Filter, Lock, Info,
 } from "lucide-react";
 import axios from "axios";
+import {
+  Popover, PopoverTrigger, PopoverContent,
+} from "../components/ui/popover";
 
 const API = process.env.REACT_APP_BACKEND_URL || "";
 
@@ -416,7 +419,11 @@ function SessionView({ chatId }) {
 
       {/* Counters grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="tc-promise-counters">
-        <Counter label="Identifiers shielded" value={ps.identifiers_shielded_total ?? 0} />
+        <Counter
+          label="Identifiers shielded"
+          value={ps.identifiers_shielded_total ?? 0}
+          infoSlot={<DeIdSummaryInfoPopover />}
+        />
         <Counter label="Turns with redaction" value={`${ps.turns_with_redaction ?? 0} / ${ps.total_turns ?? 0}`} />
         <Counter label="LLM calls" value={ps.llm_calls ?? 0} />
         <Counter label="Models" value={(ps.models_used || []).join(", ") || "—"} small />
@@ -458,6 +465,13 @@ function SessionView({ chatId }) {
       <div className="space-y-2">
         <div className="text-[11px] uppercase tracking-wide text-[var(--muted)] mb-2">
           Per-turn detail
+        </div>
+        <div
+          data-testid="tc-perturn-deviation-note"
+          className="text-[11.5px] text-[var(--muted)] leading-relaxed -mt-1 mb-1"
+        >
+          Per-turn counts. Session totals above may be larger because they
+          include historical context and grounding replay.
         </div>
         {(data.turns || []).map((t) => (
           <div key={t.message_id} data-testid="tc-turn-row">
@@ -517,16 +531,70 @@ function SessionView({ chatId }) {
   );
 }
 
-function Counter({ label, value, small = false }) {
+function Counter({ label, value, small = false, infoSlot = null }) {
   return (
     <div className="bg-[var(--cream)] border border-[var(--cream-deep)] rounded-lg p-4">
-      <div className="text-[10.5px] uppercase tracking-wide text-[var(--muted)]">
-        {label}
+      <div className="text-[10.5px] uppercase tracking-wide text-[var(--muted)] flex items-center gap-1.5">
+        <span>{label}</span>
+        {infoSlot}
       </div>
       <div className={`mt-1 text-[var(--ink)] ${small ? "text-[14px]" : "text-[22px]"} leading-tight`}>
         {value}
       </div>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Session-totals vs per-turn methodology popover.
+//
+// Trust Center surfaces two complementary de-identification views:
+//   • Session-level headline counters (counted across everything Shield
+//     processed for the session — turn input + historical context
+//     replay + grounding material).
+//   • Per-turn drill-down (counted only at the turn boundary).
+//
+// The session total is therefore a **superset** of the sum of
+// per-turn counts. This popover is the in-product transparency note
+// for that gap. The trigger button renders unconditionally per the
+// DOM-unconditional rule; popover content opens on click.
+//
+// Wording is anchored on three audit-anchor phrases:
+//   "Session totals", "per-turn", "superset".
+// Methodology doc: /app/memory/sprints/TRUST_CENTER_METHODOLOGY.md
+// ─────────────────────────────────────────────────────────────────────
+function DeIdSummaryInfoPopover() {
+  return (
+    <Popover>
+      <PopoverTrigger
+        type="button"
+        data-testid="tc-deidsummary-info-button"
+        aria-label="What does Identifiers shielded count?"
+        className="inline-flex items-center justify-center w-3.5 h-3.5 text-[var(--muted)] hover:text-[var(--ink)] focus:outline-none focus:ring-1 focus:ring-[var(--deep)] rounded-sm transition-colors"
+      >
+        <Info className="w-3.5 h-3.5" strokeWidth={1.7} />
+      </PopoverTrigger>
+      <PopoverContent
+        data-testid="tc-deidsummary-info-content"
+        align="start"
+        sideOffset={6}
+        className="w-[340px] text-[12px] text-[var(--ink)] leading-relaxed bg-[var(--cream)] border-[var(--cream-deep)] p-4 space-y-2"
+      >
+        <div className="text-[10.5px] uppercase tracking-wide text-[var(--muted)]">
+          How this count is built
+        </div>
+        <p>
+          Session totals count every place Shield touched data — including
+          historical context and grounding replay for this session.
+          Per-turn totals below count only what Shield processed at each
+          specific turn.
+        </p>
+        <p>
+          Both views are factually accurate to their question; expect
+          the session total to be a superset of the sum of per-turn counts.
+        </p>
+      </PopoverContent>
+    </Popover>
   );
 }
 

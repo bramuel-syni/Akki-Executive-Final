@@ -35,6 +35,15 @@ T1 ran clean against the spec. No off-scope issues surfaced.
 
 - **C4 Project Brief LLM step deferred** — the wizard ships with the direct create-and-commission path. The full C4 Review / Save-as-Draft branches (with Shield-routed agent-cycle summary regeneration via `llm_router.invoke()` + `deidentifier.deidentify()`) are not in this tier. Follow-on sprint should add the brief-generation endpoint + the `Review` + `Save as Draft` CTAs alongside `Commission Cycle`.
 
+## Backlog-b deployment-pipeline gap (25 May 2026) — LOW PRIORITY
+
+- **Demo seeds are NOT auto-applied on preview pod boot.** During the backlog-b verification, e1_tester had to manually run `cd /app/backend && python -m scripts.seed_backlog_b_demo` on a fresh preview pod. The seed itself is idempotent and safe; the gap is procedural.
+  - **Park decision** (deferred to future sprint): *"Decide whether demo seeds should auto-apply on preview pod boot (e.g. via an idempotent startup hook), or remain manual to keep prod-like environments lean."* Defensible both ways:
+    - **Auto-apply** — faster tester ramp-up, predictable demo state.
+    - **Manual** — keeps preview pods prod-like, avoids leaking `[DEMO]` rows into any audit chain by accident.
+  - Decision intentionally NOT made in backlog-b. Owned by a future sprint that scopes the demo-pipeline question.
+
+
 
 - **X4 — Remove Monitor objective/project filter tabs** (`AKKI_PRODUCT_SPEC.md` v1.1 L687–L695). The user's T2 scope named only "Monitor drawer redesign" (X5) and explicitly excluded Strategic Goals (X6–X8 covered separately). X4 removes the RAG filter tabs on the *Objectives & Projects* listing panel itself — not the drawer. Strictly outside T2.3 by the user's own wording, so deferred. Surface to revisit during a follow-on sprint focused on Monitor listing UX. Spec text: *"delete the filter tabs circled in figure 6 and figure 7."*
   - File that would be touched: `frontend/src/components/monitor/ObjectivesProjectsPanel.jsx` (filterTabs L539–L548 + `<ListingShell filterTabs={filterTabs}>` prop at L658).
