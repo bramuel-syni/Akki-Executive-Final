@@ -113,6 +113,22 @@ export default function CycleList() {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [activeContextId, q, status, sort, page]);
 
+  // J2.3 (2026-05-25, G21 wiring fix) — cycle-door auto-opens the
+  // wizard when the user arrives from FirstSession with
+  // `?wizard=1`. Previously this query param was ignored; the user
+  // landed on the cycle list and had to click "Add Cycle" manually,
+  // which broke the spec §3 Stage 3 acceptance ("cycle door routes
+  // to the T5 Cycle Setup Wizard"). Consumed-once: we strip the
+  // param via replaceState so refresh doesn't re-open.
+  useEffect(() => {
+    if (search.get("wizard") !== "1") return;
+    setAddOpen(true);
+    const next = new URLSearchParams(search);
+    next.delete("wizard");
+    setSearch(next, { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Keyboard: `n` opens Add Cycle modal when on the cycle list.
   useEffect(() => {
     const onKey = (e) => {

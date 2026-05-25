@@ -485,10 +485,40 @@ async def choose_door(
         )
         return {"state": state, "landing_cycle_id": DEMO_LANDING_CYCLE_ID}
 
-    # cycle / upload — normal working-step flow. Cycle door routes the
-    # user to the T5 Cycle Setup Wizard; upload door routes to the
-    # Document Journal upload sheet. Both leave `first_session` in
-    # `in_progress` until `/complete` is called.
+    # J2 (2026-05-25, G21 ratified) — cycle door fast-path.
+    # The cycle door routes the user to the T5 Cycle Setup Wizard.
+    # The user has explicitly chosen their entry path; FirstSession
+    # polling is moot from here on. Flip status → completed so the
+    # `FirstSessionGuard` (frontend/src/App.js) does NOT redirect the
+    # /app/cycle?wizard=1 navigate back to /app/first-session.
+    #
+    # J2.3 false-green fix (2026-05-25): the original cycle branch
+    # left `current_step: working` + `status: in_progress`, which
+    # the FirstSessionGuard whitelist treated as a not-completed
+    # state and bounced the user to a "Working…" polling screen.
+    # The wizard never mounted. Now `completed`/`done` mirrors the
+    # demo + solve branches.
+    if body.door == "cycle":
+        state["door_taken"] = "cycle"
+        state["current_step"] = "done"
+        state["status"] = "completed"
+        state["completed_at"] = _iso(_now())
+        state["artefact"] = {
+            "kind": "cycle",
+            "id": None,  # filled in by the wizard's POST /cycles response
+        }
+        await _persist_state(current["id"], state)
+        await write_audit(
+            ctx_id, current["id"], "first_session.door_cycle",
+            "account", current["id"], {"door": "cycle"},
+        )
+        await write_audit(
+            ctx_id, current["id"], "first_session.completed",
+            "account", current["id"], {"door": "cycle", "exit": "cycle_door"},
+        )
+        return {"state": state}
+
+    # upload — working-step flow.
     state["status"] = "in_progress"
     state["door_taken"] = body.door
     state["current_step"] = "working"

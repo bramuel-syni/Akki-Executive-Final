@@ -118,6 +118,50 @@ These are the durable lessons that survive this sprint and bind every future age
 
 **Scope:** the rule applies to spec-required sections (banners, citation cards, empty-state CTAs, validation messages, toolbar buttons). It does NOT require non-spec UX scaffolding (loading spinners, transient toasts, in-flight indicators) to render unconditionally — those remain data-conditional by design.
 
+### 5.8 Source-string assertions ≠ behavior verification (J2.3 false-clean — 2026-05-25)
+
+**Lesson:** asserting that a literal string is present in a file proves the file CONTAINS the wire label. It does NOT prove the wire LANDS at a working destination. Tests of the form `assert 'navigate("...")' in src` are equivalent to `assert True` for behavior coverage — they confirm the agent typed the right characters, not that the user reaches the intended UI.
+
+**Origin:** J2 (Stage 3 cycle door). The J2 test `test_cycle_door_routes_to_setup_wizard_query_string` asserted that the literal `navigate('/app/cycle?wizard=1&intake_seed=1')` string was present in `FirstSession.jsx`. It passed; e1_tester then found **two real defects** that blocked the actual user journey:
+
+1. **FirstSessionGuard redirect** — the cycle-door branch left `first_session.status = "in_progress"`, which the `FirstSessionGuard` whitelist treated as not-completed. The `/app/cycle?wizard=1` navigate was immediately redirected back to `/app/first-session`; the user landed on a "Working…" polling screen.
+2. **CycleList ignored the query param** — `CycleList.jsx` did not read `searchParams.get("wizard")`. Even if the guard had been bypassed, the wizard would not auto-mount.
+
+Neither defect was caught by the J2 test suite because every J2 frontend assertion checked source labels rather than behavior. This is the THIRD sprint-level false-green pattern:
+
+| # | Pattern | Where | Lesson |
+| --- | --- | --- | --- |
+| 1 | DOM-conditional gating | T2.3 | §5.1 — Structural sections emit DOM unconditionally. |
+| 2 | Missing JSX-imported symbol | Backlog-B B3 | §5.6 — Code-verified is not enough without the import. |
+| 3 | **Source-string assertion** | J2.3 | This sub-rule — **assertions must walk control flow, not match labels.** |
+
+**Enforcement (concrete):**
+
+1. **Behavior tests over label tests.** When wiring a navigate / API call / state transition, the test must EXERCISE the destination (backend integration via httpx, frontend integration via Playwright or RTL) OR assert a CONTROL-FLOW CHAIN within a single bounded block of source. A test that walks `import → useEffect → searchParams.get → setState` as a 4-anchor chain inside the same `useEffect` is acceptable; a test that asserts `"setSomething(true)" in src` is not.
+
+2. **Anchor-chain test pattern.** When a Playwright/RTL setup isn't worth the cost, use multi-anchor source patterns that prove the BEHAVIOR shape, not the label. Example from `tests/test_j2_3_cycle_door_behavior.py::test_j2_3_3_setup_wizard_prefills_cycle_name_from_intake_seed`:
+
+```python
+# 4-anchor behavior chain — all must coexist within the SAME useEffect block.
+use_effects = re.finditer(r"useEffect\(\(\) => \{(.*?)\}, \[", src, re.DOTALL)
+for m in use_effects:
+    body = m.group(1)
+    if (
+        'searchParams.get("intake_seed")' in body
+        and 'api.get("/me/first-session")' in body
+        and "setCycleName(" in body
+    ):
+        found = True
+        break
+assert found, "..."
+```
+
+3. **Backend behavior tests via httpx.** Every backend wire test that hits a route MUST also GET the resulting state and assert the contract — not just inspect the response payload. The J2.3 fix proves the value: the response payload `{state: {status: "completed"}}` matches the contract, AND the follow-up GET confirms the state PERSISTED — both are required for the BehaviourBased assertion to be honest.
+
+**Pre-fix anti-false-green proof (J2.3):** all 4 behavior tests in `test_j2_3_cycle_door_behavior.py` fail against the pre-J2.3 worktree (`v-post-j1` + J2-without-fix). The previous false-green test `test_cycle_door_routes_to_setup_wizard_query_string` passed against the same worktree because it only matched the literal string, not the control flow.
+
+---
+
 ### 5.2 Code-verified vs. live-verified distinction
 
 **Lesson:** some surfaces (failure-toast catch blocks, ClamAV reject paths, race conditions in nested modals) cannot be live-exercised by browser-use automation because the test rig cannot reliably force the upstream HTTP error class. For these, **code-verification of the verbatim literal** in the catch block is the canonical evidence. The per-tier ledgers explicitly tag these surfaces.

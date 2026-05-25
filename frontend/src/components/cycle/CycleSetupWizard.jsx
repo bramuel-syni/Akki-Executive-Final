@@ -31,6 +31,7 @@
  * generation step is logged in POST_T5_BACKLOG for follow-up.
  */
 import React, { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
   DialogFooter,
@@ -73,6 +74,8 @@ export default function CycleSetupWizard({
   contextId,
   onCycleCreated,
 }) {
+  const [searchParams] = useSearchParams();
+
   // Step state
   const [step, setStep] = useState(1);
 
@@ -98,6 +101,36 @@ export default function CycleSetupWizard({
       setDupeIndex(-1);
       setSubmitting(false);
     }
+  }, [open]);
+
+  // J2.3 (2026-05-25, G21 wiring fix) — intake-seed pre-fill.
+  // When the wizard opens from a FirstSession cycle-door navigate
+  // carrying `?intake_seed=1`, fetch the user's first-session
+  // intake state and pre-fill the `cycleName` field with the Q2
+  // `primary_context_name` value. If the value is missing/empty
+  // we silently leave the field blank (per orchestrator brief:
+  // "do not error").
+  useEffect(() => {
+    if (!open) return;
+    if (searchParams.get("intake_seed") !== "1") return;
+    (async () => {
+      try {
+        const { data } = await api.get("/me/first-session");
+        const intake = data?.intake || {};
+        // Spec §3 Stage 2 Q2 = `primary_context_name` — the org name
+        // the user gave at intake, which is the most natural starting
+        // value for their first cycle title. We fall back to the Q3
+        // `top_of_mind` answer only if Q2 is empty (it's Shield-
+        // redacted text — still usable as a cue but less ideal).
+        const prefill =
+          (intake.primary_context_name || "").trim()
+          || (intake.top_of_mind || "").trim();
+        if (prefill) setCycleName(prefill);
+      } catch {
+        // Network/auth fail — leave cycleName blank per brief.
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // G4 validation

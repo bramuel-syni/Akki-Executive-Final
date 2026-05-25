@@ -178,17 +178,21 @@ async def test_g21_backend_rejects_legacy_email_door():
 
 # ── G21 — door semantics (transitions) ──────────────────────────────
 @pytest.mark.asyncio
-async def test_g21_cycle_door_leaves_in_progress():
-    """Cycle door routes user to the T5 Setup Wizard; first_session
-    stays `in_progress` until the wizard's compilation completes."""
+async def test_g21_cycle_door_completes_first_session():
+    """J2.3 false-green fix (2026-05-25) — cycle door now flips
+    `first_session.status` to `completed` so the FirstSessionGuard
+    whitelist allows the `/app/cycle?wizard=1` navigate through.
+    The T5 Cycle Setup Wizard owns the user's next-step UX from
+    that point. See `test_j2_3_cycle_door_behavior.py` for the
+    detailed root-cause + behavior test."""
     async with _client() as c:
         token, account, ctx_id, h = await _register_and_intake(c, "g21-cyc")
         r = await c.post("/api/me/first-session/choose-door",
                          json={"door": "cycle"}, headers=h)
         assert r.status_code == 200, r.text
         st = r.json()["state"]
-        assert st["status"] == "in_progress"
-        assert st["current_step"] == "working"
+        assert st["status"] == "completed"
+        assert st["current_step"] == "done"
         assert st["door_taken"] == "cycle"
 
 
