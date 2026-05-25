@@ -89,3 +89,11 @@ T1 ran clean against the spec. No off-scope issues surfaced.
   - Files to touch: `backend/requirements.txt`.
   - Verification: `pip uninstall stripe` + `pytest -q` should remain green (regression test `test_chunk_c_no_stripe_sdk_import.py` pins the invariant at the import level).
   - Not in flight.
+
+## Hardening Step 3 closure observation (2026-05-25) — P2 ENHANCEMENT
+
+- **`/api/healthz/boot-seed` endpoint** — surface the latest seed-run's `(rows, delta, ran_at_utc)` from the boot hook so an admin dashboard or readiness probe can assert that the seed actually fired (not just that the hook is registered). Matches the `/api/healthz/clamav` surface stance from Hardening Step 1.
+  - Idea source: Step 3 finish suggestion (orchestrator parked it explicitly — "scope creep for now").
+  - Sketch: store the most recent seed-run result on a module global (or a single Mongo row in `boot_seed_status`) at the end of `on_startup_demo_seed`. New router `routers/healthz_boot_seed.py` exposes `GET /api/healthz/boot-seed` returning `{ran_at_utc, rows, delta, ok, error?}`. No auth (mirrors the clamav probe surface).
+  - Not in flight. Pick up if/when a future admin-tooling sprint needs the wire format.
+
