@@ -183,11 +183,44 @@ export default function DocumentOverlay({ contextId, artefactId, open, onClose }
                   toast.error(apiErrorMessage(e, "Couldn't update title."));
                 }
               }}
-              onDownload={() => {
-                if (doc.file_name) {
-                  window.open(`/api/contexts/${contextId}/work-studio/exports/${artefactId}/download`, "_blank");
-                } else {
-                  toast.info("No rendered file available yet for this draft.");
+              onDownload={async (fmt) => {
+                /* T4.1 (2026-05-25) — G6 ratified server-produced
+                 * downloads in DOCX / PDF / PPTX. Hits the on-the-fly
+                 * render endpoint and triggers a browser download via
+                 * a blob URL. We use the same axios `api` client so
+                 * the auth header is attached automatically; using
+                 * `window.open` directly would lose the bearer token
+                 * for cross-origin previews. */
+                const format = (fmt || "docx").toLowerCase();
+                try {
+                  const resp = await api.get(
+                    `/contexts/${contextId}/work-studio/documents/${artefactId}/render`,
+                    { params: { format }, responseType: "blob" },
+                  );
+                  const blob = new Blob([resp.data], {
+                    type: resp.headers["content-type"] || "application/octet-stream",
+                  });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  // Filename comes from Content-Disposition; fall back
+                  // to a synthetic name if the header isn't set.
+                  const cd = resp.headers["content-disposition"] || "";
+                  const match = cd.match(/filename="?([^";]+)"?/);
+                  a.download = match ? match[1] : `${doc.title || "document"}.${format}`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  URL.revokeObjectURL(url);
+                } catch (e) {
+                  const status = e?.response?.status;
+                  if (status === 409) {
+                    toast.error("This artefact has no compiled content yet.");
+                  } else {
+                    toast.error(
+                      apiErrorMessage(e, `Couldn't download ${format.toUpperCase()} file.`),
+                    );
+                  }
                 }
               }}
             />
@@ -336,15 +369,46 @@ function Toolbar({
         >
           <History className="w-4 h-4" strokeWidth={1.6} />
         </button>
+        {/* T4.1 (2026-05-25) — G6 ratified: 3 server-produced download
+            formats (DOCX / PDF / PPTX). Each button hits the on-the-fly
+            render endpoint `/work-studio/documents/{aid}/render?format=...`
+            and streams the binary back. All three buttons emit DOM
+            unconditionally (T2.3 rule); they're disabled only when no
+            artefactId is available (the toolbar root won't render
+            without a doc anyway, but the prop guard keeps test data
+            clean). The pre-T4 single "Download" icon (which routed to
+            the legacy export-job pipeline) is removed; that pipeline
+            is still reachable from the Compile wizard's commission
+            flow and isn't a Compiled Document toolbar affordance. */}
         <button
           type="button"
-          onClick={onDownload}
-          className="p-1.5 text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)]/30 rounded"
-          aria-label="Download"
-          data-testid="document-overlay-download-btn"
-          title="Download"
+          onClick={() => onDownload("docx")}
+          className="px-2.5 py-1 text-[11.5px] uppercase tracking-[0.14em] font-mono text-[var(--ink)] hover:bg-[var(--cream-deep)]/40 border border-[var(--rule)] rounded-sm"
+          aria-label="Download DOCX"
+          data-testid="document-overlay-download-docx-btn"
+          title="Download as DOCX"
         >
-          <Download className="w-4 h-4" strokeWidth={1.6} />
+          DOCX
+        </button>
+        <button
+          type="button"
+          onClick={() => onDownload("pdf")}
+          className="px-2.5 py-1 text-[11.5px] uppercase tracking-[0.14em] font-mono text-[var(--ink)] hover:bg-[var(--cream-deep)]/40 border border-[var(--rule)] rounded-sm"
+          aria-label="Download PDF"
+          data-testid="document-overlay-download-pdf-btn"
+          title="Download as PDF"
+        >
+          PDF
+        </button>
+        <button
+          type="button"
+          onClick={() => onDownload("pptx")}
+          className="px-2.5 py-1 text-[11.5px] uppercase tracking-[0.14em] font-mono text-[var(--ink)] hover:bg-[var(--cream-deep)]/40 border border-[var(--rule)] rounded-sm"
+          aria-label="Download PPTX"
+          data-testid="document-overlay-download-pptx-btn"
+          title="Download as PPTX"
+        >
+          PPTX
         </button>
 
         {/* Draft / In Review affordances */}
@@ -807,7 +871,15 @@ function AIRevisionPanel({ contextId, artefactId, doc, onClose, onApplied }) {
       }
       setAccepted(initial);
     } catch (e) {
-      setError(apiErrorMessage(e, "Revision failed."));
+      // T4.2 (2026-05-25) — G7 ratified failure copy verbatim.
+      // The recommendation/state (instruction, scope, tone, last
+      // diff if any) is left untouched in the inline error block so
+      // the user can hit Refine again without re-typing. We only
+      // clear the in-flight diff that hasn't been computed yet —
+      // the diff state is set to null at the START of `submit()`
+      // above, so this catch path doesn't accidentally clear an
+      // already-displayed diff (there isn't one to clear here).
+      setError("We couldn't apply that refinement. Please try again.");
     } finally {
       setSubmitting(false);
     }

@@ -42,6 +42,7 @@ from routers import work_studio_phase_c2 as work_studio_phase_c2_router  # noqa:
 from routers import work_studio_from_source as work_studio_from_source_router  # noqa: E402
 # Chunk 8 (2026-05-18) — Document Overlay (QA-2026-05-16-029…-036).
 from routers import work_studio_overlay as work_studio_overlay_router  # noqa: E402
+from routers import work_studio_render as work_studio_render_router  # noqa: E402  # T4.1 (G6)
 from routers import learn as learn_router  # noqa: E402
 from routers import committees as committees_router  # noqa: E402
 from routers import simulate as simulate_router  # noqa: E402
@@ -155,6 +156,7 @@ app.include_router(work_studio_phase_c2_router.router)
 app.include_router(work_studio_from_source_router.router)
 # Chunk 8 (2026-05-18) — Document Overlay (QA-2026-05-16-029…-036).
 app.include_router(work_studio_overlay_router.router)
+app.include_router(work_studio_render_router.router)  # T4.1 (G6) — DOCX/PDF/PPTX on-the-fly render
 app.include_router(learn_router.router)
 app.include_router(committees_router.router)
 app.include_router(simulate_router.router)

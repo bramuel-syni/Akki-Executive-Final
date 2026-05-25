@@ -133,3 +133,20 @@ T1 (11 tests) + T2 (23 tests) + T3 (20 tests) + baseline (28 tests) = 82 pass. 1
 | **No guardrail files modified** | ✅ `git diff --name-only HEAD` excludes `services/synisense/**`, `services/clamav_service.py`, `inbound_email.py`, `trust_center.py`, `admin_audit_invariant.py`, `llm_router.py`. The new `from-document` endpoint resides alongside the existing `work_studio_from_source.py` module and only reads `db.documents` + writes `db.work_studio_exports`. |
 | **No T4/T5 scope pulled forward** | ✅ Compile *download formats* (G6 PPTX) untouched. Refine flow (W3/W5) untouched. Enhance flow (W9/W10) untouched. Cycle setup wizard (C2/C3/C4) untouched. |
 
+
+
+
+---
+
+## T3 closure — e1_tester verdict 2026-05-25
+
+**Verdict: 4/4 PASS.** All T3 items verified by e1_tester on 2026-05-25 against the v1.1 contract.
+
+| Item | Spec ref | Tester result |
+| --- | --- | --- |
+| T3.1 — Add to Work Studio modal | §4.A → D5 + §6 G8 | PASS |
+| T3.2 — Add to Cycle cross-surface parity | §4.A → D6 + §6 G1 | PASS |
+| T3.3 — Work Studio card lifecycle routing | §4.C → W3/W4 + §6 G8 | PASS |
+| T3.4 — Compile modal nested upload + G9 toasts | §4.C → W8 + §6 G9 | PASS (code-verified for failure toasts; browser-use cannot force HTTP 422/500 to live-intercept) |
+
+**T3 status: CLOSED.**

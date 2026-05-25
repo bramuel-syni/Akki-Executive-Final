@@ -265,7 +265,13 @@ export default function EnhanceModal({ open, onClose, kind, contextId, briefId =
       }
       setPhase("complete");
     } catch (err) {
-      setErrMsg(apiErrorMessage(err));
+      /* T4.5 (2026-05-25) — G10 ratified failure copy verbatim.
+       * On Refine failure inside the enhanced-document drawer we
+       * leave the existing enhanced content + intelligence in place
+       * (we don't clear `c2Result` here — only the in-flight result
+       * was cleared at the start of this submit). The inline error
+       * banner above the form (`errMsg`) carries the verbatim copy. */
+      setErrMsg("We couldn't refine this version. Please try again.");
       setPhase("failed");
     }
   };
