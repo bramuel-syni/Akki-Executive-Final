@@ -1020,3 +1020,98 @@ Spec lock: `/app/memory/AKKI_ONBOARDING_SPEC.md` v1.1 (ratified 2026-05-25).
 
 Full sprint summary appended to `T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md` §11 "Onboarding sprint J1-J4 closeout".
 
+
+---
+
+## 2026-05-25 — Chunk (c) build — Stripe "Billing — Coming Soon" UX
+
+Implementation entry. See `T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md` §11 + `PUSH_READINESS.md` for sprint-level context. Chunk (c) was dispatched after the onboarding sprint closed and the user explicitly opted for an honest Coming-Soon surface over a silent-fake-success mock.
+
+### Implementation summary
+
+**Backend** (`backend/routers/billing.py` — full rewrite):
+- All Stripe SDK / `emergentintegrations.payments.stripe.checkout` calls REMOVED.
+- 4 existing endpoints now return `{coming_soon: true, message: <verbatim>}` — `/billing/plans`, `/billing/me`, `/billing/checkout` (writes audit row), `/billing/status/{sid}`.
+- Webhook stub `/webhook/stripe` returns 200 + dead-letters body to `stripe_dead_letter` collection. NO signature verification.
+- NEW `/api/notify-billing-launch` — idempotent set-if-not-exists into `billing_launch_interest` collection.
+
+**Frontend:**
+- `components/settings/BillingTab.jsx` REWRITTEN as the Coming-Soon hero page. Verbatim heading/body/CTA, Notify-me CTA, read-only plan catalog.
+- `components/depth/UpgradeModal.jsx` REWRITTEN — primary "NOTIFY ME WHEN READY" CTA routes to `/app/settings/billing`. Secondary mailto preserved for enterprise prospects.
+
+**Verbatim copy** (single source of truth — `routers/billing.py` constants, mirrored in JSX consts):
+- Heading: *"Billing & Subscription — Coming Soon"*
+- Body: *"We're finalizing our subscription tiers. Your account is fully active during this preview period; billing will roll out in a future release."*
+- CTA: *"Notify me when this is ready"*
+
+**Tests:** 13 new (7 backend + 6 frontend), anchor-chain pattern. Anti-false-green: 13/13 fail against `v-pre-c`. Full pytest post-impl: 1206 passed (+13), 490 skipped, 1 pre-existing failure.
+
+### Chunk (c.1) e1_tester verdict — 3/4 PASS · FAIL on (c.1)(c)
+
+**(c.1)(a):** PASS — Coming-Soon surface renders verbatim copy + Notify-me CTA wired.
+**(c.1)(b):** PASS — `/api/notify-billing-launch` idempotent.
+**(c.1)(c):** **FAIL** — Dead `import stripe` inside `backend/services/stripe_webhook.py::verify_and_parse_event`. No runtime callers (the live webhook stub dead-letters directly), but the source line tripped the strict zero-Stripe-SDK invariant grep audit.
+**(c.1)(d):** PASS — UpgradeModal routes to `/app/settings/billing`, mocked-mode kill confirmed.
+
+**WARN (acceptable):** `POST /api/billing/checkout` returns 422 on naked body — `CheckoutIn` schema strictness on plan_id + origin_url. User confirmed: do NOT change the schema; the WARN is acceptable given the endpoint returns the verbatim Coming-Soon contract on valid bodies.
+
+### (c.1)(c) surgical fix
+
+Scope per user brief (verbatim): delete dead code; verify zero-Stripe-SDK invariant; add regression test that pins the invariant.
+
+**Files changed:**
+
+| File | Change |
+| --- | --- |
+| `backend/services/stripe_webhook.py` | Deleted `verify_and_parse_event` function (contained the dead `import stripe` lazy load) + the `SignatureInvalid` companion exception class (only used by that function). Kept the Mongo-side plumbing — `configured`, `is_replay`, `record_event`, `ensure_indexes`, `dead_letter` — none of which load the Stripe SDK; `ensure_indexes` is actively imported by `server.py` startup. Docstring rewritten to avoid the literal `import stripe` substring that would still trip the grep audit. |
+| `backend/tests/test_chunk_c_no_stripe_sdk_import.py` | NEW. Two tests: (1) a `subprocess.run(["grep", "-rn", ...])` directly mirroring the e1_tester (c.1)(c) audit pattern against `backend/routers/` + `backend/services/` — asserts 0 hits; (2) a targeted `services/stripe_webhook.py` source check that strips docstrings and re-asserts no `import stripe` / `from stripe import` / `emergentintegrations.payments.stripe` matches, AND that `verify_and_parse_event` + `SignatureInvalid` stay deleted. |
+
+**No frontend changes. No guardrail changes.**
+
+### Pre-fix vs post-fix evidence
+
+```
+$ git show v-pre-c:backend/services/stripe_webhook.py \
+    | grep -cE "import stripe|from stripe|emergentintegrations.payments.stripe"
+1                              ← pre-fix hit (line 51, lazy import inside verify_and_parse_event)
+
+$ grep -rn "import stripe|from stripe|emergentintegrations.payments.stripe" \
+    backend/routers/ backend/services/ --include='*.py' \
+    | grep -v __pycache__ | wc -l
+0                              ← post-fix: zero hits anywhere in the audit scope
+```
+
+```
+$ # Pre-fix evidence — restore v-pre-c source, run the new test:
+$ git checkout v-pre-c -- backend/services/stripe_webhook.py
+$ pytest tests/test_chunk_c_no_stripe_sdk_import.py
+FAILED test_chunk_c_no_stripe_sdk_import_in_backend_routers_or_services
+FAILED test_chunk_c_stripe_webhook_helpers_have_no_stripe_sdk_load
+2 failed                       ← 2/2 FAIL pre-fix
+
+$ # Post-fix — restore the chunk-c.1 fix:
+$ git checkout HEAD -- backend/services/stripe_webhook.py
+$ pytest tests/test_chunk_c_no_stripe_sdk_import.py tests/test_chunk_c_billing_coming_soon*.py
+15 passed                      ← 15/15 PASS (13 prior + 2 new)
+```
+
+### Boot smoke
+
+`server.py` line 431 still imports `ensure_indexes` from `services.stripe_webhook` at startup — verified live: the import succeeds, `configured()` returns `{'api_key': False, 'webhook_secret': False}` as expected in the no-Stripe-env preview pod.
+
+### Full pytest
+
+```
+1 failed · 1208 passed · 490 skipped · 86 warnings in <4 minutes>
+```
+
+- Post-(c.1)-fix passing count: **1208** (= 1206 prior + 2 new regression tests).
+- Zero regressions from the pre-(c.1)-fix baseline.
+- The 1 failure remains the pre-existing `test_real_requirements_file_is_clean` — unrelated, parked in `POST_T5_BACKLOG.md`.
+
+### Hygiene
+
+- No new tag — still under `v-pre-c`. `v-post-c` to be created once chunk (c) overall verifies green (after e1_tester re-runs (c.1)(c)).
+- Guardrails: zero modifications to `services/synisense/*`, `services/llm_router.py`, `services/clamav_service.py`, `services/inbound_email.py`, `routers/trust_center.py`, `services/trust_center.py`, `routers/admin_audit_invariant.py`.
+
+**Chunk (c.1)(c) status: READY FOR e1_tester re-verification of (c.1)(c) only.**

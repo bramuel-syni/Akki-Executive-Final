@@ -1,29 +1,33 @@
-"""Phase 10 / Item C — Stripe webhook hardening.
+"""Stripe webhook helpers — idempotency + dead-letter plumbing.
 
-Responsibilities separated from the router so the signature
-verification + idempotency + dead-letter logic is unit-testable.
+Chunk (c) closeout (2026-05-25): the Stripe signature verification
+helper (``verify_and_parse_event``) and its companion
+``SignatureInvalid`` exception were DELETED to pin the strict
+zero-Stripe-SDK invariant. That function contained a lazy
+load of the Stripe SDK that, while never reached at runtime under
+the Coming-Soon contract, still appeared in source and tripped
+the codebase grep audit.
 
-  * ``verify_and_parse_event(raw_body, sig_header)``
-      - Verifies the ``Stripe-Signature`` header against
-        ``STRIPE_WEBHOOK_SECRET``. Raises :class:`SignatureInvalid`
-        on any failure. **Never** trusts the body before verify.
-  * ``is_replay(event_id)`` / ``record_event(event_id)``
-      - Idempotency via ``db.stripe_events`` with a 30-day TTL.
-  * ``dead_letter(event, reason)``
-      - Anything unhandled is stored raw in ``db.stripe_dead_letter``.
+What remains is purely Mongo-side plumbing (TTL indexes + replay
+tracking + dead-letter writes) that the Coming-Soon webhook stub
+in ``routers/billing.py`` may still call. None of it loads the
+Stripe SDK.
+
+  * ``configured()`` — env-flag probe (useful for ops dashboards).
+  * ``is_replay(event_id)`` / ``record_event(event_id)`` — idempotency
+    via ``db.stripe_events`` with a 30-day TTL.
+  * ``ensure_indexes(db)`` — additive TTL index creation at startup.
+  * ``dead_letter(db, event, reason)`` — writes raw event payloads
+    into ``db.stripe_dead_letter`` for operator inspection.
 """
 from __future__ import annotations
 
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 logger = logging.getLogger("akki.stripe_webhook")
-
-
-class SignatureInvalid(Exception):
-    pass
 
 
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
@@ -35,28 +39,6 @@ def configured() -> Dict[str, bool]:
         "api_key": bool(STRIPE_API_KEY),
         "webhook_secret": bool(STRIPE_WEBHOOK_SECRET),
     }
-
-
-def verify_and_parse_event(raw_body: bytes, sig_header: Optional[str]) -> Dict[str, Any]:
-    """Verify signature, return the parsed event dict.
-
-    Raises :class:`SignatureInvalid` if the secret is unset, the
-    header is missing or the signature does not match.
-    """
-    if not STRIPE_WEBHOOK_SECRET:
-        raise SignatureInvalid("STRIPE_WEBHOOK_SECRET is not set")
-    if not sig_header:
-        raise SignatureInvalid("missing Stripe-Signature header")
-    try:
-        import stripe  # lazy import
-        event = stripe.Webhook.construct_event(
-            payload=raw_body, sig_header=sig_header, secret=STRIPE_WEBHOOK_SECRET,
-        )
-    except ImportError as e:
-        raise SignatureInvalid(f"stripe library unavailable: {e}") from e
-    except Exception as e:  # noqa: BLE001 — Stripe SDK raises a family of errors
-        raise SignatureInvalid(str(e)) from e
-    return event
 
 
 async def is_replay(db, event_id: str) -> bool:
@@ -106,3 +88,4 @@ async def dead_letter(db, event: Dict[str, Any], reason: str) -> None:
         "reason": reason,
         "raw": event,
     })
+
