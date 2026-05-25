@@ -3714,3 +3714,38 @@ Full closeout: `T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md` §12 "Full session closeout
 
 **Status: ALL IMPLEMENTATION CHUNKS CLOSED. Standing by for next instruction.**
 
+
+---
+
+## Production-hardening sprint (2026-05-25) — CLOSED
+
+After the full-session closeout above, the operator dispatched a 5-step production-hardening sprint to settle the "code-verified but never-real-user-tested" gap before any friendly-tester rollout.
+
+| Step | Verdict | Tag |
+| --- | --- | --- |
+| 1 — ClamAV prod-status verification endpoint | 3/3 PASS | `v-post-hardening-step-1` |
+| 2 — False-green pattern sweep + ESLint `react/jsx-no-undef` pin | 4/4 PASS | `v-post-hardening-step-2` |
+| 3 — Demo seeds auto-apply on pod boot | 4/4 PASS | `v-post-hardening-step-3` |
+| 4 — Coverage-loss test triage (4 unbacked tier verdicts now backed) | 4/4 PASS | `v-post-hardening-step-4` |
+| 5 — Friendly-tester rollout checklist (operator-readable doc) | doc-only | — |
+
+**Cumulative: 5/5 PASS · 15 user-verified verdicts · 4 latent prod bugs caught + fixed · +40 passing tests (1208 → 1248) · 37 skipped tests retired · 1 durable lesson banked (§5.10 scope-aware lint catches what regex can't) · 0 regressions · 0 guardrail file changes.**
+
+**Sprint closure tag:** `v-post-hardening-sprint-closed` (local-only, with annotated message *"hardening sprint 1-5 closed"*).
+
+**Latent prod bugs caught during hardening:**
+1. `clamd` library `ConnectionError` mis-classification (Step 1 live-probe surface).
+2. `Search` lucide icon undeclared in `AttachDocumentModal.jsx` (Step 2 Phase C webpack build).
+3. `navigate` undeclared in `WorkStudio.jsx` top-level scope (Step 2 Phase C webpack build).
+4. 4 onboarding bootstrap-callback staleness sites (Step 2 Phase A static audit) — `FirstSession.jsx` × 3 + `AppShell.jsx` trust-center-tooltip.
+
+**Final pytest at hardening closure:** **1248 passed · 453 skipped · 1 failed (pre-existing `test_real_requirements_file_is_clean` — spaCy direct-URL refs, parked P3).**
+
+**Tag inventory at hardening close:**
+- 18 tags from full-session close (see §12.7 of `T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md`).
+- 6 new from hardening: `v-pre-hardening` · `v-post-hardening-step-{1,2,3,4}` · `v-post-hardening-sprint-closed`.
+- **24 total local-only tags.** Operator's next "Save to GitHub" cycle pushes the new 6.
+
+Full closeout: `T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md` §13.
+
+**Status: ALL SPRINTS CLOSED. Standing by for operator's GitHub push (consolidated) and first friendly-tester batch invite.**

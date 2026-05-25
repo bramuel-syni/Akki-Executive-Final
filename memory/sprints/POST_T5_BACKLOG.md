@@ -109,3 +109,11 @@ T1 ran clean against the spec. No off-scope issues surfaced.
   - Carried forward from before the hardening sprint. Has been the sole pytest failure across Steps 1-4 (1248 passed · 1 pre-existing failure).
   - Not in flight. Resolve in a future housekeeping pass.
 
+
+## Hardening Step 5 closure observation (2026-05-25) — P2 ENHANCEMENT
+
+- **Landing-page revenue optimisation sprint** — surface friction-funnel data from `FRIENDLY_TESTER_FINDINGS_<date>.md` (the artefact produced by §6 of the hardening Step-5 checklist) and translate the top 3 friction points into landing-page / signup-page conversion improvements. Industry rule-of-thumb: 10-30% conversion lift per top-funnel friction point fixed.
+  - Idea source: hardening Step 5 finish suggestion (orchestrator parked it as scope creep).
+  - **Required input:** at least one completed `FRIENDLY_TESTER_FINDINGS_<date>.md` from §6 of the rollout checklist. Don't dispatch without that data — without it the sprint is guesswork.
+  - Not in flight. Pick up after the first friendly-tester batch returns and the findings doc has been aggregated.
+

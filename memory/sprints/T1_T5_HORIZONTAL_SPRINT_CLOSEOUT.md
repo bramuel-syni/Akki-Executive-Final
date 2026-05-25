@@ -627,3 +627,123 @@ Verified by `git diff --name-only v-pre-T1..v-post-c -- <each path>` returning e
 
 **Full session closed. 31/31 PO-ratified gaps shipped across two sprints + one Coming-Soon chunk. 9 durable lessons banked. 18 local-only git tags ready for GitHub push. 1208 passing tests. Zero regressions. Zero guardrail file changes. Awaiting operator's "Save to Github" trigger for (e) and next instruction.**
 
+
+
+---
+
+## 13. Production-hardening sprint closeout (2026-05-25)
+
+After the session closeout above, the operator dispatched a 5-step production-hardening sprint to settle the "code-verified but never-real-user-tested" gap before any friendly-tester rollout. All 5 steps are now closed.
+
+### 13.1 Per-step verdict ledger
+
+| Step | Scope | e1_tester verdict | Pass-count | Tag |
+| --- | --- | --- | --- | --- |
+| **1** | ClamAV prod-status verification endpoint (`GET /api/healthz/clamav`) | **PASS** | 3/3 | `v-post-hardening-step-1` |
+| **2** | False-green pattern sweep (audit + 4 surgical fixes + ESLint pin + 2 latent B3 bugs caught) | **PASS** | 4/4 | `v-post-hardening-step-2` |
+| **3** | Demo seeds auto-apply on pod boot (idempotent · fail-soft · `DISABLE_DEMO_SEED` env-flag) | **PASS** | 4/4 | `v-post-hardening-step-3` |
+| **4** | Coverage-loss test triage (4 originals archived · 3 new in-process files · 19 tests covering all 4 unbacked tier verdicts) | **PASS** | 4/4 | `v-post-hardening-step-4` |
+| **5** | Friendly-tester rollout checklist (operator-readable doc) | doc-only | — | — |
+
+**Cumulative hardening-sprint verdict: 5/5 chunks CLOSED · 15 e1_tester user-verified verdicts · all 4 unbacked tier verdicts (T1 D7 · T2.2 · T2.4 G11/G12 · T3.3 G8) now backed by passing in-process tests.**
+
+### 13.2 Pytest growth across the hardening sprint
+
+| Boundary | Passed | Skipped | Failed |
+| --- | --- | --- | --- |
+| Pre-hardening baseline (post-chunk-c) | 1208 | 490 | 1 (pre-existing requirements-guard) |
+| Post-Step-1 | 1216 (+8) | 490 | 1 |
+| Post-Step-2 | 1224 (+8) | 490 | 1 |
+| Post-Step-3 | 1229 (+5) | 490 | 1 |
+| Post-Step-4 | **1248 (+19)** | 453 (-37) | 1 |
+| Post-Step-5 (doc-only) | **1248** | 453 | 1 |
+
+**Net delta across hardening: +40 passing tests · −37 skipped tests · 0 regressions.** Total session delta (pre-`v-pre-T1` baseline → post-hardening): +165 passing tests.
+
+### 13.3 Latent production bugs caught + fixed during hardening
+
+Four bugs that would have hit real users were caught and fixed during the hardening sprint. Each had been in source for ≥1 chunk before discovery; none were caught by pytest under the prior assertion patterns.
+
+| Bug | Caught by | Symptom in prod | Fix |
+| --- | --- | --- | --- |
+| **clamd library `ConnectionError` mis-classification** | Step 1 live-probe (immediately after first hit on the new endpoint in the preview env) | `/api/healthz/clamav` returned `clamd_daemon: "unknown"` with `debug.exception_class: "ConnectionError"` instead of the canonical `"unreachable"` — the `clamd` library raises its OWN `clamd.ConnectionError` class that doesn't inherit from Python's built-in `ConnectionError`, so the original except clause missed it. | `_ping_clamd()` now extends `unreachable_exc_types` at runtime with `clamd.ConnectionError` + `clamd.ClamdError` if present on the module. Regression test `S1.C2` pins the fix. |
+| **Search lucide icon undeclared in AttachDocumentModal** | Step 2 Phase C (webpack build after enabling `react/jsx-no-undef`) | `<Search />` icon at the journal-tab empty state was used in JSX but not in the file's lucide-react named-imports list. `ReferenceError` whenever a user with no journal docs opened the modal. | Added `Search` to the named-import list. Test `S2.G` pins the import. |
+| **`navigate` undeclared scope in WorkStudio default export** | Step 2 Phase C (webpack build) | Top-level `WorkStudio` component called `navigate(...)` inside the G8-routed Board/Committee Pack card handler at line 669, but the component itself never called `useNavigate()`. The `navigate` at line 213 belonged to the sibling `BriefDrawer` scope. `ReferenceError` whenever a user clicked a Board Pack / Committee Pack card. | Added `const navigate = useNavigate();` to the top-level `WorkStudio()` body. Test `S2.H` pins the hook. |
+| **4 onboarding bootstrap-callback staleness sites** | Step 2 Phase A static audit (J2.3-pattern recurrence) | `FirstSession.jsx` callbacks `onIntakeSubmitted`, `onArtefactReady`, `onSkip`, plus `AppShell.jsx` trust-center-tooltip conditional gate — all used `refreshContexts()` instead of `bootstrap()` after auth-mutating endpoints, OR rendered behind a `{cond && (...)}` JSX gate. The first 3 would have caused `FirstSessionGuard` redirect loops; the 4th would have silently broken any test asserting the tooltip exists at first paint. | All 4 sites refactored. `bootstrap()` consistently used post-auth-mutation; trust-center-tooltip emits unconditionally with `data-tooltip-visible` attribute + CSS class flip. Tests `S2.A` / `S2.B` / `S2.C` / `S2.D` pin the fixes. |
+
+**ROI on the hardening sprint:** 4 prod-impacting bugs caught and fixed BEFORE any friendly-tester invite — exactly the gap the sprint was scoped to close.
+
+### 13.4 New durable lesson banked
+
+#### §5.10 Scope-aware lint catches what regex audits cannot (Step 2 Phase C, 2026-05-25)
+
+Regex-based static audits cannot walk JS scope chains. The Step 2 Phase A audit script intersected JSX symbol use with the file's module-level imports, which caught nothing — both real B3 bugs slipped through because they involved scope-shadowing (`navigate` declared in the SIBLING `BriefDrawer` function, not the top-level `WorkStudio` function) or non-conditional JSX use (the `Search` icon at a `<TabsContent>` block that renders unconditionally when the tab is selected, not behind a `{cond && ...}` gate).
+
+ESLint's `react/jsx-no-undef` + `no-undef` rules walk the full scope chain at parse time and caught both bugs immediately when webpack rebuilt.
+
+**Rule (binding for future sprints):**
+
+> When pinning a "this symbol must be in scope" invariant, scope-aware lint rules are STRICTLY more capable than regex audits. Wire the rule into the build (craco/eslint config) BEFORE writing the regex audit script, not after. The Step 2 Phase C config snapshot is the reference implementation:
+>
+> ```js
+> "react/jsx-no-undef": "error",
+> "no-undef": "error",
+> ```
+>
+> Both rules MUST be `error` (not `warn`) so webpack build fails. Recommend NEVER demoting these rules from `error`.
+
+Codified in `craco.config.js::ESLintPlugin`. Test enforcement: `S2.F` (`test_s2_f_craco_eslint_pins_b3_pattern`) regex-checks both rule declarations in `craco.config.js`.
+
+### 13.5 POST_T5_BACKLOG snapshot (post-hardening)
+
+The hardening sprint resolved 2 prior backlog items and added 4 new ones (3 P2 enhancements + 1 P3 housekeeping). Net inventory:
+
+**RESOLVED at hardening:**
+- ~~Backlog-b deployment-pipeline gap (demo seeds auto-apply)~~ → Step 3
+- ~~J2 closure observation (AppShell ESLint dev overlay)~~ → resolved earlier at J4 boundary
+
+**NEW from hardening closure observations:**
+- **P2:** `/api/healthz/boot-seed` endpoint — surface latest seed-run result (Step 3 closure idea).
+- **P2:** Coming-Soon analytics admin view (`billing_launch_interest` daily rollup — chunk (c) closure idea).
+- **P2:** Launch-day email blast CRON (post-launch follow-on for the Notify-me waitlist — chunk (c.1) closure idea).
+- **P3:** spaCy `requirements.txt` cleanup (`test_real_requirements_file_is_clean` failure, Step 4 closure observation).
+
+**Still parked (pre-hardening):**
+- **P2:** Onboarding Health admin dashboard (J4 closure idea).
+- **P2:** Demo visibility widening across DJ/WS/Monitor (parked at J5).
+- **P2:** Cycle Setup Wizard `intake_seed=1` Q3 fallback prefill (parked at J5).
+- **P2:** Landing-page revenue optimisation sprint — NEW. Run after first friendly-tester batch returns. Friction-funnel data from `FRIENDLY_TESTER_FINDINGS_<date>.md` is the required input. Added at hardening closure.
+- **P2:** ClamAV EICAR live spot-check — DEFERRED (clamd sidecar STOPPED in preview).
+- **P3:** Stripe library removal from `requirements.txt` (chunk-(c.1) housekeeping).
+- **P3:** X4 Monitor objective/project filter tab removal.
+- **P3:** SKIP_LEDGER amnesty sprint — ~60-100 more skipped tests resurrectable via Step 4's harness-rewrite pattern.
+
+Full backlog state: `/app/memory/sprints/POST_T5_BACKLOG.md`.
+
+### 13.6 Git tag inventory after hardening (chronological)
+
+```
+v-pre-T1 ... v-post-c                        (18 tags — full session closeout, see §12.7)
+2026-05-25  v-pre-hardening                  hardening sprint open
+2026-05-25  v-post-hardening-step-1
+2026-05-25  v-post-hardening-step-2
+2026-05-25  v-post-hardening-step-3
+2026-05-25  v-post-hardening-step-4
+2026-05-25  v-post-hardening-sprint-closed   hardening sprint close (THIS commit)
+```
+
+**24 tags total** (18 from full-session close + 6 new from hardening). All local-only — the GitHub push for the hardening tags is the operator's next action via "Save to Github". See `PUSH_READINESS.md` for the consolidated tag inventory.
+
+### 13.7 Final pytest at hardening closure
+
+```
+1 failed · 1248 passed · 453 skipped · 89 warnings in <4:30>
+```
+
+- The 1 failure is `test_real_requirements_file_is_clean` (spaCy direct-URL refs) — parked at P3 housekeeping. Has been the sole pytest failure through every step boundary in this session (T-sprint, onboarding, Coming-Soon chunk, and now hardening).
+- 453 skipped — down 37 from pre-hardening's 490 (Step 4 retirement of the 4 archived files).
+- 1248 passed is the post-session high-water mark.
+
+### 13.8 Final closure statement (hardening sprint)
+
+**Hardening sprint Steps 1–5 closed. 5/5 chunks PASS · 15 user-verified verdicts · 4 latent prod bugs caught + fixed · +40 passing tests · +1 durable lesson (§5.10) · 6 new local-only git tags · 0 regressions · 0 guardrail file changes. Friendly-tester rollout checklist landed at `/app/memory/sprints/FRIENDLY_TESTER_ROLLOUT_CHECKLIST.md`. Standing by for operator's GitHub push (consolidated) and first tester-batch invite.**

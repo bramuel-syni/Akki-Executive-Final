@@ -186,3 +186,91 @@ Before triggering "Save to GitHub":
 ---
 
 **Status:** ready for the operator's GitHub push. Documentation only — no code changes for chunk (e).
+
+---
+
+## Update — Production-hardening sprint added (2026-05-25)
+
+After the chunk-(c) close above, the operator dispatched a 5-step production-hardening sprint. All 5 steps are now closed. The **6 new tags below are LOCAL-ONLY and require another "Save to GitHub" cycle** to land on origin.
+
+### Hardening tags (added to the inventory in §2)
+
+```
+2026-05-25  v-pre-hardening                  hardening sprint open
+2026-05-25  v-post-hardening-step-1          clamav prod-status endpoint
+2026-05-25  v-post-hardening-step-2          false-green sweep + ESLint pin
+2026-05-25  v-post-hardening-step-3          demo seeds auto-apply on boot
+2026-05-25  v-post-hardening-step-4          coverage-loss test triage
+2026-05-25  v-post-hardening-sprint-closed   hardening sprint close (annotated)
+```
+
+**24 total tags now in the local repo** (18 from session close + 6 from hardening). The previous "Save to GitHub" cycle (if completed for chunk-e) covered the 18; the next cycle needs to cover the 6 new hardening tags.
+
+### Hardening chunk summary
+
+| Step | Summary | Verdict |
+| --- | --- | --- |
+| **1** | `GET /api/healthz/clamav` — read-only daemon status probe (alive / unreachable / unknown). Caught the `clamd.ConnectionError` library-class mis-classification live in the preview env. | 3/3 PASS |
+| **2** | Static-analysis sweep for 3 known false-green patterns (T2.3 DOM-unconditional · B3 undefined-symbol · J2.3 auth-staleness). 4 P0 sites fixed via surgical patches. ESLint `react/jsx-no-undef` + `no-undef` pinned in `craco.config.js` (lesson §5.10) — Phase C immediately caught 2 latent prod bugs the regex script missed. | 4/4 PASS |
+| **3** | `@app.on_event("startup")` hook auto-applies the `DEMO_T5_BACKLOG` seed pack on pod boot. Idempotent (deterministic-id upserts), fail-soft (catch-all logs + pod keeps booting), `DISABLE_DEMO_SEED=1` env-flag for prod opt-out. | 4/4 PASS |
+| **4** | 4 coverage-loss test files triaged. 3 rewritten as in-process companions (`test_iter{40,41,19}_*_in_process.py`, 19 new tests), 1 archived as obsolete (iter62, `/api/solve/*` namespace retired). All 4 unbacked tier verdicts (T1 D7 · T2.2 · T2.4 G11/G12 · T3.3 G8) now backed. | 4/4 PASS |
+| **5** | `/app/memory/sprints/FRIENDLY_TESTER_ROLLOUT_CHECKLIST.md` — operator-readable, 159 lines, 7 sections. Closes the "never seen by real users" gap. | doc-only |
+
+### Pytest at hardening close
+
+```
+1 failed · 1248 passed · 453 skipped · 89 warnings
+```
+
+- **+40 vs pre-hardening baseline** (1208 → 1248).
+- **−37 vs pre-hardening skipped** (490 → 453). Coverage-loss families retired.
+- The 1 failure is the pre-existing `test_real_requirements_file_is_clean` — parked P3 (`POST_T5_BACKLOG.md`).
+- Zero regressions on the 1208 pre-hardening passing.
+
+### Suggested commit message for the SECOND "Save to GitHub" push
+
+```
+Production-hardening sprint (5 steps) close
+
+Step 1: GET /api/healthz/clamav — daemon-status probe.
+Step 2: false-green pattern sweep — 4 surgical fixes + ESLint
+        react/jsx-no-undef + no-undef pinned in craco config
+        (lesson §5.10). Phase C immediately caught 2 latent prod
+        bugs the regex audit missed.
+Step 3: on_startup_demo_seed boot hook — idempotent + fail-soft
+        + DISABLE_DEMO_SEED env-flag.
+Step 4: coverage-loss test triage — 3 files rewritten as in-
+        process companions (19 new tests), 1 archived as obsolete.
+        All 4 unbacked tier verdicts now backed.
+Step 5: friendly-tester rollout checklist (operator docs).
+
+4 latent prod bugs caught + fixed before any tester invite:
+clamd.ConnectionError mis-classification, Search lucide import,
+WorkStudio navigate scope, 4 onboarding bootstrap-callback
+staleness sites.
+
++40 passing tests (1208 → 1248), −37 skipped, 0 regressions,
+0 guardrail file changes. New durable lesson banked (§5.10).
+
+Tags: v-pre-hardening, v-post-hardening-step-{1,2,3,4},
+v-post-hardening-sprint-closed.
+```
+
+### Updated pre-push checklist (operator)
+
+Before triggering the SECOND "Save to GitHub":
+
+- [ ] Read `memory/sprints/HARDENING_LOG.md` (full per-step diary).
+- [ ] Read `memory/sprints/T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md` §13 (hardening sprint closeout).
+- [ ] Confirm hardening tag inventory above matches `git tag -l | grep hardening` output.
+- [ ] Run `cd /app/backend && pytest -q --no-header --tb=no` and confirm `1248 passed · 1 failed (pre-existing)`.
+- [ ] Trigger "Save to GitHub" from the Emergent chat input.
+
+### After the second push lands
+
+- Optional: re-fetch tags on the remote and verify all 24 tags above are visible on the origin.
+- Begin the friendly-tester rollout per `memory/sprints/FRIENDLY_TESTER_ROLLOUT_CHECKLIST.md`.
+
+---
+
+**Status (post-hardening):** ready for the operator's SECOND GitHub push + first friendly-tester batch invite. Pure documentation — no code changes for this update.
