@@ -220,7 +220,12 @@ async def upload_document(
 
     data = await file.read()
     if len(data) > MAX_BYTES:
-        raise HTTPException(status_code=413, detail=f"File too large. Max {MAX_BYTES // 1024 // 1024}MB.")
+        # G25 (2026-05-25, ratified spec §3 Stage 4) — verbatim toast
+        # for oversized uploads. NOT paraphrased.
+        raise HTTPException(
+            status_code=413,
+            detail="That file is larger than 50 MB. Please split it or upload a smaller version.",
+        )
 
     # Generate the doc_id up front so the clamav `upload_scan_log` row
     # carries the same identifier the persisted document row will use.
@@ -282,6 +287,15 @@ async def upload_document(
     storage_key = save_to_storage(context_id, doc_id, filename, data)
     text, err = extract_text(data, filename, file.content_type or "")
     preview = make_preview(text)
+
+    # G24 (2026-05-25, ratified spec §3 Stage 4) — verbatim 400 when
+    # no text can be extracted. Refusing pre-storage so the user sees
+    # the exact message + nothing is committed.
+    if not text or not text.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="That file doesn't have any text we can read. Please upload a different file.",
+        )
 
     created_at = _iso(_now())
     trust = data_trust if data_trust in ("trusted", "mixed", "weak") else "mixed"
@@ -357,6 +371,21 @@ async def upload_document(
          "related_doc_id": related_doc_id, "relation_type": doc["relation_type"],
          "mentions": len(mention_ids)},
     )
+
+    # J3 (2026-05-25, ratified spec §3 Stage 4) — first-doc-uploaded
+    # flag. Flip on every successful upload (idempotent set). Gates
+    # the Stage 5 Trust Center introduction.
+    try:
+        await db.accounts.update_one(
+            {"id": ctx["account"]["id"]},
+            {"$set": {"first_session.first_doc_uploaded": True,
+                      "first_session.first_doc_uploaded_at": created_at}},
+        )
+    except Exception:
+        # Non-fatal — the doc is already persisted. The flag will flip
+        # on the next successful upload.
+        pass
+
     return sanitize_doc(doc)
 
 

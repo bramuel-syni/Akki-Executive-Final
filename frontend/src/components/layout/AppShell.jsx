@@ -437,11 +437,11 @@ export default function AppShell({ children }) {
               <div
                 role="tooltip"
                 data-testid="trust-center-tooltip"
-                className="absolute top-full mt-2 right-0 w-56 bg-[var(--ink)] text-[var(--cream)] text-[11.5px] px-3 py-2 rounded-md shadow-lg z-50"
+                className="absolute top-full mt-2 right-0 w-64 bg-[var(--ink)] text-[var(--cream)] text-[11.5px] px-3 py-2 rounded-md shadow-lg z-50"
               >
                 <div className="font-medium mb-0.5">New</div>
                 <div className="text-[var(--cream)]/85 leading-snug">
-                  See how your data is protected.
+                  This is your Trust Center. We've recorded what Shield touched on your first upload — take a look.
                 </div>
                 <div
                   className="absolute -top-1 right-6 w-2 h-2 bg-[var(--ink)] rotate-45"

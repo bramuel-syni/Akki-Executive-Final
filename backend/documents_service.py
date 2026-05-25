@@ -35,7 +35,7 @@ log = logging.getLogger("akki.documents")
 ACCEPT_EXT = {".pdf", ".docx", ".pptx", ".txt", ".md", ".rtf",
               ".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif",
               ".csv", ".xlsx"}
-MAX_BYTES = 25 * 1024 * 1024  # 25 MB
+MAX_BYTES = 50 * 1024 * 1024  # 50 MB (spec §3 Stage 4 G25 ratified 2026-05-25)
 MAX_EXTRACT_CHARS = 200_000
 # Phase F.1 — image OCR bounds.
 OCR_MAX_BYTES = 5 * 1024 * 1024

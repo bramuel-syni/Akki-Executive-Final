@@ -28,6 +28,7 @@ import axios from "axios";
 import {
   Popover, PopoverTrigger, PopoverContent,
 } from "../components/ui/popover";
+import TrustCenterTour from "../components/trust/TrustCenterTour";
 
 const API = process.env.REACT_APP_BACKEND_URL || "";
 
@@ -781,6 +782,31 @@ export default function TrustCenter() {
     setIntroDismissed(true);
   }, [hdrs]);
 
+  // J3 (2026-05-25, ratified spec §3 Stage 5) — Trust Center tour.
+  // Reads `trust_center_tour.show` from the onboarding-status
+  // endpoint. The tour scaffolding renders DOM-unconditionally
+  // (closeout §5.1) — visibility is governed by the `show` prop
+  // inside the overlay component itself.
+  const [tourState, setTourState] = useState({ show: false });
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try {
+        const { data: status } = await axios.get(
+          `${API}/api/users/me/onboarding-status`,
+          { headers: hdrs },
+        );
+        if (cancel) return;
+        const tour = status?.trust_center_tour || {};
+        setTourState({ show: Boolean(tour.show) });
+      } catch (_e) {
+        // Non-fatal — tour stays hidden.
+      }
+    })();
+    return () => { cancel = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div
       data-testid="trust-center-page"
@@ -844,7 +870,7 @@ export default function TrustCenter() {
           {tab === "session" && chatId && <SessionView chatId={chatId} />}
           {tab === "session" && !chatId && (
             <div className="text-[13px] text-[var(--muted)]" data-testid="tc-no-chat">
-              No conversation selected. Open Trust Center from a chat to see its session view.
+              No sessions yet. Upload a document or chat with Akki to begin.
             </div>
           )}
           {tab === "activity" && <ActivityView />}
@@ -852,6 +878,13 @@ export default function TrustCenter() {
 
         <StandardsFooter />
       </div>
+      {/* J3 (2026-05-25, ratified spec §3 Stage 5) — Trust Center
+          tour. DOM-unconditional (closeout §5.1 + §5.7); visibility
+          governed by `show` prop. */}
+      <TrustCenterTour
+        show={tourState.show}
+        onDismiss={() => setTourState({ show: false })}
+      />
     </div>
   );
 }

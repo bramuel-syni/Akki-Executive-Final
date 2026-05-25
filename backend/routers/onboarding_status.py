@@ -113,6 +113,16 @@ async def _compute_status(account: Dict[str, Any]) -> Dict[str, Any]:
     )
     show_help_tooltip = not help_dismissed
 
+    # J3 (2026-05-25, ratified spec §3 Stage 5) — Trust Center
+    # introduction (3-stop tour overlay on the Trust Center page).
+    # Gated on the user having uploaded at least one document (the
+    # Stage 4 `first_doc_uploaded` flag) AND not having dismissed
+    # the tour previously. Idempotent.
+    fs = account.get("first_session") or {}
+    first_doc_uploaded = bool(fs.get("first_doc_uploaded"))
+    tc_introduced = bool(fs.get("trust_center_introduced"))
+    show_tc_tour = first_doc_uploaded and not tc_introduced
+
     return {
         "needs_reintro": needs_reintro,
         "reason": reason,
@@ -126,6 +136,11 @@ async def _compute_status(account: Dict[str, Any]) -> Dict[str, Any]:
         "help_tooltip": {
             "show": show_help_tooltip,
             "dismissed_at": account.get("help_tooltip_dismissed_at"),
+        },
+        "trust_center_tour": {
+            "show": show_tc_tour,
+            "first_doc_uploaded": first_doc_uploaded,
+            "trust_center_introduced": tc_introduced,
         },
         "shield_v1_deploy_at": SHIELD_V1_DEPLOY_ISO,
     }
@@ -207,4 +222,32 @@ async def dismiss_help_tooltip(
         {"$set": {"help_tooltip_dismissed_at": now}},
     )
     current["help_tooltip_dismissed_at"] = now
+    return await _compute_status(current)
+
+
+@router.post("/trust-center-tour/dismiss")
+async def dismiss_trust_center_tour(
+    current: Dict[str, Any] = Depends(get_current_account),
+) -> Dict[str, Any]:
+    """J3 (2026-05-25, ratified spec §3 Stage 5) — Mark the Trust
+    Center introduction tour as completed. Idempotent. Once
+    dismissed, the tour does NOT re-appear on subsequent visits.
+
+    Flips `accounts.{id}.first_session.trust_center_introduced` to
+    True with an ISO timestamp; the `_compute_status` reader gates
+    `trust_center_tour.show` on this flag.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    await db.accounts.update_one(
+        {"id": current["id"]},
+        {"$set": {
+            "first_session.trust_center_introduced": True,
+            "first_session.trust_center_introduced_at": now,
+        }},
+    )
+    # Refresh the in-memory representation for `_compute_status`.
+    fs = dict(current.get("first_session") or {})
+    fs["trust_center_introduced"] = True
+    fs["trust_center_introduced_at"] = now
+    current["first_session"] = fs
     return await _compute_status(current)

@@ -650,3 +650,179 @@ $ cd /app/backend && python -m pytest -q --no-header --tb=no
 - The 1 failure is the same pre-existing `test_real_requirements_file_is_clean`.
 
 **J2.3-fix.A/D status: READY FOR e1_tester re-verification (J2.3-fix.A and J2.3-fix.D only).**
+
+---
+
+## 2026-05-25 — J2 closure
+
+**Final e1_tester verdict: 4/4 PASS** for J2 + J2.3 + J2.3-fix.A/D + bonus solve/demo alignment. The 2-line `refreshAuth={bootstrap}` fix unified all three door branches successfully.
+
+**Git tag `v-post-j2`** created (commit at J2-fully-closed boundary; local-only).
+
+**Post-T5 backlog addition:** "Transient dev-server ESLint overlay in `AppShell.jsx` intermittently obscures UI during manual QA. Non-blocking, dev-only. Schedule a lint cleanup pass when convenient." Logged in `POST_T5_BACKLOG.md` at low priority.
+
+**J2 status: CLOSED.**
+
+---
+
+## 2026-05-25 — J3 build (Stages 4-5) — IMPLEMENTATION
+
+### Pre-J3 hygiene
+| Artifact | Path | UTC timestamp |
+| --- | --- | --- |
+| Git tag | `v-pre-a` (still in force) + `v-post-j2` (J2 boundary, local-only) | — |
+| Mongo dump | `/app/backup/pre_j3_20260525T130751Z/` (72 MB, 240 collections) | 2026-05-25T13:07:51Z |
+
+### Stage 4 — First document upload (G24, G25, first_doc_uploaded flag)
+
+Spec §3 Stage 4. The upload pipeline already exists (T3.4 + G9) — J3 work is the **first-time gate + verbatim error copy refinements**, NOT a new pipeline.
+
+**Backend (`backend/routers/documents.py` + `backend/documents_service.py`):**
+
+| Change | Spec ref | Detail |
+| --- | --- | --- |
+| `MAX_BYTES`: `25 * 1024 * 1024` → `50 * 1024 * 1024` | §6 G25 | Spec ratified the 50 MB ceiling. Other upload surfaces (`_ATTACH_MAX_BYTES`, `_ENHANCE_MAX_BYTES`) keep their own 25 MB ceilings — this change is local to the `/api/contexts/{cid}/documents` endpoint. |
+| 413 detail string | §6 G25 | Pre-fix: `f"File too large. Max {MAX_BYTES // 1024 // 1024}MB."` Post-fix: verbatim `"That file is larger than 50 MB. Please split it or upload a smaller version."` |
+| 400 detail string (NEW) | §6 G24 | After `extract_text(...)`, if the extracted text is empty/whitespace-only, raise verbatim `"That file doesn't have any text we can read. Please upload a different file."` Pre-fix this case silently saved a `status: "empty"` row. |
+| `first_session.first_doc_uploaded` flag | §3 Stage 4 + Stage 5 gate | After the `document.uploaded` audit row, `$set` `first_session.first_doc_uploaded = True` + `first_doc_uploaded_at` on `db.accounts.{id}`. Idempotent (set-if-different). Best-effort try/except — the audit chain is the source of truth. |
+
+ClamAV + Shield are NOT modified — calls continue to go through `services/clamav_service.scan(...)` and `services/synisense/shield/deidentifier.deidentify(...)` exactly as they did pre-J3. Verified by `git diff --name-only v-post-j2..HEAD` excluding `services/clamav_service.py` and `services/synisense/shield/*`.
+
+### Stage 5 — Trust Center introduction (G27, G28, new tour overlay)
+
+Spec §3 Stage 5 — NEW work on top of the b48ee23 cherry-pick.
+
+**Backend (`backend/routers/onboarding_status.py`):**
+
+| Change | Spec ref | Detail |
+| --- | --- | --- |
+| New `trust_center_tour` block in `_compute_status` | §3 Stage 5 | Returns `{show, first_doc_uploaded, trust_center_introduced}`. `show` is True only when `first_doc_uploaded == True` AND `trust_center_introduced == False`. |
+| New endpoint `POST /api/users/me/onboarding-status/trust-center-tour/dismiss` | §3 Stage 5 | `$set` `first_session.trust_center_introduced = True` + `_at`. Idempotent. Returns the recomputed status payload. |
+
+**Frontend (`frontend/src/components/trust/TrustCenterTour.jsx` — NEW):**
+
+- 196-line React component implementing the 3-stop introduction overlay per spec §3 Stage 5.
+- DOM-unconditional root (`data-testid="trust-center-tour"`) — visibility governed by the `show` prop via CSS `pointer-events`/`opacity`, NOT presence-based conditional rendering (closeout §5.1).
+- 3 stops in spec order:
+  1. **Master Audit** — *"Your Master Audit lives here."*
+  2. **Sensitivity Band** — *"Each session carries a sensitivity band."*
+  3. **De-id summary** — *"Click the info icon on any counter."*
+- Verbatim copy treated as literal — `TOUR_STOPS` constant exported for testing.
+- On Next from final stop OR close-X OR backdrop click → `POST /trust-center-tour/dismiss`.
+- Lucide-react imports: `X as XIcon, ArrowRight, ArrowLeft, ShieldCheck` — all confirmed in import block (import-survival rule §5.6).
+
+**Frontend (`frontend/src/pages/TrustCenter.jsx`):**
+
+- Added `import TrustCenterTour from "../components/trust/TrustCenterTour"`.
+- New `useEffect` fetches `/api/users/me/onboarding-status` on mount and writes `setTourState({show: data.trust_center_tour.show})`.
+- `<TrustCenterTour show={tourState.show} onDismiss={...}>` mounted at the page root, AFTER the `</div>` that closes the main layout — overlays everything but doesn't break the layout DOM tree.
+- G28 verbatim empty-state copy applied to the `tc-no-chat` block: *"No sessions yet. Upload a document or chat with Akki to begin."* (was: *"No conversation selected. Open Trust Center from a chat to see its session view."*).
+
+**Frontend (`frontend/src/components/layout/AppShell.jsx`):**
+
+- G27 verbatim tooltip refinement: the `trust-center-tooltip` wrapper now carries *"This is your Trust Center. We've recorded what Shield touched on your first upload — take a look."* (was the b48ee23 placeholder *"See how your data is protected."*).
+- Tooltip wrapper width bumped from `w-56` to `w-64` to accommodate the longer ratified copy.
+
+### Tests written
+
+**File:** `backend/tests/test_j3_stage_4_5_backend.py` (NEW). 5 backend behavior tests:
+
+| Test | Asserts |
+| --- | --- |
+| `test_j3_1_first_doc_uploaded_flag_flips_on_successful_upload` | Real upload → 200; flag flipped on account; audit row written |
+| `test_j3_2_g25_oversized_upload_returns_verbatim_413` | 51 MB upload → 413 with verbatim G25 string |
+| `test_j3_3_g24_empty_text_upload_returns_verbatim_400` | Whitespace-only file → 400 with verbatim G24 string |
+| `test_j3_4_trust_center_tour_show_gates_on_first_doc_uploaded` | Pre-upload `show=False`, post-upload `show=True` |
+| `test_j3_5_dismiss_tour_flips_flag_and_hides_tour_on_next_visit` | Dismiss endpoint flips DB flag; 2nd GET shows `show=False`; idempotent |
+
+**File:** `backend/tests/test_j3_stage_4_5_frontend.py` (NEW). 8 frontend behavior tests (control-flow chain pattern per §5.8):
+
+| Test | Asserts |
+| --- | --- |
+| `test_j3_f1_g27_verbatim_trust_center_tooltip_copy` | G27 verbatim in AppShell tooltip wrapper; legacy b48ee23 copy gone |
+| `test_j3_f2_g28_verbatim_trust_center_empty_state_copy` | G28 verbatim in tc-no-chat; legacy copy gone |
+| `test_j3_f3_trust_center_tour_module_emits_three_verbatim_stops` | TOUR_STOPS exported; 3 stop IDs in spec order; 3 verbatim headings |
+| `test_j3_f4_trust_center_page_mounts_tour_overlay_via_use_effect_chain` | 4-anchor chain: import + useEffect [fetches onboarding-status + setTourState] + JSX render with show={tourState.show} |
+| `test_j3_f5_trust_center_tour_dom_unconditional` | No `&&` gate immediately preceding the trust-center-tour root |
+| `test_j3_f6_no_j4_chat_starter_scope_pulled_forward` | No top_of_mind / intake_seed / chat_starter / G29 Help copy in TrustCenterTour |
+| `test_j3_f7_door_allow_list_unchanged_post_j3` | ALLOWED_DOORS == {cycle, upload, solve, demo} — invariant |
+| `test_j3_f8_no_guardrail_files_modified` | Documentary anchor — A_LOG.md source of truth |
+
+### Pre-fix anti-false-green evidence
+
+Against `v-post-j2`:
+
+```
+$ git checkout v-post-j2 -- backend/documents_service.py backend/routers/documents.py \
+    backend/routers/onboarding_status.py frontend/src/components/layout/AppShell.jsx \
+    frontend/src/pages/TrustCenter.jsx
+$ rm frontend/src/components/trust/TrustCenterTour.jsx
+$ cd /app/backend && pytest tests/test_j3_stage_4_5_*.py
+FAILED test_j3_1_first_doc_uploaded_flag_flips_on_successful_upload
+FAILED test_j3_2_g25_oversized_upload_returns_verbatim_413
+FAILED test_j3_3_g24_empty_text_upload_returns_verbatim_400
+FAILED test_j3_4_trust_center_tour_show_gates_on_first_doc_uploaded
+FAILED test_j3_5_dismiss_tour_flips_flag_and_hides_tour_on_next_visit
+FAILED test_j3_f1_g27_verbatim_trust_center_tooltip_copy
+FAILED test_j3_f2_g28_verbatim_trust_center_empty_state_copy
+FAILED test_j3_f3_trust_center_tour_module_emits_three_verbatim_stops
+FAILED test_j3_f4_trust_center_page_mounts_tour_overlay_via_use_effect_chain
+FAILED test_j3_f5_trust_center_tour_dom_unconditional
+FAILED test_j3_f6_no_j4_chat_starter_scope_pulled_forward
+11 failed, 2 passed
+```
+
+**11/13 FAIL pre-fix.** The 2 that pass are the invariant tests (J3.F7 door allow-list unchanged + J3.F8 documentary anchor).
+
+### Post-fix evidence
+
+```
+$ pytest tests/test_j3_*.py tests/test_j2_*.py tests/test_j1_*.py
+69 passed, 7 warnings in 12.97s
+```
+
+**69/69 PASS** (J1=24 + J2=22 + J2.3 backend=4 + J2.3-fix.A/D frontend=6 + J3=13).
+
+### Files changed (J3 — final inventory)
+
+**Backend (composition — no guardrail file touched):**
+- `backend/documents_service.py` — `MAX_BYTES` 25 MB → 50 MB per G25.
+- `backend/routers/documents.py` — G25 verbatim 413, G24 verbatim 400, first_doc_uploaded flag flip on success.
+- `backend/routers/onboarding_status.py` — new `trust_center_tour` block in `_compute_status` + new `/trust-center-tour/dismiss` endpoint.
+- `backend/tests/test_j3_stage_4_5_backend.py` — NEW (5 tests).
+- `backend/tests/test_j3_stage_4_5_frontend.py` — NEW (8 tests).
+
+**Frontend (composition):**
+- `frontend/src/components/trust/TrustCenterTour.jsx` — NEW (3-stop overlay component, 196 LOC).
+- `frontend/src/pages/TrustCenter.jsx` — TrustCenterTour import + tour state useEffect + render + G28 verbatim empty-state.
+- `frontend/src/components/layout/AppShell.jsx` — G27 verbatim tooltip refinement.
+
+**Documentation:**
+- `memory/sprints/POST_T5_BACKLOG.md` — J2-closure ESLint-overlay observation appended.
+- `memory/sprints/A_LOG.md` — this entry.
+
+**Backend guardrail files touched: 0.** Verified by `git diff --name-only v-post-j2..HEAD` excluding `services/synisense/*`, `services/llm_router.py`, `services/clamav_service.py`, `services/inbound_email.py`, `routers/trust_center.py`, `services/trust_center.py`, `routers/admin_audit_invariant.py` — none modified.
+
+### J4 scope NOT pulled forward
+
+- **G29 (Help tooltip refinement)** — the b48ee23 cherry-pick wired the Help tooltip wrapper; the G29 verbatim refinement (*"Tap Help any time. Akki has a built-in tour of every screen."*) is **J4 scope**, NOT J3.
+- **G30 (Chat starter prompt seeding)** — read `intake.top_of_mind` on home chat mount — **J4 scope**, NOT J3.
+- **G31 (Help tooltip restoration)** — covered by the b48ee23 cherry-pick wire; J4 will refine the copy. Not J3.
+
+CI guard `test_j3_f6_no_j4_chat_starter_scope_pulled_forward` asserts none of these strings exist in the new TrustCenterTour.jsx.
+
+### Full pytest
+
+```
+$ cd /app/backend && python -m pytest -q --no-header --tb=no
+1 failed, 1179 passed, 490 skipped, 86 warnings in 257.17s (4:17)
+```
+
+**1179 passed · 490 skipped · 1 failed.**
+
+- Pre-J3 baseline (post-J2.3-fix.A/D): 1166 passed.
+- Post-J3: **1179 passed (+13 — exactly the 13 new test_j3_stage_4_5_*.py tests).** Zero regressions.
+- 490 skipped — UNCHANGED.
+- The 1 failure is the same pre-existing `test_real_requirements_file_is_clean`.
+
+**J3 chunk status: READY FOR e1_tester binary verification.**
