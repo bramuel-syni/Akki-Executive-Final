@@ -1090,6 +1090,112 @@ Verification harness produces evidence under `/tmp/phase_e_*.png` and via curl. 
 | E2 | Relocate Ready+At-Risk to Cycle Manager. | Same — both Work Studio rail and Cycle Manager are surfaces; the readiness signals move between them without changing the underlying data contract. | No spec conflict. |
 | E3 | `state` field on `documents` collection introduced in E.3. | Document schema is implicit (codebase-defined). The new `state` field is additive — legacy docs without `state` are filtered out cleanly. | No spec conflict. |
 
+### E.3 — Universal Document Drawer
+
+**Surface:** `<DocumentDrawer>` (`components/documents/DocumentDrawer.jsx`) — a Shadcn Sheet at 60% viewport width, slides from the right, mounts on every primary doc-listing surface (Work Studio, Workspace / Document Journal, Pulse, Cycle). Opens via the canonical `?doc_id=<uuid>` URL contract; backdrop + Esc close.
+
+**Render modes** (selected by `doc.state` + `doc.origin`):
+- **CREATION** — `state === "draft" && origin === "akki_generated"`. Editable body, DRAFT watermark overlay, Creation intelligence (objective adherence + completeness + clarity + audience fit + suggestions), inline edit + prompt-based edit composer (composer ships as a UX entry-point; the apply pipeline is documented as a follow-up).
+- **REFERENCE** — everything else (committed / uploaded / email_receipt). Read-only body, Reference intelligence (2-sentence summary + key signals + open questions + provenance + related), no watermark.
+
+**5 tabs:** `Document` (default) · `Intelligence` · `Summary & Notes` · `Signals` · `Related`. All five render under the same tab-bar shell.
+
+**5 footer CTAs** — all four navigation CTAs emit Phase D.3 canonical `?ctx_type=document&ctx_id=<id>` URLs:
+
+| CTA | URL builder | Resolves to |
+| --- | --- | --- |
+| Use in Solva | `useInSolvaUrl()` | `/app/solva?ctx_type=document&ctx_id=…` |
+| Use in Chat | `useInChatUrl()` | `/app/chat?ctx_type=document&ctx_id=…` |
+| Generate brief | `generateBriefUrl()` | `/app/solva?ctx_type=document&ctx_id=…&submodule=develop_strategy&starter=…` |
+| Test hypothesis | `testHypothesisUrl()` | `/app/solva?ctx_type=document&ctx_id=…&submodule=simulate_hypothesis&starter=…` |
+| Share document | opens `<ShareDocumentModal>` (internal) | reuses legacy `/documents/{did}/share` + `/engagement` endpoints; no new collection |
+
+Each CTA also carries `data-href` so live DOM verification can read the canonical URL straight from the button.
+
+**Stack pattern:** clicking a row in the Related tab pushes the related doc onto an internal `stack` array; the drawer's Back chevron pops the stack. Closing from the topmost drawer strips `?doc_id=` from the URL.
+
+**DRAFT watermark overlay** (`DocumentDrawerWatermark.jsx`):
+- SVG `<pattern>` with `patternUnits="userSpaceOnUse"`, `width=280 height=180`, `patternTransform="rotate(-30)"` — repeating tile across the entire Document-tab body.
+- `text` element renders "DRAFT" in Georgia serif, 64px, 0.1em letter-spacing.
+- Fill: `var(--oxblood, #7A2E2E)` (the design token fallback covers shadow DOM cases).
+- Overlay opacity: `0.12`. `pointer-events: none` so the body underneath stays interactive.
+- Render gate: `mode === "creation" && activeTab === "document"` (the watermark would conflict with the Intelligence / Notes / Signals / Related tabs' tables and controls).
+
+**Objective capture modal** (`ObjectiveCaptureModal.jsx`):
+- Fires from the Drafts tab's `+ New draft` CTA (`onCreateClick("draft")` intercept in `WorkStudio.jsx`).
+- Captures `{ goal: required, context: optional, set_at: ISO }`.
+- On save: POSTs `/contexts/{cid}/documents/manual-create` with `{state: "draft", origin: "akki_generated", objective}` and deep-links into the new drawer via `?doc_id=<id>`.
+- The objective payload is then read by the Intelligence tab to compute the `objective_score` (0-100, scored by the LLM through Shield).
+
+**Backend schema additions** — all optional, backwards-compatible:
+
+| Field | Values | Purpose |
+| --- | --- | --- |
+| `state` | `"draft" \| "committed" \| None` | Mode selection for the drawer; legacy docs with no `state` render as Reference. |
+| `objective` | `{goal, context, set_at}` | Captured at draft creation; powers objective adherence scoring. |
+| `origin` | `"akki_generated" \| "upload" \| "email_receipt" \| None` | Surfaced as the origin chip in the drawer header. |
+| `audience` | `"board" \| "committee" \| "regulator" \| "public"` | Drives audience-fit scoring in Creation mode. |
+
+**Backend endpoints** (`routers/documents.py`):
+
+| Endpoint | Purpose |
+| --- | --- |
+| `PATCH /contexts/{cid}/documents/{did}` | Drawer inline edits: title, body, state, objective, audience, origin. State transitions `draft → committed` stamp `committed_at`. |
+| `GET /contexts/{cid}/documents/{did}/intelligence` | Returns cached envelope OR `{status: "pending", doc_hash}` when no cache. |
+| `POST /contexts/{cid}/documents/{did}/intelligence/regenerate` | Schedules async extraction via `BackgroundTasks`; returns `{status: "queued"}` immediately. |
+| `GET /contexts/{cid}/documents/{did}/export-guard` | DRAFT export guard. When `state === "draft"`, returns `{can_export: False, reason: "draft_watermark_pending"}` until the server-side watermark pipeline ships. |
+
+**Intelligence extraction** (`services/documents/intelligence_service.py`):
+- Single entrypoint `extract_intelligence(doc, account_id, mode)`.
+- Up to **three** Shield-bounded LLM calls per extraction:
+  1. **Summary** (Reference mode only) — 2-sentence editorial via Shield purpose `document_journal.intelligence.extract`.
+  2. **Signals + Open questions** (both modes) — structured JSON ask via Shield purpose `document_journal.signals.generate`. Solva coach voice on open questions.
+  3. **Objective adherence + Suggested improvements** (Creation mode + objective set) — structured JSON via Shield purpose `document_journal.intelligence.extract`. Returns `objective_score` (0-100) + up to 5 improvements.
+- **No `emergentintegrations` direct import** — every LLM call routes through `services.synisense.shield.client.invoke()`. Shield purposes match the existing allowlist's `document_journal.*` wildcard.
+- Heuristic-only fields (word count, avg sentence length, jargon density, completeness placeholders) populate even when the LLM call fails — the drawer always has *something* to show.
+- Cache shape on `db.document_intelligence`:
+  ```
+  {doc_id, doc_hash, generated_at, mode,
+   summary, key_signals[], open_questions[],
+   completeness_gaps[], clarity_signals{},
+   objective_score, audience_fit{}, suggested_improvements[]}
+  ```
+  Keyed by `(doc_id, doc_hash)` where `doc_hash = sha256(id|name|state|body[:50000])`. Any PATCH that changes those fields wipes the cache so the next GET regenerates.
+
+**Share modal** (`ShareDocumentModal.jsx`):
+- **NO new tracking infrastructure invented.** Wires directly to the existing legacy electronic-tracking endpoints:
+  - `POST /api/contexts/{cid}/documents/{did}/share` (Resend-backed email + `db.document_shares` row)
+  - `GET  /api/contexts/{cid}/documents/{did}/engagement` (returns view_count, unique_readers, share_count, shares[])
+  - `POST /api/shares/{share_id}/revoke` (revoke flow from `routers/shares.py`)
+- Modal renders: recipient input, optional message, send button, engagement metrics (views + readers + shares), per-share-row revoke affordance.
+- Surfaces revoked rows in muted style with an "revoked" chip.
+
+**Files changed — Phase E.3**
+
+| Path | Purpose |
+| --- | --- |
+| `backend/routers/documents.py` | E.3 endpoints (PATCH / intelligence GET+POST / export-guard) + schema field surfacing (state/objective/origin/audience on detail response). |
+| `backend/services/documents/__init__.py` | NEW — package marker. |
+| `backend/services/documents/intelligence_service.py` | NEW — Shield-bounded LLM extraction + heuristic signals + cache shape. |
+| `frontend/src/components/documents/DocumentDrawer.jsx` | NEW — the universal drawer (60% Sheet + 5 tabs + 5 CTAs + stack + mode selection). |
+| `frontend/src/components/documents/DocumentDrawerWatermark.jsx` | NEW — DRAFT SVG-pattern overlay. |
+| `frontend/src/components/documents/ShareDocumentModal.jsx` | NEW — wraps the legacy engagement endpoints into a clean modal. |
+| `frontend/src/components/documents/ObjectiveCaptureModal.jsx` | NEW — objective capture on new-draft creation. |
+| `frontend/src/pages/WorkStudio.jsx` | Mount `<DocumentDrawer>` + `<ObjectiveCaptureModal>`; intercept `onCreateClick("draft")` to fire the objective modal. |
+| `frontend/src/pages/Workspace.jsx` | Mount `<DocumentDrawer>` (Document Journal surface). |
+| `frontend/src/pages/Pulse.jsx` | Mount `<DocumentDrawer>` (signal-doc refs). |
+| `frontend/src/pages/Cycle.jsx` | Mount `<DocumentDrawer>` (cycle-doc refs). |
+| `backend/tests/test_home_cleanup_phase_e3.py` | NEW — wire + live tests. |
+
+**Scope cuts documented for honest follow-up (NOT shipped in this pass):**
+1. **Prompt-based edit apply pipeline.** The composer + Apply button are present in the Document tab (Creation mode); clicking Apply surfaces a `toast.info("Prompt-based edits are coming soon")` placeholder. The endpoint that would actually run the edit (with Shield) is the next iteration.
+2. **DRAFT watermark on export.** The export-guard correctly *blocks* draft exports today (returns `can_export: false`, reason `draft_watermark_pending`). The python-docx / python-pptx / PDF watermark pipeline ships in a follow-up. Per spec: "If watermarking fails for any reason, BLOCK the export with a clear error." — blocking is the spec-compliant behaviour until the pipeline lands.
+3. **Related-docs semantic similarity.** Today the Related tab shows context-peer documents (sibling docs in the same context). The "Same metadata / Content similarity / Canonical lineage" relationship typing is a follow-up — requires the embedding infra wired up.
+
+### Tests added — Phase E.3
+
+`backend/tests/test_home_cleanup_phase_e3.py` (22 tests). Each test anchors on the actual computed artefact (URL, testid, endpoint path, schema field, Shield purpose, mode-selector booleans), NOT JSX className strings. Live HTTP tests cover: PATCH persistence; export-guard blocking drafts then unblocking committed; intelligence pending→queued lifecycle.
+
 ---
 
 ## Deploy-readiness checklist

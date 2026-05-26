@@ -15,6 +15,8 @@
  */
 import React, { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
+// Phase E.3 (2026-05-26) — Universal Document Drawer.
+import DocumentDrawer from "@/components/documents/DocumentDrawer";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
 import { pollJob } from "@/lib/pollJob";
@@ -1426,6 +1428,10 @@ export default function Cycle() {
           </AlertDialogContent>
         </AlertDialog>
       </div>
+      {/* Phase E.3 (2026-05-26) — Universal Document Drawer.
+          Cycle surfaces doc refs across the agenda + contributions
+          tabs; appending `?doc_id=` opens the drawer here. */}
+      <DocumentDrawer contextId={cid} />
       </WorkspaceEntryGate>
     </AppShell>
   );

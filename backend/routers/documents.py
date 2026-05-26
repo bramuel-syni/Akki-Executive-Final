@@ -7,7 +7,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from datetime import datetime, timezone
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -72,6 +73,13 @@ def sanitize_doc(d: Dict[str, Any]) -> Dict[str, Any]:
         "inbound_promoted_by": d.get("inbound_promoted_by"),
         "inbound_promoted_at": d.get("inbound_promoted_at"),
         "inbound_promoted_note": d.get("inbound_promoted_note"),
+        # Phase E.3 (2026-05-26) — Universal Document Drawer fields.
+        "state":         d.get("state"),
+        "objective":     d.get("objective"),
+        "origin":        d.get("origin"),
+        "audience":      d.get("audience"),
+        "updated_at":    d.get("updated_at"),
+        "committed_at":  d.get("committed_at"),
     }
 
 
@@ -534,10 +542,193 @@ async def get_document_detail(
         # Phase M.2: surface the journal-specific fields too.
         "source_channel", "journal_commentary",
         "journal_commentary_generated_at", "journal_commentary_synisense_version",
+        # Phase E.3 (2026-05-26) — Universal Document Drawer:
+        # state (draft/committed), objective (goal+context), origin
+        # (akki_generated/upload/email_receipt), audience.
+        "state", "objective", "origin", "audience",
     ):
         if k in d:
             out[k] = d[k]
     return out
+
+
+# ═════════════════════════════════════════════════════════════════════════
+#  Phase E.3 (2026-05-26) — Universal Document Drawer
+#
+#  Drawer-driven document surface. Backend exposes:
+#    PATCH  /contexts/{cid}/documents/{did}              — edit fields
+#    POST   /contexts/{cid}/documents/{did}/commit       — draft → committed
+#    GET    /contexts/{cid}/documents/{did}/intelligence — cached envelope
+#    POST   /contexts/{cid}/documents/{did}/intelligence/regenerate
+#                                                        — async re-extract
+#
+#  New schema fields on `db.documents` (all optional, backwards-compatible):
+#    state:     "draft" | "committed" | None
+#    objective: { goal: str, context: str, set_at: ISO } | None
+#    origin:    "akki_generated" | "upload" | "email_receipt" | None
+#    audience:  "board" | "committee" | "regulator" | "public" | None
+# ═════════════════════════════════════════════════════════════════════════
+
+
+class _DocPatchIn(BaseModel):
+    title:    Optional[str] = None
+    body:     Optional[str] = None
+    state:    Optional[str] = None  # "draft" | "committed"
+    objective: Optional[Dict[str, Any]] = None
+    audience: Optional[str] = None
+    origin:   Optional[str] = None
+
+
+@router.patch("/contexts/{context_id}/documents/{doc_id}")
+async def patch_document(
+    context_id: str, doc_id: str,
+    body: _DocPatchIn,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Phase E.3 — partial edits from the drawer's Document tab."""
+    d = await db.documents.find_one(
+        {"id": doc_id, "context_id": context_id}, {"_id": 0, "id": 1, "state": 1},
+    )
+    if not d:
+        raise HTTPException(status_code=404, detail="Document not found")
+    update: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    if body.title is not None:
+        clean = body.title.strip()[:240]
+        if clean:
+            update["name"] = clean
+    if body.body is not None:
+        update["extracted_text"] = body.body[:MAX_EXTRACT_CHARS_OUT * 2]
+    if body.state is not None:
+        if body.state not in ("draft", "committed"):
+            raise HTTPException(status_code=400, detail="state must be draft|committed")
+        update["state"] = body.state
+        if body.state == "committed":
+            update["committed_at"] = datetime.now(timezone.utc).isoformat()
+    if body.objective is not None:
+        # Normalise the shape: {goal, context, set_at}.
+        goal = (body.objective.get("goal") or "").strip()
+        if not goal:
+            raise HTTPException(status_code=400, detail="objective.goal is required")
+        update["objective"] = {
+            "goal":   goal[:480],
+            "context": (body.objective.get("context") or "").strip()[:2000],
+            "set_at": body.objective.get("set_at") or datetime.now(timezone.utc).isoformat(),
+        }
+    if body.audience is not None:
+        if body.audience not in ("board", "committee", "regulator", "public"):
+            raise HTTPException(status_code=400, detail="invalid audience")
+        update["audience"] = body.audience
+    if body.origin is not None:
+        if body.origin not in ("akki_generated", "upload", "email_receipt"):
+            raise HTTPException(status_code=400, detail="invalid origin")
+        update["origin"] = body.origin
+    if len(update) == 1:
+        raise HTTPException(status_code=400, detail="Send at least one field")
+    await db.documents.update_one({"id": doc_id, "context_id": context_id}, {"$set": update})
+    # Invalidate the intelligence cache on any body/title/state change
+    # so the next /intelligence GET returns a stale flag (the frontend
+    # then auto-regenerates).
+    if any(k in update for k in ("extracted_text", "name", "state", "objective")):
+        await db.document_intelligence.delete_many({"doc_id": doc_id})
+    fresh = await db.documents.find_one(
+        {"id": doc_id, "context_id": context_id}, {"_id": 0, "storage_key": 0},
+    )
+    return sanitize_doc(fresh)
+
+
+@router.get("/contexts/{context_id}/documents/{doc_id}/intelligence")
+async def get_document_intelligence(
+    context_id: str, doc_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Phase E.3 — returns the cached intelligence envelope. When no
+    cache row exists OR the cached hash mismatches the current doc,
+    returns `{status: "pending"}` so the drawer renders the skeleton.
+    Frontend then POSTs /intelligence/regenerate to kick off the async
+    extraction."""
+    from services.documents.intelligence_service import _doc_hash
+    doc = await db.documents.find_one(
+        {"id": doc_id, "context_id": context_id}, {"_id": 0, "storage_key": 0},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    cached = await db.document_intelligence.find_one(
+        {"doc_id": doc_id}, {"_id": 0},
+    )
+    current_hash = _doc_hash(doc)
+    if not cached or cached.get("doc_hash") != current_hash:
+        return {"status": "pending", "doc_id": doc_id, "doc_hash": current_hash}
+    return {"status": "ready", **cached}
+
+
+@router.post("/contexts/{context_id}/documents/{doc_id}/intelligence/regenerate")
+async def regenerate_document_intelligence(
+    context_id: str, doc_id: str,
+    background_tasks: BackgroundTasks,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Phase E.3 — kick off async intelligence extraction. Returns
+    immediately with `{status: "queued"}`. The drawer polls
+    /intelligence until status becomes "ready"."""
+    doc = await db.documents.find_one(
+        {"id": doc_id, "context_id": context_id}, {"_id": 0, "storage_key": 0},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    mode = "creation" if (doc.get("state") == "draft" and
+                          doc.get("origin") == "akki_generated") else "reference"
+    account_id = ctx.get("account", {}).get("id") or ctx["account_id"]
+    # Schedule the extraction. Failure inside the task is logged + the
+    # cache row stays absent so the next GET retries automatically.
+    async def _run() -> None:
+        from services.documents.intelligence_service import extract_intelligence
+        try:
+            envelope = await extract_intelligence(
+                doc=doc, account_id=account_id, mode=mode,
+            )
+            await db.document_intelligence.update_one(
+                {"doc_id": doc_id},
+                {"$set": envelope},
+                upsert=True,
+            )
+        except Exception as e:  # noqa: BLE001
+            import logging as _log
+            _log.getLogger("documents.intelligence").warning(
+                "extract_intelligence failed for doc=%s: %s", doc_id, e,
+            )
+    background_tasks.add_task(_run)
+    return {"status": "queued", "doc_id": doc_id, "mode": mode}
+
+
+@router.get("/contexts/{context_id}/documents/{doc_id}/export-guard")
+async def check_export_guard(
+    context_id: str, doc_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Phase E.3 — DRAFT export guard. Returns `{can_export, reason?}`.
+    When `state == "draft"` AND no watermark pipeline is available,
+    `can_export` is False and the drawer's Download CTA disables.
+
+    Hard rule from the brief: NO export from Draft state without the
+    DRAFT watermark. The watermarking pipeline integration with
+    python-docx / python-pptx ships in a follow-up; until then the
+    guard returns can_export=False for any draft. This is the
+    spec-compliant fallback ("If watermarking fails for any reason,
+    BLOCK the export with a clear error.")."""
+    doc = await db.documents.find_one(
+        {"id": doc_id, "context_id": context_id}, {"_id": 0, "id": 1, "state": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if doc.get("state") == "draft":
+        return {
+            "can_export": False,
+            "reason": "draft_watermark_pending",
+            "message": "Drafts can be downloaded only with a visible DRAFT watermark. "
+                       "Watermark pipeline ships in a follow-up; export disabled "
+                       "until then.",
+        }
+    return {"can_export": True}
 
 
 # ═════════════════════════════════════════════════════════════════════════

@@ -43,6 +43,9 @@ import EnhanceModal from "@/components/studio/EnhanceModal";
 import PerArtefactSynisenseBadge from "@/components/studio/PerArtefactSynisenseBadge";
 import CreateArtefactModal from "@/components/work_studio/CreateArtefactModal";
 import CompilationRail from "@/components/work_studio/CompilationRail";
+// Phase E.3 (2026-05-26) — Universal Document Drawer + objective capture.
+import DocumentDrawer from "@/components/documents/DocumentDrawer";
+import ObjectiveCaptureModal from "@/components/documents/ObjectiveCaptureModal";
 import CompilationWizard from "@/components/work_studio/CompilationWizard";
 import {
   FileText, Presentation, ScrollText, Loader2, ArrowRight, AlertCircle,
@@ -538,6 +541,8 @@ export default function WorkStudio() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createKind, setCreateKind] = useState("deck");
+  // Phase E.3 (2026-05-26) — objective capture modal for new drafts.
+  const [objectiveModalOpen, setObjectiveModalOpen] = useState(false);
 
   // Patch 2B.2 — Compilation Wizard state.
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -702,7 +707,19 @@ export default function WorkStudio() {
     setEnhanceMode("compile");
     setEnhanceOpen(true);
   };
-  const onCreateClick = (k) => { setCreateKind(k); setCreateOpen(true); };
+  const onCreateClick = (k) => {
+    // Phase E.3 (2026-05-26) — when creating a new draft, fire the
+    // Objective Capture modal first. The modal's onSave handler
+    // creates the document with the objective payload and deep-links
+    // into the drawer. Other artefact kinds (deck/report) keep the
+    // existing CreateArtefactModal flow.
+    if (k === "draft") {
+      setObjectiveModalOpen(true);
+      return;
+    }
+    setCreateKind(k);
+    setCreateOpen(true);
+  };
 
   const onOpenBrief = (row) => { setDrawerAid(row.id); setDrawerOpen(true); };
   const onCloseDrawer = () => { setDrawerOpen(false); };
@@ -906,6 +923,36 @@ export default function WorkStudio() {
           preselectArtefactType={wizardPreselectType}
           preselectSourceId={wizardPreselectSourceId}
           onCreated={() => setRailRefreshKey((k) => k + 1)}
+        />
+
+        {/* Phase E.3 (2026-05-26) — Universal Document Drawer.
+            Opens automatically when the URL carries `?doc_id=`. */}
+        <DocumentDrawer contextId={cid} />
+
+        {/* Phase E.3 — Objective capture modal. Fires from the
+            Drafts tab's "+ New draft" CTA; persists `draft.objective`
+            on the freshly-created document and opens the drawer. */}
+        <ObjectiveCaptureModal
+          open={objectiveModalOpen}
+          onOpenChange={setObjectiveModalOpen}
+          onSave={async (obj) => {
+            try {
+              const { data: newDoc } = await api.post(`/contexts/${cid}/documents/manual-create`, {
+                name: "Untitled draft",
+                body: "",
+                state: "draft",
+                origin: "akki_generated",
+                objective: { ...obj, set_at: new Date().toISOString() },
+              });
+              fetchAggregates();
+              // Open the new draft in the drawer via deep-link.
+              const sp = new URLSearchParams(searchParams);
+              sp.set("doc_id", newDoc?.id);
+              setSearchParams(sp, { replace: true });
+            } catch (e) {
+              toast.error(apiErrorMessage(e));
+            }
+          }}
         />
       </WorkspaceEntryGate>
     </AppShell>

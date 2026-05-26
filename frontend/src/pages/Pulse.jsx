@@ -19,6 +19,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
+// Phase E.3 (2026-05-26) — Universal Document Drawer.
+import DocumentDrawer from "@/components/documents/DocumentDrawer";
 import { api, apiErrorMessage } from "@/lib/api";
 import { takeToSolva } from "@/lib/takeToSolva";
 import {
@@ -730,6 +732,10 @@ export default function Pulse() {
         }}
         busyAction={busyAction}
       />
+      {/* Phase E.3 (2026-05-26) — Universal Document Drawer.
+          Pulse surfaces doc refs via signal cards; clicking a doc
+          ref can append `?doc_id=` to open the drawer here. */}
+      <DocumentDrawer contextId={cid} />
     </AppShell>
   );
 }

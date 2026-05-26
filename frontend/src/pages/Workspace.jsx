@@ -19,6 +19,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
 import { Link } from "react-router-dom";
 import { Sparkles, Search, Upload, Camera, FileText, X, Eye, Loader2, ArrowRight } from "lucide-react";
+// Phase E.3 (2026-05-26) — Universal Document Drawer.
+import DocumentDrawer from "@/components/documents/DocumentDrawer";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -685,6 +687,13 @@ export default function Workspace() {
           }}
         />
       )}
+
+      {/* Phase E.3 (2026-05-26) — Universal Document Drawer.
+          Opens via the canonical `?doc_id=` URL contract. Existing
+          inline DocumentJournalDrawer above remains for the
+          journal-specific summary surface — clicking a journal row
+          can navigate to `?doc_id=` to use the universal drawer. */}
+      <DocumentDrawer contextId={cid} />
     </AppShell>
   );
 }
