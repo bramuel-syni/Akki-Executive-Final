@@ -1626,7 +1626,97 @@ Mirrors the E.3 DocumentDrawer pattern: 60% Sheet primitive mounted on the Task 
 
 ### Suite pass count after F.3
 
-- Phase A 12 · B 14 · C 12 · D 44 · D-audit-correction 10 · E 18 · E.3 22 · E.3 scope-compliance 15 · E.4 10 · F.1+F.2 20 · **F.3 22 = 209/209 GREEN.**
+- Phase A 12 · B 14 · C 12 · D 44 · D-audit-correction 10 · E 18 · E.3 22 · E.3 scope-compliance 15 · E.4 10 · F.1+F.2 20 · **F.3 24 = 212/212 GREEN.**
+
+## F.4 — Compile Flow (2026-05-26)
+
+Lights up the F.3 Compile-tab placeholder with the full 5-stage pipeline. Compile button is **always enabled** per orchestrator directive — readiness is informational, not a lock. Below-80% readiness opens a non-blocking confirmation modal.
+
+### 5 stages — backend wiring
+
+| Stage | Endpoint | Behaviour |
+| --- | --- | --- |
+| 1 — Drafting | `POST /api/tasks/{id}/compile/draft` | Akki LLM-generates one or more `state=draft, origin=akki_generated, task_id=<id>` documents. Multi-section template packs (Board / Committee / Fundraising) run in BackgroundTasks; single-section returns synchronously. Pulls submitted/approved contributions + linked docs into the prompt. |
+| 2 — Review | `POST /api/tasks/{id}/compile/review/complete` `{skip_circulation: bool}` | Pass-through stage. Edits happen via the existing DocumentDrawer + prompted-edit pipeline (E.3). Advances to `circulation` or jumps to `final_production`. |
+| 3 — Circulation | `POST /api/tasks/{id}/compile/circulation/send` `{reviewer_emails, message?, base_url}` | Generates per-reviewer magic-link tokens (32-byte url-safe), 14-day expiry, persists to `task_circulation_tokens`. Sends invite email via Postmark (`email_service.send_email`). Send failure persists the link + records `send_failed` on the per-reviewer status — link still works manually. |
+| 3 — Reviewer view (PUBLIC) | `GET /api/tasks/circulation/{token}` | No auth header. Returns task summary + accessible drafts + reviewer's prior comments. |
+| 3 — Reviewer comment (PUBLIC) | `POST /api/tasks/circulation/{token}/comment` `{comment, doc_id?}` | No auth. Persists comment to `compile_session.circulation.comments[]`. Validates token (not used, not expired). |
+| 3 — Close | `POST /api/tasks/{id}/compile/circulation/close` | Stamps `closed_at`. Advances to `final_production`. |
+| 4 — Apply comment | `POST /api/tasks/{id}/compile/final-production/apply-comment` `{comment_id, action}` | `action="apply"` runs the comment text through Shield as a prompted-edit rewrite, persists the new body. `discard` / `edit_manual` record intent only. |
+| 4 — Complete | `POST /api/tasks/{id}/compile/final-production/complete` | Advances to `commit`. |
+| 5 — Commit | `POST /api/tasks/{id}/compile/commit` | Sequentially flips each draft to `state="committed"`. On partial failure, rolls back already-committed docs from THIS run + fires `task.compile.commit.failed` audit. On success, fires `task.compile.commit.completed`; auto-transitions task to `state="closed"` if no other open drafts remain (`task.state.auto_closed` audit). |
+
+### Compile session sub-document on `tasks`
+
+```python
+compile_session: {
+  active: bool,
+  current_stage: "drafting" | "review" | "circulation" | "final_production" | "commit" | null,
+  draft_artefact_ids:     [doc_id, ...],
+  review_artefact_ids:    [doc_id, ...],
+  circulation: {
+    enabled:         bool,
+    reviewer_emails: [str],
+    sent_at:         ISO?,
+    sent_status:     [{email, status, token, url}, ...],
+    comments:        [{id, reviewer, comment, doc_id?, created_at, status?}, ...],
+    closed_at:       ISO?,
+  },
+  final_artefact_ids:     [doc_id, ...],
+  committed_artefact_ids: [doc_id, ...],
+  started_at:   ISO,
+  completed_at: ISO?,
+}
+```
+
+### New collection — `task_circulation_tokens`
+
+```python
+{
+  id, token, task_id, reviewer_email,
+  draft_artefact_ids: [doc_id, ...],
+  expires_at:  ISO (+14d default),
+  used:        bool,
+  created_at:  ISO,
+}
+```
+
+### 3-second LLM timeout — wired in BOTH services per dispatch ask
+
+- `services/tasks/compile_service.shield_invoke_bounded` — module-level wrapper. Constant `SHIELD_LLM_TIMEOUT_SECONDS = 3.0`. On `asyncio.TimeoutError` returns `{__timeout__: True, purpose}` so the caller can audit + fall back. Audit row: `task.compile.llm.timeout` with `metadata.purpose`.
+- `services/tasks/intelligence_service._llm_recommendations` — wrapped the existing Shield call in `asyncio.wait_for(..., timeout=3.0)`. On timeout: logs + returns `None` so the caller substitutes the rule-based fallback. No silent gaps.
+
+### Frontend (`TaskDrawer.jsx`)
+
+- F.3 placeholder Compile-tab body deleted. F.4 ships:
+  - **Progress strip** — 5 stage pips with current=oxblood, completed=ink, future=parchment. `data-testid="task-drawer-compile-progress"`.
+  - **Always-on Start button** — `data-testid="task-drawer-compile-start"`. Disabled prop is bound only to in-flight `busy` state. The readiness chip next to it carries the title attribute "Readiness — informational only, does not gate the compile button".
+  - **Low-readiness warning modal** — `data-testid="task-drawer-compile-low-readiness-modal"`. Triggers when readiness < 80% on first click. Continue / Cancel buttons. Non-blocking — user can always proceed.
+  - **5 stage panels** — `task-drawer-compile-panel-{drafting|review|circulation|final|commit}`. Each renders the right CTAs for its stage.
+- "Open draft" in Review / Final / Commit panels sets `?doc_id=…` on the URL → DocumentDrawer opens stacked (E.3 stack pattern preserved).
+
+### Scope cuts (NOT shipped — flagged honestly)
+
+- **Inline-comment span resolution** (selecting text in a draft → comment threaded at that span). Out of scope per brief — F.5+ territory. Today's reviewer comments are general (one box per draft) and carry an optional `doc_id` association.
+- **MongoDB multi-doc transactions for commit**. The deployment doesn't expose ACID transactions in our Motor client config. We ship sequential commit + best-effort rollback per the brief's explicit scope-cut allowance.
+- **Live Postmark verification under integration test** — the unit tests assert the magic-link generation + persistence + audit path. Postmark `send_email` is called but the test env's audit row reflects the configured email_service mode (likely `disabled` or `mocked`). Real Postmark verification waits for F.5 contributor-mode live runs.
+
+### Files changed — F.4
+
+| Path | Change |
+| --- | --- |
+| `backend/services/tasks/compile_service.py` (NEW, ~430 lines) | 5-stage orchestrator: drafting, review_complete, send_circulation, add_circulation_comment, close_circulation, apply_comment, complete_final_production, run_commit. `shield_invoke_bounded` with 3s timeout. |
+| `backend/services/tasks/intelligence_service.py` | `_llm_recommendations` now wrapped in `asyncio.wait_for(timeout=3.0)`. |
+| `backend/routers/tasks.py` | +10 compile endpoints (GET state, draft, review-complete, circulation send / view (PUBLIC) / comment (PUBLIC) / close, final apply-comment / complete, commit). |
+| `frontend/src/components/tasks/TaskDrawer.jsx` | Compile tab rewritten with progress strip + 5 panels + low-readiness modal. |
+| `backend/tests/test_home_cleanup_phase_f4.py` (NEW) | 20 wire + live tests covering all 5 stages, public-endpoint shape, rollback path. |
+| `backend/tests/test_home_cleanup_phase_f3.py` | `test_f3_compile_tab_is_placeholder_with_disabled_cta` rewritten as `test_f3_compile_tab_is_now_wired_in_f4`. |
+| `memory/sprints/AUTONOMOUS_DECISIONS_LOG.md` | F.4 decisions appended (rollback over transactions, send-fail-keeps-link path, public-endpoint auth model). |
+| `memory/sprints/HOME_CLEANUP_LOG.md` | This subsection. |
+
+### Suite pass count after F.4
+
+- Phase A 12 · B 14 · C 12 · D 44 · D-audit-correction 10 · E 18 · E.3 22 · E.3 scope-compliance 15 · E.4 10 · F.1+F.2 20 · F.3 24 · **F.4 20 = 232/232 GREEN.**
 
 
 

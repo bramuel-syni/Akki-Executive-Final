@@ -112,11 +112,19 @@ def test_f3_intelligence_tab_renders_5_sections():
     assert "task-drawer-intelligence-regen" in src
 
 
-def test_f3_compile_tab_is_placeholder_with_disabled_cta():
+def test_f3_compile_tab_is_now_wired_in_f4():
+    """F.4 (2026-05-26) — the F.3 placeholder is gone. Compile tab
+    now renders the 5-stage progress strip + a Start/Resume button
+    that is ALWAYS enabled (no readiness gate)."""
     src = _read(TASK_DRAWER)
-    assert "task-drawer-compile-coming-soon" in src
-    assert "task-drawer-compile-disabled-cta" in src
-    assert "F.4" in src
+    # The F.3 placeholder testids no longer exist.
+    assert "task-drawer-compile-coming-soon" not in src
+    assert "task-drawer-compile-disabled-cta" not in src
+    # F.4 testids that replaced them.
+    assert "task-drawer-compile-progress" in src
+    assert "task-drawer-compile-start" in src
+    # Progress strip carries the 5 stage testids via the COMPILE_STAGES map.
+    assert "task-drawer-compile-stage-${s.key}" in src
 
 
 def test_f3_footer_emits_canonical_ctx_type_task_urls():

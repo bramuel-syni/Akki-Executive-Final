@@ -223,7 +223,12 @@ def _fallback_recommendations(task: Dict[str, Any], bl: List[Dict[str, Any]], gp
 
 async def _llm_recommendations(task: Dict[str, Any], rb: Dict[str, Any], bl: List[Dict[str, Any]], gp: List[Dict[str, Any]], user_id: str) -> Optional[List[Dict[str, Any]]]:
     """Best-effort Shield call for LLM-voiced recommendations. Returns
-    None on any failure — caller substitutes the rule-based fallback."""
+    None on any failure — caller substitutes the rule-based fallback.
+
+    F.4 (2026-05-26) — wrapped in a 3-second `asyncio.wait_for` so a
+    slow Shield call cannot block the tab render. On timeout we drop
+    back to the rule-based fallback without raising."""
+    import asyncio as _asyncio
     try:
         from services.synisense.shield.client import invoke as shield_invoke
     except Exception:
@@ -242,14 +247,20 @@ async def _llm_recommendations(task: Dict[str, Any], rb: Dict[str, Any], bl: Lis
         f"GAPS: {json.dumps([g['message'] for g in gp])}\n"
     )
     try:
-        result = await shield_invoke(
-            purpose="task_manager.intelligence.recommendations",
-            content=prompt,
-            tenant_id=user_id,
-            consumer_id="tasks",
-            user_id=user_id,
-            model_preference="balanced",
+        result = await _asyncio.wait_for(
+            shield_invoke(
+                purpose="task_manager.intelligence.recommendations",
+                content=prompt,
+                tenant_id=user_id,
+                consumer_id="tasks",
+                user_id=user_id,
+                model_preference="balanced",
+            ),
+            timeout=3.0,
         )
+    except _asyncio.TimeoutError:
+        log.warning("intel recs timed out (>3s); falling back to rule-based")
+        return None
     except Exception as e:  # noqa: BLE001
         log.warning("task intel shield failed: %s", e)
         return None

@@ -158,3 +158,37 @@ These are now locked decisions, not pending borderline calls.
   metrics surface from the existing `/engagement` listing if a row
   is present.
 
+---
+
+## 2026-05-26 — F.4 in-flight decisions
+
+- **Sequential commit + best-effort rollback (vs. multi-doc
+  transactions):** the Motor/Mongo deployment doesn't expose multi-
+  doc ACID transactions in the current config. Per the brief's
+  explicit scope-cut allowance, Stage 5 commits drafts sequentially
+  and, if any flips fail mid-run, rolls back the ones already
+  flipped in THIS run. Failure audit row: `task.compile.commit.failed`
+  with `metadata.failed_doc` + `metadata.rolled_back`. A subsequent
+  Mongo upgrade can swap in a transaction wrapper without changing
+  the public API.
+- **Send-fail keeps the magic link valid:** when Postmark
+  `send_email` errors for a circulation reviewer, we still persist
+  the token + record `send_failed` on the per-reviewer status. The
+  link works manually (copy/paste). This trades a silent email loss
+  for a visible failure surface that the user can act on.
+- **Public-endpoint auth model:** circulation reviewers DON'T have
+  Akki accounts. The two reviewer endpoints (`GET /api/tasks/
+  circulation/{token}` and `POST /api/tasks/circulation/{token}/
+  comment`) take NO auth header — the URL-safe 32-byte token IS the
+  credential. Tokens carry a 14-day expiry, are single-task scoped,
+  and persist their `draft_artefact_ids` list at issuance time so a
+  token can't be promoted to view unrelated docs later. This is the
+  same trust model as a Calendly link.
+- **3-second LLM timeout default (intelligence + compile):** any
+  Shield call wider than 3s falls back to deterministic output:
+  - intelligence → rule-based recommendations (already shipped F.3)
+  - compile drafting → static skeleton with TODO markers
+  - compile apply-comment → no-op (comment marked applied, body
+    untouched; user can re-run manually)
+  Timeouts surface via an audit event so we can monitor frequency.
+

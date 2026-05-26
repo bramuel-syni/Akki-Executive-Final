@@ -590,3 +590,240 @@ async def regenerate_task_intelligence(
 
     background_tasks.add_task(_rebuild)
     return {"status": "queued", "task_id": task_id, "task_hash": th}
+
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Phase F.4 (2026-05-26) — Compile Flow (5 stages)
+# ═════════════════════════════════════════════════════════════════════
+class _CirculationSendIn(BaseModel):
+    reviewer_emails: List[str] = Field(min_length=1, max_length=20)
+    message: Optional[str] = Field(default=None, max_length=2000)
+    base_url: Optional[str] = Field(default=None, max_length=300)
+
+
+class _CirculationCommentIn(BaseModel):
+    """Public endpoint body — used by the magic-link review surface."""
+    comment: str = Field(min_length=1, max_length=4000)
+    doc_id: Optional[str] = None
+
+
+class _ApplyCommentIn(BaseModel):
+    comment_id: str
+    action: str = Field(min_length=1, max_length=40)
+
+
+class _ReviewCompleteIn(BaseModel):
+    skip_circulation: bool = False
+
+
+def _resolve_base_url(provided: Optional[str]) -> str:
+    """Caller may provide their browser origin (`window.location.origin`)
+    so the magic-link URL points at the right host. Falls back to env."""
+    if provided and provided.startswith(("http://", "https://")):
+        return provided
+    import os
+    return os.environ.get("REACT_APP_BACKEND_URL") or os.environ.get("PUBLIC_BASE_URL") or ""
+
+
+# ─────────────────────────────────────────────────────────────────────
+# GET /api/tasks/{task_id}/compile — current session state
+# ─────────────────────────────────────────────────────────────────────
+@router.get("/tasks/{task_id}/compile")
+async def get_compile_state(
+    task_id: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    t = await db.tasks.find_one({"id": task_id, "account_id": current["id"]}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    from services.tasks.compile_service import _empty_session
+    return t.get("compile_session") or _empty_session()
+
+
+# ─────────────────────────────────────────────────────────────────────
+# POST /api/tasks/{task_id}/compile/draft — Stage 1
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/tasks/{task_id}/compile/draft")
+async def start_compile_drafting(
+    task_id: str,
+    background_tasks: BackgroundTasks,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Kicks off Stage 1 (Drafting). Synchronous if the output_spec is
+    single-section; runs in the background for multi-section packs."""
+    t = await db.tasks.find_one({"id": task_id, "account_id": current["id"]}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    from services.tasks.compile_service import run_drafting, _TEMPLATE_PACK_SHAPES
+    tpl_id = (t.get("output_spec") or {}).get("template_id")
+    sections = _TEMPLATE_PACK_SHAPES.get(tpl_id, [t.get("name")])
+    if len(sections) <= 1:
+        ids = await run_drafting(db, task=t, account_id=current["id"])
+        return {"status": "completed", "draft_artefact_ids": ids}
+
+    async def _bg() -> None:
+        await run_drafting(db, task=t, account_id=current["id"])
+    background_tasks.add_task(_bg)
+    return {"status": "queued", "n_sections": len(sections)}
+
+
+# ─────────────────────────────────────────────────────────────────────
+# POST /api/tasks/{task_id}/compile/review/complete — Stage 2 → 3/4
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/tasks/{task_id}/compile/review/complete")
+async def complete_review_stage(
+    task_id: str,
+    body: _ReviewCompleteIn,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    t = await db.tasks.find_one({"id": task_id, "account_id": current["id"]}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    from services.tasks.compile_service import complete_review
+    session = await complete_review(db, task=t, account_id=current["id"],
+                                     skip_circulation=body.skip_circulation)
+    return session
+
+
+# ─────────────────────────────────────────────────────────────────────
+# POST /api/tasks/{task_id}/compile/circulation/send — Stage 3 start
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/tasks/{task_id}/compile/circulation/send")
+async def send_compile_circulation(
+    task_id: str,
+    body: _CirculationSendIn,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    t = await db.tasks.find_one({"id": task_id, "account_id": current["id"]}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    from services.tasks.compile_service import send_circulation
+    return await send_circulation(
+        db, task=t, account_id=current["id"],
+        reviewer_emails=body.reviewer_emails, message=body.message,
+        base_url=_resolve_base_url(body.base_url),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# GET /api/tasks/circulation/{token} — PUBLIC reviewer landing
+# ─────────────────────────────────────────────────────────────────────
+@router.get("/tasks/circulation/{token}")
+async def circulation_view(token: str):
+    """Public — no auth. Magic-link token is the only credential."""
+    row = await db.task_circulation_tokens.find_one(
+        {"token": token, "used": False}, {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
+    try:
+        exp = datetime.fromisoformat((row.get("expires_at") or "").replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        exp = None
+    if exp and exp < datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail="Link expired")
+    doc_ids = row.get("draft_artefact_ids") or []
+    docs = await db.documents.find(
+        {"id": {"$in": doc_ids}},
+        {"_id": 0, "id": 1, "name": 1, "extracted_text": 1, "doc_type": 1, "state": 1},
+    ).to_list(length=20)
+    t = await db.tasks.find_one(
+        {"id": row["task_id"]},
+        {"_id": 0, "name": 1, "objective": 1, "id": 1, "compile_session.circulation.comments": 1},
+    )
+    own = [
+        c for c in ((t or {}).get("compile_session", {}).get("circulation", {}).get("comments") or [])
+        if c.get("reviewer") == row["reviewer_email"]
+    ]
+    return {
+        "task":           {"id": t["id"], "name": t.get("name"), "objective": t.get("objective")} if t else None,
+        "reviewer_email": row["reviewer_email"],
+        "docs":           docs,
+        "expires_at":     row.get("expires_at"),
+        "own_comments":   own,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────
+# POST /api/tasks/circulation/{token}/comment — PUBLIC reviewer route
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/tasks/circulation/{token}/comment")
+async def circulation_comment(
+    token: str,
+    body: _CirculationCommentIn,
+):
+    from services.tasks.compile_service import add_circulation_comment
+    result = await add_circulation_comment(
+        db, token=token, comment_text=body.comment, doc_id=body.doc_id,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("reason"))
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────
+# POST /api/tasks/{task_id}/compile/circulation/close — Stage 3 → 4
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/tasks/{task_id}/compile/circulation/close")
+async def close_compile_circulation(
+    task_id: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    t = await db.tasks.find_one({"id": task_id, "account_id": current["id"]}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    from services.tasks.compile_service import close_circulation
+    return await close_circulation(db, task=t, account_id=current["id"])
+
+
+# ─────────────────────────────────────────────────────────────────────
+# POST /api/tasks/{task_id}/compile/final-production/apply-comment
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/tasks/{task_id}/compile/final-production/apply-comment")
+async def apply_final_comment(
+    task_id: str,
+    body: _ApplyCommentIn,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    t = await db.tasks.find_one({"id": task_id, "account_id": current["id"]}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if body.action not in ("apply", "discard", "edit_manual"):
+        raise HTTPException(status_code=400, detail="action must be apply, discard, or edit_manual")
+    from services.tasks.compile_service import apply_comment
+    return await apply_comment(db, task=t, account_id=current["id"],
+                                comment_id=body.comment_id, action=body.action)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# POST /api/tasks/{task_id}/compile/final-production/complete — Stage 4 → 5
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/tasks/{task_id}/compile/final-production/complete")
+async def complete_final_production_stage(
+    task_id: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    t = await db.tasks.find_one({"id": task_id, "account_id": current["id"]}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    from services.tasks.compile_service import complete_final_production
+    return await complete_final_production(db, task=t, account_id=current["id"])
+
+
+# ─────────────────────────────────────────────────────────────────────
+# POST /api/tasks/{task_id}/compile/commit — Stage 5
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/tasks/{task_id}/compile/commit")
+async def commit_compile(
+    task_id: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    t = await db.tasks.find_one({"id": task_id, "account_id": current["id"]}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    from services.tasks.compile_service import run_commit
+    result = await run_commit(db, task=t, account_id=current["id"])
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result)
+    return result

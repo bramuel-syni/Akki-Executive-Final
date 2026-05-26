@@ -796,28 +796,504 @@ function IntelligenceTab({ task, onJumpTab }) {
 
 
 // ═════════════════════════════════════════════════════════════════════
-// Tab 5 — Compile (placeholder; F.4 lights it up)
+// Tab 5 — Compile (Phase F.4 · 2026-05-26)
 // ═════════════════════════════════════════════════════════════════════
+//
+// 5-stage compile flow rendered as a horizontal progress strip + a
+// stage-specific body panel. The Start Compile / Resume Compile
+// button is ALWAYS enabled (per user directive — readiness is
+// informational, not a lock). At <80% readiness the start path opens
+// a non-blocking confirmation modal that the user can dismiss.
+//
+const COMPILE_STAGES = [
+  { key: "drafting",         label: "Drafting" },
+  { key: "review",           label: "Review" },
+  { key: "circulation",      label: "Circulation" },
+  { key: "final_production", label: "Final" },
+  { key: "commit",           label: "Commit" },
+];
+
 function CompileTab({ task }) {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [warnLow, setWarnLow] = useState(false);
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+
+  const loadSession = async () => {
+    try {
+      const { data } = await api.get(`/tasks/${task.id}/compile`);
+      setSession(data);
+    } catch { /* tolerate */ }
+    setLoading(false);
+  };
+  useEffect(() => { loadSession(); /* eslint-disable-next-line */ }, [task.id]);
+
+  const stage = session?.current_stage || null;
+  const sessionActive = !!session?.active;
+
+  const startCompile = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/tasks/${task.id}/compile/draft`);
+      toast.success("Drafting started.");
+      await loadSession();
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+  const onStartClick = () => {
+    if ((task.readiness_score ?? 0) < 80 && !sessionActive) {
+      setWarnLow(true);
+    } else {
+      startCompile();
+    }
+  };
+
+  if (loading) {
+    return <p className="text-[12px] text-[var(--muted)] inline-flex items-center gap-1.5">
+      <Loader2 className="w-3 h-3 animate-spin" /> Loading compile state…
+    </p>;
+  }
+
   return (
-    <div className="space-y-4" data-testid="task-drawer-tab-compile-body">
-      <section className="border border-[var(--rule)] rounded-sm p-4 bg-[var(--parchment)]">
-        <p className="text-[10.5px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1">
-          Readiness
-        </p>
-        <p className="text-[24px] akki-serif text-[var(--ink)]">{task.readiness_score ?? 0}%</p>
-      </section>
-      <p className="text-[12.5px] italic text-[var(--muted)]" data-testid="task-drawer-compile-coming-soon">
-        Compile not yet available. Configure the compile flow in Phase F.4.
+    <div className="space-y-5" data-testid="task-drawer-tab-compile-body">
+      {/* Header — Start/Resume button + readiness chip (informational) */}
+      <div className="flex items-center justify-between gap-3" data-testid="task-drawer-compile-header">
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            onClick={onStartClick}
+            disabled={busy}
+            className="bg-[var(--oxblood)] hover:bg-[var(--oxblood-deep)] text-white"
+            data-testid="task-drawer-compile-start"
+          >
+            {busy && <Loader2 className="w-3 h-3 animate-spin mr-1.5" />}
+            {sessionActive ? "Resume Compile" : "Start Compile"}
+          </Button>
+          <span
+            className="text-[11px] font-mono text-[var(--muted)] inline-flex items-center gap-1"
+            data-testid="task-drawer-compile-readiness-chip"
+            title="Readiness — informational only, does not gate the compile button"
+          >
+            <span className="text-[var(--ink)]">{task.readiness_score ?? 0}%</span>
+            <span>readiness</span>
+          </span>
+        </div>
+      </div>
+
+      {/* Progress strip */}
+      <div className="flex items-center gap-2" data-testid="task-drawer-compile-progress">
+        {COMPILE_STAGES.map((s, i) => {
+          const reached = stage && COMPILE_STAGES.findIndex((x) => x.key === stage) >= i;
+          const isCurrent = stage === s.key;
+          const stageCompleted = stage && COMPILE_STAGES.findIndex((x) => x.key === stage) > i;
+          return (
+            <React.Fragment key={s.key}>
+              <div
+                className={`flex items-center gap-1.5 ${isCurrent ? "text-[var(--ink)]" : reached ? "text-[var(--muted)]" : "text-[var(--muted)]"}`}
+                data-testid={`task-drawer-compile-stage-${s.key}`}
+              >
+                <span
+                  className={`w-5 h-5 rounded-full text-[10px] font-mono flex items-center justify-center ${
+                    isCurrent ? "bg-[var(--oxblood)] text-white" :
+                    stageCompleted ? "bg-[var(--ink)] text-white" :
+                    "bg-[var(--parchment)] text-[var(--muted)]"
+                  }`}
+                  data-testid={`task-drawer-compile-stage-pip-${s.key}`}
+                >
+                  {stageCompleted ? <Check className="w-3 h-3" /> : (i + 1)}
+                </span>
+                <span className="text-[11px] uppercase tracking-[0.14em] font-mono">{s.label}</span>
+              </div>
+              {i < COMPILE_STAGES.length - 1 && <span className="flex-1 h-px bg-[var(--rule)]" />}
+            </React.Fragment>
+          );
+        })}
+      </div>
+
+      {/* Per-stage panels */}
+      {!sessionActive && stage !== "commit" && (
+        <div
+          className="border border-[var(--rule)] rounded-sm p-4 bg-[var(--parchment)]"
+          data-testid="task-drawer-compile-idle"
+        >
+          <p className="text-[12.5px] text-[var(--ink)]">
+            Ready to compile. {((task.team || []).filter((m) => m.status === "approved").length)} of {(task.team || []).length} contributors approved.
+          </p>
+          <p className="text-[11.5px] italic text-[var(--muted)] mt-1">
+            The compile button is always enabled — readiness is informational.
+          </p>
+        </div>
+      )}
+
+      {stage === "drafting" && sessionActive && (
+        <CompileDraftingPanel task={task} session={session} onAdvance={loadSession} />
+      )}
+      {stage === "review" && sessionActive && (
+        <CompileReviewPanel task={task} session={session} onAdvance={loadSession} navigate={navigate} setParams={setParams} params={params} />
+      )}
+      {stage === "circulation" && sessionActive && (
+        <CompileCirculationPanel task={task} session={session} onAdvance={loadSession} />
+      )}
+      {stage === "final_production" && sessionActive && (
+        <CompileFinalPanel task={task} session={session} onAdvance={loadSession} navigate={navigate} setParams={setParams} params={params} />
+      )}
+      {stage === "commit" && (
+        <CompileCommitPanel task={task} session={session} onAdvance={loadSession} navigate={navigate} setParams={setParams} params={params} />
+      )}
+
+      {/* Non-blocking low-readiness warning modal */}
+      {warnLow && (
+        <div
+          className="fixed inset-0 bg-black/30 z-[60] flex items-center justify-center"
+          data-testid="task-drawer-compile-low-readiness-modal"
+        >
+          <div className="bg-white border border-[var(--rule)] rounded-sm p-5 max-w-md">
+            <p className="text-[14px] text-[var(--ink)] mb-2">
+              Your readiness is {task.readiness_score ?? 0}%.
+            </p>
+            <p className="text-[12.5px] text-[var(--muted)] mb-4">
+              Some contributions are still pending. You can compile anyway — Akki will draft from what's submitted and flag the gaps.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" size="sm" onClick={() => setWarnLow(false)} data-testid="task-drawer-compile-low-readiness-cancel">
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="bg-[var(--oxblood)] hover:bg-[var(--oxblood-deep)] text-white"
+                onClick={() => { setWarnLow(false); startCompile(); }}
+                data-testid="task-drawer-compile-low-readiness-continue"
+              >
+                Compile anyway
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function CompileDraftingPanel({ task, session, onAdvance }) {
+  return (
+    <div className="space-y-3" data-testid="task-drawer-compile-panel-drafting">
+      <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)]">
+        Stage 1 · Drafting
       </p>
+      <p className="text-[12.5px] text-[var(--ink)]">
+        Akki is drafting from {(task.team || []).filter((m) => ["submitted", "approved"].includes(m.status)).length} contribution{(task.team || []).filter((m) => ["submitted", "approved"].includes(m.status)).length === 1 ? "" : "s"} + your output spec.
+      </p>
+      <ul className="space-y-1" data-testid="task-drawer-compile-drafts-list">
+        {(session.draft_artefact_ids || []).map((did) => (
+          <li key={did} className="px-2 py-1.5 rounded-sm bg-[var(--parchment)] text-[12px] font-mono text-[var(--ink)]"
+              data-testid={`task-drawer-compile-draft-${did}`}>
+            {did}
+          </li>
+        ))}
+      </ul>
       <Button
         size="sm"
-        disabled
-        title="Compile flow ships in F.4"
-        data-testid="task-drawer-compile-disabled-cta"
+        onClick={async () => {
+          try {
+            await api.post(`/tasks/${task.id}/compile/review/complete`, { skip_circulation: false });
+            toast.success("Advanced to Review.");
+            // Actually, drafting → review requires we just keep drafts;
+            // but the brief flow is Draft → Review → Circulation. The
+            // "Next: Review" button here marks the drafting visible
+            // panel done; the user actually edits drafts in Review.
+            onAdvance?.();
+          } catch (e) { toast.error(apiErrorMessage(e)); }
+        }}
+        data-testid="task-drawer-compile-next-review"
+        disabled={(session.draft_artefact_ids || []).length === 0}
       >
-        Compile anyway
+        Next: Review <ArrowUpRight className="w-3 h-3 ml-1" />
       </Button>
+    </div>
+  );
+}
+
+
+function CompileReviewPanel({ task, session, onAdvance, setParams, params }) {
+  const openDraft = (did) => {
+    const next = new URLSearchParams(params);
+    next.set("doc_id", did);
+    setParams(next, { replace: false });
+  };
+  const advance = async (skipCirc) => {
+    try {
+      await api.post(`/tasks/${task.id}/compile/review/complete`, { skip_circulation: skipCirc });
+      toast.success(skipCirc ? "Skipped to Final production." : "Advanced to Circulation.");
+      onAdvance?.();
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+  return (
+    <div className="space-y-3" data-testid="task-drawer-compile-panel-review">
+      <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)]">
+        Stage 2 · Review &amp; Editing
+      </p>
+      <p className="text-[12.5px] text-[var(--ink)]">
+        Open each draft to edit inline or via the prompted-edit composer.
+      </p>
+      <ul className="space-y-1" data-testid="task-drawer-compile-review-list">
+        {(session.draft_artefact_ids || []).map((did) => (
+          <li key={did}>
+            <button
+              type="button" onClick={() => openDraft(did)}
+              className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-[var(--parchment)] text-[12.5px] inline-flex items-center gap-1.5"
+              data-testid={`task-drawer-compile-review-row-${did}`}
+            >
+              <FileText className="w-3 h-3" /> {did}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="flex gap-2 pt-2 border-t border-[var(--rule)]">
+        <Button size="sm" onClick={() => advance(false)} data-testid="task-drawer-compile-next-circulation">
+          Send for circulation <ArrowUpRight className="w-3 h-3 ml-1" />
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => advance(true)} data-testid="task-drawer-compile-skip-circulation">
+          Skip circulation, go to Final
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+
+function CompileCirculationPanel({ task, session, onAdvance }) {
+  const [emails, setEmails] = useState("");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const send = async () => {
+    const list = emails.split(/[,\s]+/).map((e) => e.trim()).filter(Boolean);
+    if (list.length === 0) { toast.error("Add at least one reviewer email."); return; }
+    setSending(true);
+    try {
+      const { data } = await api.post(`/tasks/${task.id}/compile/circulation/send`, {
+        reviewer_emails: list,
+        message: message || null,
+        base_url: window.location.origin,
+      });
+      const failed = (data.sent || []).filter((s) => s.status.includes("fail")).length;
+      if (failed === 0) toast.success(`Sent ${list.length} invite${list.length === 1 ? "" : "s"}.`);
+      else toast.warning(`Sent with ${failed} delivery failure${failed === 1 ? "" : "s"} — links still valid.`);
+      setEmails(""); setMessage("");
+      onAdvance?.();
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setSending(false); }
+  };
+  const close = async () => {
+    try {
+      await api.post(`/tasks/${task.id}/compile/circulation/close`);
+      toast.success("Circulation closed.");
+      onAdvance?.();
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+  const comments = session.circulation?.comments || [];
+  const sent = session.circulation?.sent_status || [];
+  return (
+    <div className="space-y-3" data-testid="task-drawer-compile-panel-circulation">
+      <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)]">
+        Stage 3 · Circulation
+      </p>
+      {sent.length === 0 ? (
+        <>
+          <Input
+            value={emails} onChange={(e) => setEmails(e.target.value)}
+            placeholder="reviewer1@org.com, reviewer2@org.com"
+            data-testid="task-drawer-compile-circulation-emails"
+          />
+          <Textarea
+            value={message} onChange={(e) => setMessage(e.target.value)}
+            rows={2} placeholder="Optional note (e.g., 'Please focus on the risk section')"
+            data-testid="task-drawer-compile-circulation-message"
+          />
+          <Button size="sm" onClick={send} disabled={sending}
+            data-testid="task-drawer-compile-circulation-send">
+            {sending ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : <Mail className="w-3 h-3 mr-1.5" />}
+            Send for review
+          </Button>
+        </>
+      ) : (
+        <>
+          <ul className="space-y-1" data-testid="task-drawer-compile-circulation-recipients">
+            {sent.map((s, i) => (
+              <li key={i} className="text-[12px] text-[var(--ink)] flex items-center gap-2"
+                  data-testid={`task-drawer-compile-circulation-recipient-${i}`}>
+                <Mail className="w-3 h-3 text-[var(--muted)]" />
+                <span className="flex-1 truncate">{s.email}</span>
+                <span className={`text-[10px] font-mono uppercase tracking-[0.14em] ${s.status.includes("fail") ? "text-[var(--oxblood)]" : "text-[var(--muted)]"}`}>
+                  {s.status}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="border-t border-[var(--rule)] pt-2">
+            <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-2">
+              Comments received ({comments.length})
+            </p>
+            {comments.length === 0 ? (
+              <p className="text-[11.5px] italic text-[var(--muted)]"
+                 data-testid="task-drawer-compile-circulation-comments-empty">
+                Waiting on reviewers.
+              </p>
+            ) : (
+              <ul className="space-y-2" data-testid="task-drawer-compile-circulation-comments">
+                {comments.map((c) => (
+                  <li key={c.id} className="border border-[var(--rule)] rounded-sm p-2 bg-white"
+                      data-testid={`task-drawer-compile-circulation-comment-${c.id}`}>
+                    <p className="text-[11px] font-mono text-[var(--muted)] mb-1">{c.reviewer}</p>
+                    <p className="text-[12.5px] text-[var(--ink)]">{c.comment}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <Button size="sm" onClick={close} data-testid="task-drawer-compile-circulation-close">
+            Close circulation <ArrowUpRight className="w-3 h-3 ml-1" />
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
+
+function CompileFinalPanel({ task, session, onAdvance, setParams, params }) {
+  const [applying, setApplying] = useState(null);
+  const openDraft = (did) => {
+    const next = new URLSearchParams(params);
+    next.set("doc_id", did);
+    setParams(next, { replace: false });
+  };
+  const applyAction = async (cid, action) => {
+    setApplying(cid + action);
+    try {
+      await api.post(`/tasks/${task.id}/compile/final-production/apply-comment`, { comment_id: cid, action });
+      toast.success(`Comment ${action === "apply" ? "applied" : action === "discard" ? "discarded" : "marked for manual edit"}.`);
+      onAdvance?.();
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setApplying(null); }
+  };
+  const complete = async () => {
+    try {
+      await api.post(`/tasks/${task.id}/compile/final-production/complete`);
+      toast.success("Advanced to Commit.");
+      onAdvance?.();
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+  const comments = session.circulation?.comments || [];
+  const pending = comments.filter((c) => !c.status);
+  return (
+    <div className="space-y-3" data-testid="task-drawer-compile-panel-final">
+      <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)]">
+        Stage 4 · Final production
+      </p>
+      <p className="text-[12.5px] text-[var(--ink)]">
+        {comments.length === 0
+          ? "No reviewer comments to apply. Mark complete to move to Commit."
+          : `${pending.length} of ${comments.length} comments pending. Apply or discard each.`}
+      </p>
+      {comments.length > 0 && (
+        <ul className="space-y-2" data-testid="task-drawer-compile-final-comments">
+          {comments.map((c) => (
+            <li
+              key={c.id}
+              className="border border-[var(--rule)] rounded-sm p-3 bg-white"
+              data-testid={`task-drawer-compile-final-comment-${c.id}`}
+            >
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <p className="text-[11px] font-mono text-[var(--muted)]">{c.reviewer}</p>
+                {c.status && (
+                  <span className="text-[10px] uppercase tracking-[0.14em] font-mono text-[var(--muted)]">
+                    {c.status}
+                  </span>
+                )}
+              </div>
+              <p className="text-[12.5px] text-[var(--ink)] mb-2">{c.comment}</p>
+              {!c.status && (
+                <div className="flex gap-1.5">
+                  <Button size="sm" variant="outline" onClick={() => applyAction(c.id, "apply")}
+                          disabled={applying === c.id + "apply"}
+                          data-testid={`task-drawer-compile-final-apply-${c.id}`}>
+                    {applying === c.id + "apply"
+                      ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" />
+                      : <Check className="w-3 h-3 mr-1.5" />}
+                    Apply
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => applyAction(c.id, "discard")}
+                          data-testid={`task-drawer-compile-final-discard-${c.id}`}>
+                    Discard
+                  </Button>
+                  {c.doc_id && (
+                    <Button size="sm" variant="ghost" onClick={() => openDraft(c.doc_id)}
+                            data-testid={`task-drawer-compile-final-edit-manual-${c.id}`}>
+                      Edit manually
+                    </Button>
+                  )}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <Button size="sm" onClick={complete} data-testid="task-drawer-compile-final-complete">
+        Mark final production complete <ArrowUpRight className="w-3 h-3 ml-1" />
+      </Button>
+    </div>
+  );
+}
+
+
+function CompileCommitPanel({ task, session, onAdvance, setParams, params }) {
+  const [committing, setCommitting] = useState(false);
+  const drafts = session.final_artefact_ids?.length ? session.final_artefact_ids : (session.draft_artefact_ids || []);
+  const openDraft = (did) => {
+    const next = new URLSearchParams(params);
+    next.set("doc_id", did);
+    setParams(next, { replace: false });
+  };
+  const commit = async () => {
+    setCommitting(true);
+    try {
+      const { data } = await api.post(`/tasks/${task.id}/compile/commit`);
+      toast.success(`Committed ${data.committed?.length || 0} draft${(data.committed?.length || 0) === 1 ? "" : "s"}.`);
+      if (data.task_closed) toast.success("Task auto-closed.");
+      onAdvance?.();
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setCommitting(false); }
+  };
+  return (
+    <div className="space-y-3" data-testid="task-drawer-compile-panel-commit">
+      <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)]">
+        Stage 5 · Commit
+      </p>
+      <p className="text-[12.5px] text-[var(--ink)]">
+        Final review — committing lifts the DRAFT watermark and locks the deliverable.
+      </p>
+      <ul className="space-y-1" data-testid="task-drawer-compile-commit-list">
+        {drafts.map((did) => (
+          <li key={did}>
+            <button type="button" onClick={() => openDraft(did)}
+                    className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-[var(--parchment)] text-[12.5px] inline-flex items-center gap-1.5"
+                    data-testid={`task-drawer-compile-commit-row-${did}`}>
+              <FileText className="w-3 h-3" /> {did}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="flex gap-2 pt-2 border-t border-[var(--rule)]">
+        <Button size="sm" onClick={commit} disabled={committing || drafts.length === 0}
+                className="bg-[var(--oxblood)] hover:bg-[var(--oxblood-deep)] text-white"
+                data-testid="task-drawer-compile-commit-final">
+          {committing ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : <Check className="w-3 h-3 mr-1.5" />}
+          Commit final
+        </Button>
+      </div>
     </div>
   );
 }
