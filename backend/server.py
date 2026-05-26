@@ -197,6 +197,10 @@ app.include_router(_solva_phase_d.router)
 # Phase D.1 (2026-05-26) — Solva briefing-deck state.
 from routers import solva_briefing as _solva_briefing  # noqa: E402
 app.include_router(_solva_briefing.router)
+# Phase D.2 audit-correction (2026-05-26) — Solva variant-cycle +
+# key-usage admin telemetry endpoints.
+from routers import solva_telemetry_admin as _solva_telemetry_admin  # noqa: E402
+app.include_router(_solva_telemetry_admin.router)
 # Phase E (2026-05-16) — observability + migration + export + PDF.
 from routers import synisense_observability as _syn_obs  # noqa: E402
 from routers import solva_phase_e_polish as _solva_pe  # noqa: E402

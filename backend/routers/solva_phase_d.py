@@ -56,6 +56,11 @@ from services.solva.voice import (
     render_acknowledgement,
     render_refusal,
 )
+from services.solva.voice.question_bank import _resolve_variants as _resolve_bank_variants
+from services.solva.telemetry import (
+    record_variant_seen,
+    record_key_emission,
+)
 from services.solva.guardrails import (
     run_guardrail_ladder,
     GuardrailOutcome,
@@ -248,11 +253,40 @@ async def _push_audit(session_id: str, audit_ids: List[str], orch_entries: List[
     await _coll().update_one({"session_id": session_id}, update)
 
 
-def _next_question_payload(session: Dict[str, Any]) -> Dict[str, Any]:
-    """Pick the right question for the current layer state."""
+async def _emit_telemetry(*, user_id: str, key: str, variant_index: int) -> None:
+    """Phase D.2 telemetry — write the variant-seen + key-emission rows
+    for one question emission. Both writes are best-effort: any failure
+    is logged and swallowed so analytics never break the question
+    pipeline. The variant LABEL is `vN` (zero-indexed) — the bank
+    stores variants positionally so this label uniquely identifies the
+    string the user just saw."""
+    try:
+        await record_key_emission(question_key=key, account_id=user_id or "anonymous")
+    except Exception as e:  # noqa: BLE001 — never block the pipeline
+        logger.warning("solva.telemetry.record_key_emission failed: %s", e)
+    try:
+        total = len(_resolve_bank_variants(key))
+        await record_variant_seen(
+            user_id=user_id or "anonymous",
+            question_key=key,
+            variant_label=f"v{variant_index}",
+            total_variants_in_bank=total,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("solva.telemetry.record_variant_seen failed: %s", e)
+
+
+async def _next_question_payload(session: Dict[str, Any]) -> Dict[str, Any]:
+    """Pick the right question for the current layer state.
+
+    Phase D.2 telemetry (2026-05-26) — every emission writes two
+    durable rows: `solva_variant_seen` (cycle-depth tracking) and
+    `solva_key_emissions` (key-usage frequency). Failures are
+    swallowed so analytics never block the question pipeline."""
     sm = session.get("sub_module", "seek_clarity")
     sid = session.get("session_id", "")
     state = session.get("layer_state", "entry")
+    uid = session.get("user_id", "")
 
     if state == "layer_1":
         l1 = session.get("layer_1") or {}
@@ -273,6 +307,7 @@ def _next_question_payload(session: Dict[str, Any]) -> Dict[str, Any]:
             )
             key = probes[asked - 1] if asked - 1 < len(probes) else f"{sm}.layer_2.probe.evidence_grounding"
         q = next_question(key=key, session_id=sid, asked_so_far=asked)
+        await _emit_telemetry(user_id=uid, key=q.key, variant_index=q.variant_index)
         return {
             "layer": "layer_1",
             "question_key": q.key,
@@ -288,6 +323,7 @@ def _next_question_payload(session: Dict[str, Any]) -> Dict[str, Any]:
         if asked > 0:
             key = f"{sm}.layer_2.probe.evidence_grounding"
         q = next_question(key=key, session_id=sid, asked_so_far=asked)
+        await _emit_telemetry(user_id=uid, key=q.key, variant_index=q.variant_index)
         return {
             "layer": "layer_2",
             "question_key": q.key,
@@ -484,6 +520,23 @@ async def create_session(
     }
     await _coll().insert_one(dict(row))
     row.pop("_id", None)
+    # Phase D.2 telemetry (2026-05-26) — handoff deep-link analytics.
+    # Fires the moment a Solva session is created with a seed-handoff,
+    # equivalent to chat.linked_context on the Chat surface. Skipped
+    # for "vanilla" Solva sessions started without a source item.
+    if source_handoff and source_handoff.get("source") and source_handoff.get("source_id"):
+        try:
+            from services.solva.telemetry import record_handoff
+            await record_handoff(
+                surface="solva",
+                ctx_type=source_handoff["source"],
+                ctx_id=source_handoff["source_id"],
+                account_id=account["id"],
+                session_id=sid,
+                context_id=context_id,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("solva handoff telemetry failed: %s", e)
     return _serialise(row)
 
 
@@ -846,7 +899,7 @@ async def get_session(
     context_id = ctx["context"]["id"]
     row = await _get_session(context_id, session_id, account["id"])
     payload = _serialise(row)
-    payload["next_question"] = _next_question_payload(row)
+    payload["next_question"] = await _next_question_payload(row)
     return payload
 
 
@@ -992,7 +1045,7 @@ async def submit_framing(
 
     refreshed = await _get_session(context_id, session_id, account["id"])
     payload = _serialise(refreshed)
-    payload["next_question"] = _next_question_payload(refreshed)
+    payload["next_question"] = await _next_question_payload(refreshed)
     payload["acknowledgement"] = render_acknowledgement(
         sub_module=session["sub_module"], framing_text=body.framing_text,
     )
@@ -1183,7 +1236,7 @@ async def submit_answer(
 
     refreshed = await _get_session(context_id, session_id, account["id"])
     payload = _serialise(refreshed)
-    payload["next_question"] = _next_question_payload(refreshed)
+    payload["next_question"] = await _next_question_payload(refreshed)
     return payload
 
 

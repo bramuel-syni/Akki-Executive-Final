@@ -612,6 +612,93 @@ Bank shape:
 
 **No deltas identified. No code changes proposed.** This audit is recorded purely as governance evidence.
 
+### D.2 — audit correction (2026-05-26, post-Julius-aopio bug report)
+
+**Reason for correction:** a tester (`juliusaopio@gmail.com`) reported seeing the EXACT SAME questions every time they used Solva. This contradicted the original D.2 audit's invariant statement that "Two users with the same FAR get the same question text" — which was correct in isolation but masked a much bigger problem: most users see the same question text **regardless of FAR**, because the FAR routes to keys that aren't actually populated in the bank.
+
+#### Hypothesis tested
+
+The follow-up brief proposed:
+> the `session_id` arg to the variant picker in `question_bank.py` might NOT be a true per-conversation-instance ID. It may be a stable `user_id`/`account_id` (so same user → same hash → same variant forever).
+
+**Hypothesis disconfirmed.** Investigation shows:
+
+1. `session_id` IS a fresh UUID per Solva conversation, minted at session-create time:
+   ```python
+   # routers/solva_phase_d.py line 436
+   sid = "sol-" + uuid.uuid4().hex
+   ```
+2. Empirical test against the picker — 30 fresh UUIDs against the 2-variant key `seek_clarity.layer_1.opening.default` produces a roughly 50/50 split between variant_index 0 and 1. The deterministic-hash picker is statistically healthy.
+3. Same session_id reproducibly lands on the same variant (replay invariant holds).
+
+#### Real root cause
+
+**The variant picker is fine. The bank's content coverage is the bug.** Empirical map of all FAR-routable keys (60 total):
+
+| Bucket | Keys | Variants in bank |
+| --- | --- | --- |
+| `layer_1.opening.{default,with_caveats,conversational}` × 4 sub-modules | **12** | 2 hand-written variants each ✅ |
+| `layer_1.probe.{evidence_grounding,decisional_clarity,time_horizon,options_surfaced,stakeholder_map,tension_invitation}` × 4 sub-modules | **24** | 0 — ALL fall through to the 1-variant generic fallback ❌ |
+| `layer_2.probe.<dimension>` × 4 sub-modules | **24** | 6 hand-written (3 sub-modules × `evidence_grounding`, plus `seek_clarity` × 3) + 18 fall through ❌ |
+
+**Net: 38 of 60 FAR-routable keys (63%) resolve to a single 1-variant generic fallback string.** That string is, verbatim:
+
+> "Take me deeper on one piece — what's the part of this that's harder to name than the rest?"
+
+So when the FAR routes Q2/Q3 on Layer 1 (or any probe on Layer 2 outside the 6 covered keys), EVERY user sees that exact sentence on EVERY session, regardless of session_id.
+
+Julius's bug report is fully explained by this: he sees Q1 rotate roughly 50/50 (because Q1 hits an in-bank key) but Q2 and Q3 are word-for-word identical across all 12 of his sessions (because Q2/Q3 hit the fallback).
+
+The legacy V2 path (`services/solva/voice.py`, used by `/app/solva/session/new` → `SolvaSession`) is even worse — its question bank has NO session-id rotation at all (`position % len(qs)`), and most `framing` slots have only 1 entry. Out of scope for this fix (V2 is being deprecated in the Phase E rework) but recorded here so it's not surprising next time.
+
+#### Corrected D.2 invariants
+
+The original audit's bullet list, post-correction:
+
+- ✅ `session_id` IS a fresh per-session UUID. Replays of the same session never drift.
+- ✅ The hash-based variant picker is sound; multi-variant keys rotate roughly uniformly across fresh UUIDs (verified: 30 fresh UUIDs → both indices surface).
+- ✅ Layer 4 reflection uses a static 3-question list (no FAR involvement).
+- ✅ Layer 3 prose is LLM-voiced but bounded by Shield audit.
+- ❌ **CORRECTED — was misleading:** "Two users with the same FAR get the same question text." This is true but misleading. The actual user-visible behavior is closer to: **two users with DIFFERENT FARs see the same Q2/Q3 text most of the time, because most probe keys aren't in the bank.** Question variety is bottlenecked at the bank, not the picker.
+- 🆕 **38/60 FAR-routable keys resolve to a single shared 1-variant generic fallback.** This is the real user-facing scarcity.
+
+#### Picker NOT touched
+
+Per the follow-up brief: *"If session_id is already a per-conversation UUID and the bug is elsewhere: surface the real cause and propose a fix. Do NOT change the picker if it's already correct."* The picker is correct. No change applied.
+
+#### Proposed fix (NOT applied in this pass)
+
+The minimal, surgical content fix: hand-write 2 variants per missing probe key (38 keys × 2 = ~76 strings), in the same coach voice as the existing bank entries. This is a copywriter task, not engineering. Until that pass lands, a partial mitigation is to expand `_BANK["_generic.layer_2.probe"]` from 1 variant to 3 — that won't fix the FAR-routing-decision-doesn't-vary-the-text problem but it will at least give the fallback bucket internal variety.
+
+Either expansion is content-only and safe to apply incrementally — no code change required in `question_bank.py`'s public surface.
+
+#### What WAS implemented (telemetry)
+
+Three telemetry additions ship alongside this correction so we can MEASURE bank coverage / cycle depth / handoff conversion going forward without waiting for the next user-bug report:
+
+1. **`solva_variant_seen` collection** (`services/solva/telemetry.py::record_variant_seen`) — upsert one row per `(user_id, question_key, variant_label)` tuple. `variant_label = "v<index>"`. Idempotent: repeated emissions don't dupe rows. Emits a `solva.variant.cycle_complete` event into `audit_log` the moment a user has seen every variant in the bank for that key. Helper: `get_variants_seen(user_id, question_key) -> [variant_labels]`.
+
+2. **`solva_key_emissions` collection** — append-only `{question_key, account_id, emitted_at}` per emission. Powers the new admin endpoint `GET /api/admin/solva/key-usage?since=<iso>` which returns `{items: [{key, count}], total_keys, since, generated_at}` sorted by count desc. Auth-gated to admin / superadmin / owner only. Companion endpoint `GET /api/admin/solva/variant-coverage?user_id=<uid?>` returns per-key `{variants_seen, seen_count, total_in_bank, cycle_complete}`.
+
+3. **Handoff deep-link analytics** — `services/solva/telemetry.py::record_handoff` writes a `handoff.<surface>_attached.<ctx_type>` row into the existing `audit_log` collection (no new collection). Wired into `routers/chat.py::create_chat` (fires when `linked_context` is persisted) AND `routers/solva_phase_d.py::create_session` (fires when `source_handoff` is set from a seed-payload). Tracks the moment a LinkedContextChip first renders, NOT every page nav — so the audit log stays clean.
+
+All three writes are best-effort: telemetry failures are logged and swallowed so analytics never block the question pipeline.
+
+#### Wire tests added — `tests/test_phase_d_audit_correction.py`
+
+| Test | Asserts |
+| --- | --- |
+| `test_variant_rotation_across_fresh_uuids` | Picker variant rotation across 30 fresh UUIDs surfaces both indices (regression guard against the "session_id becomes stable user_id" mistake) |
+| `test_variant_rotation_same_session_stable` | Replay invariant: same session_id → same variant |
+| `test_phase_d2_bank_coverage_health_check` | Floor-check: in-bank key count ≥ baseline (22). Improvements silently accepted; regressions fail loudly. |
+| `test_record_variant_seen_idempotent` | Same tuple written 3× = exactly 1 row. `get_variants_seen` returns canonical list. |
+| `test_variant_cycle_complete_emits_event_once` | Cycle-complete event fires exactly once even with repeat emissions. |
+| `test_key_usage_admin_endpoint_returns_sorted_data` | `GET /api/admin/solva/key-usage` returns rows sorted by count desc. |
+| `test_key_usage_endpoint_rejects_non_admin` | Auth gate: non-admin → 403. |
+| `test_record_handoff_writes_audit_log_row` | `record_handoff` writes `handoff.<surface>_attached.<ctx_type>` with `{ctx_type, ctx_id}` metadata. |
+| `test_chat_create_with_linked_context_writes_handoff_event` | End-to-end: chat create with `linked_context` triggers the handoff audit row alongside `chat.created`. |
+| `test_d2_audit_correction_recorded_in_home_cleanup_log` | This subsection exists + contains the corrected invariants. |
+
 ### D.3 — Context-passing query params (`?ctx_type=…&ctx_id=…`)
 
 **Brief:** allow `/app/solva` and `/app/chat` to accept a generic `?ctx_type=…&ctx_id=…` URL pair that preloads the named source item into the first AI message's context. Rationale: surfaces that "hand off" to Solva or Chat (Document Journal, Cycle Page, Work Studio) shouldn't each invent their own query-param contract.

@@ -555,6 +555,29 @@ async def create_chat(
                  "context_id": effective_ctx,
                  "linked_context": rec.get("linked_context")},
     )
+    # Phase D.2 telemetry (2026-05-26) — handoff deep-link analytics.
+    # Fires the moment a linked-context item is FIRST persisted on the
+    # chat row (which is also the moment the LinkedContextChip will
+    # first render on the client). We don't log on subsequent renders
+    # (page nav / thread resume) — those are presentation events and
+    # would spam the audit log. See HOME_CLEANUP_LOG.md → "D.2 —
+    # audit correction".
+    lc = rec.get("linked_context") or {}
+    if lc.get("ctx_type") and lc.get("ctx_id"):
+        try:
+            from services.solva.telemetry import record_handoff
+            await record_handoff(
+                surface="chat",
+                ctx_type=lc["ctx_type"],
+                ctx_id=lc["ctx_id"],
+                account_id=current["id"],
+                chat_id=cid,
+                context_id=effective_ctx,
+            )
+        except Exception as e:  # noqa: BLE001 — never block create
+            logging.getLogger("chat").warning(
+                "handoff telemetry failed: %s", e,
+            )
     return _sanitize(rec)
 
 
