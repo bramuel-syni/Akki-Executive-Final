@@ -444,6 +444,72 @@ async def list_documents(
     return [sanitize_doc(d) for d in docs]
 
 
+# Phase E.1 (2026-05-26) — Drafts feed for the new Work Studio "Drafts"
+# tab + the new "Recent Drafts" right-rail card. A draft is a document
+# with `state == "draft"`. The `state` field is introduced in Phase E.3
+# (Universal Document Drawer); until then the endpoint returns []
+# correctly — empty state per spec, no fake data.
+@router.get("/contexts/{context_id}/documents/drafts")
+async def list_draft_documents(
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+    limit: int = 100,
+):
+    q: Dict[str, Any] = {
+        "context_id": ctx["context"]["id"],
+        "state": "draft",
+        "status": {"$ne": "archived"},
+    }
+    docs = await db.documents.find(
+        q, {"_id": 0, "extracted_text": 0, "storage_key": 0},
+    ).sort("updated_at", -1).to_list(min(limit, 500))
+    return [sanitize_doc(d) for d in docs]
+
+
+# Phase E.2 (2026-05-26) — Unified Recent Activity feed for the new
+# Work Studio right-rail card. Reads `audit_log` events scoped to the
+# user's active context. Returns a row-projection per event:
+#   { id, action, actor_id, doc_id?, doc_title?, created_at }
+# The frontend renders each as "<timestamp> · <doc title> · <action> · <actor>".
+@router.get("/contexts/{context_id}/activity/recent")
+async def list_recent_activity(
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+    limit: int = 25,
+):
+    cid = ctx["context"]["id"]
+    # Surface every audit row that mentions the context (either
+    # context-scoped or with a resource_id known to belong to this
+    # context). Avoid N+1: pull rows first, then resolve doc titles
+    # in one batch.
+    rows = await db.audit_log.find(
+        {"context_id": cid},
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(min(limit, 100))
+    # Resolve doc titles for any rows that point at a document.
+    doc_ids = {
+        r.get("resource_id") for r in rows
+        if r.get("resource_type") == "document" and r.get("resource_id")
+    }
+    title_map: Dict[str, str] = {}
+    if doc_ids:
+        docs = await db.documents.find(
+            {"id": {"$in": list(doc_ids)}, "context_id": cid},
+            {"_id": 0, "id": 1, "name": 1, "original_filename": 1},
+        ).to_list(length=len(doc_ids))
+        for d in docs:
+            title_map[d["id"]] = d.get("name") or d.get("original_filename") or d["id"]
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        out.append({
+            "id":          r.get("id"),
+            "action":      r.get("action") or "",
+            "actor_id":    r.get("account_id"),
+            "doc_id":      r.get("resource_id") if r.get("resource_type") == "document" else None,
+            "doc_title":   title_map.get(r.get("resource_id")) if r.get("resource_type") == "document" else None,
+            "created_at":  r.get("created_at"),
+        })
+    return out
+
+
 @router.get("/contexts/{context_id}/documents/{doc_id}")
 async def get_document_detail(
     context_id: str, doc_id: str,

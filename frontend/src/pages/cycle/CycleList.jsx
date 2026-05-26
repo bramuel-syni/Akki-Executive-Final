@@ -27,6 +27,8 @@ import ListingShell from "@/components/common/ListingShell";
 import CycleCard from "@/components/cycle/CycleCard";
 import QuickActionBar from "@/components/cycle/QuickActionBar";
 import CycleSetupWizard from "@/components/cycle/CycleSetupWizard";
+import CompilationReadinessSection from "@/components/cycle/CompilationReadinessSection";
+import CompilationWizard from "@/components/work_studio/CompilationWizard";
 import { api } from "@/lib/api";
 
 
@@ -96,6 +98,11 @@ export default function CycleList() {
   const [addOpen, setAddOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [creating, setCreating] = useState(false);
+  // Phase E.2 — Compilation wizard state for the relocated
+  // Ready-to-Compile click handler.
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardPreselectType, setWizardPreselectType] = useState(null);
+  const [wizardPreselectSourceId, setWizardPreselectSourceId] = useState(null);
 
   const load = async () => {
     if (!activeContextId) return;
@@ -265,6 +272,30 @@ export default function CycleList() {
             onCycleCreated={({ id }) => {
               navigate(`/app/cycle/${id}?tab=agenda&attached=${encodeURIComponent(id)}`);
             }}
+          />
+
+          {/* Phase E.2 (2026-05-26) — Ready-to-Compile + At-Risk cards
+              relocated from the Work Studio rail (CompilationRail.jsx)
+              to Cycle Manager per the Phase E brief. The new section
+              shares CompilationWizard with Work Studio for the
+              "Compile" click handler. The T5 side panel below remains
+              untouched (it tracks cycle-status counters, a separate
+              semantic surface). */}
+          <CompilationReadinessSection
+            contextId={activeContextId}
+            onCompile={(opts) => {
+              setWizardPreselectType(opts?.artefactType || null);
+              setWizardPreselectSourceId(opts?.sourceId || null);
+              setWizardOpen(true);
+            }}
+          />
+          <CompilationWizard
+            open={wizardOpen}
+            onOpenChange={setWizardOpen}
+            contextId={activeContextId}
+            preselectArtefactType={wizardPreselectType}
+            preselectSourceId={wizardPreselectSourceId}
+            onCompiled={() => setWizardOpen(false)}
           />
 
           {/* T5 (2026-05-25) — C6 side panel. Two cards: Ready to

@@ -31,12 +31,12 @@
  *
  * Oxblood is used ONLY on the At-risk readiness numeral (severity case).
  */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
-  Sparkles, RefreshCw, AlertCircle, Loader2, BookOpenCheck, ArrowRight,
+  Sparkles, RefreshCw, AlertCircle, Loader2, BookOpenCheck, ArrowRight, FileText,
 } from "lucide-react";
 
 
@@ -91,37 +91,22 @@ function artefactDetailHref(row, kindEntry) {
 
 export default function CompilationRail({ contextId, onOpenWizard, refreshKey = 0 }) {
   const navigate = useNavigate();
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
-  // Chunk 6.5-REVISED (Task D) — Document Journal side deck state.
+  // Document Journal side deck state (Chunk 6.5-REVISED Task D — kept).
   const [recentDocs, setRecentDocs] = useState([]);
   const [recentDocsLoading, setRecentDocsLoading] = useState(true);
+  // Phase E.2 (2026-05-26) — Recent Drafts + Recent Activity decks.
+  const [recentDrafts, setRecentDrafts] = useState([]);
+  const [recentDraftsLoading, setRecentDraftsLoading] = useState(true);
+  const [recentActivity, setRecentActivity] = useState([]);
+  const [recentActivityLoading, setRecentActivityLoading] = useState(true);
 
-  useEffect(() => {
-    if (!contextId) return undefined;
-    let dead = false;
-    setLoading(true);
-    setErr(null);
-    Promise.all(KINDS.map((k) =>
-      api
-        .get(`/contexts/${contextId}/briefings/aggregates`, {
-          params: { kind: k.kind, page_size: 50, sort: "recent" },
-        })
-        .then(({ data }) => (data?.items || []).map((it) => ({ ...it, _kind: k })))
-        .catch(() => []),
-    ))
-      .then((all) => {
-        if (dead) return;
-        setRows(all.flat());
-      })
-      .catch(() => { if (!dead) setErr("Could not load rail."); })
-      .finally(() => { if (!dead) setLoading(false); });
-    return () => { dead = true; };
-  }, [contextId, refreshKey]);
+  // Phase E.2 — Ready-to-Compile + At-Risk rows MOVED to Cycle Manager
+  // (see components/cycle/CompilationReadinessSection.jsx). The
+  // aggregates fetch is no longer required on this surface.
 
   // Document Journal deck — fetched independently so a Document Journal
-  // outage doesn't blank the Compile-report sections.
+  // outage doesn't blank the rail.
   useEffect(() => {
     if (!contextId) return undefined;
     let dead = false;
@@ -134,26 +119,31 @@ export default function CompilationRail({ contextId, onOpenWizard, refreshKey = 
     return () => { dead = true; };
   }, [contextId, refreshKey]);
 
-  const { ready, atRisk } = useMemo(() => {
-    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-    const now = Date.now();
-    const decorated = rows.map((r) => {
-      const readiness = rowReadiness(r);
-      let lastTs = 0;
-      try { lastTs = new Date(r.meeting_date || r.created_at || 0).getTime() || 0; } catch { /* noop */ }
-      const stale = lastTs > 0 && (now - lastTs) > sevenDaysMs;
-      return { ...r, _readiness: readiness, _stale: stale, _lastTs: lastTs };
-    });
-    const r = decorated
-      .filter((r2) => r2._readiness >= 80)
-      .sort((a, b) => b._readiness - a._readiness)
-      .slice(0, 3);
-    const a = decorated
-      .filter((r2) => r2._readiness <= 40 || r2._stale)
-      .sort((x, y) => (x._readiness - y._readiness) || (x._lastTs - y._lastTs))
-      .slice(0, 3);
-    return { ready: r, atRisk: a };
-  }, [rows]);
+  // Phase E.2 — Recent Drafts feed (state=draft).
+  useEffect(() => {
+    if (!contextId) return undefined;
+    let dead = false;
+    setRecentDraftsLoading(true);
+    api
+      .get(`/contexts/${contextId}/documents/drafts`, { params: { limit: RECENT_DOCS_LIMIT } })
+      .then(({ data }) => { if (!dead) setRecentDrafts(Array.isArray(data) ? data : []); })
+      .catch(() => { if (!dead) setRecentDrafts([]); })
+      .finally(() => { if (!dead) setRecentDraftsLoading(false); });
+    return () => { dead = true; };
+  }, [contextId, refreshKey]);
+
+  // Phase E.2 — Unified Recent Activity feed.
+  useEffect(() => {
+    if (!contextId) return undefined;
+    let dead = false;
+    setRecentActivityLoading(true);
+    api
+      .get(`/contexts/${contextId}/activity/recent`, { params: { limit: RECENT_DOCS_LIMIT } })
+      .then(({ data }) => { if (!dead) setRecentActivity(Array.isArray(data) ? data : []); })
+      .catch(() => { if (!dead) setRecentActivity([]); })
+      .finally(() => { if (!dead) setRecentActivityLoading(false); });
+    return () => { dead = true; };
+  }, [contextId, refreshKey]);
 
   return (
     <aside
@@ -164,116 +154,31 @@ export default function CompilationRail({ contextId, onOpenWizard, refreshKey = 
         className="sticky top-24 space-y-5"
         data-testid="compilation-rail-sticky"
       >
-        {/* Primary CTA */}
-        <Button
-          type="button"
-          onClick={() => onOpenWizard && onOpenWizard()}
-          className="w-full bg-[var(--ink)] hover:bg-[var(--ink)]/90 text-[var(--parchment)] rounded-sm"
-          data-testid="compilation-rail-cta"
-        >
-          <Sparkles className="w-3.5 h-3.5 mr-1.5" /> Compile a Report
-        </Button>
-
-        {/* Ready to compile */}
-        <section
-          className="border border-[var(--rule)] bg-white rounded-sm"
-          data-testid="compilation-rail-ready"
-        >
-          <header className="px-3 py-2 border-b border-[var(--rule)] flex items-center justify-between">
-            <p className="akki-overline text-[10.5px] tracking-[0.16em] text-[var(--ink)]">
-              Ready to compile
-            </p>
-            {loading && <Loader2 className="w-3 h-3 animate-spin text-[var(--muted)]" />}
-          </header>
-          <div
-            className="p-2.5 overflow-hidden"
-            style={{ minHeight: DECK_BODY_HEIGHT_3ROW, maxHeight: DECK_BODY_HEIGHT_3ROW }}
+        {/* Phase E.2 — Primary CTA "Generate Report" replaces the
+            prior "Compile a Report" button. Same visual treatment;
+            italic subtext "from multiple documents" sits directly
+            below per spec. Click behaviour opens the existing
+            CompilationWizard with multi-document Step 2 unchanged. */}
+        <div data-testid="compilation-rail-generate-report-block">
+          <Button
+            type="button"
+            onClick={() => onOpenWizard && onOpenWizard()}
+            className="w-full bg-[var(--ink)] hover:bg-[var(--ink)]/90 text-[var(--parchment)] rounded-sm"
+            data-testid="compilation-rail-cta"
           >
-            {loading ? null : ready.length === 0 ? (
-              <p className="text-[12px] text-[var(--muted)] italic px-1" data-testid="compilation-rail-ready-empty">
-                Nothing ready yet.
-              </p>
-            ) : (
-              <ul className="space-y-1.5" data-testid="compilation-rail-ready-list">
-                {ready.map((row) => (
-                  <li key={row.id} className="text-[12.5px]">
-                    <button
-                      type="button"
-                      onClick={() => onOpenWizard && onOpenWizard({
-                        artefactType: row._kind.artefact_type,
-                        sourceId: row.id,
-                      })}
-                      className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-[var(--parchment)] flex items-center gap-2"
-                      data-testid="compilation-rail-ready-row"
-                    >
-                      <span className="flex-1 min-w-0 truncate text-[var(--ink)]">{row.name}</span>
-                      <span className="text-[10.5px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] shrink-0">
-                        {row._kind.label}
-                      </span>
-                      <span className="font-mono text-[12px] tabular-nums text-[var(--ink)] shrink-0 w-10 text-right">
-                        {row._readiness}%
-                      </span>
-                      <RefreshCw
-                        className="w-3 h-3 text-[var(--muted)] shrink-0"
-                        strokeWidth={1.7}
-                        aria-label="Compile"
-                      />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </section>
-
-        {/* At risk */}
-        <section
-          className="border border-[var(--rule)] bg-white rounded-sm"
-          data-testid="compilation-rail-atrisk"
-        >
-          <header className="px-3 py-2 border-b border-[var(--rule)] flex items-center gap-1.5">
-            <AlertCircle className="w-3 h-3 text-[color:var(--oxblood)]" strokeWidth={1.7} />
-            <p className="akki-overline text-[10.5px] tracking-[0.16em] text-[var(--ink)]">At risk</p>
-          </header>
-          <div
-            className="p-2.5 overflow-hidden"
-            style={{ minHeight: DECK_BODY_HEIGHT_3ROW, maxHeight: DECK_BODY_HEIGHT_3ROW }}
+            <Sparkles className="w-3.5 h-3.5 mr-1.5" /> Generate Report
+          </Button>
+          <p
+            className="text-[11.5px] italic text-[var(--muted)] mt-1.5 text-center"
+            data-testid="compilation-rail-generate-report-subtext"
           >
-            {loading ? null : atRisk.length === 0 ? (
-              <p className="text-[12px] text-[var(--muted)] italic px-1" data-testid="compilation-rail-atrisk-empty">
-                Nothing at risk. Healthy queue.
-              </p>
-            ) : (
-              <ul className="space-y-1.5" data-testid="compilation-rail-atrisk-list">
-                {atRisk.map((row) => (
-                  <li key={row.id} className="text-[12.5px]">
-                    <button
-                      type="button"
-                      onClick={() => navigate(artefactDetailHref(row, row._kind))}
-                      className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-[var(--parchment)] flex items-center gap-2"
-                      data-testid="compilation-rail-atrisk-row"
-                    >
-                      <span className="flex-1 min-w-0 truncate text-[var(--ink)]">{row.name}</span>
-                      <span className="text-[10.5px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] shrink-0">
-                        {row._kind.label}
-                      </span>
-                      {/* oxblood numeral — severity case (spec-locked) */}
-                      <span
-                        className="font-mono text-[12px] tabular-nums text-[color:var(--oxblood)] shrink-0 w-10 text-right"
-                        data-testid="compilation-rail-atrisk-readiness"
-                      >
-                        {row._readiness}%
-                      </span>
-                      <span className="font-mono text-[11px] text-[var(--muted)] shrink-0 w-8 text-right">
-                        {fmtRelDays(row.meeting_date || row.created_at)}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </section>
+            from multiple documents
+          </p>
+        </div>
+
+        {/* Phase E.2 (2026-05-26) — Ready-to-Compile + At-Risk sections
+            MOVED to Cycle Manager. See
+            components/cycle/CompilationReadinessSection.jsx. */}
 
         {/* Chunk 6.5-REVISED (2026-05-13, Task D) — Document Journal deck. */}
         <section
@@ -324,6 +229,119 @@ export default function CompilationRail({ contextId, onOpenWizard, refreshKey = 
               onClick={() => navigate("/app/workspace")}
               className="text-[11.5px] text-[var(--deep)] hover:text-[var(--ink)] inline-flex items-center gap-1 transition-colors"
               data-testid="compilation-rail-document-journal-view-more"
+            >
+              View more <ArrowRight className="w-3 h-3" strokeWidth={1.7} />
+            </button>
+          </footer>
+        </section>
+
+        {/* Phase E.2 (2026-05-26) — Recent Drafts deck. Same visual
+            pattern as Document Journal. View more → /app/work-studio?kind=drafts */}
+        <section
+          className="border border-[var(--rule)] bg-white rounded-sm"
+          data-testid="compilation-rail-recent-drafts"
+        >
+          <header className="px-3 py-2 border-b border-[var(--rule)] flex items-center gap-1.5">
+            <FileText className="w-3 h-3 text-[var(--deep)]" strokeWidth={1.7} />
+            <p className="akki-overline text-[10.5px] tracking-[0.16em] text-[var(--ink)]">Recent drafts</p>
+            {recentDraftsLoading && <Loader2 className="w-3 h-3 animate-spin text-[var(--muted)] ml-auto" />}
+          </header>
+          <div
+            className="p-2.5 overflow-hidden"
+            style={{ minHeight: DECK_BODY_HEIGHT_5ROW, maxHeight: DECK_BODY_HEIGHT_5ROW }}
+          >
+            {recentDraftsLoading ? null : recentDrafts.length === 0 ? (
+              <p className="text-[12px] text-[var(--muted)] italic px-1" data-testid="compilation-rail-recent-drafts-empty">
+                No drafts yet.
+              </p>
+            ) : (
+              <ul className="space-y-1.5" data-testid="compilation-rail-recent-drafts-list">
+                {recentDrafts.slice(0, RECENT_DOCS_LIMIT).map((d) => (
+                  <li key={d.id} className="text-[12.5px]">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/app/work-studio?kind=drafts&doc_id=${d.id}`)}
+                      className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-[var(--parchment)] flex items-center gap-2"
+                      data-testid={`compilation-rail-recent-drafts-row-${d.id}`}
+                    >
+                      <span className="flex-1 min-w-0 truncate text-[var(--ink)]">
+                        {d.name || d.original_filename || "Untitled draft"}
+                      </span>
+                      <span className="text-[10.5px] uppercase tracking-[0.14em] font-mono text-[color:var(--oxblood)] shrink-0">
+                        DRAFT
+                      </span>
+                      <span className="font-mono text-[11px] text-[var(--muted)] shrink-0 w-8 text-right">
+                        {fmtRelDays(d.updated_at || d.created_at)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <footer className="px-3 py-2 border-t border-[var(--rule)] bg-[var(--cream-deep)]/40">
+            <button
+              type="button"
+              onClick={() => navigate("/app/work-studio?kind=drafts")}
+              className="text-[11.5px] text-[var(--deep)] hover:text-[var(--ink)] inline-flex items-center gap-1 transition-colors"
+              data-testid="compilation-rail-recent-drafts-view-more"
+            >
+              View more <ArrowRight className="w-3 h-3" strokeWidth={1.7} />
+            </button>
+          </footer>
+        </section>
+
+        {/* Phase E.2 (2026-05-26) — Recent Activity deck. Pulls audit
+            rows scoped to the active context. View more → /app/work-studio/activity */}
+        <section
+          className="border border-[var(--rule)] bg-white rounded-sm"
+          data-testid="compilation-rail-recent-activity"
+        >
+          <header className="px-3 py-2 border-b border-[var(--rule)] flex items-center gap-1.5">
+            <RefreshCw className="w-3 h-3 text-[var(--deep)]" strokeWidth={1.7} />
+            <p className="akki-overline text-[10.5px] tracking-[0.16em] text-[var(--ink)]">Recent activity</p>
+            {recentActivityLoading && <Loader2 className="w-3 h-3 animate-spin text-[var(--muted)] ml-auto" />}
+          </header>
+          <div
+            className="p-2.5 overflow-hidden"
+            style={{ minHeight: DECK_BODY_HEIGHT_5ROW, maxHeight: DECK_BODY_HEIGHT_5ROW }}
+          >
+            {recentActivityLoading ? null : recentActivity.length === 0 ? (
+              <p className="text-[12px] text-[var(--muted)] italic px-1" data-testid="compilation-rail-recent-activity-empty">
+                No activity yet.
+              </p>
+            ) : (
+              <ul className="space-y-1.5" data-testid="compilation-rail-recent-activity-list">
+                {recentActivity.slice(0, RECENT_DOCS_LIMIT).map((a) => (
+                  <li key={a.id} className="text-[12px]">
+                    <button
+                      type="button"
+                      onClick={() => a.doc_id && navigate(`/app/work-studio?doc_id=${a.doc_id}`)}
+                      disabled={!a.doc_id}
+                      className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-[var(--parchment)] flex items-center gap-2 disabled:opacity-70 disabled:cursor-default"
+                      data-testid={`compilation-rail-recent-activity-row-${a.id}`}
+                    >
+                      <span className="flex-1 min-w-0 truncate text-[var(--ink)]">
+                        {a.doc_title || a.action || "—"}
+                      </span>
+                      <span className="text-[10.5px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] shrink-0">
+                        {(a.action || "").split(".").pop() || "event"}
+                      </span>
+                      <span className="font-mono text-[11px] text-[var(--muted)] shrink-0 w-8 text-right">
+                        {fmtRelDays(a.created_at)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <footer className="px-3 py-2 border-t border-[var(--rule)] bg-[var(--cream-deep)]/40">
+            <button
+              type="button"
+              onClick={() => navigate("/app/work-studio/activity")}
+              className="text-[11.5px] text-[var(--deep)] hover:text-[var(--ink)] inline-flex items-center gap-1 transition-colors"
+              data-testid="compilation-rail-recent-activity-view-more"
             >
               View more <ArrowRight className="w-3 h-3" strokeWidth={1.7} />
             </button>

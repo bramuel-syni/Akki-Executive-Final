@@ -78,28 +78,54 @@ function formatPeriod(period_start, period_end, fallback) {
 
 // =============================================================================
 // Six-tab listing
+// Phase E.1 (2026-05-26) — tab cleanup:
+//   • "Board Packs" + "Committee Packs" merged into
+//     "Main Board & Committee Packs". The new tab id is
+//     `cycle_main_and_committee_pack`; the listing fetches both
+//     legacy kinds in parallel and unions the rows (dedup by id).
+//   • New "Drafts" tab inserted between Minutes and Decks. Sources
+//     documents where `state == "draft"` from the documents
+//     collection (NOT briefings/aggregates).
+//   • Tab order is now:
+//     Main Board & Committee Packs · Minutes · Drafts · Decks · Reports · Briefing
 // =============================================================================
 const KIND_TABS = [
-  { id: "cycle_board_pack",     label: "Board Packs",     short: "board packs",     icon: ScrollText,     empty: "No board packs yet." },
-  { id: "cycle_minutes",        label: "Minutes",         short: "minutes",         icon: FileText,       empty: "No minutes filed yet." },
-  { id: "cycle_committee_pack", label: "Committee Packs", short: "committee packs", icon: FolderOpen,     empty: "No committee packs yet." },
-  { id: "deck",                 label: "Decks",           short: "decks",           icon: Presentation,   empty: "No decks in flight." },
-  { id: "report",               label: "Reports",         short: "reports",         icon: FileText,       empty: "No reports yet." },
-  { id: "briefing",             label: "Briefing",        short: "briefings",       icon: BookOpen,       empty: "No briefs yet." },
+  {
+    id: "cycle_main_and_committee_pack",
+    label: "Main Board & Committee Packs",
+    short: "main board & committee packs",
+    icon: ScrollText,
+    empty: "No board or committee packs yet.",
+    // The merged tab fetches both legacy aggregate kinds in parallel.
+    union_of: ["cycle_board_pack", "cycle_committee_pack"],
+  },
+  { id: "cycle_minutes",        label: "Minutes",  short: "minutes",  icon: FileText,     empty: "No minutes filed yet." },
+  {
+    id: "drafts",
+    label: "Drafts",
+    short: "drafts",
+    icon: FileText,
+    empty: "No drafts yet.",
+    // Drafts is sourced from documents (state=draft), not from
+    // briefings/aggregates. The fetcher branches on this flag.
+    source: "documents_drafts",
+  },
+  { id: "deck",                 label: "Decks",    short: "decks",    icon: Presentation, empty: "No decks in flight." },
+  { id: "report",               label: "Reports",  short: "reports",  icon: FileText,     empty: "No reports yet." },
+  { id: "briefing",             label: "Briefing", short: "briefings",icon: BookOpen,     empty: "No briefs yet." },
 ];
 
 
 // Per-tab contextual action rows. Spec-locked.
 function ContextActions({ kind, onExport, onEnhance, onCompile, onCreate }) {
   const ACTIONS = {
-    cycle_board_pack: [
-      // Chunk 4 (2026-05-13, WS-R02/R04/R05/R07/R08) — pass the *real*
-      // artefact-type key so the wizard opens with the right radio
-      // pre-selected AND queries the right source kind on Step 2.
-      // Pre-fix all three Compile-XXX buttons literally passed
-      // `"report"`, which made every flow land as a Report
-      // compilation regardless of which button was clicked.
-      { id: "compile_board_pack", label: "Compile Board Pack", icon: Files,    onClick: () => onCompile("board_pack") },
+    // Phase E.1 (2026-05-26) — merged tab carries BOTH legacy
+    // compile actions (the union of `compile_board_pack` +
+    // `compile_committee_pack`). Either button still routes to the
+    // wizard with the correct artefact-type pre-selected.
+    cycle_main_and_committee_pack: [
+      { id: "compile_board_pack",     label: "Compile Board Pack",     icon: Files, onClick: () => onCompile("board_pack") },
+      { id: "compile_committee_pack", label: "Compile Committee Pack", icon: Files, onClick: () => onCompile("committee_pack") },
     ],
     cycle_minutes: [
       { id: "compile_minutes",    label: "Compile Minutes",    icon: Files,    onClick: () => onCompile("minutes") },
@@ -109,8 +135,10 @@ function ContextActions({ kind, onExport, onEnhance, onCompile, onCreate }) {
       // resulting artefact is filed under Minutes rather than Reports).
       { id: "enhance_minutes",    label: "Enhance Minutes",    icon: Wand2,    onClick: () => onEnhance("minutes") },
     ],
-    cycle_committee_pack: [
-      { id: "compile_committee_pack", label: "Compile Committee Pack", icon: Files, onClick: () => onCompile("committee_pack") },
+    // Phase E.1 — Drafts tab carries a single CTA today; future
+    // passes can add per-draft actions (objective edit, finalize, etc.)
+    drafts: [
+      { id: "create_draft",       label: "+ New draft",        icon: Plus,    onClick: () => onCreate("draft") },
     ],
     deck: [
       { id: "create_summary_deck", label: "Create Summary Deck", icon: Plus,   onClick: () => onCreate("deck") },
@@ -440,10 +468,15 @@ export default function WorkStudio() {
   // `no-undef` ESLint rule (Step 2 Phase C).
   const navigate = useNavigate();
 
-  // Tab state — URL-backed.
+  // Tab state — URL-backed. Phase E.1 (2026-05-26) — default tab is
+  // now the merged `cycle_main_and_committee_pack`.
   const initialKind = (() => {
-    const k = (searchParams.get("kind") || "cycle_board_pack").toLowerCase();
-    return KIND_TABS.find((t) => t.id === k) ? k : "cycle_board_pack";
+    const k = (searchParams.get("kind") || "cycle_main_and_committee_pack").toLowerCase();
+    // Phase E.1 — legacy kind ids redirect to the merged tab.
+    if (k === "cycle_board_pack" || k === "cycle_committee_pack") {
+      return "cycle_main_and_committee_pack";
+    }
+    return KIND_TABS.find((t) => t.id === k) ? k : "cycle_main_and_committee_pack";
   })();
   const [kind, setKind] = useState(initialKind);
 
@@ -517,20 +550,92 @@ export default function WorkStudio() {
     setAggLoading(true);
     setAggErr(null);
     try {
-      // Patch 2B.1 — Status filter strip removed from UI. We send a
-      // benign `status=all` here so the backend keeps the param shape
-      // (no /api/docs change), but the result is unfiltered.
-      const { data } = await api.get(`/contexts/${cid}/briefings/aggregates`, {
-        params: {
-          kind,
-          q: aggQ || undefined,
-          sort: aggSort,
-          page: aggPage,
-          page_size: aggPageSize,
-        },
-      });
-      setAggItems(data?.items || []);
-      setAggTotal(data?.total ?? (data?.items || []).length);
+      const tab = KIND_TABS.find((t) => t.id === kind);
+      // Phase E.1 (2026-05-26) — Drafts tab sources documents
+      // (state=draft) rather than briefings/aggregates. Pagination is
+      // client-side for the moment (the listing collection is tiny);
+      // when drafts grow we can promote to server-side pagination.
+      if (tab && tab.source === "documents_drafts") {
+        const { data } = await api.get(`/contexts/${cid}/documents/drafts`, {
+          params: { limit: 200 },
+        });
+        const rows = Array.isArray(data) ? data : [];
+        // Map document shape → the same minimal row shape the listing
+        // expects (id + name + created_at). The listing already
+        // gracefully renders missing fields.
+        const items = rows.map((d) => ({
+          id: d.id,
+          name: d.name || d.original_filename || d.id,
+          created_at: d.created_at,
+          updated_at: d.updated_at || d.created_at,
+          kind: "drafts",
+          _draft: true,
+        }));
+        // Filter by search + sort client-side.
+        let filtered = items;
+        if (aggQ) {
+          const needle = aggQ.toLowerCase();
+          filtered = filtered.filter((it) => (it.name || "").toLowerCase().includes(needle));
+        }
+        const total = filtered.length;
+        const start = (aggPage - 1) * aggPageSize;
+        const paged = filtered.slice(start, start + aggPageSize);
+        setAggItems(paged);
+        setAggTotal(total);
+      } else if (tab && Array.isArray(tab.union_of)) {
+        // Phase E.1 — Merged "Main Board & Committee Packs" tab. Fetch
+        // both legacy aggregate kinds in parallel and union by id.
+        const responses = await Promise.all(
+          tab.union_of.map((k) =>
+            api.get(`/contexts/${cid}/briefings/aggregates`, {
+              params: {
+                kind: k,
+                q: aggQ || undefined,
+                sort: aggSort,
+                page: 1,
+                page_size: 500,  // load all, page client-side
+              },
+            }),
+          ),
+        );
+        const byId = new Map();
+        for (const r of responses) {
+          for (const item of (r.data?.items || [])) {
+            // dedup by id; first occurrence wins
+            if (!byId.has(item.id)) byId.set(item.id, item);
+          }
+        }
+        let merged = Array.from(byId.values());
+        // Client-side sort (responses are pre-sorted within each kind
+        // but the union needs re-sorting).
+        if (aggSort === "recent") {
+          merged.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+        } else if (aggSort === "oldest") {
+          merged.sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
+        } else if (aggSort === "alpha") {
+          merged.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+        }
+        const total = merged.length;
+        const start = (aggPage - 1) * aggPageSize;
+        const paged = merged.slice(start, start + aggPageSize);
+        setAggItems(paged);
+        setAggTotal(total);
+      } else {
+        // Patch 2B.1 — Status filter strip removed from UI. We send a
+        // benign `status=all` here so the backend keeps the param shape
+        // (no /api/docs change), but the result is unfiltered.
+        const { data } = await api.get(`/contexts/${cid}/briefings/aggregates`, {
+          params: {
+            kind,
+            q: aggQ || undefined,
+            sort: aggSort,
+            page: aggPage,
+            page_size: aggPageSize,
+          },
+        });
+        setAggItems(data?.items || []);
+        setAggTotal(data?.total ?? (data?.items || []).length);
+      }
     } catch (e) {
       setAggErr(apiErrorMessage(e));
       setAggItems([]);
@@ -545,7 +650,10 @@ export default function WorkStudio() {
   const onKind = (next) => {
     setKind(next);
     const sp = new URLSearchParams(searchParams);
-    if (next === "cycle_board_pack") sp.delete("kind"); else sp.set("kind", next);
+    // Phase E.1 (2026-05-26) — default tab is the merged main-pack tab,
+    // so we drop the param when landing there. Other tabs persist.
+    if (next === "cycle_main_and_committee_pack") sp.delete("kind");
+    else sp.set("kind", next);
     // Switching tabs resets pagination + search to keep listings honest.
     sp.delete("page");
     setSearchParams(sp, { replace: true });

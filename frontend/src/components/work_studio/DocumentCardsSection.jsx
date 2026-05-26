@@ -148,9 +148,8 @@ export default function DocumentCardsSection({ contextId, onOpenDocument }) {
       data-testid="work-studio-document-cards-section"
       aria-label="Document Cards"
     >
-      <h2 className="text-[11px] font-mono uppercase tracking-[0.15em] text-[var(--muted)] mb-3">
-        Document Cards
-      </h2>
+      {/* Phase E.1 (2026-05-26) — "Document Cards" h2 label removed
+          per user spec; the listing itself stays. */}
       <ul className="space-y-2" data-testid="work-studio-document-cards-list">
         {items.map((it) => (
           <DocumentCardRow

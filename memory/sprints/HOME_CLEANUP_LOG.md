@@ -868,6 +868,230 @@ Both grep passes verified clean post-fix (only doc comments / legacy-alias refer
 
 ---
 
+## Phase E — Work Studio
+
+**Surface:** `/app/work-studio` (`pages/WorkStudio.jsx`) + right rail
+(`components/work_studio/CompilationRail.jsx`). Cycle Manager surface
+(`/app/cycle` → `pages/cycle/CycleList.jsx`) receives the relocated
+readiness cards.
+
+**Status:** E.1 + E.2 closed. E.3 (Universal Document Drawer) and E.4
+(legacy route enumeration → archive) NOT yet started — orchestrator
+verification required before dispatching.
+
+### E.1 — Tab cleanup
+
+**Brief recap:**
+1. Remove the "DOCUMENT CARDS" h2 heading above the document listing.
+2. Merge "Board Packs" + "Committee Packs" into a single tab named
+   exactly `Main Board & Committee Packs`. Union of the two legacy
+   collections (dedup by id).
+3. Add a `Drafts` tab between Minutes and Decks. Sources documents
+   where `state == "draft"`.
+4. Other tabs (Minutes / Decks / Reports / Briefing) preserved verbatim.
+
+**Implementation:**
+
+- `components/work_studio/DocumentCardsSection.jsx` — deleted the
+  `<h2>Document Cards</h2>` block. The listing `<ul>` + section
+  container preserved; only the label is gone (per spec).
+
+- `pages/WorkStudio.jsx::KIND_TABS` — rewritten:
+
+  ```js
+  const KIND_TABS = [
+    { id: "cycle_main_and_committee_pack",
+      label: "Main Board & Committee Packs",
+      union_of: ["cycle_board_pack", "cycle_committee_pack"], … },
+    { id: "cycle_minutes",  label: "Minutes",  … },
+    { id: "drafts",         label: "Drafts",
+      source: "documents_drafts", … },
+    { id: "deck",           label: "Decks",    … },
+    { id: "report",         label: "Reports",  … },
+    { id: "briefing",       label: "Briefing", … },
+  ];
+  ```
+
+  Default tab = `cycle_main_and_committee_pack`. Legacy URL params
+  `?kind=cycle_board_pack` and `?kind=cycle_committee_pack` redirect
+  to the merged tab at `initialKind` capture time:
+
+  ```js
+  if (k === "cycle_board_pack" || k === "cycle_committee_pack") {
+    return "cycle_main_and_committee_pack";
+  }
+  ```
+
+- `fetchAggregates` branches three ways:
+  - `tab.source === "documents_drafts"` →
+    `GET /contexts/{cid}/documents/drafts` (new endpoint, see backend).
+    Client-side search + pagination.
+  - `Array.isArray(tab.union_of)` → parallel
+    `GET /contexts/{cid}/briefings/aggregates?kind=…` calls for each
+    legacy kind, union by `id` (first wins on collision), client-side
+    sort + pagination.
+  - Otherwise — legacy single-kind aggregate path unchanged.
+
+- `ContextActions` map: removed `cycle_board_pack` + `cycle_committee_pack`
+  entries; merged tab carries BOTH compile buttons (Compile Board Pack
+  + Compile Committee Pack) since the listing now mixes both kinds.
+  Drafts tab carries a single `+ New draft` CTA (placeholder until
+  E.3 mints draft objects from the Document Drawer).
+
+**Backend — new endpoint** (`routers/documents.py`):
+
+```python
+@router.get("/contexts/{context_id}/documents/drafts")
+async def list_draft_documents(...):
+    q = {"context_id": cid, "state": "draft", "status": {"$ne": "archived"}}
+    return [sanitize_doc(d) for d in await db.documents.find(q, …).sort("updated_at", -1)…]
+```
+
+Declared **before** the catch-all `documents/{doc_id}` route so
+FastAPI matches the literal `drafts` first. The `state` field on
+documents is introduced in Phase E.3 (Universal Document Drawer); the
+endpoint returns `[]` correctly today — empty state per spec, no fake
+data.
+
+### E.2 — Right side panel restructure
+
+**Brief recap:**
+1. Move "Ready to Compile" + "At Risk" to Cycle Manager.
+2. Keep Document Journal card (5 listings + view-more).
+3. Add "Recent Drafts" card (5 listings + view-more →
+   `/app/work-studio?kind=drafts`).
+4. Add "Recent Activity" card (5 listings + view-more →
+   `/app/work-studio/activity`).
+5. Top of rail: black `Generate Report` CTA with italic subtext
+   "from multiple documents".
+
+**Implementation:**
+
+- **Extracted readiness cards into shared component** —
+  `components/cycle/CompilationReadinessSection.jsx` (new file).
+  Same fetch shape, same readiness formula
+  `(docs*12 + contributors*10, clamped 0-100)`, same oxblood-on-severity
+  numeral, same Ready (≥80%) / At-Risk (≤40%) cutoffs as the original
+  rail rendition. Mounted into `pages/cycle/CycleList.jsx` above the
+  existing T5 status panel.
+
+  The Cycle Manager surface already had a `CycleSetupWizard`; the
+  relocated readiness section's Ready-row click handler opens the
+  existing `CompilationWizard` (shared with Work Studio) on Step 2
+  with `preselectArtefactType` + `preselectSourceId`.
+
+- **CompilationRail.jsx restructure:**
+  - Removed: `Ready to compile` block + `At risk` block (now on Cycle
+    Manager). Removed: `useMemo` import + the aggregates `useEffect`
+    + the `KINDS` constant + the `rowReadiness`, `artefactDetailHref`
+    helpers that fed those blocks.
+  - Renamed: primary CTA `Compile a Report` → `Generate Report`.
+    Wrapped CTA + italic subtext in a `data-testid="compilation-rail-
+    generate-report-block"` `<div>`. Subtext `<p>` carries
+    `data-testid="compilation-rail-generate-report-subtext"` and the
+    class `text-[11.5px] italic text-[var(--muted)]`.
+  - Added: `Recent Drafts` deck (5-row cap, view-more →
+    `/app/work-studio?kind=drafts`). Each row shows
+    `<title> · DRAFT · <relative time>` and links to
+    `/app/work-studio?kind=drafts&doc_id=<id>` (the `doc_id` param
+    will be consumed by the E.3 drawer).
+  - Added: `Recent Activity` deck (5-row cap, view-more →
+    `/app/work-studio/activity`). Each row shows
+    `<doc title or action> · <last action segment> · <relative time>`.
+    Rows with a `doc_id` are clickable; rows without are dimmed.
+
+- **Final rail section order** (top to bottom):
+
+  ```
+  Generate Report block
+    ├── Generate Report button
+    └── "from multiple documents" italic subtext
+  Document Journal deck (existing, untouched)
+  Recent Drafts deck
+  Recent Activity deck
+  ```
+
+  Wire test `test_e2_rail_section_order_document_journal_drafts_activity`
+  pins this ordering by `data-testid` position in the source.
+
+- **New activity-feed endpoint** (`routers/documents.py`):
+
+  ```python
+  @router.get("/contexts/{context_id}/activity/recent")
+  async def list_recent_activity(...):
+      rows = await db.audit_log.find({"context_id": cid}, …).sort("created_at", -1).…
+      # batch-resolve doc titles for rows where resource_type == "document"
+      return [{id, action, actor_id, doc_id?, doc_title?, created_at}, …]
+  ```
+
+  Reuses the existing `audit_log` collection — no new collection per spec.
+
+- **New full-page activity surface:** `pages/WorkStudioActivity.jsx`.
+  Mounted at `/app/work-studio/activity` in `App.js`. Renders the
+  same data with higher row limit + fuller layout + back-link.
+
+### Files changed — Phase E (E.1 + E.2)
+
+| Path | Purpose |
+| --- | --- |
+| `backend/routers/documents.py` | E.1 — `GET /contexts/{cid}/documents/drafts`. E.2 — `GET /contexts/{cid}/activity/recent`. |
+| `frontend/src/pages/WorkStudio.jsx` | E.1 — `KIND_TABS` rewrite, default-tab + legacy-redirect logic, three-way `fetchAggregates` branching, `ContextActions` map. |
+| `frontend/src/components/work_studio/DocumentCardsSection.jsx` | E.1 — deleted `<h2>Document Cards</h2>` heading. |
+| `frontend/src/components/work_studio/CompilationRail.jsx` | E.2 — removed Ready+At-Risk sections; renamed CTA to Generate Report + italic subtext; added Recent Drafts + Recent Activity decks. |
+| `frontend/src/components/cycle/CompilationReadinessSection.jsx` (NEW) | E.2 — shared Ready+At-Risk section mounted on Cycle Manager. |
+| `frontend/src/pages/cycle/CycleList.jsx` | E.2 — mounts `CompilationReadinessSection` + `CompilationWizard` for the Ready-row click. |
+| `frontend/src/pages/WorkStudioActivity.jsx` (NEW) | E.2 — full-page Recent Activity surface. |
+| `frontend/src/App.js` | E.2 — `/app/work-studio/activity` route. |
+| `backend/tests/test_home_cleanup_phase_e.py` (NEW) | Wire + live tests for E.1 + E.2. |
+
+### Tests added — Phase E.1 + E.2
+
+See `backend/tests/test_home_cleanup_phase_e.py`. Each test anchors
+on the **actual computed artefact** (URL strings, tab id strings, DOM
+testid positions, endpoint paths, backend filter clauses) — not on
+JSX className strings (Phase C false-greens lesson applied).
+
+| Test | Asserts |
+| --- | --- |
+| `test_e1_document_cards_heading_removed` | h2 removed; section + ul retained. |
+| `test_e1_tab_bar_has_correct_six_tabs_in_correct_order` | KIND_TABS order exactly: Main → Minutes → Drafts → Decks → Reports → Briefing. |
+| `test_e1_legacy_tab_labels_removed` | `"Board Packs"` + `"Committee Packs"` strings removed from KIND_TABS definition (comments allowed). |
+| `test_e1_merged_tab_unions_legacy_kinds` | `union_of: ["cycle_board_pack","cycle_committee_pack"]` data-contract present. |
+| `test_e1_drafts_tab_sources_documents_drafts_endpoint` | Drafts tab branches on `source === "documents_drafts"` and calls `/documents/drafts`. |
+| `test_e1_legacy_kind_query_param_redirects_to_merged` | URL params `?kind=cycle_board_pack` / `?kind=cycle_committee_pack` resolve to the merged tab. |
+| `test_e2_ready_to_compile_lives_on_cycle_list_not_work_studio_rail` | Ready+At-Risk testids ABSENT from CompilationRail, PRESENT on CompilationReadinessSection, section mounted in CycleList. |
+| `test_e2_rail_cta_is_generate_report_with_italic_subtext` | Rail CTA reads "Generate Report"; italic subtext "from multiple documents" present; legacy "Compile a Report" copy removed from active code. |
+| `test_e2_recent_drafts_deck_present_with_view_more_link` | Recent Drafts deck testids present; view-more → `/app/work-studio?kind=drafts`. |
+| `test_e2_recent_activity_deck_present_with_view_more_link` | Recent Activity deck testids present; view-more → `/app/work-studio/activity`. |
+| `test_e2_recent_activity_route_is_mounted` | `/app/work-studio/activity` route declared in App.js + page file exists. |
+| `test_e2_rail_section_order_document_journal_drafts_activity` | DOM source-order: Generate Report block → Document Journal → Recent Drafts → Recent Activity. |
+| `test_e2_backend_drafts_endpoint_wired` | `@router.get("/contexts/{context_id}/documents/drafts")` defined with `"state": "draft"` filter. |
+| `test_e2_backend_drafts_endpoint_declared_before_doc_id_route` | Route-ordering guard so FastAPI matches literal `drafts` first. |
+| `test_e2_backend_activity_endpoint_wired` | `@router.get("/contexts/{context_id}/activity/recent")` defined + reads from `audit_log`. |
+| `test_e2_drafts_endpoint_returns_empty_list_when_no_drafts` | Live HTTP: empty drafts collection → `[]`, no 500. |
+| `test_e2_drafts_endpoint_filters_state_draft` | Live HTTP: seeded one draft + one committed → endpoint returns only the draft. |
+| `test_e_log_section_present_in_home_cleanup_log` | This subsection exists. |
+
+### Live DOM evidence — Phase E.1 + E.2
+
+Verification harness produces evidence under `/tmp/phase_e_*.png` and via curl. Captured at commit time:
+
+- Tab bar order on Work Studio confirmed via Playwright `evaluate()` over `[data-testid^="ws-tab-"]` collection.
+- Legacy tab labels `"Board Packs"` / `"Committee Packs"` absent from rendered DOM (the wire test sweep covers source; the screenshot covers live).
+- Italic subtext "from multiple documents" computed style: `font-style: italic` (verified via `getComputedStyle`).
+- Section order on right rail confirmed via `data-testid` document-order scan.
+- New backend endpoints return 200 + `[]` against fresh contexts (live curl in regression suite).
+
+### Spec/Code Deltas — Phase E.1 + E.2
+
+| # | Brief / surface | Existing spec | Action |
+| --- | --- | --- | --- |
+| E1 | Tab merge + Drafts tab on `/app/work-studio`. | `AKKI_PRODUCT_SPEC.md` is silent on Work Studio tab composition; the canonical spec is the UI brief that dispatched Phase E. The merge is additive UX — no spec rule altered. | No spec conflict. |
+| E2 | Relocate Ready+At-Risk to Cycle Manager. | Same — both Work Studio rail and Cycle Manager are surfaces; the readiness signals move between them without changing the underlying data contract. | No spec conflict. |
+| E3 | `state` field on `documents` collection introduced in E.3. | Document schema is implicit (codebase-defined). The new `state` field is additive — legacy docs without `state` are filtered out cleanly. | No spec conflict. |
+
+---
+
 ## Deploy-readiness checklist
 
 - [x] Phases A + B + C + D closed in this log.

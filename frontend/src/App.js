@@ -95,6 +95,8 @@ const SharedArtefact = lazy(() => import("@/pages/SharedArtefact"));
 const InboundQueue = lazy(() => import("@/pages/InboundQueue"));
 const StudioComposerPage = lazy(() => import("@/pages/StudioComposerPage"));
 const WorkStudio = lazy(() => import("@/pages/WorkStudio"));
+// Phase E.2 (2026-05-26) — full-page Recent Activity surface.
+const WorkStudioActivity = lazy(() => import("@/pages/WorkStudioActivity"));
 const WorkStudioDocumentPage = lazy(() => import("@/pages/WorkStudioDocumentPage"));
 const Pulse = lazy(() => import("@/pages/Pulse"));
 const SearchResults = lazy(() => import("@/pages/SearchResults"));
@@ -311,6 +313,8 @@ function App() {
           <Route path="/app/manage" element={<Gated><Manage /></Gated>} />
           <Route path="/app/enterprise" element={<Gated><Enterprise /></Gated>} />
           <Route path="/app/work-studio" element={<Gated><WorkStudio /></Gated>} />
+          {/* Phase E.2 — Recent Activity full-page view */}
+          <Route path="/app/work-studio/activity" element={<Gated><WorkStudioActivity /></Gated>} />
           {/* T3.3 (2026-05-25) — G8 ratified dedicated full-page
               surface for Board Packs + Committee Packs. The pre-T3
               route here pointed to <WorkStudio /> and auto-opened
