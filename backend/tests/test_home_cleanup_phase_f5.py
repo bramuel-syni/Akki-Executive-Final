@@ -429,10 +429,10 @@ async def _seed_task(db, actor, **overrides):
 
 @pytest.mark.asyncio
 async def test_f5_inbound_webhook_ingests_email_reply(task_owner):
-    """Build a Postmark-shaped inbound payload with MailboxHash =
-    `task-<token>`. The webhook parses body + attachments, creates a
-    document, flips contributor status to submitted, fires the
-    submitted_via_email audit."""
+    """Build a SendGrid Inbound Parse multipart payload addressed to
+    `task-<token>@inbound.<domain>`. The webhook parses body +
+    attachments, creates a document, flips contributor status to
+    submitted, fires the submitted_via_email audit."""
     from server import app  # noqa: F401
     from core import db
     import os
@@ -449,13 +449,18 @@ async def test_f5_inbound_webhook_ingests_email_reply(task_owner):
         "used": False, "created_at": datetime.now(timezone.utc).isoformat(),
     })
 
-    # Build the inbound payload.
+    # Build SendGrid Inbound Parse multipart form fields.
+    inbound_domain = (
+        os.environ.get("SENDGRID_INBOUND_DOMAIN")
+        or os.environ.get("CYCLE_REPLY_DOMAIN")
+        or "akki.syni.ai"
+    )
     att_content = b"My section A content. Numbers attached."
-    payload = {
-        "From": "ext@external.com",
-        "FromFull": {"Email": "ext@external.com", "Name": "Ext User"},
-        "Subject": f"Re: Action requested — F.5 Inbound test",
-        "TextBody": (
+    fields = {
+        "from":         "Ext User <ext@external.com>",
+        "to":           f"task-{token}@{inbound_domain}",
+        "subject":      "Re: Action requested — F.5 Inbound test",
+        "text":         (
             "Here is my contribution.\n"
             "Numbers reconciled.\n"
             "\n"
@@ -463,23 +468,16 @@ async def test_f5_inbound_webhook_ingests_email_reply(task_owner):
             "Ext User\n"
             "Phone\n"
         ),
-        "HtmlBody": "",
-        "MailboxHash": f"task-{token}",
-        "MessageID": "msg-" + uuid.uuid4().hex,
-        "Attachments": [{
-            "Name": "section_a.txt",
-            "ContentType": "text/plain",
-            "Content": base64.b64encode(att_content).decode("ascii"),
-            "ContentLength": len(att_content),
-        }],
+        "html":         "",
+        "MessageID":    "msg-" + uuid.uuid4().hex,
+        "attachments":  "1",
+        "attachment-info": '{"attachment1": {"filename": "section_a.txt", "type": "text/plain"}}',
     }
-
-    # Disable webhook signature for this test by ensuring the env
-    # secret is unset OR by using the `?secret=` query (existing path).
-    secret = os.environ.get("POSTMARK_WEBHOOK_SECRET")
-    base_qs = f"?secret={secret}" if secret else ""
+    files = {
+        "attachment1": ("section_a.txt", att_content, "text/plain"),
+    }
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        r = await c.post(f"/api/inbound/postmark{base_qs}", json=payload)
+        r = await c.post("/api/inbound/sendgrid", data=fields, files=files)
         # We accept 200 OR 2xx — depends on the existing webhook's success shape.
         assert r.status_code in (200, 202, 204), r.text
         body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
@@ -501,6 +499,7 @@ async def test_f5_inbound_webhook_ingests_email_reply(task_owner):
     inbound = await db.task_inbound_emails.find_one({"task_id": tid})
     assert inbound is not None
     assert inbound["parse_status"] == "ingested"
+    assert inbound.get("provider") == "sendgrid"
 
 
 @pytest.mark.asyncio
@@ -521,19 +520,22 @@ async def test_f5_inbound_webhook_rejects_sender_mismatch(task_owner):
         "expires_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
         "used": False, "created_at": datetime.now(timezone.utc).isoformat(),
     })
-    payload = {
-        "From": "imposter@bad.com",
-        "FromFull": {"Email": "imposter@bad.com"},
-        "Subject": "Re: Action",
-        "TextBody": "I'm not who you think I am.",
-        "MailboxHash": f"task-{token}",
+    inbound_domain = (
+        os.environ.get("SENDGRID_INBOUND_DOMAIN")
+        or os.environ.get("CYCLE_REPLY_DOMAIN")
+        or "akki.syni.ai"
+    )
+    fields = {
+        "from":      "imposter@bad.com",
+        "to":        f"task-{token}@{inbound_domain}",
+        "subject":   "Re: Action",
+        "text":      "I'm not who you think I am.",
+        "html":      "",
         "MessageID": "msg-" + uuid.uuid4().hex,
-        "Attachments": [],
+        "attachments": "0",
     }
-    secret = os.environ.get("POSTMARK_WEBHOOK_SECRET")
-    base_qs = f"?secret={secret}" if secret else ""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        await c.post(f"/api/inbound/postmark{base_qs}", json=payload)
+        await c.post("/api/inbound/sendgrid", data=fields)
     # No doc created.
     d = await db.documents.find_one({"task_id": tid, "origin": "email_receipt"})
     assert d is None
@@ -541,6 +543,7 @@ async def test_f5_inbound_webhook_rejects_sender_mismatch(task_owner):
     inbound = await db.task_inbound_emails.find_one({"task_id": tid})
     assert inbound is not None
     assert inbound["parse_status"] == "sender_mismatch"
+    assert inbound.get("provider") == "sendgrid"
 
 
 # ═════════════════════════════════════════════════════════════════════

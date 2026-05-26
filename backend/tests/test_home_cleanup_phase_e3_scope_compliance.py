@@ -436,11 +436,13 @@ async def test_scope_related_endpoint_returns_typed_groups(seeded_context):
             "metadata_match", "content_similarity",
             "explicit_attachment", "canonical_lineage",
         }
-        # Gaps surface honestly.
-        assert groups["explicit_attachment"]["available"] is False
-        assert groups["canonical_lineage"]["available"] is False
-        assert "gap_reason" in groups["explicit_attachment"]
-        assert "gap_reason" in groups["canonical_lineage"]
+        # Debt W3 (2026-05-26) — explicit_attachment + canonical_lineage
+        # are now AVAILABLE (no longer gaps). content_similarity is the
+        # only remaining gap, deferred to Phase G (embeddings).
+        assert groups["explicit_attachment"]["available"] is True
+        assert groups["canonical_lineage"]["available"] is True
+        assert groups["content_similarity"]["available"] is False
+        assert "Phase G" in groups["content_similarity"]["gap_reason"]
         # Metadata match finds the peer doc (same context + same doc_type).
         meta_items = groups["metadata_match"]["items"]
         peer_ids = {it.get("id") for it in meta_items}

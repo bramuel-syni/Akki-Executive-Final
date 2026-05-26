@@ -1,16 +1,17 @@
 """Phase B — Postmark inbound webhook tests.
 
-Coverage:
-  * HMAC signature verify (valid + tampered)
-  * Basic-Auth path (with + without `POSTMARK_BASIC_AUTH_USER`)
-  * MailboxHash prefix routing — session-attach, doc-attach, notify
-  * Plain (default) routing path
-  * EICAR attachment → 422-equivalent (clamav signature surfaces in audit log)
-  * Tier-C unknown sender → `inbound_queue` row
+⚠️ RETIRED 2026-05-26 — replaced by SendGrid Inbound Parse migration (W1).
 
-These tests stand up a `httpx.AsyncClient + ASGITransport` against the
-in-process FastAPI app (no separate uvicorn). Postmark payloads are
-hand-rolled minimal JSON envelopes matching the on-disk Webhook schema.
+The Postmark inbound endpoint now returns 410 Gone. The dispatch logic
+moved into `_dispatch_inbound_payload` and is exercised end-to-end via
+the SendGrid multipart adapter in:
+  - `tests/test_home_cleanup_phase_f5.py` (contributor reply path)
+  - `tests/test_home_cleanup_phase_f7.py` (migration contract + general
+    routing parity)
+
+This file is kept on disk for git-history continuity but the test
+functions are skipped to avoid CI noise. Re-enable only if Postmark is
+reinstated as a provider.
 """
 from __future__ import annotations
 
@@ -28,7 +29,15 @@ from httpx import AsyncClient, ASGITransport
 from motor.motor_asyncio import AsyncIOMotorClient
 
 
-pytestmark = pytest.mark.asyncio
+# Module-level skip — Postmark inbound was retired 2026-05-26. See
+# `tests/test_home_cleanup_phase_f7.py` for the live SendGrid migration
+# coverage that replaces these tests.
+pytestmark = [
+    pytest.mark.asyncio,
+    pytest.mark.skip(
+        reason="Postmark inbound retired 2026-05-26 — see test_home_cleanup_phase_f7 + test_home_cleanup_phase_f5 for SendGrid coverage"
+    ),
+]
 
 
 EICAR = (

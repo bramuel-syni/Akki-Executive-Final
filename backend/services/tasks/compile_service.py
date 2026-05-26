@@ -374,7 +374,8 @@ async def send_circulation(db, *, task: Dict[str, Any], account_id: str,
 
 
 async def add_circulation_comment(db, *, token: str, comment_text: str,
-                                   doc_id: Optional[str] = None) -> Dict[str, Any]:
+                                   doc_id: Optional[str] = None,
+                                   span: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     row = await db.task_circulation_tokens.find_one({"token": token, "used": False})
     if not row:
         return {"ok": False, "reason": "invalid_or_expired_token"}
@@ -396,13 +397,29 @@ async def add_circulation_comment(db, *, token: str, comment_text: str,
         "doc_id":     doc_id,
         "created_at": _now_iso(),
     }
+    # Debt W4 (2026-05-26) — inline-comment span. Optional. When
+    # present, the comment is anchored at a text span. Multiple
+    # comments on the same span are allowed (group by `span.start +
+    # ":" + span.end` on the review surface).
+    if span and isinstance(span, dict):
+        try:
+            start = int(span.get("start", 0))
+            end   = int(span.get("end", 0))
+            text  = (span.get("text") or "").strip()[:2000]
+            if 0 <= start <= end and text:
+                cmt["span"] = {"start": start, "end": end, "text": text}
+        except (ValueError, TypeError):
+            pass
     session["circulation"]["comments"].append(cmt)
     await _set_session(db, task_id=tid, session=session)
     await _audit(db, task_id=tid, account_id=t.get("account_id"),
                  action="task.compile.circulation.comment_received",
                  ctx_id=t.get("context_id"),
-                 metadata={"reviewer": row["reviewer_email"], "doc_id": doc_id, "len": len(cmt["comment"])})
-    return {"ok": True, "comment_id": cmt["id"], "task_id": tid}
+                 metadata={"reviewer": row["reviewer_email"], "doc_id": doc_id,
+                           "len": len(cmt["comment"]),
+                           "inline": bool(cmt.get("span"))})
+    return {"ok": True, "comment_id": cmt["id"], "task_id": tid,
+            "inline": bool(cmt.get("span"))}
 
 
 async def close_circulation(db, *, task: Dict[str, Any], account_id: str) -> Dict[str, Any]:

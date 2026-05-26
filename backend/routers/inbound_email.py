@@ -28,6 +28,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 
 from core import db, iso, now, write_audit
 from documents_service import (
@@ -672,6 +673,7 @@ async def _handle_task_contributor_reply(
                 "parse_status":   "token_unknown_or_expired",
                 "received_at":    datetime.now(timezone.utc).isoformat(),
                 "message_id":     message_id,
+                "provider":       payload.get("_provider", "postmark"),
             })
         except Exception:  # noqa: BLE001
             pass
@@ -689,6 +691,7 @@ async def _handle_task_contributor_reply(
                 "expected_email": row.get("contributor_email"),
                 "received_at":    datetime.now(timezone.utc).isoformat(),
                 "message_id":     message_id,
+                "provider":       payload.get("_provider", "postmark"),
             })
         except Exception:  # noqa: BLE001
             pass
@@ -803,6 +806,7 @@ async def _handle_task_contributor_reply(
             "comment_len":    len(cleaned_body),
             "received_at":    datetime.now(timezone.utc).isoformat(),
             "message_id":     message_id,
+            "provider":       payload.get("_provider", "postmark"),
         })
     except Exception as e:  # noqa: BLE001
         logger.warning("post-email audit failed: %s", e)
@@ -829,16 +833,39 @@ async def _handle_task_contributor_reply(
 
 @router.post("/postmark")
 async def receive_postmark_inbound(request: Request, secret: Optional[str] = Query(None)):
-    raw_body = await _verify_inbound(request, secret)
+    """DEPRECATED (2026-05-26) — Postmark inbound has been replaced by
+    SendGrid Inbound Parse. This route returns 410 Gone with a migration
+    note. Re-point the inbound webhook in your provider dashboard to
+    `/api/inbound/sendgrid` (multipart/form-data, optional HTTP Basic
+    Auth). Will be removed in the next release cycle.
+    """
+    return JSONResponse(
+        status_code=410,
+        content={
+            "ok": False,
+            "error": "endpoint_retired",
+            "migration": {
+                "from": "/api/inbound/postmark (Postmark JSON)",
+                "to":   "/api/inbound/sendgrid (SendGrid Inbound Parse multipart/form-data)",
+                "since": "2026-05-26",
+                "docs":  "/app/memory/sprints/DEPLOY_READINESS.md#sendgrid-setup",
+            },
+            "note": (
+                "Postmark inbound webhook is retired. Configure SendGrid "
+                "Inbound Parse and point the parse URL at the new endpoint."
+            ),
+        },
+    )
 
-    try:
-        import json
-        payload = json.loads(raw_body.decode("utf-8") or "{}")
-    except Exception as e:  # noqa: BLE001
-        logger.warning("Postmark inbound: invalid JSON: %s", e)
-        # Return 200 so Postmark doesn't retry; log for ops.
-        return {"ok": False, "error": "invalid_json"}
 
+async def _dispatch_inbound_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Provider-agnostic inbound dispatch.
+
+    Accepts a Postmark-shape dict (the historic internal contract).
+    The SendGrid endpoint normalizes its multipart payload into this
+    shape before calling this worker. Returns the same response shape
+    the legacy Postmark handler returned.
+    """
     mailbox_hash = (payload.get("MailboxHash") or "").strip()
     subject = (payload.get("Subject") or "").strip() or "(no subject)"
     text_body = (payload.get("TextBody") or "").strip()
@@ -1207,11 +1234,9 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Phase B (2026-05-21) — back-compat endpoint.
-# Wires `/api/webhooks/postmark/inbound` to the same handler. Operators
-# can re-point Postmark's dashboard URL without a hard cutover. Both
-# endpoints are functionally identical; the back-compat one is hidden
-# from the OpenAPI schema to avoid suggesting two distinct contracts.
+# Phase B (2026-05-21) — back-compat endpoint (now also 410).
+# Wires `/api/webhooks/postmark/inbound` to a 410 response. Both
+# Postmark routes are retired in favour of SendGrid Inbound Parse.
 # ─────────────────────────────────────────────────────────────────────
 @backcompat_router.post("/webhooks/postmark/inbound", include_in_schema=False)
 async def receive_postmark_inbound_backcompat(
@@ -1219,3 +1244,204 @@ async def receive_postmark_inbound_backcompat(
     secret: Optional[str] = Query(None),
 ):
     return await receive_postmark_inbound(request, secret=secret)
+
+
+# ═════════════════════════════════════════════════════════════════════
+# SendGrid Inbound Parse — 2026-05-26 — replaces Postmark inbound.
+#
+# SendGrid posts multipart/form-data (NOT JSON). Fields:
+#   to / from / subject / text / html      string
+#   attachments                              integer count (string)
+#   attachment-info                          JSON metadata
+#   email                                    raw MIME source
+#   dkim / SPF / envelope                    strings
+#   attachment1, attachment2, …              multipart file parts
+#
+# Reply-to address shape:
+#   task-<token>@inbound.<SENDGRID_INBOUND_DOMAIN>
+#   <account-uuid>@cycles.akki.ai            (cycle alias, unchanged)
+#   inbound+<account_token>[.<ctx_token>]@inbound.<SENDGRID_INBOUND_DOMAIN>
+#
+# Auth: optional HTTP Basic Auth (SendGrid Inbound Parse settings).
+# Env vars:
+#   SENDGRID_INBOUND_AUTH_USERNAME (optional)
+#   SENDGRID_INBOUND_AUTH_PASSWORD (optional)
+# When both are unset, the endpoint accepts unauthenticated POSTs (DEV).
+# When set, the endpoint requires Basic Auth matching them.
+# ═════════════════════════════════════════════════════════════════════
+
+
+def _verify_sendgrid_basic_auth(authz_header: Optional[str]) -> bool:
+    """Verify SendGrid Inbound Parse HTTP Basic Auth.
+
+    If `SENDGRID_INBOUND_AUTH_USERNAME` AND `SENDGRID_INBOUND_AUTH_PASSWORD`
+    are BOTH set, the request must include matching Basic auth.
+    Otherwise auth is OPTIONAL (the parse URL is the credential).
+    """
+    expected_user = (os.environ.get("SENDGRID_INBOUND_AUTH_USERNAME") or "").strip()
+    expected_pw   = (os.environ.get("SENDGRID_INBOUND_AUTH_PASSWORD") or "").strip()
+    if not (expected_user and expected_pw):
+        return True  # auth not configured → accept (URL secrecy is the credential)
+    if not authz_header or not authz_header.lower().startswith("basic "):
+        return False
+    try:
+        decoded = base64.b64decode(authz_header[6:].strip()).decode("utf-8")
+    except Exception:  # noqa: BLE001
+        return False
+    if ":" not in decoded:
+        return False
+    user, _, pw = decoded.partition(":")
+    return (
+        secrets.compare_digest(user, expected_user)
+        and secrets.compare_digest(pw, expected_pw)
+    )
+
+
+def _extract_email_addr(raw: str) -> str:
+    """Extract the bare `name@domain` from a `"Name" <name@domain>` header
+    or pass through a bare address. Lower-cased."""
+    if not raw:
+        return ""
+    s = raw.strip()
+    if "<" in s and ">" in s:
+        s = s[s.rindex("<") + 1 : s.rindex(">")]
+    return s.strip().lower()
+
+
+def _mailbox_hash_from_local_part(addr: str) -> str:
+    """Extract the MailboxHash equivalent from a SendGrid `to` address.
+
+    SendGrid does NOT support Postmark-style `+plus-addressing`. Instead
+    the entire local-part (everything before `@`) IS the routing token.
+    For our prefix-based routing (`task-<token>`, `inbound+...`, etc.)
+    we return the local-part as the MailboxHash so the existing dispatch
+    logic works unchanged.
+
+    Cycle aliases (`<uuid>@cycles.akki.ai`) are detected separately by
+    `is_cycles_alias` against the full address — we do NOT set a hash
+    for those.
+    """
+    bare = _extract_email_addr(addr)
+    if not bare or "@" not in bare:
+        return ""
+    local, _, _ = bare.partition("@")
+    return local
+
+
+def _parse_attachment_info(raw_json: str) -> Dict[str, Dict[str, Any]]:
+    """SendGrid's `attachment-info` field is a JSON map keyed by the
+    multipart part name (e.g. `attachment1`) with values describing
+    each file (filename, type, charset). Returns `{}` on parse failure."""
+    if not raw_json:
+        return {}
+    try:
+        import json as _json
+        data = _json.loads(raw_json)
+        if isinstance(data, dict):
+            return data
+    except Exception:  # noqa: BLE001
+        pass
+    return {}
+
+
+async def _sendgrid_form_to_payload(form) -> Dict[str, Any]:
+    """Adapt a SendGrid Inbound Parse multipart form into the Postmark-
+    shape dict the internal dispatcher consumes.
+
+    `form` is a `starlette.datastructures.FormData` instance.
+    """
+    to_raw   = (form.get("to") or "").strip()
+    from_raw = (form.get("from") or "").strip()
+    subject  = (form.get("subject") or "").strip()
+    text     = form.get("text") or ""
+    html     = form.get("html") or ""
+
+    # MailboxHash = local-part of the To address (e.g., `task-<token>` or
+    # `inbound+<acct>.<ctx>`). The legacy Postmark code already handles
+    # both shapes.
+    mailbox_hash = _mailbox_hash_from_local_part(to_raw)
+
+    # Bare email of the From address.
+    from_email = _extract_email_addr(from_raw)
+    # FromName: the bit before `<…>` if any.
+    from_name = ""
+    if "<" in from_raw:
+        from_name = from_raw[: from_raw.rindex("<")].strip().strip('"')
+
+    # Attachments. SendGrid posts each as a multipart file under
+    # `attachment1`, `attachment2`, …. `attachment-info` carries metadata.
+    attachments: List[Dict[str, Any]] = []
+    info = _parse_attachment_info(form.get("attachment-info") or "")
+    try:
+        count = int((form.get("attachments") or "0").strip() or "0")
+    except (ValueError, TypeError):
+        count = 0
+    for i in range(1, count + 1):
+        key = f"attachment{i}"
+        f = form.get(key)
+        if f is None:
+            continue
+        # `f` is a starlette `UploadFile` for files.
+        try:
+            content_bytes = await f.read()
+        except Exception:  # noqa: BLE001
+            continue
+        meta = info.get(key) or {}
+        attachments.append({
+            "Name":         meta.get("filename") or getattr(f, "filename", None) or key,
+            "ContentType":  meta.get("type")     or getattr(f, "content_type", None) or "application/octet-stream",
+            "Content":      base64.b64encode(content_bytes).decode("ascii"),
+            "ContentLength": len(content_bytes),
+        })
+
+    # Cycle-alias detection: SendGrid doesn't carry an `OriginalRecipient`
+    # header in the form payload, but the cycle alias IS the `to`. Pass
+    # the full to-address through `OriginalRecipient` so the cycle-alias
+    # path in `_dispatch_inbound_payload` resolves it.
+    original_recipient = _extract_email_addr(to_raw)
+    to_full = [{"Email": original_recipient, "MailboxHash": mailbox_hash}]
+
+    return {
+        # `From` is the BARE email (lowercased) — matches Postmark's
+        # field semantics. The display-name lives in `FromName`/`FromFull`.
+        "From":               from_email,
+        "FromFull":           {"Email": from_email, "Name": from_name},
+        "FromName":           from_name,
+        "To":                 to_raw,
+        "ToFull":             to_full,
+        "Subject":            subject,
+        "TextBody":           text,
+        "HtmlBody":           html,
+        "MailboxHash":        mailbox_hash,
+        "MessageID":          (form.get("MessageID") or form.get("message-id") or "").strip(),
+        "Attachments":        attachments,
+        "OriginalRecipient":  original_recipient,
+        # Provenance — forensics row records this for future-proofing.
+        "_provider":          "sendgrid",
+    }
+
+
+@router.post("/sendgrid")
+async def receive_sendgrid_inbound(request: Request):
+    """SendGrid Inbound Parse webhook receiver.
+
+    Reads multipart/form-data, normalizes to the internal Postmark-shape
+    payload, and dispatches via `_dispatch_inbound_payload`.
+    """
+    if not _verify_sendgrid_basic_auth(request.headers.get("authorization")):
+        raise HTTPException(status_code=401, detail="Invalid inbound credentials.")
+
+    try:
+        form = await request.form()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("SendGrid inbound: failed to parse multipart: %s", e)
+        # 200 so SendGrid doesn't infinite-retry; log for ops.
+        return {"ok": False, "error": "invalid_multipart"}
+
+    try:
+        payload = await _sendgrid_form_to_payload(form)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("SendGrid inbound: payload adapter error: %s", e)
+        return {"ok": False, "error": "adapter_error"}
+
+    return await _dispatch_inbound_payload(payload)

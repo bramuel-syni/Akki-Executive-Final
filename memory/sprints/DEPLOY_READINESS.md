@@ -55,11 +55,16 @@ issue an explicit deploy signal on return — DO NOT deploy without it.
 | `DB_NAME`                  | Mongo database name             | `akki_production`            | YES — protected |
 | `JWT_SECRET`               | JWT signing secret              | `<random 32+ bytes>`         | YES |
 | `EMERGENT_LLM_KEY`         | Shield-routed LLM credential    | provisioned by Emergent     | YES |
-| `POSTMARK_API_KEY` / `POSTMARK_SERVER_TOKEN` | Postmark transactional stream | `xxx-xxx-xxx`               | YES (F.5 contributor invites + F.4 circulation) |
-| `POSTMARK_WEBHOOK_SECRET`  | HMAC verification of inbound webhook payloads | `<random 32+ bytes>` | YES (F.5 Mode 3) |
-| `CYCLE_REPLY_DOMAIN`       | Parse domain for `task-<token>@…` reply-to addresses | `parse.akki.example.com` | YES (F.5 Mode 3) |
+| `SENDGRID_API_KEY`         | SendGrid transactional + Inbound Parse credential | `SG.xxx-xxx-xxx` | YES (Debt W1 — replaces Postmark) |
+| `SENDGRID_FROM_EMAIL`      | Verified sender address (SPF + DKIM authenticated) | `noreply@akki.example.com` | YES |
+| `SENDGRID_INBOUND_DOMAIN`  | SendGrid Inbound Parse parse hostname (MX records on this domain point at SendGrid) | `inbound.akki.example.com` | YES (Debt W1) |
+| `SENDGRID_INBOUND_AUTH_USERNAME` | Optional HTTP Basic Auth user on the Inbound Parse webhook | `sg-inbound` | optional |
+| `SENDGRID_INBOUND_AUTH_PASSWORD` | Optional HTTP Basic Auth password on the Inbound Parse webhook | `<random 32+ bytes>` | optional |
+| `EMAIL_PROVIDER`           | Force-pick provider (`sendgrid` \| `resend`). When unset, SendGrid is preferred if `SENDGRID_API_KEY` is set, else Resend. | `sendgrid` | optional |
+| `RESEND_API_KEY`           | LEGACY fallback transactional provider | `re_xxx` | optional (back-compat) |
+| `CYCLE_REPLY_DOMAIN`       | LEGACY reply-to domain (used when `SENDGRID_INBOUND_DOMAIN` unset) | `parse.akki.example.com` | optional |
 | `PUBLIC_BASE_URL`          | Canonical app origin used in magic-link URLs | `https://app.akki.example.com` | recommended |
-| `RESEND_FROM_EMAIL`        | Transactional sender address (legacy var name) | `onboarding@akki.example.com` | YES |
+| `RESEND_FROM_EMAIL`        | LEGACY transactional sender address | `onboarding@akki.example.com` | optional (back-compat) |
 
 ### Frontend env vars
 
@@ -69,42 +74,81 @@ issue an explicit deploy signal on return — DO NOT deploy without it.
 
 ---
 
-## Postmark setup
+## SendGrid setup (Debt W1 — 2026-05-26 — replaces Postmark)
 
-### Transactional stream (already required)
+### Transactional stream
 
-Required for: F.5 contributor invites (Mode 1 deep-link emails,
-Mode 2 magic-link emails, Mode 3 reply-to-tagged emails), F.4
-circulation reviewer invites, post-commit confirmations.
+Required for: F.5 contributor invites (Mode 1 deep-link, Mode 2
+magic-link, Mode 3 reply-tagged), F.4 circulation reviewer invites,
+post-commit confirmations.
 
-1. Verify the sending domain in Postmark.
-2. `POSTMARK_API_KEY` env var set.
-3. Test send from the backend:
+1. Create a **SendGrid account** (or use existing).
+2. Settings → Sender Authentication → authenticate your sending domain
+   (publish SPF + DKIM records). This is required to clear spam
+   filters at scale.
+3. Settings → API Keys → create a Full Access key. Save as
+   `SENDGRID_API_KEY`.
+4. Set `SENDGRID_FROM_EMAIL` to a verified sender on the authenticated
+   domain (e.g., `noreply@akki.example.com`).
+5. Outbound smoke test (works against in-process app):
+   ```bash
+   cd /app/backend
+   python -c "
+   import asyncio
+   from email_service import send_email
+   r = asyncio.run(send_email(
+       to=['you@example.com'],
+       subject='SendGrid smoke',
+       html='<p>hello from SendGrid</p>',
+       text='hello from SendGrid'))
+   print(r)"
+   # Expected: {'ok': True, 'mode': 'sent', 'provider': 'sendgrid', ...}
    ```
-   python -c "import asyncio; from email_service import send_email;
-   print(asyncio.run(send_email(to='you@example.com', subject='test',
-                                text='hello', html='<p>hello</p>')))"
+
+### Inbound Parse (required for F.5 Mode 3 — email reply contributors)
+
+Required for: contributors who choose `email_reply` mode. They reply
+to `task-<token>@<SENDGRID_INBOUND_DOMAIN>` and SendGrid POSTs the
+parsed message to our webhook as multipart/form-data.
+
+1. **Pick an inbound parse hostname** you own (e.g.,
+   `inbound.akki.example.com`). Set `SENDGRID_INBOUND_DOMAIN` to it.
+2. **DNS MX record** on that hostname: priority `10`, value
+   `mx.sendgrid.net.`. Verify with `dig MX inbound.akki.example.com`.
+3. **SendGrid dashboard → Settings → Inbound Parse → Add Host & URL**:
+   - Receiving Domain: `inbound.akki.example.com`
+   - Destination URL: `https://<prod-host>/api/inbound/sendgrid`
+   - **Check** "POST the raw, full MIME message" if you want
+     `email` field populated. Optional — the parsed fields are
+     sufficient for our adapter.
+   - Spam Check: enable (sets `SPF` / `dkim` form fields).
+4. **HTTP Basic Auth (optional)**: if you set
+   `SENDGRID_INBOUND_AUTH_USERNAME` + `SENDGRID_INBOUND_AUTH_PASSWORD`
+   on the backend, configure the SendGrid Inbound Parse URL as
+   `https://user:pass@<prod-host>/api/inbound/sendgrid` so SendGrid
+   sends matching Basic auth on each POST.
+5. **Local verification curl** (against the live deploy):
+   ```bash
+   curl -X POST "${REACT_APP_BACKEND_URL}/api/inbound/sendgrid" \
+     -F "from=contributor@example.com" \
+     -F "to=task-<TOKEN>@${SENDGRID_INBOUND_DOMAIN}" \
+     -F "subject=Re: contribution" \
+     -F "text=Here is my answer." \
+     -F "attachments=1" \
+     -F 'attachment-info={"attachment1": {"filename": "answer.txt", "type": "text/plain"}}' \
+     -F "attachment1=@/tmp/answer.txt;type=text/plain"
+   # Expected: 200 {"ok": true, "task_id": "...", "doc_ids": ["..."]}
+   # OR        200 {"ok": false, "error": "token_unknown_or_expired"}
+   #   if the token doesn't exist (forensic row still written).
    ```
 
-### Inbound stream (NEW — required for F.5 Mode 3)
+### Postmark — retired (returns 410 Gone)
 
-Required for: contributors who choose `email_reply` mode. They
-reply to `task-<token>@<CYCLE_REPLY_DOMAIN>` and Postmark POSTs the
-parsed message to our webhook.
-
-1. **Create an Inbound Server** in the Postmark dashboard.
-2. **Domain & MX records:** point a subdomain (e.g.,
-   `parse.akki.example.com`) at Postmark's MX hosts.
-3. **Webhook URL:**
-   `https://<prod-host>/api/inbound/postmark?secret=$POSTMARK_WEBHOOK_SECRET`
-4. **MailboxHash routing:** Postmark automatically captures the
-   `+<hash>` portion of the recipient as `MailboxHash` in the
-   webhook JSON. Our handler recognises the `task-<token>` prefix
-   and dispatches to `_handle_task_contributor_reply`. No
-   per-recipient config needed.
-5. **Local mock test:** see `backend/tests/test_home_cleanup_phase_f5.py::
-   test_f5_inbound_webhook_ingests_email_reply` for a curl-friendly
-   payload shape.
+`POST /api/inbound/postmark` and `POST /api/webhooks/postmark/inbound`
+now return **410 Gone** with a JSON migration note. Re-point any
+external webhooks to `/api/inbound/sendgrid`. The Postmark code path
+is removed from production behaviour; the legacy Phase B tests are
+skipped (kept on disk for git-history continuity).
 
 ---
 

@@ -35,7 +35,7 @@
  * deprecation list strictly applied.
  */
 import React, { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { api } from "@/lib/api";
 // Phase D.1 (2026-05-26) — pre-conversation briefing deck.
@@ -349,6 +349,7 @@ function RecentSessionsCollapsible({ sessions, onResume, onDiscard, onStartGuide
 
 export default function SolvaLanding({ variant = "auth", intakeSeed = null, intakeStarter = null }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [recent, setRecent] = useState([]);
   const [focusIdx, setFocusIdx] = useState(-1);
   // Wave 1.3 (UAT pack 2026-05-10) — disambiguator dialog.
@@ -357,6 +358,32 @@ export default function SolvaLanding({ variant = "auth", intakeSeed = null, inta
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [briefingArea, setBriefingArea] = useState(null);
   const [briefingPendingCard, setBriefingPendingCard] = useState(null);
+
+  // F.6 W2 (2026-05-26) — URL-driven briefing-deck fire.
+  // When a user lands here from a Task Drawer / Document Drawer CTA
+  // like `/app/solva?ctx_type=task&ctx_id=...&submodule=develop_strategy`,
+  // the briefing deck for that area must fire (unless suppressed). The
+  // deck's own suppression logic handles the "Don't show me again"
+  // ticked state; if suppressed it closes immediately and we navigate
+  // straight through to Phase D.
+  useEffect(() => {
+    if (variant !== "auth") return;
+    const sp = new URLSearchParams(location.search);
+    const submodule = sp.get("submodule");
+    if (!submodule) return;
+    const briefArea = SUBMODULE_TO_AREA[submodule];
+    if (!briefArea) return;
+    setBriefingPendingCard({
+      key: submodule,
+      __fromUrl: true,
+      __urlSearch: location.search,
+    });
+    setBriefingArea(briefArea);
+    setBriefingOpen(true);
+    // Only run on mount (URL params are read once); the user-initiated
+    // card-click flow still drives `onSelectCard` after this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (variant !== "auth") return;
@@ -420,6 +447,14 @@ export default function SolvaLanding({ variant = "auth", intakeSeed = null, inta
     setBriefingOpen(false);
     const card = briefingPendingCard;
     setBriefingPendingCard(null);
+    if (!card) return;
+    // F.6 W2 (2026-05-26) — URL-driven entry: preserve all original
+    // URL params (ctx_type / ctx_id / starter / submodule) and route
+    // straight to the Phase D session-new surface.
+    if (card.__fromUrl) {
+      navigate(`/app/solva/phase-d/session/new${card.__urlSearch}`);
+      return;
+    }
     if (card) {
       _navigateAfterCard(card);
     }

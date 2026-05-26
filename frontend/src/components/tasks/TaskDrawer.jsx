@@ -1190,7 +1190,23 @@ function CompileCirculationPanel({ task, session, onAdvance }) {
                 {comments.map((c) => (
                   <li key={c.id} className="border border-[var(--rule)] rounded-sm p-2 bg-white"
                       data-testid={`task-drawer-compile-circulation-comment-${c.id}`}>
-                    <p className="text-[11px] font-mono text-[var(--muted)] mb-1">{c.reviewer}</p>
+                    <p className="text-[11px] font-mono text-[var(--muted)] mb-1">
+                      {c.reviewer}
+                      {c.span && (
+                        <span className="ml-2 text-[10px] uppercase tracking-[0.12em] text-[var(--oxblood)]"
+                              data-testid={`task-drawer-compile-comment-span-badge-${c.id}`}>
+                          inline · {c.span.start}–{c.span.end}
+                        </span>
+                      )}
+                    </p>
+                    {c.span?.text && (
+                      <blockquote
+                        className="text-[12px] italic text-[var(--muted)] border-l-2 border-[var(--oxblood)] pl-2 mb-1.5"
+                        data-testid={`task-drawer-compile-comment-span-quote-${c.id}`}
+                      >
+                        "{c.span.text}"
+                      </blockquote>
+                    )}
                     <p className="text-[12.5px] text-[var(--ink)]">{c.comment}</p>
                   </li>
                 ))}

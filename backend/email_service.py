@@ -1,6 +1,18 @@
-"""Resend transactional email service.
+"""Transactional email service.
 
 Single entry point for all outbound mail from AKKI.
+
+PROVIDER
+========
+The service supports BOTH SendGrid (preferred, 2026-05-26 onward) and
+Resend (legacy). Provider selection is automatic by env-var presence:
+
+  * `SENDGRID_API_KEY` set →  SendGrid (preferred)
+  * else if `RESEND_API_KEY` set → Resend (legacy fallback)
+  * else → noop (callers can show a mailto fallback)
+
+To force Resend even when SendGrid is configured, set
+`EMAIL_PROVIDER=resend`.
 
 Sender format
 =============
@@ -14,12 +26,9 @@ Two shapes are supported:
   Phase D — cycle follow-ups (per the Executive Cycle Manager Spec):
       '<First Last> (via Akki) <noreply@cycles.akki.ai>'
       reply-to = '<account-uuid>@cycles.akki.ai'   (opaque alias)
-      Inbound replies hit the Postmark webhook and are threaded back to
-      the cycle_followups row by the alias-recipient match.
-
-The cycle posture exists so the recipient sees a peer-toned sender
-('Sarah Mwangi (via Akki)') rather than a third-party-tooling sender,
-and so AKKI owns the inbound-reply path through a domain we control.
+      Inbound replies hit the SendGrid Inbound Parse webhook and are
+      threaded back to the cycle_followups row by the alias-recipient
+      match.
 """
 from __future__ import annotations
 
@@ -34,7 +43,13 @@ import resend
 logger = logging.getLogger("akki.email")
 
 _RESEND_KEY = os.environ.get("RESEND_API_KEY")
-_DEFAULT_FROM = os.environ.get("RESEND_FROM_EMAIL") or "onboarding@resend.dev"
+_SENDGRID_KEY = os.environ.get("SENDGRID_API_KEY")
+_SENDGRID_FROM_EMAIL = os.environ.get("SENDGRID_FROM_EMAIL")
+_DEFAULT_FROM = (
+    _SENDGRID_FROM_EMAIL
+    or os.environ.get("RESEND_FROM_EMAIL")
+    or "onboarding@resend.dev"
+)
 _DEFAULT_FROM_NAME = os.environ.get("RESEND_FROM_NAME") or "AKKI"
 
 # Phase D — Cycle Manager outbound posture.
@@ -44,13 +59,28 @@ _CYCLE_FROM_EMAIL = os.environ.get("CYCLE_FROM_EMAIL") or f"noreply@{_CYCLE_DOMA
 # once; baked in. Pair with the `cycles_alias_for(account_id)` helper.
 _CYCLE_ALIAS_NAMESPACE = uuid.UUID("3f6e9c12-4b81-4a2d-9d34-2ce5a8f17b09")
 
+
+def _provider() -> str:
+    """Return active provider name: 'sendgrid' | 'resend' | 'none'."""
+    forced = (os.environ.get("EMAIL_PROVIDER") or "").strip().lower()
+    if forced == "resend" and _RESEND_KEY:
+        return "resend"
+    if forced == "sendgrid" and _SENDGRID_KEY:
+        return "sendgrid"
+    if _SENDGRID_KEY:
+        return "sendgrid"
+    if _RESEND_KEY:
+        return "resend"
+    return "none"
+
+
 if _RESEND_KEY:
     resend.api_key = _RESEND_KEY
 
 
 def configured() -> bool:
-    """Return True iff Resend is wired (allows callers to fall back to mailto)."""
-    return bool(_RESEND_KEY)
+    """Return True iff an email provider is wired (allows callers to fall back to mailto)."""
+    return _provider() != "none"
 
 
 def _format_from(executive_name: Optional[str]) -> str:
@@ -127,6 +157,96 @@ def cycles_alias_extract(addr: str) -> Optional[str]:
     return addr.strip().lower().rsplit("@", 1)[0]
 
 
+def _sendgrid_send(
+    *,
+    to_list: List[str],
+    subject: str,
+    html: str,
+    text: Optional[str],
+    reply_to: Optional[str],
+    from_header: str,
+    tags: Optional[List[Dict[str, str]]],
+    attachments: Optional[List[Dict[str, Any]]],
+) -> Dict[str, Any]:
+    """Send via SendGrid SDK. Synchronous (run inside `asyncio.to_thread`).
+
+    Mirrors the Resend return shape so callers don't branch on provider.
+    """
+    from sendgrid import SendGridAPIClient
+    from sendgrid.helpers.mail import (
+        Mail, Email, To, Content, Personalization, ReplyTo,
+        Attachment, FileContent, FileName, FileType, Disposition,
+    )
+
+    # Parse out `Display Name <addr@host>` if present.
+    addr = from_header
+    if "<" in from_header and ">" in from_header:
+        addr = from_header[from_header.rindex("<") + 1 : from_header.rindex(">")]
+    name = ""
+    if "<" in from_header:
+        name = from_header[: from_header.rindex("<")].strip().strip('"')
+
+    mail = Mail()
+    mail.from_email = Email(addr, name) if name else Email(addr)
+    mail.subject = subject
+
+    p = Personalization()
+    for t in to_list:
+        p.add_to(To(t))
+    mail.add_personalization(p)
+
+    if text:
+        mail.add_content(Content("text/plain", text))
+    if html:
+        mail.add_content(Content("text/html", html))
+
+    if reply_to:
+        mail.reply_to = ReplyTo(reply_to)
+
+    if attachments:
+        import base64 as _b64
+        for att in attachments:
+            content = att.get("content")
+            if isinstance(content, (bytes, bytearray)):
+                b64 = _b64.b64encode(bytes(content)).decode("ascii")
+            elif isinstance(content, str):
+                # Assume already base64 (Resend shape).
+                b64 = content
+            else:
+                continue
+            a = Attachment()
+            a.file_content = FileContent(b64)
+            a.file_name    = FileName(att.get("filename", "attachment.bin"))
+            a.file_type    = FileType(att.get("type", "application/octet-stream"))
+            a.disposition  = Disposition("attachment")
+            mail.add_attachment(a)
+
+    if tags:
+        # SendGrid uses `categories`; we map tag names → categories.
+        for tag in tags:
+            try:
+                name_ = tag.get("name") if isinstance(tag, dict) else str(tag)
+                if name_:
+                    mail.add_category(name_)
+            except Exception:  # noqa: BLE001
+                pass
+
+    sg = SendGridAPIClient(_SENDGRID_KEY)
+    resp = sg.send(mail)
+    # SendGrid returns 202 Accepted on success.
+    msg_id = ""
+    try:
+        msg_id = resp.headers.get("X-Message-Id", "") if resp.headers else ""
+    except Exception:  # noqa: BLE001
+        pass
+    if 200 <= resp.status_code < 300:
+        return {"ok": True, "id": msg_id or None, "mode": "sent",
+                "from": from_header, "reply_to": reply_to,
+                "provider": "sendgrid"}
+    return {"ok": False, "id": None, "mode": "error",
+            "error": f"sendgrid status {resp.status_code}", "provider": "sendgrid"}
+
+
 async def send_email(
     *,
     to: List[str],
@@ -139,7 +259,7 @@ async def send_email(
     attachments: Optional[List[Dict[str, Any]]] = None,
     posture: str = "default",
 ) -> Dict[str, Any]:
-    """Send a transactional email via Resend.
+    """Send a transactional email via the active provider (SendGrid preferred).
 
     `posture`:
       - 'default' (iter18) — '"AKKI for <Name>" <noreply@akki.ai>'
@@ -149,9 +269,9 @@ async def send_email(
                               reply-to = '<account-uuid>@cycles.akki.ai'
                               opaque alias the caller passes in.
 
-    Returns `{ok, id, mode}` where mode is one of:
+    Returns `{ok, id, mode, provider}` where mode is one of:
       - 'sent'                 success
-      - 'noop'                 Resend not configured (caller can fall back)
+      - 'noop'                 No provider configured (caller can fall back)
       - 'test_mode_restricted' Resend rejected because the API key is in
                                test mode and the recipient is not the
                                account owner's registered address.
@@ -159,21 +279,48 @@ async def send_email(
 
     Never raises — email failures must not crash a UX flow.
 
+    Callers may pass `to` as a single string for backwards compatibility
+    with earlier signatures; the function coerces to a list.
+
     `attachments` follow the Resend SDK shape:
       [{"filename": "session.pdf", "content": <base64 string OR bytes>}]
     """
-    if not _RESEND_KEY:
-        logger.warning("Resend not configured — email to %s skipped", to)
-        return {"ok": False, "id": None, "mode": "noop", "error": "RESEND_API_KEY not set"}
+    provider = _provider()
+    if provider == "none":
+        logger.warning("No email provider configured — email to %s skipped", to)
+        return {"ok": False, "id": None, "mode": "noop",
+                "error": "no email provider configured",
+                "provider": "none"}
+
+    # Coerce `to` to a list.
+    to_list = [to] if isinstance(to, str) else list(to or [])
+    if not to_list:
+        return {"ok": False, "id": None, "mode": "error",
+                "error": "no recipients", "provider": provider}
 
     from_header = (
         _format_from_cycle(from_executive_name)
         if posture == "cycle"
         else _format_from(from_executive_name)
     )
+
+    if provider == "sendgrid":
+        try:
+            return await asyncio.to_thread(
+                _sendgrid_send,
+                to_list=to_list, subject=subject, html=html, text=text,
+                reply_to=reply_to, from_header=from_header,
+                tags=tags, attachments=attachments,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.exception("SendGrid send failed")
+            return {"ok": False, "id": None, "mode": "error",
+                    "error": str(e)[:300], "provider": "sendgrid"}
+
+    # provider == "resend" — legacy fallback.
     params: Dict[str, Any] = {
         "from": from_header,
-        "to": to,
+        "to": to_list,
         "subject": subject,
         "html": html,
     }
@@ -189,7 +336,8 @@ async def send_email(
     try:
         result = await asyncio.to_thread(resend.Emails.send, params)
         return {"ok": True, "id": result.get("id"), "mode": "sent",
-                "from": from_header, "reply_to": reply_to}
+                "from": from_header, "reply_to": reply_to,
+                "provider": "resend"}
     except Exception as e:  # noqa: BLE001 — Resend wraps all errors
         msg = str(e)
         # Resend test-mode constraint: 403 + "you can only send testing
@@ -210,9 +358,11 @@ async def send_email(
                 "id": None,
                 "mode": "test_mode_restricted",
                 "error": msg[:300],
+                "provider": "resend",
             }
         logger.exception("Resend send failed")
-        return {"ok": False, "id": None, "mode": "error", "error": msg[:300]}
+        return {"ok": False, "id": None, "mode": "error",
+                "error": msg[:300], "provider": "resend"}
 
 
 

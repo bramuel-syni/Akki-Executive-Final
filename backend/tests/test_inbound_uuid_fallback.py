@@ -45,37 +45,42 @@ def openapi_paths():
 
 
 def test_canonical_inbound_route_in_openapi(openapi_paths):
-    """`/api/inbound/postmark` is the schema-documented surface."""
+    """SendGrid inbound is now the canonical schema-documented route.
+    Postmark route still appears (returns 410), and SendGrid replaces it.
+    """
+    assert "/api/inbound/sendgrid" in openapi_paths, (
+        "canonical SendGrid inbound route missing from openapi — "
+        "router include may have regressed (W1 migration regression)."
+    )
     assert "/api/inbound/postmark" in openapi_paths, (
-        "canonical Postmark inbound route missing from openapi — "
-        "router include may have regressed."
+        "Postmark inbound route should still appear in openapi as a "
+        "410-Gone migration alias."
     )
 
 
 @pytest.mark.asyncio
 async def test_backcompat_inbound_route_is_mounted():
     """The back-compat alias `/api/webhooks/postmark/inbound` is mounted
-    with `include_in_schema=False`, so it does NOT appear in OpenAPI.
-    We probe live — GET against the POST-only route yields 405 if the
-    path is routed; 404 would mean the include was dropped.
+    with `include_in_schema=False`. After W1 migration it returns 410
+    on POST, but a GET still confirms the path is routed.
     """
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
         r = await c.get("/api/webhooks/postmark/inbound")
     # 405 (Method Not Allowed) → path is routed, just wrong verb.
     # 401/403 → auth fired before method check (also confirms mount).
+    # 410 → migration in effect (also confirms mount).
     # 404 → NOT mounted — regression.
-    assert r.status_code in (401, 403, 405), (
+    assert r.status_code in (401, 403, 405, 410), (
         f"back-compat Postmark route appears unmounted: "
-        f"GET returned {r.status_code}, expected 401/403/405."
+        f"GET returned {r.status_code}, expected 401/403/405/410."
     )
 
 
 def test_inbound_uuid_fallback_helper_still_present():
     """`routers/inbound_email.py` still emits a UUID placeholder when
     the upstream Message-Id header is absent. We assert by source
-    inspection because the fallback is a code-path, not an endpoint:
-    triggering it cleanly requires a Postmark fixture + Basic-Auth.
+    inspection because the fallback is a code-path, not an endpoint.
     """
     from routers import inbound_email  # noqa: PLC0415
     src = inbound_email.__file__

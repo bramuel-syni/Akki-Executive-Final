@@ -15,6 +15,25 @@ GREEN. Deploy-readiness artefacts shipped:
 
 **Batch status:** CLOSED. Awaiting user explicit deploy signal — DO NOT deploy
 without it. See AUTONOMOUS_TRIP_REPORT.md "Before deploy" section for the full
+
+## Debt closure (W1–W5) — 2026-05-26 ✅
+Closes out remaining UI-cleanup batch debt under autonomous mode:
+- **W1 — SendGrid migration** replaces Postmark (transactional + Inbound Parse).
+  Postmark endpoints return 410 Gone with migration note. `sendgrid==6.12.5`.
+- **W2 — Solva briefing deck on task surfaces** — SolvaLanding reads `?submodule=`
+  URL param, fires the deck for that area (suppression respected).
+- **W3 — Related-docs typing (2 of 3)** — `document_attachments` collection +
+  symmetric POST/DELETE, `documents.parent_doc_id` lineage walk + PATCH endpoint.
+  Content similarity formally tracked as **Phase G** (embeddings).
+- **W4 — Inline-comment span resolution** — circulation comments persist `span`
+  metadata; TaskDrawer Stage 3 renders span quote + inline badge.
+- **W5 — Docs** — F.4 ACID-via-rollback acceptance, Phase F.7 cycles retirement,
+  Phase G embeddings — all tracked. AUTONOMOUS_DECISIONS_LOG.md + HOME_CLEANUP_LOG.md
+  + DEPLOY_READINESS.md updated. SendGrid setup runbook with curl example.
+
+**Final suite:** 301 passed + 10 skipped (legacy Postmark phase B retired).
+
+
 operator checklist.
 
 

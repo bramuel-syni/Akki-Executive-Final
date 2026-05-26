@@ -594,10 +594,24 @@ class _CirculationSendIn(BaseModel):
     base_url: Optional[str] = Field(default=None, max_length=300)
 
 
+class _CirculationSpan(BaseModel):
+    """Inline-comment span — characters relative to the document's
+    rendered text content (NOT raw HTML)."""
+    start: int = Field(ge=0)
+    end:   int = Field(ge=0)
+    text:  str = Field(min_length=1, max_length=2000)
+
+
 class _CirculationCommentIn(BaseModel):
-    """Public endpoint body — used by the magic-link review surface."""
+    """Public endpoint body — used by the magic-link review surface.
+
+    `span` is optional. When omitted the comment is a general /
+    whole-document note. When provided the comment is anchored at a
+    text span (Debt W4 — inline-comment span resolution).
+    """
     comment: str = Field(min_length=1, max_length=4000)
-    doc_id: Optional[str] = None
+    doc_id:  Optional[str] = None
+    span:    Optional[_CirculationSpan] = None
 
 
 class _ApplyCommentIn(BaseModel):
@@ -746,8 +760,16 @@ async def circulation_comment(
     body: _CirculationCommentIn,
 ):
     from services.tasks.compile_service import add_circulation_comment
+    span_dict = None
+    if body.span is not None:
+        span_dict = {
+            "start": body.span.start,
+            "end":   body.span.end,
+            "text":  body.span.text,
+        }
     result = await add_circulation_comment(
         db, token=token, comment_text=body.comment, doc_id=body.doc_id,
+        span=span_dict,
     )
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("reason"))

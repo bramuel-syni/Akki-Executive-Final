@@ -35,7 +35,15 @@ log = logging.getLogger("akki.tasks.contrib")
 
 
 CONTRIB_TOKEN_TTL_DAYS = 30
-_CYCLE_REPLY_DOMAIN = os.environ.get("CYCLE_REPLY_DOMAIN", "akki.syni.ai")
+# SendGrid Inbound Parse domain (preferred). Falls back to the legacy
+# `CYCLE_REPLY_DOMAIN` for environments that haven't migrated. The
+# domain MUST have MX records pointing at SendGrid AND a matching
+# Inbound Parse webhook configured in the SendGrid dashboard.
+_INBOUND_DOMAIN = (
+    os.environ.get("SENDGRID_INBOUND_DOMAIN")
+    or os.environ.get("CYCLE_REPLY_DOMAIN")
+    or "akki.syni.ai"
+)
 
 
 def _now_iso() -> str:
@@ -95,7 +103,7 @@ async def _send(*, to: str, subject: str, text: str, html: str,
         from email_service import send_email
         return await send_email(to=to, subject=subject, text=text, html=html, reply_to=reply_to)
     except Exception as e:  # noqa: BLE001
-        log.warning("postmark send failed (to=%s): %s", to, e)
+        log.warning("email send failed (to=%s): %s", to, e)
         return {"mode": "send_failed", "error": str(e)[:200]}
 
 
@@ -173,7 +181,7 @@ async def invite_email_reply(
             task_account_id=task["account_id"],
         )
         token = row["token"]
-    reply_to = f"task-{token}@{_CYCLE_REPLY_DOMAIN}"
+    reply_to = f"task-{token}@{_INBOUND_DOMAIN}"
     subject = f"Action requested — {task.get('name', '')}"
     text = (
         f"{contributor.get('name') or 'Hi'},\n\n"

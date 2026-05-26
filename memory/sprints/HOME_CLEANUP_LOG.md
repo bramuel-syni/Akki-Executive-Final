@@ -1879,3 +1879,137 @@ operator on return:
    particularly the Indexes section + Postmark inbound setup
    instructions — and applies the operational steps.
 3. Issues the explicit deploy signal.
+
+## Debt closure (W1–W5) — 2026-05-26
+
+User-locked decisions consumed in this pass:
+- Migrate transactional + inbound email from Postmark → **SendGrid**
+- Ship Solva briefing deck on task surfaces
+- Ship E.3 related-docs **explicit attachment** + **canonical lineage** (defer content similarity to **Phase G**)
+- Phase F.7 = legacy `cycles` retirement (TRACKED, no code change now)
+- F.4 inline-comment span resolution → ship
+- F.4 ACID-via-rollback → accepted as production approach (documented in AUTONOMOUS_DECISIONS_LOG)
+
+### W1 — SendGrid migration
+
+| Layer | Change |
+| --- | --- |
+| `backend/routers/inbound_email.py` | `POST /api/inbound/sendgrid` (multipart/form-data) added. `_dispatch_inbound_payload(payload)` extracted as the provider-agnostic worker. `POST /api/inbound/postmark` returns **410 Gone** with a migration-note JSON body. The back-compat `/api/webhooks/postmark/inbound` also routes to the same 410 response. Optional HTTP Basic Auth via `SENDGRID_INBOUND_AUTH_USERNAME` / `SENDGRID_INBOUND_AUTH_PASSWORD`. |
+| `backend/email_service.py` | Provider selection via `_provider()` → returns `sendgrid` when `SENDGRID_API_KEY` is set, else `resend` (legacy). New `_sendgrid_send(...)` helper builds a `sendgrid.helpers.mail.Mail` envelope (personalization, reply_to, attachments, categories). Resend code path retained as fallback. Return shape unchanged: `{ok, id, mode, provider}`. |
+| `backend/services/tasks/contributor_invitation_service.py` | `_INBOUND_DOMAIN = SENDGRID_INBOUND_DOMAIN or CYCLE_REPLY_DOMAIN`. Reply-to format unchanged: `task-<token>@<domain>`. |
+| `backend/requirements.txt` | `sendgrid==6.12.5` added (provider swap, not new scope). |
+| `backend/tests/test_postmark_inbound_phase_b.py` | Module-level `@pytest.mark.skip` — Postmark inbound retired. F.5 + F.6 debt tests cover the SendGrid path end-to-end. |
+| `backend/tests/test_inbound_uuid_fallback.py` | Asserts `/api/inbound/sendgrid` in OpenAPI; Postmark 410-Gone alias still mounted; UUID fallback emitters present. |
+| `backend/tests/test_home_cleanup_phase_f5.py` | 2 inbound tests rewritten to use SendGrid multipart payloads + `task_inbound_emails.provider == "sendgrid"` assertions. |
+| `backend/tests/test_home_cleanup_phase_f6_debt.py` | NEW — 6 W1 wire+live tests (multipart adapter, 410 contract, Basic Auth, provider field). |
+
+**Required env vars (new):**
+- `SENDGRID_API_KEY` — outbound API credential
+- `SENDGRID_FROM_EMAIL` — verified sender address
+- `SENDGRID_INBOUND_DOMAIN` — Inbound Parse parse domain (e.g., `inbound.akki.example.com`)
+- `SENDGRID_INBOUND_AUTH_USERNAME` *(optional)* — Inbound Parse Basic Auth
+- `SENDGRID_INBOUND_AUTH_PASSWORD` *(optional)* — Inbound Parse Basic Auth
+
+**Operator action required at deploy-time:**
+1. SendGrid dashboard → Settings → API Keys → Full Access key
+2. Sender domain authentication (SPF + DKIM)
+3. Inbound Parse Settings → Add parse hostname (e.g., `inbound.akki.example.com`) + Destination URL `https://<prod-host>/api/inbound/sendgrid`
+4. DNS: MX record on the parse hostname → `mx.sendgrid.net` priority 10
+5. **Local verification curl** (works against the in-process app or live deploy):
+   ```bash
+   curl -X POST "${REACT_APP_BACKEND_URL}/api/inbound/sendgrid" \
+     -F "from=contributor@example.com" \
+     -F "to=task-<TOKEN>@inbound.akki.example.com" \
+     -F "subject=Re: contribution" \
+     -F "text=Here is my answer." \
+     -F "attachments=1" \
+     -F 'attachment-info={"attachment1": {"filename": "answer.txt", "type": "text/plain"}}' \
+     -F "attachment1=@/tmp/answer.txt;type=text/plain"
+   # Expected: 200 {"ok": true, "task_id": "...", "doc_ids": ["..."]}
+   ```
+6. **Outbound smoke** (Python):
+   ```bash
+   cd /app/backend
+   python -c "
+   import asyncio
+   from email_service import send_email
+   r = asyncio.run(send_email(
+       to=['you@example.com'],
+       subject='SendGrid smoke',
+       html='<p>hello from SendGrid</p>',
+       text='hello from SendGrid'))
+   print(r)"
+   # Expected: {'ok': True, 'mode': 'sent', 'provider': 'sendgrid', ...}
+   ```
+
+### W2 — Solva briefing deck on task surfaces
+
+`frontend/src/components/solva/SolvaLanding.jsx` — added a `useEffect` that runs on mount, reads `?submodule=` from the URL, resolves the area via `SUBMODULE_TO_AREA`, and opens the briefing deck. On close the deck routes to `/app/solva/phase-d/session/new` preserving all original URL search params (ctx_type, ctx_id, starter, submodule). The deck's existing suppression logic handles "Don't show me again" — when suppressed, the deck closes immediately and navigation proceeds.
+
+### W3 — Related-docs typing (explicit attachment + canonical lineage)
+
+| Endpoint / Field | Purpose |
+| --- | --- |
+| `POST /api/documents/{doc_id}/attachments` | Create symmetric attachment link from `doc_id` → `target_doc_id` with optional note. Dedupes existing links in either direction. |
+| `DELETE /api/documents/{doc_id}/attachments/{attachment_id}` | Remove an attachment link. Caller must own at least one side. |
+| `PATCH /api/documents/{doc_id}/lineage` | Mark as derived from `parent_doc_id`. Optional `version_label`. Rejects self-parent + ancestor-as-parent (cycle detection, capped at 10 hops). |
+| `GET /api/contexts/{cid}/documents/{doc_id}/related` (UPDATED) | `explicit_attachment` + `canonical_lineage` flipped from gap → live data. `content_similarity` is the remaining gap, `gap_reason` references **Phase G**. |
+| `documents.parent_doc_id` (NEW field) | Nullable. Carried through the lineage walk. |
+| `documents.version_label` (NEW field) | Optional free-text label. |
+| `document_attachments` (NEW collection) | `{id, source_doc_id, target_doc_id, attached_by_user_id, attached_at, note?}`. |
+
+`frontend/src/components/documents/DocumentDrawer.jsx` — RelatedTab now renders attachments + lineage groups live (including direction/depth chips), and the explicit_attachment group ships an inline "+ Attach related document" form with target-id + note inputs and a per-row × detach button.
+
+### W4 — Inline-comment span resolution
+
+| Layer | Change |
+| --- | --- |
+| `backend/routers/tasks.py` | New `_CirculationSpan` Pydantic model (`start`, `end`, `text`). `_CirculationCommentIn.span` optional. The endpoint maps it into a `span_dict` and passes to the service. |
+| `backend/services/tasks/compile_service.py` | `add_circulation_comment(..., span=None)`. When valid, `cmt["span"] = {start, end, text}` is merged into the comment row. Audit metadata records `inline: bool`. |
+| `frontend/src/components/tasks/TaskDrawer.jsx` | Stage 3 Circulation panel renders the span quote in a blockquote above each inline comment, with an "inline · start–end" badge. General comments (no span) render unchanged. |
+
+### W5 — Documentation closures
+
+- **Phase F.7 — Legacy `cycles` collection retirement (TRACKED)** — captured below.
+- **Phase G — Embedding-based content similarity for related docs (TRACKED)** — captured below.
+- **F.4 ACID-via-rollback acceptance** — appended to `AUTONOMOUS_DECISIONS_LOG.md` under the existing F.4 section.
+- **SendGrid migration call** — appended to `AUTONOMOUS_DECISIONS_LOG.md`.
+
+### Suite pass count after debt closure
+
+- Phase A 12 · B 14 · C 12 · D 54 · D-audit-correction 10 · E 18 · E.3 23 · E.3 scope-compliance 15 · E.4 10 · F.1+F.2 20 · F.3 24 · F.4 24 · F.5 20 · F.6 16 · **F.6-debt 22 = 294/294 GREEN.**
+
+---
+
+## Phase F.7 — Legacy `cycles` collection retirement (TRACKED)
+
+**Current state.** The legacy `cycles` collection coexists with the new `tasks` collection (F.1 borderline decision). The two are semantically distinct: `cycles` is the historic Cycle Manager surface; `tasks` is the Task Manager surface. Per the F.1 autonomous-decision log, no rename or data migration was performed.
+
+**Trigger condition.** Schedule Phase F.7 when **either**:
+1. Production telemetry shows < 10 active `cycles` writes/week for 30 consecutive days, **OR**
+2. The user explicitly green-lights the retirement.
+
+**Migration plan outline.**
+1. Deprecation period (30 days): emit a soft-deprecation warning on every `cycles.*` write surface in the UI.
+2. Dual-read window (7 days): the Task Manager listing surfaces both `cycles` and `tasks` rows under a unified pill, normalized via a thin adapter.
+3. Gradual cutover (14 days): mark `cycles` writes as forbidden in the router; reads remain.
+4. Cleanup: archive `routers/cycle_manager.py`, drop the `cycles` collection (or rename to `_cycles_archived`), retire `frontend/src/components/cycle/*` to `_archived/`.
+
+**Expected effort.** Medium (3–5 day phase). No spec change required.
+
+---
+
+## Phase G — Embedding-based content similarity for related docs (TRACKED)
+
+**Scope.** Replace the BM25 / heuristic content-similarity fallback in the Related-docs endpoint with embedding-based similarity. This is the only remaining gap in the Related-docs typed groups after Debt W3.
+
+**Infra requirements.**
+1. Embedding model selection — OpenAI text-embedding-3-small via Shield, or a self-hosted alternative.
+2. Vector store — Mongo Atlas Vector Search (preferred), or a sidecar (Qdrant / pgvector).
+3. Backfill job — embed all existing `documents` rows on first deploy; ongoing embedding fires on document state-change to `ready`.
+4. New collection `document_embeddings` — `{doc_id, model, vector, hash, created_at}`.
+
+**Deferred from.** E.3 scope-compliance pass (would have required adding embedding infra mid-batch). Explicitly user-deferred during the F.6 debt-closure dispatch.
+
+**Expected effort.** Large (5–8 day phase). Includes infra spinup, backfill, and Related-tab UI updates.
+

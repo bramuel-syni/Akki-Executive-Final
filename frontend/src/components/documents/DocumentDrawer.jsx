@@ -349,26 +349,74 @@ function NotesTab({ doc, contextId }) {
 // E.3 scope-compliance: surfaces 4 typed groups from
 //   GET /contexts/{cid}/documents/{did}/related
 //
-//   • metadata_match     (same context + same doc_type)
-//   • content_similarity (BM25 over peer paragraphs)
-//   • explicit_attachment (gap — no doc-to-doc link table)
-//   • canonical_lineage   (gap — no parent_doc_id field)
+//   • metadata_match      (same context + same doc_type)
+//   • explicit_attachment (Debt W3 — `document_attachments` collection)
+//   • canonical_lineage   (Debt W3 — `documents.parent_doc_id` walk)
+//   • content_similarity  (gap — deferred to Phase G, embedding infra)
 //
 // Gap buckets render in muted style with the server's `gap_reason`.
 function RelatedTab({ doc, contextId, onOpenDoc }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    if (!doc?.id) { setData(null); return; }
+  // Debt W3 (2026-05-26) — attach affordance state.
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [attachTarget, setAttachTarget] = useState("");
+  const [attachNote, setAttachNote] = useState("");
+  const [attachBusy, setAttachBusy] = useState(false);
+  const [attachError, setAttachError] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const refetch = () => {
+    if (!doc?.id) return;
     setLoading(true);
     api.get(`/contexts/${contextId}/documents/${doc.id}/related`)
       .then(({ data }) => setData(data))
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [doc?.id, contextId]);
+  };
+
+  useEffect(() => {
+    if (!doc?.id) { setData(null); return; }
+    refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc?.id, contextId, refreshKey]);
+
+  const onCreateAttachment = async () => {
+    const tgt = attachTarget.trim();
+    if (!tgt) {
+      setAttachError("Target document id is required.");
+      return;
+    }
+    setAttachBusy(true);
+    setAttachError("");
+    try {
+      await api.post(`/documents/${doc.id}/attachments`, {
+        target_doc_id: tgt,
+        note: attachNote.trim() || null,
+      });
+      setAttachOpen(false);
+      setAttachTarget("");
+      setAttachNote("");
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      setAttachError(e?.response?.data?.detail || "Failed to attach.");
+    } finally {
+      setAttachBusy(false);
+    }
+  };
+
+  const onDeleteAttachment = async (attId) => {
+    try {
+      await api.delete(`/documents/${doc.id}/attachments/${attId}`);
+      setRefreshKey((k) => k + 1);
+    } catch {
+      // best-effort
+    }
+  };
+
   const groupOrder = [
-    "metadata_match", "content_similarity",
-    "explicit_attachment", "canonical_lineage",
+    "metadata_match", "explicit_attachment",
+    "canonical_lineage", "content_similarity",
   ];
   return (
     <div data-testid="drawer-related-tab" className="space-y-4">
@@ -382,6 +430,7 @@ function RelatedTab({ doc, contextId, onOpenDoc }) {
         const grp = data.groups?.[gk];
         if (!grp) return null;
         const items = grp.items || [];
+        const isAttach = gk === "explicit_attachment";
         return (
           <div key={gk} data-testid={`drawer-related-group-${gk}`} className="border-t border-[var(--rule)] pt-3 first:border-t-0 first:pt-0">
             <div className="flex items-center justify-between mb-2">
@@ -403,22 +452,98 @@ function RelatedTab({ doc, contextId, onOpenDoc }) {
             ) : (
               <ul className="space-y-1" data-testid={`drawer-related-list-${gk}`}>
                 {items.map((r) => (
-                  <li key={r.id}>
+                  <li key={r.id || r.attachment_id} className="flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => onOpenDoc(r.id)}
-                      className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-[var(--parchment)] text-[12.5px] text-[var(--ink)] inline-flex items-center gap-1.5"
+                      className="flex-1 text-left px-2 py-1.5 rounded-sm hover:bg-[var(--parchment)] text-[12.5px] text-[var(--ink)] inline-flex items-center gap-1.5"
                       data-testid="drawer-related-row"
                     >
                       <FileText className="w-3 h-3 text-[var(--muted)] shrink-0" />
                       <span className="truncate">{r.name || r.original_filename || r.id}</span>
+                      {r.lineage && (
+                        <span className="ml-auto text-[10px] uppercase tracking-[0.12em] font-mono text-[var(--oxblood)]">
+                          {r.lineage}{r.depth ? ` · d${r.depth}` : ""}
+                        </span>
+                      )}
+                      {r.direction && !r.lineage && (
+                        <span className="ml-auto text-[10px] uppercase tracking-[0.12em] font-mono text-[var(--muted)]">
+                          {r.direction}
+                        </span>
+                      )}
                       {typeof r.score === "number" && (
                         <span className="ml-auto text-[10px] font-mono text-[var(--muted)]">{r.score.toFixed(2)}</span>
                       )}
                     </button>
+                    {isAttach && r.attachment_id && (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteAttachment(r.attachment_id)}
+                        className="text-[10px] text-[var(--muted)] hover:text-[var(--oxblood)] px-1.5"
+                        data-testid={`drawer-related-attachment-detach-${r.attachment_id}`}
+                        title="Detach"
+                      >
+                        ×
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
+            )}
+            {isAttach && grp.available && (
+              <div className="mt-2">
+                {!attachOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => setAttachOpen(true)}
+                    className="text-[11.5px] text-[var(--oxblood)] hover:text-[var(--ink)] inline-flex items-center gap-1"
+                    data-testid="drawer-related-attach-open"
+                  >
+                    + Attach related document
+                  </button>
+                ) : (
+                  <div className="border border-[var(--rule)] rounded-sm p-2 bg-[var(--cream-deep)]/30 space-y-1.5">
+                    <input
+                      type="text"
+                      value={attachTarget}
+                      onChange={(e) => setAttachTarget(e.target.value)}
+                      placeholder="Target document id"
+                      className="w-full px-2 py-1 text-[12px] border border-[var(--rule)] rounded-sm bg-white"
+                      data-testid="drawer-related-attach-target-input"
+                    />
+                    <input
+                      type="text"
+                      value={attachNote}
+                      onChange={(e) => setAttachNote(e.target.value)}
+                      placeholder="Note (optional)"
+                      className="w-full px-2 py-1 text-[12px] border border-[var(--rule)] rounded-sm bg-white"
+                      data-testid="drawer-related-attach-note-input"
+                    />
+                    {attachError && (
+                      <p className="text-[11px] text-[var(--oxblood)]" data-testid="drawer-related-attach-error">{attachError}</p>
+                    )}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={onCreateAttachment}
+                        disabled={attachBusy}
+                        className="text-[11.5px] px-2 py-1 bg-[var(--ink)] text-white rounded-sm disabled:opacity-50"
+                        data-testid="drawer-related-attach-submit"
+                      >
+                        {attachBusy ? "Attaching…" : "Attach"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setAttachOpen(false); setAttachError(""); }}
+                        className="text-[11.5px] px-2 py-1 text-[var(--muted)] hover:text-[var(--ink)]"
+                        data-testid="drawer-related-attach-cancel"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         );

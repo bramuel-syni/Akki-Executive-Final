@@ -254,3 +254,81 @@ These are now locked decisions, not pending borderline calls.
 The UI-cleanup batch (Phases A → F.6) is feature-complete and
 test-green at **272/272**. No deploy action taken; all decisions
 above documented and reversal paths surfaced.
+
+---
+
+## 2026-05-26 — Debt closure session decisions
+
+### F.4 ACID-via-rollback — accepted as production approach
+
+- **Decision:** Multi-doc commit uses sequential commit + best-effort
+  rollback (Motor lacks ACID transaction support). Rollback path
+  tested and exercised in F.4 Stage 5. Accepted as production
+  approach. Revisit ONLY if production telemetry shows
+  commit-partial-failure rate > 1% over a 30-day window. The audit
+  row `task.compile.commit.failed` with `metadata.rolled_back`
+  surfaces every partial failure so we can monitor.
+
+### SendGrid migration (replaces Postmark) — authorized
+
+- **Trigger:** Debt closure dispatch made the provider-swap call.
+- **Decision:** Replace Postmark with SendGrid for BOTH transactional
+  outbound AND inbound parse. Keep Resend as a legacy fallback
+  behind env-var precedence (sendgrid > resend > none). Postmark
+  inbound endpoint returns 410 Gone with a migration note for one
+  release cycle; the back-compat `/api/webhooks/postmark/inbound`
+  alias also returns 410.
+- **Provider-shim approach:** Extracted `_dispatch_inbound_payload`
+  as the provider-agnostic worker. SendGrid endpoint adapts its
+  multipart/form-data payload into the Postmark-shape internal dict
+  via `_sendgrid_form_to_payload`, so the 390-line dispatch logic
+  (cycle-alias detection, task-token branch, Tier-A/B/C routing,
+  ClamAV scan, quarantine) is unchanged. Forensic rows on
+  `task_inbound_emails` now carry `provider: "sendgrid"`.
+- **Postmark legacy tests parked, not deleted:**
+  `tests/test_postmark_inbound_phase_b.py` carries a module-level
+  `pytest.mark.skip` for git-history continuity. The F.5 + F.6
+  debt-closure tests cover the SendGrid path end-to-end.
+- **Reversal:** Single-file revert of `email_service.py` (Resend
+  pathway preserved) + revert of `inbound_email.py` to restore the
+  Postmark endpoint body would re-enable both directions. The
+  provider-shim makes provider re-swap a clean operation.
+
+### Solva briefing deck on task surfaces — ship
+
+- **Decision:** SolvaLanding reads `?submodule=` on mount and fires
+  the area's briefing deck. The deck's existing suppression logic
+  (per `solva_briefing_state`) handles "Don't show me again". On
+  close, navigation preserves all original URL params.
+- **Reversal:** Single useEffect deletion in `SolvaLanding.jsx`.
+
+### Related-docs typing — ship explicit attachment + canonical lineage
+
+- **Decision:** Ship `document_attachments` collection + symmetric
+  endpoints + `documents.parent_doc_id`/`version_label` schema
+  fields + lineage walk. Defer `content_similarity` (embeddings) to
+  Phase G per user direction.
+- **Cycle prevention on lineage:** PATCH /lineage refuses self-parent
+  and walks the proposed parent's chain up to 10 hops to detect
+  doc_id as an ancestor. 400 on cycle.
+- **Attachment symmetry:** the related-docs endpoint surfaces the
+  link from BOTH sides (source → target AND target → source). The
+  caller direction is annotated on each item (`direction:
+  outgoing|incoming`).
+
+### Inline-comment span resolution — ship
+
+- **Decision:** `_CirculationCommentIn.span` is optional —
+  backwards-compat for general comments. Span text capped at 2000
+  chars on persist; full audit metadata records `inline: bool`.
+- **Rendering on TaskDrawer Stage 3:** span quote rendered in a
+  blockquote with the oxblood-left-border, plus an inline badge
+  (`inline · start–end`). Comments without spans render unchanged.
+
+### Phase F.7 + Phase G — tracking only
+
+- **Decision:** Phase F.7 (cycles retirement) is tracked in
+  `HOME_CLEANUP_LOG.md` with explicit trigger conditions. Phase G
+  (embedding-based content similarity) is similarly tracked. No
+  code change in this debt-closure session for either.
+
