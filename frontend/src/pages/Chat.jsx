@@ -30,6 +30,8 @@ import {
   // import was causing a runtime ReferenceError that crashed the
   // archive surface. Imported now.
   ArrowLeft,
+  // Phase C Chat cleanup (2026-05-26) — three-dot per-thread menu.
+  MoreVertical,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -52,6 +54,15 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+// Phase C Chat cleanup (2026-05-26) — per-thread row menu (Claude
+// pattern). Initial menu ships with "Delete" only; menu is left
+// extensible for future per-thread actions.
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 
 const POLICY_LABEL = {
   auto: "Auto-shield",
@@ -875,7 +886,7 @@ export default function Chat() {
   return (
     <AppShell>
       <WorkspaceEntryGate workspace="chat">
-      <div className="h-[calc(100vh-4rem)] akki-w-medium grid grid-cols-1 lg:grid-cols-[300px_1fr] lg:gap-12 overflow-x-hidden overflow-hidden" data-testid="chat-page">
+      <div className="h-[calc(100vh-4rem)] akki-w-wide grid grid-cols-1 lg:grid-cols-[300px_1fr] lg:gap-12 overflow-x-hidden overflow-hidden" data-testid="chat-page">
         {/* Phase F (2026-05-21) — boundary-removal pass. The aside
             and the main pane now sit on a single warm parchment
             surface with no enclosing rectangles. Hierarchy comes
@@ -1030,23 +1041,72 @@ export default function Chat() {
             ) : chats.map((c) => {
               const active = c.id === activeId;
               return (
-                <button
+                <div
                   key={c.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setActiveId(c.id)}
-                  className={`w-full text-left px-3 py-2.5 mb-5 transition-colors ${
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setActiveId(c.id);
+                    }
+                  }}
+                  className={`group w-full text-left px-3 py-2.5 mb-5 cursor-pointer transition-colors flex items-start gap-2 ${
                     active
                       ? "bg-[var(--cream)] border-l-2 border-l-[var(--accent)] pl-2.5"
                       : ""
                   }`}
                   data-testid={`chat-item-${c.id}`}
                 >
-                  <p className="text-[16px] font-medium leading-snug line-clamp-1 text-[var(--ink)]">
-                    {c.title}
-                  </p>
-                  <p className="text-[13px] text-[var(--muted)] line-clamp-1 mt-0.5">
-                    {c.last_message_preview || "(no messages yet)"}
-                  </p>
-                </button>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[16px] font-medium leading-snug line-clamp-1 text-[var(--ink)]">
+                      {c.title}
+                    </p>
+                    <p className="text-[13px] text-[var(--muted)] line-clamp-1 mt-0.5">
+                      {c.last_message_preview || "(no messages yet)"}
+                    </p>
+                  </div>
+                  {/* Phase C Chat cleanup (2026-05-26): three-dot
+                      per-thread menu (Claude pattern). Visible on
+                      hover on desktop; always-visible on touch
+                      via the `group-hover:opacity-100` + base
+                      `opacity-100 sm:opacity-0` toggle.
+                      Initial menu ships with Delete only — soft-
+                      archive (`onArchive`) is the existing
+                      destructive op; the top-bar trash icon stays. */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        className="shrink-0 p-1 rounded-sm text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)]/40 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 sm:focus-within:opacity-100 transition-opacity"
+                        aria-label="Thread options"
+                        data-testid={`chat-thread-row-menu-${c.id}`}
+                      >
+                        <MoreVertical className="w-4 h-4" strokeWidth={1.8} />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      onCloseAutoFocus={(e) => e.preventDefault()}
+                      data-testid={`chat-thread-row-menu-content-${c.id}`}
+                    >
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onArchive(c.id);
+                        }}
+                        className="text-[var(--ink)] focus:text-red-600"
+                        data-testid={`chat-thread-row-delete-${c.id}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               );
             })}
           </div>
@@ -1881,10 +1941,13 @@ function AuditDialog({ open, onClose, chatId }) {
                 <span className="akki-serif text-[24px] text-[var(--accent)]" data-testid="metric-modelcalls">{metrics.model_calls}</span>
                 <span className="text-[11px] text-[var(--muted)] ml-1">through Synisense Shield</span>
               </div>
-              <div className="text-[11px] text-[var(--muted)]" data-testid="metric-layer-breakdown">
-                <span className="block text-[10px] uppercase tracking-[0.18em]">Layers won</span>
-                <span><span className="text-[var(--ink)]">{metrics.layer_breakdown?.regex || 0}</span> regex · <span className="text-[var(--ink)]">{metrics.layer_breakdown?.presidio || 0}</span> Presidio · <span className="text-[var(--ink)]">{metrics.layer_breakdown?.llm || 0}</span> LLM-fallback</span>
-              </div>
+              {/* Phase C Chat cleanup (2026-05-26): removed the
+                  "Layers won" column entirely per brief item #4. The
+                  metrics.layer_breakdown payload is still emitted by
+                  the backend (no schema change) — it's just not
+                  surfaced in this modal. Identifiers Redacted +
+                  Model Calls re-flow side-by-side naturally via
+                  the existing flex-wrap parent. */}
             </div>
             <p className="akki-serif text-[14px] text-[var(--ink)] italic mt-3 leading-relaxed" data-testid="metric-storyline">
               {metrics.storyline}

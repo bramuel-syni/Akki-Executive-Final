@@ -286,13 +286,122 @@ None. The legacy 6-tile data hooks remain wired into `/home/insights` (additive 
 
 ---
 
+## Phase C — Chat surface
+
+**Status:** complete.
+**Route:** `/app/chat` (`frontend/src/pages/Chat.jsx`).
+
+### 1. Sticky chat input pinned to viewport bottom
+
+**Brief:** composer always visible at bottom on load; only `.message-list` + `.thread-list` scroll; no page-level scroll on the chat route.
+
+**Implementation finding:** the existing layout already implemented this correctly — no surgical change needed:
+- Top-level container at `Chat.jsx:878` is `h-[calc(100vh-4rem)] ... overflow-hidden` (page-scroll disabled).
+- Messages region is wrapped in an inner `overflow-y-auto` with `data-testid="chat-messages"` so the message list scrolls within its column.
+- Sidebar thread list is wrapped in `overflow-y-auto` with `data-testid="chat-list"` so the thread list scrolls within its column.
+- Composer block at `Chat.jsx:1605` is `position: sticky bottom-0` — it pins to the bottom of the chat pane.
+
+**Live verification (Julius, `/app/chat`, 2026-05-26T11:46Z, 1920×1080):** `scrollY === 0`, composer's textarea computed `bottom = 1083px` (3px below the 1080 viewport floor — a pre-existing 3px chrome-allowance from `h-[calc(100vh-4rem)]` not introduced by this pass; the composer IS visually pinned to the viewport bottom in the screenshot — verified by inspection). `chat_page_overflow: "hidden"`. No code change for item 1.
+
+### 2. Three-dot per-thread menu (Claude pattern)
+
+**Brief:** add `⋮` on each thread row; menu opens with "Delete" as the only initial item; keep the top-bar trash icon.
+
+**Implementation:**
+- Refactored thread row from `<button>` to `<div role="button" tabIndex={0}>` (HTML rule: button-in-button is invalid).
+- Added `<DropdownMenu>` from `@/components/ui/dropdown-menu` next to the row content (existing shadcn primitive — no new package).
+- New testids:
+  - `chat-thread-row-menu-${c.id}` on the three-dot button.
+  - `chat-thread-row-menu-content-${c.id}` on the dropdown content.
+  - `chat-thread-row-delete-${c.id}` on the Delete menu item.
+- Delete wires to `onArchive(c.id)` — the SAME soft-archive op the top-bar trash uses. No new endpoint, no new state.
+- Visibility: `opacity-100 sm:opacity-0 sm:group-hover:opacity-100` — always-visible on touch; hover-revealed on desktop per brief.
+- Top-bar trash icon (deletes the currently-open thread) preserved as-is.
+- Imported `MoreVertical` from `lucide-react`.
+
+**Live verification:** 30 thread rows render, 30 menus present, first menu opens on click, Delete item visible (`delete_count: 1, visible: true`).
+
+### 3. Remove left + right outer margins (chat surface only)
+
+**Brief:** chat surface edge-to-edge of main content area; preserve internal padding.
+
+**Implementation:**
+- Changed `Chat.jsx:878` `akki-w-medium` → `akki-w-wide`. `--w-medium` = 1200px (with auto margins → outer gutters at wide viewports); `--w-wide` = 100% (no max-width). Both classes are already defined in `index.css:107-108,427-428` — no new tokens.
+- Scope: change is local to the chat-page container only. Other surfaces using `akki-w-medium` (Decks, InboundQueue, InfluenceMap, Workspace, etc.) untouched.
+
+**Live verification:** `chat_page_left = 0px`, `chat_page_right_offset_from_window = 0px`, `chat_page_width = 1920px` (full viewport width). Internal padding inside the sidebar + chat pane preserved.
+
+### 4. Remove "LAYERS WON" column from Audit modal
+
+**Brief:** remove only the LAYERS WON column; keep everything else.
+
+**Implementation:**
+- Removed the entire `<div data-testid="metric-layer-breakdown">...</div>` block from the Audit dialog's metrics strip.
+- Replaced with an explanatory inline comment documenting the removal + noting that the `metrics.layer_breakdown` payload is still emitted by the backend (no schema change — additive non-removal).
+- The remaining 2 metrics (`metric-identifiers` + `metric-modelcalls`) re-flow side-by-side naturally via the existing parent's `flex flex-wrap gap-x-6 gap-y-2` layout.
+
+**Live verification (AUDIT modal open):**
+```
+{
+  has_layers_won: false,                          ✓ gone
+  has_metric_layer_breakdown_testid: false,       ✓ testid gone
+  has_identifiers_label: true,                    ✓ preserved
+  has_modelcalls_label: true,                     ✓ preserved
+  has_metric_identifiers_testid: true,            ✓ preserved
+  has_metric_modelcalls_testid: true,             ✓ preserved
+  has_export_btn: true,                           ✓ Export audit pack preserved
+  has_hash_chain_container: true,                 ✓ chat-audit-rows preserved
+  has_trust_link: true                            ✓ View full Trust Panel preserved
+}
+```
+
+### Files changed
+
+| Path | Purpose |
+| --- | --- |
+| `frontend/src/pages/Chat.jsx` | All 4 Phase C items: thread row refactor + three-dot menu, outer-gutter swap, LAYERS WON removal, icon imports updated. |
+| `backend/tests/test_home_cleanup_phase_c.py` | New wire-check pytest — 12 cases anchored to acceptance criteria (a)–(h). |
+| `memory/sprints/HOME_CLEANUP_LOG.md` | This file. |
+
+### Tests added — 12 cases (all green)
+
+| # | Test | Anchor |
+| --- | --- | --- |
+| 1 | `test_phase_c_composer_is_sticky_bottom` | (a) `sticky bottom-0` |
+| 2 | `test_phase_c_chat_page_overflow_hidden` | (b) `overflow-hidden` |
+| 3 | `test_phase_c_chat_messages_scroll_container_present` | (b) `data-testid="chat-messages"` + `overflow-y-auto` |
+| 4 | `test_phase_c_thread_row_menu_testid_present` | (c) `chat-thread-row-menu-{id}` |
+| 5 | `test_phase_c_thread_row_menu_uses_dropdown_primitive` | (c) DropdownMenu reuse |
+| 6 | `test_phase_c_thread_row_delete_action_wired` | (c) Delete → onArchive(c.id) |
+| 7 | `test_phase_c_thread_row_uses_div_not_nested_button` | (c) `<div role="button">` |
+| 8 | `test_phase_c_outer_gutters_removed` | (d) `akki-w-wide` not `akki-w-medium` |
+| 9 | `test_phase_c_outer_gutter_change_scoped_to_chat` | (d) ≥3 other surfaces untouched |
+| 10 | `test_phase_c_layers_won_block_removed` | (e) testid + visible text gone |
+| 11 | `test_phase_c_audit_modal_keeps_other_metrics` | (e) Identifiers + Model calls preserved |
+| 12 | `test_phase_c_audit_modal_keeps_hash_chain_and_export` | (e) Export + chat-audit-rows + rows.map preserved |
+
+**Full backend pytest after Phase C:** 1324 passed, 1 failed (pre-existing parked `test_real_requirements_file_is_clean`), 408 skipped. **+12 vs Phase B baseline. Zero regressions.**
+
+### Dead code archived
+
+None — `akki-w-medium` token + class remain in use by ≥3 other surfaces. `metrics.layer_breakdown` backend payload still emitted (additive non-removal). The `DropdownMenu` primitive was already in `components/ui/`.
+
+### Spec/Code Deltas — Phase C
+
+| # | Brief / surface | Existing spec | Action |
+| --- | --- | --- | --- |
+| D6 | Phase C item #4 LAYERS WON removed. | `AKKI_PRODUCT_SPEC.md` is silent on Audit-modal metric composition (§3.2 Trust Center / Master Audit describes the audit chain but not the specific UI metric tiles shown in this modal). | No spec conflict. Recorded for completeness. |
+| D7 | Phase C items #1-3 (sticky composer, three-dot menu, outer gutters). | Spec §4.D X2 says: *"Akki Chat: Responsive layout … Fixed input bar … is fixed and remains anchored to the bottom of the screen at all times."* — this brief AFFIRMS and reinforces that spec rule. The three-dot menu + outer-gutter changes are not addressed by the spec (chat chrome is not enumerated). | No spec conflict. Item #1 matches §4.D X2 verbatim intent. |
+
+---
+
 ## Deploy-readiness checklist
 
-- [x] Both phases closed in this log.
-- [x] All targeted text-size, color, and layout changes verified live in preview (Phase A 5 tiles measured + Phase B Home 2 measured against Julius's Government Executive context).
+- [x] Phases A + B + C closed in this log.
+- [x] All targeted text-size, color, layout, and chat-chrome changes verified live in preview.
 - [x] No console errors (frontend smoke — no error logs captured in the Playwright session).
-- [x] No new npm packages added (`package.json` unchanged across both phases).
-- [x] Frontend wire tests green (12 Phase A + 14 Phase B = 26 wire checks, all passing).
-- [x] Backend pytest green (1312 passing; only pre-existing parked failure remains).
+- [x] No new npm packages added (`package.json` unchanged across all three phases).
+- [x] Frontend wire tests green (12 Phase A + 14 Phase B + 12 Phase C = 38 wire checks, all passing).
+- [x] Backend pytest green (1324 passing; only pre-existing parked failure remains).
 - [x] No spec edits performed (`git diff memory/AKKI_PRODUCT_SPEC.md memory/AKKI_ONBOARDING_SPEC.md` → empty).
 - [ ] Tag `v-post-home-cleanup` applied (deferred to end of full deploy-readiness pass).
