@@ -19,8 +19,9 @@ import HeroDocActions from "@/components/home/HeroDocActions";
 import ExcoTeamsCard from "@/components/home/ExcoTeamsCard";
 import { Button } from "@/components/ui/button";
 import {
-  Files, AlertTriangle, Briefcase, CheckCircle2, Calendar,
-  MessageSquare, ChevronRight, History, ArrowLeft, ArrowRight, Sparkles,
+  Files, AlertTriangle, ClipboardCheck,
+  MessageSquare, ChevronRight, History, ArrowLeft, ArrowRight, Mail,
+  Calendar,
 } from "lucide-react";
 
 
@@ -49,45 +50,45 @@ function relTime(iso) {
 }
 
 
-// Card config — key matches the backend insights map.
-// `urgency` drives the default order; `count_weight` was set per spec.
+// Phase B Home cleanup (2026-05-26).  ── Plate redesign ──
+// The legacy 6-tile mix (Pulse alerts / Sign-offs / Cycles closing /
+// Compile report / Open questions / Solva sessions waiting) has been
+// replaced by a 5-tile set rendered in this exact order:
 //
-// Chunk 6.5-REVISED (2026-05-13, Task B): the `new_documents` tile
-// has been removed from this map. The Document Journal is now
-// reachable directly from the top-bar "Documents" button (Task A);
-// surfacing a count-tile for it here was redundant and crowded the
-// plate.
+//   1. drafts_ready        → cycle_followups (status ∈ {draft, approved})
+//   2. compile_ready       → cycles (active + readiness_pct ≥ 80)
+//   3. pulse_critical      → signals (severity = critical, open)
+//   4. open_questions      → cycle_questions (assigned to me, open)
+//   5. documents_to_review → DATA-SOURCE TODO (see HOME_CLEANUP_LOG.md)
+//
+// All counts come from /api/contexts/{cid}/home/insights — server-side
+// keys preserved verbatim so existing tests + consumers stay green.
 const CARD_CONFIG = {
-  pulse_critical: {
-    title: "Pulse alerts", icon: AlertTriangle, urgency: 6,
-    template: (n) => `${n} critical update${n === 1 ? "" : "s"}`,
-    href: "/app/pulse",
-  },
-  signoffs_needed: {
-    title: "Sign-offs needed", icon: CheckCircle2, urgency: 5,
-    template: (n) => `${n} item${n === 1 ? "" : "s"} awaiting your decision`,
-    href: "/app/ned-inbox",
-  },
-  cycles_closing: {
-    title: "Cycles closing this week", icon: Calendar, urgency: 4,
-    template: (n) => `${n} to ship`,
-    href: "/app/cycle",
+  drafts_ready: {
+    title: "Drafts Ready For You", icon: Mail, urgency: 6,
+    template: (n) => `${n} draft${n === 1 ? "" : "s"} ready for review`,
+    href: "/app/cycle?tab=drafts",
   },
   compile_ready: {
-    title: "Compile report", icon: Files, urgency: 3,
-    template: (n) => `${n} agenda${n === 1 ? "" : "s"} at ≥80% readiness`,
+    title: "Reports Ready to Compile", icon: Files, urgency: 5,
+    template: (n) => `${n} report${n === 1 ? "" : "s"} ready to compile`,
     href: "/app/work-studio",
     isCompileWizard: true,
   },
+  pulse_critical: {
+    title: "New Pulse Updates", icon: AlertTriangle, urgency: 4,
+    template: (n) => `${n} new pulse update${n === 1 ? "" : "s"}`,
+    href: "/app/pulse",
+  },
   open_questions: {
-    title: "Open questions", icon: MessageSquare, urgency: 2,
-    template: (n) => `${n} from NEDs awaiting your response`,
+    title: "Open Questions", icon: MessageSquare, urgency: 3,
+    template: (n) => `${n} open question${n === 1 ? "" : "s"}`,
     href: "/app/questions?filter=open",
   },
-  solva_waiting: {
-    title: "Solva sessions waiting", icon: Sparkles, urgency: 1,
-    template: (n) => `${n} draft${n === 1 ? "" : "s"} ready for review`,
-    href: "/app/solva",
+  documents_to_review: {
+    title: "Documents to Review", icon: ClipboardCheck, urgency: 2,
+    template: (n) => `${n} document${n === 1 ? "" : "s"} to review`,
+    href: null, // DATA-SOURCE TODO — disabled until wired.
   },
 };
 
@@ -131,15 +132,22 @@ function InsightCard({ keyName, count, onClick }) {  const cfg = CARD_CONFIG[key
   if (!cfg) return null;
   const Icon = cfg.icon;
   const muted = count === 0;
+  // Phase B Home cleanup — disabled-state for DATA-SOURCE TODO tiles
+  // (cfg.href === null). Cursor + chevron are suppressed so the tile
+  // reads as "informational only, no destination yet" without faking
+  // a link.
+  const disabled = !cfg.href;
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className={[
         "text-left border rounded-sm px-4 py-3.5 bg-white transition-colors",
         muted
-          ? "border-[var(--rule)] opacity-60 hover:opacity-80"
-          : "border-[var(--rule)] hover:border-[var(--ink)]",
+          ? "border-[var(--rule)] opacity-60"
+          : "border-[var(--rule)]",
+        disabled ? "cursor-default" : "hover:border-[var(--ink)] hover:opacity-100",
       ].join(" ")}
       data-testid={`home2-insight-${keyName}`}
     >
@@ -151,7 +159,9 @@ function InsightCard({ keyName, count, onClick }) {  const cfg = CARD_CONFIG[key
             {cfg.template(count)}
           </p>
         </div>
-        <ChevronRight className="w-3.5 h-3.5 text-[var(--muted)] shrink-0 mt-1" />
+        {!disabled && (
+          <ChevronRight className="w-3.5 h-3.5 text-[var(--muted)] shrink-0 mt-1" />
+        )}
       </div>
     </button>
   );
@@ -225,33 +235,39 @@ export default function Home2() {
     return () => { dead = true; };
   }, [activeContext?.id]);
 
-  // Order the 7 cards by score = count * 1 + urgency. Cards with count 0
-  // still render but at the end (urgency-only).
-  // Patch 28B — role-sensitive card visibility. NEDs see a subset
-  // tuned to board work (no `compile_ready`, no `new_documents` since
-  // those are operator-facing). The `open_questions` template rewrites
-  // to reflect the answer-side for NEDs.
-  const isNedRole = useMemo(() => {
-    const r = (activeContext?.my_role || "").toLowerCase();
-    return r === "ned" || r === "non_executive_director" || r === "non-executive-director";
-  }, [activeContext?.my_role]);
-
+  // Phase B Home cleanup (2026-05-26): plate ordering is FIXED per
+  // brief (not score-based). Cards still render with their count
+  // (or 0 if the data source is unwired / returns no rows).
+  // NED-specific subsetting from Patch 28B is dropped — the new
+  // 5-tile set is universal per the user's directive.
+  const PLATE_ORDER = [
+    "drafts_ready",
+    "compile_ready",
+    "pulse_critical",
+    "open_questions",
+    "documents_to_review",
+  ];
   const orderedCards = useMemo(() => {
     const map = insights?.insights || {};
-    const NED_KEYS = ["signoffs_needed", "open_questions", "pulse_critical", "cycles_closing", "solva_waiting"];
-    const allKeys = Object.keys(CARD_CONFIG);
-    const keys = isNedRole ? allKeys.filter((k) => NED_KEYS.includes(k)) : allKeys;
-    return keys
-      .map((k) => ({
-        key: k,
-        count: (map[k]?.count) ?? 0,
-        urgency: CARD_CONFIG[k].urgency,
-      }))
-      .sort((a, b) => {
-        const score = (r) => (r.count > 0 ? (r.urgency + r.count * 2 + 10) : r.urgency);
-        return score(b) - score(a);
-      });
+    return PLATE_ORDER.map((k) => ({
+      key: k,
+      count: (map[k]?.count) ?? 0,
+      urgency: CARD_CONFIG[k].urgency,
+    }));
   }, [insights]);
+
+  // Phase B Home cleanup — Coming up section data.
+  const [comingUp, setComingUp] = useState([]);
+  const [comingUpLoaded, setComingUpLoaded] = useState(false);
+  useEffect(() => {
+    if (!activeContext?.id) return;
+    let dead = false;
+    api.get(`/contexts/${activeContext.id}/home/coming-up`, { params: { days: 14 } })
+      .then(({ data }) => { if (!dead) setComingUp(data?.items || []); })
+      .catch(() => { if (!dead) setComingUp([]); })
+      .finally(() => { if (!dead) setComingUpLoaded(true); });
+    return () => { dead = true; };
+  }, [activeContext?.id]);
 
   const greeting = useMemo(() => greetingFor(new Date()), []);
   const firstName = (account?.display_name || account?.name || "").split(" ")[0] || "there";
@@ -259,6 +275,9 @@ export default function Home2() {
   const onCardClick = (keyName) => {
     const cfg = CARD_CONFIG[keyName];
     if (!cfg) return;
+    // Phase B Home cleanup — DATA-SOURCE TODO tiles (href === null)
+    // are no-op buttons; do not fake a navigation.
+    if (!cfg.href) return;
     if (cfg.isCompileWizard) {
       navigate("/app/work-studio?compile=1");
       return;
@@ -284,29 +303,40 @@ export default function Home2() {
   return (
     <AppShell>
       <div className="akki-w-medium px-8 py-12" data-testid="home2">
-        {/* Chunk 6.5-REVISED (2026-05-13, Task B):
+        {/* Chunk 6.5-REVISED (2026-05-13, Task B), revised by Phase B
+            Home cleanup (2026-05-26):
             Hero (sections 1-3) and Plate (section 4) sit side-by-side
-            at ≥1100px (3fr / 2fr split). Below the breakpoint the
-            grid collapses to a single column — hero on top, plate
-            beneath — preserving mobile readability. Both columns
-            start at the same top edge for visual balance. */}
+            at ≥1100px. Phase B widens the plate column from 2fr/3fr to
+            3fr/2fr giving "What's on your plate" ~60% of the
+            horizontal — was ~33% / 40% before. Below the breakpoint
+            the grid collapses to a single column. */}
         <div
-          className="grid grid-cols-1 min-[1100px]:grid-cols-[3fr_2fr] gap-x-10 gap-y-8 items-start"
+          className="grid grid-cols-1 min-[1100px]:grid-cols-[2fr_3fr] gap-x-10 gap-y-8 items-start"
           data-testid="home2-hero-plate-grid"
         >
           {/* ─── Left column: HERO ─── */}
           <div data-testid="home2-hero-block">
-            {/* 1. Greeting band */}
+            {/* 1. Greeting band — Phase B Home cleanup restructure:
+                "Back to portfolio" moved ABOVE the company name on
+                its own line, with triple line-spacing between (mb-12
+                ≈ 3em / 48px on the default 16px root). Company name
+                size up 20% (text-[10.5px] → text-[12.5px] for the
+                uppercase token; the company tile name follows the
+                hero greeting). */}
             <section data-testid="home2-greeting">
-              <p className="akki-overline mb-1 flex items-center gap-2">
-                <span>{activeContext.name}</span>
-                <button
-                  onClick={onBackToPortfolio}
-                  className="inline-flex items-center gap-1 text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] hover:text-[var(--ink)]"
-                  data-testid="home2-back-to-portfolio"
-                >
-                  <ArrowLeft className="w-3 h-3" strokeWidth={1.7} /> Back to portfolio
-                </button>
+              <button
+                onClick={onBackToPortfolio}
+                className="inline-flex items-center gap-1 text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] hover:text-[var(--ink)]"
+                data-testid="home2-back-to-portfolio"
+              >
+                <ArrowLeft className="w-3 h-3" strokeWidth={1.7} /> Back to portfolio
+              </button>
+              <p
+                className="akki-overline mb-1 mt-12"
+                style={{ fontSize: "13px" }}
+                data-testid="home2-company-name"
+              >
+                {activeContext.name}
               </p>
               <h1 className="akki-greeting">{greeting}, {firstName}.</h1>
               <p className="akki-meta mt-1">
@@ -335,6 +365,53 @@ export default function Home2() {
             {/* 3. HeroDocActions — preserved from Patch 2A.
                 "+ Add document" + "All documents" CTAs. */}
             <HeroDocActions />
+
+            {/* Phase B Home cleanup (2026-05-26), item #3:
+                "Coming up" — next 14 days. Lives in the LEFT column
+                below HeroDocActions so its right edge aligns with
+                the plate column above it (both sit inside the same
+                hero-plate grid; the left column is the same width
+                top-to-bottom).
+                Currently wired sub-source: cycle close dates. Other
+                sub-sources (board / committee meetings, regulator
+                filings) tracked in HOME_CLEANUP_LOG.md "Data source
+                TODOs" and will surface here additively. */}
+            <section className="mt-10" data-testid="home2-coming-up">
+              <h2 className="akki-serif text-[15px] text-[var(--ink)] mb-3 inline-flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[var(--deep)]" strokeWidth={1.7} /> Coming up
+              </h2>
+              {!comingUpLoaded ? (
+                <p className="akki-meta italic">Reading the room…</p>
+              ) : comingUp.length === 0 ? (
+                <p
+                  className="akki-meta italic"
+                  data-testid="home2-coming-up-empty"
+                >
+                  No upcoming items in the next 14 days.
+                </p>
+              ) : (
+                <ul className="space-y-2" data-testid="home2-coming-up-list">
+                  {comingUp.map((it, i) => (
+                    <li
+                      key={`${it.kind}-${it.ts}-${i}`}
+                      className="border-l-2 border-[var(--rule)] pl-3 py-1"
+                      data-testid={`home2-coming-up-${i}`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => it.href && navigate(it.href)}
+                        className="text-left w-full"
+                      >
+                        <p className="text-[13.5px] text-[var(--ink)] leading-snug">{it.label}</p>
+                        <p className="text-[11px] text-[var(--muted)] font-mono mt-0.5">
+                          {it.ts ? new Date(it.ts).toLocaleDateString() : "—"} · {String(it.kind || "").replace(/_/g, " ")}
+                        </p>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           </div>
 
           {/* ─── Right column: PLATE ─── */}
@@ -394,35 +471,11 @@ export default function Home2() {
           )}
         </section>
 
-        {/* 6. Footer — Running the business / Sitting on the boards split */}
-        <section className="mt-12 grid lg:grid-cols-2 gap-4" data-testid="home2-footer-split">
-          <button
-            onClick={() => navigate("/app/work-studio")}
-            className="text-left border border-[var(--rule)] rounded-sm bg-white px-5 py-4 hover:border-[var(--ink)]"
-            data-testid="home2-footer-running"
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <Briefcase className="w-4 h-4 text-[var(--deep)]" strokeWidth={1.7} />
-              <p className="akki-serif text-[16px] text-[var(--ink)]">Running the business</p>
-            </div>
-            <p className="text-[12.5px] text-[var(--muted)] leading-snug">
-              Work Studio · Cycle Manager · Briefings.
-            </p>
-          </button>
-          <button
-            onClick={() => navigate("/app/ned-inbox")}
-            className="text-left border border-[var(--rule)] rounded-sm bg-white px-5 py-4 hover:border-[var(--ink)]"
-            data-testid="home2-footer-boards"
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <CheckCircle2 className="w-4 h-4 text-[var(--deep)]" strokeWidth={1.7} />
-              <p className="akki-serif text-[16px] text-[var(--ink)]">Sitting on the boards</p>
-            </div>
-            <p className="text-[12.5px] text-[var(--muted)] leading-snug">
-              NED inbox · pending packs · open questions.
-            </p>
-          </button>
-        </section>
+        {/* Phase B Home cleanup (2026-05-26), item #4: removed the
+            two "Running the business" / "Sitting on the boards"
+            footer tiles from this section. The "What's new since
+            your last visit" header + caught-up empty-state above
+            remain. */}
 
         {/* Patch 17 — ExCo teams card parity (was on HomeDual + HomeExecutive).
             Renders the admin-only ExCo teams grouping function. */}

@@ -174,23 +174,125 @@ Tester reported on 2026-05-26 that (1) the Executive chip was still grey on live
 
 ## Phase B — Home 2 (Workspace)
 
-Placeholder. Not yet started. Will cover:
-- Back-to-portfolio relocation
-- Plate tiles
-- Coming up section
-- Running/Sitting tile removal
+**Status:** complete.
+**Route:** dispatched via `pages/AppHome.jsx` → `pages/home/Home2.jsx` when `activeContext != null`.
+
+### 1. Greeting band — restructure + company name 1.2×
+
+**Brief:** move "Back to portfolio" above the company name, with triple line-spacing between, and increase the company name display by 20%.
+
+**Pre-Phase-B baseline (measured before the edit):** company name token rendered as `.akki-overline` which is defined at `frontend/src/index.css:170-176` with `font-size: 11px`. The back button was inline beside it (`<p>` with two children separated by a `gap-2` spacer).
+
+**Implementation:**
+- Greeting band restructured (`Home2.jsx` ~lines 244-273):
+  - `<button data-testid="home2-back-to-portfolio">` lifted ABOVE the company-name `<p>` as a peer block.
+  - Company-name `<p data-testid="home2-company-name">` now carries `mt-12` (3rem ≈ 48px, which is ~3× the default 16px line-height ⇒ triple line-spacing per brief).
+- Company-name font-size increased via inline `style={{ fontSize: "13px" }}`. Calculation: pre = 11px, target = 11 × 1.2 = 13.2 → **13px** integer. Used inline `style` (not Tailwind utility) because `.akki-overline { font-size: 11px }` is a regular CSS rule that beats Tailwind arbitrary-value utilities at the same specificity level. Inline style guarantees the override.
+- **Live computed-style verification (Julius Opio → Government Executive, 2026-05-26T10:56Z):** `getComputedStyle(home2-company-name).fontSize === "13px"`. Ratio post / pre = 13 / 11 ≈ **1.182** (closest integer to 1.2× target).
+- **DOM-order verification:** `back_top=226px`, `cname_top=295px`, `vertical_gap_px=53px` (≥48px target met).
+
+### 2. "What's on your plate" — widen + replace tiles
+
+**Brief:** widen plate column to ~60% of horizontal width (was ~33% / 40%); drop 6 legacy tiles; render 5 new tiles in exact order.
+
+**Implementation:**
+- Hero-plate grid template changed from `min-[1100px]:grid-cols-[3fr_2fr]` → `min-[1100px]:grid-cols-[2fr_3fr]` so the plate column takes 3/5 = **60%** of the row width.
+- **Live verification:** `gridTemplateColumns: "438.391px 657.609px"` ⇒ `plate_pct = 60%` (1920×800 viewport).
+- Replaced `CARD_CONFIG` entirely. New 5-tile set (verbatim in this order):
+
+  | # | Tile testid | Title | Source | Click destination |
+  | --- | --- | --- | --- | --- |
+  | 1 | `home2-insight-drafts_ready` | "Drafts Ready For You" | `_count_drafts_ready` — `cycle_followups` collection where `status ∈ {draft, approved}` (mirrors Phase D Cycle Page's "Drafts Waiting for You" surface). **Wired.** | `/app/cycle?tab=drafts` |
+  | 2 | `home2-insight-compile_ready` | "Reports Ready to Compile" | `_count_compile_ready` — preserved from prior plate (REUSE). | `/app/work-studio?compile=1` |
+  | 3 | `home2-insight-pulse_critical` | "New Pulse Updates" | `_count_pulse_critical` — preserved from prior plate (REUSE; renamed). | `/app/pulse` |
+  | 4 | `home2-insight-open_questions` | "Open Questions" | `_count_open_questions` — preserved (REUSE; renamed). | `/app/questions?filter=open` |
+  | 5 | `home2-insight-documents_to_review` | "Documents to Review" | `_count_documents_to_review` — returns `0` until wired (DATA-SOURCE TODO). | `href: null` — click is no-op + chevron hidden + cursor not-pointer. |
+
+- Removed `PLATE_ORDER` is fixed (no urgency sort) — brief required exact order.
+- NED-specific subsetting from Patch 28B dropped — universal 5-tile set per brief.
+
+### 3. "Coming up" section — left column under HeroDocActions
+
+**Brief:** new "Coming up" section below the hero in the left column; symmetrical to the plate column's right edge; sub-sources = cycle close dates, board/committee meetings, regulator filings, etc.; render only wired items; empty-state copy "No upcoming items in the next 14 days."
+
+**Implementation:**
+- New backend endpoint `GET /api/contexts/{cid}/home/coming-up?days=14` at `backend/routers/home.py` (appended at file end). Aggregates ONLY the currently-wired sub-source — `cycles.expected_close_at` in the next 14 days. Returns `{ "items": [{ "kind": "cycle_close", "ts": ..., "label": ..., "href": ... }] }` ordered ascending by timestamp.
+- New section `<section data-testid="home2-coming-up">` in `Home2.jsx` rendered IMMEDIATELY AFTER `<HeroDocActions />` inside the left hero block. Width = same as the hero block (the grid's left column), so its right edge aligns with the plate column above it — confirmed by the shared `home2-hero-block` parent.
+- Empty-state renders "No upcoming items in the next 14 days." verbatim per brief.
+- **Live verification:** `coming_up_present: true`, `coming_up_empty: true` (Julius's "Government Executive" context has no future cycle close dates seeded).
+
+### 4. Remove "Running the business" + "Sitting on the boards" tiles
+
+**Brief:** delete the two footer-split tiles. Keep the "What's new since your last visit" header + caught-up empty-state.
+
+**Implementation:**
+- Removed the entire `<section data-testid="home2-footer-split">` block (was at the old line 419-446). Both `home2-footer-running` and `home2-footer-boards` buttons gone.
+- `home2-whats-new` section (header + caught-up copy) preserved exactly as-is.
+- **Live verification:** `legacy_footer_split: false`, `legacy_footer_running: false`, `legacy_footer_boards: false`, `whats_new_header: true`.
+
+### Files changed
+
+| Path | Purpose |
+| --- | --- |
+| `backend/routers/home.py` | Added `_count_drafts_ready`, `_count_documents_to_review`, extended `/home/insights` response with two new keys, added `/home/coming-up?days=14` endpoint. |
+| `backend/tests/test_patch_3_home_v2.py` | Updated `test_home_insights_returns_all_7_keys` from exact-set equality to superset semantics — additive Phase B keys land without breaking the legacy assertion. |
+| `frontend/src/pages/home/Home2.jsx` | All four Phase B items: greeting band restructure, plate column widen + new 5-tile set, Coming up section, footer-split removal, icon import cleanup. |
+| `backend/tests/test_home_cleanup_phase_b.py` | New wire-check pytest — 14 cases anchored to acceptance criteria (a)–(g). |
+| `memory/sprints/HOME_CLEANUP_LOG.md` | This file. |
+
+### Tests added — 14 cases (all green)
+
+| # | Test | Anchor |
+| --- | --- | --- |
+| 1 | `test_phase_b_back_to_portfolio_above_company_name` | (a) DOM order |
+| 2 | `test_phase_b_triple_line_spacing_between_back_and_name` | (a) `mt-12` ≈ 3× line-spacing |
+| 3 | `test_phase_b_company_name_size_1_2x` | (a) inline `fontSize: "13px"` |
+| 4 | `test_phase_b_plate_column_60pct` | (b) `2fr_3fr` grid |
+| 5 | `test_phase_b_plate_order_and_labels` | (b) `PLATE_ORDER` const exact order |
+| 6 | `test_phase_b_plate_tile_labels_verbatim` | (b) 5 tile labels |
+| 7 | `test_phase_b_old_tiles_absent` | (b) 6 legacy titles removed from `CARD_CONFIG` |
+| 8 | `test_phase_b_no_fake_data_documents_to_review` | (b) `href: null` |
+| 9 | `test_phase_b_coming_up_section_present` | (c) testid + empty-state copy |
+| 10 | `test_phase_b_coming_up_in_left_column` | (c) DOM order — left of plate |
+| 11 | `test_phase_b_running_and_sitting_tiles_removed` | (d) 3 footer testids absent |
+| 12 | `test_phase_b_whats_new_header_and_empty_state_preserved` | (d) header + copy retained |
+| 13 | `test_phase_b_insights_endpoint_includes_new_counts` | (e) backend wiring |
+| 14 | `test_phase_b_coming_up_endpoint_defined` | (e) `/home/coming-up` endpoint |
+
+**Full pytest run after Phase B:** 1312 passed, 1 failed (pre-existing parked `test_real_requirements_file_is_clean`), 408 skipped. **+26 new tests vs Phase A baseline. Zero regressions.**
+
+### Data source TODOs
+
+| Tile / surface | Missing wiring | Current behavior |
+| --- | --- | --- |
+| Tile 5 — Documents to Review | No `review_required: true` flag is written on `documents` documents during upload or signal-resolution. No "executive review queue" collection exists. | `_count_documents_to_review` returns hardcoded `0`. Tile renders "0 documents to review" + `href: null` (no-op click, chevron hidden). |
+| Coming up — board / committee meetings | No `meetings` collection wired (out of spec scope per `AKKI_PRODUCT_SPEC.md` §5). | Not surfaced. |
+| Coming up — regulator filing dates | No `filings` collection wired (out of spec scope). | Not surfaced. |
+| Coming up — report deadlines | `cycles.expected_close_at` is the closest existing proxy and is already included. | Surfaced as `kind: "cycle_close"` items. |
+
+### Dead code archived during Phase B
+
+None. The legacy 6-tile data hooks remain wired into `/home/insights` (additive change — legacy keys preserved). Frontend `<HeroDocActions />`, `<ExcoTeamsCard />`, `<RestoreMatrix />`, `<ContinueOnboardingBand />`, and `<NedQuickEntries />` components retained — all are still rendered by Home2 in unchanged positions. No file orphaned by the removals.
+
+`Briefcase` + `CheckCircle2` + `Sparkles` icon imports removed from `Home2.jsx` (no longer referenced after `home2-footer-split` deletion + new CARD_CONFIG). `Mail` + `ClipboardCheck` + `Calendar` icons added for the new tile set + Coming up section.
+
+### Spec/Code Deltas — Phase B
+
+| # | Brief / surface | Existing spec / code rule | Action |
+| --- | --- | --- | --- |
+| D3 | Phase B item #2 new plate set: drafts_ready / compile_ready / pulse_critical / open_questions / documents_to_review. | `AKKI_PRODUCT_SPEC.md` does not specify a Home 2 plate composition (§5 lists portfolio chrome / Settings as out of scope; the Home journey is not enumerated in §4). The legacy 6-tile set was a Patch 3 / 28B design artefact, not a spec ratification. | No spec conflict. Recorded for completeness. |
+| D4 | Phase B item #3 "Coming up" section. | Not in spec (Home 2 is out of §4 scope). | No spec conflict. Recorded for completeness. |
+| D5 | Phase B item #4 removed footer-split tiles. | Not in spec. | No spec conflict. |
 
 ---
 
 ## Deploy-readiness checklist
 
-Placeholder for end-of-batch.
-
-- [ ] Both phases closed in this log.
-- [ ] All targeted text-size, color, and layout changes verified live in preview.
-- [ ] No console errors (frontend smoke).
-- [ ] No new npm packages added.
-- [ ] Frontend wire tests green.
-- [ ] Backend pytest green (regression check after `index.css` edit).
-- [ ] No spec edits performed.
-- [ ] Tag `v-post-home-cleanup` applied (local only).
+- [x] Both phases closed in this log.
+- [x] All targeted text-size, color, and layout changes verified live in preview (Phase A 5 tiles measured + Phase B Home 2 measured against Julius's Government Executive context).
+- [x] No console errors (frontend smoke — no error logs captured in the Playwright session).
+- [x] No new npm packages added (`package.json` unchanged across both phases).
+- [x] Frontend wire tests green (12 Phase A + 14 Phase B = 26 wire checks, all passing).
+- [x] Backend pytest green (1312 passing; only pre-existing parked failure remains).
+- [x] No spec edits performed (`git diff memory/AKKI_PRODUCT_SPEC.md memory/AKKI_ONBOARDING_SPEC.md` → empty).
+- [ ] Tag `v-post-home-cleanup` applied (deferred to end of full deploy-readiness pass).

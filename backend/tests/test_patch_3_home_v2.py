@@ -68,6 +68,12 @@ def _client():
 
 @pytest.mark.asyncio
 async def test_home_insights_returns_all_7_keys(env):
+    """Patch 3 acceptance: insights includes all 7 legacy keys.
+
+    Phase B Home cleanup (2026-05-26): the response is additive —
+    `drafts_ready` + `documents_to_review` were appended for the
+    new plate. Assert superset semantics (legacy 7 must remain
+    present) instead of exact-set equality."""
     await _seed(env)
     _auth(env["owner"])
     async with _client() as c:
@@ -76,12 +82,17 @@ async def test_home_insights_returns_all_7_keys(env):
     body = r.json()
     assert "insights" in body
     keys = set(body["insights"].keys())
-    expected = {
+    expected_legacy = {
         "compile_ready", "pulse_critical", "solva_waiting",
         "signoffs_needed", "cycles_closing", "new_documents",
         "open_questions",
     }
-    assert keys == expected
+    assert expected_legacy <= keys, (
+        f"legacy insights keys missing: {expected_legacy - keys}"
+    )
+    # Phase B additions are present.
+    assert "drafts_ready" in keys
+    assert "documents_to_review" in keys
     for k, v in body["insights"].items():
         assert "count" in v
         assert isinstance(v["count"], int)

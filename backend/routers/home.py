@@ -177,14 +177,45 @@ async def _count_open_questions(context_id: str, account_id: str) -> int:
     })
 
 
+# Phase B Home cleanup (2026-05-26): two new counts for the
+# revised plate.
+async def _count_drafts_ready(context_id: str, account_id: str) -> int:
+    """Cycle follow-up emails this user is responsible for that are
+    drafted or approved and not yet sent.
+    Mirrors the Phase D Cycle Page "Drafts Waiting for You" surface
+    (cycle_manager.py /cycle/follow-ups). Counts per-context, all
+    contributors — the executive is the gate-keeper for sending,
+    so they see the full draft queue."""
+    return await db.cycle_followups.count_documents({
+        "context_id": context_id,
+        "status": {"$in": ["draft", "approved"]},
+    })
+
+
+async def _count_documents_to_review(context_id: str, account_id: str) -> int:
+    """Documents flagged for executive review.
+
+    DATA-SOURCE TODO (Phase B Home cleanup): no `review_required: true`
+    flag is currently written on `documents` documents during upload
+    or signal-resolution. Returns 0 until a wiring decision is made.
+    See HOME_CLEANUP_LOG.md :: "Data source TODOs"."""
+    return 0
+
+
 @router.get("/contexts/{context_id}/home/insights")
 async def home_insights(
     context_id: str,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    """Returns 7 leading-insight counts for the active context in one shot.
+    """Returns leading-insight counts for the active context in one shot.
     Side-effect: records the visit so the next "What's new" query has
-    an anchor timestamp."""
+    an anchor timestamp.
+
+    Phase B Home cleanup (2026-05-26): added `drafts_ready` +
+    `documents_to_review` to back the new 5-tile plate. Legacy
+    counts (compile_ready, pulse_critical, open_questions,
+    cycles_closing, signoffs_needed, solva_waiting, new_documents)
+    remain so existing consumers + tests stay green."""
     me = ctx["account"]
     prev_visit = await _bump_visit(me["id"], context_id)
 
@@ -195,6 +226,8 @@ async def home_insights(
     cycles_closing = await _count_cycles_closing_this_week(context_id)
     new_documents = await _count_new_documents_since(context_id, prev_visit, me["id"])
     open_questions = await _count_open_questions(context_id, me["id"])
+    drafts_ready = await _count_drafts_ready(context_id, me["id"])
+    documents_to_review = await _count_documents_to_review(context_id, me["id"])
 
     return {
         "context_id": context_id,
@@ -207,6 +240,9 @@ async def home_insights(
             "cycles_closing":  {"count": cycles_closing,  "key": "cycles_closing"},
             "new_documents":   {"count": new_documents,   "key": "new_documents"},
             "open_questions":  {"count": open_questions,  "key": "open_questions"},
+            # Phase B additions
+            "drafts_ready":        {"count": drafts_ready,        "key": "drafts_ready"},
+            "documents_to_review": {"count": documents_to_review, "key": "documents_to_review"},
         },
     }
 
@@ -286,5 +322,69 @@ async def home_whats_new(
     return {
         "context_id": context_id,
         "since": since or None,
+        "items": items,
+    }
+
+
+# -----------------------------------------------------------------------------
+# Home 2 — Coming up (next 14 days)
+# -----------------------------------------------------------------------------
+# Phase B Home cleanup (2026-05-26): aggregator that powers the new
+# "Coming up" section on Home 2 (left column, under HeroDocActions).
+#
+# Currently-wired sub-source:
+#   - Cycles closing within the next `days` window. Pulls cycles
+#     where `expected_close_at` is between now and now+days.
+#
+# Data-source TODOs (logged in HOME_CLEANUP_LOG.md :: "Data source
+# TODOs"; not surfaced in the response until wired):
+#   - Board / committee meetings — no `meetings` collection wired.
+#   - Regulator filing dates — no `filings` collection wired.
+#   - Report due dates — `cycles.expected_close_at` is the closest
+#     existing proxy and is already included above.
+#
+# Empty-state: returns `{"items": []}` → frontend renders the
+# verbatim brief copy "No upcoming items in the next 14 days."
+@router.get("/contexts/{context_id}/home/coming-up")
+async def home_coming_up(
+    context_id: str,
+    days: int = 14,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Aggregate upcoming items for the active context.
+
+    Currently surfaces only cycle close dates (the sole wired
+    sub-source). Other sub-sources are tracked in
+    HOME_CLEANUP_LOG.md and will surface here once their data
+    sources land — additive, no client-side changes required."""
+    if days < 1:
+        days = 1
+    if days > 90:
+        days = 90
+
+    horizon = _iso(_now() + timedelta(days=days))
+    now_iso = _iso(_now())
+
+    items: List[Dict[str, Any]] = []
+
+    async for c in db.cycles.find(
+        {
+            "context_id": context_id,
+            "status": "active",
+            "expected_close_at": {"$gte": now_iso, "$lte": horizon, "$ne": None},
+        },
+        {"_id": 0, "id": 1, "title": 1, "expected_close_at": 1},
+    ).limit(20):
+        items.append({
+            "kind": "cycle_close",
+            "ts": c.get("expected_close_at"),
+            "label": f"Cycle closes — {c.get('title','')}",
+            "href": f"/app/cycle/{c.get('id')}",
+        })
+
+    items.sort(key=lambda r: r.get("ts") or "")
+    return {
+        "context_id": context_id,
+        "horizon_days": days,
         "items": items,
     }
