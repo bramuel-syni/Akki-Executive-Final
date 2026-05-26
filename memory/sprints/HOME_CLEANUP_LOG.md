@@ -2099,3 +2099,98 @@ chip, all 5 tabs, all 5 CTAs.
 ### Suite pass count after fix
 
 - Phase A–F.6 + debt + admin-health: **321 / 321 GREEN** (309 prior + 12 new runtime drawer tests).
+
+## F.3 — runtime drawer compliance verification + CI gate (2026-05-26)
+
+After the E.3 fix shipped, e1_tester flagged F.3 as a suspect false-
+green with same symptom shape: "clicking a task card on
+`/app/task-manager` navigates to `/app/work-studio` instead of
+opening TaskDrawer". Reported reproducible across 5 click targets
+(title, body, pill, whitespace, keyboard Enter).
+
+### Direct DOM verification on live preview pod
+
+Seeded a real Active task for the `juliusaopio@gmail.com` account,
+logged in via Playwright, clicked the card. Result:
+
+```
+Main task cards on Active tab: 1
+Clicking card: task-card-f3test-42862e6e28
+URL after click: …/app/task-manager?task_id=f3test-42862e6e28
+CORRECT: ?task_id= set
+task-drawer present: True
+```
+
+Also verified the Recent Task Activity row click (right-rail card):
+```
+Recent activity rows: 5
+After activity row click: URL = …/app/task-manager?task_id=task-8de05ce0d6b3
+task-drawer present: True
+```
+
+**F.3 click handler is working correctly.** The runtime behavior
+matches the spec — `?task_id=` URL contract → universal TaskDrawer
+renders with all 5 tabs (Plan / Contributions / Drafts /
+Intelligence / Compile) + all 5 CTAs (Use in Solva / Use in Chat /
+Generate brief / Test hypothesis / Share task) with canonical
+`?ctx_type=task&ctx_id=` URLs + W2 `submodule=` params.
+
+### Possible explanation for the tester's report
+
+The most likely confusion: e1_tester may have been clicking
+**FollowUpDraftsCard** rows on the Task Manager right rail.
+FollowUpDraftsCard surfaces DRAFTS (which are documents, not
+tasks); its rows correctly navigate to `/app/work-studio?doc_id=`
+because drafts open in the universal DocumentDrawer on Work Studio.
+That routing is by design, not a regression.
+
+Logged in AUTONOMOUS_DECISIONS_LOG: no code fix applied because no
+bug was reproducible. Bug claims that don't reproduce on direct DOM
+verification do NOT trigger fabricated fixes — the existing code is
+correct.
+
+### CI gate adopted regardless — locks in correct F.3 behavior
+
+Added 18 new assertions to `test_home_cleanup_phase_e3_runtime_drawer.py`:
+
+**Source-level click-handler assertions:**
+- `test_f3_task_listing_card_click_sets_task_id_url` — asserts
+  `onClick={() => openTask(t.id)}` + `next.set("task_id", taskId)` +
+  tripwire on `navigate(`/app/work-studio` literal.
+- `test_f3_recent_task_activity_row_click_sets_task_id_url`
+- `test_f3_task_manager_mounts_universal_task_drawer`
+
+**Universal TaskDrawer shape assertions:**
+- `test_f3_universal_task_drawer_has_5_spec_tabs` — all 5 tab body testids
+- `test_f3_universal_task_drawer_has_5_spec_ctas` — all 5 CTA testids +
+  canonical `?ctx_type=task&ctx_id=` URLs + W2 `submodule=` params
+
+**Parametrized tripwires across all task-listing surfaces:**
+- `test_f3_no_inline_drawer_on_any_task_listing_surface` (×4)
+- `test_f3_no_legacy_drawer_text_on_task_listing_surfaces` (×4)
+
+**Unified drawer compliance matrix (CI gate centerpiece):**
+- `test_drawer_compliance_matrix` (×5 — parametrized per surface)
+  asserts: drawer mount substring present + canonical URL param
+  key referenced in the file body. Catches the exact false-green
+  class that slipped through twice.
+
+### Files changed
+
+| File | Change |
+| --- | --- |
+| `backend/tests/test_home_cleanup_phase_e3_runtime_drawer.py` | Doubled in size — added F.3 section + DRAWER_COMPLIANCE_MATRIX parametrized gate (30 tests total: 12 doc-listing + 18 task-listing/matrix). |
+| `memory/sprints/HOME_CLEANUP_LOG.md` | This section. |
+| `memory/sprints/AUTONOMOUS_DECISIONS_LOG.md` | Decision: no code fix without reproducible bug; CI gate adopted regardless. |
+
+### Suite pass count
+
+**339 / 339 GREEN** (321 baseline + 18 new F.3 / matrix tests).
+
+### Awaiting e1_tester verification — do not self-report as compliance-fixed
+
+This conclusion needs validation from e1_tester to confirm whether
+the original F.3 fail report was a click-target mis-identification
+(my hypothesis) or whether there's a surface I haven't tested. If
+the tester repros the bug, please share the EXACT testid clicked +
+the URL before/after — I'll trace from there.

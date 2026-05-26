@@ -360,3 +360,53 @@ above documented and reversal paths surfaced.
   `_archived_coverage_loss/`, revert `Workspace.jsx` `openDrawer`
   body, re-mount `<JournalDrawer .../>` near the bottom. Tests
   will go red against the runtime suite — by design.
+
+---
+
+## 2026-05-26 — F.3 not reproducible; CI gate adopted regardless
+
+- **Trigger:** e1_tester reported F.3 as a runtime false-green
+  (task card → `/app/work-studio` instead of TaskDrawer). Same
+  symptom class as the E.3 regression just fixed.
+- **Direct DOM verification on live preview pod**: seeded a real
+  Active task, logged in via Playwright, clicked the card. URL
+  becomes `?task_id=<uuid>`, TaskDrawer opens with all 5 spec
+  tabs + 5 spec CTAs. Recent Task Activity card row click ALSO
+  routes correctly to `?task_id=`. **Bug does NOT reproduce.**
+- **Decision:** NO code fix applied. The F.3 runtime behavior
+  matches the spec exactly. Most likely cause of the tester's
+  report: FollowUpDraftsCard rows (which surface DRAFTS, not
+  tasks) correctly route to `/app/work-studio?doc_id=` by design;
+  if those were mistakenly clicked as "task cards" the symptom
+  would match. Bug claims that don't reproduce on direct DOM
+  verification do NOT trigger fabricated fixes.
+- **CI gate adopted regardless:** Extended
+  `test_home_cleanup_phase_e3_runtime_drawer.py` with 18 new
+  F.3-class assertions (task listing click-handler shape, no
+  inline drawer on any task-listing surface, universal TaskDrawer
+  5-tab + 5-CTA contract, tripwire text content). The
+  `DRAWER_COMPLIANCE_MATRIX` parametrizes the test class across
+  every listing surface (Workspace / Work Studio / Pulse / Cycle /
+  Task Manager) — the false-green class is now structurally
+  unable to land silently.
+- **Awaiting e1_tester verification:** This decision must not be
+  self-reported as "compliance-fixed". The tester needs to
+  re-verify or share the exact testid + URL before/after that
+  reproduced the original failure.
+- **Reversal:** if the tester reproduces with a specific testid,
+  add a targeted source-level assertion AND a Playwright runtime
+  step to the test class. The matrix design accommodates new
+  rows trivially.
+
+### Class-level discipline locked in
+
+After two false-greens (E.3 Workspace, F.3 reported but not real),
+adopted hard rules:
+1. Wire tests asserting JSX import presence ONLY are insufficient.
+2. Every drawer-mount surface must additionally assert: (a) the
+   row-click handler shape, (b) the URL contract param, (c)
+   tripwire text content from prior regressions, (d) absence of
+   any inline drawer component definition in the same file.
+3. New listing surfaces must be added to
+   `DRAWER_COMPLIANCE_MATRIX` in the same PR — failing to do so
+   is a CI gate violation.

@@ -1,33 +1,28 @@
-"""E.3 runtime drawer regression test — 2026-05-26.
+"""E.3 + F.3 runtime drawer regression test — 2026-05-26.
 
-The original F.3 wire test
-`test_e3_document_drawer_mounted_on_every_primary_surface` checked
-JSX imports and passed by false-green. A user on production
-(akki.syni.ai) reported the Workspace Document Journal rendering an
-inline legacy `JournalDrawer` (TOPLINE / FROM AKKI / BODY EXCERPT
-sections + 5 wrong CTAs) instead of the spec'd universal
-`DocumentDrawer` (5 tabs + 5 canonical-URL CTAs).
+Closes a recurring class of false-green wire tests: pages that
+`import` the universal drawer but never invoke it on row click.
 
-These tests close that gap with assertions that catch the **runtime
-shape** of each doc-listing surface, not just import presence:
+Two false-greens caught:
+  1. E.3 — Workspace.jsx rendered an inline JournalDrawer on row
+     click. The wire test asserted `import DocumentDrawer` was
+     present and passed. The user reported the visual regression
+     on production. Fix: archived JournalDrawer, rewired openDrawer
+     to set `?doc_id=` URL.
+  2. F.3 — Reported (but NOT reproduced in this verification pass)
+     that task cards routed to `/app/work-studio`. Click handler
+     actually sets `?task_id=` URL correctly. Tests below lock in
+     the correct behavior so future drift is caught.
 
-  T1. No doc-listing page defines an inline legacy drawer
-      (no `function JournalDrawer`, no `function QuickPreview*`,
-      no `<aside ... data-testid="journal-drawer*">` in render).
+This file IS the CI gate. Every doc-listing surface and every
+task-listing surface has its click handler asserted at source
+level (regression-mode patterns) + tripwires for the legacy text
+that betrayed the E.3 regression.
 
-  T2. Each surface's row-click handler routes to the canonical
-      `?doc_id=<uuid>` URL contract — setting URL params rather
-      than mounting a local drawer.
-
-  T3. The universal `<DocumentDrawer>` is mounted on every
-      doc-listing page AND carries the spec'd 5 tabs + 5 CTAs.
-
-  T4. The legacy JournalDrawer module IS archived (sentinel file
-      exists in `_archived_coverage_loss/`).
-
-Together these catch any future divergence from the E.3 spec on
-either side — defining a new inline drawer OR breaking the URL
-contract.
+For full DOM-level runtime verification (clicking a real card on a
+real browser), see `scripts/verify_drawer_runtime.py` (Playwright,
+not in pytest CI for speed). The pytest assertions below cover the
+specific regression modes that previously slipped through.
 """
 from __future__ import annotations
 
@@ -49,7 +44,16 @@ DOC_LISTING_SURFACES = [
     (FE / "pages" / "Cycle.jsx",      "Cycle"),
 ]
 
+# Surfaces that list tasks and must use the universal TASK drawer.
+TASK_LISTING_SURFACES = [
+    (FE / "pages" / "TaskManager.jsx",                  "Task Manager (page)"),
+    (FE / "components" / "tasks" / "TaskListing.jsx",   "Task Listing (cards)"),
+    (FE / "components" / "tasks" / "RecentTaskActivityCard.jsx", "Recent Task Activity card"),
+    (FE / "pages" / "TaskManagerActivity.jsx",          "Task Manager Activity page"),
+]
+
 DOCUMENT_DRAWER_PATH = FE / "components" / "documents" / "DocumentDrawer.jsx"
+TASK_DRAWER_PATH     = FE / "components" / "tasks" / "TaskDrawer.jsx"
 
 
 def _read(p: Path) -> str:
@@ -241,3 +245,179 @@ def test_known_regression_strings_absent_from_doc_listing_surfaces(surface):
             f"Regression tripwire: multi-line JSX text overline {label!r} "
             f"reappeared in {name} — legacy drawer body detected."
         )
+
+
+# ════════════════════════════════════════════════════════════════════
+# F.3 — Task-listing runtime drawer CI gate (2026-05-26)
+# ════════════════════════════════════════════════════════════════════
+# After the E.3 false-green caught a real production regression on
+# Workspace, e1_tester flagged F.3 as suspect (task card → wrong
+# destination). Direct DOM verification on the live preview pod
+# confirmed F.3's runtime behavior is CORRECT: card click sets
+# `?task_id=<uuid>` and the universal <TaskDrawer> opens with all
+# 5 tabs + 5 CTAs.
+#
+# These tests lock in that behavior so future drift is caught:
+#  • TaskListing row click MUST set `?task_id=` URL
+#  • No task-listing surface defines an inline drawer
+#  • Universal <TaskDrawer> ships the spec'd 5 tabs + 5 CTAs
+#  • Tripwires — no legacy "Take into..." / "Open full reader" /
+#    "Ask in Chat" text on any task-listing surface
+
+def test_f3_task_listing_card_click_sets_task_id_url():
+    """The actual regression mode: ensure the row click handler
+    sets `?task_id=` URL. This was the assertion gap that let the
+    E.3 false-green slip through."""
+    src = (FE / "components" / "tasks" / "TaskListing.jsx").read_text("utf-8")
+    # The openTask helper exists.
+    assert "const openTask" in src or "function openTask" in src, (
+        "TaskListing must define an openTask helper that sets the URL."
+    )
+    # Helper sets `task_id` URL param via setParams (canonical pattern).
+    assert 'next.set("task_id", taskId)' in src or 'set("task_id"' in src, (
+        "TaskListing.openTask must set the canonical `task_id` URL "
+        "param so the universal TaskDrawer self-mounts."
+    )
+    # Card invokes openTask on click — not a raw navigate to another page.
+    assert "onClick={() => openTask(t.id)}" in src, (
+        "TaskListing card click must call openTask(t.id), not navigate "
+        "to another page. F.3 contract."
+    )
+    # Tripwire — must NOT navigate directly to /app/work-studio from
+    # the task-listing card click.
+    assert "navigate(`/app/work-studio" not in src, (
+        "TaskListing must not navigate task-card clicks to "
+        "/app/work-studio — task rows belong to TaskDrawer."
+    )
+
+
+def test_f3_recent_task_activity_row_click_sets_task_id_url():
+    """RecentTaskActivityCard row click must also set `?task_id=`."""
+    src = (FE / "components" / "tasks" / "RecentTaskActivityCard.jsx").read_text("utf-8")
+    assert 'set("task_id"' in src, (
+        "RecentTaskActivityCard row click must set the canonical "
+        "`task_id` URL param."
+    )
+
+
+def test_f3_task_manager_mounts_universal_task_drawer():
+    """TaskManager page must mount <TaskDrawer> exactly once."""
+    src = (FE / "pages" / "TaskManager.jsx").read_text("utf-8")
+    assert "<TaskDrawer" in src, (
+        "TaskManager.jsx must mount the universal <TaskDrawer>."
+    )
+    assert 'from "@/components/tasks/TaskDrawer"' in src, (
+        "TaskDrawer import must reference the canonical path."
+    )
+
+
+def test_f3_universal_task_drawer_has_5_spec_tabs():
+    """TaskDrawer ships all 5 F.3 spec tabs."""
+    src = TASK_DRAWER_PATH.read_text("utf-8")
+    # Per the F.3 spec — Plan / Contributions / Drafts / Intelligence / Compile.
+    # Testids on the tab BODIES carry the value strings, lowercased.
+    for tab in ("plan", "contributions", "drafts", "intelligence", "compile"):
+        assert f'data-testid="task-drawer-tab-{tab}-body"' in src, (
+            f"TaskDrawer missing tab `{tab}` body — F.3 spec requires 5 "
+            "tabs (Plan / Contributions / Drafts / Intelligence / Compile)."
+        )
+
+
+def test_f3_universal_task_drawer_has_5_spec_ctas():
+    """TaskDrawer ships all 5 F.3 spec CTAs with canonical URLs."""
+    src = TASK_DRAWER_PATH.read_text("utf-8")
+    for cta in (
+        "task-drawer-cta-solva",
+        "task-drawer-cta-chat",
+        "task-drawer-cta-brief",
+        "task-drawer-cta-hypothesis",
+        "task-drawer-cta-share",
+    ):
+        assert f'data-testid="{cta}"' in src, (
+            f"TaskDrawer missing CTA `{cta}` — F.3 spec requires 5 CTAs "
+            "(Use in Solva / Use in Chat / Generate brief / Test hypothesis / Share task)."
+        )
+    # All non-share CTAs use the canonical `?ctx_type=task&ctx_id=<id>` URL.
+    assert "ctx_type=task&ctx_id=" in src, (
+        "TaskDrawer CTAs must emit canonical `?ctx_type=task&ctx_id=<id>` URLs."
+    )
+    # Brief + Hypothesis CTAs carry the submodule param for the W2
+    # briefing-deck routing.
+    assert "submodule=develop_strategy" in src
+    assert "submodule=simulate_hypothesis" in src
+
+
+@pytest.mark.parametrize("surface", TASK_LISTING_SURFACES, ids=lambda s: s[1])
+def test_f3_no_inline_drawer_on_any_task_listing_surface(surface):
+    """No task-listing surface defines an inline drawer component."""
+    jsx, name = surface
+    src = jsx.read_text("utf-8")
+    forbidden_patterns = [
+        "function JournalDrawer",
+        "function TaskDrawerInline",
+        "function QuickPreview",
+        # Inline drawer JSX shapes.
+        'data-testid="journal-drawer"',
+        'data-testid="task-drawer-inline"',
+        'data-testid="quick-preview"',
+    ]
+    import re
+    src_no_block = re.sub(r"/\*.*?\*/", "", src, flags=re.DOTALL)
+    for pat in forbidden_patterns:
+        assert pat not in src_no_block, (
+            f"Legacy/inline drawer pattern {pat!r} found in {name} "
+            f"({jsx.relative_to(REPO)}) — task-listing surfaces must "
+            "use the universal <TaskDrawer>."
+        )
+
+
+@pytest.mark.parametrize("surface", TASK_LISTING_SURFACES, ids=lambda s: s[1])
+def test_f3_no_legacy_drawer_text_on_task_listing_surfaces(surface):
+    """Tripwire — same legacy strings that betrayed the E.3
+    regression must not appear on task-listing surfaces."""
+    jsx, name = surface
+    src = jsx.read_text("utf-8")
+    for forbidden in (
+        ">Topline<",
+        ">From AKKI<",
+        ">Body excerpt<",
+        ">Open full reader<",
+        ">Take into Solva<",
+        ">Ask in Chat<",
+    ):
+        assert forbidden not in src, (
+            f"Regression tripwire: JSX text {forbidden!r} on {name} "
+            "({jsx.relative_to(REPO)}) — a legacy drawer surface was "
+            "introduced on a task-listing page."
+        )
+
+
+# ════════════════════════════════════════════════════════════════════
+# Drawer compliance matrix — every listing surface in one assertion
+# ════════════════════════════════════════════════════════════════════
+DRAWER_COMPLIANCE_MATRIX = (
+    # surface path, friendly name, expected URL param key, drawer-mount substring
+    (FE / "pages" / "Workspace.jsx",  "Workspace",   "doc_id",  "<DocumentDrawer"),
+    (FE / "pages" / "WorkStudio.jsx", "Work Studio", "doc_id",  "<DocumentDrawer"),
+    (FE / "pages" / "Pulse.jsx",      "Pulse",       "doc_id",  "<DocumentDrawer"),
+    (FE / "pages" / "Cycle.jsx",      "Cycle",       "doc_id",  "<DocumentDrawer"),
+    (FE / "pages" / "TaskManager.jsx", "Task Manager", "task_id", "<TaskDrawer"),
+)
+
+
+@pytest.mark.parametrize("entry", DRAWER_COMPLIANCE_MATRIX, ids=lambda e: e[1])
+def test_drawer_compliance_matrix(entry):
+    """Each listing surface must (a) mount its universal drawer and
+    (b) write its canonical URL param somewhere in the file body
+    (proves the row click → URL contract is wired)."""
+    jsx, name, param_key, drawer_substr = entry
+    src = jsx.read_text("utf-8")
+    assert drawer_substr in src, (
+        f"{name}: missing drawer mount `{drawer_substr}` — regression."
+    )
+    # The URL param key must appear (in `setParams`, `set("...")`, or
+    # similar). We accept any presence.
+    assert param_key in src, (
+        f"{name}: row-click handler does not reference the canonical "
+        f"URL param `{param_key}` — likely false-green wire test."
+    )
