@@ -17,7 +17,6 @@ import UpgradeModal from "@/components/depth/UpgradeModal";
 
 // -- Lazy: marketing deeper routes (rarely visited from cold start) ----------
 const Landing = lazy(() => import("@/pages/Landing"));
-const SolvaLanding = lazy(() => import("@/pages/SolvaLanding"));
 const About = lazy(() => import("@/pages/marketing/About"));
 const Features = lazy(() => import("@/pages/marketing/Features"));
 const Security = lazy(() => import("@/pages/marketing/Security"));
@@ -72,7 +71,6 @@ const LensRoom = lazy(() => import("@/pages/LensRoom"));
 const Chat = lazy(() => import("@/pages/Chat"));
 const ArchivedChats = lazy(() => import("@/pages/ArchivedChats"));
 const InfluenceMap = lazy(() => import("@/pages/InfluenceMap"));
-const SandboxV2 = lazy(() => import("@/pages/SandboxV2"));
 const SandboxApp = lazy(() => import("@/sandbox/SandboxApp"));
 const Manage = lazy(() => import("@/pages/Manage"));
 const HelpFeatures = lazy(() => import("@/pages/HelpFeatures"));  // Phase E — /help
@@ -259,11 +257,10 @@ function App() {
           <Route path="/invite/:token" element={<InviteAccept />} />
           {/* M.4: legacy /sandbox/legacy + /sandbox/generating + /quick-results
               retired. Phase J (2026-05-12): /sandbox is now the new
-              Generative Sandbox MVP. The legacy guided tour (SandboxV2)
-              moved to /legacy-sandbox for back-link compatibility. */}
+              Generative Sandbox MVP. Legacy /legacy-sandbox routes
+              archived 2026-05-26 (CLEANUP_B1_LOG.md) — SandboxV2 page
+              moved to frontend/src/_archived_legacy/. */}
           <Route path="/sandbox" element={<SandboxApp />} />
-          <Route path="/legacy-sandbox" element={<SandboxV2 />} />
-          <Route path="/legacy-sandbox/resume" element={<SandboxV2 />} />
           {/* J1 (2026-05-24) — public alias for the Trust Center page so
               marketing / external links land on the real surface without
               needing to know the /app prefix. Forwards any querystring

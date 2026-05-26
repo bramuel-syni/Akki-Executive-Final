@@ -1,10 +1,14 @@
 """Phase E — `/api/help/features` route.
 
-Serves the canonical AKKI features-and-functionality document
-(`/app/memory/product/AKKI_FEATURES_AND_FUNCTIONALITY.md`) so the
-React `/help` page can render it inline. Mirrors the no-auth
-`product_features` router (this is product-overview material — the
-same audience that lands on the website nav reads it).
+Serves the canonical AKKI product spec (`/app/memory/AKKI_PRODUCT_SPEC.md`,
+currently v1.1) so the React `/help` page can render it inline. Mirrors
+the no-auth `product_features` router (this is product-overview material
+— the same audience that lands on the website nav reads it).
+
+CLEANUP B1 (2026-05-26): source switched from the deprecated
+`AKKI_FEATURES_AND_FUNCTIONALITY.md` (which `AKKI_PRODUCT_SPEC.md` §1.4
+explicitly strips of authority) to the canonical spec. The route stays
+alive to preserve the `/help` page; only the body source changed.
 
 Response envelope is JSON because the React FE uses `react-markdown`
 to render the body and also needs the document metadata (last
@@ -20,14 +24,14 @@ from fastapi.responses import Response
 
 router = APIRouter(prefix="/api/help", tags=["help"])
 
-_FEATURES_DOC = Path("/app/memory/product/AKKI_FEATURES_AND_FUNCTIONALITY.md")
+_FEATURES_DOC = Path("/app/memory/AKKI_PRODUCT_SPEC.md")
 
 
 def _read_doc() -> str:
     if not _FEATURES_DOC.exists():
         raise HTTPException(
             status_code=404,
-            detail="AKKI_FEATURES_AND_FUNCTIONALITY.md not found",
+            detail="AKKI_PRODUCT_SPEC.md not found",
         )
     try:
         return _FEATURES_DOC.read_text(encoding="utf-8")
@@ -39,7 +43,7 @@ def _read_doc() -> str:
 
 def _doc_metadata(markdown: str) -> dict:
     """Derive title (first H1) + word/char counts from the body."""
-    title = "AKKI — Features & Functionality"
+    title = "AKKI Product Spec"
     for line in markdown.splitlines():
         if line.startswith("# "):
             title = line[2:].strip()
@@ -53,7 +57,7 @@ def _doc_metadata(markdown: str) -> dict:
 
 @router.get("/features")
 async def get_help_features():
-    """Return the features document as JSON envelope for the React
+    """Return the product spec as JSON envelope for the React
     `/help` page to render."""
     markdown = _read_doc()
     stat = _FEATURES_DOC.stat()
@@ -79,7 +83,7 @@ async def get_help_features_raw():
         media_type="text/markdown; charset=utf-8",
         headers={
             "Content-Disposition": (
-                'inline; filename="AKKI_FEATURES_AND_FUNCTIONALITY.md"'
+                'inline; filename="AKKI_PRODUCT_SPEC.md"'
             ),
         },
     )

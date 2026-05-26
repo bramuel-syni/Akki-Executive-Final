@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"38654989810f4c07ba98a3fd3d5e2dcf","collectionName":"billing_launch_interest","type":"collection"}
