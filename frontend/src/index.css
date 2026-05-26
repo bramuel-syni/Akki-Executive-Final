@@ -65,6 +65,11 @@
   --oxblood:         #7A2E2E;
   --oxblood-deep:    #5E2222;
 
+  /* Phase A — Home 1 cleanup (2026-05-26). Role-chip purple.
+   * Used by the NED chip on the portfolio view (Home1.jsx ::
+   * ChipCompany). Executive chip continues to use --oxblood. */
+  --ned-purple:      #6B46C1;
+
   /* Legacy aliases — DO NOT use in new code. ---------------------------
    * Every alias maps to the closest v7 token so component call sites
    * keep rendering without a global sweep. */

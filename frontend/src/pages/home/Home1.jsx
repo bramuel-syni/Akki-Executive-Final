@@ -12,7 +12,7 @@
  * No company-specific data on Home 1 — that lives on Home 2.
  */
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
@@ -83,15 +83,38 @@ function ChipCompany({ ctx, onPick }) {
   // Chunk 6.5-REVISED (2026-05-13, Task C): card refresh.
   // - Bold company name, single line, ellipsis on overflow.
   // - Role chip in muted neutral (NOT crimson — that's the v7
-  //   token sweep rule too).
+  //   token sweep rule too).  ← Overridden 2026-05-26 (Phase A
+  //   Home cleanup, item #2) for Executive + NED only: Executive
+  //   chip now renders Oxblood-15%-bg + Oxblood text; NED chip
+  //   renders --ned-purple-15%-bg + --ned-purple text. Other
+  //   role values still fall through to the muted neutral.
   // - Optional "Last seen Nh ago" — only when an upstream timestamp
   //   is available on the context payload.
   // - Hover: 1px border highlight + soft shadow lift. No translate.
+  // Phase A Home cleanup (2026-05-26, item #1): company tile title
+  // reduced 30% (16px → 11px). Scoped to this tile only — other
+  // text on Home 1 is unchanged.
   const role = (ctx.my_role || "—").toLowerCase();
   const roleLabel = role === "owner" ? "Executive"
                   : role === "ned" ? "NED"
                   : role.charAt(0).toUpperCase() + role.slice(1);
   const lastSeen = ctx.last_activity_at || ctx.last_seen_at || ctx.updated_at;
+  // Role-specific chip styling (2026-05-26 brief).
+  let roleChipClass = "bg-[var(--cream-deep)] text-[var(--muted)]";
+  let roleChipStyle = undefined;
+  if (role === "owner") {
+    roleChipClass = "";
+    roleChipStyle = {
+      backgroundColor: "rgba(122, 46, 46, 0.15)", // --oxblood @ 15%
+      color: "var(--oxblood)",
+    };
+  } else if (role === "ned") {
+    roleChipClass = "";
+    roleChipStyle = {
+      backgroundColor: "rgba(107, 70, 193, 0.15)", // --ned-purple @ 15%
+      color: "var(--ned-purple)",
+    };
+  }
   return (
     <button
       type="button"
@@ -100,14 +123,16 @@ function ChipCompany({ ctx, onPick }) {
       data-testid={`home1-chip-${ctx.id}`}
     >
       <p
-        className="akki-serif text-[16px] text-[var(--ink)] font-bold truncate leading-tight"
+        className="akki-serif text-[11px] text-[var(--ink)] font-bold truncate leading-tight"
         title={ctx.name}
+        data-testid={`home1-chip-${ctx.id}-title`}
       >
         {ctx.name}
       </p>
       <div className="flex items-center justify-between gap-2">
         <span
-          className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] inline-flex items-center px-1.5 py-0.5 rounded-sm bg-[var(--cream-deep)]"
+          className={`text-[10.5px] uppercase tracking-[0.16em] font-mono inline-flex items-center px-1.5 py-0.5 rounded-sm ${roleChipClass}`}
+          style={roleChipStyle}
           data-testid={`home1-chip-${ctx.id}-role`}
         >
           {roleLabel}
@@ -188,47 +213,56 @@ export default function Home1() {
           )}
         </section>
 
-        {/* 3. Continue where you left off */}
-        <section className="mb-12" data-testid="home1-recent">
-          <h2 className="akki-serif text-[15px] text-[var(--ink)] mb-3 inline-flex items-center gap-2">
-            <History className="w-4 h-4 text-[var(--deep)]" strokeWidth={1.7} /> Continue where you left off
-          </h2>
-          {recent.length === 0 ? (
-            <p className="akki-meta italic" data-testid="home1-recent-empty">
-              Nothing to resume yet.
-            </p>
-          ) : (
-            <div className="grid sm:grid-cols-3 gap-3" data-testid="home1-recent-grid">
-              {recent.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => navigate(r.surface_path)}
-                  className="text-left border border-[var(--rule)] rounded-sm px-4 py-3 bg-white hover:border-[var(--ink)]"
-                  data-testid={`home1-recent-${r.id}`}
-                >
-                  <p className="akki-serif text-[14px] text-[var(--ink)] truncate">{r.label}</p>
-                  <p className="text-[11px] text-[var(--muted)] font-mono mt-1">
-                    {relTime(r.last_visited_at)}
-                  </p>
-                  <span className="inline-flex items-center gap-1 text-[11px] text-[var(--ink)] mt-2">
-                    Resume <ChevronRight className="w-3 h-3" strokeWidth={1.7} />
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
+        {/* Phase A Home cleanup (2026-05-26, item #4): sections 3 + 4
+            now render side-by-side at md+ widths in a 2-column grid
+            (equal widths). Stacks on narrow viewports — empty-state
+            copy preserved verbatim. */}
+        <div
+          className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6 mb-12"
+          data-testid="home1-recent-calendar-grid"
+        >
+          {/* 3. Continue where you left off */}
+          <section data-testid="home1-recent">
+            <h2 className="akki-serif text-[15px] text-[var(--ink)] mb-3 inline-flex items-center gap-2">
+              <History className="w-4 h-4 text-[var(--deep)]" strokeWidth={1.7} /> Continue where you left off
+            </h2>
+            {recent.length === 0 ? (
+              <p className="akki-meta italic" data-testid="home1-recent-empty">
+                Nothing to resume yet.
+              </p>
+            ) : (
+              <div className="grid sm:grid-cols-3 gap-3" data-testid="home1-recent-grid">
+                {recent.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => navigate(r.surface_path)}
+                    className="text-left border border-[var(--rule)] rounded-sm px-4 py-3 bg-white hover:border-[var(--ink)]"
+                    data-testid={`home1-recent-${r.id}`}
+                  >
+                    <p className="akki-serif text-[14px] text-[var(--ink)] truncate">{r.label}</p>
+                    <p className="text-[11px] text-[var(--muted)] font-mono mt-1">
+                      {relTime(r.last_visited_at)}
+                    </p>
+                    <span className="inline-flex items-center gap-1 text-[11px] text-[var(--ink)] mt-2">
+                      Resume <ChevronRight className="w-3 h-3" strokeWidth={1.7} />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
 
-        {/* 4. Calendar peek */}
-        <section className="mb-12" data-testid="home1-calendar">
-          <h2 className="akki-serif text-[15px] text-[var(--ink)] mb-3 inline-flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-[var(--deep)]" strokeWidth={1.7} /> Coming up
-          </h2>
-          <p className="akki-meta italic" data-testid="home1-calendar-empty">
-            No upcoming events on your calendar.
-          </p>
-        </section>
+          {/* 4. Calendar peek */}
+          <section data-testid="home1-calendar">
+            <h2 className="akki-serif text-[15px] text-[var(--ink)] mb-3 inline-flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-[var(--deep)]" strokeWidth={1.7} /> Coming up
+            </h2>
+            <p className="akki-meta italic" data-testid="home1-calendar-empty">
+              No upcoming events on your calendar.
+            </p>
+          </section>
+        </div>
 
         {/* Chunk 6.5-REVISED (2026-05-13, Task C):
             News strip + "New in AKKI" sit side-by-side at ≥1100px
@@ -294,6 +328,22 @@ export default function Home1() {
                   </li>
                 ))}
               </ul>
+            )}
+            {/* Phase A Home cleanup (2026-05-26, item #3): "Read more →"
+                link to the existing Learn news feed (/app/learn). Only
+                rendered when there's at least one article — empty
+                state already says "News updating — check back
+                shortly." and a Read-more would be misleading there. */}
+            {news.length > 0 && (
+              <div className="mt-3 pt-2 border-t border-[var(--rule)]">
+                <Link
+                  to="/app/learn"
+                  className="inline-flex items-center gap-1 text-[12.5px] font-mono text-[var(--ink)] hover:text-[var(--accent)] transition-colors no-underline"
+                  data-testid="home1-news-read-more"
+                >
+                  Read more <ChevronRight className="w-3 h-3" strokeWidth={1.7} />
+                </Link>
+              </div>
             )}
           </section>
 
