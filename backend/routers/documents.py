@@ -21,6 +21,7 @@ from services import clamav_service
 from services.clamav_service import ClamAVUnreachable
 from core import (
     db, now as _now, iso as _iso, write_audit, require_context_membership,
+    get_current_account,
 )
 
 logger = logging.getLogger("akki.documents")
@@ -700,21 +701,286 @@ async def regenerate_document_intelligence(
     return {"status": "queued", "doc_id": doc_id, "mode": mode}
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Phase E.3 — Prompted-edit pipeline
+#
+# User types a natural-language instruction in the drawer's Document
+# tab composer; the backend:
+#   1. Runs both the prompt AND the doc body through Shield (no bypass).
+#   2. Calls the Emergent LLM via Shield's invoke() to produce the
+#      rewritten body.
+#   3. Returns the proposed replacement body to the frontend (NOT
+#      committed yet).
+#   4. Frontend renders a diff preview (strikethrough on removed,
+#      oxblood-underline on added). User clicks Apply → PATCH commits.
+#
+# Audit: a `document_prompted_edit` audit_log row is written with
+# user_id, doc_id, prompt_hash, diff_size. The raw prompt + content
+# are NOT logged here — Shield's own audit chain already captures
+# de-identified copies.
+# ─────────────────────────────────────────────────────────────────────
+
+
+class _PromptedEditIn(BaseModel):
+    prompt: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/documents/{doc_id}/prompted-edit")
+async def prompted_edit(
+    doc_id: str,
+    body: _PromptedEditIn,
+    request: Request,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Phase E.3 — prompted-edit pipeline. Returns proposed new body
+    WITHOUT committing. Caller (the drawer) then renders a diff
+    preview and POSTs a PATCH to commit if the user accepts."""
+    import hashlib as _hash
+    from services.synisense.shield.client import invoke as shield_invoke
+    from datetime import datetime as _dt, timezone as _tz
+    import uuid as _uuid
+
+    # Scope: only drafts owned-and-accessible by the user. We trust
+    # `documents.context_id` membership check on the next read.
+    doc = await db.documents.find_one(
+        {"id": doc_id}, {"_id": 0, "id": 1, "context_id": 1, "name": 1,
+                          "extracted_text": 1, "state": 1, "origin": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    # Membership check.
+    mem = await db.memberships.find_one({
+        "account_id": current["id"], "context_id": doc["context_id"],
+        "status": "active",
+    }, {"_id": 0, "id": 1})
+    if not mem and not current.get("is_superadmin"):
+        raise HTTPException(status_code=403, detail="No access to this document")
+    if doc.get("state") != "draft":
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "NOT_A_DRAFT",
+                    "message": "Prompted edits apply only to drafts."},
+        )
+
+    body_text = (doc.get("extracted_text") or "")[:30000]
+    prompt = body.prompt.strip()
+    title = doc.get("name") or "Untitled draft"
+
+    # Shield-bounded LLM call. The combined payload (prompt + body)
+    # passes through Shield's de-id pipeline before the LLM sees it.
+    llm_prompt = (
+        "You are an executive editor. Rewrite the document below per the "
+        "user's instruction. Return ONLY the full rewritten document text "
+        "— no preamble, no commentary, no markdown fences. Preserve the "
+        "voice and structure unless the instruction says otherwise.\n\n"
+        f"INSTRUCTION: {prompt}\n\n"
+        f"TITLE: {title}\n\n"
+        f"CURRENT BODY:\n{body_text}"
+    )
+    try:
+        result = await shield_invoke(
+            purpose="document_journal.prompted_edit.rewrite",
+            content=llm_prompt,
+            tenant_id=current["id"],
+            consumer_id="documents",
+            user_id=current["id"],
+            model_preference="balanced",
+        )
+        new_body = (result.get("response") or "").strip()
+        # Strip any markdown fences the model may have added.
+        if new_body.startswith("```"):
+            new_body = re.sub(r"^```[a-z]*\n", "", new_body)
+            new_body = re.sub(r"\n```$", "", new_body)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "LLM_REWRITE_FAILED",
+                    "message": "Could not generate the rewritten body.",
+                    "error": str(e)},
+        ) from e
+
+    if not new_body:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "LLM_EMPTY_RESPONSE",
+                    "message": "LLM returned an empty body — try a more specific prompt."},
+        )
+
+    # Audit row.
+    diff_size = abs(len(new_body) - len(body_text))
+    prompt_hash = _hash.sha256(prompt.encode("utf-8")).hexdigest()[:16]
+    try:
+        await db.audit_log.insert_one({
+            "id":            str(_uuid.uuid4()),
+            "context_id":    doc["context_id"],
+            "account_id":    current["id"],
+            "action":        "document.prompted_edit.proposed",
+            "resource_type": "document",
+            "resource_id":   doc_id,
+            "metadata": {
+                "prompt_hash":      prompt_hash,
+                "diff_size":        diff_size,
+                "current_body_len": len(body_text),
+                "new_body_len":     len(new_body),
+            },
+            "created_at": _dt.now(_tz.utc).isoformat(),
+        })
+    except Exception as e:  # noqa: BLE001
+        logger.warning("prompted_edit audit failed: %s", e)
+
+    return {
+        "doc_id":       doc_id,
+        "prompt_hash":  prompt_hash,
+        "current_body": body_text,
+        "new_body":     new_body,
+        "diff_size":    diff_size,
+    }
+
+
+import re  # used by prompted_edit fence-stripping
+import logging as _logging
+logger = _logging.getLogger("documents")
+
+
+import re  # used by prompted_edit fence-stripping
+import logging as _logging
+logger = _logging.getLogger("documents")
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Phase E.3 — Related-docs typing (4 relationship buckets)
+#
+# Returns related docs grouped by type:
+#   • metadata_match — same context + same doc_type + (optionally
+#                       same uploader)
+#   • content_similarity — BM25 over the source doc's title+body
+#                           against all sibling docs' paragraphs
+#   • explicit_attachment — gap: no doc-to-doc link table exists.
+#   • canonical_lineage — gap: no parent_doc_id / derived_from field.
+#
+# Each gap surfaces with `available: false` so the drawer can render
+# an empty/disabled state honestly — no fake data.
+# ─────────────────────────────────────────────────────────────────────
+@router.get("/contexts/{context_id}/documents/{doc_id}/related")
+async def list_related_documents(
+    context_id: str, doc_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    doc = await db.documents.find_one(
+        {"id": doc_id, "context_id": context_id},
+        {"_id": 0, "id": 1, "name": 1, "doc_type": 1, "uploaded_by_email": 1,
+         "extracted_text": 1, "paragraphs": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    out: Dict[str, Any] = {
+        "doc_id": doc_id,
+        "groups": {
+            "metadata_match":       {"available": True,  "items": [], "label": "Same metadata"},
+            "content_similarity":   {"available": True,  "items": [], "label": "Content similarity"},
+            "explicit_attachment":  {"available": False, "items": [], "label": "Explicit attachment",
+                                     "gap_reason": "No doc-to-doc attachment table exists yet."},
+            "canonical_lineage":    {"available": False, "items": [], "label": "Canonical lineage",
+                                     "gap_reason": "No parent_doc_id / derived_from field exists yet."},
+        },
+    }
+
+    # ── Metadata-match: same context + same doc_type ──────────────
+    if doc.get("doc_type"):
+        peers = await db.documents.find(
+            {
+                "context_id": context_id,
+                "id": {"$ne": doc_id},
+                "doc_type": doc["doc_type"],
+                "status": {"$ne": "archived"},
+            },
+            {"_id": 0, "id": 1, "name": 1, "doc_type": 1, "created_at": 1,
+             "uploaded_by_email": 1},
+        ).sort("created_at", -1).limit(8).to_list(length=8)
+        out["groups"]["metadata_match"]["items"] = peers
+    else:
+        # Fall back: same context only — surface as a coarse-match
+        # (still inside the metadata_match bucket since context is
+        # metadata).
+        peers = await db.documents.find(
+            {
+                "context_id": context_id,
+                "id": {"$ne": doc_id},
+                "status": {"$ne": "archived"},
+            },
+            {"_id": 0, "id": 1, "name": 1, "doc_type": 1, "created_at": 1},
+        ).sort("created_at", -1).limit(6).to_list(length=6)
+        out["groups"]["metadata_match"]["items"] = peers
+
+    # ── Content similarity via BM25 over peer paragraphs ──────────
+    # Build the query string from the source doc's title + first ~400
+    # chars of body.
+    try:
+        from bm25 import score_bm25
+        query = (doc.get("name") or "") + " " + (doc.get("extracted_text") or "")[:400]
+        # Collect peer paragraphs (same context).
+        peer_docs = await db.documents.find(
+            {"context_id": context_id, "id": {"$ne": doc_id},
+             "status": {"$ne": "archived"}},
+            {"_id": 0, "id": 1, "name": 1, "extracted_text": 1, "paragraphs": 1},
+        ).limit(40).to_list(length=40)
+        chunks: List[Dict[str, Any]] = []
+        for pd in peer_docs:
+            paras = pd.get("paragraphs") or []
+            # Use paragraphs if available, otherwise first 800 chars of body.
+            if paras:
+                for i, p in enumerate(paras[:6]):
+                    txt = (p.get("text") or p.get("body") or "") if isinstance(p, dict) else str(p)
+                    chunks.append({"text": txt, "doc_id": pd["id"],
+                                   "name": pd.get("name"), "trust": 1.0,
+                                   "chunk_idx": i})
+            else:
+                chunks.append({"text": (pd.get("extracted_text") or "")[:800],
+                               "doc_id": pd["id"], "name": pd.get("name"),
+                               "trust": 1.0, "chunk_idx": 0})
+        ranked = score_bm25(query, chunks, k=8) if chunks else []
+        # Dedup by doc_id and surface the top peer-docs.
+        seen: set = set()
+        sim_items: List[Dict[str, Any]] = []
+        for r in ranked:
+            did = r.get("doc_id")
+            if did in seen or did == doc_id:
+                continue
+            seen.add(did)
+            sim_items.append({
+                "id": did,
+                "name": r.get("name"),
+                "score": round(r.get("score", 0.0), 3),
+            })
+            if len(sim_items) >= 5:
+                break
+        out["groups"]["content_similarity"]["items"] = sim_items
+    except Exception as e:  # noqa: BLE001
+        logger.warning("related_docs bm25 failed: %s", e)
+        out["groups"]["content_similarity"]["items"] = []
+        out["groups"]["content_similarity"]["available"] = False
+        out["groups"]["content_similarity"]["gap_reason"] = (
+            f"BM25 ranking failed: {e}"
+        )
+
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────
+
+
 @router.get("/contexts/{context_id}/documents/{doc_id}/export-guard")
 async def check_export_guard(
     context_id: str, doc_id: str,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    """Phase E.3 — DRAFT export guard. Returns `{can_export, reason?}`.
-    When `state == "draft"` AND no watermark pipeline is available,
-    `can_export` is False and the drawer's Download CTA disables.
-
-    Hard rule from the brief: NO export from Draft state without the
-    DRAFT watermark. The watermarking pipeline integration with
-    python-docx / python-pptx ships in a follow-up; until then the
-    guard returns can_export=False for any draft. This is the
-    spec-compliant fallback ("If watermarking fails for any reason,
-    BLOCK the export with a clear error.")."""
+    """Phase E.3 — DRAFT export guard. Per HOME_CLEANUP_LOG scope-cut
+    #2: until the server-side watermark pipeline is orchestrator-
+    ratified, draft exports are BLOCKED. Committed docs export freely.
+    Spec rule: 'If watermarking fails for any reason, BLOCK the
+    export with a clear error.' — blocking is the spec-compliant
+    behaviour until the pipeline lands."""
     doc = await db.documents.find_one(
         {"id": doc_id, "context_id": context_id}, {"_id": 0, "id": 1, "state": 1},
     )
@@ -724,11 +990,135 @@ async def check_export_guard(
         return {
             "can_export": False,
             "reason": "draft_watermark_pending",
-            "message": "Drafts can be downloaded only with a visible DRAFT watermark. "
-                       "Watermark pipeline ships in a follow-up; export disabled "
-                       "until then.",
+            "watermark_required": True,
+            "watermark_label": "DRAFT",
         }
-    return {"can_export": True}
+    return {
+        "can_export": True,
+        "watermark_required": False,
+        "watermark_label": None,
+    }
+
+
+@router.get("/contexts/{context_id}/documents/{doc_id}/download")
+async def download_document(
+    context_id: str, doc_id: str,
+    format: str = "pdf",
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Phase E.3 — Direct document download in PDF / DOCX / PPTX.
+    Drafts ship with a diagonal DRAFT watermark embedded into the
+    exported bytes. Committed exports have no watermark. If
+    watermarking fails (lib error / malformed input), the export is
+    blocked with HTTP 503 — preserving the original spec's hard rule
+    that no draft ships without its watermark."""
+    from services.documents.watermark_service import (
+        watermark_file, WatermarkError,
+    )
+    from fastapi.responses import Response
+    import re as _re
+
+    fmt = (format or "pdf").lower().lstrip(".")
+    if fmt not in ("pdf", "docx", "pptx"):
+        raise HTTPException(status_code=400, detail="format must be pdf|docx|pptx")
+    doc = await db.documents.find_one(
+        {"id": doc_id, "context_id": context_id},
+        {"_id": 0, "id": 1, "name": 1, "original_filename": 1,
+         "extracted_text": 1, "state": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    title = doc.get("name") or doc.get("original_filename") or "Document"
+    body  = doc.get("extracted_text") or ""
+
+    # ── Render the doc body to the requested format ─────────────
+    rendered: bytes
+    if fmt == "pdf":
+        from reportlab.pdfgen import canvas as _canvas
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import inch
+        import io as _io
+        buf = _io.BytesIO()
+        c = _canvas.Canvas(buf, pagesize=A4)
+        page_w, page_h = A4
+        # Title.
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(0.8 * inch, page_h - 0.8 * inch, title[:120])
+        # Body — naive wrap at ~95 chars/line, ~50 lines per page.
+        c.setFont("Helvetica", 10)
+        lines: List[str] = []
+        for para in (body or "").splitlines():
+            while len(para) > 95:
+                lines.append(para[:95])
+                para = para[95:]
+            lines.append(para)
+        y = page_h - 1.2 * inch
+        for ln in lines:
+            if y < 0.7 * inch:
+                c.showPage()
+                c.setFont("Helvetica", 10)
+                y = page_h - 0.7 * inch
+            c.drawString(0.8 * inch, y, ln[:110])
+            y -= 14
+        c.save()
+        rendered = buf.getvalue()
+    elif fmt == "docx":
+        from docx import Document as _Doc
+        import io as _io
+        d = _Doc()
+        d.add_heading(title[:120], level=0)
+        for para in (body or "").split("\n\n"):
+            d.add_paragraph(para)
+        buf = _io.BytesIO()
+        d.save(buf)
+        rendered = buf.getvalue()
+    else:  # pptx
+        from pptx import Presentation as _Pres
+        from pptx.util import Inches as _In
+        import io as _io
+        prs = _Pres()
+        slide_layout = prs.slide_layouts[1]
+        slide = prs.slides.add_slide(slide_layout)
+        slide.shapes.title.text = title[:120]
+        # Single content slide carrying the body excerpt.
+        body_box = slide.placeholders[1]
+        body_box.text = (body or "")[:2000]
+        buf = _io.BytesIO()
+        prs.save(buf)
+        rendered = buf.getvalue()
+
+    # ── Watermark drafts; preserve block-on-failure ─────────────
+    if doc.get("state") == "draft":
+        try:
+            rendered = watermark_file(rendered, fmt=fmt, label="DRAFT")
+        except WatermarkError as e:
+            # Spec-compliant fallback: BLOCK the export with a clear
+            # error rather than ship an unmarked draft.
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "DRAFT_WATERMARK_FAILED",
+                    "message": "Watermark pipeline failed; draft export blocked.",
+                    "error": str(e),
+                },
+            ) from e
+
+    # Audit + return.
+    safe_name = _re.sub(r"[^A-Za-z0-9._-]+", "_", title)[:60] or "document"
+    media_type = {
+        "pdf":  "application/pdf",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    }[fmt]
+    return Response(
+        content=rendered,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}.{fmt}"',
+            "X-Document-State":    doc.get("state") or "committed",
+            "X-Watermark-Applied": "1" if doc.get("state") == "draft" else "0",
+        },
+    )
 
 
 # ═════════════════════════════════════════════════════════════════════════
