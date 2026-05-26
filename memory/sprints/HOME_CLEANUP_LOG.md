@@ -393,6 +393,105 @@ None — `akki-w-medium` token + class remain in use by ≥3 other surfaces. `me
 | D6 | Phase C item #4 LAYERS WON removed. | `AKKI_PRODUCT_SPEC.md` is silent on Audit-modal metric composition (§3.2 Trust Center / Master Audit describes the audit chain but not the specific UI metric tiles shown in this modal). | No spec conflict. Recorded for completeness. |
 | D7 | Phase C items #1-3 (sticky composer, three-dot menu, outer gutters). | Spec §4.D X2 says: *"Akki Chat: Responsive layout … Fixed input bar … is fixed and remains anchored to the bottom of the screen at all times."* — this brief AFFIRMS and reinforces that spec rule. The three-dot menu + outer-gutter changes are not addressed by the spec (chat chrome is not enumerated). | No spec conflict. Item #1 matches §4.D X2 verbatim intent. |
 
+### Phase C — post-test fixes (2026-05-26, live-DOM regression pass)
+
+Tester ran against live preview (1920×1080) and flagged that the initial Phase C ship passed wire tests but the rendered DOM didn't behave correctly. Three fixes applied.
+
+#### Fix 1 — Sticky composer NOT actually pinned
+
+**Pre-fix live measurements:**
+- `body.scrollHeight = 1185px` vs `windowH = 1080px` → page scrollable.
+- `window.scrollBy(0, 500)` → `scrollY = 105` (body scrolls).
+- `body.overflow = "visible"`, `html.overflow = "visible"`.
+- `chat-page.height = 1016px`, top = 128px → bottom = 1144px (64px BELOW viewport floor).
+- `composer.bottom = 1083px` (3px below viewport but visually off-screen because the body itself was scrolled).
+
+**Root cause:** Two compounding issues:
+1. `h-[calc(100vh-4rem)]` accounted for ONLY the AppShell top-bar (64px / 4rem). The tabs row (also 64px) added another 4rem of chrome ABOVE the chat-page. Real chrome = 8rem, not 4rem.
+2. `<div class="min-h-screen flex flex-col">` (the AppShell outer wrapper) auto-grew to fit its content (1185px), letting the body scroll despite chat-page being `overflow-hidden`.
+
+**Fix applied:**
+```jsx
+// Chat.jsx line 878 — chat-page container height calc
+- "h-[calc(100vh-4rem)]"
++ "lg:h-[calc(100vh-8rem)] h-[calc(100vh-4rem)]"
+//   ^ desktop accounts for top-bar + tabs;
+//   ^ mobile keeps 4rem fallback (tabs render differently on small).
+
+// Chat.jsx — new useEffect mounted at the top of the Chat component
+useEffect(() => {
+  const prevBody = document.body.style.overflow;
+  const prevHtml = document.documentElement.style.overflow;
+  document.body.style.overflow = "hidden";
+  document.documentElement.style.overflow = "hidden";
+  window.scrollTo(0, 0);
+  return () => {
+    document.body.style.overflow = prevBody;
+    document.documentElement.style.overflow = prevHtml;
+  };
+}, []);
+```
+
+**Post-fix live measurements:**
+```
+{
+  "body_overflow": "hidden",
+  "html_overflow": "hidden",
+  "initial_scrollY": 0,
+  "after_scroll": 0,                // window.scrollBy(0, 500) is a no-op
+  "body_scroll_locked": true,
+  "chat_page": { "overflow": "hidden", "height": "952px",
+                 "top": 128, "bottom": 1080, "left": 0, "right_offset": 0 },
+  "chat_list":     { "overflowY": "auto", "height": 770 },
+  "chat_messages": { "overflowY": "auto", "height": 734 },
+  "composer":      { "top": 974, "bottom": 1019, "in_viewport": true }
+}
+```
+
+All four brief criteria for Fix 1 met: body scroll locked, only chat-list + chat-messages scroll, composer pinned inside viewport, chat-page edge-to-edge.
+
+#### Fix 2 — Delete menu item not rendering
+
+**Tester report:** Three-dot opens but no Delete element visible inside the popover.
+
+**Investigation:** My initial-ship Playwright test had shown `delete_count: 1, visible: true`, but the tester's query likely searched WITHIN the trigger's children. Radix's `DropdownMenu` portals its content to `document.body` (not inside the trigger's parent), so a `container.querySelector` inside the trigger element returns nothing.
+
+**Confirmation:** Re-ran live, opened first thread's three-dot menu, captured screenshot showing:
+- Visible popover with trash icon + "Delete" label (screenshot 2 from the 2026-05-26T12:14Z run).
+- DOM-wide query (`document.querySelectorAll('[data-testid^="chat-thread-row-delete-"]')`) returns 1 element, `delete_visible: true`, `delete_text: "Delete"`, `delete_role: "menuitem"`, `portaled_count: 2`.
+
+**No code change required for Fix 2.** The implementation was correct; the tester's selector pattern needs to traverse the portal — documented in the wire test docstring.
+
+**Top-bar icon clarification (brief request):**
+- The top-bar icon currently labeled "trash" in source (`<Trash />` lucide icon) actually wires to `onArchive(chat.id)` — the SAME soft-archive op the new dropdown's Delete also calls. Both surfaces perform soft-archive (set `archived_at`); neither performs a permanent destructive delete.
+- This means the "Delete" label in the new dropdown menu and the existing top-bar icon are **functionally identical** — both call `onArchive`.
+- The user-visible naming is intentional: "Delete" matches Claude's UX pattern (the brief's stated reference). The audit-trail / restore flow is preserved via `/app/chat/archive` (the existing soft-archive list).
+- Going forward, if a hard-delete is needed, it should be a separate menu item under the dropdown ("Delete permanently…") with confirmation — out of scope for Phase C.
+
+#### Fix 3 — Outer gutter scoping (regression check)
+
+**Tester concern:** both `/app/chat` AND `/app/portfolio` show `left = 0` on the main content.
+
+**Git-diff scope:** the only file touched for outer-gutter behavior is `frontend/src/pages/Chat.jsx:878` — `akki-w-medium` → `akki-w-wide`. No edit to `AppShell.jsx`, `index.css`, or any parent layout container.
+
+**Live regression check (2026-05-26T12:14Z):**
+- `/app/portfolio` Home1 measurements: `left: 360px`, `right: 360px`, `width: 1200px`. Portfolio STILL uses `akki-w-medium` (1200px max-width with auto-margins). The 360px equal gutters confirm the v7 outer-gutter rule is intact on Home1.
+- `/app/chat` chat-page measurements: `left: 0px`, `right_offset: 0px`, `width: 1920px`. Chat is edge-to-edge.
+
+**The tester's `left = 0` observation on `/app/portfolio` was measuring the outer page `<main>` element**, not the Home1 content container. The `<main>` wrapper IS full-width on all routes — that's the AppShell behavior, unchanged by Phase C. Home1's actual content container (`[data-testid="home1"]`) has the expected 360px gutters from `akki-w-medium`.
+
+**No code change required for Fix 3.** Scope was correct from the start; clarified the measurement target in the wire test (`test_phase_c_outer_gutter_change_scoped_to_chat` already grep-verifies that `akki-w-medium` remains on ≥3 other surfaces).
+
+### Files changed in the post-test fix pass
+
+| Path | Change |
+| --- | --- |
+| `frontend/src/pages/Chat.jsx` | (a) Chat-page height calc: `h-[calc(100vh-4rem)]` → `lg:h-[calc(100vh-8rem)] h-[calc(100vh-4rem)]`. (b) New `useEffect` at the top of `Chat()` that locks `document.body.style.overflow` and `document.documentElement.style.overflow` to `"hidden"` on mount, restored on unmount. |
+| `backend/tests/test_home_cleanup_phase_c.py` | `test_phase_c_composer_is_sticky_bottom` extended with two additional anchor assertions: `lg:h-[calc(100vh-8rem)]` height calc + the `document.body.style.overflow = "hidden"` lock. |
+| `memory/sprints/HOME_CLEANUP_LOG.md` | This section. |
+
+Tests still pass: `pytest tests/test_home_cleanup_phase_c.py` → **12 passed**.
+
 ---
 
 ## Deploy-readiness checklist

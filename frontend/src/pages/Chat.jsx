@@ -209,6 +209,26 @@ export default function Chat() {
   // four-check is the default, visible reasoning is the exception).
   const [thinkHarder, setThinkHarder] = useState(false);
 
+  // Phase C Chat cleanup (2026-05-26, post-test fix): lock body
+  // overflow while the chat surface is mounted. The AppShell's
+  // `.min-h-screen` parent + tabs row inflate the document height
+  // above the viewport (~1185px on a 1080px viewport), which lets
+  // the page scroll despite the chat-page container being
+  // `overflow-hidden`. Locking body overflow stops scroll at the
+  // root, so only the chat-page's inner scrollable children
+  // (chat-list + chat-messages) can scroll — matching the brief.
+  useEffect(() => {
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    window.scrollTo(0, 0);
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+    };
+  }, []);
+
   // ── Bootstrap: fetch models + chats list
   useEffect(() => {
     (async () => {
@@ -886,7 +906,7 @@ export default function Chat() {
   return (
     <AppShell>
       <WorkspaceEntryGate workspace="chat">
-      <div className="h-[calc(100vh-4rem)] akki-w-wide grid grid-cols-1 lg:grid-cols-[300px_1fr] lg:gap-12 overflow-x-hidden overflow-hidden" data-testid="chat-page">
+      <div className="lg:h-[calc(100vh-8rem)] h-[calc(100vh-4rem)] akki-w-wide grid grid-cols-1 lg:grid-cols-[300px_1fr] lg:gap-12 overflow-x-hidden overflow-hidden" data-testid="chat-page">
         {/* Phase F (2026-05-21) — boundary-removal pass. The aside
             and the main pane now sit on a single warm parchment
             surface with no enclosing rectangles. Hierarchy comes

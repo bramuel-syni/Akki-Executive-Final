@@ -18,11 +18,34 @@ def _read(p: Path) -> str:
 
 # ── (a) + (b) — sticky composer + scroll containment ─────────────
 def test_phase_c_composer_is_sticky_bottom():
+    """Brief acceptance (a): composer visible at viewport bottom on
+    load. Anchored on multiple signals — class string + useEffect
+    that locks body overflow + chat-page height calc.
+
+    Live-DOM tolerance: the wire test cannot fully verify
+    `getComputedStyle()` (no real browser) so we assert against
+    JSX-level invariants. Live verification recorded in
+    HOME_CLEANUP_LOG.md "Phase C — post-test fixes" section.
+    """
     src = _read(CHAT)
-    # The composer block is wrapped in a `sticky bottom-0` container.
+    # Sticky pattern on the composer wrapper.
     assert "sticky bottom-0" in src, (
-        "Composer must use sticky bottom-0 pattern so it stays "
-        "pinned to the chat-pane bottom on load."
+        "Composer must use sticky bottom-0 pattern"
+    )
+    # Post-fix: chat-page height calc accounts for full chrome (top-bar
+    # 4rem + tabs 4rem = 8rem) on desktop. Mobile keeps the 4rem fallback.
+    assert "lg:h-[calc(100vh-8rem)]" in src, (
+        "chat-page must use lg:h-[calc(100vh-8rem)] so the chat surface "
+        "fits within the viewport accounting for the top-bar + tabs row."
+    )
+    # Post-fix: body overflow lock useEffect.
+    assert 'document.body.style.overflow = "hidden"' in src, (
+        "Chat mount must lock document.body overflow to hidden so the "
+        "AppShell parents cannot scroll. (Restored on unmount.)"
+    )
+    assert 'document.documentElement.style.overflow = "hidden"' in src, (
+        "Chat mount must lock document.documentElement overflow to "
+        "hidden so html-element scroll is also disabled."
     )
 
 
