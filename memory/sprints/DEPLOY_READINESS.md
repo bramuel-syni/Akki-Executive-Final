@@ -150,6 +150,105 @@ external webhooks to `/api/inbound/sendgrid`. The Postmark code path
 is removed from production behaviour; the legacy Phase B tests are
 skipped (kept on disk for git-history continuity).
 
+### User-facing setup runbook (operator quick-start)
+
+Three options for setting the SendGrid env vars on an Emergent pod
+— pick whichever fits your workflow.
+
+**Option A — Emergent secrets panel (recommended for prod)**
+1. Open the Emergent app dashboard → your project → Settings →
+   Secrets.
+2. Add each key from the SendGrid block in `/app/backend/.env.example`:
+   - `SENDGRID_API_KEY`
+   - `SENDGRID_FROM_EMAIL`
+   - `SENDGRID_INBOUND_DOMAIN`
+   - `SENDGRID_INBOUND_AUTH_USERNAME` *(optional)*
+   - `SENDGRID_INBOUND_AUTH_PASSWORD` *(optional)*
+3. Click "Save" — the panel injects them into the pod env on next
+   boot. No file edit required. Restart the backend supervisor
+   (`sudo supervisorctl restart backend`) to pick them up.
+
+**Option B — VS Code (when iterating locally on the pod)**
+1. Open `/app/backend/.env` in the editor.
+2. Fill the empty SendGrid slots that the debt-closure pass added.
+3. Save → supervisor hot-reloads .env-dependent paths on next
+   backend restart. Run `sudo supervisorctl restart backend`.
+
+**Option C — Terminal (one-liner, for ad-hoc testing)**
+```bash
+# Edit in place
+sed -i 's|^SENDGRID_API_KEY=$|SENDGRID_API_KEY=SG.your-real-key-here|' /app/backend/.env
+sed -i 's|^SENDGRID_FROM_EMAIL=$|SENDGRID_FROM_EMAIL=noreply@akki.example.com|' /app/backend/.env
+sed -i 's|^SENDGRID_INBOUND_DOMAIN=$|SENDGRID_INBOUND_DOMAIN=inbound.akki.example.com|' /app/backend/.env
+# Restart
+sudo supervisorctl restart backend
+```
+
+**Basic Auth (recommended for production Inbound Parse)**
+
+SendGrid lets you secure the inbound parse webhook with HTTP Basic
+Auth. Steps:
+
+1. Generate a strong username + password (≥ 32 bytes each):
+   ```bash
+   python -c "import secrets; print('user:', secrets.token_urlsafe(16)); print('pass:', secrets.token_urlsafe(32))"
+   ```
+2. Set them in your env (via Option A/B/C above):
+   ```
+   SENDGRID_INBOUND_AUTH_USERNAME=<the-username>
+   SENDGRID_INBOUND_AUTH_PASSWORD=<the-password>
+   ```
+3. In the SendGrid dashboard → Inbound Parse → edit your hostname,
+   update the **Destination URL** to:
+   ```
+   https://<the-username>:<the-password>@<prod-host>/api/inbound/sendgrid
+   ```
+4. SendGrid will send a `Authorization: Basic <base64>` header on
+   each POST. The backend verifies it via
+   `secrets.compare_digest` (constant-time).
+
+**Verify wiring — health-ping endpoint**
+
+After env vars are set + backend restarted, hit the admin
+health-ping (superadmin only — never logs secrets):
+
+```bash
+TOKEN=$(curl -s -X POST "${REACT_APP_BACKEND_URL}/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"<admin-email>","password":"<admin-pw>"}' \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+
+curl -s "${REACT_APP_BACKEND_URL}/api/admin/email-provider/health" \
+  -H "Authorization: Bearer ${TOKEN}" | python3 -m json.tool
+```
+
+Expected (when all 5 vars set + DNS + Inbound Parse configured):
+```json
+{
+  "active_provider": "sendgrid",
+  "from_email_configured": true,
+  "inbound_domain_configured": true,
+  "basic_auth_configured": true,
+  "outbound_smoke": {
+    "ok": true,
+    "provider_response_ms": 234,
+    "sandbox_mode": true
+  },
+  "inbound_parse": {
+    "domain": "inbound.akki.example.com",
+    "webhook_path": "/api/inbound/sendgrid",
+    "ready": true,
+    "route_mounted": true
+  },
+  "warnings": []
+}
+```
+
+The health-ping uses SendGrid's `mail_settings.sandbox_mode` flag —
+the API call **validates** the envelope (credentials, sender, domain
+auth) without delivering a real email. Safe to run as often as you
+like. The endpoint NEVER 500s — any error surfaces in `warnings[]`.
+
 ---
 
 ## MongoDB collections — new in this batch
