@@ -26,6 +26,7 @@ import TaskDrawer from "@/components/tasks/TaskDrawer";
 import DocumentDrawer from "@/components/documents/DocumentDrawer";
 import CompilationReadinessSection from "@/components/cycle/CompilationReadinessSection";
 import FollowUpDraftsCard from "@/components/tasks/FollowUpDraftsCard";
+import RecentTaskActivityCard from "@/components/tasks/RecentTaskActivityCard";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 
@@ -135,6 +136,7 @@ export default function TaskManager() {
               contextId={cid}
               refreshKey={refreshKey}
             />
+            <RecentTaskActivityCard refreshKey={refreshKey} />
           </aside>
         </div>
       </main>

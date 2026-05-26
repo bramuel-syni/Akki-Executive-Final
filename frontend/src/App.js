@@ -96,6 +96,8 @@ const TaskManager = lazy(() => import("@/pages/TaskManager"));
 // Phase F.5 (2026-05-26) — Contributor magic-link portal. PUBLIC route,
 // no AppShell, no auth gate. Mounted at /contribute/:token.
 const ContributorPortal = lazy(() => import("@/pages/ContributorPortal"));
+// Phase F.6 (2026-05-26) — Account-scoped task activity full-page view.
+const TaskManagerActivity = lazy(() => import("@/pages/TaskManagerActivity"));
 // T5 (2026-05-25) — C7 Draft Journal + C8 Ready to Compile Journal.
 const CycleDraftJournal = lazy(() => import("@/pages/cycle/CycleDraftJournal"));
 const CycleReadyJournal = lazy(() => import("@/pages/cycle/CycleReadyJournal"));
@@ -300,6 +302,7 @@ function App() {
               the legacy CycleList listing while /app/task-manager
               renders the new TaskManager page. */}
           <Route path="/app/task-manager" element={<Gated><TaskManager /></Gated>} />
+          <Route path="/app/task-manager/activity" element={<Gated><TaskManagerActivity /></Gated>} />
           <Route path="/app/task-manager/:taskId" element={<Gated><TaskManager /></Gated>} />
           <Route path="/app/cycle" element={<Gated><CycleList /></Gated>} />
           {/* T5 (2026-05-25) — Spec §4.B → C6/C7 Journals. */}

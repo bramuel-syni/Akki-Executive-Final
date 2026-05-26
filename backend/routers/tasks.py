@@ -1079,3 +1079,49 @@ async def reinvite_contributor(
         log.warning("contributor.reinvited audit failed: %s", e)
     return {"ok": True, "delivery_status": result.get("mode"), "mode": mode}
 
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Phase F.6 (2026-05-26) — Account-scoped task activity feed
+# ═════════════════════════════════════════════════════════════════════
+@router.get("/accounts/{account_id}/task-activity/recent")
+async def list_account_task_activity(
+    account_id: str,
+    limit: int = Query(default=20, ge=1, le=200),
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Account-scoped task activity feed.
+
+    The existing `/api/contexts/{cid}/activity/recent` is context-scoped
+    — it drops events for tasks created without a `context_id`. This
+    endpoint serves the Task Manager right rail's "Recent Task
+    Activity" card, listing every `task.*` event owned by the
+    account regardless of `context_id` association.
+
+    Authorization: the requesting account MUST match `account_id`."""
+    if account_id != current["id"]:
+        raise HTTPException(status_code=403, detail="Cross-account task activity not permitted")
+    rows = await db.audit_log.find(
+        {"account_id": account_id, "action": {"$regex": "^task\\."}},
+        {"_id": 0, "id": 1, "action": 1, "resource_id": 1, "metadata": 1, "created_at": 1},
+    ).sort("created_at", -1).to_list(length=limit)
+    task_ids = sorted({r.get("resource_id") for r in rows if r.get("resource_id")})
+    name_by_id: Dict[str, str] = {}
+    if task_ids:
+        async for t in db.tasks.find(
+            {"id": {"$in": list(task_ids)}, "account_id": account_id},
+            {"_id": 0, "id": 1, "name": 1},
+        ):
+            name_by_id[t["id"]] = t.get("name") or t["id"]
+    return [
+        {
+            "id":          r.get("id"),
+            "action":      r.get("action"),
+            "task_id":     r.get("resource_id"),
+            "task_name":   name_by_id.get(r.get("resource_id"), "(deleted or unrelated)"),
+            "metadata":    r.get("metadata") or {},
+            "created_at":  r.get("created_at"),
+        }
+        for r in rows
+    ]
+
