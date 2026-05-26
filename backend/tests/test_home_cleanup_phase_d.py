@@ -695,22 +695,28 @@ def test_phase_d_take_to_solva_helper_emits_ctx_type_ctx_id():
 
 
 def test_phase_d_workspace_ask_in_chat_link_emits_ctx_type_ctx_id():
-    """Workspace.jsx journal drawer 'Ask in Chat' link must emit
-    canonical params."""
-    src = (REPO / "frontend" / "src" / "pages" / "Workspace.jsx").read_text("utf-8")
-    # Locate the journal-drawer-continue-chat Link block.
-    assert 'data-testid="journal-drawer-continue-chat"' in src
-    # MUST emit canonical form.
-    assert "/app/chat?ctx_type=document&ctx_id=" in src, (
-        "Workspace.jsx 'Ask in Chat' link must emit ctx_type/ctx_id"
+    """Workspace's "Use in Chat" CTA must emit canonical params.
+
+    E.3 RUNTIME DRAWER FIX (2026-05-26): the legacy inline
+    JournalDrawer on Workspace.jsx (with `journal-drawer-continue-chat`
+    testid) was archived. Workspace now mounts the universal
+    DocumentDrawer, whose "Use in Chat" CTA carries the canonical
+    `?ctx_type=document&ctx_id=` URL. We now assert against the
+    universal drawer instead of the archived legacy one.
+    """
+    drawer_src = (REPO / "frontend" / "src" / "components" / "documents" / "DocumentDrawer.jsx").read_text("utf-8")
+    # Universal drawer's Chat CTA testid.
+    assert 'data-testid="drawer-cta-use-in-chat"' in drawer_src, (
+        "Universal DocumentDrawer must expose `drawer-cta-use-in-chat`."
     )
-    # MUST NOT emit legacy form in the same Link.
-    # We isolate the Link block and check it.
-    drawer_block = src.split('data-testid="journal-drawer-continue-chat"')[0]
-    # Get the 4 lines preceding the testid (the <Link to=...> declaration).
-    preceding = "\n".join(drawer_block.rsplit("\n", 5)[-5:])
-    assert "to={`/app/chat?doc=" not in preceding, (
-        "Workspace.jsx 'Ask in Chat' Link no longer emits legacy ?doc="
+    # MUST emit canonical form via the buildChatUrl helper.
+    assert "/app/chat?ctx_type=document&ctx_id=" in drawer_src, (
+        "DocumentDrawer 'Use in Chat' CTA must emit canonical "
+        "ctx_type/ctx_id URL params."
+    )
+    # MUST NOT emit legacy form anywhere in the drawer.
+    assert "/app/chat?doc=" not in drawer_src, (
+        "DocumentDrawer must not emit legacy `?doc=` URL form."
     )
 
 

@@ -332,3 +332,31 @@ above documented and reversal paths surfaced.
   (embedding-based content similarity) is similarly tracked. No
   code change in this debt-closure session for either.
 
+
+---
+
+## 2026-05-26 — E.3 runtime drawer compliance fix (user-reported)
+
+- **Trigger:** User visual inspection on production deploy
+  (`akki.syni.ai`) — clicking a doc row on Workspace opened a
+  legacy inline `JournalDrawer` instead of the spec'd universal
+  `<DocumentDrawer>`. The original F.3 wire test passed by JSX-
+  import inspection (false-green); it never asserted the runtime
+  rendered component matched the spec.
+- **Decision:** Archive the inline legacy `JournalDrawer` from
+  `pages/Workspace.jsx` to `_archived_coverage_loss/JournalDrawer.jsx`,
+  rewire `openDrawer` to use the canonical `?doc_id=<uuid>` URL
+  contract, and replace the false-green wire test with a 12-test
+  runtime-behavior suite (`test_home_cleanup_phase_e3_runtime_drawer.py`).
+- **Categorisation:** REAL COMPLIANCE FIX (not a no-op). The
+  user's regression matched the E.3 spec violation verbatim;
+  fix verified end-to-end via Playwright-driven DOM assertions
+  on the live preview pod.
+- **Lesson logged:** wire tests must assert runtime shape (DOM
+  testids, URL contract behavior, render-visible JSX text) — NOT
+  just import presence. Source-level grep for component imports
+  is a leading indicator, never a confirmation of correctness.
+- **Reversal:** restore `JournalDrawer` from
+  `_archived_coverage_loss/`, revert `Workspace.jsx` `openDrawer`
+  body, re-mount `<JournalDrawer .../>` near the bottom. Tests
+  will go red against the runtime suite — by design.

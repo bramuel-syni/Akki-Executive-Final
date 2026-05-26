@@ -2013,3 +2013,89 @@ User-locked decisions consumed in this pass:
 
 **Expected effort.** Large (5–8 day phase). Includes infra spinup, backfill, and Related-tab UI updates.
 
+
+## E.3 — runtime drawer regression fix (2026-05-26)
+
+User reported a Phase E.3 compliance regression on the production
+deploy (https://akki.syni.ai): clicking a document row on the
+Workspace surface (Document Journal) opened a **legacy inline
+drawer** instead of the spec'd universal `DocumentDrawer`.
+
+### What was wrong
+
+`pages/Workspace.jsx` carried an inline `JournalDrawer(...)`
+component (~160 lines defined within the same file). The row-click
+handler `openDrawer(docId)` fetched the doc directly and rendered
+the inline drawer via local `drawerDoc` state — bypassing the
+universal `<DocumentDrawer>` that was already mounted lower in the
+same file. Symptoms matched the user screenshot verbatim:
+
+- Section overlines `TOPLINE / FROM AKKI / BODY EXCERPT` (legacy)
+  instead of the 5 spec tabs (Document / Intelligence / Summary &
+  Notes / Signals / Related)
+- 5 wrong CTAs (`Open full reader` / `Ask in Chat` / `Add to Cycle`
+  / `Add to Work Studio` / `Take into Solva`) instead of the 5 spec
+  CTAs (`Use in Solva` / `Use in Chat` / `Generate brief` / `Test
+  hypothesis` / `Share document`)
+- No state badge, no origin chip, no DRAFT watermark, no canonical
+  `?ctx_type=document&ctx_id=` URLs
+
+### Why the original wire test passed
+
+The F.3 test `test_e3_document_drawer_mounted_on_every_primary_surface`
+checked only that `import DocumentDrawer` was present in each
+doc-listing page's JSX — a false-green that didn't catch the fact
+that DocumentDrawer was MOUNTED but NOT INVOKED on row click.
+Same lesson as Phase C: wire tests must assert runtime behavior,
+not just import presence.
+
+### Fix
+
+| Layer | Change |
+| --- | --- |
+| `frontend/src/pages/Workspace.jsx` | Deleted the inline `JournalDrawer` function. Rewired `openDrawer(docId)` to set `?doc_id=<uuid>` on the URL via `useSearchParams`. The universal `<DocumentDrawer>` self-mounts on that URL param and renders the 5-tab + 5-CTA spec'd shape. Removed unused `drawerDoc`/`drawerLoading` state. |
+| `frontend/src/_archived_coverage_loss/JournalDrawer.jsx` *(NEW)* | Archived the legacy component for git-history continuity. Module is not imported anywhere. |
+| `backend/tests/test_home_cleanup_phase_e3_runtime_drawer.py` *(NEW, 12 tests)* | Replaces the false-green import test. Asserts: (T1) no inline legacy drawer on ANY of 4 spec'd doc-listing surfaces · (T2) Workspace row click sets `?doc_id=` URL · (T3) universal DocumentDrawer exposes all 5 tabs + all 5 CTAs + canonical URLs · (T4) legacy module archived to quarantine · (T5) Recent Drafts / Recent Activity cards navigate via URL not modal · (T6) regression tripwires (`>Topline<`, `>From AKKI<`, `>Body excerpt<`, `>Open full reader<`, `>Take into Solva<`, etc.) absent from JSX text content on all 4 surfaces. |
+| `backend/tests/test_home_cleanup_phase_d.py` | `test_phase_d_workspace_ask_in_chat_link_emits_ctx_type_ctx_id` rewritten to assert against the universal DocumentDrawer's `drawer-cta-use-in-chat` testid instead of the archived `journal-drawer-continue-chat`. |
+
+### Runtime DOM verification (live preview, Playwright-driven)
+
+Logged in as `juliusaopio@gmail.com`, navigated to `/app/workspace`,
+clicked first doc row:
+
+```
+Doc rows found on workspace: 3
+URL after row click: /app/workspace?doc_id=790f6a60-2204-41bd-a5d9-f10af99fb1a3
+URL contains ?doc_id=: True
+<DocumentDrawer> mounted: True
+  tab `document`:       PRESENT
+  tab `intelligence`:   PRESENT
+  tab `notes`:          PRESENT
+  tab `signals`:        PRESENT
+  tab `related`:        PRESENT
+  cta `use-in-solva`:   PRESENT
+  cta `use-in-chat`:    PRESENT
+  cta `generate-brief`: PRESENT
+  cta `test-hypothesis`:PRESENT
+  cta `share`:          PRESENT
+LEGACY journal-drawer testid present: False  (correct)
+```
+
+Screenshot at `/tmp/workspace_drawer_e3.png` confirms visual shape
+matches the spec — state badges (`COMMITTED`, `UPLOADED`), origin
+chip, all 5 tabs, all 5 CTAs.
+
+### Surface parity matrix
+
+| Surface | Universal DocumentDrawer mounted | Row click sets `?doc_id=` | Inline legacy drawer absent |
+| --- | :---: | :---: | :---: |
+| Workspace        | ✅ | ✅ | ✅ |
+| Work Studio      | ✅ | ✅ | ✅ |
+| Pulse            | ✅ | ✅ | ✅ |
+| Cycle            | ✅ | ✅ | ✅ |
+| FollowUpDraftsCard (F.2/F.6) | navigates to `/app/work-studio?doc_id=` | ✅ | ✅ |
+| RecentTaskActivityCard (F.6) | navigates to task drawer | ✅ | ✅ |
+
+### Suite pass count after fix
+
+- Phase A–F.6 + debt + admin-health: **321 / 321 GREEN** (309 prior + 12 new runtime drawer tests).

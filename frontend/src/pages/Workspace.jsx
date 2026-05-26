@@ -17,7 +17,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Sparkles, Search, Upload, Camera, FileText, X, Eye, Loader2, ArrowRight } from "lucide-react";
 // Phase E.3 (2026-05-26) — Universal Document Drawer.
 import DocumentDrawer from "@/components/documents/DocumentDrawer";
@@ -42,163 +42,15 @@ function formatDate(s) {
 }
 
 /* ------------------------------------------------------------------ */
-/* JournalDrawer — side drawer for a single document                  */
-/* Pattern mirrors WorkStudio.BriefDrawer (Phase C.1).                */
-/* ------------------------------------------------------------------ */
-function JournalDrawer({ doc, loading, onClose, onOpenStructuralDetail, contextId }) {
-  if (!doc && !loading) return null;
-  return (
-    <div
-      className="fixed inset-0 z-40 flex"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Document detail"
-      data-testid="journal-drawer"
-    >
-      {/* Backdrop */}
-      <div
-        className="flex-1 bg-black/30 transition-opacity"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-      {/* Panel */}
-      <aside
-        className="
-          w-full sm:w-[640px] md:w-[760px] lg:w-[820px] max-w-[92vw]
-          bg-[var(--paper)] border-l border-[var(--rule)]
-          h-full overflow-y-auto shadow-xl flex flex-col
-        "
-        data-testid="journal-drawer-panel"
-      >
-        {/* Title bar */}
-        <header className="px-5 py-4 border-b border-[var(--rule)] bg-white sticky top-0 z-10 flex items-start gap-3">
-          <FileText className="w-4 h-4 text-[var(--accent)] mt-1 shrink-0" strokeWidth={1.7} />
-          <div className="flex-1 min-w-0">
-            {loading ? (
-              <p className="akki-meta">Loading…</p>
-            ) : (
-              <>
-                <h2 className="akki-serif text-[18px] text-[var(--ink)] leading-snug truncate" data-testid="journal-drawer-title">
-                  {doc?.name || "(untitled)"}
-                </h2>
-                <p className="akki-meta mt-0.5 text-[11.5px] text-[var(--muted)]">
-                  {[
-                    formatDate(doc?.created_at),
-                    formatBytes(doc?.size_bytes),
-                    doc?.doc_kind,
-                    (doc?.sensitivity_band || "").toLowerCase(),
-                    /* T2.1 (2026-05-25) — D4 drawer metadata line origin
-                       badge. The drawer fetches the doc directly so it
-                       already has `source_channel`. Apply the same
-                       derivation as the listing. */
-                    (() => {
-                      const ch = (doc?.source_channel || "").toLowerCase();
-                      const AKKI = new Set(["cycle_compilation", "work_studio_export"]);
-                      if (AKKI.has(ch)) return "Akki Generated";
-                      return "Uploaded";
-                    })(),
-                  ].filter(Boolean).join(" · ")}
-                </p>
-              </>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 hover:bg-[var(--cream-deep)] rounded-sm shrink-0"
-            aria-label="Close drawer"
-            data-testid="journal-drawer-close"
-          >
-            <X className="w-4 h-4 text-[var(--muted)]" />
-          </button>
-        </header>
-
-        {/* Body */}
-        <div className="flex-1 px-5 py-4 space-y-5">
-          {loading && (
-            <div className="py-12 text-center">
-              <Loader2 className="w-4 h-4 mx-auto animate-spin text-[var(--accent)]" />
-            </div>
-          )}
-
-          {!loading && doc && (
-            <>
-              {/* Topline strip */}
-              <div className="border border-[var(--rule)] bg-[var(--cream-deep)]/40 rounded-sm px-4 py-3" data-testid="journal-drawer-topline">
-                <p className="akki-overline text-[var(--muted)] mb-1">Topline</p>
-                <p className="akki-serif text-[14.5px] text-[var(--ink)] leading-[1.55]">
-                  {doc.preview ||
-                    (doc.extracted_text || "").slice(0, 240).replace(/\s+/g, " ").trim() ||
-                    "—"}
-                </p>
-              </div>
-
-              {/* Akki notes (journal commentary) */}
-              <div data-testid="journal-drawer-commentary">
-                <p className="akki-overline text-[var(--muted)] mb-2">From AKKI</p>
-                {doc.journal_commentary ? (
-                  <p className="akki-serif text-[14px] text-[var(--ink)] leading-[1.7] whitespace-pre-wrap">
-                    {doc.journal_commentary}
-                  </p>
-                ) : (
-                  <p className="text-[13px] text-[var(--muted)] italic">
-                    Notes are still being prepared. They appear automatically once the document finishes processing.
-                  </p>
-                )}
-              </div>
-
-              {/* Body excerpt */}
-              <div data-testid="journal-drawer-body-excerpt">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="akki-overline text-[var(--muted)]">Body excerpt</p>
-                  <button
-                    type="button"
-                    onClick={onOpenStructuralDetail}
-                    className="text-[11.5px] text-[var(--accent)] hover:underline inline-flex items-center gap-1"
-                    data-testid="journal-drawer-open-structural"
-                  >
-                    <Eye className="w-3 h-3" /> Structural detail
-                  </button>
-                </div>
-                <p className="text-[13px] text-[var(--ink)] leading-[1.7] whitespace-pre-wrap">
-                  {(doc.extracted_text || "—").slice(0, 1800)}
-                  {((doc.extracted_text || "").length > 1800) && "…"}
-                </p>
-              </div>
-
-              {/* Actions */}
-              <div className="border-t border-[var(--rule)] pt-4 flex flex-wrap gap-2">
-                <Link
-                  to={`/app/documents/${doc.id}`}
-                  className="text-[12.5px] px-3 py-1.5 border border-[var(--rule)] rounded-sm text-[var(--ink)] hover:border-[var(--accent)] no-underline inline-flex items-center gap-1"
-                  data-testid="journal-drawer-open-reader"
-                >
-                  Open full reader <ArrowRight className="w-3 h-3" />
-                </Link>
-                <Link
-                  to={`/app/chat?ctx_type=document&ctx_id=${doc.id}`}
-                  className="text-[12.5px] px-3 py-1.5 border border-[var(--rule)] rounded-sm text-[var(--ink)] hover:border-[var(--accent)] no-underline inline-flex items-center gap-1"
-                  data-testid="journal-drawer-continue-chat"
-                >
-                  Ask in Chat
-                </Link>
-                {/* Phase H2 (2026-05-11) — three new routing CTAs. */}
-                <DocumentRoutingActions
-                  contextId={contextId}
-                  doc={doc}
-                  onActionDone={onClose}
-                />
-              </div>
-            </>
-          )}
-        </div>
-      </aside>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /* Workspace page                                                     */
+/*                                                                    */
+/* Phase E.3 (2026-05-26) — Universal Document Drawer.                */
+/* The legacy inline `JournalDrawer` was archived to                   */
+/* `_archived_coverage_loss/JournalDrawer.jsx`. Row click now sets the */
+/* canonical `?doc_id=<uuid>` URL param and the universal              */
+/* <DocumentDrawer> self-mounts on that param. This restores the      */
+/* 5-tab + 5-CTA chrome (Document / Intelligence / Summary & Notes /  */
+/* Signals / Related) per the E.3 spec.                                */
 /* ------------------------------------------------------------------ */
 export default function Workspace() {
   const { activeContext } = useAuth();
@@ -212,8 +64,10 @@ export default function Workspace() {
   const [searchHits, setSearchHits] = useState(null); // null = no search ran
   const [searching, setSearching] = useState(false);
 
-  const [drawerDoc, setDrawerDoc] = useState(null);
-  const [drawerLoading, setDrawerLoading] = useState(false);
+  // E.3 drawer is fully URL-driven via `?doc_id=`. We keep no local
+  // drawer state — the universal <DocumentDrawer> self-mounts on the
+  // URL param and fetches the doc itself.
+  const [_, setSearchParams] = useSearchParams();
 
   // T2.1 (2026-05-25) — Document Journal filter tabs per spec §4.A → D3.
   // Briefings live in `db.boardpacks` (their own collection) so we fetch
@@ -313,20 +167,16 @@ export default function Workspace() {
     }
   };
 
-  /* Drawer open */
+  /* Phase E.3 (2026-05-26) — drawer open via canonical URL contract.
+     Row click sets `?doc_id=<uuid>`; the universal <DocumentDrawer>
+     self-mounts on that param and fetches the doc. We retain
+     `drawerDoc` / `drawerLoading` state only as a back-compat shim for
+     any external callers — the actual rendering is driven by the URL. */
   const openDrawer = async (docId) => {
     if (!cid || !docId) return;
-    setDrawerDoc({ id: docId, name: "" });
-    setDrawerLoading(true);
-    try {
-      const { data } = await api.get(`/contexts/${cid}/documents/${docId}`);
-      setDrawerDoc(data);
-    } catch (e) {
-      toast.error(apiErrorMessage(e));
-      setDrawerDoc(null);
-    } finally {
-      setDrawerLoading(false);
-    }
+    const sp = new URLSearchParams(window.location.search);
+    sp.set("doc_id", docId);
+    setSearchParams(sp, { replace: false });
   };
 
   /* T2.1 (2026-05-25) — origin derivation for D3 filter tabs.
@@ -671,28 +521,11 @@ export default function Workspace() {
         )}
       </div>
 
-      {(drawerDoc || drawerLoading) && (
-        <JournalDrawer
-          doc={drawerDoc}
-          loading={drawerLoading}
-          contextId={cid}
-          onClose={() => { setDrawerDoc(null); setDrawerLoading(false); }}
-          onOpenStructuralDetail={() => {
-            // The legacy three-column reader (ReadingView.jsx) is the
-            // structural-detail view for now. Keep route working as
-            // documented in the C.3 brief.
-            if (drawerDoc?.id) {
-              window.open(`/app/documents/${drawerDoc.id}`, "_self");
-            }
-          }}
-        />
-      )}
-
       {/* Phase E.3 (2026-05-26) — Universal Document Drawer.
-          Opens via the canonical `?doc_id=` URL contract. Existing
-          inline DocumentJournalDrawer above remains for the
-          journal-specific summary surface — clicking a journal row
-          can navigate to `?doc_id=` to use the universal drawer. */}
+          Row click sets `?doc_id=<uuid>`; this <DocumentDrawer>
+          self-mounts on that URL param. The legacy inline
+          JournalDrawer has been archived to
+          `_archived_coverage_loss/JournalDrawer.jsx`. */}
       <DocumentDrawer contextId={cid} />
     </AppShell>
   );
