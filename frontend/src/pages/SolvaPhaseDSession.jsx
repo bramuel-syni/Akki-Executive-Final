@@ -166,8 +166,10 @@ export default function SolvaPhaseDSession() {
         return;
       }
       const sub = (searchParams.get("submodule") || "seek_clarity").trim();
-      const seedKind = (searchParams.get("seed_kind") || "").trim();
-      const seedId = (searchParams.get("seed_id") || "").trim();
+      // Phase D.3 (2026-05-26) — accept `?ctx_type=...&ctx_id=...` as
+      // canonical aliases for the legacy `?seed_kind=...&seed_id=...`.
+      const seedKind = (searchParams.get("ctx_type") || searchParams.get("seed_kind") || "").trim();
+      const seedId   = (searchParams.get("ctx_id")   || searchParams.get("seed_id")   || "").trim();
       const seedPreview = (searchParams.get("seed_preview") || "").trim();
       const urlStarter = (searchParams.get("starter") || "").trim();
       let seedPayload = null;

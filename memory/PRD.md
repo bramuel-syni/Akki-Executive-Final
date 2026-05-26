@@ -1,5 +1,56 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
+## Home Cleanup Batch — Phase D Solva closeout — 2026-05-26 ✅
+Fourth and final phase of the Home/Chat/Solva cleanup batch dispatched
+2026-05-26. Phases A (Home 1), B (Home 2), and C (Chat) already shipped;
+Phase D closes Solva surface in 3 sub-items.
+
+- **D.1 — Pre-conversation briefing deck** (4 slides per area, suppression-
+  aware). New `routers/solva_briefing.py` + `solva_briefing_state` collection.
+  New `frontend/src/data/solva-briefings.js` (verbatim slide copy) +
+  `components/solva/SolvaBriefingDeck.jsx` (4-slide modal with progress
+  counter, "Don't show me again" checkbox from 2nd visit onward, first-word-
+  in-oxblood title rendering). Wired into `SolvaLanding.jsx` picker→deck→
+  framing flow + `SolvaPhaseDSession.jsx` `(i)` info icon for force-reopen.
+  **Bug found + fixed**: deck was misplaced inside `DisambiguatorDialog`
+  (would have thrown `ReferenceError`); lifted to `SolvaLanding` parent
+  scope. Verified live: clicking "Seek Clarity" opens deck slide 1/4 with
+  "Solva" in oxblood `rgb(122, 46, 46)`.
+- **D.2 — Question-logic audit (read-only)**. Wrote findings into
+  `HOME_CLEANUP_LOG.md`: Solva Layer 1 / 2 questions are **deterministic,
+  hand-written** in `services/solva/voice/question_bank.py` (no LLM
+  generation per brief §5.4). Variant picker is `sha256(session_id +
+  key) % len(variants)`. FAR's `routing_decision` drives the *key*, not
+  the text. Layer 4 reflection uses a static 3-question list. Layer 3
+  synthesis is the only LLM-voiced surface, bounded by Shield. **No code
+  changes** — audit findings recorded as governance evidence.
+- **D.3 — Context-passing query params (option b — full persistence)**.
+  - Solva: `?ctx_type=…&ctx_id=…` added as canonical alias for legacy
+    `?seed_kind=…&seed_id=…`. Both resolve identically.
+  - Chat: NEW `linked_context: {ctx_type, ctx_id, title, excerpt, href,
+    attached_at}` field on `db.chats`. New `LinkedContextIn` schema +
+    `_resolve_linked_context` helper (supports document / cycle /
+    work_studio_artefact). Persisted on `POST /chats`, re-resolved fresh
+    on every send/stream turn, `$unset` via PATCH `clear_linked_context:
+    true`. New `[LINKED_CONTEXT]…[/LINKED_CONTEXT]` prompt block prepended
+    to `full_prompt` before Shield invocation (no Shield bypass).
+  - Frontend: `Chat.jsx` `?ctx_type=…&ctx_id=…` URL handler; new
+    `LinkedContextChip` above composer with "Reading: <title>" + ✕ remove;
+    muted "item no longer available" state when excerpt is empty.
+
+- **Tests** — `test_home_cleanup_phase_d.py`: 44 wire + live tests, all
+  GREEN. Lifecycle test exercises create → resolve → persist → GET →
+  PATCH-clear → silent-miss-on-invalid-id → 422-on-bad-ctx_type.
+- **Live curl verification**: created chat with linked doc, server resolved
+  full snapshot (title, 8000-char excerpt, href, attached_at); GET returned
+  same; PATCH clear_linked_context: true → linked_context unset.
+- **Regression**: 1367 passing across full suite (Phases A+B+C+D = 91/91,
+  Solva+J4 = 203/203). Only pre-existing parked `test_real_requirements_
+  file_is_clean` failure remains (`spaCy` URL refs, P2 backlog).
+- **No spec edits**, no new npm packages, no new pip dependencies, no
+  Shield bypasses, no LLM model swaps.
+
+
 ## Original problem statement
 AKKI is a Context-primary intelligence platform for Non-Executive Directors (NEDs) and
 operating Executives. The BRD pivoted from v1.0 (Tenant B2B) → v3.0 (Context-primary) →

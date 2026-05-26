@@ -346,12 +346,24 @@ export default function Chat() {
     const docId = searchParams.get("doc");
     const continueChatId = searchParams.get("chat_id");
     const continueAttachId = searchParams.get("attach");
-    if (!p && !seedTitle && !docId && !continueChatId && !continueAttachId) return;
+    // Phase D.3 (2026-05-26) — generic linked-context entry. When the
+    // URL carries `?ctx_type=...&ctx_id=...`, mint a new chat with
+    // `linked_context: {ctx_type, ctx_id}` on the body. The backend
+    // resolves the title + excerpt and persists it on the chat row;
+    // the chip renders from `activeChat.linked_context` once the
+    // chat is loaded. Document-typed ctx is routed through the
+    // legacy `?doc=...` path (which also calls /chats/{id}/attach)
+    // so the in-thread attachment chip flow keeps working — the
+    // linked_context payload is set alongside.
+    const ctxType = (searchParams.get("ctx_type") || "").trim();
+    const ctxId   = (searchParams.get("ctx_id") || "").trim();
+    if (!p && !seedTitle && !docId && !continueChatId && !continueAttachId
+        && !(ctxType && ctxId)) return;
     // Iter57 — when the trigger is ?doc=<id>, we *must* wait for the
     // active context to hydrate before we can resolve the doc title and
     // mint a chat. Re-firing this effect when activeContext.id changes
     // closes the race that the testing pass surfaced.
-    if ((docId || continueAttachId) && !activeContext?.id) return;
+    if ((docId || continueAttachId || (ctxType && ctxId)) && !activeContext?.id) return;
     let cancelled = false;
     (async () => {
       try {
@@ -462,6 +474,41 @@ export default function Chat() {
               } catch { /* best-effort — chat still works without the attached body */ }
             }
           }
+        } else if (ctxType && ctxId && activeContext?.id) {
+          // Phase D.3 (2026-05-26) — generic linked-context entry. The
+          // backend resolves the title + excerpt + href and persists
+          // `chat.linked_context` on the row. We then re-fetch the
+          // chat so the "Reading: …" chip renders from the canonical
+          // server-side payload (rather than client-side guesses
+          // about title/href).
+          try {
+            const { data: created } = await api.post("/chats", {
+              title: seedTitle || "New conversation",
+              model_id: defaultModel,
+              shielding_policy: "auto",
+              context_id: activeContext.id,
+              linked_context: { ctx_type: ctxType, ctx_id: ctxId },
+            });
+            if (cancelled) return;
+            setChats((prev) => [created, ...prev]);
+            setActiveId(created.id);
+            if (p) setInput(p);
+          } catch {
+            // Resolution failed on the server side — fall back to a
+            // bare chat so the user isn't stranded.
+            try {
+              const { data: bare } = await api.post("/chats", {
+                title: seedTitle || "New conversation",
+                model_id: defaultModel,
+                shielding_policy: "auto",
+                context_id: activeContext.id,
+              });
+              if (cancelled) return;
+              setChats((prev) => [bare, ...prev]);
+              setActiveId(bare.id);
+              if (p) setInput(p);
+            } catch { /* swallow */ }
+          }
         } else if (wantNew) {
           if (!activeContext?.id) {
             toast.error("Pick a company first to continue from a brief.");
@@ -490,6 +537,8 @@ export default function Chat() {
       next.delete("doc");
       next.delete("chat_id");
       next.delete("attach");
+      next.delete("ctx_type");
+      next.delete("ctx_id");
       setSearchParams(next, { replace: true });
     })();
     return () => { cancelled = true; };
@@ -513,6 +562,32 @@ export default function Chat() {
       });
       setChats((prev) => [data, ...prev]);
       setActiveId(data.id);
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+
+  // Phase D.3 (2026-05-26) — remove the linked source item from the
+  // active chat. Persists `linked_context: null` via PATCH so the chip
+  // doesn't reappear on resume. Subsequent turns won't inject the
+  // item's summary into the system context.
+  const onRemoveLinkedContext = async () => {
+    if (!activeId) return;
+    try {
+      const { data } = await api.patch(`/chats/${activeId}`, {
+        clear_linked_context: true,
+      });
+      setActiveChat((prev) => {
+        const merged = { ...(prev || {}), ...data };
+        if (Object.prototype.hasOwnProperty.call(merged, "linked_context")) {
+          delete merged.linked_context;
+        }
+        return merged;
+      });
+      setChats((prev) => prev.map((c) => {
+        if (c.id !== activeId) return c;
+        const merged = { ...c, ...data };
+        delete merged.linked_context;
+        return merged;
+      }));
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
@@ -1300,6 +1375,8 @@ export default function Chat() {
                 onRemoveAttachment={onRemoveAttachment}
                 thinkHarder={thinkHarder}
                 onToggleThinkHarder={() => setThinkHarder((v) => !v)}
+                linkedContext={activeChat.linked_context || null}
+                onRemoveLinkedContext={onRemoveLinkedContext}
               />
             </>
           )}
@@ -1717,7 +1794,7 @@ function renderInlineCitations(text, citations) {
   });
 }
 
-function Composer({ value, onChange, onSubmit, sending, policy, onCancel, attachments, onAttachFile, onRemoveAttachment, thinkHarder, onToggleThinkHarder }) {
+function Composer({ value, onChange, onSubmit, sending, policy, onCancel, attachments, onAttachFile, onRemoveAttachment, thinkHarder, onToggleThinkHarder, linkedContext, onRemoveLinkedContext }) {
   const ta = useRef(null);
   const fileInputRef = useRef(null);
   return (
@@ -1729,6 +1806,19 @@ function Composer({ value, onChange, onSubmit, sending, policy, onCancel, attach
        in case a deeper flex child breaks the layout contract on
        narrow viewports. */
     <div className="sticky bottom-0 z-10 border-t border-[var(--rule)] p-3 bg-white" data-testid="chat-composer">
+      {/* Phase D.3 (2026-05-26) — linked-context chip. Renders above
+          the composer when the active chat is tied to a source item
+          (document / cycle / work_studio artefact). Click the title
+          to navigate back to the source; click ✕ to remove the link
+          (persists `linked_context: null` on the chat row). Excerpt
+          is NOT shown in the chip — only the title + type — so the
+          chip stays compact next to the composer. */}
+      {linkedContext && (
+        <LinkedContextChip
+          linked={linkedContext}
+          onRemove={onRemoveLinkedContext}
+        />
+      )}
       {/* Phase B.1 — attached-file chips. Each chip shows name + size +
           sensitivity band; click X to remove. The chips travel with
           the next send and are cleared on success/cancel. */}
@@ -1897,6 +1987,78 @@ function Pass1Panel({ pass1 }) {
   );
 }
 
+
+// ─────────────────────────────────────────────────────────────────────
+// Phase D.3 (2026-05-26) — Linked context chip
+//
+// Renders above the composer when the active chat carries a
+// `linked_context: { ctx_type, ctx_id, title, href, excerpt, attached_at }`.
+// The chip is intentionally compact (one line) and matches the existing
+// attachment-chip aesthetic — so users perceive the linked item as the
+// "topic" of the conversation, not a heavy interactive surface.
+//
+// Behaviour:
+//   • Title links to `linked.href` (source surface deep-link).
+//   • "✕ Remove" button calls onRemove, which PATCHes
+//     `clear_linked_context: true` on the chat row.
+//   • When excerpt is empty (item deleted server-side OR access lost),
+//     the chip renders in a muted state with "Item no longer
+//     available". The backend already drops the prompt injection in
+//     that case — the chip is purely display.
+// ─────────────────────────────────────────────────────────────────────
+function LinkedContextChip({ linked, onRemove }) {
+  const title = linked?.title || linked?.ctx_id || "Linked item";
+  const href  = linked?.href || "#";
+  const kind  = (linked?.ctx_type || "").replace(/_/g, " ");
+  const gone  = !linked?.excerpt;
+  return (
+    <div
+      className={`mb-2 flex items-center gap-2 text-[12px] rounded-sm border px-2.5 py-1.5 ${
+        gone
+          ? "border-[var(--rule)] bg-[var(--cream-deep)]/30 text-[var(--muted)]"
+          : "border-[var(--accent)]/30 bg-[var(--cream-deep)]/50 text-[var(--ink)]"
+      }`}
+      data-testid="chat-linked-context-chip"
+      data-ctx-type={linked?.ctx_type || ""}
+      data-ctx-id={linked?.ctx_id || ""}
+    >
+      <FileText className={`w-3.5 h-3.5 ${gone ? "text-[var(--muted)]" : "text-[var(--accent)]"}`} />
+      <span className="text-[10px] uppercase tracking-wider text-[var(--muted)] font-mono">
+        Reading
+      </span>
+      {gone ? (
+        <span
+          className="truncate max-w-[420px] italic"
+          data-testid="chat-linked-context-title-unavailable"
+          title="Item no longer available"
+        >
+          {title} · item no longer available
+        </span>
+      ) : (
+        <a
+          href={href}
+          className="truncate max-w-[420px] underline-offset-2 hover:underline hover:text-[var(--accent)]"
+          data-testid="chat-linked-context-title"
+          title={title}
+        >
+          {title}
+        </a>
+      )}
+      <span className="text-[10px] text-[var(--muted)] uppercase tracking-wider">
+        · {kind}
+      </span>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="ml-auto inline-flex items-center text-[var(--muted)] hover:text-[var(--accent)]"
+        aria-label="Remove linked item"
+        data-testid="chat-linked-context-remove"
+      >
+        <X className="w-3 h-3" />
+      </button>
+    </div>
+  );
+}
 
 
 function BypassDialog({ info, onClose, onConfirm }) {

@@ -29,7 +29,7 @@ from typing import Any, Dict, List, Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from core import db, get_current_account  # noqa: E402
 from core import now as _now, iso as _iso  # noqa: E402
@@ -101,6 +101,33 @@ def _model_def(model_id: str) -> Optional[Dict[str, str]]:
 # -----------------------------------------------------------------------------
 # Schemas
 # -----------------------------------------------------------------------------
+class LinkedContextIn(BaseModel):
+    """Phase D.3 (2026-05-26) — inbound payload for a linked source
+    item. Server resolves the title + excerpt; client may supply
+    `title` as a fallback display but the server-resolved value wins.
+
+    Allowed ctx_type values:
+      - `document`               (db.documents)
+      - `cycle`                  (db.cycles)
+      - `work_studio` / `work_studio_artefact` (db.work_studio_artefacts;
+                                  `work_studio` normalises to the
+                                  canonical name)
+    """
+    model_config = ConfigDict(extra="ignore")
+    ctx_type: str = Field(min_length=1, max_length=40)
+    ctx_id:   str = Field(min_length=1, max_length=80)
+
+    @field_validator("ctx_type")
+    @classmethod
+    def _check_ctx_type(cls, v: str) -> str:
+        allowed = {"document", "cycle", "work_studio", "work_studio_artefact"}
+        if v not in allowed:
+            raise ValueError(f"ctx_type must be one of {sorted(allowed)}")
+        if v == "work_studio":
+            return "work_studio_artefact"
+        return v
+
+
 class ChatCreateIn(BaseModel):
     title: Optional[str] = Field(default=None, max_length=120)
     model_id: str = Field(default=DEFAULT_MODEL_ID)
@@ -113,6 +140,14 @@ class ChatCreateIn(BaseModel):
     # the response is returned to the client. When None, the chat
     # behaves exactly as it did pre-Phase-11 — untethered, no citations.
     context_id: Optional[str] = Field(default=None, max_length=120)
+    # Phase D.3 (2026-05-26) — linked source item. When set on chat
+    # create, the named item (document / cycle / work_studio artefact)
+    # is persisted on the chat row, surfaced as a "Reading: …" chip
+    # above the composer, and its summary is injected into the system
+    # context on EVERY turn (Shield runs over the injection just like
+    # any other prompt content). Backwards-compatible: None on legacy
+    # chats means "untethered to a source item".
+    linked_context: Optional[LinkedContextIn] = None
 
 
 class ChatPatchIn(BaseModel):
@@ -120,6 +155,16 @@ class ChatPatchIn(BaseModel):
     model_id: Optional[str] = None
     shielding_policy: Optional[ShieldingPolicy] = None
     context_id: Optional[str] = None  # set/clear grounding
+    # Phase D.3 — clear by sending {"linked_context": null}. Replacing
+    # one linked item with another isn't supported via patch: users
+    # go back through `?ctx_type=…&ctx_id=…` to start over.
+    linked_context: Optional[LinkedContextIn] = None
+    # Tri-state surface: client signals "explicit clear" via a sentinel
+    # field, because Pydantic doesn't distinguish missing-vs-null at
+    # the schema level on Optional fields. When `clear_linked_context`
+    # is True, the chat row's `linked_context` is unset regardless of
+    # whether `linked_context` itself is present.
+    clear_linked_context: Optional[bool] = None
 
 
 class MessageSendIn(BaseModel):
@@ -176,6 +221,89 @@ def _require_active_context(request: Request) -> str:
             },
         )
     return ctx
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Phase D.3 (2026-05-26) — linked-context resolver.
+#
+# A chat can be linked to a single source item (document / cycle /
+# work_studio artefact). The link is captured at create-time, lives on
+# the chat row, drives the "Reading: …" chip above the composer, and
+# injects the item's summary into the LLM prompt on EVERY turn (Shield
+# runs over the injection alongside the rest of the prompt, no bypass).
+#
+# Returns a dict in the canonical shape persisted on `chats.linked_context`:
+#     {
+#       "ctx_type": str, "ctx_id": str,
+#       "title": str,             # captured at attach time
+#       "excerpt": str,           # short content excerpt — re-fetched
+#                                 # fresh on each send, so this stays
+#                                 # as the at-attach-time snapshot
+#       "attached_at": ISO ts,
+#       "href": str,              # deep link back to the source
+#     }
+# Returns None when the referenced item doesn't exist OR the user
+# can't see it (silent miss — the chip will render in a muted
+# "Item no longer available" state and no context is injected).
+# ─────────────────────────────────────────────────────────────────────
+async def _resolve_linked_context(
+    *, ctx_type: str, ctx_id: str, context_id: str, account_id: str,
+) -> Optional[Dict[str, Any]]:
+    """Look up the linked source item against the caller's context.
+    Used at create-time (persist) and at every send (re-resolve for
+    freshness + access check)."""
+    if not ctx_type or not ctx_id:
+        return None
+    # Documents live in db.documents and are context-scoped. Access is
+    # via the membership chain on the parent context (already enforced
+    # on the calling chat route).
+    if ctx_type == "document":
+        doc = await db.documents.find_one(
+            {"id": ctx_id, "context_id": context_id},
+            {"_id": 0, "id": 1, "name": 1, "original_filename": 1,
+             "extracted_text": 1, "preview": 1},
+        )
+        if not doc:
+            return None
+        return {
+            "ctx_type": "document",
+            "ctx_id":   doc["id"],
+            "title":    doc.get("name") or doc.get("original_filename") or doc["id"],
+            "excerpt": ((doc.get("extracted_text") or "")[:8000] or doc.get("preview") or ""),
+            "href":     f"/app/workspace?doc={doc['id']}",
+        }
+    if ctx_type == "cycle":
+        cyc = await db.cycles.find_one(
+            {"id": ctx_id, "context_id": context_id},
+            {"_id": 0, "id": 1, "title": 1, "description": 1},
+        )
+        if not cyc:
+            return None
+        return {
+            "ctx_type": "cycle",
+            "ctx_id":   cyc["id"],
+            "title":    cyc.get("title") or cyc["id"],
+            "excerpt":  (cyc.get("description") or "")[:8000],
+            "href":     f"/app/cycle/{cyc['id']}",
+        }
+    if ctx_type in ("work_studio", "work_studio_artefact"):
+        art = await db.work_studio_artefacts.find_one(
+            {"id": ctx_id, "context_id": context_id},
+            {"_id": 0, "id": 1, "title": 1, "summary": 1},
+        )
+        if not art:
+            return None
+        return {
+            "ctx_type": "work_studio_artefact",
+            "ctx_id":   art["id"],
+            "title":    art.get("title") or art["id"],
+            "excerpt":  (art.get("summary") or "")[:8000],
+            "href":     f"/app/work-studio/artefact/{art['id']}",
+        }
+    # Unknown ctx_type — silently miss. The schema validator should
+    # already have rejected it; defensive return for any future
+    # caller that bypasses the schema.
+    return None
 
 
 async def _last_audit_hash(account_id: str) -> str:
@@ -395,12 +523,37 @@ async def create_chat(
         "created_at": _iso(_now()),
         "updated_at": _iso(_now()),
     }
+    # Phase D.3 (2026-05-26) — resolve the linked source item and
+    # persist it on the chat row. If the item doesn't exist OR the
+    # user can't see it, we drop linked_context silently (the chip
+    # will not render). We never error here — linking is additive.
+    if body.linked_context is not None:
+        resolved = await _resolve_linked_context(
+            ctx_type=body.linked_context.ctx_type,
+            ctx_id=body.linked_context.ctx_id,
+            context_id=effective_ctx,
+            account_id=current["id"],
+        )
+        if resolved is not None:
+            rec["linked_context"] = {
+                "ctx_type":    resolved["ctx_type"],
+                "ctx_id":      resolved["ctx_id"],
+                "title":       resolved["title"],
+                "excerpt":     resolved["excerpt"],
+                "href":        resolved["href"],
+                "attached_at": _iso(_now()),
+            }
     await db.chats.insert_one(rec)
+    # MongoDB `insert_one` mutates `rec` to add `_id`; strip before
+    # returning. The `linked_context` block (if any) flows through as
+    # part of `_sanitize`.
+    rec.pop("_id", None)
     await _append_audit(
         account_id=current["id"], chat_id=cid, action="chat.created",
         request=request,
         payload={"model_id": body.model_id, "shielding_policy": body.shielding_policy,
-                 "context_id": effective_ctx},
+                 "context_id": effective_ctx,
+                 "linked_context": rec.get("linked_context")},
     )
     return _sanitize(rec)
 
@@ -850,8 +1003,47 @@ async def patch_chat(
         ctx_val = body.context_id.strip() or None
         update["context_id"] = ctx_val
         audit_payload["context_id"] = ctx_val
-    if len(update) == 1:
+    # Phase D.3 (2026-05-26) — linked_context lifecycle on patch.
+    # `clear_linked_context: true` unsets the field entirely. A
+    # non-null `linked_context` object replaces the existing link
+    # (re-resolved against the chat's context); silent miss if the
+    # referenced item is gone.
+    unset: Dict[str, Any] = {}
+    if body.clear_linked_context is True:
+        unset["linked_context"] = ""
+        audit_payload["linked_context"] = None
+    elif body.linked_context is not None:
+        # Find the chat's context_id to re-resolve.
+        existing = await db.chats.find_one(
+            {"id": chat_id, "account_id": current["id"], "context_id": active_ctx},
+            {"_id": 0, "context_id": 1},
+        )
+        if not existing:
+            raise HTTPException(status_code=404, detail="Chat not found")
+        resolved = await _resolve_linked_context(
+            ctx_type=body.linked_context.ctx_type,
+            ctx_id=body.linked_context.ctx_id,
+            context_id=existing.get("context_id") or active_ctx,
+            account_id=current["id"],
+        )
+        if resolved is not None:
+            update["linked_context"] = {
+                "ctx_type":    resolved["ctx_type"],
+                "ctx_id":      resolved["ctx_id"],
+                "title":       resolved["title"],
+                "excerpt":     resolved["excerpt"],
+                "href":        resolved["href"],
+                "attached_at": _iso(_now()),
+            }
+            audit_payload["linked_context"] = {
+                "ctx_type": resolved["ctx_type"],
+                "ctx_id":   resolved["ctx_id"],
+            }
+    if len(update) == 1 and not unset:
         raise HTTPException(status_code=400, detail="Send at least one field.")
+    mongo_op: Dict[str, Any] = {"$set": update}
+    if unset:
+        mongo_op["$unset"] = unset
     res = await db.chats.update_one(
         {
             "id": chat_id,
@@ -859,7 +1051,7 @@ async def patch_chat(
             "context_id": active_ctx,
             "status": {"$ne": "archived"},
         },
-        {"$set": update},
+        mongo_op,
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Chat not found")
@@ -1429,6 +1621,33 @@ async def send_message(
         )
         grounding_block = _format_grounding_block(grounding_paragraphs)
 
+    # Phase D.3 (2026-05-26) — linked-context injection. Re-resolve
+    # fresh every turn so a deleted / unauthorised item silently
+    # drops out of the prompt without erroring the chat. The
+    # excerpt flows through Shield as part of `full_prompt` below —
+    # NO bypass. The chip on the frontend is rendered from the
+    # at-attach-time title + href persisted on chat.linked_context,
+    # which we DO NOT mutate here (the chip survives even if the
+    # item was deleted later — it renders in a muted "no longer
+    # available" state on the client when the excerpt is empty).
+    linked_block = ""
+    linked_ctx = chat.get("linked_context")
+    if linked_ctx and chat.get("context_id"):
+        fresh = await _resolve_linked_context(
+            ctx_type=linked_ctx.get("ctx_type") or "",
+            ctx_id=linked_ctx.get("ctx_id") or "",
+            context_id=chat["context_id"],
+            account_id=current["id"],
+        )
+        if fresh and (fresh.get("excerpt") or "").strip():
+            linked_block = (
+                "[LINKED_CONTEXT]\n"
+                f"title: {fresh['title']}\n"
+                f"type: {fresh['ctx_type']}\n\n"
+                f"{(fresh['excerpt'] or '')[:8000]}\n"
+                "[/LINKED_CONTEXT]"
+            )
+
     system_msg = (
         "You are AKKI, a calm, editorial intelligence partner for executives "
         "and non-executive directors. Tone: precise, neutral, no hype, "
@@ -1451,6 +1670,8 @@ async def send_message(
         )
 
     full_prompt_parts: List[str] = []
+    if linked_block:
+        full_prompt_parts.append(linked_block)
     if grounding_block:
         full_prompt_parts.append(grounding_block)
     if history_block:
@@ -2206,7 +2427,32 @@ async def stream_message(
         )
         grounding_block = _format_grounding_block(grounding_paragraphs)
 
+    # Phase D.3 (2026-05-26) — linked-context injection on stream path.
+    # Same contract as the sync /messages handler: re-resolve fresh
+    # every turn, silently drop if the item is gone, never bypass
+    # Shield (the block is part of `full_prompt`, which Shield then
+    # de-ids before the LLM sees it).
+    linked_block = ""
+    linked_ctx = chat.get("linked_context")
+    if linked_ctx and chat.get("context_id"):
+        fresh = await _resolve_linked_context(
+            ctx_type=linked_ctx.get("ctx_type") or "",
+            ctx_id=linked_ctx.get("ctx_id") or "",
+            context_id=chat["context_id"],
+            account_id=current["id"],
+        )
+        if fresh and (fresh.get("excerpt") or "").strip():
+            linked_block = (
+                "[LINKED_CONTEXT]\n"
+                f"title: {fresh['title']}\n"
+                f"type: {fresh['ctx_type']}\n\n"
+                f"{(fresh['excerpt'] or '')[:8000]}\n"
+                "[/LINKED_CONTEXT]"
+            )
+
     full_prompt_parts: List[str] = []
+    if linked_block:
+        full_prompt_parts.append(linked_block)
     if grounding_block:
         full_prompt_parts.append(grounding_block)
 

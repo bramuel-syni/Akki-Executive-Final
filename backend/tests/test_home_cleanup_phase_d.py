@@ -174,7 +174,7 @@ async def test_phase_d_briefing_state_endpoint_lifecycle():
     import uuid
 
     aid = f"test-d1-{uuid.uuid4().hex[:8]}"
-    email = f"d1-{uuid.uuid4().hex[:6]}@test.local"
+    email = f"d1-{uuid.uuid4().hex[:6]}@example.com"
     await db.accounts.insert_one({
         "id": aid,
         "email": email,
@@ -252,6 +252,135 @@ async def test_phase_d_briefing_state_endpoint_lifecycle():
     await db.accounts.delete_one({"id": aid})
 
 
+@pytest.mark.asyncio
+async def test_phase_d3_chat_linked_context_lifecycle():
+    """D.3 end-to-end (option b — full persistence) on the live FastAPI
+    app. Asserts:
+
+      1. POST /chats with linked_context: {ctx_type, ctx_id} persists
+         a resolved snapshot (title, excerpt, href, attached_at) on
+         the chat row.
+      2. GET /chats/{id} returns the same linked_context block.
+      3. PATCH /chats/{id} with clear_linked_context: true $unsets it.
+      4. Resolving a non-existent ctx_id silently drops linked_context
+         (no error, no chip).
+    """
+    from server import app  # noqa: F401
+    from core import db, hash_password
+    from datetime import datetime, timezone
+    import uuid
+
+    aid = f"test-d3-{uuid.uuid4().hex[:8]}"
+    email = f"d3-{uuid.uuid4().hex[:6]}@example.com"
+    cid = f"ctx-d3-{uuid.uuid4().hex[:8]}"
+    did = f"doc-d3-{uuid.uuid4().hex[:8]}"
+
+    # Seed: account + context + membership + document.
+    await db.accounts.insert_one({
+        "id": aid, "email": email,
+        "password_hash": hash_password("Pw!1234567Abc"),
+        "name": "D3 Tester",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "tier": "executive", "mfa_enrolled": False,
+        "declared_role": "executive",
+    })
+    await db.contexts.insert_one({
+        "id": cid, "name": "D3 Test Co",
+        "owner_account_id": aid, "type": "executive_personal",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    await db.memberships.insert_one({
+        "id": f"mem-{uuid.uuid4().hex[:8]}",
+        "account_id": aid, "context_id": cid,
+        "role": "executive", "status": "active",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    await db.documents.insert_one({
+        "id": did, "context_id": cid,
+        "name": "Q3 Risk Report.pdf",
+        "original_filename": "Q3 Risk Report.pdf",
+        "extracted_text": "This is a sample extracted text from the Q3 risk report. "
+                          "Key findings: regulator escalation risk on Pillar 2.",
+        "preview": "Q3 risk report preview.",
+        "status": "ready",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    transport = ASGITransport(app=app)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            # Auth
+            r = await c.post("/api/auth/login",
+                             json={"email": email, "password": "Pw!1234567Abc"})
+            assert r.status_code == 200, r.text
+            token = (r.json().get("access_token") or r.json().get("token"))
+            hdr = {"Authorization": f"Bearer {token}",
+                   "X-Active-Context": cid}
+
+            # 1. Create chat with linked_context.
+            r = await c.post("/api/chats", headers=hdr, json={
+                "title": "Risk-report deep dive",
+                "model_id": "claude-sonnet-4-5",
+                "shielding_policy": "auto",
+                "context_id": cid,
+                "linked_context": {"ctx_type": "document", "ctx_id": did},
+            })
+            assert r.status_code == 200, r.text
+            chat = r.json()
+            assert "linked_context" in chat, f"linked_context missing: {chat}"
+            lc = chat["linked_context"]
+            assert lc["ctx_type"] == "document"
+            assert lc["ctx_id"] == did
+            assert lc["title"] == "Q3 Risk Report.pdf"
+            assert "Q3 risk report" in lc["excerpt"]
+            assert lc["href"] == f"/app/workspace?doc={did}"
+            assert lc["attached_at"], "attached_at must be set"
+            chat_id = chat["id"]
+
+            # 2. GET re-reads the same payload (resume contract).
+            r = await c.get(f"/api/chats/{chat_id}", headers=hdr)
+            assert r.status_code == 200
+            assert r.json()["linked_context"]["ctx_id"] == did
+
+            # 3. PATCH clear.
+            r = await c.patch(f"/api/chats/{chat_id}", headers=hdr,
+                              json={"clear_linked_context": True})
+            assert r.status_code == 200, r.text
+            assert "linked_context" not in r.json() or r.json().get("linked_context") is None
+
+            # 4. Non-existent ctx_id → silent miss (no chip persisted,
+            #    chat still created OK).
+            r = await c.post("/api/chats", headers=hdr, json={
+                "title": "Phantom link",
+                "model_id": "claude-sonnet-4-5",
+                "shielding_policy": "auto",
+                "context_id": cid,
+                "linked_context": {"ctx_type": "document",
+                                   "ctx_id": "doc-does-not-exist-xyz"},
+            })
+            assert r.status_code == 200, r.text
+            assert "linked_context" not in r.json() or r.json().get("linked_context") is None
+
+            # 5. Invalid ctx_type → 422 (schema validator).
+            r = await c.post("/api/chats", headers=hdr, json={
+                "title": "Bad type",
+                "model_id": "claude-sonnet-4-5",
+                "shielding_policy": "auto",
+                "context_id": cid,
+                "linked_context": {"ctx_type": "garbage",
+                                   "ctx_id": "anything"},
+            })
+            assert r.status_code == 422, r.text
+    finally:
+        # Cleanup
+        await db.chats.delete_many({"account_id": aid})
+        await db.chat_audit_log.delete_many({"account_id": aid})
+        await db.documents.delete_many({"id": did})
+        await db.memberships.delete_many({"account_id": aid})
+        await db.contexts.delete_many({"id": cid})
+        await db.accounts.delete_one({"id": aid})
+
+
 # ─────────────────────────────────────────────────────────────────
 # D.3 — Chat context-passing chip injection
 # ─────────────────────────────────────────────────────────────────
@@ -298,3 +427,204 @@ def test_phase_d3_solva_context_passing_via_existing_helper():
     handoff = REPO / "frontend" / "src" / "components" / "shell" / "HandoffActions.jsx"
     handoff_src = handoff.read_text("utf-8")
     assert "takeToSolva" in handoff_src
+
+
+# ─────────────────────────────────────────────────────────────────
+# D.1 — bug guard: SolvaBriefingDeck must live in SolvaLanding's
+# parent scope (NOT inside DisambiguatorDialog). The deck references
+# briefingArea / briefingOpen / onBriefingClose which only exist in
+# the parent component; placing it inside the sub-component would
+# throw "ReferenceError: briefingArea is not defined" at render.
+# ─────────────────────────────────────────────────────────────────
+def test_phase_d_landing_deck_lives_in_parent_scope_not_disambiguator():
+    src = _read(SOLVA_LANDING)
+    parts = src.split("function DisambiguatorDialog")
+    assert len(parts) == 2, "DisambiguatorDialog function not found in expected shape"
+    parent_body, disambig_body = parts
+    assert "<SolvaBriefingDeck" in parent_body, (
+        "SolvaBriefingDeck must be rendered in SolvaLanding's parent "
+        "scope (where briefingArea / briefingOpen / onBriefingClose live)"
+    )
+    assert "<SolvaBriefingDeck" not in disambig_body, (
+        "SolvaBriefingDeck must NOT be rendered inside DisambiguatorDialog "
+        "(scope bug — parent-only state vars would be undefined there)"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────
+# D.3 — ctx_type / ctx_id canonical aliases (Solva surface)
+# ─────────────────────────────────────────────────────────────────
+def test_phase_d3_solva_app_accepts_ctx_type_ctx_id_alias():
+    """SolvaApp.jsx reads BOTH ctx_type/ctx_id (canonical) AND
+    seed_kind/seed_id (legacy alias) on mount, with both resolving
+    identically into the seed handoff plumbing."""
+    src = (REPO / "frontend" / "src" / "pages" / "SolvaApp.jsx").read_text("utf-8")
+    assert 'params.get("ctx_type")' in src
+    assert 'params.get("ctx_id")' in src
+    assert 'params.get("seed_kind")' in src
+    assert 'params.get("seed_id")' in src
+    # The URL cleanup pass deletes both query-param forms after capture.
+    assert 'next.delete("ctx_type")' in src
+    assert 'next.delete("ctx_id")' in src
+
+
+def test_phase_d3_solva_session_accepts_ctx_type_ctx_id_alias():
+    """SolvaPhaseDSession.jsx (direct URL landing) also accepts the
+    new aliases. The capture line MUST OR-fall-through both forms so
+    a single seed flows downstream."""
+    src = _read(SOLVA_SESSION)
+    assert 'searchParams.get("ctx_type") || searchParams.get("seed_kind")' in src
+    assert 'searchParams.get("ctx_id")   || searchParams.get("seed_id")' in src
+
+
+# ─────────────────────────────────────────────────────────────────
+# D.3 — Chat backend: linked_context schema + resolver + injection
+# ─────────────────────────────────────────────────────────────────
+CHAT_BE = REPO / "backend" / "routers" / "chat.py"
+
+
+def test_phase_d3_chat_backend_linked_context_schema():
+    src = CHAT_BE.read_text("utf-8")
+    assert "class LinkedContextIn(BaseModel)" in src
+    assert "ctx_type: str = Field(min_length=1" in src
+    assert "ctx_id:   str = Field(min_length=1" in src
+    # Allowlist of ctx_types.
+    assert '"document"' in src and '"cycle"' in src and '"work_studio_artefact"' in src
+    # `work_studio` shortcut normalises to the canonical name.
+    assert 'if v == "work_studio":' in src
+
+
+def test_phase_d3_chat_backend_create_persists_linked_context():
+    src = CHAT_BE.read_text("utf-8")
+    create_section = src.split("@router.post(\"/chats\")")[1].split("@router.")[0]
+    assert "linked_context" in create_section
+    assert "_resolve_linked_context" in create_section
+    assert 'rec["linked_context"]' in create_section
+
+
+def test_phase_d3_chat_backend_resolver_supports_3_ctx_types():
+    src = CHAT_BE.read_text("utf-8")
+    assert "async def _resolve_linked_context(" in src
+    resolver = src.split("async def _resolve_linked_context(")[1].split("\n\nasync def")[0]
+    # Each branch reads from the appropriate collection.
+    assert "db.documents.find_one(" in resolver
+    assert "db.cycles.find_one(" in resolver
+    assert "db.work_studio_artefacts.find_one(" in resolver
+    # Each returns a canonical envelope.
+    for needed in ('"ctx_type": "document"', '"ctx_type": "cycle"',
+                   '"ctx_type": "work_studio_artefact"',
+                   '"title":', '"excerpt":', '"href":'):
+        assert needed in resolver, f"resolver missing key '{needed}'"
+
+
+def test_phase_d3_chat_backend_clear_via_patch():
+    src = CHAT_BE.read_text("utf-8")
+    assert "clear_linked_context: Optional[bool]" in src
+    assert "body.clear_linked_context is True" in src
+    # $unset is the canonical clear path.
+    assert 'unset["linked_context"]' in src
+
+
+def test_phase_d3_chat_backend_injects_linked_context_on_every_turn():
+    """Both /messages (sync) AND /messages/stream (SSE) must rebuild
+    the linked-context prompt block from a fresh resolve on every
+    turn — so deleted items silently drop and Shield runs over the
+    re-resolved excerpt each time."""
+    src = CHAT_BE.read_text("utf-8")
+    import re as _re
+    # Count `if linked_block:` blocks that append onto full_prompt_parts.
+    matches = _re.findall(
+        r"if linked_block:\s*\n\s+full_prompt_parts\.append\(linked_block\)",
+        src,
+    )
+    assert len(matches) >= 2, (
+        f"linked_block injection must appear in BOTH send_message AND "
+        f"stream_message (found {len(matches)})"
+    )
+    # The injection block must use the [LINKED_CONTEXT]…[/LINKED_CONTEXT]
+    # markers (separate from [GROUNDING] / [ATTACHMENT]).
+    assert "[LINKED_CONTEXT]" in src
+    assert "[/LINKED_CONTEXT]" in src
+
+
+# ─────────────────────────────────────────────────────────────────
+# D.3 — Chat frontend: chip + URL handler + remove flow
+# ─────────────────────────────────────────────────────────────────
+def test_phase_d3_chat_frontend_handles_ctx_type_ctx_id_url():
+    src = _read(CHAT)
+    assert 'searchParams.get("ctx_type")' in src
+    assert 'searchParams.get("ctx_id")' in src
+    # New chat created with linked_context payload.
+    assert "linked_context: { ctx_type: ctxType, ctx_id: ctxId }" in src
+    # URL cleanup pass deletes ctx_type + ctx_id after consumption.
+    assert 'next.delete("ctx_type")' in src
+    assert 'next.delete("ctx_id")' in src
+
+
+def test_phase_d3_chat_frontend_renders_linked_context_chip():
+    src = _read(CHAT)
+    assert "function LinkedContextChip" in src
+    for tid in (
+        'data-testid="chat-linked-context-chip"',
+        'data-testid="chat-linked-context-remove"',
+        'data-testid="chat-linked-context-title"',
+        'data-testid="chat-linked-context-title-unavailable"',
+    ):
+        assert tid in src, f"missing testid: {tid}"
+    # Chip is wired into Composer's prop set.
+    assert "linkedContext={activeChat.linked_context" in src
+    assert "onRemoveLinkedContext" in src
+
+
+def test_phase_d3_chat_frontend_remove_chip_persists_clear():
+    """The ✕ Remove button calls onRemoveLinkedContext which PATCHes
+    {clear_linked_context: true} so the chip doesn't reappear on
+    thread resume."""
+    src = _read(CHAT)
+    remove_section = src.split("const onRemoveLinkedContext")[1].split("const onArchive")[0]
+    assert "clear_linked_context: true" in remove_section
+    assert "/chats/${activeId}" in remove_section
+    # Local state cleanup strips linked_context from both activeChat
+    # and the sidebar chats[] row.
+    assert "delete merged.linked_context" in remove_section
+
+
+def test_phase_d3_chat_frontend_chip_muted_state_when_item_gone():
+    """Item deleted server-side OR access lost → muted chip with
+    "Item no longer available". No error toast (per Acceptance #5)."""
+    src = _read(CHAT)
+    chip_section = src.split("function LinkedContextChip")[1].split("function ")[0]
+    assert "const gone  = !linked?.excerpt" in chip_section
+    assert "item no longer available" in chip_section
+
+
+def test_phase_d3_chat_create_audit_payload_carries_linked_context():
+    """Acceptance — privacy/audit: chat.created audit row payload
+    must include the resolved linked_context snapshot so Trust Center
+    can replay the attach event."""
+    src = CHAT_BE.read_text("utf-8")
+    create_section = src.split("@router.post(\"/chats\")")[1].split("@router.")[0]
+    # The _append_audit payload includes a linked_context key.
+    assert '"linked_context": rec.get("linked_context")' in create_section
+
+
+# ─────────────────────────────────────────────────────────────────
+# D.2 — audit writeup recorded in HOME_CLEANUP_LOG.md
+# ─────────────────────────────────────────────────────────────────
+def test_phase_d2_audit_recorded_in_home_cleanup_log():
+    log_path = REPO / "memory" / "sprints" / "HOME_CLEANUP_LOG.md"
+    log = log_path.read_text("utf-8")
+    assert "## Phase D — Solva surface" in log
+    assert "### D.2 — Solva question-generation logic (READ-ONLY audit)" in log
+    # Key audit findings must land in the writeup.
+    assert "NO LLM-generated questions" in log
+    assert "hand-written" in log
+    assert "deterministic" in log
+    assert "REFLECTION_QUESTIONS" in log
+
+
+def test_phase_d2_question_bank_docstring_asserts_no_llm_generation():
+    src = (REPO / "backend" / "services" / "solva" / "voice" / "question_bank.py").read_text("utf-8")
+    assert "NO LLM-generated questions" in src
+    assert "deterministic hash-based variant picker" in src
+

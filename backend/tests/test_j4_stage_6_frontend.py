@@ -171,18 +171,25 @@ def test_j4_f2_solva_app_captures_starter_and_forwards_to_landing():
 
 # ── J4.F3 — SolvaLanding propagates starter onto Phase D URL ─────────
 def test_j4_f3_solva_landing_forwards_starter_to_phase_d_url():
-    """`SolvaLanding.jsx::onSelectCard` MUST reference `intakeStarter`
-    and call `params.set("starter", ...)` in the SAME function body."""
+    """`SolvaLanding.jsx` MUST forward the starter onto the Phase D
+    framing URL. Phase D.1 (2026-05-26) split the card-selection flow
+    into TWO functions: `onSelectCard` (opens briefing deck) and
+    `_navigateAfterCard` (actually navigates with all params). The
+    intakeStarter forwarding moved to `_navigateAfterCard`; either
+    function body is acceptable as long as the starter still lands
+    on the framing URL."""
     src = SOLVA_LANDING.read_text(encoding="utf-8")
-    body = _function_body(src, "onSelectCard")
-    assert body, "Could not locate `onSelectCard` function body."
-    # Anchor 1 — intakeStarter referenced in the same function body.
-    assert "intakeStarter" in body, (
-        "SolvaLanding.onSelectCard no longer references intakeStarter."
+    body_select = _function_body(src, "onSelectCard") or ""
+    body_nav    = _function_body(src, "_navigateAfterCard") or ""
+    combined = body_select + "\n" + body_nav
+    assert combined.strip(), "Could not locate onSelectCard / _navigateAfterCard function bodies."
+    # Anchor 1 — intakeStarter referenced in the card-selection flow.
+    assert "intakeStarter" in combined, (
+        "SolvaLanding card-selection flow no longer references intakeStarter."
     )
     # Anchor 2 — params.set("starter", ...) called.
-    assert 'params.set("starter"' in body, (
-        "SolvaLanding.onSelectCard no longer calls "
+    assert 'params.set("starter"' in combined, (
+        "SolvaLanding card-selection flow no longer calls "
         "`params.set(\"starter\", ...)`."
     )
 

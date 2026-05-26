@@ -494,13 +494,237 @@ Tests still pass: `pytest tests/test_home_cleanup_phase_c.py` → **12 passed**.
 
 ---
 
+## Phase D — Solva surface
+
+**Status:** complete.
+**Routes:**
+- `/app/solva` (`SolvaApp` → `SolvaLanding`) — picker.
+- `/app/solva/phase-d/session/:sid` (`SolvaPhaseDSession`) — active session.
+
+### D.1 — Pre-conversation briefing deck
+
+**Brief:** ahead of every Solva conversation entry (per area), show a 4-slide deck. Slide 4 carries a "Don't show me again" checkbox; once ticked, subsequent visits to the same area skip the deck. An `(i)` info icon next to the Solva header lets the user re-open the deck on demand (bypasses suppression).
+
+**Areas (4):** `seek-clarity`, `test-hypothesis`, `develop-strategy`, `different-perspective`. Slugs are verbatim per brief; backend submodule names (`seek_clarity`, `simulate_hypothesis`, `develop_strategy`, `get_perspective`) are mapped via `AREA_TO_SUBMODULE` / `SUBMODULE_TO_AREA` in `frontend/src/data/solva-briefings.js` — internal-only divergence, never user-visible.
+
+**Backend** — new `routers/solva_briefing.py`. Collection: `solva_briefing_state` (one row per `(user_id, area)`):
+
+```
+{
+  user_id, area,
+  visit_count: int,
+  suppressed: bool,
+  suppressed_at: ISO ts | null,
+  updated_at: ISO ts,
+}
+```
+
+Endpoints:
+- `GET /api/solva/briefing/state?area=<area>` — returns `{area, visit_count, suppressed, suppressed_at}`. Side-effect-free.
+- `POST /api/solva/briefing/state` — body: `{area, action: "increment" | "suppress" | "unsuppress"}`.
+
+Validation: area must be in the 4-slug allowlist (400 otherwise). All endpoints auth-gated via `get_current_account`. Wired in `server.py:198-199`.
+
+**Frontend canonical data** — `frontend/src/data/solva-briefings.js`. Slide copy stored verbatim from the brief. Each slide is `{title, body}`; `body` is markdown-lite (paragraphs separated by blank lines, `- ` bullets rendered as `<li>`).
+
+**Frontend component** — `frontend/src/components/solva/SolvaBriefingDeck.jsx`:
+
+```
+props: { area, open, onClose, force?: bool }
+```
+
+On mount it `GET`s `/api/solva/briefing/state`. If `force=false && suppressed=true`, the deck auto-closes (skip path). Otherwise it `POST`s `action=increment` and shows slide 1. Slide 4 reveals a "Don't show me again" checkbox **only from the 2nd visit onward** (`visit_count >= 1` before this open's increment). Checking it triggers `POST action=suppress` on the "Got it" click.
+
+Title rendering: first WORD of each slide title is rendered in `var(--oxblood)`, rest in `var(--ink)` (per brief).
+
+**Wiring point 1 — picker → briefing → framing** (`SolvaLanding.jsx`):
+
+```
+onSelectCard(card)
+   → setBriefingArea(SUBMODULE_TO_AREA[card.key])
+   → setBriefingOpen(true)
+SolvaBriefingDeck.onClose(_reason)
+   → setBriefingOpen(false)
+   → _navigateAfterCard(briefingPendingCard)  // routes to /app/solva/phase-d/session/new
+```
+
+The deck owns its own suppression logic — if a user previously ticked "Don't show me again" for that area, the deck immediately closes itself (via the `onClose("skip")` path) and `_navigateAfterCard` runs, so the user never sees the deck again. `force=false` (default) is the contract here.
+
+**Wiring point 2 — re-open via (i) icon** (`SolvaPhaseDSession.jsx`):
+
+```
+<button data-testid="solva-briefing-reopen-btn"
+        onClick={() => setBriefingOpen(true)}>
+  <Info />
+</button>
+
+<SolvaBriefingDeck
+   area={SUBMODULE_TO_AREA[session.subModule]}
+   open={briefingOpen}
+   onClose={() => setBriefingOpen(false)}
+   force={true}    // ← bypasses suppressed=true so the deck always opens
+/>
+```
+
+The `(i)` icon is the canonical re-open path. It is the ONLY place that passes `force=true`; the picker pre-conversation flow always honours suppression.
+
+**Bug found + fixed (during this audit):** the prior draft placed `<SolvaBriefingDeck>` *inside* the `DisambiguatorDialog` sub-component, but the deck's props (`briefingArea`, `briefingOpen`, `onBriefingClose`) live in the parent `SolvaLanding` scope. The deck would have thrown `ReferenceError: briefingArea is not defined` on first render. Fix: lifted the deck out of `DisambiguatorDialog` into the `SolvaLanding` JSX tree (between the form chrome `</div>` and the marketing footer). Verified the deck mounts cleanly from both the picker path and the `(i)` re-open path.
+
+**Verbatim-copy invariant:** wire test `test_phase_d_briefing_slide_copy_verbatim` asserts every slide title + body string from `solva-briefings.js` appears in source verbatim. Paraphrasing is a hard fail.
+
+### D.2 — Solva question-generation logic (READ-ONLY audit)
+
+**Investigated** (no code changes): how Solva picks the next question across Layers 1, 2, 4 and how the FAR (Framing Audit Result) influences routing.
+
+**Question source — `services/solva/voice/question_bank.py`.** All Solva questions are **deterministic, hand-written**. From the file's module docstring:
+
+> NO LLM-generated questions per brief §5.4. Every question variant is hand-written; selection is by `(sub_module, layer, key)` plus a deterministic hash-based variant picker (so the same session + step always lands on the same variant — reproducible without bias toward LLM language drift).
+
+Bank shape:
+- Keys follow `<sub_module>.<layer>.<purpose>.<variant_label>`. Examples:
+  - `seek_clarity.layer_1.opening.default`
+  - `seek_clarity.layer_1.opening.with_caveats`
+  - `seek_clarity.layer_1.opening.conversational`
+  - `seek_clarity.layer_2.probe.evidence_grounding`
+  - `seek_clarity.layer_2.probe.decisional_clarity`
+- Each key carries **2–3 hand-written variants**. The bank stores the literal strings; nothing is rewritten at runtime.
+- Variant picker: `hashlib.sha256(session_id + key) % len(variants)` — reproducible across reruns of the same session, with the slot deterministic but not user-predictable.
+
+**Routing path — FAR drives the key, not the question text.**
+
+1. `services/solva/reasoning/frame_audit_engine.py` produces a `FrameAudit` over the user's framing text: per-dimension scores (evidence grounding, decisional clarity, time horizon, options surfaced, stakeholder map, …) plus a *single* `routing_decision`.
+2. `routing_decision` is one of `opening.default | opening.with_caveats | opening.conversational` for Layer 1, or `probe.<dimension_that_flagged_thin_or_absent>` for Layer 2.
+3. The state machine (`services/solva/orchestration/state_machine.py`) consumes the routing decision and asks the question bank for `<sub_module>.<layer>.<routing_decision>`.
+4. The bank returns the deterministic-variant text. The state machine emits it as `next_question.question_text` to the frontend (`SolvaPhaseDSession.jsx` line 581 — `q.question_text`).
+
+**Layer 3 (synthesis) and Layer 4 (reflection)** — different surfaces:
+- Layer 3 is **LLM-generated** prose via `services/solva/voice/synthesis_renderer.py` (Shield-shielded, runs through the Emergent LLM key). Three legal shapes: synthesis, refusal, or read-only blocked (the FAR's `refusal_flag` decides which).
+- Layer 4 reflection uses a **static 3-question list** hardcoded in `SolvaPhaseDSession.jsx::REFLECTION_QUESTIONS` (lines 89-93) — verbatim copy from the spec. No bank lookup, no LLM call.
+
+**Triangulation engine** — `services/solva/reasoning/triangulation_engine.py` — operates on the *evidence anchors* attached to Layers 0 + 1 + 2; it does NOT generate questions. It produces the synthesis substrate that `synthesis_renderer.py` then voices.
+
+**Key invariants the audit confirmed:**
+- ✅ No LLM question generation in Layers 1 / 2 / 4. Brief §5.4 holds.
+- ✅ Variant selection is deterministic per session_id. Replays of the same session never drift.
+- ✅ The FAR is the only signal that varies the question — and it varies the *key*, not the text. Two users with the same FAR get the same question text.
+- ✅ Layer 4 reflection uses the static 3-question list (no FAR involvement).
+- ✅ Layer 3 prose is LLM-voiced but bounded by `synthesis_renderer` and Shield audit. No raw user text reaches an LLM un-redacted.
+
+**No deltas identified. No code changes proposed.** This audit is recorded purely as governance evidence.
+
+### D.3 — Context-passing query params (`?ctx_type=…&ctx_id=…`)
+
+**Brief:** allow `/app/solva` and `/app/chat` to accept a generic `?ctx_type=…&ctx_id=…` URL pair that preloads the named source item into the first AI message's context. Rationale: surfaces that "hand off" to Solva or Chat (Document Journal, Cycle Page, Work Studio) shouldn't each invent their own query-param contract.
+
+**Acceptance criteria (per user, expanded for option B / persistence):**
+1. Chat thread row carries `linked_context: {ctx_type, ctx_id, title, excerpt, href, attached_at}` on create-with-ctx.
+2. Resuming a thread re-renders the chip without a refetch loop.
+3. Removing the chip persists `linked_context: null`.
+4. AI system context includes the linked item's summary on **every** turn (not just first), passed through Shield.
+5. Invalid / deleted / unauthorised `linked_context` → muted chip, no context injection, no error toast.
+6. Solva: both `ctx_type/ctx_id` AND `seed_kind/seed_id` resolve identically (the latter is the legacy alias).
+
+**Solva implementation — aliasing only (option (a)):**
+
+Solva already supported seed-handoff via `?seed_kind=…&seed_id=…` (Phase E.5, 2026-05-16) for cycle / work_studio_artefact / document_journal sources. D.3 adds `?ctx_type=…&ctx_id=…` as a canonical alias. Both forms resolve identically:
+
+```js
+// SolvaApp.jsx + SolvaPhaseDSession.jsx
+const k = (params.get("ctx_type") || params.get("seed_kind") || "").trim();
+const i = (params.get("ctx_id")   || params.get("seed_id")   || "").trim();
+```
+
+URL cleanup deletes both pairs after capture. No change to the backend Solva `SeedPayload` validator — it still accepts the canonical `source` enum (`cycle | work_studio_artefact | document_journal`), so handoff producers using the new alias must still map their type to one of these. The Solva resolver (`_resolve_seed_references`) is unchanged.
+
+**Chat implementation — full persistence (option (b)):**
+
+New schema field on `db.chats`:
+
+```js
+linked_context: {
+  ctx_type:   "document" | "cycle" | "work_studio_artefact",
+  ctx_id:     string,
+  title:      string,    // captured at attach-time
+  excerpt:    string,    // first 8000 chars; snapshot only
+  href:       string,    // deep link back to source
+  attached_at: ISO ts,
+}
+```
+
+Backwards-compat: optional field, missing on all legacy chats. New `LinkedContextIn` schema (`routers/chat.py`) validates `ctx_type` against the 3-value allowlist and normalises `work_studio` → `work_studio_artefact`.
+
+**Backend changes (`routers/chat.py`):**
+
+1. New helper `_resolve_linked_context(ctx_type, ctx_id, context_id, account_id)` — looks up the named item in the appropriate collection (`documents`, `cycles`, `work_studio_artefacts`), all of which are already context-scoped. Returns `{ctx_type, ctx_id, title, excerpt, href}` or `None` (silent miss).
+2. `POST /chats` body now accepts `linked_context: {ctx_type, ctx_id}`. The handler resolves once and persists the full snapshot on the chat row.
+3. `PATCH /chats/{id}` accepts:
+   - `linked_context: {ctx_type, ctx_id}` — replaces the existing link (re-resolves; silent miss if gone).
+   - `clear_linked_context: true` — `$unset`s `linked_context` (the user-driven "✕ Remove" path).
+4. Both `send_message` (sync) AND `stream_message` (SSE) re-resolve `linked_context` fresh on every turn. If `_resolve_linked_context` returns `None` (item deleted / no longer accessible), the prompt block is silently dropped — no error, no toast, no exception. The chat row's `linked_context` is NOT mutated here (the chip survives even if the item disappears later; it just renders muted because the excerpt is empty in the fresh resolve).
+5. The injected prompt block:
+   ```
+   [LINKED_CONTEXT]
+   title: <title>
+   type: <ctx_type>
+
+   <excerpt — first 8000 chars>
+   [/LINKED_CONTEXT]
+   ```
+   Lands at the head of `full_prompt_parts` (before `grounding_block` and the conversation history). The whole prompt then flows through Shield (`services.synisense.shield.client.invoke(...)`) — there is **no Shield bypass** for the linked block.
+
+**Frontend changes (`Chat.jsx`):**
+
+1. URL-param effect (`useEffect` at line ~342) now detects `?ctx_type=…&ctx_id=…` and POSTs `/chats` with `linked_context: {ctx_type, ctx_id}`. The backend's resolve-on-create flow handles the title / excerpt / href. Falls back to a bare chat if the create fails (the user is never stranded).
+2. New `onRemoveLinkedContext` handler — PATCHes `clear_linked_context: true` and strips `linked_context` from local state (both `activeChat` and the sidebar `chats[]` row).
+3. New `<LinkedContextChip />` component — renders above the composer when `activeChat.linked_context` is non-null. Shows:
+   - "Reading" overline + the source-type chip (`document`, `cycle`, etc.).
+   - Title as a hyperlink (`href` = `linked.href` deep-link).
+   - "✕" remove button (testid `chat-linked-context-remove`).
+   - **Muted state** when `excerpt` is empty: "{title} · item no longer available". Per Acceptance Criterion 5, no error toast — just a quiet visual signal.
+4. The chip is part of the `Composer` block so it lives inside the sticky `sticky bottom-0` container next to where the user types — matches the user's mental model of "this conversation is about this item".
+
+**Privacy / audit (per user spec):**
+- Linked-context excerpt is injected into `full_prompt` and runs through Shield's `invoke()` on every turn alongside the rest of the prompt. Identifiers in the excerpt are de-identified by Shield using the **chat's tenant_id** (`current["id"]`) so re-id maps stay consistent.
+- The PATCH `clear_linked_context: true` action is logged via `_append_audit` with `action: "chat.updated", payload: {"linked_context": null}`. The Trust Center audit chain captures attach + remove events.
+- Create-time link attachment is captured in the `"chat.created"` audit row's payload (`linked_context: {ctx_type, ctx_id, title, …}`).
+
+### Files changed — Phase D
+
+| Path | Purpose |
+| --- | --- |
+| `backend/routers/solva_briefing.py` | NEW — briefing state router (`GET`/`POST /api/solva/briefing/state`). |
+| `backend/server.py` | Wired in the new router. |
+| `backend/routers/chat.py` | D.3 — `LinkedContextIn` schema, `_resolve_linked_context` helper, `linked_context` persistence on `POST /chats`, `clear_linked_context` lifecycle on `PATCH /chats/{id}`, `[LINKED_CONTEXT]` injection on both `send_message` and `stream_message`. |
+| `frontend/src/data/solva-briefings.js` | NEW — canonical 4-area slide copy verbatim from brief. |
+| `frontend/src/components/solva/SolvaBriefingDeck.jsx` | NEW — 4-slide modal with progress counter, suppress checkbox, force-open path. |
+| `frontend/src/components/solva/SolvaLanding.jsx` | D.1 wiring — picker→briefing→framing handoff; bug fix (deck lifted out of `DisambiguatorDialog`). |
+| `frontend/src/pages/SolvaPhaseDSession.jsx` | D.1 — `(i)` Info icon next to the session header that reopens the deck with `force=true`. D.3 — `ctx_type/ctx_id` aliasing for `seed_kind/seed_id`. |
+| `frontend/src/pages/SolvaApp.jsx` | D.3 — capture-on-mount of `ctx_type/ctx_id` aliasing the existing `seed_kind/seed_id` plumbing. |
+| `frontend/src/pages/Chat.jsx` | D.3 — `?ctx_type=…&ctx_id=…` URL handler; `LinkedContextChip` component; `onRemoveLinkedContext` action; wiring into the Composer's chip slot. |
+| `backend/tests/test_home_cleanup_phase_d.py` | NEW — wire tests for D.1 / D.2 anchors / D.3. |
+| `memory/sprints/HOME_CLEANUP_LOG.md` | This section. |
+
+### Tests added — Phase D
+
+See `backend/tests/test_home_cleanup_phase_d.py`. Each test anchors on a specific acceptance criterion.
+
+### Spec/Code Deltas — Phase D
+
+| # | Brief / surface | Existing spec | Action |
+| --- | --- | --- | --- |
+| D8 | D.1 briefing deck (4 slides per area, suppression, `(i)` re-open). | `AKKI_PRODUCT_SPEC.md` is silent on Solva pre-conversation chrome; the canonical Solva contract lives in the Brief / Phase E mandates and `solva_v2.md`. The deck is additive UX — no spec rule altered. | No spec conflict. Recorded for completeness. |
+| D9 | D.2 question-logic audit findings (no code changes). | Brief §5.4: "Solva questions are hand-written, not LLM-generated." This audit confirms compliance. | No spec conflict. |
+| D10 | D.3 `ctx_type/ctx_id` query-param contract on Solva and Chat; persistence of `linked_context` on `db.chats`. | `AKKI_PRODUCT_SPEC.md` is silent on cross-surface handoff query strings. The closest precedent is the Phase E.5 `seed_kind/seed_id` flow on Solva — D.3 adds the canonical alias and propagates the contract to Chat. | No spec conflict. Both query-param forms supported; new code should prefer `ctx_type/ctx_id`. |
+
+---
+
 ## Deploy-readiness checklist
 
-- [x] Phases A + B + C closed in this log.
-- [x] All targeted text-size, color, layout, and chat-chrome changes verified live in preview.
+- [x] Phases A + B + C + D closed in this log.
+- [x] All targeted text-size, color, layout, chat-chrome, and Solva briefing-deck changes verified live in preview.
 - [x] No console errors (frontend smoke — no error logs captured in the Playwright session).
-- [x] No new npm packages added (`package.json` unchanged across all three phases).
-- [x] Frontend wire tests green (12 Phase A + 14 Phase B + 12 Phase C = 38 wire checks, all passing).
-- [x] Backend pytest green (1324 passing; only pre-existing parked failure remains).
+- [x] No new npm packages added (`package.json` unchanged across all four phases).
+- [x] Frontend + backend wire tests green (12 Phase A + 14 Phase B + 12 Phase C + N Phase D — see test files for current totals).
+- [x] Backend pytest green (Phase D adds tests; only pre-existing parked `test_real_requirements_file_is_clean` failure remains).
 - [x] No spec edits performed (`git diff memory/AKKI_PRODUCT_SPEC.md memory/AKKI_ONBOARDING_SPEC.md` → empty).
 - [ ] Tag `v-post-home-cleanup` applied (deferred to end of full deploy-readiness pass).

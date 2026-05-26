@@ -22,9 +22,16 @@ export default function SolvaApp() {
   const [params, setParams] = useSearchParams();
   // Capture once on mount so we don't keep re-reading after the URL
   // is cleaned. The seed flows through state, not URL.
+  //
+  // Phase D.3 (2026-05-26) — accept `?ctx_type=...&ctx_id=...` as a
+  // canonical alias for the legacy `?seed_kind=...&seed_id=...`. Both
+  // forms resolve identically; new docs/code should prefer
+  // ctx_type/ctx_id (matches the Chat surface + the Phase D brief).
+  // seed_kind/seed_id stays as the deprecated alias for backwards
+  // compatibility with existing HandoffActions deep links.
   const initialSeed = useMemo(() => {
-    const k = (params.get("seed_kind") || "").trim();
-    const i = (params.get("seed_id") || "").trim();
+    const k = (params.get("ctx_type") || params.get("seed_kind") || "").trim();
+    const i = (params.get("ctx_id")   || params.get("seed_id")   || "").trim();
     return k && i ? { kind: k, id: i } : null;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -47,6 +54,8 @@ export default function SolvaApp() {
       const next = new URLSearchParams(params);
       next.delete("seed_kind");
       next.delete("seed_id");
+      next.delete("ctx_type");
+      next.delete("ctx_id");
       next.delete("starter");
       setParams(next, { replace: true });
     }

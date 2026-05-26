@@ -612,6 +612,19 @@ export default function SolvaLanding({ variant = "auth", intakeSeed = null, inta
         )}
       </div>
 
+      {/* Phase D.1 (2026-05-26) — pre-conversation briefing deck.
+          Lives in the SolvaLanding scope (not inside DisambiguatorDialog)
+          so it can access briefingArea / briefingOpen / onBriefingClose.
+          Suppression logic owned by the deck itself; we pass `force=false`
+          (default) — only the (i) icon on the session page forces. */}
+      {briefingArea && (
+        <SolvaBriefingDeck
+          area={briefingArea}
+          open={briefingOpen}
+          onClose={onBriefingClose}
+        />
+      )}
+
       {/* Brief §7.6 responsive — title 32px on mobile.
           Phase G — solva-picker-grid renders 2×2 on desktop/tablet,
           collapses to 1-column on mobile (≤640px). */}
@@ -789,14 +802,6 @@ function DisambiguatorDialog({ onPick, onClose }) {
           </button>
         </div>
       </div>
-      {/* Phase D.1 (2026-05-26) — pre-conversation briefing deck. */}
-      {briefingArea && (
-        <SolvaBriefingDeck
-          area={briefingArea}
-          open={briefingOpen}
-          onClose={onBriefingClose}
-        />
-      )}
     </div>
   );
 }
