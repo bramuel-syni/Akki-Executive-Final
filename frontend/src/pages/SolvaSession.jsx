@@ -68,8 +68,13 @@ export default function SolvaSession() {
   // Wave 1.1 (UAT pack 2026-05-10) — intake_seed forwarded by the
   // SolvaApp picker via URL params. Captured once on mount; sent
   // with the framing POST when the user submits.
-  const seedKindQuery = (searchParams.get("seed_kind") || "").trim();
-  const seedIdQuery = (searchParams.get("seed_id") || "").trim();
+  //
+  // Phase D.3 post-test fix (2026-05-26) — accept `?ctx_type=…&ctx_id=…`
+  // as canonical alias for the legacy `?seed_kind=…&seed_id=…` form.
+  // Every new handoff CTA emits the canonical pair; old bookmarks
+  // with the legacy form still resolve identically.
+  const seedKindQuery = (searchParams.get("ctx_type") || searchParams.get("seed_kind") || "").trim();
+  const seedIdQuery   = (searchParams.get("ctx_id")   || searchParams.get("seed_id")   || "").trim();
   const intakeSeed = useMemo(
     () => (seedKindQuery && seedIdQuery ? { kind: seedKindQuery, id: seedIdQuery } : null),
     [seedKindQuery, seedIdQuery],

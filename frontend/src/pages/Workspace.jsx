@@ -174,7 +174,7 @@ function JournalDrawer({ doc, loading, onClose, onOpenStructuralDetail, contextI
                   Open full reader <ArrowRight className="w-3 h-3" />
                 </Link>
                 <Link
-                  to={`/app/chat?doc=${doc.id}`}
+                  to={`/app/chat?ctx_type=document&ctx_id=${doc.id}`}
                   className="text-[12.5px] px-3 py-1.5 border border-[var(--rule)] rounded-sm text-[var(--ink)] hover:border-[var(--accent)] no-underline inline-flex items-center gap-1"
                   data-testid="journal-drawer-continue-chat"
                 >

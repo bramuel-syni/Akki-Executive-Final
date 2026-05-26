@@ -61,8 +61,12 @@ function PrePhase({ meeting, refresh }) {
   };
 
   const askChatAboutPaper = (paper) => {
-    // Deep-link into existing chat with the document attached
-    navigate(`/app/chat?new=1&doc_id=${paper.id}&context_id=${meeting.context_id}`);
+    // Deep-link into a chat tethered to the document.
+    // Phase D.3 post-test fix (2026-05-26) — emit canonical
+    // `?ctx_type=document&ctx_id=…` so the chat persists a
+    // linked_context row + renders the "Reading: <title>" chip,
+    // not the legacy attachment-style `?doc_id=…` path.
+    navigate(`/app/chat?new=1&ctx_type=document&ctx_id=${encodeURIComponent(paper.id)}&context_id=${encodeURIComponent(meeting.context_id)}`);
   };
   const takeToSolvaPaper = (paper) => {
     // Phase F.2.A — unified journey. Lands on the framing surface

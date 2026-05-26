@@ -3,10 +3,14 @@
  *
  * One reusable button row that mounts inside any artefact detail view
  * (briefing detail, deck detail, signal detail, document detail) and
- * gives the user three escape hatches:
+ * gives the user four escape hatches:
  *
- *   - Take into Solva    → /app/solva?seed_kind=&seed_id=
+ *   - Ask in Chat        → /app/chat?ctx_type=document&ctx_id=
+ *                          (document only; persists chat.linked_context)
+ *   - Take into Solva    → /app/solva/session/new?ctx_type=&ctx_id=
+ *                          (via takeToSolva helper)
  *   - Send to Work Studio→ /app/work-studio?seed_kind=&seed_id=
+ *                          (legacy params; Phase E rework TBD)
  *   - Add to Cycle       → POST /api/contexts/{cid}/cycle/questions and navigate
  *
  * The component renders the data-solva-seed attribute on its host span
@@ -43,9 +47,17 @@ export default function HandoffActions({ kind, id, contextId, title, className =
   // Workstream B.6 (2026-05-10) — Ask in Chat handoff. Only meaningful
   // when the seed is a `document`; the chat surface needs a doc id to
   // pre-attach for grounded conversation.
+  //
+  // Phase D.3 post-test fix (2026-05-26) — emit the canonical
+  // `?ctx_type=document&ctx_id=…` URL pair (NOT the legacy `?doc=…`
+  // form). The new URL makes the chat thread persist a
+  // `linked_context` row + render the "Reading: <title>" chip above
+  // the composer. The legacy `?doc=…` form still works on the Chat
+  // receiver for backwards compat, but no NEW handoff button should
+  // emit it. See HOME_CLEANUP_LOG.md → "Phase D — post-test fixes".
   const onAskInChat = useCallback(() => {
     if (kind !== "document" || !id) return;
-    navigate(`/app/chat?doc=${encodeURIComponent(id)}`);
+    navigate(`/app/chat?ctx_type=document&ctx_id=${encodeURIComponent(id)}`);
     toast.success("Opened a chat tethered to this document.");
   }, [kind, id, navigate]);
 

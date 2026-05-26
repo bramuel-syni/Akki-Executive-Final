@@ -2,8 +2,8 @@
  * takeToSolva.js — Phase F.2.A unified "Take to Solva" journey.
  *
  * Every "Take to Solva" CTA in the codebase MUST converge on this
- * helper. It does one thing: navigates to /app/solva/session/new
- * with seed_kind + seed_id (and optional submodule) on the URL.
+ * helper. It navigates to /app/solva/session/new with the canonical
+ * `ctx_type` + `ctx_id` query-param pair (and optional submodule).
  *
  * The Solva session-new page (pages/SolvaSession.jsx) reads those
  * params on mount, hits GET /api/solva/v2/seed?kind=...&id=..., and
@@ -20,6 +20,12 @@
  *
  * Hard rule: NEVER use `?doc_id=...` deep-link directly from a
  * caller. ALWAYS go through this helper.
+ *
+ * Phase D.3 post-test fix (2026-05-26) — emit `?ctx_type=…&ctx_id=…`
+ * canonical pair. SolvaSession + SolvaApp + SolvaPhaseDSession all
+ * accept this pair as an alias for the legacy `?seed_kind=…&seed_id=…`
+ * form; the alias keeps URL bookmarks from earlier builds working
+ * but every NEW handoff CTA must emit the canonical pair.
  */
 
 /**
@@ -37,7 +43,7 @@ export function takeToSolva({ navigate, kind, id, submodule, persona } = {}) {
   if (!kind || !id) {
     throw new Error(`takeToSolva: kind and id are required (got kind=${kind}, id=${id})`);
   }
-  const params = new URLSearchParams({ seed_kind: String(kind), seed_id: String(id) });
+  const params = new URLSearchParams({ ctx_type: String(kind), ctx_id: String(id) });
   if (submodule) params.set("submodule", String(submodule));
   if (persona) params.set("persona", String(persona));
   navigate(`/app/solva/session/new?${params.toString()}`);
@@ -50,7 +56,7 @@ export function takeToSolva({ navigate, kind, id, submodule, persona } = {}) {
  */
 export function takeToSolvaPath({ kind, id, submodule, persona } = {}) {
   if (!kind || !id) return "/app/solva/session/new";
-  const params = new URLSearchParams({ seed_kind: String(kind), seed_id: String(id) });
+  const params = new URLSearchParams({ ctx_type: String(kind), ctx_id: String(id) });
   if (submodule) params.set("submodule", String(submodule));
   if (persona) params.set("persona", String(persona));
   return `/app/solva/session/new?${params.toString()}`;

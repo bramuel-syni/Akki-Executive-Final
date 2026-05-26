@@ -50,7 +50,10 @@ export default function DocumentSummaryCard({ contextId, docId }) {
 
   const continueInChat = () => {
     if (!docId) return;
-    navigate(`/app/chat?doc=${encodeURIComponent(docId)}`);
+    // Phase D.3 post-test fix (2026-05-26) — emit canonical
+    // `?ctx_type=document&ctx_id=…` pair so the new chat persists a
+    // linked_context row and renders the "Reading: <title>" chip.
+    navigate(`/app/chat?ctx_type=document&ctx_id=${encodeURIComponent(docId)}`);
   };
 
   if (!docId) {

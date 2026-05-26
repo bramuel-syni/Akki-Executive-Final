@@ -628,3 +628,244 @@ def test_phase_d2_question_bank_docstring_asserts_no_llm_generation():
     assert "NO LLM-generated questions" in src
     assert "deterministic hash-based variant picker" in src
 
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Phase D — Post-test fixes (2026-05-26)
+#
+# Tester verified the canonical /app/chat?ctx_type=document&ctx_id=…
+# URL works end-to-end, but the actual handoff buttons across the
+# codebase were still emitting the LEGACY ?doc= / ?doc_id= / ?seed_kind=
+# URL params — so the user's reported bug ("clicking Ask in Chat from
+# a document detail page does NOT load the document") was still live.
+#
+# These tests assert the actual URL each handoff button generates —
+# NOT the className or the JSX structure (Phase C tests learned this
+# the hard way). Wire tests must check what the user's browser sees.
+# ─────────────────────────────────────────────────────────────────────
+
+def test_phase_d_handoff_ask_in_chat_emits_ctx_type_ctx_id():
+    """HandoffActions.jsx::onAskInChat must navigate to
+    `/app/chat?ctx_type=document&ctx_id=…` (canonical) NOT to
+    `/app/chat?doc=…` (legacy)."""
+    src = (REPO / "frontend" / "src" / "components" / "shell" / "HandoffActions.jsx").read_text("utf-8")
+    # Locate the onAskInChat callback body.
+    cb = src.split("const onAskInChat = useCallback(")[1].split("}, [")[0]
+    # Strip JS line + block comments so commit-notes mentioning the
+    # legacy URL don't trip the matcher.
+    code_lines = [ln for ln in cb.splitlines()
+                  if not ln.lstrip().startswith("//")
+                  and not ln.lstrip().startswith("*")]
+    code_only = "\n".join(code_lines)
+    # MUST emit the canonical pair.
+    assert "ctx_type=document&ctx_id=" in code_only, (
+        "onAskInChat must navigate to /app/chat?ctx_type=document&ctx_id=… "
+        "(canonical Phase D.3 contract)"
+    )
+    # MUST NOT emit the legacy form anywhere in this callback's code.
+    assert "?doc=" not in code_only, (
+        "onAskInChat must NOT emit the legacy ?doc=… URL anymore"
+    )
+
+
+def test_phase_d_take_to_solva_helper_emits_ctx_type_ctx_id():
+    """lib/takeToSolva.js must emit `?ctx_type=…&ctx_id=…` (canonical)
+    in the URL — NOT `?seed_kind=…&seed_id=…` (legacy)."""
+    src = (REPO / "frontend" / "src" / "lib" / "takeToSolva.js").read_text("utf-8")
+    # Locate the URLSearchParams construction inside takeToSolva().
+    assert 'new URLSearchParams({ ctx_type: String(kind), ctx_id: String(id) })' in src, (
+        "takeToSolva must build params with canonical {ctx_type, ctx_id}"
+    )
+    # Same check for the sync builder.
+    assert src.count('new URLSearchParams({ ctx_type: String(kind), ctx_id: String(id) })') >= 2, (
+        "Both takeToSolva and takeToSolvaPath must emit canonical params"
+    )
+    # The legacy form must NOT appear in any URL-building line. (Doc
+    # comments referring to the legacy alias are fine — we strip those.)
+    code_lines = [ln for ln in src.splitlines()
+                  if not ln.lstrip().startswith("*")
+                  and not ln.lstrip().startswith("//")]
+    code_only = "\n".join(code_lines)
+    assert "seed_kind:" not in code_only, (
+        "takeToSolva must NOT emit ?seed_kind= in any URL-building code"
+    )
+    assert "seed_id:" not in code_only, (
+        "takeToSolva must NOT emit ?seed_id= in any URL-building code"
+    )
+
+
+def test_phase_d_workspace_ask_in_chat_link_emits_ctx_type_ctx_id():
+    """Workspace.jsx journal drawer 'Ask in Chat' link must emit
+    canonical params."""
+    src = (REPO / "frontend" / "src" / "pages" / "Workspace.jsx").read_text("utf-8")
+    # Locate the journal-drawer-continue-chat Link block.
+    assert 'data-testid="journal-drawer-continue-chat"' in src
+    # MUST emit canonical form.
+    assert "/app/chat?ctx_type=document&ctx_id=" in src, (
+        "Workspace.jsx 'Ask in Chat' link must emit ctx_type/ctx_id"
+    )
+    # MUST NOT emit legacy form in the same Link.
+    # We isolate the Link block and check it.
+    drawer_block = src.split('data-testid="journal-drawer-continue-chat"')[0]
+    # Get the 4 lines preceding the testid (the <Link to=...> declaration).
+    preceding = "\n".join(drawer_block.rsplit("\n", 5)[-5:])
+    assert "to={`/app/chat?doc=" not in preceding, (
+        "Workspace.jsx 'Ask in Chat' Link no longer emits legacy ?doc="
+    )
+
+
+def test_phase_d_document_summary_card_emits_ctx_type_ctx_id():
+    """DocumentSummaryCard.jsx::continueInChat must emit canonical
+    params, not the legacy ?doc= form."""
+    src = (REPO / "frontend" / "src" / "components" / "documents" / "DocumentSummaryCard.jsx").read_text("utf-8")
+    fn = src.split("const continueInChat")[1].split("};")[0]
+    # Strip line comments.
+    code_lines = [ln for ln in fn.splitlines() if not ln.lstrip().startswith("//")]
+    code_only = "\n".join(code_lines)
+    assert "ctx_type=document&ctx_id=" in code_only
+    assert "?doc=" not in code_only, (
+        "DocumentSummaryCard.continueInChat must NOT emit ?doc="
+    )
+
+
+def test_phase_d_ned_meeting_ask_chat_emits_ctx_type_ctx_id():
+    """NedMeeting.jsx::askChatAboutPaper must emit canonical params,
+    not the legacy ?doc_id= form."""
+    src = (REPO / "frontend" / "src" / "pages" / "ned" / "NedMeeting.jsx").read_text("utf-8")
+    fn = src.split("const askChatAboutPaper")[1].split("};")[0]
+    # Strip JS line comments so the test doesn't get tripped up by
+    # commit-notes that mention the legacy URL form.
+    code_lines = [ln for ln in fn.splitlines() if not ln.lstrip().startswith("//")]
+    code_only = "\n".join(code_lines)
+    assert "ctx_type=document&ctx_id=" in code_only
+    assert "doc_id=" not in code_only, (
+        "NedMeeting.askChatAboutPaper must NOT emit ?doc_id="
+    )
+
+
+def test_phase_d_solva_session_accepts_ctx_type_ctx_id_alias():
+    """SolvaSession.jsx must accept ctx_type/ctx_id as a canonical
+    alias for the legacy seed_kind/seed_id pair. The takeToSolva
+    helper now emits the canonical form."""
+    src = (REPO / "frontend" / "src" / "pages" / "SolvaSession.jsx").read_text("utf-8")
+    # Both query-param forms must be read on mount.
+    assert 'searchParams.get("ctx_type")' in src
+    assert 'searchParams.get("ctx_id")' in src
+    assert 'searchParams.get("seed_kind")' in src  # alias retained
+    assert 'searchParams.get("seed_id")' in src   # alias retained
+
+
+def test_phase_d_no_legacy_chat_doc_url_in_active_code():
+    """Sweep — no production frontend file emits `/app/chat?doc=` or
+    `/app/chat?doc_id=` anymore. The Chat receiver still SUPPORTS those
+    forms for backwards compat, but no NEW handoff code should emit
+    them. This is the canonical-form invariant."""
+    import os
+    fe = REPO / "frontend" / "src"
+    offenders = []
+    for root, _, files in os.walk(fe):
+        for f in files:
+            if not (f.endswith(".jsx") or f.endswith(".js")):
+                continue
+            # Test files + e2e fixtures may reference legacy URLs as
+            # part of regression coverage — exclude them.
+            if "__tests__" in root or f.startswith("test_"):
+                continue
+            path = Path(root) / f
+            txt = path.read_text(encoding="utf-8", errors="ignore")
+            # Strip line-comments + block-comments so we don't catch
+            # legacy URLs documented in JSDoc / inline comments.
+            cleaned_lines = []
+            for ln in txt.splitlines():
+                stripped = ln.lstrip()
+                if stripped.startswith("//") or stripped.startswith("*"):
+                    continue
+                cleaned_lines.append(ln)
+            cleaned = "\n".join(cleaned_lines)
+            if "/app/chat?doc=" in cleaned or "/app/chat?doc_id=" in cleaned:
+                offenders.append(str(path.relative_to(REPO)))
+            # Also check inline `?doc=` next to /app/chat patterns.
+            if "navigate(`/app/chat?doc=" in cleaned:
+                offenders.append(str(path.relative_to(REPO)))
+    assert not offenders, (
+        f"Legacy /app/chat?doc= URLs still present in: {offenders}\n"
+        f"Phase D.3 post-test fix requires canonical "
+        f"/app/chat?ctx_type=document&ctx_id=… across all surfaces."
+    )
+
+
+def test_phase_d_no_legacy_solva_seed_url_emitted_in_active_code():
+    """Sweep — no production frontend file emits `?seed_kind=` /
+    `?seed_id=` for Solva navigations anymore. takeToSolva is the
+    sole helper and it now emits canonical params. Work-studio
+    handoffs are excluded (Phase E still owns that surface)."""
+    import os
+    fe = REPO / "frontend" / "src"
+    offenders = []
+    for root, _, files in os.walk(fe):
+        for f in files:
+            if not (f.endswith(".jsx") or f.endswith(".js")):
+                continue
+            if "__tests__" in root or f.startswith("test_"):
+                continue
+            path = Path(root) / f
+            rel = str(path.relative_to(REPO))
+            txt = path.read_text(encoding="utf-8", errors="ignore")
+            # Strip comments.
+            cleaned_lines = []
+            for ln in txt.splitlines():
+                stripped = ln.lstrip()
+                if stripped.startswith("//") or stripped.startswith("*"):
+                    continue
+                cleaned_lines.append(ln)
+            cleaned = "\n".join(cleaned_lines)
+            # Solva navigations only.
+            for marker in (
+                "/app/solva?seed_kind=",
+                "/app/solva/session/new?seed_kind=",
+                "navigate(`/app/solva?seed_kind=",
+            ):
+                if marker in cleaned:
+                    offenders.append(f"{rel} ({marker})")
+            # The takeToSolva helper itself must not emit the legacy
+            # URL pattern (we already check this in a separate test,
+            # but it's worth catching here to make the sweep complete).
+            if rel.endswith("takeToSolva.js") and "seed_kind: String(kind)" in cleaned:
+                offenders.append(f"{rel} (seed_kind in URLSearchParams)")
+    assert not offenders, (
+        f"Legacy Solva seed_kind/seed_id URLs still emitted in: {offenders}"
+    )
+
+
+def test_phase_d_handoff_actions_doc_describes_canonical_url():
+    """HandoffActions.jsx header docstring must reference the
+    canonical `?ctx_type=…&ctx_id=…` URL so future devs maintaining
+    the file know the contract."""
+    src = (REPO / "frontend" / "src" / "components" / "shell" / "HandoffActions.jsx").read_text("utf-8")
+    header = src.split("export default")[0]
+    assert "ctx_type=document&ctx_id=" in header, (
+        "HandoffActions.jsx header docstring must reference the canonical "
+        "?ctx_type=document&ctx_id=… URL contract"
+    )
+
+
+def test_phase_d_post_test_fixes_logged_in_home_cleanup_log():
+    """HOME_CLEANUP_LOG.md must contain the 'Phase D — post-test fixes'
+    subsection listing every surface updated + the before/after URL
+    pattern."""
+    log = (REPO / "memory" / "sprints" / "HOME_CLEANUP_LOG.md").read_text("utf-8")
+    assert "Phase D — post-test fixes" in log
+    # Each updated surface must be enumerated.
+    for surface in (
+        "HandoffActions.jsx",
+        "takeToSolva.js",
+        "Workspace.jsx",
+        "DocumentSummaryCard.jsx",
+        "NedMeeting.jsx",
+        "SolvaSession.jsx",
+    ):
+        assert surface in log, (
+            f"Phase D post-test fix log must enumerate '{surface}'"
+        )
+    # The before/after URL contract must be documented.
+    assert "?doc=" in log and "ctx_type=document&ctx_id=" in log

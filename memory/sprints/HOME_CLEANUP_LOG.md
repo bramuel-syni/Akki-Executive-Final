@@ -716,6 +716,69 @@ See `backend/tests/test_home_cleanup_phase_d.py`. Each test anchors on a specifi
 | D9 | D.2 question-logic audit findings (no code changes). | Brief §5.4: "Solva questions are hand-written, not LLM-generated." This audit confirms compliance. | No spec conflict. |
 | D10 | D.3 `ctx_type/ctx_id` query-param contract on Solva and Chat; persistence of `linked_context` on `db.chats`. | `AKKI_PRODUCT_SPEC.md` is silent on cross-surface handoff query strings. The closest precedent is the Phase E.5 `seed_kind/seed_id` flow on Solva — D.3 adds the canonical alias and propagates the contract to Chat. | No spec conflict. Both query-param forms supported; new code should prefer `ctx_type/ctx_id`. |
 
+### Phase D — post-test fixes (2026-05-26)
+
+After the initial Phase D close, the verification pass found a real bug: the **canonical URL** `/app/chat?ctx_type=document&ctx_id=<id>` worked end-to-end (chip rendered, persisted, removed correctly), **but no actual handoff button in the product emitted it**. Every "Ask in Chat" / "Take into Solva" button still emitted the legacy `?doc=` / `?doc_id=` / `?seed_kind=` URL params, so the user's reported bug ("clicking the Solva/Chat button from a document detail page does NOT load the document") was still live for the actual click path.
+
+This subsection enumerates the sweep that closed the gap.
+
+**Lesson learned (same as Phase C):** wire tests must assert on the **actual generated URL**, not on JSX className / structure. The original Phase D tests anchored on the `linked_context` plumbing being correct (true) but never verified that any production button emits the canonical URL (it didn't).
+
+**Surfaces updated — Chat handoffs:**
+
+| Surface | Before | After |
+| --- | --- | --- |
+| `components/shell/HandoffActions.jsx::onAskInChat` | `/app/chat?doc=${id}` | `/app/chat?ctx_type=document&ctx_id=${id}` |
+| `components/documents/DocumentSummaryCard.jsx::continueInChat` | `/app/chat?doc=${docId}` | `/app/chat?ctx_type=document&ctx_id=${docId}` |
+| `pages/Workspace.jsx` (journal drawer Ask-in-Chat link) | `/app/chat?doc=${doc.id}` | `/app/chat?ctx_type=document&ctx_id=${doc.id}` |
+| `pages/ned/NedMeeting.jsx::askChatAboutPaper` | `/app/chat?new=1&doc_id=${paper.id}&context_id=…` | `/app/chat?new=1&ctx_type=document&ctx_id=${paper.id}&context_id=…` |
+
+**Surfaces updated — Solva handoffs:**
+
+| Surface | Before | After |
+| --- | --- | --- |
+| `lib/takeToSolva.js::takeToSolva()` | emits `?seed_kind=…&seed_id=…` | emits `?ctx_type=…&ctx_id=…` |
+| `lib/takeToSolva.js::takeToSolvaPath()` | emits `?seed_kind=…&seed_id=…` | emits `?ctx_type=…&ctx_id=…` |
+| `pages/SolvaSession.jsx` (consumer of the above) | only read `seed_kind/seed_id` | now reads `ctx_type/ctx_id` first, falls back to `seed_kind/seed_id` (legacy alias) |
+
+**Solva-handoff propagation — all call sites inherit the fix:**
+- `components/shell/HandoffActions.jsx::onSolva` — calls `takeToSolva({...})`
+- `pages/Pulse.jsx` (signal Take-to-Solva) — calls `takeToSolva({...})`
+- `pages/Cycle.jsx` (cycle contribution Take-to-Solva) — calls `takeToSolva({...})`
+- `pages/ned/NedMeeting.jsx::takeToSolvaPaper` — calls `takeToSolva({...})`
+- `components/solva/artefact/SolvaArtefact.jsx` (Use as input) — calls `takeToSolva({...})`
+- `hooks/useKeyboardShortcuts.js` (⌘-J shortcut) — calls `takeToSolva({...})`
+
+**Surfaces explicitly NOT touched** (per user instruction):
+- `HandoffActions.jsx::onWorkStudio` — still emits `?seed_kind=…&seed_id=…` because Phase E (Work Studio surface rework) is still being scoped.
+- Chat `?chat_id=…` / `?attach=…` URLs (resume + attach flows, e.g., `pages/Cycle.jsx::Continue Chat`, `components/studio/ExportModal.jsx::onContinueChat`, `components/studio/EnhanceModal.jsx`) — these are chat-thread-internal params (resume an existing thread / attach a file), NOT cross-surface item linking, so they are correct as-is.
+
+**Sweep methodology:**
+```bash
+grep -rn '/app/chat\?doc=\|/app/chat\?doc_id=' frontend/src/ --include='*.jsx' --include='*.js'
+grep -rn 'seed_kind=\|seed_id=' frontend/src/ --include='*.jsx' --include='*.js'
+```
+Both grep passes verified clean post-fix (only doc comments / legacy-alias references remain).
+
+**Wire tests added — `test_home_cleanup_phase_d.py`:**
+
+| Test | Asserts |
+| --- | --- |
+| `test_phase_d_handoff_ask_in_chat_emits_ctx_type_ctx_id` | HandoffActions onAskInChat emits canonical pair, NOT `?doc=`. |
+| `test_phase_d_take_to_solva_helper_emits_ctx_type_ctx_id` | takeToSolva + takeToSolvaPath build URLs with `{ctx_type, ctx_id}`, no `seed_kind:` / `seed_id:` in URL-building code. |
+| `test_phase_d_workspace_ask_in_chat_link_emits_ctx_type_ctx_id` | Workspace journal-drawer Link emits canonical pair. |
+| `test_phase_d_document_summary_card_emits_ctx_type_ctx_id` | DocumentSummaryCard.continueInChat emits canonical pair. |
+| `test_phase_d_ned_meeting_ask_chat_emits_ctx_type_ctx_id` | NedMeeting.askChatAboutPaper emits canonical pair, no `?doc_id=`. |
+| `test_phase_d_solva_session_accepts_ctx_type_ctx_id_alias` | SolvaSession.jsx reads both pairs (alias retained). |
+| `test_phase_d_no_legacy_chat_doc_url_in_active_code` | Codebase-wide sweep — no `/app/chat?doc=` / `/app/chat?doc_id=` survives in production code (comments/docstrings/test fixtures excluded). |
+| `test_phase_d_no_legacy_solva_seed_url_emitted_in_active_code` | Codebase-wide sweep — no Solva-handoff code emits `?seed_kind=` / `?seed_id=` (Work Studio excluded per Phase E carve-out). |
+| `test_phase_d_handoff_actions_doc_describes_canonical_url` | HandoffActions.jsx header docstring references the canonical URL contract (so future devs see it). |
+| `test_phase_d_post_test_fixes_logged_in_home_cleanup_log` | This subsection exists + enumerates every updated surface. |
+
+**Test counts:**
+- Phase D before post-test fixes: 44 tests
+- Phase D after post-test fixes: 54 tests (10 added, 0 removed)
+
 ---
 
 ## Deploy-readiness checklist
