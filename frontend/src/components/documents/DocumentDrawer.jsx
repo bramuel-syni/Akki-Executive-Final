@@ -345,47 +345,86 @@ function NotesTab({ doc, contextId }) {
 
 
 // Related tab --------------------------------------------------------------
+//
+// E.3 scope-compliance: surfaces 4 typed groups from
+//   GET /contexts/{cid}/documents/{did}/related
+//
+//   • metadata_match     (same context + same doc_type)
+//   • content_similarity (BM25 over peer paragraphs)
+//   • explicit_attachment (gap — no doc-to-doc link table)
+//   • canonical_lineage   (gap — no parent_doc_id field)
+//
+// Gap buckets render in muted style with the server's `gap_reason`.
 function RelatedTab({ doc, contextId, onOpenDoc }) {
-  const [related, setRelated] = useState([]);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    if (!doc?.id) return;
+    if (!doc?.id) { setData(null); return; }
     setLoading(true);
-    // Reuse the existing related-docs endpoint if present; else list
-    // sibling docs in the same context.
-    api.get(`/contexts/${contextId}/documents`, { params: { limit: 12 } })
-      .then(({ data }) => {
-        const peers = (Array.isArray(data) ? data : []).filter((d) => d.id !== doc.id).slice(0, 8);
-        setRelated(peers);
-      })
-      .catch(() => setRelated([]))
+    api.get(`/contexts/${contextId}/documents/${doc.id}/related`)
+      .then(({ data }) => setData(data))
+      .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [doc?.id, contextId]);
+  const groupOrder = [
+    "metadata_match", "content_similarity",
+    "explicit_attachment", "canonical_lineage",
+  ];
   return (
-    <div data-testid="drawer-related-tab">
-      <p className="text-[11px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-3">Related documents</p>
-      {loading ? (
+    <div data-testid="drawer-related-tab" className="space-y-4">
+      <p className="text-[11px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">Related documents</p>
+      {loading && (
         <p className="text-[12px] text-[var(--muted)] inline-flex items-center gap-1.5">
           <Loader2 className="w-3 h-3 animate-spin" /> Loading…
         </p>
-      ) : related.length === 0 ? (
-        <p className="text-[12px] italic text-[var(--muted)]" data-testid="drawer-related-empty">No related documents.</p>
-      ) : (
-        <ul className="space-y-1.5" data-testid="drawer-related-list">
-          {related.map((r) => (
-            <li key={r.id}>
-              <button
-                type="button"
-                onClick={() => onOpenDoc(r.id)}
-                className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-[var(--parchment)] text-[12.5px] text-[var(--ink)] inline-flex items-center gap-1.5"
-                data-testid="drawer-related-row"
-              >
-                <FileText className="w-3 h-3 text-[var(--muted)] shrink-0" />
-                <span className="truncate">{r.name || r.original_filename || r.id}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+      )}
+      {!loading && data && groupOrder.map((gk) => {
+        const grp = data.groups?.[gk];
+        if (!grp) return null;
+        const items = grp.items || [];
+        return (
+          <div key={gk} data-testid={`drawer-related-group-${gk}`} className="border-t border-[var(--rule)] pt-3 first:border-t-0 first:pt-0">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[11.5px] font-medium text-[var(--ink)]">{grp.label}</p>
+              {!grp.available && (
+                <span className="text-[10px] uppercase tracking-[0.12em] font-mono text-[var(--muted)]" data-testid={`drawer-related-gap-${gk}`}>
+                  Not available
+                </span>
+              )}
+            </div>
+            {!grp.available ? (
+              <p className="text-[11.5px] italic text-[var(--muted)]" data-testid={`drawer-related-gap-reason-${gk}`}>
+                {grp.gap_reason || "Data infrastructure not wired."}
+              </p>
+            ) : items.length === 0 ? (
+              <p className="text-[11.5px] italic text-[var(--muted)]" data-testid={`drawer-related-empty-${gk}`}>
+                No matches.
+              </p>
+            ) : (
+              <ul className="space-y-1" data-testid={`drawer-related-list-${gk}`}>
+                {items.map((r) => (
+                  <li key={r.id}>
+                    <button
+                      type="button"
+                      onClick={() => onOpenDoc(r.id)}
+                      className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-[var(--parchment)] text-[12.5px] text-[var(--ink)] inline-flex items-center gap-1.5"
+                      data-testid="drawer-related-row"
+                    >
+                      <FileText className="w-3 h-3 text-[var(--muted)] shrink-0" />
+                      <span className="truncate">{r.name || r.original_filename || r.id}</span>
+                      {typeof r.score === "number" && (
+                        <span className="ml-auto text-[10px] font-mono text-[var(--muted)]">{r.score.toFixed(2)}</span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })}
+      {!loading && !data && (
+        <p className="text-[12px] italic text-[var(--muted)]" data-testid="drawer-related-error">Could not load related documents.</p>
       )}
     </div>
   );
@@ -393,11 +432,50 @@ function RelatedTab({ doc, contextId, onOpenDoc }) {
 
 
 // Document tab content -----------------------------------------------------
+//
+// E.3 scope-compliance: the prompt-based-edit composer now calls
+//   POST /api/documents/{id}/prompted-edit
+// which returns `{ new_body, current_body, prompt_hash, diff_size }`.
+// We render a side-by-side preview using a simple word-level diff and
+// expose Apply (PATCH the draft body) / Discard (drop the proposal).
+function _wordDiff(oldText, newText) {
+  // Lightweight LCS-based word diff. Returns [{op:"keep"|"add"|"del", word}].
+  const a = (oldText || "").split(/(\s+)/);
+  const b = (newText || "").split(/(\s+)/);
+  const m = a.length;
+  const n = b.length;
+  // Cap for huge diffs — fall back to plain replace.
+  if (m * n > 600000) {
+    return [{ op: "del", word: oldText }, { op: "add", word: newText }];
+  }
+  const dp = Array.from({ length: m + 1 }, () => new Uint16Array(n + 1));
+  for (let i = 1; i <= m; i += 1) {
+    for (let j = 1; j <= n; j += 1) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1] + 1
+        : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  const out = [];
+  let i = m, j = n;
+  while (i > 0 && j > 0) {
+    if (a[i - 1] === b[j - 1]) { out.push({ op: "keep", word: a[i - 1] }); i--; j--; }
+    else if (dp[i - 1][j] >= dp[i][j - 1]) { out.push({ op: "del", word: a[i - 1] }); i--; }
+    else { out.push({ op: "add", word: b[j - 1] }); j--; }
+  }
+  while (i > 0) { out.push({ op: "del", word: a[i - 1] }); i--; }
+  while (j > 0) { out.push({ op: "add", word: b[j - 1] }); j--; }
+  return out.reverse();
+}
+
 function DocumentTab({ doc, contextId, mode, onPatched }) {
   const [body, setBody] = useState(doc?.extracted_text || "");
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [composer, setComposer] = useState("");
+  const [proposal, setProposal] = useState(null); // {current_body, new_body, prompt_hash, diff_size}
+  const [proposing, setProposing] = useState(false);
+  const [applying, setApplying] = useState(false);
   useEffect(() => { setBody(doc?.extracted_text || ""); }, [doc?.id, doc?.extracted_text]);
 
   const onSave = async () => {
@@ -412,12 +490,36 @@ function DocumentTab({ doc, contextId, mode, onPatched }) {
   };
 
   const onPromptEdit = async () => {
-    if (!composer.trim()) return;
-    // The prompt-based edit pipeline ships in a follow-up. We surface a
-    // clean placeholder so the UX is testable today without inventing
-    // the LLM call.
-    toast.info("Prompt-based edits are coming soon. The composer is the entry point — the apply pipeline ships in the next pass.");
+    if (!composer.trim() || proposing) return;
+    setProposing(true);
+    try {
+      const { data } = await api.post(`/documents/${doc.id}/prompted-edit`, {
+        prompt: composer.trim(),
+      });
+      setProposal(data);
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setProposing(false); }
   };
+
+  const onApplyProposal = async () => {
+    if (!proposal?.new_body || applying) return;
+    setApplying(true);
+    try {
+      await api.patch(`/contexts/${contextId}/documents/${doc.id}`, {
+        body: proposal.new_body,
+      });
+      setBody(proposal.new_body);
+      setProposal(null);
+      setComposer("");
+      toast.success("Edit applied.");
+      onPatched?.();
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setApplying(false); }
+  };
+
+  const onDiscardProposal = () => { setProposal(null); };
+
+  const diff = proposal ? _wordDiff(proposal.current_body || body, proposal.new_body) : null;
 
   return (
     <div className="space-y-3" data-testid="drawer-document-tab">
@@ -450,6 +552,34 @@ function DocumentTab({ doc, contextId, mode, onPatched }) {
                   <Pencil className="w-3 h-3 mr-1" /> Edit
                 </Button>
               </div>
+              {proposal && (
+                <div className="border border-[var(--oxblood)] rounded-sm p-3 bg-[var(--parchment)]" data-testid="drawer-document-prompt-diff">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--oxblood)]">Proposed rewrite</p>
+                    <span className="text-[10px] font-mono text-[var(--muted)]" data-testid="drawer-document-prompt-diff-size">
+                      diff {proposal.diff_size} chars
+                    </span>
+                  </div>
+                  <div className="text-[12.5px] leading-relaxed max-h-72 overflow-y-auto whitespace-pre-wrap" data-testid="drawer-document-prompt-diff-body">
+                    {diff?.map((seg, i) => seg.op === "keep" ? (
+                      <span key={i}>{seg.word}</span>
+                    ) : seg.op === "del" ? (
+                      <span key={i} className="line-through text-[var(--oxblood)] bg-[rgba(122,46,46,0.08)]" data-testid="drawer-document-prompt-diff-del">{seg.word}</span>
+                    ) : (
+                      <span key={i} className="underline decoration-[var(--oxblood)] decoration-2 underline-offset-2 text-[var(--ink)] bg-[rgba(122,46,46,0.04)]" data-testid="drawer-document-prompt-diff-add">{seg.word}</span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <Button onClick={onApplyProposal} disabled={applying} size="sm" data-testid="drawer-document-prompt-apply-confirm">
+                      {applying ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : <Save className="w-3 h-3 mr-1.5" />}
+                      Apply
+                    </Button>
+                    <Button onClick={onDiscardProposal} variant="outline" size="sm" data-testid="drawer-document-prompt-discard">
+                      Discard
+                    </Button>
+                  </div>
+                </div>
+              )}
               <div className="border-t border-[var(--rule)] pt-3 mt-3">
                 <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-2">Prompt-based edit</p>
                 <div className="flex gap-2">
@@ -460,8 +590,9 @@ function DocumentTab({ doc, contextId, mode, onPatched }) {
                     className="flex-1 border border-[var(--rule)] rounded-sm px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-[var(--ink)]"
                     data-testid="drawer-document-prompt-composer"
                   />
-                  <Button onClick={onPromptEdit} size="sm" data-testid="drawer-document-prompt-apply">
-                    <Wand2 className="w-3 h-3 mr-1" /> Apply
+                  <Button onClick={onPromptEdit} disabled={proposing || !composer.trim()} size="sm" data-testid="drawer-document-prompt-apply">
+                    {proposing ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Wand2 className="w-3 h-3 mr-1" />}
+                    {proposing ? "Drafting…" : "Apply"}
                   </Button>
                 </div>
               </div>

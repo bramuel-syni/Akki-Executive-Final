@@ -179,15 +179,18 @@ def test_e3_backend_intelligence_endpoints_wired():
     assert "BackgroundTasks" in regen_block or "background_tasks" in regen_block
 
 
-def test_e3_backend_export_guard_blocks_drafts():
-    """The /export-guard endpoint refuses exports from draft state
-    until the watermark pipeline lands."""
+def test_e3_backend_export_guard_allows_drafts_with_watermark_required():
+    """Per E.3 scope-compliance (2026-05-26): drafts ARE now exportable
+    — the watermark pipeline embeds a visible DRAFT stamp before
+    serving the bytes. The guard signals `watermark_required: True`
+    on drafts. Block-on-failure still lives in the download endpoint."""
     src = _read(DOCUMENTS_PY)
     assert '@router.get("/contexts/{context_id}/documents/{doc_id}/export-guard")' in src
     guard_block = src.split('@router.get("/contexts/{context_id}/documents/{doc_id}/export-guard")')[1].split("@router")[0]
     assert 'doc.get("state") == "draft"' in guard_block
-    assert '"can_export": False' in guard_block
-    assert "draft_watermark_pending" in guard_block
+    assert '"can_export":         True' in guard_block
+    assert '"watermark_required": True' in guard_block
+    assert '"watermark_label":    "DRAFT"' in guard_block
 
 
 def test_e3_intelligence_service_routes_through_shield():
@@ -342,9 +345,11 @@ async def test_e3_patch_document_persists_state_and_objective(seeded_context):
 
 
 @pytest.mark.asyncio
-async def test_e3_export_guard_blocks_draft_state(seeded_context):
-    """A doc with state=draft hits the export-guard and gets
-    can_export=False until the watermark pipeline lands."""
+async def test_e3_export_guard_allows_draft_with_watermark_required(seeded_context):
+    """Per E.3 scope-compliance: a doc with state=draft hits the
+    export-guard and gets can_export=True + watermark_required=True.
+    The download endpoint applies the watermark and falls back to
+    HTTP 503 (DRAFT_WATERMARK_FAILED) if the pipeline errors."""
     from server import app  # noqa: F401
     from core import db
     did = f"doc-e3-{uuid.uuid4().hex[:8]}"
@@ -364,15 +369,18 @@ async def test_e3_export_guard_blocks_draft_state(seeded_context):
         r = await c.get(f"/api/contexts/{seeded_context['cid']}/documents/{did}/export-guard", headers=hdr)
         assert r.status_code == 200, r.text
         data = r.json()
-        assert data["can_export"] is False
-        assert data["reason"] == "draft_watermark_pending"
-        # Now commit and verify guard passes.
+        assert data["can_export"] is True
+        assert data["watermark_required"] is True
+        assert data["watermark_label"] == "DRAFT"
+        # Now commit and verify guard reports no watermark needed.
         r = await c.patch(f"/api/contexts/{seeded_context['cid']}/documents/{did}", json={
             "state": "committed",
         }, headers=hdr)
         assert r.status_code == 200
         r = await c.get(f"/api/contexts/{seeded_context['cid']}/documents/{did}/export-guard", headers=hdr)
-        assert r.json()["can_export"] is True
+        data = r.json()
+        assert data["can_export"] is True
+        assert data["watermark_required"] is False
 
 
 @pytest.mark.asyncio

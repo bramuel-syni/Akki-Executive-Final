@@ -1196,6 +1196,175 @@ Each CTA also carries `data-href` so live DOM verification can read the canonica
 
 `backend/tests/test_home_cleanup_phase_e3.py` (22 tests). Each test anchors on the actual computed artefact (URL, testid, endpoint path, schema field, Shield purpose, mode-selector booleans), NOT JSX className strings. Live HTTP tests cover: PATCH persistence; export-guard blocking drafts then unblocking committed; intelligence pending→queued lifecycle.
 
+### E.3 — scope compliance (2026-05-26, autonomous mode)
+
+Orchestrator authorized closure of all 3 scope cuts under the standing
+rule *"Ensure scope compliance now, unless it compromises system or
+journey."* — recorded in `/app/memory/sprints/AUTONOMOUS_DECISIONS_LOG.md`.
+This subsection inventories the closure, file paths, live-byte evidence,
+and any residual gaps surfaced honestly.
+
+#### A. Prompt-based edit apply pipeline (SHIPPED)
+
+- **Backend endpoint** `POST /api/documents/{doc_id}/prompted-edit`
+  (`routers/documents.py` ~ lines 727–838). Shield-bounded LLM rewrite
+  via `shield_invoke(purpose="document_journal.prompted_edit.rewrite", …)`.
+  Returns `{doc_id, prompt_hash, current_body, new_body, diff_size}`.
+  Draft-only (committed → 400 with `code=NOT_A_DRAFT`). Audit row
+  written: `action="document.prompted_edit.proposed"` with
+  `prompt_hash` (sha256[:16]) + `diff_size` + `current_body_len` +
+  `new_body_len`. **Raw prompt + content NOT logged** — Shield owns the
+  de-identified copy on its own audit chain.
+
+- **Frontend** (`components/documents/DocumentDrawer.jsx::DocumentTab`):
+  the legacy `toast.info("…coming soon")` is removed. Apply now POSTs
+  to `/documents/${doc.id}/prompted-edit`. Response is rendered as an
+  inline diff preview (testid `drawer-document-prompt-diff`) with:
+  - **Strikethrough on removed words** (`line-through text-[var(--oxblood)]`,
+    testid `drawer-document-prompt-diff-del`).
+  - **Oxblood underline on added words** (`decoration-[var(--oxblood)]
+    decoration-2 underline-offset-2`, testid `drawer-document-prompt-diff-add`).
+  - **Apply** (`drawer-document-prompt-apply-confirm`) → PATCH the
+    draft body, clear the proposal, toast success.
+  - **Discard** (`drawer-document-prompt-discard`) → drop the
+    proposal, leave the composer in place.
+  Diff is computed client-side via LCS over whitespace tokens with a
+  600k-cell cap (falls back to plain replace beyond that).
+
+- **Live HTTP evidence** (test `test_scope_prompted_edit_endpoint_returns_diff_payload`):
+  POST against a seeded draft returns 200 with `new_body` non-empty,
+  `diff_size` int, `prompt_hash` matching the audit row's
+  `metadata.prompt_hash`.
+
+#### B. DRAFT watermark embedded into exports (SHIPPED)
+
+- **Watermark service** `services/documents/watermark_service.py`
+  (265 lines, was dormant — now wired in). Three format helpers:
+  - `add_pdf_watermark` — reportlab overlay + pypdf `merge_page` on
+    every source page. Repeating-tile `DRAFT` at `OXBLOOD_RGB` 30%
+    opacity, `-30°` rotation, Helvetica-Bold 48pt.
+  - `add_docx_watermark` — zipfile-level injection of
+    `word/header_watermark.xml` (VML shape `_x0000_t136` textpath),
+    `[Content_Types].xml` + rels patched in.
+  - `add_pptx_watermark` — python-pptx adds rotated DRAFT textboxes
+    (4 × 3 tile) to every slide, `RGBColor(0x7A, 0x2E, 0x2E)`,
+    Pt(48) bold.
+  - `WatermarkError` raised on any failure; caller (`download_document`)
+    catches and returns HTTP 503 + `code=DRAFT_WATERMARK_FAILED`.
+  - **No new packages** — `reportlab`, `pypdf`, `python-docx`,
+    `python-pptx` already in `requirements.txt` (verified).
+
+- **Export pipeline** `routers/documents.py::download_document`
+  (~lines 1003–1121). Renders the doc body into the requested format
+  (pdf/docx/pptx) then `if doc.state == "draft": rendered =
+  watermark_file(rendered, fmt=fmt, label="DRAFT")`. Response headers:
+  - `X-Document-State`: `draft` | `committed`
+  - `X-Watermark-Applied`: `1` | `0`
+
+- **Export-guard endpoint** flipped from unconditional block to
+  conditional pass:
+  ```python
+  if doc.get("state") == "draft":
+      return {"can_export": True, "watermark_required": True,
+              "watermark_label": "DRAFT"}
+  return {"can_export": True, "watermark_required": False,
+          "watermark_label": None}
+  ```
+  Block-on-failure path still active inside `download_document`'s
+  `except WatermarkError` arm.
+
+- **Live byte evidence** (test_home_cleanup_phase_e3_scope_compliance.py):
+  - PDF — `add_pdf_watermark` output passes `PdfReader.extract_text()`
+    yielding both the source line AND the `DRAFT` stamp.
+  - DOCX — output zip contains `word/header_watermark.xml` with
+    `string="DRAFT"` and the original document.xml body survives.
+  - PPTX — output presentation has ≥ 1 `DRAFT` text run per slide
+    AND the source title content survives.
+  - End-to-end HTTP download: draft PDF download returns
+    `X-Watermark-Applied: 1`, `X-Document-State: draft`, and the PDF
+    text extraction returns both the source body and the `DRAFT`
+    stamp. Committed download returns `X-Watermark-Applied: 0` and
+    the PDF text does NOT contain `DRAFT`.
+
+#### C. Related-docs typed groups (PARTIAL — gaps surfaced)
+
+Investigated first per orchestrator brief.
+
+- **Embedding infra audit:** `services/embeddings/` does NOT exist;
+  the only retrieval primitive in the codebase is `backend/bm25.py`
+  (token-level BM25 used by `/ask`). No vector store, no MongoDB
+  Atlas Vector Search config. Conclusion: real content similarity via
+  BM25 (deterministic) is feasible today; embedding-driven semantic
+  similarity is NOT (would need a new infra dependency outside the
+  autonomous-mode scope envelope).
+- **Lineage audit:** the `documents` collection schema has no
+  `parent_doc_id`, `derived_from`, `prev_version_id`, or `revision_dag`
+  field. The Phase D.3 `linked_context` lives on `chats`, not
+  `documents`. Conclusion: canonical lineage typing is NOT shippable
+  today; surfaced as an honest gap.
+
+- **Backend endpoint** `GET /api/contexts/{cid}/documents/{doc_id}/related`
+  (`routers/documents.py` ~ lines 851–967). Returns 4 typed buckets:
+  | Key | Status | Source |
+  | --- | --- | --- |
+  | `metadata_match` | Available | Same context + same `doc_type` (fallback: same context only when doc_type absent). Sorted by `created_at` desc, capped at 8. |
+  | `content_similarity` | Available | `bm25.score_bm25` over peer paragraphs (or first 800 chars when paragraphs absent). Top 5 by score, deduped by doc_id. |
+  | `explicit_attachment` | **Gap** | `gap_reason: "No doc-to-doc attachment table exists yet."` |
+  | `canonical_lineage` | **Gap** | `gap_reason: "No parent_doc_id / derived_from field exists yet."` |
+
+- **Frontend** (`DocumentDrawer.jsx::RelatedTab`): renders one section
+  per group in fixed order (metadata_match → content_similarity →
+  explicit_attachment → canonical_lineage). Gap buckets render in
+  muted style with a `"Not available"` chip + the server's
+  `gap_reason`. Each populated row carries a BM25 score chip when
+  applicable. Available buckets without items render an empty-state
+  ("No matches.") rather than hiding the section — empty states are
+  part of the contract per DOM-unconditional rendering rule.
+
+- **Live HTTP evidence** (test_home_cleanup_phase_e3_scope_compliance.py::
+  `test_scope_related_endpoint_returns_typed_groups`): 2 sibling docs
+  in the same context with the same `doc_type` produce a populated
+  `metadata_match` bucket containing the peer; `explicit_attachment`
+  and `canonical_lineage` come back with `available: False` +
+  `gap_reason`.
+
+#### Files changed — E.3 scope compliance
+
+| Path | Purpose |
+| --- | --- |
+| `backend/routers/documents.py` | (i) Add `get_current_account` to the core import. (ii) Flip export-guard from block to allow-with-watermark-required. (iii) Add `prompted-edit` endpoint (Shield-bounded). (iv) Add `related` endpoint with 4 typed groups. (v) Cleanup duplicate `import re` / `logger` block. (vi) `download_document` calls `watermark_file` for drafts and 503s on `WatermarkError`. |
+| `backend/services/documents/watermark_service.py` | (no change — already in repo from previous agent; now actively wired into the export pipeline). |
+| `frontend/src/components/documents/DocumentDrawer.jsx` | (i) `DocumentTab` — replace "coming soon" toast with real `/prompted-edit` POST + diff preview + Apply/Discard. (ii) `RelatedTab` — rewrite to render 4 typed groups against `/related` endpoint. |
+| `backend/tests/test_home_cleanup_phase_e3.py` | Update 2 export-guard tests (wire + live) to assert the new pass-with-watermark behaviour. |
+| `backend/tests/test_home_cleanup_phase_e3_scope_compliance.py` (NEW) | 15 wire + live tests covering all 3 closures, including byte-level inspection of watermarked PDF / DOCX / PPTX outputs. |
+| `memory/sprints/AUTONOMOUS_DECISIONS_LOG.md` (NEW) | Records the autonomous-mode authorization. |
+| `memory/sprints/HOME_CLEANUP_LOG.md` | This subsection. |
+
+#### Stop-conditions surfaced (NOT shipped)
+
+- **Content similarity via embeddings** — out of scope. BM25 ships
+  today; semantic similarity would require new embedding
+  infrastructure (`sentence-transformers` / external API), which is
+  outside the autonomous-mode envelope ("no new packages" /
+  "no system compromise").
+- **Canonical lineage** — out of scope. Would require adding
+  `parent_doc_id` / `derived_from` to the `documents` schema and
+  back-filling existing docs. Not a UI change; a data-model change.
+  Bucket surfaces with `available: False` + `gap_reason` so the UI
+  honestly tells the user.
+- **Explicit attachment** — out of scope. Same as lineage; needs a
+  doc-to-doc link table that doesn't exist. Bucket surfaces with
+  `available: False` + `gap_reason`.
+
+#### Suite pass count after E.3 scope compliance
+
+- Phase A: 12/12 · Phase B: 14/14 · Phase C: 12/12 · Phase D: 44/44 +
+  Phase D audit correction: 10/10 · Phase E (E.1+E.2): 18/18 · Phase
+  E.3: 22/22 · Phase E.3 scope compliance: 15/15 · **=
+  158/158 GREEN.**
+
+
+
 ---
 
 ## Deploy-readiness checklist

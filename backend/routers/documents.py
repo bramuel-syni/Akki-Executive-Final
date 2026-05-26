@@ -729,7 +729,6 @@ class _PromptedEditIn(BaseModel):
 async def prompted_edit(
     doc_id: str,
     body: _PromptedEditIn,
-    request: Request,
     current: Dict[str, Any] = Depends(get_current_account),
 ):
     """Phase E.3 — prompted-edit pipeline. Returns proposed new body
@@ -835,11 +834,6 @@ async def prompted_edit(
         "new_body":     new_body,
         "diff_size":    diff_size,
     }
-
-
-import re  # used by prompted_edit fence-stripping
-import logging as _logging
-logger = _logging.getLogger("documents")
 
 
 import re  # used by prompted_edit fence-stripping
@@ -975,12 +969,16 @@ async def check_export_guard(
     context_id: str, doc_id: str,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    """Phase E.3 — DRAFT export guard. Per HOME_CLEANUP_LOG scope-cut
-    #2: until the server-side watermark pipeline is orchestrator-
-    ratified, draft exports are BLOCKED. Committed docs export freely.
-    Spec rule: 'If watermarking fails for any reason, BLOCK the
-    export with a clear error.' — blocking is the spec-compliant
-    behaviour until the pipeline lands."""
+    """Phase E.3 — DRAFT export guard. Per E.3 scope-compliance
+    (2026-05-26): drafts ARE exportable now — the download endpoint
+    embeds a visible DRAFT watermark before serving the bytes. The
+    guard returns `can_export: True` plus `watermark_required: True`
+    on drafts so callers can confirm a stamp will be applied.
+
+    The spec-compliant block-on-failure path still lives inside the
+    download endpoint: if watermarking actually fails, the export is
+    refused with HTTP 503 + `code: DRAFT_WATERMARK_FAILED`.
+    """
     doc = await db.documents.find_one(
         {"id": doc_id, "context_id": context_id}, {"_id": 0, "id": 1, "state": 1},
     )
@@ -988,15 +986,14 @@ async def check_export_guard(
         raise HTTPException(status_code=404, detail="Document not found")
     if doc.get("state") == "draft":
         return {
-            "can_export": False,
-            "reason": "draft_watermark_pending",
+            "can_export":         True,
             "watermark_required": True,
-            "watermark_label": "DRAFT",
+            "watermark_label":    "DRAFT",
         }
     return {
-        "can_export": True,
+        "can_export":         True,
         "watermark_required": False,
-        "watermark_label": None,
+        "watermark_label":    None,
     }
 
 
