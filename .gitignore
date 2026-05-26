@@ -151,3 +151,9 @@ credentials.json
 .env
 .env.*
 *.env
+
+# Allow required .env files for Emergent deployment (these contain
+# protected env-var contracts: MONGO_URL, DB_NAME, REACT_APP_BACKEND_URL
+# — production deploy reads these from the bundle).
+!backend/.env
+!frontend/.env
