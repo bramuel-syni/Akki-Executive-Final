@@ -36,3 +36,80 @@ can re-direct on return.
   HOME_CLEANUP_LOG.md "E.3 — scope compliance" subsection.
 - **Surface:** orchestrator message dispatching scope-compliance closure.
 
+---
+
+## 2026-05-26 — E.4 legacy-doc-route archive authorized; G8 page flagged borderline
+
+- **Trigger:** Orchestrator dispatched E.4 enumeration + autonomous
+  archive under the standing rule *"Clean up any other route that does
+  not align with this. All documents are found in Document Journal.
+  The drawer is the primary journey to interacting with documents."*
+- **Decision:** Archived the legacy `ReadingView` surface, all 7
+  reading subcomponents, and the 2 reading hooks. Replaced
+  `/app/documents/:id` with a `<Navigate>` redirect to the Universal
+  Document Drawer surface (`/app/work-studio?doc_id=:id`). Rewired 3
+  explicit doc-click handlers (MentionInbox, AppShell upload,
+  CompilationRail Document Journal).
+- **Rationale:**
+  - Universal Drawer's 5-tab Reference mode (E.3) fully covers the
+    ReadingView surface's content contract.
+  - Redirect preserves all bookmarks + 13+ in-code `<Link>` /
+    `href="/app/documents/…"` references without urgent rewiring.
+  - No active code imports any of the archived files (grep-verified
+    before move).
+- **BORDERLINE (kept):** `/app/work-studio/document/:artefactId` +
+  `pages/WorkStudioDocumentPage.jsx`. This route binds the
+  G8-ratified full-page surface for Board Packs + Committee Packs
+  (T3.3 / 2026-05-25). The directive *"drawer is the primary
+  journey"* would archive it, but G8 was a deliberate prior
+  ratification choosing full-page over overlay. Archiving would erase
+  a previously-approved user decision. **Kept as-is**; user input
+  would resolve whether to fold Board/Committee Packs into the drawer
+  as well or maintain the G8 full-page exception.
+- **Reversal:** to restore the archived surface, `git mv
+  frontend/src/_archived/e4_doc_routes/pages/ReadingView.jsx
+  frontend/src/pages/`, restore the reading subcomponents and hooks
+  the same way, and re-point `DocumentRouteSwitch` in `App.js` back
+  to `<ReadingView />`. The 3 click-handler rewires are isolated
+  one-line changes and easy to revert independently.
+- **Surface:** orchestrator E.4 dispatch + Phase F kickoff message.
+
+---
+
+## 2026-05-26 — F.1+F.2 dispatched under autonomous mode; collection rename deferred
+
+- **Trigger:** Orchestrator paired-dispatched E.4 archive + Phase F
+  kickoff (F.1 rename + F.2 listing/wizard) under continued autonomous
+  authority. F.3–F.6 explicitly queued.
+- **Decision (rename scope):** UI-level rename only. Routes, nav
+  labels, URL params (with `cycle_id` → `task_id` alias). The MongoDB
+  `cycles` collection is NOT renamed.
+- **Borderline call — collection rename:** The orchestrator brief said
+  *"if there's a `cycles` collection, rename to `tasks` with a Mongo
+  `renameCollection` migration."* On inspection: the existing `cycles`
+  collection serves the legacy Reporting Cycle surface (close dates,
+  checklists, reportee submissions, reports). The new Phase F `tasks`
+  collection has a structurally distinct schema (objective,
+  success_criteria, output_spec, team[], contribution_mode). They are
+  semantically different objects. A `renameCollection` migration
+  would couple two unrelated concepts and force a schema rewrite on
+  all `cycle*` routers (3,700 lines). **Conservative choice:**
+  introduce `tasks` collection FRESH; leave `cycles` untouched. Both
+  surfaces coexist (legacy `/app/cycle` continues to render the
+  legacy CycleList listing for now). If the orchestrator wants the
+  two unified, that's a follow-up data-model phase.
+- **Borderline call — `agent-prefill` LLM fallback:** When Shield
+  invocation fails, the endpoint returns a generic objective +
+  success-criteria pair (`source:"none"`) so the wizard is never
+  blocked. The conservative call here is to never let an upstream
+  LLM outage gate user workflow. Audit-traceable via the response's
+  `source` field.
+- **Reversal:** all routes and labels are isolated; revert by:
+  1. Restoring the old nav labels in `AppShell.jsx`.
+  2. Removing the `/app/task-manager` routes from `App.js`.
+  3. (Optional) deleting `pages/TaskManager.jsx`,
+     `components/tasks/`, `routers/tasks.py`,
+     `tests/test_home_cleanup_phase_f.py`.
+  4. The `tasks` collection survives until manually dropped.
+- **Surface:** orchestrator E.4 + Phase F kickoff dispatch.
+

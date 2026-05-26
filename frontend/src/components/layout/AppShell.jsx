@@ -75,7 +75,7 @@ const TOP_NAV = [
   { to: "/app/chat",          label: "Chat" },
   { to: "/app/solva",         label: "Solva" },
   { to: "/app/work-studio",   label: "Work Studio" },
-  { to: "/app/cycle",         label: "Cycle Manager" },
+  { to: "/app/task-manager",  label: "Task Manager" },   // Phase F.1 (2026-05-26): renamed from "Cycle Manager"
   { to: "/app/monitor",       label: "Monitor" },
   { to: "/app/pulse",         label: "Pulse" },
   { to: "/app/learn",         label: "Learn" },
@@ -109,8 +109,8 @@ const NAV = [
   // links to the canonical surfaces (Cycle Manager + Work Studio).
   { to: "/app/cycle?tab=briefs", label: "Boardpack", icon: ScrollText, module: "M3+M12", ready: true },
   { to: "/app/work-studio?view=decks", label: "Decks + Reports", icon: Presentation, module: "§17", ready: true },
-  { to: "/app/cycle", label: "Reporting Cycle", icon: Send, module: "§12", ready: true,
-    roles: ["executive"] },
+  { to: "/app/task-manager", label: "Task Manager", icon: Send, module: "§12", ready: true,
+    roles: ["executive"] },   // Phase F.1 (2026-05-26): renamed from "Reporting Cycle"; route /app/cycle still works as backwards-compat alias.
   { to: "/app/learn", label: "Learn", icon: GraduationCap, module: "M9", ready: true },
 ];
 
@@ -1042,11 +1042,12 @@ export default function AppShell({ children }) {
           toast.success("Added to your Document Journal.");
           // Broadcast so whatever surface is open can re-fetch its doc list
           window.dispatchEvent(new CustomEvent("akki:document-uploaded"));
-          // Phase M.1 — route the user straight to the Reading Viewer
-          // for the new doc so the upload feels finished, not "where did
-          // it go?". UploadModal already calls onClose() before this.
+          // E.4 (2026-05-26) — route the user to the Universal Document
+          // Drawer (mounts on /app/work-studio) so the upload feels
+          // finished, not "where did it go?". UploadModal calls
+          // onClose() before this.
           if (doc?.id) {
-            navigate(`/app/documents/${doc.id}`);
+            navigate(`/app/work-studio?doc_id=${doc.id}`);
           }
         }}
       />

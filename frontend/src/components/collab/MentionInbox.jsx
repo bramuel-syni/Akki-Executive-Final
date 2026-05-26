@@ -39,7 +39,7 @@ export default function MentionInbox() {
     setOpen(false);
     // Route to the artefact that hosts the comment
     if (m.artefact_type === "briefing") navigate("/app/prepare");
-    else if (m.artefact_type === "document") navigate(`/app/documents/${m.artefact_id}`);
+    else if (m.artefact_type === "document") navigate(`/app/work-studio?doc_id=${m.artefact_id}`); // E.4: drawer
     else if (m.artefact_type === "simulation") navigate("/app/simulate");
     else if (m.artefact_type === "signal") navigate("/app/prepare");
   };

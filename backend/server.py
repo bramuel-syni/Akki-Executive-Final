@@ -177,6 +177,11 @@ app.include_router(synisense_router.router)
 app.include_router(shares_router.router)
 app.include_router(sandbox_router.router)
 app.include_router(cycle_router.router)
+# Phase F (2026-05-26) — Task Manager (rename of Cycle Manager UI).
+# Distinct collection `tasks`. Legacy `cycle*` collections + routers
+# stay untouched for the Reporting Cycle surface.
+from routers import tasks as tasks_router  # noqa: E402
+app.include_router(tasks_router.router)
 app.include_router(blog_router.router)
 app.include_router(billing_router.router)
 # CLEANUP B2 (2026-05-26): plays_router include removed — see archive note above.

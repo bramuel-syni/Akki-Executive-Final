@@ -1,6 +1,6 @@
 import React, { Suspense, lazy } from "react";
 import "@/App.css";
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { Toaster } from "@/components/ui/sonner";
@@ -57,7 +57,10 @@ const Home1 = lazy(() => import("@/pages/home/Home1"));
 const Questions = lazy(() => import("@/pages/Questions"));
 const Workspace = lazy(() => import("@/pages/Workspace"));
 const Activity = lazy(() => import("@/pages/Activity"));
-const ReadingView = lazy(() => import("@/pages/ReadingView"));
+// E.4 (2026-05-26) — ReadingView archived. The Universal Document
+// Drawer (Phase E.3) is the canonical surface for reading documents.
+// /app/documents/:id now redirects to /app/work-studio?doc_id=:id.
+// See _archived/e4_doc_routes/.
 const DailyReview = lazy(() => import("@/pages/DailyReview"));
 const Learn = lazy(() => import("@/pages/Learn"));
 const TenantSettings = lazy(() => import("@/pages/TenantSettings"));
@@ -86,6 +89,10 @@ const SolvaPhaseDSession = lazy(() => import("@/pages/SolvaPhaseDSession"));
 const SynisenseObservability = lazy(() => import("@/pages/SynisenseObservability"));
 const Cycle = lazy(() => import("@/pages/Cycle"));
 const CycleList = lazy(() => import("@/pages/cycle/CycleList"));
+// Phase F.1 (2026-05-26) — Task Manager (rename of Cycle Manager UI).
+// Canonical surface: /app/task-manager. /app/cycle remains as
+// backwards-compat alias (renders the legacy CycleList listing).
+const TaskManager = lazy(() => import("@/pages/TaskManager"));
 // T5 (2026-05-25) — C7 Draft Journal + C8 Ready to Compile Journal.
 const CycleDraftJournal = lazy(() => import("@/pages/cycle/CycleDraftJournal"));
 const CycleReadyJournal = lazy(() => import("@/pages/cycle/CycleReadyJournal"));
@@ -165,13 +172,17 @@ function FirstSessionGuard({ children }) {
   return children;
 }
 
-/** Document route — always renders ReadingView. The `?v=*` switch from
- *  the Phase 1 default-flip transition was retired in Phase 3 along with
- *  the legacy DocumentViewer. Any `?v=` param is now ignored.
- *  See /app/docs/ux-advisories-v1.md (Phase 3 changelog).
+/** E.4 (2026-05-26) — /app/documents/:id redirects to the Universal
+ *  Document Drawer (Phase E.3). The drawer mounts on /app/work-studio
+ *  and listens for `?doc_id=` to open. Old bookmarks survive via this
+ *  redirect.
+ *  Archived: pages/ReadingView.jsx + components/reading/* + the two
+ *  hooks (useDocumentParagraphs, useReadingScrollSync).
+ *  See _archived/e4_doc_routes/.
  */
 function DocumentRouteSwitch() {
-  return <ReadingView />;
+  const { id } = useParams();
+  return <Navigate to={`/app/work-studio?doc_id=${encodeURIComponent(id || "")}`} replace />;
 }
 
 function Gated({ children }) {
@@ -275,6 +286,12 @@ function App() {
           <Route path="/app/questions" element={<Gated><Questions /></Gated>} />
           <Route path="/app/cycle/:cycleId/questions" element={<Gated><Questions /></Gated>} />
           <Route path="/app/portfolio" element={<Gated><PortfolioRoute /></Gated>} />
+          {/* Phase F.1 (2026-05-26) — Task Manager is the canonical
+              surface. /app/cycle stays as a backwards-compat alias to
+              the legacy CycleList listing while /app/task-manager
+              renders the new TaskManager page. */}
+          <Route path="/app/task-manager" element={<Gated><TaskManager /></Gated>} />
+          <Route path="/app/task-manager/:taskId" element={<Gated><TaskManager /></Gated>} />
           <Route path="/app/cycle" element={<Gated><CycleList /></Gated>} />
           {/* T5 (2026-05-25) — Spec §4.B → C6/C7 Journals. */}
           <Route path="/app/cycle/drafts" element={<Gated><CycleDraftJournal /></Gated>} />

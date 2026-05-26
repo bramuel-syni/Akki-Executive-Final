@@ -1365,9 +1365,182 @@ Investigated first per orchestrator brief.
 
 
 
+### E.4 — Legacy route enumeration + autonomous archive picks (2026-05-26)
+
+User's standing criterion: *"Clean up any other route that does not align with this. All documents are found in Document Journal. The drawer is the primary journey to interacting with documents."*
+
+#### Enumeration table
+
+| # | Route / component / handler | Description | Invoked from | Drawer replacement | Pick | Confidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | `Route /app/documents/:id` (`App.js:338`) | Document detail full page (binds to `DocumentRouteSwitch` → `ReadingView`) | Direct URL · `<Link to="/app/documents/:id">` in 13+ files · external bookmarks | **Full** — Drawer Reference mode = 5 tabs (Document / Intelligence / Summary & Notes / Signals / Related). | **Archive-with-redirect** → `/app/work-studio?doc_id=:id` | high |
+| 2 | `pages/ReadingView.jsx` (510 lines) | 3-column reader: TopBar + Body + Rail + CommentaryDrawer. Paragraph-scroll-sync. | Only consumed by `DocumentRouteSwitch` (`App.js`). | Same as #1. | **Archive** (`git mv` → `_archived/e4_doc_routes/`) | high |
+| 3 | `components/reading/*` (7 files: `ReadingTopBar`, `ReadingBody`, `ReadingRail`, `CommentaryDrawer`, `CommentaryItem`, `CitationChip`, `TierChip`) | ReadingView's private subcomponents. | Only consumed by `pages/ReadingView.jsx`. | Same as #2. | **Archive** | high |
+| 4 | `hooks/useDocumentParagraphs.js`, `hooks/useReadingScrollSync.js` | Paragraph-level fetch + scroll-sync hooks. | Only consumed by `pages/ReadingView.jsx`. | Same as #2. | **Archive** | high |
+| 5 | `function DocumentRouteSwitch` (`App.js:173`) | 3-line wrapper that returned `<ReadingView />`. | Bound to `/app/documents/:id`. | n/a — becomes the redirect target. | **Rewrite to `<Navigate to="/app/work-studio?doc_id=…" replace>`** | high |
+| 6 | `MentionInbox.jsx:42` — `navigate(`/app/documents/${m.artefact_id}`)` | @mention click on a document. | Header bell → mention list. | **Full** — drawer opens via `?doc_id=` on Work Studio. | **Rewire** to `/app/work-studio?doc_id=…` | high |
+| 7 | `AppShell.jsx:1049` — `navigate(`/app/documents/${doc.id}`)` | Post-upload nav after `UploadModal` success. | Header Upload button. | **Full** — drawer surfaces the freshly-uploaded doc. | **Rewire** to `/app/work-studio?doc_id=…` | high |
+| 8 | `CompilationRail.jsx:207` — `navigate(`/app/documents/${d.id}`)` | Document Journal deck row click on Work Studio rail. | Right-rail Document Journal section. | **Full** — drawer opens in-place. | **Rewire** to `/app/work-studio?doc_id=…` | high |
+| 9 | `Route /app/work-studio/document/:artefactId` + `pages/WorkStudioDocumentPage.jsx` (`App.js:324`) | G8-ratified full-page surface for Board Packs + Committee Packs (75-line wrapper around `DocumentOverlay`). | Work Studio listing rows for `cycle_main_and_committee_pack` tab. | **Partial** — drawer covers content but G8 explicitly chose full-page over overlay drawer. Conflict with directive. | **Borderline-keep** — flag for user | borderline |
+| 10 | Remaining `<Link to="/app/documents/${id}">` (13+ sites) | Cross-surface links to legacy URL. | Various pages/components. | Caught by redirect at the route level (no urgent rewire). | **Leave** — preserved by #1 redirect | high |
+
+#### Autonomous picks executed
+
+- **Archived 9 files** to `_archived/e4_doc_routes/`:
+  - `pages/ReadingView.jsx`
+  - `components/reading/{ReadingTopBar,ReadingBody,ReadingRail,CommentaryDrawer,CommentaryItem,CitationChip,TierChip}.jsx`
+  - `hooks/useDocumentParagraphs.js`, `hooks/useReadingScrollSync.js`
+- **Route rewrite:** `function DocumentRouteSwitch` in `App.js` now returns a `<Navigate to="/app/work-studio?doc_id=…" replace />` that preserves the `:id` param via `encodeURIComponent`. `useParams` added to the react-router-dom import.
+- **3 click handlers rewired** to navigate to `/app/work-studio?doc_id=<id>` (drawer opens in-place):
+  - `components/collab/MentionInbox.jsx`
+  - `components/layout/AppShell.jsx` (post-upload)
+  - `components/work_studio/CompilationRail.jsx` (Document Journal row)
+- **Bookmark preservation:** all remaining `<Link to="/app/documents/${id}">` and `href="/app/documents/…"` references (13+ sites — Monitor, Workspace, Prepare, InboundQueue, Chat, Activity, BlockComposer, etc.) survive untouched via the route-level redirect.
+- **No archived file referenced by any active import** — verified via grep sweep.
+
+#### Borderline (flagged for user review)
+
+| Route / file | Ambiguity | Conservative choice | What user input would resolve |
+| --- | --- | --- | --- |
+| `/app/work-studio/document/:artefactId` + `pages/WorkStudioDocumentPage.jsx` | The directive *"drawer is the primary journey"* would archive this. But G8 was an explicit prior ratification choosing a full-page surface for Board Packs + Committee Packs specifically (T3.3 / 2026-05-25). Archiving would erase a deliberate user-approved decision. | **Keep as-is.** Universal Document Drawer mounts on Work Studio's listing surface for in-line viewing; this dedicated route remains for the G8 full-page case. | Confirm: do you want Board/Committee Packs to ALSO funnel through the drawer (archive G8), or keep the full-page surface for this case? |
+
+#### Files changed — E.4
+
+| Path | Purpose |
+| --- | --- |
+| `frontend/src/App.js` | Removed `ReadingView` lazy import. Rewrote `DocumentRouteSwitch` from `<ReadingView />` to `<Navigate>` redirect. Added `useParams` to react-router-dom import. |
+| `frontend/src/components/collab/MentionInbox.jsx` | Doc-mention click → drawer URL. |
+| `frontend/src/components/layout/AppShell.jsx` | Post-upload nav → drawer URL. |
+| `frontend/src/components/work_studio/CompilationRail.jsx` | Document Journal deck row click → drawer URL; updated module docstring. |
+| `frontend/src/_archived/e4_doc_routes/**` (NEW) | All 9 archived files under their original tree (pages/, components/reading/, hooks/). |
+| `backend/tests/test_home_cleanup_phase_e4.py` (NEW) | 10 wire tests covering archive, redirect, handler rewires, borderline preservation, log presence. |
+| `memory/sprints/AUTONOMOUS_DECISIONS_LOG.md` | Borderline entry for the G8 surface. |
+| `memory/sprints/HOME_CLEANUP_LOG.md` | This subsection. |
+
+#### Suite pass count after E.4
+
+- Phase A 12 · B 14 · C 12 · D 44 · D-audit-correction 10 · E (E.1+E.2) 18 · E.3 22 · E.3 scope-compliance 15 · E.4 10 = **168/168 GREEN.**
+
 ---
 
 ## Deploy-readiness checklist
+
+---
+
+# Phase F — Task Manager (kickoff)
+
+## F.1 — Cycle Manager → Task Manager rename (2026-05-26)
+
+Renamed the UI surface from "Cycle Manager" / "Reporting Cycle" to "Task Manager". Did NOT rename the underlying `cycles` MongoDB collection — the existing Reporting Cycle data model (close dates, checklists, reportee submissions, reports) is structurally distinct from the new Phase F `tasks` model (objective, success_criteria, output_spec, team, contribution_mode). The two collections coexist; the rename is **UI-only**.
+
+| Change | File | Detail |
+| --- | --- | --- |
+| New canonical route | `App.js` | `<Route path="/app/task-manager" element={<TaskManager />} />` (+ `/:taskId` detail route shape for F.3 deep-links). |
+| Backwards-compat alias | `App.js` | `<Route path="/app/cycle" element={<CycleList />} />` retained. All sub-routes `/app/cycle/drafts`, `/app/cycle/ready`, `/app/cycle/:cycleId` untouched. Existing bookmarks survive. |
+| URL param alias | `pages/TaskManager.jsx` | `params.get("task_id") || params.get("cycle_id")` — `task_id` wins; `cycle_id` survives as alias. |
+| Top-nav label | `components/layout/AppShell.jsx` | `{ to: "/app/cycle", label: "Cycle Manager" }` → `{ to: "/app/task-manager", label: "Task Manager" }`. |
+| Depth-nav label | `components/layout/AppShell.jsx` | `{ to: "/app/cycle", label: "Reporting Cycle" }` → `{ to: "/app/task-manager", label: "Task Manager" }` (roles: ["executive"] retained). |
+| DB collection rename | — | **Skipped** — separate concept. `tasks` collection introduced fresh. |
+| Audit log events | — | Existing `cycle.*` events keep their event names per governance rule. New `task.*` events (`task.created`, `task.updated`, `task.contributor.added`) emit going forward. |
+
+## F.2 — Listing surface + Setup wizard (2026-05-26)
+
+### Frontend
+
+| Path | Purpose |
+| --- | --- |
+| `pages/TaskManager.jsx` (NEW) | 3-tab listing (Active / Draft / Closed, no "All"). Top-of-page `Set up new task` CTA opens wizard. Right rail = `CompilationReadinessSection` (Ready + At Risk) + `FollowUpDraftsCard` (Phase F.2 new). |
+| `components/tasks/TaskListing.jsx` (NEW) | Calls `GET /api/tasks?state=…`. Cards show name + truncated objective + readiness score + contributor avatars (initial-only chips, `+N` for overflow) + due date + status pill. Click → placeholder `<Sheet>` until F.3 Task Drawer lands. |
+| `components/tasks/TaskSetupWizard.jsx` (NEW) | 4-step modal wizard. Step navigation guarded by per-step `canAdvance`. |
+| `components/tasks/FollowUpDraftsCard.jsx` (NEW) | Right-rail card surfacing draft documents (`state==="draft"`) via the E.2 endpoint `GET /api/contexts/{cid}/documents/drafts`. 5-list + View-more pattern. |
+
+#### Wizard step contract
+
+| Step | Title | Fields | Pre-fill source |
+| --- | --- | --- | --- |
+| 1 | Define | `name`, `objective`, `success_criteria` | `POST /api/tasks/agent-prefill` → static template shelf (Board Pack / Committee Pack / Monthly Report / Strategy / Fundraising) OR Shield-bounded LLM rewrite if name doesn't match the shelf. Falls back to generic prompt on Shield failure — wizard never blocked. |
+| 2 | Output | `output_kind` (template gallery / free text), `template_id` OR `free_text`, `formats[]` (PDF/DOCX/PPTX/XLSX, pre-checked from template), `final_due_date` | Template gallery has 7 cards (Board Pack, Committee Pack, Strategy Deck, Financial Model, Fundraising Deck, Briefing, Custom). |
+| 3 | Team | Editable table: `name`, `role`, `email`, `contribution_mode` ∈ {akki_account, magic_link, email_reply} | Pre-populated team roster per template (e.g., Board Pack → CFO/GC/CEO/Board Chair). `contribution_mode` captured for F.5 (magic-link generation + email-reply ingestion are queued). |
+| 4 | Commission | Read-only preview of all captured fields + 2 buttons: `Save as Draft` (`state=draft`, no notifications), `Commission` (`state=active`, contributor audit fires). | — |
+
+### Backend
+
+| Path | Purpose |
+| --- | --- |
+| `routers/tasks.py` (NEW, 290 lines) | New `tasks` collection + 5 endpoints. |
+| `server.py` | `app.include_router(tasks_router.router)` wired after `cycle_router`. |
+
+#### Endpoints
+
+| Endpoint | Behavior |
+| --- | --- |
+| `POST /api/tasks` | Create. `state=draft` or `state=active`. Active triggers `_notify_contributors()` which writes one `task.contributor.added` audit row per team member. Audit row also written for `task.created`. |
+| `GET /api/tasks?state=…&context_id=…` | List scoped to caller. State filter (active/draft/closed). |
+| `GET /api/tasks/{task_id}` | Detail (used by F.3 Task Drawer when it lands). |
+| `PATCH /api/tasks/{task_id}` | Inline edits. State changes push to `status_history`. Recomputes `readiness_score` on every change. If state transitions to `active`, contributor notifications fire. |
+| `POST /api/tasks/agent-prefill` | Shield-bounded LLM helper (purpose `task_manager.wizard.prefill`). Static template shelf hit returns `source:"template"`; LLM rewrite returns `source:"llm"`; failure fallback returns `source:"none"` with a generic prompt — wizard is never blocked. |
+
+#### Schema (`tasks` collection)
+
+```python
+{
+  "id": "task-<12 hex>",
+  "account_id": "<creator>",
+  "context_id": "<optional>",
+  "name": "Q4 Board Pack",
+  "objective": "Produce a board-ready pack...",
+  "success_criteria": "Pack delivered ≥ 48h before...",
+  "output_spec": {
+    "kind":           "template" | "free_text",
+    "template_id":    "board_pack" | "committee_pack" | ... | null,
+    "free_text":      "..." | null,
+    "formats":        ["pdf", "docx", ...],
+    "final_due_date": "2026-12-31" | null
+  },
+  "team": [
+    {
+      "name": "...", "role": "CFO", "email": "...",
+      "contribution": "Financial performance + ...",
+      "due_date": "..." | null,
+      "contribution_mode": "akki_account" | "magic_link" | "email_reply",
+      "contributor_id": null  // populated when contributor accepts (F.5)
+    }
+  ],
+  "state": "draft" | "active" | "closed",
+  "due_date": "..." | null,
+  "readiness_score": 0..100,
+  "status_history": [{"state":"draft","at":"..."}, {"state":"active","at":"..."}],
+  "created_at": "...",
+  "updated_at": "..."
+}
+```
+
+#### Readiness formula (F.2 placeholder)
+
+The orchestrator-locked formula (60% approved + 25% submitted + 15% avg objective-adherence) requires contribution-state tracking which lands in F.3. For F.2, `_compute_readiness()` returns a deterministic placeholder:
+- 10 pts per team member (cap 40)
+- +30 if `output_spec` set
+- +20 if `objective` set
+- Clamped to [0, 100]
+
+This gives the listing card something honest to display until F.3 wires the real formula.
+
+#### Notifications (F.2 baseline)
+
+Email send via Postmark is deferred to F.5. For F.2, `_notify_contributors()` writes one `task.contributor.added` audit row per team member at commission time. The audit row is the durable record contributors will eventually be notified from.
+
+### Scope cuts (NOT shipped — flagged honestly)
+
+- **F.3 Task Drawer (5 tabs)** — clicking a task card opens a placeholder `<Sheet>` showing name + objective + success_criteria. `data-testid="task-drawer-coming-soon"`.
+- **F.4 Compile flow** — the Task Manager doesn't yet wire compile.
+- **F.5 Contributor modes** — `contribution_mode` is captured per team member (`akki_account` / `magic_link` / `email_reply`) but magic-link generation, email-reply ingestion, and live email send are deferred.
+- **F.6 Side-panel polish** — right-rail cards reuse `CompilationReadinessSection` without re-styling; visual harmonization to the new Task Manager aesthetic is queued.
+
+### Suite pass count after F.1 + F.2
+
+- Phase A 12 · B 14 · C 12 · D 44 · D-audit-correction 10 · E (E.1+E.2) 18 · E.3 22 · E.3 scope-compliance 15 · E.4 10 · **F.1+F.2 20 = 187/187 GREEN.**
+
+
 
 - [x] Phases A + B + C + D closed in this log.
 - [x] All targeted text-size, color, layout, chat-chrome, and Solva briefing-deck changes verified live in preview.

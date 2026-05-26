@@ -20,7 +20,8 @@
  *   • Primary CTA → onOpenWizard()
  *   • Ready row    → onOpenWizard({ artefactType, sourceId })  (pre-selects on Step 2)
  *   • At-risk row  → navigates to the artefact detail surface
- *   • Document row → navigates to /app/documents/<id>
+ *   • Document row → opens the Universal Document Drawer in place via
+ *                    /app/work-studio?doc_id=<id> (Phase E.4, 2026-05-26)
  *   • View more →  → navigates to /app/workspace
  *
  * Constant-height constraint (Chunk 6.5-REVISED): each deck body
@@ -204,7 +205,7 @@ export default function CompilationRail({ contextId, onOpenWizard, refreshKey = 
                   <li key={d.id} className="text-[12.5px]">
                     <button
                       type="button"
-                      onClick={() => navigate(`/app/documents/${d.id}`)}
+                      onClick={() => navigate(`/app/work-studio?doc_id=${d.id}`)}
                       className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-[var(--parchment)] flex items-center gap-2"
                       data-testid={`compilation-rail-document-journal-row-${d.id}`}
                     >
