@@ -58,7 +58,6 @@ const Questions = lazy(() => import("@/pages/Questions"));
 const Workspace = lazy(() => import("@/pages/Workspace"));
 const Activity = lazy(() => import("@/pages/Activity"));
 const ReadingView = lazy(() => import("@/pages/ReadingView"));
-const CycleSettings = lazy(() => import("@/pages/CycleSettings"));
 const DailyReview = lazy(() => import("@/pages/DailyReview"));
 const Learn = lazy(() => import("@/pages/Learn"));
 const TenantSettings = lazy(() => import("@/pages/TenantSettings"));
@@ -91,8 +90,6 @@ const CycleList = lazy(() => import("@/pages/cycle/CycleList"));
 const CycleDraftJournal = lazy(() => import("@/pages/cycle/CycleDraftJournal"));
 const CycleReadyJournal = lazy(() => import("@/pages/cycle/CycleReadyJournal"));
 const Monitor = lazy(() => import("@/pages/Monitor"));
-const PlaysLibrary = lazy(() => import("@/pages/PlaysLibrary"));
-const PlayView = lazy(() => import("@/pages/PlayView"));
 const RespondToChecklist = lazy(() => import("@/pages/RespondToChecklist"));
 const SharedArtefact = lazy(() => import("@/pages/SharedArtefact"));
 const InboundQueue = lazy(() => import("@/pages/InboundQueue"));
@@ -286,8 +283,13 @@ function App() {
           <Route path="/app/ned/committee/:cid/:committee" element={<Gated><NedCommittee /></Gated>} />
           <Route path="/app/ned/inbox" element={<Gated><NedInbox /></Gated>} />
           <Route path="/app/monitor" element={<Gated><Monitor /></Gated>} />
-          <Route path="/app/plays" element={<Gated><PlaysLibrary /></Gated>} />
-          <Route path="/app/plays/:playId" element={<Gated><PlayView /></Gated>} />
+          {/* CLEANUP B2 (2026-05-26): /app/plays + /app/plays/:playId
+              routes archived per PROVENANCE_TRACE_PLAYS_CYCLE.md —
+              Plays surface ORPHAN (no canonical reference). Pages
+              moved to frontend/src/_archived_legacy/pages/. Home/Decks
+              integrations call /api/contexts/{cid}/plays with a
+              `.catch(() => ({ data: { plays: [] } }))` fallback and
+              continue to render empty Plays sections. */}
           <Route path="/app/blog-admin" element={<Gated><BlogAdmin /></Gated>} />
           <Route path="/app/workspace" element={<Gated><Workspace /></Gated>} />
           <Route path="/app/inbound-queue" element={<Gated><InboundQueue /></Gated>} />
@@ -337,7 +339,10 @@ function App() {
           <Route path="/app/contexts/new" element={<Gated><NewContext /></Gated>} />
           <Route path="/app/new-workspace" element={<Gated><NewContext /></Gated>} />
           <Route path="/app/settings" element={<Gated><TenantSettings /></Gated>} />
-          <Route path="/app/settings/cycle" element={<Gated><CycleSettings /></Gated>} />
+          {/* CLEANUP B2 (2026-05-26): /app/settings/cycle route archived
+              — CycleSettings.jsx was the only consumer of cycle_config
+              router (now archived) and useCycleConfig hook (now archived).
+              Orphan route, not in nav, not in spec. */}
           <Route path="/app/review" element={<Gated><DailyReview /></Gated>} />
           <Route path="/app/settings/billing" element={<Gated><TenantSettings /></Gated>} />
           <Route path="/app/security" element={<Gated><AccountSecurity /></Gated>} />

@@ -64,7 +64,9 @@ from routers import synisense_engine as synisense_engine_router  # noqa: E402
 from routers import cycle as cycle_router  # noqa: E402
 from routers import blog as blog_router  # noqa: E402
 from routers import billing as billing_router  # noqa: E402
-from routers import plays as plays_router  # noqa: E402
+# CLEANUP B2 (2026-05-26): plays_router archived — Plays surface ORPHAN
+# per PROVENANCE_TRACE_PLAYS_CYCLE.md. Router moved to
+# backend/_archived_legacy/routers/plays.py.archived.
 from routers import agenda as agenda_router  # noqa: E402
 from routers import document_engagement as document_engagement_router  # noqa: E402
 from routers import monitor as monitor_router  # noqa: E402
@@ -106,7 +108,11 @@ from routers import studio_blocks as studio_blocks_router  # noqa: E402
 from routers import product_features as product_features_router  # noqa: E402
 from routers import help as help_router  # noqa: E402  # Phase E — /api/help/features
 from routers import early_access as early_access_router  # noqa: E402
-from routers import cycle_config as cycle_config_router  # noqa: E402
+# CLEANUP B2 (2026-05-26): cycle_config_router archived — only consumer
+# chain (useCycleConfig hook → CycleSettings page → /app/settings/cycle
+# route) all archived. Router moved to
+# backend/_archived_legacy/routers/cycle_config.py.archived. The
+# db.cycle_configs collection persists (solva_v2.py reads from it).
 from routers import daily_review as daily_review_router  # noqa: E402
 from routers import first_session as first_session_router  # noqa: E402
 from routers import depth as depth_router  # noqa: E402
@@ -173,7 +179,7 @@ app.include_router(sandbox_router.router)
 app.include_router(cycle_router.router)
 app.include_router(blog_router.router)
 app.include_router(billing_router.router)
-app.include_router(plays_router.router)
+# CLEANUP B2 (2026-05-26): plays_router include removed — see archive note above.
 app.include_router(agenda_router.router)
 app.include_router(document_engagement_router.router)
 app.include_router(monitor_router.router)
@@ -233,7 +239,7 @@ app.include_router(studio_blocks_router.router)
 app.include_router(product_features_router.router)
 app.include_router(help_router.router)  # Phase E — /api/help/features
 app.include_router(early_access_router.router)
-app.include_router(cycle_config_router.router)
+# CLEANUP B2 (2026-05-26): cycle_config_router include removed — see archive note above.
 app.include_router(daily_review_router.router)
 app.include_router(first_session_router.router)
 app.include_router(depth_router.router)

@@ -14,16 +14,20 @@
     "Original ask 'Nikkei Asia Business': RSS not public; substituted with `scmp-business` (South China Morning Post — Asia-business focus, RSS public).",
     "Original ask 'Business Day South Africa': RSS not public; substituted with `aljazeera-business` (pan-Africa+global coverage, RSS public). Best fit for Africa region tag in the curated set."
   ],
+  "_removed_2026_05_26_redeploy_cleanup": [
+    "Four sources removed during the 2026-05-26 redeploy-cleanup chunk after HEAD probes confirmed the underlying RSS endpoints are dead. Documented here so future maintainers know what was tried (and why each was pulled rather than `enabled: false`-d).",
+    "reuters-biz — was https://feeds.reuters.com/reuters/businessNews — DNS resolution fails (`feeds.reuters.com` retired); Reuters discontinued public RSS.",
+    "hbr — was https://hbr.org/feed — HTTP 404 (Harvard Business Review retired the feed URL).",
+    "frc-uk — was https://www.frc.org.uk/news-and-events/rss — HTTP 404 (Financial Reporting Council UK changed CMS; old RSS path gone).",
+    "iod — was https://www.iod.com/news/rss — HTTP 403 (Institute of Directors blocks unauth probes + does not serve RSS at that path).",
+    "Replacement sources are NOT auto-substituted here — that's a follow-up decision the operator opted to defer."
+  ],
   "sources": [
     { "id": "bbc-business",        "name": "BBC Business",                  "url": "http://feeds.bbci.co.uk/news/business/rss.xml",            "regions": ["UK", "GLOBAL"],         "enabled": true },
-    { "id": "reuters-biz",         "name": "Reuters Business",              "url": "https://feeds.reuters.com/reuters/businessNews",           "regions": ["GLOBAL"],               "enabled": true },
     { "id": "ft-companies",        "name": "Financial Times — Companies",   "url": "https://www.ft.com/companies?format=rss",                  "regions": ["UK", "EU", "GLOBAL"],   "enabled": true },
     { "id": "ft-lex",              "name": "Financial Times — Lex",         "url": "https://www.ft.com/lex?format=rss",                        "regions": ["UK", "EU", "GLOBAL"],   "enabled": true },
     { "id": "economist-biz",       "name": "The Economist — Business",      "url": "https://www.economist.com/business/rss.xml",               "regions": ["UK", "GLOBAL"],         "enabled": true },
-    { "id": "hbr",                 "name": "Harvard Business Review",       "url": "https://hbr.org/feed",                                     "regions": ["US", "GLOBAL"],         "enabled": true },
-    { "id": "frc-uk",              "name": "Financial Reporting Council UK","url": "https://www.frc.org.uk/news-and-events/rss",               "regions": ["UK"],                   "enabled": true },
     { "id": "boe-news",            "name": "Bank of England",               "url": "https://www.bankofengland.co.uk/rss/news",                 "regions": ["UK"],                   "enabled": true },
-    { "id": "iod",                 "name": "Institute of Directors",        "url": "https://www.iod.com/news/rss",                             "regions": ["UK"],                   "enabled": true },
 
     { "id": "nyt-business",        "name": "New York Times — Business",     "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", "regions": ["US", "GLOBAL"],         "enabled": true,
       "note": "Substitution for the Patch 25 brief's NYT Business RSS ask. RSS endpoint stable + open."

@@ -1,5 +1,67 @@
 """§12 Reporting Cycle (iter18 redesign).
 
+==============================================================================
+POST-CLEANUP-B2 STATUS NOTE (2026-05-26)
+==============================================================================
+This router is classified MIXED — partial-orphan per
+`/app/memory/sprints/PROVENANCE_TRACE_PLAYS_CYCLE.md` (Task B, 2026-05-26).
+First introduced commit `59b609f` on 2026-04-25 — predates the
+`AKKI_PRODUCT_SPEC.md` v1.1 clean-break (24 May 2026). The router as a
+whole has NO canonical citation. Of its 30 endpoints:
+
+  CANONICAL — pre-spec but still load-bearing for live UX (9 endpoints):
+  -----------------------------------------------------------------------
+    /api/contexts/{cid}/questions                     [Questions page,
+    /api/contexts/{cid}/questions/seed-from-briefings  Home2 dashboard,
+    /api/contexts/{cid}/questions/{qid}                HandoffActions]
+
+    /api/contexts/{cid}/checklists                    [QuickActions tile,
+    /api/contexts/{cid}/checklists/dispatch            InSummaryTiles card]
+    /api/contexts/{cid}/checklists/generate
+    /api/contexts/{cid}/checklists/{cid}
+
+    /api/contexts/{cid}/submissions                   [InSummaryTiles
+    /api/contexts/{cid}/me/submitted-briefs            "submissions waiting" card]
+
+    /api/respond/{token}                              [RespondToChecklist
+                                                       /r/:token route]
+
+    /api/contexts/{cid}/reports                       [Monitor v1 page,
+    /api/contexts/{cid}/reports/{rid}                  /reports/inbox call]
+    /api/contexts/{cid}/reports/{rid}/review
+    /api/contexts/{cid}/reports/inbox
+
+  PRE-SPEC — no current callers, do not extend (21 endpoints):
+  -----------------------------------------------------------------------
+    /api/contexts/{cid}/cycle/committees
+    /api/contexts/{cid}/cycle/schedule          [cron + Plays callers
+    /api/contexts/{cid}/cycle/actions            archived 2026-05-26]
+    /api/cycle/cron/run-schedules               [admin cron only]
+
+    /api/contexts/{cid}/reportees               [no live frontend caller
+    /api/contexts/{cid}/reportees/{rid}          — only archived cycle UI
+                                                 components in
+                                                 _archived_legacy/ ]
+
+    /api/contexts/{cid}/reports/compose         [iter20 multi-tier
+    /api/contexts/{cid}/reports/{rid}/export.deck.pdf review chain — no
+    /api/contexts/{cid}/reports/{rid}/export.pdf      live callers]
+    /api/contexts/{cid}/reports/{rid}/polish
+    /api/contexts/{cid}/reports/{rid}/send_up
+
+REVIEW PROCEDURE FOR FUTURE EDITS:
+  1. Read `PROVENANCE_TRACE_PLAYS_CYCLE.md` first — that doc has the
+     full reference-check grep recipe.
+  2. DO NOT EXTEND the pre-spec families. New cycle-related endpoints
+     should go in `routers/cycle_manager.py` (Phase D — canonical per
+     `cycle_manager_qa_24may2026.md` §4) or `routers/cycles.py`
+     (T5 master — canonical per same QA §2-§4).
+  3. Surgical removal of the pre-spec 21 endpoints is a refactor sprint;
+     not authorised under the 2026-05-26 cleanup chunk.
+
+==============================================================================
+ORIGINAL DOCSTRING (preserved verbatim):
+==============================================================================
 Reframed governance posture: AKKI is the objective third party in the
 conversation. The executive (or her EA) reviews and approves a checklist
 that AKKI prepared; AKKI then *does* send and *does* collect responses,

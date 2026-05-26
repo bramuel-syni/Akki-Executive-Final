@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"6b16c873483c4cf58d1fa6e13ac873a9","collectionName":"backfill_jobs","type":"collection"}
