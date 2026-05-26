@@ -1820,3 +1820,62 @@ Local testing: see `tests/test_home_cleanup_phase_f5.py::test_f5_inbound_webhook
 - [x] Backend pytest green (Phase D adds tests; only pre-existing parked `test_real_requirements_file_is_clean` failure remains).
 - [x] No spec edits performed (`git diff memory/AKKI_PRODUCT_SPEC.md memory/AKKI_ONBOARDING_SPEC.md` → empty).
 - [ ] Tag `v-post-home-cleanup` applied (deferred to end of full deploy-readiness pass).
+
+## F.6 — Side panel polish + batch close (2026-05-26)
+
+Final phase of the UI-cleanup batch. Closes out the right-rail
+visual harmonization, ships account-scoped task activity, and
+locks in deploy-readiness artefacts.
+
+### Workstreams
+
+| WS | What shipped |
+| --- | --- |
+| **W1 — Side panel polish** | `FollowUpDraftsCard.jsx` restyled to canonical `<section> + <header> + body + <footer>` chrome. All 3 right-rail cards (CompilationReadinessSection, FollowUpDraftsCard, RecentTaskActivityCard) share `border border-[var(--rule)] bg-white rounded-sm` shell + `border-b border-[var(--rule)]` header + `akki-overline` label + `border-t border-[var(--rule)] bg-[var(--cream-deep)]/40` footer. Asserted by 3 wire tests. |
+| **W2 — Account-scoped task activity** | NEW `GET /api/accounts/{account_id}/task-activity/recent` endpoint. NEW `RecentTaskActivityCard.jsx` right-rail card. NEW `TaskManagerActivity.jsx` full page mounted at `/app/task-manager/activity`. Account-scoping enforced (403 on cross-account). Live HTTP tests cover both paths. |
+| **W3 — Cross-phase polish** | 10 handoff CTAs verified: TaskDrawer (5 testids `task-drawer-cta-{solva,chat,brief,hypothesis,share}`) + DocumentDrawer (5 testids `drawer-cta-{use-in-solva,use-in-chat,generate-brief,test-hypothesis,share}`). Drawer stack pattern preserved (`<TaskDrawer />` + `<DocumentDrawer contextId={cid} />` mounted on TaskManager). Empty states on all new components. Task auto-closure transition wired via `task.state.auto_closed` audit event. |
+| **W4 — DEPLOY_READINESS.md** | `/app/memory/sprints/DEPLOY_READINESS.md` (~290 lines). Sections: Pre-deploy verification · Environment requirements · Postmark setup · MongoDB collections · Indexes (per-collection with reasoning + apply procedure) · Migration steps · Known gaps · Recommended deploy approach · Operator quick-reference cards. |
+| **W5 — AUTONOMOUS_TRIP_REPORT.md** | `/app/memory/sprints/AUTONOMOUS_TRIP_REPORT.md` (~340 lines). Sections: Phases closed · Test count progression · Major features · Autonomous decisions · Spec/code deltas · Scope cuts · Open backlog · Borderline routes · Before deploy. |
+
+### W3 scope cut (NOT shipped — flagged honestly)
+
+- **Solva briefing deck on task surfaces.** The brief listed it as a
+  cross-phase polish candidate but it isn't on the explicit W3 ship
+  list and the F.6 test file doesn't assert it. The briefing-deck
+  component lives on Solva and Home surfaces today; porting to
+  task surfaces would expand scope. Logged here for the next batch.
+
+### Files changed — F.6
+
+| Path | Change |
+| --- | --- |
+| `frontend/src/components/tasks/FollowUpDraftsCard.jsx` | Restyled to canonical card chrome; testids `follow-up-drafts-card`, `follow-up-drafts-empty`, `follow-up-drafts-view-more`, `follow-up-drafts-count`, `follow-up-drafts-list`, `follow-up-drafts-row-${id}`. |
+| `frontend/src/components/tasks/RecentTaskActivityCard.jsx` (NEW) | Account-scoped task activity card on Task Manager right rail. |
+| `frontend/src/pages/TaskManagerActivity.jsx` (NEW) | Full-page activity feed at `/app/task-manager/activity`. |
+| `frontend/src/pages/TaskManager.jsx` | Mounts all 3 right-rail cards inside `data-testid="task-manager-right-rail"`. |
+| `frontend/src/App.js` | Mounts `/app/task-manager/activity` route. |
+| `backend/routers/tasks.py` | NEW endpoint `GET /accounts/{account_id}/task-activity/recent` with `account_id != current["id"]` 403 check + `action: {"$regex": "^task\\."}` filter + enriched `task_name`. |
+| `backend/tests/test_home_cleanup_phase_f6.py` (NEW, 16 tests) | W1–W5 wire + live coverage. |
+| `memory/sprints/DEPLOY_READINESS.md` (NEW) | Operator deploy checklist. |
+| `memory/sprints/AUTONOMOUS_TRIP_REPORT.md` (NEW) | Trip report spanning Phases A → F.6. |
+| `memory/sprints/AUTONOMOUS_DECISIONS_LOG.md` | F.6 completion-after-context-drift decision logged. |
+| `memory/sprints/HOME_CLEANUP_LOG.md` | This subsection. |
+
+### Suite pass count after F.6
+
+- Phase A 12 · B 14 · C 12 · D 54 · D-audit-correction 10 · E 18 · E.3 23 · E.3 scope-compliance 15 · E.4 10 · F.1+F.2 20 · F.3 24 · F.4 24 · F.5 20 · **F.6 16 = 272/272 GREEN.**
+
+### Batch closed — awaiting user deploy signal
+
+The UI-cleanup batch (Phases A → F.6) is feature-complete and test-
+green. No deploy action taken; this stops at code + artefacts. The
+operator on return:
+
+1. Audits `/app/memory/sprints/AUTONOMOUS_TRIP_REPORT.md` —
+   particularly the borderline-routes table and the autonomous-
+   decisions section — to confirm the autonomous calls match
+   product intent.
+2. Reviews `/app/memory/sprints/DEPLOY_READINESS.md` —
+   particularly the Indexes section + Postmark inbound setup
+   instructions — and applies the operational steps.
+3. Issues the explicit deploy signal.

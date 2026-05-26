@@ -1,5 +1,23 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
+## Home Cleanup Batch — Phase F (Task Manager rollout, F.1 → F.6) — 2026-05-26 ✅
+Closes the UI-cleanup batch (Phases A → F.6). Task Manager surface shipped end-
+to-end: 3-tab listing + 4-step setup wizard + Universal Task Drawer (5 tabs) +
+5-stage Compile flow + 3 contributor notification modes (akki_account, magic_link,
+email_reply) + right-rail polish + account-scoped activity. 272/272 batch tests
+GREEN. Deploy-readiness artefacts shipped:
+- `/app/memory/sprints/DEPLOY_READINESS.md` — operator checklist (Indexes,
+  Postmark setup, env vars, migration steps, known gaps).
+- `/app/memory/sprints/AUTONOMOUS_TRIP_REPORT.md` — full trip record across
+  Phases A → F.6 (decisions, scope cuts, borderline routes, before-deploy items).
+- `/app/memory/sprints/AUTONOMOUS_DECISIONS_LOG.md` — every autonomous-mode
+  decision with reversal path.
+
+**Batch status:** CLOSED. Awaiting user explicit deploy signal — DO NOT deploy
+without it. See AUTONOMOUS_TRIP_REPORT.md "Before deploy" section for the full
+operator checklist.
+
+
 ## Home Cleanup Batch — Phase D Solva closeout — 2026-05-26 ✅
 Fourth and final phase of the Home/Chat/Solva cleanup batch dispatched
 2026-05-26. Phases A (Home 1), B (Home 2), and C (Chat) already shipped;

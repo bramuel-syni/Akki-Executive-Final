@@ -237,3 +237,20 @@ These are now locked decisions, not pending borderline calls.
   url-safe 32-byte token IS the credential, 30-day expiry, scoped to
   one task + one contributor.
 
+
+---
+
+## 2026-05-26 — F.6 completion authorized after context drift
+
+- **Trigger:** New context window found partial F.6 work on disk (14/16 tests passing, DEPLOY_READINESS.md present but incomplete, AUTONOMOUS_TRIP_REPORT.md missing)
+- **Decision:** Complete F.6 rather than roll back. Work matches dispatched F.6 brief scope; no unauthorized features.
+- **Rationale:** 266/2 → 268/0 is surgical; rollback would discard correct in-progress work
+- **Reversal:** User can audit DEPLOY_READINESS.md + AUTONOMOUS_TRIP_REPORT.md on return; either doc can be rewritten if direction is off
+
+---
+
+## 2026-05-26 — Batch closed. Awaiting user deploy signal.
+
+The UI-cleanup batch (Phases A → F.6) is feature-complete and
+test-green at **272/272**. No deploy action taken; all decisions
+above documented and reversal paths surfaced.

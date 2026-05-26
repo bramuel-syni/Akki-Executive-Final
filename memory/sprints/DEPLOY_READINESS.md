@@ -131,43 +131,191 @@ parsed message to our webhook.
 
 ---
 
-## Recommended Mongo indexes
+## Indexes
 
-Hot-path queries observed during the batch — add these before
-deploy to avoid full-collection scans:
+Hot-path queries observed during the batch — apply these before
+deploy to avoid full-collection scans. These are
+**recommendations** for the deploy operator to apply post-deploy;
+the code does NOT auto-create them. Apply during a low-traffic
+window — most are `{ background: true }` safe but unique indexes
+may need a pre-flight dedupe step if duplicate documents exist.
+
+### `tasks`
 
 ```javascript
-// Task listing (filter by state + sort by created_at desc)
+// Task Listing — filter by state + sort by created_at desc.
+// Powers GET /api/tasks?state=<…>.
 db.tasks.createIndex({ "account_id": 1, "state": 1, "created_at": -1 });
 
-// Task detail
+// Owner-scoped tasks ordered by last update (used by drawer & rail).
+db.tasks.createIndex({ "account_id": 1, "owner_id": 1, "updated_at": -1 });
+
+// Single-task lookup by ID. NOTE: the live schema stores the task
+// identifier in field `id` (not `task_id`); the unique index is on
+// `id`. If you migrate to a `task_id` field name later, repoint this.
 db.tasks.createIndex({ "id": 1 }, { unique: true });
+```
 
-// Doc → task link (F.3 Drafts tab + F.5 contributor docs)
-db.documents.createIndex({ "task_id": 1, "state": 1 });
+**Reasoning:** the Task Listing surface (Task Manager 3-tab view)
+filters on `(account_id, state)` and sorts on `created_at`; the
+right-rail FollowUpDraftsCard + Task Drawer load by owner +
+updated_at. The unique index on the canonical task id prevents
+duplicate inserts under retry storms.
 
-// Account-scoped task activity (F.6)
-db.audit_log.createIndex({ "account_id": 1, "action": 1, "created_at": -1 });
+### `task_contributor_tokens` (F.5 magic links)
 
-// Context-scoped activity (existing, used by Recent Activity)
-db.audit_log.createIndex({ "context_id": 1, "created_at": -1 });
-
-// Magic-link token lookups (F.4 + F.5)
-db.task_circulation_tokens.createIndex({ "token": 1 }, { unique: true });
+```javascript
 db.task_contributor_tokens.createIndex({ "token": 1 }, { unique: true });
-db.task_contributor_tokens.createIndex({ "task_id": 1, "contributor_email": 1, "used": 1 });
+db.task_contributor_tokens.createIndex({ "contributor_email": 1 });
+db.task_contributor_tokens.createIndex({ "task_id": 1 });
 
-// Intelligence cache hit
-db.task_intelligence.createIndex({ "task_id": 1, "task_hash": 1 }, { unique: true });
-db.document_intelligence.createIndex({ "doc_id": 1, "doc_hash": 1 }, { unique: true });
+// TTL — Mongo auto-evicts expired tokens 30 days after expires_at.
+// expires_at is stored as ISO string in the live schema; convert to
+// `Date` BSON type before applying this TTL OR apply on the Date
+// field if you add a parallel `expires_at_dt` column.
+db.task_contributor_tokens.createIndex(
+  { "expires_at": 1 },
+  { expireAfterSeconds: 0 }
+);
+```
 
-// Inbound email forensics
+**Reasoning:** every contributor portal hit (`GET /api/tasks/
+contribute/<token>`) does a `findOne({ token })`; that path needs
+to be O(log n). The `contributor_email` index supports re-invite
+rotation (revoke prior tokens for this email). TTL is operational
+hygiene — tokens are credentials, expired credentials should be
+expunged.
+
+### `task_circulation_tokens` (F.4 reviewer links)
+
+```javascript
+db.task_circulation_tokens.createIndex({ "token": 1 }, { unique: true });
+db.task_circulation_tokens.createIndex({ "task_id": 1 });
+
+// TTL on 14-day expiry (same caveat re: ISO string vs Date).
+db.task_circulation_tokens.createIndex(
+  { "expires_at": 1 },
+  { expireAfterSeconds: 0 }
+);
+```
+
+**Reasoning:** identical lookup pattern as contributor tokens; 14-day
+window per F.4 trust model.
+
+### `task_inbound_emails` (F.5 forensics)
+
+```javascript
+db.task_inbound_emails.createIndex({ "token": 1 });
+db.task_inbound_emails.createIndex({ "parse_status": 1, "received_at": -1 });
 db.task_inbound_emails.createIndex({ "task_id": 1, "received_at": -1 });
 db.task_inbound_emails.createIndex({ "message_id": 1 });
-
-// Solva telemetry
-db.solva_variant_seen.createIndex({ "user_id": 1, "question_key": 1, "seen_at": -1 });
 ```
+
+**Reasoning:** forensic queries land here when an inbound email
+fails to route (`parse_status: token_unknown_or_expired |
+sender_mismatch`); operator dashboards filter by `parse_status`
+and slice by `received_at`. The token index supports cross-
+referencing a contributor's submission attempts.
+
+### `task_intelligence` + `document_intelligence` (cache)
+
+```javascript
+db.task_intelligence.createIndex(
+  { "task_id": 1, "task_hash": 1 }, { unique: true }
+);
+db.document_intelligence.createIndex(
+  { "doc_id": 1, "doc_hash": 1 }, { unique: true }
+);
+```
+
+**Reasoning:** intelligence cache is keyed by `(entity_id,
+content_hash)` — every Intelligence-tab open does an upsert on this
+pair. Unique guarantees idempotency and prevents the cache from
+fragmenting.
+
+### `documents` (task link + contributor provenance)
+
+```javascript
+// Doc → task link (F.3 Drafts tab + F.5 contributor docs).
+db.documents.createIndex({ "task_id": 1, "state": 1 });
+
+// Contributor docs lookup (used by F.5 reconciliation queries).
+db.documents.createIndex({ "task_id": 1, "contributor_email": 1 });
+```
+
+**Reasoning:** the Task Drawer Drafts tab queries by
+`(task_id, state="draft")`; contributor reconciliation queries by
+`(task_id, contributor_email)`.
+
+### `audit_log` (activity feeds)
+
+```javascript
+// Account-scoped task activity (F.6).
+db.audit_log.createIndex(
+  { "account_id": 1, "action": 1, "created_at": -1 }
+);
+
+// Context-scoped activity (pre-existing, used by Recent Activity).
+db.audit_log.createIndex({ "context_id": 1, "created_at": -1 });
+```
+
+**Reasoning:** the F.6 RecentTaskActivityCard hits the account-
+scoped index; the Work Studio Recent Activity panel hits the
+context-scoped one. Both queries are bounded by `limit` so the
+sort key is critical to keep latency flat as the audit log grows.
+
+### `solva_briefing_state`
+
+```javascript
+db.solva_briefing_state.createIndex(
+  { "user_id": 1, "area": 1 }, { unique: true }
+);
+```
+
+**Reasoning:** per-user-per-area briefing dismissal state is read on
+every Solva surface load. The unique index prevents drift from
+concurrent dismissal POSTs.
+
+### `solva_variant_seen` (D.2 cycle detection)
+
+```javascript
+db.solva_variant_seen.createIndex(
+  { "user_id": 1, "question_key": 1, "seen_at": -1 }
+);
+
+// Plain question_key index supports the cross-user cycle-detection
+// pass that audits "is this key cycling repeatedly?".
+db.solva_variant_seen.createIndex({ "question_key": 1 });
+```
+
+**Reasoning:** the cycle-detection pass at session boundary reads
+`(user_id, question_key)` for the current user, and the global key
+emission audit reads `(question_key)` across users.
+
+### `solva_key_emissions` (D.2 telemetry)
+
+```javascript
+db.solva_key_emissions.createIndex({ "question_key": 1 });
+db.solva_key_emissions.createIndex({ "emitted_at": -1 });
+```
+
+**Reasoning:** admin time-window dashboards query by
+`(emitted_at >= cutoff)` and group by `question_key`. Two
+single-field indexes outperform a compound here because the
+queries combine them with `$or` style filters.
+
+### Apply procedure (post-deploy operator)
+
+1. Connect to prod Mongo: `mongosh "$MONGO_URL"`.
+2. `use <DB_NAME>;` (matches `DB_NAME` env var).
+3. Paste each block above. All `createIndex` calls are idempotent —
+   re-running is safe.
+4. Verify: `db.<col>.getIndexes()` — confirm all listed indexes
+   present.
+5. For TTL indexes: if `expires_at` is stored as ISO string (current
+   live schema), Mongo will NOT honor `expireAfterSeconds`. Convert
+   the column to `Date` first OR add a parallel `expires_at_dt`
+   field + repoint the index. Logged as a known gap below.
 
 ---
 
@@ -204,6 +352,7 @@ db.solva_variant_seen.createIndex({ "user_id": 1, "question_key": 1, "seen_at": 
 | Email signature stripping is heuristic | No parser library added per "no new packages" envelope | F.5 autonomous decisions |
 | LLM-voiced Recommendations may fall back to rule-based on Shield outage / timeout | Audit row `task.compile.llm.timeout` records frequency | F.3 + F.4 autonomous decisions |
 | **G8 Board/Committee Pack** retained as full-page surface | Locked decision — drawer is primary, but the G8 full-page surface stays for this specific case | E.4 enumeration table |
+| Token TTL indexes need `expires_at` as `Date` BSON type | Currently stored as ISO string; TTL won't fire until converted. Operator should convert at deploy-time OR add parallel `expires_at_dt` column. | Indexes section, apply procedure |
 
 ---
 
