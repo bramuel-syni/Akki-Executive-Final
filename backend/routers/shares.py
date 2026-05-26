@@ -12,6 +12,7 @@ Scope of v1 (this sprint):
 """
 from __future__ import annotations
 
+import os
 import uuid
 import logging
 from typing import Any, Dict, List, Optional, Literal
@@ -169,12 +170,12 @@ async def create_share(
         try:
             if body.item_type == "briefing":
                 artefact_path = "briefings"
-                view_url = f"{__import__('os').environ.get('FRONTEND_ORIGIN', '').rstrip('/')}/app/{artefact_path}/{body.item_id}"
+                view_url = f"{os.environ.get('FRONTEND_ORIGIN', '').rstrip('/')}/app/{artefact_path}/{body.item_id}"
             elif body.item_type == "signal":
                 artefact_path = "highlights"
-                view_url = f"{__import__('os').environ.get('FRONTEND_ORIGIN', '').rstrip('/')}/app/{artefact_path}/{body.item_id}"
+                view_url = f"{os.environ.get('FRONTEND_ORIGIN', '').rstrip('/')}/app/{artefact_path}/{body.item_id}"
             else:  # doc_summary or doc_evolution — both link into workspace
-                view_url = f"{__import__('os').environ.get('FRONTEND_ORIGIN', '').rstrip('/')}/app/workspace/{body.item_id}"
+                view_url = f"{os.environ.get('FRONTEND_ORIGIN', '').rstrip('/')}/app/workspace/{body.item_id}"
 
             # For doc_summary shares, surface AKKI's summary in the email body
             # so the recipient gets the read even before clicking through.

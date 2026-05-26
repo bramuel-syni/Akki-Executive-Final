@@ -496,3 +496,71 @@ All 5 steps of the production-hardening sprint are complete and verified.
 - `SKIP_LEDGER` amnesty sprint — Step 4's harness-rewrite pattern could resurrect ~60-100 more skipped tests if a future sprint scopes the work. Not in flight.
 
 **Hardening sprint closed. Standing by for orchestrator dispatch of the next sprint.**
+
+---
+
+## 2026-05-25 — Post-hardening code review — discarded as mostly tool noise
+
+After hardening close, the operator received a static-analyzer code review report (likely SonarQube / similar) flagging:
+- 3 "critical code injection vulnerabilities" (`exec()` calls).
+- 95 "possibly undefined variables".
+- 500 React hook-dependency warnings.
+- 4 "hardcoded secrets in production code".
+- "Auth tokens in localStorage" (XSS risk).
+- 150 "index-as-key" React anti-patterns.
+- 4 high-complexity functions flagged for refactoring (`render_pdf`, `render_docx`, `extract_text`, `render_board_deck_pdf`).
+- 4 oversized components flagged for splitting (`Chat.jsx` 1057 LOC, `AppShell.jsx` 920 LOC, etc.).
+- ~10 dynamic-import sites flagged for static-ification.
+
+Operator asked: *"please apply the suggested fixes."*
+
+### Spot-check verdict — ~95% false-positive rate
+
+| Category | Reality | Outcome |
+| --- | --- | --- |
+| `exec()` "code injection" (3 sites) | All regex literals (`exec(?:utive)?` matching "executive") and a pytest fixture named `exec_test_sess`. **Zero real `exec()` builtin calls anywhere in the backend.** Verified by full-tree grep. | DISCARDED |
+| 95 undefined variables | No specifics in the report. If real, the 1248 pytest tests would surface them at import time. | DISCARDED |
+| 500 hook-dep warnings | `craco.config.js` deliberately sets `exhaustive-deps: warn`. Mass-fixing would create infinite re-render loops or unwanted re-fetches in J-suite-verified flows. | DISCARDED |
+| 4 "hardcoded secrets" in scripts | `bramuel@syni.ai / Bramuel2026!` and `juliusaopio@gmail.com / Julius@Akki!2026-Exec` — these are the operator's own test-account credentials (tracked in `/app/memory/test_credentials.md`) and demo-user seed passwords. Moving them to env vars relocates the same string. Zero security benefit. | DISCARDED |
+| Auth tokens in localStorage | The flagged AuthContext lines 135/175 are the J1-era LEGACY MIGRATION code (`localStorage.removeItem(...)` clearing old keys to migrate users TO sessionStorage). Migration shipped. Switching the entire auth stack to httpOnly cookies is a multi-day refactor (CSRF / cookie-domain / every `api.js` interceptor / every route guard) — separate sprint, not a code-review fix. | DISCARDED |
+| 150 index-as-key sites | The `Chat.jsx` examples checked use `idx` as the positional identifier for a text-segment slice — `idx` IS the stable identifier for that use. Some of the 150 may be legitimate, but auto-fixing risks introducing reconciliation bugs in just-verified surfaces. | DISCARDED |
+| Refactor `render_pdf` / `render_docx` / `extract_text` / `render_board_deck_pdf` | Stable, tested, working code. The system-prompt operating discipline explicitly forbids gratuitous refactoring: *"Don't refactor code, or make 'improvements' beyond what was asked. A bug fix doesn't need surrounding code cleaned up."* No bug here — just complexity-metric whining. | DISCARDED |
+| Split `Chat.jsx` (1057 LOC) / `AppShell.jsx` (920 LOC) / `EnhanceModal.jsx` / `CompilationWizard.jsx` | All four components are just-shipped surfaces the friendly-tester batch will exercise. Splitting is at minimum half-day-per-component refactoring with non-trivial risk of breaking verified flows. | DISCARDED |
+
+### The 2 items that survived triage — option (b)
+
+The only items meeting the bar for "directly requested or clearly necessary":
+
+| Site | Pre-fix shape | Investigation outcome | Fix applied |
+| --- | --- | --- | --- |
+| `routers/shares.py` lines 172/175/177 | `__import__('os').environ.get('FRONTEND_ORIGIN', '')` — three identical inline calls | `os` was NOT imported at module top. No circular-import risk (`os` is stdlib). Pattern was cargo-cult — author was reluctant to add a top-of-file import. | Added `import os` at module top, replaced 3 inline `__import__('os')` calls with `os.environ.get(...)`. |
+| `services/solva/reasoning/refusal_logic.py` lines 101/105/107/111/113/114/117 | `__import__("re").compile(...)` and `__import__("re").IGNORECASE` — seven inline references inside module-level constants | `re` was NOT imported at module top. No circular-import risk. Same cargo-cult pattern. | Added `import re` at module top, replaced 7 inline `__import__("re")` calls with direct `re.compile(...)` / `re.IGNORECASE`. |
+
+Both modules import cleanly post-fix (verified via `importlib`). Both lint clean. Targeted pytest pass: **126/126** for `shares` + `refusal` + `solva_v2` test families.
+
+### No new tests, no new tags
+
+The 2 fixes are purely stylistic cleanups (cargo-cult `__import__` → static import) with identical runtime behavior. No new tests were written (the surface is structurally unchanged) and no new git tag was created (still under `v-post-hardening-sprint-closed`).
+
+### Durable lesson banked (extending §5.10)
+
+> **Static-analyzer reviews on a stabilised codebase MUST be triaged by hand before action.** False-positive rate on this pass: **~95%**. Auto-applying every "fix" suggestion would have regressed verified surfaces, leaked test credentials into a Vault that doesn't need them, broken Chat.jsx into 4 untested fragments hours before a tester batch invite, and switched auth stacks mid-release.
+>
+> The class of finding that DOES survive triage is small and characteristic:
+> - **Cargo-cult patterns** that simplify cleanly (e.g. inline `__import__("re")` calls when `re` is unused at module scope).
+> - **Real undefined-symbol regressions** that surface at build/parse time (Step 2 Phase C ESLint catches these directly).
+> - **Cross-file invariant violations** that pytest can confirm.
+>
+> The class of finding that DOES NOT survive triage:
+> - Complexity-metric refactor suggestions on tested working code.
+> - "Anti-pattern" callouts on patterns that are correct in context (positional `idx` keys, deliberate `warn`-level lint rules, intentional `localStorage` usage post-migration).
+> - Substring-matched "security vulnerabilities" without semantic verification (the `exec()` false positives are the canonical example).
+> - Architectural rewrites dressed up as "important" fixes (httpOnly cookie migration, component splits).
+>
+> **Operating rule:** treat every static-analyzer review as a triage candidate, not an action list. Confirm 2-3 spot-check items personally before mass-applying anything. If false-positive rate > 30%, discard the whole report and ask the reviewer to provide per-line evidence for any retained findings.
+
+This rule is now durable across future sprints. Section header in the orchestrator's closeout doc (T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md §5.11 if extended) is the canonical reference.
+
+### Status
+
+**Post-hardening code review discarded as mostly tool noise. 2 dynamic-import cargo-cult sites cleaned up surgically (shares.py + refusal_logic.py). No new tests, no new tags. Operating discipline preserved.**

@@ -21,6 +21,7 @@ Triggers (per brief §4.7 + Phase D fix bundle 2026-05-16):
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -98,23 +99,23 @@ def compute_layer_2_resolved(
     )
 
 
-_EVIDENCE_DOC_RE = __import__("re").compile(
+_EVIDENCE_DOC_RE = re.compile(
     r"\b(memo|deck|report|paper|brief(?:ing)?|forecast|model|analysis|"
     r"finding|study|scorecard|dashboard|minutes|email|letter|forecast|"
     r"dataset|log|spreadsheet|tracker|board|review|attached)\b",
-    __import__("re").IGNORECASE,
+    re.IGNORECASE,
 )
-_EVIDENCE_DATE_RE = __import__("re").compile(
+_EVIDENCE_DATE_RE = re.compile(
     r"\b(q[1-4]|h[12]|fy\s*\d+|fy\d{2,4}|fiscal year|"
     r"jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|"
     r"\d+\s*(?:days?|weeks?|months?|quarters?|years?))\b",
-    __import__("re").IGNORECASE,
+    re.IGNORECASE,
 )
-_EVIDENCE_DIGIT_RE = __import__("re").compile(r"\d")
-_EVIDENCE_UNIT_RE = __import__("re").compile(
+_EVIDENCE_DIGIT_RE = re.compile(r"\d")
+_EVIDENCE_UNIT_RE = re.compile(
     r"\b(usd|eur|gbp|chf|jpy|inr|bps|basis points?|percent|"
     r"million|billion|bn|mn|m)\b",
-    __import__("re").IGNORECASE,
+    re.IGNORECASE,
 )
 
 
