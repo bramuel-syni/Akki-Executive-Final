@@ -398,10 +398,19 @@ export default function Chat() {
           // we land here with ?doc=<id>. Spin up a fresh conversation
           // titled with the doc's name (resolved client-side) and
           // pre-fill the composer so they can ask their question.
+          //
+          // Phase D.3 (2026-05-26) — additionally CALL /chats/{cid}/attach
+          // so the doc lands as a visible attachment chip AND its body
+          // gets pulled into the first AI message's system context
+          // (existing chat send pipeline already injects attachments).
+          // Previously the prompt mentioned the doc by name only —
+          // the AI had no access to the doc body.
           let docTitle = "this document";
+          let docPayload = null;
           try {
             const { data } = await api.get(`/contexts/${activeContext.id}/documents/${docId}`);
             docTitle = data?.name || data?.original_filename || docTitle;
+            docPayload = data;
           } catch { /* fall through with default title */ }
           // Workstream A.1 — pass context_id so the chat shows in the
           // active-context-filtered sidebar list and can accept attachments.
@@ -415,6 +424,43 @@ export default function Chat() {
             setChats((prev) => [data, ...prev]);
             setActiveId(data.id);
             setInput(p || `What's the most important thing for me to know from "${docTitle}"?`);
+            // Phase D.3 — register the doc as a chat attachment so the
+            // first AI message has access to its body. Best-effort: a
+            // failure here still lands the user in the new chat with
+            // the pre-filled prompt (graceful degradation, no toast).
+            if (docPayload?.id) {
+              try {
+                const { data: attached } = await api.post(
+                  `/chats/${data.id}/attach`,
+                  { document_id: docPayload.id },
+                );
+                if (!cancelled && attached) {
+                  const chip = {
+                    document_id: docPayload.id,
+                    chat_id: data.id,
+                    context_id: activeContext.id,
+                    name: docPayload.name || docPayload.original_filename || "Document",
+                    original_filename: docPayload.original_filename || docPayload.name,
+                    mime_type: docPayload.mime_type || "application/octet-stream",
+                    size_bytes: docPayload.size_bytes || 0,
+                    char_len: docPayload.extracted_chars || 0,
+                    sensitivity: {
+                      score: docPayload.sensitivity_score || 0,
+                      classification: (docPayload.sensitivity_band || "internal").toUpperCase(),
+                      label: (docPayload.sensitivity_label || "INTERNAL"),
+                      reasons: [],
+                    },
+                    storage_key: docPayload.storage_key || "",
+                    created_at: docPayload.created_at || "",
+                    linked_context: true,
+                  };
+                  setAttachments((prev) => {
+                    if (prev.some((a) => a.document_id === chip.document_id)) return prev;
+                    return [...prev, chip];
+                  });
+                }
+              } catch { /* best-effort — chat still works without the attached body */ }
+            }
           }
         } else if (wantNew) {
           if (!activeContext?.id) {

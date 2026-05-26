@@ -38,6 +38,9 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { api } from "@/lib/api";
+// Phase D.1 (2026-05-26) — pre-conversation briefing deck.
+import SolvaBriefingDeck from "@/components/solva/SolvaBriefingDeck";
+import { SUBMODULE_TO_AREA } from "@/data/solva-briefings";
 
 // Tokens (brief §7.1) — kept inline so the component is portable.
 const TOKEN = {
@@ -350,6 +353,10 @@ export default function SolvaLanding({ variant = "auth", intakeSeed = null, inta
   const [focusIdx, setFocusIdx] = useState(-1);
   // Wave 1.3 (UAT pack 2026-05-10) — disambiguator dialog.
   const [pickerHelpOpen, setPickerHelpOpen] = useState(false);
+  // Phase D.1 (2026-05-26) — briefing deck state.
+  const [briefingOpen, setBriefingOpen] = useState(false);
+  const [briefingArea, setBriefingArea] = useState(null);
+  const [briefingPendingCard, setBriefingPendingCard] = useState(null);
 
   useEffect(() => {
     if (variant !== "auth") return;
@@ -365,28 +372,56 @@ export default function SolvaLanding({ variant = "auth", intakeSeed = null, inta
 
   const onSelectCard = (card) => {
     if (variant === "auth") {
-      // Phase F + E.5 (2026-05-16) — Phase D framing now supports
-      // seed-handoff payloads (`seed_payload` on POST /sessions),
-      // so seed-bearing flows (cycle / work-studio / document-
-      // journal) route to Phase D too. Legacy /app/solva/session/new
-      // is no longer exercised for new sessions.
-      const params = new URLSearchParams();
-      params.set("submodule", card.key);
-      if (intakeSeed?.kind && intakeSeed?.id) {
-        params.set("seed_kind", intakeSeed.kind);
-        params.set("seed_id", intakeSeed.id);
-        if (intakeSeed.preview) params.set("seed_preview", intakeSeed.preview);
+      // Phase D.1 (2026-05-26) — open the briefing deck FIRST (per
+      // area). The deck owns its own suppression logic via
+      // `/api/solva/briefing/state`; if the user has previously
+      // ticked "Don't show me again" for this area, the deck closes
+      // itself immediately and we navigate straight through.
+      // Force-open (i.e., bypass suppression) is NOT used here —
+      // only the (i) reopen icon next to the composer forces.
+      const briefArea = SUBMODULE_TO_AREA[card.key];
+      if (briefArea) {
+        setBriefingPendingCard(card);
+        setBriefingArea(briefArea);
+        setBriefingOpen(true);
+        return;
       }
-      // J4 (2026-05-25, G30 ratified) — forward the de-identified
-      // first-session "starter" (intake.top_of_mind, Shield-redacted
-      // by J1's G18) onto the framing surface so the Phase D composer
-      // pre-fills with the user's stated concern.
-      if (intakeStarter) {
-        params.set("starter", intakeStarter);
-      }
-      navigate(`/app/solva/phase-d/session/new?${params.toString()}`);
+      // Fallback — unknown submodule → skip the deck.
+      _navigateAfterCard(card);
     } else {
       navigate("/signin");
+    }
+  };
+
+  const _navigateAfterCard = (card) => {
+    // Phase F + E.5 (2026-05-16) — Phase D framing now supports
+    // seed-handoff payloads (`seed_payload` on POST /sessions),
+    // so seed-bearing flows (cycle / work-studio / document-
+    // journal) route to Phase D too. Legacy /app/solva/session/new
+    // is no longer exercised for new sessions.
+    const params = new URLSearchParams();
+    params.set("submodule", card.key);
+    if (intakeSeed?.kind && intakeSeed?.id) {
+      params.set("seed_kind", intakeSeed.kind);
+      params.set("seed_id", intakeSeed.id);
+      if (intakeSeed.preview) params.set("seed_preview", intakeSeed.preview);
+    }
+    // J4 (2026-05-25, G30 ratified) — forward the de-identified
+    // first-session "starter" (intake.top_of_mind, Shield-redacted
+    // by J1's G18) onto the framing surface so the Phase D composer
+    // pre-fills with the user's stated concern.
+    if (intakeStarter) {
+      params.set("starter", intakeStarter);
+    }
+    navigate(`/app/solva/phase-d/session/new?${params.toString()}`);
+  };
+
+  const onBriefingClose = (_reason) => {
+    setBriefingOpen(false);
+    const card = briefingPendingCard;
+    setBriefingPendingCard(null);
+    if (card) {
+      _navigateAfterCard(card);
     }
   };
 
@@ -754,6 +789,14 @@ function DisambiguatorDialog({ onPick, onClose }) {
           </button>
         </div>
       </div>
+      {/* Phase D.1 (2026-05-26) — pre-conversation briefing deck. */}
+      {briefingArea && (
+        <SolvaBriefingDeck
+          area={briefingArea}
+          open={briefingOpen}
+          onClose={onBriefingClose}
+        />
+      )}
     </div>
   );
 }

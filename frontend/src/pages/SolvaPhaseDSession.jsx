@@ -22,9 +22,12 @@ import AttachDocumentModal from "@/components/solva/AttachDocumentModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, ArrowRight, ShieldCheck, Paperclip, FileText, X } from "lucide-react";
+import { Loader2, ArrowRight, ShieldCheck, Paperclip, FileText, X, Info } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+// Phase D.1 (2026-05-26) — briefing deck reopen via (i) icon.
+import SolvaBriefingDeck from "@/components/solva/SolvaBriefingDeck";
+import { SUBMODULE_TO_AREA } from "@/data/solva-briefings";
 import {
   createPhaseDSession,
   getPhaseDSession,
@@ -110,6 +113,9 @@ export default function SolvaPhaseDSession() {
   // render-smoke step 11) a deterministic DOM marker to observe.
   // Cleared after 2.5s to match the spec's toast duration.
   const [savedMarker, setSavedMarker] = useState(false);
+  // Phase D.1 (2026-05-26) — briefing deck reopen via (i) icon.
+  // `force=true` bypasses the user's suppression flag.
+  const [briefingOpen, setBriefingOpen] = useState(false);
 
   const fireSavedMarker = useCallback(() => {
     setSavedMarker(true);
@@ -318,9 +324,26 @@ export default function SolvaPhaseDSession() {
               Trust verified by Synisense — every reasoning step is governed and auditable.
             </span>
           </div>
-          <h1 className="text-3xl font-semibold text-slate-900">
-            Solva · {SUB_MODULES.find(s => s.id === session.subModule)?.label || session.subModule}
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl font-semibold text-slate-900">
+              Solva · {SUB_MODULES.find(s => s.id === session.subModule)?.label || session.subModule}
+            </h1>
+            {/* Phase D.1 (2026-05-26) — (i) info icon next to the
+                Solva header reopens the briefing deck on demand,
+                bypassing any "Don't show me again" suppression. */}
+            {SUBMODULE_TO_AREA[session.subModule] && (
+              <button
+                type="button"
+                onClick={() => setBriefingOpen(true)}
+                aria-label="Show briefing"
+                title="Show briefing"
+                data-testid="solva-briefing-reopen-btn"
+                className="rounded-full p-1 text-[var(--muted)] hover:text-[var(--accent)] hover:bg-[var(--cream-deep)]/40 transition-colors"
+              >
+                <Info className="h-5 w-5" strokeWidth={1.7} />
+              </button>
+            )}
+          </div>
           <p className="text-sm text-slate-500">
             Phase {session.layerState.replace("_", " ")} · {session.auditIdsCount} governed call{session.auditIdsCount !== 1 && "s"} so far
           </p>
@@ -449,6 +472,16 @@ export default function SolvaPhaseDSession() {
             if (payload?.anchor) setLastAttached(payload.anchor);
           }}
         />
+        {/* Phase D.1 (2026-05-26) — briefing deck reopened from the
+            (i) icon. `force` bypasses the user's suppression flag. */}
+        {SUBMODULE_TO_AREA[session.subModule] && (
+          <SolvaBriefingDeck
+            area={SUBMODULE_TO_AREA[session.subModule]}
+            open={briefingOpen}
+            onClose={() => setBriefingOpen(false)}
+            force={true}
+          />
+        )}
       </div>
     </AppShell>
   );
