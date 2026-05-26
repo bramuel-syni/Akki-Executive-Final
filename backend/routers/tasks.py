@@ -64,6 +64,10 @@ class _TeamMemberIn(BaseModel):
     # demo/test tasks can land with realistic statuses.
     status: Optional[str] = None
     adherence_score: Optional[int] = None
+    # Phase F.5 (2026-05-26) — coexistence flag. When True, the
+    # contributor receives BOTH the primary-mode invite AND an
+    # email_reply fallback invite. Default False.
+    allow_email_reply: Optional[bool] = False
 
 
 class _OutputSpecIn(BaseModel):
@@ -133,29 +137,12 @@ def _compute_readiness(task: Dict[str, Any]) -> int:
 
 
 async def _notify_contributors(task: Dict[str, Any]) -> None:
-    """F.2 — fire a simple "you've been added to a task" audit row per
-    team member. Email send via Resend is deferred to F.5 (Contributor
-    modes). For now the audit log is the durable record.
-    """
-    ctx_id = task.get("context_id")
-    for m in (task.get("team") or []):
-        try:
-            await db.audit_log.insert_one({
-                "id":            str(uuid.uuid4()),
-                "context_id":    ctx_id,
-                "account_id":    task.get("account_id"),
-                "action":        "task.contributor.added",
-                "resource_type": "task",
-                "resource_id":   task.get("id"),
-                "metadata": {
-                    "contributor_email": m.get("email"),
-                    "contribution_mode": m.get("contribution_mode") or "akki_account",
-                    "task_name":         task.get("name"),
-                },
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            })
-        except Exception as e:  # noqa: BLE001
-            log.warning("contributor notify audit failed: %s", e)
+    """F.2-era stub kept for backwards-compat — F.5 (2026-05-26)
+    replaces this with the real `contributor_invitation_service.
+    fan_out_invitations`. This function is no longer called from
+    the create/patch paths; left in place to avoid breaking any
+    external callers that may import it."""
+    return None
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -203,9 +190,12 @@ async def create_task(
         })
     except Exception as e:  # noqa: BLE001
         log.warning("task.created audit failed: %s", e)
-    # On commission (state=active), fire contributor notifications.
+    # On commission (state=active), fire contributor invitations.
+    # F.5 (2026-05-26) replaces the F.2 placeholder audit-only path
+    # with the real Postmark fan-out across all 3 modes.
     if body.state == "active":
-        await _notify_contributors(task)
+        from services.tasks.contributor_invitation_service import fan_out_invitations
+        await fan_out_invitations(db, task=task)
     return _sanitize_task(task)
 
 
@@ -314,7 +304,9 @@ async def patch_task(
     except Exception as e:  # noqa: BLE001
         log.warning("task.updated audit failed: %s", e)
     if state_changed and body.state == "active":
-        await _notify_contributors(t2)
+        # F.5 (2026-05-26) — real invitation fan-out on draft→active.
+        from services.tasks.contributor_invitation_service import fan_out_invitations
+        await fan_out_invitations(db, task=t2)
 
     return _sanitize_task(t2)
 
@@ -827,3 +819,263 @@ async def commit_compile(
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result)
     return result
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Phase F.5 (2026-05-26) — Contributor public endpoints + Re-invite
+# ═════════════════════════════════════════════════════════════════════
+from fastapi import File, UploadFile, Form  # noqa: E402
+
+
+class _ContributorCommentIn(BaseModel):
+    comment: str = Field(min_length=1, max_length=4000)
+
+
+class _ContributorSubmitIn(BaseModel):
+    final_note: Optional[str] = Field(default=None, max_length=2000)
+
+
+async def _resolve_contributor_token(token: str) -> Dict[str, Any]:
+    row = await db.task_contributor_tokens.find_one(
+        {"token": token, "used": False}, {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
+    try:
+        exp = datetime.fromisoformat((row.get("expires_at") or "").replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        exp = None
+    if exp and exp < datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail="Link expired")
+    return row
+
+
+# ─────────────────────────────────────────────────────────────────────
+# GET /api/tasks/contribute/{token} — PUBLIC contributor landing
+# ─────────────────────────────────────────────────────────────────────
+@router.get("/tasks/contribute/{token}")
+async def contributor_view(token: str):
+    """Public — no auth header. Magic-link token IS the credential.
+    Returns task summary + this contributor's specific contribution
+    + peers (names + roles only, no emails) + docs already uploaded
+    under this token."""
+    row = await _resolve_contributor_token(token)
+    t = await db.tasks.find_one(
+        {"id": row["task_id"]},
+        {"_id": 0, "id": 1, "name": 1, "objective": 1, "success_criteria": 1,
+         "due_date": 1, "team": 1, "output_spec": 1},
+    )
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    me = next(
+        (m for m in (t.get("team") or [])
+         if (m.get("email") or "").lower() == row["contributor_email"]),
+        None,
+    )
+    peers = [
+        {"name": m.get("name"), "role": m.get("role")}
+        for m in (t.get("team") or [])
+        if (m.get("email") or "").lower() != row["contributor_email"]
+    ]
+    docs = await db.documents.find(
+        {"task_id": row["task_id"], "contributor_token": token},
+        {"_id": 0, "id": 1, "name": 1, "original_filename": 1, "state": 1, "created_at": 1},
+    ).to_list(length=20)
+    return {
+        "task": {
+            "id":               t["id"],
+            "name":             t.get("name"),
+            "objective":        t.get("objective"),
+            "success_criteria": t.get("success_criteria"),
+            "due_date":         t.get("due_date"),
+            "output_formats":   (t.get("output_spec") or {}).get("formats") or [],
+        },
+        "contributor_email": row["contributor_email"],
+        "contribution":      (me or {}).get("contribution") or "",
+        "your_due_date":     (me or {}).get("due_date"),
+        "your_status":       (me or {}).get("status") or "not_started",
+        "peers":             peers,
+        "docs":              docs,
+        "expires_at":        row.get("expires_at"),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────
+# POST /api/tasks/contribute/{token}/upload — PUBLIC file upload
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/tasks/contribute/{token}/upload")
+async def contributor_upload(
+    token: str,
+    file: UploadFile = File(...),
+    note: Optional[str] = Form(default=None),
+):
+    """Accepts a file upload from a magic-link contributor. Creates a
+    document row with `task_id` + `contributor_token` set + `origin=
+    "magic_link"`."""
+    row = await _resolve_contributor_token(token)
+    payload = await file.read()
+    if len(payload) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 25 MB).")
+    did = f"doc-{uuid.uuid4().hex[:10]}"
+    doc = {
+        "id":                   did,
+        "task_id":               row["task_id"],
+        "account_id":            row["task_account_id"],
+        "contributor_email":     row["contributor_email"],
+        "contributor_id":        row.get("contributor_id"),
+        "contributor_token":     token,
+        "name":                  file.filename or "Contribution",
+        "original_filename":     file.filename,
+        "mime_type":             file.content_type,
+        "size_bytes":            len(payload),
+        "state":                 "draft",
+        "origin":                "magic_link",
+        "status":                "ready",
+        "extracted_text":        payload.decode("utf-8", errors="replace") if (file.content_type or "").startswith("text/") else "",
+        "contributor_note":      note,
+        "created_at":            datetime.now(timezone.utc).isoformat(),
+    }
+    await db.documents.insert_one(dict(doc))
+    try:
+        await db.audit_log.insert_one({
+            "id":            str(uuid.uuid4()),
+            "account_id":    row["task_account_id"],
+            "action":        "task.contribution.uploaded",
+            "resource_type": "task",
+            "resource_id":   row["task_id"],
+            "metadata": {
+                "contributor_email": row["contributor_email"],
+                "doc_id":            did,
+                "filename":          file.filename,
+                "size_bytes":        len(payload),
+            },
+            "created_at":    datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as e:  # noqa: BLE001
+        log.warning("contribution.uploaded audit failed: %s", e)
+    return {"ok": True, "doc_id": did, "name": file.filename}
+
+
+# ─────────────────────────────────────────────────────────────────────
+# POST /api/tasks/contribute/{token}/comment — PUBLIC comment add
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/tasks/contribute/{token}/comment")
+async def contributor_comment(token: str, body: _ContributorCommentIn):
+    row = await _resolve_contributor_token(token)
+    cmt = {
+        "id":         str(uuid.uuid4()),
+        "reviewer":   row["contributor_email"],
+        "comment":    body.comment.strip()[:4000],
+        "kind":       "contributor",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.tasks.update_one(
+        {"id": row["task_id"]},
+        {"$push": {"contributor_comments": cmt}, "$set": {"updated_at": cmt["created_at"]}},
+    )
+    return {"ok": True, "comment_id": cmt["id"]}
+
+
+# ─────────────────────────────────────────────────────────────────────
+# POST /api/tasks/contribute/{token}/submit — PUBLIC finalize
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/tasks/contribute/{token}/submit")
+async def contributor_submit(token: str, body: _ContributorSubmitIn):
+    """Flip the contributor's status to `submitted` + fire audit."""
+    row = await _resolve_contributor_token(token)
+    t = await db.tasks.find_one({"id": row["task_id"]}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    team = list(t.get("team") or [])
+    target_email = row["contributor_email"]
+    idx = next(
+        (i for i, m in enumerate(team) if (m.get("email") or "").lower() == target_email),
+        None,
+    )
+    if idx is None:
+        raise HTTPException(status_code=404, detail="Contributor not on this task")
+    if team[idx].get("status") in ("approved",):
+        return {"ok": True, "noop_reason": "already_approved"}
+    team[idx] = {**team[idx], "status": "submitted"}
+    if body.final_note:
+        team[idx]["final_note"] = body.final_note
+    now_iso = datetime.now(timezone.utc).isoformat()
+    from services.tasks.intelligence_service import readiness_breakdown
+    rb = readiness_breakdown({**t, "team": team})
+    await db.tasks.update_one(
+        {"id": row["task_id"]},
+        {"$set": {"team": team, "updated_at": now_iso, "readiness_score": rb["score"]}},
+    )
+    try:
+        await db.audit_log.insert_one({
+            "id":            str(uuid.uuid4()),
+            "account_id":    row["task_account_id"],
+            "action":        "task.contribution.submitted",
+            "resource_type": "task",
+            "resource_id":   row["task_id"],
+            "metadata": {
+                "contributor_email": target_email,
+                "via":               "magic_link",
+                "readiness_after":   rb["score"],
+            },
+            "created_at": now_iso,
+        })
+    except Exception as e:  # noqa: BLE001
+        log.warning("contribution.submitted audit failed: %s", e)
+    return {"ok": True, "readiness_score": rb["score"]}
+
+
+# ─────────────────────────────────────────────────────────────────────
+# POST /api/tasks/{task_id}/contributors/{contributor_id}/reinvite
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/tasks/{task_id}/contributors/{contributor_id}/reinvite")
+async def reinvite_contributor(
+    task_id: str, contributor_id: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Re-fire the invitation email for one contributor. Rotates the
+    magic-link token if applicable (revokes the previous one so old
+    links go dead)."""
+    t = await db.tasks.find_one({"id": task_id, "account_id": current["id"]}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    cid_lower = contributor_id.lower()
+    member = next(
+        (m for m in (t.get("team") or [])
+         if (m.get("email") or "").lower() == cid_lower
+         or (m.get("name") or "").lower() == cid_lower
+         or m.get("contributor_id") == contributor_id),
+        None,
+    )
+    if not member:
+        raise HTTPException(status_code=404, detail="Contributor not on this task")
+    from services.tasks.contributor_invitation_service import (
+        invite_akki_account, invite_magic_link, invite_email_reply,
+    )
+    import os as _os
+    app_base = _os.environ.get("PUBLIC_BASE_URL") or _os.environ.get("REACT_APP_BACKEND_URL") or ""
+    mode = (member.get("contribution_mode") or "akki_account").lower()
+    if mode == "magic_link":
+        result = await invite_magic_link(db, task=t, contributor=member, app_base=app_base)
+    elif mode == "email_reply":
+        result = await invite_email_reply(db, task=t, contributor=member, app_base=app_base)
+    else:
+        result = await invite_akki_account(db, task=t, contributor=member, app_base=app_base)
+    try:
+        await db.audit_log.insert_one({
+            "id":            str(uuid.uuid4()),
+            "account_id":    current["id"],
+            "action":        "task.contributor.reinvited",
+            "resource_type": "task",
+            "resource_id":   task_id,
+            "metadata": {
+                "contributor_email": member.get("email"),
+                "mode":              mode,
+                "delivery_status":   result.get("mode"),
+            },
+            "created_at":    datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as e:  # noqa: BLE001
+        log.warning("contributor.reinvited audit failed: %s", e)
+    return {"ok": True, "delivery_status": result.get("mode"), "mode": mode}
+

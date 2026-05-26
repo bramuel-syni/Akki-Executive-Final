@@ -615,6 +615,218 @@ async def _handle_cycle_reply(
 
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Phase F.5 (2026-05-26) — Task contributor email-reply handler
+# ─────────────────────────────────────────────────────────────────────
+def _strip_email_signature(body: str) -> str:
+    """Heuristic — best effort. Strips quoted history (>) lines, common
+    sig delimiters (-- and __ followed by newlines), and "On … wrote:"
+    forwards. Anchored to the END of the body so the contribution
+    content survives."""
+    if not body:
+        return ""
+    import re
+    lines = body.split("\n")
+    # Drop trailing block after "On <date> <name> wrote:" forwards.
+    cut = None
+    for i, ln in enumerate(lines):
+        if re.match(r"^On\s+.+?\s+wrote:\s*$", ln.strip()):
+            cut = i
+            break
+    if cut is not None:
+        lines = lines[:cut]
+    # Drop trailing signature delimited by "-- " or "__".
+    for i in range(len(lines) - 1, -1, -1):
+        s = lines[i].strip()
+        if s == "--" or s == "-- " or s.startswith("__"):
+            lines = lines[:i]
+            break
+    # Drop quoted-history lines (start with >).
+    lines = [ln for ln in lines if not ln.lstrip().startswith(">")]
+    return "\n".join(lines).strip()
+
+
+async def _handle_task_contributor_reply(
+    *, payload: Dict[str, Any], token_hash: str,
+    from_email: str, from_name: str, subject: str,
+    text_body: str, html_body: str, message_id: str,
+    attachments_raw: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Phase F.5 — contributor replied to a task-<token>@... address.
+    Token alone identifies the task + contributor. Validates the
+    sender's email matches the token's contributor_email."""
+    import base64
+    from datetime import datetime, timezone
+    from core import db
+    row = await db.task_contributor_tokens.find_one(
+        {"token": token_hash, "used": False}, {"_id": 0},
+    )
+    if not row:
+        # Log to inbound stream and quietly drop.
+        try:
+            await db.task_inbound_emails.insert_one({
+                "id":             str(uuid.uuid4()),
+                "token":          token_hash[:24] + "…",
+                "from":           from_email,
+                "subject":        subject,
+                "parse_status":   "token_unknown_or_expired",
+                "received_at":    datetime.now(timezone.utc).isoformat(),
+                "message_id":     message_id,
+            })
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": False, "error": "token_unknown_or_expired"}
+
+    # Sender authority check — From: must match the token's contributor.
+    if from_email != (row.get("contributor_email") or "").lower():
+        try:
+            await db.task_inbound_emails.insert_one({
+                "id":             str(uuid.uuid4()),
+                "task_id":        row["task_id"],
+                "from":           from_email,
+                "subject":        subject,
+                "parse_status":   "sender_mismatch",
+                "expected_email": row.get("contributor_email"),
+                "received_at":    datetime.now(timezone.utc).isoformat(),
+                "message_id":     message_id,
+            })
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": False, "error": "sender_mismatch"}
+
+    # Body — prefer plain text, strip signatures.
+    cleaned_body = _strip_email_signature(text_body or html_body or "")
+
+    # Attachments → docs.
+    created_doc_ids: List[str] = []
+    for att in attachments_raw[:10]:
+        try:
+            name = (att.get("Name") or att.get("name") or "attachment").strip()
+            content_type = att.get("ContentType") or att.get("content_type") or "application/octet-stream"
+            b64 = att.get("Content") or att.get("content") or ""
+            raw_bytes = base64.b64decode(b64) if b64 else b""
+            if not raw_bytes:
+                continue
+            did = f"doc-{uuid.uuid4().hex[:10]}"
+            await db.documents.insert_one({
+                "id":                did,
+                "task_id":           row["task_id"],
+                "account_id":        row["task_account_id"],
+                "contributor_email": row["contributor_email"],
+                "contributor_id":    row.get("contributor_id"),
+                "contributor_token": token_hash,
+                "name":              name,
+                "original_filename": name,
+                "mime_type":         content_type,
+                "size_bytes":        len(raw_bytes),
+                "state":             "draft",
+                "origin":            "email_receipt",
+                "status":            "ready",
+                "source": {
+                    "sender":       from_email,
+                    "subject":      subject,
+                    "received_at": datetime.now(timezone.utc).isoformat(),
+                    "message_id":   message_id,
+                },
+                "extracted_text":    raw_bytes.decode("utf-8", errors="replace") if (content_type or "").startswith("text/") else "",
+                "created_at":        datetime.now(timezone.utc).isoformat(),
+            })
+            created_doc_ids.append(did)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("attachment ingest failed: %s", e)
+
+    # Add the cleaned body as a contributor comment on the task.
+    if cleaned_body:
+        try:
+            await db.tasks.update_one(
+                {"id": row["task_id"]},
+                {"$push": {"contributor_comments": {
+                    "id":         str(uuid.uuid4()),
+                    "reviewer":   row["contributor_email"],
+                    "comment":    cleaned_body[:4000],
+                    "kind":       "email_body",
+                    "subject":    subject,
+                    "doc_ids":    created_doc_ids,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }}},
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("contributor_comments push failed: %s", e)
+
+    # Flip status to "submitted" + recompute readiness.
+    t = await db.tasks.find_one({"id": row["task_id"]}, {"_id": 0})
+    if t:
+        team = list(t.get("team") or [])
+        target = row["contributor_email"]
+        idx = next(
+            (i for i, m in enumerate(team) if (m.get("email") or "").lower() == target),
+            None,
+        )
+        if idx is not None and team[idx].get("status") not in ("approved",):
+            team[idx] = {**team[idx], "status": "submitted"}
+            try:
+                from services.tasks.intelligence_service import readiness_breakdown
+                rb = readiness_breakdown({**t, "team": team})
+                await db.tasks.update_one(
+                    {"id": row["task_id"]},
+                    {"$set": {"team": team,
+                              "readiness_score": rb["score"],
+                              "updated_at": datetime.now(timezone.utc).isoformat()}},
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("post-email readiness update failed: %s", e)
+
+    # Audit + inbound log.
+    try:
+        await db.audit_log.insert_one({
+            "id":            str(uuid.uuid4()),
+            "account_id":    row["task_account_id"],
+            "action":        "task.contribution.submitted_via_email",
+            "resource_type": "task",
+            "resource_id":   row["task_id"],
+            "metadata": {
+                "contributor_email": from_email,
+                "subject":           subject,
+                "n_attachments":     len(created_doc_ids),
+                "doc_ids":           created_doc_ids,
+                "message_id":        message_id,
+            },
+            "created_at":    datetime.now(timezone.utc).isoformat(),
+        })
+        await db.task_inbound_emails.insert_one({
+            "id":             str(uuid.uuid4()),
+            "task_id":        row["task_id"],
+            "from":           from_email,
+            "subject":        subject,
+            "parse_status":   "ingested",
+            "doc_ids":        created_doc_ids,
+            "comment_len":    len(cleaned_body),
+            "received_at":    datetime.now(timezone.utc).isoformat(),
+            "message_id":     message_id,
+        })
+    except Exception as e:  # noqa: BLE001
+        logger.warning("post-email audit failed: %s", e)
+
+    # Best-effort confirmation reply (queued; failure non-fatal).
+    try:
+        from email_service import send_email
+        await send_email(
+            to=from_email,
+            subject=f"Got it — we received your contribution to {(t or {}).get('name', 'the task')}",
+            text=f"Thanks {from_name or ''}. We received your reply and {len(created_doc_ids)} attachment(s). The task owner has been notified.\n",
+            html=f"<p>Thanks {from_name or ''}. We received your reply and {len(created_doc_ids)} attachment(s). The task owner has been notified.</p>",
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {
+        "ok":             True,
+        "task_id":        row["task_id"],
+        "doc_ids":        created_doc_ids,
+        "comment_len":    len(cleaned_body),
+    }
+
+
 @router.post("/postmark")
 async def receive_postmark_inbound(request: Request, secret: Optional[str] = Query(None)):
     raw_body = await _verify_inbound(request, secret)
@@ -662,6 +874,21 @@ async def receive_postmark_inbound(request: Request, secret: Optional[str] = Que
         to_full = payload.get("ToFull") or []
         if to_full and isinstance(to_full, list):
             mailbox_hash = (to_full[0] or {}).get("MailboxHash", "")
+
+    # Phase F.5 (2026-05-26) — task contributor email-reply branch.
+    # The MailboxHash for these is `task-<32-byte-url-safe-token>`. The
+    # token alone is the credential; sender authority comes from
+    # matching token.contributor_email vs the From: header. No
+    # account_token suffix required (the contributor doesn't have an
+    # Akki account).
+    if mailbox_hash.startswith("task-"):
+        return await _handle_task_contributor_reply(
+            payload=payload,
+            token_hash=mailbox_hash[len("task-"):],
+            from_email=from_email, from_name=from_name,
+            subject=subject, text_body=text_body, html_body=html_body,
+            message_id=message_id, attachments_raw=attachments_raw,
+        )
 
     try:
         resolved = await _resolve_mailbox(mailbox_hash)

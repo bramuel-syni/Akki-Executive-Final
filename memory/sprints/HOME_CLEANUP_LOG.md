@@ -1718,6 +1718,98 @@ compile_session: {
 
 - Phase A 12 · B 14 · C 12 · D 44 · D-audit-correction 10 · E 18 · E.3 22 · E.3 scope-compliance 15 · E.4 10 · F.1+F.2 20 · F.3 24 · **F.4 20 = 232/232 GREEN.**
 
+## F.5 — Contributor notification modes (2026-05-26)
+
+Lights up the 3 contributor modes captured in F.2 (`akki_account` / `magic_link` / `email_reply`). Replaces the F.2 audit-only stub with the real Postmark fan-out via `services/tasks/contributor_invitation_service.py`. Adds the magic-link contributor portal (`/contribute/:token`) and the inbound email-reply pipeline through the existing Postmark webhook.
+
+### 3 contributor modes — what each ships
+
+| Mode | On Commission | How they submit | Audit trail |
+| --- | --- | --- | --- |
+| **1 · `akki_account`** | Postmark transactional email with deep-link to `/app/task-manager?task_id=…` | Log in to Akki → TaskManager listing → Task Drawer → Contributions tab (their row highlighted as "Your contribution") → status PATCH | `task.contributor.invited` with channel=`akki_account` |
+| **2 · `magic_link`** | 30-day url-safe token persisted to `task_contributor_tokens`; Postmark email with `/contribute/<token>` link | Open the link → PUBLIC `ContributorPortal` page → upload + comment + submit (no auth) | `task.contributor.invited` (channel=`magic_link`) + `task.contribution.uploaded` + `task.contribution.submitted` (via=`magic_link`) |
+| **3 · `email_reply`** | 30-day token; Postmark email with `reply_to=task-<token>@CYCLE_REPLY_DOMAIN` | Reply to the email with their contribution attached | Inbound webhook → strip-signature heuristic → create `documents` row with `origin="email_receipt"` + `source={sender,subject,received_at,message_id}` → status flip → `task.contribution.submitted_via_email` |
+
+### Coexistence rule
+
+When `team[].allow_email_reply == True` AND the primary mode is NOT `email_reply`, BOTH emails fire (the primary mode invite + a paired `email_reply_fallback` invite). They share the same token so whichever path the contributor uses, the submission resolves to the same row. First-to-arrive wins; the other becomes a no-op confirmation (the `_resolve_contributor_token` returns 404 once the token is marked used).
+
+### Backend files
+
+| Path | Purpose |
+| --- | --- |
+| `backend/services/tasks/contributor_invitation_service.py` (NEW, ~290 lines) | `mint_contributor_token` + 3 per-mode dispatchers + `fan_out_invitations` orchestrator. Rotates prior tokens on re-invite. Email send failure persists the link + records `send_failed` on the per-channel status (no silent loss). |
+| `backend/routers/tasks.py` | +5 endpoints: 4 PUBLIC contributor endpoints + 1 owner-only re-invite. Old `_notify_contributors` stub kept as a no-op (legacy callers). Commission path now calls `fan_out_invitations`. |
+| `backend/routers/inbound_email.py` | `task-<token>` MailboxHash branch + `_strip_email_signature` heuristic + `_handle_task_contributor_reply`. New collection: `task_inbound_emails` for inbound forensics. |
+
+### Frontend files
+
+| Path | Purpose |
+| --- | --- |
+| `frontend/src/pages/ContributorPortal.jsx` (NEW) | PUBLIC `/contribute/:token` magic-link landing — task summary + contribution + peers (names + roles only, no emails) + upload + clarifications + submit. |
+| `frontend/src/App.js` | Mounts the PUBLIC route (no `<Gated>` wrapper) before marketing routes. |
+| `frontend/src/components/tasks/TaskDrawer.jsx` | Contributions tab — "Your contribution" highlight via `useAuth()`. Real `/reinvite` endpoint wired (rotates token if mode=magic_link). Enhancement #2 — `?compile_stage=` URL param opens Compile tab when it matches the live session stage. |
+| `frontend/src/components/tasks/TaskListing.jsx` | Enhancement #1 — `task-card-compile-pill-${t.id}` renders when `compile_session.active`. Enhancement #5/F.5 — `task-card-needs-your-input-${t.id}` shows for contributors with `not_started`/`in_progress` status. |
+
+### New collections
+
+| Collection | Shape |
+| --- | --- |
+| `task_contributor_tokens` | `{id, token, task_id, task_account_id, contributor_email, contributor_id, expires_at (+30d), used, revoked_at?, revoked_reason?, created_at}` |
+| `task_inbound_emails` | `{id, task_id?, from, subject, parse_status ∈ {ingested, token_unknown_or_expired, sender_mismatch}, doc_ids?, comment_len?, expected_email?, received_at, message_id}` — forensic log for inbound mail (debug + audit). |
+
+### Documents schema additions
+
+| Field | Purpose |
+| --- | --- |
+| `task_id` | Link to the task (from F.3, retained). |
+| `contributor_email` | Lower-case canonical email of the contributor who submitted this doc. |
+| `contributor_token` | The magic-link token the doc was uploaded under (for traceability + revocation). |
+| `origin` | Now accepts `"magic_link"` and `"email_receipt"` in addition to the prior values. |
+| `source` (when `origin == "email_receipt"`) | `{sender, subject, received_at, message_id}` for governance trail. |
+
+### Opportunistic enhancements (folded in per dispatch)
+
+1. **Compile session pill on task cards.** Renders when `compile_session.active=True` with the current stage in muted oxblood. testid `task-card-compile-pill-${t.id}`.
+2. **Resume-from-stage URL param.** `?compile_stage=<stage>` in the URL opens the Compile tab when it matches the live session stage. Ignored otherwise. testid path verified via wire test (`test_f5_resume_from_stage_url_param_in_task_drawer`).
+
+### Postmark inbound stream setup (deploy-readiness — UNDOCUMENTED step)
+
+Production deployment requires:
+1. **Postmark Inbound Server** configured with a domain you own (e.g., `parse.akki.example.com`).
+2. **DNS MX records** on that subdomain pointing to Postmark's inbound MX hosts (see Postmark docs).
+3. **Webhook URL** in Postmark inbound stream → `https://<your-domain>/api/inbound/postmark?secret=$POSTMARK_WEBHOOK_SECRET`.
+4. **Environment variable** `CYCLE_REPLY_DOMAIN` set to the inbound parse domain (defaults to `akki.syni.ai`). Used by `invite_email_reply` to construct the `reply_to` address.
+5. **MailboxHash routing** — Postmark must include the `+task-<token>` portion of the recipient as `MailboxHash` in the inbound webhook JSON. Default Postmark behaviour; no extra config needed.
+
+Local testing: see `tests/test_home_cleanup_phase_f5.py::test_f5_inbound_webhook_ingests_email_reply` for a mock Postmark payload that hits the webhook directly.
+
+### Scope cuts (NOT shipped — flagged honestly)
+
+1. **Live Postmark inbound delivery verification.** Requires production DNS + Postmark inbound stream config (deploy-time, out of pod control). The webhook code + mock-payload tests verify the parsing/routing path end-to-end.
+2. **Inline-comment span resolution on the ContributorPortal.** Comments are general (one box) per F.4 scope cut continuation. Inline anchoring lands in F.6+ if needed.
+3. **Email signature stripping is heuristic.** No dedicated parser library (mailparser etc.) was added — the regex strips `>` quoted lines, `-- ` sig delimiters, and `On … wrote:` forwards. Accuracy is best-effort; the original cleaned body is still surfaced on the contributor row for human review.
+
+### Files changed — F.5
+
+| Path | Change |
+| --- | --- |
+| `backend/services/tasks/contributor_invitation_service.py` (NEW, ~290 lines) | 3-mode dispatch + token mint + fan-out orchestrator |
+| `backend/routers/tasks.py` | +5 endpoints (4 PUBLIC contributor + 1 reinvite); commission paths now call `fan_out_invitations` |
+| `backend/routers/inbound_email.py` | `task-<token>` branch + `_strip_email_signature` + `_handle_task_contributor_reply` |
+| `frontend/src/pages/ContributorPortal.jsx` (NEW) | PUBLIC magic-link landing page |
+| `frontend/src/App.js` | Mounted `ContributorPortal` at `/contribute/:token` (no auth gate) |
+| `frontend/src/components/tasks/TaskDrawer.jsx` | "Your contribution" highlight via `useAuth`; real `/reinvite` call; `?compile_stage=` resume support |
+| `frontend/src/components/tasks/TaskListing.jsx` | Compile session pill + "Needs your input" pill |
+| `backend/tests/test_home_cleanup_phase_f5.py` (NEW) | 21 wire + live tests including Postmark webhook simulation |
+| `backend/tests/test_home_cleanup_phase_f.py` | 2 F.2 tests updated for `task.contributor.invited` (renamed from F.2's `task.contributor.added` legacy stub) |
+| `memory/sprints/AUTONOMOUS_DECISIONS_LOG.md` | F.5 in-flight decisions (signature stripping heuristic, MailboxHash routing, sender-mismatch audit, send_failed-keeps-link path) |
+| `memory/sprints/HOME_CLEANUP_LOG.md` | This subsection |
+
+### Suite pass count after F.5
+
+- Phase A 12 · B 14 · C 12 · D 44 · D-audit-correction 10 · E 18 · E.3 22 · E.3 scope-compliance 15 · E.4 10 · F.1+F.2 20 · F.3 24 · F.4 20 · **F.5 21 = 252/252 GREEN.**
+
 
 
 - [x] Phases A + B + C + D closed in this log.

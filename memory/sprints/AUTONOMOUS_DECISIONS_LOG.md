@@ -192,3 +192,48 @@ These are now locked decisions, not pending borderline calls.
     untouched; user can re-run manually)
   Timeouts surface via an audit event so we can monitor frequency.
 
+---
+
+## 2026-05-26 — F.5 in-flight decisions
+
+- **Signature stripping heuristic vs. parser library:** no
+  mailparser-style library was added (would require a `pip install`
+  outside the autonomous-mode "no new packages" envelope). The
+  heuristic in `inbound_email._strip_email_signature` strips `>`
+  quoted lines, `-- ` sig delimiters, and `On … wrote:` forward
+  blocks. Accuracy is best-effort; the cleaned body is still
+  surfaced on the contributor's row for human review. If a future
+  dispatch authorises adding `mail-parser` to requirements.txt, the
+  heuristic can be swapped behind the same `_strip_email_signature`
+  signature without changing any caller.
+- **MailboxHash routing model:** chose to PIGGYBACK on the existing
+  `routers/inbound_email.py` webhook rather than create a new
+  `webhooks_postmark.py` file. Reasons:
+  1. The signature-verification + payload-shape logic was already
+     battle-tested. Forking it would create drift risk.
+  2. The `task-` MailboxHash prefix gives us a clean dispatch branch
+     without coupling to the legacy account-token flow.
+  3. Postmark inbound streams are configured per webhook URL; one
+     URL is operationally simpler than two.
+- **Sender authority via From: header:** the F.5 inbound path
+  REQUIRES `From:` to match `token.contributor_email`. Mismatches
+  are logged to `task_inbound_emails` with `parse_status:
+  "sender_mismatch"` for forensics, no doc created. The token alone
+  is the credential — but only when paired with the email it was
+  issued to.
+- **Send-fail keeps the link (continuation of F.4 pattern):** when
+  Postmark `send_email` errors on a magic-link or email-reply invite,
+  the token is still persisted; the audit row records `send_failed`.
+  The link works manually (the task owner can copy it from the
+  Contributions tab → Re-invite button) — no silent loss.
+- **`_notify_contributors` legacy stub:** kept as a no-op in
+  `routers/tasks.py` rather than deleted. External callers (none
+  found in repo) won't break. Documented in the docstring as
+  superseded by `fan_out_invitations`.
+- **ContributorPortal as a PUBLIC route (no AppShell, no auth gate):**
+  mounted via a top-level `<Route path="/contribute/:token">` BEFORE
+  any marketing routes. The route has NO `<Gated>` wrapper. Trust
+  model is identical to the F.4 circulation surface — the
+  url-safe 32-byte token IS the credential, 30-day expiry, scoped to
+  one task + one contributor.
+

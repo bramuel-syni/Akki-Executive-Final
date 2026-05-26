@@ -11,6 +11,7 @@
  */
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
 import { Loader2, Calendar, Users, FileText, Inbox } from "lucide-react";
 import { toast } from "sonner";
@@ -71,6 +72,8 @@ export default function TaskListing({ contextId, state, refreshKey }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [, setParams] = useSearchParams();
+  const { account } = useAuth();
+  const myEmail = (account?.email || "").toLowerCase();
 
   useEffect(() => {
     let dead = false;
@@ -156,6 +159,30 @@ export default function TaskListing({ contextId, state, refreshKey }) {
                   </span>
                 )}
               </div>
+              {/* Phase F.4 enhancement — Compile session pill on the card */}
+              {t.compile_session?.active && t.compile_session?.current_stage && (
+                <div
+                  className="mt-2 inline-flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded-sm bg-[rgba(122,46,46,0.08)] text-[var(--oxblood)]"
+                  data-testid={`task-card-compile-pill-${t.id}`}
+                >
+                  <span>Compile · {(t.compile_session.current_stage || "").replace(/_/g, " ")}</span>
+                </div>
+              )}
+              {/* Phase F.5 — "needs your input" pill if the current user is
+                  a contributor with not_started / in_progress status. */}
+              {(() => {
+                if (!myEmail) return null;
+                const me = (t.team || []).find((m) => (m.email || "").toLowerCase() === myEmail);
+                if (!me || !["not_started", "in_progress"].includes(me.status || "not_started")) return null;
+                return (
+                  <div
+                    className="mt-2 inline-flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded-sm bg-amber-50 text-amber-800 ml-2"
+                    data-testid={`task-card-needs-your-input-${t.id}`}
+                  >
+                    Needs your input
+                  </div>
+                );
+              })()}
             </button>
           </li>
         ))}

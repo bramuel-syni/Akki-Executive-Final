@@ -204,7 +204,7 @@ async def seeded_actor():
 @pytest.mark.asyncio
 async def test_f2_create_task_as_draft(seeded_actor):
     """POST /api/tasks with state=draft creates a task and returns
-    the sanitized payload. No contributor audit fires."""
+    the sanitized payload. No contributor invitation fires."""
     from server import app  # noqa: F401
     from core import db
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -224,19 +224,20 @@ async def test_f2_create_task_as_draft(seeded_actor):
         assert body["state"] == "draft"
         assert body["id"].startswith("task-")
         assert body["readiness_score"] >= 0
-        # No contributor.added audit row for draft.
+        # No contributor.invited audit row for draft (F.5 — fan-out
+        # only fires on commission).
         rows = await db.audit_log.find({
             "account_id": seeded_actor["uid"],
             "resource_id": body["id"],
-            "action": "task.contributor.added",
+            "action": "task.contributor.invited",
         }).to_list(length=10)
         assert rows == []
 
 
 @pytest.mark.asyncio
 async def test_f2_commission_task_emits_contributor_audit(seeded_actor):
-    """POST /api/tasks with state=active fires task.contributor.added
-    per team member."""
+    """POST /api/tasks with state=active fires task.contributor.invited
+    per team member via the F.5 fan-out."""
     from server import app  # noqa: F401
     from core import db
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -258,7 +259,7 @@ async def test_f2_commission_task_emits_contributor_audit(seeded_actor):
         rows = await db.audit_log.find({
             "account_id": seeded_actor["uid"],
             "resource_id": tid,
-            "action": "task.contributor.added",
+            "action": "task.contributor.invited",
         }).to_list(length=10)
         assert len(rows) == 2
         emails = sorted(r["metadata"]["contributor_email"] for r in rows)

@@ -18,6 +18,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { api, apiErrorMessage } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,6 +71,7 @@ function StatusBadge({ state }) {
 export default function TaskDrawer() {
   const [params, setParams] = useSearchParams();
   const tid = params.get("task_id") || null;
+  const compileStageParam = params.get("compile_stage") || null;
   const [task, setTask] = useState(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState("plan");
@@ -84,6 +86,18 @@ export default function TaskDrawer() {
       .finally(() => { if (!dead) setLoading(false); });
     return () => { dead = true; };
   }, [tid]);
+
+  // Phase F.5 enhancement #2 — Resume-from-stage URL param. If the URL
+  // carries `?compile_stage=<stage>` AND the task has an active compile
+  // session at THAT stage, jump to the Compile tab. Otherwise the param
+  // is ignored and the drawer opens on Plan.
+  useEffect(() => {
+    if (!task || !compileStageParam) return;
+    const sessionStage = task.compile_session?.current_stage || null;
+    if (sessionStage && compileStageParam === sessionStage) {
+      setTab("compile");
+    }
+  }, [task, compileStageParam]);
 
   const onClose = () => {
     const next = new URLSearchParams(params);
@@ -381,6 +395,10 @@ function ContributionsTab({ task, onPatched }) {
   const [revisionFor, setRevisionFor] = useState(null);
   const [revisionNote, setRevisionNote] = useState("");
   const [working, setWorking] = useState(null);
+  const [reinviting, setReinviting] = useState(null);
+  // Phase F.5 — highlight the logged-in user's row.
+  const { account } = useAuth();
+  const meEmail = (account?.email || "").toLowerCase();
 
   const team = task.team || [];
 
@@ -394,6 +412,19 @@ function ContributionsTab({ task, onPatched }) {
       onPatched?.();
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setWorking(null); }
+  };
+
+  const reinvite = async (contributorId) => {
+    setReinviting(contributorId);
+    try {
+      const { data } = await api.post(`/tasks/${task.id}/contributors/${encodeURIComponent(contributorId)}/reinvite`);
+      const label = data.delivery_status === "send_failed"
+        ? "Invite re-sent (email delivery failed — link rotated; share manually)."
+        : "Invite re-sent.";
+      toast.success(label);
+      onPatched?.();
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setReinviting(null); }
   };
 
   if (team.length === 0) {
@@ -412,12 +443,25 @@ function ContributionsTab({ task, onPatched }) {
           const d = daysUntil(m.due_date);
           const overdue = d !== null && d < 0 && !["submitted", "approved"].includes(m.status);
           const dueSoon = d !== null && d >= 0 && d <= 3 && !["submitted", "approved"].includes(m.status);
+          const isMe = !!meEmail && (m.email || "").toLowerCase() === meEmail;
           return (
             <li
               key={cid}
-              className="border border-[var(--rule)] rounded-sm p-3 bg-white"
+              className={`border rounded-sm p-3 ${
+                isMe
+                  ? "border-[var(--oxblood)] bg-[rgba(122,46,46,0.04)]"
+                  : "border-[var(--rule)] bg-white"
+              }`}
               data-testid={`task-drawer-contributions-row-${i}`}
             >
+              {isMe && (
+                <p
+                  className="text-[10px] uppercase tracking-[0.14em] font-mono text-[var(--oxblood)] mb-1"
+                  data-testid={`task-drawer-contributions-your-row-${i}`}
+                >
+                  Your contribution
+                </p>
+              )}
               <div className="flex items-start justify-between gap-3 mb-2">
                 <div>
                   <p className="text-[13px] text-[var(--ink)]">
@@ -477,12 +521,12 @@ function ContributionsTab({ task, onPatched }) {
                   </Button>
                   <Button
                     size="sm" variant="ghost"
-                    onClick={() => patch(cid, m.status || "not_started")}
-                    disabled={working === cid + (m.status || "not_started")}
+                    onClick={() => reinvite(cid)}
+                    disabled={reinviting === cid}
                     data-testid={`task-drawer-contributions-reinvite-${i}`}
-                    title="Re-fire contributor notification"
+                    title="Re-send invitation (rotates magic-link token if applicable)"
                   >
-                    <Mail className="w-3 h-3" />
+                    {reinviting === cid ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
                   </Button>
                 </div>
               </div>

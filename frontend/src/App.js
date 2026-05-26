@@ -93,6 +93,9 @@ const CycleList = lazy(() => import("@/pages/cycle/CycleList"));
 // Canonical surface: /app/task-manager. /app/cycle remains as
 // backwards-compat alias (renders the legacy CycleList listing).
 const TaskManager = lazy(() => import("@/pages/TaskManager"));
+// Phase F.5 (2026-05-26) — Contributor magic-link portal. PUBLIC route,
+// no AppShell, no auth gate. Mounted at /contribute/:token.
+const ContributorPortal = lazy(() => import("@/pages/ContributorPortal"));
 // T5 (2026-05-25) — C7 Draft Journal + C8 Ready to Compile Journal.
 const CycleDraftJournal = lazy(() => import("@/pages/cycle/CycleDraftJournal"));
 const CycleReadyJournal = lazy(() => import("@/pages/cycle/CycleReadyJournal"));
@@ -247,6 +250,12 @@ function App() {
           <Route path="/for-exco" element={<WebsiteForExco />} />
           <Route path="/for-non-executive-directors" element={<WebsiteForNeds />} />
           <Route path="/for-organisations" element={<WebsiteForOrganisations />} />
+
+          {/* Phase F.5 (2026-05-26) — Contributor magic-link portal.
+              PUBLIC route, no auth gate, no AppShell. Mounted before
+              the marketing routes so /contribute/:token never falls
+              through to a marketing page. */}
+          <Route path="/contribute/:token" element={<ContributorPortal />} />
 
           {/* Retained marketing routes (back-link compatibility) */}
           <Route path="/landing-legacy" element={<Landing />} />
