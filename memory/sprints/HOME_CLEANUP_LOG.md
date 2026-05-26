@@ -111,6 +111,65 @@ The `--ned-purple` token is brand-new — no aliasing or dead-color overlap.
 
 `/app/learn` route is registered at `frontend/src/App.js:309` and binds to the lazy-loaded `Learn` page (`pages/Learn.jsx`). The Learn page's `TABS` const at `Learn.jsx:24-29` declares `{ key: "news", label: "News", icon: Newspaper }` as the first tab — so clicking "Read more →" lands the user on the existing Learn news-feed surface with the News tab default-selected. No new route, no new endpoint, no new component — pure reuse.
 
+### Phase A — post-test fixes
+
+Tester reported on 2026-05-26 that (1) the Executive chip was still grey on live tiles and (2) requested verification of the 30% font math.
+
+#### Fix 1 — Executive chip grey (root cause + diff)
+
+**Root cause:** the live DB writes `"role": "executive"` (verified at `backend/core.py:390` and `backend/routers/contexts.py:547`), NOT `"owner"`. The first Phase A pass only branched on `role === "owner"`, so every real Executive membership fell through to the grey-neutral default. NED was unaffected because the API does write `"role": "ned"` directly.
+
+**Fix:** match both `"owner"` and `"executive"` for the Executive chip — mirrored exactly to the NED pattern. Diff (live region of `Home1.jsx::ChipCompany`):
+
+```diff
+   const role = (ctx.my_role || "—").toLowerCase();
+-  const roleLabel = role === "owner" ? "Executive"
++  const roleLabel = (role === "owner" || role === "executive") ? "Executive"
+                   : role === "ned" ? "NED"
+                   : role.charAt(0).toUpperCase() + role.slice(1);
+   ...
+-  if (role === "owner") {
++  if (role === "owner" || role === "executive") {
+     roleChipClass = "";
+     roleChipStyle = {
+       backgroundColor: "rgba(122, 46, 46, 0.15)", // --oxblood @ 15%
+       color: "var(--oxblood)",
+     };
+   } else if (role === "ned") { ... }
+```
+
+**ChipCompany consumers verified:** `grep -rn "ChipCompany" frontend/src` returns 2 hits — both in `Home1.jsx` (the definition + the only render site in the "Your companies" grid). No other component imports it. Fix is naturally scoped.
+
+**Wire test updated:** `test_phase_a_executive_chip_oxblood_15pct` now anchors on the IF-statement form `if (role === "owner" || role === "executive")` to disambiguate from the same boolean in the ternary above it. All 12 wire tests pass.
+
+**Live verification (Julius Opio portfolio, 2026-05-26T10:42Z, `/app/portfolio`):**
+
+| Tile (label rendered) | Computed background-color | Computed color |
+| --- | --- | --- |
+| Personal NED Seat — **NED** | `rgba(107, 70, 193, 0.15)` | `rgb(107, 70, 193)` |
+| Government Executive — **EXECUTIVE** | `rgba(122, 46, 46, 0.15)` | `rgb(122, 46, 46)` |
+| Executive Role — **EXECUTIVE** | `rgba(122, 46, 46, 0.15)` | `rgb(122, 46, 46)` |
+| Sponsored NED Seat — **NED** | `rgba(107, 70, 193, 0.15)` | `rgb(107, 70, 193)` |
+| Enterprise Executive — **EXECUTIVE** | `rgba(122, 46, 46, 0.15)` | `rgb(122, 46, 46)` |
+
+#### Fix 2 — Font math (pre/post measurements)
+
+| Metric | Value | Source |
+| --- | --- | --- |
+| Pre-Phase-A tile title size | **16px** | The class in the diff hunk I replaced was `text-[16px] text-[var(--ink)] font-bold truncate leading-tight` — the exact pre-image of the Phase A search-replace edit. |
+| Post-Phase-A tile title size | **11px** | Currently on disk: `text-[11px]` (single occurrence in `Home1.jsx` at the `home1-chip-${ctx.id}-title` `<p>`). Live DOM computed style measured on `/app/portfolio` confirms `font-size: 11px` on all 5 visible tiles. |
+| Ratio (post / pre) | **0.6875** | 11 / 16 = 0.6875 → **31.25% reduction** (slightly stronger than the 30% target but within rounding tolerance for the requested intent). |
+
+**Adjustment decision:** Brief calculation says 16 × 0.70 = 11.2px → CSS rounds sub-pixel down to 11px. Going to 12px would yield a 25% reduction (under the 30% target). Going to 11px yields 31.25% (over by 1.25 percentage points). 11px is the closer integer to the exact 11.2px target — keeping the 11px value. The 13px the tester measured was a stale-CSS-cache reading; the live computed style is **11px** on every tile (verified via `getComputedStyle()` against 5 tiles in the live browser session above).
+
+**No further code edit needed for Fix 2.** Math + live computed style confirmed.
+
+#### Bonus live verifications captured in the same pass
+
+- Read more href: `/app/learn` (matches acceptance criterion (d)).
+- Continue where you left off + Coming up: rendered side-by-side at 1920px viewport in the live screenshot (matches acceptance criterion (e)).
+- No console errors during sign-in + portfolio load (no errors logged in the automation capture).
+
 ---
 
 ## Phase B — Home 2 (Workspace)

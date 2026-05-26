@@ -95,14 +95,21 @@ function ChipCompany({ ctx, onPick }) {
   // reduced 30% (16px → 11px). Scoped to this tile only — other
   // text on Home 1 is unchanged.
   const role = (ctx.my_role || "—").toLowerCase();
-  const roleLabel = role === "owner" ? "Executive"
+  // Phase A post-test fix (2026-05-26): match both "owner" and
+  // "executive" — the live DB stores "executive" (core.py:390).
+  const roleLabel = (role === "owner" || role === "executive") ? "Executive"
                   : role === "ned" ? "NED"
                   : role.charAt(0).toUpperCase() + role.slice(1);
   const lastSeen = ctx.last_activity_at || ctx.last_seen_at || ctx.updated_at;
   // Role-specific chip styling (2026-05-26 brief).
+  // Phase A post-test fix (2026-05-26): Executive branch matches
+  // BOTH `role === "owner"` AND `role === "executive"` — the DB
+  // writes the literal "executive" string (backend/core.py:390),
+  // not "owner". Original branch only matched "owner" so live
+  // contexts fell through to grey neutral. Mirror NED pattern.
   let roleChipClass = "bg-[var(--cream-deep)] text-[var(--muted)]";
   let roleChipStyle = undefined;
-  if (role === "owner") {
+  if (role === "owner" || role === "executive") {
     roleChipClass = "";
     roleChipStyle = {
       backgroundColor: "rgba(122, 46, 46, 0.15)", // --oxblood @ 15%

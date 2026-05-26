@@ -104,9 +104,20 @@ def test_phase_a_ned_purple_token_defined():
 
 def test_phase_a_executive_chip_oxblood_15pct():
     src = _read("frontend/src/pages/home/Home1.jsx")
-    # Executive chip rendered when role === "owner".
-    idx = src.find('if (role === "owner")')
-    assert idx != -1, "Executive (owner) role branch missing"
+    # Executive chip rendered when role is "owner" OR "executive".
+    # Phase A post-test fix (2026-05-26): the live DB writes the
+    # literal "executive" (backend/core.py:390), not "owner" — so
+    # the branch must match both shapes. Anchor on the IF-statement
+    # form specifically (the ternary also contains the same boolean
+    # for the roleLabel, so we use the `if (` prefix to disambiguate).
+    idx = src.find('if (role === "owner" || role === "executive")')
+    assert idx != -1, (
+        "Executive chip-style branch must match BOTH 'owner' AND 'executive' "
+        "role values via `if (role === \"owner\" || role === \"executive\")`. "
+        "Live DB writes 'executive' (core.py:390); a branch that only matches "
+        "'owner' leaves real Executive chips grey."
+    )
+    # The matching branch body must apply oxblood styling.
     branch = src[idx: idx + 400]
     assert "rgba(122, 46, 46, 0.15)" in branch, (
         "Executive chip bg must be Oxblood @ 15% opacity"
