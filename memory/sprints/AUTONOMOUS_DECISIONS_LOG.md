@@ -113,3 +113,48 @@ can re-direct on return.
   4. The `tasks` collection survives until manually dropped.
 - **Surface:** orchestrator E.4 + Phase F kickoff dispatch.
 
+---
+
+## 2026-05-26 — F.3 locked-in autonomous picks (orchestrator-confirmed)
+
+The orchestrator returned and **locked** the borderline calls from
+prior entries before dispatching F.3:
+
+1. **G8 Board/Committee Pack (E.4 borderline):** STAYS as full-page
+   surface. Do not refactor into the Universal Document Drawer.
+   `pages/WorkStudioDocumentPage.jsx` + `/app/work-studio/document/:artefactId`
+   route preserved indefinitely.
+2. **`cycles` MongoDB collection (F.1 borderline):** STAYS coexisting
+   with the new `tasks` collection. No `renameCollection` migration.
+   The two surfaces are semantically distinct objects and remain so.
+3. **Email send transport (F.5 forward-look):** **Postmark** with the
+   user's existing API key. Audit rows continue to be the durable
+   record; live send wires when F.5 ships.
+
+These are now locked decisions, not pending borderline calls.
+
+---
+
+## 2026-05-26 — F.3 in-flight decisions
+
+- **`<EntityDrawer>` base extraction:** orchestrator suggested
+  extracting genuinely shared chrome from `DocumentDrawer` into a
+  shared base if there's clean reuse. On inspection the chrome
+  *looks* shareable but the inner state machine (mode selectors,
+  tab routers, content sourcing) is bespoke per entity. **Decision:**
+  compose, do NOT extract a base class today. Premature abstraction
+  risks. `TaskDrawer` and `DocumentDrawer` share the `<Sheet>`
+  primitive from `components/ui/sheet.jsx` (already shared) plus a
+  small reused helper `_stripWatermarkOnReader` — that's it. The
+  two components stay independently editable.
+- **Intelligence LLM Recommendations:** per the brief's "scope cut
+  allowed" clause, the LLM-voiced Recommendations bullet ships with
+  a rule-based fallback. If Shield fails, the section renders rule-
+  derived prose ("Sarah's contribution is overdue by 3 days")
+  WITHOUT the LLM polish; tab still functional. No silent gaps.
+- **Share-task tracking:** ports the DocumentDrawer pattern
+  (`ShareDocumentModal` → `engagement` endpoints). Minimal initial
+  ship: link-copy + audit row via `task.shared` event. Engagement
+  metrics surface from the existing `/engagement` listing if a row
+  is present.
+

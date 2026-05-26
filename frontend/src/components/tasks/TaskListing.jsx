@@ -1,17 +1,17 @@
 /**
- * TaskListing — Phase F.2 (2026-05-26).
+ * TaskListing — Phase F.2 (2026-05-26) · F.3 patched 2026-05-26.
  *
  * Renders the list of task cards for the active sort tab. Calls
  * `GET /api/tasks?state=<tab>`. Each card shows: title · objective
  * (truncated) · readiness score · contributor avatars · due date ·
  * status pill.
  *
- * F.3 deferred: clicking a task card opens a placeholder "Task drawer
- * coming soon" sheet. The drawer surface ships in F.3.
+ * F.3: clicking a task card now sets `?task_id=<id>` on the URL —
+ * the <TaskDrawer> mounted on TaskManager opens automatically.
  */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, apiErrorMessage } from "@/lib/api";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Loader2, Calendar, Users, FileText, Inbox } from "lucide-react";
 import { toast } from "sonner";
 
@@ -67,10 +67,10 @@ function ContributorAvatars({ team }) {
 }
 
 
-export default function TaskListing({ contextId, state, refreshKey, activeTaskId }) {
+export default function TaskListing({ contextId, state, refreshKey }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [openTask, setOpenTask] = useState(null);
+  const [, setParams] = useSearchParams();
 
   useEffect(() => {
     let dead = false;
@@ -86,12 +86,14 @@ export default function TaskListing({ contextId, state, refreshKey, activeTaskId
     return () => { dead = true; };
   }, [contextId, state, refreshKey]);
 
-  // Open the drawer placeholder if a `task_id` URL param is set.
-  useEffect(() => {
-    if (!activeTaskId || tasks.length === 0) return;
-    const found = tasks.find((t) => t.id === activeTaskId);
-    if (found) setOpenTask(found);
-  }, [activeTaskId, tasks]);
+  // F.3: card click opens the drawer via `?task_id=<id>`.
+  const openTask = (taskId) => {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("task_id", taskId);
+      return next;
+    }, { replace: false });
+  };
 
   if (loading) {
     return (
@@ -123,7 +125,7 @@ export default function TaskListing({ contextId, state, refreshKey, activeTaskId
           <li key={t.id}>
             <button
               type="button"
-              onClick={() => setOpenTask(t)}
+              onClick={() => openTask(t.id)}
               className="w-full text-left p-4 border border-[var(--rule)] bg-white rounded-sm hover:border-[var(--ink)] transition-colors"
               data-testid={`task-card-${t.id}`}
             >
@@ -158,49 +160,6 @@ export default function TaskListing({ contextId, state, refreshKey, activeTaskId
           </li>
         ))}
       </ul>
-
-      {/* F.3 — Task Drawer is the next sub-phase. Placeholder for now. */}
-      <Sheet open={!!openTask} onOpenChange={(o) => !o && setOpenTask(null)}>
-        <SheetContent
-          side="right"
-          className="w-full sm:max-w-[60vw] p-0 flex flex-col"
-          data-testid="task-drawer-placeholder"
-        >
-          <div className="px-6 py-5 border-b border-[var(--rule)] flex items-start justify-between">
-            <div>
-              <p className="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[var(--muted)]">
-                Task
-              </p>
-              <h2 className="akki-serif text-[20px] text-[var(--ink)] mt-0.5">
-                {openTask?.name || "—"}
-              </h2>
-            </div>
-            <StatusPill state={openTask?.state} />
-          </div>
-          <div className="p-6 space-y-4 flex-1 overflow-y-auto">
-            {openTask?.objective && (
-              <section>
-                <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Objective</p>
-                <p className="text-[13px] text-[var(--ink)] leading-relaxed">{openTask.objective}</p>
-              </section>
-            )}
-            {openTask?.success_criteria && (
-              <section>
-                <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Success criteria</p>
-                <p className="text-[13px] text-[var(--ink)] leading-relaxed">{openTask.success_criteria}</p>
-              </section>
-            )}
-            <section className="border-t border-[var(--rule)] pt-4 mt-2">
-              <p
-                className="text-[12.5px] italic text-[var(--muted)]"
-                data-testid="task-drawer-coming-soon"
-              >
-                Task drawer with full intelligence, compile flow, and contributor activity is the next sub-phase (F.3). For now this drawer shows the captured spec.
-              </p>
-            </section>
-          </div>
-        </SheetContent>
-      </Sheet>
     </>
   );
 }

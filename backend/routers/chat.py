@@ -109,6 +109,7 @@ class LinkedContextIn(BaseModel):
     Allowed ctx_type values:
       - `document`               (db.documents)
       - `cycle`                  (db.cycles)
+      - `task`                   (db.tasks — Phase F.3 / 2026-05-26)
       - `work_studio` / `work_studio_artefact` (db.work_studio_artefacts;
                                   `work_studio` normalises to the
                                   canonical name)
@@ -120,7 +121,7 @@ class LinkedContextIn(BaseModel):
     @field_validator("ctx_type")
     @classmethod
     def _check_ctx_type(cls, v: str) -> str:
-        allowed = {"document", "cycle", "work_studio", "work_studio_artefact"}
+        allowed = {"document", "cycle", "task", "work_studio", "work_studio_artefact"}
         if v not in allowed:
             raise ValueError(f"ctx_type must be one of {sorted(allowed)}")
         if v == "work_studio":
@@ -285,6 +286,38 @@ async def _resolve_linked_context(
             "title":    cyc.get("title") or cyc["id"],
             "excerpt":  (cyc.get("description") or "")[:8000],
             "href":     f"/app/cycle/{cyc['id']}",
+        }
+    # Phase F.3 (2026-05-26) — Task Manager linked-context support.
+    # Tasks are owned by the caller (account_id), not context-scoped
+    # like documents/cycles. The excerpt blends the objective +
+    # success criteria + a one-line readiness summary so the linked
+    # chip carries enough context for the model to use it.
+    if ctx_type == "task":
+        t = await db.tasks.find_one(
+            {"id": ctx_id, "account_id": account_id},
+            {"_id": 0, "id": 1, "name": 1, "objective": 1,
+             "success_criteria": 1, "readiness_score": 1, "state": 1,
+             "team": 1, "due_date": 1},
+        )
+        if not t:
+            return None
+        readiness = t.get("readiness_score", 0)
+        team_n = len(t.get("team") or [])
+        bits = []
+        if t.get("objective"):
+            bits.append(f"Objective: {t['objective']}")
+        if t.get("success_criteria"):
+            bits.append(f"Success criteria: {t['success_criteria']}")
+        bits.append(
+            f"State: {t.get('state', 'draft')} · readiness {readiness}% · {team_n} contributors"
+            + (f" · due {t['due_date']}" if t.get("due_date") else "")
+        )
+        return {
+            "ctx_type": "task",
+            "ctx_id":   t["id"],
+            "title":    t.get("name") or t["id"],
+            "excerpt":  "\n\n".join(bits)[:8000],
+            "href":     f"/app/task-manager?task_id={t['id']}",
         }
     if ctx_type in ("work_studio", "work_studio_artefact"):
         art = await db.work_studio_artefacts.find_one(

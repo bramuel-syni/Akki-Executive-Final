@@ -288,7 +288,9 @@ async def test_f2_list_tasks_filters_by_state(seeded_actor):
 
 @pytest.mark.asyncio
 async def test_f2_patch_task_recomputes_readiness(seeded_actor):
-    """PATCH updates fields and recomputes readiness_score."""
+    """PATCH updates fields and recomputes readiness_score via the
+    F.3 60/25/15 formula. Adding a submitted/approved contributor
+    moves the score above the empty baseline."""
     from server import app  # noqa: F401
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         r = await c.post("/api/auth/login",
@@ -300,7 +302,7 @@ async def test_f2_patch_task_recomputes_readiness(seeded_actor):
         before = r.json()["readiness_score"]
         r = await c.patch(f"/api/tasks/{tid}", json={
             "objective": "Make it sharp.",
-            "team": [{"name": "X", "email": "x@example.com"}],
+            "team": [{"name": "X", "email": "x@example.com", "status": "approved"}],
             "output_spec": {"kind": "template", "template_id": "board_pack", "formats": ["pdf"]},
         }, headers=hdr)
         assert r.status_code == 200, r.text

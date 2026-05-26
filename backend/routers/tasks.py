@@ -31,7 +31,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, conint, conlist
 
 from core import (
@@ -59,6 +59,11 @@ class _TeamMemberIn(BaseModel):
     due_date: Optional[str] = None
     contribution_mode: str = "akki_account"
     contributor_id: Optional[str] = None
+    # Phase F.3 (2026-05-26) — status is set by the contributions
+    # PATCH endpoint at runtime. Allow it through on create so seeded
+    # demo/test tasks can land with realistic statuses.
+    status: Optional[str] = None
+    adherence_score: Optional[int] = None
 
 
 class _OutputSpecIn(BaseModel):
@@ -118,22 +123,13 @@ def _sanitize_task(t: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _compute_readiness(task: Dict[str, Any]) -> int:
-    """F.3-deferred formula: 60% approved + 25% submitted + 15% avg
-    objective-adherence. For F.2, contributions aren't yet tracked,
-    so we return a deterministic placeholder based on team size +
-    output_spec presence so the listing has something honest to show.
+    """Phase F.3 (2026-05-26) — readiness uses the orchestrator-locked
+    60/25/15 formula via the shared `readiness_breakdown` helper.
+    Before F.3 this was a placeholder; once contributor status is
+    trackable end-to-end the placeholder is no longer needed.
     """
-    team_n = len(task.get("team") or [])
-    spec_set = bool(task.get("output_spec"))
-    obj_set = bool((task.get("objective") or "").strip())
-    score = 0
-    if team_n:
-        score += min(40, team_n * 10)
-    if spec_set:
-        score += 30
-    if obj_set:
-        score += 20
-    return max(0, min(100, score))
+    from services.tasks.intelligence_service import readiness_breakdown
+    return readiness_breakdown(task)["score"]
 
 
 async def _notify_contributors(task: Dict[str, Any]) -> None:
@@ -418,3 +414,179 @@ async def agent_prefill(
         "success_criteria": "Name the concrete artefact(s) produced and the sign-off criterion.",
         "source":           "none",
     }
+
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Phase F.3 (2026-05-26) — Task Drawer endpoints
+# ═════════════════════════════════════════════════════════════════════
+CONTRIBUTION_STATUS_ALLOWED = (
+    "not_started", "in_progress", "submitted",
+    "approved", "needs_revision",
+)
+
+
+class _ContributionPatchIn(BaseModel):
+    """Status changes on a single contributor row of a task."""
+    status: str = Field(min_length=1, max_length=40)
+    note:   Optional[str] = Field(default=None, max_length=2000)
+
+
+def _find_contributor(team: List[Dict[str, Any]], contributor_id: str) -> Optional[int]:
+    """Locate a contributor row by email (canonical) or name (fallback).
+    Returns the index in the team list or None."""
+    for i, m in enumerate(team or []):
+        if (m.get("email") or "").lower() == contributor_id.lower():
+            return i
+        if (m.get("name") or "").lower() == contributor_id.lower():
+            return i
+        if (m.get("contributor_id") or "") == contributor_id:
+            return i
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────────
+# GET /api/tasks/{task_id}/drafts — task-linked documents
+# ─────────────────────────────────────────────────────────────────────
+@router.get("/tasks/{task_id}/drafts")
+async def list_task_drafts(
+    task_id: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Documents linked to this task (via `documents.task_id`).
+    Returns both Akki-generated drafts AND contributor uploads."""
+    t = await db.tasks.find_one({"id": task_id, "account_id": current["id"]}, {"_id": 0, "id": 1, "context_id": 1})
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    docs = await db.documents.find(
+        {"task_id": task_id},
+        {"_id": 0, "id": 1, "name": 1, "original_filename": 1, "state": 1,
+         "origin": 1, "uploader_id": 1, "uploader_name": 1, "created_at": 1,
+         "doc_type": 1},
+    ).sort("created_at", -1).to_list(length=200)
+    return docs
+
+
+# ─────────────────────────────────────────────────────────────────────
+# PATCH /api/tasks/{task_id}/contributions/{contributor_id} — status
+# ─────────────────────────────────────────────────────────────────────
+@router.patch("/tasks/{task_id}/contributions/{contributor_id}")
+async def patch_contribution(
+    task_id: str, contributor_id: str,
+    body: _ContributionPatchIn,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Update a single contributor row's status. Status changes trigger
+    a readiness recompute + audit row. Notifications fire on
+    approve / request-revision when contribution_mode is `akki_account`
+    or `email_reply` (live email send is wired in F.5; today we write
+    the audit row as the durable record)."""
+    if body.status not in CONTRIBUTION_STATUS_ALLOWED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"status must be one of {CONTRIBUTION_STATUS_ALLOWED}",
+        )
+    t = await db.tasks.find_one({"id": task_id, "account_id": current["id"]})
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    team = list(t.get("team") or [])
+    idx = _find_contributor(team, contributor_id)
+    if idx is None:
+        raise HTTPException(status_code=404, detail="Contributor not found on this task")
+    team[idx] = {**team[idx], "status": body.status}
+    if body.note:
+        team[idx]["status_note"] = body.note
+    now_iso = datetime.now(timezone.utc).isoformat()
+    # Recompute readiness via the F.3 formula.
+    from services.tasks.intelligence_service import readiness_breakdown
+    rb = readiness_breakdown({**t, "team": team})
+    await db.tasks.update_one(
+        {"id": task_id},
+        {"$set": {"team": team, "updated_at": now_iso, "readiness_score": rb["score"]}},
+    )
+    # Audit row.
+    try:
+        await db.audit_log.insert_one({
+            "id":            str(uuid.uuid4()),
+            "context_id":    t.get("context_id"),
+            "account_id":    current["id"],
+            "action":        f"task.contribution.{body.status}",
+            "resource_type": "task",
+            "resource_id":   task_id,
+            "metadata": {
+                "contributor_email": team[idx].get("email"),
+                "contributor_name":  team[idx].get("name"),
+                "note":              body.note,
+                "readiness_after":   rb["score"],
+            },
+            "created_at": now_iso,
+        })
+    except Exception as e:  # noqa: BLE001
+        log.warning("task contribution audit failed: %s", e)
+    return {
+        "task_id":         task_id,
+        "contributor_id":  contributor_id,
+        "team":            team,
+        "readiness_score": rb["score"],
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────
+# GET /api/tasks/{task_id}/intelligence — cached or pending
+# ─────────────────────────────────────────────────────────────────────
+@router.get("/tasks/{task_id}/intelligence")
+async def get_task_intelligence(
+    task_id: str,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Returns the cached intelligence row keyed by (task_id, task_hash).
+    Cache MISS → returns {status: "pending"} and triggers a synchronous
+    build (small enough to run inline; LLM Recommendations are best-
+    effort with rule-based fallback)."""
+    from services.tasks.intelligence_service import task_hash, build_intelligence
+    t = await db.tasks.find_one({"id": task_id, "account_id": current["id"]}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    th = task_hash(t)
+    cached = await db.task_intelligence.find_one(
+        {"task_id": task_id, "task_hash": th}, {"_id": 0},
+    )
+    if cached:
+        return cached
+    # Compute inline. LLM is best-effort; rule-based fallback covers any failure.
+    payload = await build_intelligence(t, user_id=current["id"])
+    try:
+        await db.task_intelligence.insert_one(dict(payload))
+    except Exception as e:  # noqa: BLE001
+        log.warning("task intel cache insert failed: %s", e)
+    return payload
+
+
+# ─────────────────────────────────────────────────────────────────────
+# POST /api/tasks/{task_id}/intelligence/regenerate — force rebuild
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/tasks/{task_id}/intelligence/regenerate")
+async def regenerate_task_intelligence(
+    task_id: str,
+    background_tasks: BackgroundTasks,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Force a fresh build. Drops the cache row for the current task_hash
+    and triggers a background rebuild. Returns {status:"queued"}; the
+    UI polls /intelligence to pick up the new payload."""
+    from services.tasks.intelligence_service import task_hash, build_intelligence
+    t = await db.tasks.find_one({"id": task_id, "account_id": current["id"]}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    th = task_hash(t)
+    await db.task_intelligence.delete_many({"task_id": task_id, "task_hash": th})
+
+    async def _rebuild() -> None:
+        try:
+            payload = await build_intelligence(t, user_id=current["id"])
+            await db.task_intelligence.insert_one(dict(payload))
+        except Exception as e:  # noqa: BLE001
+            log.warning("task intel rebuild failed: %s", e)
+
+    background_tasks.add_task(_rebuild)
+    return {"status": "queued", "task_id": task_id, "task_hash": th}

@@ -108,7 +108,9 @@ class SeedPayload(BaseModel):
     @field_validator("source")
     @classmethod
     def _check_source(cls, v: str) -> str:
-        allowed = {"cycle", "work_studio_artefact", "document_journal"}
+        # Phase F.3 (2026-05-26) — "task" added so the new Task Manager
+        # can hand off to Solva via `?ctx_type=task&ctx_id=…`.
+        allowed = {"cycle", "work_studio_artefact", "document_journal", "task"}
         if v not in allowed:
             raise ValueError(f"source must be one of {sorted(allowed)}")
         return v
@@ -549,6 +551,8 @@ def _build_source_url(source: str, source_id: str, context_id: str) -> str:
         return f"/app/work-studio/artefact/{source_id}"
     if source == "document_journal":
         return f"/app/workspace?doc={source_id}"
+    if source == "task":  # Phase F.3 (2026-05-26)
+        return f"/app/task-manager?task_id={source_id}"
     return ""
 
 

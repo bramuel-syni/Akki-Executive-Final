@@ -22,6 +22,8 @@ import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import TaskListing from "@/components/tasks/TaskListing";
 import TaskSetupWizard from "@/components/tasks/TaskSetupWizard";
+import TaskDrawer from "@/components/tasks/TaskDrawer";
+import DocumentDrawer from "@/components/documents/DocumentDrawer";
 import CompilationReadinessSection from "@/components/cycle/CompilationReadinessSection";
 import FollowUpDraftsCard from "@/components/tasks/FollowUpDraftsCard";
 import { Button } from "@/components/ui/button";
@@ -32,12 +34,26 @@ export default function TaskManager() {
   const cid = activeContext?.id;
   const [params, setParams] = useSearchParams();
   // F.1 — accept BOTH `task_id` and legacy `cycle_id`. task_id wins.
-  const activeTaskId = params.get("task_id") || params.get("cycle_id") || null;
+  // The TaskDrawer mounted below also reads `task_id` directly.
   // Initial tab from URL (defaults to active).
   const initialTab = params.get("state") || "active";
   const [tab, setTab] = useState(initialTab);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // F.1 backwards-compat: if URL still carries the legacy `cycle_id`
+  // param, rewrite it to the canonical `task_id` so the TaskDrawer
+  // mount picks it up. This is the entire alias path — task_id wins.
+  useEffect(() => {
+    const legacy = params.get("cycle_id");
+    if (legacy && !params.get("task_id")) {
+      const next = new URLSearchParams(params);
+      next.set("task_id", legacy);
+      next.delete("cycle_id");
+      setParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Keep the ?state=… param sticky as the user switches tabs.
   useEffect(() => {
@@ -106,7 +122,6 @@ export default function TaskManager() {
               contextId={cid}
               state={tab}
               refreshKey={refreshKey}
-              activeTaskId={activeTaskId}
             />
           </section>
 
@@ -130,6 +145,14 @@ export default function TaskManager() {
         onCreated={onTaskCreated}
         contextId={cid}
       />
+      {/* Phase F.3 (2026-05-26) — Universal Task Drawer mounts here.
+          Opens automatically when the URL carries `?task_id=`. */}
+      <TaskDrawer />
+      {/* DocumentDrawer mount supports the F.3 stack pattern: when a
+          user opens a draft from inside the Task Drawer's Drafts tab,
+          the URL adds `?doc_id=…` on top of `?task_id=…` and this
+          drawer opens stacked above the Task Drawer. */}
+      <DocumentDrawer contextId={cid} />
     </AppShell>
   );
 }

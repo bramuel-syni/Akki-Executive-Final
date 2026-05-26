@@ -1540,6 +1540,94 @@ Email send via Postmark is deferred to F.5. For F.2, `_notify_contributors()` wr
 
 - Phase A 12 · B 14 · C 12 · D 44 · D-audit-correction 10 · E (E.1+E.2) 18 · E.3 22 · E.3 scope-compliance 15 · E.4 10 · **F.1+F.2 20 = 187/187 GREEN.**
 
+## F.3 — Task Drawer (2026-05-26)
+
+Mirrors the E.3 DocumentDrawer pattern: 60% Sheet primitive mounted on the Task Manager surface, opens via `?task_id=<uuid>` URL contract.
+
+### Frontend
+
+| Path | Purpose |
+| --- | --- |
+| `components/tasks/TaskDrawer.jsx` (NEW, ~800 lines) | 5-tab universal Task surface. Listens to `?task_id=`. Inline name edit in header, readiness chip, due pill (overdue / due-soon styled). |
+| `pages/TaskManager.jsx` | Mounts `<TaskDrawer />` + `<DocumentDrawer />` (stack pattern). F.1 alias rewrite: legacy `?cycle_id=…` rewrites to `?task_id=…` on mount. |
+| `components/tasks/TaskListing.jsx` | Placeholder Sheet removed. Card click now sets `?task_id=…` → TaskDrawer opens. |
+
+#### 5 tabs
+
+| Tab | Surface |
+| --- | --- |
+| **Plan** | Inline-edit objective + success_criteria + name (header). Output spec + team roster read-only here (team edits flow through F.2 wizard re-run). Every save fires `task.updated` audit. |
+| **Contributions** | Per-row contributor table with status pill (`not_started` / `in_progress` / `submitted` / `approved` / `needs_revision`). Inline actions per row: Approve · Request revision (opens 2-row textarea) · Re-invite (re-fires audit notification). Overdue indicator (red) / due-soon indicator (amber). |
+| **Drafts** | Lists docs with `task_id == this.id` via `GET /api/tasks/{id}/drafts`. "Open" sets `?doc_id=…` on top of `?task_id=…` — DocumentDrawer opens stacked above TaskDrawer (closing the inner returns to the Task Drawer). |
+| **Intelligence** | 5 sections: readiness breakdown (60/25/15) · blockers · gaps · completion roadmap · recommendations (LLM via Shield with rule-based fallback). Refresh CTA triggers async regenerate. |
+| **Compile** | Placeholder per brief — readiness card + disabled "Compile anyway" CTA + "F.4" note. |
+
+#### 5 footer CTAs (canonical `?ctx_type=task&ctx_id=<id>` URL contract)
+
+| CTA | Route emitted |
+| --- | --- |
+| Use in Solva | `/app/solva?ctx_type=task&ctx_id=…` |
+| Use in Chat | `/app/chat?ctx_type=task&ctx_id=…` |
+| Generate brief | `/app/solva?ctx_type=task&ctx_id=…&submodule=develop_strategy&starter=<task.name>` |
+| Test hypothesis | `/app/solva?ctx_type=task&ctx_id=…&submodule=simulate_hypothesis&starter=<task.objective>` |
+| Share task | clipboard-copy of `/app/task-manager?task_id=<id>` + sonner toast (explicit `task.shared` audit endpoint queued for F.5) |
+
+### Backend
+
+| Endpoint | Behavior |
+| --- | --- |
+| `GET /api/tasks/{task_id}/drafts` | Documents with `task_id == task_id` |
+| `PATCH /api/tasks/{task_id}/contributions/{contributor_id}` | Status change. Resolves contributor by email (primary) / name (fallback). Recomputes readiness via F.3 formula. Writes audit row `task.contribution.<new_status>`. |
+| `GET /api/tasks/{task_id}/intelligence` | Cache lookup keyed by `(task_id, task_hash)`. MISS → synchronous build, insert. |
+| `POST /api/tasks/{task_id}/intelligence/regenerate` | Drops cache row for current hash + queues background rebuild. Returns `{status:"queued"}`. |
+
+| Module | Purpose |
+| --- | --- |
+| `services/tasks/intelligence_service.py` (NEW, ~260 lines) | `task_hash`, `readiness_breakdown` (60/25/15), `blockers`, `gaps`, `roadmap` — all rule-based, no LLM dependency. `_llm_recommendations` (Shield-bounded) + `_fallback_recommendations` (rule-based safety net). `build_intelligence` orchestrates all 5 sections. |
+
+| Schema change | Detail |
+| --- | --- |
+| `documents.task_id` | NEW optional field. Backwards compat — defaults to null. Set when a contributor uploads a doc against a task OR when a task generates a draft. |
+| `task_intelligence` collection | NEW. Caches `{task_id, task_hash, readiness, blockers, gaps, roadmap, recommendations, generated_at}`. Cache row dropped+rebuilt on `regenerate`. |
+
+### Linked-context propagation (continuity from E.3 + D.3)
+
+#### Chat (`routers/chat.py`)
+- `LinkedContextIn._check_ctx_type` now accepts `"task"` (whitelist: `{document, cycle, task, work_studio, work_studio_artefact}`).
+- `_resolve_linked_context` adds a `ctx_type == "task"` branch that hits `db.tasks` (account-scoped, not context-scoped because tasks are user-owned), returns `{ctx_type, ctx_id, title, excerpt (objective + success_criteria + state/readiness/team summary), href: "/app/task-manager?task_id=…"}`.
+- The frontend `LinkedContextChip` is data-driven and renders "Reading: <task name> · task" automatically with NO frontend change required.
+
+#### Solva (`routers/solva_phase_d.py`)
+- `SeedPayload.source` validator now accepts `"task"` (whitelist: `{cycle, work_studio_artefact, document_journal, task}`).
+- `_build_source_url("task", …)` returns `/app/task-manager?task_id=…` so the Trust panel back-link works.
+
+### Scope cuts (NOT shipped — flagged honestly)
+
+- **Live contributor email send** — F.5 (Postmark via user's existing API key per locked decision). Today's behavior: audit row is the durable record; `Re-invite` button re-fires the audit row but does NOT send email.
+- **Explicit `task.shared` audit endpoint** — F.5. Today's Share button copies the link + writes nothing; the audit lives implicitly via the URL hop.
+- **Compile flow** — F.4. Placeholder card with disabled CTA + "ships in F.4" tooltip.
+- **Objective-adherence scoring per contributor** — the readiness formula's 15% adherence weight is computed from `team[].adherence_score`, but no UI sets that field yet. Today the score is 0 in the absence of adherence data — surfaces honestly in the readiness breakdown.
+
+### Files changed — F.3
+
+| Path | Change |
+| --- | --- |
+| `backend/routers/tasks.py` | +4 endpoints (drafts, contributions PATCH, intelligence GET, intelligence regenerate). `BackgroundTasks` imported. |
+| `backend/routers/chat.py` | `task` added to `LinkedContextIn` whitelist + resolver branch. |
+| `backend/routers/solva_phase_d.py` | `task` added to `SeedPayload.source` whitelist + URL builder. |
+| `backend/services/tasks/intelligence_service.py` (NEW) | Full intelligence service. |
+| `backend/services/tasks/__init__.py` (NEW) | Empty package marker. |
+| `frontend/src/components/tasks/TaskDrawer.jsx` (NEW) | Universal Task Drawer. |
+| `frontend/src/components/tasks/TaskListing.jsx` | Placeholder Sheet removed; card click sets `?task_id=`. |
+| `frontend/src/pages/TaskManager.jsx` | Mounts TaskDrawer + DocumentDrawer; legacy `cycle_id` → `task_id` alias rewrite. |
+| `backend/tests/test_home_cleanup_phase_f3.py` (NEW) | 22 wire + live tests. |
+| `memory/sprints/AUTONOMOUS_DECISIONS_LOG.md` | F.3 in-flight decisions (no EntityDrawer extraction; LLM fallback path; minimal share). |
+| `memory/sprints/HOME_CLEANUP_LOG.md` | This subsection. |
+
+### Suite pass count after F.3
+
+- Phase A 12 · B 14 · C 12 · D 44 · D-audit-correction 10 · E 18 · E.3 22 · E.3 scope-compliance 15 · E.4 10 · F.1+F.2 20 · **F.3 22 = 209/209 GREEN.**
+
 
 
 - [x] Phases A + B + C + D closed in this log.
