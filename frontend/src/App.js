@@ -53,7 +53,6 @@ const WebsiteForOrganisations = lazy(() => import("@/website/pages/ForOrganisati
 // -- Lazy: protected app routes ----------------------------------------------
 const FirstSession = lazy(() => import("@/pages/FirstSession"));
 const AppHome = lazy(() => import("@/pages/AppHome"));
-const Home1 = lazy(() => import("@/pages/home/Home1"));
 const Questions = lazy(() => import("@/pages/Questions"));
 const Workspace = lazy(() => import("@/pages/Workspace"));
 const Activity = lazy(() => import("@/pages/Activity"));
@@ -67,7 +66,6 @@ const TenantSettings = lazy(() => import("@/pages/TenantSettings"));
 const AccountSecurity = lazy(() => import("@/pages/AccountSecurity"));
 const InviteAccept = lazy(() => import("@/pages/InviteAccept"));
 const NewContext = lazy(() => import("@/pages/NewWorkspace"));
-const ContextPortfolio = lazy(() => import("@/pages/ContextPortfolio"));
 const NewsStub = lazy(() => import("@/pages/NewsStub"));
 const Simulate = lazy(() => import("@/pages/Simulate"));
 const LensRoom = lazy(() => import("@/pages/LensRoom"));
@@ -126,21 +124,20 @@ const LLMSpend = lazy(() => import("@/pages/admin/LLMSpend"));
 const AuthEvents = lazy(() => import("@/pages/admin/AuthEvents"));
 const AdminIndex = lazy(() => import("@/pages/admin/AdminIndex"));
 
-// Patch 3 — Home 1 needs to render even when the user has an active context
-// (the explicit "Back to portfolio" path).
-function PortfolioRoute() { return <Home1 />; }
+// Phase H.5 route consolidation (2026-05-27) — `Home1` archived. All
+// legacy portfolio entry routes (/app/portfolio, /app/companies,
+// /app/contexts) collapse into `/app` (no-active-context branch of
+// AppHome → ContextPortfolio).
 
 function PublicOnlyRoute({ children, allowSandbox = false }) {
   const { account } = useAuth();
   if (account === null) return null;
   // Sandbox users must be allowed through to /signup so they can convert.
-  // QA-2026-05-16-001 (Chunk 15, 2026-05-21) — when an already-authed
-  // user (or a just-authed one mid-state-flush) lands here, redirect to
-  // `/app/portfolio` instead of `/app`. This matches the SignIn handler
-  // default and ensures the post-login experience always lands on Home 1
-  // (the portfolio surface) regardless of whether the React state flush
-  // racing the navigate() call wins.
-  if (account && !(allowSandbox && account.is_sandbox)) return <Navigate to="/app/portfolio" replace />;
+  // Phase H.5 (2026-05-27) — post-auth target collapsed to `/app`
+  // (was `/app/portfolio` while Home1 was the canonical entry).
+  // The AppHome dispatcher routes the no-active-context branch to
+  // the new Portfolio Landing.
+  if (account && !(allowSandbox && account.is_sandbox)) return <Navigate to="/app" replace />;
   return children;
 }
 
@@ -294,10 +291,12 @@ function App() {
 
           <Route path="/app/first-session" element={<ProtectedRoute><FirstSession /></ProtectedRoute>} />
           <Route path="/app" element={<Gated><AppHome /></Gated>} />
-          {/* Patch 3 — explicit portfolio entry (always Home 1). */}
+          {/* Phase H.5 (2026-05-27) — legacy portfolio routes collapsed
+              to /app. /app/portfolio used to render Home1 (now
+              archived). External bookmarks redirect transparently. */}
+          <Route path="/app/portfolio" element={<Navigate to="/app" replace />} />
           <Route path="/app/questions" element={<Gated><Questions /></Gated>} />
           <Route path="/app/cycle/:cycleId/questions" element={<Gated><Questions /></Gated>} />
-          <Route path="/app/portfolio" element={<Gated><PortfolioRoute /></Gated>} />
           {/* Phase F.1 (2026-05-26) — Task Manager is the canonical
               surface. /app/cycle stays as a backwards-compat alias to
               the legacy CycleList listing while /app/task-manager
@@ -366,9 +365,12 @@ function App() {
           <Route path="/app/solva/phase-d/session/:sessionId" element={<Gated><SolvaPhaseDSession /></Gated>} />
           <Route path="/app/admin/synisense-observability" element={<Gated><SynisenseObservability /></Gated>} />
           <Route path="/app/documents/:id" element={<Gated><DocumentRouteSwitch /></Gated>} />
-          <Route path="/app/contexts" element={<Gated><ContextPortfolio /></Gated>} />
-          {/* Phase 15.2 cosmetic alias: /app/companies alongside /app/contexts. */}
-          <Route path="/app/companies" element={<Gated><ContextPortfolio /></Gated>} />
+          {/* Phase H.5 (2026-05-27) — /app/contexts and /app/companies
+              landing routes collapsed to /app. ContextPortfolio renders
+              there via the AppHome dispatcher's no-active-context
+              branch. External bookmarks redirect transparently. */}
+          <Route path="/app/contexts" element={<Navigate to="/app" replace />} />
+          <Route path="/app/companies" element={<Navigate to="/app" replace />} />
           {/* H.1 (2026-05-26) — Portfolio Landing news stub. Full feed lands in H.3. */}
           <Route path="/app/news" element={<Gated><NewsStub /></Gated>} />
           <Route path="/app/companies/new" element={<Gated><NewContext /></Gated>} />

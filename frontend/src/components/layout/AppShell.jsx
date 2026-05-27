@@ -699,9 +699,10 @@ export default function AppShell({ children }) {
       {/* Patch 27 — PortfolioRail removed entirely. The workspace
           switcher in the top bar is now the single canonical way to
           switch contexts; the right-side rail was redundant and
-          visually intrusive (user feedback). Home 1 portfolio chips
-          (`/app/portfolio`) remain the explicit portfolio surface for
-          multi-company navigation.
+          visually intrusive (user feedback). Phase H.5 (2026-05-27):
+          the explicit portfolio surface is `/app` (no-active-context
+          branch of AppHome → Portfolio Landing); legacy
+          `/app/portfolio` is preserved as a 301 redirect.
           Main content now flows full-width to the outer gutter — no
           `pr-[48px]` reservation. */}
       <div className="flex flex-1 min-h-0">

@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import DocumentDrawerWatermark from "./DocumentDrawerWatermark";
 import ShareDocumentModal from "./ShareDocumentModal";
+import { useTrackRecentView } from "@/lib/recentViews";
 
 
 // Helpers -----------------------------------------------------------------
@@ -773,6 +774,21 @@ export default function DocumentDrawer({
       })
       .finally(() => setLoading(false));
   }, [activeId, contextId]);
+
+  // Phase H.4.1 (2026-05-27) — Track recent view so the Portfolio
+  // Landing "Where you left off" resume card can deep-link back to
+  // this document. Tracking happens once `doc` is loaded.
+  useTrackRecentView({
+    surfacePath: activeId ? `?doc_id=${activeId}` : null,
+    label: doc?.title || doc?.original_filename || null,
+    contextId,
+    artefactId: activeId || null,
+    artefactKind: "document",
+    deepLink: activeId
+      ? `/app/work-studio?doc_id=${activeId}`
+      : null,
+    enabled: !!activeId && !!contextId && !!doc,
+  });
 
   const mode = isCreationMode(doc) ? "creation" : "reference";
 

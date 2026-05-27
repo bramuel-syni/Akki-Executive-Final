@@ -1,0 +1,75 @@
+# Phase Ledger — Source of Truth
+
+**Owner:** Main agent (E1) · **Cadence:** Update on every new dispatch + every phase close.
+
+**Cross-check rule** (acknowledged 2026-05-27):
+When the user sends a brief that contains explicit `IN_SCOPE` and `OUT_OF_SCOPE` blocks,
+before writing any code I will verify:
+1. Every file I'm about to touch is justified by something in `IN_SCOPE`.
+2. Nothing I'm about to touch matches anything in `OUT_OF_SCOPE`.
+3. If both conditions don't hold, I stop and ask before writing.
+
+If the ledger and the codebase disagree, the codebase wins and the ledger gets corrected on the next dispatch.
+
+---
+
+## Active / Closed phases
+
+| Phase | Title | Status | IN_SCOPE | OUT_OF_SCOPE | Files touched | CI guard tests | Acceptance evidence | Closed date |
+|---|---|---|---|---|---|---|---|---|
+| A | Home Cleanup — Tile sizing + NED chip palette + Read-more link | closed | • 30% smaller company tile titles<br>• `--ned-purple` token + 15% chip backgrounds<br>• "Read more" → Learn route<br>• Coming-up + Continue side-by-side grid<br>• HOME_CLEANUP_LOG.md sections | • New packages<br>• Hero greeting size<br>• Companies heading | `frontend/src/pages/home/Home1.jsx` (now archived), `frontend/src/index.css`, `memory/sprints/HOME_CLEANUP_LOG.md` | `tests/test_home_cleanup_phase_a.py` (now skipped post-H.5) | Static wire-check assertions pass | 2026-05 |
+| B | Home Cleanup — Phase B trim | closed | Continuation of A trims | (same scope guard) | `Home1.jsx` | `tests/test_home_cleanup_phase_b.py` | Pytest green | 2026-05 |
+| C | Home Cleanup — Phase C trim | closed | Continuation of A/B | (same) | `Home1.jsx`, supporting | `tests/test_home_cleanup_phase_c.py` | Pytest green | 2026-05 |
+| D | Home Cleanup — Phase D trim | closed | Continuation of A/B/C | (same) | `Home1.jsx`, supporting | `tests/test_home_cleanup_phase_d.py` | Pytest green | 2026-05 |
+| E.3 | Document Drawer runtime regression (JournalDrawer → DocumentDrawer) | closed | • Replace legacy inline `JournalDrawer` with `DocumentDrawer`<br>• Add Playwright runtime DOM tests<br>• Testid-collision CI guard | • Other surfaces<br>• Drawer API shape | `Home1.jsx`, drawer mount sites, drawer component | `tests/test_home_cleanup_phase_e3_runtime_drawer.py` | Playwright DOM rendering verified | 2026-05 |
+| E.3.r | E.3 — Explicit attachment + canonical lineage UI/endpoints | closed | • Document attachments router<br>• Attachment UI in drawer | • Embedding-based related docs (deferred to Phase G) | `routers/document_attachments.py`, frontend drawer | `tests/test_home_cleanup_phase_e3_*.py` | Pytest green | 2026-05 |
+| F.3 | Task Manager false-green resolution + tab-prefix collision fix | closed | • F.3 routing bug<br>• Replace `*-body` testids with `*-panel-*`<br>• Tab-prefix collision CI guard | • Task Manager design | Task Manager pages, drawer tab IDs | `tests/test_home_cleanup_phase_f3.py`, `tests/test_task_drawer_tab_prefix_guard.py` | Pytest green + DOM verified | 2026-05 |
+| F.4 | Inline-comment span resolution | closed | Inline-comment anchoring fix | Other surfaces | Work Studio + comment components | `tests/test_home_cleanup_phase_f4*.py` | Pytest green | 2026-05 |
+| F.6 | Deploy readiness | closed | • DEPLOY_READINESS.md<br>• AUTONOMOUS_TRIP_REPORT.md<br>• Health pings<br>• Lockdown checks | New features | `routers/*.py`, deploy docs | `tests/test_home_cleanup_phase_f6_debt.py` | Pytest green + deploy-ready audit | 2026-05 |
+| SendGrid migration | Postmark → SendGrid (outbound + multipart inbound) | closed | • Replace Postmark with SendGrid<br>• Multipart inbound parse<br>• Admin health endpoint<br>• 4 env vars | • Other email providers | `services/email/sendgrid_*.py`, `routers/inbound_sendgrid.py`, `.env` | `tests/test_admin_email_provider_health.py` | Live SendGrid round-trip + multipart inbound parsed | 2026-05 |
+| Right-rail layout | Task Manager right-rail vertical stack | closed | Right-rail companies become vertical stack | Other rails | Task Manager pages | (folded into F.3 retest) | Screenshot verified | 2026-05 |
+| "My Companies" H1 audit | Home1 → ContextPortfolio H1 size lock | closed | • `.akki-greeting` token stays at 28px<br>• Portfolio H1 = 34px (inline override)<br>• Eventual H.1 landed at 32px greeting | • Token changes | `Home1.jsx`, `ContextPortfolio.jsx` | `tests/test_portfolio_h1_size_guard.py` | DOM size verified verbatim | 2026-05 |
+| H.1 | Portfolio Landing — layout shell (sketch 1) | closed | • Eyebrow + 32px greeting H1<br>• 4 metric tiles<br>• 3 sections (placeholders)<br>• Right rail with tabs<br>• `/app/news` stub | • Data wiring<br>• Phase I (Company Home)<br>• Per-page-token mutation | `pages/ContextPortfolio.jsx`, `pages/NewsStub.jsx`, `App.js` | `tests/test_phase_h1_portfolio_landing.py` | Pytest + screenshot | 2026-05-26 |
+| H.2 | Portfolio Landing — right-rail wiring | closed | • NED/Executive segmented tabs filter<br>• Click sets context<br>• Sponsored badge | Section content | `pages/ContextPortfolio.jsx` | `tests/test_phase_h2_rail_wiring.py` | Pytest + DOM | 2026-05-26 |
+| H.3 | Portfolio Landing — full data wiring | closed | • 3 endpoints (portfolio-metrics / boards-to-watch / last-action)<br>• `quality=executive` filter on /news<br>• `<NewsStrip />` shared component<br>• Non-empty `reasons[]` binary check<br>• Tier-1 allowlist binary check | • Calm pass<br>• Phase I | `routers/portfolio_data.py`, `routers/news.py`, `pages/ContextPortfolio.jsx`, `components/news/NewsStrip.jsx` | `tests/test_phase_h3_data_wiring.py` | Live verbatim DOM (FT in tier-1 response) | 2026-05-27 |
+| H.4 | Portfolio Landing — calm pass + recent-views enrichment + news tier-1 expansion | closed | • `RecentViewIn` gains `artefact_id/kind/deep_link`<br>• `last_action` prefers persisted enrichment<br>• `_EXECUTIVE_TIER1_SOURCE_IDS` adds nyt-business + reserved IDs<br>• A11y + focus rings on Portfolio Landing | • Chat list (handled in H.5 side-fix)<br>• Phase I | `routers/home.py`, `routers/portfolio_data.py`, `routers/news.py`, `pages/ContextPortfolio.jsx` | `tests/test_phase_h4_calm_pass.py` | Pytest 9/9 + DOM | 2026-05-27 |
+| Chat list density (H.3 side-fix) | Claude-style tightening on /app/chat left sidebar | closed | • Title 13.5px / weight 500 / sans / leading 1.35<br>• No subtitle/preview line<br>• Row height 36-40px<br>• 2px oxblood accent on active<br>• Header sub-line 10px<br>• Search input h-8 + text-13px<br>• Sidebar bg=`var(--paper)`<br>• Sidebar width ≤300px | • Conversation pane<br>• Other sidebars (Solva/Tasks/Documents) | `pages/Chat.jsx` (already tightened in earlier side-fix pass) | `tests/test_chat_list_density.py` | Live computed-style verbatim match | 2026-05-27 |
+| H.5 | Route consolidation + Home1 archive | closed | • Archive `Home1.jsx` to `_archived/`<br>• `/app/portfolio` 301 → `/app`<br>• `/app/companies` 301 → `/app`<br>• `/app/contexts` 301 → `/app`<br>• Update SignIn / Home2 / NewsStub link targets<br>• Hygiene grep | • Home2 archive (done in I.1) | `App.js`, `pages/SignIn.jsx`, `pages/home/Home2.jsx` (later archived), `pages/NewsStub.jsx`, `_archived/Home1.jsx` (new home), `pages/AppHome.jsx`, `pages/ContextPortfolio.jsx`, `components/layout/AppShell.jsx`, `tests/test_home_cleanup_phase_a.py` (skipped), `tests/test_phase_h1_portfolio_landing.py` (updated) | `tests/test_route_consolidation.py` (11 tests) | Pytest green + Playwright redirects verified | 2026-05-27 |
+| Recent-views surface-mount sweep (H.4.1.b) | Thread `artefact_id/kind/deep_link` from surface mounts | closed | • Shared `useTrackRecentView` hook<br>• Work Studio (doc page)<br>• DocumentDrawer<br>• TaskDrawer<br>• Chat (active conversation)<br>• SolvaSession<br>• Pulse<br>• Raw POST forbidden outside hook | Surfaces not currently posting recent-views | `lib/recentViews.js` (new), `pages/WorkStudioDocumentPage.jsx`, `components/documents/DocumentDrawer.jsx`, `components/tasks/TaskDrawer.jsx`, `pages/Chat.jsx`, `pages/SolvaSession.jsx`, `pages/Pulse.jsx` | `tests/test_recent_views_sweep.py` (5 tests) | Live API: POST → DB → `/me/last-action` returns full enrichment (verbatim Pulse → `artefact_kind:"pulse"`, `deep_link:"/app/pulse"`) | 2026-05-27 |
+| News Africa expansion (Task 3) | Drop unwired paid tier-1 IDs; add free Africa-focused sources + `region=east-africa` bucket | closed | • Drop Bloomberg/Reuters/WSJ/HBR/McKinsey/BoardEffect/Nikkei/S&P/MIT from live allowlist (moved to `_FUTURE_PAID_TIER1_IDS`)<br>• Add bbc-africa, quartz-africa, businessdaily-africa, the-east-african, nation-africa, standard-kenya to `news_sources.json`<br>• `_REGION_BUCKETS["EAST-AFRICA"]` → KE/UG/TZ/RW/AF<br>• Default applied_region=EAST-AFRICA for users resolved to KE/UG/TZ/RW<br>• Aggregator `query_items(region_bucket=…)` arg | Paid feeds (deferred to backlog) | `data/news_sources.json`, `routers/news.py`, `services/news_aggregator.py` | `tests/test_news_africa_expansion.py` (7 tests) | Live: `?region=east-africa&limit=10` → `region_applied: "EAST-AFRICA"`, 4/10 Africa-tagged items including Nairobi (Standard Kenya / KMRC green bond), BBC Africa, Al Jazeera. Quartz Africa + The East African RSS returned 403 (graceful skip per design) | 2026-05-27 |
+| I.1 | Company Home — layout shell (sketch 2) | closed | • New `pages/CompanyHome.jsx`<br>• ← Back-to-Portfolio link (clears context via `clearActiveContext`)<br>• H1 `Inside {ActiveCompanyName}.` 32px inline override<br>• Subtitle "Here is what's on your plate."<br>• Readiness `—%` placeholder strip<br>• 5 attention cards stacked (drafts/reports/pulse/questions/events)<br>• Right rail with `+ Add Document`, All-docs icon, Top Signals heading, 3 chips (Pulse default), Coming-soon body<br>• AppHome dispatcher routes active-context → CompanyHome<br>• AuthContext exposes `clearActiveContext`<br>• Archive Home2.jsx → `_archived/Home2.jsx` | • Data wiring (I.2)<br>• Top Signals wiring (I.3)<br>• Events system (I.4)<br>• Open Questions wiring (I.5)<br>• `.akki-greeting` token mutation<br>• Other surfaces | `pages/CompanyHome.jsx` (new), `pages/AppHome.jsx` (re-routed active-context branch), `contexts/AuthContext.jsx` (added `clearActiveContext`), `_archived/Home2.jsx` (moved from `pages/home/Home2.jsx`), `tests/test_home_cleanup_phase_b.py` (skipped), `tests/test_patch_28_home_doc_journal.py` (path-resilient), `tests/test_route_consolidation.py` (path-resilient) | `tests/test_phase_i1_company_home.py` (14 tests) | Live verbatim DOM (Julius): H1="Inside Julius Opio — Personal NED Seat.", H1 font-size=32px, subtitle present, readiness="—%", 5 cards (drafts/reports/pulse/questions/events), Pulse chip aria-selected=true, Back-to-Portfolio click clears context and lands on Portfolio Landing (H1="Good morning, Julius.") | 2026-05-27 |
+
+---
+
+## Queued / Future
+
+### Phase I follow-ons
+| Phase | Title | Notes |
+|---|---|---|
+| I.2 | Company Home — data wiring | Wire the 5 attention card counts + subtext + Readiness % composite |
+| I.3 | Company Home — Top Signals wiring | Right-rail panel: data feed for Pulse/Monitor/Documents chips |
+| I.4.a | Events system — manual entry | User-entered events with date/title/notes |
+| I.4.b | Events system — doc-extraction | Auto-extract events from uploaded docs |
+| I.4.c | Events system — calendar sync | Google/Outlook calendar bi-directional sync |
+| I.5 | Open Questions wiring | Use `cycle_questions` collection + new `asker_role` field |
+| I.6 | Final hygiene (post-I.5) | Code cleanup, lint sweep, remove dead imports after all data wiring lands. (Home2.jsx already archived in I.1.) |
+
+### Other backlog
+| Phase | Title | Priority | Notes |
+|---|---|---|---|
+| J | Idle auto-logoff (30 min + JTI revocation) | P1 | Spike already audited the token expiry logic in handoff |
+| L | Streaming loader (Direction B muted system-log) across all 8 surfaces | P1 | Per Solva surface spec |
+| F.7 | Legacy `cycles` collection retirement | P2 | After I.5 lands and `cycle_questions` is the canonical surface |
+| G | Embedding-based related docs | P2 | Deferred by user during E.3 |
+| spaCy reqs cleanup | `test_real_requirements_file_is_clean` failure | P3 parked | `en_core_web_sm/lg` direct-URL refs |
+| Solva Question Bank variants | Content expansion for 38/60 FAR-routable keys | P3 parked | Copywriter task on `question_bank.py` |
+| Paid news adapter | Bloomberg / Reuters / WSJ / Nikkei / S&P / MIT Sloan via NewsAPI Premium or paid integration | backlog | Blocked on procurement; reserved tier-1 IDs already in code |
+
+---
+
+## Update protocol
+
+- After each phase close: replace `Status: in-progress` with `closed`, fill `Closed date`, `Acceptance evidence`, `CI guard tests`.
+- After each new dispatch: add a new row with `Status: in-progress` immediately, before writing code.
+- If the brief contains explicit IN_SCOPE / OUT_OF_SCOPE blocks, verify file touches against both lists before writing.
+- Ledger drift policy: codebase wins. Discrepancies corrected on next dispatch open.

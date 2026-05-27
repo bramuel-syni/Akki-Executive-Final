@@ -48,7 +48,7 @@ export default function NewsStub() {
 
         <div className="mt-6">
           <Link
-            to="/app/companies"
+            to="/app"
             className="text-[12.5px] text-[var(--accent)] hover:text-[var(--ink)] inline-flex items-center gap-1 no-underline"
             data-testid="news-stub-back"
           >

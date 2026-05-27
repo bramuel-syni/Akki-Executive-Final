@@ -46,6 +46,7 @@ import { TOKEN, FONT } from "@/components/solva/flow/tokens";
 // Empty state ("no governed LLM calls yet") on legacy sessions; live
 // data on Phase D sessions created via /api/contexts/{cid}/solva/v2/*.
 import AuditPanel from "@/components/chat/AuditPanel";
+import { useTrackRecentView } from "@/lib/recentViews";
 
 const ROUND2_QUESTION_STATES = ["DEPTH_Q1", "DEPTH_Q2", "DEPTH_Q3"];
 
@@ -61,6 +62,18 @@ export default function SolvaSession() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { account, activeContext } = useAuth();
+
+  // Phase H.4.1 (2026-05-27) — Recent-view tracking. Records the
+  // active Solva session for the Portfolio Landing resume card.
+  useTrackRecentView({
+    surfacePath: sidParam ? `/app/solva/session/${sidParam}` : null,
+    label: sidParam ? "Solva session" : null,
+    contextId: activeContext?.id,
+    artefactId: sidParam || null,
+    artefactKind: "solva_session",
+    deepLink: sidParam ? `/app/solva/session/${sidParam}` : null,
+    enabled: !!sidParam,
+  });
 
   // Reducer init
   const submoduleQuery = searchParams.get("submodule");

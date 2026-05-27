@@ -1,29 +1,21 @@
 """Phase A Home Cleanup — wire-check invariants.
 
-Static file-source assertions that prove the four Phase A invariants
-land on disk. Mirrors the existing test_t1_/t2_/t3_/t4_/t5_frontend_wire.py
-pattern used across the T-series sprint.
+DEPRECATED — Phase H.5 route consolidation (2026-05-27).
 
-Acceptance criteria (a)-(g) from the brief are anchored as follows:
-
-  (a) HOME_CLEANUP_LOG.md sections           — `test_phase_a_log_has_required_sections`
-  (b) Company tile titles 30% smaller        — `test_phase_a_company_tile_title_is_11px`
-                                              + `test_phase_a_hero_greeting_unchanged`
-                                              + `test_phase_a_companies_heading_unchanged`
-  (c) --ned-purple token + chip styling      — `test_phase_a_ned_purple_token_defined`
-                                              + `test_phase_a_executive_chip_oxblood_15pct`
-                                              + `test_phase_a_ned_chip_ned_purple_15pct`
-  (d) Read more link → Learn route           — `test_phase_a_read_more_link_present`
-                                              + `test_phase_a_read_more_targets_learn`
-                                              + `test_phase_a_curated_for_badge_unchanged`
-  (e) Coming up + Continue side-by-side      — `test_phase_a_recent_and_calendar_share_grid`
-  (f) No new packages                        — `test_phase_a_no_new_packages_in_lockfile_check`
-                                                (lockfile-name check; package additions
-                                                surface as bin/yarn.lock churn outside
-                                                this pass)
-  (g) Read more test exists (this file)      — auto-satisfied by collection
+Home1.jsx is now archived at `frontend/src/_archived/Home1.jsx` and
+no longer mounts on any active route (`/app/portfolio` 301s to
+`/app`). The Phase A invariants documented below were preserved in
+the archived file but the live app no longer renders Home1, so
+running these tests against it is irrelevant. The whole module is
+skipped to keep the file as code-archaeology only.
 """
 from __future__ import annotations
+
+import pytest
+
+pytestmark = pytest.mark.skip(
+    reason="Phase H.5 archived Home1.jsx; Phase A cleanup tests no longer apply."
+)
 
 from pathlib import Path
 

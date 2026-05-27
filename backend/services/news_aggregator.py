@@ -469,11 +469,18 @@ async def query_items(
     region: Optional[str] = None,
     diversify: bool = True,
     include_all_regions: bool = False,
+    region_bucket: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Build the `GET /api/news` response.
 
     Applies region filter (if region != None AND not include_all_regions),
     then either diversifies or returns recency-pure ordering.
+
+    Task 3 (2026-05-27) — `region_bucket` is an optional list of
+    ISO codes that EXPANDS the region filter. When set, the query
+    matches items tagged with ANY of those codes OR GLOBAL. The
+    `region_applied` echo-back uses the symbolic `region` string
+    (e.g. "EAST-AFRICA") so the client knows which bucket fired.
 
     Returns {items: [...], total: int, region_applied: str|None}.
     """
@@ -484,8 +491,12 @@ async def query_items(
         q["source_id"] = source
     region_applied: Optional[str] = None
     if region and not include_all_regions:
-        # Include items tagged with this region OR GLOBAL.
-        q["regions"] = {"$in": [region, "GLOBAL"]}
+        if region_bucket:
+            # Bucketed region: match any of the bucket's codes + GLOBAL.
+            q["regions"] = {"$in": [*region_bucket, "GLOBAL"]}
+        else:
+            # Single region: match it + GLOBAL.
+            q["regions"] = {"$in": [region, "GLOBAL"]}
         region_applied = region
 
     # Over-fetch when diversifying so we have enough per-source supply

@@ -1,7 +1,41 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
-## Phase H.4 (Portfolio Calm Pass) + Chat-list density lock — 2026-05-27 ✅
+## Tasks 1–4 batch + PHASE_LEDGER setup — 2026-05-27 ✅
+
+### Task 1 — Route consolidation + Home1 archive (Phase H.5)
+- Archived `Home1.jsx` → `_archived/`. `/app/portfolio` + `/app/companies` + `/app/contexts` collapse to `/app` via 301 redirects. SignIn / Home2 / NewsStub / AppShell link targets updated. Hygiene grep clean (no active Home1 imports).
+- CI guard: `tests/test_route_consolidation.py` (11 tests, all green).
+- Live Playwright: all 3 legacy URLs land at `/app`.
+
+### Task 2 — Recent-views surface-mount sweep (Phase H.4.1.b)
+- Shared `useTrackRecentView` hook at `lib/recentViews.js`. Plugged into 6 surfaces: WorkStudioDocumentPage, DocumentDrawer, TaskDrawer, Chat, SolvaSession, Pulse.
+- Raw POST to `/me/recent-views` outside the hook is forbidden (CI guard).
+- Live verified: opening Pulse and calling `/api/me/last-action` returns full enrichment: `artefact_kind="pulse"`, `deep_link="/app/pulse"`, `artefact_title="TEST_SeededNedCo — Pulse feed"`.
+
+### Task 3 — News Africa expansion
+- Dropped unwired paid IDs (Bloomberg / Reuters / WSJ / HBR / McKinsey / BoardEffect / Nikkei / S&P / MIT) from the LIVE `_EXECUTIVE_TIER1_SOURCE_IDS`. Reserved in `_FUTURE_PAID_TIER1_IDS` for future paid-adapter activation.
+- Added 6 free Africa sources: `bbc-africa`, `quartz-africa`, `businessdaily-africa`, `the-east-african`, `nation-africa`, `standard-kenya`. Quartz Africa + The East African RSS returned 403 in fetch — aggregator skips silently per design (set `enabled:false` if persistent).
+- `_REGION_BUCKETS["EAST-AFRICA"]` → KE/UG/TZ/RW/AF. Router auto-defaults applied_region to EAST-AFRICA for users resolved to KE/UG/TZ/RW.
+- Live: `GET /api/news?region=east-africa&limit=10` → `region_applied: "EAST-AFRICA"`, **4/10 Africa-tagged items** (Nairobi: Standard Kenya KMRC green bond; pan-Africa: BBC Africa, Al Jazeera).
+
+### Task 4 — Phase I.1 Company Home layout shell
+- New `pages/CompanyHome.jsx`. AppHome dispatcher routes active-context → CompanyHome (was Home2). `Home2.jsx` archived to `_archived/`.
+- AuthContext exposes `clearActiveContext` for the "← Back to Portfolio" link.
+- Layout: 32px inline H1 `Inside {company}.`, subtitle, readiness `—%` strip, 5 attention cards (drafts/reports/pulse/questions/events) with placeholders, right rail with Add Document + All Docs + Top Signals 3 chips (Pulse default), Coming-soon body.
+- Live verbatim (Julius @ Julius Opio — Personal NED Seat): H1 text=`Inside Julius Opio — Personal NED Seat.`, **H1 font-size=32px** (verbatim getComputedStyle), Pulse chip aria-selected=true, all 5 attention cards rendered, Back-to-Portfolio click cleared context and landed on Portfolio Landing.
+- CI guard: `tests/test_phase_i1_company_home.py` (14 tests, all green).
+- Scope discipline: `.akki-greeting` token NOT touched (locked at 28px); 32px is inline override.
+
+### PHASE_LEDGER created (process defense)
+- `/app/memory/sprints/PHASE_LEDGER.md` — 22 historical phases backfilled (A/B/C/D + E.3 + E.3.r + F.3 + F.4 + F.6 + SendGrid + Right-rail + H1-audit + H.1/H.2/H.3/H.4 + Chat-list + H.5 + Tasks 1–4) + Queued/Future section (I.2–I.6, J, L, F.7, G, spaCy/Solva parked, paid news adapter).
+- Cross-check rule acknowledged: when briefs contain explicit IN_SCOPE/OUT_OF_SCOPE blocks, every file-touch is verified against both lists before code lands.
+
+### Test roll-up
+- **107/107 GREEN** across the 4 new task suites (Tasks 1–4) + 5 adjacent regression suites.
+- Broader regression: **201 passed, 27 skipped, 1 pre-existing fail** (`test_patch_28_home_doc_journal::test_doc_journal_happy_path` — file-upload PDF-wrapping system behavior, unrelated to my work).
+
+
 
 ### Chat-list left-sidebar tightening (Claude-style)
 Source-level audit confirmed the H.3 side-fix tightening pass had

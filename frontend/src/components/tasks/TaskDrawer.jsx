@@ -16,6 +16,7 @@
  *   Use in Solva · Use in Chat · Generate brief · Test hypothesis · Share task
  */
 import React, { useEffect, useMemo, useState } from "react";
+import { useTrackRecentView } from "@/lib/recentViews";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { api, apiErrorMessage } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -113,6 +114,21 @@ export default function TaskDrawer() {
       setTask(data);
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
+
+  // Phase H.4.1 (2026-05-27) — Track recent view so the Portfolio
+  // Landing "Where you left off" resume card can deep-link back to
+  // this task. `surface_path` is the URL the user is at; `deep_link`
+  // is the canonical re-entry URL. Tracking is silent on failure.
+  const { activeContext: _activeCtxForRecent } = useAuth();
+  useTrackRecentView({
+    surfacePath: tid ? `/app/task-manager?task_id=${tid}` : null,
+    label: task?.name || null,
+    contextId: _activeCtxForRecent?.id,
+    artefactId: tid || null,
+    artefactKind: "task",
+    deepLink: tid ? `/app/task-manager?task_id=${tid}` : null,
+    enabled: !!tid && !!task,
+  });
 
   const open = !!tid;
 

@@ -44,6 +44,7 @@ import AggregateStrip from "@/components/chat/AggregateStrip";
 import ProtectiveInterventionCard from "@/components/chat/ProtectiveInterventionCard";
 import { useMessagesSynisense } from "@/hooks/useMessagesSynisense";
 import PerMessageSynisenseBadge from "@/components/chat/PerMessageSynisenseBadge";
+import { useTrackRecentView } from "@/lib/recentViews";
 import ProviderLine from "@/components/chat/ProviderLine";
 import WorkspaceEntryGate from "@/components/transitions/WorkspaceEntryGate";
 import rehypeHighlight from "rehype-highlight";
@@ -256,6 +257,19 @@ export default function Chat() {
       } catch (e) { toast.error(apiErrorMessage(e)); }
     })();
   }, [activeId]);
+
+  // Phase H.4.1 (2026-05-27) — Recent-view tracking. Records the
+  // active conversation so the Portfolio Landing resume card can
+  // jump straight back into it.
+  useTrackRecentView({
+    surfacePath: activeId ? `/app/chat?chat_id=${activeId}` : null,
+    label: activeChat?.title || (activeId ? "Chat conversation" : null),
+    contextId: activeContext?.id,
+    artefactId: activeId || null,
+    artefactKind: "chat",
+    deepLink: activeId ? `/app/chat?chat_id=${activeId}` : null,
+    enabled: !!activeId && !!activeChat,
+  });
 
   // Phase A (2026-05-10) — scroll-pin lock with ResizeObserver.
   //

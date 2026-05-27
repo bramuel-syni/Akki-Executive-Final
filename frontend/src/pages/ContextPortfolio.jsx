@@ -1,9 +1,10 @@
 /**
- * Portfolio Landing (Home 1) — Phase H.1/H.2/H.3 (2026-05-26).
+ * Portfolio Landing — Phase H.1/H.2/H.3/H.4 (2026-05-26 / -27).
  *
- * Post-sign-in landing surface. Used in two routing modes:
- *   1. /app/companies (canonical)  → this page directly
- *   2. /app  (no active context)   → this page via AppHome dispatcher
+ * Post-sign-in landing surface. Canonical route since Phase H.5
+ * route consolidation:
+ *   • /app  (no active context)  → this page via AppHome dispatcher
+ *   • /app/portfolio + /app/companies + /app/contexts all redirect to /app
  *
  * Phase H.3 wires live data:
  *   • Metric tiles            ← GET /api/me/portfolio-metrics

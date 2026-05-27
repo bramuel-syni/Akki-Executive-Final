@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { useTrackRecentView } from "@/lib/recentViews";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
@@ -408,6 +409,19 @@ export default function Pulse() {
   const navigate = useNavigate();
   const { activeContext } = useAuth();
   const cid = activeContext?.id;
+
+  // Phase H.4.1 (2026-05-27) — Recent-view tracking. Records that
+  // the user landed on the Pulse surface for this company. The
+  // resume card on Portfolio Landing deep-links back to /app/pulse.
+  useTrackRecentView({
+    surfacePath: cid ? `/app/pulse` : null,
+    label: cid ? `${activeContext?.name || "Company"} — Pulse feed` : null,
+    contextId: cid,
+    artefactId: cid || null,
+    artefactKind: "pulse",
+    deepLink: cid ? `/app/pulse` : null,
+    enabled: !!cid,
+  });
 
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(true);

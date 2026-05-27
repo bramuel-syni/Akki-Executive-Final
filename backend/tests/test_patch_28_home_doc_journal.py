@@ -29,8 +29,18 @@ pytestmark = pytest.mark.asyncio
 # Test 1 — Role-sensitive hero copy contract
 # ---------------------------------------------------------------------------
 def test_home2_hero_copy_variants_present_in_source():
-    """The three role variants must exist verbatim in Home2.jsx."""
-    with open("/app/frontend/src/pages/home/Home2.jsx", encoding="utf-8") as fp:
+    """The three role variants must exist verbatim in Home2.jsx.
+
+    Phase I.1 update (2026-05-27): Home2 was archived. The three
+    hero-copy variants are preserved in the archived file as
+    code-archaeology — this test reads from the archived path so the
+    role-sensitivity contract is documented even after the live
+    file moved.
+    """
+    archived = "/app/frontend/src/_archived/Home2.jsx"
+    legacy   = "/app/frontend/src/pages/home/Home2.jsx"
+    path = archived if not __import__("os").path.exists(legacy) else legacy
+    with open(path, encoding="utf-8") as fp:
         src = fp.read()
 
     # EXECUTIVE variant

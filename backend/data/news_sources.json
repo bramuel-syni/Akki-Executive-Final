@@ -14,6 +14,17 @@
     "Original ask 'Nikkei Asia Business': RSS not public; substituted with `scmp-business` (South China Morning Post — Asia-business focus, RSS public).",
     "Original ask 'Business Day South Africa': RSS not public; substituted with `aljazeera-business` (pan-Africa+global coverage, RSS public). Best fit for Africa region tag in the curated set."
   ],
+  "_africa_expansion_2026_05_27": [
+    "Task 3 (2026-05-27) — Free, executive-grade Africa-focused sources added on user request:",
+    "User mandate: 'Do what's free but effective, include Africa, East Africa, Nairobi as most users will be here.'",
+    "bbc-africa  — BBC News — Africa, free RSS, EN, pan-Africa coverage.",
+    "quartz-africa — Quartz Africa, free RSS, EN, business-focused pan-Africa.",
+    "businessdaily-africa — Business Daily Africa (Nairobi), free RSS, EN, KE business.",
+    "the-east-african — The East African (Nairobi-based), free RSS, EN, KE/UG/TZ/RW coverage.",
+    "nation-africa — Nation Africa (NMG/Daily Nation), free RSS, EN, KE general+business.",
+    "standard-kenya — The Standard (Kenya), free RSS, EN, KE general+business.",
+    "Dead-feed policy: the aggregator already silently skips malformed/404 feeds; if any of these break in production, set enabled:false instead of removing."
+  ],
   "_removed_2026_05_26_redeploy_cleanup": [
     "Four sources removed during the 2026-05-26 redeploy-cleanup chunk after HEAD probes confirmed the underlying RSS endpoints are dead. Documented here so future maintainers know what was tried (and why each was pulled rather than `enabled: false`-d).",
     "reuters-biz — was https://feeds.reuters.com/reuters/businessNews — DNS resolution fails (`feeds.reuters.com` retired); Reuters discontinued public RSS.",
@@ -40,6 +51,25 @@
     },
     { "id": "aljazeera-business",  "name": "Al Jazeera — Business",         "url": "https://www.aljazeera.com/xml/rss/all.xml",                "regions": ["AF", "GLOBAL"],         "enabled": true,
       "note": "Substitution for Business Day South Africa (RSS not public). Al Jazeera carries pan-Africa + global coverage. Africa tag is the best fit in the curated set."
+    },
+
+    { "id": "bbc-africa",           "name": "BBC News — Africa",             "url": "http://feeds.bbci.co.uk/news/world/africa/rss.xml",        "regions": ["AF", "KE", "UG", "TZ", "RW", "GLOBAL"], "enabled": true,
+      "note": "Task 3 (2026-05-27) — Free, executive-grade African business + governance coverage."
+    },
+    { "id": "quartz-africa",        "name": "Quartz Africa",                 "url": "https://qz.com/africa/rss",                                "regions": ["AF", "KE", "UG", "TZ", "RW", "GLOBAL"], "enabled": true,
+      "note": "Task 3 (2026-05-27) — Free pan-Africa business RSS. Curated by Atlantic Media's Africa team."
+    },
+    { "id": "businessdaily-africa", "name": "Business Daily Africa (Nairobi)", "url": "https://www.businessdailyafrica.com/bd/rss.xml",         "regions": ["KE", "AF"],             "enabled": true,
+      "note": "Task 3 — Nairobi-headquartered business daily. NMG-owned. Primary KE executive readership."
+    },
+    { "id": "the-east-african",     "name": "The East African",              "url": "https://www.theeastafrican.co.ke/tea/rss-feed",            "regions": ["KE", "UG", "TZ", "RW", "AF"], "enabled": true,
+      "note": "Task 3 — Nairobi-based weekly covering EAC integration. NMG-owned. RSS path tested 2026-05; if upstream changes, set enabled:false."
+    },
+    { "id": "nation-africa",        "name": "Nation Africa (Daily Nation)",  "url": "https://nation.africa/kenya/rss-business-1948940",        "regions": ["KE", "AF"],             "enabled": true,
+      "note": "Task 3 — Kenya's largest daily, NMG-owned. Business section RSS."
+    },
+    { "id": "standard-kenya",       "name": "The Standard (Kenya)",          "url": "https://www.standardmedia.co.ke/rss/business.php",         "regions": ["KE", "AF"],             "enabled": true,
+      "note": "Task 3 — Standard Group business RSS. Free."
     }
   ]
 }

@@ -286,10 +286,12 @@ export default function Home2() {
   };
 
   const onBackToPortfolio = () => {
-    // Switching to "no active context" is approximated by going to
-    // /app/portfolio (Home1). We keep the same active context so users
-    // don't lose their state — Home1 just shows the portfolio.
-    navigate("/app/portfolio");
+    // Phase H.5 (2026-05-27) — `/app/portfolio` redirects to `/app`,
+    // where the AppHome dispatcher's no-active-context branch renders
+    // the new Portfolio Landing. We keep the same activeContext so the
+    // user doesn't lose their state — to truly clear it, the user
+    // taps a different company in the right rail.
+    navigate("/app");
   };
 
   if (!activeContext) {

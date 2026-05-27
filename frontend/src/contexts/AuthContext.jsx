@@ -305,19 +305,32 @@ export function AuthProvider({ children }) {
     );
   }, []);
 
+  // Phase I.1 (2026-05-27) — Clear active context without server
+  // round-trip. Used by CompanyHome's "← Back to Portfolio" link to
+  // drop into AppHome's no-active-context branch (Portfolio Landing).
+  // The server is stateless about active context (per /me/active-context
+  // docstring) so this is a pure client-side state reset.
+  const clearActiveContext = useCallback(() => {
+    persistActiveContext(null);
+  }, [persistActiveContext]);
+
   const value = useMemo(
     () => ({
       account, contexts, activeContext, activeContextId,
       activeRole, availableRoles,
       pendingSwitchModal, dismissSwitchModal,
       rbacError,
-      afterAuth, logout, switchContext, switchRole, refreshContexts, bootstrap,
+      afterAuth, logout, switchContext, switchRole,
+      clearActiveContext,
+      refreshContexts, bootstrap,
     }),
     [account, contexts, activeContext, activeContextId,
       activeRole, availableRoles,
       pendingSwitchModal, dismissSwitchModal,
       rbacError,
-      afterAuth, logout, switchContext, switchRole, refreshContexts, bootstrap]
+      afterAuth, logout, switchContext, switchRole,
+      clearActiveContext,
+      refreshContexts, bootstrap]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

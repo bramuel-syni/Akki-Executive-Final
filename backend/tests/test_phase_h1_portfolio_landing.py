@@ -67,10 +67,15 @@ def test_h1_app_home_dispatcher_routes_no_context_to_context_portfolio():
 
 
 def test_h1_context_portfolio_canonical_route_preserved():
-    """/app/companies + /app/contexts continue to render ContextPortfolio."""
+    """/app/companies + /app/contexts + /app/portfolio now redirect
+    to /app (Phase H.5 route consolidation, 2026-05-27). The
+    canonical mount for ContextPortfolio is the AppHome dispatcher's
+    no-active-context branch at `/app`."""
     src = _read(APP_JS)
-    assert '<Route path="/app/companies"' in src
-    assert '<Route path="/app/contexts"' in src
+    # All three legacy routes 301-redirect to /app.
+    assert '<Route path="/app/companies" element={<Navigate to="/app" replace />} />' in src
+    assert '<Route path="/app/contexts" element={<Navigate to="/app" replace />} />' in src
+    assert '<Route path="/app/portfolio" element={<Navigate to="/app" replace />} />' in src
 
 
 # ── T2. Header — eyebrow + 32px H1 + subtitle ───────────────────
@@ -221,5 +226,6 @@ def test_h1_news_stub_page_has_expected_testids():
     # H.3 (2026-05-26) — the H.1 "Coming soon" copy was replaced by
     # the shared <NewsStrip /> component with limit=20 quality="executive".
     assert "NewsStrip" in src, "NewsStub must mount <NewsStrip /> post-H.3"
-    # Back-to-portfolio link routes correctly.
-    assert 'to="/app/companies"' in src
+    # Phase H.5 (2026-05-27) — back-link target moved from
+    # `/app/companies` to `/app` after route consolidation.
+    assert 'to="/app"' in src

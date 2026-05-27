@@ -1,9 +1,21 @@
 """Phase B Home Cleanup — wire-check invariants.
 
-Static + endpoint assertions for Home 2 cleanup (2026-05-26).
-Anchors acceptance criteria (a)-(g) from the brief.
+DEPRECATED — Phase I.1 archived Home2.jsx (2026-05-27).
+
+Home2.jsx is now at `frontend/src/_archived/Home2.jsx` and no longer
+mounts on any active route — the active-context branch of AppHome
+renders the new `CompanyHome.jsx` (Phase I.1 layout shell). The
+Phase B cleanup invariants documented here were preserved in the
+archived file but the live app no longer renders Home2, so running
+these tests against it is irrelevant. The whole module is skipped.
 """
 from __future__ import annotations
+
+import pytest
+
+pytestmark = pytest.mark.skip(
+    reason="Phase I.1 archived Home2.jsx; Phase B cleanup tests no longer apply."
+)
 
 import os
 import sys

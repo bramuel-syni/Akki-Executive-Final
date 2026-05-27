@@ -23,6 +23,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import AppShell from "@/components/layout/AppShell";
 import DocumentOverlay from "@/components/work_studio/overlay/DocumentOverlay";
+import { useTrackRecentView } from "@/lib/recentViews";
 import { ArrowLeft } from "lucide-react";
 
 export default function WorkStudioDocumentPage() {
@@ -31,6 +32,19 @@ export default function WorkStudioDocumentPage() {
   const navigate = useNavigate();
   const { activeContext } = useAuth();
   const cid = activeContext?.id;
+
+  // Phase H.4.1 (2026-05-27) — Track recent view. The DocumentOverlay
+  // itself does its own tracking for drawer mounts; this page-level
+  // call adds a track for the standalone page route (artefact-deep-link).
+  useTrackRecentView({
+    surfacePath: aid ? `/app/documents/${aid}` : null,
+    label: aid ? `Document ${aid.slice(0, 8)}` : null,
+    contextId: cid,
+    artefactId: aid || null,
+    artefactKind: "document",
+    deepLink: aid ? `/app/documents/${aid}` : null,
+    enabled: !!aid && !!cid,
+  });
 
   return (
     <AppShell>
