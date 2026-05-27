@@ -4,6 +4,13 @@ User raised this ≥3 times. Verbatim spec captured in PHASE_LEDGER M row.
 Locks the entire M scope so future agents can't accidentally re-introduce
 the agent-added surplus.
 
+**Revision (2026-05-27, post-close):** Briefing was originally shipped on
+a 2nd-line pill because the orchestrator misread a user bug report
+("brief is on the 2nd line") as a layout spec. User clarified after Phase M
+close: that was a defect description, not intent. Briefing is now restored
+INLINE as the 6th tab in the main horizontal tab strip — peer-level with
+the other 5. CI guards flipped accordingly.
+
 Locks:
   M.1 — Main Board & Committee Packs tab has NO doc-card listing + NO ListingShell
     M1a. DocumentCardsSection is gated by `kind !== "cycle_main_and_committee_pack"`
@@ -11,10 +18,15 @@ Locks:
     M1c. ContextActions (Compile CTAs) stays visible unconditionally
     M1d. Drafts tab listing remains intact (regression guard)
 
-  M.1.5 — Tab strip + Briefing pill layout
-    M15a. 5 tabs in KIND_TABS (NOT 6 — Briefing moved off the strip)
-    M15b. Briefing kept as BRIEFING_TAB constant (data path preserved)
-    M15c. Briefing pill rendered on a 2nd line with the briefing testid
+  M.1.5 — Tab strip layout (REVISED 2026-05-27)
+    M15a. 6 tabs in KIND_TABS (Main Board & Committee Packs · Minutes ·
+          Drafts · Decks · Reports · Briefing) — exact order locked
+    M15b. NO separate `BRIEFING_TAB` constant (Briefing is a normal
+          KIND_TABS entry; the constant is REMOVED)
+    M15c. NO 2nd-line briefing pill (regression guard against the
+          original Phase M layout) — neither the `work-studio-briefing-row`
+          container nor the `work-studio-briefing-pill` button testid
+          may appear
 
   M.2 — Subtitle removed (or trimmed to ≤5 words without tab-label words)
     M2a. Old subtitle text "Shape board packs, decks, reports, and briefings"
@@ -119,51 +131,73 @@ def test_m_M1d_drafts_tab_still_uses_listing_shell():
 
 
 # ─────────────────────────────────────────────────────────────────
-# M.1.5 — Tab strip + Briefing pill
+# M.1.5 — Tab strip layout (REVISED 2026-05-27)
+# Briefing restored inline as the 6th tab; 2nd-line pill removed.
 # ─────────────────────────────────────────────────────────────────
 
-def test_m_M15a_five_tabs_only_in_horizontal_strip():
-    """KIND_TABS must contain exactly 5 entries (Briefing moved off
-    the horizontal strip)."""
+def test_m_M15a_six_tabs_in_horizontal_strip_with_briefing_last():
+    """KIND_TABS must contain exactly 6 entries in the spec-locked order,
+    with Briefing as the 6th (REVISED 2026-05-27 — was 5 entries with
+    Briefing on a 2nd-line pill in original Phase M close-out)."""
     src = _read(WORK_STUDIO)
     m = re.search(r"const KIND_TABS\s*=\s*\[([\s\S]*?)\];", src)
     assert m, "KIND_TABS constant not found."
     body = m.group(1)
     # Count top-level entries by looking for `id: "..."` matches.
     ids = re.findall(r'id:\s*"([^"]+)"', body)
-    assert len(ids) == 5, f"Expected 5 KIND_TABS entries, found {len(ids)}: {ids}"
-    # Briefing must NOT be in the array.
-    assert "briefing" not in ids, (
-        "Briefing must NOT be in KIND_TABS — it lives in BRIEFING_TAB "
-        "and renders as a 2nd-line pill per Phase M."
+    assert len(ids) == 6, f"Expected 6 KIND_TABS entries, found {len(ids)}: {ids}"
+    # Briefing must be the 6th and last entry.
+    assert ids[-1] == "briefing", (
+        f"Briefing must be the 6th (last) KIND_TABS entry per the "
+        f"revised layout. Found: {ids}"
     )
     # Required tabs in correct order.
-    expected_prefix = [
+    expected = [
         "cycle_main_and_committee_pack", "cycle_minutes",
-        "drafts", "deck", "report",
+        "drafts", "deck", "report", "briefing",
     ]
-    assert ids == expected_prefix, (
+    assert ids == expected, (
         f"KIND_TABS order/contents drifted from spec: {ids}"
     )
 
 
-def test_m_M15b_briefing_tab_constant_preserved():
-    """BRIEFING_TAB constant exists with the briefing data path."""
+def test_m_M15b_no_separate_briefing_tab_constant():
+    """REVISED 2026-05-27: BRIEFING_TAB constant must NOT exist — Briefing
+    is a normal KIND_TABS entry. Regression guard against re-introducing
+    the original Phase M 2-constant pattern."""
     src = _read(WORK_STUDIO)
-    assert "const BRIEFING_TAB" in src
-    m = re.search(r"const BRIEFING_TAB\s*=\s*\{[^}]*id:\s*\"briefing\"", src)
-    assert m, "BRIEFING_TAB must keep the kind=briefing data path."
-
-
-def test_m_M15c_briefing_pill_renders_on_second_line():
-    """A briefing pill must render below the tab strip with the
-    `work-studio-briefing-pill` testid."""
-    src = _read(WORK_STUDIO)
-    assert "work-studio-briefing-row" in src, (
-        "Briefing 2nd-line container must have its row testid."
+    # The constant name must not appear in any executable form.
+    # Comments may legitimately reference it as historical context, so
+    # strip comments before the check.
+    code = re.sub(r"/\*[\s\S]*?\*/", "", src)
+    code = re.sub(r"//[^\n]*", "", code)
+    assert "const BRIEFING_TAB" not in code, (
+        "BRIEFING_TAB constant must NOT be re-introduced — Briefing lives "
+        "in KIND_TABS as the 6th entry per revised Phase M."
     )
-    assert "work-studio-briefing-pill" in src, (
-        "Briefing pill button must have its testid for clickability tests."
+    assert "BRIEFING_TAB." not in code, (
+        "BRIEFING_TAB.* references must NOT appear in executable code — "
+        "the constant is gone and lookups go through KIND_TABS uniformly."
+    )
+
+
+def test_m_M15c_no_second_line_briefing_pill():
+    """REVISED 2026-05-27: the 2nd-line Briefing pill must NOT be rendered.
+    Regression guard against restoring the original Phase M layout that
+    the user flagged as a misread of their bug report."""
+    src = _read(WORK_STUDIO)
+    # Strip comments — the explanatory revision note legitimately
+    # references the old testids as historical context.
+    code = re.sub(r"/\*[\s\S]*?\*/", "", src)
+    code = re.sub(r"//[^\n]*", "", code)
+    assert 'data-testid="work-studio-briefing-row"' not in code, (
+        "work-studio-briefing-row container must NOT render — the 2nd-line "
+        "pill was removed per revised Phase M."
+    )
+    assert "work-studio-briefing-pill" not in code, (
+        "work-studio-briefing-pill button testid must NOT appear — the "
+        "2nd-line pill was removed per revised Phase M; Briefing is now "
+        "the 6th tab in the main strip."
     )
 
 
@@ -242,12 +276,11 @@ def test_m_N2_subtitle_words_never_recombine():
     looking phrase. Guards against accidental re-introduction of the
     forbidden copy in a slightly different form."""
     src = _read(WORK_STUDIO)
-    # Strip JS docstrings + line comments + the KIND_TABS / BRIEFING_TAB
-    # constants (which legitimately reference all the tab labels).
+    # Strip JS docstrings + line comments + the KIND_TABS constant
+    # (which legitimately references all the tab labels).
     code = re.sub(r"/\*[\s\S]*?\*/", "", src)
     code = re.sub(r"//[^\n]*", "", code)
     code = re.sub(r"const KIND_TABS\s*=\s*\[[\s\S]*?\];", "", code)
-    code = re.sub(r"const BRIEFING_TAB\s*=\s*\{[^}]*\};", "", code)
     forbidden_combos = [
         re.compile(r"board packs.{0,60}decks.{0,60}reports", re.IGNORECASE),
         re.compile(r"decks.{0,60}reports.{0,60}briefings", re.IGNORECASE),

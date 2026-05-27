@@ -1,6 +1,59 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase M (revision) — Work Studio Briefing tab restore — 2026-05-27 ✅
+**Why this revision exists** (institutional memory):
+Phase M originally shipped Briefing on a 2nd-line pill because the
+orchestrator misread the user's bug report ("brief is on the 2nd line")
+as a layout spec. User clarified after Phase M close: the original
+message was reporting that Briefing was spilling to the 2nd line as a
+defect, not specifying it should live there. Correct intent throughout:
+Briefing is the 6th tab in the main horizontal tab strip alongside the
+other 5. Original M close-out is therefore a half-fix; this revision
+lands the correct layout the user wanted from the start.
+
+**Lesson for anti-drift protocol (added to PHASE_LEDGER diagnosis section):**
+When a user describes the current visual state in flat language, do NOT
+assume it's a spec — confirm whether the description is intent or
+symptom before locking it as IN_SCOPE.
+
+**Shipped:**
+- `KIND_TABS` extended from 5 → 6 entries; new 6th entry
+  `{id:"briefing", label:"Briefing", short:"briefings", icon:BookOpen, empty:"No briefs yet."}` appended after `report`.
+- `BRIEFING_TAB` constant REMOVED — Briefing data path now uniformly
+  resolves via `KIND_TABS.find((t)=>t.id===kind)` in 4 call sites
+  (`BriefRow` icon lookup, `initialKind` URL parser, `fetchAggregates`
+  tab resolver, `activeTab` memo).
+- 2nd-line pill render block (the `<div data-testid="work-studio-briefing-row">`
+  container + inner `<button data-testid="work-studio-briefing-pill">`)
+  REMOVED entirely from the JSX tree.
+- Tab-strip comment updated: "Five-tab line" → "Six-tab line".
+
+**CI guards flipped** (`tests/test_phase_m_workstudio_noise.py`):
+- M15a: positive — `KIND_TABS` must contain exactly 6 entries in the
+  spec-locked order with Briefing as the 6th (was 5).
+- M15b: negative — `const BRIEFING_TAB` must NOT exist (was positive).
+- M15c: negative — neither `work-studio-briefing-row` nor
+  `work-studio-briefing-pill` testids may appear in source (was positive).
+- All other guards (M1a/M1b/M1c/M1d/M2a/M2b/M2c/M3a/N1/N2) preserved
+  verbatim.
+
+**Test ledger** — Phase M 13/13 GREEN post-flip. Full sweep
+`test_phase_i*+n*+h*+m*+o*` = **191 passed / 13 skipped**. ESLint clean.
+
+**Live verification (Julius @ Personal NED Seat):**
+- Tab strip renders 6 tabs in spec order: `Main Board & Committee Packs`
+  (active) · `Minutes` · `Drafts` · `Decks` · `Reports` · `Briefing`.
+- Pill removal verified: `work-studio-briefing-row`=0,
+  `work-studio-briefing-pill`=0, `work-studio-briefing-pill-active`=0.
+- Click flow: Briefing tab click → URL `kind=briefing` + tab-active=1.
+- Drafts tab click → ListingShell + search bar + MOST RECENT regression
+  intact.
+- Screenshots: `/tmp/workstudio_BEFORE_briefing_restore.png` (5 tabs +
+  pill) vs `/tmp/workstudio_AFTER_briefing_restore.png` (6 tabs, no pill).
+
+
+
 ### Phase I.4.c (Google leg) — Events: Google Calendar OAuth + Sync — 2026-05-27 ✅
 Read-only Google Calendar integration. Users authorise via OAuth 2.0,
 their primary calendar's next-90d events get pulled into `db.events`

@@ -91,6 +91,12 @@ function formatPeriod(period_start, period_end, fallback) {
 //     collection (NOT briefings/aggregates).
 //   • Tab order is now:
 //     Main Board & Committee Packs · Minutes · Drafts · Decks · Reports · Briefing
+//   • Phase M-revision (2026-05-27) — Briefing restored INLINE as the
+//     6th tab in the main horizontal strip. The original Phase M
+//     shipped Briefing on a 2nd-line pill because the orchestrator
+//     misread a user bug report ("brief is on the 2nd line") as a
+//     layout spec. Corrected: Briefing is peer-level with the other
+//     5 tabs.
 // =============================================================================
 const KIND_TABS = [
   {
@@ -115,17 +121,11 @@ const KIND_TABS = [
   },
   { id: "deck",                 label: "Decks",    short: "decks",    icon: Presentation, empty: "No decks in flight." },
   { id: "report",               label: "Reports",  short: "reports",  icon: FileText,     empty: "No reports yet." },
+  // Phase M-revision (2026-05-27) — Briefing restored INLINE as the
+  // 6th tab. Same `kind = "briefing"` data path; peer-level with the
+  // 5 tabs above (no more 2nd-line pill).
+  { id: "briefing",             label: "Briefing", short: "briefings",icon: BookOpen,     empty: "No briefs yet." },
 ];
-
-// Phase M (2026-05-27) — `Briefing` moves OFF the horizontal tab strip
-// and onto a 2nd-line pill below the tabs. Same `kind = "briefing"`
-// state under the hood — zero data path change. Kept as a separate
-// constant to preserve clarity that the 5 tabs above are visually
-// peer-level while Briefing is treated as a secondary affordance.
-const BRIEFING_TAB = {
-  id: "briefing", label: "Briefing", short: "briefings",
-  icon: BookOpen, empty: "No briefs yet.",
-};
 
 
 // Per-tab contextual action rows. Spec-locked.
@@ -195,13 +195,9 @@ function ContextActions({ kind, onExport, onEnhance, onCompile, onCreate }) {
 
 
 function BriefRow({ row, onOpen }) {
-  // Phase M (2026-05-27) — Briefing rows resolve via BRIEFING_TAB since
-  // Briefing is no longer a horizontal tab.
-  const Icon = (
-    row.kind === "briefing"
-      ? BRIEFING_TAB.icon
-      : (KIND_TABS.find((k) => k.id === row.kind) || KIND_TABS[0]).icon
-  );
+  // Phase M-revision (2026-05-27) — Briefing is back in KIND_TABS as
+  // the 6th tab, so the icon lookup is uniform across all kinds.
+  const Icon = (KIND_TABS.find((k) => k.id === row.kind) || KIND_TABS[0]).icon;
   // Chunk 5 (2026-05-13) — Patch 28D parity: show a 1-line description
   // under the title, prioritised as `description` (set by Work Studio
   // create flows) → null (no placeholder; we hide the line entirely
@@ -494,9 +490,6 @@ export default function WorkStudio() {
     if (k === "cycle_board_pack" || k === "cycle_committee_pack") {
       return "cycle_main_and_committee_pack";
     }
-    // Phase M (2026-05-27) — `briefing` is no longer a horizontal tab
-    // but the kind id remains valid (renders as a 2nd-line pill).
-    if (k === "briefing") return "briefing";
     return KIND_TABS.find((t) => t.id === k) ? k : "cycle_main_and_committee_pack";
   })();
   const [kind, setKind] = useState(initialKind);
@@ -577,9 +570,9 @@ export default function WorkStudio() {
     setAggLoading(true);
     setAggErr(null);
     try {
-      // Phase M (2026-05-27) — Briefing pill resolves to BRIEFING_TAB
-      // since it's no longer in KIND_TABS.
-      const tab = kind === "briefing" ? BRIEFING_TAB : KIND_TABS.find((t) => t.id === kind);
+      // Phase M-revision (2026-05-27) — Briefing is the 6th KIND_TABS
+      // entry, so the lookup is uniform.
+      const tab = KIND_TABS.find((t) => t.id === kind);
       // Phase E.1 (2026-05-26) — Drafts tab sources documents
       // (state=draft) rather than briefings/aggregates. Pagination is
       // client-side for the moment (the listing collection is tiny);
@@ -782,11 +775,7 @@ export default function WorkStudio() {
   const onCloseDrawer = () => { setDrawerOpen(false); };
 
   const activeTab = useMemo(
-    () => (
-      kind === "briefing"
-        ? BRIEFING_TAB
-        : (KIND_TABS.find((t) => t.id === kind) || KIND_TABS[0])
-    ),
+    () => (KIND_TABS.find((t) => t.id === kind) || KIND_TABS[0]),
     [kind],
   );
 
@@ -813,8 +802,10 @@ export default function WorkStudio() {
               already in the tabs below. The eyebrow + H1 + tab strip
               carry the surface on their own. */}
 
-          {/* Five-tab line — spec-locked label order, Briefing moved
-              to a 2nd-line pill (Phase M, 2026-05-27). */}
+          {/* Six-tab line — spec-locked label order. Phase M-revision
+              (2026-05-27): Briefing restored INLINE as the 6th tab
+              (was on a 2nd-line pill in original Phase M close-out,
+              which the user clarified was a misread of a bug report). */}
           <div className="mt-7 border-b border-[var(--rule)]" data-testid="work-studio-tabs">
             <div className="flex items-stretch gap-0 flex-wrap -mb-px">
               {KIND_TABS.map((t) => {
@@ -839,26 +830,6 @@ export default function WorkStudio() {
                 );
               })}
             </div>
-          </div>
-
-          {/* Phase M (2026-05-27) — Briefing 2nd-line pill. Renders
-              just below the tab strip, visually subordinate. Same
-              data path as the legacy 6th tab (kind=briefing). */}
-          <div className="mt-3 mb-1" data-testid="work-studio-briefing-row">
-            <button
-              type="button"
-              onClick={() => onKind("briefing")}
-              className={`inline-flex items-center gap-1.5 px-3 py-1 text-[11.5px] rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
-                kind === "briefing"
-                  ? "bg-[var(--ink)] text-white"
-                  : "bg-white border border-[var(--rule)] text-[var(--muted)] hover:text-[var(--ink)] hover:border-[var(--ink)]/30"
-              }`}
-              data-testid={`work-studio-briefing-pill${kind === "briefing" ? "-active" : ""}`}
-              aria-current={kind === "briefing" ? "page" : undefined}
-            >
-              <BookOpen className="w-3 h-3" strokeWidth={1.8} aria-hidden="true" />
-              {BRIEFING_TAB.label}
-            </button>
           </div>
 
           {/* Per-tab body */}
