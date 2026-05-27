@@ -1,20 +1,25 @@
 /**
- * News stub — Phase H.1 placeholder for /app/news.
+ * /app/news — Full news page (Phase H.3, 2026-05-26).
  *
- * The real news/world-feed surface lands in H.3 (will reuse the
- * /api/news Patch 21 backend). For now this is a friendly
- * "Coming soon" page that the "Read more →" link on the Portfolio
- * Landing routes to, so the click flow is wired end-to-end.
+ * Was a stub in H.1; now the full page using the shared
+ * `<NewsStrip>` component with `limit=20` and the `quality=executive`
+ * filter. `Read more →` on the Portfolio Landing routes here.
+ *
+ * Pagination: the current `/api/news` endpoint accepts `limit` (1-50)
+ * but no cursor / page param. We render up to 50 items in a single
+ * call today; if the catalog grows we'll add a cursor-style param to
+ * the aggregator and infinite-scroll here.
  */
 import React from "react";
 import { Link } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
+import NewsStrip from "@/components/news/NewsStrip";
 import { Newspaper, ArrowLeft } from "lucide-react";
 
 export default function NewsStub() {
   return (
     <AppShell>
-      <div className="akki-w-medium px-8 pt-16 pb-20" data-testid="news-stub">
+      <div className="akki-w-medium px-8 pt-12 pb-20" data-testid="news-stub">
         <p className="akki-overline mb-3 flex items-center gap-2">
           <Newspaper className="w-3 h-3 text-[var(--accent)]" /> News
         </p>
@@ -26,21 +31,19 @@ export default function NewsStub() {
           The world around you.
         </h1>
         <p className="akki-meta mt-2 max-w-2xl">
-          A curated, regionally-tuned news feed for the boards and
-          companies in your portfolio.
+          Curated, regionally-tuned news from executive-grade sources.
         </p>
 
         <div
-          className="mt-10 bg-white border border-dashed border-[var(--rule)] rounded-md px-6 py-16 text-center"
+          className="mt-10 bg-white border border-[var(--rule)] rounded-md px-6 py-6"
           data-testid="news-stub-empty"
         >
-          <p className="text-[12.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">
-            Coming soon
-          </p>
-          <p className="text-[13px] text-[var(--muted)] mt-2 max-w-md mx-auto">
-            We&rsquo;re wiring the live feed in Phase H.3. Until then,
-            head back to your portfolio.
-          </p>
+          <NewsStrip
+            limit={20}
+            quality="executive"
+            variant="expanded"
+            testIdRoot="news-page-strip"
+          />
         </div>
 
         <div className="mt-6">

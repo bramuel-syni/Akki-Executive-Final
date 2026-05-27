@@ -64,6 +64,7 @@ from routers import synisense_engine as synisense_engine_router  # noqa: E402
 from routers import cycle as cycle_router  # noqa: E402
 from routers import blog as blog_router  # noqa: E402
 from routers import admin_email_provider as admin_email_provider_router  # noqa: E402
+from routers import portfolio_data as portfolio_data_router  # noqa: E402
 from routers import billing as billing_router  # noqa: E402
 # CLEANUP B2 (2026-05-26): plays_router archived — Plays surface ORPHAN
 # per PROVENANCE_TRACE_PLAYS_CYCLE.md. Router moved to
@@ -185,6 +186,7 @@ from routers import tasks as tasks_router  # noqa: E402
 app.include_router(tasks_router.router)
 app.include_router(blog_router.router)
 app.include_router(admin_email_provider_router.router)
+app.include_router(portfolio_data_router.router)
 app.include_router(billing_router.router)
 # CLEANUP B2 (2026-05-26): plays_router include removed — see archive note above.
 app.include_router(agenda_router.router)

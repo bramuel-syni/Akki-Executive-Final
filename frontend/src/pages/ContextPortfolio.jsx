@@ -30,6 +30,8 @@ import { useNavigate } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
+import api from "@/api";
+import NewsStrip from "@/components/news/NewsStrip";
 import {
   Landmark, Briefcase, Plus, Layers, Flame, History, Newspaper,
   ArrowRight,
@@ -238,25 +240,141 @@ function RailCompanyList({ contexts, activeContextId, onOpen, onAdd }) {
 
 
 /* ─────────────────────────────────────────────────────────────────── */
-/* Placeholder section card                                             */
+/* Boards to watch — Section 1                                          */
 /* ─────────────────────────────────────────────────────────────────── */
 
-function PlaceholderSection({ icon: Icon, label, testid, footer = null }) {
+function BoardsToWatchSection({ items, onOpen }) {
+  const loading = items === null;
   return (
-    <section data-testid={testid}>
+    <section data-testid="portfolio-section-boards-to-watch">
       <div className="flex items-center gap-2 mb-3">
-        <Icon className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} />
-        <h2 className="akki-overline">{label}</h2>
+        <Flame className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} />
+        <h2 className="akki-overline">Boards to watch this week</h2>
       </div>
-      <div
-        className="bg-white border border-dashed border-[var(--rule)] rounded-md px-6 py-10 text-center"
-        data-testid={`${testid}-empty`}
-      >
-        <p className="text-[12.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">
-          Coming soon
+      {loading ? (
+        <p className="akki-meta italic px-1 py-3" data-testid="portfolio-section-boards-to-watch-loading">
+          Loading…
         </p>
+      ) : items.length === 0 ? (
+        <p
+          className="text-[12.5px] italic text-[var(--muted)] bg-white border border-dashed border-[var(--rule)] rounded-md px-6 py-8 text-center"
+          data-testid="portfolio-section-boards-to-watch-empty"
+        >
+          Nothing flagged this week. Sign in to a board to start.
+        </p>
+      ) : (
+        <ul className="space-y-2.5" data-testid="portfolio-section-boards-to-watch-list">
+          {items.map((b) => (
+            <li key={b.context_id}>
+              <button
+                type="button"
+                onClick={() => onOpen(b.context_id)}
+                className="w-full text-left bg-white border border-[var(--rule)] hover:border-[var(--ink)]/40 rounded-md px-4 py-3 transition-colors"
+                data-testid={`boards-to-watch-row-${b.context_id}`}
+              >
+                <p className="text-[15px] font-medium text-[var(--ink)]">{b.name}</p>
+                {b.reasons?.length > 0 && (
+                  <p className="text-[12px] text-[var(--muted)] mt-1">
+                    {b.reasons.slice(0, 2).join(" · ")}
+                  </p>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+
+/* ─────────────────────────────────────────────────────────────────── */
+/* Where you left off — Section 2                                       */
+/* ─────────────────────────────────────────────────────────────────── */
+
+function WhereYouLeftOffSection({ row, onResume }) {
+  const loading = row === null;
+  const empty = !loading && !row?.context_id;
+  return (
+    <section data-testid="portfolio-section-where-you-left-off">
+      <div className="flex items-center gap-2 mb-3">
+        <History className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} />
+        <h2 className="akki-overline">Where you left off</h2>
       </div>
-      {footer}
+      {loading ? (
+        <p className="akki-meta italic px-1 py-3" data-testid="portfolio-section-where-you-left-off-loading">
+          Loading…
+        </p>
+      ) : empty ? (
+        <p
+          className="text-[12.5px] italic text-[var(--muted)] bg-white border border-dashed border-[var(--rule)] rounded-md px-6 py-8 text-center"
+          data-testid="portfolio-section-where-you-left-off-empty"
+        >
+          Open a board to start working.
+        </p>
+      ) : (
+        <div
+          className="bg-white border border-[var(--rule)] rounded-md px-4 py-3 flex items-start justify-between gap-3"
+          data-testid="portfolio-section-where-you-left-off-row"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="text-[15px] text-[var(--ink)]">
+              <span className="font-medium">{row.context_name || "Unknown company"}</span>
+              {" · "}
+              <span className="text-[var(--muted)]">
+                {row.action || "visited"} {row.surface || "page"}
+              </span>
+            </p>
+            {row.artefact_title && (
+              <p className="text-[12.5px] text-[var(--muted)] mt-1 truncate">
+                &ldquo;{row.artefact_title}&rdquo;
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => onResume(row.deep_link || "/app")}
+            className="text-[12.5px] text-[var(--accent)] hover:text-[var(--ink)] inline-flex items-center gap-1 shrink-0"
+            data-testid="portfolio-section-where-you-left-off-continue"
+          >
+            Continue <ArrowRight className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+
+/* ─────────────────────────────────────────────────────────────────── */
+/* News — Section 3 (shared NewsStrip)                                  */
+/* ─────────────────────────────────────────────────────────────────── */
+
+function NewsSection({ onReadMore }) {
+  return (
+    <section data-testid="portfolio-section-news">
+      <div className="flex items-center gap-2 mb-3">
+        <Newspaper className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} />
+        <h2 className="akki-overline">The world around you</h2>
+      </div>
+      <div className="bg-white border border-[var(--rule)] rounded-md px-5 py-4">
+        <NewsStrip
+          limit={5}
+          quality="executive"
+          variant="compact"
+          testIdRoot="portfolio-news-strip"
+        />
+      </div>
+      <div className="mt-3 flex justify-end">
+        <button
+          type="button"
+          onClick={onReadMore}
+          className="text-[12.5px] text-[var(--accent)] hover:text-[var(--ink)] inline-flex items-center gap-1"
+          data-testid="portfolio-section-news-read-more"
+        >
+          Read more <ArrowRight className="w-3 h-3" />
+        </button>
+      </div>
     </section>
   );
 }
@@ -291,20 +409,40 @@ export default function ContextPortfolio() {
   const { contexts, activeContextId, switchContext, account } = useAuth();
   const navigate = useNavigate();
 
-  // H.2 (2026-05-26) — Card click → switchContext(cid). The
-  // AuthContext.switchContext helper itself navigates to /app on
-  // success, where AppHome routes to Home2 (per-company home).
-  // We don't navigate manually here.
+  // H.3 (2026-05-26) — live data wiring.
+  const [metrics,       setMetrics]       = useState(null);   // null = loading
+  const [boards,        setBoards]        = useState(null);
+  const [lastAction,    setLastAction]    = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    api.get("/me/portfolio-metrics")
+      .then(({ data }) => { if (alive) setMetrics(data); })
+      .catch(() => { if (alive) setMetrics({ companies: 0, signals: 0, briefings: 0, documents: 0 }); });
+    api.get("/me/boards-to-watch", { params: { limit: 3 } })
+      .then(({ data }) => { if (alive) setBoards(data?.items || []); })
+      .catch(() => { if (alive) setBoards([]); });
+    api.get("/me/last-action")
+      .then(({ data }) => { if (alive) setLastAction(data); })
+      .catch(() => { if (alive) setLastAction(null); });
+    return () => { alive = false; };
+  }, []);
+
+  // H.2 (2026-05-26) — Card click → switchContext(cid). AuthContext
+  // owns post-switch navigation; we don't navigate manually here.
   const openContext = (cid) => {
     if (!cid) return;
-    switchContext(cid).catch(() => {
-      // switchContext surfaces its own error toasts; swallowing keeps
-      // the click handler quiet (Playwright probes etc.).
-    });
+    switchContext(cid).catch(() => { /* AuthContext surfaces toasts */ });
   };
 
   const firstName = (account?.name || "there").split(" ")[0];
   const greeting = timeAwareGreeting();
+
+  // Format a metric value: number for >=0, "—" while loading.
+  const _m = (key) =>
+    metrics === null
+      ? "—"
+      : String(metrics[key] ?? 0);
 
   return (
     <AppShell>
@@ -331,49 +469,31 @@ export default function ContextPortfolio() {
             </p>
           </header>
 
-          {/* 4 metric tiles — placeholders (H.3 wires real counts) */}
+          {/* 4 metric tiles — live values from /api/me/portfolio-metrics */}
           <div
             className="grid grid-cols-2 md:grid-cols-4 gap-4"
             data-testid="portfolio-metrics-row"
           >
-            <MetricTile label="Companies" value="—" />
-            <MetricTile label="Signals"   value="—" />
-            <MetricTile label="Briefings" value="—" />
-            <MetricTile label="Documents" value="—" />
+            <MetricTile label="Companies" value={_m("companies")} />
+            <MetricTile label="Signals"   value={_m("signals")} />
+            <MetricTile label="Briefings" value={_m("briefings")} />
+            <MetricTile label="Documents" value={_m("documents")} />
           </div>
 
-          {/* Section 1 — Boards to watch this week */}
-          <PlaceholderSection
-            icon={Flame}
-            label="Boards to watch this week"
-            testid="portfolio-section-boards-to-watch"
+          {/* Section 1 — Boards to watch this week (AI-composite ranking) */}
+          <BoardsToWatchSection
+            items={boards}
+            onOpen={openContext}
           />
 
-          {/* Section 2 — Where you left off */}
-          <PlaceholderSection
-            icon={History}
-            label="Where you left off"
-            testid="portfolio-section-where-you-left-off"
+          {/* Section 2 — Where you left off (resume card) */}
+          <WhereYouLeftOffSection
+            row={lastAction}
+            onResume={(href) => navigate(href)}
           />
 
-          {/* Section 3 — The world around you (News) */}
-          <PlaceholderSection
-            icon={Newspaper}
-            label="The world around you"
-            testid="portfolio-section-news"
-            footer={
-              <div className="mt-3 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => navigate("/app/news")}
-                  className="text-[12.5px] text-[var(--accent)] hover:text-[var(--ink)] inline-flex items-center gap-1"
-                  data-testid="portfolio-section-news-read-more"
-                >
-                  Read more <ArrowRight className="w-3 h-3" />
-                </button>
-              </div>
-            }
-          />
+          {/* Section 3 — The world around you (News strip) */}
+          <NewsSection onReadMore={() => navigate("/app/news")} />
         </div>
 
         {/* RIGHT — company rail */}

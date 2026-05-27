@@ -1035,8 +1035,11 @@ export default function Chat() {
             active-conversation parchment-light fill + 2px oxblood
             left edge. */}
         <aside className="bg-[var(--paper)] flex flex-col min-h-0" data-testid="chat-sidebar">
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
+          {/* H.3 side-fix (2026-05-26) — Header tightening: reduced
+              padding (px-3 py-3), 32px search input, single-line
+              subline, smaller gap to list. */}
+          <div className="px-3 pt-3 pb-2">
+            <div className="flex items-center justify-between mb-1.5">
               <p className="akki-overline flex items-center gap-1.5">
                 <MessageCircle className="w-3 h-3 text-[var(--accent)]" /> AKKI Chat
               </p>
@@ -1049,7 +1052,7 @@ export default function Chat() {
                 <Plus className="w-3 h-3 mr-1" /> New
               </Button>
             </div>
-            <p className="text-[10.5px] text-[var(--muted)] leading-relaxed mb-3">
+            <p className="text-[10px] text-[var(--muted)] truncate mb-2.5">
               Synisense-shielded · multi-model · audited
             </p>
             {/* Phase B.1 — Conversation search across this context.
@@ -1061,7 +1064,7 @@ export default function Chat() {
                 value={searchQ}
                 onChange={(e) => setSearchQ(e.target.value)}
                 placeholder="Search conversations…"
-                className="w-full pl-7 pr-7 h-8 text-[12.5px] border-0 border-b border-[rgba(184,182,175,0.4)] rounded-none bg-transparent focus:outline-none focus:border-[var(--accent)]/60"
+                className="w-full pl-7 pr-7 h-8 text-[13px] border-0 border-b border-[rgba(184,182,175,0.4)] rounded-none bg-transparent focus:outline-none focus:border-[var(--accent)]/60"
                 data-testid="chat-search-input"
               />
               {searchQ && (
@@ -1076,7 +1079,7 @@ export default function Chat() {
               )}
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-2" data-testid="chat-list">
+          <div className="flex-1 overflow-y-auto px-1.5 pb-2 space-y-0" data-testid="chat-list">
             {archiveOpen ? (
               /* Workstream B.5 — archive view. Replaces the active list. */
               <div data-testid="chat-archive-view">
@@ -1097,16 +1100,13 @@ export default function Chat() {
                   archivedChats.map((c) => (
                     <div
                       key={c.id}
-                      className="px-3 py-2.5 mb-5"
+                      className="px-3 py-2 hover:bg-[var(--cream-deep)]/30 rounded-sm group"
                       data-testid={`chat-archive-item-${c.id}`}
                     >
-                      <p className="text-[12.5px] font-medium leading-snug line-clamp-1 text-[var(--ink)]">
+                      <p className="font-sans text-[13.5px] font-medium leading-[1.35] truncate text-[var(--ink)]">
                         {c.title}
                       </p>
-                      <p className="text-[11px] text-[var(--muted)] line-clamp-1 mt-0.5">
-                        {c.last_message_preview || "(no messages yet)"}
-                      </p>
-                      <div className="flex items-center gap-1 mt-2">
+                      <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => onRestoreChat(c.id)}
                           className="text-[10.5px] uppercase tracking-wider text-[var(--accent)] hover:text-[var(--ink)] inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm hover:bg-[var(--cream-deep)]/40"
@@ -1145,21 +1145,21 @@ export default function Chat() {
                     <button
                       key={`hit-${c.id}-${hit.matched_message_id || "title"}`}
                       onClick={() => { setActiveId(c.id); setSearchQ(""); setSearchHits(null); }}
-                      className={`w-full text-left px-3 py-2.5 mb-5 transition-colors ${
+                      className={`w-full text-left px-3 py-2 transition-colors rounded-sm ${
                         active
                           ? "bg-[var(--cream)] border-l-2 border-l-[var(--accent)] pl-2.5"
-                          : ""
+                          : "hover:bg-[var(--cream-deep)]/30"
                       }`}
                       data-testid={`chat-search-hit-${c.id}`}
                     >
-                      <p className="text-[16px] font-medium leading-snug line-clamp-1 text-[var(--ink)]">
+                      <p className="font-sans text-[13.5px] font-medium leading-[1.35] truncate text-[var(--ink)]">
                         {c.title}
                       </p>
-                      <p className="text-[11.5px] text-[var(--muted)] mt-0.5">
-                        {hit.match_in === "title" ? "Title match" : "Turn match"}
-                      </p>
-                      <p className="text-[13px] text-[var(--deep)] line-clamp-2 mt-0.5">
-                        {hit.snippet || "(no snippet)"}
+                      {/* Search-hit only — snippet retained because it's
+                          the WHY of the match; non-search default rows
+                          dropped this per the tightening spec. */}
+                      <p className="text-[11px] text-[var(--muted)] mt-0.5">
+                        {hit.match_in === "title" ? "Title match" : "Turn match"} · {hit.snippet || "(no snippet)"}
                       </p>
                     </button>
                   );
@@ -1193,19 +1193,24 @@ export default function Chat() {
                       setActiveId(c.id);
                     }
                   }}
-                  className={`group w-full text-left px-3 py-2.5 mb-5 cursor-pointer transition-colors flex items-start gap-2 ${
+                  /* H.3 side-fix (2026-05-26) — Claude-style tightening:
+                     single-line title (subtitle dropped), sans 13.5px /
+                     weight 500, 8px vertical padding, no inter-row
+                     margin, subtle hover bg, active state keeps the
+                     2px oxblood accent bar. */
+                  className={`group w-full text-left px-3 py-2 cursor-pointer transition-colors flex items-center gap-2 rounded-sm ${
                     active
                       ? "bg-[var(--cream)] border-l-2 border-l-[var(--accent)] pl-2.5"
-                      : ""
+                      : "hover:bg-[var(--cream-deep)]/30"
                   }`}
                   data-testid={`chat-item-${c.id}`}
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-[16px] font-medium leading-snug line-clamp-1 text-[var(--ink)]">
+                    <p
+                      className="font-sans text-[13.5px] font-medium leading-[1.35] truncate text-[var(--ink)]"
+                      data-testid={`chat-item-title-${c.id}`}
+                    >
                       {c.title}
-                    </p>
-                    <p className="text-[13px] text-[var(--muted)] line-clamp-1 mt-0.5">
-                      {c.last_message_preview || "(no messages yet)"}
                     </p>
                   </div>
                   {/* Phase C Chat cleanup (2026-05-26): three-dot
