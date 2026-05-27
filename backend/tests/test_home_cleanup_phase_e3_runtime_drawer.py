@@ -312,15 +312,54 @@ def test_f3_task_manager_mounts_universal_task_drawer():
 
 
 def test_f3_universal_task_drawer_has_5_spec_tabs():
-    """TaskDrawer ships all 5 F.3 spec tabs."""
+    """TaskDrawer ships all 5 F.3 spec tabs.
+
+    Asserts both the tab TRIGGERS (clickable headers — testid
+    `task-drawer-tab-<id>`) AND the corresponding tab PANELS
+    (rendered body — testid `task-drawer-panel-<id>`). The two
+    testid namespaces are intentionally separated to prevent
+    prefix-collision when testers count tabs via
+    `[data-testid^="task-drawer-tab-"]`.
+    """
     src = TASK_DRAWER_PATH.read_text("utf-8")
     # Per the F.3 spec — Plan / Contributions / Drafts / Intelligence / Compile.
-    # Testids on the tab BODIES carry the value strings, lowercased.
     for tab in ("plan", "contributions", "drafts", "intelligence", "compile"):
-        assert f'data-testid="task-drawer-tab-{tab}-body"' in src, (
-            f"TaskDrawer missing tab `{tab}` body — F.3 spec requires 5 "
-            "tabs (Plan / Contributions / Drafts / Intelligence / Compile)."
+        # Tab body/panel uses the dedicated `panel-` prefix to avoid
+        # inflating the `tab-` prefix selector count.
+        assert f'data-testid="task-drawer-panel-{tab}"' in src, (
+            f"TaskDrawer missing panel `{tab}` — F.3 spec requires 5 "
+            "tabs (Plan / Contributions / Drafts / Intelligence / Compile) "
+            "with bodies under the `task-drawer-panel-<id>` testid."
         )
+    # Trigger registration is data-driven via a tabs array — verify
+    # the dynamic-trigger testid pattern is present + tabs list is
+    # exactly the 5 spec keys.
+    assert 'data-testid={`task-drawer-tab-${t.key}`}' in src, (
+        "TaskDrawer must use `task-drawer-tab-<key>` for tab TRIGGERS "
+        "(via the tabs array map)."
+    )
+    # Tripwire — no static `task-drawer-tab-X-body` testid anywhere
+    # (these would inflate the `tab-` prefix count in tester walks).
+    import re
+    bodies = re.findall(r'data-testid="task-drawer-tab-[a-z_-]+-body"', src)
+    assert not bodies, (
+        f"Found legacy `task-drawer-tab-*-body` testids — these collide "
+        f"with the tab-trigger prefix used by testers to count tabs. "
+        f"Rename to `task-drawer-panel-<id>`. Found: {bodies}"
+    )
+    # Strict tabs-array shape — exactly the 5 spec keys.
+    # The TabBar function defines `const tabs = [ { key: "plan", … } … ]`.
+    tabs_block_match = re.search(
+        r"function TabBar\([^)]*\)\s*\{[^}]*?const\s+tabs\s*=\s*\[(.*?)\];",
+        src, flags=re.DOTALL,
+    )
+    assert tabs_block_match, "TabBar.tabs array not found in TaskDrawer.jsx"
+    tabs_block = tabs_block_match.group(1)
+    tab_keys = re.findall(r'key:\s*"([a-z_-]+)"', tabs_block)
+    assert set(tab_keys) == {"plan", "contributions", "drafts", "intelligence", "compile"}, (
+        f"tabs array has unexpected keys: {tab_keys}. Spec requires "
+        "exactly 5: plan, contributions, drafts, intelligence, compile."
+    )
 
 
 def test_f3_universal_task_drawer_has_5_spec_ctas():

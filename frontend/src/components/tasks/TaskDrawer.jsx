@@ -283,7 +283,7 @@ function TabBar({ tab, onTab }) {
 // ═════════════════════════════════════════════════════════════════════
 function PlanTab({ task, onPatched }) {
   return (
-    <div className="space-y-5" data-testid="task-drawer-tab-plan-body">
+    <div className="space-y-5" data-testid="task-drawer-panel-plan">
       <PlanField field="objective"        label="Objective"        task={task} onPatched={onPatched} long />
       <PlanField field="success_criteria" label="Success criteria" task={task} onPatched={onPatched} long />
       <section data-testid="task-drawer-plan-output">
@@ -436,7 +436,7 @@ function ContributionsTab({ task, onPatched }) {
   }
 
   return (
-    <div className="space-y-3" data-testid="task-drawer-tab-contributions-body">
+    <div className="space-y-3" data-testid="task-drawer-panel-contributions">
       <ul className="space-y-2">
         {team.map((m, i) => {
           const cid = m.email || m.name || `contributor-${i}`;
@@ -591,7 +591,7 @@ function DraftsTab({ task }) {
     setParams(next, { replace: false });
   };
   return (
-    <div data-testid="task-drawer-tab-drafts-body">
+    <div data-testid="task-drawer-panel-drafts">
       {loading ? (
         <p className="text-[12px] text-[var(--muted)] inline-flex items-center gap-1.5">
           <Loader2 className="w-3 h-3 animate-spin" /> Loading…
@@ -674,7 +674,7 @@ function IntelligenceTab({ task, onJumpTab }) {
 
   const rb = data.readiness || { score: 0, components: [] };
   return (
-    <div className="space-y-5" data-testid="task-drawer-tab-intelligence-body">
+    <div className="space-y-5" data-testid="task-drawer-panel-intelligence">
       {/* Readiness breakdown */}
       <section data-testid="task-drawer-intelligence-readiness">
         <div className="flex items-center justify-between mb-2">
@@ -901,7 +901,7 @@ function CompileTab({ task }) {
   }
 
   return (
-    <div className="space-y-5" data-testid="task-drawer-tab-compile-body">
+    <div className="space-y-5" data-testid="task-drawer-panel-compile">
       {/* Header — Start/Resume button + readiness chip (informational) */}
       <div className="flex items-center justify-between gap-3" data-testid="task-drawer-compile-header">
         <div className="flex items-center gap-2">

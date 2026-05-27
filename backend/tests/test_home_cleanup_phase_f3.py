@@ -63,7 +63,7 @@ def test_f3_task_drawer_renders_5_tabs():
     assert "task-drawer-tab-${t.key}" in src
     # Per-tab body testids.
     for key in ("plan", "contributions", "drafts", "intelligence", "compile"):
-        assert f'task-drawer-tab-{key}-body' in src
+        assert f'task-drawer-panel-{key}' in src
     # Labels per brief.
     for label in ("Plan", "Contributions", "Drafts", "Intelligence", "Compile"):
         assert f'label: "{label}"' in src
@@ -78,7 +78,7 @@ def test_f3_plan_tab_has_inline_edit_for_three_fields():
     # Name is inline-editable in the header.
     assert 'data-testid="task-drawer-name-input"' in src
     # Plan tab body data-testid present.
-    assert 'data-testid="task-drawer-tab-plan-body"' in src
+    assert 'data-testid="task-drawer-panel-plan"' in src
 
 
 def test_f3_contributions_tab_has_per_row_actions():
