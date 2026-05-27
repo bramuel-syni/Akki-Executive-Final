@@ -133,9 +133,45 @@ async def login(body: LoginIn, request: Request, response: Response):
 
 
 @router.post("/auth/logout")
-async def logout(response: Response, _: Dict[str, Any] = Depends(get_current_account)):
+async def logout(
+    request: Request, response: Response,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    """Phase J (2026-05-27) — revoke the current access token's JTI
+    server-side BEFORE clearing the cookies. Once written, the JTI is
+    rejected by `get_current_account` even if an attacker still holds
+    a copy of the raw token. The `revoked_jtis` TTL index auto-cleans
+    rows after the access-token TTL window."""
+    # Pull the JTI off whichever credential authenticated the request.
+    jti_to_revoke: Optional[str] = None
+    auth_header = request.headers.get("Authorization", "")
+    raw_tokens = []
+    if auth_header.startswith("Bearer "):
+        raw_tokens.append(auth_header[7:].strip())
+    cookie_tok = request.cookies.get("access_token")
+    if cookie_tok:
+        raw_tokens.append(cookie_tok)
+    for tok in raw_tokens:
+        try:
+            payload = jwt.decode(tok, JWT_SECRET, algorithms=[JWT_ALGO])
+        except Exception:
+            continue
+        if payload.get("type") == "access" and payload.get("jti"):
+            jti_to_revoke = payload["jti"]
+            break
+    if jti_to_revoke:
+        await db.revoked_jtis.update_one(
+            {"jti": jti_to_revoke},
+            {"$setOnInsert": {
+                "jti":         jti_to_revoke,
+                "account_id":  current["id"],
+                "revoked_at":  _now(),
+                "reason":      "logout",
+            }},
+            upsert=True,
+        )
     clear_auth_cookies(response)
-    return {"ok": True}
+    return {"ok": True, "revoked_jti": bool(jti_to_revoke)}
 
 
 @router.post("/auth/refresh")

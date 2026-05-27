@@ -1,6 +1,91 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase J — Idle auto-logoff (30min) + JTI revocation — 2026-05-27 ✅
+Hardens authentication with two complementary mechanisms:
+
+**1. JTI revocation (per-token kill-switch):**
+- `core.py::create_access_token` + `create_refresh_token` now emit a
+  `jti` (uuid4 hex) claim on every minted token.
+- `core.py::get_current_account` checks the JTI against
+  `db.revoked_jtis` — match → 401 `"Token revoked"`. Pre-Phase-J
+  tokens (no `jti`) skip the check during the 8h legacy-tolerance
+  window; they expire naturally.
+- `POST /api/auth/logout` decodes the inbound token (bearer or
+  cookie), upserts `{jti, account_id, revoked_at, reason:"logout"}`
+  into `db.revoked_jtis` BEFORE clearing cookies. Returns
+  `{ok, revoked_jti:bool}`.
+- New `db.revoked_jtis` collection with **unique index on `jti`** +
+  **TTL on `revoked_at` (expireAfterSeconds=28800)** so Mongo
+  auto-cleans rows once the underlying JWT exp passes.
+
+**2. Account-wide session revocation (admin kill-switch):**
+- `POST /api/admin/auth/revoke-all/{account_id}` sets
+  `accounts.{id}.sessions_revoked_after = now()`. Requires
+  `is_superadmin`. 404 on unknown account.
+- `get_current_account` rejects any token with `iat <
+  sessions_revoked_after` (401 `"Sessions revoked by admin"`).
+- Use case: stolen-credential scenarios where you can't (or shouldn't)
+  enumerate every active JTI; just stamp a cutoff and ALL pre-stamp
+  tokens die at once.
+
+**3. Idle auto-logoff (frontend):**
+- `hooks/useIdleTimeout.js` — listens to `[mousemove, keydown,
+  touchstart, click, scroll]` with 5s throttle on activity resets.
+  30-minute timer (env-configurable via
+  `REACT_APP_IDLE_TIMEOUT_MINUTES`, default 30).
+- **Multi-tab safe:** shared `localStorage.akki_last_activity_ts`
+  timestamp; every tab reads same key on each 5s tick. Typing in
+  tab A keeps tab B alive.
+- **Visibility-resistant:** does NOT reset on `visibilitychange`
+  (security — hidden tabs can't extend sessions).
+- AppShell mounts hook only when `account` is truthy.
+- At T-2min: non-intrusive parchment banner with `data-testid=
+  "idle-warning-banner"` + Lock icon + grammar-correct minute label
+  + Dismiss button. Any input dismisses + resets.
+- At T=0: calls `logout()` (revokes JTI server-side) + redirects to
+  `/signin?reason=idle`. `useRef` guard ensures single fire.
+- `/signin` branches on `?reason=idle` → renders parchment banner
+  `data-testid="signin-idle-reason"`: "You were signed out due to
+  30 minutes of inactivity. Sign in to continue."
+
+**Test ledger** — Phase J **15/15 GREEN**. Full sweep
+`test_phase_i*+n*+h*+m*+o*+j*idle*` = **206 passed / 13 skipped**
+(191 prior + 15 new, 0 regressions). ESLint clean on all 3 touched
+frontend files.
+
+**Live verification (Julius @ Personal NED Seat):**
+- Sign-in `?reason=idle` → idle-reason banner mounts verbatim.
+- Login → access token has `jti` claim + 8h exp.
+- `/auth/me` 200 before logout → `/auth/logout` returns
+  `{ok:true, revoked_jti:true}` → same token now 401 `"Token revoked"`.
+- Fresh login → new JTI → `/auth/me` 200 (per-JTI semantics).
+- AppShell seeds activity timestamp on mount.
+- Simulated 28-min idle → warning banner mounts within 5s, text
+  verbatim: `"You'll be signed out for inactivity in 2 minutes.
+  Move the mouse or press any key to stay. DISMISS"`.
+- Screenshots: `/tmp/phase_j_signin_idle_reason.png`,
+  `/tmp/phase_j_idle_warning_banner.png`.
+
+**Out of scope (deferred):**
+- Per-account configurable idle policy (one global default for now)
+- SMS-based MFA
+- Phone number capture on accounts (Phase R territory)
+- Showing remaining session-time elsewhere in UI (banner only at T-2min)
+- Auto-extending sessions on background-tab activity (intentional
+  security feature)
+
+**Lessons captured (ledger NOTES):**
+- Two-tier revocation by design: per-JTI for precision + account-cutoff
+  for broad-stroke kill-switch.
+- Refresh tokens carry JTI for future-proofing but v1 revocation only
+  checks access tokens.
+- Why not store all active JTIs per account? Write amplification +
+  storage cost; cutoff timestamp gets us "kill everything" semantics
+  for free off the existing account doc.
+
+
+
 ### Phase M (revision) — Work Studio Briefing tab restore — 2026-05-27 ✅
 **Why this revision exists** (institutional memory):
 Phase M originally shipped Briefing on a 2nd-line pill because the

@@ -43,6 +43,7 @@ import TrustPanel from "@/components/governance/TrustPanel";
 import CycleContextIndicator from "@/components/layout/CycleContextIndicator";
 import ContextSwitchModal from "@/components/layout/ContextSwitchModal";
 import useKeyboardShortcuts from "@/hooks/useKeyboardShortcuts";
+import useIdleTimeout from "@/hooks/useIdleTimeout";
 import KeyboardHelp from "@/components/layout/KeyboardHelp";
 // Phase F0 — Universal Search replaces the F0.0 hijack where Cmd+K
 // opened a company switcher disguised as search. The company switcher
@@ -217,6 +218,26 @@ export default function AppShell({ children }) {
   // listens for `akki:open-search`; the keyboard hook still fires
   // that event. We DO NOT mount the F0.0 hijack here anymore.
   useKeyboardShortcuts({ openHelp: () => setHelpOpen(true) });
+
+  // Phase J (2026-05-27) — Idle auto-logoff. 30 minutes of inactivity
+  // → POST /api/auth/logout (which revokes the access-token JTI
+  // server-side) → redirect to /signin?reason=idle. At T-2min a
+  // non-intrusive banner surfaces; any user input dismisses it +
+  // resets the timer. Multi-tab safe via shared localStorage timestamp.
+  const [idleWarn, setIdleWarn] = useState(null);
+  const idleLoggingOutRef = useRef(false);
+  useIdleTimeout({
+    enabled: !!account,  // only activate once authenticated
+    onWarn: (secsLeft) => setIdleWarn({ at: Date.now(), secsLeft }),
+    onClearWarn: () => setIdleWarn(null),
+    onLogout: async () => {
+      if (idleLoggingOutRef.current) return;
+      idleLoggingOutRef.current = true;
+      try { await logout(); } catch { /* noop — proceed to /signin anyway */ }
+      navigate("/signin?reason=idle", { replace: true });
+    },
+  });
+
   useEffect(() => {
     // Phase F0 — `akki:open-palette` no longer toggles a stub dialog
     // owned by AppShell. UniversalSearchDialog listens for both
@@ -280,6 +301,33 @@ export default function AppShell({ children }) {
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--cream)]">
+      {/* Phase J (2026-05-27) — Idle auto-logoff warning banner. Surfaces
+          ~2 minutes before the 30-min idle timeout fires. Any user
+          activity dismisses + resets. Mounting condition is just the
+          presence of `idleWarn` state — the underlying hook is the
+          source of truth for timing. */}
+      {idleWarn && (
+        <div
+          data-testid="idle-warning-banner"
+          className="bg-[var(--cream-deep)] border-b border-[rgba(184,182,175,0.6)] px-6 py-2.5"
+        >
+          <div className="max-w-7xl mx-auto flex items-center gap-4 text-[12.5px]">
+            <Lock className="w-4 h-4 text-[var(--accent)] flex-shrink-0" strokeWidth={1.7} />
+            <div className="flex-1 text-[var(--ink)]">
+              <span className="font-medium">You'll be signed out for inactivity in {Math.max(1, Math.ceil(idleWarn.secsLeft / 60))} minute{Math.ceil(idleWarn.secsLeft / 60) === 1 ? "" : "s"}.</span>{" "}
+              <span className="text-[var(--deep)]">Move the mouse or press any key to stay.</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIdleWarn(null)}
+              data-testid="idle-warning-dismiss"
+              className="text-[var(--muted)] hover:text-[var(--ink)] text-[11px] uppercase tracking-wider"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
       {/* J1 — Re-intro banner for grandfathered users. Single-line,
           parchment background, non-blocking, dismissable. Disappears
           on acknowledge or after 3 dismissals. */}

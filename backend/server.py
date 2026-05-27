@@ -589,6 +589,15 @@ async def on_startup():
         _vault.init_vault()
     except Exception as _e:
         logger.warning("[startup] token_vault init failed: %s", _e)
+    # Phase J (2026-05-27) — `revoked_jtis` blocklist for the JTI
+    # revocation path. TTL index on `revoked_at` auto-cleans after the
+    # access-token TTL window (8h = 28800s) since a JWT past its `exp`
+    # would fail verification anyway — keeping the JTI longer is wasted
+    # storage. The lookup index on `jti` makes the verify path O(1).
+    await db.revoked_jtis.create_index("jti", unique=True)
+    await db.revoked_jtis.create_index(
+        "revoked_at", expireAfterSeconds=60 * 60 * 8,
+    )
     await db.user_context_visits.create_index([("account_id", 1), ("context_id", 1)], unique=True)
     # Patch 5 — Monitor v2.
     await db.objectives.create_index("id", unique=True)

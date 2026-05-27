@@ -23,6 +23,12 @@ export default function SignIn() {
   const { afterAuth } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  // Phase J (2026-05-27) — surface idle-logoff feedback if the user
+  // was bounced here by the AppShell idle hook.
+  const reason = (() => {
+    try { return new URLSearchParams(location.search).get("reason"); }
+    catch { return null; }
+  })();
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -98,6 +104,15 @@ export default function SignIn() {
           <div className="w-full max-w-sm akki-fade-up">
             <p className="akki-overline mb-3">Access your workspace</p>
             <h2 className="akki-serif text-[36px] font-normal text-[var(--ink)] mb-2 leading-tight">Sign in.</h2>
+            {/* Phase J — idle-logoff reason banner. */}
+            {reason === "idle" && (
+              <p
+                data-testid="signin-idle-reason"
+                className="mb-4 text-[12.5px] text-[var(--accent)] bg-[var(--cream-deep)] border border-[rgba(184,182,175,0.4)] rounded-sm px-3 py-2"
+              >
+                You were signed out due to 30 minutes of inactivity. Sign in to continue.
+              </p>
+            )}
             <p className="text-[13.5px] text-[var(--muted)] mb-9">
               Don't have an account?{" "}
               <Link to="/sandbox" className="text-[var(--accent)] underline underline-offset-4 hover:text-[var(--ink)]" data-testid="go-to-sandbox-link">

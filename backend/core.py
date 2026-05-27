@@ -124,11 +124,50 @@ async def get_current_account(request: Request) -> Dict[str, Any]:
             last_error = HTTPException(status_code=401, detail="Invalid token type")
             failed_sources.append(f"{source}:wrong_type")
             continue
+        # Phase J (2026-05-27) — JTI revocation check. If the token's `jti`
+        # is in the `revoked_jtis` collection, treat as invalid (logout
+        # killed it, or an admin issued a session-revoke). Tokens minted
+        # pre-Phase-J have no `jti` — those skip the check (legacy
+        # tolerance window; tokens expire within 8h of Phase J landing).
+        jti = payload.get("jti")
+        if jti:
+            revoked = await db.revoked_jtis.find_one({"jti": jti}, {"_id": 0, "jti": 1})
+            if revoked:
+                last_error = HTTPException(status_code=401, detail="Token revoked")
+                failed_sources.append(f"{source}:revoked")
+                continue
         account = await db.accounts.find_one({"id": payload["sub"]}, {"_id": 0})
         if not account:
             last_error = HTTPException(status_code=401, detail="Account not found")
             failed_sources.append(f"{source}:no_account")
             continue
+        # Phase J (2026-05-27) — Account-wide session revocation
+        # check. If an admin called /api/admin/auth/revoke-all/{id},
+        # any token with `iat < sessions_revoked_after` is rejected.
+        sra = account.get("sessions_revoked_after")
+        if sra:
+            iat_val = payload.get("iat")
+            if iat_val:
+                try:
+                    iat_dt = (
+                        iat_val
+                        if isinstance(iat_val, datetime)
+                        else datetime.fromtimestamp(int(iat_val), tz=timezone.utc)
+                    )
+                    sra_dt = datetime.fromisoformat(sra.replace("Z", "+00:00")) \
+                             if isinstance(sra, str) else sra
+                    if sra_dt.tzinfo is None:
+                        sra_dt = sra_dt.replace(tzinfo=timezone.utc)
+                    if iat_dt.tzinfo is None:
+                        iat_dt = iat_dt.replace(tzinfo=timezone.utc)
+                    if iat_dt < sra_dt:
+                        last_error = HTTPException(
+                            status_code=401, detail="Sessions revoked by admin",
+                        )
+                        failed_sources.append(f"{source}:admin_revoked")
+                        continue
+                except Exception:
+                    pass  # malformed dates fall through (defence-in-depth)
         # First credential that fully validates wins. We deliberately
         # don't track which source authenticated the request — both are
         # equally trusted once the JWT signature checks out.
@@ -271,9 +310,13 @@ def docs_as_grounding_block(docs: List[Dict[str, Any]]) -> str:
 # JWT token creators — auth-only helpers (kept in core so auth endpoints can
 # stay alongside the rest of the auth family in server.py without duplication).
 def create_access_token(account_id: str, email: str) -> str:
+    # Phase J (2026-05-27) — `jti` (uuid4) added so individual access
+    # tokens can be revoked server-side via the `revoked_jtis` collection
+    # (see `get_current_account` below + `routers/auth.py::logout`).
     return jwt.encode(
         {
             "sub": account_id, "email": email, "type": "access",
+            "jti": uuid.uuid4().hex,
             "exp": now() + timedelta(minutes=ACCESS_TOKEN_TTL_MIN),
             "iat": now(),
         },
@@ -282,9 +325,13 @@ def create_access_token(account_id: str, email: str) -> str:
 
 
 def create_refresh_token(account_id: str) -> str:
+    # Phase J — refresh tokens also carry a JTI for symmetry and future
+    # refresh-revocation work, even though revocation only checks access
+    # tokens in v1 of the blocklist.
     return jwt.encode(
         {
             "sub": account_id, "type": "refresh",
+            "jti": uuid.uuid4().hex,
             "exp": now() + timedelta(days=REFRESH_TOKEN_TTL_DAYS),
             "iat": now(),
         },

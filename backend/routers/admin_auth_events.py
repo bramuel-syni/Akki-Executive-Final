@@ -90,3 +90,37 @@ async def auth_events(
         "dual_credentials_mismatched": dual_mismatch,
         "recent": rows[:50],
     }
+
+
+
+# Phase J (2026-05-27) — Admin kill-switch for stolen-credential scenarios.
+# Marks the account so EVERY active access token issued before `now` is
+# rejected by `get_current_account`. Implemented via a wildcard JTI row
+# rather than enumerating individual JTIs (we don't track per-account JTI
+# lists; the access-token TTL of 8h means the user's session will fully
+# clear within that window even without intervention).
+@router.post("/revoke-all/{account_id}")
+async def revoke_all_sessions(
+    account_id: str,
+    actor: Dict[str, Any] = Depends(_require_superadmin),
+):
+    """Admin kill-switch — bumps `accounts.{id}.sessions_revoked_after`
+    to now(). Tokens with `iat < sessions_revoked_after` are rejected.
+    This is broader than the per-JTI blocklist but simpler — useful for
+    "this user reports their account was compromised, kill everything"
+    scenarios."""
+    target = await db.accounts.find_one({"id": account_id}, {"_id": 0, "id": 1, "email": 1})
+    if not target:
+        raise HTTPException(status_code=404, detail="Account not found")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.accounts.update_one(
+        {"id": account_id},
+        {"$set": {"sessions_revoked_after": now_iso}},
+    )
+    return {
+        "ok": True,
+        "account_id": account_id,
+        "email": target.get("email"),
+        "revoked_at": now_iso,
+        "actor_id": actor["id"],
+    }
