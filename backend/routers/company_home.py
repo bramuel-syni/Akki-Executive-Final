@@ -291,7 +291,7 @@ async def _build_events(cid: str) -> CardEvents:
     q = {
         "context_id": cid,
         "deleted_at": None,
-        "start_at": {"$gte": _iso(now), "$lte": _iso(horizon)},
+        "start_at": {"$gte": now.isoformat(), "$lte": horizon.isoformat()},
     }
     count = await db.events.count_documents(q)
     if count == 0:

@@ -1,6 +1,67 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase I.4.a — Events system (manual entry) + Card 5 wiring — 2026-05-27 ✅
+Unblocks Card 5 on Company Home. Manual events entry only this dispatch;
+I.4.b (doc-extraction) and I.4.c (calendar sync) are separate later dispatches.
+
+- **`db.events` collection** with `(context_id, start_at)` Mongo index. No
+  schema migration (Mongo dynamic). Fields: `id`, `context_id`, `title`,
+  `type` (5-value enum: board_meeting / audit_review / briefing / deadline /
+  other), `start_at`, `end_at`, `location`, `notes`, `source` ("manual"),
+  `source_ref` (null in I.4.a; reserved for I.4.b doc extraction +
+  I.4.c calendar sync), `created_by_account_id`, `created_at`, `updated_at`,
+  `deleted_at`.
+- **New router** `backend/routers/events.py` — 5 endpoints under
+  `/api/contexts/{cid}/events`: POST (create) · GET list (`upcoming` filter,
+  default true; `limit` max 100) · GET one · PATCH (partial update) ·
+  DELETE (soft via `deleted_at`). Membership 403, auth 401, 422 on
+  missing required fields, 404 on unknown event ID.
+- **Card 5 wiring** — `routers/company_home.py::_build_events()` now
+  queries `db.events` directly (NOT `db.tasks` — invariant locked in
+  both I.2 and I.4.a). 14-day forward window from now. Subtext format:
+  `"<title>"` for 1 event, `"<a>, <b>"` for 2, `"<a>, <b> · <N> more"`
+  for 3+. Empty-state copy `"No events scheduled"` preserved verbatim.
+- **New surface** `pages/Events.jsx` at route `/app/events?context_id={cid}`.
+  Eyebrow + 32px inline-override H1 "Upcoming on the calendar." +
+  subtitle "Manual entries. Document extraction and calendar sync land
+  in later phases." + Upcoming / Past / All tabs + +Add event button +
+  Add/Edit modal (5 fields: title, type, start, end, location, notes —
+  3 required) + soft-delete with confirmation.
+- **CompanyHome Card 5 click** — `_routeForCard("events", cid)` now
+  returns `/app/events?context_id={cid}` (was no-op).
+- **CI guard** `tests/test_phase_i4a_events_manual.py` — 13 tests
+  (full CRUD round-trip, validation, soft-delete hidden in list,
+  membership 403 on all 5 endpoints, unauth 401, Card 5 real data
+  with 3 seeded events + 1 outside-window + 1 past, Card 5 empty
+  state preserved, negative invariant on `db.tasks`, Events page
+  mount, modal validation, Card 5 routing, App.js route registered).
+- **Recovery dispatch (2026-05-27)** — original I.4.a code had shipped
+  but with 2 latent bugs caught at Stage-1 cross-check on re-dispatch:
+  * **B1 (P0):** `_iso(now)` and `_iso(horizon)` called in
+    `company_home.py::_build_events()` but `_iso` was never imported
+    or defined → `NameError` broke `/api/me/company-home/attention` for
+    every user. Fixed with direct `now.isoformat()` / `horizon.isoformat()`
+    inline calls (1-line edit).
+  * **B2 (P3):** tabs in `Events.jsx` used template-literal
+    `data-testid={\`events-tab-${id}\`}`; CI guard asserted literal
+    substring `data-testid="events-tab-upcoming"` in source. Runtime
+    DOM identical, source assertion failed. Fixed by hoisting the 3
+    tabs to individual JSX blocks with literal data-testid strings.
+- **Test ledger** — `test_phase_i4a_events_manual.py` 13/13 GREEN.
+  Broader regression sweep (`test_phase_i*.py` + `test_phase_n*.py` +
+  `test_phase_h*.py`) = 113 passed, 13 skipped (skips pre-existing
+  Patch 19 Solva session_id collisions, unrelated to I.4.a).
+- **Live Playwright verification** (Julius @ Personal NED Seat, cid
+  `f954d5d0-50d9-47d5-a64f-3be89cee8296`): Card 5 BEFORE = `{count:0,
+  subtext:"No events scheduled"}` → CREATE event "E2E test event" →
+  Card 5 AFTER cache invalidation = `{count:1, subtext:"E2E test event"}`
+  → PATCH rename → LIST shows renamed → DELETE → LIST empty. UI
+  screenshot captured for both surfaces: CompanyHome Card 5 renders
+  "1 · Q3 board strategy review"; Events page renders H1 "Upcoming
+  on the calendar." + 1 row "Q3 board strategy review · Board meeting
+  · Sat, May 30, 2:17 AM · Boardroom 4". Test seed cleaned up.
+
 ### Phase N (third-party branding / analytics scrub) — 2026-05-27 ✅
 Stripped runtime Emergent branding + PostHog analytics from the user-facing
 app. Operating integrations (LLM gateway via `EMERGENT_LLM_KEY` env-var,

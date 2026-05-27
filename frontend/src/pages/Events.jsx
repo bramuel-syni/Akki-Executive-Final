@@ -365,27 +365,48 @@ export default function Events() {
         {/* Tabs + Add button */}
         <div className="flex items-center justify-between mb-5">
           <div role="tablist" aria-label="Filter events by time" className="flex gap-1.5" data-testid="events-tabs">
-            {[
-              ["upcoming", "Upcoming"],
-              ["past",     "Past"],
-              ["all",      "All"],
-            ].map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={tab === id}
-                onClick={() => setTab(id)}
-                className={`px-3 py-1.5 text-[12px] uppercase tracking-[0.1em] font-mono rounded-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
-                  tab === id
-                    ? "bg-[var(--ink)] text-white"
-                    : "text-[var(--muted)] hover:text-[var(--ink)] bg-white border border-[var(--rule)]"
-                }`}
-                data-testid={`events-tab-${id}`}
-              >
-                {label}
-              </button>
-            ))}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "upcoming"}
+              onClick={() => setTab("upcoming")}
+              className={`px-3 py-1.5 text-[12px] uppercase tracking-[0.1em] font-mono rounded-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
+                tab === "upcoming"
+                  ? "bg-[var(--ink)] text-white"
+                  : "text-[var(--muted)] hover:text-[var(--ink)] bg-white border border-[var(--rule)]"
+              }`}
+              data-testid="events-tab-upcoming"
+            >
+              Upcoming
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "past"}
+              onClick={() => setTab("past")}
+              className={`px-3 py-1.5 text-[12px] uppercase tracking-[0.1em] font-mono rounded-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
+                tab === "past"
+                  ? "bg-[var(--ink)] text-white"
+                  : "text-[var(--muted)] hover:text-[var(--ink)] bg-white border border-[var(--rule)]"
+              }`}
+              data-testid="events-tab-past"
+            >
+              Past
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "all"}
+              onClick={() => setTab("all")}
+              className={`px-3 py-1.5 text-[12px] uppercase tracking-[0.1em] font-mono rounded-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
+                tab === "all"
+                  ? "bg-[var(--ink)] text-white"
+                  : "text-[var(--muted)] hover:text-[var(--ink)] bg-white border border-[var(--rule)]"
+              }`}
+              data-testid="events-tab-all"
+            >
+              All
+            </button>
           </div>
 
           <Button onClick={openCreate} data-testid="events-add-btn">
