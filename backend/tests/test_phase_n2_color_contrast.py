@@ -1,11 +1,17 @@
 """Phase N.2 — A11y color-contrast fix CI guard (2026-05-27).
 
-Locks two invariants:
+Locks three invariants:
 
   T1.  `frontend/src/index.css` declares `--muted: #5e5f64;`
        (post-N.2 value). The historical alias to `var(--graphite)`
        is gone; consumers like Portfolio Landing / Company Home
        resolve `--muted` to the new color directly.
+  T1b. `frontend/src/website/style.css` declares
+       `--graphite: #5e5f64;` (post-N.2 expansion). Marketing-site
+       surfaces (`/`, `/sign-in`) source their muted text color
+       from this token, NOT from the app-namespace `--muted`. The
+       scope expansion was confirmed mid-flight after Stage-1
+       cross-check surfaced the prescription↔verification mismatch.
   T2.  Deterministic WCAG-AA contrast calculation:
          contrast(#5e5f64, #f2efe8) >= 4.5
        Implemented in pure Python so we don't depend on a runtime
@@ -14,9 +20,10 @@ Locks two invariants:
 
 `tests/test_phase_n2_axe_runtime.py` (separate, optional Playwright-
 based regression) runs axe-core headlessly against `/` and `/sign-in`
-and asserts zero color-contrast violations. Kept as a separate skip-
-on-no-browser test to avoid flakiness in environments without
-Playwright. The deterministic math test below is the hard guard.
+and asserts zero color-contrast violations matching the original
+`#6f7177` foreground class. Kept as a separate skip-on-no-browser
+test to avoid flakiness in environments without Playwright. The
+deterministic math test below is the hard guard.
 """
 from __future__ import annotations
 
@@ -24,7 +31,8 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
-INDEX_CSS = REPO / "frontend" / "src" / "index.css"
+INDEX_CSS   = REPO / "frontend" / "src" / "index.css"
+WEBSITE_CSS = REPO / "frontend" / "src" / "website" / "style.css"
 
 
 # ── WCAG-AA contrast math (pure Python, no deps) ─────────────────
@@ -70,6 +78,29 @@ def test_n2_index_css_declares_muted_5e5f64():
     assert not legacy.search(src), (
         "Legacy `--muted: var(--graphite);` alias still present — "
         "Phase N.2 broke that alias to raise contrast above WCAG-AA."
+    )
+
+
+# ── T1b. Marketing-namespace `--graphite` bumped to the same value ──
+def test_n2_website_css_declares_graphite_5e5f64():
+    """The marketing site (`/`, `/sign-in`) sources its muted text
+    color from `frontend/src/website/style.css` — a separate token
+    namespace from the app. Originally this contained the same
+    `#6F7177` value as `--graphite` in `index.css`; the brief was
+    expanded mid-flight to bump this surface too so axe-core stops
+    flagging marketing-site contrast violations."""
+    src = WEBSITE_CSS.read_text(encoding="utf-8")
+    pat = re.compile(r"--graphite\s*:\s*#5e5f64\s*;", re.IGNORECASE)
+    assert pat.search(src), (
+        "`--graphite: #5e5f64;` not found in website/style.css. "
+        "Phase N.2 expanded scope to cover this token — see PHASE_LEDGER "
+        "`Console-error diagnosis protocol §1`."
+    )
+    # The legacy `#6F7177` value must be gone.
+    legacy = re.compile(r"--graphite\s*:\s*#6F7177\s*;", re.IGNORECASE)
+    assert not legacy.search(src), (
+        "Legacy `--graphite: #6F7177;` literal still present in "
+        "website/style.css — Phase N.2 regression."
     )
 
 

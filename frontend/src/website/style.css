@@ -52,7 +52,14 @@
   --parchment:       #F2EFE8;
   --parchment-light: #F8F6F0;
   --ink:             #1A1D20;
-  --graphite:        #6F7177;
+  --graphite:        #5e5f64;
+  /* Phase N.2 (2026-05-27) — Bumped from `#6F7177` to `#5e5f64`
+     to raise WCAG-AA contrast against `--parchment` (#F2EFE8) from
+     4.24 → 5.57 (above the 4.5 threshold for normal text). Brief
+     expanded mid-flight to cover this token after Stage-1 cross-
+     check surfaced the scope-vs-goal mismatch (the app-side `--muted`
+     bump didn't reach the marketing-site namespace). See PHASE_LEDGER
+     "Console-error diagnosis protocol" §1 for the lesson. */
   --graphite-light:  #B8B6AF;
   --oxblood:         #7A2E2E;
   --oxblood-deep:    #5E2222;

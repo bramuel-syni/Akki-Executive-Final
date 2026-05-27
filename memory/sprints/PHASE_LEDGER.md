@@ -13,6 +13,36 @@ If the ledger and the codebase disagree, the codebase wins and the ledger gets c
 
 ---
 
+## Console-error diagnosis protocol
+
+Before applying any "gate the X fetch" / "fix the Y attribute" / "bump the Z token" / etc.
+prescription for a console error, the diagnosing agent MUST:
+
+1. **Reproduce the error live** in the running app (Playwright or browser devtools).
+   **Match the prescribed fix surface to the verification surface.** If the brief
+   prescribes a fix on token/namespace A but the verification routes live in
+   token/namespace B, escalate to the user before coding — the prescription does
+   not transitively cover the verification. (Pattern observed twice: Phase N.1,
+   Phase N.2.)
+2. **Capture the verbatim** HTTP response body (for API errors) or the full stack
+   trace (for runtime errors) or the exact axe-core violation object (for a11y).
+3. **Name the bug class only after step 2.** If the inventory cross-check at
+   Stage-1 contradicts the named bug class, stop and re-diagnose.
+
+Lesson references:
+- **Phase N.1** — originally diagnosed as auth/context race; actual root cause was
+  `page_size=500` exceeding backend cap `le=100`. Caught at Stage-1 cross-check
+  before any code landed.
+- **Phase N.2** — prescribed token bump on `--muted` in `index.css` (app namespace)
+  but verification surfaces (`/`, `/sign-in`) were marketing-namespace and sourced
+  muted text from `--graphite` in `website/style.css`. Caught at Stage-1 cross-
+  check; brief expanded under user confirmation to cover both tokens.
+
+Pattern: prescription must match verification namespace, or user gets explicit
+binary to expand scope. Do not ship strict-reading that misses user intent.
+
+---
+
 ## Active / Closed phases
 
 | Phase | Title | Status | IN_SCOPE | OUT_OF_SCOPE | Files touched | CI guard tests | Acceptance evidence | Closed date |
@@ -42,6 +72,8 @@ If the ledger and the codebase disagree, the codebase wins and the ledger gets c
 | I.2 | Company Home — data wiring (5 attention cards + Readiness KPI) | closed | • New router `backend/routers/company_home.py` with two endpoints<br>• `GET /api/me/company-home/readiness?context_id=…` — weighted avg of `readiness_score` across open tasks<br>• `GET /api/me/company-home/attention?context_id=…` — 5 cards w/ count + subtext<br>• Drafts card = `ned_followups` + `cycle_followups` (status="draft"); oldest-days drives subtext<br>• Reports card = tasks (state=active) with readiness_score ≥ 80<br>• Pulse card = signals last 7d; type-based critical/opportunities decomposition<br>• Questions card = `cycle_questions` (status="open"); COUNT-ONLY subtext<br>• Events card = hardcoded count=0 + "No events scheduled" empty state<br>• 60s in-process cache per (account, context, endpoint)<br>• 403 on non-member contexts<br>• `CompanyHome.jsx` fetches both endpoints on mount; binds count + subtext + click routing per card | • I.3 right rail (chips data feeds)<br>• I.4 events collection (Card 5 stays empty)<br>• I.5 asker_role decomposition on Card 4 (count-only here)<br>• I.6 final hygiene<br>• New collections (none added)<br>• Portfolio Landing<br>• Layout/UI changes beyond filling placeholders | `backend/routers/company_home.py` (new), `backend/server.py` (router registration), `frontend/src/pages/CompanyHome.jsx` (data fetches + bindings + click routing), `backend/tests/test_phase_i1_company_home.py` (readiness testid alignment) | `tests/test_phase_i2_company_home_wiring.py` (12 tests) | Live verbatim DOM (Julius @ active company): Readiness="Readiness 80%"; drafts=0/"Nothing waiting."; reports=1/"All ≥80% · Commit now"; pulse=0/"Nothing new this week."; questions=0/"Nothing open."; events=0/"No events scheduled". Click routing verified URL-by-URL: all 4 active cards routed to context-filtered surfaces; events card no-op | 2026-05-27 |
 | N.1 | Console hygiene interlude (Work Studio 422 + marketing fetchpriority) | closed | • Cap `page_size` at 100 on the `WorkStudio.jsx` Main-Board/Committee-Pack union fetch (backend route caps `le=100`); iterate pagination until `items.length < cap` or `total` reached, safety brake at 10 pages<br>• Rename `fetchpriority="high"` → `fetchPriority="high"` on the marketing landing hero image (React 18+ typed-prop interface)<br>• CI guards: zero `page_size > 100` literals in WorkStudio; zero lowercase `fetchpriority=` in `frontend/src/website/**`; positive guard that camelCase `fetchPriority=` is preserved | • Phase I.3 (Top Signals rail)<br>• Any other console error classes (note the axe-core color-contrast errors found in passing — see notes)<br>• Work Studio refactor beyond the fetch cap<br>• Marketing layout/styling<br>• Operating integrations | `frontend/src/pages/WorkStudio.jsx` (union-fetch pagination loop), `frontend/src/website/pages/Home.jsx` (camelCase rename) | `tests/test_phase_n1_console_hygiene.py` (5 tests) | Playwright runtime probe across 4 routes — `/app/work-studio`: was 4× 422 + 0 console errors before, now **0 × 422 + 0 console errors**; `/sign-in` (redirects to `/`): was 1× fetchpriority React warning + 0 422s before, now **0 × fetchpriority warning** (axe-core a11y color-contrast errors remain on `/` and `/sign-in` — third error class, out of N.1 scope, see notes); `/app`: 0/0 unchanged | 2026-05-27 |
 | | NOTES — N.1 lessons + sightings | — | **Misdiagnosis caught at cross-check (defense pattern that worked):** Original diagnosis (auth/context race) was wrong. Actual root cause: frontend `page_size=500` exceeded backend cap `le=100`. Caught via Stage-1 network-response inventory before code landed. **Lesson:** when diagnosing console errors, capture verbatim network response body before naming the bug class. **Third error class surfaced (NOT fixed per scope):** `/` and `/sign-in` both emit 13 console errors from axe-core a11y "Element has insufficient color contrast" (foreground #6f7177 on background #f2efe8, measured 4.24, WCAG requires 4.5+). These are React dev-mode a11y warnings; production builds don't ship axe. If the user wants zero console noise even in dev, the fix is to bump `#6f7177` (var(--muted)?) by ~one shade to clear the 4.5 ratio, or set the a11y plugin to "warn" instead of "error". | | | | |
+| N.2 | A11y color-contrast fix (`#6F7177` → `#5e5f64`) + diagnosis protocol fold-in | closed | • Break the `--muted: var(--graphite)` alias in `frontend/src/index.css` — set to `#5e5f64` directly (app-namespace muted text)<br>• Bump `--graphite: #6F7177` → `#5e5f64` in `frontend/src/website/style.css` (marketing-namespace; **brief expanded mid-flight via cross-check + user confirmation**)<br>• Add deterministic Python WCAG-AA contrast calc test (`contrast(#5e5f64, #f2efe8) = 5.57 ≥ 4.5`)<br>• Add `Console-error diagnosis protocol` section to top of PHASE_LEDGER.md with the two-time-caught lesson | • Other color/typography token changes (other tokens stay)<br>• 9 remaining axe color-contrast violations on `/` and `/sign-in` with **different** foreground/background pairs (not `#6f7177`-class) — backlog candidates for N.3<br>• Any UI/UX changes<br>• Phase I.3 (Task 2 of same dispatch)<br>• Per-surface visual review<br>• `_archived/` | `frontend/src/index.css`, `frontend/src/website/style.css`, `memory/sprints/PHASE_LEDGER.md` (diagnosis protocol section + this row) | `tests/test_phase_n2_color_contrast.py` (4 tests: source-token presence in both files, deterministic WCAG math, darker-than-old sanity) | Live Playwright probe: app `--muted` and website `--graphite` both resolve to `rgb(94, 95, 100)` = `#5e5f64` on `/`, `/sign-in`, `/app`. **`#6f7177`-foreground axe violations: 13 → 0 on `/` and `/sign-in`.** WCAG calc 5.57:1 PASS ≥4.5 threshold | 2026-05-27 |
+| | NOTES — N.2 sub-line + remaining backlog | — | **Brief expanded mid-flight** to cover the marketing-namespace `--graphite` token after Stage-1 cross-check surfaced the scope-vs-goal mismatch. App-side `--muted` alone wouldn't have honored user's zero-console-errors mandate. Pattern: when verification routes are scoped to a namespace different from the prescribed token, expand explicitly via user confirmation; do not ship strict-reading that misses user intent. **9 remaining axe color-contrast violations on `/` and `/sign-in` (backlog for N.3 if user wants):** unique pairs — `#e0d1cb / #f2efe8 @ 1.29:1`, `#d1cfc9 / #f2efe8 @ 1.35:1`, `#dbd9d4 / #f2efe8 @ 1.22:1` (on `/`); `#e9e0d9 / #f2efe8 @ 1.13:1`, `#e1dfd8 / #f2efe8 @ 1.16:1`, `#e6e4de / #f2efe8 @ 1.10:1` (on `/sign-in`). All extremely light beige-on-cream — likely decorative dividers / underline tints / faint rule strokes (consumers of `--graphite-light` `#B8B6AF` and its derivatives). Fixing requires reviewing the `--graphite-light` consumer set + deciding which are "decorative" (axe rule may not apply) vs "informational" (need contrast). | | | | |
 
 ---
 
