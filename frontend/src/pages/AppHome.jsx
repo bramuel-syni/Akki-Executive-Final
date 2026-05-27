@@ -1,25 +1,25 @@
 /**
- * AppHome — Patch 3 dispatcher.
+ * AppHome — dispatcher (Phase H.1 update, 2026-05-26).
  *
  *   /app  →
- *     • If account.declared_role is undeclared → HomeUndeclared (unchanged)
- *     • Else, if there is NO active context → Home1 (portfolio entry)
- *     • Else                                → Home2 (active-context home)
+ *     • If account.declared_role is undeclared       → HomeUndeclared
+ *     • Else, if there is NO active context          → ContextPortfolio (Portfolio Landing — Home 1)
+ *     • Else                                         → Home2 (active-context home)
  *
- * /app/portfolio always renders Home1 (the explicit "Back to portfolio"
- * affordance from Home 2 routes here).
+ * H.1 change: the no-active-context branch was previously `Home1`
+ * (legacy portfolio entry). It now routes to the redesigned
+ * `ContextPortfolio` (Portfolio Landing) per the sketch-1 spec.
  *
- * Legacy role-specific homes (HomeNed / HomeExecutive / HomeDual) were
- * deleted in Patch 17 after the LEGACY_HOME_PARITY audit confirmed all
- * sections were either preserved on Home 2 or relocated to a dedicated
- * route (NedInbox / NedMeeting / Pulse).
+ * /app/portfolio still renders the legacy Home1 for any external
+ * bookmarks (back-compat alias). /app/companies is the canonical
+ * route for the new Portfolio Landing.
  *
  * The FirstSessionGuard in App.js still bounces brand-new accounts to
  * /app/first-session before they reach this dispatcher.
  */
 import React from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import Home1 from "@/pages/home/Home1";
+import ContextPortfolio from "@/pages/ContextPortfolio";
 import Home2 from "@/pages/home/Home2";
 import HomeUndeclared from "@/pages/home/HomeUndeclared";
 
@@ -28,6 +28,6 @@ export default function AppHome() {
   const role = (account?.declared_role || "undeclared").toLowerCase();
 
   if (role === "undeclared") return <HomeUndeclared />;
-  if (!activeContext) return <Home1 />;
+  if (!activeContext) return <ContextPortfolio />;
   return <Home2 />;
 }

@@ -68,6 +68,7 @@ const AccountSecurity = lazy(() => import("@/pages/AccountSecurity"));
 const InviteAccept = lazy(() => import("@/pages/InviteAccept"));
 const NewContext = lazy(() => import("@/pages/NewWorkspace"));
 const ContextPortfolio = lazy(() => import("@/pages/ContextPortfolio"));
+const NewsStub = lazy(() => import("@/pages/NewsStub"));
 const Simulate = lazy(() => import("@/pages/Simulate"));
 const LensRoom = lazy(() => import("@/pages/LensRoom"));
 const Chat = lazy(() => import("@/pages/Chat"));
@@ -368,6 +369,8 @@ function App() {
           <Route path="/app/contexts" element={<Gated><ContextPortfolio /></Gated>} />
           {/* Phase 15.2 cosmetic alias: /app/companies alongside /app/contexts. */}
           <Route path="/app/companies" element={<Gated><ContextPortfolio /></Gated>} />
+          {/* H.1 (2026-05-26) — Portfolio Landing news stub. Full feed lands in H.3. */}
+          <Route path="/app/news" element={<Gated><NewsStub /></Gated>} />
           <Route path="/app/companies/new" element={<Gated><NewContext /></Gated>} />
           <Route path="/app/contexts/new" element={<Gated><NewContext /></Gated>} />
           <Route path="/app/new-workspace" element={<Gated><NewContext /></Gated>} />

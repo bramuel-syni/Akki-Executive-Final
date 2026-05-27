@@ -52,30 +52,30 @@ def _read(p: Path) -> str:
     return p.read_text(encoding="utf-8")
 
 
-# ── T1. ContextPortfolio H1 carries the 34px override + testid ──
-def test_portfolio_companies_h1_carries_34px_override():
+# ── T1. ContextPortfolio H1 carries the 32px override + testid ──
+# Phase H.1 (2026-05-26) — Portfolio Landing replaced the older "My
+# Companies" surface. The H1 is now a time-aware greeting at 32px
+# (was: "Your boards & operating companies" at 34px). The greeting
+# H1 carries `portfolio-greeting-h1` testid.
+def test_portfolio_companies_h1_carries_32px_override():
     src = _read(CONTEXT_PORTFOLIO)
     # Stable testid so the runtime guard can reliably pin it.
-    assert 'data-testid="portfolio-companies-h1"' in src, (
-        "Portfolio 'My Companies' H1 must carry the "
-        "`portfolio-companies-h1` testid for runtime size assertion."
+    assert 'data-testid="portfolio-greeting-h1"' in src, (
+        "Portfolio Landing greeting H1 must carry the "
+        "`portfolio-greeting-h1` testid for runtime size assertion."
     )
-    # Inline style override at 34px (20% increase from canonical 28px).
-    # We accept either `fontSize: "34px"` or `fontSize: '34px'`.
+    # Inline style override at 32px.
     assert (
-        'fontSize: "34px"' in src
-        or "fontSize: '34px'" in src
+        'fontSize: "32px"' in src
+        or "fontSize: '32px'" in src
     ), (
-        "Portfolio 'My Companies' H1 must carry inline "
-        "`style={{ fontSize: '34px' }}` to override the canonical "
-        ".akki-greeting 28px (per-page 20% increase decision)."
+        "Portfolio Landing greeting H1 must carry inline "
+        "`style={{ fontSize: '32px' }}` to override the canonical "
+        ".akki-greeting 28px (per-page H.1 decision)."
     )
     # H1 still uses the akki-greeting class for font-family/weight
     # inheritance (we only override the size).
-    assert (
-        'className="akki-greeting"' in src
-        or 'className={`akki-greeting' in src
-    )
+    assert 'className="akki-greeting"' in src
 
 
 # ── T2. Peers do NOT carry a per-instance font-size override ────

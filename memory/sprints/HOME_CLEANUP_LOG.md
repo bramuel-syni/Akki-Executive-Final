@@ -2266,3 +2266,138 @@ maximum specificity.
 - `test_portfolio_h1_size_guard.py`: **16/16 GREEN**
 - Full home-cleanup + runtime-drawer + admin-health + tab-prefix guard suite: **355 passed, 1 skipped** (chromium binary not in pytest pod).
 
+
+## Phase H.1 — Portfolio Landing layout shell (2026-05-26)
+
+Redesigned post-sign-in landing per user sketch 1. SHELL ONLY — no
+data wiring. Real metric counts + the 3 main sections (Boards to
+watch / Where you left off / The world around you news feed) land
+in Phase H.3.
+
+### Routing decision
+
+**Before:**
+- `/app` → AppHome → (no active context) → `Home1` (legacy portfolio)
+- `/app/portfolio` → Home1
+- `/app/companies`, `/app/contexts` → ContextPortfolio (old "My Companies" page)
+
+**After:**
+- `/app` (no active context) → **ContextPortfolio** (redesigned Portfolio Landing)
+- `/app` (with active context) → Home2 (per-company home — unchanged)
+- `/app/portfolio` → Home1 (legacy alias retained for external bookmarks)
+- `/app/companies`, `/app/contexts` → ContextPortfolio (canonical, unchanged)
+- `/app/news` (NEW) → NewsStub (placeholder "Coming soon" page; full feed in H.3)
+
+Rationale: the user's "Home" menu item routes to `/app`. With no
+active context, that now lands on the redesigned Portfolio Landing
+directly — no extra hop. With an active context, Home2 (per-company
+home) is unchanged. `Home1` is preserved at `/app/portfolio` as a
+deliberate back-compat alias so any external bookmarks continue to
+work, and Phase I can independently redesign `Home2` without
+touching `Home1`.
+
+### Layout shell — left column (per sketch)
+
+| Element | Implementation |
+| --- | --- |
+| Eyebrow `PORTFOLIO` | `<p className="akki-overline">…<Layers />…Portfolio</p>` |
+| **Greeting H1** (32px, time-aware) | `<h1 className="akki-greeting" style={{ fontSize: "32px" }} data-testid="portfolio-greeting-h1">{greeting}, {firstName}.</h1>` with `timeAwareGreeting()` helper (cutoffs: `<12` morning, `<17` afternoon, else evening) |
+| Subtitle | "Here are your boards & operating companies." with `portfolio-subtitle` testid |
+| 4 metric tiles | `<MetricTile label="Companies" value="—" />` × 4 (Companies / Signals / Briefings / Documents) in a `grid grid-cols-2 md:grid-cols-4 gap-4` row. Placeholder `—` (H.3 wires real counts.) |
+| Section 1 — Boards to watch this week | `<PlaceholderSection icon={Flame} label="Boards to watch this week" testid="portfolio-section-boards-to-watch" />` with "Coming soon" empty state |
+| Section 2 — Where you left off | `<PlaceholderSection icon={History} label="Where you left off" testid="portfolio-section-where-you-left-off" />` |
+| Section 3 — The world around you (News) | `<PlaceholderSection icon={Newspaper} label="The world around you" testid="portfolio-section-news" />` + `Read more →` link to `/app/news` |
+
+### Layout shell — right rail (per sketch)
+
+| Element | Implementation |
+| --- | --- |
+| `+ Add Company` button | top-right, `portfolio-add-company-btn` testid → routes to `/app/contexts/new` |
+| Segmented tabs | `grid grid-cols-2` with `NED · {count}` / `Executive · {count}` (`portfolio-rail-tab-ned` / `-executive`). Default tab = first non-empty (NED if any, else Executive). |
+| Company cards | Vertical `flex flex-col gap-2.5` stack, full rail width (340px parity with FollowUpDraftsCard) |
+
+### Company card visual — calmer per user instruction
+
+| Element | Before | After (H.1) |
+| --- | --- | --- |
+| Name weight/size | bold-leaning, ~20px | `text-[16px] font-normal` |
+| Inline `SIGNALS / BRIEFINGS / DOCS` metrics | rendered as 3-cell row inside each card | **DROPPED** ("calm inviting feel") |
+| `SPONSORED` badge | kept (top-right chip) | **KEPT** (top-right chip) |
+| Industry · region line | rendered | **KEPT** |
+| Width | rail width | **KEPT** (rail-width parity) |
+| Layout | grid alongside other cards | vertical stack |
+
+### Files touched
+
+| File | Change |
+| --- | --- |
+| `frontend/src/pages/ContextPortfolio.jsx` (REWRITTEN) | H.1 Portfolio Landing layout shell. Time-aware greeting H1, 4 metric tiles, 3 placeholder sections, redesigned right rail with NED/Executive tabs + calm company cards. |
+| `frontend/src/pages/NewsStub.jsx` (NEW) | `/app/news` placeholder ("Coming soon" with back link). |
+| `frontend/src/pages/AppHome.jsx` (REWRITTEN) | No-active-context branch now routes to `ContextPortfolio` (was `Home1`). |
+| `frontend/src/App.js` | Added `NewsStub` lazy import + `/app/news` route. |
+| `backend/tests/test_phase_h1_portfolio_landing.py` (NEW, 13 tests) | Layout shell contract: routing, header, time-aware greeting helper, metric row, 3 sections, news read-more link, right rail, NED/Executive tabs, default-tab logic, card calm-posture tripwires, NewsStub. |
+| `backend/tests/test_portfolio_h1_size_guard.py` | T1 retargeted from `portfolio-companies-h1` (34px) to `portfolio-greeting-h1` (32px). |
+
+### Live verification — 1280px viewport, signed in as `juliusaopio@gmail.com`
+
+```
+TARGET — Portfolio greeting H1 font-size: '32px'
+TARGET text: 'Good morning, Julius.'
+--- Shell structure ---
+  portfolio-landing wrapper: 1
+  portfolio-subtitle:        1
+  metrics row:               1 (4 tiles: companies/signals/briefings/documents)
+  section boards-to-watch:   1
+  section where-you-left:    1
+  section news:              1
+  news read-more link:       1
+--- Right rail ---
+  right-rail wrapper:        1
+  +Add Company btn:          1
+  rail-tab-ned:              'NED · 2'
+  rail-tab-executive:        'EXECUTIVE · 3'
+  company cards in rail:     3
+CONTROL — Pulse h1.akki-greeting font-size: '28px'  (token unchanged)
+--- /app/news stub ---
+  news-stub:                 1, h1: 1, empty: 1
+```
+
+Screenshot at `/tmp/portfolio_landing_h1.png` confirms the layout
+matches the sketch verbatim — eyebrow + greeting H1 + subtitle + 4
+tiles row + 3 placeholder sections + right rail with tabs + 2 calm
+NED cards (Banking, Healthcare with sponsored badge).
+
+### Suite pass count
+
+- `test_phase_h1_portfolio_landing.py`: **13/13 GREEN**
+- Full home-cleanup + admin-health + tab-prefix guard + portfolio H1 guard + H.1 suite: **368 passed, 1 skipped** (chromium binary).
+
+### Side spike findings — reported, not implemented
+
+**Spike A — existing news feed audit.** Backend already ships
+`/api/news` (Patch 21 — see `backend/routers/news.py`). Frontend
+`pages/home/Home1.jsx` reads from it and renders a 3-item news strip.
+Implications for H.3:
+- Backend feed: reuse `/api/news?region={region}` from Patch 21.
+  No new endpoint needed.
+- Frontend renderer: lift the Home1 news-strip JSX (a small 3-item
+  list with title + source + relative timestamp) and adapt for the
+  full `/app/news` page + a tightened version for the Portfolio
+  Landing "The world around you" section. Don't duplicate the
+  fetch — share a `useNewsFeed(region)` hook.
+
+**Spike B — idle / auto-logoff timer audit.** Neither frontend nor
+backend currently implements idle/inactivity logout. The only
+session-expiry policy is JWT-based:
+- `backend/core.py` lines 25-26: `ACCESS_TOKEN_TTL_MIN = 60 * 8`
+  (480 minutes — 8h "executive session"), `REFRESH_TOKEN_TTL_DAYS`
+  (longer-running refresh).
+- No client-side idle timer, no `onIdle` event handler, no
+  `setTimeout`-based logoff. A user stays logged in for the full
+  8-hour access-token window regardless of activity.
+
+If you want idle auto-logoff later, the minimum design would be:
+client-side `useIdle(timeoutMs)` hook that fires `logout()` on
+inactivity, plus a backend revocation list for the access-token
+JTI when the client logs out. Read-only audit — no implementation.
+
