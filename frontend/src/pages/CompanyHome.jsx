@@ -118,7 +118,7 @@ function AttentionCard({ card, data, onOpen }) {
 }
 
 
-function RightRail({ chip, setChip, onAddDoc, onAllDocs }) {
+function RightRail({ chip, setChip, items, loading, onAddDoc, onAllDocs, onOpenItem }) {
   return (
     <aside
       className="w-full lg:w-[320px] shrink-0 space-y-5"
@@ -184,12 +184,72 @@ function RightRail({ chip, setChip, onAddDoc, onAllDocs }) {
           role="tabpanel"
           id={`company-home-top-signals-${chip}-panel`}
           aria-labelledby="company-home-top-signals-heading"
-          className="bg-white border border-dashed border-[var(--rule)] rounded-md px-5 py-8 text-center"
-          data-testid={`company-home-top-signals-${chip}-empty`}
+          data-testid={`company-home-top-signals-${chip}-panel`}
         >
-          <p className="text-[12.5px] italic text-[var(--muted)]">
-            Coming soon
-          </p>
+          {loading ? (
+            <div
+              className="bg-white border border-dashed border-[var(--rule)] rounded-md px-5 py-6 text-center"
+              data-testid={`company-home-top-signals-${chip}-loading`}
+            >
+              <p className="text-[12.5px] italic text-[var(--muted)]">—</p>
+            </div>
+          ) : (items?.length || 0) === 0 ? (
+            <div
+              className="bg-white border border-dashed border-[var(--rule)] rounded-md px-5 py-8 text-center"
+              data-testid={`company-home-top-signals-${chip}-empty`}
+            >
+              <p className="text-[12.5px] italic text-[var(--muted)]">
+                {chip === "documents"
+                  ? "No documents yet."
+                  : chip === "monitor"
+                    ? "Nothing on Monitor yet."
+                    : "No pulse updates yet."}
+              </p>
+            </div>
+          ) : (
+            <ul
+              className="space-y-1.5"
+              data-testid={`company-home-top-signals-${chip}-list`}
+            >
+              {items.map((it, idx) => (
+                <li key={it.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenItem(it)}
+                    aria-label={`Open ${it.title}`}
+                    className="w-full text-left bg-white border border-[var(--rule)] hover:border-[var(--ink)]/30 rounded-md px-3 py-2.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50"
+                    data-testid={`top-signal-${chip}-${idx}`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      {chip === "documents" ? (
+                        <FileText className="w-3.5 h-3.5 text-[var(--accent)] shrink-0 mt-0.5" strokeWidth={1.7} aria-hidden="true" />
+                      ) : (
+                        <span
+                          className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${
+                            it.severity === "critical"
+                              ? "bg-[var(--accent)]"
+                              : it.severity === "warning"
+                                ? "bg-[#c98c2b]"
+                                : "bg-[var(--muted)]"
+                          }`}
+                          aria-hidden="true"
+                          data-testid={`top-signal-${chip}-${idx}-severity-dot`}
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] text-[var(--ink)] leading-snug truncate">
+                          {it.title}
+                        </p>
+                        <p className="text-[11px] text-[var(--muted)] mt-0.5 truncate">
+                          {it.subtitle}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
     </aside>
@@ -209,6 +269,12 @@ export default function CompanyHome() {
   // placeholders. Never break the page.
   const [readiness, setReadiness] = useState(undefined);
   const [attention, setAttention] = useState({});
+
+  // Phase I.3 (2026-05-27) — Top Signals rail data. One entry per
+  // chip; we refetch on chip change. Loading state: items=undefined.
+  // Empty state: items=[]. Error state: log + items=[].
+  const [topSignals, setTopSignals] = useState({});  // {pulse: [], monitor: [], documents: []}
+  const [topSignalsLoading, setTopSignalsLoading] = useState(false);
 
   useEffect(() => {
     if (!cid) return;
@@ -238,6 +304,30 @@ export default function CompanyHome() {
     return () => { cancelled = true; };
   }, [cid]);
 
+  // Phase I.3 — fetch on chip change. Memoized per-chip, so re-clicking
+  // a previously-fetched chip is instant (until 60s server cache lapses).
+  useEffect(() => {
+    if (!cid || !chip) return;
+    if (topSignals[chip] !== undefined) return;  // already fetched
+    let cancelled = false;
+    setTopSignalsLoading(true);
+    (async () => {
+      try {
+        const { data } = await api.get(
+          `/me/company-home/top-signals?context_id=${encodeURIComponent(cid)}&chip=${chip}&limit=10`,
+        );
+        if (!cancelled) setTopSignals((prev) => ({ ...prev, [chip]: data?.items || [] }));
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("[CompanyHome] top-signals fetch failed:", err?.message);
+        if (!cancelled) setTopSignals((prev) => ({ ...prev, [chip]: [] }));
+      } finally {
+        if (!cancelled) setTopSignalsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [cid, chip, topSignals]);
+
   const onBackToPortfolio = useCallback(() => {
     // Phase I.1 (2026-05-27) — Clear active context client-side then
     // route to /app. AppHome's no-active-context branch resolves to
@@ -252,6 +342,11 @@ export default function CompanyHome() {
     const r = _routeForCard(routeKey, cid);
     if (r) navigate(r);
   }, [cid, navigate]);
+
+  // Phase I.3 — click a Top Signals item → route to its deep_link.
+  const onOpenTopSignalItem = useCallback((item) => {
+    if (item?.deep_link) navigate(item.deep_link);
+  }, [navigate]);
 
   const companyName = activeContext?.name || "this company";
   const readinessRendered =
@@ -327,8 +422,11 @@ export default function CompanyHome() {
           <RightRail
             chip={chip}
             setChip={setChip}
+            items={topSignals[chip]}
+            loading={topSignalsLoading && topSignals[chip] === undefined}
             onAddDoc={onAddDoc}
             onAllDocs={onAllDocs}
+            onOpenItem={onOpenTopSignalItem}
           />
         </div>
       </div>

@@ -308,3 +308,220 @@ async def attention(
     }
     _CACHE[(me["id"], cid, "attention")] = (time.monotonic(), out)
     return AttentionOut(**out)
+
+
+# -----------------------------------------------------------------------------
+# Phase I.3 — Top Signals rail (2026-05-27)
+# -----------------------------------------------------------------------------
+
+class TopSignalItem(BaseModel):
+    id:        str
+    title:     str
+    subtitle:  str
+    severity:  Optional[str]   # "critical" | "warning" | "info" | None
+    timestamp: Optional[str]
+    deep_link: str
+
+
+class TopSignalsOut(BaseModel):
+    chip:            str
+    items:           list[TopSignalItem]
+    total_available: int
+
+
+# Severity sort weight (critical highest). null/info treated as info-tier.
+_SEVERITY_WEIGHT = {
+    "critical": 0,
+    "warning":  1,
+    "info":     2,
+    None:       2,
+}
+
+
+def _sort_by_severity_then_recency(items: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
+    """Tier 1: severity weight ascending. Tier 2: timestamp descending."""
+    def _k(it):
+        sev = _SEVERITY_WEIGHT.get(it.get("severity"), 2)
+        # Negate timestamp string by inverting Unix sort — we want desc.
+        # Using empty-string fallback so missing timestamps drop to bottom.
+        ts = it.get("timestamp") or ""
+        return (sev, _invert_ts(ts))
+    return sorted(items, key=_k)
+
+
+def _invert_ts(ts: str) -> str:
+    """Helper for descending-timestamp sort under ascending tuple compare.
+    ISO timestamps invert lexicographically by char-replacing every digit
+    against its `9 - d` complement. Cheap and stable for sort."""
+    return "".join(str(9 - int(c)) if c.isdigit() else c for c in ts)
+
+
+# ─── Chip: pulse ─────────────────────────────────────────────────
+async def _build_pulse_items(cid: str, limit: int) -> tuple[list[Dict[str, Any]], int]:
+    """Recent pulse signals. Type drives severity: risk/gap → critical,
+    opportunity → info, unknown → warning. Limit `limit` after the
+    severity-then-recency sort."""
+    total = await db.signals.count_documents({"context_id": cid})
+    cursor = db.signals.find(
+        {"context_id": cid},
+        {"_id": 0, "id": 1, "headline": 1, "summary": 1,
+         "type": 1, "created_at": 1},
+    ).sort("created_at", -1).limit(max(limit * 3, 30))
+    raw = await cursor.to_list(length=max(limit * 3, 30))
+
+    items = []
+    for s in raw:
+        kind = (s.get("type") or "").lower()
+        if kind in ("risk", "gap"):
+            sev = "critical"
+        elif kind == "opportunity":
+            sev = "info"
+        else:
+            sev = "warning"
+        items.append({
+            "id":        f"signal:{s['id']}",
+            "title":     s.get("headline") or "(no headline)",
+            "subtitle":  (s.get("summary") or "")[:140],
+            "severity":  sev,
+            "timestamp": s.get("created_at"),
+            "deep_link": f"/app/pulse?signal_id={s['id']}&context_id={cid}",
+        })
+    items = _sort_by_severity_then_recency(items)[:limit]
+    return items, total
+
+
+# ─── Chip: monitor ───────────────────────────────────────────────
+async def _build_monitor_items(cid: str, limit: int) -> tuple[list[Dict[str, Any]], int]:
+    """Union: checklists (status=active) + submissions (status in
+    {pending_approval, dispatched}) + reports (status in {draft,
+    in_review}). Reuses the live `/api/contexts/{cid}/monitor` query
+    logic. Sort: updated_at desc (severity=null on all)."""
+    over_fetch = max(limit * 3, 30)
+
+    ck_cursor = db.checklists.find(
+        {"context_id": cid, "status": "active"},
+        {"_id": 0, "id": 1, "name": 1, "title": 1,
+         "updated_at": 1, "created_at": 1, "status": 1},
+    ).sort("updated_at", -1).limit(over_fetch)
+    sb_cursor = db.submissions.find(
+        {"context_id": cid, "status": {"$in": ["pending_approval", "dispatched"]}},
+        {"_id": 0, "id": 1, "subject": 1, "title": 1,
+         "updated_at": 1, "created_at": 1, "status": 1},
+    ).sort("updated_at", -1).limit(over_fetch)
+    rp_cursor = db.reports.find(
+        {"context_id": cid, "status": {"$in": ["draft", "in_review"]}},
+        {"_id": 0, "id": 1, "title": 1,
+         "updated_at": 1, "created_at": 1, "status": 1},
+    ).sort("updated_at", -1).limit(over_fetch)
+
+    checklists  = await ck_cursor.to_list(length=over_fetch)
+    submissions = await sb_cursor.to_list(length=over_fetch)
+    reports     = await rp_cursor.to_list(length=over_fetch)
+
+    total_avail = len(checklists) + len(submissions) + len(reports)
+
+    items = []
+    for ck in checklists:
+        items.append({
+            "id":        f"checklist:{ck['id']}",
+            "title":     ck.get("name") or ck.get("title") or "(checklist)",
+            "subtitle":  "Checklist · Active",
+            "severity":  None,
+            "timestamp": ck.get("updated_at") or ck.get("created_at"),
+            "deep_link": f"/app/monitor?context_id={cid}&focus=checklist:{ck['id']}",
+        })
+    for sb in submissions:
+        st = (sb.get("status") or "").replace("_", " ").capitalize()
+        items.append({
+            "id":        f"submission:{sb['id']}",
+            "title":     sb.get("subject") or sb.get("title") or "(submission)",
+            "subtitle":  f"Submission · {st}",
+            "severity":  None,
+            "timestamp": sb.get("updated_at") or sb.get("created_at"),
+            "deep_link": f"/app/monitor?context_id={cid}&focus=submission:{sb['id']}",
+        })
+    for rp in reports:
+        st = (rp.get("status") or "").replace("_", " ").capitalize()
+        items.append({
+            "id":        f"report:{rp['id']}",
+            "title":     rp.get("title") or "(report)",
+            "subtitle":  f"Report · {st}",
+            "severity":  None,
+            "timestamp": rp.get("updated_at") or rp.get("created_at"),
+            "deep_link": f"/app/monitor?context_id={cid}&focus=report:{rp['id']}",
+        })
+
+    # Sort union by updated_at desc, since severity is null across.
+    items.sort(key=lambda it: it.get("timestamp") or "", reverse=True)
+    return items[:limit], total_avail
+
+
+# ─── Chip: documents ─────────────────────────────────────────────
+async def _build_document_items(cid: str, limit: int) -> tuple[list[Dict[str, Any]], int]:
+    """All documents for this context, sorted by `updated_at` desc
+    (fall back to `created_at` if `updated_at` is missing). Severity
+    is always null — documents aren't graded."""
+    total = await db.documents.count_documents({"context_id": cid})
+    cursor = db.documents.find(
+        {"context_id": cid},
+        {"_id": 0, "id": 1, "name": 1, "original_filename": 1,
+         "description": 1, "doc_type": 1,
+         "updated_at": 1, "created_at": 1},
+    ).sort([("updated_at", -1), ("created_at", -1)]).limit(limit)
+    raw = await cursor.to_list(length=limit)
+
+    items = []
+    for d in raw:
+        title = d.get("name") or d.get("original_filename") or "(document)"
+        kind  = d.get("doc_type") or "Document"
+        items.append({
+            "id":        f"document:{d['id']}",
+            "title":     title,
+            "subtitle":  kind,
+            "severity":  None,
+            "timestamp": d.get("updated_at") or d.get("created_at"),
+            "deep_link": f"/app/work-studio?doc_id={d['id']}&context_id={cid}",
+        })
+    return items, total
+
+
+_CHIP_BUILDERS = {
+    "pulse":     _build_pulse_items,
+    "monitor":   _build_monitor_items,
+    "documents": _build_document_items,
+}
+
+
+@router.get("/me/company-home/top-signals", response_model=TopSignalsOut)
+async def top_signals(
+    context_id: str = Query(..., min_length=4, max_length=120),
+    chip:       str = Query("pulse"),
+    limit:      int = Query(10, ge=1, le=50),
+    me: Dict[str, Any] = Depends(get_current_account),
+) -> TopSignalsOut:
+    """Right-rail Top Signals chip data feed. 60s cache per
+    (account, context, chip). Severity sort applies on the Pulse
+    chip; the Monitor + Documents chips have severity=null on every
+    row and fall back to timestamp-desc sort."""
+    cid = context_id
+    chip_key = (chip or "").strip().lower()
+    if chip_key not in _CHIP_BUILDERS:
+        raise HTTPException(status_code=400, detail=f"Unknown chip: {chip!r}")
+
+    await _assert_member(me["id"], cid)
+
+    cache_key = (me["id"], cid, f"top-signals:{chip_key}:{limit}")
+    cached = _CACHE.get(cache_key)
+    if cached and (time.monotonic() - cached[0]) < _CACHE_TTL_S:
+        return TopSignalsOut(**cached[1])
+
+    builder = _CHIP_BUILDERS[chip_key]
+    items, total = await builder(cid, limit)
+
+    out = {
+        "chip":            chip_key,
+        "items":           items,
+        "total_available": total,
+    }
+    _CACHE[cache_key] = (time.monotonic(), out)
+    return TopSignalsOut(**out)
