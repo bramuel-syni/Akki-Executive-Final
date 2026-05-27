@@ -284,6 +284,11 @@ async def _build_events(cid: str) -> CardEvents:
     The I.2 invariant ("events MUST NOT fall back to tasks.final_due_date")
     is still respected — this helper queries `db.events` directly,
     never the tasks collection.
+
+    Phase I.4.b (2026-05-27) — `status: {"$ne": "draft"}` filter excludes
+    extracted drafts. Absence-default: manual events have no `status`
+    field, so they implicitly count (per E2 decision: zero migration
+    risk, no backfill needed).
     """
     from datetime import timedelta
     now = _now()
@@ -291,6 +296,7 @@ async def _build_events(cid: str) -> CardEvents:
     q = {
         "context_id": cid,
         "deleted_at": None,
+        "status": {"$ne": "draft"},
         "start_at": {"$gte": now.isoformat(), "$lte": horizon.isoformat()},
     }
     count = await db.events.count_documents(q)

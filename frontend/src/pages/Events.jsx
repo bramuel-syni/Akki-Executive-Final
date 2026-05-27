@@ -25,6 +25,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import AppShell from "@/components/layout/AppShell";
 import {
   Calendar, Plus, ArrowLeft, MapPin, Edit3, Trash2, X, ChevronRight,
+  CheckCircle2, FileText, Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -276,7 +277,7 @@ export default function Events() {
   const { activeContext } = useAuth();
   const cid = params.get("context_id") || activeContext?.id;
 
-  const [tab,        setTab]        = useState("upcoming"); // upcoming | past | all
+  const [tab,        setTab]        = useState("upcoming"); // upcoming | past | all | extracted
   const [events,     setEvents]     = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [modalOpen,  setModalOpen]  = useState(false);
@@ -287,8 +288,10 @@ export default function Events() {
     if (!cid) return;
     setLoading(true);
     try {
-      // We always load `upcoming=false` (all events incl. past) and filter
-      // client-side per tab — keeps the tab switch instant after first load.
+      // We always load `upcoming=false` (all events incl. past + drafts)
+      // and filter client-side per tab — keeps the tab switch instant
+      // after first load. Drafts (status="draft") are surfaced ONLY on
+      // the "extracted" tab (I.4.b 2026-05-27).
       const { data } = await api.get(
         `/contexts/${cid}/events?upcoming=false&limit=100`,
       );
@@ -305,11 +308,22 @@ export default function Events() {
   useEffect(() => { reload(); }, [reload]);
 
   const now = useMemo(() => Date.now(), []);
+  // Confirmed (non-draft) events power upcoming/past/all tabs.
+  const nonDrafts = useMemo(
+    () => events.filter(e => e.status !== "draft"),
+    [events],
+  );
+  // Drafts (status="draft") power the Extracted tab.
+  const drafts = useMemo(
+    () => events.filter(e => e.status === "draft"),
+    [events],
+  );
   const filtered = useMemo(() => {
-    if (tab === "upcoming") return events.filter(e => new Date(e.start_at).getTime() >= now);
-    if (tab === "past")     return events.filter(e => new Date(e.start_at).getTime() < now);
-    return events;
-  }, [tab, events, now]);
+    if (tab === "extracted") return drafts;
+    if (tab === "upcoming")  return nonDrafts.filter(e => new Date(e.start_at).getTime() >= now);
+    if (tab === "past")      return nonDrafts.filter(e => new Date(e.start_at).getTime() < now);
+    return nonDrafts;
+  }, [tab, nonDrafts, drafts, now]);
 
   const handleCreate = useCallback(async (body) => {
     const { data } = await api.post(`/contexts/${cid}/events`, body);
@@ -324,6 +338,20 @@ export default function Events() {
   }, [cid, editTarget]);
 
   const handleDelete = useCallback(async (eventId) => {
+    await api.delete(`/contexts/${cid}/events/${eventId}`);
+    setEvents(prev => prev.filter(e => e.id !== eventId));
+  }, [cid]);
+
+  // I.4.b — promote a draft to confirmed.
+  const handleConfirm = useCallback(async (eventId) => {
+    const { data } = await api.patch(
+      `/contexts/${cid}/events/${eventId}`, { status: "confirmed" },
+    );
+    setEvents(prev => prev.map(e => e.id === data.id ? data : e));
+  }, [cid]);
+
+  // I.4.b — reject a draft = soft delete (same DELETE endpoint).
+  const handleReject = useCallback(async (eventId) => {
     await api.delete(`/contexts/${cid}/events/${eventId}`);
     setEvents(prev => prev.filter(e => e.id !== eventId));
   }, [cid]);
@@ -407,6 +435,21 @@ export default function Events() {
             >
               All
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "extracted"}
+              onClick={() => setTab("extracted")}
+              className={`px-3 py-1.5 text-[12px] uppercase tracking-[0.1em] font-mono rounded-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
+                tab === "extracted"
+                  ? "bg-[var(--ink)] text-white"
+                  : "text-[var(--muted)] hover:text-[var(--ink)] bg-white border border-[var(--rule)]"
+              }`}
+              data-testid="events-tab-extracted"
+            >
+              <Sparkles className="w-3 h-3 inline mr-1" strokeWidth={1.8} aria-hidden="true" />
+              Extracted{drafts.length > 0 ? ` (${drafts.length})` : ""}
+            </button>
           </div>
 
           <Button onClick={openCreate} data-testid="events-add-btn">
@@ -425,11 +468,99 @@ export default function Events() {
             className="bg-white border border-dashed border-[var(--rule)] rounded-md px-6 py-12 text-center"
             data-testid="events-empty"
           >
-            <Calendar className="w-5 h-5 mx-auto text-[var(--muted)] mb-3" strokeWidth={1.5} />
-            <p className="text-[13px] italic text-[var(--muted)]">
-              No events yet. Add your first event to surface it on Company Home.
-            </p>
+            {tab === "extracted" ? (
+              <>
+                <Sparkles className="w-5 h-5 mx-auto text-[var(--muted)] mb-3" strokeWidth={1.5} />
+                <p className="text-[13px] italic text-[var(--muted)]">
+                  No extracted events. Upload a board pack or briefing to surface dates automatically.
+                </p>
+              </>
+            ) : (
+              <>
+                <Calendar className="w-5 h-5 mx-auto text-[var(--muted)] mb-3" strokeWidth={1.5} />
+                <p className="text-[13px] italic text-[var(--muted)]">
+                  No events yet. Add your first event to surface it on Company Home.
+                </p>
+              </>
+            )}
           </div>
+        ) : tab === "extracted" ? (
+          <ul className="space-y-2.5" data-testid="events-extracted-list">
+            {filtered.map((ev) => {
+              const conf = typeof ev.confidence === "number" ? ev.confidence : null;
+              const confPct = conf !== null ? Math.round(conf * 100) : null;
+              const confHigh = conf !== null && conf >= 0.8;
+              return (
+                <li key={ev.id}>
+                  <div
+                    className="bg-white border border-[var(--rule)] rounded-md px-5 py-3.5"
+                    data-testid={`events-draft-row-${ev.id}`}
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <p className="text-[15.5px] font-medium text-[var(--ink)] truncate">{ev.title}</p>
+                          <span className="text-[10px] uppercase tracking-[0.1em] font-mono text-[var(--muted)] border border-[var(--rule)] rounded-sm px-1.5 py-[1px] shrink-0">
+                            {EVENT_TYPE_LABEL[ev.type] || ev.type}
+                          </span>
+                          {confPct !== null && (
+                            <span
+                              className={`text-[10px] uppercase tracking-[0.08em] font-mono rounded-sm px-1.5 py-[1px] shrink-0 ${
+                                confHigh
+                                  ? "bg-green-50 text-green-800 border border-green-200"
+                                  : "bg-amber-50 text-amber-800 border border-amber-200"
+                              }`}
+                              data-testid={`events-draft-confidence-${ev.id}`}
+                            >
+                              {confPct}% match
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[12.5px] text-[var(--muted)]">{fmtDateTime(ev.start_at)}{ev.end_at ? ` → ${fmtDateTime(ev.end_at)}` : ""}</p>
+                        {ev.location && (
+                          <p className="text-[12px] text-[var(--muted)] inline-flex items-center gap-1 mt-1">
+                            <MapPin className="w-3 h-3" /> {ev.location}
+                          </p>
+                        )}
+                        {ev.source_ref && (
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/app/work-studio?doc_id=${ev.source_ref}&context_id=${cid}`)}
+                            className="text-[11px] text-[var(--accent)] hover:underline inline-flex items-center gap-1 mt-1.5"
+                            data-testid={`events-draft-source-${ev.id}`}
+                          >
+                            <FileText className="w-3 h-3" strokeWidth={1.7} /> Source document
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleConfirm(ev.id)}
+                          className="text-[11.5px] uppercase tracking-[0.08em] font-mono inline-flex items-center gap-1 bg-[var(--ink)] text-white rounded-sm px-2.5 py-1.5 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50"
+                          data-testid={`events-draft-confirm-${ev.id}`}
+                          aria-label={`Confirm extracted event: ${ev.title}`}
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={1.8} aria-hidden="true" />
+                          Confirm
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleReject(ev.id)}
+                          className="text-[var(--muted)] hover:text-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 rounded-sm p-1"
+                          data-testid={`events-draft-reject-${ev.id}`}
+                          aria-label={`Reject extracted event: ${ev.title}`}
+                          title="Reject"
+                        >
+                          <Trash2 className="w-4 h-4" strokeWidth={1.7} aria-hidden="true" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         ) : (
           <ul className="space-y-2.5" data-testid="events-list">
             {filtered.map((ev) => (

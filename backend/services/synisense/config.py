@@ -127,6 +127,13 @@ ALLOWED_PURPOSES: Set[str] = {
     "document_journal.take_to_solva.prep",
     "document_journal.*",
 
+    # Documents — direct doc-domain extraction purposes.
+    # Phase I.4.b (2026-05-27) — `events_extract` reads board pack /
+    # briefing / cycle compilation / strategy doc text and proposes
+    # time-bound events for user review.
+    "documents.events_extract",
+    "documents.*",
+
     # Cycle Manager
     "cycle_manager.agenda.generate",
     "cycle_manager.briefing.aggregate",

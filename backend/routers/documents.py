@@ -220,6 +220,7 @@ async def upload_document(
     mentioned_account_ids: Optional[str] = Form(None),  # comma-sep
     related_doc_id: Optional[str] = Form(None),
     relation_type: Optional[str] = Form(None),  # update | follow_up | additional_context | correction
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
     filename = file.filename or "unnamed"
@@ -380,6 +381,28 @@ async def upload_document(
          "related_doc_id": related_doc_id, "relation_type": doc["relation_type"],
          "mentions": len(mention_ids)},
     )
+
+    # Phase I.4.b (2026-05-27) — auto-extract events from doc text in
+    # the background when `doc_type` matches the allowlist (Board pack /
+    # briefing / cycle_compilation / strategy_document — E1=b decided
+    # 2026-05-27). Best-effort: failures are logged + swallowed by
+    # `auto_extract_after_upload`; never blocks the upload response.
+    # `doc_type` is set by upstream writers (seed scripts, inbound
+    # email parser, chat/solva attachment paths); the standard user-
+    # upload UI doesn't tag doc_type at upload time, so this trigger
+    # only fires for the channels that DO tag.
+    try:
+        if background_tasks is not None and doc.get("doc_type"):
+            from routers.events import auto_extract_after_upload
+            background_tasks.add_task(
+                auto_extract_after_upload,
+                cid=context_id,
+                doc_id=doc_id,
+                doc_type=doc.get("doc_type"),
+                actor_id=ctx["account"]["id"],
+            )
+    except Exception:  # pragma: no cover — non-fatal
+        pass
 
     # J3 (2026-05-25, ratified spec §3 Stage 4) — first-doc-uploaded
     # flag. Flip on every successful upload (idempotent set). Gates

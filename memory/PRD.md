@@ -1,6 +1,107 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase I.4.b — Events: document-extraction LLM scan — 2026-05-27 ✅
+Builds on I.4.a's `events` collection. LLM scans uploaded board packs /
+briefings / cycle compilations / strategy docs, extracts time-bound
+events, stages them as DRAFT events the user reviews before they become
+real (confirmed). Card 5 on CompanyHome counts only CONFIRMED events.
+
+- **Schema extension** — `events` collection gains `status` ("draft" |
+  "confirmed" | absent), `confidence` (0.0-1.0 or null), `extracted_at`,
+  `extracted_by` ("akki_extractor" | null). **No migration script** —
+  absence-default behaviour: events without a `status` field are
+  treated as not-draft via the `$ne:"draft"` filter (decided E2=b at
+  brief greenlight). Manual events still write no `status` and
+  implicitly count.
+- **New endpoint** `POST /api/contexts/{cid}/documents/{doc_id}/extract-events`.
+  Returns `{extracted[], persisted_draft_ids[], discarded{low_confidence,
+  out_of_window, malformed}}`. Membership 403, auth 401, 404 on missing
+  doc, 400 on doc with <80 chars text, 502 on gateway failure.
+- **Extraction pipeline** — single shielded LLM call via the existing
+  `llm_service.call_llm(tier="standard", purpose="documents.events_extract")`
+  with `response_format="json"` + strict system override. Same path as
+  `prepare.py::extract_minutes` (canonical extraction precedent).
+  Purpose registered in `services/synisense/config.py::ALLOWED_PURPOSES`.
+  `safe_parse_json` strips ```` ```json ```` code fences. Per-item
+  cleanup: `_coerce_extracted_iso` strips Synisense de-id brackets
+  (`[15 June 2026]`) and falls back to `dateutil.parser(fuzzy=True)` for
+  natural-language dates; `_map_extracted_type` collapses unknown types
+  to `"other"` with friendly-alias dictionary (AGM→board_meeting,
+  committee_meeting→audit_review, year-end→deadline). Pass-2 filter:
+  confidence floor 0.6 (E3 confirm), date window -7d to +24mo (E3
+  confirm).
+- **Idempotency (E4 confirm)** — re-extracting the same doc deletes
+  ALL rows matching `(context_id, doc_id, source="doc_extraction",
+  status="draft", deleted_at=None)`. Confirmed events untouched.
+  Soft-deleted (rejected) drafts stay rejected — they don't resurrect
+  on re-extract.
+- **Auto-extract trigger** — `documents.py::upload_document` accepts
+  `BackgroundTasks`; schedules `auto_extract_after_upload` after insert
+  IF `doc_type` is in `_AUTO_EXTRACT_DOC_TYPES = {"Board pack",
+  "briefing", "cycle_compilation", "strategy_document"}` (decided
+  E1=b — extended allowlist for wider "magical" coverage). Best-effort:
+  failures logged and swallowed, NEVER block upload response.
+- **Card 5 filter** — `company_home.py::_build_events` adds
+  `status: {"$ne": "draft"}`. Drafts excluded. Manual events implicitly
+  count via absence-default.
+- **Events surface** — `Events.jsx` gains 4th tab `Extracted (N)` with
+  sparkles icon + dynamic count. Tab order: Upcoming / Past / All /
+  Extracted. Draft rows render: title + type chip + **confidence
+  badge** (amber `<0.8` / green `≥0.8` with `{pct}% match` text) +
+  start_at + location + **Source document** link + **Confirm** primary
+  button + **Reject** icon. Confirm calls `PATCH /events/{id}` with
+  `{status:"confirmed"}`; Reject calls `DELETE` (soft). Empty state:
+  *"No extracted events. Upload a board pack or briefing to surface
+  dates automatically."*
+- **PATCH endpoint** — accepts `status` field for confirm action; only
+  `"confirmed"` is settable via PATCH. Attempts to PATCH
+  `status="draft"` return 422 (drafts are server-created only).
+- **List endpoint** — gains `?status=draft|confirmed` filter.
+  `status=confirmed` uses absence-default (`$ne:"draft"`);
+  `status=draft` is exact-match. Default (no filter) returns all
+  non-deleted.
+- **CI guard** `tests/test_phase_i4b_events_extraction.py` — 16 tests:
+  full extraction round-trip with mocked LLM, membership 403, auth 401,
+  low-confidence discard, out-of-window discard (past + future), type
+  taxonomy mapping (AGM→board_meeting + unknown→other + direct
+  match), idempotency replaces drafts + preserves confirmed, rejected
+  drafts stay rejected, Card 5 excludes drafts + counts confirmed,
+  Card 5 absence-default for manual events, PATCH `status="draft"`
+  rejected with 422, auto-extract trigger only fires for allowlist
+  `doc_type`, `?status` query filter, Events.jsx mounts
+  `events-tab-extracted`, extracted empty-state copy verbatim,
+  draft-row Confirm + Reject + confidence badge testids present,
+  Card 5 query source-strict guard for `$ne:"draft"`.
+- **Live verification** (Julius @ Personal NED Seat) — seeded a "Board
+  pack" doc with 5 event references. **Live LLM extraction:** Claude
+  Sonnet 4.5 via shielded gateway → 3 cleanly extracted with confidence
+  1.0 + 2 discarded as malformed (Synisense de-id tokenized two dates
+  as "MM" placeholders — correctly preserved as PII protection).
+  **Card 5 BEFORE confirm:** `{count:0, subtext:"No events scheduled"}`
+  — drafts correctly excluded. **PATCH `status="confirmed"`:** title
+  persisted, status flipped. **DELETE on draft:** soft-delete returned
+  `{ok:true}`. **Re-extract:** prior draft wiped; confirmed event
+  untouched. **Playwright DOM probe:** 4th tab `EXTRACTED (3)` visible
+  with sparkles icon; 3 draft rows with confidence badges (78% amber,
+  91%+95% green); clicking Confirm dropped count to `(2)` and moved
+  row to Upcoming tab.
+- **Test ledger** — I.4.b 16/16 GREEN. Broader regression sweep
+  (`test_phase_i*.py + test_phase_n*.py + test_phase_h*.py`) = 129
+  passed, 13 skipped (skips pre-existing Patch 19 Solva fixture).
+- **Gateway tier decision (institutional memory)** — first attempt
+  used `tier="fast"` (Gemini 2.5 Flash) for cost efficiency but
+  exceeded the 20s gateway timeout on ~12K-char extraction prompts.
+  Switched to `tier="standard"` (Claude Sonnet 4.5) matching the
+  `extract_minutes` precedent. ~9s latency per call. **Synisense
+  de-id interaction:** the de-id step tokenizes calendar dates as PII
+  placeholders before the LLM sees them, then re-identifies after the
+  response. Mitigations layered: bracket strip + `dateutil` natural-
+  language fallback + malformed-discard counter for anything still
+  unparseable. Net behaviour: 3/5 extraction rate on live test —
+  acceptable v1, tune prompt or de-id config in future hygiene pass
+  if recall becomes a problem.
+
 ### Phase I.4.a — Events system (manual entry) + Card 5 wiring — 2026-05-27 ✅
 Unblocks Card 5 on Company Home. Manual events entry only this dispatch;
 I.4.b (doc-extraction) and I.4.c (calendar sync) are separate later dispatches.
