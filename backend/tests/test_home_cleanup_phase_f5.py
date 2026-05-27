@@ -476,8 +476,17 @@ async def test_f5_inbound_webhook_ingests_email_reply(task_owner):
     files = {
         "attachment1": ("section_a.txt", att_content, "text/plain"),
     }
+    # F.6 W1 (2026-05-26) — Basic Auth header for SendGrid inbound
+    # endpoint when SENDGRID_INBOUND_AUTH_* env vars are set.
+    _auth_user = os.environ.get("SENDGRID_INBOUND_AUTH_USERNAME", "").strip()
+    _auth_pw   = os.environ.get("SENDGRID_INBOUND_AUTH_PASSWORD", "").strip()
+    _sg_headers = {}
+    if _auth_user and _auth_pw:
+        _sg_headers["authorization"] = "Basic " + base64.b64encode(
+            f"{_auth_user}:{_auth_pw}".encode("utf-8")
+        ).decode("ascii")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        r = await c.post("/api/inbound/sendgrid", data=fields, files=files)
+        r = await c.post("/api/inbound/sendgrid", data=fields, files=files, headers=_sg_headers)
         # We accept 200 OR 2xx — depends on the existing webhook's success shape.
         assert r.status_code in (200, 202, 204), r.text
         body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
@@ -534,8 +543,15 @@ async def test_f5_inbound_webhook_rejects_sender_mismatch(task_owner):
         "MessageID": "msg-" + uuid.uuid4().hex,
         "attachments": "0",
     }
+    _auth_user = os.environ.get("SENDGRID_INBOUND_AUTH_USERNAME", "").strip()
+    _auth_pw   = os.environ.get("SENDGRID_INBOUND_AUTH_PASSWORD", "").strip()
+    _sg_headers = {}
+    if _auth_user and _auth_pw:
+        _sg_headers["authorization"] = "Basic " + base64.b64encode(
+            f"{_auth_user}:{_auth_pw}".encode("utf-8")
+        ).decode("ascii")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        await c.post("/api/inbound/sendgrid", data=fields)
+        await c.post("/api/inbound/sendgrid", data=fields, headers=_sg_headers)
     # No doc created.
     d = await db.documents.find_one({"task_id": tid, "origin": "email_receipt"})
     assert d is None

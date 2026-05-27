@@ -131,6 +131,7 @@ export default function TaskListing({ contextId, state, refreshKey }) {
               onClick={() => openTask(t.id)}
               className="w-full text-left p-4 border border-[var(--rule)] bg-white rounded-sm hover:border-[var(--ink)] transition-colors"
               data-testid={`task-card-${t.id}`}
+              data-card-kind="task"
             >
               <div className="flex items-start justify-between gap-3 mb-2">
                 <p className="akki-serif text-[15px] text-[var(--ink)] leading-tight">

@@ -142,8 +142,16 @@ async def test_w1_sendgrid_endpoint_accepts_multipart_and_routes_dispatch(monkey
         "html":      "",
         "attachments": "0",
     }
+    # F.6 W1 — Basic Auth header when configured.
+    _auth_user = os.environ.get("SENDGRID_INBOUND_AUTH_USERNAME", "").strip()
+    _auth_pw   = os.environ.get("SENDGRID_INBOUND_AUTH_PASSWORD", "").strip()
+    _sg_headers = {}
+    if _auth_user and _auth_pw:
+        _sg_headers["authorization"] = "Basic " + base64.b64encode(
+            f"{_auth_user}:{_auth_pw}".encode("utf-8")
+        ).decode("ascii")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        r = await c.post("/api/inbound/sendgrid", data=fields)
+        r = await c.post("/api/inbound/sendgrid", data=fields, headers=_sg_headers)
     assert r.status_code == 200, r.text
     body = r.json()
     # Token doesn't exist → error surface honestly.

@@ -90,6 +90,7 @@ export default function FollowUpDraftsCard({ contextId, refreshKey }) {
                   onClick={() => navigate(`/app/work-studio?doc_id=${d.id}`)}
                   className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-[var(--parchment)] flex items-center gap-2"
                   data-testid={`follow-up-drafts-row-${d.id}`}
+                  data-card-kind="follow-up-draft"
                 >
                   <span className="flex-1 min-w-0 truncate text-[var(--ink)]">
                     {d.name || d.original_filename || d.id}
