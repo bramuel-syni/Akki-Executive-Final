@@ -1,6 +1,51 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase O — Document Drawer Universal Discipline (compliance audit) — 2026-05-27 ✅
+Audit-and-fix pass against the Phase E.3 Universal Document Drawer
+spec. User raised: *"you have not applied the document drawer
+discipline on all documents — decks, reports, drafts etc, and the
+two types of document intelligence we agreed on, across the system."*
+
+**E.3 spec recovered verbatim (source of truth for this compliance pass):**
+- **2 intelligence modes:** **CREATION** (`state==="draft" && origin==="akki_generated"`) and **REFERENCE** (everything else).
+- **5 tabs:** `Document` · `Intelligence` · `Summary & Notes` · `Signals` · `Related`
+- **5 CTAs:** `Use in Solva` · `Use in Chat` · `Generate brief` · `Test hypothesis` · `Share document`
+- **Canonical URL contract:** `/app/work-studio?doc_id=<uuid>`. Every doc-open surface MUST navigate to this URL; Universal `<DocumentDrawer>` mounts at this URL and reads `doc_id` from search params.
+
+**Stage-1B inventory (17 surfaces audited):**
+- **11 already compliant** (WorkStudio deep-link, WorkStudioActivity, TaskManager, Pulse, Cycle, Workspace, MentionInbox, AppShell, CompilationRail x3, FollowUpDraftsCard, App.js legacy redirect, Events.jsx Source-document link, Chat citations via `/app/documents/:id` → redirect)
+- **2 non-compliant** (both in WorkStudio.jsx): `BriefRow` click via legacy `setDrawerAid + setDrawerOpen`; `DocumentCardsSection` minutes/decks/reports branch via legacy `setOverlayAid + setOverlayOpen`
+- **1 dead code** (AskPanel.onCitationClick — zero importers)
+- **1 out-of-scope** (NedMeeting — Workspace artefact, not a doc-open)
+
+**Shipped (3 surgical redirects, single-file change):**
+- `onOpenBrief` body redirects through `setSearchParams({ doc_id: row.id, kind, context_id })`.
+- `DocumentCardsSection` `onOpenDocument` minutes/decks/reports branch redirects through `setSearchParams({ doc_id: aid, ... })`. Board/committee pack branch preserved (G8 dedicated full-page surface).
+- `akki:open-document-overlay` window event listener redirects to canonical URL (belt-and-suspenders).
+- Legacy `BriefDrawer` + `DocumentOverlay` mounts kept in tree (open-state setters no longer called by any entry point — unreachable in runtime UX).
+
+**CI guard** `tests/test_phase_o_drawer_discipline.py` — **6 tests:**
+positive (all 10 compliant surfaces retain `?doc_id=` URL contract) ·
+negative (onOpenBrief body uses setSearchParams not setDrawerAid/setDrawerOpen) ·
+negative (DocumentCardsSection onOpenDocument minutes/decks/reports branch uses setSearchParams not setOverlayAid/setOverlayOpen) ·
+positive (window-event listener redirects to canonical URL) ·
+positive (`<DocumentDrawer>` mount stays in WorkStudio.jsx) ·
+source-strict (no new `<DocumentOverlay>` mounts outside the 3-file allowlist).
+
+**Test ledger** — Phase O 6/6 GREEN. Full sweep `test_phase_i* + n* + h* + m* + o*` = **172 passed / 13 skipped** (skips pre-existing).
+
+**Live verification (Julius @ Personal NED Seat):**
+- Click `ws-document-card-open-d130c799-…` on Reports tab → URL transitions to `/app/work-studio?doc_id=d130c799-…&kind=report&context_id=…` ✓ **CANONICAL URL CONTRACT FIRED**.
+- `<DocumentDrawer>` testid mount: 1 ✓.
+- Direct nav to real doc `790f6a60-…` (Digital Transformation Strategy):
+  - All 5 tabs verbatim: `Document` · `Intelligence` · `Summary & Notes` · `Signals` · `Related` ✓
+  - All 5 CTAs verbatim: `Use in Solva` · `Use in Chat` · `Generate brief` · `Test hypothesis` · `Share document` ✓
+  - Mode badges: `COMMITTED · UPLOADED` (Reference mode for committed/uploaded doc) ✓
+  - Document body renders Mara Heritage Bank Q1 2026 strategy content ✓
+
+**Lesson for future agents:** the source-strict CI guards locking the canonical URL contract (added in this Phase O test) prevent future agents from re-introducing state-toggle bypasses when adding new doc-open surfaces.
+
 ### Phase M — Work Studio noise reduction + Briefing pill move — 2026-05-27 ✅
 User raised this ≥3 times. Verbatim spec captured in PHASE_LEDGER M
 row. Reduces Work Studio surface clutter on the `Main Board &

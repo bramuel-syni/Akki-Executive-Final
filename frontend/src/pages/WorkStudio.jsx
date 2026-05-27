@@ -541,12 +541,16 @@ export default function WorkStudio() {
     const onOpenOverlay = (e) => {
       const aid = e?.detail?.artefactId;
       if (!aid) return;
-      setOverlayAid(aid);
-      setOverlayOpen(true);
+      // Phase O (2026-05-27) — belt-and-suspenders redirect: even if a
+      // legacy code path fires `akki:open-document-overlay`, the request
+      // is routed through the canonical `?doc_id=` URL contract instead
+      // of mounting the legacy DocumentOverlay. Keeps every nested-doc
+      // navigation flowing through the universal <DocumentDrawer>.
+      setSearchParams({ doc_id: aid, kind, context_id: cid || "" }, { replace: false });
     };
     window.addEventListener("akki:open-document-overlay", onOpenOverlay);
     return () => window.removeEventListener("akki:open-document-overlay", onOpenOverlay);
-  }, []);
+  }, [setSearchParams, kind, cid]);
 
   // Modal state — Export / Enhance / Compile / Create.
   const [exportOpen, setExportOpen] = useState(false);
@@ -765,7 +769,16 @@ export default function WorkStudio() {
     setCreateOpen(true);
   };
 
-  const onOpenBrief = (row) => { setDrawerAid(row.id); setDrawerOpen(true); };
+  // Phase O (2026-05-27) — Universal Document Drawer discipline. Every
+  // doc-open trigger MUST route through the canonical `?doc_id=` URL
+  // contract per Phase E.3 spec. The legacy `BriefDrawer` + `DocumentOverlay`
+  // mounts below stay in place (open=false unreachable; dead via redirect)
+  // to avoid breaking any tests that reference their mount points; their
+  // open-state setters are no longer called by ANY entry point.
+  const onOpenBrief = (row) => {
+    if (!row?.id) return;
+    setSearchParams({ doc_id: row.id, kind, context_id: cid || "" }, { replace: false });
+  };
   const onCloseDrawer = () => { setDrawerOpen(false); };
 
   const activeTab = useMemo(
@@ -874,19 +887,18 @@ export default function WorkStudio() {
                   /* T3.3 (2026-05-25) — G8 ratified card-kind routing.
                    * Board Pack + Committee Pack → dedicated full-page
                    * surface (`/app/work-studio/document/{artefactId}`).
-                   * The other three kinds (Minutes / Deck / Report)
-                   * open the existing side drawer overlay on this page.
-                   * The spec frames the dedicated page as W3 ("Compiled
-                   * Document page") and the drawer as W4 ("Pack side
-                   * drawer"); G8 ratification splits them by card kind. */
+                   * Phase O (2026-05-27) — other three kinds (Minutes /
+                   * Deck / Report) now route through the canonical
+                   * `?doc_id=` URL contract instead of the legacy
+                   * `DocumentOverlay`. Universal `<DocumentDrawer>`
+                   * mounted at the bottom of this surface picks it up. */
                   const k = (exportKind || "").toLowerCase();
                   if (k === "cycle_board_pack" || k === "board_pack" ||
                       k === "cycle_committee_pack" || k === "committee_pack") {
                     navigate(`/app/work-studio/document/${aid}`);
                     return;
                   }
-                  setOverlayAid(aid);
-                  setOverlayOpen(true);
+                  setSearchParams({ doc_id: aid, kind, context_id: cid || "" }, { replace: false });
                 }}
               />
             )}
