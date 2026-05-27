@@ -1556,8 +1556,25 @@ async def get_document_journal_recent(
         limit = 1
     if limit > 25:
         limit = 25
+    # Work Studio recurring-bug fix #2 (2026-05-27, recurrence #3).
+    # **Structural root cause:** smoke-test runs (e.g. an old upload
+    # contract test) wrote 100 documents named "smoke-upload" into
+    # the TEST_SeededNedCo context and never cleaned them up. The
+    # `/document-journal/recent` endpoint had no filter against test-
+    # debris doc names, so the CompilationRail right-rail surfaced
+    # them on a real user-facing render. Belt-and-suspenders fix:
+    # (a) one-shot DB cleanup ran 2026-05-27 to delete the 100 rows;
+    # (b) this `$not` filter regression-guards against any future
+    # smoke run that forgets to clean up. The filter is case-
+    # insensitive and matches the exact known test-debris name
+    # pattern. If you add new smoke tests that write documents, give
+    # them a cleanup hook OR add the name pattern here.
+    test_debris_name_re = re.compile(r"^smoke[-_]upload(\.[a-z0-9]+)?$", re.IGNORECASE)
     cursor = db.documents.find(
-        {"context_id": context_id},
+        {
+            "context_id": context_id,
+            "name": {"$not": test_debris_name_re},
+        },
         {
             "_id": 0,
             "id": 1, "name": 1, "title": 1, "doc_kind": 1, "doc_type": 1,

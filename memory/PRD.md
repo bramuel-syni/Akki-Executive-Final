@@ -1,6 +1,48 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Recurring bug fix — Work Studio Briefing tab + Document Journal seed-bleed — 2026-05-27 ✅ (Recurrence #3 closed)
+Two-issue dispatch. User flagged third recurrence.
+
+**Issue #1 — Briefing tab placement:** NO EDIT REQUIRED. The user's screenshot was stale (taken before the Phase M-revision fix landed earlier this session). Live DOM probe verified the structural assertions hold on the current preview deployment: `briefing.parentElement === reports.parentElement === true` AND `briefing.getBoundingClientRect().top === reports.getBoundingClientRect().top === 254.09375` (zero pixel diff). All 6 tabs render in one flex row: `Main Board & Committee Packs · Minutes · Drafts · Decks · Reports · Briefing`. Parent component path: `WorkStudio.jsx` → `<div data-testid="work-studio-tabs">` → `<div className="flex items-stretch gap-0 flex-wrap -mb-px">` → `KIND_TABS.map(...)`. Added a 4th positive structural CI lock: source-strict guard that `KIND_TABS.map(...)` is called exactly once (catches future agents splitting the render into two loops).
+
+**Issue #2 — Document Journal seed-bleed:** FIXED. Two-layer structural fix.
+
+Layer 1 (one-shot DB cleanup): An old upload-contract smoke test wrote 100 documents named `smoke-upload` into the `TEST_SeededNedCo` context (`fbc54a51-5a4f-4f2c-aeeb-661494275f4f`) and never cleaned them up. Single `delete_many` op on the regex pattern removed all 100 rows.
+
+Layer 2 (defensive code): `GET /contexts/{cid}/document-journal/recent` endpoint now applies a `$not` filter on the compiled regex `^smoke[-_]upload(\.[a-z0-9]+)?$` (case-insensitive). Any future smoke run that writes to this collection and forgets to clean up cannot bleed onto user-facing rails.
+
+**CI guards** (6 tests in `tests/test_recurrence3_workstudio_briefing_and_journal.py`):
+- I1.a — KIND_TABS array contains exactly 6 entries in spec order with Briefing 6th
+- I1.b — no separate `BRIEFING_TAB` constant, no 2nd-line pill testids
+- I1.c — single `KIND_TABS.map()` render loop (catches split rendering)
+- I2.a — endpoint source-strict has `smoke[-_]upload` filter + `$not` operator
+- I2.b — live integration: 2 smoke-upload + 1 real doc seeded → endpoint returns ONLY the real doc
+- I2.c — case-insensitivity: 5 variants (`Smoke-Upload`, `SMOKE-UPLOAD`, `smoke_upload`, `Smoke_Upload.docx`, `SMOKE-UPLOAD.pdf`) all filtered
+
+**Test ledger** — 6/6 GREEN. Full regression sweep `test_recurrence3*+r1*+i*+n*+h*+m*+o*+j_idle*+bugfix*` = **235 passed / 13 skipped** (229 prior + 6 new, 0 regressions).
+
+**Live verification (admin@akki.ai → TEST_SeededNedCo):**
+- Before: 5 `smoke-upload` cards in the Document Journal panel
+- After: 0 smoke-upload occurrences in the rendered DOM; panel now shows legitimate test rows (`P2 corrupt test`, `P2 CSV test`, `P2 OCR live test`, `p1-midsession`, `P0 curl test`)
+- Briefing tab: same parent as Reports, same `top` pixel value, 6 tabs in one row
+- Screenshots: `/tmp/recurrence_3_BEFORE.png`, `/tmp/recurrence_3_AFTER.png`
+- 0 axe-a11y, 0 non-401 console errors
+
+**Structural root cause captured in ledger (institutional memory to break the recurrence loop):**
+
+*Why this kept recurring (Recurrence #1 → #2 → #3):*
+1. **Recurrence #1** (Phase M original) — Orchestrator misread user bug report ("brief is on the 2nd line") as a layout spec. Treated symptom as desire. Diagnosis-protocol lesson "Symptom vs spec disambiguation" was added then.
+2. **Recurrence #2** (Phase M-revision) — Corrected the layout AND CI-locked 3 structural assertions, BUT verification was scoped to the change, not the surrounding surface state. The right rail's Document Journal seed-bleed went unfixed because it wasn't in M-revision's IN_SCOPE.
+3. **Recurrence #3** (this fix) — Two-issue dispatch revealed both that the Briefing-tab fix was structurally correct all along AND that test debris had been silently bleeding into the right rail for weeks. The 100 smoke-upload docs had been live the whole time with zero defensive filter at the listing endpoint.
+
+*The structural pattern that produced the recurrence loop:*
+1. **JSX inspection isn't DOM verification.** Every "fixed" claim must be backed by a live DOM probe with `parentElement === parentElement` AND `bounding-rect.top` equality.
+2. **Test debris in long-lived DB collections is a recurring failure mode.** Smoke tests that write to production-shaped collections without teardown hooks AND without defensive name-pattern filters at the read API are the recipe for surfacing test artifacts on real user rails.
+3. **Recurring-bug dispatches must audit the surrounding surface, not just the named symptom.** Future dispatches should include a "surface audit" — open the rendered page, screenshot it, enumerate every visible element against expected state BEFORE proposing a fix.
+
+
+
 ### Phase R.1 — Founding Cohort foundation — 2026-05-27 ✅
 First leg of the Founding Cohort Console rollout. Ships the magic-link
 issuance + consume + trial-lifecycle account fields. R.2-R.5 (welcome
