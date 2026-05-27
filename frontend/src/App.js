@@ -15,6 +15,7 @@ import SignIn from "@/pages/SignIn";
 import SignUp from "@/pages/SignUp";
 import UpgradeModal from "@/components/depth/UpgradeModal";
 import FeedbackWidget from "@/components/feedback/FeedbackWidget";
+import Day16Banner from "@/components/cohort/Day16Banner";
 import useTrialStatus from "@/hooks/useTrialStatus";
 
 // -- Lazy: marketing deeper routes (rarely visited from cold start) ----------
@@ -57,6 +58,7 @@ const FirstSession = lazy(() => import("@/pages/FirstSession"));
 const AppHome = lazy(() => import("@/pages/AppHome"));
 // Phase R.5.a (2026-05-27) — Cohort console + Early access opt-in
 const CohortConsole = lazy(() => import("@/pages/admin/CohortConsole"));
+const CohortCopyEditor = lazy(() => import("@/pages/admin/CohortCopyEditor"));
 const EarlyAccessOptIn = lazy(() => import("@/pages/EarlyAccessOptIn"));
 const Questions = lazy(() => import("@/pages/Questions"));
 const Workspace = lazy(() => import("@/pages/Workspace"));
@@ -198,6 +200,8 @@ function Gated({ children }) {
     <ProtectedRoute>
       <FirstSessionGuard>
         <HardLockGuard>
+          {/* Phase R.5.b (2026-05-27) — Day-16 soft-warning banner on top. */}
+          <Day16Banner />
           {children}
           {/* Phase R.4 (2026-05-27) — Feedback widget on every gated surface. */}
           <FeedbackWidget />
@@ -320,6 +324,8 @@ function App() {
           <Route path="/app/early-access-opt-in" element={<ProtectedRoute><EarlyAccessOptIn /></ProtectedRoute>} />
           {/* Phase R.5.a (2026-05-27) — Superadmin cohort console. */}
           <Route path="/app/admin/cohort" element={<Gated><CohortConsole /></Gated>} />
+          {/* Phase R.5.b (2026-05-27) — Founder copy editor. */}
+          <Route path="/app/admin/cohort/copy" element={<Gated><CohortCopyEditor /></Gated>} />
           <Route path="/app" element={<Gated><AppHome /></Gated>} />
           {/* Phase H.5 (2026-05-27) — legacy portfolio routes collapsed
               to /app. /app/portfolio used to render Home1 (now

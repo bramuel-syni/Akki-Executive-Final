@@ -51,6 +51,12 @@ def build_welcome_html(payload: Dict[str, Any]) -> Dict[str, str]:
     """Compose subject + html + text from the SendGrid-ready payload
     that R.1 already produces on invite creation.
 
+    R.5.b note: this function returns the DEFAULT template (with
+    `[FOUNDER:]` placeholders). The consumer (`issue_invite`) calls
+    `services.cohort.copy_overrides.get_slot_override('welcome_email')`
+    + `overlay_slot(...)` to layer any founder-saved override before
+    handing the rendered payload to the SendGrid client.
+
     The body is intentionally minimal — typography clean, no logos,
     no marketing gloss. AKKI's founder voice is paramount; the
     placeholder text is shipped pre-filled with a clearly-marked

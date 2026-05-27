@@ -29,6 +29,9 @@ from services.cohort.console import (
     _compute_trial_status, TRIAL_SOFT_WARNING_DAY, TRIAL_HARD_LOCK_DAY,
     TRIAL_TOTAL_DAYS,
 )
+from services.cohort.copy_overrides import (
+    get_slot_override, SLOT_FIELDS,
+)
 
 
 log = logging.getLogger("akki.cohort.trial_status")
@@ -135,3 +138,29 @@ async def admin_get_trial_status(
         "trial_start_at": acct.get("trial_start_at"),
         "locked":         trial_status == "expired_hard_lock",
     }
+
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Phase R.5.b — public read of in-app copy slots that the user sees
+# (early_access_opt_in, day_16_banner). Authenticated user only; the
+# slot identifier is whitelisted to the surfaces a regular user can
+# legitimately render. Email slots (welcome_email, feedback_thanks)
+# stay superadmin-only via the editor endpoints.
+# ─────────────────────────────────────────────────────────────────────
+_USER_VISIBLE_SLOTS = frozenset(("early_access_opt_in", "day_16_banner"))
+
+
+@router.get("/copy/{slot}")
+async def get_user_visible_copy(
+    slot: str,
+    _account: Dict[str, Any] = Depends(get_current_account),
+) -> Dict[str, Any]:
+    """Frontend `EarlyAccessOptIn` + day-16 banner read their copy
+    overrides via this endpoint. Returns `{slot, fields, values}`."""
+    if slot not in _USER_VISIBLE_SLOTS:
+        raise HTTPException(status_code=403, detail="Slot not user-visible.")
+    row = await get_slot_override(slot)
+    values = {f: (row or {}).get(f) for f in SLOT_FIELDS.get(slot, [])}
+    return {"slot": slot, "fields": list(SLOT_FIELDS.get(slot, [])), "values": values}
+

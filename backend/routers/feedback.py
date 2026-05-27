@@ -109,6 +109,20 @@ async def submit_feedback(
             "text":         body.text,
             "surface_path": body.surface_path,
         })
+        # Phase R.5.b (2026-05-27) — overlay any founder-saved
+        # `feedback_thanks` copy override on top of the default.
+        try:
+            from services.cohort.copy_overrides import (
+                get_slot_override, overlay_slot,
+            )
+            override_row = await get_slot_override("feedback_thanks")
+            rendered = overlay_slot(
+                default_payload=rendered,
+                override_row=override_row,
+                slot="feedback_thanks",
+            )
+        except Exception:
+            pass
         try:
             assert_no_founder_placeholder(rendered)
         except HTTPException as exc:

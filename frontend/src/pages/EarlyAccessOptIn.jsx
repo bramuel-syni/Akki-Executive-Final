@@ -17,17 +17,43 @@
  *     and not a 500). R.5.b adds the founder copy editor — until then,
  *     the placeholders show as a literal nudge to the founder.
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import useTrialStatus from "@/hooks/useTrialStatus";
 import { Loader2, CheckCircle2 } from "lucide-react";
+
+const DEFAULTS = {
+  heading:     "Your founding-cohort trial has ended.",
+  body:        "[FOUNDER: write one short paragraph in your voice explaining what early-access means + what happens next. The user is locked out of the app until you convert them. Edit before shipping to real users.]",
+  thanks_body: "[FOUNDER: write one sentence — what happens next in your voice.]",
+  signoff:     "[FOUNDER: sign-off line in your voice — one line, your name. Edit before shipping.]",
+};
 
 export default function EarlyAccessOptIn() {
   const trial = useTrialStatus();
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [copy, setCopy] = useState(DEFAULTS);
+
+  // Phase R.5.b (2026-05-27) — fetch the founder-saved override.
+  useEffect(() => {
+    let cancelled = false;
+    api.get("/me/copy/early_access_opt_in")
+      .then((res) => {
+        if (cancelled) return;
+        const values = res?.data?.values || {};
+        setCopy({
+          heading:     values.heading     || DEFAULTS.heading,
+          body:        values.body        || DEFAULTS.body,
+          thanks_body: values.thanks_body || DEFAULTS.thanks_body,
+          signoff:     values.signoff     || DEFAULTS.signoff,
+        });
+      })
+      .catch(() => { /* keep defaults */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleSubmit = async (e) => {
     e?.preventDefault();
@@ -60,14 +86,11 @@ export default function EarlyAccessOptIn() {
           data-testid="early-access-opt-in-heading"
           className="akki-serif text-[36px] leading-[1.1] tracking-tight text-[var(--ink)] mb-6"
         >
-          Your founding-cohort trial has ended.
+          {copy.heading}
         </h1>
 
         <p className="akki-serif italic text-[16.5px] leading-relaxed text-[var(--deep)] mb-3">
-          [FOUNDER: write one short paragraph in your voice explaining
-          what early-access means + what happens next. The user is
-          locked out of the app until you convert them. Edit before
-          shipping to real users.]
+          {copy.body}
         </p>
 
         {trial.day != null && (
@@ -90,7 +113,7 @@ export default function EarlyAccessOptIn() {
                 We&rsquo;ve noted it.
               </p>
               <p className="text-[13px] text-[var(--muted)]">
-                [FOUNDER: write one sentence — what happens next in your voice.]
+                {copy.thanks_body}
               </p>
             </div>
           </div>
@@ -125,7 +148,7 @@ export default function EarlyAccessOptIn() {
         )}
 
         <p className="akki-serif italic text-[12.5px] text-[var(--muted)] mt-12">
-          [FOUNDER: sign-off line in your voice — one line, your name. Edit before shipping.]
+          {copy.signoff}
         </p>
       </div>
     </div>

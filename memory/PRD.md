@@ -1,6 +1,26 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase R.5.b — Founder copy editors + Day-16 banner — 2026-05-27 ✅ (CLOSED — halt-and-report triggered)
+
+**The trial-blocking critical path is now unblocked.** Founders can edit the `[FOUNDER:]` placeholders via the in-app editor, the overlay replaces defaults at consumer-render time, and the R.2 / R.4 / R.5.a guards stop firing once the copy is clean. HALT-AND-REPORT triggered: ~668 lines NEW code, >> 500-line auto-slice threshold. **R.5.b.2 dispatched separately** for special-ask tracker + cohort console additions.
+
+**Backend (~270 NEW lines + edits):**
+- `services/cohort/copy_overrides.py` — 5-slot schema (`welcome_email`, `feedback_thanks`, `day_16_banner`, `early_access_opt_in`, `special_ask`), `assert_save_clean()` raising the locked 422 with `dirty_fields[]` windows, `overlay_slot()` pure-function overlay, `save_slot_override()` upsert, `list_all_slots()` for the editor's GET-all endpoint.
+- `routers/admin_cohort.py` — `GET /api/admin/cohort/copy` + `PUT /api/admin/cohort/copy/{slot}` (superadmin); the `issue_invite` handler now consults `welcome_email` override and overlays it before the R.2 guard.
+- `routers/trial_status.py` — `GET /api/me/copy/{slot}` whitelisted to user-visible slots (`early_access_opt_in`, `day_16_banner`).
+- `routers/feedback.py` — consults `feedback_thanks` override + overlays before the R.4 guard.
+
+**Frontend (~400 NEW lines + edits):**
+- `pages/admin/CohortCopyEditor.jsx` — schema-driven editor, one `SlotEditor` per slot, client-side placeholder detection mirrors server guard (save button disabled while dirty), 422 `dirty_fields[]` rendered as inline per-field error banners.
+- `components/cohort/Day16Banner.jsx` — renders ONLY when `trial.status === "soft_warning"`; dismissable per-session via sessionStorage; consumes the `day_16_banner` override.
+- `pages/EarlyAccessOptIn.jsx` — refactored to render `{copy.heading}` / `{copy.body}` / `{copy.thanks_body}` / `{copy.signoff}` from the override fetch; defaults preserved.
+- `App.js` — `<Day16Banner />` mounted in `Gated` above `{children}`; `/app/admin/cohort/copy` route registered.
+
+**Verification:** Phase R.5.b CI **25/25 GREEN**. Full regression across 16 phase test files = **198/198 GREEN**. Live curl 5-probe: list slots, save-dirty→422, save-clean→200, unknown-field→400, **invite-send-1→200 (trial unblocked from 422)**. Playwright smoke: editor mounts at `/app/admin/cohort/copy`, 5 slot sections render with defaults populated, save flow works end-to-end with toast confirmation, multi-viewport 1280/1024/820 width-fit confirmed.
+
+
+
 ### Phase R.5.a — Cohort console + day-counter enforcement + early-access opt-in — 2026-05-27 ✅ (CLOSED — halt-and-report triggered)
 
 Shipped the Founding Cohort console with time-window dimensions folded in (R.5.0 deflected per the user's accepted proposal). HALT-AND-REPORT triggered: 924 lines of NEW code, >> 500-line auto-slice threshold the user locked. **R.5.b dispatched separately.**

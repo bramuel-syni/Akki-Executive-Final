@@ -32,6 +32,10 @@ from services.cohort.welcome_email import (
 from services.cohort.console import (
     aggregate_cohort_console, get_account_activity_timeline, FUNNEL_STAGES,
 )
+from services.cohort.copy_overrides import (
+    KNOWN_SLOTS, SLOT_FIELDS, slot_field_list,
+    list_all_slots, save_slot_override, get_slot_override,
+)
 
 
 log = logging.getLogger("akki.cohort.admin")
@@ -162,6 +166,16 @@ async def issue_invite(
     # Build the rendered email body. The same body is used for both
     # `?preview=1` (return without creating) and the actual send path.
     rendered = build_welcome_html(welcome_payload["dynamic_template_data"])
+
+    # Phase R.5.b (2026-05-27) — overlay any founder-saved welcome_email
+    # copy override on top of the default template. If the founder
+    # hasn't saved anything yet, the [FOUNDER:] placeholders survive
+    # and the R.2 guard below fires.
+    override_row = await get_slot_override("welcome_email")
+    from services.cohort.copy_overrides import overlay_slot
+    rendered = overlay_slot(
+        default_payload=rendered, override_row=override_row, slot="welcome_email",
+    )
 
     # Phase R.2 (2026-05-27) — MANDATORY server-side guard. Refuses to
     # SEND if any `[FOUNDER:` placeholder is still in the body. The
@@ -375,4 +389,56 @@ async def cohort_console_stages() -> Dict[str, Any]:
     frontend uses this to render the table header without baking
     the names into client code."""
     return {"stages": list(FUNNEL_STAGES)}
+
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Phase R.5.b — Founder copy editors
+# ═════════════════════════════════════════════════════════════════════
+
+class CopyOverrideIn(BaseModel):
+    """Free-form text fields keyed by the slot's SLOT_FIELDS list.
+    Endpoint validates that the keys belong to the slot's schema."""
+    fields: Dict[str, str] = Field(default_factory=dict)
+
+
+@router.get("/copy")
+async def list_copy_overrides(
+    _admin: Dict[str, Any] = Depends(_require_superadmin),
+) -> Dict[str, Any]:
+    """Return every override row + the slot field schema in one shot.
+    The editor page consumes this on load."""
+    rows = await list_all_slots()
+    return {"slots": rows, "known_slots": sorted(KNOWN_SLOTS)}
+
+
+@router.put("/copy/{slot}")
+async def put_copy_override(
+    slot: str,
+    body: CopyOverrideIn,
+    actor: Dict[str, Any] = Depends(_require_superadmin),
+) -> Dict[str, Any]:
+    """Persist a slot override. Raises 422 with the locked
+    `founder_placeholder_present` code if any `[FOUNDER:` literal
+    remains in the submitted fields."""
+    if slot not in KNOWN_SLOTS:
+        raise HTTPException(status_code=400, detail={
+            "code": "unknown_slot",
+            "message": f"Slot must be one of {sorted(KNOWN_SLOTS)}; got {slot!r}",
+        })
+    # Reject unknown field keys defensively (pydantic Dict can't enforce).
+    expected = set(slot_field_list(slot))
+    submitted = set(body.fields.keys())
+    extras = submitted - expected
+    if extras:
+        raise HTTPException(status_code=400, detail={
+            "code": "unknown_field",
+            "slot": slot,
+            "extras": sorted(extras),
+            "expected": sorted(expected),
+        })
+    out = await save_slot_override(
+        slot=slot, fields=body.fields, updated_by=actor["id"],
+    )
+    return out
 
