@@ -115,6 +115,12 @@ async def raise_question(
 ):
     me = ctx["account"]
     now_iso = _iso(_now())
+    # Phase I.5 (2026-05-27) — derive `asker_role` at insert time so
+    # Card 4 decomposition is computed at read time without per-row
+    # membership lookups. Memberships lookup is best-effort and
+    # NEVER raises; defaults to "team" if anything goes wrong.
+    from services.open_questions.asker_role_map import derive_asker_role
+    asker_role = await derive_asker_role(me["id"], context_id)
     rec: Dict[str, Any] = {
         "id": str(uuid.uuid4()),
         "context_id": context_id,
@@ -122,6 +128,7 @@ async def raise_question(
         "agenda_item_id": body.agenda_item_id,
         "text": body.text.strip(),
         "asked_by_account_id": me["id"],
+        "asker_role": asker_role,
         "asked_at": now_iso,
         "assignee_account_id": body.assignee_account_id,
         "status": "open",

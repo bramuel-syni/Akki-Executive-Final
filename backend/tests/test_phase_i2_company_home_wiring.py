@@ -262,9 +262,13 @@ async def test_i2_attention_returns_all_five_cards_with_seeded_counts(i2_actor):
     assert "critical" in body["pulse"]["subtext"]
     assert "opportunit" in body["pulse"]["subtext"]
 
-    # Questions: 2 open.
+    # Questions: 2 open. Phase I.5 (2026-05-27) — these 2 fixture rows
+    # have no `asker_role` / no `asked_by_account_id`, so they fall to
+    # the conservative-default team bucket per I.5 E2=a. Subtext is
+    # now the decomposition, not "Awaiting clarification".
     assert body["questions"]["count"] == 2
-    assert body["questions"]["subtext"] == "Awaiting clarification"
+    assert body["questions"]["subtext"] == "2 from team"
+    assert body["questions"]["decomposition"] == {"board": 0, "ceo": 0, "team": 2}
 
     # Events: hardcoded 0 + empty state.
     assert body["events"]["count"] == 0
@@ -285,30 +289,62 @@ def _strip_py_strings_and_comments(src: str) -> str:
     return src
 
 
-def test_i2_questions_card_does_not_pre_wire_asker_role_decomposition():
-    src = _strip_py_strings_and_comments(_read(ROUTER))
-    # I.5 will add asker-role splitting like "X from board · Y from
-    # CEO · Z from team". I.2 must NOT pre-wire this in executable code.
-    for forbidden in (
-        "asker_role",
-        "from board",
-        "from CEO",
-        "from team",
-    ):
-        assert forbidden not in src, (
-            f"`{forbidden}` is I.5 scope — must not appear in the "
-            "I.2 company_home router (executable code)."
-        )
-    # The frontend rendering must use the count-only act-now prompt,
-    # not a decomposition. (JSX has its own comment-strip semantics —
-    # we keep this check coarse since the JSX docstrings here are
-    # JS-style /* … */ which never carry these tokens.)
+def test_i2_questions_card_uses_asker_role_decomposition_post_i5():
+    """Phase I.2 originally locked OUT asker-role decomposition (Card 4
+    was count-only with subtext "Awaiting clarification"). Phase I.5
+    (2026-05-27) LANDED the decomposition — this guard now flips from
+    negative ('decomposition must NOT appear') to positive ('the
+    contract IS present and matches the I.5 shape').
+
+    Institutional memory: the invariant's intent has evolved. I.5
+    decided 2026-05-27 (E6=confirm) that this test rewrite is part of
+    the I.5 dispatch — the I.2 guard kept us honest mid-flight; I.5
+    locks the positive contract going forward.
+
+    The positive guard asserts (against `routers/company_home.py`):
+      • A `QuestionsDecomposition` shape with `board / ceo / team` fields
+      • The aggregation queries `db.cycle_questions.aggregate` over
+        `asker_role` (NOT a simple count_documents call)
+      • Subtext formatting comes from
+        `services.open_questions.asker_role_map.format_decomposition_subtext`
+      • The old count-only subtext literal "Awaiting clarification" is
+        GONE from the router source (replaced by formatter call)
+    """
+    src = _read(ROUTER)
+    src_code = _strip_py_strings_and_comments(src)
+
+    # Positive: decomposition model + aggregation present
+    assert "class QuestionsDecomposition" in src, (
+        "I.5 must expose the QuestionsDecomposition Pydantic model."
+    )
+    assert "decomposition" in src_code, (
+        "I.5 router must wire `decomposition` into the questions card."
+    )
+    assert ".aggregate(" in src_code, (
+        "I.5 must use Mongo `aggregate` to group by asker_role — a "
+        "simple count_documents does not yield the bucket split."
+    )
+    assert "asker_role" in src_code, (
+        "I.5 must reference `asker_role` in the company_home router."
+    )
+
+    # Negative regression: the old "Awaiting clarification" literal
+    # must not survive — its replacement is the decomposition string.
+    assert "Awaiting clarification" not in src, (
+        "I.5 should remove the count-only `Awaiting clarification` "
+        "subtext — it was the I.2 placeholder. Decomposition replaces it."
+    )
+
+    # Frontend: CompanyHome reads subtext as a free-form string, so
+    # we don't need to assert the bucket labels are in JSX. We DO
+    # confirm the surface still renders a subtext element (DOM
+    # contract preserved).
     fe = _read(COMPANY_HOME)
-    for forbidden in ("from board", "from CEO", "from team"):
-        assert forbidden not in fe, (
-            f"`{forbidden}` is I.5 scope — must not appear in "
-            "CompanyHome.jsx I.2 wiring."
-        )
+    assert "company-home-attention-${card.id}-subtext" in fe \
+        or "company-home-attention-" in fe, (
+        "CompanyHome.jsx subtext data-testid pattern must remain — "
+        "the new I.5 subtext flows through the same element."
+    )
 
 
 # ── T5. Events card never falls back to tasks collection ────────

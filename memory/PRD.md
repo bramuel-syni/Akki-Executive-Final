@@ -1,6 +1,89 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase I.5 — Open Questions wiring (Card 4 asker-role decomposition) — 2026-05-27 ✅
+Card 4 on CompanyHome ("Open questions") evolves from count-only with
+the placeholder subtext "Awaiting clarification" to a 3-bucket
+decomposition: **"X from board · Y from CEO · Z from team"**.
+
+- **Asker-role taxonomy locked** to 3 buckets (`board / ceo / team`).
+  Derivation source is `db.memberships(account_id, context_id).role`
+  — the canonical context-scoped role truth source. (Cross-check at
+  I.5 brief established that `cycles.team[]` does not exist in live
+  data — escalation E1=a locked memberships as the substitute.)
+  Mapping: `ned → board · owner → board · executive → ceo ·
+  (member not found or future-role) → team` (conservative default).
+- **Schema extension** — `cycle_questions` gains
+  `asker_role: "board" | "ceo" | "team"`. No new collection.
+  Absence-default behaviour: legacy rows without `asker_role` count
+  into the `team` bucket via the endpoint's None-bucket fallback —
+  decomposition sum always equals total count.
+- **Insert-time hook** — `routers/questions.py::raise_question` calls
+  `derive_asker_role(account_id, context_id)` on every POST and
+  writes the bucket to the row. ONE insertion point (the only writer
+  to `db.cycle_questions` per E5 confirmation).
+- **One-shot backfill script** —
+  `backend/scripts/backfill_asker_role.py`. Idempotent:
+  `{asker_role: {$exists: False}} OR {asker_role: None}` query, derives
+  per-row, writes. **Production run:** 1010/1010 backfilled →
+  **584 team** (legacy no-asker rows), **426 board** (ned/owner
+  askers), **0 ceo** (no executive askers in seed data). Re-run found
+  0 → idempotency proven.
+- **Endpoint extension** —
+  `routers/company_home.py::_build_questions` swaps the
+  `count_documents` call for a Mongo `aggregate` grouped by
+  `asker_role`. New `QuestionsDecomposition` Pydantic model
+  (`board / ceo / team` int fields) is included in the Card 4
+  response shape. Subtext rendering moves to
+  `services.open_questions.asker_role_map.format_decomposition_subtext`
+  (pure function, fully unit-testable). Subtext rules: empty/all-zero
+  → `"Nothing open."`; single non-zero → `"3 from CEO"`; mixed →
+  `"1 from board · 2 from CEO · 4 from team"` (zero segments omitted).
+- **Frontend** — ZERO code change. CompanyHome.jsx already reads the
+  subtext as a free-form string through
+  `data-testid="company-home-attention-questions-subtext"`. The new
+  decomposition string flows automatically.
+- **I.2 negative invariant FLIPPED → positive guard.** The original
+  Phase I.2 guard
+  (`test_i2_questions_card_does_not_pre_wire_asker_role_decomposition`)
+  locked OUT the decomposition during I.2's count-only era. Phase I.5
+  locks it IN. Renamed to
+  `test_i2_questions_card_uses_asker_role_decomposition_post_i5` and
+  now asserts: `QuestionsDecomposition` shape present, `aggregate`
+  used (not `count_documents`), `asker_role` referenced in router,
+  old `"Awaiting clarification"` literal GONE. Institutional memory:
+  the invariant's intent has EVOLVED. Captured verbatim in
+  PHASE_LEDGER I.5 row NOTES.
+- **CI guard** `tests/test_phase_i5_open_questions.py` — **12 tests:**
+  M1-M2 pure role-bucket mapper (NED/owner→board, executive→CEO,
+  unknown/None→team, case-insensitive); M3-M5 subtext formatter
+  (empty / single-bucket-omit-zeros / mixed-buckets-in-locked-order);
+  D1-D3 DB-touching deriver via memberships (resolves correctly +
+  missing-account → team + missing-membership → team); E1-E2 Card 4
+  endpoint decomposition shape + sum-to-count invariant + populated
+  subtext format; E3 empty-state subtext; E4 legacy rows without
+  asker_role count in team bucket (absence-default lock); H1
+  raise_question POST writes derived asker_role; B1 backfill
+  idempotency; N1 source-strict no-`cycles.team[]`-references
+  negative invariant.
+- **Test ledger** — I.5 12/12 GREEN. I.2 (post-flip) 11/11 GREEN.
+  Broader regression sweep (`test_phase_i*.py + test_phase_n*.py +
+  test_phase_h*.py`) = **140 passed / 13 skipped** (skips pre-
+  existing Patch 19 Solva session fixture).
+- **Live verification** (Julius @ Personal NED Seat) — Card 4 EMPTY:
+  `{count:0, subtext:"Nothing open.", decomposition:{board:0, ceo:0,
+  team:0}}`. POST as Julius (ned member) → asker_role derived as
+  `"board"` ✓ H1 hook live. DB-seeded 2 drafts (ceo + team) to
+  populate full decomposition. Card 4 verbatim: `{count:3,
+  subtext:"1 from board · 1 from CEO · 1 from team",
+  decomposition:{board:1, ceo:1, team:1}}`. **Playwright DOM probe**
+  on subtext testid renders exact string. **Resolve walkthrough**
+  (board question → status="answered") → Card 4 correctly updates
+  to `{count:2, subtext:"1 from CEO · 1 from team",
+  decomposition:{board:0, ceo:1, team:1}}` — board=0 segment
+  correctly omitted from subtext per formatter contract. Test
+  seeds cleaned up.
+
 ### Phase I.4.b — Events: document-extraction LLM scan — 2026-05-27 ✅
 Builds on I.4.a's `events` collection. LLM scans uploaded board packs /
 briefings / cycle compilations / strategy docs, extracts time-bound

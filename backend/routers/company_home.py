@@ -138,9 +138,18 @@ class CardPulse(BaseModel):
     opportunities: int
 
 
+class QuestionsDecomposition(BaseModel):
+    board: int
+    ceo:   int
+    team:  int
+
+
 class CardQuestions(BaseModel):
     count: int
     subtext: str
+    # Phase I.5 (2026-05-27) — bucket counts that sum to `count`. Drives
+    # the subtext "X from board · Y from CEO · Z from team".
+    decomposition: QuestionsDecomposition
 
 
 class CardEvents(BaseModel):
@@ -261,16 +270,42 @@ async def _build_pulse(cid: str) -> CardPulse:
 
 
 async def _build_questions(cid: str) -> CardQuestions:
-    """Open `cycle_questions`. I.2 surfaces COUNT only — the asker-
-    role decomposition ("X from board · Y from CEO · Z from team")
-    lands in I.5 once the `asker_role` field is added to the
-    cycle_questions schema. Do NOT pre-wire that here."""
-    count = await db.cycle_questions.count_documents({
-        "context_id": cid,
-        "status": "open",
-    })
-    subtext = "Nothing open." if count == 0 else "Awaiting clarification"
-    return CardQuestions(count=count, subtext=subtext)
+    """Open `cycle_questions` for this context, decomposed by `asker_role`.
+
+    Phase I.5 (2026-05-27) — Card 4 surfaces both a total count AND
+    a per-bucket decomposition driving the new subtext format:
+        "X from board · Y from CEO · Z from team"
+    Zero segments are omitted from the subtext. count == 0 → "Nothing open."
+
+    Asker-role taxonomy locked to 3 buckets: board / ceo / team. See
+    `services.open_questions.asker_role_map` for derivation rules.
+    Legacy questions without `asker_role` (backfilled to 'team' per
+    I.5 E2=a) are still bucketed correctly.
+    """
+    from services.open_questions.asker_role_map import (
+        ASKER_ROLE_BOARD, ASKER_ROLE_CEO, ASKER_ROLE_TEAM,
+        format_decomposition_subtext,
+    )
+    pipeline = [
+        {"$match": {"context_id": cid, "status": "open"}},
+        {"$group": {"_id": "$asker_role", "n": {"$sum": 1}}},
+    ]
+    raw = await db.cycle_questions.aggregate(pipeline).to_list(length=None)
+    decomp = {ASKER_ROLE_BOARD: 0, ASKER_ROLE_CEO: 0, ASKER_ROLE_TEAM: 0}
+    for r in raw:
+        bucket = r.get("_id")
+        n = int(r.get("n") or 0)
+        # None / unknown / missing → 'team' (E2=a conservative default).
+        if bucket not in decomp:
+            decomp[ASKER_ROLE_TEAM] += n
+        else:
+            decomp[bucket] += n
+    count = decomp[ASKER_ROLE_BOARD] + decomp[ASKER_ROLE_CEO] + decomp[ASKER_ROLE_TEAM]
+    subtext = format_decomposition_subtext(decomp)
+    return CardQuestions(
+        count=count, subtext=subtext,
+        decomposition=QuestionsDecomposition(**decomp),
+    )
 
 
 async def _build_events(cid: str) -> CardEvents:
