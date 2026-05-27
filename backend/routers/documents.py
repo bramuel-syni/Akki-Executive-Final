@@ -84,6 +84,134 @@ def sanitize_doc(d: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+
+def _render_structured_content(sc: Any) -> str:
+    """Best-effort: flatten a work_studio_exports `structured_content`
+    payload into a plain-text rendering for the Drawer's extracted_text
+    pane. Handles the common shapes the exporter produces (dict with
+    sections, list of blocks, plain string). Synthesis is read-only —
+    the source row is never mutated."""
+    if sc is None:
+        return ""
+    if isinstance(sc, str):
+        return sc
+    if isinstance(sc, list):
+        return "\n\n".join(_render_structured_content(x) for x in sc if x)
+    if isinstance(sc, dict):
+        # Common exporter shape: { sections: [{heading, body|paragraphs}, ...] }
+        parts: List[str] = []
+        title = sc.get("title") or sc.get("heading")
+        if isinstance(title, str) and title.strip():
+            parts.append(title.strip())
+        for section in (sc.get("sections") or []):
+            if isinstance(section, dict):
+                h = section.get("heading") or section.get("title")
+                if isinstance(h, str) and h.strip():
+                    parts.append(h.strip())
+                body = section.get("body") or section.get("text")
+                if isinstance(body, str) and body.strip():
+                    parts.append(body.strip())
+                paras = section.get("paragraphs")
+                if isinstance(paras, list):
+                    for p in paras:
+                        if isinstance(p, str) and p.strip():
+                            parts.append(p.strip())
+                        elif isinstance(p, dict) and isinstance(p.get("text"), str):
+                            parts.append(p["text"].strip())
+            elif isinstance(section, str) and section.strip():
+                parts.append(section.strip())
+        # Fallback for less-structured payloads.
+        for k in ("body", "text", "summary", "description", "executive_summary"):
+            v = sc.get(k)
+            if isinstance(v, str) and v.strip() and v.strip() not in parts:
+                parts.append(v.strip())
+        return "\n\n".join(parts)
+    return str(sc)
+
+
+def _synthesize_doc_from_export(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Bug #1 fix (2026-05-27) — when a work_studio_exports row is opened
+    via the canonical `?doc_id=` URL contract but has no corresponding
+    `documents` mirror, return a documents-shaped read-only payload so the
+    Universal Document Drawer renders the artefact without 404'ing.
+
+    The synthesized payload carries:
+    - `id` = the export's id (URL contract stable; subsequent endpoint
+      calls that don't apply to exports will 404 gracefully — out of
+      scope per the dispatch brief).
+    - `_synthesized_from = "work_studio_export"` marker for the frontend.
+    - `work_studio_export_id` = self-ref so the drawer can detect the
+      synthesis case alongside the existing "Continue-spawned" mirrors.
+    """
+    sc = row.get("structured_content")
+    intel = row.get("intelligence_report") if isinstance(row.get("intelligence_report"), dict) else None
+    kind = row.get("kind") or ""
+    output_format = row.get("output_format") or ""
+
+    # Title resolution: structured_content.title → intelligence_report.title
+    # → file_name (without ext) → "Brief"/"Deck"/etc. derived from kind.
+    title = None
+    if isinstance(sc, dict):
+        title = sc.get("title") or sc.get("heading")
+    if not title and intel:
+        title = intel.get("title")
+    if not title and row.get("file_name"):
+        try:
+            title = str(row["file_name"]).rsplit(".", 1)[0]
+        except Exception:
+            title = row.get("file_name")
+    if not title:
+        title = (kind or "artefact").replace("_", " ").strip().title() or "Untitled artefact"
+
+    body = _render_structured_content(sc)
+    fname = row.get("file_name") or (
+        f"{kind or 'artefact'}{('.' + output_format) if output_format else ''}"
+    )
+
+    lifecycle = (row.get("lifecycle_state") or "committed").lower()
+    state = "committed" if lifecycle in ("committed", "locked") else "draft"
+
+    return {
+        "id":               row["id"],
+        "context_id":       row["context_id"],
+        "name":             title,
+        "description":      row.get("description") or "",
+        "original_filename": fname,
+        "mime_type":        {
+                                "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                                "pdf":  "application/pdf",
+                            }.get(output_format, "application/octet-stream"),
+        "size_bytes":       row.get("description_chars", 0) + row.get("objective_chars", 0) + row.get("scope_chars", 0),
+        "status":           "extracted",
+        "preview":          (body or "")[:320],
+        "extracted_text":   body,
+        "extracted_chars":  len(body),
+        "data_trust":       "trusted",
+        "doc_type":         "work_studio_artefact",
+        "uploaded_by_email": row.get("account_id"),
+        "source_channel":   "work_studio_export",
+        # Phase E.3 fields — drives the Universal Drawer creation-mode.
+        "state":            state,
+        "origin":           "akki_generated",
+        "audience":         None,
+        "objective":        None,
+        "created_at":       row.get("created_at"),
+        "updated_at":       row.get("completed_at") or row.get("created_at"),
+        "committed_at":     row.get("completed_at") if state == "committed" else None,
+        # Sensitivity + Synisense fields the Drawer reads.
+        "sensitivity_band":  row.get("sensitivity_band"),
+        "sensitivity_score": None,
+        "sensitivity_label": (row.get("sensitivity_band") or "INTERNAL").upper() if row.get("sensitivity_band") else None,
+        "body_redacted":     None,
+        "synisense_version": 0,
+        # Provenance markers (Bug #1 fix).
+        "work_studio_export_id": row["id"],
+        "_synthesized_from":     "work_studio_export",
+    }
+
+
+
 class DocumentTrustUpdate(BaseModel):
     data_trust: Optional[Literal["trusted", "mixed", "weak"]] = None
     related_doc_id: Optional[str] = Field(
@@ -547,9 +675,39 @@ async def get_document_detail(
     context_id: str, doc_id: str,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
+    # Bug #1 fix (2026-05-27) — work_studio_exports.id vs documents.id
+    # mismatch. The Universal Document Drawer's ?doc_id= URL contract is
+    # called with both `documents.id` AND `work_studio_exports.id` (since
+    # Phase O routed Minutes/Deck/Report card opens through it). Only 18
+    # of 391 exports have a documents-mirror row (created by the
+    # "Continue in chat" flow at work_studio_export.py:941, back-ref via
+    # `documents.work_studio_export_id`). The other 373 have no mirror —
+    # opening their card 404'd with "Document not found". Resolver chain:
+    #
+    #   (1) Direct hit on documents.id (the original path).
+    #   (2) Reverse-lookup: documents.find_one({work_studio_export_id})
+    #       — handles "Continue-spawned" mirrors.
+    #   (3) Last resort: work_studio_exports.find_one({id}) + synthesize
+    #       a documents-shaped read-only payload so the drawer renders
+    #       the artefact without an underlying mirror row.
+    #
+    # Backfill of historical exports into `documents` is OUT_OF_SCOPE per
+    # the dispatch brief; step (3)'s synthesis keeps the existing data
+    # untouched.
     d = await db.documents.find_one(
         {"id": doc_id, "context_id": context_id}, {"_id": 0, "storage_key": 0}
     )
+    if not d:
+        d = await db.documents.find_one(
+            {"work_studio_export_id": doc_id, "context_id": context_id},
+            {"_id": 0, "storage_key": 0},
+        )
+    if not d:
+        export_row = await db.work_studio_exports.find_one(
+            {"id": doc_id, "context_id": context_id}, {"_id": 0},
+        )
+        if export_row:
+            d = _synthesize_doc_from_export(export_row)
     if not d:
         raise HTTPException(status_code=404, detail="Document not found")
     out = sanitize_doc(d)
@@ -570,6 +728,10 @@ async def get_document_detail(
         # state (draft/committed), objective (goal+context), origin
         # (akki_generated/upload/email_receipt), audience.
         "state", "objective", "origin", "audience",
+        # Bug #1 fix (2026-05-27) — surface the work_studio_export id +
+        # synthesis marker so the frontend can opt out of endpoints that
+        # don't apply to synthesised payloads (e.g. /intelligence).
+        "work_studio_export_id", "_synthesized_from",
     ):
         if k in d:
             out[k] = d[k]

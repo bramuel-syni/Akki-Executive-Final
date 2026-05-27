@@ -1,6 +1,54 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Bugfix dispatch (2026-05-27) — work_studio_exports resolver + RSS-feed swap ✅
+Two surgical fixes shipped as a single batch:
+
+**Bug #1 — `work_studio_exports.id` vs `documents.id` mismatch (Drawer "Document not found")**
+- Root cause: Phase O routed Minutes/Deck/Report card opens through the
+  universal `?doc_id=` URL contract, but `GET /api/contexts/{cid}/documents/{id}`
+  only looked in the `documents` collection. Only 18 of 391 exports
+  had a `documents` mirror (back-ref `documents.work_studio_export_id`,
+  created by the "Continue in chat" flow). The remaining 373 → 404.
+- Fix: resolver chain in `routers/documents.py::get_document_detail()`:
+  1. Direct `documents.id` lookup (original).
+  2. Reverse-lookup via `documents.work_studio_export_id` (for the 18
+     "Continue-spawned" mirrors).
+  3. Synthesise a documents-shaped read-only payload from the
+     `work_studio_exports` row (for the 373 without mirrors). New
+     `_synthesize_doc_from_export()` + `_render_structured_content()`
+     helpers. Synthesised payload carries `_synthesized_from =
+     "work_studio_export"` marker + `work_studio_export_id` self-ref.
+- Zero frontend changes. Zero schema migration. Zero endpoint contract
+  changes (the GET path now resolves a superset of ids).
+- CI: 5 tests (B1a-e) GREEN. Full regression: 217 passed / 13 skipped.
+- Live DOM probe (admin@akki.ai → Lemasy Minutes tab): 3 export cards
+  opened via actual click, all 3 drawers mounted with full headers,
+  zero `drawer-load-error`, zero "Document not found".
+
+**Bug #2 — Quartz Africa + East African RSS 403s**
+- Both feeds disabled (`enabled: false` in `data/news_sources.json`).
+  Cloudflare blocks confirmed by probe.
+- Replacement: `capital-fm-business` (`https://www.capitalfm.co.ke/business/feed/`)
+  verified HTTP 200 + valid RSS + 10 items before commit.
+- Citizen Digital (specified in brief) has NO working RSS endpoint —
+  all variants 500 or HTML. Surfaced to user with proposed substitute
+  KBC Business (verified 200, 10 items) — awaiting greenlight.
+- CI: 5 tests (B2a-e) GREEN.
+
+**Lessons captured:**
+- The Phase O universal `?doc_id=` contract assumed all
+  "documents-shaped" opens lived in `documents`. Work Studio exports
+  are a parallel artefact collection. Future doc-open sources must
+  either (a) write a `documents` mirror, OR (b) the resolver chain
+  in `get_document_detail()` must learn about the new source.
+- News feed config now distinguishes "removed" (entry deleted) from
+  "disabled" (entry retained with `enabled:false` + explanatory `note`)
+  — disabled entries serve as institutional memory of which sources
+  to NOT re-add without resolving the underlying block.
+
+
+
 ### Phase J — Idle auto-logoff (30min) + JTI revocation — 2026-05-27 ✅
 Hardens authentication with two complementary mechanisms:
 

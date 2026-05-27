@@ -56,20 +56,23 @@
     { "id": "bbc-africa",           "name": "BBC News — Africa",             "url": "http://feeds.bbci.co.uk/news/world/africa/rss.xml",        "regions": ["AF", "KE", "UG", "TZ", "RW", "GLOBAL"], "enabled": true,
       "note": "Task 3 (2026-05-27) — Free, executive-grade African business + governance coverage."
     },
-    { "id": "quartz-africa",        "name": "Quartz Africa",                 "url": "https://qz.com/africa/rss",                                "regions": ["AF", "KE", "UG", "TZ", "RW", "GLOBAL"], "enabled": true,
-      "note": "Task 3 (2026-05-27) — Free pan-Africa business RSS. Curated by Atlantic Media's Africa team."
+    { "id": "quartz-africa",        "name": "Quartz Africa",                 "url": "https://qz.com/africa/rss",                                "regions": ["AF", "KE", "UG", "TZ", "RW", "GLOBAL"], "enabled": false,
+      "note": "Task 3 (2026-05-27) — Free pan-Africa business RSS. Curated by Atlantic Media's Africa team. DISABLED 2026-05-27 — Cloudflare 403 on all fetches from the pod. Re-enable only after the operator wires a scraper/header-spoofing path; otherwise this entry silently inflates the tier-1 set without contributing items."
     },
     { "id": "businessdaily-africa", "name": "Business Daily Africa (Nairobi)", "url": "https://www.businessdailyafrica.com/bd/rss.xml",         "regions": ["KE", "AF"],             "enabled": true,
       "note": "Task 3 — Nairobi-headquartered business daily. NMG-owned. Primary KE executive readership."
     },
-    { "id": "the-east-african",     "name": "The East African",              "url": "https://www.theeastafrican.co.ke/tea/rss-feed",            "regions": ["KE", "UG", "TZ", "RW", "AF"], "enabled": true,
-      "note": "Task 3 — Nairobi-based weekly covering EAC integration. NMG-owned. RSS path tested 2026-05; if upstream changes, set enabled:false."
+    { "id": "the-east-african",     "name": "The East African",              "url": "https://www.theeastafrican.co.ke/tea/rss-feed",            "regions": ["KE", "UG", "TZ", "RW", "AF"], "enabled": false,
+      "note": "Task 3 — Nairobi-based weekly covering EAC integration. NMG-owned. DISABLED 2026-05-27 — Cloudflare 403 on all fetches from the pod. Re-enable only after the operator wires a scraper/header-spoofing path."
     },
     { "id": "nation-africa",        "name": "Nation Africa (Daily Nation)",  "url": "https://nation.africa/kenya/rss-business-1948940",        "regions": ["KE", "AF"],             "enabled": true,
       "note": "Task 3 — Kenya's largest daily, NMG-owned. Business section RSS."
     },
     { "id": "standard-kenya",       "name": "The Standard (Kenya)",          "url": "https://www.standardmedia.co.ke/rss/business.php",         "regions": ["KE", "AF"],             "enabled": true,
       "note": "Task 3 — Standard Group business RSS. Free."
+    },
+    { "id": "capital-fm-business",  "name": "Capital FM Business (Nairobi)", "url": "https://www.capitalfm.co.ke/business/feed/",               "regions": ["KE", "AF"],             "enabled": true,
+      "note": "Bug fix (2026-05-27) — Replacement for the disabled quartz-africa + the-east-african feeds. Verified HTTP 200 + valid RSS (10 items, application/rss+xml, ~44KB) on a single probe fetch from inside the pod before commit. Capital Group's Nairobi business desk."
     }
   ]
 }
