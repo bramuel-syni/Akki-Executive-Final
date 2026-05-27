@@ -346,7 +346,13 @@ def test_i4a_events_page_mounts_required_elements():
     assert 'data-testid="events-eyebrow"' in src
     assert 'data-testid="events-h1"' in src
     assert "Upcoming on the calendar." in src
-    assert "Manual entries." in src
+    # Phase I.4.c (2026-05-27) — subtitle evolved from "Manual entries.
+    # Document extraction and calendar sync land in later phases." to a
+    # tri-source description ("Manual entries, AI-extracted dates, and
+    # your connected calendar — in one place.") now that I.4.b/.c shipped.
+    # The "Manual entries" prefix is preserved as the institutional anchor
+    # — fall through either old or new form.
+    assert "Manual entries" in src
     # Tabs
     for t in ("upcoming", "past", "all"):
         assert f'data-testid="events-tab-{t}"' in src

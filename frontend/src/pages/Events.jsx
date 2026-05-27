@@ -25,7 +25,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import AppShell from "@/components/layout/AppShell";
 import {
   Calendar, Plus, ArrowLeft, MapPin, Edit3, Trash2, X, ChevronRight,
-  CheckCircle2, FileText, Sparkles,
+  CheckCircle2, FileText, Sparkles, Link2, RefreshCw, AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -272,7 +272,7 @@ function EventModal({ open, mode, event, onSave, onDelete, onClose }) {
 /* ─────────────────────────────────────────────────────────────────── */
 
 export default function Events() {
-  const [params] = useSearchParams();
+  const [params, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { activeContext } = useAuth();
   const cid = params.get("context_id") || activeContext?.id;
@@ -283,6 +283,72 @@ export default function Events() {
   const [modalOpen,  setModalOpen]  = useState(false);
   const [modalMode,  setModalMode]  = useState("create"); // create | edit
   const [editTarget, setEditTarget] = useState(null);
+
+  // Phase I.4.c (2026-05-27) — Calendar sync state (Google leg only).
+  const [calendarStatus, setCalendarStatus] = useState(null);   // null=loading, {connected:bool,...}
+  const [syncing,        setSyncing]        = useState(false);
+  const [disconnecting,  setDisconnecting]  = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+
+  const loadCalendarStatus = useCallback(async () => {
+    if (!cid) return;
+    try {
+      const { data } = await api.get(`/contexts/${cid}/oauth/calendar/status`);
+      setCalendarStatus(data);
+    } catch {
+      setCalendarStatus({ connected: false });
+    }
+  }, [cid]);
+
+  // Trigger an explicit sync (called by "Sync now" + auto-fired once
+  // when the OAuth callback redirects with ?calendar_connected=google).
+  const triggerSync = useCallback(async () => {
+    if (!cid) return null;
+    setSyncing(true);
+    try {
+      const { data } = await api.post(
+        `/contexts/${cid}/events/sync-calendar?provider=google`,
+      );
+      await Promise.all([loadCalendarStatus(), reload()]);
+      return data;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[Events] calendar sync failed:", err?.response?.data?.detail || err?.message);
+      await loadCalendarStatus();
+      return null;
+    } finally {
+      setSyncing(false);
+    }
+  // reload is defined below — declared as a let-then-assigned-by-useCallback
+  // pattern would be cleaner but we keep this dependency list permissive.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cid, loadCalendarStatus]);
+
+  const connectGoogle = useCallback(async () => {
+    if (!cid) return;
+    try {
+      const { data } = await api.get(`/oauth/google/connect?context_id=${cid}`);
+      if (data?.authorize_url) window.location.href = data.authorize_url;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[Events] google connect failed:", err?.message);
+    }
+  }, [cid]);
+
+  const disconnectGoogle = useCallback(async () => {
+    if (!cid) return;
+    setDisconnecting(true);
+    try {
+      await api.post(`/contexts/${cid}/oauth/google/disconnect`);
+      await loadCalendarStatus();
+      setConfirmDisconnect(false);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[Events] google disconnect failed:", err?.message);
+    } finally {
+      setDisconnecting(false);
+    }
+  }, [cid, loadCalendarStatus]);
 
   const reload = useCallback(async () => {
     if (!cid) return;
@@ -306,6 +372,21 @@ export default function Events() {
   }, [cid]);
 
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { loadCalendarStatus(); }, [loadCalendarStatus]);
+
+  // Phase I.4.c (2026-05-27) — Auto-sync once when the OAuth callback
+  // redirects with ?calendar_connected=google. Then strip the param.
+  useEffect(() => {
+    const flag = params.get("calendar_connected");
+    if (flag !== "google" || !cid) return;
+    (async () => {
+      await triggerSync();
+      const sp = new URLSearchParams(params);
+      sp.delete("calendar_connected");
+      setSearchParams(sp, { replace: true });
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, cid]);
 
   const now = useMemo(() => Date.now(), []);
   // Confirmed (non-draft) events power upcoming/past/all tabs.
@@ -387,8 +468,18 @@ export default function Events() {
           Upcoming on the calendar.
         </h1>
         <p className="text-[13.5px] text-[var(--muted)] mb-6">
-          Manual entries. Document extraction and calendar sync land in later phases.
+          Manual entries, AI-extracted dates, and your connected calendar — in one place.
         </p>
+
+        {/* Phase I.4.c (2026-05-27) — Calendar sync banner (Google leg).
+            States: not-connected | connected-ok | auth-expired | syncing. */}
+        <CalendarSyncBanner
+          status={calendarStatus}
+          syncing={syncing}
+          onConnect={connectGoogle}
+          onSyncNow={triggerSync}
+          onAskDisconnect={() => setConfirmDisconnect(true)}
+        />
 
         {/* Tabs + Add button */}
         <div className="flex items-center justify-between mb-5">
@@ -578,6 +669,16 @@ export default function Events() {
                         <span className="text-[10px] uppercase tracking-[0.1em] font-mono text-[var(--muted)] border border-[var(--rule)] rounded-sm px-1.5 py-[1px] shrink-0">
                           {EVENT_TYPE_LABEL[ev.type] || ev.type}
                         </span>
+                        {ev.source === "calendar_sync" && (
+                          <span
+                            className="text-[var(--muted)] shrink-0"
+                            title="Synced from Google Calendar"
+                            data-testid={`events-row-source-calendar-${ev.id}`}
+                            aria-label="Synced from Google Calendar"
+                          >
+                            <Calendar className="w-3 h-3" strokeWidth={1.7} aria-hidden="true" />
+                          </span>
+                        )}
                       </div>
                       <p className="text-[12.5px] text-[var(--muted)]">{fmtDateTime(ev.start_at)}{ev.end_at ? ` → ${fmtDateTime(ev.end_at)}` : ""}</p>
                       {ev.location && (
@@ -605,7 +706,165 @@ export default function Events() {
           onDelete={handleDelete}
           onClose={() => setModalOpen(false)}
         />
+
+        {/* Phase I.4.c — Disconnect confirmation modal. */}
+        {confirmDisconnect && (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" data-testid="calendar-disconnect-modal">
+            <div className="bg-white border border-[var(--rule)] rounded-md max-w-md w-full p-6">
+              <p className="text-[15.5px] text-[var(--ink)] font-medium mb-2">
+                Disconnect Google Calendar?
+              </p>
+              <p className="text-[13px] text-[var(--muted)] mb-5">
+                Synced events will remain on the Events page but won't update with future calendar changes. You can reconnect any time.
+              </p>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDisconnect(false)}
+                  className="px-3 py-1.5 text-[12.5px] uppercase tracking-[0.1em] font-mono text-[var(--muted)] hover:text-[var(--ink)] rounded-sm"
+                  data-testid="calendar-disconnect-cancel"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={disconnectGoogle}
+                  disabled={disconnecting}
+                  className="px-3 py-1.5 text-[12.5px] uppercase tracking-[0.1em] font-mono bg-[var(--ink)] text-white rounded-sm hover:opacity-90 disabled:opacity-50"
+                  data-testid="calendar-disconnect-confirm"
+                >
+                  {disconnecting ? "Disconnecting…" : "Disconnect"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AppShell>
+  );
+}
+
+
+/* ─────────────────────────────────────────────────────────────────── */
+/* Calendar Sync Banner — Phase I.4.c (Google leg, 2026-05-27)          */
+/* ─────────────────────────────────────────────────────────────────── */
+
+function _relativeTime(iso) {
+  if (!iso) return "—";
+  try {
+    const then = new Date(iso).getTime();
+    const diff = Math.max(0, Date.now() - then);
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d ago`;
+  } catch { return "—"; }
+}
+
+function CalendarSyncBanner({ status, syncing, onConnect, onSyncNow, onAskDisconnect }) {
+  // Loading
+  if (!status) {
+    return (
+      <div
+        className="mb-5 flex items-center gap-2 text-[12px] text-[var(--muted)] italic"
+        data-testid="calendar-banner-loading"
+      >
+        <Calendar className="w-3.5 h-3.5" strokeWidth={1.7} aria-hidden="true" />
+        Checking calendar connection…
+      </div>
+    );
+  }
+
+  // Not connected
+  if (!status.connected) {
+    return (
+      <div
+        className="mb-5 flex items-center justify-between gap-4 bg-white border border-dashed border-[var(--rule)] rounded-md px-4 py-3"
+        data-testid="calendar-banner-disconnected"
+      >
+        <div className="flex items-center gap-2.5">
+          <Calendar className="w-4 h-4 text-[var(--muted)]" strokeWidth={1.7} />
+          <p className="text-[13px] text-[var(--ink)]">
+            <span className="font-medium">Sync your calendar.</span>{" "}
+            <span className="text-[var(--muted)]">Pull upcoming meetings, audits and deadlines straight in.</span>
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onConnect}
+          className="text-[11.5px] uppercase tracking-[0.1em] font-mono inline-flex items-center gap-1.5 bg-[var(--ink)] text-white rounded-sm px-3 py-1.5 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50"
+          data-testid="calendar-connect-google"
+        >
+          <Link2 className="w-3.5 h-3.5" strokeWidth={1.8} aria-hidden="true" />
+          Connect Google Calendar
+        </button>
+      </div>
+    );
+  }
+
+  // Auth expired
+  if (status.last_sync_status === "auth_expired") {
+    return (
+      <div
+        className="mb-5 flex items-center justify-between gap-4 bg-amber-50 border border-amber-200 rounded-md px-4 py-3"
+        data-testid="calendar-banner-auth-expired"
+      >
+        <div className="flex items-center gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-amber-700" strokeWidth={1.7} />
+          <p className="text-[13px] text-amber-900">
+            <span className="font-medium">Connection expired.</span>{" "}
+            <span>Reconnect Google Calendar to keep syncing.</span>
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onConnect}
+          className="text-[11.5px] uppercase tracking-[0.1em] font-mono inline-flex items-center gap-1.5 bg-amber-900 text-white rounded-sm px-3 py-1.5 hover:opacity-90"
+          data-testid="calendar-reconnect-google"
+        >
+          <Link2 className="w-3.5 h-3.5" strokeWidth={1.8} aria-hidden="true" />
+          Reconnect
+        </button>
+      </div>
+    );
+  }
+
+  // Connected OK
+  return (
+    <div
+      className="mb-5 flex items-center justify-between gap-4 bg-white border border-[var(--rule)] rounded-md px-4 py-3"
+      data-testid="calendar-banner-connected"
+    >
+      <div className="flex items-center gap-2.5 min-w-0">
+        <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" strokeWidth={1.7} />
+        <p className="text-[13px] text-[var(--ink)] truncate">
+          <span className="font-medium">Connected to Google</span>
+          <span className="text-[var(--muted)]"> · {status.synced_count} event{status.synced_count === 1 ? "" : "s"} synced · Last: <span data-testid="calendar-last-sync-relative">{_relativeTime(status.last_sync_at)}</span></span>
+        </p>
+      </div>
+      <div className="flex items-center gap-3 shrink-0">
+        <button
+          type="button"
+          onClick={onSyncNow}
+          disabled={syncing}
+          className="text-[11.5px] uppercase tracking-[0.1em] font-mono inline-flex items-center gap-1.5 text-[var(--ink)] hover:opacity-80 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 rounded-sm px-1"
+          data-testid="calendar-sync-now"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} strokeWidth={1.8} aria-hidden="true" />
+          {syncing ? "Syncing…" : "Sync now"}
+        </button>
+        <button
+          type="button"
+          onClick={onAskDisconnect}
+          className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] underline-offset-2 hover:underline"
+          data-testid="calendar-disconnect"
+        >
+          Disconnect
+        </button>
+      </div>
+    </div>
   );
 }

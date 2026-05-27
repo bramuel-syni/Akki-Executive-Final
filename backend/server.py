@@ -67,6 +67,7 @@ from routers import admin_email_provider as admin_email_provider_router  # noqa:
 from routers import portfolio_data as portfolio_data_router  # noqa: E402
 from routers import company_home as company_home_router  # noqa: E402
 from routers import events as events_router  # noqa: E402
+from routers import oauth_google as oauth_google_router  # noqa: E402
 from routers import billing as billing_router  # noqa: E402
 # CLEANUP B2 (2026-05-26): plays_router archived — Plays surface ORPHAN
 # per PROVENANCE_TRACE_PLAYS_CYCLE.md. Router moved to
@@ -191,6 +192,7 @@ app.include_router(admin_email_provider_router.router)
 app.include_router(portfolio_data_router.router)
 app.include_router(company_home_router.router)
 app.include_router(events_router.router)
+app.include_router(oauth_google_router.router)
 app.include_router(billing_router.router)
 # CLEANUP B2 (2026-05-26): plays_router include removed — see archive note above.
 app.include_router(agenda_router.router)
@@ -576,6 +578,17 @@ async def on_startup():
     # entry surface. Compound index keys list-by-context queries
     # sorted by start_at (used by /api/contexts/{cid}/events).
     await db.events.create_index([("context_id", 1), ("start_at", 1)])
+    # Phase I.4.c (2026-05-27) — user_calendar_credentials index +
+    # init the OAuth token vault (Fernet key from env or auto-gen in non-prod).
+    await db.user_calendar_credentials.create_index(
+        [("user_id", 1), ("context_id", 1), ("provider", 1)],
+        unique=True, partialFilterExpression={"deleted_at": None},
+    )
+    try:
+        from services.crypto import token_vault as _vault
+        _vault.init_vault()
+    except Exception as _e:
+        logger.warning("[startup] token_vault init failed: %s", _e)
     await db.user_context_visits.create_index([("account_id", 1), ("context_id", 1)], unique=True)
     # Patch 5 — Monitor v2.
     await db.objectives.create_index("id", unique=True)

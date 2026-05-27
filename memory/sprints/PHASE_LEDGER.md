@@ -104,7 +104,7 @@ binary to expand scope. Do not ship strict-reading that misses user intent.
 ### Phase I follow-ons
 | Phase | Title | Notes |
 |---|---|---|
-| I.4.c | Events system — calendar sync | Google/Outlook calendar bi-directional sync (blocked on OAuth credentials) |
+| I.4.c (Microsoft) | Microsoft Graph (Outlook) calendar sync | Blocked on user-provided Microsoft Graph credentials. Architecture pre-built (`user_calendar_credentials.provider` field already accepts `"microsoft"`; `/sync-calendar?provider=…` is enum-gated). Implementation lands when creds arrive — same contract, sibling router `routers/oauth_microsoft.py`. |
 
 ### Compliance + hygiene queue
 | Phase | Title | Priority | Notes |
