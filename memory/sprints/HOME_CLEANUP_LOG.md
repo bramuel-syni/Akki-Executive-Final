@@ -2194,3 +2194,75 @@ the original F.3 fail report was a click-target mis-identification
 (my hypothesis) or whether there's a surface I haven't tested. If
 the tester repros the bug, please share the EXACT testid clicked +
 the URL before/after — I'll trace from there.
+
+## Right-rail layout regression + My Companies H1 (2026-05-26)
+
+Two surgical fixes after user-reported regressions on the live preview.
+
+### Right-rail layout — CompilationReadinessSection vertical stack mode
+
+The `READY TO COMPILE` and `AT RISK` cards were rendering side-by-side
+in the Task Manager right rail because the wrapper used
+`md:grid-cols-2` which triggers at viewport-relative breakpoint ≥768px
+(not container-relative). Inside the 340px right rail the two cards
+got placed in two columns.
+
+Fix: added an opt-in `layout` prop on `CompilationReadinessSection`
+that switches the wrapper class:
+
+- `layout="grid"` (default — preserves CycleList behavior unchanged)
+  → `mt-6 grid grid-cols-1 md:grid-cols-2 gap-4`
+- `layout="stack"` (Task Manager rail)
+  → `mt-6 flex flex-col gap-4`
+
+`TaskManager.jsx` passes `layout="stack"`. Card internals + dimensions
+unchanged. Wrapper exposes `data-layout` attribute for testability.
+
+Live Playwright bbox measurement:
+- ready-to-compile at (x=1220, y=266, w=340)
+- at-risk         at (x=1220, y=355, w=340)
+- follow-up-drafts at (x=1220, y=448, w=340)
+All 340px wide (rail-width parity), stacked vertically.
+
+### My Companies H1 — per-page 20% increase (28 → 34px)
+
+User-locked decision: increase the "My Companies" H1 in
+`pages/ContextPortfolio.jsx:265` by 20%. The canonical
+`.akki-greeting` design token (shared by 16 surfaces) MUST stay at
+28px — this is a per-page override only.
+
+Implementation: inline `style={{ fontSize: "34px" }}` on the H1
+plus the existing `akki-greeting` class for font-family/weight
+inheritance. Added stable `data-testid="portfolio-companies-h1"`.
+
+Route mapping clarification:
+- The user's menu item "Home" routes to `/app` → `AppHome` → `Home2`,
+  which has a different H1 (`{greeting}, {firstName}.`).
+- The "My Companies" H1 (target of this change) lives at
+  `/app/companies` (alias `/app/contexts`), rendered by
+  `ContextPortfolio.jsx`.
+
+Live `getComputedStyle` verification (Playwright):
+- TARGET — Portfolio H1 (`/app/companies`): **`'34px'`** ✓
+- CONTROL #1 — Pulse `h1.akki-greeting`: **`'28px'`** ✓ (token unchanged)
+- CONTROL #2 — Manage `h1.akki-greeting`: **`'28px'`** ✓ (token unchanged)
+
+Note: an initial attempt with Tailwind arbitrary `text-[34px]` was
+overridden by the `.akki-greeting` rule's `font-size: 28px` (source
+order in compiled CSS); switched to inline style which carries the
+maximum specificity.
+
+### Files touched
+
+| File | Change |
+| --- | --- |
+| `frontend/src/components/cycle/CompilationReadinessSection.jsx` | Added `layout` prop + conditional wrapper class. No internal card changes. |
+| `frontend/src/pages/TaskManager.jsx` | Passes `layout="stack"` to the rail invocation. |
+| `frontend/src/pages/ContextPortfolio.jsx` | Inline `fontSize: "34px"` + `data-testid="portfolio-companies-h1"` on the H1. |
+| `backend/tests/test_portfolio_h1_size_guard.py` (NEW, 16 tests) | T1 portfolio H1 carries 34px + testid; T2 (×14 parametrized peers) no per-instance override on `.akki-greeting`; T3 token still 28px in index.css. |
+
+### Suite pass count
+
+- `test_portfolio_h1_size_guard.py`: **16/16 GREEN**
+- Full home-cleanup + runtime-drawer + admin-health + tab-prefix guard suite: **355 passed, 1 skipped** (chromium binary not in pytest pod).
+

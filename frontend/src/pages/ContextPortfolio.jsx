@@ -262,7 +262,11 @@ export default function ContextPortfolio() {
           </p>
           <div className="flex items-end justify-between gap-6 flex-wrap">
             <div>
-              <h1 className="akki-greeting">Your boards & operating companies, {firstName}.</h1>
+              <h1
+                className="akki-greeting"
+                style={{ fontSize: "34px" }}
+                data-testid="portfolio-companies-h1"
+              >Your boards & operating companies, {firstName}.</h1>
               <p className="akki-meta mt-2 max-w-2xl">
                 Every company is isolated. Data, signals, members and briefings stay within each board. Open one to work in it.
               </p>
