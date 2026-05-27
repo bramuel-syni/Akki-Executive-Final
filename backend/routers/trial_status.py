@@ -30,8 +30,26 @@ from services.cohort.console import (
     TRIAL_TOTAL_DAYS,
 )
 from services.cohort.copy_overrides import (
-    get_slot_override, SLOT_FIELDS,
+    get_slot_override, SLOT_FIELDS, overlay_slot,
 )
+from services.cohort.special_ask import (
+    SPECIAL_ASK_TRIGGER_DAY,
+    get_or_mint_special_ask,
+    get_special_ask,
+    save_special_ask,
+)
+from services.cohort.feature_events import (
+    emit_feature_event,
+)
+
+
+# Phase R.5.b.2 (2026-05-27) — `feature_events` constants. These are
+# event-type strings the special-ask flow emits. NOT in the global
+# `KNOWN_EVENT_TYPES` set yet — added below at import time so the
+# funnel aggregator surfaces them.
+SPECIAL_ASK_SURFACED  = "special_ask.surfaced"
+SPECIAL_ASK_SUBMITTED = "special_ask.submitted"
+SPECIAL_ASK_DISMISSED = "special_ask.dismissed"
 
 
 log = logging.getLogger("akki.cohort.trial_status")
@@ -49,6 +67,24 @@ async def get_my_trial_status(
     trial_end_at   = account.get("trial_end_at")
     trial_status, day = _compute_trial_status(trial_start_at=trial_start_at)
     locked = (trial_status == "expired_hard_lock")
+
+    # Phase R.5.b.2 (2026-05-27) — day-14 special-ask trigger.
+    # On-read pattern: if day >= 14 and no row exists, mint one and
+    # surface the modal on next /app/ mount. The flag travels with
+    # the trial-status payload so the frontend never makes a 2nd RTT.
+    special_ask_surface = False
+    if not locked and day >= SPECIAL_ASK_TRIGGER_DAY:
+        try:
+            row = await get_or_mint_special_ask(
+                account_id=account["id"],
+                cohort_tag=account.get("cohort_tag"),
+                trial_day=day,
+            )
+            if row and row.get("status") == "pending":
+                special_ask_surface = True
+        except Exception:
+            pass
+
     return {
         "trial_day":            day,
         "trial_total_days":     TRIAL_TOTAL_DAYS,
@@ -59,6 +95,8 @@ async def get_my_trial_status(
         "soft_warning_at_day":  TRIAL_SOFT_WARNING_DAY,
         "hard_lock_at_day":     TRIAL_HARD_LOCK_DAY,
         "locked":               locked,
+        "special_ask_surface":  special_ask_surface,
+        "special_ask_at_day":   SPECIAL_ASK_TRIGGER_DAY,
     }
 
 
@@ -163,4 +201,107 @@ async def get_user_visible_copy(
     row = await get_slot_override(slot)
     values = {f: (row or {}).get(f) for f in SLOT_FIELDS.get(slot, [])}
     return {"slot": slot, "fields": list(SLOT_FIELDS.get(slot, [])), "values": values}
+
+
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Phase R.5.b.2 — Special-ask endpoints
+# ═════════════════════════════════════════════════════════════════════
+
+class SpecialAskIn(BaseModel):
+    referral_name:      Optional[str] = Field(default=None, max_length=200)
+    referral_email:     Optional[str] = Field(default=None, max_length=200)
+    case_study_consent: Optional[bool] = None
+    testimonial_text:   Optional[str] = Field(default=None, max_length=4000)
+
+
+@router.get("/special-ask")
+async def get_my_special_ask(
+    account: Dict[str, Any] = Depends(get_current_account),
+) -> Dict[str, Any]:
+    """Return the user's special-ask row (if any) + the founder-saved
+    `special_ask` copy slot overrides (or defaults). Frontend modal
+    reads this on first mount of the trigger."""
+    row = await get_special_ask(account_id=account["id"])
+    override_row = await get_slot_override("special_ask")
+    default_copy = {
+        "modal_heading": "Before you go — one ask.",
+        "modal_body":    "[FOUNDER: write 2-3 sentences in your voice asking for a referral name + email + (optional) case-study consent + (optional) testimonial. Edit before going live.]",
+        "email_subject": "A small ask, from one founder to another",
+        "email_body":    "[FOUNDER: write 3-4 sentences in your voice — same ask as the modal but for inbox. Edit before going live.]",
+    }
+    copy_values = overlay_slot(
+        default_payload=default_copy, override_row=override_row, slot="special_ask",
+    )
+    return {
+        "row":  row,
+        "copy": copy_values,
+        "trigger_at_day": SPECIAL_ASK_TRIGGER_DAY,
+    }
+
+
+@router.post("/special-ask")
+async def put_my_special_ask(
+    body: SpecialAskIn,
+    account: Dict[str, Any] = Depends(get_current_account),
+) -> Dict[str, Any]:
+    """Persist the user's submission. Status flips to `complete` only
+    when referral_name + referral_email are both filled; otherwise
+    `partial` (any other field filled) or `pending` (nothing)."""
+    row = await save_special_ask(
+        account_id=account["id"],
+        referral_name=body.referral_name,
+        referral_email=body.referral_email,
+        case_study_consent=body.case_study_consent,
+        testimonial_text=body.testimonial_text,
+    )
+    # Phase R.3 / R.5.b.2 — emit feature_event
+    try:
+        await emit_feature_event(
+            event_type=SPECIAL_ASK_SUBMITTED,
+            account_id=account["id"],
+            cohort_tag=account.get("cohort_tag"),
+            payload={"status": row.get("status"), "has_referral":
+                     bool(row.get("referral_name") and row.get("referral_email"))},
+        )
+    except Exception:
+        pass
+    return row
+
+
+@router.post("/special-ask/dismiss")
+async def dismiss_my_special_ask(
+    account: Dict[str, Any] = Depends(get_current_account),
+) -> Dict[str, Any]:
+    """`Remind me later` action. Does NOT change the row's status —
+    the modal will re-surface on the next session because the row
+    stays `pending`. Just emits the `special_ask.dismissed` event so
+    the cohort console can show "asked but dismissed" patterns."""
+    try:
+        await emit_feature_event(
+            event_type=SPECIAL_ASK_DISMISSED,
+            account_id=account["id"],
+            cohort_tag=account.get("cohort_tag"),
+        )
+    except Exception:
+        pass
+    return {"ok": True, "dismissed_at": datetime.now(timezone.utc).isoformat()}
+
+
+@router.post("/special-ask/surface-ack")
+async def ack_my_special_ask_surfaced(
+    account: Dict[str, Any] = Depends(get_current_account),
+) -> Dict[str, Any]:
+    """Frontend pings this on modal mount so the funnel records the
+    surfacing event exactly once per session."""
+    try:
+        await emit_feature_event(
+            event_type=SPECIAL_ASK_SURFACED,
+            account_id=account["id"],
+            cohort_tag=account.get("cohort_tag"),
+        )
+    except Exception:
+        pass
+    return {"ok": True}
 

@@ -38,6 +38,9 @@ import {
 import { toast } from "sonner";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import JudgementPanel from "@/components/cycle/JudgementPanel";
+// Phase L.b.2 (2026-05-27) — StreamingLogScene driver for the Compile step.
+import StreamingLogScene from "@/components/transitions/StreamingLogScene";
+import usePhasedTimer from "@/hooks/usePhasedTimer";
 import BoardSubmitPanel from "@/components/cycle/BoardSubmitPanel";
 import CycleBreadcrumb from "@/components/cycle/CycleBreadcrumb";
 import CycleStepNav from "@/components/cycle/CycleStepNav";
@@ -952,6 +955,10 @@ function CompilationStep({ cid, cycleId, cycle, onBack }) {
   const [out, setOut] = useState(null);
   const [progress, setProgress] = useState(null);
   const navigate = useNavigate();
+  // Phase L.b.2 (2026-05-27) — Streaming-log progress driver during
+  // the async compile. Walks the locked `task-manager-compile` script
+  // while the existing pollJob loop drives the job-queue worker.
+  const { state: lbState, start: lbStart, complete: lbComplete, error: lbError, reset: lbReset } = usePhasedTimer();
 
   // Blocker 2 (2026-05-25, backlog-b) — pre-populate `out` from the
   // backend's defensive linkage lookup so the DOCX/PDF/PPTX chips
@@ -975,6 +982,8 @@ function CompilationStep({ cid, cycleId, cycle, onBack }) {
 
   const compile = async () => {
     setBusy(true); setOut(null); setProgress(null);
+    lbReset();
+    lbStart("task-manager-compile", { stepMs: 9000 });
     try {
       // Chunk 2 (2026-05-13, CM-R04) — async pattern. The endpoint
       // returns 202 + { job_id } immediately. The two-pass LLM compile
@@ -990,11 +999,16 @@ function CompilationStep({ cid, cycleId, cycle, onBack }) {
         },
       });
       if (job.status === "failed") {
+        lbError("compilation_failed", job.error || "Compilation failed.");
         throw new Error(job.error || "Compilation failed.");
       }
       setOut(job.result || {});
+      lbComplete(job.result || {});
       toast.success("Compilation produced.");
-    } catch (e) { toast.error(apiErrorMessage(e)); }
+    } catch (e) {
+      lbError("compile_exception", apiErrorMessage(e));
+      toast.error(apiErrorMessage(e));
+    }
     finally { setBusy(false); setProgress(null); }
   };
 
@@ -1065,10 +1079,19 @@ function CompilationStep({ cid, cycleId, cycle, onBack }) {
             {busy ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileDown className="w-3.5 h-3.5 mr-1" />}
             {busy ? "Compiling…" : "Produce draft compilation"}
           </Button>
-          {busy && progress && (
-            <p className="akki-meta mt-3 text-[12px] text-[var(--muted)]" data-testid="cycle-compile-progress">
-              {progress} — you can keep working; this finishes in the background.
-            </p>
+          {busy && (
+            <div className="mt-4 max-w-md" data-testid="cycle-compile-progress">
+              <StreamingLogScene
+                surfaceId="streaming-log-task-manager-compile"
+                state={lbState}
+                emptyHint="Preparing the compile…"
+              />
+              {progress && (
+                <p className="akki-meta mt-2 text-[11px] text-[var(--muted)] font-mono">
+                  {progress} — you can keep working; this finishes in the background.
+                </p>
+              )}
+            </div>
           )}
         </>
       )}

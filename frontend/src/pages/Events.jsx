@@ -31,6 +31,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+// Phase L.b.2 (2026-05-27) — StreamingLogScene driver for the sync flow.
+import StreamingLogScene from "@/components/transitions/StreamingLogScene";
+import usePhasedTimer from "@/hooks/usePhasedTimer";
 
 
 const EVENT_TYPES = [
@@ -290,6 +293,9 @@ export default function Events() {
   const [disconnecting,  setDisconnecting]  = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
+  // Phase L.b.2 (2026-05-27) — Streaming-log driver for the sync flow.
+  const { state: lbState, start: lbStart, complete: lbComplete, error: lbError, reset: lbReset } = usePhasedTimer();
+
   const loadCalendarStatus = useCallback(async () => {
     if (!cid) return;
     try {
@@ -305,15 +311,19 @@ export default function Events() {
   const triggerSync = useCallback(async () => {
     if (!cid) return null;
     setSyncing(true);
+    lbReset();
+    lbStart("events-calendar-sync", { stepMs: 1100 });
     try {
       const { data } = await api.post(
         `/contexts/${cid}/events/sync-calendar?provider=google`,
       );
       await Promise.all([loadCalendarStatus(), reload()]);
+      lbComplete(data);
       return data;
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn("[Events] calendar sync failed:", err?.response?.data?.detail || err?.message);
+      lbError("calendar_sync_failed", err?.response?.data?.detail || err?.message || "Calendar sync failed.");
       await loadCalendarStatus();
       return null;
     } finally {
@@ -480,6 +490,22 @@ export default function Events() {
           onSyncNow={triggerSync}
           onAskDisconnect={() => setConfirmDisconnect(true)}
         />
+
+        {/* Phase L.b.2 (2026-05-27) — Streaming-log shown while a sync
+            is in flight. The banner shows the persistent state (connect /
+            connected / expired); this row shows live phase advancement. */}
+        {syncing && (
+          <div
+            className="mb-5 bg-white border border-[var(--rule)] rounded-md px-4 py-3 max-w-md"
+            data-testid="calendar-sync-streaming-row"
+          >
+            <StreamingLogScene
+              surfaceId="streaming-log-events-calendar-sync"
+              state={lbState}
+              emptyHint="Reaching Google Calendar…"
+            />
+          </div>
+        )}
 
         {/* Tabs + Add button */}
         <div className="flex items-center justify-between mb-5">

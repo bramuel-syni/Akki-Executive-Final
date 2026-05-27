@@ -36,6 +36,9 @@ from services.cohort.copy_overrides import (
     KNOWN_SLOTS, SLOT_FIELDS, slot_field_list,
     list_all_slots, save_slot_override, get_slot_override,
 )
+from services.cohort.special_ask import (
+    get_special_ask, aggregate_cohort_special_asks,
+)
 
 
 log = logging.getLogger("akki.cohort.admin")
@@ -376,11 +379,30 @@ async def cohort_account_drilldown(
     """Per-account activity drill-down for the cohort console.
 
     Returns the most recent `limit` feature_events for the account,
-    most-recent-first — the cohort console renders this as a
-    chronological timeline on row-click.
+    most-recent-first, ALONGSIDE the account's special-ask row (if any)
+    so the cohort console can render the special-ask status column
+    without a second RTT.
     """
     rows = await get_account_activity_timeline(account_id=account_id, limit=limit)
-    return {"account_id": account_id, "items": rows, "count": len(rows)}
+    special_ask_row = await get_special_ask(account_id=account_id)
+    return {
+        "account_id":   account_id,
+        "items":        rows,
+        "count":        len(rows),
+        "special_ask":  special_ask_row,
+    }
+
+
+@router.get("/console/special-asks")
+async def cohort_special_asks_aggregate(
+    cohort_tag: str = Query(...),
+    _admin: Dict[str, Any] = Depends(_require_superadmin),
+) -> Dict[str, Any]:
+    """Per-cohort special-ask aggregate for the cohort console
+    secondary panel: total_invitees, total_asks, status_counts +
+    complete_pct. Used to render the "X of N completed special-ask"
+    progress bar above the table."""
+    return await aggregate_cohort_special_asks(cohort_tag=cohort_tag)
 
 
 @router.get("/console/stages")

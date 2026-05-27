@@ -1,47 +1,42 @@
 /**
- * Synthesis preparation interstitial. Brief §4.2.
+ * Phase L.b.2 (2026-05-27) — Synthesis preparation interstitial.
  *
- * Single column. Centred message: "Putting this together."
- * Below it, three lines of subtle status text that update as each
- * reasoning model conceptually completes.
+ * The Solva session lands here after DEPTH_Q3 while the orchestrator
+ * runs the synthesis pass server-side. This component renders the
+ * locked Claude-reference `<StreamingLogScene>` walking the
+ * `solva-synthesis` 6-phase script via `usePhasedTimer`.
  *
  * No real progress data — the orchestrator runs synchronously on the
- * server. We rotate the lines on a 1.5s cadence (or instantly under
- * prefers-reduced-motion).
+ * server. The timer cadence is calibrated against observed synthesis
+ * latency (~8-12s) so the user sees natural phase advancement.
+ *
+ * When the parent dispatches `preparingDone`, the component unmounts;
+ * `usePhasedTimer` cleans up on unmount via its `useEffect` return.
+ *
+ * `prefers-reduced-motion` users: `StreamingLogScene` already honours
+ * reduced motion via the CSS keyframe + 200ms fade-in tokens.
  */
-import React, { useEffect, useState } from "react";
-import { TOKEN, FONT } from "./tokens";
-import usePrefersReducedMotion from "./usePrefersReducedMotion";
-
-const LINES = [
-  "Looking across what you've shared.",
-  "Checking against your evidence.",
-  "Composing the synthesis.",
-];
+import React, { useEffect } from "react";
+import StreamingLogScene from "@/components/transitions/StreamingLogScene";
+import usePhasedTimer from "@/hooks/usePhasedTimer";
+import { FONT, TOKEN } from "./tokens";
 
 export default function PreparingInterstitial({ testId = "solva-preparing" }) {
-  const reduced = usePrefersReducedMotion();
-  const [step, setStep] = useState(0);
+  const { state, start } = usePhasedTimer();
 
   useEffect(() => {
-    if (reduced) {
-      setStep(LINES.length - 1);
-      return undefined;
-    }
-    const id = setInterval(() => {
-      setStep((s) => Math.min(s + 1, LINES.length - 1));
-    }, 1500);
-    return () => clearInterval(id);
-  }, [reduced]);
+    start("solva-synthesis", { stepMs: 1500 });
+  }, [start]);
 
   return (
     <div
       data-testid={testId}
-      role="status"
-      aria-live="polite"
       style={{
-        textAlign: "center",
+        textAlign: "left",
+        maxWidth: 640,
+        margin: "0 auto",
         paddingTop: 60,
+        paddingInline: 24,
       }}
     >
       <div
@@ -49,28 +44,18 @@ export default function PreparingInterstitial({ testId = "solva-preparing" }) {
           fontFamily: FONT.GEORGIA,
           fontSize: 26,
           color: TOKEN.INK,
-          marginBottom: 32,
+          marginBottom: 28,
+          textAlign: "center",
         }}
       >
         Putting this together.
       </div>
 
-      {LINES.map((line, i) => (
-        <div
-          key={line}
-          aria-hidden={i > step}
-          style={{
-            fontFamily: FONT.CALIBRI,
-            fontSize: 14,
-            color: TOKEN.DEEP,
-            opacity: i <= step ? 1 : 0.18,
-            marginBottom: 8,
-            transition: reduced ? "none" : "opacity 200ms ease-out",
-          }}
-        >
-          {line}
-        </div>
-      ))}
+      <StreamingLogScene
+        surfaceId="streaming-log-solva-synthesis"
+        state={state}
+        emptyHint="Preparing..."
+      />
     </div>
   );
 }

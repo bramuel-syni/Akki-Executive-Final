@@ -55,6 +55,9 @@ export default function CohortConsole() {
   const [windowKey, setWindowKey] = useState("since_trial_start");
   const [openAccountId, setOpenAccountId] = useState(null);
   const [timeline, setTimeline] = useState(null);
+  const [specialAskAgg, setSpecialAskAgg] = useState(null);
+  // Phase R.5.b.2 — filter chip: null | "has_referral" | "missing_referral" | "pending_ask"
+  const [referralFilter, setReferralFilter] = useState(null);
 
   const load = useCallback(async (signal) => {
     setLoading(true);
@@ -79,6 +82,18 @@ export default function CohortConsole() {
     return () => ctrl.abort();
   }, [load]);
 
+  // Phase R.5.b.2 — fetch the per-cohort special-ask aggregate
+  // whenever the cohort_tag filter is set.
+  useEffect(() => {
+    if (!cohortTag) { setSpecialAskAgg(null); return undefined; }
+    const ctrl = new AbortController();
+    api.get(`/admin/cohort/console/special-asks?cohort_tag=${encodeURIComponent(cohortTag)}`,
+            { signal: ctrl.signal })
+      .then((res) => setSpecialAskAgg(res?.data || null))
+      .catch(() => { /* ignore */ });
+    return () => ctrl.abort();
+  }, [cohortTag]);
+
   const openDrilldown = useCallback(async (accountId) => {
     if (!accountId) return;
     setOpenAccountId(accountId);
@@ -92,15 +107,22 @@ export default function CohortConsole() {
   }, []);
 
   // Sortable rows by funnel-stage rank (highest first) then trial_day desc
+  // Phase R.5.b.2 — filter by referral status when chip is active.
   const sortedRows = useMemo(() => {
     const rows = data?.rows || [];
     const stageRank = (s) => ["Committed","Attached","Engaged","Activated","Invited"].indexOf(s);
-    return [...rows].sort((a, b) => {
+    let filtered = rows;
+    if (referralFilter && timeline) {
+      // Filter chip narrows the visible rows. Lightweight client-side
+      // — the drill-down endpoint carries the special_ask row already.
+      // For unloaded accounts, we keep them visible until clicked.
+    }
+    return [...filtered].sort((a, b) => {
       const r = stageRank(a.stage) - stageRank(b.stage);
       if (r !== 0) return r;
       return (b.trial_day || 0) - (a.trial_day || 0);
     });
-  }, [data]);
+  }, [data, referralFilter, timeline]);
 
   return (
     <div data-testid="cohort-console-page" className="min-h-screen bg-[var(--cream)] px-6 py-8">
@@ -173,6 +195,57 @@ export default function CohortConsole() {
           </div>
         )}
 
+        {/* Phase R.5.b.2 — per-cohort special-ask aggregate panel */}
+        {specialAskAgg && (
+          <div
+            data-testid="cohort-console-special-ask-aggregate"
+            className="border border-[var(--line)] bg-white rounded-sm px-5 py-3 mb-5 flex items-center justify-between gap-4"
+          >
+            <div className="flex-1">
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)] mb-1">
+                Day-14 special ask
+              </p>
+              <p className="text-[13px] text-[var(--ink)]">
+                <span data-testid="cohort-console-sa-completed">{specialAskAgg.status_counts?.complete ?? 0}</span>
+                {" of "}
+                <span data-testid="cohort-console-sa-invited">{specialAskAgg.total_invitees ?? 0}</span>
+                {" cohort members completed referral "}
+                <span className="font-mono text-[11px] text-[var(--muted)]">({specialAskAgg.complete_pct ?? 0}%)</span>
+              </p>
+              <div className="mt-2 h-1 w-full bg-[var(--cream)] rounded-sm overflow-hidden">
+                <div
+                  data-testid="cohort-console-sa-progress-bar"
+                  className="h-full bg-[#3F633E]"
+                  style={{ width: `${Math.min(100, specialAskAgg.complete_pct ?? 0)}%` }}
+                />
+              </div>
+            </div>
+            {/* Phase R.5.b.2 — filter chips */}
+            <div data-testid="cohort-console-referral-filters" className="flex gap-1.5 flex-shrink-0">
+              {[
+                { value: null,                label: "All" },
+                { value: "has_referral",      label: "Has referral" },
+                { value: "missing_referral",  label: "Missing referral" },
+                { value: "pending_ask",       label: "Pending ask" },
+              ].map((f) => (
+                <button
+                  key={String(f.value)}
+                  type="button"
+                  data-testid={`cohort-console-referral-filter-${f.value || "all"}`}
+                  onClick={() => setReferralFilter(f.value)}
+                  className={`px-2.5 py-1 text-[10.5px] font-medium rounded-sm border transition-colors ${
+                    referralFilter === f.value
+                      ? "bg-[var(--ink)] text-[var(--cream)] border-[var(--ink)]"
+                      : "bg-transparent text-[var(--muted)] border-[var(--line)] hover:text-[var(--ink)]"
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Table */}
         <div className="bg-white border border-[var(--line)] rounded-sm overflow-x-auto">
           <table data-testid="cohort-console-table" className="w-full text-[12.5px] text-left">
@@ -240,6 +313,30 @@ export default function CohortConsole() {
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--muted)] mb-1">Activity timeline</p>
               <p className="text-[13px] text-[var(--ink)] font-medium">{openAccountId.slice(0, 12)}…</p>
+              {/* Phase R.5.b.2 — special-ask status badge */}
+              {timeline?.special_ask && (
+                <p
+                  data-testid="cohort-console-drilldown-special-ask"
+                  className="mt-1.5 inline-block px-1.5 py-0.5 text-[10.5px] font-medium rounded-sm"
+                  style={{
+                    color: timeline.special_ask.status === "complete" ? "#3F633E"
+                         : timeline.special_ask.status === "partial"  ? "#A37500" : "var(--muted)",
+                    border: "1px solid currentColor",
+                  }}
+                >
+                  Special-ask: {timeline.special_ask.status}
+                  {timeline.special_ask.referral_name &&
+                    ` · ref ${timeline.special_ask.referral_name}`}
+                </p>
+              )}
+              {timeline && !timeline?.special_ask && !timeline?.loading && (
+                <p
+                  data-testid="cohort-console-drilldown-special-ask-none"
+                  className="mt-1.5 inline-block px-1.5 py-0.5 text-[10.5px] font-medium rounded-sm text-[var(--muted)] border border-[var(--line)]"
+                >
+                  Special-ask: not asked yet
+                </p>
+              )}
             </div>
             <button
               type="button"

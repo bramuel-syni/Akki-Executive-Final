@@ -16,6 +16,7 @@ import SignUp from "@/pages/SignUp";
 import UpgradeModal from "@/components/depth/UpgradeModal";
 import FeedbackWidget from "@/components/feedback/FeedbackWidget";
 import Day16Banner from "@/components/cohort/Day16Banner";
+import SpecialAskModal from "@/components/cohort/SpecialAskModal";
 import useTrialStatus from "@/hooks/useTrialStatus";
 
 // -- Lazy: marketing deeper routes (rarely visited from cold start) ----------
@@ -74,6 +75,7 @@ const AccountSecurity = lazy(() => import("@/pages/AccountSecurity"));
 const InviteAccept = lazy(() => import("@/pages/InviteAccept"));
 const NewContext = lazy(() => import("@/pages/NewWorkspace"));
 const NewsStub = lazy(() => import("@/pages/NewsStub"));
+const Events = lazy(() => import("@/pages/Events"));
 const Simulate = lazy(() => import("@/pages/Simulate"));
 const LensRoom = lazy(() => import("@/pages/LensRoom"));
 const Chat = lazy(() => import("@/pages/Chat"));
@@ -205,6 +207,8 @@ function Gated({ children }) {
           {children}
           {/* Phase R.4 (2026-05-27) — Feedback widget on every gated surface. */}
           <FeedbackWidget />
+          {/* Phase R.5.b.2 (2026-05-27) — Day-14 special-ask modal (surfaces conditionally). */}
+          <SpecialAskModal />
         </HardLockGuard>
       </FirstSessionGuard>
     </ProtectedRoute>
@@ -409,6 +413,8 @@ function App() {
           <Route path="/app/companies" element={<Navigate to="/app" replace />} />
           {/* H.1 (2026-05-26) — Portfolio Landing news stub. Full feed lands in H.3. */}
           <Route path="/app/news" element={<Gated><NewsStub /></Gated>} />
+          {/* I.4.a (2026-05-27) — Events page (manual entry). */}
+          <Route path="/app/events" element={<Gated><Events /></Gated>} />
           <Route path="/app/companies/new" element={<Gated><NewContext /></Gated>} />
           <Route path="/app/contexts/new" element={<Gated><NewContext /></Gated>} />
           <Route path="/app/new-workspace" element={<Gated><NewContext /></Gated>} />

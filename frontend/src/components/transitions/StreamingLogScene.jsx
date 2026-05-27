@@ -19,9 +19,13 @@ import React from "react";
 import {
   BookOpen, ShieldCheck, Map, PenTool, CheckSquare,
   List, FileText, Sparkles, Loader2, AlertCircle,
+  Scale, Calendar, Download, Presentation,
 } from "lucide-react";
 
 // Phase L.a icon map — matches the `icon` key in `PHASE_SCRIPTS` (backend).
+// Phase L.b.2 (2026-05-27): added scale/calendar/download/presentation
+// for the 5 L.b surfaces (solva-synthesis, work-studio-enhance,
+// task-manager-compile, events-calendar-sync, decks-generation).
 // Future surfaces extending the script add their icon here.
 const ICON_MAP = {
   "book-open":     BookOpen,
@@ -32,6 +36,10 @@ const ICON_MAP = {
   "list":          List,
   "file-text":     FileText,
   "sparkles":      Sparkles,
+  "scale":         Scale,
+  "calendar":      Calendar,
+  "download":      Download,
+  "presentation":  Presentation,
 };
 
 function PhaseLine({ phase, index, status, surfaceId }) {

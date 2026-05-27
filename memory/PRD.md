@@ -1,6 +1,30 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase L.b.2 — Frontend wiring for 5 L.b streaming surfaces — 2026-05-27 ✅ (CLOSED, fork-resume close-out)
+
+5 user-facing long-ops now display the locked Claude-reference `<StreamingLogScene>` walking phase scripts instead of generic spinners:
+1. **Solva Synthesis** — `PreparingInterstitial.jsx` rewritten; replaces the 3-line fade rotation with the 6-phase `solva-synthesis` log.
+2. **Work Studio Enhance** — `EnhanceModal.jsx` running-phase block now renders the 5-phase `work-studio-enhance` log driven during multipart upload + poll.
+3. **Task Manager Compile** — `Cycle.jsx` compile step renders the 7-phase `task-manager-compile` log alongside the existing `pollJob` job-queue worker.
+4. **Calendar Sync** — `Events.jsx` adds a streaming-log row beneath the calendar banner during the 5-phase `events-calendar-sync` flow.
+5. **Decks Generation** — `Decks.jsx` adds a streaming-log box beneath the "Confirm & generate" button during the 6-phase `decks-generation` deep-tier pass.
+
+**Driver-hook choice (deliberate):** L.b.2 ships with the new `usePhasedTimer` hook (timer-driven phase walker that mirrors `useStreamingProgress.state` shape) NOT `useStreamingProgress`. The L.b backend SSE pipes have signature mismatches with the inner handlers for 4/5 surfaces — WS Enhance is multipart (backend wrap declares JSON `Body`), Task Manager Compile + Decks Generation inner handlers are job-queue (202 + job_id), Calendar Sync inner uses `me=Depends(...)` not `ctx=Depends(...)`, Solva synthesis legacy URL is non-context-scoped. The visual contract is identical now; a future L.b.3 dispatch swaps the driver hook to `useStreamingProgress` once the backend pipes are reconciled.
+
+**Files:** `StreamingLogScene.jsx` (+4 lucide icons + 4 ICON_MAP keys: scale/calendar/download/presentation), `data/phaseScripts.js` (NEW, ~70 lines: `LB_PHASE_SCRIPTS` mirror locked verbatim to backend), `hooks/usePhasedTimer.js` (NEW, ~135 lines), 5 surface call sites, plus `App.js` (RESTORE: `Events` lazy import + `/app/events` route — previously dropped in a prior agent's search_replace mishap; restoration unblocked the pre-existing I.4.a test).
+
+**Verification:** Phase L.b.2 CI **30/30 GREEN**. Full regression across all phase test files = **432 passed / 13 skipped** (the 13 skips are pre-existing P4 REWRITE tickets, not regressions). Frontend ESLint 0 issues across 9 touched files. Live multi-viewport Playwright at 1280/1024/820 confirms `/app/events` mounts cleanly (route restore verified). Source-strict CI guards lock cross-file parity between backend `PHASE_SCRIPTS` and frontend `LB_PHASE_SCRIPTS` labels.
+
+
+### Phase R.5.b.2 — Special-ask tracker + cohort console additions — 2026-05-27 ✅ (CLOSED — halt-and-report triggered, fork-resume verified)
+
+Shipped the day-14 special-ask referral capture modal + cohort console additions. **NEW collection** `db.cohort_special_asks` with locked row shape + 3-state status (`pending`/`partial`/`complete`). **Day-14 trigger on-read pattern**: every trial-status call computes `trial_day` + idempotently mints a `pending` row when `trial_day >= 14`, flipping a `special_ask_surface` flag on the response. **Frontend modal** (`SpecialAskModal.jsx`) opens only when the surface flag is true, with referral_name + referral_email required for save, optional case_study_consent + testimonial_text fields. Surface emits `special_ask.surfaced`; submit emits `special_ask.submitted`; remind-me-later POSTs `/dismiss` + sessionStorage-stores so the modal stays closed for the session but RE-surfaces on next browser session. **Cohort console additions**: drilldown carries the special_ask row; new aggregate endpoint returns status_counts + complete_pct; UI adds the aggregate panel + 4 filter chips + status badge in the drill-down drawer. **Email parallel**: R.4 held-with-warning semantic divergence applies — `[FOUNDER:]` placeholders don't block in-app modal surfacing; the email queued send is held + logged as warning instead of 422-ing the user flow.
+
+**Verification (fork-resume re-confirmed):** Phase R.5.b.2 CI **24/24 GREEN**. Live frontend Playwright probe — created day-16 test account (trial_start_at backdated 15d) → modal mount confirmed with all 10 testids → body text contains `[FOUNDER:` placeholder (R.4 semantic divergence verified live) → submit disabled initially → enables after both referrals filled → Day-16 soft warning banner (R.5.b) renders alongside the modal in the same screenshot (R.4 + R.5.b + R.5.b.2 chain all visible). Multi-viewport at 1280 + 820 both clean.
+
+
+
 ### Phase R.5.b — Founder copy editors + Day-16 banner — 2026-05-27 ✅ (CLOSED — halt-and-report triggered)
 
 **The trial-blocking critical path is now unblocked.** Founders can edit the `[FOUNDER:]` placeholders via the in-app editor, the overlay replaces defaults at consumer-render time, and the R.2 / R.4 / R.5.a guards stop firing once the copy is clean. HALT-AND-REPORT triggered: ~668 lines NEW code, >> 500-line auto-slice threshold. **R.5.b.2 dispatched separately** for special-ask tracker + cohort console additions.

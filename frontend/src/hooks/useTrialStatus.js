@@ -13,13 +13,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 
 const INITIAL = {
-  status:          null,
-  locked:          false,
-  day:             null,
-  totalDays:       null,
-  softWarningAt:   null,
-  hardLockAt:      null,
-  cohortTag:       null,
+  status:             null,
+  locked:             false,
+  day:                null,
+  totalDays:          null,
+  softWarningAt:      null,
+  hardLockAt:         null,
+  cohortTag:          null,
+  specialAskSurface:  false,
+  specialAskAtDay:    null,
 };
 
 export default function useTrialStatus() {
@@ -31,13 +33,15 @@ export default function useTrialStatus() {
       const res = await api.get("/me/trial-status");
       const d = res?.data || {};
       setData({
-        status:          d.trial_status || "pending",
-        locked:          Boolean(d.locked),
-        day:             d.trial_day ?? null,
-        totalDays:       d.trial_total_days ?? null,
-        softWarningAt:   d.soft_warning_at_day ?? null,
-        hardLockAt:      d.hard_lock_at_day ?? null,
-        cohortTag:       d.cohort_tag || null,
+        status:             d.trial_status || "pending",
+        locked:             Boolean(d.locked),
+        day:                d.trial_day ?? null,
+        totalDays:          d.trial_total_days ?? null,
+        softWarningAt:      d.soft_warning_at_day ?? null,
+        hardLockAt:         d.hard_lock_at_day ?? null,
+        cohortTag:          d.cohort_tag || null,
+        specialAskSurface:  Boolean(d.special_ask_surface),
+        specialAskAtDay:    d.special_ask_at_day ?? null,
       });
       fetchedOnce.current = true;
     } catch (_) {

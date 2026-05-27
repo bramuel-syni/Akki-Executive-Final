@@ -19,6 +19,9 @@ import WalkInCard from "@/components/walkin/WalkInCard";
 import ShareArtefactModal from "@/components/studio/ShareArtefactModal";
 import ValidatedBadge from "@/components/trust/ValidatedBadge";
 import HandoffActions from "@/components/shell/HandoffActions";
+// Phase L.b.2 (2026-05-27) — StreamingLogScene driver for deck generation.
+import StreamingLogScene from "@/components/transitions/StreamingLogScene";
+import usePhasedTimer from "@/hooks/usePhasedTimer";
 
 /**
  * Decks — three-step flow that keeps the user from burning Opus on weak prompts.
@@ -384,6 +387,9 @@ function OutlineStep({ outline, contextId, onIterate, onGenerated, onCancel }) {
   const [busy, setBusy] = useState(null);
   const [editingRQ, setEditingRQ] = useState(false);
   const [rq, setRq] = useState(outline.research_question || "");
+  // Phase L.b.2 (2026-05-27) — StreamingLogScene driver for the deck
+  // generate step (the ~30-60s deep-tier pass).
+  const { state: lbState, start: lbStart, complete: lbComplete, error: lbError, reset: lbReset } = usePhasedTimer();
 
   const sufficiency = outline.context_sufficiency || "partial";
   const sufficiencyTone = {
@@ -415,6 +421,8 @@ function OutlineStep({ outline, contextId, onIterate, onGenerated, onCancel }) {
       return;
     }
     setBusy("generate");
+    lbReset();
+    lbStart("decks-generation", { stepMs: 9000 });
     try {
       const edits = rq && rq !== outline.research_question
         ? { research_question: rq } : null;
@@ -422,13 +430,17 @@ function OutlineStep({ outline, contextId, onIterate, onGenerated, onCancel }) {
         `/contexts/${contextId}/decks/${outline.id}/generate`,
         { outline_id: outline.id, confirmed: true, edits },
       );
+      lbComplete(data);
       onGenerated(data);
       if (data?.quota?.downgraded) {
         toast.info("Deep budget exhausted today — generated with the standard tier.");
       } else {
         toast.success("Deck generated. Quality check ready.");
       }
-    } catch (e) { toast.error(apiErrorMessage(e)); }
+    } catch (e) {
+      lbError("decks_generate_failed", apiErrorMessage(e));
+      toast.error(apiErrorMessage(e));
+    }
     finally { setBusy(null); }
   };
 
@@ -576,6 +588,21 @@ function OutlineStep({ outline, contextId, onIterate, onGenerated, onCancel }) {
           {busy === "generate" ? "Generating…" : "Confirm & generate (uses 1 slot)"}
         </Button>
       </div>
+
+      {/* Phase L.b.2 (2026-05-27) — Streaming-log shown during the
+          deep-tier ~30-60s generate pass. */}
+      {busy === "generate" && (
+        <div
+          className="mt-4 bg-white border border-[var(--rule)] rounded-sm px-4 py-3 max-w-md"
+          data-testid="decks-generation-streaming-row"
+        >
+          <StreamingLogScene
+            surfaceId="streaming-log-decks-generation"
+            state={lbState}
+            emptyHint="Reading the outline…"
+          />
+        </div>
+      )}
     </section>
   );
 }

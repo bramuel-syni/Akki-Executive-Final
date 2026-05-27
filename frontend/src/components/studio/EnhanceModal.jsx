@@ -33,6 +33,10 @@ import {
   AlertTriangle, Check, ChevronRight, ChevronDown, GitBranch, Eye,
 } from "lucide-react";
 import { toast } from "sonner";
+// Phase L.b.2 (2026-05-27) — Replace the spinner with the locked
+// Claude-reference StreamingLogScene driven by usePhasedTimer.
+import StreamingLogScene from "@/components/transitions/StreamingLogScene";
+import usePhasedTimer from "@/hooks/usePhasedTimer";
 
 const FORMAT_OPTIONS = {
   deck:   [["pptx", "PPTX"], ["pdf", "PDF"], ["auto", "Auto"]],   // PDF soft-forks to PPTX server-side
@@ -179,6 +183,12 @@ export default function EnhanceModal({ open, onClose, kind, contextId, briefId =
   const pollRef = useRef(null);
   const startedAtRef = useRef(null);
 
+  // Phase L.b.2 (2026-05-27) — Streaming-log driver for the running
+  // phase. usePhasedTimer walks the locked `work-studio-enhance` phase
+  // script while the multipart POST + polling proceeds in the existing
+  // code path.
+  const { state: lbState, start: lbStart, complete: lbComplete, error: lbError, reset: lbReset } = usePhasedTimer();
+
   // Reset on open/close.
   useEffect(() => {
     if (open) {
@@ -194,6 +204,7 @@ export default function EnhanceModal({ open, onClose, kind, contextId, briefId =
       setFileName(null);
       setContinueChatId(null);
       setContinueDocId(null);
+      lbReset();
       setC2Instruction("");
       setC2Scope("whole_brief");
       setC2Result(null);
@@ -306,6 +317,7 @@ export default function EnhanceModal({ open, onClose, kind, contextId, briefId =
     setErrMsg(null);
     setRefusalText(null);
     startedAtRef.current = Date.now();
+    lbStart("work-studio-enhance", { stepMs: 8000 });
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -332,6 +344,7 @@ export default function EnhanceModal({ open, onClose, kind, contextId, briefId =
           setErrMsg(data.error || "Enhance refused.");
         }
         setPhase("failed");
+        lbError("enhance_refused", data.error || "Enhance refused.");
         return;
       }
       // Begin polling.
@@ -347,22 +360,26 @@ export default function EnhanceModal({ open, onClose, kind, contextId, briefId =
             setContinueChatId(r.data.continue_chat_id || null);
             setContinueDocId(r.data.continue_doc_id || null);
             setPhase("complete");
+            lbComplete(r.data);
             clearInterval(pollRef.current); pollRef.current = null;
           } else if (r.data.status === "failed") {
             setErrMsg(r.data.error || "Enhance failed.");
             setRefusalText(r.data.refusal_text || null);
             setPhase("failed");
+            lbError("enhance_failed", r.data.error || "Enhance failed.");
             clearInterval(pollRef.current); pollRef.current = null;
           }
         } catch (pe) {
           setErrMsg(apiErrorMessage(pe));
           setPhase("failed");
+          lbError("enhance_poll_failed", apiErrorMessage(pe));
           clearInterval(pollRef.current); pollRef.current = null;
         }
       }, 2500);
     } catch (e2) {
       setErrMsg(apiErrorMessage(e2));
       setPhase("failed");
+      lbError("enhance_post_failed", apiErrorMessage(e2));
     }
   };
 
@@ -747,17 +764,21 @@ export default function EnhanceModal({ open, onClose, kind, contextId, briefId =
         )}
 
         {!isC2 && phase === "running" && (
-          <div className="py-6 text-center" data-testid="work-studio-enhance-running">
-            <Loader2 className="w-5 h-5 mx-auto animate-spin text-[var(--accent)] mb-3" />
-            <p className="text-[14px] text-[var(--ink)] font-medium">Enhancing the {KIND_LABEL[kind].toLowerCase()}…</p>
-            <p className="text-[11.5px] text-[var(--muted)] mt-1">
-              About 30–60 seconds. Pass 1 reasoning runs first, then the deliverable.
+          <div className="py-6" data-testid="work-studio-enhance-running">
+            <p className="text-[14px] text-[var(--ink)] font-medium text-center mb-4">
+              Enhancing the {KIND_LABEL[kind].toLowerCase()}…
             </p>
+            <StreamingLogScene
+              surfaceId="streaming-log-work-studio-enhance"
+              state={lbState}
+              emptyHint="Preparing..."
+              className="max-w-md mx-auto"
+            />
             {elapsedSec !== null && (
-              <p className="text-[11px] text-[var(--muted)] mt-3 font-mono">{elapsedSec}s</p>
+              <p className="text-[11px] text-[var(--muted)] mt-4 font-mono text-center">{elapsedSec}s</p>
             )}
             {exportId && (
-              <p className="text-[10px] text-[var(--muted)] mt-1 font-mono break-all">{exportId}</p>
+              <p className="text-[10px] text-[var(--muted)] mt-1 font-mono break-all text-center">{exportId}</p>
             )}
           </div>
         )}
