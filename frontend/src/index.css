@@ -78,7 +78,13 @@
   --cream-deep:   var(--graphite-light);
   --warm-white:   var(--parchment-light);
   --rule:         var(--graphite-light);
-  --muted:        var(--graphite);
+  /* Phase N.2 (2026-05-27) — Token bumped from `var(--graphite)`
+     (#6F7177) to `#5e5f64` to raise the WCAG-AA contrast ratio against
+     `var(--paper)` (#F2EFE8) from 4.24 → 5.57 (above the 4.5 threshold
+     for normal text). The graphite token itself is unchanged so other
+     consumers (--slate, --gap, --opportunity, --neutral, scrollbar
+     hover) keep their original tint. */
+  --muted:        #5e5f64;
   --slate:        var(--graphite);
   --deep:         var(--ink);
   --accent:       var(--oxblood);
