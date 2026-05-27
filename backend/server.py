@@ -68,6 +68,8 @@ from routers import portfolio_data as portfolio_data_router  # noqa: E402
 from routers import company_home as company_home_router  # noqa: E402
 from routers import events as events_router  # noqa: E402
 from routers import oauth_google as oauth_google_router  # noqa: E402
+from routers import admin_cohort as admin_cohort_router  # noqa: E402
+from routers import auth_magic as auth_magic_router  # noqa: E402
 from routers import billing as billing_router  # noqa: E402
 # CLEANUP B2 (2026-05-26): plays_router archived — Plays surface ORPHAN
 # per PROVENANCE_TRACE_PLAYS_CYCLE.md. Router moved to
@@ -193,6 +195,8 @@ app.include_router(portfolio_data_router.router)
 app.include_router(company_home_router.router)
 app.include_router(events_router.router)
 app.include_router(oauth_google_router.router)
+app.include_router(admin_cohort_router.router)
+app.include_router(auth_magic_router.router)
 app.include_router(billing_router.router)
 # CLEANUP B2 (2026-05-26): plays_router include removed — see archive note above.
 app.include_router(agenda_router.router)
@@ -598,6 +602,13 @@ async def on_startup():
     await db.revoked_jtis.create_index(
         "revoked_at", expireAfterSeconds=60 * 60 * 8,
     )
+    # Phase R.1 (2026-05-27) — `cohort_invites` collection. Indexes:
+    # - `id` UNIQUE for the public invite_id surfaced in admin API.
+    # - `magic_link_token` UNIQUE for the consume-endpoint O(1) lookup.
+    # - compound `(email, cohort_tag)` for re-issuance scenarios (R.5).
+    await db.cohort_invites.create_index("id", unique=True)
+    await db.cohort_invites.create_index("magic_link_token", unique=True)
+    await db.cohort_invites.create_index([("email", 1), ("cohort_tag", 1)])
     await db.user_context_visits.create_index([("account_id", 1), ("context_id", 1)], unique=True)
     # Patch 5 — Monitor v2.
     await db.objectives.create_index("id", unique=True)

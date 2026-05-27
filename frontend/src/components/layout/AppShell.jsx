@@ -301,6 +301,19 @@ export default function AppShell({ children }) {
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--cream)]">
+      {/* Phase R.1 (2026-05-27) — Test-only DOM hook surfacing
+          the account's trial_status. Hidden visually via sr-only +
+          aria-hidden so it has zero UX impact. The Playwright probe
+          reads this to verify magic-link consume stamped the correct
+          status. R.5 will render trial_status on a real cohort
+          console surface and REMOVE this hidden div. */}
+      <div
+        className="sr-only"
+        aria-hidden="true"
+        data-testid="trial-status"
+      >
+        {account?.trial_status || ""}
+      </div>
       {/* Phase J (2026-05-27) — Idle auto-logoff warning banner. Surfaces
           ~2 minutes before the 30-min idle timeout fires. Any user
           activity dismisses + resets. Mounting condition is just the

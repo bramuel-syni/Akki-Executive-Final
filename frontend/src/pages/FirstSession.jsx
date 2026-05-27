@@ -692,7 +692,16 @@ export default function FirstSession() {
     <Shell>
       {step === "intake" && (
         <FirstSessionIntake
-          initial={state.intake || initialPrefill}
+          // Phase R.1 (2026-05-27) — Cohort users land here from the
+          // magic-link consume with `account.logo_name` already stamped.
+          // Feed that as the context-name pre-fill so the wizard's 2nd
+          // question is one-confirm away. Order: server-saved partial
+          // > sandbox-conversion prefill > cohort invite logo_name.
+          initial={state.intake || initialPrefill || (
+            account?.cohort_tag && account?.logo_name
+              ? { primary_context_name: account.logo_name }
+              : null
+          )}
           onSubmitted={onIntakeSubmitted}
           onSkip={onSkip}
         />
@@ -718,6 +727,19 @@ export default function FirstSession() {
       {/* Hidden account email marker so tests can assert who we're flowing */}
       <span data-testid="first-session-account-email" className="sr-only">
         {account?.email}
+      </span>
+      {/* Phase R.1 (2026-05-27) — Test-only DOM hook surfacing the
+          account's trial_status. Hidden visually via sr-only +
+          aria-hidden so it has zero UX impact. Mirrors the same hook
+          on AppShell so cohort users on /app/first-session can also
+          be verified via Playwright. R.5 will render trial_status
+          visibly and REMOVE both copies. */}
+      <span
+        className="sr-only"
+        aria-hidden="true"
+        data-testid="trial-status"
+      >
+        {account?.trial_status || ""}
       </span>
     </Shell>
   );

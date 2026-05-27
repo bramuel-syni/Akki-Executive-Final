@@ -390,6 +390,15 @@ def sanitize_account(a: Dict[str, Any]) -> Dict[str, Any]:
         out["is_sandbox"] = True
         if a.get("sandbox_session_id"):
             out["sandbox_session_id"] = a["sandbox_session_id"]
+    # Phase R.1 (2026-05-27) — Cohort markers surface only when present.
+    # Non-cohort accounts stay lean. R.5 cohort console will read these
+    # to render trial countdown / status; for R.1 the only consumer is
+    # the sr-only DOM hook in AppShell that the Playwright probe reads.
+    for k in ("trial_status", "trial_start_at", "trial_end_at",
+              "cohort_tag", "first_name", "logo_name",
+              "grandfathered_price_locked"):
+        if a.get(k) is not None:
+            out[k] = a[k]
     return out
 
 

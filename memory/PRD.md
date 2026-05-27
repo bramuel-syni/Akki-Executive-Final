@@ -1,6 +1,97 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase R.1 — Founding Cohort foundation — 2026-05-27 ✅
+First leg of the Founding Cohort Console rollout. Ships the magic-link
+issuance + consume + trial-lifecycle account fields. R.2-R.5 (welcome
+email send, feature_events, feedback widget, cohort console UI) remain
+queued.
+
+**Architecture:**
+
+*Schema additions to `db.accounts`* (Mongo dynamic, no migration; existing
+non-cohort accounts unaffected):
+- `trial_start_at`, `trial_end_at` (ISO datetime strs)
+- `trial_status` enum: `pending_invite | active_trial | soft_warning | expired_hard_lock | early_access | churned`. R.1 only writes `active_trial`; R.5 owns the rest.
+- `cohort_tag` (e.g. `"founding_2026Q2"`)
+- `first_name`, `logo_name` (welcome-email template vars)
+- `grandfathered_price_locked` bool (R.5 flips on Early Access conversion)
+
+*New collection `db.cohort_invites`*:
+```
+{
+  id, email, cohort_tag, trial_length_days, first_name, logo_name,
+  magic_link_token (256-bit url-safe random, UNIQUE index),
+  magic_link_url, issued_at, expires_at (issued_at + 14d),
+  consumed_at, consumed_by_account_id, status: "pending"|"consumed",
+  issued_by_account_id (audit)
+}
+```
+Indexes: `id` UNIQUE, `magic_link_token` UNIQUE, `(email, cohort_tag)` compound.
+
+*Endpoints:*
+- `POST /api/admin/cohort/invites` (superadmin-gated) — issues a single-use opaque random token, returns full https URL.
+- `GET /api/admin/cohort/invites?cohort_tag=&status=` (superadmin) — lists with computed-on-read `expired` status (no cron).
+- `GET /api/auth/magic/{token}` — public consume endpoint. Atomic single-use flip via `find_one_and_update({status:"pending"}, ...)`. Creates passwordless account OR upgrades existing one. Mints first-class JWT (inherits Phase J JTI revocation + idle logoff). 302-redirects to `/app/`. Per-IP rate limit 10 req / 5 min.
+
+*Welcome email STUB:* `cohort_welcome_pending: {…}` log line shaped as SendGrid `dynamic_template_data` dict so R.2 wraps it in a `.send()` call with zero refactor.
+
+**Q1-Q5 locks honoured (all live-verified):**
+- Q1 — wizard runs (cohort users land on `/app/first-session`, FirstSessionGuard bounces them to the 3-step wizard). Context-name pre-filled from `account.logo_name`.
+- Q2 — `declared_role: null` on cohort account creation; wizard's role-button step collects it.
+- Q3 — wizard creates the context (not the consume endpoint).
+- Q4 — `test_credentials.md` updated with curl-flow documentation (passwordless — generated fresh per test run, not statically stored).
+- Q5 — `expired` status computed on read; DB row stays `pending` until physically consumed.
+
+**Risk #6 (existing-account UPGRADE) locked by CI:**
+When magic link consumed for an email that already has an account:
+- ✅ `password_hash` preserved
+- ✅ `declared_role` preserved
+- ✅ `first_session.status` preserved (no `intake` reset)
+- ✅ `preferences` preserved
+- ✅ `sessions_revoked_after` NOT bumped (Phase J kill-switch untouched)
+- ✅ Trial fields stamped on top
+- ✅ Same `account_id` returned (no duplication)
+
+**Token shape — Option B (overridden from original brief):**
+Pre-build brief said HMAC-signed. Playbook expert call (mandatory per system-prompt auth integration rule) returned generic JWT playbook silent on magic-link specifics. Surfaced HMAC-vs-opaque-random divergence to user; user picked Option B (opaque random `secrets.token_urlsafe(32)`) matching existing contributor-invitation pattern at `services/tasks/contributor_invitation_service.py`. 256 bits of entropy + DB-enforced single-use atomicity = no HMAC layer needed. `COHORT_MAGIC_LINK_SECRET` env var dropped; secret-rotation lockdown test dropped.
+
+**Frontend changes (33 lines total):**
+- AppShell.jsx: sr-only `data-testid="trial-status"` hidden span (test hook only — R.5 will render visibly + remove this).
+- FirstSession.jsx: same sr-only hook + intake pre-fill cohort fallback (`primary_context_name = account.logo_name`).
+- Both hooks are `aria-hidden="true"` + `sr-only` class → zero visual / a11y impact.
+
+**Test ledger:**
+- Phase R.1 **11/11 GREEN**: 5 acceptance probes (issue, consume, replay-410, tampered-410, list); 3 negative regressions (expired, non-superadmin-403, existing-account-UPGRADE); 2 lockdowns (sanitize_account shape, atomic concurrent single-use); 1 schema-omit guard.
+- Full regression sweep **229 passed / 13 skipped** (0 regressions).
+- ESLint clean on all 3 touched frontend files.
+
+**Live verification (admin@akki.ai → fresh `r1-prefill-…@example.com` cohort account):**
+- Magic-link 302 → `/app/first-session` (Q1 verified).
+- `/api/auth/me`: `trial_status="active_trial"`, `cohort_tag="founding_2026Q2_TEST"`, `declared_role=null`, `first_session.status="intake"` (Q1+Q2 verified).
+- Hidden `data-testid="trial-status"` reads `"active_trial"` on the rendered DOM.
+- Context-name input pre-filled with `"PrefillCo Holdings"` (Q1 lock verified live — screenshot evidence at `/tmp/phase_r1_prefill_landed.png`).
+- Replay → 410 `link_already_used`.
+- 0 axe-a11y / 0 React warnings / 0 non-401 console errors.
+
+**Curl smoke probes** (live preview deployment):
+- (a) issue: 200, full https URL returned
+- (b) consume `?json=1`: 200 + access_token + trial fields
+- (c) replay: 410 link_already_used
+- (d) tampered (last 4 chars mutated): 410 link_not_found
+- (e) admin list: status=consumed + consumed_at + consumed_by_account_id populated
+
+**OUT_OF_SCOPE locks (deferred per brief):**
+- R.2 SendGrid send (welcome email)
+- R.3 feature_events instrumentation
+- R.4 in-app feedback widget
+- R.5 cohort console UI + day-16 soft warnings + day-22 hard cutoff
+- TOTP / SMS MFA for trial cohort
+- Pricing display anywhere in app
+- Backfill of existing accounts with cohort fields
+
+
+
 ### Bugfix dispatch (2026-05-27) — work_studio_exports resolver + RSS-feed swap ✅
 Two surgical fixes shipped as a single batch:
 
