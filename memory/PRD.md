@@ -1,6 +1,59 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Recurring bug fix — Work Studio Briefing tab wraps at narrow viewports — 2026-05-27 ✅ (Recurrence #4 closed)
+User flagged FOURTH recurrence of the Briefing tab placement bug. The
+prior Recurrence #3 fix had passed both locked structural assertions
+(`parentElement === parentElement`, `bounding-rect.top === bounding-
+rect.top`) — but ONLY at the 1280×900 probe viewport. Container had
+`flex-wrap: wrap` in effect; at narrow viewports (≤820 CSS px) the row
+wrapped while still sharing the same DOM parent.
+
+**Structural root cause (institutional memory locked):**
+Single-viewport structural probes are necessary but not sufficient
+for responsive layout work. The Recurrence #3 assertions checked the
+rendered DOM at 1280×900 only — at that width the wrap container had
+everything on one line so both assertions passed. The container was
+waiting to wrap at ≤ ~820px.
+
+**Fix (Option A — minimum-risk responsive pattern):**
+- Container: `flex-wrap` → `overflow-x-auto` + `no-scrollbar`
+- Tab buttons: + `flex-shrink-0` + `whitespace-nowrap`
+- New `no-scrollbar` utility in `index.css` (Chromium / Firefox / IE-shim)
+- Result: at any viewport ≤ 768px the row scrolls horizontally; all 6
+  tabs always on a single visual row.
+
+**Verified live at 4 viewports** (1280/768/712/600 CSS px):
+- `unique_tops_count === 1` at every viewport
+- `briefing.getBoundingClientRect().top === reports.getBoundingClientRect().top` at every viewport
+- `container_flex_wrap === "nowrap"` + `overflow-x === "auto"`
+- Container horizontally scrollable at narrow widths (`scrollWidth=755 > clientWidth=536/648/704`)
+- Screenshots: `/tmp/recurrence_4_BEFORE_{viewport}.png` (5 captures showing wrap) + `/tmp/recurrence_4_AFTER_{viewport}.png` (4 captures showing single-row + scroll)
+
+**NEW LOCKED INSTITUTIONAL RULE (forgetting-mitigation #2):**
+Every future tab-row / horizontal-container layout probe MUST run at
+**minimum 3 viewports: 1280×900, 768×1024, 600×1024** (the desktop /
+iPad-portrait / Samsung-Tab-A-portrait triplet). For each viewport,
+assert `unique(getBoundingClientRect().top for each sibling) === 1`.
+A passing probe at one viewport is treated as a FALSE-GREEN until
+verified at the other two. Same rule applies to footer / nav-strip /
+bottom-rail layouts.
+
+The R4.documentation CI test (in
+`tests/test_recurrence4_tab_strip_responsive.py`) re-checks the
+PHASE_LEDGER for the multi-viewport rule on every CI run — future
+agents can't quietly drop it.
+
+**The Recurrence #1 → #2 → #3 → #4 loop:**
+1. Recurrence #1 (Phase M original): misread bug-report-as-spec.
+2. Recurrence #2 (Phase M-revision): single-viewport CI lock.
+3. Recurrence #3 (Issue #1 false-green): structural assertions added but at one viewport.
+4. Recurrence #4 (this fix): multi-viewport lock added. Loop closed at the methodology level, not just at the surface.
+
+**CI:** 5/5 GREEN. Full regression sweep: **240 passed / 13 skipped** (235 prior + 5 new R4, 0 regressions).
+
+
+
 ### Recurring bug fix — Work Studio Briefing tab + Document Journal seed-bleed — 2026-05-27 ✅ (Recurrence #3 closed)
 Two-issue dispatch. User flagged third recurrence.
 

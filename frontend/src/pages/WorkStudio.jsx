@@ -805,9 +805,17 @@ export default function WorkStudio() {
           {/* Six-tab line — spec-locked label order. Phase M-revision
               (2026-05-27): Briefing restored INLINE as the 6th tab
               (was on a 2nd-line pill in original Phase M close-out,
-              which the user clarified was a misread of a bug report). */}
+              which the user clarified was a misread of a bug report).
+              Recurrence #4 (2026-05-27): replaced `flex-wrap` with
+              `overflow-x-auto` so the row never wraps at narrow
+              viewports (Samsung Tab A 600px portrait was wrapping
+              Decks/Reports/Briefing onto a 2nd line). Tabs now scroll
+              horizontally when the row exceeds viewport width. Per-
+              tab `flex-shrink-0` + `whitespace-nowrap` is the
+              companion piece that prevents content-driven shrinking
+              + label wrapping. */}
           <div className="mt-7 border-b border-[var(--rule)]" data-testid="work-studio-tabs">
-            <div className="flex items-stretch gap-0 flex-wrap -mb-px">
+            <div className="flex items-stretch gap-0 overflow-x-auto -mb-px no-scrollbar">
               {KIND_TABS.map((t) => {
                 const Icon = t.icon;
                 const active = kind === t.id;
@@ -816,7 +824,7 @@ export default function WorkStudio() {
                     key={t.id}
                     type="button"
                     onClick={() => onKind(t.id)}
-                    className={`px-5 py-3 text-[13px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
+                    className={`flex-shrink-0 whitespace-nowrap px-5 py-3 text-[13px] inline-flex items-center gap-2 border-b-2 -mb-px transition-colors ${
                       active
                         ? "border-[color:var(--oxblood)] text-[var(--ink)] font-medium"
                         : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"

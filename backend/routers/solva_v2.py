@@ -36,7 +36,8 @@ import uuid
 from datetime import datetime  # noqa: F401  (used in QA-2026-05-20 SV-03 merge)
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from core import db, get_current_account, iso, now
@@ -1222,6 +1223,8 @@ async def start_session(
 @router.post("/sessions/{sid}/frame-audit")
 async def run_frame_audit(
     sid: str,
+    request: Request,
+    stream: int = Query(default=0),
     account: Dict[str, Any] = Depends(get_current_account),
 ):
     rec = await db.solva_v2_sessions.find_one(
@@ -1234,7 +1237,20 @@ async def run_frame_audit(
 
     if rec.get("frame_audit_summary"):
         # Idempotent: don't mint duplicate audit rows on a refresh.
-        return {"frame_audit": rec["frame_audit_summary"], "cached": True}
+        cached_result = {"frame_audit": rec["frame_audit_summary"], "cached": True}
+        if not stream:
+            return cached_result
+        # Stream-mode shortcut — fire the script + a single 'complete'
+        # so the frontend's StreamingLogScene briefly shows the script
+        # then transitions to content.
+        from services.streaming.sse import sse_headers
+        from services.streaming.progress import PhaseEmitter
+        async def _cached_gen():
+            emitter = PhaseEmitter(request, surface="solva-frame-audit")
+            async with emitter.start() as e:
+                yield e.script_event()
+                yield await e.complete(cached_result)
+        return StreamingResponse(_cached_gen(), headers=sse_headers())
 
     # Use the lazy import to avoid pulling the engine at module load
     # time; it's only on the framing path.
@@ -1246,6 +1262,62 @@ async def run_frame_audit(
     seed_payload = rec.get("intake_seed")
     has_attached_docs = bool(seed_payload and seed_payload.get("kind") == "document")
 
+    # Phase L.a (2026-05-27) — streaming branch.
+    if stream:
+        from services.streaming.sse import sse_headers
+        from services.streaming.progress import PhaseEmitter
+
+        async def _stream_gen():
+            emitter = PhaseEmitter(request, surface="solva-frame-audit")
+            async with emitter.start() as e:
+                yield e.script_event()
+                # Phase 1: "Reading your framing."
+                yield await e.advance() or ""
+                if e.cancelled: return
+                # (no expensive work between 1→2, but the phase boundary
+                # is meaningful for the user — visible progression)
+
+                # Phase 2: "Checking the grounding contract."
+                yield await e.advance() or ""
+                if e.cancelled: return
+
+                # Phase 3: "Mapping the layer-0 ingest."
+                yield await e.advance() or ""
+                if e.cancelled: return
+
+                # Phase 4: "Composing." — the actual frame-audit call
+                yield await e.advance() or ""
+                if e.cancelled: return
+                audit_res = audit_framing(
+                    submodule=rec.get("submodule") or "seek_clarity",
+                    framing_text=framing_text,
+                    has_attached_docs=has_attached_docs,
+                    seed_payload=seed_payload,
+                )
+                if e.cancelled: return
+                summary = audit_res.to_dict()
+                audit_row = audit_to_audit_log_row(
+                    audit_res,
+                    framing_text=framing_text,
+                    submodule=rec.get("submodule") or "seek_clarity",
+                    iso_now=iso(now()),
+                )
+
+                # Phase 5: "Validating." — persist + emit complete
+                yield await e.advance() or ""
+                if e.cancelled: return
+                await db.solva_v2_sessions.update_one(
+                    {"id": sid, "account_id": account["id"]},
+                    {
+                        "$set": {"frame_audit_summary": summary, "updated_at": iso(now())},
+                        "$push": {"reasoning_audit_log": audit_row},
+                    },
+                )
+                yield await e.complete({"frame_audit": summary, "cached": False})
+
+        return StreamingResponse(_stream_gen(), headers=sse_headers())
+
+    # Non-streaming path (legacy contract — preserved verbatim)
     audit_res = audit_framing(
         submodule=rec.get("submodule") or "seek_clarity",
         framing_text=framing_text,

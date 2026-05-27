@@ -146,6 +146,34 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--graphite-light); border-radius: 0; }
 ::-webkit-scrollbar-thumb:hover { background: var(--graphite); }
 
+/* Recurrence #4 (2026-05-27) — hide-scrollbar utility for the
+   Work Studio tab strip's horizontal overflow at narrow viewports.
+   The row scrolls horizontally; the scrollbar itself is suppressed
+   for visual cleanliness (tap-and-drag / trackpad-swipe still works). */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Phase L.a (2026-05-27) — StreamingLogScene animations.
+   Claude-reference visual: 200ms fade-in on new phase lines + subtle
+   pulse on the active phase icon. Reduced-motion users get an
+   instant-render fallback (no fade, no pulse). */
+@keyframes akki-streaming-log-fade {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes akki-streaming-log-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+.akki-streaming-log-pulse {
+  animation: akki-streaming-log-pulse 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .streaming-log-line { animation: none !important; }
+  .akki-streaming-log-pulse { animation: none !important; opacity: 1 !important; }
+}
+
+
 /* Shadcn CSS variables rewired to v7 (parchment + ink + oxblood) */
 @layer base {
   :root {
