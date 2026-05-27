@@ -59,7 +59,7 @@ export default function Home() {
               alt="A senior executive at a desk, reading paper materials in a quiet study."
               width="800" height="1000"
               loading="eager"
-              fetchpriority="high"
+              fetchPriority="high"
               data-testid="home-hero-img"
             />
           </div>

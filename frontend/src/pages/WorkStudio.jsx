@@ -590,22 +590,46 @@ export default function WorkStudio() {
       } else if (tab && Array.isArray(tab.union_of)) {
         // Phase E.1 — Merged "Main Board & Committee Packs" tab. Fetch
         // both legacy aggregate kinds in parallel and union by id.
-        const responses = await Promise.all(
-          tab.union_of.map((k) =>
-            api.get(`/contexts/${cid}/briefings/aggregates`, {
-              params: {
-                kind: k,
-                q: aggQ || undefined,
-                sort: aggSort,
-                page: 1,
-                page_size: 500,  // load all, page client-side
+        //
+        // Phase N.1 (2026-05-27) — `page_size` is capped at 100 by the
+        // backend (`le=100` on the briefings/aggregates route). Previously
+        // we sent `page_size=500` to "load all client-side"; the route now
+        // rejects that with 422. We paginate up to the route cap and walk
+        // forward until the response is short (< page_size) OR we've
+        // collected `total`. The realistic data shape today is far below
+        // 100 items per kind, so we typically make 1 round-trip per kind.
+        const _AGG_PAGE_CAP = 100;
+        const _MAX_PAGES = 10;   // safety brake: 1000 items per kind is plenty
+        const _fetchAllPagesFor = async (k) => {
+          const collected = [];
+          for (let p = 1; p <= _MAX_PAGES; p += 1) {
+            const { data } = await api.get(
+              `/contexts/${cid}/briefings/aggregates`,
+              {
+                params: {
+                  kind: k,
+                  q: aggQ || undefined,
+                  sort: aggSort,
+                  page: p,
+                  page_size: _AGG_PAGE_CAP,
+                },
               },
-            }),
-          ),
+            );
+            const items = data?.items || [];
+            collected.push(...items);
+            // Stop when the page wasn't full (server has no more) OR
+            // we've reached the reported total.
+            if (items.length < _AGG_PAGE_CAP) break;
+            if (typeof data?.total === "number" && collected.length >= data.total) break;
+          }
+          return collected;
+        };
+        const perKind = await Promise.all(
+          tab.union_of.map((k) => _fetchAllPagesFor(k)),
         );
         const byId = new Map();
-        for (const r of responses) {
-          for (const item of (r.data?.items || [])) {
+        for (const items of perKind) {
+          for (const item of items) {
             // dedup by id; first occurrence wins
             if (!byId.has(item.id)) byId.set(item.id, item);
           }
