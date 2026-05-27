@@ -67,7 +67,7 @@ function artefactDetailHref(row, kindEntry) {
 }
 
 
-export default function CompilationReadinessSection({ contextId, onCompile }) {
+export default function CompilationReadinessSection({ contextId, onCompile, layout = "grid" }) {
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -115,10 +115,24 @@ export default function CompilationReadinessSection({ contextId, onCompile }) {
 
   if (!contextId) return null;
 
+  // Layout — `grid` (default, side-by-side at md+) for wide page
+  // surfaces, or `stack` (vertical, full width) when mounted in a
+  // narrow right rail. Card internals + dimensions are unchanged.
+  const wrapperCls =
+    layout === "stack"
+      ? "mt-6 flex flex-col gap-4"
+      : "mt-6 grid grid-cols-1 md:grid-cols-2 gap-4";
+  // The `md:col-span-2` error pill only applies in grid layout.
+  const errPillCls =
+    layout === "stack"
+      ? "text-[11.5px] text-amber-900 inline-flex items-center gap-1.5"
+      : "md:col-span-2 text-[11.5px] text-amber-900 inline-flex items-center gap-1.5";
+
   return (
     <aside
-      className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4"
+      className={wrapperCls}
       data-testid="cycle-list-compilation-readiness"
+      data-layout={layout}
     >
       {/* Ready to compile */}
       <section
@@ -211,7 +225,7 @@ export default function CompilationReadinessSection({ contextId, onCompile }) {
       </section>
 
       {err && (
-        <p className="md:col-span-2 text-[11.5px] text-amber-900 inline-flex items-center gap-1.5">
+        <p className={errPillCls}>
           <AlertCircle className="w-3 h-3" /> {err}
         </p>
       )}

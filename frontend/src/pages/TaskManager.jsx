@@ -131,7 +131,7 @@ export default function TaskManager() {
             className="hidden xl:block w-[340px] shrink-0 space-y-5"
             data-testid="task-manager-right-rail"
           >
-            <CompilationReadinessSection contextId={cid} />
+            <CompilationReadinessSection contextId={cid} layout="stack" />
             <FollowUpDraftsCard
               contextId={cid}
               refreshKey={refreshKey}
