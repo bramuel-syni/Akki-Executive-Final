@@ -65,7 +65,7 @@ const TOP_SIGNAL_CHIPS = [
 ];
 
 
-function AttentionCard({ card, data, onOpen }) {
+function AttentionCard({ card, data, onOpen, onOpenRoleSegment }) {
   const Icon = card.icon;
   const count = data?.count;
   const subtext = data?.subtext;
@@ -77,6 +77,55 @@ function AttentionCard({ card, data, onOpen }) {
     typeof subtext === "string" && subtext.length > 0
       ? subtext
       : "Awaiting wiring...";
+
+  // Phase I.6 (2026-05-27) — Card 4 subtext close-loop. When this is
+  // the `questions` card and the I.5 decomposition is non-empty,
+  // render each "N from {role}" segment as a clickable inline span
+  // that deep-links to /app/questions?role={role}. Other cards keep
+  // the plain text subtext (Card 1-3 / 5 aren't decomposition-bearing).
+  // Implemented as `<span role="button">` (NOT a real `<button>`) to
+  // avoid invalid nested-button HTML — the outer card is already a
+  // `<button>`. `stopPropagation` prevents the outer card click from
+  // firing when a segment is activated.
+  const decomposition = data?.decomposition;
+  const isQuestionsCard = card.id === "questions";
+  const hasDecomposition = (
+    isQuestionsCard
+    && decomposition
+    && typeof count === "number" && count > 0
+    && (decomposition.board > 0 || decomposition.ceo > 0 || decomposition.team > 0)
+  );
+
+  function renderClickableSubtext() {
+    const segs = [];
+    if (decomposition.board > 0) segs.push(["board", decomposition.board]);
+    if (decomposition.ceo > 0)   segs.push(["ceo",   decomposition.ceo]);
+    if (decomposition.team > 0)  segs.push(["team",  decomposition.team]);
+    return segs.map(([role, n], idx) => (
+      <React.Fragment key={role}>
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenRoleSegment && onOpenRoleSegment(role);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              onOpenRoleSegment && onOpenRoleSegment(role);
+            }
+          }}
+          className="cursor-pointer hover:underline underline-offset-2 text-[var(--muted)] hover:text-[var(--ink)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 rounded-sm"
+          data-testid={`card4-subtext-segment-${role}`}
+        >
+          {n} from {role === "ceo" ? "CEO" : role}
+        </span>
+        {idx < segs.length - 1 ? " · " : ""}
+      </React.Fragment>
+    ));
+  }
 
   return (
     <button
@@ -108,7 +157,7 @@ function AttentionCard({ card, data, onOpen }) {
             className="text-[12px] text-[var(--muted)] italic mt-1"
             data-testid={`company-home-attention-${card.id}-subtext`}
           >
-            {renderedSubtext}
+            {hasDecomposition ? renderClickableSubtext() : renderedSubtext}
           </p>
         </div>
         <ChevronRight className="w-3.5 h-3.5 text-[var(--muted)] shrink-0 mt-1.5" strokeWidth={1.8} aria-hidden="true" />
@@ -413,6 +462,11 @@ export default function CompanyHome() {
                   card={card}
                   data={attention?.[card.id]}
                   onOpen={onOpenCard}
+                  onOpenRoleSegment={(role) =>
+                    navigate(
+                      `/app/questions?role=${role}&filter=open${cid ? `&context_id=${cid}` : ""}`
+                    )
+                  }
                 />
               ))}
             </div>

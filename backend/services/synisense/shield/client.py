@@ -51,7 +51,7 @@ async def invoke(
     purpose_validator.validate_purpose(purpose, internal_caller=internal_caller)
 
     started = time.perf_counter()
-    de_id = await deidentifier.deidentify(content, tenant_id=tenant_id)
+    de_id = await deidentifier.deidentify(content, tenant_id=tenant_id, purpose=purpose)
     llm_text, provider, model, usage = await llm_router.invoke_with_metering(
         de_id.redacted_text, model_preference=model_preference,
     )
@@ -175,7 +175,7 @@ async def prepare_for_streaming(
     purpose_validator.validate_purpose(purpose, internal_caller=internal_caller)
 
     started = time.perf_counter()
-    de_id = await deidentifier.deidentify(content, tenant_id=tenant_id)
+    de_id = await deidentifier.deidentify(content, tenant_id=tenant_id, purpose=purpose)
 
     audit_id = "aud-" + uuid.uuid4().hex
     receipt_id = "rcp-" + uuid.uuid4().hex

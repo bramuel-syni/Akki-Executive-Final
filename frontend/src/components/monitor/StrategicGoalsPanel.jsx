@@ -760,7 +760,7 @@ function ScoreBar({ label, value, barClass, testId }) {
       <div className="flex items-baseline justify-between mb-1">
         <span className="text-[9.5px] uppercase tracking-wider text-[var(--muted)]">{label}</span>
         <span className={`akki-serif text-[14px] leading-none ${empty ? "text-[var(--muted)]" : "text-[var(--ink)]"}`}>
-          {empty ? "—" : pct}
+          {empty ? "—" : `${pct}%`}
         </span>
       </div>
       <div className={`h-1.5 rounded-sm w-full ${empty ? "border border-dashed border-[var(--rule)]" : "bg-[var(--cream-deep)]"} overflow-hidden`}>

@@ -367,6 +367,48 @@ def _within_window(start_iso: str) -> bool:
     return True
 
 
+def _sanitise_llm_json(raw: str) -> str:
+    """Best-effort cleanup of LLM-emitted JSON that contains unescaped
+    control characters inside string values (a common Claude/Gemini
+    failure mode for long structured outputs).
+
+    Walks the input char-by-char tracking quote state. While inside a
+    string (between unescaped `"` boundaries), replaces raw newline /
+    carriage return / tab characters with spaces. Outside strings (and
+    in any escaped sequence) the input is passed through unchanged.
+
+    Phase I.6 (2026-05-27) — added to lift events.extract recall after
+    confirming the de-id fix unblocked the LLM but the LLM then
+    produced JSON with unescaped `\\n` inside a string value, breaking
+    `json.loads`. Scoped to events.py only; if other LLM consumers
+    hit similar parse failures the helper can move into
+    `helpers/llm_json.py`.
+    """
+    if not raw or not isinstance(raw, str):
+        return raw
+    out: List[str] = []
+    in_string = False
+    escape_next = False
+    for ch in raw:
+        if escape_next:
+            out.append(ch)
+            escape_next = False
+            continue
+        if ch == "\\" and in_string:
+            out.append(ch)
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            out.append(ch)
+            continue
+        if in_string and ch in ("\n", "\r", "\t"):
+            out.append(" ")
+            continue
+        out.append(ch)
+    return "".join(out)
+
+
 _EXTRACTION_SYSTEM_PROMPT = (
     "You are AKKI's structured-extraction model. Strict JSON only. "
     "Never invent events that are not in the source text. If no events "
@@ -450,7 +492,20 @@ async def _extract_and_persist(
         raise HTTPException(status_code=502, detail=f"Extractor unavailable: {e}") from e
 
     from helpers.llm_json import safe_parse_json
-    parsed, raw_str = safe_parse_json(llm_out.get("response") or "{}")
+    raw_response = llm_out.get("response") or "{}"
+    parsed, raw_str = safe_parse_json(raw_response)
+    if not isinstance(parsed, dict) or not parsed:
+        # Phase I.6 — fallback for malformed JSON the upstream model
+        # occasionally emits (unescaped newlines/control chars inside
+        # string values). Re-tries the parse after a control-char
+        # sanitiser, scoped to events extraction only (other LLM
+        # consumers can opt in via the same helper if they hit similar
+        # issues).
+        sanitised = _sanitise_llm_json(raw_response)
+        if sanitised != raw_response:
+            parsed_retry, _ = safe_parse_json(sanitised)
+            if isinstance(parsed_retry, dict) and parsed_retry:
+                parsed = parsed_retry
     if not isinstance(parsed, dict):
         parsed = {}
     raw_events = parsed.get("events") or []

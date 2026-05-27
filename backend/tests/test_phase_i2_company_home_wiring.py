@@ -404,7 +404,14 @@ def test_i2_readiness_strip_carries_canonical_testid():
 def test_i2_attention_card_renders_live_count_and_subtext():
     src = _read(COMPANY_HOME)
     # The card receives a `data` prop (live API row).
-    assert "function AttentionCard({ card, data, onOpen })" in src
+    # Phase I.6 (2026-05-27) — signature evolved to include
+    # `onOpenRoleSegment` for the Card 4 clickable subtext segments
+    # close-loop. Both old (I.2-era) and new (I.6+) signatures are
+    # valid component shapes; this guard accepts either.
+    assert (
+        "function AttentionCard({ card, data, onOpen })" in src
+        or "function AttentionCard({ card, data, onOpen, onOpenRoleSegment })" in src
+    ), "AttentionCard must accept the live `data` row + onOpen handler."
     # The count expression reads `data.count`.
     assert "data?.count" in src or "data?.[\"count\"]" in src
     # The subtext expression reads `data.subtext`.

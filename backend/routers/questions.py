@@ -61,6 +61,7 @@ async def my_questions(
     status: str = "open",
     page: int = 1,
     page_size: int = 10,
+    asker_role: Optional[str] = None,
     me: Dict[str, Any] = Depends(get_current_account),
 ):
     page = max(1, int(page or 1))
@@ -73,6 +74,14 @@ async def my_questions(
             q["status"] = status
         else:
             raise HTTPException(status_code=400, detail="Unknown status.")
+    # Phase I.6 (2026-05-27) — `asker_role` filter param closes the loop
+    # from CompanyHome Card 4 clickable subtext segments. Accepted
+    # values match the I.5 bucket taxonomy: board / ceo / team. Any
+    # other value returns 400.
+    if asker_role:
+        if asker_role not in ("board", "ceo", "team"):
+            raise HTTPException(status_code=400, detail="Unknown asker_role.")
+        q["asker_role"] = asker_role
     total = await db.cycle_questions.count_documents(q)
     cursor = (
         db.cycle_questions.find(q, {"_id": 0})
@@ -95,6 +104,7 @@ async def list_cycle_questions(
     context_id: str,
     cycle_id: str,
     status: Optional[str] = None,
+    asker_role: Optional[str] = None,
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
     q: Dict[str, Any] = {"context_id": context_id, "cycle_id": cycle_id}
@@ -102,6 +112,11 @@ async def list_cycle_questions(
         if status not in _STATUS:
             raise HTTPException(status_code=400, detail="Unknown status.")
         q["status"] = status
+    # Phase I.6 (2026-05-27) — `asker_role` filter param (see note above).
+    if asker_role:
+        if asker_role not in ("board", "ceo", "team"):
+            raise HTTPException(status_code=400, detail="Unknown asker_role.")
+        q["asker_role"] = asker_role
     rows = await db.cycle_questions.find(q, {"_id": 0}).sort("asked_at", -1).to_list(200)
     return {"items": [_strip(r) for r in rows], "total": len(rows)}
 

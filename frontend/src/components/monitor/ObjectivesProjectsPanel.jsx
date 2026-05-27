@@ -89,7 +89,9 @@ function ItemRow({ row, onOpen }) {
           </p>
         </div>
         <div className="hidden sm:flex items-baseline gap-1.5 shrink-0">
-          <span className="font-mono text-[16px] text-[var(--ink)] tabular-nums">{row.score ?? 0}</span>
+          <span className="font-mono text-[16px] text-[var(--ink)] tabular-nums" data-testid={`objective-score-${row.id}`}>
+            {row.score == null ? "—" : `${row.score}%`}
+          </span>
           <span className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">Score</span>
           <Trend className="w-3.5 h-3.5 text-[var(--deep)] ml-2" strokeWidth={1.7} />
         </div>

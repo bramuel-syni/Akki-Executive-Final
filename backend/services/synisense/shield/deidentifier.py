@@ -468,11 +468,23 @@ class DeIdResult:
         }
 
 
-async def deidentify(content: str, *, tenant_id: str) -> DeIdResult:
+async def deidentify(content: str, *, tenant_id: str, purpose: Optional[str] = None) -> DeIdResult:
     """Three-layer de-identification.
 
     Fail-closed: any unrecoverable failure raises `ServiceUnavailable`.
     The caller (the Shield route) MUST translate that to a 503.
+
+    Phase I.6 (2026-05-27) — `purpose` kwarg enables purpose-gated
+    pattern exclusions. The only current exclusion is
+    `purpose == "documents.events_extract"` which skips the `DATE_ISO`
+    regex pass so calendar dates flow through to the LLM unmodified.
+    Rationale: the I.4.b event-extraction prompt asks the LLM to
+    return ISO dates as part of its structured output — pre-tokenizing
+    them as `[[ENT_DATE_ISO_xxx]]` collapses extraction recall (the
+    LLM hallucinates placeholders like "MM" because it can't parse
+    the tokens). Calendar dates are NOT PII for this purpose. All
+    other purposes (chat, solva, work-studio, etc.) retain the full
+    PII shield.
     """
     start = time.perf_counter()
     if not content:
@@ -485,12 +497,22 @@ async def deidentify(content: str, *, tenant_id: str) -> DeIdResult:
     original_len = len(original)
     original_words = max(1, len(re.findall(r"\S+", original)))
 
+    # Phase I.6 — purpose-gated exclusion set. Currently scoped to a
+    # single purpose. Add to this dict if other purposes need similar
+    # exemptions (do NOT broaden by default).
+    _PURPOSE_REGEX_SKIPS: Dict[str, set] = {
+        "documents.events_extract": {"DATE_ISO"},
+    }
+    skip_labels = _PURPOSE_REGEX_SKIPS.get(purpose or "", set())
+
     # Collect every hit, then resolve overlaps preferring higher priority.
     # Priority: regex > tenant_dict > spaCy.
     hits: List[Dict[str, Any]] = []
 
     # Layer 1 — regex.
     for label, pat in _REGEX_PATTERNS:
+        if label in skip_labels:
+            continue
         validator = _REGEX_VALIDATORS.get(label)
         for m in pat.finditer(original):
             raw_match = m.group(0)

@@ -1,6 +1,65 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase I.6 — Final hygiene + 3 fold-ins — 2026-05-27 ✅
+Closes the Phase I family by folding 3 deferred items into a single
+hygiene-disciplined dispatch:
+- **Fold-in 1 (Phase P)** — Monitor score "%" suffix
+- **Fold-in 2 (I.5 close-loop)** — Card 4 clickable subtext segments
+- **Fold-in 3 (I.4.b)** — De-id PII fix lifting extraction recall
+
+**Stage-1 cross-check refinements (ship-velocity):**
+- Phase P scope reduced from "7 sprinkled sites" → **2 sites** in 2 files. No centralised formatter; inline edits.
+- De-id fix approach **(a)** chosen — pre-pass `purpose`-gated regex skip, scoped exclusively to `documents.events_extract`. Other purposes (chat, solva, work-studio) retain full PII shield.
+
+**Fold-in 1 — Phase P (Monitor score % suffix):**
+- `StrategicGoalsPanel.jsx::ScoreBar` — render changed from bare `{pct}` to template-literal `` `${pct}%` `` for non-empty values. Empty still renders `—`.
+- `ObjectivesProjectsPanel.jsx` — row score render changed from `{row.score ?? 0}` (defaulting to 0 — visually wrong for null) to `{row.score == null ? "—" : \`${row.score}%\`}`. Added `data-testid="objective-score-{id}"` for test addressability.
+
+**Fold-in 2 — I.5 close-loop (Card 4 clickable subtext):**
+- `CompanyHome.jsx::AttentionCard` gains `onOpenRoleSegment` prop.
+- When `card.id === "questions"` AND `decomposition` has non-zero counts: subtext renders each segment as `<span role="button">` (NOT nested `<button>` — invalid HTML) with `data-testid="card4-subtext-segment-{role}"`. `e.stopPropagation()` prevents the parent-card click from also firing.
+- Click → navigates to `/app/questions?role={role}&filter=open&context_id={cid}`.
+- Backend `/api/me/questions` + `/api/contexts/{cid}/cycles/{cycle_id}/questions` accept `asker_role=board|ceo|team` query param. Invalid value → 400.
+- `Questions.jsx` reads `?role=` from URL, applies filter, renders active-filter chip `Role: {role} ✕` with `data-testid="questions-role-chip-clear"`.
+
+**Fold-in 3 — De-id PII fix:**
+- `services/synisense/shield/deidentifier.py::deidentify(content, *, tenant_id, purpose=None)` — new `purpose` kwarg threaded through.
+- Internal `_PURPOSE_REGEX_SKIPS = {"documents.events_extract": {"DATE_ISO"}}` map. When called with that purpose, the DATE_ISO regex pass is bypassed — ISO calendar dates flow through to the LLM unmodified.
+- `services/synisense/shield/client.py::invoke` + `invoke_streaming` plumb `purpose=purpose` into both `deidentify` calls.
+- **Follow-on JSON sanitiser** — added `events.py::_sanitise_llm_json` (quote-state-aware control-char stripper). Triggers on retry when first `safe_parse_json` returns empty dict. Handles Claude's occasional unescaped `\n` inside string values which surfaced ONLY after the de-id fix unblocked the model.
+- **Recall lift verified live:** same seeded board pack doc with 5 ISO date references. **Pre-fix:** 3/5 = 60% (I.4.b ledger note). **Post-fix:** raw=5 parsed, kept_pre_filter=5, **4 extracted cleanly** = **80% (4/5)**. The 1/5 remaining miss is LLM-output formatting variance — parked as future hygiene.
+
+**Fold-in 4 — Hygiene sweep:**
+- Zero live executable imports of archived Home1/Home2 outside `_archived/` (7 historical-context comment references in 6 files — kept as architecture documentation; not removed).
+- Zero TODO/FIXME/XXX comments in any Phase I.1-I.5 file.
+- Ledger queue reconciled: I.4.b + I.5 + I.6 removed from Queued. Remaining: I.4.c (OAuth-blocked) + Phase O / J / L / M / N.3 / Q.
+
+**Files touched:**
+- `frontend/src/components/monitor/StrategicGoalsPanel.jsx` (1-char fix)
+- `frontend/src/components/monitor/ObjectivesProjectsPanel.jsx` (1-line fix + testid)
+- `frontend/src/pages/CompanyHome.jsx` (~60 lines: AttentionCard branch + nav handler)
+- `frontend/src/pages/Questions.jsx` (~30 lines: role URL param + chip)
+- `backend/routers/questions.py` (asker_role query param on 2 endpoints)
+- `backend/services/synisense/shield/deidentifier.py` (purpose kwarg + skip map)
+- `backend/services/synisense/shield/client.py` (purpose plumbing in 2 invoke paths)
+- `backend/routers/events.py` (_sanitise_llm_json + retry-parse fallback)
+- `backend/tests/test_phase_i2_company_home_wiring.py` (loosen signature assertion to accept I.6-evolved AttentionCard 4-prop shape)
+
+**CI guard** `tests/test_phase_i6_hygiene.py` — **13 tests:**
+P1-P2 score % suffix (both sites + null handling) · L1-L2 card4 segment testids + stopPropagation + deep-link · L3 backend asker_role filter (with seeded buckets) · L5 invalid asker_role → 400 · L6 Questions.jsx role chip + clear testid · D1-D2 deidentify skips DATE_ISO ONLY when purpose=documents.events_extract · D3 other patterns (EMAIL) still fire under events_extract (shield not gutted) · D4 client.py plumbs purpose=purpose in both invoke paths · H1 no live executable imports of Home1/Home2 · H2 no TODO/FIXME/XXX in Phase I.1-I.5 files.
+
+**Test ledger** — I.6 13/13 GREEN. Full regression sweep
+(`test_phase_i*.py + test_phase_n*.py + test_phase_h*.py`) = **153 passed / 13 skipped** (skips pre-existing Patch 19 Solva fixture). Zero new regressions.
+
+**Live verification (Julius @ Personal NED Seat):**
+- Seeded 4 questions (1 board, 2 ceo, 1 team) assigned to Julius.
+- **CompanyHome Card 4** renders subtext "1 from board · 2 from CEO · 1 from team" with each segment underlined on hover. Playwright DOM probe confirms all 3 segment testids present with verbatim text.
+- **Click "1 from board"** → URL navigates to `/app/questions?role=board&filter=open&context_id=f954d5d0…` ✓. Role chip "Role: board ✕" renders with clear-X testid.
+- **Backend curl:** `/me/questions?asker_role=board` → 1 result; `?asker_role=ceo` → 2; `?asker_role=director` → 400 with verbatim error.
+- **De-id recall lift:** pre-fix 3/5 → post-fix 4/5 (80%) on the same seeded board pack.
+- Test seeds cleaned up.
+
 ### Phase I.5 — Open Questions wiring (Card 4 asker-role decomposition) — 2026-05-27 ✅
 Card 4 on CompanyHome ("Open questions") evolves from count-only with
 the placeholder subtext "Awaiting clarification" to a 3-bucket

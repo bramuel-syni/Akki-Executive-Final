@@ -301,6 +301,9 @@ export default function Questions() {
 
   const filter = searchParams.get("filter") || "open";
   const q = searchParams.get("q") || "";
+  // Phase I.6 (2026-05-27) — close-loop wire from CompanyHome Card 4
+  // subtext segments: deep link `/app/questions?role=board|ceo|team`.
+  const askerRole = searchParams.get("role") || "";
 
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState([]);
@@ -315,6 +318,12 @@ export default function Questions() {
     setSearchParams(sp, { replace: true });
   };
 
+  const clearAskerRole = () => {
+    const sp = new URLSearchParams(searchParams);
+    sp.delete("role");
+    setSearchParams(sp, { replace: true });
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -322,12 +331,21 @@ export default function Questions() {
       if (routeCycleId && activeContext?.id) {
         const r = await api.get(
           `/contexts/${activeContext.id}/cycles/${routeCycleId}/questions`,
-          { params: { status: filter === "all" ? "all" : filter } },
+          {
+            params: {
+              status: filter === "all" ? "all" : filter,
+              ...(askerRole ? { asker_role: askerRole } : {}),
+            },
+          },
         );
         data = r.data;
       } else {
         const r = await api.get("/api/me/questions", {
-          params: { status: filter === "all" ? "all" : filter, page, page_size: 10 },
+          params: {
+            status: filter === "all" ? "all" : filter,
+            page, page_size: 10,
+            ...(askerRole ? { asker_role: askerRole } : {}),
+          },
         });
         data = r.data;
       }
@@ -342,7 +360,7 @@ export default function Questions() {
       setItems([]);
       setTotal(0);
     } finally { setLoading(false); }
-  }, [routeCycleId, activeContext?.id, filter, page, q]);
+  }, [routeCycleId, activeContext?.id, filter, page, q, askerRole]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -380,6 +398,26 @@ export default function Questions() {
             ? "Questions raised on this agenda. Answer to flip status."
             : "Questions assigned to you across all contexts. Answer to flip status."}
         </p>
+
+        {/* Phase I.6 (2026-05-27) — Active-filter chip for the
+            asker_role deep-link from CompanyHome Card 4 segments.
+            Only renders when `?role=` is present. Click X clears. */}
+        {askerRole && (
+          <div className="mb-5 inline-flex items-center gap-2" data-testid={`questions-role-chip-${askerRole}`}>
+            <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.12em] font-mono bg-[var(--ink)] text-[var(--parchment)] rounded-sm px-2.5 py-1">
+              Role: {askerRole === "ceo" ? "CEO" : askerRole}
+              <button
+                type="button"
+                onClick={clearAskerRole}
+                className="hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 rounded-sm"
+                data-testid="questions-role-chip-clear"
+                aria-label="Clear role filter"
+              >
+                ✕
+              </button>
+            </span>
+          </div>
+        )}
 
         <ListingShell
           testId="questions-listing"
