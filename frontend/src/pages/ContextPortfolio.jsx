@@ -74,7 +74,18 @@ function CompanyCard({ c, active, onOpen }) {
           : "border-[var(--rule)] hover:border-[var(--ink)]/30"
       }`}
       data-testid={`portfolio-card-${c.id}`}
+      data-rail-card-id={c.id}
+      data-rail-card-role={c.type?.startsWith("ned") ? "ned" : "executive"}
     >
+      {/* H.2 — Stable alias testid for rail-row Playwright assertions.
+          We render an invisible sentinel so the testid query is
+          unambiguous (the parent already carries `portfolio-card-<id>`
+          for back-compat with H.1 tests). */}
+      <span
+        data-testid={`rail-company-card-${c.id}`}
+        className="sr-only"
+        aria-hidden="true"
+      />
       {sponsored && (
         <span
           className="absolute top-2 right-2 text-[9px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] border border-[var(--rule)] rounded-sm px-1.5 py-[1px]"
@@ -108,9 +119,40 @@ function CompanyCard({ c, active, onOpen }) {
 function RailCompanyList({ contexts, activeContextId, onOpen, onAdd }) {
   const nedList  = useMemo(() => contexts.filter((c) => classifyRole(c) === "ned"), [contexts]);
   const execList = useMemo(() => contexts.filter((c) => classifyRole(c) === "executive"), [contexts]);
-  // Default to first non-empty tab. Re-evaluates only when counts change.
-  const defaultTab = nedList.length > 0 ? "ned" : "executive";
-  const [tab, setTab] = useState(defaultTab);
+
+  // H.2 (2026-05-26) — tab persistence via localStorage. Falls back
+  // to first non-empty tab when nothing was persisted yet, or when
+  // the persisted tab is now empty.
+  const _readPersisted = () => {
+    try {
+      if (typeof window === "undefined") return null;
+      const v = window.localStorage.getItem("akki.portfolio.rail.tab");
+      return v === "ned" || v === "executive" ? v : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const _firstNonEmpty = () => (nedList.length > 0 ? "ned" : "executive");
+  const _initialTab = () => {
+    const persisted = _readPersisted();
+    if (persisted === "ned"       && nedList.length  > 0) return "ned";
+    if (persisted === "executive" && execList.length > 0) return "executive";
+    return _firstNonEmpty();
+  };
+
+  const [tab, setTabRaw] = useState(_initialTab);
+  const setTab = (next) => {
+    setTabRaw(next);
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("akki.portfolio.rail.tab", next);
+      }
+    } catch {
+      // localStorage unavailable (private mode, quota); ignore.
+    }
+  };
+
   useEffect(() => {
     if (tab === "ned" && nedList.length === 0 && execList.length > 0) setTab("executive");
     if (tab === "executive" && execList.length === 0 && nedList.length > 0) setTab("ned");
@@ -249,9 +291,16 @@ export default function ContextPortfolio() {
   const { contexts, activeContextId, switchContext, account } = useAuth();
   const navigate = useNavigate();
 
+  // H.2 (2026-05-26) — Card click → switchContext(cid). The
+  // AuthContext.switchContext helper itself navigates to /app on
+  // success, where AppHome routes to Home2 (per-company home).
+  // We don't navigate manually here.
   const openContext = (cid) => {
-    switchContext(cid);
-    navigate("/app");
+    if (!cid) return;
+    switchContext(cid).catch(() => {
+      // switchContext surfaces its own error toasts; swallowing keeps
+      // the click handler quiet (Playwright probes etc.).
+    });
   };
 
   const firstName = (account?.name || "there").split(" ")[0];

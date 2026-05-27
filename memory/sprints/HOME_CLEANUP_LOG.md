@@ -2401,3 +2401,152 @@ client-side `useIdle(timeoutMs)` hook that fires `logout()` on
 inactivity, plus a backend revocation list for the access-token
 JTI when the client logs out. Read-only audit — no implementation.
 
+
+## Phase H.2 — Right-rail company list wiring (2026-05-26)
+
+Wires the H.1 layout shell to live data. No layout changes —
+just behavior + tab persistence + click → context switch.
+
+### What landed
+
+| Behavior | Implementation |
+| --- | --- |
+| Tab filtering | `nedList = contexts.filter(c => classifyRole(c) === "ned")` + `execList = …executive`. Tab buttons render filtered subset only. |
+| Tab counts | `NED · {nedList.length}` / `Executive · {execList.length}` — real filtered counts. |
+| Default tab | first non-empty (`nedList.length > 0 ? "ned" : "executive"`). |
+| localStorage persistence | key `akki.portfolio.rail.tab`. Read on init via `_initialTab()`; written via `setTab(next)` wrapper. Try/catch so private-mode / quota errors don't crash. Falls back to first non-empty if persisted tab is now empty. |
+| Card click | calls `switchContext(c.id)` from AuthContext. AuthContext owns post-switch navigation (sets `window.location.href = "/app"`) — we do NOT navigate manually. |
+| `+ Add Company` button | `navigate("/app/contexts/new")` — reuses the existing flow (same route used by Manage.jsx, TenantSettings.jsx, OnboardingProvisioningChoice.jsx). |
+| Stable testids | Card root has `portfolio-card-${c.id}` (H.1) + `data-rail-card-id={c.id}` + `data-rail-card-role={ned|executive}`. Sr-only sentinel `rail-company-card-${c.id}` for stable Playwright queries. |
+
+### Live verification (1280×900, signed in as juliusaopio@gmail.com)
+
+```
+=== STEP 1 — Default tab + counts ===
+NED tab label:       'NED · 2'
+Executive tab label: 'EXECUTIVE · 3'
+NED aria-selected:        true   (default, since nedList non-empty)
+Executive aria-selected:  false
+Visible cards on default tab: 2
+Card roles on default tab: ['ned', 'ned']
+
+=== STEP 2 — Click Executive tab ===
+Cards after Executive click: 3
+Card roles: ['executive', 'executive', 'executive']
+All visible cards are role=executive: True
+localStorage value after Executive click: 'executive'
+
+=== STEP 3 — Click NED tab ===
+Cards on NED tab: 2
+Card roles: ['ned', 'ned']
+All visible cards are role=ned: True
+localStorage value after NED click: 'ned'
+
+=== STEP 4 — Reload preserves NED tab via localStorage ===
+NED tab aria-selected after reload: true
+
+=== STEP 5 — Click first card → context switch ===
+Clicking card id: f954d5d0-50d9-47d5-a64f-3be89cee8296
+(switchContext fires: backend POST /api/contexts/active, then context-switched modal renders with "Continue" CTA)
+```
+
+### Files touched
+
+| File | Change |
+| --- | --- |
+| `frontend/src/pages/ContextPortfolio.jsx` | RailCompanyList rewired: `_initialTab`/`setTab` localStorage wrappers; CompanyCard exposes `data-rail-card-{id,role}` + sr-only `rail-company-card-<id>` sentinel; `openContext` simplified to `switchContext(cid)` (no manual navigate). |
+| `backend/tests/test_phase_h2_rail_wiring.py` (NEW, 9 tests) | T1-T8 per-feature CI guard. |
+
+### Suite pass count
+
+- `test_phase_h2_rail_wiring.py`: **9/9 GREEN**
+- Full suite (incl. all home-cleanup phases + admin-health + tab-prefix + portfolio-H1 + H.1 + H.2): **377 passed, 1 skipped** (chromium binary not in pytest pod).
+
+---
+
+## Spike — Open Questions (read-only, blocks Phase I)
+
+User assumption check: does Akki already track "open questions"
+(board / CEO / team)?
+
+**Answer: YES — directly mappable. Reuse `cycle_questions`.**
+
+### Direct-map finding (Bucket a) — `cycle_questions` collection
+
+| Aspect | Status |
+| --- | --- |
+| **Collection** | `cycle_questions` (Mongo) |
+| **Backend router** | `/app/backend/routers/questions.py` (mounted) |
+| **Frontend surface** | `/app/frontend/src/pages/Questions.jsx` — already exists |
+| **Schema** | `{id, context_id, cycle_id, agenda_item_id?, text, asked_by_account_id, asked_at, assignee_account_id, status: open\|answered\|resolved, answer_text?, answered_at?, answered_by_account_id?, history[]}` |
+| **Status field** | YES — `open` / `pending` / `answered` / `resolved`. Filter via `GET /api/me/questions?status=open\|answered\|all` |
+| **Per-context filterable** | YES — every doc has `context_id`; routes are `/contexts/{cid}/cycles/{cycle_id}/questions` and `/me/questions` (across all contexts) |
+| **Endpoints** | `GET /api/me/questions` · `GET /api/contexts/{cid}/cycles/{cycle_id}/questions` · `POST .../questions` · `GET .../questions/{qid}` · `POST .../questions/{qid}/answer` |
+| **Already used by Home** | `backend/routers/home.py` returns `open_questions: {count, key}` on the home dashboard payload — `cycle_questions.count_documents({"status": {"$in": ["open","pending"]}})` |
+
+### What's missing for the "board / CEO / team" asker-role taxonomy
+
+The schema has `asked_by_account_id` (the account that asked), but
+**no explicit asker-role classification**. The user's mental model
+("questions from the board / CEO / team") needs a derived field
+OR a new column. Three options for Phase I.5:
+
+1. **Derive at read time** from `asked_by_account_id` →
+   `account.declared_role` + the `context.type` (is the asker the
+   executive owner of this context, a sponsored NED on it, or a
+   team member of the company?). Zero schema change. Adds a join
+   in the read path; cacheable on the frontend.
+2. **Backfill + new field** `asker_role: "board" | "ceo" | "team"`
+   on every `cycle_questions` doc + maintain on insert. Cleanest
+   for filtering at scale, but needs migration.
+3. **Compute from the question's CYCLE** — cycles already classify
+   contributors by role (`cycle.team[].role`). When inserting a
+   question, copy the role from the cycle team entry → no new
+   account-derived join. Lightest scope.
+
+Recommend **option 3** for Phase I.5: copy `asker_role` from the
+cycle's `team[]` row when a question is created. Backwards-compat
+read path: if `asker_role` missing, derive at read time (option 1
+fallback).
+
+### Other surfaces audited
+
+| Surface | Open/resolved status? | Asker role? | Per-company filterable? | Verdict |
+| --- | :-: | :-: | :-: | --- |
+| **Solva** (`solva_*` routers) | No — Solva tracks `question_key` emissions for telemetry/cycle-detection. Solva "questions" are conversational probes, not standing items. | n/a | yes via session_id → context | NOT a Q&A tracker. Don't reuse. |
+| **Inbound emails** (`task_inbound_emails`) | `parse_status` field tracks pipeline (ingested / sender_mismatch / token_unknown_or_expired). | n/a | yes via task_id | Forensics-only. Not Q&A. |
+| **Document comments** (`comments` collection) | `status` is `active`/`deleted` only — NO open/resolved semantics. | author_account_id | yes via context_id + artefact_id | NOT directly mappable. Would need schema additions (`resolved_at`, `kind: question\|note`). |
+| **Chat threads** | No "pinned" or "flagged" field exists. Search returned zero. | n/a | yes (via context_id) | NOT a Q&A tracker. |
+| **Tasks** (`tasks` collection) | No `clarification` field per role. Tasks have a `team[]` with role-tagged contributions, but those are deliverables, not questions. | (contribution-not-question) | yes via account_id + context_id | NOT a Q&A tracker. |
+
+### Bucket assignments (per dispatch reporting format)
+
+- **(a) Exists & directly maps** ✅ — `cycle_questions` collection.
+  Use it as-is for Phase I.5 open-questions surface. Already
+  exposes status filtering, per-context filtering, full audit
+  trail (asked_at/answered_at/answered_by + history[]). Frontend
+  `pages/Questions.jsx` provides a read-time render pattern to
+  copy.
+- **(b) Exists across multiple surfaces** ⚠️ — `comments`
+  collection has the **structural** shape (artefact link, author,
+  thread parent_id, history) but lacks `resolved` semantics.
+  Phase I.5 COULD aggregate questions + unresolved comments into
+  one "open work" surface — but that's an explicit product
+  decision, not a forced move.
+- **(c) Net-new collection needed** ❌ — none required for the
+  immediate "board / CEO / team open questions" view. The
+  asker-role taxonomy is a single-field addition to
+  `cycle_questions` (option 3 above), not a new collection.
+
+### Phase I.5 scope estimate (rough — for user planning, NOT a commitment)
+
+- Backend: add `asker_role` field, populate on insert from
+  `cycle.team[].role`, add backfill migration for existing rows,
+  expose `?asker_role=board|ceo|team` filter on `/api/me/questions`
+  and `/api/contexts/{cid}/.../questions`. ~half-day.
+- Frontend: new "Open Questions by asker role" view (or extend
+  `pages/Questions.jsx` with role-filter tabs). Same chrome as
+  H.1 right rail (NED/Executive style tabs). ~half-day.
+- Tests: wire + live; ~2-3h.
+- Total: ~1.5 days end-to-end including Playwright verification.
+
