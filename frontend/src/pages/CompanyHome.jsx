@@ -53,7 +53,7 @@ function _routeForCard(routeKey, cid) {
     case "reports":   return `/app/task-manager?filter=ready_to_compile&context_id=${cid}`;
     case "pulse":     return `/app/pulse?context_id=${cid}`;
     case "questions": return `/app/questions?status=open&context_id=${cid}`;
-    case "events":    return null;   // I.4
+    case "events":    return `/app/events?context_id=${cid}`;
     default:          return null;
   }
 }

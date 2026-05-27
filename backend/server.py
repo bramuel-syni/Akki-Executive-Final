@@ -66,6 +66,7 @@ from routers import blog as blog_router  # noqa: E402
 from routers import admin_email_provider as admin_email_provider_router  # noqa: E402
 from routers import portfolio_data as portfolio_data_router  # noqa: E402
 from routers import company_home as company_home_router  # noqa: E402
+from routers import events as events_router  # noqa: E402
 from routers import billing as billing_router  # noqa: E402
 # CLEANUP B2 (2026-05-26): plays_router archived — Plays surface ORPHAN
 # per PROVENANCE_TRACE_PLAYS_CYCLE.md. Router moved to
@@ -189,6 +190,7 @@ app.include_router(blog_router.router)
 app.include_router(admin_email_provider_router.router)
 app.include_router(portfolio_data_router.router)
 app.include_router(company_home_router.router)
+app.include_router(events_router.router)
 app.include_router(billing_router.router)
 # CLEANUP B2 (2026-05-26): plays_router include removed — see archive note above.
 app.include_router(agenda_router.router)
@@ -570,6 +572,10 @@ async def on_startup():
     # Patch 3 — Home v2.
     await db.user_recent_views.create_index([("account_id", 1), ("surface_path", 1)], unique=True)
     await db.user_recent_views.create_index([("account_id", 1), ("last_visited_at", -1)])
+    # Phase I.4.a (2026-05-27) — events collection for the new manual
+    # entry surface. Compound index keys list-by-context queries
+    # sorted by start_at (used by /api/contexts/{cid}/events).
+    await db.events.create_index([("context_id", 1), ("start_at", 1)])
     await db.user_context_visits.create_index([("account_id", 1), ("context_id", 1)], unique=True)
     # Patch 5 — Monitor v2.
     await db.objectives.create_index("id", unique=True)

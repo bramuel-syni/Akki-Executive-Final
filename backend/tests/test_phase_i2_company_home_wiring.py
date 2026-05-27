@@ -311,26 +311,32 @@ def test_i2_questions_card_does_not_pre_wire_asker_role_decomposition():
         )
 
 
-# ── T5. Events card always empty in I.2 ──────────────────────────
-def test_i2_events_card_is_hard_coded_empty():
+# ── T5. Events card never falls back to tasks collection ────────
+# This guard was originally written when _build_events() returned
+# a hardcoded empty state in I.2. Post-I.4.a (2026-05-27) the helper
+# queries the new `events` collection. The negative invariant
+# (`tasks` collection MUST NOT be used as an events source) is what
+# we still want to enforce — that was the OUT_OF_SCOPE locked in
+# both I.2 AND I.4.a briefs.
+def test_i2_events_card_never_falls_back_to_tasks_collection():
     src = _read(ROUTER)
-    # The events helper must return 0 + the empty-state string.
+    # The empty-state string survives somewhere (used when events
+    # collection has no rows in the 14-day window).
     assert "No events scheduled" in src
-    # Strip docstrings/comments before the forbidden-token scan so
-    # the OUT_OF_SCOPE comment inside `_build_events` doesn't trip
-    # the guard.
     stripped = _strip_py_strings_and_comments(src)
+    # Match the I.4.a helper signature (takes a cid param). Old
+    # signature was `_build_events()` (no args).
     m = re.search(
-        r"def _build_events\(\)[\s\S]*?return CardEvents\(",
+        r"def _build_events\([^)]*\)[\s\S]*?return CardEvents\(",
         stripped,
     )
     assert m, "_build_events function not found (after comment strip)"
     body = m.group(0)
     # The executable body must NOT read from the tasks collection.
-    for f in ("final_due_date", "due_date", "db.tasks"):
+    for f in ("final_due_date", "tasks.find_one", "db.tasks", "tasks.aggregate"):
         assert f not in body, (
-            f"_build_events must NOT touch `{f}` — events collection "
-            "ships in I.4, not as a tasks fallback."
+            f"_build_events must NOT touch `{f}` — tasks are NOT an "
+            "events source. Locked OUT in both the I.2 and I.4.a briefs."
         )
 
 
@@ -377,16 +383,13 @@ def test_i2_click_routing_uses_context_filtered_routes_per_card():
     # The route resolver function.
     assert "_routeForCard" in src
     # Each card's route shape (verbatim).
+    # Phase I.4.a (2026-05-27): events card now routes to /app/events
+    # (was no-op in I.2). The 4 other markers are unchanged.
     for marker in (
         "/app/work-studio?tab=drafts&context_id=",
         "/app/task-manager?filter=ready_to_compile&context_id=",
         "/app/pulse?context_id=",
         "/app/questions?status=open&context_id=",
+        "/app/events?context_id=",
     ):
         assert marker in src, f"missing route marker `{marker}`"
-    # Events card is a no-op (returns null).
-    m = re.search(
-        r'case\s+"events":\s*return\s+null',
-        src,
-    )
-    assert m, "events card must be a no-op in _routeForCard"

@@ -273,12 +273,42 @@ async def _build_questions(cid: str) -> CardQuestions:
     return CardQuestions(count=count, subtext=subtext)
 
 
-def _build_events() -> CardEvents:
-    """Hard-coded empty state — the events collection ships in
-    Phase I.4. Do NOT fall back to `tasks.final_due_date` etc. The
-    brief is explicit: "Card stays empty-state-only until I.4 wires
-    the real events collection." """
-    return CardEvents(count=0, subtext="No events scheduled")
+async def _build_events(cid: str) -> CardEvents:
+    """Phase I.4.a (2026-05-27) — events collection now exists; pull
+    upcoming events for this context within the next 14 days.
+
+    Sort by start_at asc; subtext = first 2 titles + " · N more" if
+    more than 2. Empty state preserved when no events fall in the
+    window.
+
+    The I.2 invariant ("events MUST NOT fall back to tasks.final_due_date")
+    is still respected — this helper queries `db.events` directly,
+    never the tasks collection.
+    """
+    from datetime import timedelta
+    now = _now()
+    horizon = now + timedelta(days=14)
+    q = {
+        "context_id": cid,
+        "deleted_at": None,
+        "start_at": {"$gte": _iso(now), "$lte": _iso(horizon)},
+    }
+    count = await db.events.count_documents(q)
+    if count == 0:
+        return CardEvents(count=0, subtext="No events scheduled")
+
+    cursor = db.events.find(
+        q, {"_id": 0, "title": 1, "start_at": 1}
+    ).sort("start_at", 1).limit(3)
+    rows = await cursor.to_list(length=3)
+    titles = [r.get("title") or "(untitled)" for r in rows[:2]]
+    if count == 1:
+        subtext = titles[0]
+    elif count == 2:
+        subtext = ", ".join(titles)
+    else:
+        subtext = f"{titles[0]}, {titles[1]} · {count - 2} more"
+    return CardEvents(count=count, subtext=subtext)
 
 
 @router.get("/me/company-home/attention", response_model=AttentionOut)
@@ -297,7 +327,7 @@ async def attention(
     reports   = await _build_reports(cid)
     pulse     = await _build_pulse(cid)
     questions = await _build_questions(cid)
-    events    = _build_events()
+    events    = await _build_events(cid)
 
     out = {
         "drafts":    drafts.model_dump(),

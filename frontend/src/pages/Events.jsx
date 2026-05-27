@@ -1,0 +1,459 @@
+/**
+ * Events page — Phase I.4.a (2026-05-27).
+ *
+ * Manual events entry surface for an active company context. The
+ * Company Home Card 5 ("Upcoming events") deep-links here.
+ *
+ * Route: `/app/events?context_id={cid}`
+ *
+ * I.4.a scope (manual entry only):
+ *   • List events for the active context (tabs: Upcoming / Past / All)
+ *   • Add event modal (5 fields, 4 of them required: title, type,
+ *     start_at; location + notes optional; end_at optional)
+ *   • Edit event (same modal, prefilled)
+ *   • Delete event (soft-delete via DELETE; backend hides deleted)
+ *
+ * Out of scope (later I.4 sub-phases):
+ *   • I.4.b — doc-extraction (LLM scans board packs for events)
+ *   • I.4.c — calendar sync (Google/Outlook OAuth)
+ *   • Recurring events, reminders, notifications
+ */
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import AppShell from "@/components/layout/AppShell";
+import {
+  Calendar, Plus, ArrowLeft, MapPin, Edit3, Trash2, X, ChevronRight,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+
+
+const EVENT_TYPES = [
+  { id: "board_meeting", label: "Board meeting" },
+  { id: "audit_review",  label: "Audit review" },
+  { id: "briefing",      label: "Briefing" },
+  { id: "deadline",      label: "Deadline" },
+  { id: "other",         label: "Other" },
+];
+
+const EVENT_TYPE_LABEL = Object.fromEntries(EVENT_TYPES.map(t => [t.id, t.label]));
+
+
+function fmtDateTime(iso) {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, {
+      weekday: "short", month: "short", day: "numeric",
+      hour: "numeric", minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+
+/* ─────────────────────────────────────────────────────────────────── */
+/* Add / Edit modal                                                     */
+/* ─────────────────────────────────────────────────────────────────── */
+
+function EventModal({ open, mode, event, onSave, onDelete, onClose }) {
+  const [title,    setTitle]    = useState("");
+  const [type,     setType]     = useState("board_meeting");
+  const [startAt,  setStartAt]  = useState("");
+  const [endAt,    setEndAt]    = useState("");
+  const [location, setLocation] = useState("");
+  const [notes,    setNotes]    = useState("");
+  const [err,      setErr]      = useState(null);
+  const [saving,   setSaving]   = useState(false);
+
+  // Prefill on open (edit mode)
+  useEffect(() => {
+    if (!open) return;
+    setErr(null);
+    if (mode === "edit" && event) {
+      setTitle(event.title || "");
+      setType(event.type || "board_meeting");
+      setStartAt(event.start_at ? event.start_at.slice(0, 16) : "");
+      setEndAt(event.end_at ? event.end_at.slice(0, 16) : "");
+      setLocation(event.location || "");
+      setNotes(event.notes || "");
+    } else {
+      setTitle(""); setType("board_meeting"); setStartAt("");
+      setEndAt(""); setLocation(""); setNotes("");
+    }
+  }, [open, mode, event]);
+
+  const handleSave = useCallback(async (e) => {
+    e?.preventDefault?.();
+    if (!title.trim()) { setErr("Title is required"); return; }
+    if (!startAt)      { setErr("Start date/time is required"); return; }
+    setSaving(true); setErr(null);
+    try {
+      // datetime-local inputs are local-naive; convert to ISO with timezone offset.
+      const start_iso = new Date(startAt).toISOString();
+      const end_iso = endAt ? new Date(endAt).toISOString() : null;
+      await onSave({
+        title:    title.trim(),
+        type,
+        start_at: start_iso,
+        end_at:   end_iso,
+        location: location.trim() || null,
+        notes:    notes.trim() || null,
+      });
+      onClose();
+    } catch (e) {
+      setErr(e?.response?.data?.detail || e?.message || "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }, [title, type, startAt, endAt, location, notes, onSave, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+      onClick={onClose}
+      data-testid="event-modal-backdrop"
+    >
+      <form
+        className="bg-white rounded-md shadow-lg w-full max-w-[540px] max-h-[92vh] overflow-y-auto p-6"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={handleSave}
+        data-testid="event-modal"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-serif text-[20px] text-[var(--ink)]">
+            {mode === "edit" ? "Edit event" : "Add event"}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="text-[var(--muted)] hover:text-[var(--ink)]"
+            data-testid="event-modal-close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="evt-title" className="text-[11px] uppercase tracking-[0.08em] font-mono text-[var(--muted)]">
+              Title *
+            </Label>
+            <Input
+              id="evt-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              maxLength={200}
+              data-testid="event-modal-title"
+              required
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="evt-type" className="text-[11px] uppercase tracking-[0.08em] font-mono text-[var(--muted)]">
+              Type
+            </Label>
+            <select
+              id="evt-type"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              className="w-full border border-[var(--rule)] rounded-md px-3 py-2 text-[14px] bg-white"
+              data-testid="event-modal-type"
+            >
+              {EVENT_TYPES.map(t => (
+                <option key={t.id} value={t.id}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="evt-start" className="text-[11px] uppercase tracking-[0.08em] font-mono text-[var(--muted)]">
+                Start *
+              </Label>
+              <Input
+                id="evt-start"
+                type="datetime-local"
+                value={startAt}
+                onChange={(e) => setStartAt(e.target.value)}
+                data-testid="event-modal-start"
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="evt-end" className="text-[11px] uppercase tracking-[0.08em] font-mono text-[var(--muted)]">
+                End (optional)
+              </Label>
+              <Input
+                id="evt-end"
+                type="datetime-local"
+                value={endAt}
+                onChange={(e) => setEndAt(e.target.value)}
+                data-testid="event-modal-end"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="evt-location" className="text-[11px] uppercase tracking-[0.08em] font-mono text-[var(--muted)]">
+              Location (optional)
+            </Label>
+            <Input
+              id="evt-location"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              maxLength={200}
+              data-testid="event-modal-location"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="evt-notes" className="text-[11px] uppercase tracking-[0.08em] font-mono text-[var(--muted)]">
+              Notes (optional)
+            </Label>
+            <Textarea
+              id="evt-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              maxLength={2000}
+              rows={4}
+              data-testid="event-modal-notes"
+            />
+          </div>
+        </div>
+
+        {err && (
+          <p className="text-[12px] text-[var(--accent)] mt-3" data-testid="event-modal-error">
+            {err}
+          </p>
+        )}
+
+        <div className="mt-5 flex items-center justify-between gap-3">
+          {mode === "edit" ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm("Delete this event? This cannot be undone.")) {
+                  onDelete(event.id).then(onClose);
+                }
+              }}
+              className="text-[12.5px] text-[var(--accent)] hover:underline inline-flex items-center gap-1"
+              data-testid="event-modal-delete"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </button>
+          ) : <span />}
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={onClose} data-testid="event-modal-cancel">
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving} data-testid="event-modal-save">
+              {saving ? "Saving…" : (mode === "edit" ? "Save changes" : "Add event")}
+            </Button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+
+/* ─────────────────────────────────────────────────────────────────── */
+/* Events page                                                          */
+/* ─────────────────────────────────────────────────────────────────── */
+
+export default function Events() {
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const { activeContext } = useAuth();
+  const cid = params.get("context_id") || activeContext?.id;
+
+  const [tab,        setTab]        = useState("upcoming"); // upcoming | past | all
+  const [events,     setEvents]     = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [modalOpen,  setModalOpen]  = useState(false);
+  const [modalMode,  setModalMode]  = useState("create"); // create | edit
+  const [editTarget, setEditTarget] = useState(null);
+
+  const reload = useCallback(async () => {
+    if (!cid) return;
+    setLoading(true);
+    try {
+      // We always load `upcoming=false` (all events incl. past) and filter
+      // client-side per tab — keeps the tab switch instant after first load.
+      const { data } = await api.get(
+        `/contexts/${cid}/events?upcoming=false&limit=100`,
+      );
+      setEvents(data?.items || []);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[Events] list fetch failed:", err?.message);
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [cid]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  const now = useMemo(() => Date.now(), []);
+  const filtered = useMemo(() => {
+    if (tab === "upcoming") return events.filter(e => new Date(e.start_at).getTime() >= now);
+    if (tab === "past")     return events.filter(e => new Date(e.start_at).getTime() < now);
+    return events;
+  }, [tab, events, now]);
+
+  const handleCreate = useCallback(async (body) => {
+    const { data } = await api.post(`/contexts/${cid}/events`, body);
+    setEvents(prev => [...prev, data]);
+  }, [cid]);
+
+  const handleUpdate = useCallback(async (body) => {
+    const { data } = await api.patch(
+      `/contexts/${cid}/events/${editTarget.id}`, body,
+    );
+    setEvents(prev => prev.map(e => e.id === data.id ? data : e));
+  }, [cid, editTarget]);
+
+  const handleDelete = useCallback(async (eventId) => {
+    await api.delete(`/contexts/${cid}/events/${eventId}`);
+    setEvents(prev => prev.filter(e => e.id !== eventId));
+  }, [cid]);
+
+  const openCreate = () => { setModalMode("create"); setEditTarget(null); setModalOpen(true); };
+  const openEdit   = (e) => { setModalMode("edit"); setEditTarget(e); setModalOpen(true); };
+
+  const companyName = activeContext?.name || "this company";
+
+  return (
+    <AppShell>
+      <div className="max-w-[1100px] mx-auto px-6 lg:px-8 py-8" data-testid="events-page">
+        {/* Breadcrumb */}
+        <button
+          type="button"
+          onClick={() => navigate("/app")}
+          aria-label="Back to Company Home"
+          className="text-[11.5px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] hover:text-[var(--ink)] inline-flex items-center gap-1.5 mb-6 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 rounded-sm px-1 py-0.5"
+          data-testid="events-back-to-home"
+        >
+          <ArrowLeft className="w-3 h-3" strokeWidth={1.8} aria-hidden="true" /> Back to Company Home
+        </button>
+
+        {/* Eyebrow + H1 + subtitle */}
+        <p className="text-[10.5px] uppercase tracking-[0.18em] font-mono text-[var(--muted)] mb-2" data-testid="events-eyebrow">
+          Events · {companyName}
+        </p>
+        <h1
+          className="font-serif leading-[1.15] text-[var(--ink)] mb-2"
+          style={{ fontSize: "32px" }}
+          data-testid="events-h1"
+        >
+          Upcoming on the calendar.
+        </h1>
+        <p className="text-[13.5px] text-[var(--muted)] mb-6">
+          Manual entries. Document extraction and calendar sync land in later phases.
+        </p>
+
+        {/* Tabs + Add button */}
+        <div className="flex items-center justify-between mb-5">
+          <div role="tablist" aria-label="Filter events by time" className="flex gap-1.5" data-testid="events-tabs">
+            {[
+              ["upcoming", "Upcoming"],
+              ["past",     "Past"],
+              ["all",      "All"],
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={tab === id}
+                onClick={() => setTab(id)}
+                className={`px-3 py-1.5 text-[12px] uppercase tracking-[0.1em] font-mono rounded-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
+                  tab === id
+                    ? "bg-[var(--ink)] text-white"
+                    : "text-[var(--muted)] hover:text-[var(--ink)] bg-white border border-[var(--rule)]"
+                }`}
+                data-testid={`events-tab-${id}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <Button onClick={openCreate} data-testid="events-add-btn">
+            <Plus className="w-3.5 h-3.5 mr-1" />
+            Add event
+          </Button>
+        </div>
+
+        {/* List */}
+        {loading ? (
+          <p className="text-[13px] italic text-[var(--muted)] py-6" data-testid="events-loading">
+            Loading…
+          </p>
+        ) : filtered.length === 0 ? (
+          <div
+            className="bg-white border border-dashed border-[var(--rule)] rounded-md px-6 py-12 text-center"
+            data-testid="events-empty"
+          >
+            <Calendar className="w-5 h-5 mx-auto text-[var(--muted)] mb-3" strokeWidth={1.5} />
+            <p className="text-[13px] italic text-[var(--muted)]">
+              No events yet. Add your first event to surface it on Company Home.
+            </p>
+          </div>
+        ) : (
+          <ul className="space-y-2.5" data-testid="events-list">
+            {filtered.map((ev) => (
+              <li key={ev.id}>
+                <button
+                  type="button"
+                  onClick={() => openEdit(ev)}
+                  className="w-full text-left bg-white border border-[var(--rule)] hover:border-[var(--ink)]/30 rounded-md px-5 py-3.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50"
+                  data-testid={`events-row-${ev.id}`}
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="text-[15.5px] font-medium text-[var(--ink)] truncate">{ev.title}</p>
+                        <span className="text-[10px] uppercase tracking-[0.1em] font-mono text-[var(--muted)] border border-[var(--rule)] rounded-sm px-1.5 py-[1px] shrink-0">
+                          {EVENT_TYPE_LABEL[ev.type] || ev.type}
+                        </span>
+                      </div>
+                      <p className="text-[12.5px] text-[var(--muted)]">{fmtDateTime(ev.start_at)}{ev.end_at ? ` → ${fmtDateTime(ev.end_at)}` : ""}</p>
+                      {ev.location && (
+                        <p className="text-[12px] text-[var(--muted)] inline-flex items-center gap-1 mt-1">
+                          <MapPin className="w-3 h-3" /> {ev.location}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0 text-[var(--muted)]">
+                      <Edit3 className="w-3.5 h-3.5" strokeWidth={1.7} />
+                      <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.7} />
+                    </div>
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <EventModal
+          open={modalOpen}
+          mode={modalMode}
+          event={editTarget}
+          onSave={modalMode === "edit" ? handleUpdate : handleCreate}
+          onDelete={handleDelete}
+          onClose={() => setModalOpen(false)}
+        />
+      </div>
+    </AppShell>
+  );
+}
