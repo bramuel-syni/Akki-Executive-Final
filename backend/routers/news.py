@@ -134,21 +134,30 @@ async def get_news(
     )
 
 
-# H.3 — Executive-tier source allowlist (2026-05-26). Used by the
-# ?quality=executive filter. Conservative subset of the aggregator's
-# curated set; expand as the source list grows.
+# H.3 — Executive-tier source allowlist (2026-05-26).
+# H.4 (2026-05-27) — Expanded with all live executive-grade aggregator
+# sources (nyt-business) + the canonical paid-API sources reserved for
+# future activation (Bloomberg/Reuters/WSJ/Nikkei/S&P/MIT Sloan). The
+# reserved IDs do NOT match any live aggregator entries today, so they
+# are forward-compatible only — the moment an operator wires those
+# feeds via paid API, the filter will pick them up automatically.
+#
+# Used by the ?quality=executive filter. Fallback to the full curated
+# set kicks in when the tier-1 subset is thin (< max(3, limit//2)).
 _EXECUTIVE_TIER1_SOURCE_IDS = frozenset({
-    "ft-companies",
-    "ft-lex",
-    "economist-biz",
-    # Reserved entries — these source_ids don't yet exist in the
-    # aggregator but are the canonical executive tier-1 sources. Add
-    # to the aggregator's RSS list when ready; this filter is
-    # forward-compatible.
+    # ── Live, in `data/news_sources.json` ────────────────────────
+    "ft-companies",     # FT Companies (RSS, live)
+    "ft-lex",           # FT Lex column (RSS, live)
+    "economist-biz",    # The Economist — Business (RSS, live)
+    "nyt-business",     # H.4 — NYT Business (RSS, live)
+    # ── Reserved (paid-API sources, not yet wired to aggregator) ─
     "bloomberg",
     "reuters-business",
     "wsj-business",
     "hbr",
     "mckinsey-insights",
     "boardeffect",
+    "nikkei-asia",      # H.4 — Nikkei Asia (reserved)
+    "sp-global",        # H.4 — S&P Global Market Intelligence (reserved)
+    "mit-sloan-review", # H.4 — MIT Sloan Management Review (reserved)
 })

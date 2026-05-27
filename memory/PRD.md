@@ -1,6 +1,59 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+## Phase H.4 (Portfolio Calm Pass) + Chat-list density lock — 2026-05-27 ✅
+
+### Chat-list left-sidebar tightening (Claude-style)
+Source-level audit confirmed the H.3 side-fix tightening pass had
+already applied at the JSX level. Live DOM verification on the
+preview (bramuel@syni.ai, 5 chats rendered) returned EXACT spec
+match: title `13.5px` / `font-weight: 500` / sans-serif stack /
+line-height `1.35` (= 18.225px) / `whiteSpace: nowrap` /
+`textOverflow: ellipsis` / row height `40px` / sidebar width
+`300px` / 1 `<p>` per row (no subtitle/preview). Control surface
+(Task Manager) regression-free.
+
+Added `tests/test_chat_list_density.py` (8/8 GREEN) to lock:
+title typography, row spacing, no-subtitle invariant, active-state
+2px oxblood accent bar, header sub-line `10px` muted, search
+input `h-8 + text-[13px]`, parchment background preserved, title
+testid attached to the title `<p>` directly.
+
+### Phase H.4 — Portfolio calm pass
+Three deliverables, all live-verified + locked by CI guard
+(`tests/test_phase_h4_calm_pass.py` 9/9 GREEN):
+
+- **H.4.1 — Recent-views deep-link enrichment.** `RecentViewIn`
+  now accepts optional `artefact_id` / `artefact_kind` / `deep_link`.
+  POST `/api/me/recent-views` persists them. GET `/api/me/last-action`
+  prefers persisted enrichment over surface_path classification, AND
+  surfaces a new `artefact_kind` field on `LastActionOut`. Legacy
+  rows (no enrichment) fall back to H.3 classification — confirmed
+  via live round-trip + legacy-row regression test.
+
+- **H.4.2 — News tier-1 allowlist expansion.** Added live
+  `nyt-business` + reserved paid-API ids (`nikkei-asia`, `sp-global`,
+  `mit-sloan-review`) on top of the existing FT/Economist set. Fallback
+  to full curated set retained when tier-1 subset < `max(3, limit//2)`.
+  Real strict-filter coverage still depends on operators wiring the
+  paid Bloomberg/Reuters/WSJ feeds (documented in `news.py`).
+
+- **H.4.3 — A11y / focus calm pass on Portfolio Landing.**
+  Company-card buttons gained verbose `aria-label`, `aria-current`,
+  and `focus-visible:ring-2`. Segmented tabs gained `aria-label`,
+  `aria-controls`, panel `role="tabpanel" + id` linkage. Section
+  headings gained stable ids referenced by `aria-labelledby` on the
+  `<section>` elements. Read-more / Continue / boards-to-watch row
+  buttons gained verbose aria-labels + focus-visible rings.
+  Decorative lucide icons inside actionable controls carry
+  `aria-hidden="true"` so screen readers don't double-read.
+
+**Full suite roll-up:** H.1+H.2+H.3+H.4+size-guard+chat-density =
+70/70 GREEN. Adjacent regression (patch-10 home insights, email-
+provider health, F.3/F.6/E.3, task-drawer prefix) = 94 passed +
+1 pre-existing skip.
+
+
 ## Portfolio Landing Batch — Phase H.3 (Data Wiring) — 2026-05-27 ✅
 Phase H.3 closes the Portfolio Landing data layer. Live-verified end-to-end:
 

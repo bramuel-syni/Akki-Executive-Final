@@ -35,6 +35,14 @@ class RecentViewIn(BaseModel):
     surface_path: str = Field(..., min_length=1, max_length=300)
     label: str = Field(..., min_length=1, max_length=160)
     context_id: Optional[str] = None
+    # Phase H.4 (2026-05-27) — Deep-link enrichment. When callers
+    # know the artefact they're opening (a doc, task, chat, signal,
+    # etc) they pass these so the "Where you left off" resume card
+    # on /app/companies can jump straight into the artefact instead
+    # of dropping the user on the surface index.
+    artefact_id:   Optional[str] = Field(None, max_length=160)
+    artefact_kind: Optional[str] = Field(None, max_length=40)
+    deep_link:     Optional[str] = Field(None, max_length=400)
 
 
 @router.post("/me/recent-views")
@@ -52,6 +60,15 @@ async def post_recent_view(
                 "surface_path": body.surface_path,
                 "label": body.label,
                 "context_id": body.context_id,
+                # H.4 — persist optional deep-link enrichment. Falsy
+                # values still get written so subsequent upserts can
+                # OVERWRITE stale values from earlier visits (e.g. when
+                # a doc page is replaced by a task page on the same
+                # surface_path). Legacy rows missing these fields are
+                # handled by the read path's fallback to surface_path.
+                "artefact_id":   body.artefact_id,
+                "artefact_kind": body.artefact_kind,
+                "deep_link":     body.deep_link,
                 "last_visited_at": _iso(now),
             },
             "$setOnInsert": {"id": str(uuid.uuid4())},

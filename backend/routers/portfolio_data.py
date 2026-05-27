@@ -268,6 +268,7 @@ class LastActionOut(BaseModel):
     context_name:   Optional[str]
     surface:        Optional[str]
     artefact_id:    Optional[str]
+    artefact_kind:  Optional[str] = None   # H.4 — persisted artefact kind
     artefact_title: Optional[str]
     action:         Optional[str]
     at:             Optional[str]
@@ -316,6 +317,13 @@ async def last_action(
     Reads from `user_recent_views` (populated by `POST /api/me/recent-views`
     on most surface mounts). Returns an empty / null shape when no
     recent activity exists (frontend renders the empty state).
+
+    Phase H.4 (2026-05-27) — When the recent-view row was written
+    with `deep_link`/`artefact_id`/`artefact_kind` fields, surface
+    them so the frontend can jump straight into the artefact
+    (doc/task/chat) instead of bouncing off the surface index.
+    Legacy rows (pre-H.4 writes) fall back to surface_path
+    classification, preserving the H.3 contract.
     """
     row = await db.user_recent_views.find_one(
         {"account_id": me["id"]},
@@ -325,24 +333,37 @@ async def last_action(
     if not row:
         return LastActionOut(
             context_id=None, context_name=None, surface=None,
-            artefact_id=None, artefact_title=None, action=None,
-            at=None, deep_link=None,
+            artefact_id=None, artefact_kind=None, artefact_title=None,
+            action=None, at=None, deep_link=None,
         )
     cid = row.get("context_id")
     ctx_name = None
     if cid:
         ctx = await db.contexts.find_one({"id": cid}, {"_id": 0, "name": 1})
         ctx_name = (ctx or {}).get("name")
-    surface_path = row.get("surface_path") or "/app"
-    surface = _classify_surface(surface_path)
+
+    # H.4 — Prefer persisted enrichment. Fall back to surface_path
+    # classification when the row pre-dates H.4 (legacy rows have
+    # neither artefact_kind nor deep_link).
+    persisted_artefact_kind = row.get("artefact_kind")
+    persisted_deep_link     = row.get("deep_link")
+    surface_path            = row.get("surface_path") or "/app"
+
+    if persisted_artefact_kind:
+        surface = persisted_artefact_kind
+    else:
+        surface = _classify_surface(surface_path)
+
+    deep_link = persisted_deep_link or surface_path
+
     return LastActionOut(
         context_id=cid,
         context_name=ctx_name,
         surface=surface,
-        artefact_id=None,   # Not threaded through recent-views today;
-                            # frontend has the label.
+        artefact_id=row.get("artefact_id"),
+        artefact_kind=persisted_artefact_kind,
         artefact_title=row.get("label") or "(work in progress)",
         action=_classify_action(surface),
         at=row.get("last_visited_at"),
-        deep_link=surface_path,
+        deep_link=deep_link,
     )

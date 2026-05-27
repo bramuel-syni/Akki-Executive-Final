@@ -67,11 +67,24 @@ function CompanyCard({ c, active, onOpen }) {
     c.type === "executive_enterprise";
   const Icon = c.type?.startsWith("ned") ? Landmark : Briefcase;
 
+  // H.4 — Compose verbose aria-label so screen readers announce
+  // company name + role + sponsored status in one breath instead of
+  // reading the icon-svg + ellipsis-truncated metadata separately.
+  const role = c.type?.startsWith("ned") ? "NED board" : "Executive context";
+  const ariaLabel = [
+    `Open ${c.name}`,
+    role,
+    sponsored ? "sponsored seat" : null,
+    active ? "currently active" : null,
+  ].filter(Boolean).join(" · ");
+
   return (
     <button
       type="button"
       onClick={onOpen}
-      className={`relative w-full text-left bg-white border rounded-md px-4 py-3 transition-colors ${
+      aria-label={ariaLabel}
+      aria-current={active ? "true" : undefined}
+      className={`relative w-full text-left bg-white border rounded-md px-4 py-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 focus-visible:ring-offset-1 ${
         active
           ? "border-[var(--accent)]"
           : "border-[var(--rule)] hover:border-[var(--ink)]/30"
@@ -99,7 +112,7 @@ function CompanyCard({ c, active, onOpen }) {
       )}
       <div className="flex items-start gap-2.5">
         <div className="w-7 h-7 bg-[var(--cream-deep)] rounded-md flex items-center justify-center shrink-0 mt-0.5">
-          <Icon className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.7} />
+          <Icon className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.7} aria-hidden="true" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-[16px] font-normal text-[var(--ink)] leading-snug pr-12">
@@ -183,14 +196,17 @@ function RailCompanyList({ contexts, activeContextId, onOpen, onAdd }) {
       <div
         className="grid grid-cols-2 border border-[var(--rule)] rounded-sm bg-white overflow-hidden"
         role="tablist"
+        aria-label="Filter companies by your role"
         data-testid="portfolio-rail-tabs"
       >
         <button
           type="button"
           role="tab"
           aria-selected={tab === "ned"}
+          aria-controls={`portfolio-rail-list-ned`}
+          aria-label={`Show NED boards (${nedList.length})`}
           onClick={() => setTab("ned")}
-          className={`text-[11.5px] uppercase tracking-[0.14em] font-mono py-2 transition-colors ${
+          className={`text-[11.5px] uppercase tracking-[0.14em] font-mono py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]/50 ${
             tab === "ned"
               ? "bg-[var(--ink)] text-white"
               : "text-[var(--muted)] hover:text-[var(--ink)] bg-white"
@@ -203,8 +219,10 @@ function RailCompanyList({ contexts, activeContextId, onOpen, onAdd }) {
           type="button"
           role="tab"
           aria-selected={tab === "executive"}
+          aria-controls={`portfolio-rail-list-executive`}
+          aria-label={`Show executive companies (${execList.length})`}
           onClick={() => setTab("executive")}
-          className={`text-[11.5px] uppercase tracking-[0.14em] font-mono py-2 transition-colors ${
+          className={`text-[11.5px] uppercase tracking-[0.14em] font-mono py-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]/50 ${
             tab === "executive"
               ? "bg-[var(--ink)] text-white"
               : "text-[var(--muted)] hover:text-[var(--ink)] bg-white"
@@ -218,6 +236,9 @@ function RailCompanyList({ contexts, activeContextId, onOpen, onAdd }) {
       {/* Vertical stack of company cards (rail-width parity) */}
       <div
         className="flex flex-col gap-2.5"
+        role="tabpanel"
+        id={`portfolio-rail-list-${tab}`}
+        aria-labelledby={`portfolio-rail-tab-${tab}`}
         data-testid={`portfolio-rail-list-${tab}`}
       >
         {visible.length === 0 ? (
@@ -247,10 +268,10 @@ function RailCompanyList({ contexts, activeContextId, onOpen, onAdd }) {
 function BoardsToWatchSection({ items, onOpen }) {
   const loading = items === null;
   return (
-    <section data-testid="portfolio-section-boards-to-watch">
+    <section data-testid="portfolio-section-boards-to-watch" aria-labelledby="portfolio-boards-heading">
       <div className="flex items-center gap-2 mb-3">
-        <Flame className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} />
-        <h2 className="akki-overline">Boards to watch this week</h2>
+        <Flame className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} aria-hidden="true" />
+        <h2 className="akki-overline" id="portfolio-boards-heading">Boards to watch this week</h2>
       </div>
       {loading ? (
         <p className="akki-meta italic px-1 py-3" data-testid="portfolio-section-boards-to-watch-loading">
@@ -270,7 +291,8 @@ function BoardsToWatchSection({ items, onOpen }) {
               <button
                 type="button"
                 onClick={() => onOpen(b.context_id)}
-                className="w-full text-left bg-white border border-[var(--rule)] hover:border-[var(--ink)]/40 rounded-md px-4 py-3 transition-colors"
+                aria-label={`Open ${b.name}${b.reasons?.length ? ` — ${b.reasons.slice(0, 2).join(", ")}` : ""}`}
+                className="w-full text-left bg-white border border-[var(--rule)] hover:border-[var(--ink)]/40 rounded-md px-4 py-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 focus-visible:ring-offset-1"
                 data-testid={`boards-to-watch-row-${b.context_id}`}
               >
                 <p className="text-[15px] font-medium text-[var(--ink)]">{b.name}</p>
@@ -297,10 +319,10 @@ function WhereYouLeftOffSection({ row, onResume }) {
   const loading = row === null;
   const empty = !loading && !row?.context_id;
   return (
-    <section data-testid="portfolio-section-where-you-left-off">
+    <section data-testid="portfolio-section-where-you-left-off" aria-labelledby="portfolio-resume-heading">
       <div className="flex items-center gap-2 mb-3">
-        <History className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} />
-        <h2 className="akki-overline">Where you left off</h2>
+        <History className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} aria-hidden="true" />
+        <h2 className="akki-overline" id="portfolio-resume-heading">Where you left off</h2>
       </div>
       {loading ? (
         <p className="akki-meta italic px-1 py-3" data-testid="portfolio-section-where-you-left-off-loading">
@@ -335,10 +357,11 @@ function WhereYouLeftOffSection({ row, onResume }) {
           <button
             type="button"
             onClick={() => onResume(row.deep_link || "/app")}
-            className="text-[12.5px] text-[var(--accent)] hover:text-[var(--ink)] inline-flex items-center gap-1 shrink-0"
+            aria-label={`Continue working on ${row.artefact_title || row.context_name || "your last item"}`}
+            className="text-[12.5px] text-[var(--accent)] hover:text-[var(--ink)] inline-flex items-center gap-1 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 rounded-sm px-1"
             data-testid="portfolio-section-where-you-left-off-continue"
           >
-            Continue <ArrowRight className="w-3 h-3" />
+            Continue <ArrowRight className="w-3 h-3" aria-hidden="true" />
           </button>
         </div>
       )}
@@ -353,10 +376,10 @@ function WhereYouLeftOffSection({ row, onResume }) {
 
 function NewsSection({ onReadMore }) {
   return (
-    <section data-testid="portfolio-section-news">
+    <section data-testid="portfolio-section-news" aria-labelledby="portfolio-news-heading">
       <div className="flex items-center gap-2 mb-3">
-        <Newspaper className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} />
-        <h2 className="akki-overline">The world around you</h2>
+        <Newspaper className="w-3.5 h-3.5 text-[var(--accent)]" strokeWidth={1.8} aria-hidden="true" />
+        <h2 className="akki-overline" id="portfolio-news-heading">The world around you</h2>
       </div>
       <div className="bg-white border border-[var(--rule)] rounded-md px-5 py-4">
         <NewsStrip
@@ -370,10 +393,11 @@ function NewsSection({ onReadMore }) {
         <button
           type="button"
           onClick={onReadMore}
-          className="text-[12.5px] text-[var(--accent)] hover:text-[var(--ink)] inline-flex items-center gap-1"
+          aria-label="Read more news on the full news page"
+          className="text-[12.5px] text-[var(--accent)] hover:text-[var(--ink)] inline-flex items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 rounded-sm px-1 py-0.5"
           data-testid="portfolio-section-news-read-more"
         >
-          Read more <ArrowRight className="w-3 h-3" />
+          Read more <ArrowRight className="w-3 h-3" aria-hidden="true" />
         </button>
       </div>
     </section>
