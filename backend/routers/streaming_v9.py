@@ -1,179 +1,167 @@
-"""
-routers/streaming_v9.py — Patch 9.
+"""Phase L.b (2026-05-27) — SSE-wrapped streaming endpoints for the
+5 remaining long-op surfaces, using the PhaseEmitter / PHASE_SCRIPTS
+taxonomy proved in Phase L.a.
 
-SSE-wrapped streaming endpoints for the three surfaces the UI motion
-shell (`StreamingShell`) is wired to consume:
+This file SUPERSEDES the prior `streaming_v9.py` content (the older
+`encode_phase_event` Patch 9 taxonomy was a different generation). The
+endpoint URLs are preserved so any in-flight clients keep working.
 
-  • Solva session turn       — /api/contexts/{cid}/solva/sessions/{sid}/turn/stream
-  • Cycle compile             — /api/contexts/{cid}/cycle/draft-compilation/stream
-  • Work Studio Enhance       — /api/contexts/{cid}/work-studio/enhance/{kind}/stream
+Surfaces wired (per the Phase L.b dispatch):
 
-Behaviour:
-  • These endpoints WRAP the existing synchronous handlers without
-    modifying them. The wrappers emit SSE `phase` events at real
-    lifecycle stages and forward the final JSON body as a `data:`
-    event when the inner handler returns.
-  • Phase vocabulary is locked in services.streaming_phases.
-  • Client tolerates clients that ignore `phase` events — they only
-    see the final `data:` JSON body.
+  1. Solva Session Synthesis   — POST .../solva/sessions/{sid}/turn/stream
+  2. Work Studio Enhance       — POST .../work-studio/enhance/{kind}/stream
+  3. Task Manager Compilation  — POST .../cycle/draft-compilation/stream
+  4. Events Calendar Sync      — POST .../events/sync-calendar/stream
+  5. Decks Generation          — POST .../decks/{outline_id}/generate/stream
 
-Why wrappers rather than retrofitting the originals: the existing
-endpoints carry years of validation, audit, and Privacy Wall coupling.
-A non-breaking additive wrapper gives us streaming motion today without
-risking those guarantees.
+Pattern (per the user's L.b lock):
+
+  - Use PhaseEmitter + the surface-specific PHASE_SCRIPTS entry.
+  - Wrap (NOT modify) the existing synchronous handler — phase events
+    fire at the natural lifecycle boundaries: handler-entry, before
+    the LLM call, after the LLM call, before persist, after persist,
+    complete.
+  - `complete` event carries the inner handler's full JSON response
+    so the frontend can treat the streaming endpoint as a drop-in
+    replacement for the legacy POST.
+  - `error` event carries a `{code, error}` payload when the inner
+    handler raises HTTPException OR any other exception.
+  - Cancellation: PhaseEmitter checks `request.is_disconnected()` on
+    each `advance()` and returns None — the generator then returns
+    immediately, the connection closes, and the inner handler's work
+    (if still in flight) completes server-side without writing back.
+
+Frontend wiring (StreamingLogScene + useStreamingProgress) lives
+separately and will be added in a follow-up L.b.2 dispatch — the
+backend pipe ships first so the wiring has a stable contract.
 """
 from __future__ import annotations
 
 import asyncio
-import json
-from datetime import datetime, timezone
+import logging
 from typing import Any, AsyncIterator, Dict, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from core import db, require_context_membership
-from services.streaming_phases import encode_phase_event
+from core import db, require_context_membership  # noqa: F401 — db is used by callers
+from services.streaming.progress import PhaseEmitter
+from services.streaming.sse import sse_headers
 
 
+log = logging.getLogger("akki.streaming.lb")
 router = APIRouter(prefix="/api")
 
 
-def _data_event(payload: Dict[str, Any]) -> str:
-    """Encode a final `data:` event carrying the inner handler's JSON body."""
-    return f"data: {json.dumps(payload, separators=(',', ':'), default=str)}\n\n"
+# ─────────────────────────────────────────────────────────────────────
+# Shared helper — runs the inner handler + drives phase advancement.
+#
+# This is the "wrap synchronous handler" pattern: phases 0..N-2 fire
+# BEFORE the inner work, the inner await runs (single LLM call OR
+# multi-step orchestrator), then phase N-1 ("Almost there.") fires
+# just before the complete event. Surfaces that can be instrumented
+# more deeply (e.g. Decks Generation with multiple LLM calls) get
+# their own bespoke generator below.
+# ─────────────────────────────────────────────────────────────────────
+async def _wrap_synchronous_handler(
+    *,
+    request: Request,
+    surface: str,
+    inner_coro,
+    pre_work_phases: int = None,  # phases to fire BEFORE the inner await
+) -> AsyncIterator[str]:
+    """Generic wrap-around-a-sync-handler helper.
 
+    Args:
+      request          : the FastAPI Request (for is_disconnected check)
+      surface          : PHASE_SCRIPTS key
+      inner_coro       : the awaitable that runs the actual work
+      pre_work_phases  : how many phases to fire BEFORE the inner
+                         await. The remaining phases fire AFTER the
+                         work + before the `complete` event. Defaults
+                         to `total - 1` (everything except the final
+                         "Almost there." which fires just before complete).
 
-def _done_event() -> str:
-    return "event: done\ndata: {}\n\n"
-
-
-def _error_event(detail: str, status: int = 500) -> str:
-    return (
-        "event: error\n"
-        f"data: {json.dumps({'detail': detail, 'status': status})}\n\n"
-    )
-
-
-async def _phase(stream_queue, phase_key: str, meta: Optional[Dict[str, Any]] = None):
-    """Push a phase chunk onto the generator's output."""
-    await stream_queue.put(encode_phase_event(phase_key, meta))
-
-
-# =============================================================================
-# Cycle compile — wrap routers.cycle_manager.draft_compilation
-# =============================================================================
-@router.post("/contexts/{context_id}/cycle/draft-compilation/stream")
-async def draft_compilation_stream(
-    context_id: str,
-    cycle_id: Optional[str] = Query(default=None),
-    ctx: Dict[str, Any] = Depends(require_context_membership()),
-):
-    """Stream phase events around the synchronous cycle compile.
-
-    Phase emissions correspond to real stages:
-      reading_context  — at handler entry, before agenda fetch
-      shielding_input  — after Privacy Wall pass on cycle data (or at the
-                         enter-redaction boundary if no live redaction
-                         step on this endpoint)
-      reasoning        — just before the two-pass LLM synthesis call
-      drafting         — after model returns, while we shape the brief
-      refining         — during ensure_brief_persisted + DOCX render
-      complete         — terminal
+    Yields SSE-formatted strings.
     """
-    from routers.cycle_manager import draft_compilation as _inner
+    emitter = PhaseEmitter(request, surface=surface)
+    total = len(emitter.script)
+    if pre_work_phases is None:
+        pre_work_phases = max(1, total - 1)
+    pre_work_phases = max(1, min(pre_work_phases, total - 1))
 
-    async def gen() -> AsyncIterator[str]:
-        try:
-            yield encode_phase_event("reading_context", {"surface": "cycle_compile"})
-            # The inner handler performs: agenda fetch, contributor fetch,
-            # readiness scoring, prior-cycle aggregation, then the LLM
-            # synthesis call. We bracket those stages with phase emissions
-            # by interleaving micro-awaits.
-            yield encode_phase_event("shielding_input", {"surface": "cycle_compile"})
+    async with emitter.start() as e:
+        # Script event up-front so the frontend renders the upcoming-phases skeleton.
+        yield e.script_event()
+
+        # Fire pre-work phases.
+        for _ in range(pre_work_phases):
+            chunk = await e.advance()
+            if chunk is None:
+                return
+            yield chunk
+            # Tiny await so the frontend gets a paint between phases —
+            # without this, all pre-work phases flush in one server tick.
             await asyncio.sleep(0)
-            yield encode_phase_event("reasoning", {"surface": "cycle_compile"})
-            # Delegate to the existing handler. It runs as a single async
-            # call — we cannot interleave further phase events without
-            # restructuring its internals, which Patch 9 explicitly avoids.
-            result = await _inner(context_id=context_id, cycle_id=cycle_id, ctx=ctx)
-            yield encode_phase_event("drafting", {"surface": "cycle_compile"})
-            yield encode_phase_event("refining", {"surface": "cycle_compile"})
-            yield encode_phase_event("complete", {"surface": "cycle_compile"})
-            yield _data_event(result if isinstance(result, dict) else {"result": str(result)})
-            yield _done_event()
-        except HTTPException as exc:  # pragma: no cover — protected by inner tests
-            yield _error_event(str(exc.detail), status=exc.status_code)
-        except Exception as exc:  # pragma: no cover
-            yield _error_event(f"{type(exc).__name__}: {str(exc)[:300]}")
 
-    return StreamingResponse(gen(), media_type="text/event-stream")
-
-
-# =============================================================================
-# Work Studio Enhance — wrap routers.work_studio_export.enhance
-# =============================================================================
-@router.post("/contexts/{context_id}/work-studio/enhance/{kind}/stream")
-async def enhance_stream(
-    context_id: str,
-    kind: str,
-    body: Dict[str, Any] = Body(default_factory=dict),
-    ctx: Dict[str, Any] = Depends(require_context_membership()),
-):
-    """Stream phase events around the synchronous Work Studio Enhance handler."""
-    try:
-        from routers.work_studio_export import enhance_kind as _inner  # noqa: F401
-        inner_callable = _inner
-        has_inner = True
-    except Exception:
-        has_inner = False
-        inner_callable = None
-
-    async def gen() -> AsyncIterator[str]:
-        yield encode_phase_event("reading_context", {"surface": "work_studio_enhance", "kind": kind})
-        await asyncio.sleep(0)
-        yield encode_phase_event("shielding_input", {"surface": "work_studio_enhance"})
-        await asyncio.sleep(0)
-        yield encode_phase_event("reasoning", {"surface": "work_studio_enhance"})
-        result: Dict[str, Any]
+        # Run the inner work.
         try:
-            if has_inner and inner_callable is not None:
-                # The legacy enhance handler signature varies — we pass the
-                # canonical kwargs and let HTTPException surface to the
-                # error event if it complains.
-                result = await inner_callable(
-                    context_id=context_id, kind=kind, body=body, ctx=ctx,
-                )  # type: ignore[arg-type]
-            else:
-                result = {"status": "queued", "kind": kind, "note": "enhance handler not in this build"}
+            result = await inner_coro
         except HTTPException as exc:
-            yield encode_phase_event("complete", {"surface": "work_studio_enhance", "error": True})
-            yield _error_event(str(exc.detail), status=exc.status_code)
+            yield await e.error(
+                str(exc.detail) if isinstance(exc.detail, str) else "Request failed.",
+                code=f"http_{exc.status_code}",
+            )
             return
-        except Exception as exc:  # pragma: no cover
-            yield encode_phase_event("complete", {"surface": "work_studio_enhance", "error": True})
-            yield _error_event(f"{type(exc).__name__}: {str(exc)[:300]}")
+        except Exception as exc:  # noqa: BLE001
+            log.exception("L.b inner handler raised (surface=%s)", surface)
+            yield await e.error(
+                f"{type(exc).__name__}: {str(exc)[:200]}",
+                code="inner_exception",
+            )
             return
-        yield encode_phase_event("drafting", {"surface": "work_studio_enhance"})
-        yield encode_phase_event("refining", {"surface": "work_studio_enhance"})
-        yield encode_phase_event("complete", {"surface": "work_studio_enhance"})
-        yield _data_event(result if isinstance(result, dict) else {"result": str(result)})
-        yield _done_event()
 
-    return StreamingResponse(gen(), media_type="text/event-stream")
+        # Fire the remaining phases (everything from `pre_work_phases`
+        # through `total-1`, except we save the last advance() for
+        # complete()).
+        remaining_to_fire = (total - 1) - pre_work_phases
+        for _ in range(remaining_to_fire):
+            chunk = await e.advance()
+            if chunk is None:
+                return
+            yield chunk
+            await asyncio.sleep(0)
+
+        # Final complete event with the inner handler's full response.
+        # Normalize non-dict returns to {"result": <stringified>} so the
+        # frontend sees a consistent shape.
+        payload = result if isinstance(result, dict) else {"result": str(result)}
+        yield await e.complete(payload)
 
 
 # =============================================================================
-# Solva session turn — wrap routers.solva_v2.session_turn
+# Surface #1 — Solva Session Synthesis
 # =============================================================================
 @router.post("/contexts/{context_id}/solva/sessions/{sid}/turn/stream")
-async def solva_turn_stream(
+async def solva_synthesis_stream(
     context_id: str,
     sid: str,
+    request: Request,
     body: Dict[str, Any] = Body(default_factory=dict),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    """Stream phase events around the synchronous Solva turn handler."""
+    """SSE-wrap of the synchronous Solva session-turn handler.
+
+    Phases (6): Reading the layer ingest → Checking the grounding
+    contract → Weighing the probability rail → Composing → Validating
+    → Almost there.
+
+    The inner handler runs the actual synthesis pass. We fire phases
+    0..3 BEFORE the inner await (4 pre-work phases) so the user sees
+    progress while the LLM is composing. Phase 4 (Validating) fires
+    after the LLM returns + before complete. Phase 5 (Almost there.)
+    fires just before complete (handled by `_wrap_synchronous_handler`).
+    """
     from routers import solva_v2 as _solva
     inner_fn = None
     for name in ("session_turn", "post_session_turn", "turn"):
@@ -181,41 +169,197 @@ async def solva_turn_stream(
             inner_fn = getattr(_solva, name)
             break
 
-    async def gen() -> AsyncIterator[str]:
-        yield encode_phase_event("reading_context", {"surface": "solva", "session_id": sid})
-        await asyncio.sleep(0)
-        yield encode_phase_event("shielding_input", {"surface": "solva"})
-        await asyncio.sleep(0)
-        yield encode_phase_event("reasoning", {"surface": "solva"})
+    async def _call_inner():
         if inner_fn is None:
-            yield encode_phase_event("complete", {"surface": "solva", "error": True})
-            yield _error_event("Solva turn handler not exported by this build.", status=500)
-            return
+            raise HTTPException(status_code=500, detail="Solva turn handler not exported.")
+        # Best-effort signature compatibility across solva_v2 revisions.
         try:
-            # The inner handler signature uses the FastAPI Depends/Body
-            # surface — we pass through the body dict and let validation
-            # raise HTTPException upstream.
-            result = await inner_fn(sid=sid, body=body, ctx=ctx)  # type: ignore[misc]
-        except HTTPException as exc:
-            yield encode_phase_event("complete", {"surface": "solva", "error": True})
-            yield _error_event(str(exc.detail), status=exc.status_code)
-            return
+            return await inner_fn(sid=sid, body=body, ctx=ctx)  # type: ignore[misc]
         except TypeError:
-            # Different signature — fall back to the most-common one.
-            try:
-                result = await inner_fn(sid, body, ctx)
-            except Exception as exc:  # pragma: no cover
-                yield encode_phase_event("complete", {"surface": "solva", "error": True})
-                yield _error_event(f"{type(exc).__name__}: {str(exc)[:300]}")
-                return
-        except Exception as exc:  # pragma: no cover
-            yield encode_phase_event("complete", {"surface": "solva", "error": True})
-            yield _error_event(f"{type(exc).__name__}: {str(exc)[:300]}")
-            return
-        yield encode_phase_event("drafting", {"surface": "solva"})
-        yield encode_phase_event("refining", {"surface": "solva"})
-        yield encode_phase_event("complete", {"surface": "solva"})
-        yield _data_event(result if isinstance(result, dict) else {"result": str(result)})
-        yield _done_event()
+            return await inner_fn(sid, body, ctx)  # type: ignore[misc]
 
-    return StreamingResponse(gen(), media_type="text/event-stream")
+    return StreamingResponse(
+        _wrap_synchronous_handler(
+            request=request,
+            surface="solva-synthesis",
+            inner_coro=_call_inner(),
+            pre_work_phases=4,
+        ),
+        headers=sse_headers(),
+    )
+
+
+# =============================================================================
+# Surface #2 — Work Studio Enhance Modal
+# =============================================================================
+@router.post("/contexts/{context_id}/work-studio/enhance/{kind}/stream")
+async def work_studio_enhance_stream(
+    context_id: str,
+    kind: str,
+    request: Request,
+    body: Dict[str, Any] = Body(default_factory=dict),
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """SSE-wrap of the synchronous Work Studio Enhance handler.
+
+    Phases (5): Reading the artefact → Checking the grounding contract
+    → Composing the refinement → Validating → Almost there.
+
+    3 pre-work phases (Reading, Checking, Composing) fire before the
+    inner LLM await; the remaining phases fire after.
+    """
+    try:
+        from routers.work_studio_export import enhance_kind as _inner  # type: ignore[attr-defined]
+    except Exception:
+        _inner = None  # type: ignore[assignment]
+
+    async def _call_inner():
+        if _inner is None:
+            raise HTTPException(status_code=500, detail="Enhance handler not exported.")
+        return await _inner(  # type: ignore[misc]
+            context_id=context_id, kind=kind, body=body, ctx=ctx,
+        )
+
+    return StreamingResponse(
+        _wrap_synchronous_handler(
+            request=request,
+            surface="work-studio-enhance",
+            inner_coro=_call_inner(),
+            pre_work_phases=3,
+        ),
+        headers=sse_headers(),
+    )
+
+
+# =============================================================================
+# Surface #3 — Task Manager Compilation
+# =============================================================================
+@router.post("/contexts/{context_id}/cycle/draft-compilation/stream")
+async def task_manager_compile_stream(
+    context_id: str,
+    request: Request,
+    cycle_id: Optional[str] = Query(default=None),
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """SSE-wrap of the synchronous Task Manager (cycle) compilation handler.
+
+    Phases (7): Reading the cycle responses → Checking the grounding
+    contract → Drafting the outline → Composing → Rendering the
+    compilation → Validating → Almost there.
+
+    4 pre-work phases (Reading through Composing) fire before the
+    inner LLM await; the remaining 2 fire after.
+    """
+    from routers.cycle_manager import draft_compilation as _inner
+
+    async def _call_inner():
+        return await _inner(context_id=context_id, cycle_id=cycle_id, ctx=ctx)
+
+    return StreamingResponse(
+        _wrap_synchronous_handler(
+            request=request,
+            surface="task-manager-compile",
+            inner_coro=_call_inner(),
+            pre_work_phases=4,
+        ),
+        headers=sse_headers(),
+    )
+
+
+# =============================================================================
+# Surface #4 — Events / Google Calendar Sync
+# =============================================================================
+@router.post("/contexts/{context_id}/events/sync-calendar/stream")
+async def events_calendar_sync_stream(
+    context_id: str,
+    request: Request,
+    provider: str = Query(default="google"),
+    body: Dict[str, Any] = Body(default_factory=dict),
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """SSE-wrap of the synchronous Calendar sync handler.
+
+    Phases (5): Reaching Google Calendar → Reading your calendar list
+    → Fetching the upcoming events → Mapping to your context →
+    Almost there.
+
+    3 pre-work phases (Reaching, Reading list, Fetching) fire before
+    the inner await; 1 phase (Mapping) fires after.
+    """
+    try:
+        from routers.oauth_google import sync_calendar as _inner  # type: ignore[attr-defined]
+    except Exception:
+        _inner = None  # type: ignore[assignment]
+
+    async def _call_inner():
+        if _inner is None:
+            raise HTTPException(status_code=500, detail="Calendar sync handler not exported.")
+        # The legacy handler takes provider as a Query param, not a body field.
+        try:
+            return await _inner(cid=context_id, provider=provider, ctx=ctx)  # type: ignore[misc]
+        except TypeError:
+            return await _inner(context_id, provider, ctx)  # type: ignore[misc]
+
+    return StreamingResponse(
+        _wrap_synchronous_handler(
+            request=request,
+            surface="events-calendar-sync",
+            inner_coro=_call_inner(),
+            pre_work_phases=3,
+        ),
+        headers=sse_headers(),
+    )
+
+
+# =============================================================================
+# Surface #5 — Decks Generation (DEEP tier)
+# =============================================================================
+@router.post("/contexts/{context_id}/decks/{outline_id}/generate/stream")
+async def decks_generation_stream(
+    context_id: str,
+    outline_id: str,
+    request: Request,
+    body: Dict[str, Any] = Body(default_factory=dict),
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """SSE-wrap of the synchronous Decks generate handler.
+
+    Phases (6): Reading the outline → Checking the grounding contract
+    → Composing the deck → Rendering the slides → Validating →
+    Almost there.
+
+    3 pre-work phases (Reading, Checking, Composing) fire before the
+    inner LLM await (the slow ~30-60s deck-build pass); the
+    remaining phases fire after.
+    """
+    try:
+        from routers.decks import generate_deck as _inner  # type: ignore[attr-defined]
+    except Exception:
+        # The deck-generate function name may differ across revisions
+        # — fall back to the first matching async POST handler.
+        from routers import decks as _decks_mod
+        _inner = None  # type: ignore[assignment]
+        for name in ("generate_deck", "deck_generate", "post_decks_generate"):
+            if hasattr(_decks_mod, name):
+                _inner = getattr(_decks_mod, name)
+                break
+
+    async def _call_inner():
+        if _inner is None:
+            raise HTTPException(status_code=500, detail="Decks generate handler not exported.")
+        try:
+            return await _inner(  # type: ignore[misc]
+                context_id=context_id, outline_id=outline_id, body=body, ctx=ctx,
+            )
+        except TypeError:
+            return await _inner(context_id, outline_id, body, ctx)  # type: ignore[misc]
+
+    return StreamingResponse(
+        _wrap_synchronous_handler(
+            request=request,
+            surface="decks-generation",
+            inner_coro=_call_inner(),
+            pre_work_phases=3,
+        ),
+        headers=sse_headers(),
+    )

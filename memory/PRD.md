@@ -1,6 +1,36 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase R.5.a — Cohort console + day-counter enforcement + early-access opt-in — 2026-05-27 ✅ (CLOSED — halt-and-report triggered)
+
+Shipped the Founding Cohort console with time-window dimensions folded in (R.5.0 deflected per the user's accepted proposal). HALT-AND-REPORT triggered: 924 lines of NEW code, >> 500-line auto-slice threshold the user locked. **R.5.b dispatched separately.**
+
+**Backend (615 NEW lines):**
+- `services/cohort/console.py` — funnel-stage logic + day-counter computation + time-window resolution + aggregator + drill-down. Funnel-stage taxonomy LOCKED to `("Invited", "Activated", "Engaged", "Attached", "Committed")`; trial day thresholds LOCKED at 16 (soft_warning) / 22 (expired_hard_lock) / 30 (total).
+- `routers/trial_status.py` — `GET /api/me/trial-status` (frontend hook reads this every 60s), `POST /api/me/early-access-opt-in` (the hard-locked user's ONLY reachable mutation), `GET /api/me/trial-status/by-account/{id}` (cohort console drill-down).
+- `routers/admin_cohort.py` — added `GET /api/admin/cohort/console`, `/console/stages`, `/console/account/{id}/timeline`.
+- Wired the R.3 placeholder constants: `auth_magic.py` emits `ACCOUNT_SIGNED_UP`; `oauth_google.py` emits `CALENDAR_SYNC_LINKED`.
+
+**Frontend (476 NEW lines):**
+- `hooks/useTrialStatus.js` — fetch + 60s poll the trial-status endpoint.
+- `pages/EarlyAccessOptIn.jsx` — the hard-lock destination (editorial layout, 3 `[FOUNDER:]` placeholders for R.5.b editor).
+- `pages/admin/CohortConsole.jsx` — superadmin console: 5 stage-count cards + tag filter + 3-button window toggle + sortable table + drill-down drawer.
+- `App.js` — `HardLockGuard` wraps `Gated`; locked users `<Navigate>`-redirected to `/app/early-access-opt-in`. Routes registered for both pages.
+
+**Verification:** Phase R.5.a CI **21/21 GREEN**. Full regression across 15 phase test files = **173/173 GREEN**. Live curl probes confirm all 3 superadmin + 3 self endpoints return the locked shapes. Playwright smoke confirms both pages render — Cohort Console shows 6 invitees with stages live + Feedback widget alongside (R.4 chain proved); EarlyAccessOptIn shows the editorial header + day counter + `[FOUNDER:]` placeholders (R.5.b will edit).
+
+
+### Phase R.4 — In-app feedback widget — 2026-05-27 ✅ (CLOSED)
+
+Fixed-position lower-right `<FeedbackWidget>` renders on every authenticated app surface (inside `Gated`). Single textarea + 3 LOCKED tag buttons (Broken / Wrong / Great). `POST /api/feedback` emits `feedback.submitted` to the R.3 feature_events pipe + queues SendGrid auto-thanks via BackgroundTasks. **R.4 semantic divergence from R.2:** we ALWAYS capture feedback even when the auto-thanks is gated — endpoint returns 200 + `block_reason` rather than 422. Widget shows the same "Got it, thank you." toast in both cases. 17/17 CI green, 4 curl probes confirm contract, live Playwright shows trigger + panel + tags + submit + toast all work + widget stays in-viewport across 1280/768/600.
+
+
+### Phase L.b — 5 remaining surfaces onto the SSE pipe (backend only) — 2026-05-27 ✅ (CLOSED, L.b.2 frontend wiring queued)
+
+5 phase scripts added to `PHASE_SCRIPTS`. `routers/streaming_v9.py` rewritten wholesale to use the new `PhaseEmitter` taxonomy at the SAME URLs (preserves any in-flight clients): 5 SSE-wrap endpoints driven by a shared `_wrap_synchronous_handler` that fires phases BEFORE the inner await + the remaining phases AFTER + emits `error` SSE event on any HTTPException / Exception. Cancellation honoured via `is_disconnected()` check. **L.b.2 (frontend wiring for 5 surfaces) auto-sliced** per the >500-line scope rule — backend pipe ships first so the integrations have a stable contract. 21/21 CI green; live curl probes against Decks + Calendar confirm script + phase events fire correctly + error namespace works.
+
+
+
 ### Phase R.3 — Founding Cohort feature_events instrumentation — 2026-05-27 ✅ (CLOSED)
 
 Shipped the cohort funnel telemetry pipe end-to-end:

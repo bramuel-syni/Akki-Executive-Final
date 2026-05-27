@@ -592,4 +592,23 @@ async def sync_calendar(
         }},
     )
 
+    # Phase R.5.a (2026-05-27) — wire `calendar.sync.linked` event
+    # (constant defined in R.3 as a placeholder). Best-effort.
+    try:
+        from services.cohort.feature_events import (
+            emit_feature_event, CALENDAR_SYNC_LINKED,
+        )
+        acct = await db.accounts.find_one(
+            {"id": me["id"]}, {"_id": 0, "cohort_tag": 1},
+        ) or {}
+        await emit_feature_event(
+            event_type=CALENDAR_SYNC_LINKED,
+            account_id=me["id"],
+            cohort_tag=acct.get("cohort_tag"),
+            payload={"context_id": cid, "provider": provider,
+                     "imported": imported, "skipped": skipped},
+        )
+    except Exception:
+        pass
+
     return SyncOut(imported=imported, skipped=skipped, errors=0)

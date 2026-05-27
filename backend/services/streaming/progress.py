@@ -65,6 +65,70 @@ PHASE_SCRIPTS: Dict[str, List[Dict[str, str]]] = {
         {"label": "Validating.",                   "icon": "check-square"},
         {"label": "Almost there.",                 "icon": "sparkles"},
     ],
+
+    # ─────────────────────────────────────────────────────────────────
+    # L.b — 5 remaining long-op surfaces (added 2026-05-27).
+    # All use the same PhaseEmitter contract as L.a.
+    # ─────────────────────────────────────────────────────────────────
+
+    # L.b Surface #1 — Solva Session Synthesis (6 phases).
+    # Runs after framing-audit + grounding ingest; produces the synthesis
+    # body the user sees on the Synthesis tab.
+    "solva-synthesis": [
+        {"label": "Reading the layer ingest.",     "icon": "book-open"},
+        {"label": "Checking the grounding contract.", "icon": "shield-check"},
+        {"label": "Weighing the probability rail.", "icon": "scale"},
+        {"label": "Composing.",                    "icon": "pen-tool"},
+        {"label": "Validating.",                   "icon": "check-square"},
+        {"label": "Almost there.",                 "icon": "sparkles"},
+    ],
+
+    # L.b Surface #2 — Work Studio Enhance Modal (5 phases).
+    # Refines an existing artefact (tone shift, length adjust, etc.)
+    # against the original grounding.
+    "work-studio-enhance": [
+        {"label": "Reading the artefact.",         "icon": "book-open"},
+        {"label": "Checking the grounding contract.", "icon": "shield-check"},
+        {"label": "Composing the refinement.",     "icon": "pen-tool"},
+        {"label": "Validating.",                   "icon": "check-square"},
+        {"label": "Almost there.",                 "icon": "sparkles"},
+    ],
+
+    # L.b Surface #3 — Task Manager Compilation (7 phases).
+    # Long-op cycle compilation that produces a draft pack.
+    # (User-facing label "Task Manager" — file paths stay at components/cycle/*
+    # per the L.b dispatch lock.)
+    "task-manager-compile": [
+        {"label": "Reading the cycle responses.",  "icon": "book-open"},
+        {"label": "Checking the grounding contract.", "icon": "shield-check"},
+        {"label": "Drafting the outline.",         "icon": "list"},
+        {"label": "Composing.",                    "icon": "pen-tool"},
+        {"label": "Rendering the compilation.",    "icon": "file-text"},
+        {"label": "Validating.",                   "icon": "check-square"},
+        {"label": "Almost there.",                 "icon": "sparkles"},
+    ],
+
+    # L.b Surface #4 — Events / Google Calendar Sync (5 phases).
+    # Calendar OAuth → calendar-list fetch → events fetch → upsert.
+    "events-calendar-sync": [
+        {"label": "Reaching Google Calendar.",     "icon": "calendar"},
+        {"label": "Reading your calendar list.",   "icon": "list"},
+        {"label": "Fetching the upcoming events.", "icon": "download"},
+        {"label": "Mapping to your context.",      "icon": "map"},
+        {"label": "Almost there.",                 "icon": "sparkles"},
+    ],
+
+    # L.b Surface #5 — Decks Generation (DEEP-tier 6 phases).
+    # The slow ~30-60s deck rendering pass that fans 8-12 slides.
+    # Iterate + Quality use the same script for consistency.
+    "decks-generation": [
+        {"label": "Reading the outline.",          "icon": "book-open"},
+        {"label": "Checking the grounding contract.", "icon": "shield-check"},
+        {"label": "Composing the deck.",           "icon": "pen-tool"},
+        {"label": "Rendering the slides.",         "icon": "presentation"},
+        {"label": "Validating.",                   "icon": "check-square"},
+        {"label": "Almost there.",                 "icon": "sparkles"},
+    ],
 }
 
 

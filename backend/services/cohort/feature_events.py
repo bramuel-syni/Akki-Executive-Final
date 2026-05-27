@@ -55,6 +55,8 @@ COHORT_WELCOME_DISPATCHED    = "cohort.welcome.dispatched"
 SOLVA_SESSION_CREATED        = "solva.session.created"
 WORK_STUDIO_EXPORT_COMPLETED = "work_studio.export.completed"
 CALENDAR_SYNC_LINKED         = "calendar.sync.linked"
+# Phase R.4 (2026-05-27) — in-app feedback widget.
+FEEDBACK_SUBMITTED           = "feedback.submitted"
 
 
 KNOWN_EVENT_TYPES = frozenset({
@@ -64,6 +66,7 @@ KNOWN_EVENT_TYPES = frozenset({
     SOLVA_SESSION_CREATED,
     WORK_STUDIO_EXPORT_COMPLETED,
     CALENDAR_SYNC_LINKED,
+    FEEDBACK_SUBMITTED,
 })
 
 

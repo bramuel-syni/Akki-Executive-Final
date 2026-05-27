@@ -14,6 +14,8 @@ import WebsiteHome from "@/website/pages/Home";
 import SignIn from "@/pages/SignIn";
 import SignUp from "@/pages/SignUp";
 import UpgradeModal from "@/components/depth/UpgradeModal";
+import FeedbackWidget from "@/components/feedback/FeedbackWidget";
+import useTrialStatus from "@/hooks/useTrialStatus";
 
 // -- Lazy: marketing deeper routes (rarely visited from cold start) ----------
 const Landing = lazy(() => import("@/pages/Landing"));
@@ -53,6 +55,9 @@ const WebsiteForOrganisations = lazy(() => import("@/website/pages/ForOrganisati
 // -- Lazy: protected app routes ----------------------------------------------
 const FirstSession = lazy(() => import("@/pages/FirstSession"));
 const AppHome = lazy(() => import("@/pages/AppHome"));
+// Phase R.5.a (2026-05-27) — Cohort console + Early access opt-in
+const CohortConsole = lazy(() => import("@/pages/admin/CohortConsole"));
+const EarlyAccessOptIn = lazy(() => import("@/pages/EarlyAccessOptIn"));
 const Questions = lazy(() => import("@/pages/Questions"));
 const Workspace = lazy(() => import("@/pages/Workspace"));
 const Activity = lazy(() => import("@/pages/Activity"));
@@ -67,7 +72,6 @@ const AccountSecurity = lazy(() => import("@/pages/AccountSecurity"));
 const InviteAccept = lazy(() => import("@/pages/InviteAccept"));
 const NewContext = lazy(() => import("@/pages/NewWorkspace"));
 const NewsStub = lazy(() => import("@/pages/NewsStub"));
-const Events = lazy(() => import("@/pages/Events"));
 const Simulate = lazy(() => import("@/pages/Simulate"));
 const LensRoom = lazy(() => import("@/pages/LensRoom"));
 const Chat = lazy(() => import("@/pages/Chat"));
@@ -192,9 +196,30 @@ function DocumentRouteSwitch() {
 function Gated({ children }) {
   return (
     <ProtectedRoute>
-      <FirstSessionGuard>{children}</FirstSessionGuard>
+      <FirstSessionGuard>
+        <HardLockGuard>
+          {children}
+          {/* Phase R.4 (2026-05-27) — Feedback widget on every gated surface. */}
+          <FeedbackWidget />
+        </HardLockGuard>
+      </FirstSessionGuard>
     </ProtectedRoute>
   );
+}
+
+/**
+ * Phase R.5.a (2026-05-27) — Hard-lock guard.
+ *
+ * When `useTrialStatus().locked === true` (trial crossed Day 22),
+ * force-redirect to /app/early-access-opt-in unless already there.
+ */
+function HardLockGuard({ children }) {
+  const trial = useTrialStatus();
+  const location = useLocation();
+  if (trial.locked && !location.pathname.startsWith("/app/early-access-opt-in")) {
+    return <Navigate to="/app/early-access-opt-in" replace />;
+  }
+  return children;
 }
 
 // Lazy fallback — intentionally invisible. Renders nothing during the
@@ -291,6 +316,10 @@ function App() {
           />
 
           <Route path="/app/first-session" element={<ProtectedRoute><FirstSession /></ProtectedRoute>} />
+          {/* Phase R.5.a (2026-05-27) — Early access opt-in (the ONLY route a hard-locked user can navigate to). */}
+          <Route path="/app/early-access-opt-in" element={<ProtectedRoute><EarlyAccessOptIn /></ProtectedRoute>} />
+          {/* Phase R.5.a (2026-05-27) — Superadmin cohort console. */}
+          <Route path="/app/admin/cohort" element={<Gated><CohortConsole /></Gated>} />
           <Route path="/app" element={<Gated><AppHome /></Gated>} />
           {/* Phase H.5 (2026-05-27) — legacy portfolio routes collapsed
               to /app. /app/portfolio used to render Home1 (now
@@ -374,8 +403,6 @@ function App() {
           <Route path="/app/companies" element={<Navigate to="/app" replace />} />
           {/* H.1 (2026-05-26) — Portfolio Landing news stub. Full feed lands in H.3. */}
           <Route path="/app/news" element={<Gated><NewsStub /></Gated>} />
-          {/* I.4.a (2026-05-27) — Events page (manual entry). */}
-          <Route path="/app/events" element={<Gated><Events /></Gated>} />
           <Route path="/app/companies/new" element={<Gated><NewContext /></Gated>} />
           <Route path="/app/contexts/new" element={<Gated><NewContext /></Gated>} />
           <Route path="/app/new-workspace" element={<Gated><NewContext /></Gated>} />

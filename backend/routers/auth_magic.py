@@ -231,7 +231,9 @@ async def consume_magic_link(
     # Best-effort; emit_feature_event never raises.
     try:
         from services.cohort.feature_events import (
-            emit_feature_event, COHORT_MAGIC_LINK_CONSUMED,
+            emit_feature_event,
+            COHORT_MAGIC_LINK_CONSUMED,
+            ACCOUNT_SIGNED_UP,
         )
         await emit_feature_event(
             event_type=COHORT_MAGIC_LINK_CONSUMED,
@@ -240,6 +242,17 @@ async def consume_magic_link(
             payload={"invite_id": claim["id"], "email": email,
                      "new_account": account is None},
         )
+        # Phase R.5.a (2026-05-27) — wire account.signed_up that R.3
+        # shipped as a placeholder constant. Fires ONLY for genuinely
+        # new accounts (existing account branch just upgrades trial
+        # fields + does NOT count as a new sign-up).
+        if account is None:
+            await emit_feature_event(
+                event_type=ACCOUNT_SIGNED_UP,
+                account_id=account_id,
+                cohort_tag=pre["cohort_tag"],
+                payload={"email": email, "via": "magic_link"},
+            )
     except Exception:
         pass
 

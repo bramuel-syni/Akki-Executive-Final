@@ -135,6 +135,8 @@ from routers import monitor_v2 as monitor_v2_router  # noqa: E402  Patch 5 — O
 from routers import monitor_status_assessment as monitor_status_router  # noqa: E402  Phase F — Update goal
 from routers import strategic_goal_assessment as strategic_goal_assessment_router  # noqa: E402  Chunk 12 — Strategic Goal Update Goal flow
 from routers import streaming_v9 as streaming_v9_router  # noqa: E402  Patch 9 — Streaming phase events
+from routers import feedback as feedback_router  # noqa: E402  Phase R.4 — Feedback widget
+from routers import trial_status as trial_status_router  # noqa: E402  Phase R.5.a — Trial status + early-access
 from routers import questions as questions_router  # noqa: E402  Patch 14 — Questions UI
 from routers import news as news_router  # noqa: E402  Patch 21 — News feed
 from routers import profile as profile_router  # noqa: E402  Patch 25C — /me/profile country
@@ -296,6 +298,8 @@ app.include_router(monitor_v2_router.router)  # Patch 5 — Monitor v2
 app.include_router(monitor_status_router.router)  # Phase F — Monitor "Update goal"
 app.include_router(strategic_goal_assessment_router.router)  # Chunk 12 — Strategic Goal "Update Goal"
 app.include_router(streaming_v9_router.router)  # Patch 9 — Streaming phase events
+app.include_router(feedback_router.router)  # Phase R.4 — Feedback widget
+app.include_router(trial_status_router.router)  # Phase R.5.a — Trial status + early-access
 app.include_router(questions_router.router)  # Patch 14 — Questions UI
 app.include_router(news_router.router)  # Patch 21 — News feed
 app.include_router(profile_router.router)  # Patch 25C — /me/profile country

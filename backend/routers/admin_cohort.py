@@ -29,6 +29,9 @@ from services.cohort.magic_link import (
 from services.cohort.welcome_email import (
     build_welcome_html, assert_no_founder_placeholder, send_welcome_email_async,
 )
+from services.cohort.console import (
+    aggregate_cohort_console, get_account_activity_timeline, FUNNEL_STAGES,
+)
 
 
 log = logging.getLogger("akki.cohort.admin")
@@ -320,3 +323,56 @@ async def cohort_funnel(
         "total_events": total,
         "as_of": _now().isoformat(),
     }
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Phase R.5.a — Cohort console table + drill-down
+# ═════════════════════════════════════════════════════════════════════
+
+@router.get("/console")
+async def cohort_console_table(
+    cohort_tag: Optional[str] = Query(default=None),
+    window: str = Query(default="since_trial_start",
+                        regex="^(7d|28d|since_trial_start)$"),
+    limit: int = Query(default=200, ge=1, le=1000),
+    _admin: Dict[str, Any] = Depends(_require_superadmin),
+) -> Dict[str, Any]:
+    """Cohort console table aggregator.
+
+    Returns per-logo rows with highest funnel stage + trial-day +
+    trial-status + last-signal-at. The R.5.a frontend renders this
+    as a sortable table with the time-window toggle.
+
+    Window options:
+      - `7d`                   : events within the last 7 days
+      - `28d`                  : events within the last 28 days
+      - `since_trial_start` (default): events since the user's trial began
+    """
+    return await aggregate_cohort_console(
+        cohort_tag=cohort_tag, window=window, limit=limit,
+    )
+
+
+@router.get("/console/account/{account_id}/timeline")
+async def cohort_account_drilldown(
+    account_id: str,
+    limit: int = Query(default=50, ge=1, le=500),
+    _admin: Dict[str, Any] = Depends(_require_superadmin),
+) -> Dict[str, Any]:
+    """Per-account activity drill-down for the cohort console.
+
+    Returns the most recent `limit` feature_events for the account,
+    most-recent-first — the cohort console renders this as a
+    chronological timeline on row-click.
+    """
+    rows = await get_account_activity_timeline(account_id=account_id, limit=limit)
+    return {"account_id": account_id, "items": rows, "count": len(rows)}
+
+
+@router.get("/console/stages")
+async def cohort_console_stages() -> Dict[str, Any]:
+    """Locked list of the 5 funnel stages (in rank order). The
+    frontend uses this to render the table header without baking
+    the names into client code."""
+    return {"stages": list(FUNNEL_STAGES)}
+
