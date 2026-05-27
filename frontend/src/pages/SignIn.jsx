@@ -72,12 +72,13 @@ export default function SignIn() {
           <div>
             <p className="akki-overline mb-4 text-[var(--accent)]">Welcome back</p>
             <h1 className="akki-serif text-[44px] leading-[1.1] tracking-tight text-[var(--ink)] mb-7 font-normal">
-              The colleague who reads with you.
+              The colleague who reads everything with you.
             </h1>
             <p className="akki-serif text-[16.5px] leading-[1.7] text-[var(--deep)] italic max-w-md">
-              AKKI is the third party in the conversation — a sharp, sober
-              colleague who reads every pack, remembers what the board has
-              already asked, and prepares you without taking the floor.
+              Boards. Ops. Monitoring. Briefings. Research. AKKI reads what
+              you don&rsquo;t have time to read, remembers what you asked the
+              last six meetings, and prepares you without ever taking the
+              floor.
             </p>
           </div>
 

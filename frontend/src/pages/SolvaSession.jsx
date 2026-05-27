@@ -221,11 +221,14 @@ export default function SolvaSession() {
       setSession(srv);
       dispatch(Actions.attachSession(srv.id));
       dispatch(Actions.submitFraming(framingDraft.trim()));
-      // Wave 2.1 — kick off the deterministic Frame Audit immediately
-      // after the session row exists. Fire-and-forget here; the Frame
-      // Audit screen itself will GET the result. Failures are logged
-      // but never block the framing-submit happy path.
-      api.post(`/solva/v2/sessions/${srv.id}/frame-audit`).catch(() => {});
+      // Phase L.a (2026-05-27) — the FrameAuditScreen now drives the
+      // frame-audit POST via the SSE pipe (`?stream=1`). The earlier
+      // fire-and-forget POST on framing-submit caused the audit to
+      // complete BEFORE the FrameAuditScreen mounted, which made the
+      // StreamingLogScene flash for one tick (cached_result branch
+      // emits only `script` + `complete`, no `phase` events). Letting
+      // the FrameAuditScreen own the first call preserves the
+      // multi-line progressive reveal.
       // Replace the URL so reload resumes the session.
       navigate(`/app/solva/session/${srv.id}`, { replace: true });
     } catch (err) {

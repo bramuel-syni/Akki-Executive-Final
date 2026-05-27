@@ -361,9 +361,31 @@ def _try_parse_json(raw: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+async def _set_export_phase(export_id: str, phase_index: int, phase_label: str) -> None:
+    """Phase L.a (2026-05-27) — write a phase marker on the export row.
+
+    Best-effort: failures must NEVER block the worker. The streaming
+    observer endpoint polls `phase_index` at 500ms cadence and emits
+    SSE events when it advances; missing markers degrade UX (the
+    progress log freezes between phases) but do not corrupt the
+    underlying export."""
+    try:
+        await db.work_studio_exports.update_one(
+            {"id": export_id},
+            {"$set": {
+                "phase_index": phase_index,
+                "phase_label": phase_label,
+                "phase_at":    iso(now()),
+            }},
+        )
+    except Exception:
+        logger.debug("phase marker write failed (export_id=%s, phase=%d)", export_id, phase_index)
+
+
 async def _run_two_pass_for_export(
     *, kind: str, body: ExportRequestIn, ctx_doc: Dict[str, Any],
     grounding_block: str, citations_manifest: List[Dict[str, Any]],
+    on_pass_boundary=None,
 ) -> Tuple[str, Dict[str, Any], int, int, Dict[str, Any]]:
     """Run Pass 1 (silent reasoning) + Pass 2 (strict JSON) over the
     universal LLM proxy. Returns (pass_1_text, content_dict,
@@ -445,6 +467,13 @@ async def _run_two_pass_for_export(
     pass_1_ms = int((time.monotonic() - p1_t0) * 1000)
     partial["llm_pass1"] = {"provider": p1_provider, "fallback": bool(p1_fallback)}
     partial["pass1_text"] = pass_1_text[:8000] if pass_1_text else None
+
+    # Phase L.a (2026-05-27) — Pass 1 complete; emit "Composing." phase marker.
+    if on_pass_boundary is not None:
+        try:
+            await on_pass_boundary("pass2_start")
+        except Exception:
+            pass
 
     # ── Pass 2 — JSON content_dict
     schema_doc = {
@@ -590,6 +619,9 @@ async def _run_export(
     """Execute the LLM stage + render + persist + audit. Runs in
     BackgroundTasks. Updates db.work_studio_exports as it progresses.
     """
+    # Phase L.a (2026-05-27) — phase 0 ("Reading the cycle inputs.") fires
+    # at entry. Subsequent phases are stamped at each boundary.
+    await _set_export_phase(export_id, 0, "Reading the cycle inputs.")
     ctx_doc = await db.contexts.find_one({"id": context_id}, {"_id": 0})
     if not ctx_doc:
         await db.work_studio_exports.update_one(
@@ -623,6 +655,7 @@ async def _run_export(
     # ── Synisense-shielded grounding context for the LLM stage. We
     # rely on the existing chat path's grounding paragraphs so the
     # documents are already de-identified at upload-time.
+    await _set_export_phase(export_id, 1, "Checking the grounding contract.")
     user_input = _flat_user_input(body)
     grounding = await _grounding_for_context(context_id, user_input, top_k=8)
     grounding_block = _format_grounding(grounding)
@@ -653,11 +686,16 @@ async def _run_export(
         return
 
     # ── Two-pass canonical LLM stage
+    await _set_export_phase(export_id, 2, "Drafting the outline.")
     try:
+        async def _on_pass_boundary(marker: str):
+            if marker == "pass2_start":
+                await _set_export_phase(export_id, 3, "Composing.")
         pass_1, content_dict, p1_ms, p2_ms, llm_meta = await _run_two_pass_for_export(
             kind=kind, body=body, ctx_doc=ctx_doc,
             grounding_block=grounding_block,
             citations_manifest=citations_manifest,
+            on_pass_boundary=_on_pass_boundary,
         )
     except Exception as e:
         logger.exception("Export LLM stage failed")
@@ -700,6 +738,7 @@ async def _run_export(
     pre_hit = _ex.scan_for_banned_words(pre_text)
 
     # ── Render
+    await _set_export_phase(export_id, 4, "Rendering the artefact.")
     try:
         ctx_meta_full = {
             **ctx_meta,
@@ -756,6 +795,7 @@ async def _run_export(
     post_hit = _ex.scan_for_banned_words(file_text)
 
     # ── Sensitivity scoring (deterministic — reuse Studio scorer).
+    await _set_export_phase(export_id, 5, "Validating.")
     sensitivity_band = "INTERNAL"
     sensitivity_score = 0
     sensitivity_reasons: List[str] = []
@@ -819,6 +859,9 @@ async def _run_export(
             pass
 
     completed_at = iso(now())
+    # Phase L.a (2026-05-27) — phase 6 ("Almost there.") fires just before the
+    # final updates land + the export row flips to status=complete.
+    await _set_export_phase(export_id, 6, "Almost there.")
     # ── C.3 — mint Continue-in-chat (chat row + artefact doc row)
     cont_chat_id, cont_doc_id = await _create_continue_chat(
         account_id=account_id, context_id=context_id, kind=kind,
@@ -850,6 +893,27 @@ async def _run_export(
             "continue_doc_id": cont_doc_id,
         }},
     )
+
+    # Phase R.3 (2026-05-27) — emit work_studio.export.completed feature event.
+    try:
+        from services.cohort.feature_events import (
+            emit_feature_event, WORK_STUDIO_EXPORT_COMPLETED,
+        )
+        acct_doc = await db.accounts.find_one(
+            {"id": account_id}, {"_id": 0, "cohort_tag": 1},
+        ) or {}
+        await emit_feature_event(
+            event_type=WORK_STUDIO_EXPORT_COMPLETED,
+            account_id=account_id,
+            cohort_tag=acct_doc.get("cohort_tag"),
+            payload={
+                "export_id": export_id, "context_id": context_id,
+                "kind": kind, "output_format": output_format,
+                "sensitivity_band": sensitivity_band,
+            },
+        )
+    except Exception:
+        pass
     try:
         await write_audit(
             account_id=account_id, context_id=context_id,
@@ -1524,6 +1588,140 @@ async def get_studio_synisense_breakdown(
         "model_calls_total": total_calls,
         "storyline": storyline,
     }
+
+
+@router.get("/contexts/{context_id}/work-studio/exports/{export_id}/stream")
+async def stream_export_progress(
+    context_id: str,
+    export_id: str,
+    request: Request,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Phase L.a (2026-05-27) — SSE observer for an active export.
+
+    The `POST /export/{kind}` endpoint kicks off a BackgroundTasks
+    worker (`_run_export`) and returns 202 immediately. This endpoint
+    OBSERVES that worker by polling `db.work_studio_exports.{phase_index}`
+    at 500ms cadence and emits SSE `phase` events when the marker
+    advances. When the row flips to `status=complete`, the final
+    `complete` event carries the same payload the legacy
+    `GET /exports/{eid}` endpoint returns. On `status=failed`, an
+    `error` event is emitted. The frontend `StreamingLogScene` reads
+    these events via `useStreamingProgress`.
+
+    Auth: same membership check as the polling endpoint. Same
+    cross-account narrowing.
+
+    Why "observer" pattern (not synchronous SSE):
+      The legacy POST→202+poll architecture is preserved so existing
+      clients (Cycle.jsx + ExportModal polling code paths) keep
+      working unchanged. The stream endpoint is purely additive.
+    """
+    row = await db.work_studio_exports.find_one(
+        {"id": export_id, "context_id": context_id}, {"_id": 0},
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Export not found.")
+    if row["account_id"] != ctx["account"]["id"]:
+        raise HTTPException(status_code=403, detail="Not the export owner.")
+
+    from services.streaming.sse import sse_headers
+    from services.streaming.progress import PhaseEmitter
+    from fastapi.responses import StreamingResponse
+
+    async def _gen():
+        emitter = PhaseEmitter(request, surface="work-studio-compile")
+        last_phase_emitted = -1
+        max_iterations = 600  # 600 * 500ms = 5 minutes hard cap
+        async with emitter.start() as e:
+            yield e.script_event()
+
+            # Reset internal index; we drive advance() to match the
+            # worker's marker.
+            iter_count = 0
+            while iter_count < max_iterations:
+                iter_count += 1
+                if e.cancelled or await emitter._stream.is_disconnected():
+                    return
+
+                cur = await db.work_studio_exports.find_one(
+                    {"id": export_id, "context_id": context_id},
+                    {"_id": 0, "phase_index": 1, "phase_label": 1, "status": 1,
+                     "error": 1, "refusal_text": 1, "file_name": 1,
+                     "sensitivity_band": 1, "completed_at": 1,
+                     "kind": 1, "output_format": 1, "created_at": 1,
+                     "chat_audit_id": 1, "continue_chat_id": 1,
+                     "continue_doc_id": 1, "source": 1},
+                )
+                if not cur:
+                    yield await emitter.error("Export row disappeared.", code="not_found")
+                    return
+
+                worker_phase = cur.get("phase_index", -1)
+                if isinstance(worker_phase, int) and worker_phase > last_phase_emitted:
+                    # Catch up phase by phase so the frontend renders
+                    # each intermediate line (in case the worker
+                    # jumped 2 phases inside one 500ms window).
+                    while last_phase_emitted < worker_phase:
+                        chunk = await emitter.advance()
+                        if chunk is None:
+                            return
+                        yield chunk
+                        last_phase_emitted += 1
+
+                status_val = cur.get("status")
+                if status_val == "complete":
+                    # Mint download token (same path as get_export_status).
+                    token = secrets.token_urlsafe(32)
+                    await db.work_studio_export_tokens.insert_one({
+                        "token": token, "export_id": export_id,
+                        "expires_at": (
+                            datetime.now(timezone.utc) + timedelta(seconds=_DOWNLOAD_TTL_SECONDS)
+                        ).isoformat(),
+                        "used": False,
+                        "issued_at": iso(now()),
+                        "account_id": ctx["account"]["id"],
+                    })
+                    yield await emitter.complete({
+                        "export_id": export_id,
+                        "status": "complete",
+                        "kind": cur.get("kind"),
+                        "output_format": cur.get("output_format"),
+                        "file_name": cur.get("file_name"),
+                        "sensitivity_band": cur.get("sensitivity_band"),
+                        "completed_at": cur.get("completed_at"),
+                        "download_token": token,
+                        "chat_audit_id": cur.get("chat_audit_id"),
+                        "continue_chat_id": cur.get("continue_chat_id"),
+                        "continue_doc_id": cur.get("continue_doc_id"),
+                        "source": cur.get("source") or "export",
+                    })
+                    return
+                if status_val == "failed":
+                    yield await emitter.error(
+                        cur.get("error") or "Composition did not complete.",
+                        code="export_failed",
+                    )
+                    return
+
+                # Heartbeat every ~15s (30 iterations * 500ms) to keep
+                # the connection warm during long LLM passes.
+                if iter_count % 30 == 0:
+                    hb = await emitter.heartbeat()
+                    if hb is None:
+                        return
+                    yield hb
+
+                await asyncio.sleep(0.5)
+
+            # 5-minute observer cap — escalate as a timeout. The worker
+            # keeps running; the user can poll the legacy GET endpoint.
+            yield await emitter.error(
+                "Composition is taking longer than expected. Try the polling fallback.",
+                code="stream_timeout",
+            )
+
+    return StreamingResponse(_gen(), headers=sse_headers())
 
 
 @router.get("/contexts/{context_id}/work-studio/exports/{export_id}")

@@ -1,16 +1,18 @@
 /**
- * Phase L.a (2026-05-27) — Streaming-progress hook.
+ * Phase L.a (2026-05-27) — Streaming-progress hook (fetch-based SSE).
  *
- * Opens an EventSource against a long-op endpoint with `?stream=1` and
- * normalises the inbound events into a shape `StreamingLogScene` can
- * render. Bridges the backend SSE pipe (services/streaming/progress.py)
- * to the React tree.
- *
- * Inbound SSE events:
+ * Reads from any backend endpoint that emits the Phase L SSE event
+ * taxonomy:
  *   - `script`   → { surface, phases: [{label, icon}, ...], total }
  *   - `phase`    → { index, label, icon, total, elapsed_ms }
  *   - `complete` → { index, total, elapsed_ms, result: <legacy-json> }
  *   - `error`    → { code, error }
+ *
+ * **Why fetch instead of EventSource:**
+ *   - EventSource is GET-only; the Solva frame-audit endpoint is POST.
+ *   - EventSource doesn't accept custom headers (we need bearer auth).
+ *   - fetch + ReadableStream covers both POST and GET, carries bearer,
+ *     and the SSE wire format is identical to parse.
  *
  * Outbound hook state:
  *   {
@@ -23,20 +25,9 @@
  *     status: 'idle' | 'connecting' | 'streaming' | 'complete' | 'error' | 'cancelled',
  *   }
  *
- * **Auth carry:** EventSource doesn't accept custom headers, so we
- * rely on the existing httponly cookie path (browser sends it
- * automatically on same-origin SSE GET). The `withCredentials: true`
- * EventSource option is required for cross-origin — but akki-executive
- * preview is same-origin so this is a no-op there. Production setups
- * with a separate API host need to set `withCredentials: true`.
- *
  * **Cancellation:** when the consuming component unmounts OR explicitly
- * calls `cancel()`, the EventSource closes cleanly. The backend detects
- * the disconnect via `request.is_disconnected()` and short-circuits.
- *
- * **Reduced motion:** the hook itself doesn't animate — that's
- * `StreamingLogScene`'s job. We just emit state; the component reads
- * `prefers-reduced-motion` and collapses transitions accordingly.
+ * calls `cancel()`, the AbortController aborts the fetch. The backend
+ * detects the disconnect via `request.is_disconnected()`.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -50,131 +41,177 @@ const INITIAL_STATE = {
   status: "idle",
 };
 
+function _parseSseBlocks(buffer) {
+  // Returns { events: [{event, data}], remainder }
+  const events = [];
+  let buf = buffer;
+  let idx;
+  while ((idx = buf.indexOf("\n\n")) !== -1) {
+    const block = buf.slice(0, idx);
+    buf = buf.slice(idx + 2);
+    if (!block.trim() || block.trimStart().startsWith(":")) {
+      // comment / heartbeat — skip
+      continue;
+    }
+    let eventName = "message";
+    let dataLine = "";
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event:")) eventName = line.slice(6).trim();
+      else if (line.startsWith("data:")) dataLine += line.slice(5).trim();
+    }
+    events.push({ event: eventName, data: dataLine });
+  }
+  return { events, remainder: buf };
+}
+
 export default function useStreamingProgress() {
   const [state, setState] = useState(INITIAL_STATE);
-  const esRef = useRef(/** @type {EventSource | null} */ (null));
+  const abortRef = useRef(null);
 
-  const _close = useCallback(() => {
-    if (esRef.current) {
-      try { esRef.current.close(); } catch { /* noop */ }
-      esRef.current = null;
+  const _abort = useCallback(() => {
+    if (abortRef.current) {
+      try { abortRef.current.abort(); } catch { /* noop */ }
+      abortRef.current = null;
     }
   }, []);
 
   const cancel = useCallback(() => {
-    _close();
+    _abort();
     setState((s) => ({ ...s, status: s.status === "complete" ? "complete" : "cancelled" }));
-  }, [_close]);
+  }, [_abort]);
 
   const reset = useCallback(() => {
-    _close();
+    _abort();
     setState(INITIAL_STATE);
-  }, [_close]);
+  }, [_abort]);
 
   /**
-   * Open an EventSource against `url`. Caller is expected to ensure
-   * the URL has `?stream=1` (or whatever flag the endpoint requires).
-   * `withCredentials` defaults to true so cookies carry on cross-origin.
+   * Open a fetch-SSE stream against `url`.
+   *
+   * @param {string} url   - target endpoint (caller must include `?stream=1` etc.)
+   * @param {object} opts  - { method?, body?, headers? }
+   *   method  default "GET"
+   *   body    JSON-serialised if present (sets Content-Type: application/json)
+   *   headers extra request headers (Authorization is auto-added from localStorage)
    */
-  const stream = useCallback((url, { withCredentials = true } = {}) => {
-    _close();
+  const stream = useCallback(async (url, opts = {}) => {
+    const { method = "GET", body = null, headers = {} } = opts;
+    _abort();
     setState({ ...INITIAL_STATE, status: "connecting" });
 
-    let es;
+    const tok = (typeof window !== "undefined")
+      ? window.localStorage.getItem("akki_access_token")
+      : null;
+
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    let res;
     try {
-      es = new EventSource(url, { withCredentials });
+      // eslint-disable-next-line no-restricted-syntax -- SSE stream; axios can't expose ReadableStream
+      res = await fetch(url, {
+        method,
+        headers: {
+          Accept: "text/event-stream",
+          ...(body != null ? { "Content-Type": "application/json" } : {}),
+          ...(tok ? { Authorization: `Bearer ${tok}` } : {}),
+          ...headers,
+        },
+        body: body == null ? null : JSON.stringify(body),
+        signal: ctrl.signal,
+        credentials: "include",
+      });
     } catch (e) {
+      if (e.name === "AbortError") return;
       setState((s) => ({ ...s, status: "error",
-        error: { code: "eventsource_init_failed", message: String(e) } }));
+        error: { code: "fetch_failed", message: String(e?.message || e) } }));
       return;
     }
-    esRef.current = es;
 
-    es.addEventListener("script", (ev) => {
-      try {
-        const data = JSON.parse(ev.data);
-        setState((s) => ({
-          ...s,
-          status: "streaming",
-          surface: data.surface || s.surface,
-          phases: Array.isArray(data.phases) ? data.phases : [],
-        }));
-      } catch { /* ignore malformed */ }
-    });
+    if (!res.ok || !res.body) {
+      setState((s) => ({ ...s, status: "error",
+        error: { code: `http_${res.status}`, message: `HTTP ${res.status}` } }));
+      return;
+    }
 
-    es.addEventListener("phase", (ev) => {
-      try {
-        const data = JSON.parse(ev.data);
-        setState((s) => {
-          // Mark all previous indexes as completed (idempotent set
-          // construction so React notices the change)
-          const completed = new Set(s.completedIndexes);
-          for (let i = 0; i < data.index; i++) completed.add(i);
-          return {
-            ...s,
-            status: "streaming",
-            activeIndex: data.index,
-            completedIndexes: completed,
-          };
-        });
-      } catch { /* ignore malformed */ }
-    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
 
-    es.addEventListener("complete", (ev) => {
-      try {
-        const data = JSON.parse(ev.data);
-        setState((s) => {
-          // Mark the active phase + all prior as completed
-          const completed = new Set(s.completedIndexes);
-          const finalIdx = typeof data.index === "number" ? data.index : s.activeIndex;
-          for (let i = 0; i <= finalIdx; i++) completed.add(i);
-          return {
-            ...s,
-            status: "complete",
-            result: data.result ?? null,
-            completedIndexes: completed,
-            activeIndex: finalIdx,
-          };
-        });
-      } catch { /* ignore */ }
-      _close();
-    });
+    try {
+      // First-chunk transition to streaming
+      setState((s) => ({ ...s, status: "streaming" }));
 
-    es.addEventListener("error", (ev) => {
-      // EventSource fires `error` both for backend `event: error` AND
-      // for transport errors (connection closed). Distinguish by
-      // checking the ready state.
-      if (es.readyState === EventSource.CLOSED) {
-        setState((s) => {
-          // If we already received `complete`, this is just the natural
-          // close — don't overwrite status.
-          if (s.status === "complete") return s;
-          // Transport-layer disconnect mid-stream.
-          return { ...s, status: s.status === "streaming" ? "cancelled" : "error",
-            error: s.error || { code: "transport_closed", message: "Stream connection lost" } };
-        });
-        _close();
-        return;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const { events, remainder } = _parseSseBlocks(buf);
+        buf = remainder;
+        for (const ev of events) {
+          let payload = {};
+          try { payload = ev.data ? JSON.parse(ev.data) : {}; } catch { payload = {}; }
+
+          if (ev.event === "script") {
+            setState((s) => ({
+              ...s,
+              status: "streaming",
+              surface: payload.surface || s.surface,
+              phases: Array.isArray(payload.phases) ? payload.phases : [],
+            }));
+          } else if (ev.event === "phase") {
+            setState((s) => {
+              const completed = new Set(s.completedIndexes);
+              for (let i = 0; i < payload.index; i++) completed.add(i);
+              return {
+                ...s,
+                status: "streaming",
+                activeIndex: typeof payload.index === "number" ? payload.index : s.activeIndex,
+                completedIndexes: completed,
+              };
+            });
+          } else if (ev.event === "complete") {
+            setState((s) => {
+              const completed = new Set(s.completedIndexes);
+              const finalIdx = typeof payload.index === "number" ? payload.index : s.activeIndex;
+              for (let i = 0; i <= finalIdx; i++) completed.add(i);
+              return {
+                ...s,
+                status: "complete",
+                result: payload.result ?? null,
+                completedIndexes: completed,
+                activeIndex: finalIdx,
+              };
+            });
+          } else if (ev.event === "error") {
+            setState((s) => ({
+              ...s,
+              status: "error",
+              error: {
+                code: payload.code || "server_error",
+                message: payload.error || "Stream failed",
+              },
+            }));
+          }
+          // `message` / unknown event types are ignored — Phase L taxonomy is fixed.
+        }
       }
-      // Server-side `event: error` payload.
-      try {
-        const data = ev.data ? JSON.parse(ev.data) : {};
-        setState((s) => ({
-          ...s,
-          status: "error",
-          error: { code: data.code || "server_error", message: data.error || "Stream failed" },
-        }));
-      } catch {
-        setState((s) => ({ ...s, status: "error",
-          error: { code: "server_error", message: "Stream failed" } }));
-      }
-    });
-  }, [_close]);
+    } catch (e) {
+      if (e.name === "AbortError") return;
+      setState((s) => {
+        if (s.status === "complete") return s;
+        return { ...s, status: "error",
+          error: { code: "stream_read_failed", message: String(e?.message || e) } };
+      });
+    } finally {
+      abortRef.current = null;
+    }
+  }, [_abort]);
 
   // Cleanup on unmount
   useEffect(() => {
-    return () => { _close(); };
-  }, [_close]);
+    return () => { _abort(); };
+  }, [_abort]);
 
   return { state, stream, cancel, reset };
 }

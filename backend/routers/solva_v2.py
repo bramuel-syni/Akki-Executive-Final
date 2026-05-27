@@ -1108,6 +1108,20 @@ async def start_session(
     }
     await db.solva_v2_sessions.insert_one(rec)
 
+    # Phase R.3 (2026-05-27) — emit solva.session.created feature event.
+    try:
+        from services.cohort.feature_events import (
+            emit_feature_event, SOLVA_SESSION_CREATED,
+        )
+        await emit_feature_event(
+            event_type=SOLVA_SESSION_CREATED,
+            account_id=account["id"],
+            cohort_tag=account.get("cohort_tag"),
+            payload={"session_id": rec["id"], "submodule": rec.get("submodule")},
+        )
+    except Exception:
+        pass
+
     # Prime framing turn immediately (mirrors v1 posture)
     solve_turn_id = str(uuid.uuid4())
     # Refusal classifier (real LLM call in 15.1) at turn boundary.

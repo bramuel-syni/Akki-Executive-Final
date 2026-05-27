@@ -95,7 +95,7 @@ async def test_r1_a_admin_issues_invite(superadmin_actor, trial_email):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         tok = await _login(c, superadmin_actor["email"], superadmin_actor["password"])
         r = await c.post(
-            "/api/admin/cohort/invites",
+            "/api/admin/cohort/invites?send=0",
             headers={"Authorization": f"Bearer {tok}"},
             json={
                 "email":             trial_email,
@@ -142,7 +142,7 @@ async def test_r1_b_magic_link_consume_creates_active_trial(superadmin_actor, tr
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         tok = await _login(c, superadmin_actor["email"], superadmin_actor["password"])
         r1 = await c.post(
-            "/api/admin/cohort/invites",
+            "/api/admin/cohort/invites?send=0",
             headers={"Authorization": f"Bearer {tok}"},
             json={"email": trial_email, "cohort_tag": COHORT_TAG, "first_name": "T", "logo_name": "L"},
         )
@@ -201,7 +201,7 @@ async def test_r1_c_magic_link_replay_returns_410(superadmin_actor, trial_email)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         tok = await _login(c, superadmin_actor["email"], superadmin_actor["password"])
         r1 = await c.post(
-            "/api/admin/cohort/invites",
+            "/api/admin/cohort/invites?send=0",
             headers={"Authorization": f"Bearer {tok}"},
             json={"email": trial_email, "cohort_tag": COHORT_TAG},
         )
@@ -234,7 +234,7 @@ async def test_r1_d_tampered_token_returns_410_link_not_found(superadmin_actor, 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         tok = await _login(c, superadmin_actor["email"], superadmin_actor["password"])
         r1 = await c.post(
-            "/api/admin/cohort/invites",
+            "/api/admin/cohort/invites?send=0",
             headers={"Authorization": f"Bearer {tok}"},
             json={"email": trial_email, "cohort_tag": COHORT_TAG},
         )
@@ -258,7 +258,7 @@ async def test_r1_e_admin_list_shows_consumed_invite(superadmin_actor, trial_ema
         tok = await _login(c, superadmin_actor["email"], superadmin_actor["password"])
         # Issue + consume
         r1 = await c.post(
-            "/api/admin/cohort/invites",
+            "/api/admin/cohort/invites?send=0",
             headers={"Authorization": f"Bearer {tok}"},
             json={"email": trial_email, "cohort_tag": COHORT_TAG},
         )
@@ -303,7 +303,7 @@ async def test_r1_N1_expired_token_returns_410(superadmin_actor, trial_email):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         tok = await _login(c, superadmin_actor["email"], superadmin_actor["password"])
         r1 = await c.post(
-            "/api/admin/cohort/invites",
+            "/api/admin/cohort/invites?send=0",
             headers={"Authorization": f"Bearer {tok}"},
             json={"email": trial_email, "cohort_tag": COHORT_TAG},
         )
@@ -328,14 +328,14 @@ async def test_r1_N2_non_superadmin_cannot_issue_invite(non_admin_actor):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         tok = await _login(c, non_admin_actor["email"], non_admin_actor["password"])
         r = await c.post(
-            "/api/admin/cohort/invites",
+            "/api/admin/cohort/invites?send=0",
             headers={"Authorization": f"Bearer {tok}"},
             json={"email": "ignored@x.com", "cohort_tag": COHORT_TAG},
         )
         assert r.status_code == 403, r.text
         # Also list endpoint
         r2 = await c.get(
-            "/api/admin/cohort/invites",
+            "/api/admin/cohort/invites?send=0",
             headers={"Authorization": f"Bearer {tok}"},
         )
         assert r2.status_code == 403
@@ -366,7 +366,7 @@ async def test_r1_N3_existing_account_upgrade_preserves_state(superadmin_actor):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             tok = await _login(c, superadmin_actor["email"], superadmin_actor["password"])
             r1 = await c.post(
-                "/api/admin/cohort/invites",
+                "/api/admin/cohort/invites?send=0",
                 headers={"Authorization": f"Bearer {tok}"},
                 json={"email": pre_email, "cohort_tag": COHORT_TAG,
                       "first_name": "FromInvite", "logo_name": "FromInvite Co"},
@@ -446,7 +446,7 @@ async def test_r1_L2_concurrent_consume_only_one_wins(superadmin_actor, trial_em
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         tok = await _login(c, superadmin_actor["email"], superadmin_actor["password"])
         r1 = await c.post(
-            "/api/admin/cohort/invites",
+            "/api/admin/cohort/invites?send=0",
             headers={"Authorization": f"Bearer {tok}"},
             json={"email": trial_email, "cohort_tag": COHORT_TAG},
         )

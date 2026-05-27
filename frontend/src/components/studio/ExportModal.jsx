@@ -17,9 +17,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, API_BASE } from "@/lib/api";
 import { Loader2, Download, AlertCircle, FileDown, MessageSquare } from "lucide-react";
 import SourceStep from "./SourceStep";
+import StreamingLogScene from "@/components/transitions/StreamingLogScene";
+import useStreamingProgress from "@/hooks/useStreamingProgress";
 
 const FORMAT_OPTIONS = {
   brief:  [["docx", "DOCX"], ["pdf", "PDF"], ["auto", "Auto"]],
@@ -59,6 +61,11 @@ export default function ExportModal({ open, onClose, kind, contextId, contextNam
   const pollRef = useRef(null);
   const startedAtRef = useRef(null);
 
+  // Phase L.a (2026-05-27) — SSE observer stream against the export row.
+  // Drives the `running` branch's StreamingLogScene; the legacy polling
+  // path remains as a fallback if the stream errors out.
+  const { state: streamState, stream, reset: resetStream } = useStreamingProgress();
+
   // Reset on open/close.
   useEffect(() => {
     if (open) {
@@ -77,6 +84,7 @@ export default function ExportModal({ open, onClose, kind, contextId, contextNam
       setContinueChatId(null);
       setContinueDocId(null);
       setC1DirectDownload(null);
+      resetStream();
     }
     return () => {
       if (pollRef.current) {
@@ -105,6 +113,14 @@ export default function ExportModal({ open, onClose, kind, contextId, contextNam
       );
       setExportId(data.export_id);
       setStatus(data);
+      // Phase L.a (2026-05-27) — open the SSE observer stream.
+      // Background worker writes phase markers; the observer translates
+      // them into SSE events. The legacy polling loop still runs in
+      // parallel as a defence-in-depth fallback.
+      stream(
+        `${API_BASE}/contexts/${contextId}/work-studio/exports/${data.export_id}/stream`,
+        { method: "GET" },
+      ).catch(() => { /* state.status flips */ });
       // Begin polling.
       pollRef.current = setInterval(async () => {
         try {
@@ -304,17 +320,22 @@ export default function ExportModal({ open, onClose, kind, contextId, contextNam
         )}
 
         {phase === "running" && (
-          <div className="py-6 text-center" data-testid="work-studio-export-running">
-            <Loader2 className="w-5 h-5 mx-auto animate-spin text-[var(--accent)] mb-3" />
-            <p className="text-[14px] text-[var(--ink)] font-medium">Composing the {KIND_LABEL[kind].toLowerCase()}…</p>
-            <p className="text-[11.5px] text-[var(--muted)] mt-1">
-              About 30–60 seconds. Pass 1 reasoning runs first, then the deliverable.
+          <div className="py-6" data-testid="work-studio-export-running">
+            <p className="text-[14px] text-[var(--ink)] font-medium mb-3 text-center">
+              Composing the {KIND_LABEL[kind].toLowerCase()}…
             </p>
+            <div className="max-w-md mx-auto">
+              <StreamingLogScene
+                surfaceId="streaming-log-work-studio-compile"
+                state={streamState}
+                emptyHint="Starting the composition…"
+              />
+            </div>
             {elapsedSec !== null && (
-              <p className="text-[11px] text-[var(--muted)] mt-3 font-mono">{elapsedSec}s</p>
+              <p className="text-[11px] text-[var(--muted)] mt-4 font-mono text-center">{elapsedSec}s</p>
             )}
             {exportId && (
-              <p className="text-[10px] text-[var(--muted)] mt-1 font-mono break-all">{exportId}</p>
+              <p className="text-[10px] text-[var(--muted)] mt-1 font-mono break-all text-center">{exportId}</p>
             )}
           </div>
         )}

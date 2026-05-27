@@ -1,6 +1,67 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase R.3 — Founding Cohort feature_events instrumentation — 2026-05-27 ✅ (CLOSED)
+
+Shipped the cohort funnel telemetry pipe end-to-end:
+
+- New `services/cohort/feature_events.py` exposes `emit_feature_event` (never raises) + 6 canonical dotted-key event constants. New `db.feature_events` collection (separate from `db.events` Calendar + `db.telemetry_events` Synisense — clean per-domain boundary).
+- 4 surface emissions wired this dispatch: `auth_magic.py` → `cohort.magic_link.consumed`; `solva_v2.py` → `solva.session.created`; `work_studio_export.py` → `work_studio.export.completed`; `admin_cohort.py` → `cohort.welcome.dispatched`. (2 more — `account.signed_up`, `calendar.sync.linked` — wired in R.5 alongside the cohort console UI.)
+- TTL 90-day raw retention + 2 compound indexes for funnel queries.
+- New superadmin `GET /api/admin/cohort/funnel?cohort_tag=` returns the locked output shape `{cohort_tag, events_by_type, unique_accounts_by_type, total_events, as_of}` with all 6 event-type keys present (even when zero) so the cohort-console UI never has to handle missing-key cases.
+
+**Verification:** Phase R.3 CI **11/11 GREEN**. Full regression sweep across all 12 phase test files = **114/114 GREEN**. Live curl pipe end-to-end: issue invite (send=0) → consume → emit → `GET /funnel?cohort_tag=r3-live-funnel-probe` → `total_events=1, consumed_count=1, unique_accounts_consumed=1`.
+
+
+### Phase R.2 — Founding Cohort welcome email (SendGrid) — 2026-05-27 ✅ (CLOSED)
+
+Wired the welcome-email send to the existing SendGrid pipe (already configured: `sendgrid==6.12.5`, `SENDGRID_API_KEY` / `SENDGRID_FROM_EMAIL` in `.env`):
+
+- `services/cohort/welcome_email.py` ships the body with 4 `[FOUNDER: edit before sending real invites]` placeholders in the 4 founder-voice slots.
+- MANDATORY server-side guard (`assert_no_founder_placeholder`) returns 422 with `{code: founder_placeholder_present, founder_placeholders_remaining, examples[]}` if any `[FOUNDER:` marker is still in subject/html/text. Guard fires ONLY on real send (`send=1`); `?preview=1` bypasses so founders can iterate visibly.
+- Send is fire-and-forget via FastAPI `BackgroundTasks`; success emits `cohort_welcome_sent`, failure emits `cohort_welcome_failed`. Function NEVER raises. `SENDGRID_SANDBOX_ONLY=1` env flag forces sandbox-mode for staging/QA.
+- `POST /api/admin/cohort/invites` defaults to `send=1`; `?send=0` skips send (test path); `?preview=1` returns the rendered body without creating an invite (folds in R.2.1 preview backlog feature).
+
+**Verification:** Phase R.2 CI **14/14 GREEN**. Live curl: 422 with placeholders, 200 with `preview=1`, 200 with `send=0`.
+
+
+### Sign-in copy swap → Option C — 2026-05-27 ✅ (CLOSED)
+
+Two verbatim string swaps on `SignIn.jsx` editorial-column aside per the autonomous queue lock. FTSE 250 quote kept verbatim. CI 3/3 GREEN.
+
+
+
+### Phase L.a — Streaming Loader Architecture + 2 reference surfaces — 2026-05-27 ✅ (CLOSED)
+
+Shipped the Claude-reference streaming-loader pipe end-to-end:
+
+**Backend (SSE pipe):**
+- `backend/services/streaming/__init__.py` + `sse.py` (~125 lines — `SSEStream` context manager, `encode_event`, `encode_heartbeat`, `sse_headers` with X-Accel-Buffering defence) + `progress.py` (~195 lines — `PhaseEmitter` advancing through a static script, emits `script` / `phase` / `complete` / `error` SSE events).
+- `PHASE_SCRIPTS` dict carries the 2 L.a surfaces: `solva-frame-audit` (5 phases) + `work-studio-compile` (7 phases). Phase voice carries the Phase K signature ("Reading your framing.", "Checking the grounding contract.", "Composing.", "Validating.", "Almost there.").
+- Solva Frame Audit endpoint (`POST /api/solva/v2/sessions/{sid}/frame-audit`) accepts `?stream=1`; legacy JSON path preserved.
+- Work Studio Compile uses an **observer pattern**: existing POST→202+poll architecture preserved; new `GET /api/contexts/{cid}/work-studio/exports/{eid}/stream` polls the export row at 500ms cadence, translating `phase_index` advances into SSE events. `_run_export` worker stamps 7 phase markers at boundaries (entry → grounding → drafting outline → composing → rendering → validating → almost there). Heartbeat every ~15s. 5-minute observer cap.
+
+**Frontend (visual scene per Claude reference):**
+- `useStreamingProgress` rewritten to use fetch+ReadableStream (NOT EventSource — EventSource is GET-only but Solva frame-audit is POST). Bearer auth via Authorization header from localStorage. Handles all 4 Phase L event types.
+- `StreamingLogScene.jsx` (~155 lines) — lucide-react icons, sans-serif text, muted greys, completed lines with checkmark + opacity-70, active phase with `akki-streaming-log-pulse`. NO upcoming-phases shown. 200ms fade-in per line. `aria-live="polite"` + `aria-busy`. NO monospace / NO terminal / NO progress-bar (verified via CI source-strict guard).
+- `index.css` — `akki-streaming-log-fade` + `akki-streaming-log-pulse` keyframes + `prefers-reduced-motion` block that disables both.
+- `FrameAuditScreen.jsx` — legacy `ContextLoadingScene` replaced with `StreamingLogScene` driven by `useStreamingProgress`; POST against `?stream=1`. Surface id `streaming-log-solva-frame-audit`.
+- `ExportModal.jsx` — generic running spinner replaced with `StreamingLogScene` opened against the observer GET stream endpoint. Surface id `streaming-log-work-studio-compile`.
+- `SolvaSession.jsx` — REMOVED the legacy fire-and-forget POST on framing-submit (it caused the streaming scene to flash for one tick because the cached_result branch only emits script+complete). Letting `FrameAuditScreen` own the first call preserves the multi-line progressive reveal.
+
+**Verification:**
+- **CI:** Phase L.a `test_phase_la_streaming_loader.py` **15/15 GREEN** across 9 invariant groups (SSE module exports, phase scripts, both endpoint stream branches, worker phase instrumentation at 7 boundaries, hook uses fetch not EventSource, scene visual contract NO monospace/terminal/progress-bar, both surface UIs wired, visual reference doc locked). Full regression sweep across L.a + R1 + J + M + O + N2 + Recurrence #3/#4 = **75/75 GREEN**.
+- **Live curl probes:**
+  - Solva Frame Audit `?stream=1` → `script` event lists all 5 phases → `phase` events 0..4 in order with verbatim labels → `complete` event with audit summary as `result.frame_audit`. End-to-end <1s (deterministic engine).
+  - Work Studio Compile observer stream → `script` event lists all 7 phases → `phase` events 0/1/2 within first 8s (LLM Pass 1 still running at probe end). Worker `status=running` confirmed.
+- **End-to-end frontend (Julius@admin):** Login → Solva new session → fill framing → click Begin → state machine FRAMING→FRAME_AUDIT → FrameAuditScreen mounts → SSE stream fires → React state advances → `frame-audit-screen` testid renders verbatim audit content ("A couple of pieces are thin", observations, recommendations, summary). Zero non-N.3-backlog console errors.
+
+**Timing-artifact note (Solva-specific, NOT a bug):** The streaming scene visually unmounts in ~50-100ms on the Solva surface because `audit_framing()` is a sub-millisecond deterministic engine. CI guards lock the source-level contract independently. The multi-line progressive reveal is naturally visible on Work Studio Compile where Pass 1+2 take 30-60s.
+
+**L.b queued:** 5 remaining surfaces (Solva Session Synthesis, Work Studio Enhance Modal, Task Manager Compilation, Events Calendar Sync, Decks Generation) — same pipe, same scene, additive PHASE_SCRIPTS entries.
+
+
+
 ### Recurring bug fix — Work Studio Briefing tab wraps at narrow viewports — 2026-05-27 ✅ (Recurrence #4 closed)
 User flagged FOURTH recurrence of the Briefing tab placement bug. The
 prior Recurrence #3 fix had passed both locked structural assertions

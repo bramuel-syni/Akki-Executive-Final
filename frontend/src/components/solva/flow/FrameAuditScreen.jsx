@@ -23,9 +23,10 @@
  */
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, API_BASE } from "@/lib/api";
 import { toast } from "sonner";
-import ContextLoadingScene from "@/components/transitions/ContextLoadingScene";
+import StreamingLogScene from "@/components/transitions/StreamingLogScene";
+import useStreamingProgress from "@/hooks/useStreamingProgress";
 
 const SEVERITY_BADGE = {
   advisory: {
@@ -44,18 +45,37 @@ const SEVERITY_BADGE = {
 export default function FrameAuditScreen({ sessionId, onProceed, onGetMore, onPause }) {
   const [audit, setAudit] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [errMsg, setErrMsg] = useState(null);
   const navigate = useNavigate();
+  const { state: streamState, stream } = useStreamingProgress();
 
   useEffect(() => {
+    if (!sessionId) return undefined;
+    // Phase L.a (2026-05-27) — drive the frame-audit POST via the SSE
+    // pipe. The backend stream-branch emits Phase L `script` / `phase` /
+    // `complete` events; `useStreamingProgress` normalises them and
+    // `StreamingLogScene` renders the Claude-reference visual.
     let cancelled = false;
-    if (!sessionId) { setLoading(false); return; }
-    api.post(`/solva/v2/sessions/${sessionId}/frame-audit`)
-      .then((res) => { if (!cancelled) setAudit(res.data?.frame_audit || null); })
-      .catch((err) => { if (!cancelled) toast.error(apiErrorMessage(err)); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+    stream(`${API_BASE}/solva/v2/sessions/${sessionId}/frame-audit?stream=1`, {
+      method: "POST",
+    }).catch(() => { /* state.status already flips to "error" */ });
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  // When the SSE stream completes, lift the audit summary into local
+  // state so the regular render path takes over.
+  useEffect(() => {
+    if (streamState.status === "complete") {
+      const fa = streamState.result?.frame_audit || null;
+      if (fa) setAudit(fa);
+      else setErrMsg("Frame audit produced no summary.");
+    }
+    if (streamState.status === "error") {
+      setErrMsg(streamState.error?.message || "Could not fetch the frame audit.");
+      toast.error(streamState.error?.message || "Frame audit failed.");
+    }
+  }, [streamState.status, streamState.result, streamState.error]);
 
   const decide = async (decision) => {
     if (!sessionId) return;
@@ -76,26 +96,35 @@ export default function FrameAuditScreen({ sessionId, onProceed, onGetMore, onPa
     }
   };
 
-  if (loading) {
+  if (audit === null && streamState.status !== "error") {
     return (
-      <ContextLoadingScene
-        title="Reading what you wrote."
-        lines={[
-          "Reading the framing you submitted.",
-          "Checking what's missing before we proceed.",
-          "Comparing against comparable diagnoses.",
-          "Drafting the frame audit.",
-          "Almost there.",
-        ]}
-        testId="frame-audit-loading"
-      />
+      <div data-testid="frame-audit-loading" style={{ maxWidth: 640, margin: "0 auto", padding: "32px 24px" }}>
+        <p style={metaLine}>Layer 0 — Frame Audit</p>
+        <h2
+          style={{
+            fontFamily: "Georgia, serif",
+            fontSize: 24,
+            color: "#1F1C18",
+            margin: "6px 0 24px 0",
+            fontWeight: 600,
+            lineHeight: 1.3,
+          }}
+        >
+          Reading what you wrote.
+        </h2>
+        <StreamingLogScene
+          surfaceId="streaming-log-solva-frame-audit"
+          state={streamState}
+          emptyHint="Preparing the frame audit…"
+        />
+      </div>
     );
   }
 
   if (!audit) {
     return (
       <div data-testid="frame-audit-error" style={{ padding: 32 }}>
-        <p style={{ color: "#6B6358" }}>Couldn&rsquo;t fetch the frame audit.</p>
+        <p style={{ color: "#6B6358" }}>{errMsg || "Couldn\u2019t fetch the frame audit."}</p>
         <button onClick={() => onProceed?.()} style={btnPrimary}>Proceed anyway</button>
       </div>
     );

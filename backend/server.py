@@ -609,6 +609,14 @@ async def on_startup():
     await db.cohort_invites.create_index("id", unique=True)
     await db.cohort_invites.create_index("magic_link_token", unique=True)
     await db.cohort_invites.create_index([("email", 1), ("cohort_tag", 1)])
+    # Phase R.3 (2026-05-27) — `feature_events` collection indexes
+    # (TTL 90 days + compound for funnel queries). Best-effort.
+    try:
+        from services.cohort.feature_events import ensure_indexes as _r3_ensure
+        await _r3_ensure()
+    except Exception:
+        pass
+
     await db.user_context_visits.create_index([("account_id", 1), ("context_id", 1)], unique=True)
     # Patch 5 — Monitor v2.
     await db.objectives.create_index("id", unique=True)

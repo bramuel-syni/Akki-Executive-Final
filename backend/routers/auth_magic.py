@@ -227,7 +227,23 @@ async def consume_magic_link(
         {"$set": {"consumed_by_account_id": account_id}},
     )
 
-    # 6. Mint a first-class JWT — Phase J JTI revocation + idle logoff
+    # Phase R.3 (2026-05-27) — emit cohort.magic_link.consumed feature event.
+    # Best-effort; emit_feature_event never raises.
+    try:
+        from services.cohort.feature_events import (
+            emit_feature_event, COHORT_MAGIC_LINK_CONSUMED,
+        )
+        await emit_feature_event(
+            event_type=COHORT_MAGIC_LINK_CONSUMED,
+            account_id=account_id,
+            cohort_tag=pre["cohort_tag"],
+            payload={"invite_id": claim["id"], "email": email,
+                     "new_account": account is None},
+        )
+    except Exception:
+        pass
+
+    # 7. Mint a first-class JWT — Phase J JTI revocation + idle logoff
     #    apply uniformly (Q-e per playbook outcome).
     access = create_access_token(account_id, email)
     refresh = create_refresh_token(account_id)
