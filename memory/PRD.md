@@ -1,5 +1,48 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
+
+## Portfolio Landing Batch — Phase H.3 (Data Wiring) — 2026-05-27 ✅
+Phase H.3 closes the Portfolio Landing data layer. Live-verified end-to-end:
+
+- **Backend** — `routers/portfolio_data.py` (already mounted at server.py
+  line 189). Three endpoints powering `/app/companies`:
+  * `GET /api/me/portfolio-metrics` → 4-tile counts (companies / signals /
+    briefings / documents). Signals + briefings windowed to last 30d.
+  * `GET /api/me/boards-to-watch?limit=3` → AI-composite ranking.
+    Weights: 7d signals 0.5 · 14d briefings 0.3 · at-risk tasks 0.2.
+    Each item carries a non-empty `reasons[]` (binary check #1 enforced).
+  * `GET /api/me/last-action` → "Where you left off" resume card sourced
+    from `user_recent_views`. Returns null-empty shape (not 404) when no
+    recent activity.
+- **News quality filter** — `routers/news.py`'s `?quality=executive` param
+  narrows to tier-1 allowlist (FT / WSJ / Reuters / Bloomberg / Economist
+  / HBR / McKinsey / BoardEffect). Graceful fallback to full curated set
+  when the tier-1 subset is thin.
+- **Frontend** — `pages/ContextPortfolio.jsx` wires all 3 endpoints +
+  mounts shared `<NewsStrip quality="executive" limit=5>` for "The world
+  around you". `NewsStub` now renders the full news page (limit=20).
+- **Shared component** — `components/news/NewsStrip.jsx` (composable
+  fetch + render for both /app/companies and /app/news).
+- **Tests** — `tests/test_phase_h3_data_wiring.py` 14/14 GREEN. Includes
+  the 2 binary checks the user mandated:
+  * Every boards-to-watch item has non-empty `reasons[]`.
+  * news?quality=executive returns ≥1 source matching the tier-1
+    allowlist (FT confirmed live).
+- **Full batch suite** — H.1 + H.2 + H.3 + size-guard = 52/52 GREEN.
+  Recent-regression suite (E.3 runtime drawer, F.3 routing, F.6 debt,
+  task-drawer prefix, email-provider health) = 91 passed + 1 skip.
+- **Live DOM verification** (Julius Opio account, /app/companies):
+  * Metric tiles: Companies=5, Signals=0, Briefings=0, Documents=14
+  * Boards-to-Watch: empty state (correctly — 0 signals/briefings/at-risk)
+  * Where-you-left-off: empty state (no recent views logged)
+  * News strip top 3: FT (Dulux/AkzoNobel), SCMP (EV reads), Al Jazeera
+    (Taiwan AI). FT match satisfies tier-1 allowlist binary check.
+
+**Note:** The H.1 placeholder tests were updated to be H.3-aware
+(metric-tile loading helper `_m(...)` + section empty-state testids
+replace the legacy `value="—"` / "Coming soon" assertions).
+
+
 ## Home Cleanup Batch — Phase F (Task Manager rollout, F.1 → F.6) — 2026-05-26 ✅
 Closes the UI-cleanup batch (Phases A → F.6). Task Manager surface shipped end-
 to-end: 3-tab listing + 4-step setup wizard + Universal Task Drawer (5 tabs) +

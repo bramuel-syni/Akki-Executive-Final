@@ -1,13 +1,15 @@
 /**
- * Portfolio Landing (Home 1) — Phase H.1 layout shell (2026-05-26).
+ * Portfolio Landing (Home 1) — Phase H.1/H.2/H.3 (2026-05-26).
  *
  * Post-sign-in landing surface. Used in two routing modes:
  *   1. /app/companies (canonical)  → this page directly
  *   2. /app  (no active context)   → this page via AppHome dispatcher
  *
- * H.1 is SHELL ONLY. No data wiring — metric tile values render as
- * `—` placeholders; the 3 main sections render `Coming soon` empty
- * states. H.3 will wire real data sources.
+ * Phase H.3 wires live data:
+ *   • Metric tiles            ← GET /api/me/portfolio-metrics
+ *   • Boards to watch         ← GET /api/me/boards-to-watch?limit=3
+ *   • Where you left off      ← GET /api/me/last-action
+ *   • The world around you    ← <NewsStrip quality="executive">
  *
  * Layout (per sketch 1):
  *   LEFT  — eyebrow + time-aware greeting H1 (32px) + subtitle +
@@ -17,9 +19,8 @@
  *           tabs + vertical stack of calm company cards
  *
  * Out of scope (deferred):
- *   • Real data for metric tiles + 3 sections          → H.3
- *   • Full /app/news page                              → H.3
- *   • Phase I (Company Home / Home2 redesign)          → Phase I
+ *   • Phase H.4: Calm pass on Portfolio Landing
+ *   • Phase I:   Company Home / Home2 redesign
  *
  * Per-page font-size override (32px) on the greeting H1 is INLINE,
  * not via .akki-greeting token (token stays at 28px — guarded by
@@ -30,7 +31,7 @@ import { useNavigate } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import api from "@/api";
+import { api } from "@/lib/api";
 import NewsStrip from "@/components/news/NewsStrip";
 import {
   Landmark, Briefcase, Plus, Layers, Flame, History, Newspaper,

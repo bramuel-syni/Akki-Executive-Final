@@ -115,8 +115,16 @@ def test_h1_metrics_row_with_4_placeholder_tiles():
     assert 'label="Signals"'   in src
     assert 'label="Briefings"' in src
     assert 'label="Documents"' in src
-    # Placeholder dash.
-    assert 'value="—"' in src
+    # H.3 (2026-05-26) — placeholder dashes replaced by `_m(...)`
+    # helper that renders "—" while loading and a number once data
+    # arrives. We assert the loading branch exists so the structural
+    # contract (tile always renders, never crashes empty) is preserved.
+    assert "_m(" in src, "metrics loading helper `_m` missing"
+    # Either the dash literal (for loading state) OR the live value
+    # binding must be present.
+    assert '"—"' in src or "'—'" in src, (
+        "Loading-state em-dash must remain reachable in MetricTile."
+    )
 
 
 # ── T5. 3 placeholder sections ──────────────────────────────────
@@ -128,8 +136,13 @@ def test_h1_three_placeholder_sections_present():
         "portfolio-section-news",
     ):
         assert f'testid="{testid}"' in src, f"Missing section: {testid}"
-    # Each has a placeholder body with the "Coming soon" copy.
-    assert "Coming soon" in src
+    # H.3 (2026-05-26) — sections are now data-wired. The legacy
+    # H.1 "Coming soon" placeholders were replaced by loading +
+    # empty + populated states. We assert at least one empty-state
+    # testid exists as proof the sections still render unconditionally
+    # when no data is available.
+    assert "portfolio-section-boards-to-watch-empty" in src
+    assert "portfolio-section-where-you-left-off-empty" in src
 
 
 # ── T6. News read-more link ─────────────────────────────────────
@@ -205,7 +218,8 @@ def test_h1_news_stub_page_has_expected_testids():
     src = _read(NEWS_STUB)
     for testid in ("news-stub", "news-stub-h1", "news-stub-empty", "news-stub-back"):
         assert f'data-testid="{testid}"' in src, f"NewsStub missing testid `{testid}`"
-    # Stub displays the "Coming soon" copy.
-    assert "Coming soon" in src
+    # H.3 (2026-05-26) — the H.1 "Coming soon" copy was replaced by
+    # the shared <NewsStrip /> component with limit=20 quality="executive".
+    assert "NewsStrip" in src, "NewsStub must mount <NewsStrip /> post-H.3"
     # Back-to-portfolio link routes correctly.
     assert 'to="/app/companies"' in src
