@@ -51,7 +51,7 @@ router = APIRouter(prefix="/api")
 ShieldingPolicy = Literal["auto", "always", "off"]
 
 # Provider+model identifiers exposed to the user. Keep in sync with the
-# Emergent LLM Key playbook.
+# Universal LLM proxy.
 #
 # Patch 26G — refresh against latest provider releases (verified Feb 2026):
 #   * Anthropic — Claude Opus 4.7 added (released Apr 2026 per Anthropic);
@@ -3436,7 +3436,7 @@ async def stream_message(
                 # Phase B.3 — direct-stream provenance. `provider_used` is
                 # one of {anthropic_direct, gemini_direct, proxy_buffered}.
                 # `fallback_triggered` is True when the direct provider
-                # 5xx'd and we fell back to the Emergent proxy mid-flight
+                # 5xx'd and we fell back to the universal LLM proxy mid-flight
                 # (only possible before any delta was emitted; mid-stream
                 # failures surface as type=error and DO NOT persist).
                 "provider_used": locals().get("stream_provider_used") or "",

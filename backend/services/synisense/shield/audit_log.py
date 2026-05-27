@@ -96,7 +96,7 @@ async def write_audit(
 # Chunk 18 (Track 4 item 2, 2026-05-21) — per-model USD rate table.
 #
 # Numbers are public list prices as of 2026-05 for the providers we
-# proxy through Emergent integrations. Values are USD per 1M tokens.
+# proxy through the universal LLM gateway. Values are USD per 1M tokens.
 # Adding a new model: append a row using the SAME provider:model
 # composite key shape `client.py` writes into the audit log (the
 # `:mock` suffix is stripped before lookup).

@@ -14,7 +14,7 @@ backfill therefore:
     off because the only persistent state is the `journal_commentary`
     field on each row;
   * is throttled — `--sleep-ms` between docs (default 750ms) keeps the
-    Emergent universal key from rate-limiting under burst;
+    universal LLM key from rate-limiting under burst;
   * logs progress every 10 docs.
 
 Invocation:
@@ -98,7 +98,7 @@ async def run_backfill(
         Bumping to 3-4 cuts wall-clock dramatically because each doc's
         Synisense LLM fallback layer fires 5-10 Gemini calls in a tight
         burst and the Claude commentary call is ~20s; running 3 in
-        parallel still keeps total in-flight Emergent calls under the
+        parallel still keeps total in-flight LLM-gateway calls under the
         documented `SYNISENSE_LLM_FALLBACK_CONCURRENCY=5` ceiling per
         doc plus a handful of Claude streams. The throttle (`sleep_ms`)
         is applied between *batches* of `concurrency` docs.

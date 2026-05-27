@@ -707,7 +707,7 @@ async def regenerate_document_intelligence(
 # User types a natural-language instruction in the drawer's Document
 # tab composer; the backend:
 #   1. Runs both the prompt AND the doc body through Shield (no bypass).
-#   2. Calls the Emergent LLM via Shield's invoke() to produce the
+#   2. Calls the universal LLM proxy via Shield's invoke() to produce the
 #      rewritten body.
 #   3. Returns the proposed replacement body to the frontend (NOT
 #      committed yet).

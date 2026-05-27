@@ -8,7 +8,10 @@ import { Label } from "@/components/ui/label";
 import Logo from "@/components/brand/Logo";
 import { ArrowRight, Sparkles } from "lucide-react";
 
-const BG = "https://static.prod-images.emergentagent.com/jobs/0441d610-5908-43db-b746-3ec05187ba11/images/708daea7b9b446b2eb96ba8c62c926559162b8b148c9d38a052037a00298cfbb.png";
+// Phase N (2026-05-27) — Local asset (was previously hosted on an
+// external CDN). Served from /public/assets/ so the build is brand-
+// neutral and no third-party request fires on the signup page.
+const BG = "/assets/signup-bg.png";
 
 export default function SignUp() {
   const [form, setForm] = useState({ name: "", email: "", password: "", tenant_name: "" });

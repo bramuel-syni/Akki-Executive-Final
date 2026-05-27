@@ -366,14 +366,14 @@ async def _run_two_pass_for_export(
     grounding_block: str, citations_manifest: List[Dict[str, Any]],
 ) -> Tuple[str, Dict[str, Any], int, int, Dict[str, Any]]:
     """Run Pass 1 (silent reasoning) + Pass 2 (strict JSON) over the
-    Emergent universal-key proxy. Returns (pass_1_text, content_dict,
+    universal LLM proxy. Returns (pass_1_text, content_dict,
     pass_1_ms, pass_2_ms, llm_meta).  `llm_meta` carries
     {"llm_pass1": {"provider","fallback"}, "llm_pass2": {...}} so the
     caller can persist it on the work_studio_exports row. Raises
     RuntimeError / ChatError on irrecoverable failure.
 
     Phase B.3 hardening — Pass 1 + Pass 2 used to call `LlmChat` directly
-    against the Emergent proxy. When the proxy 502'd on Claude every
+    against the universal LLM proxy. When the proxy 502'd on Claude every
     Work Studio export+enhance failed with `llm_error:ChatError`. Now
     each pass goes through `services.llm_streaming.collect_llm_text`
     which tries the direct Anthropic SDK first (when ANTHROPIC_API_KEY

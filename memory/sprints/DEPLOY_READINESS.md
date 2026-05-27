@@ -54,7 +54,7 @@ issue an explicit deploy signal on return — DO NOT deploy without it.
 | `MONGO_URL`                | Mongo connection URI            | `mongodb://localhost:27017`  | YES — protected |
 | `DB_NAME`                  | Mongo database name             | `akki_production`            | YES — protected |
 | `JWT_SECRET`               | JWT signing secret              | `<random 32+ bytes>`         | YES |
-| `EMERGENT_LLM_KEY`         | Shield-routed LLM credential    | provisioned by Emergent     | YES |
+| `EMERGENT_LLM_KEY`         | Shield-routed LLM credential    | provisioned by gateway     | YES |
 | `SENDGRID_API_KEY`         | SendGrid transactional + Inbound Parse credential | `SG.xxx-xxx-xxx` | YES (Debt W1 — replaces Postmark) |
 | `SENDGRID_FROM_EMAIL`      | Verified sender address (SPF + DKIM authenticated) | `noreply@akki.example.com` | YES |
 | `SENDGRID_INBOUND_DOMAIN`  | SendGrid Inbound Parse parse hostname (MX records on this domain point at SendGrid) | `inbound.akki.example.com` | YES (Debt W1) |
@@ -152,11 +152,11 @@ skipped (kept on disk for git-history continuity).
 
 ### User-facing setup runbook (operator quick-start)
 
-Three options for setting the SendGrid env vars on an Emergent pod
+Three options for setting the SendGrid env vars on a deployed pod
 — pick whichever fits your workflow.
 
-**Option A — Emergent secrets panel (recommended for prod)**
-1. Open the Emergent app dashboard → your project → Settings →
+**Option A — Platform secrets panel (recommended for prod)**
+1. Open the deploy platform dashboard → your project → Settings →
    Secrets.
 2. Add each key from the SendGrid block in `/app/backend/.env.example`:
    - `SENDGRID_API_KEY`

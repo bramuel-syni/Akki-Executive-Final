@@ -341,7 +341,7 @@ async def warmup_or_warn() -> None:
     **Why downgrade**: a hard ``warmup_or_die`` couples liveness to
     boot-time model availability. When the prod build dropped the
     ``en_core_web_sm`` wheel (transitive of a URL-pin format that
-    Emergent's pip-compile rewrote), the backend pod crash-looped
+    the platform's pip-compile rewrote), the backend pod crash-looped
     and every ``/api/*`` route returned 502. Observably-broken (LB
     sees pod up, ``healthz/shield`` returns 503, every chat fails-
     closed at runtime via Part A's broadened exception coverage) is

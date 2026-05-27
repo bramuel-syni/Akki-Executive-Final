@@ -10,13 +10,13 @@ Design
 * Per-provider direct streaming:
     - Anthropic — official `anthropic` SDK `messages.stream`.
     - Gemini    — official `google-genai` SDK `aio.generate_content_stream`.
-    - OpenAI    — `litellm.acompletion(stream=True)` against the Emergent
-                  integrations proxy (no separate OPENAI_API_KEY needed).
+    - OpenAI    — `litellm.acompletion(stream=True)` against the universal
+                  LLM proxy (no separate OPENAI_API_KEY needed).
                   This is the same library `emergentintegrations.LlmChat`
                   already uses for non-streaming proxy calls; we just turn
                   on `stream=True`.
 * If the direct SDK call for a provider fails (e.g. tier 429 on Gemini
-  Pro), we attempt a litellm-stream retry through the Emergent proxy
+  Pro), we attempt a litellm-stream retry through the universal LLM proxy
   (still token-level streaming) before giving up and emitting one
   buffered delta. This means proxy-buffered is the LAST resort, not the
   default for non-Anthropic providers.
@@ -73,7 +73,7 @@ def streaming_mode_per_provider() -> Dict[str, str]:
     Default behaviour: direct where keys present, else proxy_buffered.
 
     Phase A.1 — `gpt` reports `direct_stream` because OpenAI streaming
-    now goes through the Emergent integrations proxy via litellm with
+    now goes through the universal LLM proxy via litellm with
     `stream=True` (no separate OPENAI_API_KEY required).
     """
     forced = (os.environ.get("CHAT_STREAMING_MODE") or "").strip().lower()
@@ -173,8 +173,8 @@ async def _stream_gemini(
 # Direct streaming — OpenAI native SDK.
 #
 # Phase A.3 (2026-05-10) — preferred path for GPT-5.2 when an
-# OPENAI_API_KEY is present in the environment. The LiteLLM-via-Emergent-
-# proxy path buffers the full response server-side and yields all chunks
+# OPENAI_API_KEY is present in the environment. The LiteLLM-via-LLM-
+# gateway path buffers the full response server-side and yields all chunks
 # at machine speed when generation completes (verified by direct probe
 # in Phase A.2: 903 chunks in a 0.48 s window after a 25 s wait). Native
 # `openai.AsyncOpenAI().chat.completions.create(stream=True)` yields
@@ -232,7 +232,7 @@ async def _stream_openai_native(
 
 # ---------------------------------------------------------------------------
 # Direct streaming — OpenAI (and Gemini fallback) via LiteLLM through the
-# Emergent integrations proxy. This is the SAME library and proxy URL
+# universal LLM proxy. This is the SAME library and proxy URL
 # `emergentintegrations.LlmChat` already uses for non-streaming calls; we
 # just turn on `stream=True` and iterate the OpenAI-compat delta chunks.
 # No new SDK, no new key — re-uses EMERGENT_LLM_KEY.
@@ -358,7 +358,7 @@ async def stream_llm_direct(
     elif provider == "openai" and os.environ.get("OPENAI_API_KEY"):
         # Phase A.3 — native OpenAI SDK streaming when the key is
         # provisioned. This is the only path that yields tokens at
-        # SDK pace; LiteLLM-via-Emergent-proxy is machine-speed
+        # SDK pace; LiteLLM-via-LLM-proxy is machine-speed
         # buffered (see Phase A.2 diagnostic).
         direct_gen = _stream_openai_native
     else:  # openai (gpt-5.2) without OPENAI_API_KEY → litellm/proxy
@@ -409,7 +409,7 @@ async def stream_llm_direct(
         )
         return
 
-    # No bytes shipped yet — try LiteLLM-stream through the Emergent proxy
+    # No bytes shipped yet — try LiteLLM-stream through the universal LLM proxy
     # before falling all the way back to a single buffered blob. This is
     # the path that recovers Gemini Pro from a tier 429 on the user's
     # GEMINI_API_KEY: same provider, different transport, still token-

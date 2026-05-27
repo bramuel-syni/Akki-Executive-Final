@@ -10,7 +10,7 @@ The `admin@akki.ai` seed account carries that flag by default.
 
 Checks (all run in parallel via asyncio.gather):
     mongo     · ping + a writable round-trip on a noop collection
-    llm       · 1-token Emergent LLM call (cheapest model)
+    llm       · 1-token LLM gateway call (cheapest model)
     resend    · API-key shape check (no email actually sent)
     stripe    · /v1/balance call (read-only, no charge)
     apsched   · scheduler is running + jobs registered
@@ -61,7 +61,7 @@ async def _check_mongo() -> Dict[str, Any]:
 
 
 async def _check_llm() -> Dict[str, Any]:
-    """A 1-token Emergent LLM ping via Synisense Shield (Phase B —
+    """A 1-token LLM gateway ping via Synisense Shield (Phase B —
     migrated 2026-05-13). Uses `purpose="health.ping"`; Shield routes
     to the balanced provider (Gemini flash by default) for cost."""
     started = time.monotonic()

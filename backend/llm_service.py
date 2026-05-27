@@ -198,7 +198,7 @@ async def call_llm(
         model_id = os.environ.get("LLM_MODEL_FAST", "gemini-2.5-flash")
     elif tier == "deep":
         provider = "anthropic"
-        # Opus 4.7 is too new for the Emergent key catalogue today; we ship on
+        # Opus 4.7 is too new for the universal LLM key catalogue today; we ship on
         # 4.6 and flip via env when the catalogue catches up.
         model_id = os.environ.get("LLM_MODEL_DEEP", "claude-opus-4-6")
     else:

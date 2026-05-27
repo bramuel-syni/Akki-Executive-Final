@@ -265,7 +265,7 @@ def test_deploy_readiness_has_user_facing_runbook():
     txt = p.read_text("utf-8")
     assert "User-facing setup runbook" in txt
     # 3 mechanisms for setting env vars covered.
-    assert "Emergent secrets panel" in txt
+    assert "Platform secrets panel" in txt
     assert "VS Code" in txt or "vscode" in txt.lower()
     assert "terminal" in txt.lower()
     # Health-ping curl example present.

@@ -24,22 +24,22 @@ const PROVIDER_LABEL = {
   "google_direct":    "Gemini · direct stream",
   "google":           "Gemini · direct stream",
   "gemini-3-pro":     "Gemini 3 Pro · direct stream",
-  "emergent_proxy":   "Emergent universal proxy",
-  "emergent":         "Emergent universal proxy",
+  "emergent_proxy":   "Universal LLM proxy",
+  "emergent":         "Universal LLM proxy",
 };
 
 function pretty(provider) {
-  if (!provider) return "Emergent universal proxy";
+  if (!provider) return "Universal LLM proxy";
   return PROVIDER_LABEL[provider] || provider;
 }
 
 function chainTooltip(provider, fallback) {
   // Best-effort resolution narrative for the hover.
   if (fallback) {
-    return `${pretty(provider)} — fell through to Emergent universal proxy.`;
+    return `${pretty(provider)} — fell through to Universal LLM proxy.`;
   }
   if (provider && provider.includes("emergent")) {
-    return "Emergent universal proxy — direct SDK keys not present, proxy fielded the call.";
+    return "Universal LLM proxy — direct SDK keys not present, proxy fielded the call.";
   }
   return `${pretty(provider)} — direct SDK call, no fallback.`;
 }

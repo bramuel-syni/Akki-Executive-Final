@@ -28,7 +28,7 @@ const STATUS = {
 
 const CHECK_LABEL = {
   mongo:       "MongoDB",
-  llm:         "LLM (Emergent key)",
+  llm:         "LLM (Gateway key)",
   resend:      "Resend (Email)",
   stripe:      "Stripe (Billing)",
   scheduler:   "APScheduler (Cron)",

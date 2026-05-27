@@ -1,7 +1,40 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
-## Tasks 1–4 batch + PHASE_LEDGER setup — 2026-05-27 ✅
+### Phase N (third-party branding / analytics scrub) — 2026-05-27 ✅
+Stripped runtime Emergent branding + PostHog analytics from the user-facing
+app. Operating integrations (LLM gateway via `EMERGENT_LLM_KEY` env-var,
+`emergentintegrations` SDK, `emergentagent.com` preview host) preserved
+explicitly per OUT_OF_SCOPE.
+
+- **index.html**: removed `assets.emergent.sh/scripts/emergent-main.js`
+  script tag + the entire inline PostHog init block + the historical
+  comment about the old "Emergent | Fullstack App" default.
+- **package.json**: dropped `@emergentbase/visual-edits` dep
+  (visual-edits SDK) + regenerated yarn.lock.
+- **.lighthouseci/**: wiped pre-scrub artifacts; CI regenerates clean.
+- **Customer copy**: `Security.jsx` ("Emergent LLM gateway" →
+  "private LLM gateway"); `ProviderLine.jsx` ("Emergent universal
+  proxy" → "Universal LLM proxy"); `HealthDashboard.jsx` ("LLM
+  (Emergent key)" → "LLM (Gateway key)").
+- **SignUp.jsx**: background image moved from Emergent CDN to local
+  `/public/assets/signup-bg.png` (1057 KB PNG).
+- **Backend technical comments**: 12 references across 9 files
+  rewritten to neutral phrasing (universal LLM proxy / LLM gateway).
+- **Documentation**: `.env.example` + `DEPLOY_READINESS.md` brand
+  refs scrubbed; `test_admin_email_provider_health.py` assertion
+  updated to "Platform secrets panel".
+- **CI guard** `tests/test_phase_n_third_party_scrub.py` — 7 tests
+  asserting zero `emergent.sh` / `posthog` / "Made with Emergent" /
+  bare-word "Emergent" branding in active source (allowlist for
+  env-var name + integrations package + preview host).
+- **Runtime verification** — Playwright probed 10 routes
+  (`/app`, `/app/chat`, `/app/solva`, `/app/work-studio`,
+  `/app/task-manager`, `/app/monitor`, `/app/pulse`, `/app/learn`,
+  `/app/news`, `/sign-in`): `window.posthog`=undefined,
+  `window.Emergent`=undefined, 0 scrub-related console msgs on
+  every route. Two routes had pre-existing unrelated console msgs
+  ## Tasks 1–4 batch + PHASE_LEDGER setup — 2026-05-27 ✅
 
 ### Task 1 — Route consolidation + Home1 archive (Phase H.5)
 - Archived `Home1.jsx` → `_archived/`. `/app/portfolio` + `/app/companies` + `/app/contexts` collapse to `/app` via 301 redirects. SignIn / Home2 / NewsStub / AppShell link targets updated. Hygiene grep clean (no active Home1 imports).

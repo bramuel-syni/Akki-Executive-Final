@@ -7,7 +7,7 @@ const PROMISES = [
   {
     n: "01", icon: Lock, title: "Your data stays yours",
     headline: "AKKI cannot train on your board pack. Period.",
-    detail: "Your documents and signals never join a public training set. We use the Emergent LLM gateway with a private contract — no logging of your content, no model fine-tuning, no \"you sent it to us, you said we could.\" Every read and write is scoped to the company you're working in. Cross-company leakage isn't a setting; it's a query-time impossibility.",
+    detail: "Your documents and signals never join a public training set. We use a private LLM gateway with a private contract — no logging of your content, no model fine-tuning, no \"you sent it to us, you said we could.\" Every read and write is scoped to the company you're working in. Cross-company leakage isn't a setting; it's a query-time impossibility.",
     proof: "Audit log: every read and write, with actor and timestamp. Export it any time.",
   },
   {

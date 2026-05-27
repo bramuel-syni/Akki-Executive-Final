@@ -4,7 +4,7 @@ Phase A:
 - Single provider abstraction. The route selects a provider/model based
   on the request's `model_preference` ("analytical" | "generative" |
   "balanced"). Routing logic stays simple — Phase B will expand.
-- Uses the Emergent universal LLM key via `emergentintegrations`. If
+- Uses the universal LLM key via `emergentintegrations`. If
   the key is missing OR the SDK is unavailable, we fall back to a
   deterministic echo response so smoke tests are hermetic in CI.
 - **No cloud LLM-NER calls.** The course correction explicitly removed
@@ -80,7 +80,7 @@ def _provider_for(preference: ModelPreference) -> Tuple[str, str]:
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Deterministic echo fallback. Used when Emergent LLM key is missing OR
+# Deterministic echo fallback. Used when EMERGENT_LLM_KEY is missing OR
 # when SYNISENSE_LLM_MODE=mock. Smoke tests opt into this so they don't
 # burn LLM budget. The fallback intentionally echoes the de-identified
 # content verbatim so `reidentify()` has tokens to swap back, exercising
@@ -132,7 +132,7 @@ async def invoke_with_metering(
     Implementation: we call `litellm.acompletion` directly instead of
     `LlmChat.send_message` because the latter discards the
     `ModelResponse.usage` payload. The request shape mirrors what
-    `LlmChat._execute_completion` builds (same Emergent proxy URL,
+    `LlmChat._execute_completion` builds (same LLM-gateway proxy URL,
     same `custom_llm_provider="openai"` envelope, same model name
     transform for Gemini), so behaviour stays identical to the legacy
     path apart from the additional usage capture.
@@ -149,7 +149,7 @@ async def invoke_with_metering(
 
     # Live mode — call litellm directly so we can keep the ModelResponse
     # and pull `usage.prompt_tokens` / `usage.completion_tokens`. Module-
-    # level import probe (Chunk 18 cold-start) covers the emergent SDK;
+    # level import probe (Chunk 18 cold-start) covers the integrations SDK;
     # `_LITELLM_AVAILABLE` (Chunk 18.5) covers litellm + the proxy URL
     # helper. Both probes run ONCE at import time.
     if not _EMERGENT_AVAILABLE or not _LITELLM_AVAILABLE:
@@ -165,7 +165,7 @@ async def invoke_with_metering(
         if provider == "gemini":
             litellm_model = f"gemini/{model}"
         else:
-            litellm_model = model  # openai, anthropic via Emergent proxy
+            litellm_model = model  # openai, anthropic via the universal LLM proxy
         params = {
             "model": litellm_model,
             "messages": [

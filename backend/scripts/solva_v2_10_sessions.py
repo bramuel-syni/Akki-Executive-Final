@@ -1,6 +1,6 @@
 """Phase 15.0/15.1 acceptance — run 10 real Seek Clarity sessions end-to-end.
 
-Uses the live Emergent Universal Key and the live Mongo instance. Walks each
+Uses the live universal LLM key and the live Mongo instance. Walks each
 session through all four layers (framing → grounding → synthesis → reflection)
 and reports outcomes on three orthogonal axes (Phase 15.1):
 

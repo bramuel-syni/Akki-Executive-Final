@@ -165,7 +165,7 @@ async def _create_briefing_worker(
     )
 
     # Phase B.3 — strategic failover lives in llm_service.call_llm itself
-    # (direct Anthropic / Gemini SDKs first, Emergent proxy on failure).
+    # (direct Anthropic / Gemini SDKs first, universal LLM proxy on failure).
     # The previous briefings-local Claude→Gemini band-aid is gone. We
     # still surface `fallback_triggered` on the persisted row + audit
     # metadata so ops can spot post-facto when Claude flapped.
@@ -234,7 +234,7 @@ async def _create_briefing_worker(
         "shielding_masked": llm_out.get("shielding", {}).get("identifiers_masked", 0),
         "shielding": llm_out.get("shielding", {}),
         # Phase B post-D — option (b) audit flag. Present iff the
-        # standard-tier call 502'd through the Emergent proxy and the
+        # standard-tier call 502'd through the universal LLM proxy and the
         # fast-tier (Gemini) retry succeeded. Absent on the happy path,
         # so existing rows and the briefing serialiser are unaffected.
         "llm_fallback": fallback_meta,
@@ -744,7 +744,7 @@ async def regenerate_boardpack_commentary(
     boardpack, run it through Synisense (surface=briefing for parity
     with existing Daily Review approval queue), persist the result.
 
-    Real LLM call — uses the Emergent universal LLM gateway. ~600-1200
+    Real LLM call — uses the universal LLM gateway. ~600-1200
     word target. Cached on the row; subsequent reads return cached
     output unless this endpoint is called again or `?refresh=true` is
     passed to GET (the refresh flag is currently advisory; explicit

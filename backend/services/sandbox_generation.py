@@ -1,8 +1,8 @@
 """Phase J — Generative Sandbox MVP.
 
 Generates an 8-artefact fictional working session from a visitor's
-7-question form intake. Primary model: Claude Sonnet 4.5 via Emergent
-proxy. Fallback: GPT-5.2 via the same proxy. Schema-validated with
+7-question form intake. Primary model: Claude Sonnet 4.5 via the universal
+LLM proxy. Fallback: GPT-5.2 via the same proxy. Schema-validated with
 one retry on shape failure; pre-composed default served on second
 failure so the sandbox never hangs.
 
