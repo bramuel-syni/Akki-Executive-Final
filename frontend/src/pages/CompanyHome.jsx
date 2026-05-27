@@ -25,9 +25,10 @@
  * .akki-greeting token (which stays at 28px — guarded by tests/
  * test_portfolio_h1_size_guard.py).
  */
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
 import AppShell from "@/components/layout/AppShell";
 import {
   ArrowLeft, Mail, ClipboardCheck, AlertTriangle, MessageSquare,
@@ -35,12 +36,27 @@ import {
 } from "lucide-react";
 
 const ATTENTION_CARDS = [
-  { id: "drafts",    title: "Email drafts ready for review", icon: Mail,            route: "/app/work-studio" },
-  { id: "reports",   title: "Reports ready to compile",      icon: ClipboardCheck,  route: "/app/task-manager" },
-  { id: "pulse",     title: "New pulse updates",              icon: AlertTriangle,   route: "/app/pulse" },
-  { id: "questions", title: "Open questions",                 icon: MessageSquare,   route: "/app/solva" },
-  { id: "events",    title: "Upcoming events",                icon: Calendar,        route: "/app/task-manager" },
+  { id: "drafts",    title: "Email drafts ready for review", icon: Mail,            routeKey: "drafts" },
+  { id: "reports",   title: "Reports ready to compile",      icon: ClipboardCheck,  routeKey: "reports" },
+  { id: "pulse",     title: "New pulse updates",              icon: AlertTriangle,   routeKey: "pulse" },
+  { id: "questions", title: "Open questions",                 icon: MessageSquare,   routeKey: "questions" },
+  { id: "events",    title: "Upcoming events",                icon: Calendar,        routeKey: "events" },
 ];
+
+// Phase I.2 (2026-05-27) — click → context-filtered surface route.
+// `events` card is intentionally a no-op until I.4 ships the events
+// collection.
+function _routeForCard(routeKey, cid) {
+  if (!cid) return null;
+  switch (routeKey) {
+    case "drafts":    return `/app/work-studio?tab=drafts&context_id=${cid}`;
+    case "reports":   return `/app/task-manager?filter=ready_to_compile&context_id=${cid}`;
+    case "pulse":     return `/app/pulse?context_id=${cid}`;
+    case "questions": return `/app/questions?status=open&context_id=${cid}`;
+    case "events":    return null;   // I.4
+    default:          return null;
+  }
+}
 
 const TOP_SIGNAL_CHIPS = [
   { id: "pulse",     label: "Pulse" },
@@ -49,12 +65,23 @@ const TOP_SIGNAL_CHIPS = [
 ];
 
 
-function AttentionCard({ card, onOpen }) {
+function AttentionCard({ card, data, onOpen }) {
   const Icon = card.icon;
+  const count = data?.count;
+  const subtext = data?.subtext;
+  // Loading: count is undefined (no fetch yet). Show — / placeholder.
+  // Loaded: count is a number; subtext is the act-now prompt.
+  const renderedCount =
+    typeof count === "number" ? String(count) : "—";
+  const renderedSubtext =
+    typeof subtext === "string" && subtext.length > 0
+      ? subtext
+      : "Awaiting wiring...";
+
   return (
     <button
       type="button"
-      onClick={() => onOpen(card.route)}
+      onClick={() => onOpen(card.routeKey)}
       aria-label={`Open ${card.title}`}
       className="w-full bg-white border border-[var(--rule)] hover:border-[var(--ink)]/30 rounded-md px-5 py-4 transition-colors text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 focus-visible:ring-offset-1"
       data-card-kind="attention"
@@ -74,14 +101,14 @@ function AttentionCard({ card, onOpen }) {
               className="text-[15.5px] font-medium text-[var(--muted)] shrink-0 tabular-nums"
               data-testid={`company-home-attention-${card.id}-count`}
             >
-              —
+              {renderedCount}
             </span>
           </div>
           <p
             className="text-[12px] text-[var(--muted)] italic mt-1"
             data-testid={`company-home-attention-${card.id}-subtext`}
           >
-            Awaiting wiring...
+            {renderedSubtext}
           </p>
         </div>
         <ChevronRight className="w-3.5 h-3.5 text-[var(--muted)] shrink-0 mt-1.5" strokeWidth={1.8} aria-hidden="true" />
@@ -174,6 +201,42 @@ export default function CompanyHome() {
   const navigate = useNavigate();
   const { activeContext, clearActiveContext } = useAuth();
   const [chip, setChip] = useState("pulse");
+  const cid = activeContext?.id;
+
+  // Phase I.2 (2026-05-27) — live data fetches. Two endpoints,
+  // mounted in parallel. Loading state: leave undefined → `—`
+  // placeholders. Error state: log to console, leave undefined →
+  // placeholders. Never break the page.
+  const [readiness, setReadiness] = useState(undefined);
+  const [attention, setAttention] = useState({});
+
+  useEffect(() => {
+    if (!cid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get(
+          `/me/company-home/readiness?context_id=${encodeURIComponent(cid)}`
+        );
+        if (!cancelled) setReadiness(data);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("[CompanyHome] readiness fetch failed:", err?.message);
+      }
+    })();
+    (async () => {
+      try {
+        const { data } = await api.get(
+          `/me/company-home/attention?context_id=${encodeURIComponent(cid)}`
+        );
+        if (!cancelled) setAttention(data || {});
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("[CompanyHome] attention fetch failed:", err?.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [cid]);
 
   const onBackToPortfolio = useCallback(() => {
     // Phase I.1 (2026-05-27) — Clear active context client-side then
@@ -185,9 +248,16 @@ export default function CompanyHome() {
 
   const onAddDoc = useCallback(() => navigate("/app/work-studio"), [navigate]);
   const onAllDocs = useCallback(() => navigate("/app/work-studio"), [navigate]);
-  const onOpenCard = useCallback((route) => navigate(route), [navigate]);
+  const onOpenCard = useCallback((routeKey) => {
+    const r = _routeForCard(routeKey, cid);
+    if (r) navigate(r);
+  }, [cid, navigate]);
 
   const companyName = activeContext?.name || "this company";
+  const readinessRendered =
+    readiness && typeof readiness.readiness_percent === "number"
+      ? `${readiness.readiness_percent}%`
+      : "—%";
 
   return (
     <AppShell>
@@ -225,10 +295,10 @@ export default function CompanyHome() {
               Here is what's on your plate.
             </p>
 
-            {/* Header KPI strip — Readiness placeholder for I.2 */}
+            {/* Header KPI strip — Readiness (I.2 wired) */}
             <div
               className="inline-flex items-center gap-2 text-[12.5px] text-[var(--muted)] border border-[var(--rule)] bg-white rounded-md px-3 py-1.5"
-              data-testid="company-home-readiness-strip"
+              data-testid="company-home-readiness"
             >
               <Bell className="w-3 h-3 text-[var(--accent)]" strokeWidth={1.8} aria-hidden="true" />
               <span>Readiness</span>
@@ -236,14 +306,19 @@ export default function CompanyHome() {
                 className="font-medium text-[var(--ink)] tabular-nums"
                 data-testid="company-home-readiness-value"
               >
-                —%
+                {readinessRendered}
               </span>
             </div>
 
             {/* 5 attention cards stacked */}
             <div className="space-y-3" data-testid="company-home-attention-stack">
               {ATTENTION_CARDS.map((card) => (
-                <AttentionCard key={card.id} card={card} onOpen={onOpenCard} />
+                <AttentionCard
+                  key={card.id}
+                  card={card}
+                  data={attention?.[card.id]}
+                  onOpen={onOpenCard}
+                />
               ))}
             </div>
           </main>

@@ -90,12 +90,21 @@ def test_i1_subtitle_present():
 # ── T6. Readiness placeholder ────────────────────────────────────
 def test_i1_readiness_placeholder_strip_present():
     src = _read(COMPANY_HOME)
-    assert 'data-testid="company-home-readiness-strip"' in src
+    # Phase I.2 (2026-05-27) — renamed the wrapper testid from
+    # `company-home-readiness-strip` to the canonical
+    # `company-home-readiness` per the I.2 spec. The inner value
+    # testid `company-home-readiness-value` is unchanged. The em-dash
+    # placeholder is only rendered while data is loading or null;
+    # we still assert the literal lives in the source so the loading
+    # branch is reachable.
+    src = _read(COMPANY_HOME)
+    assert 'data-testid="company-home-readiness"' in src
     assert 'data-testid="company-home-readiness-value"' in src
-    # The placeholder dash + percent.
+    # The placeholder dash + percent — emitted by the readiness
+    # rendering helper when the fetch hasn't returned or returned null.
     assert "—%" in src, (
-        "Readiness placeholder must render `—%` (em-dash + percent) "
-        "until I.2 wires the value."
+        "Readiness em-dash placeholder must remain reachable for "
+        "the loading / null branch."
     )
 
 

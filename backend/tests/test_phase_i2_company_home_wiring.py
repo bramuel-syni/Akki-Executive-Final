@@ -1,0 +1,392 @@
+"""Phase I.2 — Company Home data wiring CI guard (2026-05-27).
+
+Locks the I.2 contract:
+
+  Backend:
+    T1.  Both endpoints exist and require auth.
+    T2.  `/api/me/company-home/readiness?context_id=…` returns
+         `{readiness_percent: int|null, open_task_count: int}`
+         with sensible shape across seeded data + empty cases.
+    T3.  `/api/me/company-home/attention?context_id=…` returns the
+         5-card shape; every card has non-null `count` and
+         non-empty `subtext`.
+    T4.  Card 4 (questions) subtext does NOT pre-wire I.5
+         asker-role decomposition phrasing.
+    T5.  Card 5 (events) is always count=0 + "No events scheduled".
+
+  Frontend wire:
+    T6.  `CompanyHome.jsx` imports `api` from `@/lib/api` and
+         fires GETs to both endpoints.
+    T7.  Readiness strip carries `data-testid="company-home-readiness"`.
+    T8.  All 5 card placeholders bind to live data (count + subtext).
+    T9.  Click routing uses the canonical context-filtered routes per
+         card; `events` card is a no-op.
+"""
+from __future__ import annotations
+
+import re
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+from httpx import AsyncClient, ASGITransport
+
+
+REPO = Path(__file__).resolve().parent.parent.parent
+COMPANY_HOME = REPO / "frontend" / "src" / "pages" / "CompanyHome.jsx"
+ROUTER       = REPO / "backend" / "routers" / "company_home.py"
+
+
+def _read(p: Path) -> str:
+    return p.read_text(encoding="utf-8")
+
+
+def _iso(dt: datetime) -> str:
+    return dt.isoformat()
+
+
+# ═════════════════════════════════════════════════════════════════
+# Backend live tests
+# ═════════════════════════════════════════════════════════════════
+
+@pytest.fixture
+async def i2_actor():
+    from core import db, hash_password
+    uid = f"i2-{uuid.uuid4().hex[:8]}"
+    email = f"i2-{uuid.uuid4().hex[:6]}@example.com"
+    pw = "Pw!1234567Abc"
+    cid = f"i2-ctx-{uuid.uuid4().hex[:6]}"
+    now = datetime.now(timezone.utc)
+    now_iso = _iso(now)
+
+    await db.accounts.insert_one({
+        "id": uid, "email": email, "password_hash": hash_password(pw),
+        "name": "I2 Tester", "tier": "executive",
+        "declared_role": "executive", "mfa_enrolled": False,
+        "is_superadmin": False, "created_at": now_iso,
+    })
+    await db.contexts.insert_one({
+        "id": cid, "name": "I2 Test Co",
+        "type": "executive_personal", "owner_id": uid,
+        "created_at": now_iso,
+    })
+    await db.memberships.insert_one({
+        "account_id": uid, "context_id": cid, "status": "active",
+        "role": "executive", "created_at": now_iso,
+    })
+
+    # Seed tasks: 2 with readiness 60, 1 with readiness 90 (compile-eligible).
+    await db.tasks.insert_many([
+        {"id": f"i2-t-{i}", "context_id": cid, "state": "active",
+         "readiness_score": score, "created_at": now_iso}
+        for i, score in enumerate([60, 60, 90])
+    ])
+    # Seed drafts: 1 ned + 2 cycle, all status="draft". Oldest is 5d.
+    await db.ned_followups.insert_one({
+        "id": f"i2-ned-{uuid.uuid4().hex[:6]}",
+        "context_id": cid, "status": "draft",
+        "created_at": _iso(now - timedelta(days=5)),
+    })
+    await db.cycle_followups.insert_many([
+        {"id": f"i2-cy-{i}", "context_id": cid, "status": "draft",
+         "created_at": _iso(now - timedelta(days=d))}
+        for i, d in enumerate([1, 2])
+    ])
+    # Seed pulse signals: 2 risk + 1 opportunity in last 7d.
+    await db.signals.insert_many([
+        {"id": f"i2-sig-r1", "context_id": cid, "type": "risk",
+         "created_at": _iso(now - timedelta(days=1))},
+        {"id": f"i2-sig-r2", "context_id": cid, "type": "risk",
+         "created_at": _iso(now - timedelta(days=2))},
+        {"id": f"i2-sig-o1", "context_id": cid, "type": "opportunity",
+         "created_at": _iso(now - timedelta(days=3))},
+    ])
+    # Seed cycle_questions: 2 open + 1 closed.
+    await db.cycle_questions.insert_many([
+        {"id": f"i2-q-{i}", "context_id": cid, "status": status,
+         "created_at": now_iso}
+        for i, status in enumerate(["open", "open", "closed"])
+    ])
+
+    yield {"uid": uid, "email": email, "password": pw, "cid": cid}
+
+    # Teardown.
+    await db.accounts.delete_one({"id": uid})
+    await db.contexts.delete_one({"id": cid})
+    await db.memberships.delete_many({"account_id": uid})
+    await db.tasks.delete_many({"context_id": cid})
+    await db.ned_followups.delete_many({"context_id": cid})
+    await db.cycle_followups.delete_many({"context_id": cid})
+    await db.signals.delete_many({"context_id": cid})
+    await db.cycle_questions.delete_many({"context_id": cid})
+
+
+async def _login(c, actor):
+    r = await c.post("/api/auth/login",
+                     json={"email": actor["email"], "password": actor["password"]})
+    tok = r.json()["access_token"]
+    return {"Authorization": f"Bearer {tok}"}
+
+
+# ── T1. Auth gate ─────────────────────────────────────────────────
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", [
+    "/api/me/company-home/readiness?context_id=any",
+    "/api/me/company-home/attention?context_id=any",
+])
+async def test_i2_endpoints_require_auth(path):
+    from server import app  # noqa: F401
+    async with AsyncClient(transport=ASGITransport(app=app),
+                           base_url="http://test") as c:
+        r = await c.get(path)
+    assert r.status_code == 401, r.text
+
+
+@pytest.mark.asyncio
+async def test_i2_endpoints_403_on_non_member(i2_actor):
+    from server import app  # noqa: F401
+    async with AsyncClient(transport=ASGITransport(app=app),
+                           base_url="http://test") as c:
+        hdr = await _login(c, i2_actor)
+        # Forge a context_id the user is not a member of.
+        for path in (
+            "/api/me/company-home/readiness?context_id=not-a-member-ctx",
+            "/api/me/company-home/attention?context_id=not-a-member-ctx",
+        ):
+            r = await c.get(path, headers=hdr)
+            assert r.status_code == 403, f"{path} → {r.status_code}"
+
+
+# ── T2. Readiness shape + math ────────────────────────────────────
+@pytest.mark.asyncio
+async def test_i2_readiness_returns_weighted_average(i2_actor):
+    from server import app  # noqa: F401
+    cid = i2_actor["cid"]
+    async with AsyncClient(transport=ASGITransport(app=app),
+                           base_url="http://test") as c:
+        hdr = await _login(c, i2_actor)
+        r = await c.get(
+            f"/api/me/company-home/readiness?context_id={cid}", headers=hdr,
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "readiness_percent" in body and "open_task_count" in body
+    # Seeded: 3 tasks @ scores 60, 60, 90 → avg=70.
+    assert body["readiness_percent"] == 70
+    assert body["open_task_count"] == 3
+    # Range guard.
+    assert 0 <= body["readiness_percent"] <= 100
+
+
+@pytest.mark.asyncio
+async def test_i2_readiness_returns_null_when_no_open_tasks():
+    from core import db, hash_password
+    from server import app  # noqa: F401
+
+    uid = f"i2e-{uuid.uuid4().hex[:8]}"
+    email = f"i2e-{uuid.uuid4().hex[:6]}@example.com"
+    pw = "Pw!1234567Abc"
+    cid = f"i2e-ctx-{uuid.uuid4().hex[:6]}"
+    now_iso = _iso(datetime.now(timezone.utc))
+    await db.accounts.insert_one({
+        "id": uid, "email": email, "password_hash": hash_password(pw),
+        "name": "I2 Empty", "tier": "executive",
+        "declared_role": "executive", "mfa_enrolled": False,
+        "is_superadmin": False, "created_at": now_iso,
+    })
+    await db.contexts.insert_one({
+        "id": cid, "name": "I2 Empty Co", "type": "executive_personal",
+        "owner_id": uid, "created_at": now_iso,
+    })
+    await db.memberships.insert_one({
+        "account_id": uid, "context_id": cid, "status": "active",
+        "role": "executive", "created_at": now_iso,
+    })
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app),
+                               base_url="http://test") as c:
+            r = await c.post("/api/auth/login",
+                             json={"email": email, "password": pw})
+            tok = r.json()["access_token"]
+            r = await c.get(
+                f"/api/me/company-home/readiness?context_id={cid}",
+                headers={"Authorization": f"Bearer {tok}"},
+            )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["readiness_percent"] is None
+        assert body["open_task_count"] == 0
+    finally:
+        await db.accounts.delete_one({"id": uid})
+        await db.contexts.delete_one({"id": cid})
+        await db.memberships.delete_many({"account_id": uid})
+
+
+# ── T3. Attention shape + counts ─────────────────────────────────
+@pytest.mark.asyncio
+async def test_i2_attention_returns_all_five_cards_with_seeded_counts(i2_actor):
+    from server import app  # noqa: F401
+    cid = i2_actor["cid"]
+    async with AsyncClient(transport=ASGITransport(app=app),
+                           base_url="http://test") as c:
+        hdr = await _login(c, i2_actor)
+        r = await c.get(
+            f"/api/me/company-home/attention?context_id={cid}", headers=hdr,
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    for key in ("drafts", "reports", "pulse", "questions", "events"):
+        assert key in body, f"missing card `{key}` in {body}"
+        assert "count" in body[key]
+        assert "subtext" in body[key]
+        assert isinstance(body[key]["count"], int)
+        assert body[key]["count"] >= 0
+        assert isinstance(body[key]["subtext"], str)
+        assert body[key]["subtext"], f"card `{key}` subtext is empty"
+
+    # Drafts: 1 ned + 2 cycle = 3. Oldest is 5d → subtext kicks the
+    # "Send today" branch.
+    assert body["drafts"]["count"] == 3
+    assert "Send today" in body["drafts"]["subtext"]
+    assert body["drafts"]["oldest_days"] >= 4
+
+    # Reports: 1 task >= 80 readiness.
+    assert body["reports"]["count"] == 1
+    assert body["reports"]["subtext"] == "All ≥80% · Commit now"
+
+    # Pulse: 2 risk + 1 opportunity → 3 total; "2 critical · 1 opportunities".
+    assert body["pulse"]["count"] == 3
+    assert body["pulse"]["critical"] == 2
+    assert body["pulse"]["opportunities"] == 1
+    assert "critical" in body["pulse"]["subtext"]
+    assert "opportunit" in body["pulse"]["subtext"]
+
+    # Questions: 2 open.
+    assert body["questions"]["count"] == 2
+    assert body["questions"]["subtext"] == "Awaiting clarification"
+
+    # Events: hardcoded 0 + empty state.
+    assert body["events"]["count"] == 0
+    assert body["events"]["subtext"] == "No events scheduled"
+
+
+# ── T4. Questions card does NOT pre-wire I.5 role decomposition ──
+def _strip_py_strings_and_comments(src: str) -> str:
+    """Strip Python triple-quoted strings + `#` line comments so the
+    forbidden-token scan only inspects EXECUTABLE code (not docstrings
+    that document what the OUT_OF_SCOPE forbids)."""
+    # Drop triple-double-quoted blocks (docstrings).
+    src = re.sub(r'"""[\s\S]*?"""', "", src)
+    # Drop triple-single-quoted blocks.
+    src = re.sub(r"'''[\s\S]*?'''", "", src)
+    # Drop `# …` line comments.
+    src = re.sub(r"#[^\n]*", "", src)
+    return src
+
+
+def test_i2_questions_card_does_not_pre_wire_asker_role_decomposition():
+    src = _strip_py_strings_and_comments(_read(ROUTER))
+    # I.5 will add asker-role splitting like "X from board · Y from
+    # CEO · Z from team". I.2 must NOT pre-wire this in executable code.
+    for forbidden in (
+        "asker_role",
+        "from board",
+        "from CEO",
+        "from team",
+    ):
+        assert forbidden not in src, (
+            f"`{forbidden}` is I.5 scope — must not appear in the "
+            "I.2 company_home router (executable code)."
+        )
+    # The frontend rendering must use the count-only act-now prompt,
+    # not a decomposition. (JSX has its own comment-strip semantics —
+    # we keep this check coarse since the JSX docstrings here are
+    # JS-style /* … */ which never carry these tokens.)
+    fe = _read(COMPANY_HOME)
+    for forbidden in ("from board", "from CEO", "from team"):
+        assert forbidden not in fe, (
+            f"`{forbidden}` is I.5 scope — must not appear in "
+            "CompanyHome.jsx I.2 wiring."
+        )
+
+
+# ── T5. Events card always empty in I.2 ──────────────────────────
+def test_i2_events_card_is_hard_coded_empty():
+    src = _read(ROUTER)
+    # The events helper must return 0 + the empty-state string.
+    assert "No events scheduled" in src
+    # Strip docstrings/comments before the forbidden-token scan so
+    # the OUT_OF_SCOPE comment inside `_build_events` doesn't trip
+    # the guard.
+    stripped = _strip_py_strings_and_comments(src)
+    m = re.search(
+        r"def _build_events\(\)[\s\S]*?return CardEvents\(",
+        stripped,
+    )
+    assert m, "_build_events function not found (after comment strip)"
+    body = m.group(0)
+    # The executable body must NOT read from the tasks collection.
+    for f in ("final_due_date", "due_date", "db.tasks"):
+        assert f not in body, (
+            f"_build_events must NOT touch `{f}` — events collection "
+            "ships in I.4, not as a tasks fallback."
+        )
+
+
+# ═════════════════════════════════════════════════════════════════
+# Frontend wire tests
+# ═════════════════════════════════════════════════════════════════
+
+# ── T6. Frontend fires GETs to both endpoints ────────────────────
+def test_i2_frontend_fetches_both_endpoints():
+    src = _read(COMPANY_HOME)
+    assert 'from "@/lib/api"' in src, "CompanyHome must import the api client"
+    assert "/me/company-home/readiness" in src, (
+        "CompanyHome must fetch readiness."
+    )
+    assert "/me/company-home/attention" in src, (
+        "CompanyHome must fetch attention."
+    )
+
+
+# ── T7. Readiness testid renamed to canonical I.2 form ───────────
+def test_i2_readiness_strip_carries_canonical_testid():
+    src = _read(COMPANY_HOME)
+    assert 'data-testid="company-home-readiness"' in src
+    # The value child keeps its testid.
+    assert 'data-testid="company-home-readiness-value"' in src
+
+
+# ── T8. AttentionCard renders live count + subtext bindings ──────
+def test_i2_attention_card_renders_live_count_and_subtext():
+    src = _read(COMPANY_HOME)
+    # The card receives a `data` prop (live API row).
+    assert "function AttentionCard({ card, data, onOpen })" in src
+    # The count expression reads `data.count`.
+    assert "data?.count" in src or "data?.[\"count\"]" in src
+    # The subtext expression reads `data.subtext`.
+    assert "data?.subtext" in src or "data?.[\"subtext\"]" in src
+    # The main render still mounts every card with `data` bound.
+    assert "attention?.[card.id]" in src
+
+
+# ── T9. Click routing uses context-filtered surface routes ──────
+def test_i2_click_routing_uses_context_filtered_routes_per_card():
+    src = _read(COMPANY_HOME)
+    # The route resolver function.
+    assert "_routeForCard" in src
+    # Each card's route shape (verbatim).
+    for marker in (
+        "/app/work-studio?tab=drafts&context_id=",
+        "/app/task-manager?filter=ready_to_compile&context_id=",
+        "/app/pulse?context_id=",
+        "/app/questions?status=open&context_id=",
+    ):
+        assert marker in src, f"missing route marker `{marker}`"
+    # Events card is a no-op (returns null).
+    m = re.search(
+        r'case\s+"events":\s*return\s+null',
+        src,
+    )
+    assert m, "events card must be a no-op in _routeForCard"
