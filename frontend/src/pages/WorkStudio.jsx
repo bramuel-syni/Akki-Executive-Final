@@ -115,8 +115,17 @@ const KIND_TABS = [
   },
   { id: "deck",                 label: "Decks",    short: "decks",    icon: Presentation, empty: "No decks in flight." },
   { id: "report",               label: "Reports",  short: "reports",  icon: FileText,     empty: "No reports yet." },
-  { id: "briefing",             label: "Briefing", short: "briefings",icon: BookOpen,     empty: "No briefs yet." },
 ];
+
+// Phase M (2026-05-27) — `Briefing` moves OFF the horizontal tab strip
+// and onto a 2nd-line pill below the tabs. Same `kind = "briefing"`
+// state under the hood — zero data path change. Kept as a separate
+// constant to preserve clarity that the 5 tabs above are visually
+// peer-level while Briefing is treated as a secondary affordance.
+const BRIEFING_TAB = {
+  id: "briefing", label: "Briefing", short: "briefings",
+  icon: BookOpen, empty: "No briefs yet.",
+};
 
 
 // Per-tab contextual action rows. Spec-locked.
@@ -186,7 +195,13 @@ function ContextActions({ kind, onExport, onEnhance, onCompile, onCreate }) {
 
 
 function BriefRow({ row, onOpen }) {
-  const Icon = (KIND_TABS.find((k) => k.id === row.kind) || KIND_TABS[0]).icon;
+  // Phase M (2026-05-27) — Briefing rows resolve via BRIEFING_TAB since
+  // Briefing is no longer a horizontal tab.
+  const Icon = (
+    row.kind === "briefing"
+      ? BRIEFING_TAB.icon
+      : (KIND_TABS.find((k) => k.id === row.kind) || KIND_TABS[0]).icon
+  );
   // Chunk 5 (2026-05-13) — Patch 28D parity: show a 1-line description
   // under the title, prioritised as `description` (set by Work Studio
   // create flows) → null (no placeholder; we hide the line entirely
@@ -479,6 +494,9 @@ export default function WorkStudio() {
     if (k === "cycle_board_pack" || k === "cycle_committee_pack") {
       return "cycle_main_and_committee_pack";
     }
+    // Phase M (2026-05-27) — `briefing` is no longer a horizontal tab
+    // but the kind id remains valid (renders as a 2nd-line pill).
+    if (k === "briefing") return "briefing";
     return KIND_TABS.find((t) => t.id === k) ? k : "cycle_main_and_committee_pack";
   })();
   const [kind, setKind] = useState(initialKind);
@@ -555,7 +573,9 @@ export default function WorkStudio() {
     setAggLoading(true);
     setAggErr(null);
     try {
-      const tab = KIND_TABS.find((t) => t.id === kind);
+      // Phase M (2026-05-27) — Briefing pill resolves to BRIEFING_TAB
+      // since it's no longer in KIND_TABS.
+      const tab = kind === "briefing" ? BRIEFING_TAB : KIND_TABS.find((t) => t.id === kind);
       // Phase E.1 (2026-05-26) — Drafts tab sources documents
       // (state=draft) rather than briefings/aggregates. Pagination is
       // client-side for the moment (the listing collection is tiny);
@@ -748,7 +768,14 @@ export default function WorkStudio() {
   const onOpenBrief = (row) => { setDrawerAid(row.id); setDrawerOpen(true); };
   const onCloseDrawer = () => { setDrawerOpen(false); };
 
-  const activeTab = useMemo(() => KIND_TABS.find((t) => t.id === kind) || KIND_TABS[0], [kind]);
+  const activeTab = useMemo(
+    () => (
+      kind === "briefing"
+        ? BRIEFING_TAB
+        : (KIND_TABS.find((t) => t.id === kind) || KIND_TABS[0])
+    ),
+    [kind],
+  );
 
   if (!cid) {
     return (
@@ -766,12 +793,15 @@ export default function WorkStudio() {
           <p className="akki-overline mb-2 flex items-center gap-2">
             <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Work Studio · {activeContext.name}
           </p>
-          <h1 className="akki-greeting mb-2">Check or review your work.</h1>
-          <p className="akki-meta max-w-2xl" data-testid="work-studio-subtitle">
-            Shape board packs, decks, reports, and briefings. Agent Cycle compiles your work to executive cadence.
-          </p>
+          <h1 className="akki-greeting mb-2" data-testid="work-studio-h1">Check or review your work.</h1>
+          {/* Phase M (2026-05-27) — Subtitle removed per user spec ≥3
+              recurrences: it repeated the tab labels verbatim
+              ("board packs, decks, reports, briefings") which are
+              already in the tabs below. The eyebrow + H1 + tab strip
+              carry the surface on their own. */}
 
-          {/* Six-tab line — spec-locked label order, no "Cycle" prefix. */}
+          {/* Five-tab line — spec-locked label order, Briefing moved
+              to a 2nd-line pill (Phase M, 2026-05-27). */}
           <div className="mt-7 border-b border-[var(--rule)]" data-testid="work-studio-tabs">
             <div className="flex items-stretch gap-0 flex-wrap -mb-px">
               {KIND_TABS.map((t) => {
@@ -798,38 +828,68 @@ export default function WorkStudio() {
             </div>
           </div>
 
+          {/* Phase M (2026-05-27) — Briefing 2nd-line pill. Renders
+              just below the tab strip, visually subordinate. Same
+              data path as the legacy 6th tab (kind=briefing). */}
+          <div className="mt-3 mb-1" data-testid="work-studio-briefing-row">
+            <button
+              type="button"
+              onClick={() => onKind("briefing")}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 text-[11.5px] rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 ${
+                kind === "briefing"
+                  ? "bg-[var(--ink)] text-white"
+                  : "bg-white border border-[var(--rule)] text-[var(--muted)] hover:text-[var(--ink)] hover:border-[var(--ink)]/30"
+              }`}
+              data-testid={`work-studio-briefing-pill${kind === "briefing" ? "-active" : ""}`}
+              aria-current={kind === "briefing" ? "page" : undefined}
+            >
+              <BookOpen className="w-3 h-3" strokeWidth={1.8} aria-hidden="true" />
+              {BRIEFING_TAB.label}
+            </button>
+          </div>
+
           {/* Per-tab body */}
           <div className="mt-5">
-            {/* Chunk 16 (QA-2026-05-16-037/-038/-039/-040, 2026-05-21) —
-                Document Cards section: surfaces work_studio_exports rows
-                (Chunk 8 listing endpoint, now augmented with confidence_band)
-                with status badge + lock-on-committed + confidence chip +
-                persistent download. Clicking a card body opens the
-                existing DocumentOverlay (Chunk 8 read-only consumer).
-                Renders ABOVE the aggregates listing so the surface is
-                visible without scrolling on the default tab. Returns null
-                when the context has zero work_studio_exports rows. */}
-            <DocumentCardsSection
-              contextId={cid}
-              onOpenDocument={(aid, exportKind) => {
-                /* T3.3 (2026-05-25) — G8 ratified card-kind routing.
-                 * Board Pack + Committee Pack → dedicated full-page
-                 * surface (`/app/work-studio/document/{artefactId}`).
-                 * The other three kinds (Minutes / Deck / Report)
-                 * open the existing side drawer overlay on this page.
-                 * The spec frames the dedicated page as W3 ("Compiled
-                 * Document page") and the drawer as W4 ("Pack side
-                 * drawer"); G8 ratification splits them by card kind. */
-                const k = (exportKind || "").toLowerCase();
-                if (k === "cycle_board_pack" || k === "board_pack" ||
-                    k === "cycle_committee_pack" || k === "committee_pack") {
-                  navigate(`/app/work-studio/document/${aid}`);
-                  return;
-                }
-                setOverlayAid(aid);
-                setOverlayOpen(true);
-              }}
-            />
+            {/* Phase M (2026-05-27) — On the `Main Board & Committee
+                Packs` tab, BOTH the DocumentCardsSection (confidence-
+                chip grid) AND the ListingShell (search bar + sort +
+                table) are HIDDEN per user spec recurrence (≥3
+                raisings): the tab keeps the 5 tabs in one line, the
+                Briefing pill on line 2, and the Compile CTAs. Docs
+                remain reachable via Drafts / Reports / Decks /
+                Minutes tabs and the Document Drawer. Other tabs are
+                untouched.
+                ─────────────────────────────────────────────────── */}
+            {kind !== "cycle_main_and_committee_pack" && (
+              /* Chunk 16 (QA-2026-05-16-037/-038/-039/-040, 2026-05-21) —
+                  Document Cards section: surfaces work_studio_exports rows
+                  (Chunk 8 listing endpoint, now augmented with confidence_band)
+                  with status badge + lock-on-committed + confidence chip +
+                  persistent download. Clicking a card body opens the
+                  existing DocumentOverlay (Chunk 8 read-only consumer).
+                  Returns null when the context has zero work_studio_exports rows. */
+              <DocumentCardsSection
+                contextId={cid}
+                onOpenDocument={(aid, exportKind) => {
+                  /* T3.3 (2026-05-25) — G8 ratified card-kind routing.
+                   * Board Pack + Committee Pack → dedicated full-page
+                   * surface (`/app/work-studio/document/{artefactId}`).
+                   * The other three kinds (Minutes / Deck / Report)
+                   * open the existing side drawer overlay on this page.
+                   * The spec frames the dedicated page as W3 ("Compiled
+                   * Document page") and the drawer as W4 ("Pack side
+                   * drawer"); G8 ratification splits them by card kind. */
+                  const k = (exportKind || "").toLowerCase();
+                  if (k === "cycle_board_pack" || k === "board_pack" ||
+                      k === "cycle_committee_pack" || k === "committee_pack") {
+                    navigate(`/app/work-studio/document/${aid}`);
+                    return;
+                  }
+                  setOverlayAid(aid);
+                  setOverlayOpen(true);
+                }}
+              />
+            )}
 
             <ContextActions
               kind={kind}
@@ -839,50 +899,52 @@ export default function WorkStudio() {
               onCreate={onCreateClick}
             />
 
-            <ListingShell
-              testId="work-studio-listing"
-              searchValue={aggQ}
-              onSearchChange={(v) => setListingParam("q", v)}
-              searchPlaceholder={`Search ${activeTab.short} by name…`}
-              sortOptions={[
-                { key: "recent", label: "Most recent" },
-                { key: "oldest", label: "Oldest" },
-                { key: "alpha",  label: "A → Z" },
-                { key: "type",   label: "By type" },
-              ]}
-              activeSortKey={aggSort}
-              onSortChange={(k) => setListingParam("sort", k)}
-              pageSize={aggPageSize}
-              page={aggPage}
-              totalCount={aggTotal}
-              onPageChange={(n) => setListingParam("page", n, { preservePage: true })}
-              isLoading={aggLoading}
-              emptyState={
-                <div className="border border-dashed border-[var(--rule)] rounded-sm bg-[var(--parchment)] px-6 py-10 text-center" data-testid="work-studio-agg-empty">
-                  <Layers className="w-6 h-6 text-[var(--muted)] mx-auto mb-3" />
-                  <p className="text-[14px] text-[var(--ink)] font-medium">
-                    {aggQ ? "No artefacts match this search." : activeTab.empty}
-                  </p>
-                  <p className="text-[12.5px] text-[var(--muted)] mt-1 max-w-md mx-auto">
-                    {aggQ
-                      ? "Try clearing the search."
-                      : "When the cycle has data for this aggregate, rows will appear here."}
-                  </p>
-                </div>
-              }
-            >
-              {aggErr ? (
-                <div className="p-4 bg-amber-50 border border-amber-100 rounded-md text-[12px] text-amber-900 flex items-center gap-2" data-testid="work-studio-agg-err">
-                  <AlertCircle className="w-3.5 h-3.5" /> {aggErr}
-                </div>
-              ) : (
-                <ul className="space-y-2" data-testid="work-studio-agg-list">
-                  {aggItems.map((row) => (
-                    <BriefRow key={row.id} row={row} onOpen={onOpenBrief} />
-                  ))}
-                </ul>
-              )}
-            </ListingShell>
+            {kind !== "cycle_main_and_committee_pack" && (
+              <ListingShell
+                testId="work-studio-listing"
+                searchValue={aggQ}
+                onSearchChange={(v) => setListingParam("q", v)}
+                searchPlaceholder={`Search ${activeTab.short} by name…`}
+                sortOptions={[
+                  { key: "recent", label: "Most recent" },
+                  { key: "oldest", label: "Oldest" },
+                  { key: "alpha",  label: "A → Z" },
+                  { key: "type",   label: "By type" },
+                ]}
+                activeSortKey={aggSort}
+                onSortChange={(k) => setListingParam("sort", k)}
+                pageSize={aggPageSize}
+                page={aggPage}
+                totalCount={aggTotal}
+                onPageChange={(n) => setListingParam("page", n, { preservePage: true })}
+                isLoading={aggLoading}
+                emptyState={
+                  <div className="border border-dashed border-[var(--rule)] rounded-sm bg-[var(--parchment)] px-6 py-10 text-center" data-testid="work-studio-agg-empty">
+                    <Layers className="w-6 h-6 text-[var(--muted)] mx-auto mb-3" />
+                    <p className="text-[14px] text-[var(--ink)] font-medium">
+                      {aggQ ? "No artefacts match this search." : activeTab.empty}
+                    </p>
+                    <p className="text-[12.5px] text-[var(--muted)] mt-1 max-w-md mx-auto">
+                      {aggQ
+                        ? "Try clearing the search."
+                        : "When the cycle has data for this aggregate, rows will appear here."}
+                    </p>
+                  </div>
+                }
+              >
+                {aggErr ? (
+                  <div className="p-4 bg-amber-50 border border-amber-100 rounded-md text-[12px] text-amber-900 flex items-center gap-2" data-testid="work-studio-agg-err">
+                    <AlertCircle className="w-3.5 h-3.5" /> {aggErr}
+                  </div>
+                ) : (
+                  <ul className="space-y-2" data-testid="work-studio-agg-list">
+                    {aggItems.map((row) => (
+                      <BriefRow key={row.id} row={row} onOpen={onOpenBrief} />
+                    ))}
+                  </ul>
+                )}
+              </ListingShell>
+            )}
           </div>
           </div>
           <CompilationRail

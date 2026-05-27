@@ -1,6 +1,39 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase M — Work Studio noise reduction + Briefing pill move — 2026-05-27 ✅
+User raised this ≥3 times. Verbatim spec captured in PHASE_LEDGER M
+row. Reduces Work Studio surface clutter on the `Main Board &
+Committee Packs` tab and consolidates the page header.
+
+**Stage-1 refinements:**
+- The doc-card surplus = `DocumentCardsSection` + `ListingShell` rendered redundantly. `ListingShell` is SHARED across tabs (canonical listing for Drafts / Reports / Decks / Minutes / Briefing). **Cleanest fix:** gate BOTH with `kind !== "cycle_main_and_committee_pack"` — drop them on this tab only, untouched everywhere else.
+- Brief said "5 tabs in one line" but live data showed 6. Resolved: Briefing moves OFF the horizontal tab strip and ONTO a 2nd-line pill below it. `kind="briefing"` data path preserved.
+- **M.3 — Task Manager already clean.** No DocumentCardsSection / no Show-drafts toggle / no MOST RECENT dropdown. No removal target. Surface this in close-out.
+- **M.4 inventory — other surfaces clean.** No other surfaces have similar agent-added surplus.
+
+**Shipped:**
+- `KIND_TABS` reduced from 6 → 5 entries: `Main Board & Committee Packs · Minutes · Drafts · Decks · Reports`.
+- `BRIEFING_TAB` constant added (preserves `kind="briefing"` data path).
+- `activeTab`, `initialKind`, `BriefRow` icon lookup all resolve Briefing via `BRIEFING_TAB` when `kind === "briefing"`.
+- Briefing pill renders below the tab strip via `work-studio-briefing-row` container with `work-studio-briefing-pill` button testid. Active state flips when `kind === "briefing"`.
+- `DocumentCardsSection` wrapped in `{kind !== "cycle_main_and_committee_pack" && (...)}`.
+- `ListingShell` wrapped in `{kind !== "cycle_main_and_committee_pack" && (...)}`. ContextActions (Compile CTAs) stays UNCONDITIONAL.
+- Subtitle (`Shape board packs, decks, reports, and briefings. Agent Cycle compiles your work to executive cadence.`) DROPPED entirely along with its `data-testid="work-studio-subtitle"`. H1 (`Check or review your work.`) preserved with new `data-testid="work-studio-h1"`.
+
+**Files touched:**
+- `frontend/src/pages/WorkStudio.jsx` (single-file Phase-M fix surface — ~80 lines net change)
+
+**CI guard** `tests/test_phase_m_workstudio_noise.py` — **13 tests:**
+M1a-M1d DocumentCardsSection + ListingShell gated, ContextActions unconditional, Drafts kind preserved · M15a-M15c exactly 5 KIND_TABS in correct order with Briefing NOT in array, BRIEFING_TAB constant preserved, briefing pill testids · M2a-M2c forbidden subtitle phrases gone, subtitle testid removed, H1 preserved · M3a Task Manager already clean (negative guard) · N1-N2 "Show drafts & empties" never reappears, tab-label-word 3+ recombinations blocked.
+
+**Test ledger** — M 13/13 GREEN. Full regression sweep `test_phase_i* + n* + h* + m*` = **166 passed / 13 skipped** (skips pre-existing).
+
+**Live verification (Julius @ Personal NED Seat, 1280×900):**
+- Playwright DOM probe on `/app/work-studio?kind=cycle_main_and_committee_pack`: H1: 1, tabs total: 5, main tab active: 1, briefing pill: 1, doc-card surfaces: **0**, work-studio-listing: **0**, Compile Board Pack text: 1, Compile Committee Pack text: 1, old subtitle text: **0**.
+- Visual screenshot: 5 tabs in horizontal strip, Briefing pill on 2nd line, Compile Board Pack + Compile Committee Pack grouped-button strip, NO doc-card grid, NO search bar, NO MOST RECENT dropdown, NO subtitle. Right rail intact.
+- Regression: Drafts tab clicked → ListingShell + search bar + 2 draft rows re-appear ✓. Briefing pill clicked → active state flips, briefing items render ✓.
+
 ### Phase I.6 — Final hygiene + 3 fold-ins — 2026-05-27 ✅
 Closes the Phase I family by folding 3 deferred items into a single
 hygiene-disciplined dispatch:
