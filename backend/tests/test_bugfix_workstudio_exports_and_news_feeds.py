@@ -319,6 +319,20 @@ def test_bug2_B2c_capital_fm_business_present_and_verified():
     assert "KE" in src.get("regions", [])
 
 
+def test_bug2_B2c2_kbc_business_present_and_verified():
+    """User-approved follow-up replacement after Citizen Digital was
+    found to have no working RSS endpoint."""
+    raw = _load_sources_raw()
+    src = next((s for s in raw["sources"] if s["id"] == "kbc-business"), None)
+    assert src is not None, "kbc-business follow-up replacement entry must exist"
+    assert src.get("enabled") is True
+    assert src["url"] == "https://www.kbc.co.ke/category/business/feed/", (
+        "URL must match the verified-200 probe path. If you change this URL, "
+        "re-run a probe fetch from inside the pod and update the test."
+    )
+    assert "KE" in src.get("regions", [])
+
+
 def test_bug2_B2d_load_sources_filters_disabled():
     """The aggregator's loader must exclude the disabled entries."""
     from services.news_aggregator import load_sources
@@ -333,14 +347,20 @@ def test_bug2_B2d_load_sources_filters_disabled():
     assert "capital-fm-business" in ids, (
         "Capital FM Business must surface to the aggregator"
     )
+    assert "kbc-business" in ids, (
+        "KBC Business must surface to the aggregator"
+    )
 
 
 def test_bug2_B2e_enabled_count_locked():
-    """Locks the math: 16 total entries, 2 disabled, 14 enabled.
-    If this test fails after a future config change, update the count
-    explicitly here so the surface is intentional."""
+    """Locks the math: 17 total entries, 2 disabled, 15 enabled.
+    Original config had 16 entries (15 enabled); the bugfix disabled 2
+    and added 2 (capital-fm-business + kbc-business after user approved
+    KBC as the second replacement). If this test fails after a future
+    config change, update the count explicitly here so the surface is
+    intentional."""
     raw = _load_sources_raw()
     total = len(raw["sources"])
     enabled = sum(1 for s in raw["sources"] if s.get("enabled", True))
-    assert total == 16, f"Expected 16 total entries; got {total}"
-    assert enabled == 14, f"Expected 14 enabled entries; got {enabled}"
+    assert total == 17, f"Expected 17 total entries; got {total}"
+    assert enabled == 15, f"Expected 15 enabled entries; got {enabled}"

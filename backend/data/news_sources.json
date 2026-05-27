@@ -73,6 +73,9 @@
     },
     { "id": "capital-fm-business",  "name": "Capital FM Business (Nairobi)", "url": "https://www.capitalfm.co.ke/business/feed/",               "regions": ["KE", "AF"],             "enabled": true,
       "note": "Bug fix (2026-05-27) — Replacement for the disabled quartz-africa + the-east-african feeds. Verified HTTP 200 + valid RSS (10 items, application/rss+xml, ~44KB) on a single probe fetch from inside the pod before commit. Capital Group's Nairobi business desk."
+    },
+    { "id": "kbc-business",          "name": "KBC Business (Nairobi)",        "url": "https://www.kbc.co.ke/category/business/feed/",            "regions": ["KE", "AF"],             "enabled": true,
+      "note": "Bug fix (2026-05-27, follow-up) — Second replacement for the disabled quartz-africa + the-east-african feeds, after Citizen Digital was found to have no working RSS endpoint (all variants 500 or HTML). Verified HTTP 200 + valid RSS (10 items) on a single probe fetch from inside the pod before commit. Kenya Broadcasting Corp's business desk. Approved by user 2026-05-27."
     }
   ]
 }
