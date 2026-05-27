@@ -1,6 +1,113 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase I.4.c (Google leg) — Events: Google Calendar OAuth + Sync — 2026-05-27 ✅
+Read-only Google Calendar integration. Users authorise via OAuth 2.0,
+their primary calendar's next-90d events get pulled into `db.events`
+as `source="calendar_sync"`/`status="confirmed"` rows that surface on
+the Events page AND on Company Home Card 5 (within 14d window).
+Microsoft Graph (Outlook) leg stays deferred until user provides
+Microsoft credentials.
+
+**Architecture shipped:**
+- `routers/oauth_google.py` (596 lines) — 5 endpoints:
+  - `GET /api/oauth/google/connect?context_id={cid}` — returns
+    `{authorize_url}` with JWT-signed state token (10-min TTL, reuses
+    app-wide `JWT_SECRET`), `access_type=offline`, `prompt=consent`
+    (so refresh_token is always issued), scopes
+    `calendar.events.readonly + calendar.readonly + openid/email/profile`.
+  - `GET /api/oauth/google/callback?code&state` — exchanges code for
+    tokens, persists encrypted in `db.user_calendar_credentials`,
+    302-redirects to `/app/events?context_id={cid}&calendar_connected=google`.
+    On Google-side `error=…`, 302-bounces with `calendar_error=` param
+    so the Events surface renders a connection-failed toast.
+  - `GET /api/contexts/{cid}/oauth/calendar/status` — banner state
+    aggregator: returns `{connected, provider, connected_at, last_sync_at, last_sync_status, last_sync_error, synced_count}`.
+  - `POST /api/contexts/{cid}/events/sync-calendar?provider=google` —
+    pulls 90d-forward primary calendar, idempotent delete-and-reinsert
+    of `(context_id, user_id, source="calendar_sync")` rows. Auto-refreshes
+    expired access tokens via stored `refresh_token`. On refresh failure
+    writes `last_sync_status="auth_expired"`.
+  - `POST /api/contexts/{cid}/oauth/google/disconnect` — soft-deletes
+    credentials row + best-effort token revoke at Google. Idempotent
+    (returns `ok=True, revoked=False` if no row).
+- `services/crypto/token_vault.py` — Fernet symmetric encryption for
+  access + refresh tokens. Production requires `OAUTH_TOKEN_VAULT_KEY`
+  env var; non-prod auto-generates per-process Fernet key with loud
+  warning. Single-purpose / single-key (no rotation machinery — external
+  tokens are re-acquirable via re-OAuth).
+- `db.user_calendar_credentials` collection (Mongo dynamic, no schema
+  migration). Schema: `id, user_id, context_id, provider, access_token_encrypted, refresh_token_encrypted, expires_at, scope, calendar_id, connected_at, last_sync_at, last_sync_status, last_sync_error, deleted_at`.
+  Index on `(user_id, context_id, provider)`.
+- Title-keyword type inference (`_infer_type`): priority-ordered regex.
+  Deadline > audit > briefing > board > other. Test Y2 locks all 11
+  keyword variants verbatim.
+- Google event → events-schema mapping (`_map_google_event`):
+  preserves `summary` (truncated 200 chars), `location` (200),
+  `description→notes` (2000); ISO-coerces `start.dateTime`/`end.dateTime`
+  (timezone-aware); all-day `start.date` maps to UTC midnight; skips
+  events with no `id` or no parseable start.
+- Frontend `Events.jsx` `CalendarSyncBanner` — 4 states with distinct
+  testids: `calendar-banner-loading` / `-disconnected` / `-connected` /
+  `-auth-expired`. Auto-fires sync once when OAuth callback redirects
+  with `?calendar_connected=google`, then strips the param. Disconnect
+  modal with confirm-cancel testids.
+
+**OUT_OF_SCOPE (locked):**
+- Microsoft Graph (Outlook) leg — deferred until creds arrive. Architecture
+  pre-built: provider enum already accepts `"microsoft"`; sync endpoint
+  enum-dispatches on `?provider=…`. Sibling `routers/oauth_microsoft.py`
+  will mirror the contract.
+- Write-back (creating/updating Google events from Akki) — would bump
+  scope from `.readonly` to `.events`. Read-only this phase.
+- Recurring event expansion (we trust Google's `singleEvents=true`
+  expansion).
+- Multi-calendar sync (primary calendar only).
+- Cross-account dedupe (if 2 board members both sync the same meeting,
+  both rows persist — dedupe is user-driven via Reject).
+- Real-time push notifications via Google webhooks (pull-on-demand via
+  Sync now button).
+
+**CI guard** `tests/test_phase_i4c_google_calendar.py` — **19 tests**
+covering token vault (V1-V3), OAuth flow (O1-O4), status endpoint
+(S1-S2), mapping + sync (Y1-Y7), disconnect (D1-D2), Microsoft-router-
+does-not-exist negative (N1). Mocks `googleapiclient.discovery.build`
++ `httpx.AsyncClient` for offline runs.
+
+**Test ledger** — Phase I.4.c **19/19 GREEN**. Full sweep
+`test_phase_i* + n* + h* + m* + o*` = **191 passed / 13 skipped**
+(skips pre-existing Patch 19 fixture, unrelated).
+
+**Live verification (Julius @ Personal NED Seat, cid=`f954d5d0…`):**
+- Events page renders: H1=`"Upcoming on the calendar."`, subtitle=
+  `"Manual entries, AI-extracted dates, and your connected calendar — in one place."`,
+  CalendarSyncBanner mounts at `calendar-banner-disconnected` with
+  verbatim body and `"CONNECT GOOGLE CALENDAR"` CTA visible+enabled.
+- Banner state matrix: disconnected=1, connected=0, auth-expired=0, loading=0 ✓.
+- Tab strip intact (UPCOMING/PAST/ALL/EXTRACTED).
+- **End-to-end OAuth click-through verified:** clicking the CTA
+  redirected browser to `accounts.google.com` Sign-in screen ("to
+  continue to akki-executive.preview.emergentagent.com") — direct
+  proof `/api/oauth/google/connect` returned a valid `authorize_url`
+  with all OAuth params intact.
+- Console errors on this surface: 0 banner-related, 0 axe-a11y, 5
+  pre-login 401s (expected — auth context resolves after first
+  authenticated call). Screenshot evidence: `/tmp/i4c_google_disconnected_banner.png`.
+
+**Lessons captured:**
+- token_vault uses raw Fernet (NOT Synisense shield-map envelope) —
+  OAuth tokens can be re-acquired via re-OAuth, so the heavyweight
+  rotation machinery would be overkill.
+- Idempotency contract (test Y4): delete-and-reinsert of `(context_id, user_id, source="calendar_sync")` rows, NOT upsert-by-source_ref —
+  so cancelled-on-Google events naturally drop off. Manual events +
+  doc_extraction drafts/confirmed are NEVER touched.
+- calendar_sync events land with `status="confirmed"` directly (no
+  draft-review gate), so they surface on Card 5 via I.5's
+  absence-default `$ne:"draft"` filter. Test Y7 locks this regression
+  invariant.
+
+
+
 ### Phase O — Document Drawer Universal Discipline (compliance audit) — 2026-05-27 ✅
 Audit-and-fix pass against the Phase E.3 Universal Document Drawer
 spec. User raised: *"you have not applied the document drawer
