@@ -93,7 +93,14 @@ async def _schedule_deletion(account_id: str) -> Dict[str, str]:
     existing = await db.accounts.find_one(
         {"id": account_id}, {"_id": 0, "status": 1, "deletion_scheduled_for": 1, "deletion_requested_at": 1},
     )
-    if not existing:
+    # Phase X bug-1 (2026-02 fork-resume) — `find_one` with a strict
+    # projection returns an EMPTY DICT `{}` (truthy `is not None`,
+    # falsy under `not …`) when the account exists but the projected
+    # fields are all absent. New accounts in the seed corpus carry
+    # neither `status` nor `deletion_*` keys → the original `if not
+    # existing` triggered a false 404 for every non-prior-status user.
+    # Always use `is None` for Mongo find_one falsiness checks.
+    if existing is None:
         raise HTTPException(status_code=404, detail="Account not found.")
     if existing.get("status") == "pending_deletion" and existing.get("deletion_scheduled_for"):
         # Already scheduled — return the existing schedule unchanged.
@@ -126,9 +133,10 @@ async def _cancel_deletion(account_id: str) -> Dict[str, Any]:
          "$unset": {"deletion_requested_at": "", "deletion_scheduled_for": ""}},
     )
     if res.modified_count == 0:
-        # Either not pending, or no row.
-        existing = await db.accounts.find_one({"id": account_id}, {"_id": 0, "status": 1})
-        if not existing:
+        # Either not pending, or no row. Use `is None` — see Phase X
+        # bug-1 lesson in _schedule_deletion.
+        existing = await db.accounts.find_one({"id": account_id}, {"_id": 0, "id": 1})
+        if existing is None:
             raise HTTPException(status_code=404, detail="Account not found.")
         raise HTTPException(status_code=400, detail="Account is not pending deletion.")
     return {"ok": True}

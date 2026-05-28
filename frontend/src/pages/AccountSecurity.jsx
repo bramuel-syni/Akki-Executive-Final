@@ -224,6 +224,28 @@ export default function AccountSecurity() {
                   {deletionBusy ? "Working…" : "Cancel deletion"}
                 </Button>
               </div>
+            ) : account?.is_superadmin ? (
+              // Phase X bug-2 (2026-02 fork-resume) — superadmin UI
+              // lockout. Backend already 400s the request; the user-
+              // visible CTA must also be disabled with a tooltip so
+              // the founder knows the path exists but the action is
+              // intentionally blocked.
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  className="border-red-300 text-red-400 rounded-sm h-9 cursor-not-allowed opacity-60"
+                  disabled
+                  aria-disabled="true"
+                  title="Superadmins cannot self-delete. Downgrade your role first."
+                  data-testid="open-delete-account-btn"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                  Delete my account
+                </Button>
+                <p className="text-[11px] text-slate-500" data-testid="superadmin-delete-lockout-note">
+                  Superadmins cannot self-delete. Downgrade your role first.
+                </p>
+              </div>
             ) : (
               <Button
                 variant="outline"

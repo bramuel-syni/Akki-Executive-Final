@@ -1900,6 +1900,13 @@ turn (context budget triage):
    Email-confirm guard, last-superadmin lockout, cascade across
    `memberships/contexts/documents/tasks_initiatives/...`.
 
+### Phase X bug-fix dispatch (2026-02 fork-resume, post-e1_tester)
+
+Tester surfaced two issues; both fixed in-session and locked behind new CI guards. No code drift outside `routers/account_deletion.py` + `frontend/src/pages/AccountSecurity.jsx`.
+
+- **Bug 1 — deployed-env 404 for non-superadmin delete-account.** Root cause: `_schedule_deletion` (and `_cancel_deletion`) used `if not existing:` against a Mongo `find_one(...)` result projected to only-optional fields (`status`, `deletion_*`). Real seed accounts in the deployed env lack those keys → projection returned `{}` (truthy under `is not None`, falsy under `not …`) → false 404 for every account without prior deletion state. The original 9 unit tests passed because their fixture accounts were seeded WITH `status: "active"`, so the projection came back populated. **Fix:** use `if existing is None` for Mongo find_one falsy checks. **Lesson captured:** never use `not existing` for projected Mongo lookups — always `is None`. New regression test `test_phase_x_deployed_env_delete_account_e2e.py` seeds a deliberately-minimal account (no `status` key) on the LIVE mounted DB and asserts 200; would have caught the bug pre-merge.
+- **Bug 2 — superadmin UI lockout missing.** Backend correctly 400'd but `AccountSecurity.jsx` did not gate the Danger Zone CTA on `account.is_superadmin`. **Fix:** rendered the CTA as `disabled` + `aria-disabled="true"` + tooltip + lockout-note paragraph for the superadmin branch (preserves discoverability — preferred over hidden). New CI guard `test_phase_x_superadmin_cta_disabled.py` covers source-strict + live Playwright DOM probe at 1280 against admin@akki.ai.
+
 ### Filed inside this dispatch (additional backlog rows)
 
 - **Wave 4.2.followup.1 (P3, cohort-feedback-gated)** — Hue-
