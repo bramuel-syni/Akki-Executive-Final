@@ -365,3 +365,25 @@ For declarative descriptions of current state, always disambiguate
 User-tightened scope removed 1 borderline site (Operations dept chip) and made the partition unambiguous. Source-strict pytest locks are cheaper than Playwright DOM probes for token-substitution sweeps — the brand-purple token's regex presence is necessary AND sufficient (Tailwind's deterministic class-to-CSS mapping handles the rest). Bonus side-effect: caught a pre-existing file-end corruption in `TenantSettings.jsx` that had been silently passing.
 
 
+
+---
+
+## R.7 — Marketing hero CTA A/B (Google OAuth instant trial) — P3, STRATEGIC GATE
+
+**Status:** 🔴 LOCKED / DO NOT BUILD without explicit user signal.
+
+**Hypothesis:** "Sign in with Google → instant trial" outperforms "Try AKKI in 60 seconds" on landing-page hero conversion.
+
+**Why locked (strategic conflict):** Conflicts with the locked trial design — cohort users come in via founder-issued magic-link invites for validation + referrals. Open public Google-OAuth signup would:
+1. Mix the cohort signal with cold-traffic noise (invalidates cohort funnel telemetry).
+2. Break the day-22 hard-lock logic — no `cohort_tag` would be assigned to OAuth-created accounts (currently `cohort_tag=None` per Phase U creation path).
+3. Pre-empt the strategic decision of when (and how) to open the public funnel.
+
+**Re-evaluate post-cohort when public funnel is intentional.** Same strategic-gate pattern as R.6 (Stripe Checkout on day-22 hard-lock). Both are locked OFF behind explicit user override only.
+
+**Surfaces it would touch (for future reference):**
+- Marketing landing hero CTA (currently `/` route, "Try AKKI in 60 seconds" link to magic-link path).
+- `/signin` Google OAuth button already shipped (Phase U) — re-positioning it as the primary CTA above the magic-link "Try in 60 seconds" line is the actual A/B mechanic.
+- Cohort-tag assignment logic in `auth_oauth.py::oauth_google_finish` would need a public-funnel cohort tag (e.g. `cohort_tag="public_oauth_<yyyy_mm>"`).
+
+
