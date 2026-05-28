@@ -5247,3 +5247,54 @@ New `tasks_initiatives` Mongo collection. Backs Phase AA (Monitor v2). Separate 
 
 ### Next per locked sequence
 **AA-slice-2** — LLM extraction (Sonnet 4.5 via `shield_invoke`) reading `documents.extracted_text` and writing `tasks_initiatives` rows with `extracted_by="llm"`.
+
+
+---
+
+## Phase AA-slice-2 — LLM extraction service (2026-05-27) — CLOSED
+
+LLM-driven extraction service that reads `documents.extracted_text`, calls Claude Sonnet 4.5 via the shielded gateway (`llm_service.call_llm(tier="standard")`), parses two distinct JSON envelopes (goals + tasks), validates rows, and persists valid ones to `strategic_goals` / `tasks_initiatives` with `extracted_by="llm"` + `source_document_id`/`source_doc_id`.
+
+### Public entry point
+```py
+await extract_from_document(document_id, context_id, account_id,
+                             extract_goals=False, extract_tasks=True, force=False)
+```
+Returns `ExtractionResult(goals_extracted, tasks_extracted, failures, idempotent_skip, model)`.
+
+### Files (`backend/services/tasks_initiatives/`)
+- `__init__.py` (5 lines)
+- `extraction.py` (472 raw / 381 net code lines) — service + helpers + deduped per-chunk pass loop
+- `prompts.py` (73 lines) — `GOALS_PROMPT_TEMPLATE` + `TASKS_PROMPT_TEMPLATE`
+
+### Chunking
+- `MAX_CHARS_BEFORE_CHUNK = 50_000` (per spec).
+- `CHUNK_SIZE_CHARS = 18_000` per chunk; breaks on paragraph boundary.
+- `MAX_ROWS_PER_CHUNK = 20` to cap LLM token budget.
+
+### New collections
+- `extractions_log` — idempotency marker per `(document_id, kind)`. Force=True bypasses.
+- `extraction_failures` — auditable record of LLM rows that failed validation.
+
+### Indexes (`ensure_indexes()` at startup)
+- `extractions_log: (document_id, kind)`, `(context_id, created_at -1)`
+- `extraction_failures: (document_id, kind)`, `(context_id, created_at -1)`
+
+### Validation
+- Goals: defensive enum coercion + score clamp 0-100.
+- Tasks: Pydantic-validated via AA-1 `TaskInitiativeIn`; owner_role uppercased.
+
+### CI guards — **21/21 GREEN**
+- 5 source-strict module shape locks (constants, prompts).
+- 2 chunking asserts.
+- 5 row-validator asserts.
+- 9 runtime asserts with mocked `call_llm`.
+
+### Slice budget
+Net code 451 lines (under 500). After first compile hit 568, deduped to a single `_run_extraction_pass(...)` generic helper.
+
+### New follow-up filed
+- **AA.followup.2 — "Recently re-assessed tasks" widget on workspace home** (P3, founder-feedback-gated).
+
+### Next per locked sequence
+**AA-slice-3** — UploadModal extension wiring `extract_from_document` after successful upload.

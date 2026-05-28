@@ -767,6 +767,7 @@ Next per the locked sequence: **Z-slice-5** (Upload modal).
 - **Wave8.followup.1 — Clean 7 pre-existing baseline test failures (P3, post-trial)** — `test_t1/t2/t3_frontend_wire`, `test_chat_v2_full_flow`, `test_patch_28_home_doc_journal`, `test_requirements_guard`. All reference removed surfaces (e.g. `ReadingTopBar.jsx`) or spaCy direct-URL refs. Orthogonal to Wave 8; don't expand scope now.
 - **Wave8.followup.2 — Page Catalog superadmin view at `/app/admin/page-catalog` (P3, founder-feedback-gated)**. Renders the locked `PAGE_SUBTEXT_FILES` tuple as a live grid showing H1 + subtext per surface. Eliminates Recurrence #5 by visual inspection instead of CI testid (stronger signal). Promote to P1 if subtext slips again.
 - **Wave8.followup.3 — Promote Z-slice-6 orthogonality wire-test to pre-deploy gate (P2)**. Wire `pytest -m runtime_playwright` into a `make deploy-check` target + GitHub Actions step that must pass before any push to main reaches the cohort pod. Promotes the strongest single test in the suite (caught all 6 historic Phase Z bugs at once) from CI signal to deploy-blocker. ~30 lines of shell + README note. SHIP BEFORE PHASE X / cohort launch.
+- **AA.followup.2 — "Recently re-assessed tasks" widget on workspace home (P3, founder-feedback-gated)**. Surfaces 5 latest rows where `last_reassessed_at` changed in past 7 days. Soft "no rows moved in 14 days" nudge for plan-staleness. Uses existing `(context_id, status_active, updated_at DESC)` index — zero schema work. Promote to P1 if founder reports wanting visibility on re-assessment cadence during cohort use.
 - **Z.followup.9 — Per-file category override in upload modal (P3, founder-feedback-gated)**. Collapsed-by-default expandable inline row per file in multi-file batches. Reduces "upload-then-recategorize-in-drawer" friction at quarter-end mixed bundles. Promote to P1 if founder reports recategorization friction during cohort use.
 
 
@@ -1153,3 +1154,154 @@ Next: **AA-slice-2** — LLM extraction (Sonnet 4.5 via
 `shield_invoke`) that reads `documents.extracted_text` and writes
 `tasks_initiatives` rows with `extracted_by="llm"` +
 `source_document_id` populated.
+
+
+---
+
+## PHASE AA-SLICE-2 — tasks/initiatives LLM extraction (CLOSED 2026-05-27)
+
+LLM-driven extraction service that reads `documents.extracted_text`,
+calls Claude Sonnet 4.5 via the shielded gateway, parses two distinct
+JSON envelopes (goals + tasks), validates each row against the Phase
+AA-1 Pydantic schemas, and persists valid rows to the appropriate
+collection. Invalid rows go to `extraction_failures` (auditable, never
+silently dropped). Idempotency via `extractions_log`.
+
+### Public entry point
+
+```py
+await extract_from_document(
+    document_id: str, context_id: str, account_id: str,
+    *, extract_goals=False, extract_tasks=True, force=False,
+) -> ExtractionResult
+```
+
+`ExtractionResult` carries `goals_extracted`, `tasks_extracted`,
+`failures`, `idempotent_skip`, `model`.
+
+### Files (`backend/services/tasks_initiatives/`)
+
+- `__init__.py` (5 lines)
+- `extraction.py` (472 raw / 381 net code lines) — service + helpers
+  + index hook + generic per-chunk LLM pass loop deduped across goals
+  and tasks.
+- `prompts.py` (73 lines) — `GOALS_PROMPT_TEMPLATE` +
+  `TASKS_PROMPT_TEMPLATE`, locked verbatim with anchor sentence
+  source-strict CI guards.
+
+### LLM contract
+
+- `llm_service.call_llm(module="tasks_initiatives.extract_goals|extract_tasks",
+   response_format="json", tier="standard",
+   purpose="tasks_initiatives.extract_goals|extract_tasks", …)`.
+- `tier="standard"` routes to Claude Sonnet 4.5 (same precedent as
+  `prepare.py::extract_minutes` + `events.py::extract_events`).
+- Response parsed via `helpers.llm_json.safe_parse_json`.
+
+### Chunking
+
+- `MAX_CHARS_BEFORE_CHUNK = 50_000` (per spec).
+- `CHUNK_SIZE_CHARS = 18_000` per chunk; breaks on `\n\n` near the cap.
+- `MAX_ROWS_PER_CHUNK = 20` to cap LLM token budget.
+
+### New collections
+
+- `extractions_log` — `{id, document_id, context_id, kind ("goals" |
+  "tasks"), count, failures, model, created_at}`. Idempotency lookup
+  on `(document_id, kind)`.
+- `extraction_failures` — `{id, document_id, context_id, kind,
+  raw_row (the rejected JSON), error, created_at}`. Auditable record
+  of what the LLM produced that we refused.
+
+### Indexes (built via `ensure_indexes()` at startup)
+
+- `extractions_log: (document_id, kind)`, `(context_id, created_at -1)`
+- `extraction_failures: (document_id, kind)`, `(context_id, created_at -1)`
+
+### Validation passes
+
+- **Goals row**: defensive enum coercion (department → `ceo` fallback,
+  category → `operations`, status → `on_track`) + score clamping
+  0-100. Persisted to `strategic_goals` with `extracted_by="llm"` +
+  `source_doc_id`.
+- **Tasks row**: Pydantic-validated against `TaskInitiativeIn` (AA-1
+  schema); `owner_role` uppercased; defaults match AA-1 (`not_started`
+  status, `operations` category, 0/0 scores). Persisted to
+  `tasks_initiatives` with `extracted_by="llm"` +
+  `source_document_id`.
+
+### Idempotency
+
+- `extractions_log` carries `(document_id, kind)` per pass. Repeated
+  calls return `idempotent_skip=True`.
+- `force=True` bypasses the check.
+
+### CI guards (`backend/tests/test_phase_aa_slice_2_extraction.py`)
+
+**21/21 GREEN** across:
+
+Source-strict module shape (5):
+- public API exposed
+- `ExtractionResult` dataclass with 5 fields including `model`
+- tunable constants locked (50_000 / 18_000 / 20)
+- goals prompt leads with "strategic / governance" anchor + carries
+  "BOARD-LEVEL STRATEGIC GOALS" + "Skip operational tasks" + JSON envelope
+- tasks prompt leads with same anchor + "SPECIFIC WORK ITEMS" + "Skip
+  board-level strategic outcomes" + JSON envelope
+
+Chunking (2):
+- single chunk under threshold
+- ≥ 2 chunks over 50_000 chars; each chunk ≤ CHUNK_SIZE_CHARS
+
+Row validators (5):
+- goal row rejects non-dict
+- goal row normalises unknown enums to safe defaults
+- goal row clamps scores out of bounds
+- task row returns Pydantic model + uppercases owner_role
+- task row rejects bad title
+
+Runtime (`call_llm` mocked) (8):
+- extract_tasks=True + good payload → rows persisted with
+  `extracted_by="llm"` + `source_document_id`
+- extract_goals=True + good payload → rows persisted with same
+  provenance on `strategic_goals`
+- bad row in payload → logged to `extraction_failures`; valid rows
+  still inserted
+- empty extracted_text → no LLM call, returns zeros
+- idempotency blocks second call (`idempotent_skip=True`)
+- `force=True` bypasses idempotency
+- chunked text → ≥ 2 LLM calls
+- both `extract_*=False` is a no-op
+- `ensure_indexes` idempotent + creates expected keys
+
+### Slice budget
+
+| File                      | Total | Net code |
+| ------------------------- | ----- | -------- |
+| `__init__.py`             |     5 |        4 |
+| `extraction.py`           |   472 |      381 |
+| `prompts.py`              |    73 |       66 |
+| **Total (product code)**  | **550** | **451** |
+
+Net code 451 lines (well under the 500-line auto-slice budget). Raw
+total 550 lines, but 99 of those are docstrings / blank-separators /
+locked-verbatim prompt content. After the first compile-pass exceeded
+the budget at 568 lines, the two extractor functions were deduped
+into a single `_run_extraction_pass(kind, prompt, response_key,
+validate, persist, …)` helper that drops ~110 lines without behavior
+change.
+
+### Out of scope (next slices)
+
+- AA-slice-3 — UploadModal extension ("Extract goals/tasks from this
+  document?" checkboxes) that triggers `extract_from_document` after
+  a successful upload.
+- AA-slice-4 — Monitor surface rewrite (rich card listing of
+  `tasks_initiatives`).
+- AA-slice-5 — Owner-filter capsule UI.
+- AA-slice-6 — Probability-bar fill colour scheme.
+- AA-slice-7 — Phase AA orthogonality wire-test (mirror of Z-slice-6).
+
+### Sequencing
+
+Next: **AA-slice-3** — UploadModal extension.

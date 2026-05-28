@@ -647,6 +647,13 @@ async def on_startup():
     except Exception as _e:
         logger.warning("[startup] tasks_initiatives ensure_indexes failed: %s", _e)
 
+    # Phase AA-slice-2 (2026-05-27) — extraction logs/failures indexes.
+    try:
+        from services.tasks_initiatives.extraction import ensure_indexes as _aa2_ensure
+        await _aa2_ensure()
+    except Exception as _e:
+        logger.warning("[startup] aa2.extraction ensure_indexes failed: %s", _e)
+
     await db.user_context_visits.create_index([("account_id", 1), ("context_id", 1)], unique=True)
     # Patch 5 — Monitor v2.
     await db.objectives.create_index("id", unique=True)
