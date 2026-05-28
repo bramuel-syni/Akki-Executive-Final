@@ -445,6 +445,9 @@ User-tightened scope removed 1 borderline site (Operations dept chip) and made t
 - **Z.followup.2 — Clean up 30 legacy `origin: "magic_link"` documents (P3)** — pre-existing data leak from auth flow; backfill to `upload`.
 - **Z.followup.3 — Email-to-Akki ingestion pipeline (P2, follow-up to Phase Z)** — the "Emailed" origin tab on `/app/documents` will surface "Coming soon" placeholder until this ships.
 - **Z.followup.4 — Document-origin attribution sparkline on `/app/documents` header (P3, ~30 lines, founder-feedback-gated)** — tiny stacked-bar chip showing the org's mix across the 3 origins (e.g. "67% Akki-generated · 28% Uploaded · 5% Emailed"). Useful at-a-glance signal but not trial-blocking. R.5.c precedent.
+- **Z.followup.5 — Work Studio sidebar card order optimization based on post-cohort usage data (P3, telemetry-driven, founder-feedback-gated)** — `+ Add a document` likely stays top, but Document Journal (browse) may outrank Recent Activity (telemetry) in real usage. R.5.b.3 precedent — premature optimization without signal.
+- **Z.followup.6 — Reconcile legacy `goals.initiatives` field with new `tasks_initiatives` collection (P3)** — Phase AA introduces a separate `tasks_initiatives` collection. The existing `goals.initiatives` array field likely becomes redundant. P3 cleanup once Monitor v2 stabilises.
+- **Z.followup.7 — Paste-clipboard image-as-upload shortcut on upload modal (P3, ~30 lines, founder-feedback-gated)** — `Cmd/Ctrl+V` in the upload modal pre-fills the file input with a pasted image. Useful for board pack screenshots + annotated PDFs lifted from email. Waits for real signal from cohort use.
 
 > **Slice naming convention (locked 2026-05-27 to resolve a collision with backlog rows):**
 > Internal slice-sequencing labels are `Z-slice-1`, `Z-slice-2`, …, `Z-slice-6`. These are NOT phases — just chunked execution of Phase Z. Backlog rows use the canonical `Z.followup.<n>` namespace.
@@ -540,6 +543,58 @@ Net new source code this slice: ~125 lines (DocumentRow component + KIND_TABS up
 ### Slice line budget (Z-slice-3)
 
 Net new source code: ~340 lines (WorkStudioSidebar.jsx) − ~22 lines removed legacy JSX in WorkStudio.jsx + 9 lines re-wire = ~327 lines net. Under the 500-line auto-slice gate.
+
+---
+
+### Slice Z-slice-4 — Canonical Documents Journal page at `/app/documents` (2026-05-27)
+
+**Status:** ✅ CLOSED — Canonical Documents Journal surface shipped. Z-slice-3's "View more →" link now resolves cleanly (no 404).
+
+**Architecture:**
+- New page at `/app/documents` (auth-gated under `<Gated>` — any authenticated user, not superadmin-only per spec; this is a daily-use exec surface).
+- 3 capsule tabs filter by `origin`: **Akki-generated** (default active) · **Uploaded** · **Emailed**.
+- Top-right `+ Add a document` button — same toast stub as Z-slice-3 sidebar; Z-slice-5 will replace both with the real upload modal.
+- Each tab shows a **live count badge** populated by 3 parallel `GET /api/contexts/{cid}/documents?origin=X&limit=500` fetches on mount.
+- Search bar filters the active tab via the existing `?search=` query param (debounced 250ms; survives URL deep-links via `?q=`).
+- Document rows: name + category badge (via `displayCategory()` helper) + last-modified + click → opens the universal `<DocumentDrawer>` via the canonical `?doc_id=` URL contract.
+- URL state contract: `?tab=X&q=Y&doc_id=Z` — fully deep-linkable. Tab switch preserves `q` but clears `doc_id`.
+
+**Emailed tab placeholder (Z.followup.3 surface):**
+When `activeTab === "email_receipt"` AND list is empty AND not loading/erroring, the row list is replaced with a locked-copy placeholder card:
+> **Coming soon.**
+> Email-to-Akki ingestion isn't wired yet. Drop files into the Uploaded tab or generate via Akki for now.
+Surfaces Z.followup.3 to users transparently.
+
+**Recurrence #3 closure preserved:** `smoke_upload` rows are filtered from the listing (consistent with sidebar preview).
+
+**Files:**
+- `frontend/src/pages/DocumentsPage.jsx` (NEW, ~340 lines) — the page.
+- `frontend/src/App.js` (+5 lines) — lazy-imports `DocumentsPage` + registers the `/app/documents` route under `<Gated>`. Legacy `/app/documents/:id` redirect to `/app/work-studio?doc_id=:id` preserved for back-compat.
+
+**Tests:**
+- `backend/tests/test_phase_z_documents_journal.py` extended with 19 Z-slice-4 source-strict locks across 6 invariant groups (V–AA):
+  - **V (3):** Page file exists + route registered in App.js + legacy redirect preserved.
+  - **W (2):** Header H1 + subtext verbatim + Add-a-document button + toast-stub copy locked.
+  - **X (5):** All 3 capsule tabs render + count badges + default active tab = `akki_generated` + TAB_ORDER locked + counts populated from per-origin fetch.
+  - **Y (2):** Listing uses `?origin=` filter + smoke-upload filter preserved.
+  - **Z (4):** Row carries category badge + locked testids + uses `displayCategory()` helper + click opens drawer via `?doc_id=` + emits `data-origin` / `data-category` attrs.
+  - **AA (2):** Emailed placeholder copy locked + gated by `activeTab === "email_receipt"` AND `docs.length === 0`.
+
+### CI
+
+- Phase Z **81/81 GREEN** (31 Z-slice-1 + 20 Z-slice-2 + 11 Z-slice-3 + 19 Z-slice-4).
+- Full regression `tests/test_phase_*.py` = **791 passed / 27 skipped / 0 regressions** (was 772; +19 new locks landed cleanly).
+- **Multi-viewport DOM probe (1280 / 1024 / 820) at `/app/documents` GREEN:**
+  - Page mounted; H1 "Documents" + subtext verbatim
+  - 3 tabs render with **LIVE counts** (Akki-generated · 1 / Uploaded · 8 / Emailed · 0 on the bramuel test account)
+  - Default active tab = `akki_generated` (`data-active="true"`)
+  - Tab click flips URL `?tab=upload`, listing testid changes to `documents-listing-upload`
+  - Emailed tab placeholder visible with locked-copy text
+- Frontend ESLint + webpack clean.
+
+### Slice line budget (Z-slice-4)
+
+Net new source code: ~340 lines (DocumentsPage.jsx) + ~5 lines (App.js route wiring) = ~345 lines. Under the 500-line auto-slice gate.
 
 ---
 

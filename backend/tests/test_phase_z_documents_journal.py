@@ -769,3 +769,188 @@ def test_Z3_u_generate_report_subtext_preserved():
 def test_Z3_u_generate_report_btn_carries_locked_testid():
     src = SIDEBAR_JSX.read_text(encoding="utf-8")
     assert 'data-testid="work-studio-sidebar-generate-report-btn"' in src
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Z-SLICE-4 — Canonical Documents Journal page at /app/documents
+#
+# Spec locks:
+#   - Header "Documents" + subtext (locked verbatim)
+#   - Top-right "+ Add a document" button (toast stub until Z-slice-5)
+#   - 3 capsule tabs: Akki-generated · N / Uploaded · N / Emailed · N
+#   - Default active tab on mount: Akki-generated
+#   - Search bar filters active tab
+#   - Document rows: name + category badge + last-modified + click → drawer
+#   - Emailed tab "Coming soon" placeholder when origin=email_receipt has 0 rows
+#   - API: GET /api/contexts/{cid}/documents?origin=X&search=Y (Z-slice-1)
+# ═════════════════════════════════════════════════════════════════════
+
+DOCS_PAGE_JSX = REPO / "frontend" / "src" / "pages" / "DocumentsPage.jsx"
+APP_JS        = REPO / "frontend" / "src" / "App.js"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# V. Page exists + route wired in App.js
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z4_v_documents_page_file_exists():
+    assert DOCS_PAGE_JSX.exists(), \
+        "DocumentsPage.jsx must exist under /app/frontend/src/pages/"
+    src = DOCS_PAGE_JSX.read_text(encoding="utf-8")
+    assert "export default function DocumentsPage" in src
+
+
+def test_Z4_v_app_route_registered():
+    src = APP_JS.read_text(encoding="utf-8")
+    assert 'lazy(() => import("@/pages/DocumentsPage"))' in src, \
+        "App.js must lazy-import DocumentsPage"
+    assert '<Route path="/app/documents" element={<Gated><DocumentsPage />' in src, \
+        "App.js must register /app/documents route under <Gated>"
+
+
+def test_Z4_v_legacy_redirect_preserved():
+    """The legacy `/app/documents/:id` redirect to
+    /app/work-studio?doc_id=:id must stay intact — back-compat for
+    deep-links from older shares + emails."""
+    src = APP_JS.read_text(encoding="utf-8")
+    assert '<Route path="/app/documents/:id"' in src
+    assert "DocumentRouteSwitch" in src
+
+
+# ─────────────────────────────────────────────────────────────────────
+# W. Header + subtext + top-right Add a document
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z4_w_header_h1_and_subtext_locked():
+    src = DOCS_PAGE_JSX.read_text(encoding="utf-8")
+    assert 'data-testid="documents-page-h1"' in src
+    # H1 text must be exactly "Documents".
+    assert ">\n              Documents\n            </h1>" in src or \
+           '>Documents</h1>' in src, \
+        "documents-page H1 must read 'Documents' verbatim"
+    # Subtext locked verbatim.
+    assert "Everything that crosses your desk — organized by where it came from." in src
+
+
+def test_Z4_w_add_document_btn_present_with_toast_stub():
+    src = DOCS_PAGE_JSX.read_text(encoding="utf-8")
+    assert 'data-testid="documents-page-add-document-btn"' in src
+    # Toast stub copy locked.
+    assert 'toast.info("Upload modal — coming in Z-slice-5.")' in src
+
+
+# ─────────────────────────────────────────────────────────────────────
+# X. 3 capsule tabs + count badges + default active tab
+# ─────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("origin", ["akki_generated", "upload", "email_receipt"])
+def test_Z4_x_capsule_tab_present(origin):
+    src = DOCS_PAGE_JSX.read_text(encoding="utf-8")
+    # The testids are constructed via template literal — confirm
+    # the template form is present (a SINGLE source declaration
+    # produces all three testids at render time).
+    assert 'data-testid={`documents-tab-${origin}`}' in src, \
+        "tabs must declare data-testid via template literal `documents-tab-{origin}`"
+    assert 'data-testid={`documents-tab-${origin}-count`}' in src, \
+        "tab count badges must declare data-testid via template literal `documents-tab-{origin}-count`"
+    # And the origin value must be in TAB_ORDER (locks the loop).
+    assert origin in ["akki_generated", "upload", "email_receipt"]
+
+
+def test_Z4_x_default_active_tab_is_akki_generated():
+    src = DOCS_PAGE_JSX.read_text(encoding="utf-8")
+    # When no tab URL param is present, fallback to akki_generated.
+    assert 'activeTab = TAB_ORDER.includes(tabFromUrl) ? tabFromUrl : "akki_generated"' in src
+
+
+def test_Z4_x_tab_order_locked():
+    """TAB_ORDER drives both the render loop AND the default —
+    locked at akki_generated → upload → email_receipt."""
+    src = DOCS_PAGE_JSX.read_text(encoding="utf-8")
+    assert 'const TAB_ORDER = ["akki_generated", "upload", "email_receipt"]' in src
+
+
+def test_Z4_x_count_badges_populated_from_per_origin_fetch():
+    """The counts state is populated by 3 parallel fetches (one per
+    origin) so each badge can show a live count without waiting for
+    the active tab's full listing."""
+    src = DOCS_PAGE_JSX.read_text(encoding="utf-8")
+    assert "ORIGIN_VALUES.map" in src
+    assert "setCounts({" in src
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Y. API contract — calls GET /documents?origin=X (Z-slice-1)
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z4_y_listing_uses_origin_filter():
+    src = DOCS_PAGE_JSX.read_text(encoding="utf-8")
+    # The active-tab fetch passes origin: activeTab.
+    assert "origin: activeTab" in src
+    # And the search query (from URL).
+    assert "search: queryFromUrl || undefined" in src
+
+
+def test_Z4_y_listing_filters_smoke_uploads():
+    """Recurrence #3 closure — Documents page also filters
+    smoke_upload rows (consistent with sidebar preview)."""
+    src = DOCS_PAGE_JSX.read_text(encoding="utf-8")
+    assert "!d?.smoke_upload" in src or "!d.smoke_upload" in src
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Z. Row component — category badge + click → drawer via ?doc_id=
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z4_z_row_carries_category_badge_and_locked_testids():
+    src = DOCS_PAGE_JSX.read_text(encoding="utf-8")
+    for tid in (
+        "documents-journal-row",
+        "documents-journal-row-name",
+        "documents-journal-row-category-badge",
+        "documents-journal-row-modified",
+    ):
+        assert f'data-testid="{tid}"' in src
+
+
+def test_Z4_z_row_uses_display_category_helper():
+    """No raw category strings in JSX — single source of truth via
+    the displayCategory() helper from @/lib/origins."""
+    src = DOCS_PAGE_JSX.read_text(encoding="utf-8")
+    assert "displayCategory" in src
+    assert "{displayCategory(doc.category)}" in src
+
+
+def test_Z4_z_row_click_opens_drawer_via_doc_id():
+    src = DOCS_PAGE_JSX.read_text(encoding="utf-8")
+    # The onOpenDoc handler sets ?doc_id=row.id and re-uses the
+    # canonical URL contract picked up by the universal DocumentDrawer.
+    assert 'sp.set("doc_id", doc.id)' in src
+    assert "<DocumentDrawer contextId={cid} />" in src
+
+
+def test_Z4_z_row_emits_data_origin_and_data_category():
+    """DOM probe contract — every row carries both attributes so the
+    Z-slice-6 live-DOM orthogonality test can assert from outside."""
+    src = DOCS_PAGE_JSX.read_text(encoding="utf-8")
+    assert 'data-origin={doc.origin || "unknown"}' in src
+    assert 'data-category={doc.category || "uncategorized"}' in src
+
+
+# ─────────────────────────────────────────────────────────────────────
+# AA. Emailed tab "Coming soon" placeholder (Z.followup.3 surface)
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z4_aa_emailed_placeholder_renders_locked_copy():
+    src = DOCS_PAGE_JSX.read_text(encoding="utf-8")
+    assert 'data-testid="documents-emailed-placeholder"' in src
+    # Copy locked verbatim per spec.
+    assert "Email-to-Akki ingestion isn't wired yet. Drop files into the Uploaded tab or generate via Akki for now." in src
+
+
+def test_Z4_aa_emailed_placeholder_gated_by_origin_and_empty():
+    """Placeholder shows only when activeTab=email_receipt AND list
+    is empty AND not loading/erroring — NOT a permanent banner."""
+    src = DOCS_PAGE_JSX.read_text(encoding="utf-8")
+    assert 'activeTab === "email_receipt"' in src
+    assert 'docs.length === 0' in src

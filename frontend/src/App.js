@@ -124,6 +124,8 @@ const SharedArtefact = lazy(() => import("@/pages/SharedArtefact"));
 const InboundQueue = lazy(() => import("@/pages/InboundQueue"));
 const StudioComposerPage = lazy(() => import("@/pages/StudioComposerPage"));
 const WorkStudio = lazy(() => import("@/pages/WorkStudio"));
+// Phase Z (2026-05-27, Z-slice-4) — Canonical Documents Journal page.
+const DocumentsPage = lazy(() => import("@/pages/DocumentsPage"));
 // Phase E.2 (2026-05-26) — full-page Recent Activity surface.
 const WorkStudioActivity = lazy(() => import("@/pages/WorkStudioActivity"));
 const WorkStudioDocumentPage = lazy(() => import("@/pages/WorkStudioDocumentPage"));
@@ -402,6 +404,12 @@ function App() {
           <Route path="/app/manage" element={<Gated><Manage /></Gated>} />
           <Route path="/app/enterprise" element={<Gated><Enterprise /></Gated>} />
           <Route path="/app/work-studio" element={<Gated><WorkStudio /></Gated>} />
+          {/* Phase Z (2026-05-27, Z-slice-4) — Canonical Documents
+              Journal. Surfaces every document organized by origin
+              (Akki-generated / Uploaded / Emailed). Public route under
+              <Gated> wrapper — any authenticated user can land here
+              (this is a daily-use exec surface). */}
+          <Route path="/app/documents" element={<Gated><DocumentsPage /></Gated>} />
           {/* Phase E.2 — Recent Activity full-page view */}
           <Route path="/app/work-studio/activity" element={<Gated><WorkStudioActivity /></Gated>} />
           {/* T3.3 (2026-05-25) — G8 ratified dedicated full-page
