@@ -68,6 +68,10 @@ const AppHome = lazy(() => import("@/pages/AppHome"));
 const CohortConsole = lazy(() => import("@/pages/admin/CohortConsole"));
 // Phase V (2026-05-27) — Admin user CRUD portal.
 const AdminUsers = lazy(() => import("@/pages/admin/AdminUsers"));
+// AA.followup.4 (2026-02 fork-resume) — Extraction Activity superadmin view.
+const ExtractionsActivity = lazy(() => import("@/pages/admin/ExtractionsActivity"));
+// Phase W (2026-02 fork-resume) — Multi-tenant org list view (superadmin).
+const AdminTenants = lazy(() => import("@/pages/admin/AdminTenants"));
 // Phase S (2026-05-27) — Password reset pages (public, no auth).
 const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
 const ResetPassword  = lazy(() => import("@/pages/ResetPassword"));
@@ -355,6 +359,10 @@ function App() {
           <Route path="/app/admin/cohort" element={<SuperadminRoute><Gated><CohortConsole /></Gated></SuperadminRoute>} />
           {/* Phase V (2026-05-27) — Admin user CRUD portal (superadmin only). */}
           <Route path="/app/admin/users" element={<SuperadminRoute><Gated><AdminUsers /></Gated></SuperadminRoute>} />
+          {/* AA.followup.4 — Extraction Activity superadmin view */}
+          <Route path="/app/admin/extractions" element={<SuperadminRoute><Gated><ExtractionsActivity /></Gated></SuperadminRoute>} />
+          {/* Phase W — Multi-tenant org list view (superadmin) */}
+          <Route path="/app/admin/tenants" element={<SuperadminRoute><Gated><AdminTenants /></Gated></SuperadminRoute>} />
           {/* Phase R.5.b (2026-05-27) — Founder copy editor. */}
           <Route path="/app/admin/cohort/copy" element={<SuperadminRoute><Gated><CohortCopyEditor /></Gated></SuperadminRoute>} />
           <Route path="/app" element={<Gated><AppHome /></Gated>} />

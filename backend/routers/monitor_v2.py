@@ -27,21 +27,20 @@ _SOURCE = ("auto", "manual", "hybrid")
 _KIND = ("objective", "project")
 
 
-# Chunk 6.5-REVISED Task F (2026-05-13) — canonical owner-role list.
-# These are the labels surfaced as tabs in the Monitor Owner filter.
-# Matching against `accounts.declared_role` is **case-insensitive**;
+# AA.followup.5 (2026-02 fork-resume) — owner-role retrofit.
+# The canonical owner-role list is now reconciled with the AA-slice-1
+# `TIOwnerRole` enum (9 tokens + null) in `routers/tasks_initiatives.py`.
+# Changes vs. the original Chunk 6.5-REVISED list:
+#   - Removed: "CCO" (chief commercial officer not in product taxonomy),
+#              "Audit Committee", "Risk Committee" (committees are
+#              cross-functional bodies, not 1:1 owner roles — they map
+#              under "OTHER" on the Monitor surface).
+#   - Added:   "CHRO", "CMO", "OTHER".
+# Matching against `accounts.declared_role` remains case-insensitive;
 # anything not in this list (and any null) collapses into "Other" on
 # the frontend. Order is the locked product order — do not re-sort.
-#
-# PO-18 (open clarification): `declared_role` on accounts uses values
-# like `executive`/`ned`/`reportee`/`dual`. None of those literally
-# equal "CEO"/"CFO"/... so in practice today most items fall under
-# "Other". The owner-roles endpoint will return what's actually in
-# the data so the frontend renders the right tabs once the field
-# semantics are resolved.
 CANONICAL_OWNER_ROLES: tuple[str, ...] = (
-    "CEO", "CFO", "COO", "CCO", "CTO", "CRO", "CIO",
-    "Audit Committee", "Risk Committee",
+    "CEO", "CFO", "COO", "CRO", "CTO", "CHRO", "CMO", "CIO", "OTHER",
 )
 _CANONICAL_LOWERS: dict[str, str] = {r.lower(): r for r in CANONICAL_OWNER_ROLES}
 

@@ -95,22 +95,27 @@ def test_W42_a_semantic_pills_remain_semantic(semantic_status, expected_color_ro
         f"semantic {semantic_status} pill must NOT be swept to purple"
 
 
-def test_W42_a_operations_dept_chip_stays_slate():
-    """Operations dept chip is a category-palette member (sibling of
-    blue/violet/amber/red category chips), NOT a neutral status pill.
-    User clarification: leave palette members alone. This test pins
-    the deliberate OUT-OF-SCOPE decision."""
+def test_W42_a_operations_dept_chip_is_purple_unified_sweep():
+    """OVERRIDDEN by the unified Wave 4.2 sweep (2026-02 fork-resume):
+    Operations dept chip is now part of the brand-purple sweep. The
+    earlier institutional decision to keep palette members slate was
+    superseded — every neutral capsule across Monitor/Pulse/Documents
+    is now brand-purple-only.
+
+    Backlog note: see Wave 4.2.followup.1 in PHASE_LEDGER.md — if
+    cohort feedback reports lost visual taxonomy on Operations vs other
+    categories, re-introduce hue differentiation within the brand-purple
+    family. P3, founder-feedback-gated.
+    """
     src = STRATEGIC_GOALS.read_text(encoding="utf-8")
-    assert "operations" in src
-    # Find the DEPT_STYLE.operations row.
     idx = src.find("operations:")
     if idx == -1:
-        pytest.skip("Operations dept chip removed — out-of-scope assertion no longer needed")
-    block = src[idx:idx + 200]
-    # Operations dept chip stays slate by the institutional palette
-    # decision archived in W4.2's partition table.
-    assert "bg-slate-100" in block, \
-        "Operations dept chip must remain slate (palette member, not a status)"
+        pytest.skip("Operations dept chip removed — assertion no longer needed")
+    block = src[idx:idx + 300]
+    assert "var(--ned-purple)" in block, \
+        "Operations dept chip must carry the brand-purple token after the unified Wave 4.2 sweep"
+    assert "bg-slate-100" not in block, \
+        "Operations dept chip must NOT carry the legacy slate background after the unified Wave 4.2 sweep"
 
 
 # ─────────────────────────────────────────────────────────────────────

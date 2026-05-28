@@ -5,14 +5,52 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { ShieldCheck, Lock } from "lucide-react";
+import { ShieldCheck, Lock, AlertTriangle, Trash2 } from "lucide-react";
 
 export default function AccountSecurity() {
-  const { account, bootstrap } = useAuth();
+  const { account, bootstrap, logout } = useAuth();
   const [setup, setSetup] = useState(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Phase X (2026-02 fork-resume) — self-service account deletion.
+  const [dangerOpen, setDangerOpen] = useState(false);
+  const [confirmEmail, setConfirmEmail] = useState("");
+  const [deletionBusy, setDeletionBusy] = useState(false);
+
+  const requestDeletion = async () => {
+    setDeletionBusy(true);
+    try {
+      const { data } = await api.post("/me/delete-account", { confirm: confirmEmail });
+      toast.success(
+        `Account scheduled for deletion. You have until ${new Date(data.deletion_scheduled_for).toLocaleDateString()} to cancel.`
+      );
+      setDangerOpen(false);
+      setConfirmEmail("");
+      await bootstrap();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setDeletionBusy(false);
+    }
+  };
+
+  const cancelDeletion = async () => {
+    setDeletionBusy(true);
+    try {
+      await api.post("/me/delete-account/cancel");
+      toast.success("Account deletion cancelled.");
+      await bootstrap();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setDeletionBusy(false);
+    }
+  };
 
   const startSetup = async () => {
     setBusy(true);
@@ -144,6 +182,102 @@ export default function AccountSecurity() {
             )}
           </div>
         </section>
+
+        {/* Phase X (2026-02 fork-resume) — Danger Zone */}
+        <section className="bg-white border border-red-200 rounded-sm mt-8" data-testid="account-danger-zone">
+          <div className="px-6 py-4 border-b border-red-100 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-red-700 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" /> Danger zone
+              </p>
+              <p className="text-xs text-slate-500 mt-1">
+                Delete your account and all linked data. There is a 30-day cancellation window.
+              </p>
+            </div>
+            {account?.status === "pending_deletion" && (
+              <span className="text-[10px] uppercase tracking-wider px-2 py-1 rounded-sm bg-red-50 text-red-700 border border-red-200" data-testid="account-pending-deletion-badge">
+                Scheduled
+              </span>
+            )}
+          </div>
+          <div className="p-6 space-y-4">
+            {account?.status === "pending_deletion" ? (
+              <div className="space-y-3" data-testid="account-pending-deletion-state">
+                <p className="text-sm text-[var(--ink)]">
+                  Your account is scheduled for permanent deletion on{" "}
+                  <strong data-testid="account-deletion-scheduled-for">
+                    {account.deletion_scheduled_for
+                      ? new Date(account.deletion_scheduled_for).toLocaleDateString()
+                      : "—"}
+                  </strong>.
+                </p>
+                <p className="text-xs text-slate-500">
+                  Cancel anytime before that date. After it, all data is irrecoverable.
+                </p>
+                <Button
+                  variant="outline"
+                  className="border-[var(--ink)] text-[var(--ink)] hover:bg-slate-50 rounded-sm h-9"
+                  onClick={cancelDeletion}
+                  disabled={deletionBusy}
+                  data-testid="cancel-account-deletion-btn"
+                >
+                  {deletionBusy ? "Working…" : "Cancel deletion"}
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                className="border-red-500 text-red-600 hover:bg-red-50 rounded-sm h-9"
+                onClick={() => setDangerOpen(true)}
+                data-testid="open-delete-account-btn"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                Delete my account
+              </Button>
+            )}
+          </div>
+        </section>
+
+        {/* Delete confirm dialog */}
+        <Dialog open={dangerOpen} onOpenChange={(o) => !o && setDangerOpen(false)}>
+          <DialogContent data-testid="delete-account-dialog">
+            <DialogHeader>
+              <DialogTitle>Delete your account</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 text-sm">
+              <p className="text-[var(--ink)]">
+                This schedules permanent deletion of your account and every linked
+                context, document, task, and signal. You have <strong>30 days</strong> to
+                cancel before the data is irrecoverable.
+              </p>
+              <div className="space-y-2">
+                <Label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">
+                  Type your email to confirm
+                </Label>
+                <Input
+                  value={confirmEmail}
+                  onChange={(e) => setConfirmEmail(e.target.value)}
+                  placeholder={account?.email}
+                  className="rounded-sm h-10"
+                  data-testid="delete-account-confirm-input"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setDangerOpen(false)} disabled={deletionBusy} data-testid="delete-account-cancel-btn">
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={requestDeletion}
+                disabled={deletionBusy || (confirmEmail || "").trim().toLowerCase() !== (account?.email || "").trim().toLowerCase()}
+                data-testid="delete-account-confirm-btn"
+              >
+                {deletionBusy ? "Scheduling…" : "Schedule deletion"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppShell>
   );

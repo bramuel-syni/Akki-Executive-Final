@@ -412,6 +412,14 @@ def sanitize_account(a: Dict[str, Any]) -> Dict[str, Any]:
               "grandfathered_price_locked"):
         if a.get(k) is not None:
             out[k] = a[k]
+    # Phase X (2026-02 fork-resume) — Self-service deletion markers.
+    # Surfaced so the frontend Danger Zone can render the "scheduled
+    # for deletion" banner + cancel CTA without an extra round-trip.
+    if a.get("status"):
+        out["status"] = a["status"]
+    for k in ("deletion_requested_at", "deletion_scheduled_for"):
+        if a.get(k) is not None:
+            out[k] = a[k]
     return out
 
 

@@ -91,9 +91,46 @@ jobs:
           cache-from: type=registry,ref=${{ secrets.ACR_LOGIN_SERVER }}/akki-frontend:buildcache
           cache-to:   type=registry,ref=${{ secrets.ACR_LOGIN_SERVER }}/akki-frontend:buildcache,mode=max
 
+  # Wave8.followup.3 (2026-02 fork-resume) — pre-deploy orthogonality gate.
+  # Runs `make deploy-check` (= `pytest -m runtime_playwright`) against the
+  # configured preview before promoting to prod. Blocks deploy on any
+  # orthogonality regression — Phase Z-slice-6 caught all 6 historic
+  # Phase Z bugs at once when introduced; promoting it to a deploy
+  # blocker prevents the cohort from ever hitting the same class of
+  # regression in production.
+  deploy-check:
+    name: Pre-deploy orthogonality gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend test deps + Playwright
+        run: |
+          cd backend && pip install -r requirements.txt
+          python -m playwright install chromium --with-deps
+
+      - name: Write frontend/.env for preview URL
+        run: |
+          mkdir -p frontend
+          echo "REACT_APP_BACKEND_URL=${{ secrets.REACT_APP_BACKEND_URL }}" > frontend/.env
+
+      - name: Run orthogonality wire-tests
+        run: make deploy-check
+
   deploy:
     name: Deploy to VM
-    needs: build
+    needs: [build, deploy-check]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:

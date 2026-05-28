@@ -76,6 +76,9 @@ from routers import billing as billing_router  # noqa: E402
 from routers import onboarding_briefs as onboarding_briefs_router  # noqa: E402
 # Phase V (2026-05-27) — Admin user CRUD portal router.
 from routers import admin_users as admin_users_router  # noqa: E402
+from routers import admin_extractions as admin_extractions_router  # noqa: E402
+from routers import admin_tenants as admin_tenants_router  # noqa: E402
+from routers import account_deletion as account_deletion_router  # noqa: E402
 # Phase S (2026-05-27) — Password reset router.
 from routers import password_reset as password_reset_router  # noqa: E402
 # CLEANUP B2 (2026-05-26): plays_router archived — Plays surface ORPHAN
@@ -215,6 +218,9 @@ app.include_router(billing_router.router)
 app.include_router(onboarding_briefs_router.router)
 # Phase V (2026-05-27) — admin user CRUD portal.
 app.include_router(admin_users_router.router)
+app.include_router(admin_extractions_router.router)
+app.include_router(admin_tenants_router.router)
+app.include_router(account_deletion_router.router)
 # Phase S (2026-05-27) — password reset.
 app.include_router(password_reset_router.router)
 # CLEANUP B2 (2026-05-26): plays_router include removed — see archive note above.

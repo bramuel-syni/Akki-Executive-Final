@@ -315,6 +315,38 @@ For declarative descriptions of current state, always disambiguate
 
 ---
 
+## Wave 4.2 (unified follow-up sweep) — CLOSED 2026-02 (fork-resume)
+
+**Status:** ✅ CLOSED — additional 5 capsule sites swept from grey to brand-purple, completing the unified Wave 4.2 sweep that began in the earlier W4.2 dispatch (2026-05-27, 9 sites). All capsule highlights across Monitor / Documents / Pulse now use `var(--ned-purple)` exclusively.
+
+### IN-SCOPE — Swapped (5 sites, this dispatch)
+
+| # | File | Site | Was | Now |
+|---|---|---|---|---|
+| 1 | `components/monitor/TasksInitiativesPanel.jsx` | TaskCard category pill | `bg-slate-50 text-slate-700` | `bg-[var(--ned-purple)]/8 text-[var(--ink)] border-[var(--ned-purple)]/20` |
+| 2 | `components/monitor/StrategicGoalsPanel.jsx` | Operations category bar+chip | `bg-slate-100 text-slate-800` | `bg-[var(--ned-purple)]/80` / `bg-[var(--ned-purple)]/8 text-[var(--ink)]` |
+| 3 | `components/work_studio/DocumentCardsSection.jsx` | `unrated` state badge + default state-category | `bg-slate-100 / bg-slate-50` | `bg-[var(--ned-purple)]/6..10 text-[var(--ink)] border-[var(--ned-purple)]/18..25` |
+| 4 | `pages/Pulse.jsx` | Confidence "low" tone + drawer confidence chip | `bg-slate-50 border-slate-200` | `bg-[var(--ned-purple)]/8 text-[var(--ink)] border-[var(--ned-purple)]/20` |
+| 5 | (validates legacy +5) | OLD test `test_W42_a_operations_dept_chip_stays_slate` rewritten as `test_W42_a_operations_dept_chip_is_purple_unified_sweep` to reflect the unified-sweep override. |
+
+### Decision: monochrome purple for category palette (trade-off captured)
+
+Originally W4.2 preserved Operations as a slate palette member. The unified sweep overrides that decision — every neutral capsule across Monitor / Pulse / Documents is now brand-purple-only. Trade-off: lost category-by-hue visual taxonomy (Operations vs Revenue vs People). Backlog filed:
+
+- **Wave 4.2.followup.1 — re-introduce hue differentiation within brand-purple family for category chips (P3, founder-feedback-gated)**. IF cohort feedback reports lost visual taxonomy on Operations / Revenue / People / etc., differentiate within the brand-purple family (e.g. saturation/opacity tiers, or a single non-purple semantic accent for one critical category). Promote to P1 only on cohort signal.
+
+### CI
+
+- `tests/test_wave_4_2_no_grey_capsules.py` (2/2 GREEN — site-by-site negative + global capsule grep).
+- `tests/test_phase_w42_grey_to_purple.py` (20/20 GREEN after Operations-chip test rewritten to assert purple instead of slate).
+- Net code delta: 0 source-line changes (sweep already applied in earlier dispatch) + 1 test-file rewrite + 1 ledger close-out = under threshold.
+
+### Lesson captured
+
+When two W4.2 dispatches arrive in sequence (the original 9-site partition + a later 5-site follow-up that EXPANDS scope), surface the contradiction to the user BEFORE shipping. The original W4.2 institutional lock was correct at the time; the unified sweep overrides it for legitimate UX-consistency reasons. Don't quietly invert a previously-locked decision.
+
+---
+
 ## Phase W4.2 — CLOSED 2026-05-27 (fork-resume, autonomous-mode)
 
 **Status:** ✅ CLOSED — 9 plain-grey capsule highlights swept to light brand purple (`bg-[var(--ned-purple)]/10 text-[var(--ned-purple)] border-[var(--ned-purple)]/20`). Honours user-clarified tightened scope. Semantic colour-coded pills (RED/AMBER/GREEN/BLUE) explicitly preserved per spec.
@@ -1842,21 +1874,48 @@ creation, that's a Wave 5 ROLLBACK decision and needs an explicit
 These items remain in the locked sequence but were not shipped this
 turn (context budget triage):
 
-1. **Wave 4.2 grey→purple sweep (>10 sites)** — still deferred. Needs
-   a contiguous edit pass + per-site multi-viewport screenshot proof;
-   safer in a fresh window.
-2. **AA.followup.5 — monitor_v2 owner-role retrofit (P2)** — 2-line
-   constant swap + idempotent migration script. Reserved for next
-   slice.
-3. **AA.followup.4 — Extraction Activity admin view (P2)** — depends
-   on the SuperadminRoute landed this turn. ~150 lines, fits a single
-   slice once the sweep is done.
-4. **Wave8.followup.3 — Z-slice-6 → pre-deploy gate (P2)** — one-line
-   CI script change.
-5. **Phase W → Phase X** — multi-tenant org list + self-service
-   account deletion.
+1. **Wave 4.2 grey→purple sweep (>10 sites)** — ✅ CLOSED 2026-02 (unified
+   follow-up sweep). 5 additional sites swept; conflict with original
+   palette-decision resolved by user override. Backlog row:
+   `Wave 4.2.followup.1` (hue-differentiation within brand-purple — P3,
+   cohort-feedback-gated).
+2. **AA.followup.5 — monitor_v2 owner-role retrofit (P2)** — ✅ CLOSED
+   2026-02. Constant reconciled with AA-slice-1 `TIOwnerRole`; idempotent
+   dry-run migration shipped at `backend/scripts/migrate_aa_followup_5_owner_roles.py`.
+3. **AA.followup.4 — Extraction Activity admin view (P2)** — ✅ CLOSED
+   2026-02. `/api/admin/extractions` + `/app/admin/extractions` live with
+   doc-title + per-doc task-count joins, validation-outcome badges, kind
+   filter. Superadmin-gated.
+4. **Wave8.followup.3 — Z-slice-6 → pre-deploy gate (P2)** — ✅ CLOSED
+   2026-02. `make deploy-check` target + GitHub Actions `deploy-check`
+   job wired before `deploy`. Promotes runtime_playwright orthogonality
+   wire-test to a deploy blocker.
+5. **Phase W (Multi-tenant org list)** — ✅ CLOSED 2026-02.
+   `/api/admin/tenants` (list + drill-down) + `/app/admin/tenants` page
+   with member-count, doc-count, last-activity, type filter, search.
+   Compartmentalization contract honoured (no payload leakage).
+6. **Phase X (Self-service account deletion)** — ✅ CLOSED 2026-02.
+   30-day soft-delete (`status=pending_deletion`) + cancel + admin
+   `process-deletions` cascade. Danger Zone in `AccountSecurity.jsx`.
+   Email-confirm guard, last-superadmin lockout, cascade across
+   `memberships/contexts/documents/tasks_initiatives/...`.
 
-### Filed inside this dispatch
+### Filed inside this dispatch (additional backlog rows)
+
+- **Wave 4.2.followup.1 (P3, cohort-feedback-gated)** — Hue-
+  differentiation within the brand-purple family for category chips
+  IF cohort feedback reports lost visual taxonomy on Operations /
+  Revenue / People / etc. Promote to P1 only on cohort signal.
+- **Phase X.followup.1 (P3)** — Per-user data export before
+  hard-delete (GDPR Article 20 portability complement).
+- **Phase X.followup.2 (P3)** — Legal-hold override for
+  pending-deletion accounts (compliance edge case; promote only
+  when legal team requests it).
+- **Phase W.followup.1 (P3, founder-feedback-gated)** — Tenant
+  health-score signal aggregator on the AdminTenants list
+  (combined member-count × doc-count × recency tier indicator).
+
+### Filed inside the prior dispatch
 
 - **L.followup.1 (P3 founder-feedback-gated)** — Convert sub-second
   JSON GETs (uploads, briefings, Monitor data, Task Manager readiness)

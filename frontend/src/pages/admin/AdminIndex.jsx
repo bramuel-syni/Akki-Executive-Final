@@ -7,7 +7,7 @@ import React, { useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
-import { Activity, Sparkles, BarChart3, Target, ArrowRight, ShieldCheck } from "lucide-react";
+import { Activity, Sparkles, BarChart3, Target, ArrowRight, ShieldCheck, FileText, Building2 } from "lucide-react";
 
 export default function AdminIndex() {
   const { account, loading } = useAuth();
@@ -109,6 +109,24 @@ export default function AdminIndex() {
           }
         : null,
       testid: "admin-tile-auth",
+    },
+    // AA.followup.4 (2026-02 fork-resume) — Extraction Activity.
+    {
+      to: "/app/admin/extractions",
+      icon: FileText,
+      title: "Extraction activity",
+      desc: "Recent LLM extraction runs — doc, kind, validation outcome, tasks produced.",
+      pill: null,
+      testid: "admin-tile-extractions",
+    },
+    // Phase W (2026-02 fork-resume) — Multi-tenant org list.
+    {
+      to: "/app/admin/tenants",
+      icon: Building2,
+      title: "Tenants & orgs",
+      desc: "Every context across the platform — members, docs, last activity.",
+      pill: null,
+      testid: "admin-tile-tenants",
     },
   ];
 

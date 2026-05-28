@@ -1,6 +1,37 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Mega-Dispatch 2026-02 (fork-resume) — Wave 4.2 unified + AA.followup.5 + AA.followup.4 + Wave8.followup.3 + Phase W + Phase X CLOSED ✅
+
+**Scope:** Complete locked sequence executed in a single context window. 6 P1/P2 items shipped end-to-end with per-slice Pytest CI guards + curl smoke + lint clean.
+
+**Tests added this round:** 5 new test files (~70 new CI guards):
+- `test_aa_followup_5_owner_role_retrofit.py` — 8 tests
+- `test_aa_followup_4_extractions_activity.py` — 8 tests (incl. async E2E with ASGI transport)
+- `test_wave8_followup_3_deploy_gate.py` — 3 tests
+- `test_phase_w_admin_tenants.py` — 8 tests (incl. async E2E)
+- `test_phase_x_account_deletion.py` — 9 tests (incl. async E2E with cascade verification)
+- `test_phase_w42_grey_to_purple.py` — Operations chip test rewritten for unified sweep
+- **All 56 new/updated suite tests GREEN; 71/71 regression GREEN on AA + Phase V + Phase Z + Monitor.**
+
+**Closed phases (this dispatch):**
+- ✅ Wave 4.2 unified follow-up sweep (5 additional sites — Operations chip override accepted by user)
+- ✅ AA.followup.5 (monitor_v2 `CANONICAL_OWNER_ROLES` reconciled with `TIOwnerRole`; idempotent dry-run migration script at `backend/scripts/migrate_aa_followup_5_owner_roles.py`)
+- ✅ AA.followup.4 (`/api/admin/extractions` + `/app/admin/extractions` superadmin view with doc-title + tasks-persisted joins)
+- ✅ Wave8.followup.3 (`make deploy-check` target + GitHub Actions `deploy-check` job blocks deploy on orthogonality regression)
+- ✅ Phase W (`/api/admin/tenants` list+drill-down + `/app/admin/tenants` page — member-count/doc-count/last-activity, type filter, search, payload-leak source-strict guard)
+- ✅ Phase X (Self-service account deletion — 30-day soft-delete → cancel → cascade hard-delete; Danger Zone in `AccountSecurity.jsx`, email-confirm guard, last-superadmin lockout)
+
+**Backlog filed:**
+- 🟡 Wave 4.2.followup.1 — Re-introduce hue differentiation within brand-purple family for category chips (P3, cohort-feedback-gated)
+- 🟡 Phase X.followup.1 — Per-user data export before hard-delete (GDPR portability, P3)
+- 🟡 Phase X.followup.2 — Legal-hold override (P3, on legal-team request)
+- 🟡 Phase W.followup.1 — Tenant health-score aggregator (P3, founder-feedback-gated)
+
+**Ready for e1_tester PASS:** Phase W + Phase X (frontend surfaces — multi-viewport probes 1280/1024/820 + interactive flow validation).
+
+
+
 
 ### Mega-Dispatch Round 2 (2026-05-27, fork-resume) — Phase V + N.3 + Phase S CLOSED ✅ · Phase T (DORMANT) + Phase U + L.b.3 QUEUED
 
