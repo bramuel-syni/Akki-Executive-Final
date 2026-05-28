@@ -58,7 +58,7 @@ import logging
 import uuid
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, conint
 
 from core import db, iso as _iso, now as _now, require_context_membership, write_audit
@@ -443,3 +443,94 @@ async def delete_task_initiative(
         {"title": existing.get("title")},
     )
     return {"ok": True, "id": ti_id, "deleted_at": now_iso}
+
+
+# ─────────────────────────────────────────────────────────────────
+# AA-slice-3 (2026-05-27) — Trigger endpoint
+# Spawns the AA-slice-2 extraction service in a BackgroundTask so
+# the upload modal can return 202 instantly while Sonnet 4.5 chews
+# on the document body in the background.
+# ─────────────────────────────────────────────────────────────────
+
+
+class ExtractTriggerIn(BaseModel):
+    extract_goals: bool = False
+    extract_tasks: bool = True
+    force: bool = False
+
+
+async def _bg_extract(
+    document_id: str, context_id: str, account_id: str,
+    extract_goals: bool, extract_tasks: bool, force: bool,
+) -> None:
+    """Background driver — silently swallows exceptions (they're
+    auditable via `extraction_failures`) so a fault inside the LLM
+    pipe never crashes the worker process."""
+    try:
+        from services.tasks_initiatives.extraction import extract_from_document
+        await extract_from_document(
+            document_id, context_id, account_id,
+            extract_goals=extract_goals,
+            extract_tasks=extract_tasks,
+            force=force,
+        )
+    except Exception as e:
+        logger.warning(
+            "[aa3.trigger] extract_from_document doc=%s ctx=%s failed: %s",
+            document_id, context_id, e,
+        )
+
+
+@router.post("/contexts/{context_id}/documents/{doc_id}/extract", status_code=202)
+async def trigger_extraction(
+    context_id: str,
+    doc_id: str,
+    body: ExtractTriggerIn,
+    bg: BackgroundTasks,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Spawn LLM extraction for this document. Returns 202 Accepted
+    immediately; the actual extraction happens in the background.
+    Caller can verify completion later via the `extractions_log`
+    collection or by polling the target collections.
+    """
+    if not body.extract_goals and not body.extract_tasks:
+        # No-op trigger; surface a 400 so the caller knows the call
+        # was meaningless rather than silently 202-ing.
+        raise HTTPException(
+            status_code=400,
+            detail="At least one of extract_goals / extract_tasks must be True.",
+        )
+
+    doc = await db.documents.find_one(
+        {"id": doc_id, "context_id": context_id},
+        {"_id": 0, "id": 1, "extracted_text": 1},
+    )
+    if doc is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found in this context.",
+        )
+    has_text = bool((doc.get("extracted_text") or "").strip())
+
+    # Best-effort audit row — the actual extraction outcome is logged
+    # by the service into `extractions_log`.
+    await write_audit(
+        context_id, ctx["account"]["id"],
+        "tasks_initiative.extract_triggered",
+        "document", doc_id,
+        {"extract_goals": body.extract_goals, "extract_tasks": body.extract_tasks,
+         "force": body.force, "has_text": has_text},
+    )
+
+    bg.add_task(
+        _bg_extract, doc_id, context_id, ctx["account"]["id"],
+        body.extract_goals, body.extract_tasks, body.force,
+    )
+    return {
+        "extraction_queued": True,
+        "document_id":       doc_id,
+        "extract_goals":     body.extract_goals,
+        "extract_tasks":     body.extract_tasks,
+        "has_extracted_text": has_text,
+    }

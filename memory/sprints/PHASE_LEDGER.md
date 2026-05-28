@@ -1305,3 +1305,133 @@ change.
 ### Sequencing
 
 Next: **AA-slice-3** — UploadModal extension.
+
+
+---
+
+## PHASE AA-SLICE-3 — Upload-modal extraction prompt (CLOSED 2026-05-27)
+
+Wires the AA-slice-2 extraction service into the Z-slice-5 upload
+flow. Two checkboxes ("Extract goals from this document" + "Extract
+tasks/initiatives from this document") render inside the modal with
+category-aware defaults. On submit, a new endpoint queues
+`extract_from_document` in a FastAPI BackgroundTask so the modal can
+close immediately while Sonnet 4.5 chews on the doc body.
+
+### FE additions (`frontend/src/components/upload/UploadModal.jsx`)
+
+- Two checkboxes (`upload-extract-goals-checkbox`,
+  `upload-extract-tasks-checkbox`) inside the
+  `upload-extraction-block` card.
+- Italic helper text (`upload-extraction-helper`) carries the locked
+  copy: "AI will scan for strategic goals and the specific work to
+  deliver them. You can review and edit later in Monitor."
+- Category-aware defaults: the high-signal list `["board_pack",
+  "report", "briefing"]` flips both ON; everything else
+  (draft / deck / minutes / uncategorized) flips both OFF.
+- `extractionTouched` state — once the user manually toggles either
+  checkbox, the category-recompute effect bails early so their pick
+  is never overwritten.
+- `onUpload` collects `uploadedIds` from successful per-file POSTs,
+  then iterates them sequentially calling
+  `POST /api/contexts/{cid}/documents/{id}/extract` with the
+  current checkbox state. Failures surface a per-file warning toast
+  but don't tear down the upload success.
+- After triggering, a status toast informs the user:
+  "AKKI is reading the document — Monitor will populate when
+  extraction finishes." (single-file) or
+  "AKKI is reading {N} documents — Monitor will populate as
+  extractions complete." (multi-file).
+
+### BE additions (`backend/routers/tasks_initiatives.py`)
+
+- New endpoint:
+  `POST /api/contexts/{context_id}/documents/{doc_id}/extract`
+  → 202 Accepted with body
+  `{extraction_queued: true, document_id, extract_goals,
+    extract_tasks, has_extracted_text}`.
+- `ExtractTriggerIn` Pydantic schema: `extract_goals=False`,
+  `extract_tasks=True`, `force=False`.
+- 400 when both flags are False (defensive — refuses no-op triggers).
+- 404 when `doc_id` doesn't live in the context.
+- Background task: `_bg_extract(...)` wraps
+  `extract_from_document(...)` in a `try/except` so a transient LLM
+  fault never crashes the worker. Failures remain auditable via
+  AA-2's `extraction_failures` collection.
+- Audit row written:
+  `tasks_initiative.extract_triggered`, metadata
+  `{extract_goals, extract_tasks, force, has_text}`.
+
+### CI guards (`backend/tests/test_phase_aa_slice_3_upload_extraction.py`)
+
+**14/14 GREEN**.
+
+Source-strict FE (6):
+- 4 checkbox/helper/block testids present.
+- Helper text copy locked verbatim.
+- `["board_pack", "report", "briefing"]` literal locked.
+- `extractionTouched` early-return locked.
+- `setExtractionTouched(true)` fires on both checkbox toggles.
+- `onUpload` gates the trigger call on `(extractGoals || extractTasks)
+  && uploadedIds.length > 0`.
+
+Source-strict BE (2):
+- Endpoint declaration + `status_code=202` + `BackgroundTasks`
+  parameter.
+- `_bg_extract` has `except Exception` (won't crash worker).
+
+Runtime (6):
+- 202 + body shape on the success path, BackgroundTask actually
+  invokes `extract_from_document(...)` with the right args.
+- 400 when both flags False.
+- 404 when doc missing.
+- Audit row written with expected metadata.
+- `extract_tasks=True` alone is sufficient.
+- `force=True` forwarded to the underlying service.
+
+### Live multi-viewport DOM probes (1280 / 1024 / 820)
+
+All 3 viewports confirmed identical behaviour:
+
+| Scenario                                                | Goals | Tasks |
+|---------------------------------------------------------|:-----:|:-----:|
+| Default (Uncategorized)                                 | OFF ✅ | OFF ✅ |
+| After picking "Report"                                  | ON ✅  | ON ✅  |
+| After picking "Draft"                                   | OFF ✅ | OFF ✅ |
+| User toggled goals → ON, then picked "Minutes" (touched) | ON ✅  | OFF ✅ |
+
+The `extractionTouched` flag correctly stops the category-recompute
+effect once the user takes manual control.
+
+### Slice budget
+
+| File                              | Net lines added |
+| --------------------------------- | --------------- |
+| `routers/tasks_initiatives.py`    |              93 |
+| `frontend/.../UploadModal.jsx`    |             113 |
+| **Total product code**            |         **206** |
+
+Test file 365 lines. Well within the 500-line product-code budget.
+
+### Out of scope (deferred to AA-3.followup if needed)
+
+- Akki-commit trigger (extraction at generation time — separate pipe).
+- Email-ingestion trigger (Z.followup.3 not built).
+- Real-time progress UI on extraction (user sees Monitor populate
+  when AA-slice-4 ships).
+- Re-extraction UI ("Re-run extraction" button on doc drawer) — file
+  as `AA.followup.3` if cohort signal demands it.
+
+### Sequencing
+
+Next: **AA-slice-4** — Monitor surface rewrite. Includes:
+- Rich card listing of `tasks_initiatives` rows
+- Capsule tabs by `owner_role`
+- **Provenance chip per LLM-extracted task** —
+  `"Extracted by Sonnet 4.5 from {document_name} · {relative_date}"`
+  with `{document_name}` as a click-through that opens the source
+  doc in the drawer. Manual-entry tasks render WITHOUT the chip.
+
+Reconciliation of `monitor_v2.CANONICAL_OWNER_ROLES` vs AA-1
+`TIOwnerRole` (AA.followup.1) will be resolved naturally by AA-4's
+UI requirements.

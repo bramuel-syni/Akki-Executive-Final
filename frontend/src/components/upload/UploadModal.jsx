@@ -84,6 +84,16 @@ export default function UploadModal({ open, onClose, onUploaded }) {
   // empty option per spec — submitting without picking yields an
   // uncategorized document.
   const [category, setCategory] = useState("");
+  // AA-slice-3 (2026-05-27) — extraction prompt checkboxes. The
+  // defaults depend on the chosen category: high-signal categories
+  // (board_pack / report / briefing) default ON; everything else
+  // (draft / deck / minutes / uncategorized) defaults OFF. The user
+  // can still override either way. `extractionTouched` records
+  // whether the user has manually toggled either checkbox so we
+  // stop auto-recomputing defaults the moment they take control.
+  const [extractGoals, setExtractGoals] = useState(false);
+  const [extractTasks, setExtractTasks] = useState(false);
+  const [extractionTouched, setExtractionTouched] = useState(false);
 
   const [members, setMembers] = useState([]);
   const [documents, setDocuments] = useState([]);
@@ -114,8 +124,23 @@ export default function UploadModal({ open, onClose, onUploaded }) {
     setFiles([]); setName(""); setDescription(""); setTrust("mixed");
     setMentionId(""); setRelatedDocId(""); setRelationType("update");
     setCategory("");
+    setExtractGoals(false); setExtractTasks(false);
+    setExtractionTouched(false);
     setGenerating(false); setUploading(false);
   }, [open]);
+
+  // AA-slice-3 (2026-05-27) — recompute extraction defaults on
+  // category change UNLESS the user has manually toggled either
+  // checkbox. High-signal categories (board_pack / report /
+  // briefing) default both ON. Everything else (draft / deck /
+  // minutes / uncategorized) defaults OFF.
+  useEffect(() => {
+    if (extractionTouched) return;
+    const high = ["board_pack", "report", "briefing"];
+    const isHigh = high.includes(category);
+    setExtractGoals(isHigh);
+    setExtractTasks(isHigh);
+  }, [category, extractionTouched]);
 
   // Z-slice-5 (2026-05-27) — multi-file selection handler. Accepts
   // an array (drag-drop, multi-pick) or a single File (legacy
@@ -192,6 +217,9 @@ export default function UploadModal({ open, onClose, onUploaded }) {
     let lastDoc = null;
     let successCount = 0;
     let failCount = 0;
+    // AA-slice-3 (2026-05-27) — collect uploaded doc IDs so we can
+    // fire the extraction trigger sequentially after the batch.
+    const uploadedIds = [];
     try {
       // Z-slice-5 (2026-05-27) — sequential per-file POSTs. Each call
       // shares the same category / trust / mention / related-doc
@@ -228,6 +256,7 @@ export default function UploadModal({ open, onClose, onUploaded }) {
           );
           lastDoc = doc;
           successCount += 1;
+          if (doc?.id) uploadedIds.push(doc.id);
         } catch (e) {
           failCount += 1;
           // Surface per-file error with filename so the user can tell
@@ -235,6 +264,39 @@ export default function UploadModal({ open, onClose, onUploaded }) {
           toast.error(`${f.name}: ${apiErrorMessage(e)}`);
         }
       }
+
+      // AA-slice-3 (2026-05-27) — if either extraction checkbox is
+      // ticked, fire the extract trigger for each successfully
+      // uploaded doc. Sequential (not parallel) to keep LLM
+      // rate-limit pressure low. Each call returns 202 immediately;
+      // the actual Sonnet 4.5 round-trip happens in the background.
+      // Failures are logged but DO NOT block subsequent files NOR
+      // surface as upload errors — the upload itself succeeded.
+      if ((extractGoals || extractTasks) && uploadedIds.length > 0) {
+        for (const did of uploadedIds) {
+          try {
+            await api.post(
+              `/contexts/${contextId}/documents/${did}/extract`,
+              {
+                extract_goals: !!extractGoals,
+                extract_tasks: !!extractTasks,
+              },
+            );
+          } catch (e) {
+            // Surface a per-file warning so the user knows the
+            // extraction didn't queue — but don't tear down the
+            // upload success.
+            const msg = apiErrorMessage(e);
+            toast.warning(`Extraction couldn't start for one file: ${msg}`);
+          }
+        }
+        toast.message(
+          uploadedIds.length === 1
+            ? "AKKI is reading the document — Monitor will populate when extraction finishes."
+            : `AKKI is reading ${uploadedIds.length} documents — Monitor will populate as extractions complete.`,
+        );
+      }
+
       if (successCount > 0) {
         if (files.length === 1) {
           toast.success(`${lastDoc?.name || "Document"} added to the journal.`);
@@ -413,6 +475,57 @@ export default function UploadModal({ open, onClose, onUploaded }) {
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* AA-slice-3 (2026-05-27) — Extraction prompt. Two
+              checkboxes the user can opt in/out of. Defaults flip
+              ON for board_pack / report / briefing categories
+              (high-signal governance docs); OFF for everything
+              else. Once the user manually toggles either checkbox,
+              the recompute-on-category-change effect stops touching
+              them (extractionTouched=true). */}
+          <div
+            className="bg-white border border-[var(--rule)] rounded-sm p-3"
+            data-testid="upload-extraction-block"
+          >
+            <label className="akki-overline block mb-2 flex items-center gap-1.5">
+              <Sparkles className="w-3 h-3 text-[var(--accent)]" /> AI extraction
+            </label>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-start gap-2.5 text-[13px] text-[var(--ink)] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={extractGoals}
+                  onChange={(e) => {
+                    setExtractionTouched(true);
+                    setExtractGoals(e.target.checked);
+                  }}
+                  className="mt-[3px] accent-[var(--accent)]"
+                  data-testid="upload-extract-goals-checkbox"
+                />
+                <span>Extract goals from this document</span>
+              </label>
+              <label className="flex items-start gap-2.5 text-[13px] text-[var(--ink)] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={extractTasks}
+                  onChange={(e) => {
+                    setExtractionTouched(true);
+                    setExtractTasks(e.target.checked);
+                  }}
+                  className="mt-[3px] accent-[var(--accent)]"
+                  data-testid="upload-extract-tasks-checkbox"
+                />
+                <span>Extract tasks/initiatives from this document</span>
+              </label>
+            </div>
+            <p
+              className="text-[11.5px] italic text-[var(--muted)] mt-2.5 leading-relaxed"
+              data-testid="upload-extraction-helper"
+            >
+              AI will scan for strategic goals and the specific work to deliver them.
+              You can review and edit later in Monitor.
+            </p>
           </div>
 
           {/* Display name — only meaningful for single-file uploads.

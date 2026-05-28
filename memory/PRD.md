@@ -5298,3 +5298,41 @@ Net code 451 lines (under 500). After first compile hit 568, deduped to a single
 
 ### Next per locked sequence
 **AA-slice-3** — UploadModal extension wiring `extract_from_document` after successful upload.
+
+
+---
+
+## Phase AA-slice-3 — Upload modal extraction prompt (2026-05-27) — CLOSED
+
+Wires the AA-slice-2 extraction service into the Z-slice-5 upload modal.
+
+### FE — `UploadModal.jsx`
+- Two checkboxes (`upload-extract-goals-checkbox` + `upload-extract-tasks-checkbox`) inside `upload-extraction-block`.
+- Helper text locked: "AI will scan for strategic goals and the specific work to deliver them. You can review and edit later in Monitor."
+- Category-aware defaults: `["board_pack", "report", "briefing"]` flip both ON; everything else OFF.
+- `extractionTouched` flag halts category-recompute once the user manually toggles either checkbox.
+- After successful upload, `onUpload` iterates uploaded IDs sequentially calling `POST /api/contexts/{cid}/documents/{id}/extract`. Failures surface per-file warning toast; upload success remains.
+
+### BE — `routers/tasks_initiatives.py`
+- New endpoint `POST /api/contexts/{cid}/documents/{doc_id}/extract` → 202 Accepted.
+- `BackgroundTasks` wraps `extract_from_document(...)` so modal doesn't block.
+- 400 when both extract flags are False; 404 when doc missing.
+- `_bg_extract` catches exceptions (auditable via `extraction_failures`).
+- Audit row written: `tasks_initiative.extract_triggered`.
+
+### CI guards — **14/14 GREEN**
+- 6 FE source-strict (testids, helper copy, default list literal, touched-flag early-return, onChange handlers, onUpload trigger gate).
+- 2 BE source-strict (endpoint declaration + status 202 + BackgroundTasks; exception swallow).
+- 6 runtime (202 + correct args, 400/404 paths, audit, sufficient-tasks-flag, force=True forwarded).
+
+### Live multi-viewport DOM probes (1280 / 1024 / 820)
+All identical: Uncategorized → both OFF; Report → both ON; Draft → both OFF; user-toggled then category-changed → user pick preserved.
+
+### Slice budget
+~206 lines product code (93 BE + 113 FE). Within 500-line budget.
+
+### Out of scope (deferred)
+- Akki-commit trigger; email-ingestion trigger; real-time extraction progress UI; "Re-run extraction" button.
+
+### Next per locked sequence
+**AA-slice-4** — Monitor surface rewrite (rich cards + provenance chip "Extracted by Sonnet 4.5 from {doc} · {date}"; manual rows render without chip).
