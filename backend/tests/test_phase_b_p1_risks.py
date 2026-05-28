@@ -116,21 +116,29 @@ def test_streaming_v9_no_repr_exc():
 
 
 def test_streaming_v9_error_format_locked():
-    """Confirms every yielded error event in streaming_v9.py uses the
-    Chunk 3 error-authenticity format (not bare `repr` and not raw
-    `str(exc)` either — exception class name is mandatory)."""
+    """Confirms streaming_v9.py uses the canonical Phase L emitter
+    error API + the exception-authenticity format
+    (`{type(exc).__name__}: {str(exc)[:N]}` — not bare repr, not bare str).
+    Phase L.b.3 (2026-05-27): rewrite of streaming_v9 uses the
+    `PhaseEmitter.error(...)` method (via the `e.error(...)` helper)
+    instead of the legacy `_error_event(...)`."""
     p = "/app/backend/routers/streaming_v9.py"
     import re
     text = open(p, encoding="utf-8").read()
-    # Match any `_error_event(...)` call.
-    calls = re.findall(r"_error_event\((?:[^()]|\([^)]*\))*\)", text)
-    assert calls, "no _error_event(...) calls found"
-    # We expect at least one `{type(exc).__name__}: {str(exc)[:300]}`
-    # form among them.
-    canonical_count = sum(
-        1 for c in calls
-        if "{type(exc).__name__}" in c or "type(" in c
+    # The shared wrap _wrap_synchronous_handler dispatches `e.error(...)`
+    # for both HTTPException and generic Exception branches. The
+    # surface adapters may also raise HTTPException directly, which the
+    # wrap converts. Lock the canonical exception-class format.
+    canonical_pattern = re.search(
+        r"\{type\(exc\)\.__name__\}.*\{str\(exc\)",
+        text,
     )
-    assert canonical_count >= 4, (
-        f"expected ≥4 canonical-form _error_event calls, got {canonical_count}"
+    assert canonical_pattern is not None, (
+        "streaming_v9.py must carry the canonical "
+        "`{type(exc).__name__}: {str(exc)[:N]}` exception format"
+    )
+    # And the emitter error path must be exercised by the wrap helper.
+    assert "await e.error(" in text, (
+        "streaming_v9.py must use `await e.error(...)` from PhaseEmitter "
+        "(Phase L.b.3 emitter contract)"
     )

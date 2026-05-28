@@ -1002,6 +1002,43 @@ async def draft_compilation(
     return {"job_id": job_id, "status": "queued", "agenda_id": agenda["id"]}
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Phase L.b.3 (2026-05-27) — Blocking variant for the SSE wrap.
+#
+# `draft_compilation` returns 202+job_id immediately (job-queue path,
+# preserved for non-streaming callers like cron + worker re-runs).
+# `draft_compilation_blocking` runs the same pre-flight + worker inline
+# and returns the final result dict so the L.b.3 streaming wrap can
+# fire phase events around a single awaitable.
+# ──────────────────────────────────────────────────────────────────────
+async def draft_compilation_blocking(
+    *, context_id: str, cycle_id: Optional[str], ctx: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Synchronous (await-blocking) compile. Returns the worker's
+    result dict — same shape the job-queue path would emit on success."""
+    agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"], cycle_id)
+    if not agenda.get("items"):
+        raise HTTPException(status_code=400, detail="Set an agenda first.")
+    contrib_count = await db.cycle_contributions.count_documents(
+        {"context_id": context_id, "agenda_id": agenda["id"]},
+    )
+    if contrib_count == 0:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "no_contributions",
+                "message": "Add at least one contribution before compiling.",
+            },
+        )
+    return await _draft_compilation_worker(
+        context_id=context_id,
+        cycle_id=cycle_id,
+        account_id=ctx["account"]["id"],
+        context_name=ctx["context"].get("name") or "Akki",
+        executive_name=ctx["account"].get("name") or "—",
+    )
+
+
 async def _draft_compilation_worker(
     *, context_id: str, cycle_id: Optional[str],
     account_id: str, context_name: str, executive_name: str,

@@ -65,6 +65,14 @@ _EMERGENT_WORD_ALLOW_PATTERNS = (
     # Anti-branding regression test (asserts the old placeholder is gone).
     r"the default `<title>` tag must NOT be the old Emergent placeholder",
     r"# The default <title> tag must NOT be the old Emergent placeholder",
+    # Phase U (2026-05-27) — `Emergent Auth` is the operational name
+    # of the platform-provided OAuth integration (analogous to
+    # `emergentintegrations`). Allowed in code comments that describe
+    # the integration internals. User-facing UI strings still use the
+    # provider name ("Continue with Google") and never `Emergent Auth`.
+    r"\bEmergent Auth\b",
+    r"\bEmergent's session-data\b",
+    r"\bEmergent platform\b",
 )
 
 

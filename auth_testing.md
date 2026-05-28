@@ -1,50 +1,68 @@
-# AKKI Sandbox Auth Testing Playbook
+# Auth Testing Playbook — Phase U (OAuth/SSO)
 
-## MongoDB verification
-```
-mongosh
-use akki_sandbox
-db.users.find({role: "superadmin"}).pretty()
-db.users.findOne({email: "admin@akki.ai"}, {password_hash: 1})  // must start with $2b$
-db.users.getIndexes()          // expect unique index on email
-db.invitations.getIndexes()    // expect unique index on token
-db.memberships.find({}).pretty()
-```
+This is the Emergent Auth playbook for OAuth (Google) sign-in. The
+testing agent should read this before testing the OAuth sign-in flow.
 
-## Happy-path curl (external URL for e2e)
+## Phase U Backend Endpoints
+
+- `GET /api/auth/oauth/google/start` — Returns `{redirect_url:
+  "https://auth.emergentagent.com/?redirect=..."}`.
+- `POST /api/auth/oauth/google/finish` — Body `{session_id}`. Backend
+  calls Emergent's session-data endpoint, finds-or-creates the
+  account (`auth_provider="google"`, `password_hash=None`), mints OUR
+  JWT (same Phase J JTI revocation contract), sets cookies, returns
+  `{token, account_id, email, is_new, next_url}`.
+- `POST /api/auth/oauth/microsoft/start` — Returns 503 + locked
+  payload `{error: "microsoft_oauth_not_configured", needs:
+  "user-provided Application ID + Client Secret"}` until creds arrive.
+
+## Test Flow
+
 ```bash
-API=$(grep REACT_APP_BACKEND_URL /app/frontend/.env | cut -d= -f2)
+# 1. Frontend forwards to:
+https://auth.emergentagent.com/?redirect=https://akki-executive.preview.emergentagent.com/oauth/callback
 
-# Register new exec
-curl -sS -c /tmp/c1.txt -X POST $API/api/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"exec.test@akki.ai","password":"TestExec2026!","name":"Test Executive","tenant_name":"Test Bank"}' | jq .
+# 2. After Google auth, browser lands at:
+https://akki-executive.preview.emergentagent.com/oauth/callback#session_id=<random>
 
-# Login (admin)
-curl -sS -c /tmp/ca.txt -X POST $API/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"admin@akki.ai","password":"AkkiAdmin2026!"}' | jq .
+# 3. Frontend `/oauth/callback` POSTs to backend:
+curl -X POST "https://akki-executive.preview.emergentagent.com/api/auth/oauth/google/finish" \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": "<random>"}'
 
-# Me
-curl -sS -b /tmp/ca.txt $API/api/auth/me | jq .
+# Returns: {token, account_id, email, is_new, next_url}
 ```
 
-## Multi-tenancy isolation checks
-- Create two users in separate tenants. User A calls `GET /api/tenants/<tenant-of-B>/members` → must return 403.
-- Remove collaborator → verify membership status flips to "removed" in Mongo.
-- Revoked invitation token cannot be used; expired tokens return 410.
-- Non-owner member calling `PATCH /api/tenants/{id}` → 403.
+## JWT Contract
 
-## Brute force
-- 5 bad logins for the same `{ip}:{email}` → 6th returns 429 (15 min lockout).
+Phase U mints JWTs using the same `core.create_access_token` /
+`create_refresh_token` helpers as the magic-link path. `auth_provider`
+is stamped on the account doc so future flows (e.g. password reset
+gating) can branch on whether the account has a password.
 
-## Export
-- Owner `POST /api/tenants/{id}/export` → JSON file includes tenant, memberships, users (no password hashes), audit_log.
+## Microsoft OAuth (deferred)
 
-## MFA
-- `POST /api/auth/mfa/setup` → returns QR data URL and secret
-- Compute TOTP with `python -c "import pyotp; print(pyotp.TOTP('<secret>').now())"`
-- `POST /api/auth/mfa/verify` with that code → `{mfa_enabled: true}`
+Microsoft route returns 503 until `MICROSOFT_OAUTH_CLIENT_ID` +
+`MICROSOFT_OAUTH_CLIENT_SECRET` are added to backend/.env. The 503
+payload is locked so the frontend can display "coming soon" UX.
 
-## LLM scaffolding probe
-- `POST /api/tenants/{id}/llm/probe` with `{"module":"signals","query":"hello"}` → returns layered mock JSON with `mode: "mock-scaffolding"`.
+## Acceptance Gates
+
+- `GET /api/auth/oauth/google/start` → 200 with redirect_url
+- `POST /api/auth/oauth/google/finish` invalid session_id → 400
+- `POST /api/auth/oauth/google/finish` valid session_id:
+  - creates new account if email novel (`auth_provider="google"`)
+  - signs in existing account if email matches
+  - mints a JWT that passes `get_current_account` validation
+- `POST /api/auth/oauth/microsoft/start` → 503 with locked payload
+- Sign-in page renders Google + Microsoft buttons at 1280/1024/768
+- Clicking Google forwards to `auth.emergentagent.com`
+- After Google auth, frontend `/oauth/callback` lands the user at
+  `/app/`
+- Zero new console errors on the callback path
+
+## Test Identities
+
+Use any Google account via Emergent Auth. The admin/test credentials
+in `/app/memory/test_credentials.md` apply to password-based test
+accounts; OAuth-created accounts are passwordless.

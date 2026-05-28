@@ -66,6 +66,8 @@ const AdminUsers = lazy(() => import("@/pages/admin/AdminUsers"));
 // Phase S (2026-05-27) — Password reset pages (public, no auth).
 const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
 const ResetPassword  = lazy(() => import("@/pages/ResetPassword"));
+// Phase U (2026-05-27) — OAuth callback handler.
+const OAuthCallback  = lazy(() => import("@/pages/OAuthCallback"));
 const CohortCopyEditor = lazy(() => import("@/pages/admin/CohortCopyEditor"));
 const EarlyAccessOptIn = lazy(() => import("@/pages/EarlyAccessOptIn"));
 const Questions = lazy(() => import("@/pages/Questions"));
@@ -321,6 +323,9 @@ function App() {
           {/* Phase S (2026-05-27) — Password reset (public, no auth). */}
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password/:token" element={<ResetPassword />} />
+          {/* Phase U (2026-05-27) — OAuth callback. PUBLIC route, no auth
+              gate (the session_id exchange is the auth event). */}
+          <Route path="/oauth/callback" element={<OAuthCallback />} />
           {/* M.4: legacy /sandbox/legacy + /sandbox/generating + /quick-results
               retired. Phase J (2026-05-12): /sandbox is now the new
               Generative Sandbox MVP. Legacy /legacy-sandbox routes

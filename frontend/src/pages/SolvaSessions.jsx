@@ -312,20 +312,21 @@ export default function SolvaSessions() {
 function StatusPill({ status }) {
   const s = (status || "").toLowerCase();
   // Chunk 13 (SV-04) — 4-bucket palette per spec:
-  //   ACTIVE green · PAUSED amber · COMPLETE blue · REFUSED grey.
-  // Legacy raw statuses (blocked_hard, blocked_soft, abandoned) still
-  // map to a sensible chip in case a session was migrated mid-flight.
+  //   ACTIVE green · PAUSED amber · COMPLETE blue · REFUSED light purple.
+  // W4.2 (2026-05-27) — REFUSED + neutral-state fallbacks swap
+  // grey → light brand purple (matches W4.1 "Active" marker + Phase V
+  // AdminUsers precedent). `--ned-purple` = #6B46C1 = rgb(107,70,193).
   const palette = {
     active:        { bg: "rgba(50,140,90,0.12)",  fg: "rgb(34,90,55)",     label: "Active" },
     paused:        { bg: "rgba(180,130,50,0.15)", fg: "rgb(120,80,15)",    label: "Paused" },
     complete:      { bg: "rgba(50,100,180,0.12)", fg: "rgb(35,75,140)",    label: "Complete" },
-    refused:       { bg: "rgba(0,0,0,0.07)",      fg: "var(--graphite)",   label: "Refused" },
+    refused:       { bg: "rgba(107,70,193,0.10)", fg: "var(--ned-purple)", label: "Refused" },
     // Legacy raw-status fallbacks kept for forward compatibility.
-    blocked_hard:  { bg: "rgba(0,0,0,0.07)",      fg: "var(--graphite)",   label: "Refused" },
+    blocked_hard:  { bg: "rgba(107,70,193,0.10)", fg: "var(--ned-purple)", label: "Refused" },
     blocked_soft:  { bg: "rgba(180,130,50,0.15)", fg: "rgb(120,80,15)",    label: "Paused" },
-    abandoned:     { bg: "rgba(0,0,0,0.07)",      fg: "var(--graphite)",   label: "Refused" },
+    abandoned:     { bg: "rgba(107,70,193,0.10)", fg: "var(--ned-purple)", label: "Refused" },
     completed:     { bg: "rgba(50,100,180,0.12)", fg: "rgb(35,75,140)",    label: "Complete" },
-  }[s] || { bg: "rgba(0,0,0,0.05)", fg: "var(--graphite)", label: (s || "—").toUpperCase() };
+  }[s] || { bg: "rgba(107,70,193,0.10)", fg: "var(--ned-purple)", label: (s || "—").toUpperCase() };
   return (
     <span
       data-testid={`solva-sessions-status-pill-${s || "unknown"}`}

@@ -1,32 +1,40 @@
 /**
- * Phase L.b.2 (2026-05-27) — Synthesis preparation interstitial.
+ * Phase L.b.3 (2026-05-27) — Synthesis preparation interstitial.
  *
  * The Solva session lands here after DEPTH_Q3 while the orchestrator
  * runs the synthesis pass server-side. This component renders the
- * locked Claude-reference `<StreamingLogScene>` walking the
- * `solva-synthesis` 6-phase script via `usePhasedTimer`.
+ * locked Claude-reference `<StreamingLogScene>` driven by real
+ * backend SSE events flowing from the synthesis turn POST.
  *
- * No real progress data — the orchestrator runs synchronously on the
- * server. The timer cadence is calibrated against observed synthesis
- * latency (~8-12s) so the user sees natural phase advancement.
+ * The parent (`SolvaSession.jsx`) owns the `useStreamingProgress`
+ * driver — it fires the synthesis turn through the streaming
+ * endpoint and passes the resulting `state` down via the `state`
+ * prop. When `state.status === "complete"` the parent dispatches
+ * `preparingDone(...)` based on the server session record.
  *
- * When the parent dispatches `preparingDone`, the component unmounts;
- * `usePhasedTimer` cleans up on unmount via its `useEffect` return.
+ * Backwards compatibility: when `state` is undefined the component
+ * falls back to an empty placeholder so it doesn't crash if any
+ * future call site forgets to pass the prop.
  *
  * `prefers-reduced-motion` users: `StreamingLogScene` already honours
  * reduced motion via the CSS keyframe + 200ms fade-in tokens.
  */
-import React, { useEffect } from "react";
+import React from "react";
 import StreamingLogScene from "@/components/transitions/StreamingLogScene";
-import usePhasedTimer from "@/hooks/usePhasedTimer";
 import { FONT, TOKEN } from "./tokens";
 
-export default function PreparingInterstitial({ testId = "solva-preparing" }) {
-  const { state, start } = usePhasedTimer();
+const EMPTY_STATE = {
+  surface: "solva-synthesis",
+  phases: [],
+  activeIndex: -1,
+  completedIndexes: new Set(),
+  result: null,
+  error: null,
+  status: "connecting",
+};
 
-  useEffect(() => {
-    start("solva-synthesis", { stepMs: 1500 });
-  }, [start]);
+export default function PreparingInterstitial({ testId = "solva-preparing", state }) {
+  const effectiveState = state || EMPTY_STATE;
 
   return (
     <div
@@ -53,7 +61,7 @@ export default function PreparingInterstitial({ testId = "solva-preparing" }) {
 
       <StreamingLogScene
         surfaceId="streaming-log-solva-synthesis"
-        state={state}
+        state={effectiveState}
         emptyHint="Preparing..."
       />
     </div>

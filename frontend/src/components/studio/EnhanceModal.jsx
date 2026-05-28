@@ -27,16 +27,18 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, API_BASE } from "@/lib/api";
 import {
   Loader2, Download, AlertCircle, Wand2, Upload, MessageSquare,
   AlertTriangle, Check, ChevronRight, ChevronDown, GitBranch, Eye,
 } from "lucide-react";
 import { toast } from "sonner";
-// Phase L.b.2 (2026-05-27) — Replace the spinner with the locked
-// Claude-reference StreamingLogScene driven by usePhasedTimer.
+// Phase L.b.3 (2026-05-27) — Real backend-driven SSE for Enhance.
+// Multipart POST is fired through useStreamingProgress (FormData
+// passthrough added in L.b.3 hook upgrade) so phase events bracket
+// the actual two-pass LLM work inside `_run_enhance`.
 import StreamingLogScene from "@/components/transitions/StreamingLogScene";
-import usePhasedTimer from "@/hooks/usePhasedTimer";
+import useStreamingProgress from "@/hooks/useStreamingProgress";
 
 const FORMAT_OPTIONS = {
   deck:   [["pptx", "PPTX"], ["pdf", "PDF"], ["auto", "Auto"]],   // PDF soft-forks to PPTX server-side
@@ -183,11 +185,10 @@ export default function EnhanceModal({ open, onClose, kind, contextId, briefId =
   const pollRef = useRef(null);
   const startedAtRef = useRef(null);
 
-  // Phase L.b.2 (2026-05-27) — Streaming-log driver for the running
-  // phase. usePhasedTimer walks the locked `work-studio-enhance` phase
-  // script while the multipart POST + polling proceeds in the existing
-  // code path.
-  const { state: lbState, start: lbStart, complete: lbComplete, error: lbError, reset: lbReset } = usePhasedTimer();
+  // Phase L.b.3 (2026-05-27) — Real backend-driven SSE for Enhance.
+  // Multipart upload streamed through `useStreamingProgress`. State
+  // updates trigger the useEffect below for completion/error handling.
+  const { state: lbState, stream: lbStream, reset: lbReset } = useStreamingProgress();
 
   // Reset on open/close.
   useEffect(() => {
@@ -219,6 +220,7 @@ export default function EnhanceModal({ open, onClose, kind, contextId, briefId =
         pollRef.current = null;
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // -------------------------------------------------------------------
@@ -317,71 +319,48 @@ export default function EnhanceModal({ open, onClose, kind, contextId, briefId =
     setErrMsg(null);
     setRefusalText(null);
     startedAtRef.current = Date.now();
-    lbStart("work-studio-enhance", { stepMs: 8000 });
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("instructions", instructions.trim());
-      fd.append("output_format", outputFormat);
-      // Workstream B.8 — browser sets multipart boundary itself.
-      const { data } = await api.post(
-        `/contexts/${contextId}/work-studio/enhance/${kind}`,
-        fd,
-      );
-      setExportId(data.export_id);
-      setStatus(data);
-      // Server may have already failed (thin-input deterministic refusal).
-      if (data.status === "failed") {
-        // Fetch the row once more to pull refusal_text in.
-        try {
-          const r2 = await api.get(
-            `/contexts/${contextId}/work-studio/exports/${data.export_id}`,
-          );
-          setStatus(r2.data);
-          setErrMsg(r2.data.error || "Enhance refused.");
-          setRefusalText(r2.data.refusal_text || null);
-        } catch (_e) {
-          setErrMsg(data.error || "Enhance refused.");
-        }
-        setPhase("failed");
-        lbError("enhance_refused", data.error || "Enhance refused.");
-        return;
-      }
-      // Begin polling.
-      pollRef.current = setInterval(async () => {
-        try {
-          const r = await api.get(
-            `/contexts/${contextId}/work-studio/exports/${data.export_id}`,
-          );
-          setStatus(r.data);
-          if (r.data.status === "complete") {
-            setDownloadToken(r.data.download_token);
-            setFileName(r.data.file_name);
-            setContinueChatId(r.data.continue_chat_id || null);
-            setContinueDocId(r.data.continue_doc_id || null);
-            setPhase("complete");
-            lbComplete(r.data);
-            clearInterval(pollRef.current); pollRef.current = null;
-          } else if (r.data.status === "failed") {
-            setErrMsg(r.data.error || "Enhance failed.");
-            setRefusalText(r.data.refusal_text || null);
-            setPhase("failed");
-            lbError("enhance_failed", r.data.error || "Enhance failed.");
-            clearInterval(pollRef.current); pollRef.current = null;
-          }
-        } catch (pe) {
-          setErrMsg(apiErrorMessage(pe));
-          setPhase("failed");
-          lbError("enhance_poll_failed", apiErrorMessage(pe));
-          clearInterval(pollRef.current); pollRef.current = null;
-        }
-      }, 2500);
-    } catch (e2) {
-      setErrMsg(apiErrorMessage(e2));
-      setPhase("failed");
-      lbError("enhance_post_failed", apiErrorMessage(e2));
-    }
+    lbReset();
+    // Phase L.b.3 — fire multipart through the SSE pipe. The hook
+    // detects FormData and skips JSON.stringify + Content-Type so the
+    // browser sets the multipart boundary itself. Completion handled
+    // by the useEffect below.
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("instructions", instructions.trim());
+    fd.append("output_format", outputFormat);
+    lbStream(
+      `${API_BASE}/contexts/${contextId}/work-studio/enhance/${kind}/stream`,
+      { method: "POST", body: fd },
+    ).catch(() => { /* error state handled by useEffect */ });
   };
+
+  // Phase L.b.3 — React to stream lifecycle. On `complete`, the SSE
+  // payload is the final `work_studio_exports` row — populate the
+  // download/continue-chat affordances + flip to phase=complete. On
+  // `error`, capture the error message + refusal text.
+  useEffect(() => {
+    if (lbState.status === "complete" && lbState.result) {
+      const data = lbState.result;
+      setExportId(data.id || data.export_id);
+      setStatus(data);
+      if (data.status === "complete") {
+        setDownloadToken(data.download_token);
+        setFileName(data.file_name);
+        setContinueChatId(data.continue_chat_id || null);
+        setContinueDocId(data.continue_doc_id || null);
+        setPhase("complete");
+      } else {
+        // status === "failed" (e.g. thin-input refusal post-LLM)
+        setErrMsg(data.error || "Enhance failed.");
+        setRefusalText(data.refusal_text || null);
+        setPhase("failed");
+      }
+    } else if (lbState.status === "error") {
+      setErrMsg(lbState.error?.message || "Enhance failed.");
+      setPhase("failed");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lbState.status]);
 
   const onDownload = async () => {
     if (!exportId || !downloadToken) return;

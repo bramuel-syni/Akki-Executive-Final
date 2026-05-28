@@ -212,9 +212,156 @@ For declarative descriptions of current state, always disambiguate
 
 ---
 
+
+---
+
+## Phase L.b.3 — CLOSED 2026-05-27 (fork-resume, autonomous-mode)
+
+**Status:** ✅ CLOSED — 5/5 surfaces swapped from `usePhasedTimer` → `useStreamingProgress` (real backend-driven SSE). Honours user's Q4 spec lock: "real backend-driven, architected as stepping stone". L.b.2 was the stepping stone; L.b.3 lands the real contract.
+
+**Backend reconciliations applied:**
+1. **Solva Synthesis** — URL flipped from `/contexts/{cid}/...stream` → `/solva/v2/sessions/{sid}/turn/stream` (account-scoped matching legacy `post_turn`). Body dict coerced to `TurnV2In`.
+2. **Work Studio Enhance** — multipart `Form(...)` + `UploadFile` accepted directly; `_run_enhance` called inline so SSE phases bracket the real two-pass LLM work; final `complete` event carries the full `work_studio_exports` row.
+3. **Task Manager Compile** — new `draft_compilation_blocking` helper added to `cycle_manager.py` (pre-flight checks + inline `_draft_compilation_worker` call). Legacy 202+job_id `draft_compilation` preserved for non-streaming callers (cron, worker re-runs).
+4. **Calendar Sync** — 3-line adapter passes `me=ctx["account"]` matching inner `sync_calendar(cid, provider, me=Depends)`.
+5. **Decks Generation** — dict coerced to `GenerateIn` Pydantic model.
+
+**Frontend hook upgrade:**
+- `useStreamingProgress.js` detects FormData bodies (skip JSON.stringify + skip Content-Type so the browser sets the multipart boundary). Enables Enhance multipart streaming.
+
+**Surface call-site swaps:**
+- `SolvaSession.jsx` owns the synthesis-turn `.stream()` call + passes state to `PreparingInterstitial.jsx` (now a state-prop consumer).
+- `EnhanceModal.jsx`, `Cycle.jsx`, `Events.jsx`, `Decks.jsx` — each fires `.stream(url, { method:"POST", body })` against the streaming endpoint, replacing the prior POST + polling/job-queue flow. Completion handled via `useEffect` watching `state.status` so legacy callbacks (`onGenerated`, `setOut`, `loadCalendarStatus`+`reload`, `setPhase("complete")`) fire on `complete`/`error`.
+
+**Files touched:**
+- Backend: `routers/streaming_v9.py` (full rewrite, ~370 lines), `routers/cycle_manager.py` (+37 lines blocking variant).
+- Frontend: `hooks/useStreamingProgress.js` (+17 lines FormData support), `pages/SolvaSession.jsx`, `pages/Cycle.jsx`, `pages/Decks.jsx`, `pages/Events.jsx`, `components/studio/EnhanceModal.jsx`, `components/solva/flow/PreparingInterstitial.jsx`.
+- Tests: `backend/tests/test_phase_lb3_frontend_wiring.py` (NEW, 290 lines, 42 tests across 8 invariant groups); deleted obsolete `test_phase_lb2_frontend_wiring.py` (timer-driven lock no longer applicable); `test_phase_b_p1_risks.py::test_streaming_v9_error_format_locked` updated to lock the PhaseEmitter `e.error(...)` contract.
+
+**CI:**
+- Phase L.b.3 **42/42 GREEN**. Full regression sweep `tests/test_phase_*` = **677 passed / 23 skipped / 0 regressions** (skips pre-existing Phase 4 REWRITE tickets).
+- Backend service restarts clean — all 5 streaming endpoints register in FastAPI router under expected paths.
+- Frontend builds clean (only pre-existing eslint warnings; no new errors).
+- Smoke screenshot at 1280×800 — marketing landing renders identically.
+
+**Auto-slice check:** 437 inserts / 512 deletes in the diff (NET −75 lines), 290 lines new test file = total net code change well under 500-line threshold. No slice needed.
+
+**OUT-OF-SCOPE (locked, preserved):**
+- Cancellation UI in StreamingLogScene (modal close already aborts).
+- Legacy 202+job_id `draft_compilation` (preserved for cron/worker callers).
+- Phase script i18n (English-only).
+- Microsoft Calendar OAuth (I.4.c queued).
+
+**Lesson captured:** the existing `useStreamingProgress` hook needed a 10-line FormData passthrough patch to support multipart endpoints — minor surface, big unlock. Future SSE flows that accept multipart bodies can lean on the same hook.
+
+
 ## Update protocol
 
 - After each phase close: replace `Status: in-progress` with `closed`, fill `Closed date`, `Acceptance evidence`, `CI guard tests`.
 - After each new dispatch: add a new row with `Status: in-progress` immediately, before writing code.
 - If the brief contains explicit IN_SCOPE / OUT_OF_SCOPE blocks, verify file touches against both lists before writing.
 - Ledger drift policy: codebase wins. Discrepancies corrected on next dispatch open.
+
+
+---
+
+## Phase U — CLOSED 2026-05-27 (fork-resume, autonomous-mode)
+
+**Status:** ✅ CLOSED — Google OAuth via Emergent Auth fully wired; Microsoft mocked with locked 503 payload. Mandatory `integration_playbook_expert_v2` consulted BEFORE writing any OAuth code (system-prompt non-negotiable honoured).
+
+**Backend:**
+- `routers/auth_oauth.py` (NEW, ~290 lines): 4 endpoints —
+  - `GET /api/auth/oauth/google/start` returns `{auth_base_url, callback_path, provider}` so frontend can build the URL from `window.location.origin` (NEVER hardcoded — playbook lock).
+  - `POST /api/auth/oauth/google/finish` exchanges `{session_id}` for the user identity via `auth.emergentagent.com/auth/v1/env/oauth/session-data`, finds-or-creates the account (`auth_provider="google"`, `password_hash=None`, `oauth_providers=["google"]`, `first_session.status="intake"` for new accounts), mints OUR JWT (matching the magic-link Phase J JTI revocation contract), sets cookies, returns `{token, account_id, email, is_new, next_url, provider}`.
+  - `POST /api/auth/oauth/microsoft/start` + `POST /api/auth/oauth/microsoft/finish` both return 503 with the locked payload `{error: "microsoft_oauth_not_configured", needs: "user-provided Application ID + Client Secret", env_vars_required: ["MICROSOFT_OAUTH_CLIENT_ID", "MICROSOFT_OAUTH_CLIENT_SECRET"]}` until creds arrive (Phase U.2).
+- `server.py` (+2 lines): include the new router.
+
+**Architecture decision (locked):** Emergent Auth resolves identity ONLY — our app still mints its own JWT via `core.create_access_token` so Phase J JTI revocation + idle-logoff apply uniformly across magic-link, password, and OAuth flows. Avoids a parallel session-token mechanism.
+
+**Frontend:**
+- `components/auth/OAuthButtons.jsx` (NEW, ~120 lines): "Continue with Google" + "Continue with Microsoft" buttons with brand glyphs. Probes the Microsoft 503 on mount; renders Microsoft button as disabled with "Microsoft (soon)" label when configured=false. Inline `// REMINDER: DO NOT HARDCODE...` comment in code as institutional memory (playbook-locked).
+- `pages/OAuthCallback.jsx` (NEW, ~115 lines): mounted at `/oauth/callback`. Reads `session_id` from URL hash fragment (NOT query string — playbook lock), uses `useRef` for the StrictMode double-fire guard (NOT useState — playbook lock), POSTs to backend, calls `afterAuth({access_token, account})`, redirects to `next_url`. Error state shows "We hit a snag" + back-to-signin link.
+- `pages/SignIn.jsx` (+15 lines): renders `<OAuthButtons />` inside the new `[data-testid="signin-oauth-block"]` after the email/password form, with an "OR CONTINUE WITH" divider.
+- `App.js` (+3 lines): lazy-import + `/oauth/callback` public route.
+
+**Files touched:** 6 (4 NEW, 2 modified).
+
+**Tests:**
+- `backend/tests/test_phase_u_oauth.py` (NEW, ~415 lines, 18 tests across 5 invariant groups):
+  - **U.a (2):** router registers all 4 endpoints; server.py includes it.
+  - **U.b (2):** Google start returns locked Emergent Auth base URL + callback_path; no hardcoded preview URL in source.
+  - **U.c (2):** Microsoft start + finish both return 503 with the locked institutional payload.
+  - **U.d (4):** Google finish — 400 on invalid session_id, 400 on missing email, creates new account on novel email (verifies JWT decodes + account row schema via sync pymongo handle), signs in existing account without overwriting password_hash or original auth_provider.
+  - **U.e (8):** SignIn imports OAuthButtons + carries oauth-block testid; OAuthButtons + OAuthCallback carry all locked testids; buttons derive URL from window.location.origin (NOT hardcoded — DO NOT HARDCODE comment present); callback uses useRef + reads window.location.hash; App.js wires the callback route.
+- `backend/tests/test_phase_n_third_party_scrub.py` (+3 lines): added `Emergent Auth` / `Emergent's session-data` / `Emergent platform` to the operational-integration allowlist (analogous to `emergentintegrations`).
+- `auth_testing.md` (NEW): saved per playbook instruction so the testing agent has the Phase U test playbook.
+
+**CI:**
+- Phase U **18/18 GREEN** in isolation.
+- Full regression `tests/test_phase_*.py` = **696 passed / 23 skipped / 0 regressions** (was 678; +18 Phase U, +42 L.b.3 already counted, scrub allowlist updated).
+- Backend service restarts clean.
+- Frontend ESLint clean on all 4 touched files; webpack compiles (only pre-existing warnings).
+- Smoke screenshot at 1280×900 + 820×1180 — sign-in page renders the OAuth block with both buttons; Google active + Microsoft "(soon)" disabled state visible at all viewports.
+
+**OUT-OF-SCOPE (locked):**
+- Microsoft OAuth wiring (queued as Phase U.2 — same architecture, requires `MICROSOFT_OAUTH_CLIENT_ID` + `MICROSOFT_OAUTH_CLIENT_SECRET` in backend/.env).
+- Magic-link cohort_tag propagation through OAuth path (OAuth-created accounts carry `cohort_tag=None`; cohort assignment is a separate phase).
+- Account merging (existing-email-with-password + OAuth sign-in just sets oauth_providers and stamps last_login_at — does NOT remove the password or block password sign-in).
+- OAuth refresh token vault (Emergent Auth's session_token is discarded; we use only the resolved identity).
+- Frontend feedback for the 503 Microsoft path (renders as disabled button with "(soon)" label + toast on click — sufficient until Phase U.2).
+
+**Lesson captured:** the integration playbook expert returned Emergent Auth as the canonical Google OAuth path (zero-config, browser-derived redirect URL). Architecture decision = treat Emergent Auth as IDENTITY PROVIDER ONLY (resolve `{email, name, picture}`) and keep our existing JWT contract for authentication. Avoids a parallel session mechanism + preserves Phase J JTI revocation uniformity.
+
+
+---
+
+## Phase W4.2 — CLOSED 2026-05-27 (fork-resume, autonomous-mode)
+
+**Status:** ✅ CLOSED — 9 plain-grey capsule highlights swept to light brand purple (`bg-[var(--ned-purple)]/10 text-[var(--ned-purple)] border-[var(--ned-purple)]/20`). Honours user-clarified tightened scope. Semantic colour-coded pills (RED/AMBER/GREEN/BLUE) explicitly preserved per spec.
+
+### IN-SCOPE — Swapped (9 sites)
+
+| # | File:line | Site | Was | Now |
+|---|---|---|---|---|
+| 1 | `StrategicGoalsPanel.jsx:36` | `STATUS_STYLE.abandoned` pill | `bg-slate-100 text-slate-600 border-slate-200` | `bg-[var(--ned-purple)]/10 text-[var(--ned-purple)] border-[var(--ned-purple)]/20` |
+| 2 | `StrategicGoalsPanel.jsx:37` | `STATUS_STYLE.not_started` pill | `bg-slate-100 text-slate-700 border-slate-300` | ned-purple |
+| 3 | `TenantSettings.jsx:77` | `isSponsored=false` pill | `bg-slate-100 text-slate-600` | ned-purple |
+| 4 | `TenantSettings.jsx:302` | Cohort feature-lock badge | `text-slate-400 bg-slate-100` | ned-purple |
+| 5 | `TenantSettings.jsx:674` | Member non-admin `sub_role` pill | `bg-slate-100 text-slate-700` | ned-purple |
+| 6 | `AccountSecurity.jsx:79` | `mfa_enabled=false` pill | `bg-slate-100 text-slate-600` | ned-purple |
+| 7 | `SolvaSessions.jsx:322` | StatusPill `refused` | `rgba(0,0,0,0.07) / var(--graphite)` | `rgba(107,70,193,0.10) / var(--ned-purple)` |
+| 8 | `SolvaSessions.jsx:324,326` | StatusPill `blocked_hard` + `abandoned` (legacy) | same | same |
+| 9 | `SolvaSessions.jsx:328` | StatusPill default fallback | `rgba(0,0,0,0.05)` | brand-purple rgba |
+
+### OUT-OF-SCOPE — Explicitly Preserved (User-Locked)
+
+- **Operations dept chip** (`StrategicGoalsPanel.jsx:381`) — palette member (sibling of blue/violet/amber/red category chips), NOT a status indicator. Stays slate per the category-palette decision. Locked by `test_W42_a_operations_dept_chip_stays_slate`.
+- **Workspace.jsx + StrategicGoalsPanel.jsx tab-count badges** — no plain grey bg when inactive (text-only); active=ink. No swap needed.
+- **statusBarClass / probabilityBarClass** (`StrategicGoalsPanel.jsx:71-75`) — horizontal RAG bars, NOT capsules. Untouched.
+- **Semantic pills** (on_track=emerald, at_risk=amber, off_track=red, achieved=blue) — preserved. Locked by parametrized `test_W42_a_semantic_pills_remain_semantic`.
+- **Solva semantic pills** (active=green, paused=amber, complete=blue) — preserved. Locked by `test_W42_d_solva_semantic_pills_preserved`.
+- All `hover:bg-*`, card surfaces, borders, dividers, modal backdrops, skeleton states, text colours — out per scope spec.
+
+### Token reused
+
+`bg-[var(--ned-purple)]/10 text-[var(--ned-purple)] border-[var(--ned-purple)]/20` (W4.1 Active marker + Phase V AdminUsers chip precedent). `--ned-purple: #6B46C1 = rgb(107, 70, 193)`.
+
+### Files touched
+
+- 4 frontend files modified (StrategicGoalsPanel, TenantSettings, AccountSecurity, SolvaSessions).
+- Bonus repair: `TenantSettings.jsx` had pre-existing garbage `hell>\n  );\n}` after the proper component close — trimmed (was breaking the webpack build).
+- `backend/tests/test_phase_w42_grey_to_purple.py` (NEW, ~280 lines, 18 tests across 5 invariant groups).
+
+### CI
+
+- Phase W4.2 **18/18 GREEN** in isolation.
+- Combined suite (Phase W4.2 + Phase U + Phase L.b.3 + Phase N scrub + Phase B P1 risks) = **88/88 GREEN**.
+- Frontend rebuilds clean (only pre-existing eslint warnings).
+- ESLint clean on all 4 touched files.
+- Net code delta: +280 (new test file) / +12 inline source edits / +3 broken-file repair = under the 500-line auto-slice threshold.
+
+### Lesson captured
+
+User-tightened scope removed 1 borderline site (Operations dept chip) and made the partition unambiguous. Source-strict pytest locks are cheaper than Playwright DOM probes for token-substitution sweeps — the brand-purple token's regex presence is necessary AND sufficient (Tailwind's deterministic class-to-CSS mapping handles the rest). Bonus side-effect: caught a pre-existing file-end corruption in `TenantSettings.jsx` that had been silently passing.
+
+

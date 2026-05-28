@@ -33,8 +33,10 @@ const STATUS_STYLE = {
   at_risk:   { label: "At risk",    tone: "text-amber-700 bg-amber-50 border-amber-200" },
   off_track: { label: "Off track",  tone: "text-red-700 bg-red-50 border-red-200" },
   achieved:  { label: "Achieved",   tone: "text-blue-700 bg-blue-50 border-blue-200" },
-  abandoned: { label: "Abandoned",  tone: "text-slate-600 bg-slate-100 border-slate-200" },
-  not_started: { label: "Not Started", tone: "text-slate-700 bg-slate-100 border-slate-300" },
+  // W4.2 (2026-05-27) — neutral states swap grey → light brand purple
+  // (matches W4.1 "Active" marker + Phase V AdminUsers precedent).
+  abandoned: { label: "Abandoned",  tone: "text-[var(--ned-purple)] bg-[var(--ned-purple)]/10 border-[var(--ned-purple)]/20" },
+  not_started: { label: "Not Started", tone: "text-[var(--ned-purple)] bg-[var(--ned-purple)]/10 border-[var(--ned-purple)]/20" },
 };
 
 // T2.4 (2026-05-25) — X8 status filter tabs (6 buckets).

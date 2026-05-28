@@ -20,7 +20,7 @@
  */
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, API_BASE } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import AppShell from "@/components/layout/AppShell";
 import {
@@ -31,9 +31,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-// Phase L.b.2 (2026-05-27) — StreamingLogScene driver for the sync flow.
+// Phase L.b.3 (2026-05-27) — Real backend-driven SSE for calendar sync.
 import StreamingLogScene from "@/components/transitions/StreamingLogScene";
-import usePhasedTimer from "@/hooks/usePhasedTimer";
+import useStreamingProgress from "@/hooks/useStreamingProgress";
 
 
 const EVENT_TYPES = [
@@ -293,8 +293,8 @@ export default function Events() {
   const [disconnecting,  setDisconnecting]  = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
-  // Phase L.b.2 (2026-05-27) — Streaming-log driver for the sync flow.
-  const { state: lbState, start: lbStart, complete: lbComplete, error: lbError, reset: lbReset } = usePhasedTimer();
+  // Phase L.b.3 (2026-05-27) — Backend-driven SSE for sync flow.
+  const { state: lbState, stream: lbStream, reset: lbReset } = useStreamingProgress();
 
   const loadCalendarStatus = useCallback(async () => {
     if (!cid) return;
@@ -312,27 +312,14 @@ export default function Events() {
     if (!cid) return null;
     setSyncing(true);
     lbReset();
-    lbStart("events-calendar-sync", { stepMs: 1100 });
-    try {
-      const { data } = await api.post(
-        `/contexts/${cid}/events/sync-calendar?provider=google`,
-      );
-      await Promise.all([loadCalendarStatus(), reload()]);
-      lbComplete(data);
-      return data;
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn("[Events] calendar sync failed:", err?.response?.data?.detail || err?.message);
-      lbError("calendar_sync_failed", err?.response?.data?.detail || err?.message || "Calendar sync failed.");
-      await loadCalendarStatus();
-      return null;
-    } finally {
-      setSyncing(false);
-    }
-  // reload is defined below — declared as a let-then-assigned-by-useCallback
-  // pattern would be cleaner but we keep this dependency list permissive.
+    // The stream callback resolves when SSE ends; useEffect below
+    // handles complete / error.
+    lbStream(
+      `${API_BASE}/contexts/${cid}/events/sync-calendar/stream?provider=google`,
+      { method: "POST" },
+    ).catch(() => { /* error state handled by useEffect */ });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cid, loadCalendarStatus]);
+  }, [cid, lbStream, lbReset]);
 
   const connectGoogle = useCallback(async () => {
     if (!cid) return;
@@ -383,6 +370,23 @@ export default function Events() {
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => { loadCalendarStatus(); }, [loadCalendarStatus]);
+
+  // Phase L.b.3 (2026-05-27) — React to stream lifecycle: complete →
+  // refresh calendar status + event list; error → log + refresh
+  // status. `setSyncing(false)` always runs on terminal state.
+  useEffect(() => {
+    if (lbState.status === "complete" || lbState.status === "error") {
+      (async () => {
+        await Promise.all([loadCalendarStatus(), reload()]);
+        setSyncing(false);
+      })();
+      if (lbState.status === "error") {
+        // eslint-disable-next-line no-console
+        console.warn("[Events] calendar sync failed:", lbState.error?.message);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lbState.status]);
 
   // Phase I.4.c (2026-05-27) — Auto-sync once when the OAuth callback
   // redirects with ?calendar_connected=google. Then strip the param.

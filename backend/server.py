@@ -70,6 +70,7 @@ from routers import events as events_router  # noqa: E402
 from routers import oauth_google as oauth_google_router  # noqa: E402
 from routers import admin_cohort as admin_cohort_router  # noqa: E402
 from routers import auth_magic as auth_magic_router  # noqa: E402
+from routers import auth_oauth as auth_oauth_router  # noqa: E402  # Phase U (2026-05-27)
 from routers import billing as billing_router  # noqa: E402
 # Phase Y (2026-05-27) — First-login onboarding briefs router.
 from routers import onboarding_briefs as onboarding_briefs_router  # noqa: E402
@@ -205,6 +206,7 @@ app.include_router(events_router.router)
 app.include_router(oauth_google_router.router)
 app.include_router(admin_cohort_router.router)
 app.include_router(auth_magic_router.router)
+app.include_router(auth_oauth_router.router)  # Phase U — Google + Microsoft (mock) OAuth sign-in
 app.include_router(billing_router.router)
 # Phase Y (2026-05-27) — onboarding briefs.
 app.include_router(onboarding_briefs_router.router)

@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Logo from "@/components/brand/Logo";
 import { ArrowRight, ShieldCheck, Quote } from "lucide-react";
+// Phase U (2026-05-27) — OAuth sign-in buttons (Google + Microsoft).
+import OAuthButtons from "@/components/auth/OAuthButtons";
 
 /**
  * SignIn — editorial-grade entry point. Cream background, Georgia headline,
@@ -186,6 +188,20 @@ export default function SignIn() {
                 )}
               </Button>
             </form>
+
+            {/* Phase U (2026-05-27) — OAuth sign-in. Google is wired via
+                Emergent Auth (no creds required); Microsoft surfaces a
+                503 mock until creds arrive. */}
+            <div className="mt-7" data-testid="signin-oauth-block">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="flex-1 h-px bg-[var(--rule)]" aria-hidden="true" />
+                <span className="text-[10.5px] uppercase tracking-wider text-[var(--muted)]">
+                  Or continue with
+                </span>
+                <div className="flex-1 h-px bg-[var(--rule)]" aria-hidden="true" />
+              </div>
+              <OAuthButtons />
+            </div>
 
             <div className="mt-9 pt-5 border-t border-[var(--rule)]">
               <p className="text-[11.5px] text-[var(--muted)] flex items-center gap-1.5">

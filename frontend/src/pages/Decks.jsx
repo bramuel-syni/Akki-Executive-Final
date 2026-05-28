@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, API_BASE } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -19,9 +19,9 @@ import WalkInCard from "@/components/walkin/WalkInCard";
 import ShareArtefactModal from "@/components/studio/ShareArtefactModal";
 import ValidatedBadge from "@/components/trust/ValidatedBadge";
 import HandoffActions from "@/components/shell/HandoffActions";
-// Phase L.b.2 (2026-05-27) — StreamingLogScene driver for deck generation.
+// Phase L.b.3 (2026-05-27) — Real backend-driven SSE for deck generation.
 import StreamingLogScene from "@/components/transitions/StreamingLogScene";
-import usePhasedTimer from "@/hooks/usePhasedTimer";
+import useStreamingProgress from "@/hooks/useStreamingProgress";
 
 /**
  * Decks — three-step flow that keeps the user from burning Opus on weak prompts.
@@ -387,9 +387,11 @@ function OutlineStep({ outline, contextId, onIterate, onGenerated, onCancel }) {
   const [busy, setBusy] = useState(null);
   const [editingRQ, setEditingRQ] = useState(false);
   const [rq, setRq] = useState(outline.research_question || "");
-  // Phase L.b.2 (2026-05-27) — StreamingLogScene driver for the deck
-  // generate step (the ~30-60s deep-tier pass).
-  const { state: lbState, start: lbStart, complete: lbComplete, error: lbError, reset: lbReset } = usePhasedTimer();
+  // Phase L.b.3 (2026-05-27) — Backend-driven SSE for the deck
+  // generate step (the ~30-60s deep-tier pass). Phase events arrive
+  // from the streaming endpoint; `state.result` carries the final
+  // deck record on `complete`.
+  const { state: lbState, stream: lbStream, reset: lbReset } = useStreamingProgress();
 
   const sufficiency = outline.context_sufficiency || "partial";
   const sufficiencyTone = {
@@ -422,27 +424,33 @@ function OutlineStep({ outline, contextId, onIterate, onGenerated, onCancel }) {
     }
     setBusy("generate");
     lbReset();
-    lbStart("decks-generation", { stepMs: 9000 });
-    try {
-      const edits = rq && rq !== outline.research_question
-        ? { research_question: rq } : null;
-      const { data } = await api.post(
-        `/contexts/${contextId}/decks/${outline.id}/generate`,
-        { outline_id: outline.id, confirmed: true, edits },
-      );
-      lbComplete(data);
+    const edits = rq && rq !== outline.research_question
+      ? { research_question: rq } : null;
+    // Fire the streaming POST. Completion handled by the useEffect below.
+    lbStream(
+      `${API_BASE}/contexts/${contextId}/decks/${outline.id}/generate/stream`,
+      { method: "POST", body: { outline_id: outline.id, confirmed: true, edits } },
+    ).catch(() => { /* state.status flips to "error" via the hook */ });
+  };
+
+  // React to stream lifecycle: complete → onGenerated + quota toast;
+  // error → error toast.
+  useEffect(() => {
+    if (lbState.status === "complete" && lbState.result) {
+      const data = lbState.result;
       onGenerated(data);
       if (data?.quota?.downgraded) {
         toast.info("Deep budget exhausted today — generated with the standard tier.");
       } else {
         toast.success("Deck generated. Quality check ready.");
       }
-    } catch (e) {
-      lbError("decks_generate_failed", apiErrorMessage(e));
-      toast.error(apiErrorMessage(e));
+      setBusy(null);
+    } else if (lbState.status === "error") {
+      toast.error(lbState.error?.message || "Deck generation failed.");
+      setBusy(null);
     }
-    finally { setBusy(null); }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lbState.status]);
 
   return (
     <section className="space-y-6" data-testid="decks-outline-card">

@@ -18,8 +18,10 @@ import React, { useCallback, useEffect, useMemo, useReducer, useState } from "re
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import AppShell from "@/components/layout/AppShell";
-import { api } from "@/lib/api";
+import { api, API_BASE } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+// Phase L.b.3 (2026-05-27) — Backend-driven SSE for synthesis turn.
+import useStreamingProgress from "@/hooks/useStreamingProgress";
 
 import {
   Actions,
@@ -103,6 +105,10 @@ export default function SolvaSession() {
   // Server session row (full doc; refreshed on every turn).
   const [session, setSession] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  // Phase L.b.3 (2026-05-27) — Streaming-progress driver for the
+  // synthesis turn POST. State is consumed by PreparingInterstitial.
+  const { state: synthState, stream: synthStream, reset: synthReset } = useStreamingProgress();
 
   // Per-screen drafts
   const [framingDraft, setFramingDraft] = useState("");
@@ -279,13 +285,16 @@ export default function SolvaSession() {
       // After DEPTH_Q3 the flow lands on PREPARING. The orchestrator's
       // synthesis happens on a NEXT turn (when the user answers the
       // grounding round). For the v3 page we mirror the orchestrator by
-      // firing one more turn for synthesis.
+      // firing one more turn for synthesis — Phase L.b.3 (2026-05-27)
+      // wires this turn through the SSE pipe so PreparingInterstitial
+      // can render real backend-driven phase events.
       if (flow.state === "DEPTH_Q3" && srv) {
-        // immediately fire the synthesis turn
         try {
-          await api.post(`/solva/v2/sessions/${flow.sessionId}/turn`, {
-            user_text: "(continue to synthesis)",
-          });
+          synthReset();
+          await synthStream(
+            `${API_BASE}/solva/v2/sessions/${flow.sessionId}/turn/stream`,
+            { method: "POST", body: { user_text: "(continue to synthesis)" } },
+          );
           const after = await refreshSession(flow.sessionId);
           const refusal = ["refused", "blocked_hard", "blocked_soft"].includes((after?.status || "").toLowerCase())
             || (after?.synthesis == null);
@@ -306,7 +315,7 @@ export default function SolvaSession() {
     } finally {
       setBusy(false);
     }
-  }, [flow.sessionId, flow.state, answerDraft, refreshSession]);
+  }, [flow.sessionId, flow.state, answerDraft, refreshSession, synthStream, synthReset]);
 
   const handleReflectionSubmit = useCallback(async (skipped) => {
     const text = skipped ? "" : reflectionDraft.trim();
@@ -433,7 +442,7 @@ export default function SolvaSession() {
       );
       break;
     case "PREPARING":
-      body = <PreparingInterstitial />;
+      body = <PreparingInterstitial state={synthState} />;
       break;
     case "ARTEFACT":
       body = (

@@ -2,49 +2,54 @@
 5 remaining long-op surfaces, using the PhaseEmitter / PHASE_SCRIPTS
 taxonomy proved in Phase L.a.
 
-This file SUPERSEDES the prior `streaming_v9.py` content (the older
-`encode_phase_event` Patch 9 taxonomy was a different generation). The
-endpoint URLs are preserved so any in-flight clients keep working.
+Phase L.b.3 (2026-05-27, fork-resume) — backend reconciliation. The
+L.b.2 close-out shipped the visual contract via timer-driven phase
+walks (`usePhasedTimer`); L.b.3 swaps each surface to real
+backend-driven SSE so the phase events reflect the actual inner
+handler's lifecycle.
 
-Surfaces wired (per the Phase L.b dispatch):
+Per-surface reconciliations applied:
 
-  1. Solva Session Synthesis   — POST .../solva/sessions/{sid}/turn/stream
-  2. Work Studio Enhance       — POST .../work-studio/enhance/{kind}/stream
-  3. Task Manager Compilation  — POST .../cycle/draft-compilation/stream
-  4. Events Calendar Sync      — POST .../events/sync-calendar/stream
-  5. Decks Generation          — POST .../decks/{outline_id}/generate/stream
+  1. **Solva Synthesis** — URL changed from
+     `/api/contexts/{cid}/solva/sessions/{sid}/turn/stream` to
+     `/api/solva/v2/sessions/{sid}/turn/stream` matching the legacy
+     account-scoped `post_turn` signature. Body coerced from dict →
+     `TurnV2In`.
+  2. **Work Studio Enhance** — endpoint accepts MULTIPART (`Form` +
+     `UploadFile`) matching the legacy `start_enhance`, then runs the
+     enhance worker inline so SSE phases bracket the work.
+  3. **Task Manager Compile** — calls the new blocking variant
+     (`cycle_manager.draft_compilation_blocking`) instead of the
+     202+job_id `draft_compilation` — preserves the job-queue path for
+     non-streaming callers (cron, worker re-runs) but feeds the SSE
+     wrap a single awaitable.
+  4. **Calendar Sync** — adapter passes `me=ctx["account"]` to match
+     the inner `sync_calendar` signature (was passing `ctx=`).
+  5. **Decks Generation** — body coerced from dict → `GenerateIn`.
 
-Pattern (per the user's L.b lock):
+Pattern (unchanged from L.b):
 
   - Use PhaseEmitter + the surface-specific PHASE_SCRIPTS entry.
-  - Wrap (NOT modify) the existing synchronous handler — phase events
-    fire at the natural lifecycle boundaries: handler-entry, before
-    the LLM call, after the LLM call, before persist, after persist,
-    complete.
-  - `complete` event carries the inner handler's full JSON response
-    so the frontend can treat the streaming endpoint as a drop-in
-    replacement for the legacy POST.
-  - `error` event carries a `{code, error}` payload when the inner
-    handler raises HTTPException OR any other exception.
-  - Cancellation: PhaseEmitter checks `request.is_disconnected()` on
-    each `advance()` and returns None — the generator then returns
-    immediately, the connection closes, and the inner handler's work
-    (if still in flight) completes server-side without writing back.
-
-Frontend wiring (StreamingLogScene + useStreamingProgress) lives
-separately and will be added in a follow-up L.b.2 dispatch — the
-backend pipe ships first so the wiring has a stable contract.
+  - Wrap the existing synchronous handler — phases fire at lifecycle
+    boundaries.
+  - `complete` event carries the inner handler's full JSON response.
+  - `error` event carries `{code, error}` on any HTTPException / Exception.
+  - Cancellation honoured via `request.is_disconnected()`.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from typing import Any, AsyncIterator, Dict, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from fastapi import (
+    APIRouter, Body, Depends, File, Form, HTTPException, Query, Request,
+    UploadFile,
+)
 from fastapi.responses import StreamingResponse
 
-from core import db, require_context_membership  # noqa: F401 — db is used by callers
+from core import db, iso, now, get_current_account, require_context_membership, write_audit
 from services.streaming.progress import PhaseEmitter
 from services.streaming.sse import sse_headers
 
@@ -55,35 +60,15 @@ router = APIRouter(prefix="/api")
 
 # ─────────────────────────────────────────────────────────────────────
 # Shared helper — runs the inner handler + drives phase advancement.
-#
-# This is the "wrap synchronous handler" pattern: phases 0..N-2 fire
-# BEFORE the inner work, the inner await runs (single LLM call OR
-# multi-step orchestrator), then phase N-1 ("Almost there.") fires
-# just before the complete event. Surfaces that can be instrumented
-# more deeply (e.g. Decks Generation with multiple LLM calls) get
-# their own bespoke generator below.
 # ─────────────────────────────────────────────────────────────────────
 async def _wrap_synchronous_handler(
     *,
     request: Request,
     surface: str,
     inner_coro,
-    pre_work_phases: int = None,  # phases to fire BEFORE the inner await
+    pre_work_phases: int = None,
 ) -> AsyncIterator[str]:
-    """Generic wrap-around-a-sync-handler helper.
-
-    Args:
-      request          : the FastAPI Request (for is_disconnected check)
-      surface          : PHASE_SCRIPTS key
-      inner_coro       : the awaitable that runs the actual work
-      pre_work_phases  : how many phases to fire BEFORE the inner
-                         await. The remaining phases fire AFTER the
-                         work + before the `complete` event. Defaults
-                         to `total - 1` (everything except the final
-                         "Almost there." which fires just before complete).
-
-    Yields SSE-formatted strings.
-    """
+    """Generic wrap-around-a-sync-handler helper."""
     emitter = PhaseEmitter(request, surface=surface)
     total = len(emitter.script)
     if pre_work_phases is None:
@@ -91,20 +76,15 @@ async def _wrap_synchronous_handler(
     pre_work_phases = max(1, min(pre_work_phases, total - 1))
 
     async with emitter.start() as e:
-        # Script event up-front so the frontend renders the upcoming-phases skeleton.
         yield e.script_event()
 
-        # Fire pre-work phases.
         for _ in range(pre_work_phases):
             chunk = await e.advance()
             if chunk is None:
                 return
             yield chunk
-            # Tiny await so the frontend gets a paint between phases —
-            # without this, all pre-work phases flush in one server tick.
             await asyncio.sleep(0)
 
-        # Run the inner work.
         try:
             result = await inner_coro
         except HTTPException as exc:
@@ -121,9 +101,6 @@ async def _wrap_synchronous_handler(
             )
             return
 
-        # Fire the remaining phases (everything from `pre_work_phases`
-        # through `total-1`, except we save the last advance() for
-        # complete()).
         remaining_to_fire = (total - 1) - pre_work_phases
         for _ in range(remaining_to_fire):
             chunk = await e.advance()
@@ -132,51 +109,35 @@ async def _wrap_synchronous_handler(
             yield chunk
             await asyncio.sleep(0)
 
-        # Final complete event with the inner handler's full response.
-        # Normalize non-dict returns to {"result": <stringified>} so the
-        # frontend sees a consistent shape.
         payload = result if isinstance(result, dict) else {"result": str(result)}
         yield await e.complete(payload)
 
 
 # =============================================================================
 # Surface #1 — Solva Session Synthesis
+# Account-scoped URL matches legacy `post_turn`. Body coerced to TurnV2In.
 # =============================================================================
-@router.post("/contexts/{context_id}/solva/sessions/{sid}/turn/stream")
+@router.post("/solva/v2/sessions/{sid}/turn/stream")
 async def solva_synthesis_stream(
-    context_id: str,
     sid: str,
     request: Request,
     body: Dict[str, Any] = Body(default_factory=dict),
-    ctx: Dict[str, Any] = Depends(require_context_membership()),
+    account: Dict[str, Any] = Depends(get_current_account),
 ):
     """SSE-wrap of the synchronous Solva session-turn handler.
 
     Phases (6): Reading the layer ingest → Checking the grounding
     contract → Weighing the probability rail → Composing → Validating
     → Almost there.
-
-    The inner handler runs the actual synthesis pass. We fire phases
-    0..3 BEFORE the inner await (4 pre-work phases) so the user sees
-    progress while the LLM is composing. Phase 4 (Validating) fires
-    after the LLM returns + before complete. Phase 5 (Almost there.)
-    fires just before complete (handled by `_wrap_synchronous_handler`).
     """
-    from routers import solva_v2 as _solva
-    inner_fn = None
-    for name in ("session_turn", "post_session_turn", "turn"):
-        if hasattr(_solva, name):
-            inner_fn = getattr(_solva, name)
-            break
+    from routers.solva_v2 import post_turn as _inner, TurnV2In
 
     async def _call_inner():
-        if inner_fn is None:
-            raise HTTPException(status_code=500, detail="Solva turn handler not exported.")
-        # Best-effort signature compatibility across solva_v2 revisions.
         try:
-            return await inner_fn(sid=sid, body=body, ctx=ctx)  # type: ignore[misc]
-        except TypeError:
-            return await inner_fn(sid, body, ctx)  # type: ignore[misc]
+            turn_body = TurnV2In(**(body or {}))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=422, detail=f"Invalid turn body: {exc}")
+        return await _inner(sid=sid, body=turn_body, account=account)
 
     return StreamingResponse(
         _wrap_synchronous_handler(
@@ -191,34 +152,148 @@ async def solva_synthesis_stream(
 
 # =============================================================================
 # Surface #2 — Work Studio Enhance Modal
+# Accepts MULTIPART (Form + UploadFile) matching the legacy `start_enhance`.
+# Resolves source bytes, inserts the export row, runs `_run_enhance` inline.
 # =============================================================================
 @router.post("/contexts/{context_id}/work-studio/enhance/{kind}/stream")
 async def work_studio_enhance_stream(
     context_id: str,
     kind: str,
     request: Request,
-    body: Dict[str, Any] = Body(default_factory=dict),
+    instructions: str = Form(...),
+    output_format: str = Form("auto"),
+    source_artefact_id: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    """SSE-wrap of the synchronous Work Studio Enhance handler.
+    """SSE-wrap of the Work Studio Enhance flow.
 
     Phases (5): Reading the artefact → Checking the grounding contract
     → Composing the refinement → Validating → Almost there.
 
-    3 pre-work phases (Reading, Checking, Composing) fire before the
-    inner LLM await; the remaining phases fire after.
+    Inline runner: resolves source → inserts row → runs `_run_enhance`
+    in-process so SSE phases bracket the actual two-pass LLM work.
+    The `complete` event carries the final export row (status,
+    download_token, continue_chat_id, etc.).
     """
+    from routers.work_studio_export import (
+        _resolve_enhance_source, _resolve_format, _ENHANCE_KINDS,
+        _is_thin_enhance_shape, _emit_thin_refusal, _append_chat_audit,
+        _run_enhance,
+    )
+
+    # Validate upfront so we surface 4xx as HTTPException (caught by wrap → error event).
+    if kind not in _ENHANCE_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown enhance kind. Allowed: {', '.join(_ENHANCE_KINDS)}.",
+        )
+    if not instructions or not instructions.strip():
+        raise HTTPException(status_code=400, detail="instructions is required.")
+    fmt = _resolve_format(
+        kind,
+        output_format if output_format in ("docx", "pptx", "pdf", "auto") else "auto",
+    )
+
+    # Resolve source bytes BEFORE entering the SSE generator (so 4xx
+    # surface as HTTP responses, not as phase-error events).
+    source_bytes, source_filename, source_label = await _resolve_enhance_source(
+        context_id=context_id,
+        account_id=ctx["account"]["id"],
+        kind=kind,
+        file=file,
+        source_artefact_id=source_artefact_id,
+    )
+
+    export_id = str(uuid.uuid4())
+    created_at = iso(now())
+    row = {
+        "id": export_id,
+        "context_id": context_id,
+        "account_id": ctx["account"]["id"],
+        "kind": kind,
+        "output_format": fmt,
+        "status": "running",
+        "source": "enhance",
+        "instructions_chars": len(instructions),
+        "source_label": source_label,
+        "source_filename": source_filename,
+        "source_artefact_id": source_artefact_id,
+        "created_at": created_at,
+        "completed_at": None,
+        "file_name": None,
+        "file_path": None,
+        "sha256": None,
+        "sensitivity_band": None,
+        "error": None,
+        "refusal_text": None,
+        "chat_audit_id": None,
+    }
+    await db.work_studio_exports.insert_one(row)
+
     try:
-        from routers.work_studio_export import enhance_kind as _inner  # type: ignore[attr-defined]
+        await write_audit(
+            account_id=ctx["account"]["id"], context_id=context_id,
+            action="work_studio.enhance.requested", target_id=export_id,
+            metadata={"export_id": export_id, "kind": kind,
+                      "output_format": fmt, "source_label": source_label,
+                      "source_filename": source_filename,
+                      "via": "stream"},
+        )
     except Exception:
-        _inner = None  # type: ignore[assignment]
+        pass
+
+    try:
+        await _append_chat_audit(
+            account_id=ctx["account"]["id"],
+            chat_id=f"enhance-{export_id}", action="enhance.requested",
+            payload={
+                "export_kind": f"enhance_{kind}",
+                "export_artefact_id": export_id,
+                "source_label": source_label,
+                "source_filename": source_filename,
+                "instructions_preview": instructions[:200],
+                "output_format": fmt,
+                "channel": "enhance",
+                "deterministic": True,
+                "via": "stream",
+            }, request=None,
+        )
+    except Exception:
+        log.warning("enhance.requested audit-append failed (non-fatal)")
+
+    # Thin-input deterministic refusal (pre-LLM).
+    thin_shape = _is_thin_enhance_shape(instructions)
+    if thin_shape is not None:
+        await _emit_thin_refusal(
+            export_id=export_id, account_id=ctx["account"]["id"],
+            context_id=context_id, kind=kind, source="enhance",
+            detection={**thin_shape, "stage": "pre_llm_enhance"},
+        )
+        raise HTTPException(status_code=400, detail={
+            "code": "thin_input",
+            "export_id": export_id,
+            "error": "thin_input",
+        })
 
     async def _call_inner():
-        if _inner is None:
-            raise HTTPException(status_code=500, detail="Enhance handler not exported.")
-        return await _inner(  # type: ignore[misc]
-            context_id=context_id, kind=kind, body=body, ctx=ctx,
+        # Run the worker inline; the row is updated server-side as it
+        # progresses. We re-read the row at the end for the complete payload.
+        await _run_enhance(
+            export_id=export_id,
+            account_id=ctx["account"]["id"],
+            context_id=context_id,
+            kind=kind,
+            output_format=fmt,
+            instructions=instructions,
+            source_data=source_bytes,
+            source_filename=source_filename,
+            source_label=source_label,
         )
+        final = await db.work_studio_exports.find_one(
+            {"id": export_id}, {"_id": 0},
+        )
+        return final or {"export_id": export_id, "status": "unknown"}
 
     return StreamingResponse(
         _wrap_synchronous_handler(
@@ -233,6 +308,7 @@ async def work_studio_enhance_stream(
 
 # =============================================================================
 # Surface #3 — Task Manager Compilation
+# Uses the new blocking variant; legacy job-queue path preserved.
 # =============================================================================
 @router.post("/contexts/{context_id}/cycle/draft-compilation/stream")
 async def task_manager_compile_stream(
@@ -241,16 +317,13 @@ async def task_manager_compile_stream(
     cycle_id: Optional[str] = Query(default=None),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    """SSE-wrap of the synchronous Task Manager (cycle) compilation handler.
+    """SSE-wrap of the Task Manager (cycle) compile flow.
 
     Phases (7): Reading the cycle responses → Checking the grounding
     contract → Drafting the outline → Composing → Rendering the
     compilation → Validating → Almost there.
-
-    4 pre-work phases (Reading through Composing) fire before the
-    inner LLM await; the remaining 2 fire after.
     """
-    from routers.cycle_manager import draft_compilation as _inner
+    from routers.cycle_manager import draft_compilation_blocking as _inner
 
     async def _call_inner():
         return await _inner(context_id=context_id, cycle_id=cycle_id, ctx=ctx)
@@ -268,37 +341,25 @@ async def task_manager_compile_stream(
 
 # =============================================================================
 # Surface #4 — Events / Google Calendar Sync
+# Adapter passes `me=ctx["account"]` to match the inner signature.
 # =============================================================================
 @router.post("/contexts/{context_id}/events/sync-calendar/stream")
 async def events_calendar_sync_stream(
     context_id: str,
     request: Request,
     provider: str = Query(default="google"),
-    body: Dict[str, Any] = Body(default_factory=dict),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    """SSE-wrap of the synchronous Calendar sync handler.
+    """SSE-wrap of the Calendar sync handler.
 
     Phases (5): Reaching Google Calendar → Reading your calendar list
     → Fetching the upcoming events → Mapping to your context →
     Almost there.
-
-    3 pre-work phases (Reaching, Reading list, Fetching) fire before
-    the inner await; 1 phase (Mapping) fires after.
     """
-    try:
-        from routers.oauth_google import sync_calendar as _inner  # type: ignore[attr-defined]
-    except Exception:
-        _inner = None  # type: ignore[assignment]
+    from routers.oauth_google import sync_calendar as _inner
 
     async def _call_inner():
-        if _inner is None:
-            raise HTTPException(status_code=500, detail="Calendar sync handler not exported.")
-        # The legacy handler takes provider as a Query param, not a body field.
-        try:
-            return await _inner(cid=context_id, provider=provider, ctx=ctx)  # type: ignore[misc]
-        except TypeError:
-            return await _inner(context_id, provider, ctx)  # type: ignore[misc]
+        return await _inner(cid=context_id, provider=provider, me=ctx["account"])
 
     return StreamingResponse(
         _wrap_synchronous_handler(
@@ -313,6 +374,7 @@ async def events_calendar_sync_stream(
 
 # =============================================================================
 # Surface #5 — Decks Generation (DEEP tier)
+# Body coerced from dict → `GenerateIn` Pydantic model.
 # =============================================================================
 @router.post("/contexts/{context_id}/decks/{outline_id}/generate/stream")
 async def decks_generation_stream(
@@ -322,37 +384,27 @@ async def decks_generation_stream(
     body: Dict[str, Any] = Body(default_factory=dict),
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
-    """SSE-wrap of the synchronous Decks generate handler.
+    """SSE-wrap of the Decks generate handler.
 
     Phases (6): Reading the outline → Checking the grounding contract
     → Composing the deck → Rendering the slides → Validating →
     Almost there.
-
-    3 pre-work phases (Reading, Checking, Composing) fire before the
-    inner LLM await (the slow ~30-60s deck-build pass); the
-    remaining phases fire after.
     """
-    try:
-        from routers.decks import generate_deck as _inner  # type: ignore[attr-defined]
-    except Exception:
-        # The deck-generate function name may differ across revisions
-        # — fall back to the first matching async POST handler.
-        from routers import decks as _decks_mod
-        _inner = None  # type: ignore[assignment]
-        for name in ("generate_deck", "deck_generate", "post_decks_generate"):
-            if hasattr(_decks_mod, name):
-                _inner = getattr(_decks_mod, name)
-                break
+    from routers.decks import generate_deck as _inner, GenerateIn
 
     async def _call_inner():
-        if _inner is None:
-            raise HTTPException(status_code=500, detail="Decks generate handler not exported.")
+        body_with_outline = {**(body or {})}
+        body_with_outline.setdefault("outline_id", outline_id)
         try:
-            return await _inner(  # type: ignore[misc]
-                context_id=context_id, outline_id=outline_id, body=body, ctx=ctx,
-            )
-        except TypeError:
-            return await _inner(context_id, outline_id, body, ctx)  # type: ignore[misc]
+            gen_body = GenerateIn(**body_with_outline)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=422, detail=f"Invalid generate body: {exc}")
+        return await _inner(
+            context_id=context_id,
+            outline_id=outline_id,
+            body=gen_body,
+            ctx=ctx,
+        )
 
     return StreamingResponse(
         _wrap_synchronous_handler(

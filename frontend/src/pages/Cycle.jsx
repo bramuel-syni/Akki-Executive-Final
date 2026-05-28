@@ -18,7 +18,7 @@ import AppShell from "@/components/layout/AppShell";
 // Phase E.3 (2026-05-26) — Universal Document Drawer.
 import DocumentDrawer from "@/components/documents/DocumentDrawer";
 import { useAuth } from "@/contexts/AuthContext";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, API_BASE } from "@/lib/api";
 import { pollJob } from "@/lib/pollJob";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,9 +38,9 @@ import {
 import { toast } from "sonner";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import JudgementPanel from "@/components/cycle/JudgementPanel";
-// Phase L.b.2 (2026-05-27) — StreamingLogScene driver for the Compile step.
+// Phase L.b.3 (2026-05-27) — Real backend-driven SSE for compile.
 import StreamingLogScene from "@/components/transitions/StreamingLogScene";
-import usePhasedTimer from "@/hooks/usePhasedTimer";
+import useStreamingProgress from "@/hooks/useStreamingProgress";
 import BoardSubmitPanel from "@/components/cycle/BoardSubmitPanel";
 import CycleBreadcrumb from "@/components/cycle/CycleBreadcrumb";
 import CycleStepNav from "@/components/cycle/CycleStepNav";
@@ -955,10 +955,10 @@ function CompilationStep({ cid, cycleId, cycle, onBack }) {
   const [out, setOut] = useState(null);
   const [progress, setProgress] = useState(null);
   const navigate = useNavigate();
-  // Phase L.b.2 (2026-05-27) — Streaming-log progress driver during
-  // the async compile. Walks the locked `task-manager-compile` script
-  // while the existing pollJob loop drives the job-queue worker.
-  const { state: lbState, start: lbStart, complete: lbComplete, error: lbError, reset: lbReset } = usePhasedTimer();
+  // Phase L.b.3 (2026-05-27) — Backend-driven SSE for the compile
+  // step. The blocking-variant inner handler awaits the worker
+  // inline, so phase events bracket real LLM work.
+  const { state: lbState, stream: lbStream, reset: lbReset } = useStreamingProgress();
 
   // Blocker 2 (2026-05-25, backlog-b) — pre-populate `out` from the
   // backend's defensive linkage lookup so the DOCX/PDF/PPTX chips
@@ -983,34 +983,28 @@ function CompilationStep({ cid, cycleId, cycle, onBack }) {
   const compile = async () => {
     setBusy(true); setOut(null); setProgress(null);
     lbReset();
-    lbStart("task-manager-compile", { stepMs: 9000 });
-    try {
-      // Chunk 2 (2026-05-13, CM-R04) — async pattern. The endpoint
-      // returns 202 + { job_id } immediately. The two-pass LLM compile
-      // (drafter Sonnet 4.5 → validator Gemini 2.5 Flash) runs in the
-      // background; we poll until terminal. Progress label updates so
-      // the user sees we're still working.
-      const { data: enq } = await api.post(
-        `/contexts/${cid}/cycle/draft-compilation${qcid(cycleId)}`, {},
-      );
-      const job = await pollJob(enq.job_id, {
-        onProgress: (status, elapsedS) => {
-          setProgress(`Compiling… ${elapsedS}s`);
-        },
-      });
-      if (job.status === "failed") {
-        lbError("compilation_failed", job.error || "Compilation failed.");
-        throw new Error(job.error || "Compilation failed.");
-      }
-      setOut(job.result || {});
-      lbComplete(job.result || {});
-      toast.success("Compilation produced.");
-    } catch (e) {
-      lbError("compile_exception", apiErrorMessage(e));
-      toast.error(apiErrorMessage(e));
-    }
-    finally { setBusy(false); setProgress(null); }
+    // Fire the streaming POST. Completion handled by the useEffect
+    // below so `state.result` (the worker's return dict) is in scope.
+    lbStream(
+      `${API_BASE}/contexts/${cid}/cycle/draft-compilation/stream${qcid(cycleId)}`,
+      { method: "POST" },
+    ).catch(() => { /* error state handled by useEffect */ });
   };
+
+  // React to stream lifecycle: complete → setOut + success toast; error → toast.
+  useEffect(() => {
+    if (lbState.status === "complete" && lbState.result) {
+      setOut(lbState.result || {});
+      toast.success("Compilation produced.");
+      setBusy(false);
+      setProgress(null);
+    } else if (lbState.status === "error") {
+      toast.error(lbState.error?.message || apiErrorMessage(new Error("Compilation failed.")));
+      setBusy(false);
+      setProgress(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lbState.status]);
 
   const download = async () => {
     if (!out?.export_id) return;

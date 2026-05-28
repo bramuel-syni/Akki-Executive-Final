@@ -1,6 +1,65 @@
 # AKKI Sandbox — Changelog
 
 > Append-only history of shipped work. Newest first.
+
+## 2026-05-27 — Fork-resume autonomous dispatch (L.b.3 + Phase U + W4.2)
+
+**Phase L.b.3 — Timer → SSE swap for 5 L.b surfaces (CLOSED)**
+- Swapped `usePhasedTimer` → `useStreamingProgress` across Solva
+  Synthesis, Work Studio Enhance (multipart), Task Manager Compile,
+  Calendar Sync, Decks Generation. Real backend-driven SSE phase
+  events now bracket actual LLM/job work.
+- Backend reconciliations: Solva URL flipped to account-scoped match
+  for legacy `post_turn`; WS Enhance accepts multipart Form+UploadFile
+  and runs `_run_enhance` inline; new `cycle_manager.draft_compilation_blocking`
+  preserves the 202+job_id path; Calendar Sync adapter passes `me=`;
+  Decks coerces body → `GenerateIn`.
+- Frontend `useStreamingProgress.js` gained 17-line FormData
+  passthrough (Enhance multipart unlock).
+- 42 source-strict CI guards (`test_phase_lb3_frontend_wiring.py`),
+  obsolete L.b.2 timer locks removed.
+
+**Phase U — OAuth/SSO sign-in (CLOSED, partial — Google ships;
+Microsoft mocked)**
+- Mandatory `integration_playbook_expert_v2` consulted before any
+  OAuth code. Architecture decision: Emergent Auth resolves Google
+  identity → app mints OWN JWT (Phase J JTI revocation contract
+  preserved). Avoids parallel session mechanism.
+- `routers/auth_oauth.py` (NEW): Google start (returns Emergent base
+  URL — frontend assembles redirect from `window.location.origin`,
+  never hardcoded), Google finish (find-or-create account
+  `auth_provider="google"`, `password_hash=None`, mint JWT, set
+  cookies), Microsoft start+finish 503 mocks with locked institutional
+  payload `{error: "microsoft_oauth_not_configured", needs: "..."}`.
+- Frontend: `OAuthButtons.jsx` (Google/Microsoft side-by-side on
+  sign-in, MS disabled with "(soon)" badge until creds arrive),
+  `OAuthCallback.jsx` at `/oauth/callback` (reads `session_id` from
+  URL hash, `useRef` StrictMode guard, redirects via `next_url`).
+- 18 source-strict + integration tests (`test_phase_u_oauth.py`).
+
+**Phase W4.2 — Grey-capsule highlights → light brand purple (CLOSED)**
+- User-tightened scope: only PLAIN grey capsule highlights swap;
+  semantic-coloured pills (RED/AMBER/GREEN/BLUE) preserved.
+- 9 sites swapped to `bg-[var(--ned-purple)]/10 text-[var(--ned-purple)]
+  border-[var(--ned-purple)]/20` token (W4.1 Active marker + Phase V
+  AdminUsers precedent):
+  Strategic Goals abandoned/not_started · Tenant Settings sponsored/
+  feature-lock/sub_role · Account Security MFA-disabled · Solva
+  Sessions StatusPill refused/blocked_hard/abandoned/default-fallback.
+- Out-of-scope: Operations dept chip (palette member, not status);
+  semantic pills; statusBarClass/probabilityBarClass (bars, not
+  capsules); hover greys, borders, modal backdrops, skeleton states.
+- 18 source-strict CI guards (`test_phase_w42_grey_to_purple.py`).
+- Bonus repair: trimmed pre-existing garbage `hell>\n  );\n}` from
+  end of `TenantSettings.jsx` (was silently breaking webpack).
+
+**Dispatch CI summary:**
+- 714 passed / 23 pre-existing skipped / 0 regressions on
+  `tests/test_phase_*` full sweep (was 678 before).
+- +18 W4.2 + +18 Phase U + +42 L.b.3 = +78 new CI guards net.
+- Frontend ESLint clean; webpack compiles clean (only pre-existing warnings).
+
+
 > Detailed patch close-outs live in `/app/memory/SYSTEM_STATE.md` §4.
 
 ## 2026-02 — Autonomous polish sprint, Phases A → F (post-Chunk-19)

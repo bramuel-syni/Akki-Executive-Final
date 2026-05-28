@@ -106,6 +106,19 @@ export default function useStreamingProgress() {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
+    // Phase L.b.3 (2026-05-27): FormData bodies pass through verbatim
+    // so multipart uploads (e.g. Work Studio Enhance) can stream too.
+    // The browser sets the multipart boundary itself when Content-Type
+    // is omitted — we therefore skip the JSON Content-Type header for
+    // FormData bodies.
+    const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+    const requestBody = body == null
+      ? null
+      : (isFormData ? body : JSON.stringify(body));
+    const contentTypeHeader = (body != null && !isFormData)
+      ? { "Content-Type": "application/json" }
+      : {};
+
     let res;
     try {
       // eslint-disable-next-line no-restricted-syntax -- SSE stream; axios can't expose ReadableStream
@@ -113,11 +126,11 @@ export default function useStreamingProgress() {
         method,
         headers: {
           Accept: "text/event-stream",
-          ...(body != null ? { "Content-Type": "application/json" } : {}),
+          ...contentTypeHeader,
           ...(tok ? { Authorization: `Bearer ${tok}` } : {}),
           ...headers,
         },
-        body: body == null ? null : JSON.stringify(body),
+        body: requestBody,
         signal: ctrl.signal,
         credentials: "include",
       });
