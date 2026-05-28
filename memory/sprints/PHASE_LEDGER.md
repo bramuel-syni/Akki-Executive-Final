@@ -2002,6 +2002,43 @@ Tester at 1024/820 surfaced 3 issues on AdminTenants drilldown + ExtractionsActi
 
   Test counts: +3 new tests source-strict, +1 new runtime probe (5-page audit). 80 source-strict tests passing across all touched files.
 
+**Slice 2 followup #2 — broader-selector re-audit + REAL_BUG fixes (2026-02 fork-resume reply dispatch #2):**
+
+  Tester re-ran #4 with a broader selector (`[class*="bg-brand-"], [class*="bg-ned-purple"], [class*="bg-[var(--ned-purple)]"]`) and found 5 transparent-bg matches my narrower regex missed. Re-ran with tester's exact selector + class-string token-bucketing to triage hover-only-vs-resting purple usages:
+
+  | # | Page | Element | Resting purple | Hover-only purple | Verdict |
+  |---|---|---|---|---|---|
+  | 1 | Monitor | `<div data-strategic-row>` goal row #1 | — | `hover:bg-brand-rule/30`, `focus:bg-brand-rule/40` | HOVER_ONLY (StrategicRow primitive clickable hover — by design) |
+  | 2 | Monitor | `<div data-strategic-row>` goal row #2 | — | same | HOVER_ONLY |
+  | 3 | Monitor | `<span data-testid="goal-category-...">` Operations dept chip | **`bg-ned-purple/8`** | — | **REAL BUG — invalid Tailwind opacity step `/8`** |
+  | 4 | TaskManager | `<div data-strategic-row>` task card | — | `hover:bg-brand-rule/30`, `focus:bg-brand-rule/40` | HOVER_ONLY |
+  | 5 | (not flagged by tester, found in source) | DocumentCardsSection.jsx unrated chip | **`bg-ned-purple/6 border-ned-purple/18`** | — | **REAL BUG — invalid Tailwind opacity steps `/6` + `/18`** |
+
+  Root cause: Tailwind's default opacity scale (https://tailwindcss.com/docs/opacity) has these stops: 0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 95, 100. Authors who pick arbitrary 2-digit values (`/8`, `/6`, `/18`) silently produce NO CSS rule — element falls back to transparent. This is the Wave 4.2.followup.2 silent-fail trap, distinct from the `bg-[var(--HEX-VAR)]/N` color-mix trap but with identical user-visible symptom (transparent capsule).
+
+  Real bugs fixed (4 source sites total):
+    - `frontend/src/components/monitor/StrategicGoalsPanel.jsx:412` — Operations dept chip `bg-ned-purple/8` → `bg-ned-purple/10`.
+    - `frontend/src/components/monitor/TasksInitiativesPanel.jsx:168` — Task category chip `bg-ned-purple/8` → `bg-ned-purple/10`.
+    - `frontend/src/pages/Pulse.jsx:220` — Pulse confidence chip `bg-ned-purple/8` → `bg-ned-purple/10`.
+    - `frontend/src/pages/Pulse.jsx:907` — Pulse drawer confidence chip `bg-ned-purple/8` → `bg-ned-purple/10`.
+    - `frontend/src/components/work_studio/DocumentCardsSection.jsx:63` — Unrated confidence chip `bg-ned-purple/6 border-ned-purple/18` → `bg-ned-purple/10 border-ned-purple/20`.
+
+  Audit script upgrade (`test_wave42_followup2_runtime_audit.py`):
+    - Switched to tester's exact broad selector (no narrow regex filter).
+    - Added per-class-string token-bucketing: separates resting purple tokens (`bg-ned-purple/10`) from pseudo-state purple tokens (`hover:bg-brand-rule/30`, `focus:bg-brand-rule/40`, etc.) using a `pseudoRe` matcher.
+    - Three-way classification per element: REAL_BUG / HOVER_ONLY / OK. Only REAL_BUG fails the test. HOVER_ONLY whitelisted by design.
+    - Structured offender report in `pytest.fail()` message: per-page REAL_BUG count + sample html snippets for triage.
+
+  New permanent source-strict guard (`test_wave42_opacity_steps_lock.py`):
+    - Scans every `.jsx` / `.js` file under `frontend/src/` with a regex matching brand utility opacity-modifier patterns (`(bg|border|text|ring|...)-(ned-purple|brand-*)/N`).
+    - Asserts every `N` is in the Tailwind default opacity step allowlist (`{0,5,10,15,20,25,30,40,50,60,70,75,80,90,95,100}`).
+    - Catches the next `/8` `/6` `/18`-style typo at lint-time, before runtime audit, before tester QA.
+    - Second test in the same file locks the audit-script's HOVER_ONLY / REAL_BUG classification so future agents can't accidentally regress the triage logic.
+
+  Live post-fix audit @1280 across all 5 pages — **0 REAL_BUGs / 1 HOVER_ONLY (StrategicRow clickable, whitelisted) / 80 OK** elements with brand-purple classes.
+
+  Test counts (followup #2): +1 new test file (2 tests in `test_wave42_opacity_steps_lock.py`). 101 source-strict tests passing across all touched files (`-m "not runtime_playwright"`).
+
 
 - **Wave 4.2.followup.1 (P3, cohort-feedback-gated)** — Hue-
   differentiation within the brand-purple family for category chips

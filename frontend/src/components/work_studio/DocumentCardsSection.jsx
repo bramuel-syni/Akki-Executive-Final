@@ -60,7 +60,7 @@ const CONFIDENCE_CHIP_PALETTE = {
   green:   "bg-emerald-50 text-emerald-800 border-emerald-200",
   amber:   "bg-amber-50 text-amber-800 border-amber-200",
   red:     "bg-rose-50 text-rose-800 border-rose-200",
-  unrated: "bg-ned-purple/6 text-[var(--ink)] border-ned-purple/18",
+  unrated: "bg-ned-purple/10 text-[var(--ink)] border-ned-purple/20",
 };
 
 

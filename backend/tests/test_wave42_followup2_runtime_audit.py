@@ -1,19 +1,23 @@
 """Wave 4.2.followup.2 — Multi-page runtime audit for silent-fail
-brand-purple capsules (2026-02 fork-resume reply dispatch).
+brand-purple capsules (2026-02 fork-resume reply dispatch · followup #2).
 
-Issue 4 from the e1_tester cross-surface pass was SUSPECTED but not
-captured in structured form. This audit runs the structured probe
-in CI so the next regression is caught immediately.
-
-Audit logic at each page:
-  1. Find every element whose `class` attribute contains a brand-
-     purple capsule pattern (`bg-ned-purple/N`, `bg-[var(--ned-purple)]`,
-     `bg-brand-*`, or `bg-[var(--brand-*)]`).
-  2. For each match, read `getComputedStyle(el).backgroundColor`.
-  3. Flag as OFFENDER if the computed background is `rgba(0,0,0,0)`
-     (transparent) — that's the silent-fail trap symptom — OR any
-     `rgb(slate-*)` / grey value when the class promised purple.
-  4. Assert the offender count is zero across all 5 surveyed pages.
+Audit logic at each page (UPDATED 2026-02 to triage hover-only design
+patterns):
+  1. Find every element whose `class` contains any brand-purple
+     utility — broad selector matching tester's exact query.
+  2. For each match, parse the class string into:
+       - resting purple tokens (e.g. `bg-ned-purple/10`)
+       - hover-only purple tokens (e.g. `hover:bg-brand-rule/30`,
+         `focus:bg-brand-rule/40`)
+  3. Element classified as:
+       - REAL BUG: has resting purple tokens BUT computed
+         backgroundColor is transparent or grey. Indicates a token
+         the Tailwind compiler dropped (e.g. invalid opacity step
+         like `/8` `/6` `/18` — Wave 4.2.followup.2 silent-fail trap).
+       - HOVER-ONLY (whitelisted): only hover/focus/active variants
+         carry the purple bg; resting transparent is the design.
+       - OK: resting purple token + opaque computed background.
+  4. Assert REAL_BUG count is zero across all 5 surveyed pages.
 
 Pages surveyed:
   - /app/monitor
@@ -50,49 +54,65 @@ def _frontend_url() -> str:
     raise RuntimeError("REACT_APP_BACKEND_URL not in frontend/.env")
 
 
-# JS audit — returns the structured offender list per page.
+# JS audit — returns the structured offender list per page with the
+# hover-only-vs-resting triage applied. Tester's broader selector
+# (`[class*="bg-brand-"], [class*="bg-ned-purple"], [class*="bg-[var(--ned-purple)]"]`)
+# matches both pseudo-state utilities AND resting utilities; the JS
+# below parses the class string into the two buckets so the audit
+# only flags REAL BUGS.
 _AUDIT_SCRIPT = r"""
 () => {
-  const purplePatterns = [
-    /\bbg-ned-purple\/\d+\b/,
-    /\bbg-\[var\(--ned-purple\)\]/,
-    /\bbg-brand-/,
-    /\bbg-\[var\(--brand-/,
-  ];
-  const matched = [];
-  const all = document.querySelectorAll('[class]');
-  all.forEach((el) => {
+  const sel = '[class*="bg-brand-"], [class*="bg-ned-purple"], [class*="bg-[var(--ned-purple)]"]';
+  const els = document.querySelectorAll(sel);
+  const out = [];
+  const purpleBgRe = /(?:^|:)bg-(?:brand-[a-z]+|ned-purple|\[var\(--ned-purple\)\])(?:\/\d+)?$/;
+  const pseudoRe = /^(?:hover|focus|active|group-hover|peer-hover|focus-visible|focus-within|disabled):/;
+
+  els.forEach((el) => {
     const cls = el.getAttribute('class') || '';
-    const hasPurple = purplePatterns.some(p => p.test(cls));
-    if (!hasPurple) return;
+    const tokens = cls.split(/\s+/);
+    const purpleTokens = tokens.filter(t => purpleBgRe.test(t));
+    if (purpleTokens.length === 0) return;
+    const restingPurple = purpleTokens.filter(t => !pseudoRe.test(t));
+    const hoverOnlyPurple = purpleTokens.filter(t => pseudoRe.test(t));
     const cs = getComputedStyle(el);
     const bg = cs.backgroundColor;
-    // Offender criteria:
-    //   1. Computed bg === rgba(0,0,0,0) → silent-fail trap symptom
-    //   2. Computed bg matches a slate/grey value → token drift
     const isTransparent = (bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent');
-    // Grey detection — rough match for the slate-* palette
-    // (rgb(100,116,139) ish range).
+
+    // Grey detection — rgb(r,g,b) where r ≈ g ≈ b and not near-white.
     let isGrey = false;
     const m = bg.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
     if (m) {
       const r = +m[1], g = +m[2], b = +m[3];
-      // Pure grey: r ≈ g ≈ b AND not within the purple/cream/parchment
-      // brand range. Tolerance: 8 units. Filter out white/cream tints.
       const isNeutral = Math.abs(r - g) <= 8 && Math.abs(g - b) <= 8 && Math.abs(r - b) <= 8;
-      const isPaperTone = r >= 220;  // parchment-ish / cream
+      const isPaperTone = r >= 220;
       isGrey = isNeutral && !isPaperTone && r >= 50 && r <= 180;
     }
-    if (!isTransparent && !isGrey) return;
-    matched.push({
+
+    // Classification:
+    //  - REAL_BUG: has resting purple token(s) yet renders transparent/grey
+    //  - HOVER_ONLY: only pseudo-state purple tokens; resting transparent OK
+    //  - OK: resting purple token(s) AND opaque non-grey bg
+    let verdict;
+    if (restingPurple.length === 0 && hoverOnlyPurple.length > 0) {
+      verdict = 'HOVER_ONLY';
+    } else if (restingPurple.length > 0 && (isTransparent || isGrey)) {
+      verdict = 'REAL_BUG';
+    } else {
+      verdict = 'OK';
+    }
+
+    out.push({
+      verdict: verdict,
       tag: el.tagName.toLowerCase(),
       testid: el.getAttribute('data-testid') || null,
-      classes: cls.substring(0, 200),
+      restingPurple: restingPurple,
+      hoverOnlyPurple: hoverOnlyPurple,
       bg: bg,
-      reason: isTransparent ? 'transparent' : 'grey-drift',
+      outerHTMLSnippet: el.outerHTML.substring(0, 220),
     });
   });
-  return matched;
+  return out;
 }
 """
 
@@ -111,12 +131,13 @@ _PAGES = (
 @pytest.mark.asyncio
 async def test_no_silent_fail_purple_capsules_across_surveyed_pages():
     """Live audit — at 1280, every element with a brand-purple capsule
-    class must render with a non-transparent, non-grey background.
-    Any offender indicates a Wave 4.2.followup.2 silent-fail trap
-    (`bg-[var(--HEX-TOKEN)]/N` syntax) OR a token-drift regression.
+    class is classified as REAL_BUG / HOVER_ONLY / OK. The assertion
+    locks REAL_BUG count == 0 across all 5 surveyed pages.
 
-    Surfaces the structured offender table in the assertion message
-    when any offenders are found — for fast triage."""
+    Surfaces a structured offender table in the failure message when
+    any REAL_BUGs are found — for fast triage. HOVER_ONLY matches are
+    whitelisted by design (ghost-button patterns where the brand-
+    purple class is the hover/focus variant, not the resting bg)."""
     from playwright.async_api import async_playwright
     base = _frontend_url()
 
@@ -136,27 +157,38 @@ async def test_no_silent_fail_purple_capsules_across_surveyed_pages():
             for url, name in _PAGES:
                 await page.goto(f"{base}{url}", wait_until="networkidle", timeout=30000)
                 await page.wait_for_timeout(3000)
-                offenders = await page.evaluate(_AUDIT_SCRIPT)
-                structured_report.append({"page": name, "url": url, "offenders": offenders})
+                results = await page.evaluate(_AUDIT_SCRIPT)
+                bugs = [r for r in results if r["verdict"] == "REAL_BUG"]
+                hover_only = [r for r in results if r["verdict"] == "HOVER_ONLY"]
+                ok = [r for r in results if r["verdict"] == "OK"]
+                structured_report.append({
+                    "page": name, "url": url,
+                    "real_bugs": bugs,
+                    "hover_only_count": len(hover_only),
+                    "ok_count": len(ok),
+                })
 
-            total = sum(len(p["offenders"]) for p in structured_report)
-            if total > 0:
-                # Render structured table in assertion failure.
-                lines = ["", "Wave 4.2.followup.2 silent-fail offenders detected:"]
+            total_bugs = sum(len(p["real_bugs"]) for p in structured_report)
+            if total_bugs > 0:
+                lines = ["", "Wave 4.2.followup.2 REAL BUGS detected:"]
                 for p in structured_report:
-                    if p["offenders"]:
-                        lines.append(f"\n  [{p['page']}] {p['url']}: {len(p['offenders'])} offenders")
-                        for o in p["offenders"][:10]:
+                    if p["real_bugs"]:
+                        lines.append(
+                            f"\n  [{p['page']}] {p['url']}: "
+                            f"{len(p['real_bugs'])} REAL_BUG "
+                            f"({p['hover_only_count']} hover-only whitelisted, "
+                            f"{p['ok_count']} OK)"
+                        )
+                        for o in p["real_bugs"][:10]:
                             lines.append(
                                 f"    - tag={o['tag']} testid={o['testid']} "
-                                f"reason={o['reason']} bg={o['bg']} "
-                                f"classes={o['classes'][:120]}"
+                                f"bg={o['bg']} "
+                                f"resting={o['restingPurple']} "
+                                f"html={o['outerHTMLSnippet']!r}"
                             )
                 pytest.fail("\n".join(lines))
 
-            # Assert all-clean signal explicitly so a passing test
-            # reads as "audit ran across all 5 pages and found 0
-            # offenders" not "test was vacuously skipped".
+            # Affirmative: every page surveyed AND classification ran.
             assert len(structured_report) == len(_PAGES), (
                 f"Audit must cover all {len(_PAGES)} pages; surveyed "
                 f"{len(structured_report)}."
