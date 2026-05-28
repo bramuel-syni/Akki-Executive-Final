@@ -12,7 +12,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  Sparkles, Loader2, RefreshCw, CheckCircle2, AlertTriangle, XCircle,
+  Sparkles, Loader2, RefreshCw, CheckCircle2, AlertTriangle, XCircle, X,
 } from "lucide-react";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
@@ -57,8 +57,15 @@ function OutcomeBadge({ outcome, count, failures }) {
 }
 
 export default function ExtractionsActivity() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const tenantId = searchParams.get("tenant_id") || "";  // Phase W.followup.1
+
+  // Phase W.followup.1 hotfix (2026-02 fork-resume) — clear tenant scope.
+  const clearTenantFilter = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("tenant_id");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -119,10 +126,20 @@ export default function ExtractionsActivity() {
           <div className="flex items-center gap-2 mb-6" data-testid="extractions-filter-strip">
             {tenantId && (
               <span
-                className="text-[11px] uppercase tracking-[0.14em] px-3 py-1 rounded-sm bg-[var(--ned-purple)]/10 text-[var(--ned-purple)] border border-[var(--ned-purple)]/30 mr-2"
+                className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] px-3 py-1 rounded-sm bg-[#6B46C1]/10 text-[#6B46C1] border border-[#6B46C1]/30 mr-2"
                 data-testid="extractions-tenant-scope-pill"
               >
                 Tenant: {tenantId.slice(0, 8)}…
+                <button
+                  type="button"
+                  onClick={clearTenantFilter}
+                  className="ml-0.5 -mr-1 hover:bg-[#6B46C1]/15 rounded-sm p-0.5 transition-colors"
+                  data-testid="extractions-tenant-scope-clear-btn"
+                  aria-label="Clear tenant filter"
+                  title="Clear tenant filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
               </span>
             )}
             {[

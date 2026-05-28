@@ -334,15 +334,15 @@ export default function AdminTenants() {
                     <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--muted)] flex items-center gap-1.5">
                       <Sparkles className="w-3 h-3" /> Extraction activity
                     </p>
-                    {extractions.length > 0 && (
-                      <Link
-                        to={`/app/admin/extractions?tenant_id=${drillCid}`}
-                        className="text-[11px] text-[var(--ned-purple)] hover:underline inline-flex items-center gap-1"
-                        data-testid="tenant-extraction-view-all-link"
-                      >
-                        View all <ExternalLink className="w-3 h-3" />
-                      </Link>
-                    )}
+                    {/* "View all" always renders so the operator can drill into the
+                        global filtered view even from the empty state. */}
+                    <Link
+                      to={`/app/admin/extractions?tenant_id=${drillCid}`}
+                      className="text-[11px] text-[#6B46C1] hover:underline inline-flex items-center gap-1"
+                      data-testid="tenant-extraction-view-all-link"
+                    >
+                      View all <ExternalLink className="w-3 h-3" />
+                    </Link>
                   </div>
                   <div className="bg-white border border-[var(--rule)] rounded-sm">
                     {extractionsLoading ? (
