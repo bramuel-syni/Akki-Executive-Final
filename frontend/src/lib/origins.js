@@ -51,9 +51,28 @@ export const CATEGORY_DISPLAY = {
   briefing:   "Briefing",
 };
 
+// Phase R.1.followup / Drafts+Briefs merge (2026-02 fork-resume) —
+// Short singular labels for per-tile category chips on the merged
+// "Drafts & Briefs" tab. The full plural form (CATEGORY_DISPLAY) is
+// the tab label vocabulary; chips use this shorter form so a row in
+// a busy listing reads cleanly: "DRAFT" / "BRIEF" / "DECK" / etc.
+export const CATEGORY_CHIP_SHORT = {
+  board_pack: "Pack",
+  minutes:    "Minutes",
+  draft:      "Draft",
+  deck:       "Deck",
+  report:     "Report",
+  briefing:   "Brief",
+};
+
 export function displayCategory(category) {
   if (!category) return "Uncategorized";
   return CATEGORY_DISPLAY[category] || "Uncategorized";
+}
+
+export function displayCategoryChip(category) {
+  if (!category) return "Uncat";
+  return CATEGORY_CHIP_SHORT[category] || displayCategory(category);
 }
 
 // ─────────────────────────────────────────────────────────────────

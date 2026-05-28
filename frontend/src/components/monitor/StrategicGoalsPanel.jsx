@@ -8,7 +8,8 @@ import {
 } from "@/components/ui/sheet";
 import {
   Target, Sparkles, FileText, ChevronRight, ChevronDown, Loader2, X,
-  TrendingUp, AlertTriangle, CheckCircle2, Plus, Info, Layers, Pencil,
+  TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Plus, Info,
+  Layers, Pencil, Upload, Activity, Minus,
 } from "lucide-react";
 
 /**
@@ -549,12 +550,42 @@ function GoalDetailDrawer({ goal, onClose, contextId, onGoalUpdated, isNED }) {
   const [noDataMessage, setNoDataMessage] = useState(null);
   const [lastApplied, setLastApplied] = useState(null);
 
+  // AA.followup.10 REVISED (2026-02 fork-resume) — Goal evolution feed
+  // for the Progress timeline section. Auto-fetched on drawer open;
+  // never user-edited.
+  const [evolution, setEvolution] = useState({ events: [], loading: false });
+  const [expandedEventId, setExpandedEventId] = useState(null);
+
   // Reset transient state whenever the drawer opens for a different goal.
   useEffect(() => {
     setNoDataMessage(null);
     setLastApplied(null);
     setUpdating(false);
+    setEvolution({ events: [], loading: false });
+    setExpandedEventId(null);
   }, [goal?.id]);
+
+  // Fetch the goal evolution feed on open. Idempotent; the endpoint
+  // is a read-only aggregator over existing collections.
+  useEffect(() => {
+    if (!goal?.id || !contextId) return;
+    let cancelled = false;
+    setEvolution((s) => ({ ...s, loading: true }));
+    (async () => {
+      try {
+        const { data } = await api.get(
+          `/contexts/${contextId}/strategic-goals/${goal.id}/evolution`,
+        );
+        if (cancelled) return;
+        setEvolution({ events: data?.events || [], loading: false });
+      } catch (_e) {
+        if (cancelled) return;
+        // Soft-fail — empty state is the right UX, not a toast.
+        setEvolution({ events: [], loading: false });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [goal?.id, contextId, lastApplied]);
 
   const onUpdateGoal = useCallback(async () => {
     if (!goal || !contextId || updating) return;
@@ -705,34 +736,125 @@ function GoalDetailDrawer({ goal, onClose, contextId, onGoalUpdated, isNED }) {
             </div>
           )}
 
-          {/* Milestone tracker — milestones not modelled yet (Phase
-              AA.followup.10). Render empty state + disabled add CTA. */}
-          <div data-testid="goal-drawer-milestones" className="border border-[var(--rule)] rounded-sm bg-white px-3 py-3">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--ink)]">Milestones</p>
-              <button
-                type="button"
-                disabled
-                title="Coming with Phase AA.followup.10 — milestone model"
-                className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)] cursor-not-allowed opacity-60"
-                data-testid="goal-drawer-add-milestone-btn"
-              >
-                + Add milestone
-              </button>
-            </div>
-            {Array.isArray(goal?.milestones) && goal.milestones.length > 0 ? (
-              <ul className="space-y-1.5">
-                {goal.milestones.map((m, i) => (
-                  <li key={i} className="text-[12.5px] text-[var(--ink)]">
-                    <span className="font-mono text-[10.5px] text-[var(--muted)] mr-2">{m.due_at || "—"}</span>
-                    {m.title}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-[12.5px] text-[var(--muted)] italic" data-testid="goal-drawer-milestones-empty">
-                No milestones set yet.
+          {/* Progress timeline — AA.followup.10 REVISED (2026-02 fork-resume).
+              Auto-derived from existing time-series sources (score_history,
+              audit_log, documents, extractions_log). Observational view —
+              NO manual "+ Add" CTA. Replaces the prior milestone-tracker
+              direction the user flagged as wrong. */}
+          <div data-testid="goal-drawer-progress-timeline" className="border border-[var(--rule)] rounded-sm bg-white px-3 py-3">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--ink)] flex items-center gap-1.5">
+                <Activity className="w-3 h-3" /> Progress timeline
               </p>
+              {evolution.events.length > 0 && (
+                <span className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)]" data-testid="goal-drawer-progress-timeline-count">
+                  {evolution.events.length} signal{evolution.events.length === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+
+            {evolution.loading ? (
+              <p className="text-[12px] text-[var(--muted)] italic">
+                <Loader2 className="w-3 h-3 inline-block animate-spin mr-1.5" />Loading…
+              </p>
+            ) : evolution.events.length === 0 ? (
+              <p
+                className="text-[12.5px] text-[var(--muted)] italic leading-snug"
+                data-testid="goal-drawer-progress-timeline-empty"
+              >
+                No progress signals recorded yet. Signals will appear here as
+                documents are uploaded and AKKI reassesses this goal.
+              </p>
+            ) : (
+              <>
+                {/* Horizontal bar with markers. The bar itself is a
+                    1px ned-purple/30 rule; each marker is a dot
+                    positioned along it proportionally to its
+                    timestamp. */}
+                {(() => {
+                  const items = evolution.events;
+                  const times = items.map((e) => new Date(e.at).getTime() || 0).filter(Boolean);
+                  const tMin = Math.min(...times);
+                  const tMax = Math.max(...times);
+                  const span = Math.max(tMax - tMin, 1);
+                  const posPct = (iso) => {
+                    const t = new Date(iso).getTime();
+                    if (!isFinite(t)) return 0;
+                    return ((t - tMin) / span) * 100;
+                  };
+                  const ICON = {
+                    score_delta:     TrendingUp,
+                    doc_upload:      Upload,
+                    ai_reassessment: Sparkles,
+                    status_change:   CheckCircle2,
+                  };
+                  return (
+                    <>
+                      <div
+                        className="relative h-6 mb-3"
+                        data-testid="goal-drawer-progress-timeline-bar"
+                      >
+                        <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-ned-purple/30" />
+                        {items.map((e) => {
+                          const Icon = ICON[e.kind] || Activity;
+                          const dirDown = e.delta?.direction === "down";
+                          const ArrowIcon = e.kind === "score_delta"
+                            ? (dirDown ? TrendingDown : (e.delta?.direction === "flat" ? Minus : TrendingUp))
+                            : Icon;
+                          return (
+                            <button
+                              key={e.id}
+                              type="button"
+                              onClick={() => setExpandedEventId(expandedEventId === e.id ? null : e.id)}
+                              className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-white border flex items-center justify-center transition-transform hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-ned-purple/40 ${
+                                expandedEventId === e.id
+                                  ? "border-ned-purple ring-2 ring-ned-purple/30"
+                                  : "border-ned-purple/60"
+                              }`}
+                              style={{ left: `${posPct(e.at)}%` }}
+                              title={e.trigger}
+                              data-testid={`goal-drawer-progress-timeline-marker-${e.id}`}
+                              data-marker-kind={e.kind}
+                            >
+                              <ArrowIcon className="w-2 h-2 text-ned-purple" strokeWidth={2.4} />
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Expanded detail panel for the clicked marker. */}
+                      {expandedEventId && (() => {
+                        const ev = items.find((e) => e.id === expandedEventId);
+                        if (!ev) return null;
+                        const when = ev.at ? new Date(ev.at).toLocaleString(undefined, {
+                          month: "short", day: "numeric", year: "numeric",
+                          hour: "2-digit", minute: "2-digit",
+                        }) : "—";
+                        return (
+                          <div
+                            className="rounded-sm bg-ned-purple/5 border border-ned-purple/20 px-3 py-2"
+                            data-testid={`goal-drawer-progress-timeline-detail-${ev.id}`}
+                          >
+                            <p className="text-[10.5px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1">
+                              {when}
+                            </p>
+                            <p className="text-[12.5px] text-[var(--ink)] leading-snug">
+                              {ev.trigger}
+                            </p>
+                            {ev.delta && (
+                              <p className="text-[11px] text-[var(--muted)] mt-1">
+                                {ev.delta.metric}: {ev.delta.from}% → {ev.delta.to}%
+                                {ev.delta.direction === "up" && " ▲"}
+                                {ev.delta.direction === "down" && " ▼"}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </>
+                  );
+                })()}
+              </>
             )}
           </div>
 

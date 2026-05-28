@@ -38,10 +38,11 @@ def test_item4_drawer_intelligence_panel_present():
         "goal-drawer-performance-signal-text",
         "goal-drawer-probability-signal",
         "goal-drawer-probability-signal-text",
-        "goal-drawer-milestones",
-        "goal-drawer-milestones-empty",
+        # AA.followup.10 REVISED — Progress timeline replaces the old
+        # manual milestones tracker.
+        "goal-drawer-progress-timeline",
+        "goal-drawer-progress-timeline-empty",
         "goal-drawer-recommended-action",
-        "goal-drawer-add-milestone-btn",
     )
     for tid in required:
         assert f'data-testid="{tid}"' in src, (
@@ -72,18 +73,23 @@ def test_item4_drawer_uses_client_side_narratives_when_backend_field_absent():
     assert "probability_explanation" in drawer_block
 
 
-def test_item4_drawer_milestones_empty_state_copy():
+def test_item4_progress_timeline_replaces_manual_milestones():
+    """AA.followup.10 REVISED — the manual `+ Add milestone` direction
+    was wrong. Drawer renders auto-derived Progress timeline instead."""
     src = (REPO / "frontend" / "src" / "components" / "monitor" / "StrategicGoalsPanel.jsx").read_text(encoding="utf-8")
-    assert "No milestones set yet." in src, (
-        "Milestone empty-state copy must match spec exactly."
+    # Old milestone testids must be gone.
+    for legacy in ("goal-drawer-milestones-empty", "goal-drawer-add-milestone-btn", "goal-drawer-milestones\""):
+        assert legacy.rstrip('"') not in src or f'"{legacy.rstrip(chr(34))}"' not in src or src.count(f'data-testid="{legacy.rstrip(chr(34))}"') == 0, (
+            f"Legacy milestone testid {legacy!r} must be removed; "
+            f"replaced by Progress timeline."
+        )
+    # Empty-state copy per spec.
+    assert "No progress signals recorded yet." in src, (
+        "Progress timeline empty-state copy must match spec exactly"
     )
-    # The add-milestone CTA is wired to a disabled button this dispatch
-    # (no backend field yet). Confirm it's disabled.
-    btn_idx = src.find("goal-drawer-add-milestone-btn")
-    btn_block = src[max(0, btn_idx - 250):btn_idx + 100]
-    assert "disabled" in btn_block, (
-        "Milestone add-CTA must be disabled while the backend milestone "
-        "model is not yet implemented (filed Phase AA.followup.10)."
+    assert "+ Add milestone" not in src, (
+        "Manual `+ Add milestone` CTA must be REMOVED from the drawer "
+        "(AA.followup.10 REVISED course-correction)"
     )
 
 

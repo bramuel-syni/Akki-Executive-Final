@@ -79,6 +79,7 @@ from routers import admin_users as admin_users_router  # noqa: E402
 from routers import admin_extractions as admin_extractions_router  # noqa: E402
 from routers import admin_tenants as admin_tenants_router  # noqa: E402
 from routers import account_deletion as account_deletion_router  # noqa: E402
+from routers import strategic_goal_evolution as strategic_goal_evolution_router  # noqa: E402
 # Phase S (2026-05-27) — Password reset router.
 from routers import password_reset as password_reset_router  # noqa: E402
 # CLEANUP B2 (2026-05-26): plays_router archived — Plays surface ORPHAN
@@ -221,6 +222,7 @@ app.include_router(admin_users_router.router)
 app.include_router(admin_extractions_router.router)
 app.include_router(admin_tenants_router.router)
 app.include_router(account_deletion_router.router)
+app.include_router(strategic_goal_evolution_router.router)
 # Phase S (2026-05-27) — password reset.
 app.include_router(password_reset_router.router)
 # CLEANUP B2 (2026-05-26): plays_router include removed — see archive note above.

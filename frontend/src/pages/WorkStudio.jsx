@@ -62,7 +62,7 @@ import WorkspaceEntryGate from "@/components/transitions/WorkspaceEntryGate";
 import ListingShell from "@/components/common/ListingShell";
 // Phase Z (2026-05-27, Z-slice-2) — origin display map (single source
 // of truth; mirror of `backend/services/documents/origin_display.py`).
-import { displayOrigin, displayCategory } from "@/lib/origins";
+import { displayOrigin, displayCategory, displayCategoryChip } from "@/lib/origins";
 
 // =============================================================================
 // Helpers
@@ -141,10 +141,15 @@ const KIND_TABS = [
     category: "board_pack",
   },
   { id: "cycle_minutes",        label: "Minutes",  short: "minutes",  icon: FileText,     empty: "No documents in this category yet.", category: "minutes" },
-  { id: "drafts",               label: "Drafts",   short: "drafts",   icon: FileText,     empty: "No documents in this category yet.", category: "draft" },
+  // Drafts + Briefs merge (2026-02 fork-resume) — collapsed two
+  // tabs (Drafts / Briefing) into one combined tab. Per-tile chip
+  // distinguishes DRAFT vs BRIEF at the row level. Data model
+  // untouched: the `draft` and `briefing` categories remain orthogonal
+  // in the API; this is UI grouping only. The fetcher uses array form
+  // `category` to fire 2 parallel GETs and merge results.
+  { id: "drafts_briefs",        label: "Drafts & Briefs", short: "drafts-briefs", icon: FileText, empty: "No drafts or briefs yet.", category: ["draft", "briefing"] },
   { id: "deck",                 label: "Decks",    short: "decks",    icon: Presentation, empty: "No documents in this category yet.", category: "deck" },
   { id: "report",               label: "Reports",  short: "reports",  icon: FileText,     empty: "No documents in this category yet.", category: "report" },
-  { id: "briefing",             label: "Briefing", short: "briefings",icon: BookOpen,     empty: "No documents in this category yet.", category: "briefing" },
 ];
 
 
@@ -171,6 +176,16 @@ function ContextActions({ kind, onExport, onEnhance, onCompile, onCreate }) {
     // passes can add per-draft actions (objective edit, finalize, etc.)
     drafts: [
       { id: "create_draft",       label: "+ New draft",        icon: Plus,    onClick: () => onCreate("draft") },
+    ],
+    // Drafts+Briefs merge (2026-02 fork-resume) — combined tab keeps
+    // BOTH `+ New draft` (creates a draft document) and `Create a Brief`
+    // (the briefing-export CTA), since each maps to a different
+    // category-orthogonal action. Phase Z orthogonality holds: the
+    // create path still files under `draft`, the brief path still
+    // files under `briefing`.
+    drafts_briefs: [
+      { id: "create_draft",       label: "+ New draft",        icon: Plus,     onClick: () => onCreate("draft") },
+      { id: "create_a_brief",     label: "Create a Brief",     icon: FileDown, onClick: () => onExport("brief") },
     ],
     deck: [
       { id: "create_summary_deck", label: "Create Summary Deck", icon: Plus,   onClick: () => onCreate("deck") },
@@ -328,13 +343,20 @@ function DocumentRow({ row, onOpen }) {
           >
             {displayOrigin(origin)}
           </span>
-          {/* Category badge — reinforces orthogonality model. */}
+          {/* Category badge — reinforces orthogonality model.
+              Drafts+Briefs merge (2026-02 fork-resume) — chip now uses
+              brand-purple ned-purple/N (Tailwind-config short name so
+              opacity composites correctly, see Wave 4.2.followup.2)
+              and the shorter singular label form (DRAFT / BRIEF / etc).
+              On the merged tab this is the per-tile DRAFT vs BRIEF
+              discriminator the user requested. */}
           {category && (
             <span
-              className="inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium uppercase tracking-wider bg-[var(--parchment)] text-[var(--muted)] border border-[var(--rule)]"
+              className="inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium uppercase tracking-wider bg-ned-purple/10 text-ned-purple border border-ned-purple/20"
               data-testid="work-studio-document-row-category-badge"
+              data-category={category}
             >
-              {displayCategory(category)}
+              {displayCategoryChip(category)}
             </span>
           )}
           <span
@@ -594,6 +616,13 @@ export default function WorkStudio() {
     if (k === "cycle_board_pack" || k === "cycle_committee_pack") {
       return "cycle_main_and_committee_pack";
     }
+    // Drafts+Briefs merge (2026-02 fork-resume) — legacy `drafts` and
+    // `briefing` URL params redirect to the merged tab id. Preserves
+    // ALL existing deep links (FollowUpDraftsCard, WorkStudioSidebar,
+    // CompilationRail, etc) without touching their navigation strings.
+    if (k === "drafts" || k === "briefing") {
+      return "drafts_briefs";
+    }
     return KIND_TABS.find((t) => t.id === k) ? k : "cycle_main_and_committee_pack";
   })();
   const [kind, setKind] = useState(initialKind);
@@ -694,14 +723,31 @@ export default function WorkStudio() {
         setAggTotal(0);
         return;
       }
-      const { data } = await api.get(`/contexts/${cid}/documents`, {
-        params: {
-          category: cat,
-          search:   aggQ || undefined,
-          limit:    500,
-        },
-      });
-      const all = Array.isArray(data) ? data : [];
+      // Drafts+Briefs merge (2026-02 fork-resume) — `category` may be
+      // a string (single category tab) OR an array (merged tab). For
+      // arrays, fire one GET per category in parallel and merge the
+      // results. Backend `?category=` filter remains single-valued —
+      // the data-model orthogonality lock (Phase Z-slice-6) holds.
+      let all;
+      if (Array.isArray(cat)) {
+        const responses = await Promise.all(
+          cat.map((c) =>
+            api.get(`/contexts/${cid}/documents`, {
+              params: { category: c, search: aggQ || undefined, limit: 500 },
+            })
+          )
+        );
+        all = responses.flatMap((r) => (Array.isArray(r.data) ? r.data : []));
+      } else {
+        const { data } = await api.get(`/contexts/${cid}/documents`, {
+          params: {
+            category: cat,
+            search:   aggQ || undefined,
+            limit:    500,
+          },
+        });
+        all = Array.isArray(data) ? data : [];
+      }
       // Client-side sort + paginate (the backend already returns
       // newest-first by created_at; we re-sort here to honour the
       // user's choice from the ListingShell sort dropdown).
@@ -915,11 +961,43 @@ export default function WorkStudio() {
               confidence-chip grid) is REMOVED — the unified documents
               listing now subsumes Akki-generated artefacts. Confidence
               chips remain available via the document drawer. */}
+          {/* Drafts+Briefs merge (2026-02 fork-resume) — when the
+              active tab carries a category ARRAY (merged tab), expose
+              the testid for BOTH categories on the same body so legacy
+              Z-slice-6 wire-tests (which iterate `ws-tab-content-${cat}`
+              per single category) still resolve to the correct wrapper.
+              For single-category tabs the testid is the singular string. */}
           <div
             className="mt-5"
-            data-testid={`ws-tab-content-${activeTab.category}`}
-            data-active-category={activeTab.category}
+            data-testid={
+              Array.isArray(activeTab.category)
+                ? `ws-tab-content-${activeTab.category[0]}`
+                : `ws-tab-content-${activeTab.category}`
+            }
+            data-testid-alt={
+              Array.isArray(activeTab.category)
+                ? activeTab.category.slice(1).map((c) => `ws-tab-content-${c}`).join(" ")
+                : undefined
+            }
+            data-active-category={
+              Array.isArray(activeTab.category)
+                ? activeTab.category.join(",")
+                : activeTab.category
+            }
           >
+            {/* Phantom testid anchors for merged-tab compat — each
+                array category gets a 0×0 child carrying its solo
+                `ws-tab-content-${cat}` testid so Playwright locators
+                from Phase Z-slice-6 (which iterate per-category) keep
+                resolving to a DOM element inside the merged body. */}
+            {Array.isArray(activeTab.category) && activeTab.category.slice(1).map((c) => (
+              <span
+                key={c}
+                className="sr-only"
+                data-testid={`ws-tab-content-${c}`}
+                aria-hidden="true"
+              />
+            ))}
             <ListingShell
               testId="work-studio-listing"
               searchValue={aggQ}
@@ -953,7 +1031,11 @@ export default function WorkStudio() {
                   </p>
                 </div>
               }
-              data-testid={`ws-tab-content-${activeTab.category}-shell`}
+              data-testid={
+                Array.isArray(activeTab.category)
+                  ? `ws-tab-content-${activeTab.category[0]}-shell`
+                  : `ws-tab-content-${activeTab.category}-shell`
+              }
               preBody={
                 <div data-testid="ws-tab-compile-actions">
                   <ContextActions

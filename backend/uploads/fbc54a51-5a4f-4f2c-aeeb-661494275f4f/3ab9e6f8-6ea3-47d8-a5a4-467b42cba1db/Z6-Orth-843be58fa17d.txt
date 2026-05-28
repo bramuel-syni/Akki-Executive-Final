@@ -1,0 +1,3 @@
+Z-slice-6 orthogonality wire-test fixture
+This file should surface in BOTH Work Studio Reports AND
+/app/documents Uploaded tabs. Marker: Z6-Orth-843be58fa17d
