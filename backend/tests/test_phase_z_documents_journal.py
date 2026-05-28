@@ -423,3 +423,212 @@ def test_Z_g_phase_ledger_carries_orthogonality_mental_model():
     assert not missing, (
         f"PHASE_LEDGER.md missing Phase Z orthogonality mental-model phrases: {missing}"
     )
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Z-SLICE-2 — Work Studio LEFT column rewrite (active-tab listing
+#             surfaces docs by category, all 3 origins, with origin
+#             badge on each row).
+# ═════════════════════════════════════════════════════════════════════
+
+WS_JSX = REPO / "frontend" / "src" / "pages" / "WorkStudio.jsx"
+
+# ─────────────────────────────────────────────────────────────────────
+# H. KIND_TABS — each tab carries the locked category mapping.
+# ─────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("tab_id,category", [
+    ("cycle_main_and_committee_pack", "board_pack"),
+    ("cycle_minutes",                 "minutes"),
+    ("drafts",                        "draft"),
+    ("deck",                          "deck"),
+    ("report",                        "report"),
+    ("briefing",                      "briefing"),
+])
+def test_Z2_h_kind_tabs_carry_locked_category(tab_id, category):
+    """Per the user dispatch — locked tab→category mapping.
+    Pre-Z legacy fetcher branches (union_of / source:documents_drafts)
+    are gone — every tab routes to one canonical `category` value."""
+    src = WS_JSX.read_text(encoding="utf-8")
+    idx = src.find(f'id: "{tab_id}"')
+    assert idx > 0, f"KIND_TABS entry for {tab_id!r} not found"
+    # Pull a generous block to absorb multi-line comments preceding
+    # the `category:` line for the merged main-board tab.
+    block = src[idx:idx + 1200]
+    # The block extends until the row close `},` — clamp it there so
+    # we don't accidentally see the NEXT tab's category.
+    close = block.find("\n  },")
+    if close > 0:
+        block = block[:close]
+    assert f'category: "{category}"' in block, \
+        f"tab {tab_id!r} must declare category: {category!r}"
+
+
+def test_Z2_h_kind_tabs_legacy_branches_removed():
+    """The pre-Z fetcher had three legacy branches (`union_of`,
+    `source: "documents_drafts"`, and a default aggregates path).
+    Z-slice-2 collapses them into ONE unified path — those legacy
+    KIND_TABS attributes MUST be gone."""
+    src = WS_JSX.read_text(encoding="utf-8")
+    assert 'union_of:' not in src, \
+        "KIND_TABS `union_of` legacy field must be removed"
+    assert 'source: "documents_drafts"' not in src, \
+        "KIND_TABS `source: documents_drafts` legacy field must be removed"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# I. Fetcher — hits the new unified /documents endpoint with `category`.
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z2_i_fetcher_hits_documents_endpoint_with_category():
+    src = WS_JSX.read_text(encoding="utf-8")
+    # The fetcher MUST issue a GET to /contexts/{cid}/documents.
+    assert "/contexts/${cid}/documents`" in src
+    # And MUST pass the active-tab's category as a query param.
+    assert "category: cat" in src or "category:    cat" in src or "category:   cat" in src
+
+
+def test_Z2_i_legacy_briefings_aggregates_path_unwired():
+    """The pre-Z surface called the briefings/aggregates endpoint —
+    Z-slice-2 routes through /documents only. The aggregates endpoint
+    remains in the backend for other callers; this page no longer
+    hits it.
+
+    We check for ACTIVE API CALLS only (the path may still appear in
+    documentation comments narrating Z's history)."""
+    src = WS_JSX.read_text(encoding="utf-8")
+    # `api.get(`/contexts/${cid}/briefings/aggregates...` is the
+    # legacy active-call form; check that literal template-string
+    # path is not present.
+    assert "/briefings/aggregates`" not in src, \
+        "WorkStudio.jsx must not call /briefings/aggregates after Z-slice-2"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# J. DocumentRow renders origin + category badges + locked testids.
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z2_j_document_row_component_defined():
+    src = WS_JSX.read_text(encoding="utf-8")
+    assert "function DocumentRow" in src, \
+        "DocumentRow component must be defined"
+
+
+def test_Z2_j_document_row_carries_locked_testids():
+    src = WS_JSX.read_text(encoding="utf-8")
+    for tid in (
+        "work-studio-document-row",
+        "work-studio-document-row-name",
+        "work-studio-document-row-origin-badge",
+        "work-studio-document-row-category-badge",
+        "work-studio-document-row-modified",
+    ):
+        assert f'data-testid="{tid}"' in src, \
+            f"DocumentRow must carry data-testid={tid!r}"
+
+
+def test_Z2_j_document_row_uses_display_origin_helper():
+    """Source-strict guard — no raw origin string literals like
+    "upload" / "email_receipt" / "akki_generated" appearing as
+    rendered JSX text. The display helper is the single source of
+    truth for user-facing labels."""
+    src = WS_JSX.read_text(encoding="utf-8")
+    # Must import the helper.
+    assert "displayOrigin" in src, \
+        "WorkStudio must import displayOrigin from @/lib/origins"
+    # Must use it in JSX.
+    assert "{displayOrigin(origin)}" in src, \
+        "DocumentRow must render origin via displayOrigin(origin)"
+
+
+def test_Z2_j_document_row_emits_data_origin_and_data_category_attrs():
+    """Critical DOM contract — rows MUST carry both data-origin AND
+    data-category attributes so the multi-viewport DOM probe in
+    slice 6 can verify the orthogonal classification renders on the
+    actual DOM (not just in source)."""
+    src = WS_JSX.read_text(encoding="utf-8")
+    assert 'data-origin={origin || "unknown"}' in src
+    assert 'data-category={category || "uncategorized"}' in src
+
+
+# ─────────────────────────────────────────────────────────────────────
+# K. Layout — compile actions BELOW the document list.
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z2_k_compile_actions_below_listing():
+    """Per Z-slice-2 spec: 'Compile actions for the active tab live
+    BELOW the document list'. Detect by relative position in source."""
+    src = WS_JSX.read_text(encoding="utf-8")
+    listing_idx = src.find('<ListingShell\n              testId="work-studio-listing"')
+    if listing_idx < 0:
+        listing_idx = src.find('testId="work-studio-listing"')
+    actions_idx = src.find("<ContextActions")
+    assert listing_idx > 0 and actions_idx > 0
+    assert listing_idx < actions_idx, \
+        "ContextActions must render AFTER ListingShell in JSX source"
+
+
+def test_Z2_k_main_board_tab_no_longer_gated_off_listing():
+    """Pre-Z bug — the cycle_main_and_committee_pack tab was
+    explicitly gated off both the DocumentCardsSection and the
+    ListingShell. Z-slice-2 unifies the listing so this gate is
+    gone."""
+    src = WS_JSX.read_text(encoding="utf-8")
+    # The legacy gating phrase used a specific pattern.
+    assert 'kind !== "cycle_main_and_committee_pack"' not in src, \
+        "legacy main-board-tab listing gate must be removed in Z-slice-2"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# L. Empty-state copy — locked "No documents in this category yet."
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z2_l_empty_state_copy_locked():
+    src = WS_JSX.read_text(encoding="utf-8")
+    assert "No documents in this category yet." in src, \
+        "ListingShell emptyState must use the spec-locked empty copy"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# M. Tab row — Recurrence #4 (overflow-x-auto) preserved.
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z2_m_tab_row_overflow_preserved():
+    """Recurrence #4 closure — the tab row must remain horizontally
+    scrollable at narrow viewports. Lock the overflow class so this
+    can't drift."""
+    src = WS_JSX.read_text(encoding="utf-8")
+    # Find the tab row container near the KIND_TABS render.
+    assert "overflow-x-auto" in src, \
+        "tab row must keep overflow-x-auto for narrow viewports"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# N. ws-tab-content-{category} testid — present + keyed by category.
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z2_n_active_tab_content_testid_keyed_by_category():
+    """Per the locked CI lockdown — `[data-testid="ws-tab-content-
+    {category}"]` MUST be mounted exactly once on the active tab.
+    The mount is dynamic (key derived from activeTab.category) so we
+    locate the template literal."""
+    src = WS_JSX.read_text(encoding="utf-8")
+    assert "`ws-tab-content-${activeTab.category}`" in src, \
+        "active-tab body must carry ws-tab-content-{category} testid"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# O. Row click — board_pack routes to dedicated page; others use ?doc_id=
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z2_o_row_click_board_pack_routes_to_dedicated_page():
+    src = WS_JSX.read_text(encoding="utf-8")
+    # The locked routing rule: cat === "board_pack" → navigate(`/app/work-studio/document/${row.id}`).
+    assert 'cat === "board_pack"' in src
+    assert "navigate(`/app/work-studio/document/${row.id}`)" in src
+
+
+def test_Z2_o_row_click_other_categories_open_via_doc_id():
+    src = WS_JSX.read_text(encoding="utf-8")
+    # Non-board-pack rows fall through to setSearchParams({doc_id: row.id...
+    assert "doc_id: row.id" in src

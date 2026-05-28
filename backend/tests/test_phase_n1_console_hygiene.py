@@ -19,6 +19,8 @@ network response body before naming the bug class.
 """
 from __future__ import annotations
 
+import pytest
+
 import re
 from pathlib import Path
 
@@ -72,6 +74,7 @@ def test_n1_work_studio_no_legacy_page_size_500_literal():
 
 
 # ── T3. WorkStudio paginates the union fetch ─────────────────────
+@pytest.mark.skip(reason="Superseded by Phase Z-slice-2 (2026-05-27) — `union_of` fetch removed entirely; WorkStudio now hits the unified GET /api/contexts/{cid}/documents endpoint. See `test_phase_z_documents_journal.py::test_Z2_i_fetcher_hits_documents_endpoint_with_category` for the post-Z lock.")
 def test_n1_work_studio_union_fetch_paginates_within_cap():
     src = WORK_STUDIO.read_text(encoding="utf-8")
     # We assert the pagination loop scaffold exists. The exact

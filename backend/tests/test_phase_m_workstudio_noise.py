@@ -47,6 +47,7 @@ Locks:
 from __future__ import annotations
 
 import re
+import pytest
 from pathlib import Path
 
 
@@ -63,6 +64,7 @@ def _read(p: Path) -> str:
 # M.1 — Doc-card listing removal on Main Board & Committee Packs tab
 # ─────────────────────────────────────────────────────────────────
 
+@pytest.mark.skip(reason="Superseded by Phase Z-slice-2 (2026-05-27) — DocumentCardsSection REMOVED + main-board tab listing un-gated. See `test_phase_z_documents_journal.py::test_Z2_k_main_board_tab_no_longer_gated_off_listing` for the post-Z lock.")
 def test_m_M1a_document_cards_section_gated_by_tab():
     """DocumentCardsSection must render only when NOT on the
     Main Board & Committee Packs tab."""
@@ -70,8 +72,6 @@ def test_m_M1a_document_cards_section_gated_by_tab():
     # Strip docstrings/comments first
     code = re.sub(r"/\*[\s\S]*?\*/", "", src)
     code = re.sub(r"//[^\n]*", "", code)
-    # Look for the conditional wrapper. Both single-line and multi-line
-    # rendering patterns are valid.
     m = re.search(
         r'kind\s*!==\s*[\'"]cycle_main_and_committee_pack[\'"]\s*&&[\s\S]{0,400}?<DocumentCardsSection',
         code,
@@ -82,6 +82,7 @@ def test_m_M1a_document_cards_section_gated_by_tab():
     )
 
 
+@pytest.mark.skip(reason="Superseded by Phase Z-slice-2 (2026-05-27) — main-board tab listing un-gated; the listing now surfaces unified docs by category. See `test_phase_z_documents_journal.py::test_Z2_k_main_board_tab_no_longer_gated_off_listing`.")
 def test_m_M1b_listing_shell_gated_by_tab():
     """ListingShell must render only when NOT on the Main Board & Committee Packs tab."""
     src = _read(WORK_STUDIO)

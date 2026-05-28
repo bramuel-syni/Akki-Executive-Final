@@ -56,6 +56,9 @@ import {
 } from "lucide-react";
 import WorkspaceEntryGate from "@/components/transitions/WorkspaceEntryGate";
 import ListingShell from "@/components/common/ListingShell";
+// Phase Z (2026-05-27, Z-slice-2) — origin display map (single source
+// of truth; mirror of `backend/services/documents/origin_display.py`).
+import { displayOrigin, displayCategory } from "@/lib/origins";
 
 // =============================================================================
 // Helpers
@@ -83,6 +86,26 @@ function formatPeriod(period_start, period_end, fallback) {
 
 // =============================================================================
 // Six-tab listing
+// Phase Z (2026-05-27, Z-slice-2) — Each tab now maps to a canonical
+// `category` value on the `documents` collection. The active tab's
+// listing surfaces ALL documents in that category, across all 3
+// origins (akki_generated / upload / email_receipt), with the origin
+// badge shown on each row.
+//
+// Tab → category mapping (locked by user dispatch):
+//   cycle_main_and_committee_pack → board_pack
+//   cycle_minutes                 → minutes
+//   drafts                        → draft
+//   deck                          → deck
+//   report                        → report
+//   briefing                      → briefing
+//
+// Pre-Z behavior (now retired): tabs sourced from
+// /briefings/aggregates (board pack + minutes + decks + reports +
+// briefings) and /documents/drafts. The new unified `GET
+// /api/contexts/{cid}/documents?category=X` endpoint (shipped in
+// Z-slice-1) replaces all four fetcher branches with one call.
+//
 // Phase E.1 (2026-05-26) — tab cleanup:
 //   • "Board Packs" + "Committee Packs" merged into
 //     "Main Board & Committee Packs". The new tab id is
@@ -107,26 +130,17 @@ const KIND_TABS = [
     short: "main board & committee packs",
     icon: ScrollText,
     empty: "No board or committee packs yet.",
-    // The merged tab fetches both legacy aggregate kinds in parallel.
-    union_of: ["cycle_board_pack", "cycle_committee_pack"],
+    // Phase Z (2026-05-27) — canonical category for this tab. Both
+    // Main Board AND Committee packs roll up under `board_pack`
+    // (the underlying `work_studio_exports.kind` keeps the
+    // sub-distinction for compile-template selection only).
+    category: "board_pack",
   },
-  { id: "cycle_minutes",        label: "Minutes",  short: "minutes",  icon: FileText,     empty: "No minutes filed yet." },
-  {
-    id: "drafts",
-    label: "Drafts",
-    short: "drafts",
-    icon: FileText,
-    empty: "No drafts yet.",
-    // Drafts is sourced from documents (state=draft), not from
-    // briefings/aggregates. The fetcher branches on this flag.
-    source: "documents_drafts",
-  },
-  { id: "deck",                 label: "Decks",    short: "decks",    icon: Presentation, empty: "No decks in flight." },
-  { id: "report",               label: "Reports",  short: "reports",  icon: FileText,     empty: "No reports yet." },
-  // Phase M-revision (2026-05-27) — Briefing restored INLINE as the
-  // 6th tab. Same `kind = "briefing"` data path; peer-level with the
-  // 5 tabs above (no more 2nd-line pill).
-  { id: "briefing",             label: "Briefing", short: "briefings",icon: BookOpen,     empty: "No briefs yet." },
+  { id: "cycle_minutes",        label: "Minutes",  short: "minutes",  icon: FileText,     empty: "No documents in this category yet.", category: "minutes" },
+  { id: "drafts",               label: "Drafts",   short: "drafts",   icon: FileText,     empty: "No documents in this category yet.", category: "draft" },
+  { id: "deck",                 label: "Decks",    short: "decks",    icon: Presentation, empty: "No documents in this category yet.", category: "deck" },
+  { id: "report",               label: "Reports",  short: "reports",  icon: FileText,     empty: "No documents in this category yet.", category: "report" },
+  { id: "briefing",             label: "Briefing", short: "briefings",icon: BookOpen,     empty: "No documents in this category yet.", category: "briefing" },
 ];
 
 
@@ -250,6 +264,90 @@ function BriefRow({ row, onOpen }) {
     </button>
   );
 }
+
+
+// =============================================================================
+// Phase Z (2026-05-27, Z-slice-2) — DocumentRow
+//
+// Active-tab row component for the Work Studio LEFT column listing.
+// Renders ONE document — sourced from the new unified
+// `GET /api/contexts/{cid}/documents?category=X` endpoint — with:
+//
+//   - Doc name
+//   - Category badge (redundant on the active tab BUT reinforces the
+//     orthogonal classification model + visually equates the row
+//     with rows on `/app/documents`)
+//   - Origin badge (Akki-generated / Uploaded / Emailed via the
+//     display map — single source of truth)
+//   - Last-modified timestamp
+//   - Click → opens the document drawer (board pack / committee pack
+//     keep their dedicated full-page route; everything else opens via
+//     the canonical `?doc_id=` URL contract picked up by the
+//     <DocumentDrawer> mounted at the page root)
+//
+// Per the locked Z-slice-2 spec: origin badge is the primary visual
+// affordance — user must instantly see "where this doc came from".
+// =============================================================================
+function DocumentRow({ row, onOpen }) {
+  const origin = row.origin || null;
+  const category = row.category || null;
+  // Last-modified prefers `updated_at` → `committed_at` → `created_at`.
+  const ts = row.updated_at || row.committed_at || row.created_at;
+  let modifiedLabel = "—";
+  if (ts) {
+    try {
+      const d = new Date(ts);
+      modifiedLabel = d.toLocaleDateString(undefined, {
+        year: "numeric", month: "short", day: "numeric",
+      });
+    } catch (_e) { /* keep fallback */ }
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(row)}
+      className="w-full text-left border border-[var(--rule)] rounded-md bg-white px-4 py-3 flex items-start sm:items-center gap-3 flex-col sm:flex-row hover:border-[var(--ink)] hover:bg-[var(--parchment)] transition-colors"
+      data-testid="work-studio-document-row"
+      data-origin={origin || "unknown"}
+      data-category={category || "uncategorized"}
+    >
+      <Files className="w-4 h-4 text-[var(--ink)] shrink-0 mt-1 sm:mt-0" strokeWidth={1.7} />
+      <div className="min-w-0 flex-1">
+        <p className="text-[14px] text-[var(--ink)] truncate" data-testid="work-studio-document-row-name">
+          {row.name || row.original_filename || "Untitled"}
+        </p>
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
+          {/* Origin badge — primary affordance per Z-slice-2 spec. */}
+          <span
+            className="inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium uppercase tracking-wider bg-[var(--ned-purple)]/10 text-[var(--ned-purple)] border border-[var(--ned-purple)]/20"
+            data-testid="work-studio-document-row-origin-badge"
+          >
+            {displayOrigin(origin)}
+          </span>
+          {/* Category badge — reinforces orthogonality model. */}
+          {category && (
+            <span
+              className="inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium uppercase tracking-wider bg-[var(--parchment)] text-[var(--muted)] border border-[var(--rule)]"
+              data-testid="work-studio-document-row-category-badge"
+            >
+              {displayCategory(category)}
+            </span>
+          )}
+          <span
+            className="inline-flex items-center gap-1 text-[11.5px] text-[var(--muted)]"
+            data-testid="work-studio-document-row-modified"
+          >
+            <Calendar className="w-3 h-3" strokeWidth={1.7} />
+            {modifiedLabel}
+          </span>
+        </div>
+      </div>
+      <ArrowRight className="w-3.5 h-3.5 text-[var(--muted)] shrink-0" />
+    </button>
+  );
+}
+
+
 
 
 // Reusable side drawer — same shape as the legacy briefs drawer.
@@ -572,118 +670,53 @@ export default function WorkStudio() {
     setAggLoading(true);
     setAggErr(null);
     try {
-      // Phase M-revision (2026-05-27) — Briefing is the 6th KIND_TABS
-      // entry, so the lookup is uniform.
+      // Phase Z (2026-05-27, Z-slice-2) — Unified document listing.
+      // Every tab now fetches via `GET /api/contexts/{cid}/documents`
+      // filtered by the tab's canonical `category` (mapped on the
+      // KIND_TABS row). All 3 origins surface together with the
+      // origin badge on each row.
+      //
+      // Replaces the prior 3-branch fetcher (briefings/aggregates
+      // union for board pack, /documents/drafts for Drafts,
+      // briefings/aggregates for everything else). The aggregate
+      // endpoint remains available for legacy callers; we just don't
+      // hit it from this surface anymore.
       const tab = KIND_TABS.find((t) => t.id === kind);
-      // Phase E.1 (2026-05-26) — Drafts tab sources documents
-      // (state=draft) rather than briefings/aggregates. Pagination is
-      // client-side for the moment (the listing collection is tiny);
-      // when drafts grow we can promote to server-side pagination.
-      if (tab && tab.source === "documents_drafts") {
-        const { data } = await api.get(`/contexts/${cid}/documents/drafts`, {
-          params: { limit: 200 },
-        });
-        const rows = Array.isArray(data) ? data : [];
-        // Map document shape → the same minimal row shape the listing
-        // expects (id + name + created_at). The listing already
-        // gracefully renders missing fields.
-        const items = rows.map((d) => ({
-          id: d.id,
-          name: d.name || d.original_filename || d.id,
-          created_at: d.created_at,
-          updated_at: d.updated_at || d.created_at,
-          kind: "drafts",
-          _draft: true,
-        }));
-        // Filter by search + sort client-side.
-        let filtered = items;
-        if (aggQ) {
-          const needle = aggQ.toLowerCase();
-          filtered = filtered.filter((it) => (it.name || "").toLowerCase().includes(needle));
-        }
-        const total = filtered.length;
-        const start = (aggPage - 1) * aggPageSize;
-        const paged = filtered.slice(start, start + aggPageSize);
-        setAggItems(paged);
-        setAggTotal(total);
-      } else if (tab && Array.isArray(tab.union_of)) {
-        // Phase E.1 — Merged "Main Board & Committee Packs" tab. Fetch
-        // both legacy aggregate kinds in parallel and union by id.
-        //
-        // Phase N.1 (2026-05-27) — `page_size` is capped at 100 by the
-        // backend (`le=100` on the briefings/aggregates route). Previously
-        // we sent `page_size=500` to "load all client-side"; the route now
-        // rejects that with 422. We paginate up to the route cap and walk
-        // forward until the response is short (< page_size) OR we've
-        // collected `total`. The realistic data shape today is far below
-        // 100 items per kind, so we typically make 1 round-trip per kind.
-        const _AGG_PAGE_CAP = 100;
-        const _MAX_PAGES = 10;   // safety brake: 1000 items per kind is plenty
-        const _fetchAllPagesFor = async (k) => {
-          const collected = [];
-          for (let p = 1; p <= _MAX_PAGES; p += 1) {
-            const { data } = await api.get(
-              `/contexts/${cid}/briefings/aggregates`,
-              {
-                params: {
-                  kind: k,
-                  q: aggQ || undefined,
-                  sort: aggSort,
-                  page: p,
-                  page_size: _AGG_PAGE_CAP,
-                },
-              },
-            );
-            const items = data?.items || [];
-            collected.push(...items);
-            // Stop when the page wasn't full (server has no more) OR
-            // we've reached the reported total.
-            if (items.length < _AGG_PAGE_CAP) break;
-            if (typeof data?.total === "number" && collected.length >= data.total) break;
-          }
-          return collected;
-        };
-        const perKind = await Promise.all(
-          tab.union_of.map((k) => _fetchAllPagesFor(k)),
-        );
-        const byId = new Map();
-        for (const items of perKind) {
-          for (const item of items) {
-            // dedup by id; first occurrence wins
-            if (!byId.has(item.id)) byId.set(item.id, item);
-          }
-        }
-        let merged = Array.from(byId.values());
-        // Client-side sort (responses are pre-sorted within each kind
-        // but the union needs re-sorting).
-        if (aggSort === "recent") {
-          merged.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
-        } else if (aggSort === "oldest") {
-          merged.sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
-        } else if (aggSort === "alpha") {
-          merged.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
-        }
-        const total = merged.length;
-        const start = (aggPage - 1) * aggPageSize;
-        const paged = merged.slice(start, start + aggPageSize);
-        setAggItems(paged);
-        setAggTotal(total);
-      } else {
-        // Patch 2B.1 — Status filter strip removed from UI. We send a
-        // benign `status=all` here so the backend keeps the param shape
-        // (no /api/docs change), but the result is unfiltered.
-        const { data } = await api.get(`/contexts/${cid}/briefings/aggregates`, {
-          params: {
-            kind,
-            q: aggQ || undefined,
-            sort: aggSort,
-            page: aggPage,
-            page_size: aggPageSize,
-          },
-        });
-        setAggItems(data?.items || []);
-        setAggTotal(data?.total ?? (data?.items || []).length);
+      const cat = tab?.category;
+      if (!cat) {
+        // Should never happen with the locked KIND_TABS; defensive
+        // bail-out so a future tab-row regression surfaces visibly.
+        setAggItems([]);
+        setAggTotal(0);
+        return;
       }
+      const { data } = await api.get(`/contexts/${cid}/documents`, {
+        params: {
+          category: cat,
+          search:   aggQ || undefined,
+          limit:    500,
+        },
+      });
+      const all = Array.isArray(data) ? data : [];
+      // Client-side sort + paginate (the backend already returns
+      // newest-first by created_at; we re-sort here to honour the
+      // user's choice from the ListingShell sort dropdown).
+      let sorted = all.slice();
+      if (aggSort === "oldest") {
+        sorted.sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
+      } else if (aggSort === "alpha") {
+        sorted.sort((a, b) => String(a.name || a.original_filename || "")
+          .localeCompare(String(b.name || b.original_filename || "")));
+      } else {
+        // "recent" is the default — newest first.
+        sorted.sort((a, b) => String(b.updated_at || b.created_at || "")
+          .localeCompare(String(a.updated_at || a.created_at || "")));
+      }
+      const total = sorted.length;
+      const start = (aggPage - 1) * aggPageSize;
+      const paged = sorted.slice(start, start + aggPageSize);
+      setAggItems(paged);
+      setAggTotal(total);
     } catch (e) {
       setAggErr(apiErrorMessage(e));
       setAggItems([]);
@@ -770,8 +803,18 @@ export default function WorkStudio() {
   // mounts below stay in place (open=false unreachable; dead via redirect)
   // to avoid breaking any tests that reference their mount points; their
   // open-state setters are no longer called by ANY entry point.
+  // Phase Z (2026-05-27, Z-slice-2) — Row click handler.
+  // Board pack / committee pack rows keep their dedicated full-page
+  // route (`/app/work-studio/document/{id}`); everything else opens
+  // the universal DocumentDrawer via the canonical `?doc_id=` URL
+  // contract.
   const onOpenBrief = (row) => {
     if (!row?.id) return;
+    const cat = (row.category || "").toLowerCase();
+    if (cat === "board_pack") {
+      navigate(`/app/work-studio/document/${row.id}`);
+      return;
+    }
     setSearchParams({ doc_id: row.id, kind, context_id: cid || "" }, { replace: false });
   };
   const onCloseDrawer = () => { setDrawerOpen(false); };
@@ -842,89 +885,62 @@ export default function WorkStudio() {
             </div>
           </div>
 
-          {/* Per-tab body */}
-          <div className="mt-5">
-            {/* Phase M (2026-05-27) — On the `Main Board & Committee
-                Packs` tab, BOTH the DocumentCardsSection (confidence-
-                chip grid) AND the ListingShell (search bar + sort +
-                table) are HIDDEN per user spec recurrence (≥3
-                raisings): the tab keeps the 5 tabs in one line, the
-                Briefing pill on line 2, and the Compile CTAs. Docs
-                remain reachable via Drafts / Reports / Decks /
-                Minutes tabs and the Document Drawer. Other tabs are
-                untouched.
-                ─────────────────────────────────────────────────── */}
-            {kind !== "cycle_main_and_committee_pack" && (
-              /* Chunk 16 (QA-2026-05-16-037/-038/-039/-040, 2026-05-21) —
-                  Document Cards section: surfaces work_studio_exports rows
-                  (Chunk 8 listing endpoint, now augmented with confidence_band)
-                  with status badge + lock-on-committed + confidence chip +
-                  persistent download. Clicking a card body opens the
-                  existing DocumentOverlay (Chunk 8 read-only consumer).
-                  Returns null when the context has zero work_studio_exports rows. */
-              <DocumentCardsSection
-                contextId={cid}
-                onOpenDocument={(aid, exportKind) => {
-                  /* T3.3 (2026-05-25) — G8 ratified card-kind routing.
-                   * Board Pack + Committee Pack → dedicated full-page
-                   * surface (`/app/work-studio/document/{artefactId}`).
-                   * Phase O (2026-05-27) — other three kinds (Minutes /
-                   * Deck / Report) now route through the canonical
-                   * `?doc_id=` URL contract instead of the legacy
-                   * `DocumentOverlay`. Universal `<DocumentDrawer>`
-                   * mounted at the bottom of this surface picks it up. */
-                  const k = (exportKind || "").toLowerCase();
-                  if (k === "cycle_board_pack" || k === "board_pack" ||
-                      k === "cycle_committee_pack" || k === "committee_pack") {
-                    navigate(`/app/work-studio/document/${aid}`);
-                    return;
-                  }
-                  setSearchParams({ doc_id: aid, kind, context_id: cid || "" }, { replace: false });
-                }}
-              />
-            )}
+          {/* Per-tab body — Phase Z (2026-05-27, Z-slice-2) rewrite.
+              Active tab surfaces ALL documents in that tab's
+              `category` (akki_generated + upload + email_receipt) via
+              the unified GET /api/contexts/{cid}/documents endpoint.
+              Each row carries an origin badge so the user knows
+              instantly where the doc came from.
 
-            <ContextActions
-              kind={kind}
-              onExport={onExportClick}
-              onEnhance={onEnhanceClick}
-              onCompile={onCompileClick}
-              onCreate={onCreateClick}
-            />
+              Layout order per locked Z-slice-2 spec:
+                1. Document listing (ListingShell + DocumentRow)
+                2. ContextActions (compile / enhance / create CTAs)
 
-            {kind !== "cycle_main_and_committee_pack" && (
-              <ListingShell
-                testId="work-studio-listing"
-                searchValue={aggQ}
-                onSearchChange={(v) => setListingParam("q", v)}
-                searchPlaceholder={`Search ${activeTab.short} by name…`}
-                sortOptions={[
-                  { key: "recent", label: "Most recent" },
-                  { key: "oldest", label: "Oldest" },
-                  { key: "alpha",  label: "A → Z" },
-                  { key: "type",   label: "By type" },
-                ]}
-                activeSortKey={aggSort}
-                onSortChange={(k) => setListingParam("sort", k)}
-                pageSize={aggPageSize}
-                page={aggPage}
-                totalCount={aggTotal}
-                onPageChange={(n) => setListingParam("page", n, { preservePage: true })}
-                isLoading={aggLoading}
-                emptyState={
-                  <div className="border border-dashed border-[var(--rule)] rounded-sm bg-[var(--parchment)] px-6 py-10 text-center" data-testid="work-studio-agg-empty">
-                    <Layers className="w-6 h-6 text-[var(--muted)] mx-auto mb-3" />
-                    <p className="text-[14px] text-[var(--ink)] font-medium">
-                      {aggQ ? "No artefacts match this search." : activeTab.empty}
-                    </p>
-                    <p className="text-[12.5px] text-[var(--muted)] mt-1 max-w-md mx-auto">
-                      {aggQ
-                        ? "Try clearing the search."
-                        : "When the cycle has data for this aggregate, rows will appear here."}
-                    </p>
-                  </div>
-                }
-              >
+              The legacy `DocumentCardsSection` (work_studio_exports
+              confidence-chip grid) is REMOVED — the unified documents
+              listing now subsumes Akki-generated artefacts. Confidence
+              chips remain available via the document drawer. */}
+          <div
+            className="mt-5"
+            data-testid={`ws-tab-content-${activeTab.category}`}
+            data-active-category={activeTab.category}
+          >
+            <ListingShell
+              testId="work-studio-listing"
+              searchValue={aggQ}
+              onSearchChange={(v) => setListingParam("q", v)}
+              searchPlaceholder={`Search ${activeTab.short} by name…`}
+              sortOptions={[
+                { key: "recent", label: "Most recent" },
+                { key: "oldest", label: "Oldest" },
+                { key: "alpha",  label: "A → Z" },
+              ]}
+              activeSortKey={aggSort}
+              onSortChange={(k) => setListingParam("sort", k)}
+              pageSize={aggPageSize}
+              page={aggPage}
+              totalCount={aggTotal}
+              onPageChange={(n) => setListingParam("page", n, { preservePage: true })}
+              isLoading={aggLoading}
+              emptyState={
+                <div
+                  className="border border-dashed border-[var(--rule)] rounded-sm bg-[var(--parchment)] px-6 py-10 text-center"
+                  data-testid="work-studio-agg-empty"
+                >
+                  <Layers className="w-6 h-6 text-[var(--muted)] mx-auto mb-3" />
+                  <p className="text-[14px] text-[var(--ink)] font-medium">
+                    {aggQ ? "No documents match this search." : "No documents in this category yet."}
+                  </p>
+                  <p className="text-[12.5px] text-[var(--muted)] mt-1 max-w-md mx-auto">
+                    {aggQ
+                      ? "Try clearing the search."
+                      : "Upload one via the sidebar, or compile something using the actions below."}
+                  </p>
+                </div>
+              }
+              data-testid={`ws-tab-content-${activeTab.category}-shell`}
+            >
+              <div data-active-category={activeTab.category}>
                 {aggErr ? (
                   <div className="p-4 bg-amber-50 border border-amber-100 rounded-md text-[12px] text-amber-900 flex items-center gap-2" data-testid="work-studio-agg-err">
                     <AlertCircle className="w-3.5 h-3.5" /> {aggErr}
@@ -932,12 +948,24 @@ export default function WorkStudio() {
                 ) : (
                   <ul className="space-y-2" data-testid="work-studio-agg-list">
                     {aggItems.map((row) => (
-                      <BriefRow key={row.id} row={row} onOpen={onOpenBrief} />
+                      <DocumentRow key={row.id} row={row} onOpen={onOpenBrief} />
                     ))}
                   </ul>
                 )}
-              </ListingShell>
-            )}
+              </div>
+            </ListingShell>
+
+            {/* Compile actions for the active tab. Per Z-slice-2 spec
+                these live BELOW the document list (was above pre-Z). */}
+            <div className="mt-5">
+              <ContextActions
+                kind={kind}
+                onExport={onExportClick}
+                onEnhance={onEnhanceClick}
+                onCompile={onCompileClick}
+                onCreate={onCreateClick}
+              />
+            </div>
           </div>
           </div>
           <CompilationRail

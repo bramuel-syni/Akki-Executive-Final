@@ -411,7 +411,7 @@ User-tightened scope removed 1 borderline site (Operations dept chip) and made t
   `doc_kind` retained read-only; **Z.2 (filed in Future)** covers `doc_kind` retirement per the Phase F.7 retirement pattern.
 - **`committee_pack` from `work_studio_exports.kind` collapses to canonical category `board_pack`** — both surface under the one "Main Board & Committee Packs" tab; the underlying `work_studio_exports.kind` keeps the distinction for compile-template purposes only.
 
-### Slice Z.1 — Backend foundation + data model (2026-05-27)
+### Slice Z-slice-1 — Backend foundation + data model (2026-05-27)
 
 **Files:**
 - `backend/services/documents/origin_display.py` (NEW, ~150 lines) — `ORIGIN_DISPLAY` + `CATEGORY_DISPLAY` maps, `display_origin()` / `display_category()` helpers, `resolve_category()` / `resolve_origin()` backfill resolvers.
@@ -441,8 +441,60 @@ User-tightened scope removed 1 borderline site (Operations dept chip) and made t
 
 ### Filed for follow-up
 
-- **Z.2 — Retire legacy `doc_kind` field (P3, post-Z stabilization)** — follows Phase F.7 retirement pattern.
-- **Z.3 — Clean up 30 legacy `origin: "magic_link"` documents (P3)** — pre-existing data leak from auth flow; backfill to `upload`.
-- **Z.1 — Email-to-Akki ingestion pipeline (P2, follow-up to Phase Z)** — the "Emailed" origin tab on `/app/documents` will surface "Coming soon" placeholder until this ships.
+- **Z.followup.1 — Retire legacy `doc_kind` field (P3, post-Z stabilization)** — follows Phase F.7 retirement pattern.
+- **Z.followup.2 — Clean up 30 legacy `origin: "magic_link"` documents (P3)** — pre-existing data leak from auth flow; backfill to `upload`.
+- **Z.followup.3 — Email-to-Akki ingestion pipeline (P2, follow-up to Phase Z)** — the "Emailed" origin tab on `/app/documents` will surface "Coming soon" placeholder until this ships.
+- **Z.followup.4 — Document-origin attribution sparkline on `/app/documents` header (P3, ~30 lines, founder-feedback-gated)** — tiny stacked-bar chip showing the org's mix across the 3 origins (e.g. "67% Akki-generated · 28% Uploaded · 5% Emailed"). Useful at-a-glance signal but not trial-blocking. R.5.c precedent.
+
+> **Slice naming convention (locked 2026-05-27 to resolve a collision with backlog rows):**
+> Internal slice-sequencing labels are `Z-slice-1`, `Z-slice-2`, …, `Z-slice-6`. These are NOT phases — just chunked execution of Phase Z. Backlog rows use the canonical `Z.followup.<n>` namespace.
+
+### Slice Z-slice-2 — Work Studio LEFT column rewrite (2026-05-27)
+
+**Status:** ✅ CLOSED — Active-tab content listing now surfaces docs by canonical category across all 3 origins, with origin badge on each row. Compile actions moved BELOW the listing per spec.
+
+**Files:**
+- `frontend/src/pages/WorkStudio.jsx`:
+  - `KIND_TABS` rows extended with locked `category` field (`board_pack | minutes | draft | deck | report | briefing`). Removed legacy `union_of` + `source: "documents_drafts"` branches.
+  - Fetcher rewritten — every tab calls the unified `GET /api/contexts/{cid}/documents?category=X&search=Y` (Z-slice-1 endpoint), client-side sorted + paginated. Legacy `briefings/aggregates` + `documents/drafts` branches retired.
+  - NEW `DocumentRow` component — renders doc name + origin badge (via `displayOrigin()` helper from `@/lib/origins`) + category badge + last-modified. Carries `data-testid="work-studio-document-row"` + `data-origin={origin}` + `data-category={category}` for DOM probes. Board-pack rows route to dedicated full-page view; everything else opens via canonical `?doc_id=` URL contract.
+  - `DocumentCardsSection` (legacy confidence-chip grid) REMOVED from the active-tab body — unified listing subsumes its role. Confidence chips remain available via the document drawer.
+  - Main-board tab listing un-gated (was hidden pre-Z).
+  - `ContextActions` (compile CTAs) moved BELOW `ListingShell`.
+  - Active-tab body wrapped in `<div data-testid="ws-tab-content-${activeTab.category}">` — mounted exactly once per tab click, even when empty, so DOM probes work in both populated and empty states.
+  - Empty-state copy locked: `"No documents in this category yet."` + `"Upload one via the sidebar, or compile something using the actions below."`
+  - Recurrence #4 (`overflow-x-auto` on tab row) preserved.
+
+**Tests:**
+- `backend/tests/test_phase_z_documents_journal.py` extended with 20 Z-slice-2 source-strict locks across 8 invariant groups (H–O):
+  - **H (7):** KIND_TABS carry locked category per tab + legacy `union_of` / `documents_drafts` branches removed.
+  - **I (2):** Fetcher hits new endpoint with `category` param + legacy `/briefings/aggregates` active-call removed.
+  - **J (4):** `DocumentRow` defined + locked testids + uses `displayOrigin()` helper + emits `data-origin`/`data-category` DOM attrs.
+  - **K (2):** Compile actions BELOW listing + main-board tab un-gated.
+  - **L (1):** Empty-state copy locked verbatim.
+  - **M (1):** `overflow-x-auto` preserved on tab row (Recurrence #4 closure).
+  - **N (1):** `[data-testid="ws-tab-content-{category}"]` mount.
+  - **O (2):** Board-pack rows route to dedicated page; others use `?doc_id=`.
+
+**Superseded legacy locks (marked `pytest.mark.skip` with full breadcrumb to the post-Z replacement):**
+- `test_phase_m_workstudio_noise.py::test_m_M1a_document_cards_section_gated_by_tab` → superseded by `test_Z2_k_main_board_tab_no_longer_gated_off_listing`.
+- `test_phase_m_workstudio_noise.py::test_m_M1b_listing_shell_gated_by_tab` → same.
+- `test_phase_n1_console_hygiene.py::test_n1_work_studio_union_fetch_paginates_within_cap` → superseded by `test_Z2_i_fetcher_hits_documents_endpoint_with_category`.
+- `test_phase_o_drawer_discipline.py::test_o_workstudio_document_cards_section_uses_canonical_url` → superseded by `test_Z2_o_row_click_other_categories_open_via_doc_id`.
+
+### CI
+
+- Phase Z **51/51 GREEN** (31 Z-slice-1 + 20 Z-slice-2).
+- Full regression `tests/test_phase_*.py` = **761 passed / 27 skipped / 0 regressions** (was 745; +20 new Z-slice-2 locks, 4 legacy locks superseded with skip-with-reason).
+- Frontend ESLint clean.
+- Backend service healthy.
+- **Multi-viewport DOM probe** (1280 / 1024 / 820) confirmed:
+  - `[data-testid="ws-tab-content-board_pack"]` mounted exactly once at all viewports.
+  - Empty-state copy + compile actions placement verified.
+  - `overflow-x-auto` present at narrow viewports (Recurrence #4 closure intact).
+
+### Slice line budget
+
+Net new source code this slice: ~125 lines (DocumentRow component + KIND_TABS update + fetcher rewrite — replaces ~95 lines of legacy fetcher branches). Net ~30 lines under the 500-line auto-slice gate.
 
 

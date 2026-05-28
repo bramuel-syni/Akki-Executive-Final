@@ -18,6 +18,8 @@ This guard locks the compliance baseline AND blocks regressions.
 from __future__ import annotations
 
 import re
+
+import pytest
 from pathlib import Path
 
 
@@ -104,6 +106,7 @@ def test_o_workstudio_briefrow_click_uses_canonical_url():
     )
 
 
+@pytest.mark.skip(reason="Superseded by Phase Z-slice-2 (2026-05-27) — DocumentCardsSection REMOVED from WorkStudio.jsx (unified documents listing subsumes its role). The canonical-URL contract is preserved by DocumentRow's onOpen handler — see `test_phase_z_documents_journal.py::test_Z2_o_row_click_other_categories_open_via_doc_id`.")
 def test_o_workstudio_document_cards_section_uses_canonical_url():
     """DocumentCardsSection.onOpenDocument minutes/decks/reports branch
     must redirect through `setSearchParams({ doc_id: … })`, NOT through
