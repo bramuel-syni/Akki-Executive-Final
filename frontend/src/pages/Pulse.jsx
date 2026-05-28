@@ -217,7 +217,7 @@ function SignalCard({ card, onAction, busyAction, onOpenDrawer }) {
         )}
         {typeof card.confidence === "string" && card.confidence && (
           <Chip
-            tone={card.confidence === "low" ? "bg-slate-50 text-slate-600 border-slate-200" : "default"}
+            tone={card.confidence === "low" ? "bg-[var(--ned-purple)]/8 text-[var(--ink)] border-[var(--ned-purple)]/20" : "default"}
             testid={`pulse-card-chip-confidence-tier-${card.id}`}
           >
             {card.confidence}
@@ -904,7 +904,7 @@ function SignalDrawer({ card, contextId, onClose, onAction, busyAction }) {
             )}
             <div className="flex flex-wrap gap-2 text-[11px] text-[var(--muted)]">
               {card.confidence != null && (
-                <span className="px-2 py-0.5 bg-slate-50 border border-slate-200 rounded-sm" data-testid="pulse-drawer-confidence">
+                <span className="px-2 py-0.5 bg-[var(--ned-purple)]/8 border border-[var(--ned-purple)]/20 rounded-sm" data-testid="pulse-drawer-confidence">
                   confidence: {typeof card.confidence === "number" ? `${Math.round(card.confidence * 100)}%` : card.confidence}
                 </span>
               )}

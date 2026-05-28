@@ -165,7 +165,7 @@ function TaskCard({ task, sourceDoc, isLast, onOwnerClick }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
             <span
-              className="inline-block px-1.5 py-0.5 rounded-sm text-[9.5px] uppercase tracking-wider border bg-slate-50 text-slate-700 border-slate-200"
+              className="inline-block px-1.5 py-0.5 rounded-sm text-[9.5px] uppercase tracking-wider border bg-[var(--ned-purple)]/8 text-[var(--ink)] border-[var(--ned-purple)]/20"
               data-testid={`task-card-category-${task.id}`}
             >
               {catLabel}

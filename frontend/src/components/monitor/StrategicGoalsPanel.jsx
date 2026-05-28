@@ -384,7 +384,7 @@ const CATEGORY_STYLE = {
   customer:   { label: "Customer",   bar: "bg-blue-600",    chip: "bg-blue-50 text-blue-800 border-blue-200" },
   product:    { label: "Product",    bar: "bg-violet-600",  chip: "bg-violet-50 text-violet-800 border-violet-200" },
   people:     { label: "People",     bar: "bg-amber-600",   chip: "bg-amber-50 text-amber-800 border-amber-200" },
-  operations: { label: "Operations", bar: "bg-slate-700",   chip: "bg-slate-100 text-slate-800 border-slate-200" },
+  operations: { label: "Operations", bar: "bg-[var(--ned-purple)]/80",   chip: "bg-[var(--ned-purple)]/8 text-[var(--ink)] border-[var(--ned-purple)]/20" },
   compliance: { label: "Compliance", bar: "bg-red-700",     chip: "bg-red-50 text-red-800 border-red-200" },
 };
 

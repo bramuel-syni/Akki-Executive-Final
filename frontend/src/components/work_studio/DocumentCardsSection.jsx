@@ -38,7 +38,7 @@ import { toast } from "sonner";
 const BADGES = {
   draft: {
     label: "Draft",
-    className: "bg-slate-100 text-slate-700 border-slate-200",
+    className: "bg-[var(--ned-purple)]/10 text-[var(--ink)] border-[var(--ned-purple)]/25",
   },
   in_review: {
     label: "In Review",
@@ -60,7 +60,7 @@ const CONFIDENCE_CHIP_PALETTE = {
   green:   "bg-emerald-50 text-emerald-800 border-emerald-200",
   amber:   "bg-amber-50 text-amber-800 border-amber-200",
   red:     "bg-rose-50 text-rose-800 border-rose-200",
-  unrated: "bg-slate-50 text-slate-600 border-slate-200",
+  unrated: "bg-[var(--ned-purple)]/6 text-[var(--ink)] border-[var(--ned-purple)]/18",
 };
 
 
