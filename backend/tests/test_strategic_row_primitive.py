@@ -106,6 +106,24 @@ def test_primitive_scores_carry_data_attribute():
     )
 
 
+def test_scorebar_carries_selector_agnostic_kind_attribute():
+    """Phase Y followup (2026-02 dispatch) — each ScoreBar must carry
+    `data-scorebar="true"` + `data-scorebar-kind="<lowercase-label>"`
+    so cross-surface probes can locate ScoreBars without depending on
+    the row-id suffix in the per-row testid (e.g. `task-card-
+    readiness-<id>`). Selector-agnostic contract."""
+    src = PRIMITIVE.read_text(encoding="utf-8")
+    assert 'data-scorebar="true"' in src, (
+        "ScoreBar root must declare `data-scorebar=\"true\"` "
+        "(selector-agnostic marker)."
+    )
+    assert 'data-scorebar-kind={kind}' in src, (
+        "ScoreBar root must declare `data-scorebar-kind={kind}` where "
+        "`kind` is the lowercase, kebab-case form of the label "
+        "(e.g. 'readiness', 'performance', 'probability')."
+    )
+
+
 def test_primitive_description_carries_data_attribute():
     src = PRIMITIVE.read_text(encoding="utf-8")
     assert 'data-strategic-row-description="true"' in src, (

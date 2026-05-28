@@ -242,20 +242,50 @@ async def test_divider_flush_against_horizontal_rules_at_1280_and_1024():
                         f"{d['bottom']:.1f}, footer.top={ft:.1f}"
                     )
 
-            # ── 820 — divider hidden.
+            # ── 820 — divider hidden (hard reload at 820 so the CSS
+            # media-query is evaluated fresh, NOT a viewport-resize
+            # after a 1024+ render which leaves headless DOM in a
+            # stale layout state).
             for path, divider_tid in SURFACES:
+                # 1. Set viewport BEFORE goto.
                 await page.set_viewport_size({"width": 820, "height": 900})
+                # 2. Hard-load the page so CSS @media rules resolve fresh.
                 await page.goto(f"{base}{path}", wait_until="networkidle", timeout=30000)
-                await page.wait_for_timeout(2000)
-                d = await page.query_selector(f'[data-testid="{divider_tid}"]')
-                if d is None:
-                    # Element may be absent at narrow viewports — that's fine.
+                await page.wait_for_timeout(2500)
+
+                # Use computed display + visibility + bounding box. The
+                # divider element may exist in the DOM (Tailwind's
+                # `hidden lg:block` keeps it in the tree but applies
+                # `display: none`), so we cannot rely on absence.
+                visibility = await page.evaluate(f"""() => {{
+                    const el = document.querySelector('[data-testid="{divider_tid}"]');
+                    if (!el) return {{ present: false }};
+                    const cs = getComputedStyle(el);
+                    const r = el.getBoundingClientRect();
+                    return {{
+                        present: true,
+                        display: cs.display,
+                        visibility: cs.visibility,
+                        width: r.width,
+                        height: r.height,
+                    }};
+                }}""")
+
+                if not visibility["present"]:
+                    # Element not in DOM — also a valid hidden state.
                     continue
-                box = await d.bounding_box()
-                if box is not None:
-                    assert box.get("width", 0) == 0, (
-                        f"{path} @ 820 — divider must be hidden; "
-                        f"got width={box.get('width')}"
-                    )
+
+                # Either display:none OR zero-sized bbox is acceptable.
+                is_hidden = (
+                    visibility["display"] == "none"
+                    or visibility["visibility"] == "hidden"
+                    or visibility["width"] == 0
+                )
+                assert is_hidden, (
+                    f"{path} @ 820 — divider must be hidden (display:none "
+                    f"or zero width). Got display={visibility['display']!r} "
+                    f"visibility={visibility['visibility']!r} "
+                    f"width={visibility['width']}"
+                )
         finally:
             await browser.close()

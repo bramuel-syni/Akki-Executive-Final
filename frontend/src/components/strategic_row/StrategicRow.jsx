@@ -38,12 +38,27 @@ import React from "react";
 /**
  * ScoreBar — extracted from StrategicGoalsPanel for shared use.
  * value: 0-100 or null (renders "—" + dashed empty bar).
+ *
+ * Selector contract (locked 2026-02 fork-resume):
+ *   - data-scorebar="true"      — generic ScoreBar marker
+ *   - data-scorebar-kind="<lowercase-label>" — semantic kind (e.g.
+ *     "readiness", "performance", "probability"). Allows cross-
+ *     surface testid-agnostic probes that don't depend on the
+ *     row-id suffix.
+ *   - data-testid=<testId>      — caller-supplied per-row testid
+ *     (e.g. "task-card-readiness-<id>")
  */
 export function ScoreBar({ label, value, barClass, testId }) {
   const empty = value === null || value === undefined;
   const pct = empty ? 0 : Math.max(0, Math.min(100, value));
+  const kind = (label || "").toLowerCase().replace(/\s+/g, "-");
   return (
-    <div className="w-[150px]" data-testid={testId}>
+    <div
+      className="w-[150px]"
+      data-testid={testId}
+      data-scorebar="true"
+      data-scorebar-kind={kind}
+    >
       <div className="flex items-baseline justify-between mb-1">
         <span className="text-[9.5px] uppercase tracking-wider text-[var(--muted)]">
           {label}

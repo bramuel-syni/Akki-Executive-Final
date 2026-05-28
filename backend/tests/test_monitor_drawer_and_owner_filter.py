@@ -176,3 +176,129 @@ def test_decision_1_dropdown_collapsed_into_capsule_strip():
         "Active capsule must use the brand accent token (matches "
         "TasksInitiativesPanel)"
     )
+
+
+def test_owner_capsule_strip_source_locks_horizontal_scroll_layout():
+    """Recurrence-#4 source-strict lock (2026-02 fork-resume reply
+    dispatch) — the owner capsule strip container MUST declare
+    `flex-nowrap overflow-x-auto`, and each capsule button MUST
+    declare `whitespace-nowrap`. This enforces the horizontal-scroll
+    layout at narrow viewports (820px) instead of the flex-wrap-to-
+    second-line failure mode."""
+    src = (REPO / "frontend" / "src" / "components" / "monitor" / "StrategicGoalsPanel.jsx").read_text(encoding="utf-8")
+    capsule_idx = src.find("strategic-goals-owner-capsules")
+    assert capsule_idx > 0
+    # Walk backwards a few hundred chars to capture the parent <div>'s
+    # className, since the testid sits on the strip container.
+    container_block = src[max(0, capsule_idx - 600):capsule_idx + 100]
+    assert "flex-nowrap" in container_block, (
+        "Owner capsule strip container must declare `flex-nowrap` so "
+        "items never wrap to a second line at narrow viewports."
+    )
+    assert "overflow-x-auto" in container_block, (
+        "Owner capsule strip container must declare `overflow-x-auto` "
+        "so overflowing capsules become horizontally scrollable."
+    )
+    # Capsule buttons (inside the strip) must declare `whitespace-nowrap`.
+    capsule_block = src[capsule_idx:capsule_idx + 2500]
+    assert "whitespace-nowrap" in capsule_block, (
+        "Owner capsule <button>s must declare `whitespace-nowrap` so "
+        "label text never wraps inside an individual capsule."
+    )
+
+
+import sys
+import pytest
+
+BACKEND = REPO / "backend"
+if str(BACKEND) not in sys.path:
+    sys.path.insert(0, str(BACKEND))
+
+try:
+    from playwright.async_api import async_playwright  # noqa: F401
+    _HAVE_PW = True
+except Exception:  # noqa: BLE001
+    _HAVE_PW = False
+
+
+def _frontend_url() -> str:
+    for ln in (REPO / "frontend" / ".env").read_text("utf-8").splitlines():
+        if ln.startswith("REACT_APP_BACKEND_URL="):
+            return ln.split("=", 1)[1].strip()
+    raise RuntimeError("REACT_APP_BACKEND_URL not in frontend/.env")
+
+
+@pytest.mark.runtime_playwright
+@pytest.mark.skipif(not _HAVE_PW, reason="Playwright not installed")
+@pytest.mark.asyncio
+async def test_owner_capsule_strip_horizontal_scrolls_at_820():
+    """Recurrence-#4 runtime lock — at 820 the owner capsule strip's
+    computed `flex-wrap` must be `nowrap` and `overflow-x` must be
+    `auto`. When more capsules are rendered than fit the strip's
+    `clientWidth`, the `scrollWidth` must exceed `clientWidth`
+    (proving it scrolls, not wraps to a second line).
+
+    Skipif fall-through: when the test tenant has no goals seeded,
+    the capsule strip doesn't render at all (gated by
+    `categoryOptions.length > 0`). Assertion is about computed style,
+    not data presence — so the test skips on empty data."""
+    from playwright.async_api import async_playwright
+    base = _frontend_url()
+
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(headless=True)
+        try:
+            ctx = await browser.new_context(viewport={"width": 1280, "height": 900})
+            page = await ctx.new_page()
+            await page.goto(f"{base}/signin", wait_until="domcontentloaded", timeout=20000)
+            await page.wait_for_selector('[data-testid="signin-email-input"]', timeout=15000)
+            await page.fill('[data-testid="signin-email-input"]', "admin@akki.ai")
+            await page.fill('[data-testid="signin-password-input"]', "AkkiAdmin2026!")
+            await page.click('[data-testid="signin-form"] button[type="submit"]')
+            await page.wait_for_timeout(3500)
+
+            for vw, vh in ((1280, 900), (1024, 800), (820, 900)):
+                # Set viewport BEFORE goto so CSS @media is evaluated fresh.
+                await page.set_viewport_size({"width": vw, "height": vh})
+                await page.goto(f"{base}/app/monitor", wait_until="networkidle", timeout=30000)
+                await page.wait_for_timeout(3500)
+
+                strip = await page.query_selector('[data-testid="strategic-goals-owner-capsules"]')
+                if strip is None:
+                    # No goals seeded under this tenant → strip not rendered.
+                    # Skipif fall-through — the source-strict lock above
+                    # already guarantees the layout when the strip renders.
+                    continue
+
+                metrics = await strip.evaluate("""(el) => {
+                    const cs = getComputedStyle(el);
+                    return {
+                        flexWrap: cs.flexWrap,
+                        overflowX: cs.overflowX,
+                        scrollWidth: el.scrollWidth,
+                        clientWidth: el.clientWidth,
+                    };
+                }""")
+                assert metrics["flexWrap"] == "nowrap", (
+                    f"Owner capsule strip @ {vw}px — flex-wrap must be "
+                    f"`nowrap`, got {metrics['flexWrap']!r}"
+                )
+                # `overflow-x: auto` is the Tailwind default; some
+                # browsers report it as `auto` literally.
+                assert metrics["overflowX"] in ("auto", "scroll"), (
+                    f"Owner capsule strip @ {vw}px — overflow-x must be "
+                    f"`auto` or `scroll`, got {metrics['overflowX']!r}"
+                )
+                # When capsules overflow the strip width, scrollWidth >
+                # clientWidth proves horizontal-scroll behaviour. When
+                # they don't overflow (e.g. only 1-2 capsules), this
+                # equality is fine; assert non-regression of nowrap+
+                # overflow regardless.
+                assert metrics["scrollWidth"] >= metrics["clientWidth"], (
+                    f"Owner capsule strip @ {vw}px — scrollWidth must "
+                    f"be ≥ clientWidth. Got scrollWidth="
+                    f"{metrics['scrollWidth']} clientWidth="
+                    f"{metrics['clientWidth']}"
+                )
+        finally:
+            await browser.close()

@@ -219,5 +219,19 @@ async def test_task_card_renders_primitive_data_attrs_multi_viewport():
                     f"Task card at {vw}px must render the readiness "
                     f"ScoreBar inside the scores cluster."
                 )
+                # Selector-agnostic contract — at least one ScoreBar
+                # with `data-scorebar-kind="readiness"` MUST exist
+                # inside any `data-strategic-row="true"` card on
+                # /app/task-manager (Phase Y followup, 2026-02).
+                kind_match = await scores_wrapper.query_selector(
+                    'div[data-scorebar="true"][data-scorebar-kind="readiness"]'
+                )
+                assert kind_match is not None, (
+                    f"Task card at {vw}px must render at least one "
+                    f"ScoreBar with `data-scorebar-kind=\"readiness\"` "
+                    f"inside the scores cluster. This is the cross-"
+                    f"surface selector contract — selectors that don't "
+                    f"know the row-id suffix should still resolve."
+                )
         finally:
             await browser.close()
