@@ -156,12 +156,17 @@ def test_aa4_provenance_chip_copy_locked() -> None:
 
 
 def test_aa4_tasks_panel_empty_state_copy_locked() -> None:
-    """User-visible empty-state copy is the spec — lock it."""
+    """User-visible empty-state copy is the spec — lock the redispatch
+    version: "No tasks yet" + "Upload a document with extraction
+    enabled to populate this view."."""
     src = TASKS_PANEL.read_text(encoding="utf-8")
     assert 'data-testid="tasks-empty-headline"' in src
     assert 'data-testid="tasks-empty-helper"' in src
-    assert "No tasks in this view yet." in src
-    assert "Upload a board pack or report and Akki will extract them." in src
+    assert "No tasks yet" in src
+    assert "Upload a document with extraction enabled to populate this view." in src
+    # Disabled "+ Add" placeholder per AA-4 redispatch.
+    assert 'data-testid="tasks-empty-add-btn"' in src
+    assert "Coming in AA-slice-5" in src
 
 
 def test_aa4_tasks_panel_listing_testid_present() -> None:

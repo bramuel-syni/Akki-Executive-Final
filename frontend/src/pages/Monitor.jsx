@@ -150,11 +150,11 @@ export default function Monitor() {
             AA-4 dispatch). Goals tab mounts the existing rich-card
             <StrategicGoalsPanel>; Tasks tab mounts the new
             <TasksInitiativesPanel>. */}
-        <div className="flex items-center gap-2 mb-5 flex-wrap" data-testid="monitor-capsule-tabs">
+        <div className="flex items-center gap-2 mb-5 flex-nowrap overflow-x-auto" data-testid="monitor-capsule-tabs">
           <button
             type="button"
             onClick={() => switchTab("goals")}
-            className={`px-4 py-2 rounded-full text-[12.5px] uppercase tracking-wider border transition-colors ${
+            className={`px-4 py-2 rounded-full text-[12.5px] uppercase tracking-wider border transition-colors whitespace-nowrap ${
               activeTab === "goals"
                 ? "bg-[var(--accent)] text-white border-[var(--accent)]"
                 : "text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)] hover:bg-[var(--cream-deep)]/40"
@@ -163,7 +163,7 @@ export default function Monitor() {
           >
             <span className="inline-flex items-center gap-2">
               <Target className="w-3 h-3" />
-              Strategic Objectives / Goals
+              Strategic Objectives
               <span
                 className="text-[10.5px] opacity-80 font-mono"
                 data-testid="monitor-tab-goals-count"
@@ -175,7 +175,7 @@ export default function Monitor() {
           <button
             type="button"
             onClick={() => switchTab("tasks")}
-            className={`px-4 py-2 rounded-full text-[12.5px] uppercase tracking-wider border transition-colors ${
+            className={`px-4 py-2 rounded-full text-[12.5px] uppercase tracking-wider border transition-colors whitespace-nowrap ${
               activeTab === "tasks"
                 ? "bg-[var(--accent)] text-white border-[var(--accent)]"
                 : "text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)] hover:bg-[var(--cream-deep)]/40"
@@ -184,7 +184,7 @@ export default function Monitor() {
           >
             <span className="inline-flex items-center gap-2">
               <Layers className="w-3 h-3" />
-              Strategic Projects / Tasks / Initiatives
+              Tasks
               <span
                 className="text-[10.5px] opacity-80 font-mono"
                 data-testid="monitor-tab-tasks-count"

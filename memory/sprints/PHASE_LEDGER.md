@@ -768,6 +768,7 @@ Next per the locked sequence: **Z-slice-5** (Upload modal).
 - **Wave8.followup.2 — Page Catalog superadmin view at `/app/admin/page-catalog` (P3, founder-feedback-gated)**. Renders the locked `PAGE_SUBTEXT_FILES` tuple as a live grid showing H1 + subtext per surface. Eliminates Recurrence #5 by visual inspection instead of CI testid (stronger signal). Promote to P1 if subtext slips again.
 - **Wave8.followup.3 — Promote Z-slice-6 orthogonality wire-test to pre-deploy gate (P2)**. Wire `pytest -m runtime_playwright` into a `make deploy-check` target + GitHub Actions step that must pass before any push to main reaches the cohort pod. Promotes the strongest single test in the suite (caught all 6 historic Phase Z bugs at once) from CI signal to deploy-blocker. ~30 lines of shell + README note. SHIP BEFORE PHASE X / cohort launch.
 - **AA.followup.2 — "Recently re-assessed tasks" widget on workspace home (P3, founder-feedback-gated)**. Surfaces 5 latest rows where `last_reassessed_at` changed in past 7 days. Soft "no rows moved in 14 days" nudge for plan-staleness. Uses existing `(context_id, status_active, updated_at DESC)` index — zero schema work. Promote to P1 if founder reports wanting visibility on re-assessment cadence during cohort use.
+- **AA.followup.7 — Micro extraction-outcome indicator on provenance chip (P3, founder-feedback-gated)**. Adds tiny ✓/⚠/✗ icon between "Sonnet 4.5" and "from" reflecting whether other tasks from same `source_document_id` also passed validation. Builds founder trust by surfacing per-doc extraction quality at-a-glance. ~30 lines, uses existing `extractions_log.failures`. Promote to P1 if founder reports wanting per-doc extraction-quality visibility during cohort use.
 - **Z.followup.9 — Per-file category override in upload modal (P3, founder-feedback-gated)**. Collapsed-by-default expandable inline row per file in multi-file batches. Reduces "upload-then-recategorize-in-drawer" friction at quarter-end mixed bundles. Promote to P1 if founder reports recategorization friction during cohort use.
 
 
@@ -1613,3 +1614,92 @@ Tests 158 lines.  Well within the 500-line product-code budget.
 Next: **AA-slice-5** — Owner-filter capsule UI on the Tasks tab.
 Wires owner_role badge clicks → filter `?owner=CFO` query param +
 visual capsule row above the status filters.
+
+
+---
+
+## PHASE AA-SLICE-4 redispatch + AA-SLICE-5/6/7 (CLOSED 2026-05-27)
+
+### AA-slice-4 redispatch — accepted amendments
+- Tab labels renamed: "Strategic Objectives / Goals" → **"Strategic Objectives"**; "Strategic Projects / Tasks / Initiatives" → **"Tasks"**.
+- Capsule-tab row + owner-capsule row + status-filter row all carry `flex-nowrap overflow-x-auto` (Recurrence #4 anti-flex-wrap lock).
+- Disabled `+ Add` placeholder button in tasks empty state with tooltip "Coming in AA-slice-5".
+- Empty-state copy updated: "No tasks yet" + "Upload a document with extraction enabled to populate this view."
+- **Spec ambiguity resolved**: `tasks_initiatives.category` is the 6-value goals enum (revenue/customer/product/...), NOT an "objective vs task" axis. Strategic Objectives tab → `strategic_goals` collection; Tasks tab → `tasks_initiatives` collection. Documented in close-out reply.
+- **`useStreamingProgress` / `StreamingLogScene` resolution**: That infra is for SSE long-ops (Work Studio Compile, Solva Synthesis). The `/tasks-initiatives` GET is a sub-second JSON endpoint — `Loader2` is canonical for short fetches across the codebase. Converting the endpoint to SSE is out of scope for AA-4; filed as `AA.followup.8` if cohort feedback demands streamed loading visual.
+
+### AA-slice-5 — Owner-filter capsules (closed inside AA-4 redispatch)
+- New `tasks-owner-capsules` row above status-filter pills on Tasks tab.
+- Single-select. "All owners" capsule resets. "Unassigned" capsule appears when any row carries `owner_role=null` (LLM extraction without an inferred owner).
+- Clicking the active capsule deselects (back to "All owners").
+- TaskCard `task-card-owner-{id}` badge becomes a button — clicking it applies the same filter (AA.followup.6 folded in).
+- Backend already supports `?owner=` + `?owner=null` via AA-1.
+
+### AA-slice-6 — Probability-bar fill refinement
+- Three brand-purple bands: ≥70% → `bg-[var(--ned-purple)]`; 40-69% → `/60`; <40% → `/30`; null → `/15`.
+- Zero `bg-slate-*` / `bg-gray-*` in the helper (Wave 4.2 brand-purple-only rule applied locally).
+- CI guards 5/5 GREEN.
+
+### AA-slice-7 — Orthogonality wire-test
+- New `backend/tests/test_phase_aa_slice_7_orthogonality_wire.py` Playwright DOM test.
+- Flow: login → upload modal with `category=report` + extract-tasks checked → simulate LLM extraction (mocked via direct Mongo write to avoid CI LLM round-trip) → navigate Monitor Tasks tab → assert both seeded tasks surface with provenance chips → switch to Goals tab → assert ZERO leakage.
+- Live run: 1 passed in 31.94s.
+- Marker: `pytest.mark.runtime_playwright` — fast CI can skip.
+
+### CI guards across the AA-4-through-7 cluster
+
+| Test file | Tests | Status |
+|-----------|-------|--------|
+| `test_phase_aa_slice_4_monitor.py` (source-strict) | 17 | ✅ |
+| `test_phase_aa_slice4_monitor.py` (Playwright DOM + bounding rects) | 1 | ✅ |
+| `test_phase_aa_slice_6_probability_bar.py` | 5 | ✅ |
+| `test_phase_aa_slice_7_orthogonality_wire.py` (Playwright wire) | 1 | ✅ |
+
+### Citizen Digital RSS — status confirmed
+The Citizen Digital feed was already replaced in an earlier dispatch via `news_sources.json::capital-fm-business` (Capital FM Business — Nairobi) + `kbc-business` (Kenya Broadcasting Corp). Current active KE-news sources: BBC Africa, Business Daily Africa, Nation Africa, Standard Kenya, Capital FM Business, KBC Business. Background 503s in console logs come from disabled feeds being retried by the cron — filed as `Wave8.followup.4` if cohort signal demands silencing.
+
+### Deferred to next dispatch (context budget triage)
+
+**Wave 4.2 grey-to-purple sweep (>10 sites)** — NOT shipped this turn. Rationale: each site needs visual verification + the 500-line auto-halt rule plus the >10-site count would force a slice 4.2a/4.2b split, and each split needs a screenshot pass. Reserving the full Wave-4.2 dispatch for a fresh context window where I can do the >10 edits AND multi-viewport screenshot proof in one contiguous pass.
+
+### Wave8.followup.1 — 7 legacy baseline test inventory (surface only, no fixes)
+
+| Test path | References | Recommended action |
+|-----------|------------|--------------------|
+| `test_t1_frontend_wire.py::test_t1_4_generate_brief_button_does_not_use_akki_overline` | `frontend/src/components/reading/ReadingTopBar.jsx` (removed) | **delete** — Reading surface retired |
+| `test_t1_frontend_wire.py::test_t1_4_generate_brief_failure_toast_is_g3_verbatim` | `frontend/src/pages/ReadingView.jsx` (removed) | **delete** — same retirement |
+| `test_t2_frontend_wire.py::test_t2_1_workspace_drawer_meta_includes_origin_badge` | "Akki Generated" badge copy on workspace drawer (renamed/relocated in Z-slice-4) | **rewrite** to assert against new `origin_display.py` mapping (`upload`→"Uploaded", `akki_generated`→"AKKI" etc.) |
+| `test_t3_frontend_wire.py::test_t3_3_workstudio_routes_board_and_committee_to_page` | Source-string scan for `cycle_board_pack` (now `cycle_main_and_committee_pack` per Z-slice-2 rename) | **rewrite** to assert against the new kind constant |
+| `test_chat_v2_full_flow.py::test_chat_create_requires_active_context_header` | Expects `POST /api/chats` to 4xx without `X-Active-Context`; current endpoint accepts null context_id | **keep-as-skip** until Chat backend is hardened (out-of-scope for AA) |
+| `test_patch_28_home_doc_journal.py::test_doc_journal_happy_path` | Asserts uploaded file body matches input bytes exactly; current pipeline writes a PDF wrapper for text uploads | **rewrite** to assert PDF wrapper contains the marker (or skip if the wrapper behavior is intentional) |
+| `test_requirements_guard.py::test_real_requirements_file_is_clean` | `scripts/check_requirements_urls.py` flags `requirements.txt` for URL-pinned deps | **keep-as-skip** with reason — emergent-integrations + spaCy wheel URLs are deliberate and the guard's policy doesn't model that case |
+
+**User decision pending** for each row — recommendations only.
+
+### Cohort console portal — surface info
+
+- **Route**: `/app/admin/cohort` (Cohort Console — Phase R.5.a)
+- **Companion routes**:
+  - `/app/admin/users` — All-accounts user management
+  - `/app/admin/cohort/copy` — Cohort copy editor (founder edits onboarding copy)
+- **Auth gate**: All three routes wrap in `<Gated>` which is `<ProtectedRoute><FirstSessionGuard><HardLockGuard>…`. **There is no superadmin role check in the route gate** — any authenticated user with active context can reach the URL. Server-side cohort endpoints (`/api/admin/cohort/*`) enforce superadmin via `require_superadmin()` dependency; the page itself surfaces but data calls return 403 for non-superadmins.
+- **Founder auth**: Use `admin@akki.ai` / `AkkiAdmin2026!` (per `/app/memory/test_credentials.md`). Custom-magic-link OR Google OAuth flow — but for the preview pod the password is fastest.
+- **Preview URL**: `https://akki-executive.preview.emergentagent.com/app/admin/cohort`
+- **Cohort Console sections** (testid-locked):
+  - `cohort-console-page` — page root
+  - `cohort-console-window-toggle` — today / 7d / 30d window pills
+  - `cohort-console-tag-filter` — filter by cohort tag
+  - `cohort-console-stage-count-*` — funnel stage counts (invited → activated → engaged → attached → committed)
+  - `cohort-console-special-ask-aggregate` — Special Ask completion rollup
+  - `cohort-console-referral-filters` — Patch 25C referral source filter pills
+  - `cohort-console-table` — per-founder row table with `cohort-console-row-{email}` rows; columns: tag, stage, trial day, last signal, click-through, special-ask status
+  - `cohort-console-refresh` — manual refresh button
+
+### Next per locked sequence
+
+- **Wave 4.2 grey-to-purple sweep** (next dispatch, fresh context window).
+- Then Wave8.followup.1 (legacy test cleanup) per user decision on each row.
+- Then `AA.followup.5` (monitor_v2 owner-role retrofit, P2 ship-before-cohort).
+- Then `AA.followup.4` (Extraction Activity superadmin view, P2 between AA + Phase W).
+- Then `Wave8.followup.3` (Z-slice-6 → pre-deploy gate, P2 ship-before-cohort).
+- Then Phase W (multi-tenant org list), Phase X (account deletion).

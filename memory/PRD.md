@@ -5390,3 +5390,39 @@ All confirmed: capsule tabs + count badges + default Goals + tab click flips bod
 
 ### Next per locked sequence
 **AA-slice-5** — Owner-filter capsule UI on the Tasks tab.
+
+
+---
+
+## AA-slice-4 redispatch + AA-5/6/7 + surface inventory (2026-05-27) — CLOSED
+
+### AA-slice-4 redispatch amendments
+- Tab labels: "Strategic Objectives" + "Tasks" (shorter).
+- All capsule rows `flex-nowrap overflow-x-auto` (Recurrence #4 anti-flex-wrap lock at 1280/1024/820).
+- Disabled `+ Add` placeholder in tasks empty state.
+- Empty copy: "No tasks yet" / "Upload a document with extraction enabled to populate this view."
+
+### AA-slice-5 — Owner-filter capsules (folded into AA-4 redispatch)
+- `tasks-owner-capsules` row above status filters.
+- "All owners" + per-owner + "Unassigned" capsules. Single-select toggle.
+- TaskCard owner badge becomes clickable button (applies filter).
+
+### AA-slice-6 — Probability-bar fill refinement
+- 3 brand-purple bands (≥70/40-69/<40) + null /15 placeholder.
+- Zero greys. CI: 5/5 GREEN.
+
+### AA-slice-7 — Orthogonality wire-test
+- `test_phase_aa_slice_7_orthogonality_wire.py` Playwright: upload report w/ extract → tasks surface on Monitor Tasks tab + don't leak to Goals tab.
+- 1 passed in 31.94s.
+
+### Citizen Digital RSS
+Already replaced earlier (Capital FM Business + KBC Business + Nation Africa + Standard Kenya + Business Daily Africa). 503s in console come from disabled feed cron retries (filed as Wave8.followup.4 if needed).
+
+### Deferred
+- **Wave 4.2 grey-to-purple sweep** — next dispatch, fresh context window (>10 sites + 500-line halt rule).
+- **7 legacy baseline test failures inventory** surfaced for user decision (delete/rewrite/keep-as-skip per row).
+
+### Cohort console portal
+- Route: `/app/admin/cohort`. Companion: `/app/admin/users` + `/app/admin/cohort/copy`.
+- Auth: admin@akki.ai / AkkiAdmin2026!. Page renders for any authed user; data endpoints enforce superadmin.
+- Sections testid-locked: window-toggle, tag-filter, stage-counts, special-ask aggregate, referral filters, per-founder table, refresh.

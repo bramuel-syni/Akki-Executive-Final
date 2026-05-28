@@ -31,7 +31,7 @@ import { Link } from "react-router-dom";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import {
-  Layers, AlertTriangle, CheckCircle2, FileText, Sparkles, Loader2,
+  Layers, AlertTriangle, CheckCircle2, FileText, Sparkles, Loader2, Plus,
 } from "lucide-react";
 
 
@@ -73,10 +73,17 @@ function statusBarClass(status) {
 }
 
 function probabilityBarClass(value) {
-  if (value === null || value === undefined) return "bg-slate-400";
-  if (value >= 70) return "bg-[color:var(--ned-purple)]";
-  if (value >= 40) return "bg-[color:var(--ned-purple)]/50";
-  return "bg-slate-400";
+  // AA-slice-6 (2026-05-27) — probability-bar fill bands locked to
+  // brand-purple token. Three opacity tiers map to the founder's
+  // mental model: high probability (≥70%) = strong purple, medium
+  // (40-69%) = mid purple, low (<40%) = muted purple. We
+  // deliberately stay within the brand-purple hue (no greys, no
+  // amber RAG mixing) so the bar reads as "confidence in this
+  // probability score", separate from the RAG performance bar.
+  if (value === null || value === undefined) return "bg-[var(--ned-purple)]/15";
+  if (value >= 70) return "bg-[var(--ned-purple)]";
+  if (value >= 40) return "bg-[var(--ned-purple)]/60";
+  return "bg-[var(--ned-purple)]/30";
 }
 
 
@@ -144,7 +151,7 @@ function ProvenanceChip({ task, sourceDoc }) {
 }
 
 
-function TaskCard({ task, sourceDoc, isLast }) {
+function TaskCard({ task, sourceDoc, isLast, onOwnerClick }) {
   const status = STATUS_STYLE[task.status] || STATUS_STYLE.not_started;
   const catLabel = CATEGORY_LABEL[task.category] || "Operations";
   const lastRel = fmtRelative(task.last_reassessed_at || task.updated_at);
@@ -196,12 +203,15 @@ function TaskCard({ task, sourceDoc, isLast }) {
 
       <div className="flex items-center gap-4 mt-1.5 flex-wrap text-[11.5px] text-[var(--deep)]">
         {task.owner_role && (
-          <span
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-[var(--cream-deep)]/60 border border-[var(--rule)] font-medium"
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onOwnerClick && onOwnerClick(task.owner_role); }}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-[var(--cream-deep)]/60 border border-[var(--rule)] font-medium hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors cursor-pointer"
             data-testid={`task-card-owner-${task.id}`}
+            title={`Filter by ${task.owner_role}`}
           >
             {task.owner_role}
-          </span>
+          </button>
         )}
         {/* AA-slice-1 indexes `(context_id, parent_objective_id)` so
             counting child tasks is cheap. For now we surface only
@@ -231,23 +241,50 @@ export default function TasksInitiativesPanel({ contextId, onCountChange }) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statusTab, setStatusTab] = useState("all");
+  // AA-slice-4 (2026-05-27 redispatch) — owner-role capsule filter.
+  // `null` = "All owners" (no filter). String = exact owner_role
+  // value. `"__unassigned__"` = rows with `owner_role IS NULL`
+  // (Sonnet couldn't infer the owner from the source doc).
+  const [ownerFilter, setOwnerFilter] = useState(null);
   // Map of source_document_id → document doc (for provenance chip).
   const [docsById, setDocsById] = useState({});
+  // Distinct owner_role values present across the FULL listing — the
+  // capsule row needs this *before* statusTab narrows the rows.
+  const [allOwners, setAllOwners] = useState([]);
+  const [hasUnassigned, setHasUnassigned] = useState(false);
 
   const load = useCallback(async () => {
     if (!contextId) return;
     setLoading(true);
     try {
+      // 1. Fetch the unfiltered listing for the owner capsule row.
+      //    Needs to happen first so the capsules are stable even when
+      //    a narrow status/owner filter is active.
+      const unfiltered = await api.get(
+        `/contexts/${contextId}/tasks-initiatives`,
+        { params: { page_size: 200 } },
+      );
+      const allRows = unfiltered.data.rows || [];
+      const distinct = Array.from(new Set(
+        allRows.filter((r) => r.owner_role).map((r) => r.owner_role),
+      )).sort();
+      setAllOwners(distinct);
+      setHasUnassigned(allRows.some((r) => !r.owner_role));
+      // Capsule-tab badge reflects the full total (not the filtered).
+      onCountChange && onCountChange(unfiltered.data.total || 0);
+
+      // 2. Fetch the filtered listing for the card rows.
       const params = { page_size: 200 };
       if (statusTab !== "all") params.status = statusTab;
+      if (ownerFilter === "__unassigned__") params.owner = "null";
+      else if (ownerFilter) params.owner = ownerFilter;
       const { data } = await api.get(
         `/contexts/${contextId}/tasks-initiatives`, { params },
       );
       setRows(data.rows || []);
       setTotal(data.total || 0);
-      onCountChange && onCountChange(data.total || 0);
-      // Fetch the source docs referenced by extracted rows so we can
-      // render the click-through provenance chip with the real name.
+
+      // 3. Resolve source-doc names for the provenance chip.
       const docIds = Array.from(new Set(
         (data.rows || [])
           .filter((r) => r.extracted_by === "llm" && r.source_document_id)
@@ -273,7 +310,7 @@ export default function TasksInitiativesPanel({ contextId, onCountChange }) {
     } finally {
       setLoading(false);
     }
-  }, [contextId, statusTab, onCountChange]);
+  }, [contextId, statusTab, ownerFilter, onCountChange]);
   useEffect(() => { load(); }, [load]);
 
   const counts = useMemo(() => {
@@ -285,9 +322,72 @@ export default function TasksInitiativesPanel({ contextId, onCountChange }) {
     return c;
   }, [rows, total]);
 
+  const handleOwnerClick = useCallback((role) => {
+    setOwnerFilter((prev) => (prev === role ? null : role));
+  }, []);
+
   return (
     <section data-testid="tasks-initiatives-panel">
-      <div className="flex items-center gap-2 mb-4 overflow-x-auto" data-testid="tasks-status-filters">
+      {/* AA-slice-4 redispatch (2026-05-27) — owner-role capsule row.
+          Sits ABOVE the status pills, BELOW the Monitor capsule tabs.
+          Single-select; clicking the active capsule deselects (back
+          to "All owners"). "Unassigned" capsule surfaces when the
+          listing carries any owner_role=null rows (LLM didn't infer
+          an owner). flex-nowrap + overflow-x-auto so the row never
+          breaks into a second line on narrow viewports
+          (Recurrence #4 lock). */}
+      {(allOwners.length > 0 || hasUnassigned) && (
+        <div
+          className="flex items-center gap-2 mb-3 flex-nowrap overflow-x-auto"
+          data-testid="tasks-owner-capsules"
+        >
+          <button
+            type="button"
+            onClick={() => setOwnerFilter(null)}
+            className={`px-3 py-1 rounded-full text-[11.5px] uppercase tracking-wider border transition-colors whitespace-nowrap ${
+              ownerFilter === null
+                ? "bg-[var(--accent)] text-white border-[var(--accent)]"
+                : "text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)] hover:bg-[var(--cream-deep)]/40"
+            }`}
+            data-testid="tasks-owner-capsule-all"
+          >
+            All owners
+          </button>
+          {allOwners.map((role) => (
+            <button
+              key={role}
+              type="button"
+              onClick={() => handleOwnerClick(role)}
+              className={`px-3 py-1 rounded-full text-[11.5px] uppercase tracking-wider border transition-colors whitespace-nowrap ${
+                ownerFilter === role
+                  ? "bg-[var(--accent)] text-white border-[var(--accent)]"
+                  : "text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)] hover:bg-[var(--cream-deep)]/40"
+              }`}
+              data-testid={`tasks-owner-capsule-${role}`}
+            >
+              {role}
+            </button>
+          ))}
+          {hasUnassigned && (
+            <button
+              type="button"
+              onClick={() => setOwnerFilter(
+                (prev) => (prev === "__unassigned__" ? null : "__unassigned__"),
+              )}
+              className={`px-3 py-1 rounded-full text-[11.5px] uppercase tracking-wider border transition-colors whitespace-nowrap italic ${
+                ownerFilter === "__unassigned__"
+                  ? "bg-[var(--accent)] text-white border-[var(--accent)]"
+                  : "text-[var(--muted)] border-[var(--rule)] hover:border-[var(--accent)] hover:bg-[var(--cream-deep)]/40"
+              }`}
+              data-testid="tasks-owner-capsule-unassigned"
+            >
+              Unassigned
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 mb-4 flex-nowrap overflow-x-auto" data-testid="tasks-status-filters">
         {STATUS_FILTER_TABS.map((t) => (
           <button
             key={t.key}
@@ -327,14 +427,27 @@ export default function TasksInitiativesPanel({ contextId, onCountChange }) {
             className="text-[14px] text-[var(--ink)] mb-1"
             data-testid="tasks-empty-headline"
           >
-            No tasks in this view yet.
+            No tasks yet
           </p>
           <p
-            className="text-[12.5px] text-[var(--muted)] italic"
+            className="text-[12.5px] text-[var(--muted)] italic mb-4"
             data-testid="tasks-empty-helper"
           >
-            Upload a board pack or report and Akki will extract them.
+            Upload a document with extraction enabled to populate this view.
           </p>
+          {/* AA-slice-4 redispatch — disabled `+ Add` placeholder.
+              Real wiring lands in a later slice; tooltip surfaces the
+              expected ship phase so the user isn't confused by the
+              dead button. */}
+          <button
+            type="button"
+            disabled
+            title="Coming in AA-slice-5"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[12.5px] text-[var(--muted)] border border-[var(--rule)] bg-white opacity-60 cursor-not-allowed"
+            data-testid="tasks-empty-add-btn"
+          >
+            <Plus className="w-3 h-3" /> Add
+          </button>
         </div>
       ) : (
         <div className="bg-white border border-[var(--rule)] rounded-md overflow-hidden" data-testid="tasks-listing">
@@ -344,6 +457,7 @@ export default function TasksInitiativesPanel({ contextId, onCountChange }) {
               task={r}
               sourceDoc={docsById[r.source_document_id]}
               isLast={i === rows.length - 1}
+              onOwnerClick={handleOwnerClick}
             />
           ))}
         </div>
