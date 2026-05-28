@@ -74,7 +74,7 @@ const CONTEXT_TYPE_LABEL = {
 function ContextTypeBadge({ type }) {
   const isSponsored = type === "ned_sponsored" || type === "executive_enterprise";
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium uppercase tracking-wider ${isSponsored ? "bg-amber-50 text-[var(--accent)] border border-[var(--accent)]/30" : "bg-[var(--ned-purple)]/10 text-[var(--ned-purple)] border border-[var(--ned-purple)]/20"}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium uppercase tracking-wider ${isSponsored ? "bg-amber-50 text-[var(--accent)] border border-[var(--accent)]/30" : "bg-ned-purple/10 text-[var(--ned-purple)] border border-ned-purple/20"}`}>
       {CONTEXT_TYPE_LABEL[type] || type}
     </span>
   );
@@ -299,7 +299,7 @@ export default function Settings() {
               >
                 <I className="w-4 h-4 mr-2" strokeWidth={1.7} />
                 {l}
-                {lock && <span className="ml-2 text-[9px] uppercase tracking-wider text-[var(--ned-purple)] bg-[var(--ned-purple)]/10 px-1.5 py-0.5 rounded-sm">{lock}</span>}
+                {lock && <span className="ml-2 text-[9px] uppercase tracking-wider text-[var(--ned-purple)] bg-ned-purple/10 px-1.5 py-0.5 rounded-sm">{lock}</span>}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -671,7 +671,7 @@ export default function Settings() {
                           </td>
                           <td className="px-6 py-3 text-sm text-slate-600">{m.email}</td>
                           <td className="px-6 py-3">
-                            <span className={`inline-flex items-center px-2 py-1 rounded-sm text-[10px] font-medium uppercase tracking-wider ${m.sub_role === "admin" ? "bg-amber-50 text-[var(--accent)] border border-[var(--accent)]/30" : "bg-[var(--ned-purple)]/10 text-[var(--ned-purple)] border border-[var(--ned-purple)]/20"}`}>
+                            <span className={`inline-flex items-center px-2 py-1 rounded-sm text-[10px] font-medium uppercase tracking-wider ${m.sub_role === "admin" ? "bg-amber-50 text-[var(--accent)] border border-[var(--accent)]/30" : "bg-ned-purple/10 text-[var(--ned-purple)] border border-ned-purple/20"}`}>
                               {m.role}{m.sub_role === "admin" ? " · admin" : ""}
                             </span>
                           </td>

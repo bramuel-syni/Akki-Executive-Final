@@ -1050,8 +1050,13 @@ export default function AppShell({ children }) {
           {/* Wave 1.4 (2026-05-27) — Universal back button mounted
               at the top-left of the page content area. Self-hides on
               top-level routes + when history depth is 1. Position
-              keeps `mb-4` so individual pages don't need to reflow. */}
-          <div className="px-8 pt-4" data-testid="appshell-back-slot">
+              keeps `mb-4` so individual pages don't need to reflow.
+
+              Item 6 redo (2026-02 fork-resume) — `empty:hidden` collapses
+              this slot to 0px when BackButton returns null. Required for
+              the side-panel hairline divider's top edge to flush against
+              the secondary-nav horizontal rule with zero gap. */}
+          <div className="px-8 pt-4 empty:hidden empty:p-0" data-testid="appshell-back-slot">
             <BackButton />
           </div>
           {children}

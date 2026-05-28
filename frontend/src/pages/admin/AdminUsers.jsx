@@ -254,7 +254,7 @@ export default function AdminUsers() {
                         <p className="text-[13px] text-[var(--ink)] font-medium" data-testid={`admin-users-row-email-${u.id}`}>
                           {u.email}
                           {u.is_superadmin && (
-                            <span className="ml-2 text-[10px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded-sm bg-[var(--ned-purple)]/10 text-[var(--ned-purple)]">
+                            <span className="ml-2 text-[10px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded-sm bg-ned-purple/10 text-[var(--ned-purple)]">
                               superadmin
                             </span>
                           )}

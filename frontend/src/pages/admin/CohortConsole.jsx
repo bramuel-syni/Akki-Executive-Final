@@ -150,7 +150,7 @@ export default function CohortConsole() {
               type="button"
               data-testid="cohort-console-invite-founder-btn"
               onClick={() => setInviteOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium rounded-sm bg-[var(--ned-purple)] text-white hover:bg-[var(--ned-purple)]/90 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium rounded-sm bg-[var(--ned-purple)] text-white hover:bg-ned-purple/90 transition-colors"
             >
               <UserPlus className="w-3.5 h-3.5" />
               Invite founder

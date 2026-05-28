@@ -70,6 +70,26 @@
    * ChipCompany). Executive chip continues to use --oxblood. */
   --ned-purple:      #6B46C1;
 
+  /* Wave 4.2.followup.2 (2026-02 fork-resume) — R G B triplet tokens.
+   * Tailwind's `bg-[var(--token)]/N` opacity-modifier syntax requires
+   * the CSS var to be in space-separated R G B form (not #hex). The
+   * hex-form tokens above were silently failing on every opacity-
+   * modifier call site (computed bg was rgba(0,0,0,0)). Direct color
+   * usage (`color: var(--ned-purple)`, `text-[var(--ned-purple)]`)
+   * continues to work via the original hex tokens. New opacity-
+   * modifier call sites should reference the Tailwind-config-
+   * registered short names (`bg-ned-purple/10`) — see
+   * tailwind.config.js → theme.extend.colors. */
+  --parchment-rgb:       242 239 232;
+  --parchment-light-rgb: 248 246 240;
+  --ink-rgb:             26 29 32;
+  --graphite-rgb:        111 113 119;
+  --graphite-light-rgb:  184 182 175;
+  --oxblood-rgb:         122 46 46;
+  --oxblood-deep-rgb:    94 34 34;
+  --ned-purple-rgb:      107 70 193;
+  --muted-rgb:           94 95 100;
+
   /* Legacy aliases — DO NOT use in new code. ---------------------------
    * Every alias maps to the closest v7 token so component call sites
    * keep rendering without a global sweep. */

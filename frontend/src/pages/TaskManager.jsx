@@ -72,7 +72,7 @@ export default function TaskManager() {
 
   return (
     <AppShell>
-      <main className="akki-w-medium py-8" data-testid="task-manager-page">
+      <main className="akki-w-medium py-8 flex-1 relative" data-testid="task-manager-page">
         <header className="flex items-end justify-between mb-6">
           <div>
             <p className="text-[11px] uppercase tracking-[0.18em] font-mono text-[var(--muted)] mb-1.5">
@@ -100,9 +100,16 @@ export default function TaskManager() {
           </Button>
         </header>
 
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-8">
-          {/* ── Listing column ───────────────────────────────────── */}
-          <section data-testid="task-manager-listing-column">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-8">
+          {/* ── Listing column. The vertical hairline divider follows
+                the sign-in pattern (SignIn.jsx:73) but uses an
+                absolute-positioned hairline (below) so it can touch
+                the top + bottom horizontal rules with zero gap. ── */}
+          <section
+            className="lg:pr-8"
+            data-testid="task-manager-listing-column"
+            data-divider-id="task-manager-vertical-divider"
+          >
             {/* 3 sort tabs: Active / Draft / Closed (no "All") */}
             <div
               className="flex gap-6 border-b border-[var(--rule)] mb-4"
@@ -137,7 +144,7 @@ export default function TaskManager() {
 
           {/* ── Right rail ───────────────────────────────────────── */}
           <aside
-            className="hidden xl:block w-[340px] shrink-0 space-y-5"
+            className="hidden lg:block w-[340px] shrink-0 space-y-5"
             data-testid="task-manager-right-rail"
           >
             <CompilationReadinessSection contextId={cid} layout="stack" />
@@ -148,6 +155,23 @@ export default function TaskManager() {
             <RecentTaskActivityCard refreshKey={refreshKey} />
           </aside>
         </div>
+
+        {/* ── Vertical hairline divider (Item 6 redo, 2026-02 fork-resume).
+              Absolute-positioned inside the `relative` <main>; top:0
+              and bottom:0 anchor to <main>'s padding box. <main> is
+              `flex-1` inside AppShell's main flex-col, so its top edge
+              flushes with the bottom of the (now-collapsed) back-slot
+              = the secondary nav's horizontal rule, and its bottom
+              edge flushes with the footer's top horizontal rule. The
+              hairline therefore touches both rules with zero gap.
+              X position: from akki-w-medium's right edge, walk left
+              by (right-rail 340px + gap-8 32px) = 372px. ── */}
+        <div
+          className="hidden lg:block absolute top-0 bottom-0 w-px bg-[var(--rule)] pointer-events-none"
+          style={{ right: 'calc(340px + 32px)' }}
+          data-testid="task-manager-vertical-divider"
+          aria-hidden="true"
+        />
       </main>
 
       <TaskSetupWizard

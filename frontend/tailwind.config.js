@@ -13,6 +13,19 @@ module.exports = {
   			sm: 'calc(var(--radius) - 4px)'
   		},
   		colors: {
+			// Wave 4.2.followup.2 (2026-02 fork-resume) — brand color tokens
+			// registered as Tailwind-native colors so the `bg-<name>/N`
+			// opacity-modifier syntax composites correctly via R G B
+			// triplet vars in index.css. Use `bg-ned-purple/10` in new
+			// code; the legacy `bg-[var(--token)]/N` syntax silently
+			// fails for hex-form tokens.
+			'ned-purple':      'rgb(var(--ned-purple-rgb) / <alpha-value>)',
+			'brand-accent':    'rgb(var(--oxblood-rgb) / <alpha-value>)',
+			'brand-ink':       'rgb(var(--ink-rgb) / <alpha-value>)',
+			'brand-muted':     'rgb(var(--muted-rgb) / <alpha-value>)',
+			'brand-rule':      'rgb(var(--graphite-light-rgb) / <alpha-value>)',
+			'brand-parchment': 'rgb(var(--parchment-rgb) / <alpha-value>)',
+			'brand-cream':     'rgb(var(--parchment-light-rgb) / <alpha-value>)',
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {

@@ -74,10 +74,21 @@ def test_w42_swept_sites_no_grey_capsules() -> None:
                 f"a grey-capsule pattern matching {pat!r}. Replace with "
                 f"`bg-[var(--ned-purple)]/<opacity>`."
             )
-        assert "var(--ned-purple)" in src, (
-            f"Wave 4.2 swept site {site['file']!r} must reference "
-            f"`var(--ned-purple)` after the sweep — purple token "
-            f"replaces the grey background."
+        # Wave 4.2.followup.2 (2026-02 fork-resume) — accept BOTH the
+        # legacy `var(--ned-purple)` direct-use form AND the Tailwind-
+        # config-registered short name `ned-purple` (preferred — opacity
+        # composites correctly via the R G B triplet var).
+        has_purple = (
+            "var(--ned-purple)" in src
+            or "ned-purple/" in src  # short-name with opacity modifier
+            or " bg-ned-purple" in src
+            or " text-ned-purple" in src
+            or " border-ned-purple" in src
+        )
+        assert has_purple, (
+            f"Wave 4.2 swept site {site['file']!r} must reference the "
+            f"brand-purple token after the sweep (either `var(--ned-purple)` "
+            f"direct or `ned-purple/N` Tailwind-config short name)."
         )
 
 

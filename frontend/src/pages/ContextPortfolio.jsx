@@ -180,7 +180,7 @@ function RailCompanyList({ contexts, activeContextId, onOpen, onAdd }) {
 
   return (
     <aside
-      className="w-[340px] shrink-0 hidden xl:flex flex-col gap-4"
+      className="w-[340px] shrink-0 hidden lg:flex flex-col gap-4"
       data-testid="portfolio-right-rail"
     >
       <div className="flex items-center justify-end">
@@ -476,8 +476,13 @@ export default function ContextPortfolio() {
         className="akki-w-medium px-8 pt-10 pb-12 flex gap-10"
         data-testid="portfolio-landing"
       >
-        {/* LEFT — main column */}
-        <div className="flex-1 min-w-0 space-y-10">
+        {/* LEFT — main column. Sign-in-style border-right hairline
+            applied to this column at lg+ (matches SignIn.jsx:73). */}
+        <div
+          className="flex-1 min-w-0 space-y-10 lg:border-r lg:border-[var(--rule)] lg:pr-10"
+          data-testid="portfolio-listing-column"
+          data-divider-id="portfolio-vertical-divider"
+        >
           {/* Header — eyebrow + greeting + subtitle */}
           <header className="akki-fade-up">
             <p className="akki-overline mb-2 flex items-center gap-2">
@@ -531,6 +536,24 @@ export default function ContextPortfolio() {
           {/* Section 3 — The world around you (News strip) */}
           <NewsSection onReadMore={() => navigate("/app/news")} />
         </div>
+
+        {/* ── Vertical hairline divider (Item 6 redo, 2026-02 fork-resume).
+              Absolute-positioned; top:0 bottom:0 anchor to the portfolio-
+              landing page wrapper's padding-box outer edge. `flex-1`
+              ensures the wrapper fills <main>'s available height;
+              combined with the back-slot collapse (BackButton hidden on
+              /app via top-level gate), the divider touches the top
+              horizontal nav rule and the trust-footer top border with
+              zero gap.
+              X position: rail-w 340 + gap-10 40 + px-8 right 32 = 412px
+              from the wrapper's outer right edge. ── */}
+        <div
+          data-testid="portfolio-vertical-divider"
+          data-divider-attached-to="portfolio-listing-column"
+          className="hidden lg:block absolute top-0 bottom-0 w-px bg-[var(--rule)] pointer-events-none"
+          style={{ right: 'calc(340px + 40px + 32px)' }}
+          aria-hidden="true"
+        />
 
         {/* RIGHT — company rail */}
         <RailCompanyList

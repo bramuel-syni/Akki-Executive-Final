@@ -30,7 +30,7 @@ function fmtDate(iso) {
 function TypePill({ value }) {
   const label = (value || "—").replace(/_/g, " ");
   return (
-    <span className="inline-flex items-center text-[10.5px] uppercase tracking-[0.14em] px-2 py-0.5 rounded-sm bg-[var(--ned-purple)]/10 text-[var(--ned-purple)] border border-[var(--ned-purple)]/20">
+    <span className="inline-flex items-center text-[10.5px] uppercase tracking-[0.14em] px-2 py-0.5 rounded-sm bg-ned-purple/10 text-[var(--ned-purple)] border border-ned-purple/20">
       {label}
     </span>
   );
@@ -338,7 +338,7 @@ export default function AdminTenants() {
                         global filtered view even from the empty state. */}
                     <Link
                       to={`/app/admin/extractions?tenant_id=${drillCid}`}
-                      className="text-[11px] text-[#6B46C1] hover:underline inline-flex items-center gap-1"
+                      className="text-[11px] text-ned-purple hover:underline inline-flex items-center gap-1"
                       data-testid="tenant-extraction-view-all-link"
                     >
                       View all <ExternalLink className="w-3 h-3" />

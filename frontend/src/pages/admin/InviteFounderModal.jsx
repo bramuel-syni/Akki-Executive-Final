@@ -208,7 +208,7 @@ export default function InviteFounderModal({
           <Button
             onClick={submit}
             disabled={busy}
-            className="bg-[var(--ned-purple)] text-white hover:bg-[var(--ned-purple)]/90"
+            className="bg-[var(--ned-purple)] text-white hover:bg-ned-purple/90"
             data-testid="invite-founder-submit-btn"
           >
             {busy

@@ -153,7 +153,7 @@ export default function WorkStudioSidebar({
 
   return (
     <aside
-      className="hidden xl:block w-[340px] shrink-0"
+      className="hidden lg:block w-[340px] shrink-0"
       data-testid="work-studio-sidebar"
     >
       <div
@@ -169,7 +169,7 @@ export default function WorkStudioSidebar({
             type="button"
             onClick={handleAddDocument}
             variant="outline"
-            className="w-full bg-white border-2 border-[var(--ned-purple)] hover:bg-[var(--ned-purple)]/10 text-[var(--ned-purple)] rounded-sm font-medium tracking-wide"
+            className="w-full bg-white border-2 border-[var(--ned-purple)] hover:bg-ned-purple/10 text-[var(--ned-purple)] rounded-sm font-medium tracking-wide"
             data-testid="work-studio-sidebar-add-document-btn"
           >
             <Plus className="w-4 h-4 mr-1.5" strokeWidth={2.2} /> Add a document

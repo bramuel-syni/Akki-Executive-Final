@@ -35,8 +35,8 @@ const STATUS_STYLE = {
   achieved:  { label: "Achieved",   tone: "text-blue-700 bg-blue-50 border-blue-200" },
   // W4.2 (2026-05-27) — neutral states swap grey → light brand purple
   // (matches W4.1 "Active" marker + Phase V AdminUsers precedent).
-  abandoned: { label: "Abandoned",  tone: "text-[var(--ned-purple)] bg-[var(--ned-purple)]/10 border-[var(--ned-purple)]/20" },
-  not_started: { label: "Not Started", tone: "text-[var(--ned-purple)] bg-[var(--ned-purple)]/10 border-[var(--ned-purple)]/20" },
+  abandoned: { label: "Abandoned",  tone: "text-[var(--ned-purple)] bg-ned-purple/10 border-ned-purple/20" },
+  not_started: { label: "Not Started", tone: "text-[var(--ned-purple)] bg-ned-purple/10 border-ned-purple/20" },
 };
 
 // T2.4 (2026-05-25) — X8 status filter tabs (6 buckets).
@@ -283,19 +283,19 @@ export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange, on
           })}
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <label htmlFor="strategic-goals-category" className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">
-            Category
+          <label htmlFor="strategic-goals-owner" className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">
+            Owner
           </label>
           <select
-            id="strategic-goals-category"
+            id="strategic-goals-owner"
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            data-testid="strategic-goals-category-select"
+            data-testid="strategic-goals-owner-select"
             className="text-[12.5px] px-2 py-1 border border-[var(--rule)] rounded-sm bg-white text-[var(--ink)] focus:outline-none focus:border-[var(--accent)]"
           >
-            <option value="all">All categories</option>
+            <option value="all">All owners</option>
             {categoryOptions.map((c) => (
-              <option key={c} value={c} data-testid={`strategic-goals-category-option-${c}`}>
+              <option key={c} value={c} data-testid={`strategic-goals-owner-option-${c}`}>
                 {DEPT_LABEL[c] || c}
               </option>
             ))}
@@ -384,7 +384,7 @@ const CATEGORY_STYLE = {
   customer:   { label: "Customer",   bar: "bg-blue-600",    chip: "bg-blue-50 text-blue-800 border-blue-200" },
   product:    { label: "Product",    bar: "bg-violet-600",  chip: "bg-violet-50 text-violet-800 border-violet-200" },
   people:     { label: "People",     bar: "bg-amber-600",   chip: "bg-amber-50 text-amber-800 border-amber-200" },
-  operations: { label: "Operations", bar: "bg-[var(--ned-purple)]/80",   chip: "bg-[var(--ned-purple)]/8 text-[var(--ink)] border-[var(--ned-purple)]/20" },
+  operations: { label: "Operations", bar: "bg-ned-purple/80",   chip: "bg-ned-purple/8 text-[var(--ink)] border-ned-purple/20" },
   compliance: { label: "Compliance", bar: "bg-red-700",     chip: "bg-red-50 text-red-800 border-red-200" },
 };
 
@@ -654,6 +654,86 @@ function GoalDetailDrawer({ goal, onClose, contextId, onGoalUpdated, isNED }) {
               <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-1">Target date</p>
               <p className="text-[14px] akki-serif text-[var(--ink)]">{goal?.target_date || "—"}</p>
             </div>
+          </div>
+
+          {/* Phase AA.followup.4 → Item 4 (2026-02 fork-resume) — Monitoring intel.
+              Surfaces the full client-side bucket-template narratives that match
+              the closed-row snippets. Backend LLM-generated explanations don't
+              exist yet (see Phase AA.followup.10 backlog) so this renders the
+              same deterministic bucket text the row uses, full-width (not
+              truncated). Score values use ned-purple accent per spec. */}
+          <div data-testid="goal-drawer-intelligence" className="space-y-3">
+            <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--ink)]">
+              Monitoring intel
+            </p>
+            <div className="space-y-2.5">
+              <div className="border border-[var(--rule)] rounded-sm bg-white px-3 py-2.5" data-testid="goal-drawer-performance-signal">
+                <div className="flex items-baseline justify-between gap-3 mb-1">
+                  <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)]">Performance signal</p>
+                  <p className="text-[13px] akki-serif text-ned-purple">{goal?.current_score != null ? `${goal.current_score}%` : "—"}</p>
+                </div>
+                <p className="text-[12.5px] text-[var(--ink)] leading-snug" data-testid="goal-drawer-performance-signal-text">
+                  {goal?.performance_explanation || performanceNarrative(goal?.current_score)}
+                </p>
+              </div>
+              <div className="border border-[var(--rule)] rounded-sm bg-white px-3 py-2.5" data-testid="goal-drawer-probability-signal">
+                <div className="flex items-baseline justify-between gap-3 mb-1">
+                  <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)]">Probability signal</p>
+                  <p className="text-[13px] akki-serif text-ned-purple">{goal?.probability != null ? `${goal.probability}%` : "—"}</p>
+                </div>
+                <p className="text-[12.5px] text-[var(--ink)] leading-snug" data-testid="goal-drawer-probability-signal-text">
+                  {goal?.probability_explanation || probabilityNarrative(goal?.probability)}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Recommended action — backend `recommended_action` field is not
+              modelled yet (filed Phase AA.followup.10). Fall back to a hint
+              derived from the performance bucket text. */}
+          {(goal?.recommended_action || (goal?.current_score != null && goal.current_score < 65)) && (
+            <div
+              data-testid="goal-drawer-recommended-action"
+              className="rounded-sm bg-ned-purple/10 border border-ned-purple/30 px-3 py-2.5"
+            >
+              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-ned-purple mb-1">
+                Recommended action
+              </p>
+              <p className="text-[12.5px] text-[var(--ink)] leading-snug" data-testid="goal-drawer-recommended-action-text">
+                {goal?.recommended_action || performanceNarrative(goal?.current_score)}
+              </p>
+            </div>
+          )}
+
+          {/* Milestone tracker — milestones not modelled yet (Phase
+              AA.followup.10). Render empty state + disabled add CTA. */}
+          <div data-testid="goal-drawer-milestones" className="border border-[var(--rule)] rounded-sm bg-white px-3 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--ink)]">Milestones</p>
+              <button
+                type="button"
+                disabled
+                title="Coming with Phase AA.followup.10 — milestone model"
+                className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--muted)] cursor-not-allowed opacity-60"
+                data-testid="goal-drawer-add-milestone-btn"
+              >
+                + Add milestone
+              </button>
+            </div>
+            {Array.isArray(goal?.milestones) && goal.milestones.length > 0 ? (
+              <ul className="space-y-1.5">
+                {goal.milestones.map((m, i) => (
+                  <li key={i} className="text-[12.5px] text-[var(--ink)]">
+                    <span className="font-mono text-[10.5px] text-[var(--muted)] mr-2">{m.due_at || "—"}</span>
+                    {m.title}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[12.5px] text-[var(--muted)] italic" data-testid="goal-drawer-milestones-empty">
+                No milestones set yet.
+              </p>
+            )}
           </div>
 
           {lastUpdateTs && (

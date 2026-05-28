@@ -1001,18 +1001,22 @@ async def get_chat(
     include_archived: bool = Query(False),
     current: Dict[str, Any] = Depends(get_current_account),
 ):
-    """Workstream A.2 — X-Active-Context REQUIRED. The chat must
-    belong to the active context, else 404 (we do NOT leak whether
-    the chat exists in another context).
+    """Wave 5 (2026-02 fork-resume) — General RAG default. The chat
+    MAY be a general chat (`context_id: None`); in that case, no
+    X-Active-Context header is required. Otherwise (context-scoped
+    chat), the header MUST match the chat's context_id.
 
     Workstream B.5 — `?include_archived=true` lets the archive view
     open an archived chat for restore preview.
     """
-    active_ctx = _require_active_context(request)
-    chat = await db.chats.find_one(
-        {"id": chat_id, "account_id": current["id"], "context_id": active_ctx},
-        {"_id": 0},
-    )
+    active_ctx = request.headers.get(ACTIVE_CONTEXT_HEADER) or None
+    chat_filter: Dict[str, Any] = {"id": chat_id, "account_id": current["id"]}
+    if active_ctx:
+        chat_filter["context_id"] = active_ctx
+    else:
+        # General chats only.
+        chat_filter["$or"] = [{"context_id": None}, {"context_id": {"$exists": False}}]
+    chat = await db.chats.find_one(chat_filter, {"_id": 0})
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
     if chat.get("status") == "archived" and not include_archived:
@@ -1030,8 +1034,10 @@ async def patch_chat(
     chat_id: str, body: ChatPatchIn, request: Request,
     current: Dict[str, Any] = Depends(get_current_account),
 ):
-    # Workstream A.2 — X-Active-Context REQUIRED.
-    active_ctx = _require_active_context(request)
+    # Wave 5 (2026-02 fork-resume) — General RAG default. General chats
+    # (context_id None) accept patches without X-Active-Context;
+    # context-scoped chats still require the header.
+    active_ctx = request.headers.get(ACTIVE_CONTEXT_HEADER) or None
     if body.model_id is not None and not _model_def(body.model_id):
         raise HTTPException(status_code=400, detail=f"Unknown model_id '{body.model_id}'.")
     update: Dict[str, Any] = {"updated_at": _iso(_now())}
@@ -1062,10 +1068,12 @@ async def patch_chat(
         audit_payload["linked_context"] = None
     elif body.linked_context is not None:
         # Find the chat's context_id to re-resolve.
-        existing = await db.chats.find_one(
-            {"id": chat_id, "account_id": current["id"], "context_id": active_ctx},
-            {"_id": 0, "context_id": 1},
-        )
+        existing_filter: Dict[str, Any] = {"id": chat_id, "account_id": current["id"]}
+        if active_ctx:
+            existing_filter["context_id"] = active_ctx
+        else:
+            existing_filter["$or"] = [{"context_id": None}, {"context_id": {"$exists": False}}]
+        existing = await db.chats.find_one(existing_filter, {"_id": 0, "context_id": 1})
         if not existing:
             raise HTTPException(status_code=404, detail="Chat not found")
         resolved = await _resolve_linked_context(
@@ -1092,15 +1100,18 @@ async def patch_chat(
     mongo_op: Dict[str, Any] = {"$set": update}
     if unset:
         mongo_op["$unset"] = unset
-    res = await db.chats.update_one(
-        {
-            "id": chat_id,
-            "account_id": current["id"],
-            "context_id": active_ctx,
-            "status": {"$ne": "archived"},
-        },
-        mongo_op,
-    )
+    # Wave 5 (2026-02 fork-resume) — match general chats when
+    # active_ctx is None; context-scoped when present.
+    update_filter: Dict[str, Any] = {
+        "id": chat_id,
+        "account_id": current["id"],
+        "status": {"$ne": "archived"},
+    }
+    if active_ctx:
+        update_filter["context_id"] = active_ctx
+    else:
+        update_filter["$or"] = [{"context_id": None}, {"context_id": {"$exists": False}}]
+    res = await db.chats.update_one(update_filter, mongo_op)
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Chat not found")
     await _append_audit(

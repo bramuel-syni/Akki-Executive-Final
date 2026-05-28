@@ -24,6 +24,14 @@ import { ArrowLeft } from "lucide-react";
 
 // Routes that DO NOT show a back button. Match exact path or
 // startswith for nested first-session/early-access flows.
+//
+// Item 6 redo (2026-02 fork-resume) — extended to include the 4
+// top-level app surfaces that carry the sign-in-style side-panel
+// hairline divider. The divider must touch the top horizontal nav
+// rule with zero gap; the back-slot wrapper (with px-8 pt-4) was
+// adding 51px of dead space above the page content even when the
+// page is logically top-level. These 4 are reached via primary nav,
+// not via deep navigation — back button adds no value here.
 const TOP_LEVEL_ROUTES = [
   "/",
   "/sign-in",
@@ -34,6 +42,8 @@ const TOP_LEVEL_ROUTES = [
   "/app/companies",
   "/app/first-session",
   "/app/early-access-opt-in",
+  "/app/work-studio",
+  "/app/task-manager",
 ];
 
 function isTopLevelRoute(pathname) {

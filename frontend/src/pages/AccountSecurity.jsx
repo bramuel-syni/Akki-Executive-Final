@@ -114,7 +114,7 @@ export default function AccountSecurity() {
                 Recommended for context admins. Use any authenticator app (1Password, Authy, Google Authenticator).
               </p>
             </div>
-            <span className={`text-[10px] uppercase tracking-wider px-2 py-1 rounded-sm ${account?.mfa_enabled ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-[var(--ned-purple)]/10 text-[var(--ned-purple)] border border-[var(--ned-purple)]/20"}`}>
+            <span className={`text-[10px] uppercase tracking-wider px-2 py-1 rounded-sm ${account?.mfa_enabled ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-ned-purple/10 text-[var(--ned-purple)] border border-ned-purple/20"}`}>
               {account?.mfa_enabled ? "Enabled" : "Off"}
             </span>
           </div>

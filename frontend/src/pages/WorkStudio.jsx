@@ -323,7 +323,7 @@ function DocumentRow({ row, onOpen }) {
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           {/* Origin badge — primary affordance per Z-slice-2 spec. */}
           <span
-            className="inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium uppercase tracking-wider bg-[var(--ned-purple)]/10 text-[var(--ned-purple)] border border-[var(--ned-purple)]/20"
+            className="inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium uppercase tracking-wider bg-ned-purple/10 text-[var(--ned-purple)] border border-ned-purple/20"
             data-testid="work-studio-document-row-origin-badge"
           >
             {displayOrigin(origin)}
@@ -839,8 +839,13 @@ export default function WorkStudio() {
   return (
     <AppShell>
       <WorkspaceEntryGate workspace="work_studio">
-        <div className="akki-w-medium px-8 py-10 xl:flex xl:items-start xl:gap-10" data-testid="work-studio">
-          <div className="flex-1 min-w-0">
+        <div className="akki-w-medium px-8 py-10 lg:flex lg:items-start lg:gap-10 flex-1 relative" data-testid="work-studio">
+          {/* Left column. The vertical hairline divider is rendered as
+              an absolute-positioned <div> at the column boundary so it
+              touches the top + bottom horizontal rules (sign-in spec). */}
+          <div className="flex-1 min-w-0 lg:pr-10"
+               data-testid="work-studio-listing-column"
+               data-divider-id="work-studio-vertical-divider">
           <p className="akki-overline mb-2 flex items-center gap-2">
             <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Work Studio · {activeContext.name}
           </p>
@@ -983,6 +988,17 @@ export default function WorkStudio() {
                 the buttons. */}
           </div>
           </div>
+
+          {/* Vertical hairline handle — the real border lives on the
+              listing column above; this is the testable testid. */}
+          <div
+            data-testid="work-studio-vertical-divider"
+            data-divider-attached-to="work-studio-listing-column"
+            className="hidden lg:block absolute top-0 bottom-0 w-px bg-[var(--rule)] pointer-events-none"
+            style={{ right: 'calc(340px + 40px + 32px)' }}
+            aria-hidden="true"
+          />
+
           {/* Phase Z (2026-05-27, Z-slice-3) — RIGHT sidebar.
               Replaces the prior `<CompilationRail>` + `<DocumentJournalRail>`
               twin layout with the locked vertical card stack:

@@ -43,7 +43,7 @@ const STATUS_STYLE = {
   at_risk:     { label: "At Risk",     tone: "text-amber-700 bg-amber-50 border-amber-200" },
   off_track:   { label: "Off Track",   tone: "text-red-700 bg-red-50 border-red-200" },
   achieved:    { label: "Achieved",    tone: "text-blue-700 bg-blue-50 border-blue-200" },
-  not_started: { label: "Not Started", tone: "text-[var(--ned-purple)] bg-[var(--ned-purple)]/10 border-[var(--ned-purple)]/20" },
+  not_started: { label: "Not Started", tone: "text-[var(--ned-purple)] bg-ned-purple/10 border-ned-purple/20" },
 };
 
 const CATEGORY_LABEL = {
@@ -80,10 +80,10 @@ function probabilityBarClass(value) {
   // deliberately stay within the brand-purple hue (no greys, no
   // amber RAG mixing) so the bar reads as "confidence in this
   // probability score", separate from the RAG performance bar.
-  if (value === null || value === undefined) return "bg-[var(--ned-purple)]/15";
+  if (value === null || value === undefined) return "bg-ned-purple/15";
   if (value >= 70) return "bg-[var(--ned-purple)]";
-  if (value >= 40) return "bg-[var(--ned-purple)]/60";
-  return "bg-[var(--ned-purple)]/30";
+  if (value >= 40) return "bg-ned-purple/60";
+  return "bg-ned-purple/30";
 }
 
 
@@ -165,7 +165,7 @@ function TaskCard({ task, sourceDoc, isLast, onOwnerClick }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
             <span
-              className="inline-block px-1.5 py-0.5 rounded-sm text-[9.5px] uppercase tracking-wider border bg-[var(--ned-purple)]/8 text-[var(--ink)] border-[var(--ned-purple)]/20"
+              className="inline-block px-1.5 py-0.5 rounded-sm text-[9.5px] uppercase tracking-wider border bg-ned-purple/8 text-[var(--ink)] border-ned-purple/20"
               data-testid={`task-card-category-${task.id}`}
             >
               {catLabel}

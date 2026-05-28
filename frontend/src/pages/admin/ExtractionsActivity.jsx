@@ -126,14 +126,14 @@ export default function ExtractionsActivity() {
           <div className="flex items-center gap-2 mb-6" data-testid="extractions-filter-strip">
             {tenantId && (
               <span
-                className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] px-3 py-1 rounded-sm bg-[#6B46C1]/10 text-[#6B46C1] border border-[#6B46C1]/30 mr-2"
+                className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] px-3 py-1 rounded-sm bg-ned-purple/10 text-ned-purple border border-ned-purple/30 mr-2"
                 data-testid="extractions-tenant-scope-pill"
               >
                 Tenant: {tenantId.slice(0, 8)}…
                 <button
                   type="button"
                   onClick={clearTenantFilter}
-                  className="ml-0.5 -mr-1 hover:bg-[#6B46C1]/15 rounded-sm p-0.5 transition-colors"
+                  className="ml-0.5 -mr-1 hover:bg-ned-purple/15 rounded-sm p-0.5 transition-colors"
                   data-testid="extractions-tenant-scope-clear-btn"
                   aria-label="Clear tenant filter"
                   title="Clear tenant filter"
@@ -153,8 +153,8 @@ export default function ExtractionsActivity() {
                 onClick={() => setKindFilter(opt.id)}
                 className={`text-[11px] uppercase tracking-[0.14em] px-3 py-1 rounded-sm border transition-colors ${
                   kindFilter === opt.id
-                    ? "bg-[var(--ned-purple)]/10 text-[var(--ned-purple)] border-[var(--ned-purple)]/20"
-                    : "bg-white text-[var(--muted)] border-[var(--rule)] hover:border-[var(--ned-purple)]/30"
+                    ? "bg-ned-purple/10 text-[var(--ned-purple)] border-ned-purple/20"
+                    : "bg-white text-[var(--muted)] border-[var(--rule)] hover:border-ned-purple/30"
                 }`}
                 data-testid={`extractions-filter-${opt.id || "all"}`}
               >
@@ -211,7 +211,7 @@ export default function ExtractionsActivity() {
                       {row.document_category || "—"}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1 text-[10.5px] uppercase tracking-[0.14em] px-2 py-0.5 rounded-sm bg-[var(--ned-purple)]/10 text-[var(--ned-purple)] border border-[var(--ned-purple)]/20">
+                      <span className="inline-flex items-center gap-1 text-[10.5px] uppercase tracking-[0.14em] px-2 py-0.5 rounded-sm bg-ned-purple/10 text-[var(--ned-purple)] border border-ned-purple/20">
                         <Sparkles className="w-3 h-3" /> {row.kind}
                       </span>
                     </td>

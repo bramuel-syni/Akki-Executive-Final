@@ -406,7 +406,7 @@ export default function CompanyHome() {
   return (
     <AppShell>
       <div
-        className="max-w-[1240px] mx-auto px-6 lg:px-8 py-8"
+        className="max-w-[1240px] mx-auto px-6 lg:px-8 py-8 relative flex-1"
         data-testid="company-home"
       >
         {/* Breadcrumb */}
@@ -423,7 +423,11 @@ export default function CompanyHome() {
 
         <div className="flex flex-col lg:flex-row gap-8">
           {/* LEFT column */}
-          <main className="flex-1 min-w-0 space-y-6">
+          <main
+            className="flex-1 min-w-0 space-y-6 lg:pr-10"
+            data-testid="company-home-listing-column"
+            data-divider-id="company-home-vertical-divider"
+          >
             {/* H1 — 32px per-page inline override (NOT the .akki-greeting token) */}
             <h1
               className="font-serif text-[32px] leading-[1.15] text-[var(--ink)]"
@@ -481,6 +485,23 @@ export default function CompanyHome() {
               ))}
             </div>
           </main>
+
+          {/* ── Vertical hairline (Item 6 redo, 2026-02 fork-resume).
+                Absolute-positioned inside `company-home` page wrapper;
+                top:0/bottom:0 anchor to its padding-box outer edge.
+                Page wrapper has `flex-1` to fill <main>'s available
+                height. Touches the top horizontal rule (back-slot
+                collapsed by BackButton's top-level-route gate) and
+                the trust-footer top border with zero gap.
+                X position: rail-w 320 + gap-8 32 + px-8 right 32 = 384px
+                from the wrapper's outer right edge. ── */}
+          <div
+            data-testid="company-home-vertical-divider"
+            data-divider-attached-to="company-home-listing-column"
+            className="hidden lg:block absolute top-0 bottom-0 w-px bg-[var(--rule)] pointer-events-none"
+            style={{ right: 'calc(320px + 32px + 32px)' }}
+            aria-hidden="true"
+          />
 
           {/* RIGHT rail */}
           <RightRail
