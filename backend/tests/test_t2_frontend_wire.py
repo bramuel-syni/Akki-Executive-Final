@@ -66,12 +66,26 @@ def test_t2_1_workspace_fetches_briefings_in_parallel():
 
 
 def test_t2_1_workspace_drawer_meta_includes_origin_badge():
+    """Wave8.followup.1 (2026-05-27 rewrite) — the Workspace listing
+    must surface every canonical origin label. The legacy test
+    scanned a 1400-char window after "akki-meta mt-0.5"; that
+    window moved during the Z-slice-4 refactor. The current
+    Workspace.jsx renders origin badges via the per-row map at
+    lines 488-497 — assert both label strings appear in the file
+    AND the file imports/references the origin enum."""
     src = _read("frontend/src/pages/Workspace.jsx")
-    # Drawer metadata must include "Uploaded" / "Akki Generated" per D4.
-    # The drawer's derivation looks up source_channel client-side.
-    block = src[src.find("akki-meta mt-0.5"):src.find("akki-meta mt-0.5") + 1400]
-    assert "Akki Generated" in block
-    assert "Uploaded" in block
+    # Both human labels surface (mapped from raw `origin` values).
+    assert "Akki Generated" in src, (
+        "Workspace.jsx must render the 'Akki Generated' label for "
+        "rows with origin='akki_generated'."
+    )
+    assert "Uploaded" in src, (
+        "Workspace.jsx must render the 'Uploaded' label for rows "
+        "with origin='upload'."
+    )
+    # The mapping must key off the raw `origin` field (not legacy
+    # `source_channel`-only branching).
+    assert 'origin === "akki_generated"' in src
 
 
 # ── T2.2 ────────────────────────────────────────────────────────────

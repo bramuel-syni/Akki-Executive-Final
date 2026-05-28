@@ -3,6 +3,11 @@ import "@/App.css";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
+// R.followup.2 (2026-05-27) — page-level superadmin enforcement.
+// Wraps every `/app/admin/*` and `/admin/*` route so a non-superadmin
+// session can't even reach the page shell (data endpoints already
+// enforce superadmin server-side; this is the second gate).
+import SuperadminRoute from "@/components/SuperadminRoute";
 import { Toaster } from "@/components/ui/sonner";
 
 // Patch 18 — code-split.
@@ -347,11 +352,11 @@ function App() {
           {/* Phase R.5.a (2026-05-27) — Early access opt-in (the ONLY route a hard-locked user can navigate to). */}
           <Route path="/app/early-access-opt-in" element={<ProtectedRoute><EarlyAccessOptIn /></ProtectedRoute>} />
           {/* Phase R.5.a (2026-05-27) — Superadmin cohort console. */}
-          <Route path="/app/admin/cohort" element={<Gated><CohortConsole /></Gated>} />
+          <Route path="/app/admin/cohort" element={<SuperadminRoute><Gated><CohortConsole /></Gated></SuperadminRoute>} />
           {/* Phase V (2026-05-27) — Admin user CRUD portal (superadmin only). */}
-          <Route path="/app/admin/users" element={<Gated><AdminUsers /></Gated>} />
+          <Route path="/app/admin/users" element={<SuperadminRoute><Gated><AdminUsers /></Gated></SuperadminRoute>} />
           {/* Phase R.5.b (2026-05-27) — Founder copy editor. */}
-          <Route path="/app/admin/cohort/copy" element={<Gated><CohortCopyEditor /></Gated>} />
+          <Route path="/app/admin/cohort/copy" element={<SuperadminRoute><Gated><CohortCopyEditor /></Gated></SuperadminRoute>} />
           <Route path="/app" element={<Gated><AppHome /></Gated>} />
           {/* Phase H.5 (2026-05-27) — legacy portfolio routes collapsed
               to /app. /app/portfolio used to render Home1 (now
@@ -393,12 +398,12 @@ function App() {
           <Route path="/app/trust-center" element={<Gated><TrustCenter /></Gated>} />  {/* H3 */}
           <Route path="/app/chats/archived" element={<Gated><ArchivedChats /></Gated>} />
           <Route path="/app/influence" element={<Gated><InfluenceMap /></Gated>} />
-          <Route path="/admin/health" element={<ProtectedRoute><HealthDashboard /></ProtectedRoute>} />
-          <Route path="/admin/sandbox-kpi" element={<ProtectedRoute><SandboxKPI /></ProtectedRoute>} />
-          <Route path="/admin/signal-kpi" element={<ProtectedRoute><SignalKPI /></ProtectedRoute>} />
-          <Route path="/admin/llm-spend" element={<ProtectedRoute><LLMSpend /></ProtectedRoute>} />
-          <Route path="/admin/auth-events" element={<ProtectedRoute><AuthEvents /></ProtectedRoute>} />
-          <Route path="/admin" element={<ProtectedRoute><AdminIndex /></ProtectedRoute>} />
+          <Route path="/admin/health" element={<SuperadminRoute><HealthDashboard /></SuperadminRoute>} />
+          <Route path="/admin/sandbox-kpi" element={<SuperadminRoute><SandboxKPI /></SuperadminRoute>} />
+          <Route path="/admin/signal-kpi" element={<SuperadminRoute><SignalKPI /></SuperadminRoute>} />
+          <Route path="/admin/llm-spend" element={<SuperadminRoute><LLMSpend /></SuperadminRoute>} />
+          <Route path="/admin/auth-events" element={<SuperadminRoute><AuthEvents /></SuperadminRoute>} />
+          <Route path="/admin" element={<SuperadminRoute><AdminIndex /></SuperadminRoute>} />
           <Route path="/app/learn" element={<Gated><Learn /></Gated>} />
           <Route path="/app/learn/:id" element={<Gated><Learn /></Gated>} />
           <Route path="/app/manage" element={<Gated><Manage /></Gated>} />
@@ -431,7 +436,7 @@ function App() {
           {/* Phase E Sub-task A — Phase D engine surface. */}
           <Route path="/app/solva/phase-d/session/new" element={<Gated><SolvaPhaseDSession /></Gated>} />
           <Route path="/app/solva/phase-d/session/:sessionId" element={<Gated><SolvaPhaseDSession /></Gated>} />
-          <Route path="/app/admin/synisense-observability" element={<Gated><SynisenseObservability /></Gated>} />
+          <Route path="/app/admin/synisense-observability" element={<SuperadminRoute><Gated><SynisenseObservability /></Gated></SuperadminRoute>} />
           <Route path="/app/documents/:id" element={<Gated><DocumentRouteSwitch /></Gated>} />
           {/* Phase H.5 (2026-05-27) — /app/contexts and /app/companies
               landing routes collapsed to /app. ContextPortfolio renders

@@ -100,11 +100,21 @@ def test_t3_2_handoff_actions_uses_modal_for_document_kind():
 
 # ── T3.3 — Work Studio kind-aware routing + dedicated page ────────────
 def test_t3_3_workstudio_routes_board_and_committee_to_page():
+    """Wave8.followup.1 (2026-05-27 rewrite) — the legacy assertion
+    grepped for `cycle_board_pack` + `cycle_committee_pack` inside
+    the `onOpenDocument` block. Phase Z-2 merged both into one
+    `cycle_main_and_committee_pack` tab (see WorkStudio.jsx
+    KIND_TABS). Lock the new canonical kind instead, AND the
+    legacy-kind redirect that keeps deep-linked bookmarks
+    working."""
     src = _read("frontend/src/pages/WorkStudio.jsx")
-    block = src[src.find("onOpenDocument={(aid, exportKind)"):]
-    assert "cycle_board_pack" in block[:1500]
-    assert "cycle_committee_pack" in block[:1500]
-    assert "/app/work-studio/document/" in block[:1500]
+    # The merged canonical kind exists in source.
+    assert "cycle_main_and_committee_pack" in src
+    # Legacy URL params route through to the canonical tab.
+    assert 'k === "cycle_board_pack"' in src
+    assert 'k === "cycle_committee_pack"' in src
+    # Document open still routes to the dedicated page.
+    assert "/app/work-studio/document/" in src
 
 
 def test_t3_3_dedicated_page_route_registered():

@@ -121,10 +121,27 @@ async def test_doc_journal_happy_path(client):
     assert detail["id"] == doc_id
     assert detail["name"] == "Audit 28C"
 
-    # 4. Download (Patch 28C — the previously-broken "empty button")
+    # 4. Download — Wave8.followup.1 (2026-05-27) — the document
+    #    pipeline now wraps text uploads in a PDF (ReportLab) for
+    #    consistent drawer rendering. The marker text "hello
+    #    journal" lives inside an ASCII85-flate-encoded stream and
+    #    isn't byte-searchable. Assert PDF structure markers
+    #    instead — header `%PDF-` + EOF `%%EOF`.
     r = await client.get(f"/api/contexts/{cid}/documents/{doc_id}/download", headers=headers)
-    assert r.status_code == 200, f"download endpoint must 200 (Patch 28C fix). Got {r.status_code} {r.text[:200]}"
-    assert r.content == b"hello journal"
+    assert r.status_code == 200, (
+        f"download endpoint must 200 (Patch 28C fix). "
+        f"Got {r.status_code} {r.text[:200]}"
+    )
+    assert r.content.startswith(b"%PDF-"), (
+        "Document download must return a PDF-wrapped stream "
+        "(post-Patch 30 text-to-PDF pipeline)."
+    )
+    assert b"%%EOF" in r.content[-32:], (
+        "PDF stream must terminate with the standard %%EOF marker."
+    )
+    assert len(r.content) > 500, (
+        "Wrapped PDF must be a real document (not a stub)."
+    )
 
 
 # ---------------------------------------------------------------------------

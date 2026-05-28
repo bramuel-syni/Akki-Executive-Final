@@ -80,23 +80,36 @@ async def test_chat_models_open_to_authenticated_user(client):
         assert isinstance(body, list)
 
 
-async def test_chat_create_requires_active_context_header(client):
-    """`POST /api/chats` without `X-Active-Context` is rejected.
+async def test_chat_create_without_context_creates_general_chat(client):
+    """Wave 5 (2026-05-27) intentionally REMOVED the per-context
+    requirement on chat creation. General RAG is now the default
+    chat mode: posting without `X-Active-Context` creates a chat
+    with `context_id=None`.
 
-    Phase 15 made per-context chat creation mandatory. The legacy
-    iter35 file did not send the header and got 200 — that contract
-    no longer holds.
+    The original Phase 15 test asserted 400/422; Wave 5 explicitly
+    contradicts that contract (see `routers/chat.py::create_chat`,
+    comment "Wave 5 (2026-05-27) — General RAG (no-context) is now
+    the DEFAULT chat mode per the locked spec"). This test was
+    rewritten in Wave8.followup.1 (2026-05-27) to lock the Wave 5
+    contract.
     """
     token, _ctx_id = await _register(client)
     r = await client.post(
         "/api/chats",
-        json={"title": "no-context-chat"},
+        json={"title": "general-chat-no-context"},
         headers={"Authorization": f"Bearer {token}"},
     )
-    # 400/422 = missing header rejected; 403 = context-permission gate.
-    assert r.status_code in (400, 401, 403, 422), (
-        f"POST /api/chats without X-Active-Context should be rejected, "
-        f"got {r.status_code}: {r.text[:200]}"
+    assert r.status_code in (200, 201), (
+        f"Wave 5 requires `POST /api/chats` to succeed without "
+        f"X-Active-Context (general RAG default); got "
+        f"{r.status_code}: {r.text[:200]}"
+    )
+    body = r.json()
+    assert body.get("id"), "Chat creation must return an id."
+    # The chat is minted with context_id=None per Wave 5 spec.
+    assert body.get("context_id") in (None, "", "null"), (
+        f"No-context chat creation must result in context_id=None, "
+        f"got {body.get('context_id')!r}"
     )
 
 
