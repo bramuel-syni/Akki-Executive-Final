@@ -5197,3 +5197,53 @@ Institutional Recurrence #5 prevention promoted from the data-model layer to the
 
 ### Next per locked sequence
 **Phase AA — Monitor v2 (7 slices)**. AA-slice-1: `tasks_initiatives` data model.
+
+
+---
+
+## Phase AA-slice-1 — tasks_initiatives data model + CRUD (2026-05-27) — CLOSED
+
+New `tasks_initiatives` Mongo collection. Backs Phase AA (Monitor v2). Separate from legacy `strategic_goals.initiatives_count` counter (reconciliation = Z.followup.6).
+
+### Schema fields
+`id` · `context_id` · `title` (2-180) · `body` (≤4000) · `category` (6-enum reused from goals) · `owner_role` (9 canonical + null) · `parent_objective_id` (FK → strategic_goals | null) · `status` (5-enum: on_track/at_risk/off_track/achieved/not_started) · `performance_score` (0-100) · `probability_score` (0-100) · `last_reassessed_at` · `source_document_id` (FK → documents | null) · `extracted_by` ("llm"|"manual") · `status_active` (soft-delete) · `created_at` · `updated_at`.
+
+### Endpoints (`backend/routers/tasks_initiatives.py`)
+- `GET /api/contexts/{cid}/tasks-initiatives?owner=&status=&parent_objective_id=&search=&page=&page_size=`
+- `GET /api/contexts/{cid}/tasks-initiatives/{id}`
+- `POST /api/contexts/{cid}/tasks-initiatives` (manual create)
+- `PATCH /api/contexts/{cid}/tasks-initiatives/{id}` (partial update; updated_at + last_reassessed_at always refreshed)
+- `DELETE /api/contexts/{cid}/tasks-initiatives/{id}` (soft-delete via `status_active=False`)
+
+### Indexes (built at startup via `ensure_indexes()`)
+- `(id)` unique
+- `(context_id, parent_objective_id)`
+- `(context_id, owner_role)`
+- `(context_id, status)`
+- `(context_id, source_document_id)`
+- `(context_id, status_active, updated_at DESC)` for soft-delete-aware hot path
+
+### Constraints
+- `parent_objective_id` must reference a goal in the same context (else 400).
+- `source_document_id` must reference a doc in the same context (else 400).
+- `source_document_id` + `extracted_by` are immutable post-create.
+- Multi-context isolation in every Mongo filter.
+
+### Audit
+- `tasks_initiative.create` / `.patch` / `.delete` rows written via `core.write_audit`.
+
+### CI guards — **19/19 GREEN**
+- 6 schema/enum locks
+- 1 indexes lock
+- 10 runtime CRUD asserts
+- 1 audit assert
+- 1 cross-context isolation assert
+
+### Slice budget
+~445 lines product code (within 500-line budget). 3 lines wiring in server.py.
+
+### New follow-up
+- **AA.followup.1 — Reconcile `monitor_v2.CANONICAL_OWNER_ROLES` legacy tuple with `TIOwnerRole` enum** (P2). Defer until AA-slice-4 reveals UI needs.
+
+### Next per locked sequence
+**AA-slice-2** — LLM extraction (Sonnet 4.5 via `shield_invoke`) reading `documents.extracted_text` and writing `tasks_initiatives` rows with `extracted_by="llm"`.

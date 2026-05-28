@@ -766,6 +766,7 @@ Next per the locked sequence: **Z-slice-5** (Upload modal).
 
 - **Wave8.followup.1 — Clean 7 pre-existing baseline test failures (P3, post-trial)** — `test_t1/t2/t3_frontend_wire`, `test_chat_v2_full_flow`, `test_patch_28_home_doc_journal`, `test_requirements_guard`. All reference removed surfaces (e.g. `ReadingTopBar.jsx`) or spaCy direct-URL refs. Orthogonal to Wave 8; don't expand scope now.
 - **Wave8.followup.2 — Page Catalog superadmin view at `/app/admin/page-catalog` (P3, founder-feedback-gated)**. Renders the locked `PAGE_SUBTEXT_FILES` tuple as a live grid showing H1 + subtext per surface. Eliminates Recurrence #5 by visual inspection instead of CI testid (stronger signal). Promote to P1 if subtext slips again.
+- **Wave8.followup.3 — Promote Z-slice-6 orthogonality wire-test to pre-deploy gate (P2)**. Wire `pytest -m runtime_playwright` into a `make deploy-check` target + GitHub Actions step that must pass before any push to main reaches the cohort pod. Promotes the strongest single test in the suite (caught all 6 historic Phase Z bugs at once) from CI signal to deploy-blocker. ~30 lines of shell + README note. SHIP BEFORE PHASE X / cohort launch.
 - **Z.followup.9 — Per-file category override in upload modal (P3, founder-feedback-gated)**. Collapsed-by-default expandable inline row per file in multi-file batches. Reduces "upload-then-recategorize-in-drawer" friction at quarter-end mixed bundles. Promote to P1 if founder reports recategorization friction during cohort use.
 
 
@@ -1002,3 +1003,153 @@ DOM. Zero leakage tolerated.
 **Phase AA** — Monitor v2 (7 slices). Locked spec already in
 PHASE_LEDGER above. AA-slice-1 starts the `tasks_initiatives`
 data model.
+
+
+---
+
+## PHASE AA-SLICE-1 — tasks_initiatives data model + CRUD (CLOSED 2026-05-27)
+
+New Mongo collection backing Phase AA (Monitor v2). Holds the tasks /
+initiatives that ladder under strategic goals. Separate from the
+legacy `strategic_goals.initiatives_count` integer counter
+(reconciliation filed as `Z.followup.6`).
+
+### Schema (locked)
+
+```
+id                   uuid hex (unique)
+context_id           FK → contexts.id (required)
+title                str 2-180 (required)
+body                 str ≤ 4000 (optional)
+category             enum (revenue|customer|product|people|operations|compliance)
+owner_role           enum (CEO|CFO|COO|CRO|CTO|CHRO|CMO|CIO|OTHER) | null
+parent_objective_id  FK → strategic_goals.id | null
+status               enum (on_track|at_risk|off_track|achieved|not_started)
+performance_score    int 0-100
+probability_score    int 0-100
+last_reassessed_at   ISO datetime
+source_document_id   FK → documents.id | null
+extracted_by         "llm" | "manual"
+status_active        bool — soft-delete flag (False = deleted)
+created_at           ISO datetime
+updated_at           ISO datetime
+```
+
+### Endpoints (`backend/routers/tasks_initiatives.py`)
+
+```
+GET    /api/contexts/{cid}/tasks-initiatives
+       ?owner=X&status=Y&parent_objective_id=Z&search=Q
+       &page=N&page_size=M
+GET    /api/contexts/{cid}/tasks-initiatives/{id}
+POST   /api/contexts/{cid}/tasks-initiatives          (manual create)
+PATCH  /api/contexts/{cid}/tasks-initiatives/{id}     (partial update)
+DELETE /api/contexts/{cid}/tasks-initiatives/{id}     (soft-delete)
+```
+
+All require `require_context_membership()`. Reads filter
+`status_active != False` so soft-deleted rows are invisible.
+
+### Indexes (built via `ensure_indexes()` from server startup)
+
+```
+(id) unique
+(context_id, parent_objective_id)
+(context_id, owner_role)
+(context_id, status)
+(context_id, source_document_id)
+(context_id, status_active, updated_at DESC)
+```
+
+### Pydantic enums
+
+```py
+TICategory     = Literal["revenue","customer","product","people","operations","compliance"]
+TIOwnerRole    = Literal["CEO","CFO","COO","CRO","CTO","CHRO","CMO","CIO","OTHER"]
+TIStatus       = Literal["on_track","at_risk","off_track","achieved","not_started"]
+TIExtractedBy  = Literal["llm","manual"]
+```
+
+### Audit trail
+
+Every CRUD emits `tasks_initiative.create / .patch / .delete` rows
+via `core.write_audit(...)`. Audit columns:
+`action`, `account_id`, `context_id`, `resource_type`,
+`resource_id`, `metadata`.
+
+### Constraints
+
+- `parent_objective_id` pointing at a goal not in this context → 400.
+- `source_document_id` pointing at a doc not in this context → 400.
+- Both null are allowed.
+- `source_document_id` + `extracted_by` are immutable post-create
+  (PATCH ignores them by schema design — only manual-mutable fields
+  are on `TaskInitiativePatch`).
+- Multi-context isolation enforced by `(context_id, …)` in every
+  Mongo filter.
+
+### CI guards (`backend/tests/test_phase_aa_slice_1_tasks_initiatives.py`)
+
+**19/19 GREEN** across:
+
+Schema (6):
+- module imports clean
+- TICategory enum locked (6 values matching goals)
+- TIOwnerRole enum locked (9 canonical roles)
+- TIStatus enum locked (5 values; `not_started` per AA spec)
+- TIExtractedBy enum locked (2 values)
+- `TaskInitiativeIn` validates title length / score bounds / body length
+
+Indexes (1):
+- `ensure_indexes()` is idempotent and creates all 6 expected indexes
+
+Runtime CRUD (10):
+- POST minimum payload with sane defaults + `extracted_by="manual"`
+- POST rejects invalid `parent_objective_id` (400)
+- POST rejects invalid `source_document_id` (400)
+- POST accepts real parent_objective_id + source_document_id
+- GET list returns paginated rows; no cross-context leakage
+- GET list filters: owner / status / parent / search; unknown status → 422
+- GET list pagination (page/page_size)
+- PATCH applies partial update + refreshes `updated_at`
+- DELETE soft-deletes; subsequent GET → 404
+- GET single → 404 when missing
+
+Audit (1):
+- Create + patch + delete each emit an audit_log row
+
+Cross-context isolation (1):
+- Same title across two contexts surfaces under each context's list
+  independently.
+
+### Slice budget
+
+~445 lines product code in the new router file. 532 lines of tests.
+Wired into `server.py` via 3 lines (import + include_router + index
+hook in startup). Within the 500-line product-code budget.
+
+### Out of scope (next slices)
+
+- AA-slice-2 — LLM extraction service that writes
+  `extracted_by="llm"` rows from uploaded documents.
+- AA-slice-3 — Upload-modal extension (depends on Z-slice-5 ✅).
+- AA-slice-4 — Monitor surface rewrite (rich card listing).
+- AA-slice-5 — Owner filter capsule UI.
+- AA-slice-6 — Probability bar fill colour scheme.
+- AA-slice-7 — Phase-AA orthogonality wire-test.
+
+### New follow-up filed
+
+- **AA.followup.1 — Reconcile `monitor_v2.CANONICAL_OWNER_ROLES`
+  (legacy 7-token tuple including "CCO") with the AA-slice-1
+  `TIOwnerRole` enum (9 tokens, no "CCO", adds "CHRO"/"CMO"/"CRO"/
+  "OTHER")** (P2). One canonical list across the monolith. Defer
+  until AA-slice-4 (Monitor surface) ships and reveals which token
+  set the UI actually needs.
+
+### Sequencing
+
+Next: **AA-slice-2** — LLM extraction (Sonnet 4.5 via
+`shield_invoke`) that reads `documents.extracted_text` and writes
+`tasks_initiatives` rows with `extracted_by="llm"` +
+`source_document_id` populated.

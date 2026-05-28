@@ -147,6 +147,9 @@ from routers import trial_status as trial_status_router  # noqa: E402  Phase R.5
 from routers import questions as questions_router  # noqa: E402  Patch 14 — Questions UI
 from routers import news as news_router  # noqa: E402  Patch 21 — News feed
 from routers import profile as profile_router  # noqa: E402  Patch 25C — /me/profile country
+# Phase AA-slice-1 (2026-05-27) — tasks/initiatives data model + CRUD.
+# Backs Monitor v2 (Phase AA). New `tasks_initiatives` collection.
+from routers import tasks_initiatives as tasks_initiatives_router  # noqa: E402
 
 
 logger = logging.getLogger("akki")
@@ -317,6 +320,8 @@ app.include_router(trial_status_router.router)  # Phase R.5.a — Trial status +
 app.include_router(questions_router.router)  # Patch 14 — Questions UI
 app.include_router(news_router.router)  # Patch 21 — News feed
 app.include_router(profile_router.router)  # Patch 25C — /me/profile country
+# Phase AA-slice-1 (2026-05-27) — tasks/initiatives CRUD.
+app.include_router(tasks_initiatives_router.router)
 # Chunk 2 (2026-05-13) — async job polling for the three long-running
 # QA-blocking endpoints (DJ-R03 brief, DJ-R05 signals, CM-R04 cycle
 # compilation). Single GET /api/jobs/{job_id}; scoped per-account.
@@ -634,6 +639,13 @@ async def on_startup():
         await _r3_ensure()
     except Exception:
         pass
+
+    # Phase AA-slice-1 (2026-05-27) — tasks_initiatives indexes.
+    try:
+        from routers.tasks_initiatives import ensure_indexes as _aa1_ensure
+        await _aa1_ensure()
+    except Exception as _e:
+        logger.warning("[startup] tasks_initiatives ensure_indexes failed: %s", _e)
 
     await db.user_context_visits.create_index([("account_id", 1), ("context_id", 1)], unique=True)
     # Patch 5 — Monitor v2.
