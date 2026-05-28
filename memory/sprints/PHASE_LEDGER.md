@@ -649,3 +649,116 @@ Net new source code: ~340 lines (DocumentsPage.jsx) + ~5 lines (App.js route wir
 Complete Z slices → **Phase AA** → Phase W → Phase X → halt.
 
 
+
+---
+
+## WAVE 8 — POLISH FIXES (CLOSED 2026-05-27)
+
+Three polish dispatches landed between Z-slice-4 and Z-slice-5. Locked
+in CI via `backend/tests/test_wave8_polish.py` (23 assertions GREEN).
+
+### W8.1 — Work Studio compile CTAs above the listing
+
+- Moved `<ContextActions>` (Compile / Enhance / Create) from a sibling
+  render below the listing into the `preBody=` slot of `<ListingShell>`
+  so the CTAs render between the search/sort row and the listing body.
+- Legacy below-listing mount REMOVED — only one `<ContextActions>`
+  mount remains in `WorkStudio.jsx`.
+- CI guard: `test_w81_compile_buttons_render_above_doc_listing`.
+- Verified live at 1280 / 1024 / 820.
+
+### W8.2 — Task tile readiness typography + compactness
+
+Original spec was readiness number at 32px. User overrode after seeing
+it rendered and flagged the F.6 Stack Test card's "huge wasted vertical
+gap" between title and subtitle.
+
+**Amendment shipped:**
+- Readiness number locked at **24px** (was 32px).
+- Readiness label `fontSize: 12, marginTop: 1` (was 14/2), italic,
+  `leading-none` on both the stack and label.
+- Right cluster outer flex: `flex-col items-end gap-1 leading-none`
+  (was `gap-1.5`) so the readiness block sits immediately under the
+  status pill row.
+- Task card outer row uses `flex items-start justify-between gap-3
+  mb-1.5` — `items-start` keeps the right cluster from stretching the
+  title row downward.
+- Card body spacing tightened: title row `mb-2 → mb-1.5`, objective
+  `mb-3 → mb-2`. No `min-height` on the card.
+- CI guards: 5 assertions — fontSize=24, negative guard against 32px
+  resurrection, `leading-none` on stack + label, marginTop ≤ 1,
+  outer-row className locked.
+- Verified live at 1280 / 1024 / 820 — DOM probe confirmed:
+  `readiness_first_font_size_px = '24px'`,
+  `label_first_font_size_px = '12px'`,
+  `label_first_margin_top = '1px'`,
+  task card height stable around 146px.
+
+### W8.3 — H1 subtext audit (Recurrence #5 lock)
+
+Institutional lesson #5 (top-level surface missing executive subtext)
+locked across **15 page-source files** via a frozen tuple
+`PAGE_SUBTEXT_FILES` in the W8 test module. Every entry MUST carry
+`data-testid="page-subtext"`. Adding a new top-level surface forces
+the contributor to:
+
+1. Register the source file in `PAGE_SUBTEXT_FILES`.
+2. Add a sober executive subtext line with the universal testid.
+
+If either step is skipped the count guard
+(`test_w83_page_subtext_count_locked_at_15`) and the per-file
+parametrised guard fail CI.
+
+**Surfaces covered:**
+
+```
+pages/home/HomeUndeclared.jsx        (AppHome → undeclared user)
+pages/ContextPortfolio.jsx           (AppHome → portfolio)
+pages/CompanyHome.jsx                (AppHome → declared workspace)
+pages/Chat.jsx                       (empty-state H1)
+components/solva/SolvaLanding.jsx    (Solva picker)
+pages/WorkStudio.jsx
+pages/TaskManager.jsx
+pages/Monitor.jsx
+pages/Pulse.jsx
+pages/Learn.jsx
+pages/DocumentsPage.jsx
+pages/admin/CohortConsole.jsx
+pages/admin/CohortCopyEditor.jsx
+pages/admin/AdminUsers.jsx
+pages/EarlyAccessOptIn.jsx
+```
+
+Where existing tests already locked a different visible-subtitle
+testid (`portfolio-subtitle`, `company-home-subtitle`,
+`documents-page-subtext`), an `sr-only aria-hidden` `<span
+data-testid="page-subtext">` sentinel was added adjacent to the visible
+subtitle so BOTH locks pass without altering visible markup or
+duplicating UI text.
+
+### Wave 8 — multi-viewport probe results
+
+Captured via `mcp_screenshot_tool` at the post-login workspace:
+
+| Surface       | Viewport | page-subtext | Readiness px | Card h | Notes                  |
+| ------------- | -------- | ------------ | ------------ | ------ | ---------------------- |
+| Task Manager  | 1280     | ✅ present    | 24px         | ~146   | crisp, no elongation   |
+| Task Manager  | 1024     | ✅ present    | 24px         | ~146   | identical layout       |
+| Task Manager  | 820      | ✅ present    | 24px         | ~146   | identical layout       |
+| Work Studio   | 1280     | ✅ present    | n/a          | n/a    | Compile CTAs in preBody|
+| Work Studio   | 1024     | ✅ present    | n/a          | n/a    | preBody mount holds    |
+| Work Studio   | 820      | ✅ present    | n/a          | n/a    | preBody mount holds    |
+
+### Test status post-Wave-8
+
+- `backend/tests/test_wave8_polish.py` — **23/23 GREEN**.
+- `backend/tests/test_phase_z_documents_journal.py` — 81/81 GREEN.
+- 7 pre-existing baseline failures (test_t1/t2/t3 wire,
+  test_chat_v2_full_flow, test_patch_28, test_requirements_guard) — NOT
+  caused by Wave 8; reproduced after `git stash`. Filed as
+  `Wave8.followup.1` for cleanup.
+
+### Wave 8 sequencing — DONE
+
+Next per the locked sequence: **Z-slice-5** (Upload modal).
+

@@ -49,7 +49,10 @@ export default function HomeUndeclared() {
         <h1 className="akki-serif text-[40px] sm:text-[52px] leading-[1.08] tracking-[-0.018em] text-[var(--ink)] mb-5 font-normal max-w-[24ch]">
           Tell AKKI whether you sit in the boardroom, run the business, or both.
         </h1>
-        <p className="akki-serif text-[16.5px] leading-[1.7] text-[var(--deep)] max-w-[58ch] mb-8">
+        <p
+          className="akki-serif text-[16.5px] leading-[1.7] text-[var(--deep)] max-w-[58ch] mb-8"
+          data-testid="page-subtext"
+        >
           AKKI shapes the home page, default surfaces, and Cycle Manager defaults around what you
           actually do. You can change this anytime from the avatar menu → Settings.
         </p>

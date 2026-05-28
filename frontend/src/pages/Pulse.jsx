@@ -607,7 +607,7 @@ export default function Pulse() {
           <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Pulse · {activeContext.name}
         </p>
         <h1 className="akki-greeting mb-1">Signals worth your attention.</h1>
-        <p className="akki-meta mb-6 max-w-2xl">
+        <p className="akki-meta mb-6 max-w-2xl" data-testid="page-subtext">
           Risks, opportunities, and recommendations surfaced from <strong className="text-[var(--ink)]">{activeContext.name}</strong>. Use the chips below to refine.
         </p>
 

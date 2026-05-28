@@ -244,6 +244,17 @@ export default function DocumentsPage() {
             >
               Everything that crosses your desk — organized by where it came from.
             </p>
+            {/* Wave 8.3 (2026-05-27) — H1 subtext audit sentinel.
+                Mirrors the visible documents-page-subtext text into
+                the universal page-subtext testid for the Recurrence #5
+                CI guard. Preserves Z-slice-4's locked testids. */}
+            <span
+              data-testid="page-subtext"
+              className="sr-only"
+              aria-hidden="true"
+            >
+              Everything that crosses your desk — organized by where it came from.
+            </span>
           </div>
           <Button
             type="button"

@@ -493,6 +493,16 @@ export default function ContextPortfolio() {
             <p className="akki-meta mt-2 max-w-2xl" data-testid="portfolio-subtitle">
               Here are your boards & operating companies.
             </p>
+            {/* Wave 8.3 (2026-05-27) — H1 subtext audit sentinel. Mirrors
+                portfolio-subtitle text into the universal page-subtext
+                testid for the Recurrence #5 CI guard. */}
+            <span
+              data-testid="page-subtext"
+              className="sr-only"
+              aria-hidden="true"
+            >
+              Here are your boards & operating companies.
+            </span>
           </header>
 
           {/* 4 metric tiles — live values from /api/me/portfolio-metrics */}

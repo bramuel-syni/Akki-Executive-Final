@@ -5055,3 +5055,41 @@ After the full-session closeout above, the operator dispatched a 5-step producti
 Full closeout: `T1_T5_HORIZONTAL_SPRINT_CLOSEOUT.md` §13.
 
 **Status: ALL SPRINTS CLOSED. Standing by for operator's GitHub push (consolidated) and first friendly-tester batch invite.**
+
+
+---
+
+## Wave 8 — Polish Fixes (2026-05-27) — CLOSED
+
+Three polish fixes shipped between Z-slice-4 (Documents page) and Z-slice-5 (Upload modal).
+
+### W8.1 — Work Studio compile CTAs above the listing
+- Moved Compile / Enhance / Create buttons from below the listing to ListingShell's `preBody=` slot.
+- Sits between the search/sort row and the listing body.
+- Legacy below-listing mount removed.
+
+### W8.2 — Task tile readiness typography (AMENDED)
+- Readiness number locked at **24px** (down from original 32px spec; user overrode after live render).
+- Label `fontSize: 12, marginTop: 1px`, italic, `leading-none` on stack + label.
+- Right cluster: `flex-col items-end gap-1 leading-none` (compact).
+- Outer task-card row: `flex items-start justify-between gap-3 mb-1.5` — `items-start` prevents right cluster from stretching the title row.
+- Card body tightened: title row mb-1.5, objective mb-2 (no `min-height`).
+- Live DOM probe confirms 24px / 12px / 1px on 1280, 1024, 820. Card height stable ~146px across viewports.
+
+### W8.3 — H1 subtext audit (Recurrence #5 LOCKED)
+- 15 top-level surfaces now carry `data-testid="page-subtext"`.
+- Frozen `PAGE_SUBTEXT_FILES` tuple in `backend/tests/test_wave8_polish.py` — adding a new top-level surface forces the contributor to register and tag it or CI fails.
+- Where Z-slice-4 had already locked a different testid on a visible subtitle (`portfolio-subtitle`, `company-home-subtitle`, `documents-page-subtext`), an `sr-only` sentinel `<span data-testid="page-subtext">` was added adjacent to the visible subtitle so both locks pass without altering visible markup.
+
+### CI guards
+- `backend/tests/test_wave8_polish.py` — **23/23 GREEN**:
+  - W8.1: 1 assertion (preBody mount + single-mount).
+  - W8.2: 5 assertions (24px, no-32px, leading-none on stack + label, marginTop ≤ 1, outer-row class).
+  - W8.3: 17 assertions (15 per-file parametrised + frozen-tuple existence + count=15).
+
+### Regression status
+- Phase Z-slice-4 tests: 81/81 GREEN.
+- Pre-existing baseline failures (7 in test_t1/t2/t3 wire, test_chat_v2_full_flow, test_patch_28, test_requirements_guard) confirmed unchanged after `git stash` — NOT caused by Wave 8.
+
+### Next per locked sequence
+**Z-slice-5** — Upload modal (replaces placeholder toasts from Z-slice-3 & Z-slice-4; requires category selector with 6 options + uncategorized; sets `origin="upload"`).

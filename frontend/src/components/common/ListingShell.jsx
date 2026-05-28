@@ -100,6 +100,11 @@ export default function ListingShell({
   onPageChange,
   isLoading = false,
   emptyState,
+  // Phase Z Wave 8.1 (2026-05-27) — `preBody` renders between the
+  // filter tabs row and the body (above loading / empty / list).
+  // Use case: per-tab compile-action buttons on Work Studio surface.
+  // When omitted the layout collapses cleanly.
+  preBody,
   children,
   testId = "listing-shell",
 }) {
@@ -224,6 +229,19 @@ export default function ListingShell({
           activeFilterKey={activeFilterKey}
           onFilterChange={onFilterChange}
         />
+      )}
+
+      {/* Phase Z Wave 8.1 (2026-05-27) — `preBody` slot. Renders
+          between filter tabs and body so per-tab actions (e.g.
+          Work Studio's "Compile Board Pack" / "Compile Committee
+          Pack" buttons) sit ABOVE the listing instead of below. */}
+      {preBody && (
+        <div
+          className="mt-4"
+          data-testid={`${testId}-pre-body`}
+        >
+          {preBody}
+        </div>
       )}
 
       {/* Body */}

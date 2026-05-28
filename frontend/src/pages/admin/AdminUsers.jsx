@@ -128,7 +128,10 @@ export default function AdminUsers() {
               <Users className="w-6 h-6 text-[var(--accent)]" strokeWidth={1.7} />
               Users
             </h1>
-            <p className="akki-meta mt-1 text-[13px] text-[var(--muted)]">
+            <p
+              className="akki-meta mt-1 text-[13px] text-[var(--muted)]"
+              data-testid="page-subtext"
+            >
               Manage all accounts across all orgs. Telemetry drill-down available; no content visible.
             </p>
           </div>

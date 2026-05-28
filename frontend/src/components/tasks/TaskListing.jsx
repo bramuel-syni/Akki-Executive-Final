@@ -152,7 +152,7 @@ export default function TaskListing({ contextId, state, refreshKey }) {
               data-card-kind="task"
               data-active-highlight={isActiveRow ? "true" : "false"}
             >
-              <div className="flex items-start justify-between gap-3 mb-2">
+              <div className="flex items-start justify-between gap-3 mb-1.5">
                 <div className="flex-1 min-w-0">
                   <p className="akki-serif text-[15px] text-[var(--ink)] leading-tight">
                     {t.name || "Untitled task"}
@@ -161,8 +161,14 @@ export default function TaskListing({ contextId, state, refreshKey }) {
                 {/* Wave 4.1 (2026-05-27) — Top-right cluster:
                     [attention pill | Active pill]  with readiness sitting
                     immediately under the Active pill. The attention pill
-                    is positioned LEFT of the state pill per the spec. */}
-                <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                    is positioned LEFT of the state pill per the spec.
+                    Wave 8.2 amend (2026-05-27) — readiness number 24px
+                    (down from 32px) + zero label marginTop + leading-none
+                    on the stack so the right cluster stays compact and
+                    doesn't elongate the row vertically beyond the
+                    natural title height. items-start on the outer row
+                    means the right side never stretches the left. */}
+                <div className="flex flex-col items-end gap-1 flex-shrink-0 leading-none">
                   <div className="flex items-center gap-1.5">
                     {needsInput && (
                       <span
@@ -174,17 +180,31 @@ export default function TaskListing({ contextId, state, refreshKey }) {
                     )}
                     <StatusPill state={t.state} />
                   </div>
+                  {/* Readiness vertical stack — number 24px, label
+                      italic immediately under it, no extra margin. */}
                   <span
-                    className="inline-flex items-center gap-1 text-[11px] text-[var(--muted)]"
+                    className="readiness-stack inline-flex flex-col items-end leading-none"
                     data-testid={`task-card-readiness-${t.id}`}
                   >
-                    <span className="font-mono text-[var(--ink)]">{t.readiness_score ?? 0}%</span>
-                    <span>readiness</span>
+                    <span
+                      className="readiness-number font-mono text-[var(--ink)] leading-none"
+                      style={{ fontSize: 24, fontWeight: 600 }}
+                      data-testid={`task-card-readiness-number-${t.id}`}
+                    >
+                      {t.readiness_score ?? 0}%
+                    </span>
+                    <span
+                      className="readiness-label italic text-[var(--muted)] leading-none"
+                      style={{ fontSize: 12, marginTop: 1 }}
+                      data-testid={`task-card-readiness-label-${t.id}`}
+                    >
+                      readiness
+                    </span>
                   </span>
                 </div>
               </div>
               {t.objective && (
-                <p className="text-[12.5px] text-[var(--deep)] line-clamp-2 mb-3">
+                <p className="text-[12.5px] text-[var(--deep)] line-clamp-2 mb-2">
                   {t.objective}
                 </p>
               )}

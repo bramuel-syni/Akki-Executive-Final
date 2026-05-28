@@ -78,9 +78,18 @@ export default function TaskManager() {
             <p className="text-[11px] uppercase tracking-[0.18em] font-mono text-[var(--muted)] mb-1.5">
               Task Manager
             </p>
-            <h1 className="akki-serif text-[28px] text-[var(--ink)] leading-tight">
+            <h1
+              className="akki-serif text-[28px] text-[var(--ink)] leading-tight"
+              data-testid="page-h1"
+            >
               Set the work · See it through
             </h1>
+            <p
+              className="text-[13.5px] text-[var(--muted)] mt-1.5"
+              data-testid="page-subtext"
+            >
+              Cycles, contributions, and the work that delivers your strategy.
+            </p>
           </div>
           <Button
             onClick={() => setWizardOpen(true)}

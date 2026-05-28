@@ -438,6 +438,16 @@ export default function CompanyHome() {
             >
               Here is what's on your plate.
             </p>
+            {/* Wave 8.3 (2026-05-27) — H1 subtext audit sentinel. Mirrors
+                company-home-subtitle text into the universal page-subtext
+                testid for the Recurrence #5 CI guard. */}
+            <span
+              data-testid="page-subtext"
+              className="sr-only"
+              aria-hidden="true"
+            >
+              Here is what's on your plate.
+            </span>
 
             {/* Header KPI strip — Readiness (I.2 wired) */}
             <div

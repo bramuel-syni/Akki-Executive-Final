@@ -373,7 +373,7 @@ export default function Learn() {
               <GraduationCap className="w-3 h-3 text-[var(--accent)]" /> Learn · Module M9
             </p>
             <h1 className="akki-greeting mb-2">A library curated for the board table.</h1>
-            <p className="akki-meta max-w-2xl">
+            <p className="akki-meta max-w-2xl" data-testid="page-subtext">
               Short reads, case studies, videos, and news on AI governance. Can't find what you need? AKKI will research any topic on demand.
             </p>
           </div>

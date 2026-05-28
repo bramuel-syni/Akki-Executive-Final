@@ -522,6 +522,7 @@ export default function SolvaLanding({ variant = "auth", intakeSeed = null, inta
             margin: "0 0 64px 0",
             textAlign: "center",
           }}
+          data-testid="page-subtext"
         >
           Pick what you came to do.
         </p>

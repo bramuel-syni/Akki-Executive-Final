@@ -135,6 +135,12 @@ export default function CohortConsole() {
             <h1 className="akki-serif text-[36px] leading-tight text-[var(--ink)]">
               Cohort console
             </h1>
+            <p
+              className="text-[13px] text-[var(--muted)] mt-2 max-w-2xl"
+              data-testid="page-subtext"
+            >
+              Per-logo funnel — invited, activated, engaged, attached, committed — with trial-day, last-signal, and click-through telemetry.
+            </p>
           </div>
           <button
             type="button"

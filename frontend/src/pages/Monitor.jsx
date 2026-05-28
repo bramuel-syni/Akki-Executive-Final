@@ -100,7 +100,7 @@ export default function Monitor() {
           <h1 className="akki-greeting mb-2">
             {isNED ? "What's expected. Where it stands." : "Strategic goals against where you are."}
           </h1>
-          <p className="akki-meta max-w-2xl">
+          <p className="akki-meta max-w-2xl" data-testid="page-subtext">
             {isNED
               ? `Each expectation set for ${activeContext?.name || "this board"}, the current score, and the probability of hitting it.`
               : `${FUNCTION_LABEL[fn] || "Executive"} view of ${activeContext?.name || "this company"} — board-tracked goals you own, plus signals and cycle items adapted to your function.`}

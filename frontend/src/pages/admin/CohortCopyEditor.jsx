@@ -217,7 +217,10 @@ export default function CohortCopyEditor() {
         <h1 className="akki-serif text-[36px] leading-tight text-[var(--ink)] mb-2">
           Edit the founder-voice copy.
         </h1>
-        <p className="akki-serif italic text-[14px] text-[var(--deep)] mb-8">
+        <p
+          className="akki-serif italic text-[14px] text-[var(--deep)] mb-8"
+          data-testid="page-subtext"
+        >
           Replace every <code className="font-mono text-[12px] text-[#7A2F2F]">[FOUNDER:&nbsp;…]</code> placeholder with your own words. The trial can't run until these are clean.
         </p>
 

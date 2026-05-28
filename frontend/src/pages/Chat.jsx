@@ -1305,7 +1305,10 @@ export default function Chat() {
                 <h1 className="akki-serif text-[22px] font-normal text-[var(--ink)] mb-2">
                   Your private AI workspace.
                 </h1>
-                <p className="text-[14px] text-[var(--muted)] leading-relaxed mb-6">
+                <p
+                  className="text-[14px] text-[var(--muted)] leading-relaxed mb-6"
+                  data-testid="page-subtext"
+                >
                   Ask anything you'd ask ChatGPT, Claude, or Gemini — without exposing
                   your company's internals to any of them. Synisense automatically
                   shields identifiers when it detects them, and every decision is

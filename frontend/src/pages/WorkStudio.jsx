@@ -844,12 +844,18 @@ export default function WorkStudio() {
           <p className="akki-overline mb-2 flex items-center gap-2">
             <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Work Studio · {activeContext.name}
           </p>
-          <h1 className="akki-greeting mb-2" data-testid="work-studio-h1">Check or review your work.</h1>
-          {/* Phase M (2026-05-27) — Subtitle removed per user spec ≥3
-              recurrences: it repeated the tab labels verbatim
-              ("board packs, decks, reports, briefings") which are
-              already in the tabs below. The eyebrow + H1 + tab strip
-              carry the surface on their own. */}
+          <h1
+            className="akki-greeting mb-2"
+            data-testid="page-h1"
+          >
+            Check or review your work.
+          </h1>
+          <p
+            className="text-[13.5px] text-[var(--muted)] mt-1 mb-4"
+            data-testid="page-subtext"
+          >
+            Compile and review the work that goes to the room.
+          </p>
 
           {/* Six-tab line — spec-locked label order. Phase M-revision
               (2026-05-27): Briefing restored INLINE as the 6th tab
@@ -943,6 +949,17 @@ export default function WorkStudio() {
                 </div>
               }
               data-testid={`ws-tab-content-${activeTab.category}-shell`}
+              preBody={
+                <div data-testid="ws-tab-compile-actions">
+                  <ContextActions
+                    kind={kind}
+                    onExport={onExportClick}
+                    onEnhance={onEnhanceClick}
+                    onCompile={onCompileClick}
+                    onCreate={onCreateClick}
+                  />
+                </div>
+              }
             >
               <div data-active-category={activeTab.category}>
                 {aggErr ? (
@@ -959,17 +976,11 @@ export default function WorkStudio() {
               </div>
             </ListingShell>
 
-            {/* Compile actions for the active tab. Per Z-slice-2 spec
-                these live BELOW the document list (was above pre-Z). */}
-            <div className="mt-5">
-              <ContextActions
-                kind={kind}
-                onExport={onExportClick}
-                onEnhance={onEnhanceClick}
-                onCompile={onCompileClick}
-                onCreate={onCreateClick}
-              />
-            </div>
+            {/* Phase Z Wave 8.1 (2026-05-27) — Compile actions
+                relocated from below the listing to the `preBody` slot
+                of <ListingShell> above. The legacy ContextActions
+                mount below is REMOVED — keeping it would duplicate
+                the buttons. */}
           </div>
           </div>
           {/* Phase Z (2026-05-27, Z-slice-3) — RIGHT sidebar.

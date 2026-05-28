@@ -89,7 +89,10 @@ export default function EarlyAccessOptIn() {
           {copy.heading}
         </h1>
 
-        <p className="akki-serif italic text-[16.5px] leading-relaxed text-[var(--deep)] mb-3">
+        <p
+          className="akki-serif italic text-[16.5px] leading-relaxed text-[var(--deep)] mb-3"
+          data-testid="page-subtext"
+        >
           {copy.body}
         </p>
 
