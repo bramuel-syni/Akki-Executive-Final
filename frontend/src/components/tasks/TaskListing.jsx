@@ -1,19 +1,26 @@
 /**
  * TaskListing — Phase F.2 (2026-05-26) · F.3 patched 2026-05-26.
  *
- * Renders the list of task cards for the active sort tab. Calls
- * `GET /api/tasks?state=<tab>`. Each card shows: title · objective
- * (truncated) · readiness score · contributor avatars · due date ·
- * status pill.
+ * Phase Y (2026-02 fork-resume) — Task cards now compose the shared
+ * `<StrategicRow>` primitive so every Task card matches the Monitor
+ * goal row layout pixel-for-pixel (chip placement, single-line
+ * description, owner avatars integrated into the metadata row,
+ * readiness as a right-anchored ScoreBar with narrative).
  *
- * F.3: clicking a task card now sets `?task_id=<id>` on the URL —
- * the <TaskDrawer> mounted on TaskManager opens automatically.
+ * Renders the list of task cards for the active sort tab. Calls
+ * `GET /api/tasks?state=<tab>`. Each card carries: TASK chip · title ·
+ * status/needs-input chips · readiness ScoreBar · owner avatars +
+ * due date + needs-input flag in the metadata row · objective as the
+ * description slot.
+ *
+ * F.3: clicking a task card sets `?task_id=<id>` on the URL — the
+ * `<TaskDrawer>` mounted on TaskManager opens automatically.
  */
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
-import { Loader2, Calendar, Users, FileText, Inbox, AlertTriangle } from "lucide-react";
+import { Loader2, Calendar, Users, Inbox } from "lucide-react";
 import { toast } from "sonner";
 import StrategicRow from "@/components/strategic_row/StrategicRow";
 
@@ -42,7 +49,7 @@ function StatusPill({ state }) {
 }
 
 
-// Phase Y / item 3 (2026-02 fork-resume) — Task readiness bar follows
+// Phase Y / Decision 2 (2026-02 fork-resume) — Task readiness bar follows
 // the same RAG vocabulary Monitor uses for the Performance score bar.
 function readinessBarClass(score) {
   if (score == null) return "bg-[var(--rule)]";
@@ -72,13 +79,13 @@ function ContributorAvatars({ team }) {
         <span
           key={i}
           title={m.name || m.email}
-          className="w-6 h-6 rounded-full bg-[var(--cream-deep)] border border-white text-[10px] font-mono flex items-center justify-center text-[var(--ink)]"
+          className="w-5 h-5 rounded-full bg-[var(--cream-deep)] border border-white text-[9.5px] font-mono flex items-center justify-center text-[var(--ink)]"
         >
           {(m.name || m.email || "?").slice(0, 1).toUpperCase()}
         </span>
       ))}
       {extra > 0 && (
-        <span className="w-6 h-6 rounded-full bg-[var(--parchment)] border border-white text-[10px] font-mono flex items-center justify-center text-[var(--muted)]">
+        <span className="w-5 h-5 rounded-full bg-[var(--parchment)] border border-white text-[9.5px] font-mono flex items-center justify-center text-[var(--muted)]">
           +{extra}
         </span>
       )}
@@ -141,118 +148,116 @@ export default function TaskListing({ contextId, state, refreshKey }) {
   }
 
   return (
-    <>
-      <ul className="space-y-3" data-testid="task-listing-list">
-        {tasks.map((t) => {
-          // Wave 4.1 (2026-05-27) — compute the "attention pill" the
-          // user-facing card surfaces in the top-right. Currently only
-          // "Needs your input" qualifies; future signals (overdue,
-          // blocked, etc.) hang off the same slot.
-          const me = myEmail
-            ? (t.team || []).find((m) => (m.email || "").toLowerCase() === myEmail)
-            : null;
-          const needsInput = me && ["not_started", "in_progress"].includes(me.status || "not_started");
-          // Active rows take the brand-purple highlight (token from
-          // index.css `--ned-purple`, Phase A Role-chip purple — not a
-          // new colour).
-          const isActiveRow = t.state === "active";
-          return (
-          <li key={t.id}>
-            <button
-              type="button"
-              onClick={() => openTask(t.id)}
-              className={[
-                "w-full text-left p-4 border bg-white rounded-sm transition-colors",
-                isActiveRow
-                  ? "border-[color:var(--ned-purple)]/40 hover:border-[color:var(--ned-purple)] hover:bg-[color:var(--ned-purple)]/5"
-                  : "border-[var(--rule)] hover:border-[var(--ink)]",
-              ].join(" ")}
-              data-testid={`task-card-${t.id}`}
-              data-card-kind="task"
-              data-active-highlight={isActiveRow ? "true" : "false"}
+    <ul className="space-y-3" data-testid="task-listing-list">
+      {tasks.map((t) => {
+        // Wave 4.1 (2026-05-27) — "Needs your input" attention pill
+        // surfaces when this user is on the team and still owes input.
+        const me = myEmail
+          ? (t.team || []).find((m) => (m.email || "").toLowerCase() === myEmail)
+          : null;
+        const needsInput = me && ["not_started", "in_progress"].includes(me.status || "not_started");
+        // Active rows carry the brand-purple highlight on the card
+        // wrapper border (W4.1 lock — see test_wave4_task_listing.py).
+        const isActiveRow = t.state === "active";
+
+        // ── StrategicRow slot composition ──────────────────────────
+        // categoryChip — Phase Y constant "TASK" marker (mirrors
+        // Monitor row's category placement). Brand-purple via
+        // Tailwind-config short name (Wave 4.2.followup.2 compliant).
+        const categoryChip = (
+          <span
+            className="inline-block px-1.5 py-0.5 rounded-sm text-[9.5px] uppercase tracking-wider border bg-ned-purple/10 text-[var(--ink)] border-ned-purple/20"
+            data-testid={`task-card-category-${t.id}`}
+          >
+            Task
+          </span>
+        );
+
+        // statusChip — needsInput pill (left, source-order first per
+        // W4_1b) + StatusPill. Empty fragment when neither applies.
+        const statusChip = (
+          <>
+            {needsInput && (
+              <span
+                className="inline-flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded-sm bg-amber-50 text-amber-800"
+                data-testid={`task-card-needs-your-input-${t.id}`}
+              >
+                Needs your input
+              </span>
+            )}
+            <StatusPill state={t.state} />
+          </>
+        );
+
+        // rightSideScores — readiness as a ScoreBar (label + bar +
+        // value + narrative underneath). Single score for tasks vs
+        // Monitor's Performance + Probability pair.
+        const rightSideScores = [{
+          label:     "Readiness",
+          value:     typeof t.readiness_score === "number" ? t.readiness_score : null,
+          barClass:  readinessBarClass(t.readiness_score),
+          narrative: readinessNarrative(t.readiness_score),
+          testId:    `task-card-readiness-${t.id}`,
+        }];
+
+        // metadataChildren — owner avatar cluster (integrated into
+        // the metadata row, no longer dangling under the title) +
+        // due date. Same gap rhythm as Monitor.
+        const metadataChildren = (
+          <>
+            <span
+              className="inline-flex items-center gap-1.5"
+              data-testid={`task-card-team-${t.id}`}
             >
-              <div className="flex items-start justify-between gap-3 mb-1.5">
-                <div className="flex-1 min-w-0">
-                  <p className="akki-serif text-[15px] text-[var(--ink)] leading-tight">
-                    {t.name || "Untitled task"}
-                  </p>
-                </div>
-                {/* Wave 4.1 (2026-05-27) — Top-right cluster:
-                    [attention pill | Active pill]  with readiness sitting
-                    immediately under the Active pill. The attention pill
-                    is positioned LEFT of the state pill per the spec.
-                    Wave 8.2 amend (2026-05-27) — readiness number 24px
-                    (down from 32px) + zero label marginTop + leading-none
-                    on the stack so the right cluster stays compact and
-                    doesn't elongate the row vertically beyond the
-                    natural title height. items-start on the outer row
-                    means the right side never stretches the left. */}
-                <div className="flex flex-col items-end gap-1 flex-shrink-0 leading-none">
-                  <div className="flex items-center gap-1.5">
-                    {needsInput && (
-                      <span
-                        className="inline-flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded-sm bg-amber-50 text-amber-800"
-                        data-testid={`task-card-needs-your-input-${t.id}`}
-                      >
-                        Needs your input
-                      </span>
-                    )}
-                    <StatusPill state={t.state} />
-                  </div>
-                  {/* Readiness vertical stack — number 24px, label
-                      italic immediately under it, no extra margin. */}
-                  <span
-                    className="readiness-stack inline-flex flex-col items-end leading-none"
-                    data-testid={`task-card-readiness-${t.id}`}
-                  >
-                    <span
-                      className="readiness-number font-mono text-[var(--ink)] leading-none"
-                      style={{ fontSize: 24, fontWeight: 600 }}
-                      data-testid={`task-card-readiness-number-${t.id}`}
-                    >
-                      {t.readiness_score ?? 0}%
-                    </span>
-                    <span
-                      className="readiness-label italic text-[var(--muted)] leading-none"
-                      style={{ fontSize: 12, marginTop: 1 }}
-                      data-testid={`task-card-readiness-label-${t.id}`}
-                    >
-                      readiness
-                    </span>
-                  </span>
-                </div>
-              </div>
-              {t.objective && (
-                <p className="text-[12.5px] text-[var(--deep)] line-clamp-2 mb-2">
-                  {t.objective}
-                </p>
-              )}
-              <div className="flex items-center gap-4 text-[11.5px] text-[var(--muted)]">
-                <span className="inline-flex items-center gap-1">
-                  <Users className="w-3 h-3" strokeWidth={1.7} />
-                  <ContributorAvatars team={t.team} />
-                </span>
-                {t.due_date && (
-                  <span className="inline-flex items-center gap-1 ml-auto">
-                    <Calendar className="w-3 h-3" strokeWidth={1.7} />
-                    {fmtDate(t.due_date)}
-                  </span>
-                )}
-              </div>
-              {/* Phase F.4 enhancement — Compile session pill on the card */}
-              {t.compile_session?.active && t.compile_session?.current_stage && (
-                <div
-                  className="mt-2 inline-flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded-sm bg-[rgba(122,46,46,0.08)] text-[var(--oxblood)]"
-                  data-testid={`task-card-compile-pill-${t.id}`}
-                >
-                  <span>Compile · {(t.compile_session.current_stage || "").replace(/_/g, " ")}</span>
-                </div>
-              )}
-            </button>
+              <Users className="w-3 h-3 text-[var(--muted)]" strokeWidth={1.7} />
+              <ContributorAvatars team={t.team} />
+            </span>
+            {t.due_date && (
+              <span
+                className="inline-flex items-center gap-1 text-[var(--muted)]"
+                data-testid={`task-card-due-${t.id}`}
+              >
+                <Calendar className="w-3 h-3" strokeWidth={1.7} />
+                {fmtDate(t.due_date)}
+              </span>
+            )}
+            {t.compile_session?.active && t.compile_session?.current_stage && (
+              <span
+                className="inline-flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded-sm bg-[rgba(122,46,46,0.08)] text-[var(--oxblood)]"
+                data-testid={`task-card-compile-pill-${t.id}`}
+              >
+                Compile · {(t.compile_session.current_stage || "").replace(/_/g, " ")}
+              </span>
+            )}
+          </>
+        );
+
+        return (
+          <li
+            key={t.id}
+            data-card-kind="task"
+            data-active-highlight={isActiveRow ? "true" : "false"}
+            className={[
+              "border bg-white rounded-sm transition-colors",
+              isActiveRow
+                ? "border-[color:var(--ned-purple)]/40 hover:border-[color:var(--ned-purple)]"
+                : "border-[var(--rule)] hover:border-[var(--ink)]",
+            ].join(" ")}
+          >
+            <StrategicRow
+              categoryChip={categoryChip}
+              statusChip={statusChip}
+              title={t.name || "Untitled task"}
+              rightSideScores={rightSideScores}
+              metadataChildren={metadataChildren}
+              description={t.objective}
+              onClick={() => openTask(t.id)}
+              testId={`task-card-${t.id}`}
+              isLast={true}
+            />
           </li>
-          );
-        })}
-      </ul>
-    </>
+        );
+      })}
+    </ul>
   );
 }

@@ -73,6 +73,12 @@ _EMERGENT_WORD_ALLOW_PATTERNS = (
     r"\bEmergent Auth\b",
     r"\bEmergent's session-data\b",
     r"\bEmergent platform\b",
+    # Wave8.followup.1 — `Emergent cloudfront wheel index` appears in
+    # a SKIP-reason docstring inside the requirements-guard test. It's
+    # internal-operational documentation of the wheel hosting URL, not
+    # user-facing branding. Allowlisted on the same basis as
+    # `emergent.cloudfront` above.
+    r"\bEmergent cloudfront\b",
 )
 
 

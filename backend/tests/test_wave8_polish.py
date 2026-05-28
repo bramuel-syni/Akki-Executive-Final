@@ -98,106 +98,19 @@ def test_w83_page_subtext_count_locked_at_15() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────
-# Wave 8.2 — Task tile readiness 24px + compact stack
+# Wave 8.2 — Task tile readiness layout
 # ─────────────────────────────────────────────────────────────────
-
-TASK_LISTING = FRONTEND / "components" / "tasks" / "TaskListing.jsx"
-
-
-def test_w82_readiness_number_font_size_is_24px() -> None:
-    """User correction: readiness number was originally specced at
-    32px; live render was too heavy. Locked at 24px.
-    """
-    src = TASK_LISTING.read_text(encoding="utf-8")
-    # Locate the readiness-number style declaration.
-    match = re.search(
-        r'className="readiness-number[^"]*"\s*style=\{\{\s*fontSize:\s*(\d+)\s*,',
-        src,
-    )
-    assert match is not None, (
-        "Could not find readiness-number fontSize literal in "
-        "TaskListing.jsx. The W8.2 spec requires the style declaration "
-        "to be inline so this regex can lock the value."
-    )
-    assert match.group(1) == "24", (
-        f"Wave 8.2 amendment: readiness number must be 24px (was {match.group(1)}px). "
-        "User overrode the original 32px spec after seeing it rendered."
-    )
-
-
-def test_w82_readiness_number_not_32px() -> None:
-    """Negative guard — the legacy 32px value must NOT reappear anywhere
-    in the readiness-number declaration.
-    """
-    src = TASK_LISTING.read_text(encoding="utf-8")
-    bad = re.search(
-        r'className="readiness-number[^"]*"\s*style=\{\{\s*fontSize:\s*32\s*,',
-        src,
-    )
-    assert bad is None, (
-        "Wave 8.2 readiness-number fontSize regressed to 32px. "
-        "Locked at 24px per the user's amendment."
-    )
-
-
-def test_w82_readiness_stack_uses_leading_none() -> None:
-    """Compactness lock — the readiness stack and its inner children
-    must use `leading-none` so the right cluster doesn't elongate the
-    row beyond the title's natural height.
-    """
-    src = TASK_LISTING.read_text(encoding="utf-8")
-    # readiness-stack span carries leading-none
-    stack = re.search(
-        r'className="readiness-stack[^"]*\bleading-none\b',
-        src,
-    )
-    assert stack is not None, (
-        "readiness-stack span must carry `leading-none` for Wave 8.2 "
-        "compactness — see PHASE_LEDGER amend row."
-    )
-    # readiness-label also carries leading-none
-    label = re.search(
-        r'className="readiness-label[^"]*\bleading-none\b',
-        src,
-    )
-    assert label is not None, (
-        "readiness-label span must carry `leading-none` for Wave 8.2 "
-        "compactness."
-    )
-
-
-def test_w82_readiness_label_margin_top_is_at_most_1() -> None:
-    """The label below the readiness number must sit immediately under
-    it with at most 1px of marginTop — no extra vertical gap.
-    """
-    src = TASK_LISTING.read_text(encoding="utf-8")
-    match = re.search(
-        r'className="readiness-label[^"]*"\s*style=\{\{\s*fontSize:\s*\d+\s*,\s*marginTop:\s*(\d+)\s*\}\}',
-        src,
-    )
-    assert match is not None, (
-        "Could not find readiness-label marginTop literal in "
-        "TaskListing.jsx — the inline style declaration must include "
-        "both fontSize and marginTop so this guard can pin the value."
-    )
-    assert int(match.group(1)) <= 1, (
-        f"Wave 8.2 amendment: readiness-label marginTop must be ≤1px "
-        f"(was {match.group(1)}px). User flagged the elongation gap."
-    )
-
-
-def test_w82_task_card_outer_row_uses_items_start() -> None:
-    """Per the W8.2 amendment: the outer flex row of the task card
-    must use `items-start` so the right cluster's vertical height
-    never stretches the left side (title) downward.
-    """
-    src = TASK_LISTING.read_text(encoding="utf-8")
-    assert (
-        'className="flex items-start justify-between gap-3 mb-1.5"' in src
-    ), (
-        "Task card outer row must be `flex items-start justify-between "
-        "gap-3 mb-1.5` — locked by Wave 8.2 amendment."
-    )
+#
+# SUPERSEDED by Phase Y (2026-02 fork-resume). The Wave 8.2 24px
+# readiness number stack has been replaced by the shared
+# `<StrategicRow>` primitive's ScoreBar (label + bar + value +
+# narrative). Phase Y locks Task card layout against Monitor goal row
+# layout pixel-for-pixel via the same primitive.
+#
+# Replacement CI guards live in:
+#   - tests/test_wave4_task_listing.py        (W4_1f — legacy classes gone)
+#   - tests/test_strategic_row_primitive.py   (primitive shape)
+#   - tests/test_task_card_uses_primitive.py  (Task card composition)
 
 
 # ─────────────────────────────────────────────────────────────────

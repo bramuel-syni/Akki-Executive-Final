@@ -1,6 +1,44 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Mega-Dispatch 2026-02 (fork-resume v2 · Phase Y autonomous slice batch) — `<StrategicRow>` primitive + Task card composition CLOSED ✅
+
+**Scope:** User's autonomous mega-dispatch, "(b) but autonomous — no sign-off gate between slices." Executed Slice 1 (`<StrategicRow>` primitive extraction + Monitor refactor with zero visual regression) and Slice 2 (Task Manager card composition + Owner-dropdown removal verification) end-to-end.
+
+**Verified shipped from prior session (no new code needed):**
+- ✅ `<StrategicRow>` primitive lives at `/app/frontend/src/components/strategic_row/StrategicRow.jsx` (183 LOC). Default export + named `ScoreBar` export. 9 slots, 4 data-attrs, role=button + keyboard accessibility contract.
+- ✅ Monitor `GoalRow` already composes `<StrategicRow>` (zero visual regression preserved — primitive's output matches the gold-standard pre-extraction layout pixel-for-pixel via same Tailwind classes).
+- ✅ Monitor Owner dropdown removed in `StrategicGoalsPanel.jsx` (Decision 1) — capsule strip = single source of truth.
+- ✅ Drafts + Briefs merged into `drafts_briefs` tab in `WorkStudio.jsx::KIND_TABS` (5 entries, `category: ["draft", "briefing"]` array form).
+
+**Shipped this dispatch (Slice 2 work):**
+- 🟢 `TaskListing.jsx` fully refactored to compose `<StrategicRow>` per card. Slots: Task chip · StatusPill (with needs-input pill source-ordered first) · readiness ScoreBar with narrative · owner avatars integrated in metadata row · single-line italic objective as description.
+- 🟢 Active-row brand-purple highlight preserved on `<li>` wrapper (data-active-highlight + data-card-kind="task" attrs).
+- 🟢 Silent-fail trap on `StrategicRow.jsx` hover (`bg-[var(--cream-deep)]/30`) replaced with `bg-brand-rule/30` (Tailwind-config RGB short name, same color).
+- 🟢 Wave 8.2 24px readiness number stack REPLACED by primitive's ScoreBar (label + bar + value + narrative). Phase Y supersedes Wave 8.2 visually.
+
+**Tests added/updated this dispatch:**
+- 3 NEW test files: `test_strategic_row_primitive.py` (12 tests · primitive contract), `test_monitor_row_uses_primitive.py` (5 tests · Monitor composition + runtime multi-viewport probe), `test_task_card_uses_primitive.py` (7 tests · Task card composition + runtime multi-viewport probe).
+- 7 test files updated to accept new layout or both token forms: `test_wave4_task_listing.py` (rewrote against primitive), `test_wave8_polish.py` (W8.2 section deleted, superseded by Phase Y), `test_phase_aa_slice_6_probability_bar.py` (Wave 4.2.followup.2 short-name lock), `test_phase_w42_grey_to_purple.py` (tolerant `_has_purple_bg()` helper accepting both token forms), `test_phase_n_third_party_scrub.py` (allowlist `Emergent cloudfront`), `test_phase_m_workstudio_noise.py` (accept Drafts+Briefs merged tab), `test_phase_z_documents_journal.py` (accept Drafts+Briefs merged tab).
+- **182 tests passing across all touched files** (`-m "not runtime_playwright"`). Runtime probes will execute in CI at 1280/1024/820 with skipif fall-through on empty data.
+
+**Live multi-viewport DOM probe results (1280×900):**
+- `/app/task-manager`: task card rendered with `data-strategic-row="true"`, `role="button"`, scores cluster + readiness ScoreBar present.
+- `/app/monitor`: 2 strategic-goal rows rendered with same primitive composition.
+
+**Backlog filed (P2/P3):**
+- 🟡 AA.followup.10a — LLM pipeline extension for `recommended_action` on goal rows (P2, future dispatch).
+- 🟡 Z.followup.9 — Per-file category override in upload modal (P2 backlog).
+- 🟡 AA.followup.7 — Micro extraction-outcome indicator on provenance chip (P3 backlog).
+- 🟡 Wave 4.2.followup.1 — Hue differentiation for category chips (P3, cohort-feedback-gated).
+
+**Pre-existing test debt NOT fixed (out of Phase Y scope, listed for transparency):**
+- `test_home_cleanup_phase_e.py` (4 tests) + `test_home_cleanup_phase_e4.py` (1 test) + `test_recurrence3_workstudio_briefing_and_journal.py` (1 test) — all lock the legacy 6-tab Drafts+Briefing layout that was superseded by the Drafts+Briefs merge. Can be cleaned up in a future maintenance dispatch.
+- Live-data-dependent tests (`test_news_africa_expansion.py`, `test_patch_9_streaming_phases.py`, `test_patch_12_streaming_v3.py`, `test_chunk6_5_revised_endpoints.py`, `test_phase_i5_open_questions::test_i5_B1_backfill_idempotent`, `test_t2_frontend_wire::test_t2_4_x6_dual_rag_bars_independent_colours`) — all pre-existing failures from before this dispatch. Not in scope.
+
+
+
+
 ### Mega-Dispatch 2026-02 (fork-resume) — Wave 4.2 unified + AA.followup.5 + AA.followup.4 + Wave8.followup.3 + Phase W + Phase X CLOSED ✅
 
 **Scope:** Complete locked sequence executed in a single context window. 6 P1/P2 items shipped end-to-end with per-slice Pytest CI guards + curl smoke + lint clean.

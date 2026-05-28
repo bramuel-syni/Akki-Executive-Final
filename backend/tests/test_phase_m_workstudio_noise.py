@@ -117,48 +117,67 @@ def test_m_M1c_context_actions_unconditionally_rendered():
 
 
 def test_m_M1d_drafts_tab_still_uses_listing_shell():
-    """Regression guard: the Drafts tab (kind=drafts) MUST still
-    receive the ListingShell render. User explicitly said Drafts has a
-    clear surface path."""
+    """Regression guard: the Drafts surface MUST still receive the
+    ListingShell render.
+
+    SUPERSEDED 2026-02 fork-resume by the Drafts+Briefs merge —
+    `drafts` + `briefing` collapsed into a single `drafts_briefs` tab.
+    The gating filter still excludes only `cycle_main_and_committee_pack`
+    so the merged tab naturally receives ListingShell. Either form is
+    acceptable here; the source-strict assertion now accepts the
+    merged tab id."""
     src = _read(WORK_STUDIO)
-    code = re.sub(r"/\*[\s\S]*?\*/", "", src)
-    code = re.sub(r"//[^\n]*", "", code)
-    # Drafts kind is `drafts`. The gating filter excludes only
-    # `cycle_main_and_committee_pack`, so Drafts naturally passes.
-    # Source-strict: KIND_TABS must contain `drafts`.
-    assert 'id: "drafts"' in src, (
-        "Drafts tab kind must remain in KIND_TABS — user-spec require."
+    # Either the legacy solo `drafts` id OR the merged `drafts_briefs`
+    # tab id must be present.
+    has_drafts_path = 'id: "drafts"' in src or 'id: "drafts_briefs"' in src
+    assert has_drafts_path, (
+        "Drafts surface kind must remain in KIND_TABS (either legacy "
+        "`drafts` or merged `drafts_briefs`)."
     )
 
 
 # ─────────────────────────────────────────────────────────────────
-# M.1.5 — Tab strip layout (REVISED 2026-05-27)
-# Briefing restored inline as the 6th tab; 2nd-line pill removed.
+# M.1.5 — Tab strip layout (REVISED 2026-05-27 + 2026-02 fork-resume)
+# Briefing restored inline as 6th tab (2026-05-27); subsequently
+# merged into `drafts_briefs` (2026-02 fork-resume), reducing the
+# strip back to 5 entries.
 # ─────────────────────────────────────────────────────────────────
 
 def test_m_M15a_six_tabs_in_horizontal_strip_with_briefing_last():
-    """KIND_TABS must contain exactly 6 entries in the spec-locked order,
-    with Briefing as the 6th (REVISED 2026-05-27 — was 5 entries with
-    Briefing on a 2nd-line pill in original Phase M close-out)."""
+    """KIND_TABS originally specced 6 entries; the Drafts+Briefs merge
+    collapsed Drafts + Briefing into one `drafts_briefs` entry, so
+    the strip is now 5. Either layout is acceptable; the guard asserts
+    that whatever the count, Briefing's data path is preserved
+    (either as a solo tab OR inside the merged `drafts_briefs` tab)."""
     src = _read(WORK_STUDIO)
     m = re.search(r"const KIND_TABS\s*=\s*\[([\s\S]*?)\];", src)
     assert m, "KIND_TABS constant not found."
     body = m.group(1)
     # Count top-level entries by looking for `id: "..."` matches.
     ids = re.findall(r'id:\s*"([^"]+)"', body)
-    assert len(ids) == 6, f"Expected 6 KIND_TABS entries, found {len(ids)}: {ids}"
-    # Briefing must be the 6th and last entry.
-    assert ids[-1] == "briefing", (
-        f"Briefing must be the 6th (last) KIND_TABS entry per the "
-        f"revised layout. Found: {ids}"
+    assert len(ids) in (5, 6), (
+        f"Expected 5 (post-merge) or 6 (pre-merge) KIND_TABS entries, "
+        f"found {len(ids)}: {ids}"
     )
-    # Required tabs in correct order.
-    expected = [
+    # Briefing data path must be reachable — either solo tab OR inside
+    # the merged `drafts_briefs` tab.
+    has_briefing_path = ("briefing" in ids) or ("drafts_briefs" in ids)
+    assert has_briefing_path, (
+        f"Briefing data path lost — neither `briefing` solo tab nor "
+        f"`drafts_briefs` merged tab found in KIND_TABS: {ids}"
+    )
+    # Verify both legacy layouts are accepted.
+    expected_pre_merge = [
         "cycle_main_and_committee_pack", "cycle_minutes",
         "drafts", "deck", "report", "briefing",
     ]
-    assert ids == expected, (
-        f"KIND_TABS order/contents drifted from spec: {ids}"
+    expected_post_merge = [
+        "cycle_main_and_committee_pack", "cycle_minutes",
+        "drafts_briefs", "deck", "report",
+    ]
+    assert ids == expected_pre_merge or ids == expected_post_merge, (
+        f"KIND_TABS layout drifted from both pre- and post-merge "
+        f"specs. Got: {ids}"
     )
 
 

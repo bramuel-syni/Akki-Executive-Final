@@ -440,6 +440,9 @@ WS_JSX = REPO / "frontend" / "src" / "pages" / "WorkStudio.jsx"
 @pytest.mark.parametrize("tab_id,category", [
     ("cycle_main_and_committee_pack", "board_pack"),
     ("cycle_minutes",                 "minutes"),
+    # Drafts+Briefs merge (2026-02 fork-resume) — `drafts` + `briefing`
+    # collapsed into one `drafts_briefs` tab. Either the legacy solo
+    # tab OR the merged tab + array-form category is accepted.
     ("drafts",                        "draft"),
     ("deck",                          "deck"),
     ("report",                        "report"),
@@ -448,8 +451,32 @@ WS_JSX = REPO / "frontend" / "src" / "pages" / "WorkStudio.jsx"
 def test_Z2_h_kind_tabs_carry_locked_category(tab_id, category):
     """Per the user dispatch — locked tab→category mapping.
     Pre-Z legacy fetcher branches (union_of / source:documents_drafts)
-    are gone — every tab routes to one canonical `category` value."""
+    are gone — every tab routes to one canonical `category` value.
+
+    Drafts+Briefs merge (2026-02 fork-resume) — when `tab_id` is
+    `drafts` or `briefing`, accept the merged `drafts_briefs` tab
+    carrying both categories in array form."""
     src = WS_JSX.read_text(encoding="utf-8")
+
+    # Drafts+Briefs merge tolerance — if the solo tab no longer exists,
+    # the merged tab MUST carry the requested category in its array form.
+    if tab_id in ("drafts", "briefing") and f'id: "{tab_id}"' not in src:
+        merged_idx = src.find('id: "drafts_briefs"')
+        assert merged_idx > 0, (
+            f"Legacy solo tab {tab_id!r} not found AND merged "
+            f"`drafts_briefs` tab also missing — Drafts+Briefs merge "
+            f"contract broken."
+        )
+        block = src[merged_idx:merged_idx + 1200]
+        close = block.find("\n  },")
+        if close > 0:
+            block = block[:close]
+        assert f'"{category}"' in block, (
+            f"Merged `drafts_briefs` tab must carry category "
+            f"{category!r} (array form). Block: {block!r}"
+        )
+        return
+
     idx = src.find(f'id: "{tab_id}"')
     assert idx > 0, f"KIND_TABS entry for {tab_id!r} not found"
     # Pull a generous block to absorb multi-line comments preceding

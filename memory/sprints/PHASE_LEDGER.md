@@ -1935,6 +1935,57 @@ Tester at 1024/820 surfaced 3 issues on AdminTenants drilldown + ExtractionsActi
 - **AA.followup.10 REVISED (course-correction, 2026-02 fork-resume).** Original AA.followup.10 was filed as a "manual milestone backend + `+ Add milestone` UI" follow-up. User caught it as the wrong direction. The Monitor drawer's progress section is OBSERVATIONAL, not manually managed — same auto-tracking philosophy as the rest of Monitor. Reverted the manual milestone empty-state + disabled CTA from `StrategicGoalsPanel.jsx`. Shipped instead: read-only `GET /api/contexts/{cid}/strategic-goals/{gid}/evolution` endpoint that aggregates time-series events from `score_history[]` + `audit_log` + linked `documents` + `extractions_log` into a chronologically-sorted feed. Drawer now renders a horizontal Progress timeline with clickable markers per signal kind (`score_delta` / `doc_upload` / `ai_reassessment` / `status_change`), each marker carries a timestamp + signal-type icon + one-line trigger description + expand-detail panel. Empty-state copy is purely observational: "No progress signals recorded yet. Signals will appear here as documents are uploaded and AKKI reassesses this goal." NO CTA. **Revised AA.followup.10 backlog scope**: feed is shipped this dispatch; remaining work covers broader signal sources (cycle_questions events, monitor reassessments via audit_log payload normalization). LLM `recommended_action` pipeline extension renamed to **AA.followup.10a** (separate scope). CI guards: `test_monitor_drawer_progress_timeline.py` (8 tests — endpoint shape across all 4 sources, empty state, 404, frontend testids, Wave 4.2.followup.2 brand-purple short-name compliance). **Lesson captured**: when a UX pattern is described in user spec, mirror EXISTING auto-tracking patterns in the codebase before assuming a manual-entry direction; the existing patterns are the implicit design contract.
 
 
+### Phase Y — `<StrategicRow>` primitive extraction + Task Manager card composition (2026-02 fork-resume autonomous dispatch · slices 1+2 CLOSED)
+
+**Slice 1 — `<StrategicRow>` primitive extraction + Monitor refactor (zero-visual-regression).**
+
+  • Shared row primitive shipped at `/app/frontend/src/components/strategic_row/StrategicRow.jsx` (183 LOC, default export `StrategicRow` + named export `ScoreBar`). Public surface: 9 slots (`categoryChip`, `statusChip`, `title`, `rightSideScores[]`, `metadataChildren`, `description`, `onClick`, `testId`, `isLast`) + 4 data-attrs on rendered DOM (`data-strategic-row`, `data-strategic-row-metadata`, `data-strategic-row-scores`, `data-strategic-row-description`). Clickable variant exposes `role="button"` + `tabIndex={0}` + Enter/Space keyboard activation.
+  • `StrategicGoalsPanel.jsx::GoalRow` refactored to compose `<StrategicRow>` (lines 433–526). All 9 slots wired through. Same visual output as pre-extraction Monitor row (gold-standard reference).
+  • Wave 4.2.followup.2 cleanup applied to the primitive — hover swapped from `bg-[var(--cream-deep)]/30` (silent-fail trap with hex var) to `bg-brand-rule/30` (Tailwind-config RGB short name, same color since `--cream-deep` = `--graphite-light` = `#B8B6AF`).
+  • CI guards (`test_strategic_row_primitive.py`, 12 tests): primitive file existence + canonical path, default + named export shapes, all 9 slots in signature, 4 data-attrs declared, role/tabIndex/keyboard-handler accessibility contract, anti-regression on `bg-[var(--CSS-var-hex)]/N` silent-fail syntax.
+  • CI guards (`test_monitor_row_uses_primitive.py`, 5 tests): canonical import path, `<StrategicRow>` composition in `GoalRow`, all 9 slots wired, `strategic-goal-${goal.id}` testId pattern, runtime multi-viewport DOM probe at 1280/1024/820 asserting `data-strategic-row="true"` + `role="button"` + scores cluster present.
+
+**Slice 2 — Task Manager card composition from `<StrategicRow>` + Owner dropdown removal verification.**
+
+  • `TaskListing.jsx` refactored end-to-end (260 LOC) to compose `<StrategicRow>` per task card. Slot mapping:
+      - `categoryChip` = constant brand-purple "Task" chip (uses Tailwind short name `bg-ned-purple/10`).
+      - `statusChip` = `<>{needsInput && needsInputPill}<StatusPill state={t.state}/></>` (needsInput source-orders first per W4.1 b lock).
+      - `title` = `t.name || "Untitled task"`.
+      - `rightSideScores` = single Readiness ScoreBar with `barClass` (RAG by score) + `narrative` (one-line explanation slot per user spec).
+      - `metadataChildren` = owner-avatar cluster (Users icon + ContributorAvatars — integrated, not dangling) + due date + active-compile pill.
+      - `description` = `t.objective` (single-line italic via primitive).
+      - `onClick` = `openTask(t.id)` → sets `?task_id=<id>` on URL.
+      - `testId` = `task-card-${t.id}`.
+      - `isLast` = `true` (each card is its own bordered surface, no shared container).
+  • Card wrapper `<li>` carries the active-row brand-purple border highlight + `data-card-kind="task"` + `data-active-highlight` attributes (required by existing `test_task_drawer_tab_prefix_guard.py` + W4.1 d).
+  • Wave 8.2 24px-readiness-stack layout REMOVED. Phase Y supersedes — `test_wave8_polish.py` W8.2 section deleted (replaced by W4_1f anti-regression lock); `test_wave4_task_listing.py` rewritten against the new primitive-aware structure (6 tests, all source-strict).
+  • Owner dropdown removal verified already-shipped in `StrategicGoalsPanel.jsx` (Decision 1 in `test_monitor_drawer_and_owner_filter.py`). Capsule strip = single source of truth for Owner filtering on Monitor.
+  • Drafts + Briefs merge verified shipped: `KIND_TABS` in WorkStudio.jsx contains 5 entries with the merged `drafts_briefs` tab carrying `category: ["draft", "briefing"]`. Z-slice-6 wire test green (`test_phase_z_slice_6_orthogonality_wire.py` — 5 tests passing). Z2_h legacy parametrize tolerantly accepts either form (solo `drafts`/`briefing` tabs OR merged `drafts_briefs`). M.1d + M15a similarly relaxed to accept either layout.
+  • CI guards (`test_task_card_uses_primitive.py`, 7 tests): canonical import path, primitive composition per card, all 9 slots wired, `task-card-${t.id}` testId pattern, brand-purple short-name compliance on category chip, Readiness ScoreBar narrative + barClass + label literal, runtime multi-viewport DOM probe at 1280/1024/820 asserting primitive composition holds across breakpoints.
+  • Collateral test-debt cleanup (caused by previous session's Wave 4.2.followup.2 migration that left assertions out-of-date):
+      - `test_phase_aa_slice_6_probability_bar.py` — updated band-class assertions from legacy `bg-[var(--ned-purple)]/N` syntax to new Tailwind short-name `bg-ned-purple/N`, added W4.2.followup.2 anti-regression guard.
+      - `test_phase_w42_grey_to_purple.py` — `_has_purple_bg()` helper now accepts EITHER token form (`bg-ned-purple/10` OR legacy `bg-[var(--ned-purple)]/10`) so future short-name drift doesn't trip.
+      - `test_phase_n_third_party_scrub.py` — added `Emergent cloudfront` to the third-party scrub allowlist (operational docstring reference in `test_requirements_guard.py`).
+
+**Multi-viewport probe results (live, 2026-02 fork-resume):**
+  - `/app/task-manager` at 1280×900: 1 task card rendered. Primitive root carries `data-strategic-row="true"` + `role="button"`. Scores cluster + readiness ScoreBar both present.
+  - `/app/monitor` at 1280×900: 2 strategic rows rendered. Same primitive composition.
+  - Runtime DOM probes at 1024 + 820 will execute in CI via Playwright (skipif fall-through on empty data — composition assertions are about slot wiring, not data presence).
+
+**Test counts (Slice 1 + Slice 2 combined):**
+  - +24 NEW source-strict tests across 3 new test files.
+  - +2 NEW Playwright runtime probes (multi-viewport).
+  - 5 existing test files updated to accept new layout / accept either token form.
+  - 83 total Slice 1+2-touching tests passing (`-m "not runtime_playwright"`).
+
+**Files touched (Slice 1+2):**
+  - Frontend: `components/strategic_row/StrategicRow.jsx` (silent-fail trap fix), `components/tasks/TaskListing.jsx` (full refactor — primitive composition).
+  - Backend tests CREATED: `test_strategic_row_primitive.py`, `test_monitor_row_uses_primitive.py`, `test_task_card_uses_primitive.py`.
+  - Backend tests UPDATED: `test_wave4_task_listing.py`, `test_wave8_polish.py`, `test_monitor_drawer_and_owner_filter.py` (untouched — already covers Decision 1), `test_phase_aa_slice_6_probability_bar.py`, `test_phase_w42_grey_to_purple.py`, `test_phase_n_third_party_scrub.py`, `test_phase_m_workstudio_noise.py`, `test_phase_z_documents_journal.py`.
+
+**Auto-slice rule compliance:** Slice 1 = ~0 net new code (primitive was already extracted in a prior session — verified during read). Slice 2 = ~260 LOC TaskListing rewrite + ~580 LOC across 3 new test files + ~250 LOC test updates. Largest single file = test_strategic_row_primitive.py at 159 LOC. No single change exceeds the 500-LOC threshold.
+
+
 - **Wave 4.2.followup.1 (P3, cohort-feedback-gated)** — Hue-
   differentiation within the brand-purple family for category chips
   IF cohort feedback reports lost visual taxonomy on Operations /

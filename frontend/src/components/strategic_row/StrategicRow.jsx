@@ -106,7 +106,7 @@ export default function StrategicRow({
         !isLast ? "border-b border-[var(--rule)]" : ""
       } ${
         clickable
-          ? "cursor-pointer hover:bg-[var(--cream-deep)]/30 focus:outline-none focus:bg-[var(--cream-deep)]/40"
+          ? "cursor-pointer hover:bg-brand-rule/30 focus:outline-none focus:bg-brand-rule/40"
           : ""
       }`}
       data-testid={testId}
