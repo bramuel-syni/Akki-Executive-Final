@@ -13,8 +13,9 @@ import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, apiErrorMessage } from "@/lib/api";
-import { Loader2, Calendar, Users, FileText, Inbox } from "lucide-react";
+import { Loader2, Calendar, Users, FileText, Inbox, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import StrategicRow from "@/components/strategic_row/StrategicRow";
 
 
 function fmtDate(iso) {
@@ -25,19 +26,37 @@ function fmtDate(iso) {
 
 function StatusPill({ state }) {
   const map = {
-    active: { label: "Active", cls: "text-[var(--ink)] bg-[var(--cream-deep)]" },
-    draft:  { label: "Draft",  cls: "text-[var(--oxblood)] bg-[rgba(122,46,46,0.10)]" },
-    closed: { label: "Closed", cls: "text-[var(--muted)] bg-[var(--parchment)]" },
+    active: { label: "Active", cls: "text-[var(--ink)] bg-[var(--cream-deep)] border-[var(--rule)]" },
+    draft:  { label: "Draft",  cls: "text-[var(--oxblood)] bg-[rgba(122,46,46,0.10)] border-[rgba(122,46,46,0.20)]" },
+    closed: { label: "Closed", cls: "text-[var(--muted)] bg-[var(--parchment)] border-[var(--rule)]" },
   };
   const m = map[state] || map.active;
   return (
     <span
-      className={`px-1.5 py-0.5 rounded-sm text-[10px] uppercase tracking-[0.14em] font-mono ${m.cls}`}
+      className={`inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] uppercase tracking-[0.14em] font-mono border ${m.cls}`}
       data-testid={`task-card-status-${state}`}
     >
       {m.label}
     </span>
   );
+}
+
+
+// Phase Y / item 3 (2026-02 fork-resume) — Task readiness bar follows
+// the same RAG vocabulary Monitor uses for the Performance score bar.
+function readinessBarClass(score) {
+  if (score == null) return "bg-[var(--rule)]";
+  if (score >= 70) return "bg-emerald-500";
+  if (score >= 40) return "bg-amber-500";
+  return "bg-rose-500";
+}
+
+function readinessNarrative(score) {
+  if (score == null) return "Readiness not yet computed.";
+  if (score >= 85) return "Ready to compile. Inputs complete.";
+  if (score >= 60) return "On the way. A few inputs still pending.";
+  if (score >= 30) return "Half-ready. Needs more contributor input.";
+  return "Early stage. Most inputs still missing.";
 }
 
 

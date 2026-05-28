@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import StrategicRow, { ScoreBar as SharedScoreBar } from "@/components/strategic_row/StrategicRow";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
@@ -283,26 +284,49 @@ export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange, on
             );
           })}
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          <label htmlFor="strategic-goals-owner" className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">
-            Owner
-          </label>
-          <select
-            id="strategic-goals-owner"
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            data-testid="strategic-goals-owner-select"
-            className="text-[12.5px] px-2 py-1 border border-[var(--rule)] rounded-sm bg-white text-[var(--ink)] focus:outline-none focus:border-[var(--accent)]"
-          >
-            <option value="all">All owners</option>
-            {categoryOptions.map((c) => (
-              <option key={c} value={c} data-testid={`strategic-goals-owner-option-${c}`}>
-                {DEPT_LABEL[c] || c}
-              </option>
-            ))}
-          </select>
-        </div>
       </div>
+
+      {/* Owner filter — Decision 1 (2026-02 fork-resume): single source
+          of truth = capsule strip. The legacy dropdown
+          (`strategic-goals-owner-select`) was removed; both Monitor tabs
+          (Strategic Goals + Tasks/Initiatives) now use the same capsule
+          pattern (single-tap interaction, more discoverable, no visual
+          duplication). Capsule colors match the brand-purple Wave 4.2
+          treatment used on Tasks/Initiatives. */}
+      {categoryOptions.length > 0 && (
+        <div
+          className="flex items-center gap-2 mb-4 flex-nowrap overflow-x-auto"
+          data-testid="strategic-goals-owner-capsules"
+        >
+          <button
+            type="button"
+            onClick={() => setCategoryFilter("all")}
+            className={`px-3 py-1 rounded-full text-[11.5px] uppercase tracking-wider border transition-colors whitespace-nowrap ${
+              categoryFilter === "all"
+                ? "bg-[var(--accent)] text-white border-[var(--accent)]"
+                : "text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)] hover:bg-[var(--cream-deep)]/40"
+            }`}
+            data-testid="strategic-goals-owner-capsule-all"
+          >
+            All owners
+          </button>
+          {categoryOptions.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setCategoryFilter(c)}
+              className={`px-3 py-1 rounded-full text-[11.5px] uppercase tracking-wider border transition-colors whitespace-nowrap ${
+                categoryFilter === c
+                  ? "bg-[var(--accent)] text-white border-[var(--accent)]"
+                  : "text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)] hover:bg-[var(--cream-deep)]/40"
+              }`}
+              data-testid={`strategic-goals-owner-capsule-${c}`}
+            >
+              {DEPT_LABEL[c] || c}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="space-y-5" data-testid="strategic-goals-groups">
         {/* T2.4 (2026-05-25) — empty state when status+category filters
@@ -413,122 +437,91 @@ function GoalRow({ goal, isLast, isNED, onOpenDrawer, contextId }) {
   const cat = CATEGORY_STYLE[goal.category] || CATEGORY_STYLE.operations;
   const initiatives = typeof goal.initiatives_count === "number" ? goal.initiatives_count : 0;
 
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onOpenDrawer}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenDrawer && onOpenDrawer(); } }}
-      className={`px-5 py-3.5 cursor-pointer ${!isLast ? "border-b border-[var(--rule)]" : ""} hover:bg-[var(--cream-deep)]/30 focus:outline-none focus:bg-[var(--cream-deep)]/40`}
-      data-testid={`strategic-goal-${goal.id}`}
+  // Decision 2 / Phase Y (2026-02 fork-resume) — Monitor goal row now
+  // consumes the shared `<StrategicRow>` primitive. Visual output is
+  // identical to the pre-extraction version; future surfaces (Task
+  // Manager, AdminTenants drill, etc.) compose the same primitive.
+
+  const categoryChip = (
+    <span
+      className={`inline-block px-1.5 py-0.5 rounded-sm text-[9.5px] uppercase tracking-wider border ${cat.chip}`}
+      data-testid={`goal-category-${goal.id}`}
     >
-      {/* TOP ROW — single line. Title + category chip + status + the two
-          progress bars sit on the same horizontal axis with consistent gaps,
-          so the eye runs left → right without re-anchoring. */}
-      <div className="flex items-center gap-4">
-        {/* TITLE BLOCK — flexes to consume the row's left half. */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span
-              className={`inline-block px-1.5 py-0.5 rounded-sm text-[9.5px] uppercase tracking-wider border ${cat.chip}`}
-              data-testid={`goal-category-${goal.id}`}
-            >
-              {cat.label}
-            </span>
-            <h3 className="text-[14.5px] text-[var(--ink)] font-medium truncate">{goal.title}</h3>
-            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10px] uppercase tracking-wider border ${status.tone}`}>
-              {goal.status === "on_track" || goal.status === "achieved" ? <CheckCircle2 className="w-2.5 h-2.5" /> :
-               goal.status === "at_risk" || goal.status === "off_track" ? <AlertTriangle className="w-2.5 h-2.5" /> : null}
-              {status.label}
-            </span>
-          </div>
-        </div>
+      {cat.label}
+    </span>
+  );
 
-        {/* PROGRESS BARS — equal width, even spacing, one line. */}
-        <div className="flex items-center gap-6 shrink-0" data-testid={`goal-score-block-${goal.id}`}>
-          <ScoreBar
-            label="Performance"
-            value={score}
-            /* T2.4 (2026-05-25) — X6 G11: performance bar now follows the
-               status RAG (was previously the category colour). Status
-               and probability are independent — a goal can have low
-               probability while sitting On Track on performance and
-               vice versa, so they must paint independently. */
-            barClass={statusBarClass(goal.status)}
-            testId={`goal-perf-bar-${goal.id}`}
-          />
-          <ScoreBar
-            label="Probability"
-            value={prob}
-            /* T2.4 (2026-05-25) — X6 G11: probability bar follows the
-               numeric bands: ≥70 green, 40–69 amber, <40 red. */
-            barClass={probabilityBarClass(prob)}
-            testId={`goal-prob-bar-${goal.id}`}
-          />
-        </div>
-      </div>
+  const statusChip = (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10px] uppercase tracking-wider border ${status.tone}`}>
+      {goal.status === "on_track" || goal.status === "achieved" ? <CheckCircle2 className="w-2.5 h-2.5" /> :
+       goal.status === "at_risk" || goal.status === "off_track" ? <AlertTriangle className="w-2.5 h-2.5" /> : null}
+      {status.label}
+    </span>
+  );
 
-      {/* SECONDARY ROW — initiatives + key facts + score narratives, all
-          on one tight line. Uses the same equal-spacing rhythm as the top
-          row so the card reads as a single editorial unit. */}
-      <div className="flex items-center gap-4 mt-2">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-x-4 gap-y-1 text-[11.5px] text-[var(--deep)] flex-wrap">
-            <span className="inline-flex items-center gap-1" data-testid={`goal-initiatives-${goal.id}`}>
-              <Layers className="w-3 h-3 text-[var(--muted)]" />
-              <strong>{initiatives}</strong> {initiatives === 1 ? "initiative" : "initiatives"}
-            </span>
-            {goal.target_metric && goal.target_value && (
-              <span><span className="text-[var(--muted)]">Target:</span> <strong>{goal.target_value}</strong> {goal.target_metric}</span>
-            )}
-            {goal.target_date && <span><span className="text-[var(--muted)]">By:</span> {goal.target_date}</span>}
-            {goal.owner_name && <span><span className="text-[var(--muted)]">Owner:</span> {goal.owner_name}</span>}
-            {goal.current_value && <span><span className="text-[var(--muted)]">Now:</span> {goal.current_value}</span>}
-            {goal.source_doc_id && (
-              <Link to={`/app/documents/${goal.source_doc_id}`} className="text-[var(--accent)] hover:underline inline-flex items-center gap-1">
-                <FileText className="w-3 h-3" /> source
-              </Link>
-            )}
-            {/* Chunk 12 fix-pass (Gap 2) — surface the "last reassessed"
-                timestamp on the card alongside other inline metadata.
-                Matches the visual weight of the existing chips/labels:
-                muted font-mono prefix, regular weight value, same
-                text size as the surrounding metadata line.
-                Renders only when the goal has been assessed at least
-                once. The drawer-level affordance lives at
-                `goal-drawer-last-update-stamp` (kept for parity). */}
-            {goal.last_akki_update?.assessed_at && (
-              <span
-                className="inline-flex items-center gap-1 text-[var(--muted)]"
-                data-testid={`goal-card-last-update-${goal.id}`}
-                title={new Date(goal.last_akki_update.assessed_at).toLocaleString(undefined, {
-                  dateStyle: "medium", timeStyle: "short",
-                })}
-              >
-                <span className="text-[var(--muted)]">Reassessed:</span>{" "}
-                {new Date(goal.last_akki_update.assessed_at).toLocaleDateString(undefined, {
-                  dateStyle: "medium",
-                })}
-              </span>
-            )}
-          </div>
-        </div>
+  const rightSideScores = [
+    {
+      label:     "Performance",
+      value:     score,
+      barClass:  statusBarClass(goal.status),
+      narrative: performanceNarrative(score),
+      testId:    `goal-perf-bar-${goal.id}`,
+    },
+    {
+      label:     "Probability",
+      value:     prob,
+      barClass:  probabilityBarClass(prob),
+      narrative: probabilityNarrative(prob),
+      testId:    `goal-prob-bar-${goal.id}`,
+    },
+  ];
 
-        {/* Narrative pair — italic Georgia, lines up under each bar. */}
-        <div className="flex items-center gap-6 shrink-0">
-          <p className="akki-serif italic text-[11px] text-[var(--muted)] w-[150px] truncate text-left" title={performanceNarrative(score)}>
-            {performanceNarrative(score)}
-          </p>
-          <p className="akki-serif italic text-[11px] text-[var(--muted)] w-[150px] truncate text-left" title={probabilityNarrative(prob)}>
-            {probabilityNarrative(prob)}
-          </p>
-        </div>
-      </div>
-
-      {goal.description && (
-        <p className="text-[12px] text-[var(--muted)] italic mt-2 leading-relaxed line-clamp-2">{goal.description}</p>
+  const metadataChildren = (
+    <>
+      <span className="inline-flex items-center gap-1" data-testid={`goal-initiatives-${goal.id}`}>
+        <Layers className="w-3 h-3 text-[var(--muted)]" />
+        <strong>{initiatives}</strong> {initiatives === 1 ? "initiative" : "initiatives"}
+      </span>
+      {goal.target_metric && goal.target_value && (
+        <span><span className="text-[var(--muted)]">Target:</span> <strong>{goal.target_value}</strong> {goal.target_metric}</span>
       )}
-    </div>
+      {goal.target_date && <span><span className="text-[var(--muted)]">By:</span> {goal.target_date}</span>}
+      {goal.owner_name && <span><span className="text-[var(--muted)]">Owner:</span> {goal.owner_name}</span>}
+      {goal.current_value && <span><span className="text-[var(--muted)]">Now:</span> {goal.current_value}</span>}
+      {goal.source_doc_id && (
+        <Link to={`/app/documents/${goal.source_doc_id}`} className="text-[var(--accent)] hover:underline inline-flex items-center gap-1">
+          <FileText className="w-3 h-3" /> source
+        </Link>
+      )}
+      {goal.last_akki_update?.assessed_at && (
+        <span
+          className="inline-flex items-center gap-1 text-[var(--muted)]"
+          data-testid={`goal-card-last-update-${goal.id}`}
+          title={new Date(goal.last_akki_update.assessed_at).toLocaleString(undefined, {
+            dateStyle: "medium", timeStyle: "short",
+          })}
+        >
+          <span className="text-[var(--muted)]">Reassessed:</span>{" "}
+          {new Date(goal.last_akki_update.assessed_at).toLocaleDateString(undefined, {
+            dateStyle: "medium",
+          })}
+        </span>
+      )}
+    </>
+  );
+
+  return (
+    <StrategicRow
+      categoryChip={categoryChip}
+      statusChip={statusChip}
+      title={goal.title}
+      rightSideScores={rightSideScores}
+      metadataChildren={metadataChildren}
+      description={goal.description}
+      onClick={onOpenDrawer}
+      testId={`strategic-goal-${goal.id}`}
+      isLast={isLast}
+    />
   );
 }
 

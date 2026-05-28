@@ -114,30 +114,65 @@ def test_item4_recommended_action_uses_brand_purple_callout():
 
 
 def test_item5_filter_label_is_owner_not_category():
+    """Decision 1 (2026-02 fork-resume) — the dropdown was COLLAPSED
+    into a capsule strip. The label-rename assertion now checks for
+    the capsule strip's `All owners` button text."""
     src = (REPO / "frontend" / "src" / "components" / "monitor" / "StrategicGoalsPanel.jsx").read_text(encoding="utf-8")
-    # New testid.
-    assert "strategic-goals-owner-select" in src, (
-        "Owner filter testid must be `strategic-goals-owner-select`."
+    # New testid — capsule strip is the single source of truth.
+    assert "strategic-goals-owner-capsules" in src, (
+        "Owner-filter capsule strip testid required"
     )
-    # Label text.
-    label_idx = src.find("strategic-goals-owner-select")
-    label_block = src[max(0, label_idx - 600):label_idx]
-    assert ">Owner</label>" in label_block or "Owner\n" in label_block or '"Owner"' in label_block, (
-        "Filter label text must read 'Owner' (uppercase via tracking-wider)."
+    assert "strategic-goals-owner-capsule-all" in src, (
+        "Default 'All owners' capsule testid required"
     )
-    # Default option.
+    # User-facing copy.
     assert "All owners" in src, (
-        'Default option text must read "All owners".'
+        '"All owners" default capsule text required'
     )
 
 
 def test_item5_legacy_category_testids_removed():
-    """The old `strategic-goals-category-*` testids must be gone (no
-    leftover references to the misleading label)."""
+    """The old `strategic-goals-category-*` testids must be gone, AND
+    the intermediate `strategic-goals-owner-select` dropdown must be
+    gone too (Decision 1 collapse).
+
+    Excludes JS line-comments + JSX `{/* ... */}` block comments — the
+    comment in `StrategicGoalsPanel.jsx` documenting the removal must
+    keep referencing the legacy testid name."""
+    import re
     src = (REPO / "frontend" / "src" / "components" / "monitor" / "StrategicGoalsPanel.jsx").read_text(encoding="utf-8")
-    assert "strategic-goals-category-select" not in src, (
+    # Strip JSX block comments and JS line comments before grep.
+    code = re.sub(r'\{/\*.*?\*/\}', '', src, flags=re.DOTALL)
+    code = re.sub(r'/\*.*?\*/', '', code, flags=re.DOTALL)
+    code = "\n".join(
+        line.split("//", 1)[0] for line in code.splitlines()
+    )
+    assert "strategic-goals-category-select" not in code, (
         "Legacy `strategic-goals-category-select` testid must be removed."
     )
-    assert "All categories" not in src, (
+    assert "strategic-goals-owner-select" not in code, (
+        "Decision 1 — `strategic-goals-owner-select` dropdown must be "
+        "removed; capsule strip is the single source of truth."
+    )
+    assert "All categories" not in code, (
         'Legacy "All categories" default option text must be removed.'
+    )
+
+
+def test_decision_1_dropdown_collapsed_into_capsule_strip():
+    """Decision 1 hard guard — no `<select>` element with the legacy
+    `id="strategic-goals-owner"` may remain. Capsules only."""
+    src = (REPO / "frontend" / "src" / "components" / "monitor" / "StrategicGoalsPanel.jsx").read_text(encoding="utf-8")
+    assert 'id="strategic-goals-owner"' not in src, (
+        "Legacy <select id='strategic-goals-owner'> dropdown must be "
+        "removed. Capsules only."
+    )
+    # The capsule strip must mirror the proven TasksInitiativesPanel
+    # pattern — single-tap, brand-accent active state.
+    capsule_idx = src.find("strategic-goals-owner-capsules")
+    assert capsule_idx > 0
+    capsule_block = src[capsule_idx:capsule_idx + 2000]
+    assert "bg-[var(--accent)]" in capsule_block, (
+        "Active capsule must use the brand accent token (matches "
+        "TasksInitiativesPanel)"
     )
