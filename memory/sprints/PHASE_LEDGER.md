@@ -1435,3 +1435,181 @@ Next: **AA-slice-4** — Monitor surface rewrite. Includes:
 Reconciliation of `monitor_v2.CANONICAL_OWNER_ROLES` vs AA-1
 `TIOwnerRole` (AA.followup.1) will be resolved naturally by AA-4's
 UI requirements.
+
+
+---
+
+## PHASE AA-SLICE-4 — Monitor surface rewrite (CLOSED 2026-05-27)
+
+The Monitor page primary section is now a **dual capsule-tab shell**.
+Goals tab mounts the existing `<StrategicGoalsPanel>` (already rich
+cards); Tasks tab mounts the **new `<TasksInitiativesPanel>`** that
+renders the `tasks_initiatives` collection from AA-1 with the
+**provenance chip** institutional trust signal on every LLM-extracted
+row.
+
+### Dual capsule tabs (Monitor.jsx)
+
+- `data-testid="monitor-capsule-tabs"` with 2 buttons.
+- `monitor-tab-goals` (default) + `monitor-tab-tasks`.
+- Live count badges `monitor-tab-goals-count` + `monitor-tab-tasks-count`
+  fed by `onCountChange` callbacks from each panel.
+- URL syncs via `?tab=goals|tasks` (history.replaceState) so the
+  active tab is shareable.
+- Tab bodies wrap each panel: `monitor-tab-content-goals` +
+  `monitor-tab-content-tasks`.
+
+### Simple-list view RETIRED
+
+The legacy `<ObjectivesProjectsPanel>` mount is removed from
+`Monitor.jsx` (both the import and the JSX). The component file
+itself is preserved for now (separate cleanup PR) but no surface
+mounts it. CI guard `test_aa4_simple_list_view_removed` strips
+comments before scanning, so prose mentions inside docstrings or
+JSX comments don't false-positive.
+
+### TasksInitiativesPanel (`frontend/src/components/monitor/TasksInitiativesPanel.jsx`)
+
+353 lines. Renders:
+
+- Status filter pill row (`tasks-status-filters`) with 6 pills
+  (`all` + the 5 AA-1 statuses). Active pill carries brand purple.
+- Each pill carries a count badge (`tasks-status-tab-{key}-count`)
+  derived from the loaded rows.
+- Empty state with locked copy: "No tasks in this view yet." +
+  "Upload a board pack or report and Akki will extract them."
+- TaskCard rows inside `tasks-listing`, each carrying the full
+  AA-4 spec field set:
+  - `task-card-category-{id}` — category pill (operations/people/...)
+  - `task-card-status-{id}` — status pill (on_track/at_risk/...)
+  - `task-card-perf-bar-{id}` — performance ScoreBar
+  - `task-card-prob-bar-{id}` — probability ScoreBar (slice-6 will
+    refine the colour bands)
+  - `task-card-owner-{id}` — owner-role badge (clickable filter
+    wiring lands in slice-5)
+  - `task-card-parent-{id}` — "Linked to a strategic goal" badge
+    when `parent_objective_id` is set
+  - `task-card-last-reassessed-{id}` — relative timestamp
+  - `task-card-provenance-{id}` — see below
+
+### Provenance chip (folded into AA-slice-4 per dispatch)
+
+- IFF `task.extracted_by === "llm"`: renders
+  `"Extracted by Sonnet 4.5 from {document_name} · {relative_date}"`
+  below the card body.
+- Document name is a `<Link to="/app/documents?doc_id={id}">` so
+  clicking opens the source doc in the universal drawer.
+- IFF `task.extracted_by !== "llm"` (manual entries): chip returns
+  `null` — institutional trust signal stays accurate.
+- `TasksInitiativesPanel` resolves source documents in a
+  `Promise.all` batch on each load so chip names show real
+  filenames rather than IDs.
+
+### Panel counts
+
+- StrategicGoalsPanel now accepts an `onCountChange` prop and
+  reports `data.goals.length` to the parent.
+- TasksInitiativesPanel reports `data.total` on each load.
+
+### AA.followup.1 RESOLUTION — owner-role token reconciliation
+
+**Recommendation: adopt AA-1 `TIOwnerRole` as canonical; retrofit
+`monitor_v2.CANONICAL_OWNER_ROLES`.**
+
+The two token sets compared:
+
+| Source                                | Tokens                                                                                  |
+| ------------------------------------- | --------------------------------------------------------------------------------------- |
+| `monitor_v2.CANONICAL_OWNER_ROLES`    | CEO, CFO, COO, CCO, CTO, CRO, CIO, Audit Committee, Risk Committee                      |
+| `routers.tasks_initiatives.TIOwnerRole` | CEO, CFO, COO, CRO, CTO, CHRO, CMO, CIO, **OTHER** (+ null nullability)                  |
+
+Rationale for adopting AA-1's set:
+
+1. **OTHER + null** explicitly model the "owner not yet assigned"
+   case — the LLM-extraction pipe (AA-2) writes `owner_role=null`
+   constantly for tasks the document doesn't attribute. monitor_v2's
+   set has no fallback.
+2. **CHRO + CMO** are standard cohort C-suite roles that monitor_v2
+   omits — adopting AA-1 covers the broader exec roster the cohort
+   will surface.
+3. **CCO** is ambiguous (Chief Commercial Officer vs Chief Customer
+   Officer); the cohort founder feedback so far has not requested it.
+4. **Audit Committee + Risk Committee** are *committees*, not
+   *roles*. They don't fit a `(task → owner_role)` 1:1 relation
+   cleanly; they belong on a separate `cycle` membership axis.
+
+**Action filed**: `AA.followup.5 — Retrofit
+monitor_v2.CANONICAL_OWNER_ROLES to match AA-1 TIOwnerRole (P2,
+ship-before-cohort)`. Two-line code change + migration for any
+existing `goals.department` rows that carry the legacy tokens. Done
+during AA-slice-5 wiring naturally if it's not done sooner.
+
+### CI guards (`backend/tests/test_phase_aa_slice_4_monitor.py`)
+
+**17/17 GREEN**:
+
+Capsule tabs (5):
+- Both tab buttons + count badges + tab bodies + URL sync.
+- Default tab is "goals" (initial `useState` literal locked).
+- `<ObjectivesProjectsPanel>` JSX mount + ES import both removed.
+
+TasksInitiativesPanel structural (10):
+- Root + listing + empty-state testids.
+- 6 status filter tabs + dynamic count badges.
+- 8 per-card field testids locked.
+- Provenance chip `if (task.extracted_by !== "llm") return null`
+  locked verbatim.
+- Provenance chip copy ("Extracted by Sonnet 4.5 from",
+  `/app/documents?doc_id=`) locked.
+- Empty state copy locked.
+- Calls AA-1 `/tasks-initiatives` endpoint.
+- Uses AA-1 5-status enum (`not_started`, NOT goals' `abandoned`).
+- `statusBarClass` + `probabilityBarClass` helpers present.
+
+Wiring (2):
+- Monitor imports TasksInitiativesPanel.
+- Both panels receive `onCountChange` props.
+
+### Live multi-viewport DOM probes (1280 / 1024 / 820) — ALL PASS
+
+| Probe                                                | 1280 | 1024 | 820 |
+| ---------------------------------------------------- | ---- | ---- | --- |
+| Capsule tabs render with count badges                | ✅   | ✅   | ✅  |
+| Goals count badge populates (= 3 seeded goals)       | ✅   | ✅   | ✅  |
+| Tasks count badge populates (= 0 in TEST_SeededNedCo)| ✅   | ✅   | ✅  |
+| Default tab = Goals                                  | ✅   | ✅   | ✅  |
+| Tasks tab click flips body + URL `?tab=tasks`        | ✅   | ✅   | ✅  |
+| Tasks panel mounts with 6 status filter pills        | ✅   | ✅   | ✅  |
+| Empty-state copy renders locked headline + helper    | ✅   | ✅   | ✅  |
+| Simple-list view ABSENT                              | ✅   | ✅   | ✅  |
+
+### Slice budget
+
+| File                                             | Net lines |
+| ------------------------------------------------ | --------- |
+| `components/monitor/TasksInitiativesPanel.jsx` (new) | 353 |
+| `pages/Monitor.jsx` (dual-tab shell)              | +94       |
+| `components/monitor/StrategicGoalsPanel.jsx` (onCountChange) | +7 |
+| **Total product code**                            | **~454**  |
+
+Tests 158 lines.  Well within the 500-line product-code budget.
+
+### Out of scope (deferred to AA-5/6/7)
+
+- Owner-filter capsule UI (AA-slice-5) — clicking the owner badge
+  on a TaskCard should filter the listing.
+- Probability bar colour band refinement (AA-slice-6) — current
+  `probabilityBarClass` uses 3 purple bands; AA-6 will tune the
+  thresholds.
+- Phase AA orthogonality wire-test (AA-slice-7) — mirror of
+  Z-slice-6 but for the extract → tasks_initiatives → Monitor
+  surface chain.
+- "Linked to a strategic goal" badge currently surfaces only as a
+  text presence; clicking it should jump to the parent goal — file
+  as `AA.followup.6` if the cohort signal demands.
+
+### Sequencing
+
+Next: **AA-slice-5** — Owner-filter capsule UI on the Tasks tab.
+Wires owner_role badge clicks → filter `?owner=CFO` query param +
+visual capsule row above the status filters.

@@ -6,7 +6,9 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import StrategicGoalsPanel from "@/components/monitor/StrategicGoalsPanel";
-import ObjectivesProjectsPanel from "@/components/monitor/ObjectivesProjectsPanel";
+// AA-slice-4 (2026-05-27) — rich card listing for the new
+// tasks_initiatives collection. Sits inside the second capsule tab.
+import TasksInitiativesPanel from "@/components/monitor/TasksInitiativesPanel";
 import WorkspaceEntryGate from "@/components/transitions/WorkspaceEntryGate";
 import {
   Activity, AlertTriangle, ArrowRight, Eye, FileText,
@@ -74,6 +76,31 @@ export default function Monitor() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editFn, setEditFn] = useState(false);
+  // AA-slice-4 (2026-05-27) — dual capsule tab state.
+  //   "goals" → mounts <StrategicGoalsPanel>   (default)
+  //   "tasks" → mounts <TasksInitiativesPanel> (AA-1/2/3 collection)
+  // URL syncs via `?tab=goals|tasks` for shareability.
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window === "undefined") return "goals";
+    const sp = new URLSearchParams(window.location.search);
+    const t = sp.get("tab");
+    return t === "tasks" ? "tasks" : "goals";
+  });
+  // Count badges sit on the capsule tabs and update as each panel
+  // finishes loading. Each panel calls back into Monitor with the
+  // current totals.
+  const [goalsCount, setGoalsCount] = useState(null);
+  const [tasksCount, setTasksCount] = useState(null);
+
+  const switchTab = useCallback((next) => {
+    if (next !== "goals" && next !== "tasks") return;
+    setActiveTab(next);
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      sp.set("tab", next);
+      window.history.replaceState(null, "", `?${sp.toString()}`);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     if (!cid) return;
@@ -116,16 +143,76 @@ export default function Monitor() {
               tiles continue to scope by function. */}
         </div>
 
-        {/* PRIMARY (Patch 5) — Objectives & Projects, top section */}
-        <ObjectivesProjectsPanel contextId={cid} />
+        {/* AA-slice-4 (2026-05-27) — dual capsule tabs sit at the top
+            of the Monitor primary section. The simple-list view that
+            previously lived in <ObjectivesProjectsPanel> is REMOVED
+            (the user explicitly called it out for removal in the
+            AA-4 dispatch). Goals tab mounts the existing rich-card
+            <StrategicGoalsPanel>; Tasks tab mounts the new
+            <TasksInitiativesPanel>. */}
+        <div className="flex items-center gap-2 mb-5 flex-wrap" data-testid="monitor-capsule-tabs">
+          <button
+            type="button"
+            onClick={() => switchTab("goals")}
+            className={`px-4 py-2 rounded-full text-[12.5px] uppercase tracking-wider border transition-colors ${
+              activeTab === "goals"
+                ? "bg-[var(--accent)] text-white border-[var(--accent)]"
+                : "text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)] hover:bg-[var(--cream-deep)]/40"
+            }`}
+            data-testid="monitor-tab-goals"
+          >
+            <span className="inline-flex items-center gap-2">
+              <Target className="w-3 h-3" />
+              Strategic Objectives / Goals
+              <span
+                className="text-[10.5px] opacity-80 font-mono"
+                data-testid="monitor-tab-goals-count"
+              >
+                {goalsCount ?? "—"}
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("tasks")}
+            className={`px-4 py-2 rounded-full text-[12.5px] uppercase tracking-wider border transition-colors ${
+              activeTab === "tasks"
+                ? "bg-[var(--accent)] text-white border-[var(--accent)]"
+                : "text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)] hover:bg-[var(--cream-deep)]/40"
+            }`}
+            data-testid="monitor-tab-tasks"
+          >
+            <span className="inline-flex items-center gap-2">
+              <Layers className="w-3 h-3" />
+              Strategic Projects / Tasks / Initiatives
+              <span
+                className="text-[10.5px] opacity-80 font-mono"
+                data-testid="monitor-tab-tasks-count"
+              >
+                {tasksCount ?? "—"}
+              </span>
+            </span>
+          </button>
+        </div>
 
-        {/* SECONDARY (was PRIMARY pre-Patch-5) — Strategic goals tracker */}
-        <StrategicGoalsPanel
-          contextId={cid}
-          fn={fn}
-          isNED={isNED}
-          onChange={load}
-        />
+        {activeTab === "goals" ? (
+          <div data-testid="monitor-tab-content-goals">
+            <StrategicGoalsPanel
+              contextId={cid}
+              fn={fn}
+              isNED={isNED}
+              onChange={load}
+              onCountChange={setGoalsCount}
+            />
+          </div>
+        ) : (
+          <div data-testid="monitor-tab-content-tasks">
+            <TasksInitiativesPanel
+              contextId={cid}
+              onCountChange={setTasksCount}
+            />
+          </div>
+        )}
 
         {/* SECONDARY — function-relevant tiles */}
         {loading ? (

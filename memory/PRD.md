@@ -5336,3 +5336,57 @@ All identical: Uncategorized → both OFF; Report → both ON; Draft → both OF
 
 ### Next per locked sequence
 **AA-slice-4** — Monitor surface rewrite (rich cards + provenance chip "Extracted by Sonnet 4.5 from {doc} · {date}"; manual rows render without chip).
+
+
+---
+
+## Phase AA-slice-4 — Monitor surface rewrite (2026-05-27) — CLOSED
+
+### Dual capsule-tab shell (`Monitor.jsx`)
+- 2 capsule tabs (`monitor-tab-goals` default + `monitor-tab-tasks`) with live count badges from each panel.
+- URL syncs via `?tab=goals|tasks` (history.replaceState).
+- Tab bodies: `monitor-tab-content-goals` + `monitor-tab-content-tasks`.
+
+### Simple-list view RETIRED
+- `<ObjectivesProjectsPanel>` mount + import removed from Monitor.jsx. Component file kept for future cleanup PR.
+
+### New `TasksInitiativesPanel.jsx` (353 lines)
+- Status filter pill row (6 pills: all + AA-1 5-enum).
+- Empty state with locked copy "No tasks in this view yet. / Upload a board pack or report and Akki will extract them."
+- TaskCard with 8 testid-locked fields: category, status, perf-bar, prob-bar, owner badge, parent-link, last-reassessed, provenance chip.
+
+### Provenance chip (folded from AA-followup, per dispatch)
+- IFF `task.extracted_by === "llm"`: renders "Extracted by Sonnet 4.5 from {document_name} · {relative_date}" with click-through to `/app/documents?doc_id={id}`.
+- Manual entries: chip returns null. Trust signal stays accurate.
+- Source documents resolved in a `Promise.all` batch on each panel load so chip names are real filenames.
+
+### Panel count callbacks
+- StrategicGoalsPanel + TasksInitiativesPanel both accept `onCountChange`; Monitor populates the capsule-tab badges.
+
+### AA.followup.1 RESOLUTION — owner-role token reconciliation
+**Recommendation: adopt AA-1 `TIOwnerRole` as canonical; retrofit `monitor_v2.CANONICAL_OWNER_ROLES`.**
+
+- AA-1 set (CEO/CFO/COO/CRO/CTO/CHRO/CMO/CIO/OTHER + null) covers the standard cohort C-suite + has a fallback (`OTHER`/null) for the unlabelled-owner case the LLM pipe constantly produces.
+- monitor_v2 set drops fallback, omits CHRO/CMO, includes ambiguous CCO + Audit Committee/Risk Committee which are committees not per-task owners.
+- Filed as `AA.followup.5 — Retrofit monitor_v2 owner-roles to AA-1 set (P2, ship-before-cohort)`.
+
+### CI guards — **17/17 GREEN**
+- 5 capsule-tab + simple-list-removal asserts.
+- 10 TasksInitiativesPanel structural asserts (incl. provenance chip null-guard + chip copy + AA-1 endpoint + AA-1 status enum).
+- 2 Monitor↔Panel wiring asserts.
+
+### Live multi-viewport at 1280 / 1024 / 820
+All confirmed: capsule tabs + count badges + default Goals + tab click flips body + URL sync + empty state copy + 6 filter pills + simple-list ABSENT.
+
+### Slice budget
+~454 lines net product code (353 new TasksPanel + 94 Monitor + 7 StrategicGoalsPanel). Within 500-line budget.
+
+### Out of scope (deferred)
+- Owner-filter capsule UI (AA-slice-5).
+- Probability bar colour band refinement (AA-slice-6).
+- Orthogonality wire-test (AA-slice-7).
+- AA.followup.5: monitor_v2 owner-role retrofit (P2 ship-before-cohort).
+- AA.followup.6: clickable "Linked to strategic goal" badge (if cohort signal demands).
+
+### Next per locked sequence
+**AA-slice-5** — Owner-filter capsule UI on the Tasks tab.

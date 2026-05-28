@@ -114,7 +114,7 @@ function groupByDepartment(goals) {
   return groups;
 }
 
-export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange }) {
+export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange, onCountChange }) {
   const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [extractOpen, setExtractOpen] = useState(false);
@@ -140,10 +140,14 @@ export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange }) 
     setLoading(true);
     try {
       const { data } = await api.get(`/contexts/${contextId}/strategic-goals`);
-      setGoals(data.goals || []);
+      const list = data.goals || [];
+      setGoals(list);
+      // AA-slice-4 (2026-05-27) — surface the total count up to the
+      // Monitor capsule-tab badge.
+      onCountChange && onCountChange(list.length);
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setLoading(false); }
-  }, [contextId]);
+  }, [contextId, onCountChange]);
   useEffect(() => { load(); }, [load]);
 
   const visible = useMemo(() => visibleGoalsForFunction(goals, fn, isNED), [goals, fn, isNED]);
