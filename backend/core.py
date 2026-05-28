@@ -168,6 +168,19 @@ async def get_current_account(request: Request) -> Dict[str, Any]:
                         continue
                 except Exception:
                     pass  # malformed dates fall through (defence-in-depth)
+        # Phase V (2026-05-27) — Suspended-account gate. If a superadmin
+        # has suspended the account via `POST /api/admin/users/{id}/suspend`,
+        # all auth-gated requests must 401 with the locked detail so the
+        # frontend can show the suspended-account screen instead of
+        # silently logging the user out. Soft-restore by the superadmin
+        # via `/restore` flips status back to "active".
+        if account.get("status") == "suspended":
+            last_error = HTTPException(
+                status_code=401,
+                detail={"code": "ACCOUNT_SUSPENDED", "message": "Account suspended"},
+            )
+            failed_sources.append(f"{source}:suspended")
+            continue
         # First credential that fully validates wins. We deliberately
         # don't track which source authenticated the request — both are
         # equally trusted once the JWT signature checks out.

@@ -43,6 +43,8 @@ import EnhanceModal from "@/components/studio/EnhanceModal";
 import PerArtefactSynisenseBadge from "@/components/studio/PerArtefactSynisenseBadge";
 import CreateArtefactModal from "@/components/work_studio/CreateArtefactModal";
 import CompilationRail from "@/components/work_studio/CompilationRail";
+// Wave 3 (2026-05-27) — Right-rail Document Journal panel.
+import DocumentJournalRail from "@/components/work_studio/DocumentJournalRail";
 // Phase E.3 (2026-05-26) — Universal Document Drawer + objective capture.
 import DocumentDrawer from "@/components/documents/DocumentDrawer";
 import ObjectiveCaptureModal from "@/components/documents/ObjectiveCaptureModal";
@@ -945,6 +947,18 @@ export default function WorkStudio() {
               setWizardPreselectSourceId(opts?.sourceId || null);
               setWizardOpen(true);
             }}
+            refreshKey={railRefreshKey}
+          />
+          {/* Wave 3 (2026-05-27) — Document Journal right rail.
+              Canonical document listing for Work Studio. Tabs above
+              continue to surface category artefacts; this rail
+              surfaces ALL documents in the active context. Listing
+              starts directly under the search bar (no hero spacing).
+              `xl:` breakpoint keeps the rail collapsed on narrow
+              viewports so smaller screens still get the full main
+              column. */}
+          <DocumentJournalRail
+            contextId={cid}
             refreshKey={railRefreshKey}
           />
         </div>

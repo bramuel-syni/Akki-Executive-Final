@@ -1,6 +1,65 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+
+### Mega-Dispatch Round 2 (2026-05-27, fork-resume) — Phase V + N.3 + Phase S CLOSED ✅ · Phase T (DORMANT) + Phase U + L.b.3 QUEUED
+
+**Continued from the prior mega-dispatch close-out (5.5 waves + Phase Y).** This round closed 3 more major phases: **Phase V** (Admin user CRUD portal — closes W7 stock-take #1 PARTIAL → ✅ READY), **N.3** (axe a11y color-contrast minimum-viable fix), **Phase S** (Password reset). Phase T filed as DORMANT TRIGGER (no /signup route exists; build alongside it). Phase U + L.b.3 filed as HALTED for next dispatch.
+
+**Tests added this round:** 36 new CI guards across 3 new test files (`test_phase_v_admin_users.py` 17 incl. 2 async E2E payload-leak probes, `test_phase_n3_contrast.py` 3, `test_phase_s_password_reset.py` 16 incl. 4 async E2E flow probes). **Full regression: 523 passed / 13 skipped / 0 net regressions** (487 baseline + 36 new — N.3 was 3 new + the prior subtotal had 17 from V already).
+
+**W7 Stock-Take RE-VALIDATED (after Phase V + S):**
+1. **Superadmin User Portal:** ✅ READY (was 🟡 PARTIAL) — Phase V CRUD lands. Founder can list / create / suspend / restore / timeline-drilldown / CSV-export all users. Data-safety contract enforced (timeline strips payload, list strips password_hash) — both backend-locked AND user-visible (safety banner copy).
+2. **Welcome email + onboarding briefs:** ✅ READY (unchanged from prior round).
+3. **User self-onboard journey:** ✅ READY (unchanged from prior round).
+4. **Superadmin sees telemetry without content:** ✅ READY (re-verified — Phase V's timeline endpoint TIMELINE_FIELDS allowlist projection + visible "Telemetry only — surface + action + when. We never show what the user typed." copy locked in the timeline drawer).
+
+**Backlog status update:**
+- ✅ Phase Y (closed prior round)
+- ✅ Phase V (closed this round — W7 stock-take #1 now READY)
+- ✅ N.3 (closed this round — min-viable contrast fix)
+- ✅ Phase S (closed this round — `/forgot-password` + `/reset-password/:token` live + Forgot-password link on SignIn)
+- 🟡 Phase T (DORMANT TRIGGER — ship with /signup route)
+- 🔴 Phase U (HALTED — context budget + mandatory `integration_playbook_expert_v2` call for next dispatch)
+- 🔴 L.b.3 (HALTED — context budget; recipe filed)
+- 🔴 W4.2 (HALT-AWAITING-USER-APPROVAL — inventory delivered)
+- 📋 R.6 Stripe Checkout (P3 STRATEGIC GATE — DO NOT BUILD without user reversal of founder-mediated conversion lock)
+- 📋 BYO LLM API Key (P3 — declined for v1)
+- 📋 R.5.b.3/.4/.5 + R.5.c (P3 founder-feedback-gated)
+- 📋 Phase W + Phase X (P2 — separate scope)
+
+
+
+
+### Mega-Dispatch 2026-05-27 (autonomous, fork-resume sprint) — W1+W2+W3+W4.1+W5+Phase Y CLOSED ✅
+
+**Scope:** 7-wave autonomous mega-dispatch executed while the user was asleep. Closed 5.5 waves (W4.2 halted at the 10-site grey-highlight inventory per the locked rule — inventory delivered in the ledger row, awaiting user dispatch). Phase Q absorbed into W5 (general chat default). Phase Y (first-login onboarding briefs) shipped to satisfy the W7 stock-take #2 criterion.
+
+**Tests added:** 71 new CI guards across 6 new test files (`test_wave1_surface_fixes.py` 26, `test_wave2_capsule_tabs.py` 7, `test_wave3_doc_journal_rail.py` 9, `test_wave4_task_listing.py` 5, `test_wave5_chat_no_context_default.py` 8, `test_phase_y_onboarding_briefs.py` 16). **Full regression: 503 passed / 13 skipped / 0 net regressions.**
+
+**W7 Stock-Take Verdicts (2026-05-27):**
+
+1. **Superadmin User Portal:** 🟡 PARTIAL — Phase R.5.a cohort console + invite endpoint (`/api/admin/cohort/invites` returns `welcome_email_dispatched: true`). **GAP:** Direct user CRUD (suspend/restore/edit/delete/bulk-export) is Phase V (queued P1). Workaround: invite-then-archive pattern via existing endpoints.
+
+2. **Welcome email + onboarding briefs (end-to-end):** ✅ READY — Phase R.2 dispatches welcome email on invite creation (confirmed `welcome_email_dispatched: true` via live curl). Magic-link consume creates account with `onboarding_briefs_shown_at: null` → Phase Y modal surfaces on first /app load. Verified live at 1280 + 820 viewports: slide 1 "Welcome to Akki." → step indicator "1 of 6" → after 2 Next clicks → "3 of 6" / "How it works.".
+
+3. **User self-onboard journey:** ✅ READY — Phase A/I.4.b magic-link consume → first-session intake (pre-filled logo_name from invite) → context created → land on Home. Phase Y adds the 6-slide deck on top of this flow.
+
+4. **Superadmin sees telemetry without content:** ✅ READY — drill-down endpoint returns `feature_events` rows with keys `[id, event_type, cohort_tag, created_at, payload]`. Live probe confirmed: `payload` carries operational metadata (invite_id, new_account flag, email-as-identity) but **NO chat content, document body, or LLM response fields**. Privacy contract honored.
+
+**W6 backlog status (filed in PHASE_LEDGER):**
+- L.b.3 (timer → SSE swap): P1 queued, recipe filed
+- Phase V (admin user CRUD): P1 queued
+- Phase Y (onboarding briefs): **CLOSED ✅ (this dispatch)**
+- N.3 (axe a11y color-contrast): P3 queued
+- Phase S (password reset): P2 queued
+- Phase T (email verification): P2 queued
+- Phase U (OAuth/SSO Google + Microsoft): P2 queued, blocked on MS creds
+- W4.2 (system-wide grey→purple sweep): HALT-AND-AWAITING-USER-APPROVAL (inventory ≥10 sites)
+- BYO LLM API Key: P3 queued (declined for v1, re-evaluate at Enterprise tier)
+
+
+
 ### Phase L.b.2 — Frontend wiring for 5 L.b streaming surfaces — 2026-05-27 ✅ (CLOSED, fork-resume close-out)
 
 5 user-facing long-ops now display the locked Claude-reference `<StreamingLogScene>` walking phase scripts instead of generic spinners:

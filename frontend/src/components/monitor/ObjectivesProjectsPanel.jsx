@@ -617,10 +617,21 @@ export default function ObjectivesProjectsPanel({ contextId }) {
     <section className="mt-2 mb-10" data-testid="objectives-projects-panel">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <p className="akki-overline">Objectives & Projects</p>
-        <div className="flex items-center gap-2">
+        {/* Wave 2 (2026-05-27) — Strategic capsule-tab nav restyled
+            to match the dark-pill-on-light treatment used by the
+            owner-role strip below. Labels per the locked spec:
+            "Strategic Objectives/Goals" / "Strategic Projects/Tasks".
+            Default tab on mount stays "objective" (Strategic
+            Objectives/Goals) per the spec lock. */}
+        <div
+          className="flex items-center gap-1.5"
+          role="tablist"
+          aria-label="Switch between Strategic Objectives and Strategic Projects"
+          data-testid="obj-panel-kind-capsule"
+        >
           {[
-            { k: "objective", label: "Objectives", icon: Target },
-            { k: "project",   label: "Projects",   icon: Layers },
+            { k: "objective", label: "Strategic Objectives/Goals", icon: Target },
+            { k: "project",   label: "Strategic Projects/Tasks",   icon: Layers },
           ].map((t) => {
             const Icon = t.icon;
             const active = kind === t.k;
@@ -628,16 +639,18 @@ export default function ObjectivesProjectsPanel({ contextId }) {
               <button
                 key={t.k}
                 type="button"
+                role="tab"
+                aria-selected={active}
                 onClick={() => { setKind(t.k); setPage(1); }}
                 className={[
-                  "inline-flex items-center gap-1.5 text-[12.5px] px-3 py-1.5 rounded-sm",
+                  "inline-flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded-sm transition-colors",
                   active
-                    ? "bg-white border border-[var(--ink)] text-[var(--ink)]"
-                    : "text-[var(--muted)] hover:text-[var(--ink)]",
+                    ? "bg-[var(--ink)] text-[var(--parchment)]"
+                    : "text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)]",
                 ].join(" ")}
                 data-testid={`obj-panel-kind-${t.k}${active ? "-active" : ""}`}
               >
-                <Icon className="w-3.5 h-3.5" strokeWidth={1.7} /> {t.label}
+                <Icon className="w-3.5 h-3.5" strokeWidth={1.7} aria-hidden="true" /> {t.label}
               </button>
             );
           })}
@@ -731,15 +744,40 @@ export default function ObjectivesProjectsPanel({ contextId }) {
         onPageChange={(n) => setPage(n)}
         isLoading={loading}
         controlsRight={
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => setCreateOpen(true)}
-            className="bg-[var(--ink)] hover:bg-[var(--ink)]/90 text-[var(--parchment)] rounded-sm"
-            data-testid="obj-panel-add"
-          >
-            <Plus className="w-3.5 h-3.5 mr-1" /> Add {kind}
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap" data-testid="obj-panel-controls">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setCreateOpen(true)}
+              className="bg-[var(--ink)] hover:bg-[var(--ink)]/90 text-[var(--parchment)] rounded-sm"
+              data-testid="obj-panel-add"
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" /> Manually Add Objectives or Projects
+            </Button>
+            {/* Wave 1.6 (2026-05-27) — Sibling action: surface the
+                strategy-doc extraction modal that lives in
+                StrategicGoalsPanel below. Both panels live under Monitor,
+                so we click-through the existing trigger to keep one
+                source of truth for the extraction flow. If the button
+                isn't on the page (e.g. NED variant), this is a no-op. */}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const trigger = document.querySelector('[data-testid="strategic-goals-add"]');
+                if (trigger) {
+                  trigger.scrollIntoView({ behavior: "smooth", block: "center" });
+                  // Defer the click so the scroll animation lands first.
+                  setTimeout(() => trigger.click(), 320);
+                }
+              }}
+              className="border-[var(--rule)] rounded-sm"
+              data-testid="obj-panel-read-from-doc"
+            >
+              <Sparkles className="w-3.5 h-3.5 mr-1.5" /> Read Goals from Strategic/Performance Documents
+            </Button>
+          </div>
         }
         emptyState={
           <div className="border border-dashed border-[var(--rule)] rounded-sm bg-[var(--parchment)] px-6 py-8 text-center" data-testid="obj-panel-empty">

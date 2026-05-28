@@ -140,9 +140,19 @@ export default function SignIn() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] font-semibold">
-                  Password
-                </Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password" className="text-[10.5px] uppercase tracking-wider text-[var(--muted)] font-semibold">
+                    Password
+                  </Label>
+                  {/* Phase S (2026-05-27) — Forgot-password link. */}
+                  <Link
+                    to="/forgot-password"
+                    className="text-[11.5px] text-[var(--muted)] hover:text-[var(--accent)] transition-colors"
+                    data-testid="signin-forgot-password"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
                 <Input
                   id="password"
                   type="password"

@@ -71,6 +71,12 @@ from routers import oauth_google as oauth_google_router  # noqa: E402
 from routers import admin_cohort as admin_cohort_router  # noqa: E402
 from routers import auth_magic as auth_magic_router  # noqa: E402
 from routers import billing as billing_router  # noqa: E402
+# Phase Y (2026-05-27) — First-login onboarding briefs router.
+from routers import onboarding_briefs as onboarding_briefs_router  # noqa: E402
+# Phase V (2026-05-27) — Admin user CRUD portal router.
+from routers import admin_users as admin_users_router  # noqa: E402
+# Phase S (2026-05-27) — Password reset router.
+from routers import password_reset as password_reset_router  # noqa: E402
 # CLEANUP B2 (2026-05-26): plays_router archived — Plays surface ORPHAN
 # per PROVENANCE_TRACE_PLAYS_CYCLE.md. Router moved to
 # backend/_archived_legacy/routers/plays.py.archived.
@@ -200,6 +206,12 @@ app.include_router(oauth_google_router.router)
 app.include_router(admin_cohort_router.router)
 app.include_router(auth_magic_router.router)
 app.include_router(billing_router.router)
+# Phase Y (2026-05-27) — onboarding briefs.
+app.include_router(onboarding_briefs_router.router)
+# Phase V (2026-05-27) — admin user CRUD portal.
+app.include_router(admin_users_router.router)
+# Phase S (2026-05-27) — password reset.
+app.include_router(password_reset_router.router)
 # CLEANUP B2 (2026-05-26): plays_router include removed — see archive note above.
 app.include_router(agenda_router.router)
 app.include_router(document_engagement_router.router)

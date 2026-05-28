@@ -124,20 +124,64 @@ export default function TaskListing({ contextId, state, refreshKey }) {
   return (
     <>
       <ul className="space-y-3" data-testid="task-listing-list">
-        {tasks.map((t) => (
+        {tasks.map((t) => {
+          // Wave 4.1 (2026-05-27) — compute the "attention pill" the
+          // user-facing card surfaces in the top-right. Currently only
+          // "Needs your input" qualifies; future signals (overdue,
+          // blocked, etc.) hang off the same slot.
+          const me = myEmail
+            ? (t.team || []).find((m) => (m.email || "").toLowerCase() === myEmail)
+            : null;
+          const needsInput = me && ["not_started", "in_progress"].includes(me.status || "not_started");
+          // Active rows take the brand-purple highlight (token from
+          // index.css `--ned-purple`, Phase A Role-chip purple — not a
+          // new colour).
+          const isActiveRow = t.state === "active";
+          return (
           <li key={t.id}>
             <button
               type="button"
               onClick={() => openTask(t.id)}
-              className="w-full text-left p-4 border border-[var(--rule)] bg-white rounded-sm hover:border-[var(--ink)] transition-colors"
+              className={[
+                "w-full text-left p-4 border bg-white rounded-sm transition-colors",
+                isActiveRow
+                  ? "border-[color:var(--ned-purple)]/40 hover:border-[color:var(--ned-purple)] hover:bg-[color:var(--ned-purple)]/5"
+                  : "border-[var(--rule)] hover:border-[var(--ink)]",
+              ].join(" ")}
               data-testid={`task-card-${t.id}`}
               data-card-kind="task"
+              data-active-highlight={isActiveRow ? "true" : "false"}
             >
               <div className="flex items-start justify-between gap-3 mb-2">
-                <p className="akki-serif text-[15px] text-[var(--ink)] leading-tight">
-                  {t.name || "Untitled task"}
-                </p>
-                <StatusPill state={t.state} />
+                <div className="flex-1 min-w-0">
+                  <p className="akki-serif text-[15px] text-[var(--ink)] leading-tight">
+                    {t.name || "Untitled task"}
+                  </p>
+                </div>
+                {/* Wave 4.1 (2026-05-27) — Top-right cluster:
+                    [attention pill | Active pill]  with readiness sitting
+                    immediately under the Active pill. The attention pill
+                    is positioned LEFT of the state pill per the spec. */}
+                <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                  <div className="flex items-center gap-1.5">
+                    {needsInput && (
+                      <span
+                        className="inline-flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded-sm bg-amber-50 text-amber-800"
+                        data-testid={`task-card-needs-your-input-${t.id}`}
+                      >
+                        Needs your input
+                      </span>
+                    )}
+                    <StatusPill state={t.state} />
+                  </div>
+                  <span
+                    className="inline-flex items-center gap-1 text-[11px] text-[var(--muted)]"
+                    data-testid={`task-card-readiness-${t.id}`}
+                  >
+                    <span className="font-mono text-[var(--ink)]">{t.readiness_score ?? 0}%</span>
+                    <span>readiness</span>
+                  </span>
+                </div>
               </div>
               {t.objective && (
                 <p className="text-[12.5px] text-[var(--deep)] line-clamp-2 mb-3">
@@ -145,10 +189,6 @@ export default function TaskListing({ contextId, state, refreshKey }) {
                 </p>
               )}
               <div className="flex items-center gap-4 text-[11.5px] text-[var(--muted)]">
-                <span className="inline-flex items-center gap-1" data-testid={`task-card-readiness-${t.id}`}>
-                  <span className="font-mono text-[var(--ink)]">{t.readiness_score ?? 0}</span>
-                  <span>readiness</span>
-                </span>
                 <span className="inline-flex items-center gap-1">
                   <Users className="w-3 h-3" strokeWidth={1.7} />
                   <ContributorAvatars team={t.team} />
@@ -169,24 +209,10 @@ export default function TaskListing({ contextId, state, refreshKey }) {
                   <span>Compile · {(t.compile_session.current_stage || "").replace(/_/g, " ")}</span>
                 </div>
               )}
-              {/* Phase F.5 — "needs your input" pill if the current user is
-                  a contributor with not_started / in_progress status. */}
-              {(() => {
-                if (!myEmail) return null;
-                const me = (t.team || []).find((m) => (m.email || "").toLowerCase() === myEmail);
-                if (!me || !["not_started", "in_progress"].includes(me.status || "not_started")) return null;
-                return (
-                  <div
-                    className="mt-2 inline-flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.14em] px-1.5 py-0.5 rounded-sm bg-amber-50 text-amber-800 ml-2"
-                    data-testid={`task-card-needs-your-input-${t.id}`}
-                  >
-                    Needs your input
-                  </div>
-                );
-              })()}
             </button>
           </li>
-        ))}
+          );
+        })}
       </ul>
     </>
   );

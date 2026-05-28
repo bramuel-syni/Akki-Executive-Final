@@ -51,6 +51,7 @@ import KeyboardHelp from "@/components/layout/KeyboardHelp";
 import UniversalSearchDialog from "@/components/search/UniversalSearchDialog";
 import ConfirmContextSwitchModal from "@/components/search/ConfirmContextSwitchModal";
 import CompanySwitcherDialog from "@/components/layout/CompanySwitcherDialog";
+import BackButton from "@/components/layout/BackButton";
 
 
 // Phase 13.3 — primary 8-item top nav. Order locked per UI/UX brief.
@@ -1046,6 +1047,13 @@ export default function AppShell({ children }) {
               <span>Sponsored. Your data stays with the sponsoring company.</span>
             </div>
           )}
+          {/* Wave 1.4 (2026-05-27) — Universal back button mounted
+              at the top-left of the page content area. Self-hides on
+              top-level routes + when history depth is 1. Position
+              keeps `mb-4` so individual pages don't need to reflow. */}
+          <div className="px-8 pt-4" data-testid="appshell-back-slot">
+            <BackButton />
+          </div>
           {children}
 
           {/* Trust footer — low-weight, persistent line that reinforces

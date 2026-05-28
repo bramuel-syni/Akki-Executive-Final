@@ -461,7 +461,12 @@
     transform: rotate(180deg);
     font-family: var(--mono);
     font-size: 11px;
-    color: var(--graphite-light);
+    /* Phase N.3 (2026-05-27) — Was `var(--graphite-light)` which gave
+       ~2.0:1 contrast on white (FAILS WCAG AA Normal Text 4.5:1).
+       Promoted to `var(--graphite)` which gives ~4.91:1 (PASSES AA).
+       Brand still reads as muted-gray; we're just on the darker stop
+       of the same gray ramp. */
+    color: var(--graphite);
     letter-spacing: 0.16em;
     user-select: none;
   }

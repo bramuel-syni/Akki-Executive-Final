@@ -181,60 +181,12 @@ export default function CompilationRail({ contextId, onOpenWizard, refreshKey = 
             MOVED to Cycle Manager. See
             components/cycle/CompilationReadinessSection.jsx. */}
 
-        {/* Chunk 6.5-REVISED (2026-05-13, Task D) — Document Journal deck. */}
-        <section
-          className="border border-[var(--rule)] bg-white rounded-sm"
-          data-testid="compilation-rail-document-journal"
-        >
-          <header className="px-3 py-2 border-b border-[var(--rule)] flex items-center gap-1.5">
-            <BookOpenCheck className="w-3 h-3 text-[var(--deep)]" strokeWidth={1.7} />
-            <p className="akki-overline text-[10.5px] tracking-[0.16em] text-[var(--ink)]">Document journal</p>
-            {recentDocsLoading && <Loader2 className="w-3 h-3 animate-spin text-[var(--muted)] ml-auto" />}
-          </header>
-          <div
-            className="p-2.5 overflow-hidden"
-            style={{ minHeight: DECK_BODY_HEIGHT_5ROW, maxHeight: DECK_BODY_HEIGHT_5ROW }}
-          >
-            {recentDocsLoading ? null : recentDocs.length === 0 ? (
-              <p className="text-[12px] text-[var(--muted)] italic px-1" data-testid="compilation-rail-document-journal-empty">
-                No documents yet.
-              </p>
-            ) : (
-              <ul className="space-y-1.5" data-testid="compilation-rail-document-journal-list">
-                {recentDocs.map((d) => (
-                  <li key={d.id} className="text-[12.5px]">
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/app/work-studio?doc_id=${d.id}`)}
-                      className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-[var(--parchment)] flex items-center gap-2"
-                      data-testid={`compilation-rail-document-journal-row-${d.id}`}
-                    >
-                      <span className="flex-1 min-w-0 truncate text-[var(--ink)]">{d.title}</span>
-                      {d.doc_kind && (
-                        <span className="text-[10.5px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] shrink-0">
-                          {d.doc_kind}
-                        </span>
-                      )}
-                      <span className="font-mono text-[11px] text-[var(--muted)] shrink-0 w-8 text-right">
-                        {fmtRelDays(d.created_at)}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <footer className="px-3 py-2 border-t border-[var(--rule)] bg-[var(--cream-deep)]/40">
-            <button
-              type="button"
-              onClick={() => navigate("/app/workspace")}
-              className="text-[11.5px] text-[var(--deep)] hover:text-[var(--ink)] inline-flex items-center gap-1 transition-colors"
-              data-testid="compilation-rail-document-journal-view-more"
-            >
-              View more <ArrowRight className="w-3 h-3" strokeWidth={1.7} />
-            </button>
-          </footer>
-        </section>
+        {/* Wave 3 (2026-05-27) — Document Journal deck REMOVED from
+            CompilationRail. The canonical document listing for Work
+            Studio is now the right-rail `<DocumentJournalRail>` (see
+            `frontend/src/components/work_studio/DocumentJournalRail.jsx`).
+            CompilationRail keeps Recent Drafts + Recent Activity, which
+            are specialized streams (not full document listings). */}
 
         {/* Phase E.2 (2026-05-26) — Recent Drafts deck. Same visual
             pattern as Document Journal. View more → /app/work-studio?kind=drafts */}

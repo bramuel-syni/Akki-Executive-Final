@@ -16,6 +16,8 @@ import SignUp from "@/pages/SignUp";
 import UpgradeModal from "@/components/depth/UpgradeModal";
 import FeedbackWidget from "@/components/feedback/FeedbackWidget";
 import Day16Banner from "@/components/cohort/Day16Banner";
+// Phase Y (2026-05-27) — First-login onboarding briefs modal.
+import OnboardingBriefsModal from "@/components/onboarding/OnboardingBriefsModal";
 import SpecialAskModal from "@/components/cohort/SpecialAskModal";
 import useTrialStatus from "@/hooks/useTrialStatus";
 
@@ -59,6 +61,11 @@ const FirstSession = lazy(() => import("@/pages/FirstSession"));
 const AppHome = lazy(() => import("@/pages/AppHome"));
 // Phase R.5.a (2026-05-27) — Cohort console + Early access opt-in
 const CohortConsole = lazy(() => import("@/pages/admin/CohortConsole"));
+// Phase V (2026-05-27) — Admin user CRUD portal.
+const AdminUsers = lazy(() => import("@/pages/admin/AdminUsers"));
+// Phase S (2026-05-27) — Password reset pages (public, no auth).
+const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
+const ResetPassword  = lazy(() => import("@/pages/ResetPassword"));
 const CohortCopyEditor = lazy(() => import("@/pages/admin/CohortCopyEditor"));
 const EarlyAccessOptIn = lazy(() => import("@/pages/EarlyAccessOptIn"));
 const Questions = lazy(() => import("@/pages/Questions"));
@@ -209,6 +216,9 @@ function Gated({ children }) {
           <FeedbackWidget />
           {/* Phase R.5.b.2 (2026-05-27) — Day-14 special-ask modal (surfaces conditionally). */}
           <SpecialAskModal />
+          {/* Phase Y (2026-05-27) — First-login onboarding briefs (self-gates
+              by `onboarding_briefs_shown_at == null` from the account row). */}
+          <OnboardingBriefsModal />
         </HardLockGuard>
       </FirstSessionGuard>
     </ProtectedRoute>
@@ -308,6 +318,9 @@ function App() {
           <Route path="/signin" element={<PublicOnlyRoute><SignIn /></PublicOnlyRoute>} />
           <Route path="/signup" element={<PublicOnlyRoute allowSandbox><SignUp /></PublicOnlyRoute>} />
           <Route path="/invite/:token" element={<InviteAccept />} />
+          {/* Phase S (2026-05-27) — Password reset (public, no auth). */}
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password/:token" element={<ResetPassword />} />
           {/* M.4: legacy /sandbox/legacy + /sandbox/generating + /quick-results
               retired. Phase J (2026-05-12): /sandbox is now the new
               Generative Sandbox MVP. Legacy /legacy-sandbox routes
@@ -328,6 +341,8 @@ function App() {
           <Route path="/app/early-access-opt-in" element={<ProtectedRoute><EarlyAccessOptIn /></ProtectedRoute>} />
           {/* Phase R.5.a (2026-05-27) — Superadmin cohort console. */}
           <Route path="/app/admin/cohort" element={<Gated><CohortConsole /></Gated>} />
+          {/* Phase V (2026-05-27) — Admin user CRUD portal (superadmin only). */}
+          <Route path="/app/admin/users" element={<Gated><AdminUsers /></Gated>} />
           {/* Phase R.5.b (2026-05-27) — Founder copy editor. */}
           <Route path="/app/admin/cohort/copy" element={<Gated><CohortCopyEditor /></Gated>} />
           <Route path="/app" element={<Gated><AppHome /></Gated>} />

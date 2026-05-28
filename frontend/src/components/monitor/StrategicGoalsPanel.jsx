@@ -55,10 +55,14 @@ const STATUS_FILTER_TABS = [
 //   On Track / Achieved → green
 //   At Risk             → amber
 //   Off Track           → red
-// Probability bar follows the G11 numeric bands:
-//   ≥ 70  → green   (High confidence)
-//   40-69 → amber   (Moderate confidence)
-//   < 40  → red     (Low confidence)
+// Probability bar follows the G11 numeric bands, in the
+// grey/purple scheme (Wave 1.5, 2026-05-27 — visual contrast
+// vs. the Performance bar so users don't confuse the two
+// signals on glance):
+//   ≥ 70  → brand purple   (High confidence)
+//   40-69 → muted purple   (Moderate confidence)
+//   < 40  → grey           (Low confidence)
+//   null  → grey           (unknown)
 function statusBarClass(status) {
   if (status === "on_track" || status === "achieved") return "bg-emerald-600";
   if (status === "at_risk") return "bg-amber-500";
@@ -68,9 +72,9 @@ function statusBarClass(status) {
 }
 function probabilityBarClass(value) {
   if (value === null || value === undefined) return "bg-slate-400";
-  if (value >= 70) return "bg-emerald-600";
-  if (value >= 40) return "bg-amber-500";
-  return "bg-[color:var(--oxblood)]";
+  if (value >= 70) return "bg-[color:var(--ned-purple)]";
+  if (value >= 40) return "bg-[color:var(--ned-purple)]/50";
+  return "bg-slate-400";
 }
 
 // T2.4 (2026-05-25) — X8 G12 ratified: category filter source.

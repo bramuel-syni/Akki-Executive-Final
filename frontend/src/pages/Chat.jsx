@@ -560,19 +560,20 @@ export default function Chat() {
   }, [searchParams.toString(), activeContext?.id]);
 
   const onNewChat = async () => {
-    // Workstream A.1 — block when no active context is selected.
-    // Without context_id, the chat lands as an orphan and gets
-    // filtered out of the per-context list (the AC-01 root cause).
-    if (!activeContext?.id) {
-      toast.error("Pick a company first to start a chat.");
-      return;
-    }
+    // Wave 5 (2026-05-27) — General RAG (no-context) is now the
+    // DEFAULT chat mode per the locked spec. Chat creation NO LONGER
+    // blocks when no active context is selected — instead, the chat
+    // mints as a "general" chat with `context_id: null`. The backend
+    // already accepts `Optional[str] = None` on the ChatCreate body
+    // (see backend/routers/chat.py line 143). When the user later
+    // selects a context via the company switcher, subsequent chats
+    // become context-scoped automatically.
     try {
       const { data } = await api.post("/chats", {
         title: "New conversation",
         model_id: defaultModel,
         shielding_policy: "auto",
-        context_id: activeContext.id,
+        context_id: activeContext?.id || null,
       });
       setChats((prev) => [data, ...prev]);
       setActiveId(data.id);
@@ -939,8 +940,13 @@ export default function Chat() {
   // changes (Phase A switcher). The Phase A interceptor already
   // attaches X-Active-Context to subsequent calls; we just need to
   // re-fetch and reset transient state.
+  //
+  // Wave 5 (2026-05-27) — General RAG default. The fetch now runs
+  // regardless of context selection so the chat list surfaces both
+  // general (no-context) chats AND context-scoped chats. The previous
+  // `if (!activeContext?.id) return;` early-bail was the only thing
+  // blocking the no-context default — removed.
   useEffect(() => {
-    if (!activeContext?.id) return;
     setChats([]);
     setActiveId(null);
     setActiveChat(null);
@@ -1296,9 +1302,9 @@ export default function Chat() {
             <div className="flex-1 flex items-center justify-center text-center p-12">
               <div className="max-w-md">
                 <Shield className="w-10 h-10 text-[var(--muted)]/40 mx-auto mb-5" strokeWidth={1.2} />
-                <h2 className="akki-serif text-[22px] font-normal text-[var(--ink)] mb-2">
+                <h1 className="akki-serif text-[22px] font-normal text-[var(--ink)] mb-2">
                   Your private AI workspace.
-                </h2>
+                </h1>
                 <p className="text-[14px] text-[var(--muted)] leading-relaxed mb-6">
                   Ask anything you'd ask ChatGPT, Claude, or Gemini — without exposing
                   your company's internals to any of them. Synisense automatically

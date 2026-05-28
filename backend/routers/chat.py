@@ -520,26 +520,18 @@ async def create_chat(
     if not _model_def(body.model_id):
         raise HTTPException(status_code=400, detail=f"Unknown model_id '{body.model_id}'.")
 
-    # Workstream A.2 (2026-05-10) — X-Active-Context REQUIRED. The
-    # chat MUST be tethered to a context at create time. Workstream
-    # A.1 traced the AC-01/AC-02 root cause to the frontend creating
-    # chats without context_id; the fix is twofold: SPA passes it,
-    # backend requires it. Body-level context_id wins (explicit > header)
-    # but at least one must be present.
+    # Wave 5 (2026-05-27) — General RAG (no-context) is now the
+    # DEFAULT chat mode per the locked spec. Chat creation NO LONGER
+    # requires a context — if neither X-Active-Context header nor
+    # body.context_id is provided, the chat is minted as a "general"
+    # chat with `context_id: None`. When the user later selects a
+    # company context, subsequent chats become context-scoped
+    # automatically (frontend passes `context_id: activeContext?.id`).
+    # Workstream A.2's tight binding (original Phase A) was a misread
+    # of the Phase Q spec, which always anticipated a general default.
     active_ctx = request.headers.get(ACTIVE_CONTEXT_HEADER)
     body_ctx = (body.context_id or "").strip() if body.context_id else ""
-    effective_ctx = body_ctx or active_ctx
-    if not effective_ctx:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "ACTIVE_CONTEXT_REQUIRED",
-                "message": (
-                    "Chat creation requires an active company context. "
-                    "Pass X-Active-Context header or context_id in the body."
-                ),
-            },
-        )
+    effective_ctx = body_ctx or active_ctx or None
 
     cid = str(uuid.uuid4())
     rec = {
@@ -841,16 +833,19 @@ async def list_chats(
     show archived chats too (newest-first by `last_message_at`). The
     sidebar archive view uses this.
     """
+    # Wave 5 (2026-05-27) — General RAG default. Without an active
+    # context header, return ONLY general chats (`context_id: None`)
+    # so the sidebar surfaces the user's context-free conversations.
+    # With an X-Active-Context header, scope to that context as before.
+    # This preserves the privacy boundary (chats never bleed across
+    # company contexts) while enabling the W5 default state.
     active_ctx = request.headers.get(ACTIVE_CONTEXT_HEADER)
-    if not active_ctx:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "ACTIVE_CONTEXT_REQUIRED",
-                "message": "X-Active-Context header required.",
-            },
-        )
-    q: Dict[str, Any] = {"account_id": current["id"], "context_id": active_ctx}
+    q: Dict[str, Any] = {"account_id": current["id"]}
+    if active_ctx:
+        q["context_id"] = active_ctx
+    else:
+        # General mode — only general chats (context_id None/missing).
+        q["$or"] = [{"context_id": None}, {"context_id": {"$exists": False}}]
     if not include_archived:
         q["status"] = {"$ne": "archived"}
     rows = await db.chats.find(q, {"_id": 0}) \
@@ -911,19 +906,16 @@ async def search_chats(
     if len(needle) < 2:
         raise HTTPException(status_code=400, detail="Query must be at least 2 characters.")
 
+    # Wave 5 (2026-05-27) — General RAG default. Search behaves the
+    # same as the chat-list GET: without X-Active-Context, search
+    # ONLY general chats (`context_id: None`); with the header, scope
+    # to that context.
     active_ctx = request.headers.get(ACTIVE_CONTEXT_HEADER)
-    if not active_ctx:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "ACTIVE_CONTEXT_REQUIRED",
-                "message": "X-Active-Context header required.",
-            },
-        )
-    chat_filter: Dict[str, Any] = {
-        "account_id": current["id"],
-        "context_id": active_ctx,
-    }
+    chat_filter: Dict[str, Any] = {"account_id": current["id"]}
+    if active_ctx:
+        chat_filter["context_id"] = active_ctx
+    else:
+        chat_filter["$or"] = [{"context_id": None}, {"context_id": {"$exists": False}}]
     if not include_archived:
         chat_filter["status"] = {"$ne": "archived"}
 
@@ -1145,11 +1137,16 @@ async def soft_delete_chat(
     with `via='manual'` so the daily-sweep telemetry separates manual
     purges from time-based ones.
     """
-    active_ctx = _require_active_context(request)
-    chat = await db.chats.find_one(
-        {"id": chat_id, "account_id": current["id"], "context_id": active_ctx},
-        {"_id": 0},
-    )
+    # Wave 5 (2026-05-27) — General RAG default. The DELETE endpoint
+    # accepts either context-scoped chats (with X-Active-Context) OR
+    # general chats (no header). See `send_message` for the pattern.
+    active_ctx = request.headers.get(ACTIVE_CONTEXT_HEADER) or None
+    chat_filter: Dict[str, Any] = {"id": chat_id, "account_id": current["id"]}
+    if active_ctx:
+        chat_filter["context_id"] = active_ctx
+    else:
+        chat_filter["$or"] = [{"context_id": None}, {"context_id": {"$exists": False}}]
+    chat = await db.chats.find_one(chat_filter, {"_id": 0})
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
 
@@ -1510,12 +1507,21 @@ async def send_message(
     chat_id: str, body: MessageSendIn, request: Request,
     current: Dict[str, Any] = Depends(get_current_account),
 ):
-    # Workstream A.2 — X-Active-Context REQUIRED.
-    active_ctx = _require_active_context(request)
-    chat = await db.chats.find_one(
-        {"id": chat_id, "account_id": current["id"], "context_id": active_ctx, "status": {"$ne": "archived"}},
-        {"_id": 0},
-    )
+    # Wave 5 (2026-05-27) — General RAG default. The chat MAY be a
+    # general chat (`context_id: None`); in that case, no X-Active-Context
+    # header is required. Otherwise (context-scoped chat), the header
+    # MUST match the chat's context_id.
+    active_ctx = request.headers.get(ACTIVE_CONTEXT_HEADER) or None
+    chat_filter: Dict[str, Any] = {
+        "id": chat_id, "account_id": current["id"],
+        "status": {"$ne": "archived"},
+    }
+    if active_ctx:
+        chat_filter["context_id"] = active_ctx
+    else:
+        # General chats only (context_id None or missing).
+        chat_filter["$or"] = [{"context_id": None}, {"context_id": {"$exists": False}}]
+    chat = await db.chats.find_one(chat_filter, {"_id": 0})
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
 
@@ -1977,12 +1983,18 @@ async def stream_message(
     chat_id: str, body: MessageSendIn, request: Request,
     current: Dict[str, Any] = Depends(get_current_account),
 ):
-    # Workstream A.2 — X-Active-Context REQUIRED.
-    active_ctx = _require_active_context(request)
-    chat = await db.chats.find_one(
-        {"id": chat_id, "account_id": current["id"], "context_id": active_ctx, "status": {"$ne": "archived"}},
-        {"_id": 0},
-    )
+    # Wave 5 (2026-05-27) — General RAG default. See `send_message`
+    # for the matched general-chat-aware lookup pattern.
+    active_ctx = request.headers.get(ACTIVE_CONTEXT_HEADER) or None
+    chat_filter: Dict[str, Any] = {
+        "id": chat_id, "account_id": current["id"],
+        "status": {"$ne": "archived"},
+    }
+    if active_ctx:
+        chat_filter["context_id"] = active_ctx
+    else:
+        chat_filter["$or"] = [{"context_id": None}, {"context_id": {"$exists": False}}]
+    chat = await db.chats.find_one(chat_filter, {"_id": 0})
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
     model_def = _model_def(chat["model_id"]) or _model_def(DEFAULT_MODEL_ID)

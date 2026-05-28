@@ -10,7 +10,7 @@
  *   REFERENCE (everything else, incl. committed + uploaded + email):
  *     read-only preview + Reference intelligence.
  *
- * 5 tabs: Document · Intelligence · Summary & Notes · Signals · Related.
+ * 5 tabs: Document · Intelligence · Your Notes · Signals · Related Documents.
  * 5 footer CTAs: Use in Solva · Use in Chat · Generate brief · Test
  *                hypothesis · Share document.
  * All CTAs emit `?ctx_type=document&ctx_id=<id>` URLs (Phase D.3 contract).
@@ -325,7 +325,7 @@ function NotesTab({ doc, contextId }) {
   };
   return (
     <div data-testid="drawer-notes-tab">
-      <p className="text-[11px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-3">Summary & notes</p>
+      <p className="text-[11px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-3">Your notes</p>
       <textarea
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
@@ -892,13 +892,13 @@ export default function DocumentDrawer({
                       <Brain className="w-3 h-3 mr-1.5" /> Intelligence
                     </TabsTrigger>
                     <TabsTrigger value="notes" data-testid="drawer-tab-notes" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-[var(--ink)]">
-                      <MessageSquare className="w-3 h-3 mr-1.5" /> Summary &amp; Notes
+                      <MessageSquare className="w-3 h-3 mr-1.5" /> Your Notes
                     </TabsTrigger>
                     <TabsTrigger value="signals" data-testid="drawer-tab-signals" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-[var(--ink)]">
                       <Signal className="w-3 h-3 mr-1.5" /> Signals
                     </TabsTrigger>
                     <TabsTrigger value="related" data-testid="drawer-tab-related" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-[var(--ink)]">
-                      <Link2 className="w-3 h-3 mr-1.5" /> Related
+                      <Link2 className="w-3 h-3 mr-1.5" /> Related Documents
                     </TabsTrigger>
                   </TabsList>
                   <div className="flex-1 overflow-y-auto px-6 py-5 relative" data-testid="drawer-body">
