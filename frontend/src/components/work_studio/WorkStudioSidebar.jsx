@@ -139,14 +139,16 @@ export default function WorkStudioSidebar({
   }, [contextId, refreshKey]);
 
   // ── + Add a document handler ─────────────────────────────────
+  // Z-slice-5 (2026-05-27) — dispatches the universal
+  // `akki:open-upload-modal` event that AppShell's shared modal
+  // listens for. Falls back to the parent prop if explicitly
+  // wired (legacy callers still pass it).
   const handleAddDocument = () => {
     if (typeof onOpenUpload === "function") {
-      // Z-slice-5 will hand us the modal opener. Until then the
-      // parent wires the toast stub below.
       onOpenUpload();
       return;
     }
-    toast.info("Upload modal — coming in Z-slice-5.");
+    window.dispatchEvent(new CustomEvent("akki:open-upload-modal"));
   };
 
   return (

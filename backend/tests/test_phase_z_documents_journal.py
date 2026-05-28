@@ -714,15 +714,22 @@ def test_Z3_r_add_document_button_carries_locked_testid():
     assert 'data-testid="work-studio-sidebar-add-document-btn"' in src
 
 
-def test_Z3_r_add_document_falls_back_to_toast_stub():
-    """Z-slice-3 ships a toast stub; Z-slice-5 replaces it by passing
-    `onOpenUpload`. The fallback path must still be in source so the
-    feature works end-to-end at Z-slice-3 close."""
+def test_Z3_r_add_document_opens_upload_modal():
+    """Z-slice-3 shipped a toast stub. Z-slice-5 (2026-05-27) replaced
+    it with a dispatch of `akki:open-upload-modal` — AppShell mounts
+    the shared `<UploadModal>` and listens for the event. The
+    parent-injected `onOpenUpload` opener path is preserved as a
+    legacy hook.
+    """
     src = SIDEBAR_JSX.read_text(encoding="utf-8")
-    assert 'toast.info("Upload modal — coming in Z-slice-5.")' in src, \
-        "add-document must fall back to the Z-slice-5 toast stub"
-    # And the parent-injected upload opener path.
+    assert 'akki:open-upload-modal' in src, (
+        "add-document handler must dispatch `akki:open-upload-modal` "
+        "(Z-slice-5 contract); the prior toast stub is retired."
+    )
+    # Legacy parent-injected opener path retained.
     assert 'typeof onOpenUpload === "function"' in src
+    # Negative — Z-slice-5 retired the stub copy.
+    assert "coming in Z-slice-5" not in src
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -832,11 +839,18 @@ def test_Z4_w_header_h1_and_subtext_locked():
     assert "Everything that crosses your desk — organized by where it came from." in src
 
 
-def test_Z4_w_add_document_btn_present_with_toast_stub():
+def test_Z4_w_add_document_btn_opens_upload_modal():
+    """Z-slice-4 shipped a toast stub. Z-slice-5 (2026-05-27) wired
+    the button to dispatch `akki:open-upload-modal`.
+    """
     src = DOCS_PAGE_JSX.read_text(encoding="utf-8")
     assert 'data-testid="documents-page-add-document-btn"' in src
-    # Toast stub copy locked.
-    assert 'toast.info("Upload modal — coming in Z-slice-5.")' in src
+    assert 'akki:open-upload-modal' in src, (
+        "documents-page add-document button must dispatch "
+        "`akki:open-upload-modal` (Z-slice-5 contract)."
+    )
+    # Negative — the toast stub copy is retired.
+    assert "coming in Z-slice-5" not in src
 
 
 # ─────────────────────────────────────────────────────────────────────

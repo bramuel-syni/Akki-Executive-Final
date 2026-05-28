@@ -5093,3 +5093,59 @@ Three polish fixes shipped between Z-slice-4 (Documents page) and Z-slice-5 (Upl
 
 ### Next per locked sequence
 **Z-slice-5** — Upload modal (replaces placeholder toasts from Z-slice-3 & Z-slice-4; requires category selector with 6 options + uncategorized; sets `origin="upload"`).
+
+
+---
+
+## Phase Z-slice-5 — Upload Modal (2026-05-27) — CLOSED
+
+Replaces toast stubs from Z-slice-3 + Z-slice-4 with the shared UploadModal.
+
+### Wiring (single modal, multiple triggers)
+- `AppShell.jsx` mounts ONE `<UploadModal>` and listens for the universal `akki:open-upload-modal` window event.
+- `WorkStudioSidebar.jsx` and `DocumentsPage.jsx` both dispatch this event.
+
+### Modal additions
+- **Category dropdown** — 7 options (Uncategorized + 6 canonical from `lib/origins.js::UPLOAD_CATEGORY_OPTIONS`); empty string is the explicit "Uncategorized" sentinel; backend normalises to `None`.
+- **Multi-file picker** — `multiple` attr on input; both drag-drop + click-to-browse accept N files; de-duped by `name+size`; per-file rows with clear buttons + "Add another file" affordance.
+- **Per-file POST loop** — `onUpload` iterates `files[]`, posting sequentially with shared category/trust/mention. Per-file failures surface a `filename: error` toast; partial success surfaces "M of N succeeded".
+- Display name auto-hides on multi-file batches.
+
+### Backend contract (unchanged from Z-slice-1)
+- `POST /api/contexts/{cid}/documents` already accepts `category` form field.
+- Unknown values normalize to `None` (defensive `cat_clean`).
+- Every doc stamped with `origin="upload"` server-side.
+
+### DOM contract for Z-slice-6
+- `DocumentsPage.jsx` now emits `data-testid="documents-tab-content-${activeTab}"`.
+- `WorkStudio.jsx` continues to emit `data-testid="ws-tab-content-${activeTab.category}"`.
+
+### CI guards (`backend/tests/test_phase_z_slice_5_upload_modal.py`)
+**21/21 GREEN**:
+- 16 source-strict FE wiring asserts.
+- 3 backend source-strict re-asserts.
+- 2 direct-Mongo orthogonality asserts (3-file batch + uncategorized).
+
+### Test migrations
+- `test_Z3_r_add_document_falls_back_to_toast_stub` → `test_Z3_r_add_document_opens_upload_modal`.
+- `test_Z4_w_add_document_btn_present_with_toast_stub` → `test_Z4_w_add_document_btn_opens_upload_modal`.
+
+### Live multi-viewport verification at 1280 / 1024 / 820
+All confirmed: modal opens from both entry points, 7-option category dropdown with "Uncategorized" default, `multiple` on file input, drop zone visible, submit disabled until file picked, ready text present.
+
+### Regression
+- 21/21 Z5 GREEN.
+- 81/81 Phase Z-slice-1-4 still GREEN (2 tests renamed).
+- 23/23 Wave 8 GREEN.
+- 7 pre-existing baseline failures unchanged.
+
+### Slice budget
+Product-code: ~370 lines new (UploadModal multi-file + dropdown; trivial wiring at the two stub sites). Within the 500-line auto-slice budget.
+
+### Out of scope (deferred)
+- Goals/tasks extraction checkboxes → AA-slice-3.
+- Server-side file transformation.
+- Legacy upload paths NOT deprecated; coexist.
+
+### Next per locked sequence
+**Z-slice-6 — Orthogonality wire-test (DOM-level)**. Then Phase AA (Monitor v2 — 7 slices), Phase W, Phase X.

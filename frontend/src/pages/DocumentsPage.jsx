@@ -204,9 +204,11 @@ export default function DocumentsPage() {
     setSearchParams(sp, { replace: false });
   }, [searchParams, setSearchParams]);
 
-  // ── + Add a document — toast stub (Z-slice-5 replaces with modal) ──
+  // ── + Add a document — Z-slice-5 (2026-05-27) dispatches the
+  //     universal `akki:open-upload-modal` event that AppShell's
+  //     shared UploadModal listens for. Toast stub retired.
   const handleAddDocument = () => {
-    toast.info("Upload modal — coming in Z-slice-5.");
+    window.dispatchEvent(new CustomEvent("akki:open-upload-modal"));
   };
 
   // ── Tab click ─────────────────────────────────────────────────────
@@ -327,7 +329,20 @@ export default function DocumentsPage() {
         </div>
 
         {/* ── Listing ─────────────────────────────────────────────── */}
-        <div data-testid={`documents-listing-${activeTab}`}>
+        {/* Z-slice-5 (2026-05-27) — the body container carries BOTH
+            the legacy `documents-listing-${activeTab}` testid and
+            the new `documents-tab-content-${activeTab}` testid that
+            Z-slice-6 will assert on for orthogonal multi-surface
+            visibility (an uploaded doc must surface here AND in the
+            matching Work Studio category tab). */}
+        <div
+          data-testid={`documents-listing-${activeTab}`}
+          data-tab-content={activeTab}
+        >
+          <div
+            data-testid={`documents-tab-content-${activeTab}`}
+            data-tab-origin={activeTab}
+          >
           {err ? (
             <div
               className="p-4 bg-amber-50 border border-amber-100 rounded-md text-[12.5px] text-amber-900 flex items-center gap-2"
@@ -378,6 +393,7 @@ export default function DocumentsPage() {
               ))}
             </ul>
           )}
+          </div>
         </div>
       </div>
 

@@ -762,3 +762,152 @@ Captured via `mcp_screenshot_tool` at the post-login workspace:
 
 Next per the locked sequence: **Z-slice-5** (Upload modal).
 
+### Wave 8 follow-ups (filed)
+
+- **Wave8.followup.1 — Clean 7 pre-existing baseline test failures (P3, post-trial)** — `test_t1/t2/t3_frontend_wire`, `test_chat_v2_full_flow`, `test_patch_28_home_doc_journal`, `test_requirements_guard`. All reference removed surfaces (e.g. `ReadingTopBar.jsx`) or spaCy direct-URL refs. Orthogonal to Wave 8; don't expand scope now.
+- **Wave8.followup.2 — Page Catalog superadmin view at `/app/admin/page-catalog` (P3, founder-feedback-gated)**. Renders the locked `PAGE_SUBTEXT_FILES` tuple as a live grid showing H1 + subtext per surface. Eliminates Recurrence #5 by visual inspection instead of CI testid (stronger signal). Promote to P1 if subtext slips again.
+
+
+
+---
+
+## PHASE Z-SLICE-5 — UPLOAD MODAL (CLOSED 2026-05-27)
+
+Replaces the toast stubs from Z-slice-3 (Work Studio sidebar
+`+ Add a document` card) AND Z-slice-4 (`/app/documents` top-right
+`+ Add a document` button) with the real shared UploadModal that
+AppShell mounts.
+
+### Wiring (single modal, multiple triggers)
+
+- `AppShell.jsx` mounts ONE `<UploadModal>` and listens for the
+  universal `akki:open-upload-modal` window event.
+- `WorkStudioSidebar.jsx::handleAddDocument` dispatches the event.
+- `DocumentsPage.jsx::handleAddDocument` dispatches the event.
+- Legacy `onOpenUpload` parent-prop path retained in
+  WorkStudioSidebar for any caller that still wires it directly.
+
+### Modal additions
+
+- **Category dropdown** (`upload-category-select`) with 7 options:
+  Uncategorized (default, empty string) + the 6 canonical category
+  values from `lib/origins.js::UPLOAD_CATEGORY_OPTIONS`. The empty
+  string is the explicit "Uncategorized" sentinel; backend normalises
+  it to `None` server-side.
+- **Multi-file picker** — file `<input>` carries `multiple`; both
+  drag-drop and click-to-browse accept N files; selections de-dupe
+  by `name + size`; a per-file row with individual clear button
+  renders the batch; an "Add another file" affordance lets the user
+  extend the batch without closing the modal.
+- **Per-file POST loop** — `onUpload` iterates `files[]` and POSTs
+  each sequentially with the SAME category / trust / mention metadata.
+  Per-file failures surface a `filename: <error>` toast; partial
+  success surfaces a "M of N succeeded" summary; the modal stays
+  open if any file failed so the user can see which.
+- **Display name field** auto-hides on multi-file batches (each
+  file keeps its own stem).
+- **Generate-meta** is single-file-only (multi-file shows a polite
+  "use the doc drawer" message).
+
+### Backend contract (unchanged from Z-slice-1)
+
+- `POST /api/contexts/{cid}/documents` already accepted
+  `category: Optional[str] = Form(None)` since Z-slice-1.
+- Unknown values normalize to `None` (defensive `cat_clean`).
+- Every doc this endpoint creates carries `origin="upload"` —
+  never trusts the wire.
+
+### DOM contract for Z-slice-6
+
+- `DocumentsPage.jsx` now emits
+  `data-testid="documents-tab-content-${activeTab}"` on the tab body
+  wrapper (alongside the legacy
+  `documents-listing-${activeTab}` testid).
+- `WorkStudio.jsx` continues to emit
+  `data-testid="ws-tab-content-${activeTab.category}"` from Z-slice-2.
+
+### CI guards (`backend/tests/test_phase_z_slice_5_upload_modal.py`)
+
+**21/21 GREEN** across three groups:
+
+Group 1 — Source-strict FE wiring (16 asserts):
+- UploadModal imports `UPLOAD_CATEGORY_OPTIONS`.
+- `upload-category-select` testid + `useState` slot + `.map()` loop.
+- `form.append("category", category || "")` on every submit.
+- file input carries `multiple` attr + `Array.from(e.target.files)` spread.
+- de-dupe by `name::size`.
+- AppShell listens for `akki:open-upload-modal` + mounts `<UploadModal>`.
+- WorkStudioSidebar dispatches the event; toast stub copy removed.
+- DocumentsPage dispatches the event; toast stub copy removed.
+- DocumentsPage emits `documents-tab-content-${activeTab}` testid.
+- Parametrised 7-option label lock against `lib/origins.js`.
+
+Group 2 — Backend source-strict (3 asserts):
+- Re-asserts `category: Optional[str] = Form(None)` declaration.
+- Re-asserts unknown-value normalisation to `None`.
+- Re-asserts `origin="upload"` stamped server-side.
+
+Group 3 — Direct-Mongo orthogonality (2 asserts):
+- 3-file batch with `category="board_pack"` surfaces in BOTH
+  `category=board_pack` AND `origin=upload` filters, with zero
+  leakage into other categories/origins.
+- Uncategorized upload (category=None) surfaces under
+  `origin=upload` but NOT under any of the 6 category filters.
+
+### Migrations to existing Z tests
+
+- `test_Z3_r_add_document_falls_back_to_toast_stub` →
+  renamed to `test_Z3_r_add_document_opens_upload_modal`; asserts
+  `akki:open-upload-modal` dispatch + retired stub copy.
+- `test_Z4_w_add_document_btn_present_with_toast_stub` →
+  renamed to `test_Z4_w_add_document_btn_opens_upload_modal`; same.
+
+### Live multi-viewport verification
+
+Captured at 1280 / 1024 / 820 via `mcp_screenshot_tool` against the
+preview pod logged in as the admin user:
+
+| Surface                              | 1280 | 1024 | 820 |
+| ------------------------------------ | ---- | ---- | --- |
+| Modal opens from `/app/documents` btn | ✅    | ✅    | ✅   |
+| Modal opens from WS sidebar card     | ✅    | ✅    | ✅   |
+| Category dropdown present + 7 opts   | ✅    | ✅    | ✅   |
+| Default "Uncategorized" selected     | ✅    | ✅    | ✅   |
+| File input has `multiple` attr       | ✅    | ✅    | ✅   |
+| Drop zone present                    | ✅    | ✅    | ✅   |
+| Submit btn disabled before file pick | ✅    | ✅    | ✅   |
+| Ready text "Pick a file to start."   | ✅    | ✅    | ✅   |
+
+### Out of scope (deferred)
+
+- "Extract goals/tasks from this document?" checkboxes →
+  AA-slice-3 extension.
+- Server-side file transformation (we ship raw-upload + Mongo per
+  the existing pattern).
+- Legacy upload paths (FE drawer link / AppShell + button) NOT
+  deprecated; coexist.
+
+### Slice budget
+
+Product-code diff: 338 inserts to UploadModal.jsx (mostly multi-file
+state machine + category dropdown + JSX block); 8/22 lines to the two
+stub sites. Combined ~370 lines of new product code — within the
+500-line auto-slice budget. Tests live in their own file
+(`test_phase_z_slice_5_upload_modal.py`, 347 lines).
+
+### Regression status post-Z-slice-5
+
+- `test_phase_z_slice_5_upload_modal.py` — 21/21 GREEN.
+- `test_phase_z_documents_journal.py` — 81/81 GREEN
+  (2 migrated tests renamed; toast-stub asserts replaced).
+- `test_wave8_polish.py` — 23/23 GREEN.
+- `test_patch_23_upload_p0.py` — 2/2 PASS (1 cross-test cookie skip).
+- 7 pre-existing baseline failures unchanged.
+
+### Sequencing — DONE
+
+Next: **Z-slice-6 — Orthogonality wire-test**. The DOM-level lock
+that an uploaded `category=report` doc surfaces in BOTH the Work
+Studio Reports tab `[data-testid="ws-tab-content-report"]` AND
+`/app/documents` Uploaded tab `[data-testid="documents-tab-content-
+upload"]`. After Z-slice-6 → Phase AA → Phase W → Phase X → halt.
