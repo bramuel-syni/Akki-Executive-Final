@@ -387,3 +387,62 @@ User-tightened scope removed 1 borderline site (Operations dept chip) and made t
 - Cohort-tag assignment logic in `auth_oauth.py::oauth_google_finish` would need a public-funnel cohort tag (e.g. `cohort_tag="public_oauth_<yyyy_mm>"`).
 
 
+
+---
+
+## Phase Z — Work Studio Document Journal architecture (P0 — Recurrence #5 closure)
+
+**Status:** 🟡 IN PROGRESS — Slice Z.1 (backend foundation + data model) shipping 2026-05-27. UI slices Z.2–Z.5 to follow.
+
+### NOTES — orthogonal classification mental model (VERBATIM from user dispatch, do NOT edit)
+
+> Documents have **TWO ORTHOGONAL CLASSIFICATIONS**:
+> - **Category** — board pack | minutes | draft | deck | report | briefing → drives Work Studio TAB surfacing
+> - **Origin** — akki_generated | uploaded | emailed → drives `/app/documents` PAGE filtering
+>
+> A document has BOTH. An uploaded audit report = `{origin: "uploaded", category: "report"}`. Surfaces under "Reports" tab in Work Studio AND under "Uploaded" tab on `/app/documents`. Both classifications are required on every document doc.
+
+### Naming reconciliation (locked per user Q1=(b) + Q2=(a))
+
+- **`origin` enum values KEEP existing backend names** (Q1 lock):
+  `"akki_generated" | "upload" | "email_receipt"` (NOT `"uploaded"` / `"emailed"`).
+  Display map at `backend/services/documents/origin_display.py::ORIGIN_DISPLAY` + frontend mirror at `frontend/src/lib/origins.js::ORIGIN_DISPLAY` provide the user-facing labels (Uploaded / Emailed / Akki-generated).
+- **`category` is a NEW field** alongside legacy `doc_kind` (Q2 lock).
+  `doc_kind` retained read-only; **Z.2 (filed in Future)** covers `doc_kind` retirement per the Phase F.7 retirement pattern.
+- **`committee_pack` from `work_studio_exports.kind` collapses to canonical category `board_pack`** — both surface under the one "Main Board & Committee Packs" tab; the underlying `work_studio_exports.kind` keeps the distinction for compile-template purposes only.
+
+### Slice Z.1 — Backend foundation + data model (2026-05-27)
+
+**Files:**
+- `backend/services/documents/origin_display.py` (NEW, ~150 lines) — `ORIGIN_DISPLAY` + `CATEGORY_DISPLAY` maps, `display_origin()` / `display_category()` helpers, `resolve_category()` / `resolve_origin()` backfill resolvers.
+- `frontend/src/lib/origins.js` (NEW, ~70 lines) — frontend mirror of the display maps + `UPLOAD_CATEGORY_OPTIONS` for the upload modal dropdown.
+- `backend/migrations/_0003_phase_z_document_category.py` (NEW, ~180 lines) — idempotent migration; backfills `category` + missing `origin` on every existing row + creates `(context_id, category)` + `(context_id, origin)` indexes.
+- `backend/migrations/_runner.py` (+8 lines) — wires migration 0003 into startup runner.
+- `backend/routers/documents.py` — extends GET `/api/contexts/{cid}/documents` with `origin` + `category` + `search` filter params (with enum validation); extends POST upload to accept `category` Form field; extends `_DocPatchIn` + PATCH endpoint with `category` field (empty string clears, enum value sets, other 400s); `sanitize_doc` carries `category` through to API responses.
+
+**Migration result (production data on this run):** 2877 docs scanned and backfilled. By category: 46 board_packs, 60 drafts, 2771 uncategorized. By origin: 108 akki_generated, 2665 upload, 74 email_receipt, 30 legacy `magic_link` (pre-existing data leak from auth flow — surfaces below as Z.3 follow-up).
+
+**Tests:** `backend/tests/test_phase_z_documents_journal.py` (NEW, ~440 lines, 31 tests across 8 invariant groups):
+- A (5): backend + frontend display maps + frontend upload-modal options list parity
+- B (8): resolve_category + resolve_origin truth tables
+- C (4): migration marker id, index creation, runner wiring, idempotency
+- D (3): GET endpoint accepts new filter params + rejects invalid enums + sanitize_doc surfaces category
+- E (3): POST upload accepts category + normalises invalid to null + writes orthogonal pair
+- F (2): PATCH _DocPatchIn carries category + validates the enum
+- **CRITICAL ORTHOGONALITY TEST (1)** — uploaded report (origin=upload, category=report) surfaces in BOTH the Work Studio Reports tab listing AND `/app/documents` Uploaded tab listing, AND NOT in any other tab on either page. This is the institutional contract that guards Recurrence #5.
+- G (1): PHASE_LEDGER.md carries the orthogonal mental model verbatim.
+
+### CI
+
+- 31/31 Phase Z slice Z.1 green.
+- Backend service restarts cleanly with migration applied.
+- ESLint clean.
+- 0 regressions on existing test sweep.
+
+### Filed for follow-up
+
+- **Z.2 — Retire legacy `doc_kind` field (P3, post-Z stabilization)** — follows Phase F.7 retirement pattern.
+- **Z.3 — Clean up 30 legacy `origin: "magic_link"` documents (P3)** — pre-existing data leak from auth flow; backfill to `upload`.
+- **Z.1 — Email-to-Akki ingestion pipeline (P2, follow-up to Phase Z)** — the "Emailed" origin tab on `/app/documents` will surface "Coming soon" placeholder until this ships.
+
+

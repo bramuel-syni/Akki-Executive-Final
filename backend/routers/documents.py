@@ -81,6 +81,11 @@ def sanitize_doc(d: Dict[str, Any]) -> Dict[str, Any]:
         "audience":      d.get("audience"),
         "updated_at":    d.get("updated_at"),
         "committed_at":  d.get("committed_at"),
+        # Phase Z (2026-05-27) — orthogonal category × origin model.
+        # `category` answers "what kind of artefact?" → Work Studio
+        # tabs. `origin` (above) answers "where did it come from?" →
+        # /app/documents tabs. Both required on every row.
+        "category":      d.get("category"),
     }
 
 
@@ -348,6 +353,9 @@ async def upload_document(
     mentioned_account_ids: Optional[str] = Form(None),  # comma-sep
     related_doc_id: Optional[str] = Form(None),
     relation_type: Optional[str] = Form(None),  # update | follow_up | additional_context | correction
+    # Phase Z (2026-05-27) — upload modal carries the user-selected
+    # category. Empty string == uncategorized (persisted as null).
+    category: Optional[str] = Form(None),
     background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
@@ -437,6 +445,12 @@ async def upload_document(
 
     created_at = _iso(_now())
     trust = data_trust if data_trust in ("trusted", "mixed", "weak") else "mixed"
+    # Phase Z (2026-05-27) — normalize category. Empty string OR a
+    # value outside the canonical 6-enum is stored as None
+    # ("uncategorized"). The upload modal's "Uncategorized" option
+    # submits an empty string.
+    _CATEGORY_ENUM = ("board_pack", "minutes", "draft", "deck", "report", "briefing")
+    cat_clean: Optional[str] = category if category in _CATEGORY_ENUM else None
     doc = {
         "id": doc_id,
         "context_id": context_id,
@@ -459,6 +473,12 @@ async def upload_document(
         "error": err,
         "created_at": created_at,
         "updated_at": created_at,
+        # Phase Z (2026-05-27) — orthogonal classification fields.
+        # Every uploaded doc carries origin="upload" + the user-
+        # selected category (None if they picked "Uncategorized").
+        "origin":         "upload",
+        "category":       cat_clean,
+        "source_channel": "upload",
     }
     await db.documents.insert_one(doc)
     doc.pop("_id", None)
@@ -594,10 +614,47 @@ async def list_documents(
     ctx: Dict[str, Any] = Depends(require_context_membership()),
     limit: int = 100,
     committee_id: Optional[str] = None,
+    # Phase Z (2026-05-27) — orthogonal filter axes. `origin` filters
+    # the `/app/documents` page's 3 capsule tabs; `category` filters
+    # the Work Studio 6-tab row. `search` is the unified search input.
+    origin: Optional[str] = None,
+    category: Optional[str] = None,
+    search: Optional[str] = None,
 ):
     q: Dict[str, Any] = {"context_id": ctx["context"]["id"], "status": {"$ne": "archived"}}
     if committee_id:
         q["committee_id"] = committee_id
+    if origin:
+        if origin not in ("akki_generated", "upload", "email_receipt"):
+            raise HTTPException(status_code=400, detail="invalid origin filter")
+        q["origin"] = origin
+    if category:
+        if category not in (
+            "board_pack", "minutes", "draft", "deck", "report", "briefing",
+            "uncategorized",
+        ):
+            raise HTTPException(status_code=400, detail="invalid category filter")
+        # `uncategorized` is the sentinel for null — matches docs where
+        # the field is missing OR explicitly null.
+        if category == "uncategorized":
+            q["$or"] = [{"category": {"$exists": False}}, {"category": None}]
+        else:
+            q["category"] = category
+    if search:
+        s = search.strip()
+        if s:
+            # Case-insensitive substring match on name / original_filename.
+            # `extracted_text` is intentionally excluded — keeps the
+            # GET fast + avoids surfacing matches from the body content
+            # in the listing (search inside docs is a separate endpoint).
+            import re
+            rx = re.compile(re.escape(s), re.IGNORECASE)
+            q["$and"] = [
+                {"$or": [
+                    {"name": {"$regex": rx}},
+                    {"original_filename": {"$regex": rx}},
+                ]},
+            ]
     docs = await db.documents.find(
         q, {"_id": 0, "extracted_text": 0, "storage_key": 0},
     ).sort("created_at", -1).to_list(min(limit, 500))
@@ -763,6 +820,9 @@ class _DocPatchIn(BaseModel):
     objective: Optional[Dict[str, Any]] = None
     audience: Optional[str] = None
     origin:   Optional[str] = None
+    # Phase Z (2026-05-27) — category is the orthogonal classification
+    # axis (Work Studio tab). Empty string clears the value.
+    category: Optional[str] = None
 
 
 @router.patch("/contexts/{context_id}/documents/{doc_id}")
@@ -808,6 +868,16 @@ async def patch_document(
         if body.origin not in ("akki_generated", "upload", "email_receipt"):
             raise HTTPException(status_code=400, detail="invalid origin")
         update["origin"] = body.origin
+    if body.category is not None:
+        # Phase Z (2026-05-27) — accept the 6 canonical categories +
+        # empty string ("Uncategorized" → null in storage).
+        _CATEGORY_ENUM = ("board_pack", "minutes", "draft", "deck", "report", "briefing")
+        if body.category == "":
+            update["category"] = None
+        elif body.category in _CATEGORY_ENUM:
+            update["category"] = body.category
+        else:
+            raise HTTPException(status_code=400, detail="invalid category")
     if len(update) == 1:
         raise HTTPException(status_code=400, detail="Send at least one field")
     await db.documents.update_one({"id": doc_id, "context_id": context_id}, {"$set": update})

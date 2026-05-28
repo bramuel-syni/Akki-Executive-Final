@@ -6,6 +6,7 @@ import logging
 
 from . import _0001_multi_cycle as _m0001
 from . import _0002_home_insight_fields as _m0002
+from . import _0003_phase_z_document_category as _m0003
 
 logger = logging.getLogger("akki.migrations.runner")
 
@@ -23,3 +24,9 @@ async def run_all() -> None:
             logger.info("migration 0002_home_insight_fields: %s", res.get("stats"))
     except Exception as exc:  # noqa: BLE001
         logger.exception("migration 0002_home_insight_fields FAILED: %s", exc)
+    try:
+        res = await _m0003.run()
+        if res.get("applied"):
+            logger.info("migration 0003_phase_z_document_category: %s", res.get("stats"))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("migration 0003_phase_z_document_category FAILED: %s", exc)
