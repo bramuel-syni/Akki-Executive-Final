@@ -70,13 +70,16 @@ async def list_extractions(
     limit: int = Query(default=50, ge=1, le=200),
     kind: Optional[str] = Query(default=None),
     since: Optional[str] = Query(default=None),
+    tenant_id: Optional[str] = Query(default=None),
     _admin: Dict[str, Any] = Depends(_require_superadmin),
 ) -> Dict[str, Any]:
     """List the most-recent extraction runs, newest first.
 
     Filters:
-      - `kind`  ∈ {"goals", "tasks"} → only that kind
-      - `since` ISO datetime         → only created_at >= since
+      - `kind`       ∈ {"goals", "tasks"} → only that kind
+      - `since`      ISO datetime         → only created_at >= since
+      - `tenant_id`  context_id           → only runs for that tenant
+                                            (Phase W.followup.1)
     """
     match: Dict[str, Any] = {}
     if kind:
@@ -87,6 +90,8 @@ async def list_extractions(
         # ISO-string comparison works because we store strict ISO-8601
         # with timezone in `created_at`.
         match["created_at"] = {"$gte": since}
+    if tenant_id:
+        match["context_id"] = tenant_id
 
     total = await db.extractions_log.count_documents(match)
     cursor = (

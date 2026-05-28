@@ -10,6 +10,7 @@
  * Strict read-only — no mutations.
  */
 import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Sparkles, Loader2, RefreshCw, CheckCircle2, AlertTriangle, XCircle,
 } from "lucide-react";
@@ -56,6 +57,9 @@ function OutcomeBadge({ outcome, count, failures }) {
 }
 
 export default function ExtractionsActivity() {
+  const [searchParams] = useSearchParams();
+  const tenantId = searchParams.get("tenant_id") || "";  // Phase W.followup.1
+
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -64,8 +68,9 @@ export default function ExtractionsActivity() {
   const queryString = useMemo(() => {
     const sp = new URLSearchParams({ limit: String(PAGE_LIMIT) });
     if (kindFilter) sp.set("kind", kindFilter);
+    if (tenantId)   sp.set("tenant_id", tenantId);
     return sp.toString();
-  }, [kindFilter]);
+  }, [kindFilter, tenantId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -112,6 +117,14 @@ export default function ExtractionsActivity() {
 
           {/* Filter strip */}
           <div className="flex items-center gap-2 mb-6" data-testid="extractions-filter-strip">
+            {tenantId && (
+              <span
+                className="text-[11px] uppercase tracking-[0.14em] px-3 py-1 rounded-sm bg-[var(--ned-purple)]/10 text-[var(--ned-purple)] border border-[var(--ned-purple)]/30 mr-2"
+                data-testid="extractions-tenant-scope-pill"
+              >
+                Tenant: {tenantId.slice(0, 8)}…
+              </span>
+            )}
             {[
               { id: "",      label: "All"   },
               { id: "tasks", label: "Tasks" },

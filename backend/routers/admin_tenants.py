@@ -131,6 +131,76 @@ async def list_tenants(
     return {"total": total, "items": items}
 
 
+@router.get("/{context_id}/extractions")
+async def get_tenant_extractions(
+    context_id: str,
+    limit: int = Query(default=5, ge=1, le=50),
+    _admin: Dict[str, Any] = Depends(_require_superadmin),
+) -> Dict[str, Any]:
+    """Phase W.followup.1 — Per-tenant extraction-activity panel feed.
+
+    Returns the most-recent extraction runs for one tenant, shape-
+    compatible with the global /api/admin/extractions endpoint so the
+    frontend can reuse the OutcomeBadge component verbatim.
+    """
+    # Defer to the existing list endpoint by importing its helper —
+    # simplest path with no duplication. We hand-roll the join here
+    # to keep the dependency boundary clean.
+    from routers.admin_extractions import _outcome  # local import avoids cycle
+
+    rows_cursor = (
+        db.extractions_log.find({"context_id": context_id}, {"_id": 0})
+        .sort("created_at", -1)
+        .limit(limit)
+    )
+    rows = await rows_cursor.to_list(length=limit)
+    total = await db.extractions_log.count_documents({"context_id": context_id})
+
+    if not rows:
+        return {"total": total, "items": []}
+
+    doc_ids = list({r.get("document_id") for r in rows if r.get("document_id")})
+    docs_by_id: Dict[str, Dict[str, Any]] = {}
+    if doc_ids:
+        async for d in db.documents.find(
+            {"id": {"$in": doc_ids}},
+            {"_id": 0, "id": 1, "title": 1, "category": 1},
+        ):
+            docs_by_id[d["id"]] = d
+
+    task_counts: Dict[str, int] = {}
+    if doc_ids:
+        pipeline = [
+            {"$match": {
+                "source_document_id": {"$in": doc_ids},
+                "deleted_at": {"$exists": False},
+            }},
+            {"$group": {"_id": "$source_document_id", "n": {"$sum": 1}}},
+        ]
+        async for r in db.tasks_initiatives.aggregate(pipeline):
+            task_counts[r["_id"]] = int(r.get("n", 0))
+
+    items: List[Dict[str, Any]] = []
+    for r in rows:
+        doc_id = r.get("document_id")
+        doc = docs_by_id.get(doc_id or "", {})
+        items.append({
+            "id":                 r.get("id"),
+            "document_id":        doc_id,
+            "document_title":     doc.get("title"),
+            "document_category":  doc.get("category"),
+            "context_id":         context_id,
+            "kind":               r.get("kind"),
+            "model":              r.get("model"),
+            "count":              int(r.get("count", 0)),
+            "failures":           int(r.get("failures", 0)),
+            "tasks_persisted":    task_counts.get(doc_id or "", 0),
+            "validation_outcome": _outcome(int(r.get("count", 0)), int(r.get("failures", 0))),
+            "created_at":         r.get("created_at"),
+        })
+    return {"total": total, "items": items}
+
+
 @router.get("/{context_id}")
 async def get_tenant(
     context_id: str,

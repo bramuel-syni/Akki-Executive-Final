@@ -16,7 +16,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, X, Activity } from "lucide-react";
+import { Loader2, RefreshCw, X, Activity, UserPlus } from "lucide-react";
+import InviteFounderModal from "@/pages/admin/InviteFounderModal";
 
 const WINDOW_OPTIONS = [
   { value: "since_trial_start", label: "Since trial start" },
@@ -58,6 +59,8 @@ export default function CohortConsole() {
   const [specialAskAgg, setSpecialAskAgg] = useState(null);
   // Phase R.5.b.2 — filter chip: null | "has_referral" | "missing_referral" | "pending_ask"
   const [referralFilter, setReferralFilter] = useState(null);
+  // Phase R.1.followup (2026-02 fork-resume) — Invite founder CTA state.
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const load = useCallback(async (signal) => {
     setLoading(true);
@@ -142,17 +145,35 @@ export default function CohortConsole() {
               Per-logo funnel — invited, activated, engaged, attached, committed — with trial-day, last-signal, and click-through telemetry.
             </p>
           </div>
-          <button
-            type="button"
-            data-testid="cohort-console-refresh"
-            onClick={() => load()}
-            disabled={loading}
-            className="inline-flex items-center gap-2 px-3 py-1.5 text-[12px] font-medium rounded-sm border border-[var(--line)] text-[var(--ink)] hover:bg-white disabled:opacity-50"
-          >
-            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              data-testid="cohort-console-invite-founder-btn"
+              onClick={() => setInviteOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium rounded-sm bg-[var(--ned-purple)] text-white hover:bg-[var(--ned-purple)]/90 transition-colors"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              Invite founder
+            </button>
+            <button
+              type="button"
+              data-testid="cohort-console-refresh"
+              onClick={() => load()}
+              disabled={loading}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-[12px] font-medium rounded-sm border border-[var(--line)] text-[var(--ink)] hover:bg-white disabled:opacity-50"
+            >
+              {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              Refresh
+            </button>
+          </div>
         </div>
+
+        <InviteFounderModal
+          open={inviteOpen}
+          onOpenChange={setInviteOpen}
+          existingCohortTags={Array.from(new Set((data?.rows || []).map((r) => r.cohort_tag).filter(Boolean)))}
+          onInvited={() => load()}
+        />
 
         {/* Controls */}
         <div className="flex flex-wrap gap-3 mb-6 items-center">

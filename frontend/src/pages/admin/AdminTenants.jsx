@@ -7,8 +7,10 @@
  * total counts — never doc bodies or chat content.
  */
 import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { Link } from "react-router-dom";
 import {
-  Building2, Loader2, RefreshCw, Search, X, Users, FileText, Clock,
+  Building2, Loader2, RefreshCw, Search, Users, FileText, Clock,
+  Sparkles, CheckCircle2, AlertTriangle, XCircle, ExternalLink,
 } from "lucide-react";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
@@ -34,6 +36,40 @@ function TypePill({ value }) {
   );
 }
 
+// Phase W.followup.1 — outcome badge mirrors AA.followup.4
+// ExtractionsActivity but inlined here so the drill-down dialog stays
+// self-contained.
+function OutcomeBadge({ outcome, count, failures, testid }) {
+  if (outcome === "all_passed") {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[10.5px] uppercase tracking-[0.14em] px-1.5 py-0.5 rounded-sm bg-emerald-50 text-emerald-700 border border-emerald-200"
+        data-testid={testid}
+      >
+        <CheckCircle2 className="w-3 h-3" /> {count}
+      </span>
+    );
+  }
+  if (outcome === "partial") {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[10.5px] uppercase tracking-[0.14em] px-1.5 py-0.5 rounded-sm bg-amber-50 text-amber-700 border border-amber-200"
+        data-testid={testid}
+      >
+        <AlertTriangle className="w-3 h-3" /> {count}/{count + failures}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10.5px] uppercase tracking-[0.14em] px-1.5 py-0.5 rounded-sm bg-rose-50 text-rose-700 border border-rose-200"
+      data-testid={testid}
+    >
+      <XCircle className="w-3 h-3" /> {failures}
+    </span>
+  );
+}
+
 export default function AdminTenants() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -43,6 +79,9 @@ export default function AdminTenants() {
   const [drillCid, setDrillCid] = useState(null);
   const [drill, setDrill] = useState(null);
   const [drillLoading, setDrillLoading] = useState(false);
+  // Phase W.followup.1 — per-tenant extraction activity panel state
+  const [extractions, setExtractions] = useState([]);
+  const [extractionsLoading, setExtractionsLoading] = useState(false);
 
   const queryString = useMemo(() => {
     const sp = new URLSearchParams({ limit: String(PAGE_LIMIT) });
@@ -69,20 +108,28 @@ export default function AdminTenants() {
   const openDrill = useCallback(async (cid) => {
     setDrillCid(cid);
     setDrillLoading(true);
+    setExtractions([]);
+    setExtractionsLoading(true);
     try {
-      const { data } = await api.get(`/admin/tenants/${cid}`);
-      setDrill(data);
+      const [{ data: drillData }, { data: extData }] = await Promise.all([
+        api.get(`/admin/tenants/${cid}`),
+        api.get(`/admin/tenants/${cid}/extractions?limit=5`),
+      ]);
+      setDrill(drillData);
+      setExtractions(extData?.items || []);
     } catch (e) {
       toast.error(apiErrorMessage(e));
       setDrill(null);
     } finally {
       setDrillLoading(false);
+      setExtractionsLoading(false);
     }
   }, []);
 
   const closeDrill = useCallback(() => {
     setDrillCid(null);
     setDrill(null);
+    setExtractions([]);
   }, []);
 
   return (
@@ -273,6 +320,67 @@ export default function AdminTenants() {
                               <td className="px-3 py-1.5 font-mono text-[11px] text-[var(--ink)]">{m.account_id}</td>
                               <td className="px-3 py-1.5 text-[var(--muted)]">{m.role || "—"}</td>
                               <td className="px-3 py-1.5 text-[var(--muted)] text-[11px]">{fmtDate(m.created_at)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+
+                {/* Phase W.followup.1 — per-tenant extraction activity panel */}
+                <div data-testid="tenant-extraction-panel">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--muted)] flex items-center gap-1.5">
+                      <Sparkles className="w-3 h-3" /> Extraction activity
+                    </p>
+                    {extractions.length > 0 && (
+                      <Link
+                        to={`/app/admin/extractions?tenant_id=${drillCid}`}
+                        className="text-[11px] text-[var(--ned-purple)] hover:underline inline-flex items-center gap-1"
+                        data-testid="tenant-extraction-view-all-link"
+                      >
+                        View all <ExternalLink className="w-3 h-3" />
+                      </Link>
+                    )}
+                  </div>
+                  <div className="bg-white border border-[var(--rule)] rounded-sm">
+                    {extractionsLoading ? (
+                      <p className="px-3 py-6 text-center text-[var(--muted)] text-[12px]">
+                        <Loader2 className="w-3 h-3 animate-spin inline-block mr-1.5" />Loading…
+                      </p>
+                    ) : extractions.length === 0 ? (
+                      <p className="px-3 py-6 text-center text-[var(--muted)] text-[12px]" data-testid="tenant-extraction-empty">
+                        No extractions yet for this tenant.
+                      </p>
+                    ) : (
+                      <table className="w-full text-[12px]" data-testid="tenant-extraction-table">
+                        <thead className="text-[10px] uppercase tracking-[0.14em] text-[var(--muted)] bg-[var(--paper)]">
+                          <tr className="border-b border-[var(--rule)]">
+                            <th className="text-left px-3 py-1.5 font-normal">Document</th>
+                            <th className="text-left px-3 py-1.5 font-normal">Kind</th>
+                            <th className="text-left px-3 py-1.5 font-normal">Outcome</th>
+                            <th className="text-left px-3 py-1.5 font-normal">Tasks</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {extractions.map((row) => (
+                            <tr key={row.id} className="border-b border-[var(--rule)] last:border-b-0" data-testid={`tenant-extraction-row-${row.id}`}>
+                              <td className="px-3 py-1.5 text-[var(--ink)] truncate max-w-[200px]" title={row.document_title || "(deleted)"}>
+                                {row.document_title || <em className="text-[var(--muted)]">(deleted)</em>}
+                              </td>
+                              <td className="px-3 py-1.5">
+                                <span className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--ned-purple)]">{row.kind}</span>
+                              </td>
+                              <td className="px-3 py-1.5">
+                                <OutcomeBadge
+                                  outcome={row.validation_outcome}
+                                  count={row.count}
+                                  failures={row.failures}
+                                  testid={`tenant-extraction-outcome-${row.id}`}
+                                />
+                              </td>
+                              <td className="px-3 py-1.5 text-[var(--ink)]">{row.tasks_persisted}</td>
                             </tr>
                           ))}
                         </tbody>
