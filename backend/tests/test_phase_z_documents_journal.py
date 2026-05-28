@@ -632,3 +632,140 @@ def test_Z2_o_row_click_other_categories_open_via_doc_id():
     src = WS_JSX.read_text(encoding="utf-8")
     # Non-board-pack rows fall through to setSearchParams({doc_id: row.id...
     assert "doc_id: row.id" in src
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Z-SLICE-3 — Work Studio RIGHT sidebar.
+#
+# Locked vertical 5-card stack:
+#   1. + Add a document (NEW, top)
+#   2. Generate Report
+#   3. Recent Drafts
+#   4. Recent Activity
+#   5. Document Journal preview + "View more →" to /app/documents
+# ═════════════════════════════════════════════════════════════════════
+
+SIDEBAR_JSX = REPO / "frontend" / "src" / "components" / "work_studio" / "WorkStudioSidebar.jsx"
+
+# ─────────────────────────────────────────────────────────────────────
+# P. Sidebar exists + WorkStudio wires it (legacy rails unmounted).
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z3_p_sidebar_component_exists():
+    assert SIDEBAR_JSX.exists(), \
+        "WorkStudioSidebar.jsx must exist under components/work_studio/"
+    src = SIDEBAR_JSX.read_text(encoding="utf-8")
+    assert "export default function WorkStudioSidebar" in src
+
+
+def test_Z3_p_workstudio_mounts_sidebar_not_legacy_rails():
+    src = WS_JSX.read_text(encoding="utf-8")
+    # Must mount the new sidebar.
+    assert "<WorkStudioSidebar" in src
+    # MUST NOT mount the legacy rails (imports may stay for now;
+    # what matters is the JSX usage is gone).
+    assert "<CompilationRail\n" not in src and \
+           "<CompilationRail " not in src, \
+        "WorkStudio must not mount <CompilationRail> after Z-slice-3"
+    assert "<DocumentJournalRail\n" not in src and \
+           "<DocumentJournalRail " not in src, \
+        "WorkStudio must not mount <DocumentJournalRail> after Z-slice-3"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Q. Vertical card stack order — top-to-bottom must match locked spec.
+# ─────────────────────────────────────────────────────────────────────
+
+CARD_TESTIDS_IN_ORDER = [
+    "work-studio-sidebar-add-document-card",
+    "work-studio-sidebar-generate-report-card",
+    "work-studio-sidebar-recent-drafts-card",
+    "work-studio-sidebar-recent-activity-card",
+    "work-studio-sidebar-document-journal-card",
+]
+
+
+def test_Z3_q_card_stack_carries_locked_testids():
+    src = SIDEBAR_JSX.read_text(encoding="utf-8")
+    for tid in CARD_TESTIDS_IN_ORDER:
+        assert f'data-testid="{tid}"' in src, \
+            f"sidebar must declare data-testid={tid!r}"
+
+
+def test_Z3_q_card_stack_order_top_to_bottom_locked():
+    """Per spec: Add document (TOP) → Generate Report → Recent Drafts
+    → Recent Activity → Document Journal (BOTTOM). Lock by source
+    position."""
+    src = SIDEBAR_JSX.read_text(encoding="utf-8")
+    positions = [src.find(f'data-testid="{tid}"') for tid in CARD_TESTIDS_IN_ORDER]
+    for pos in positions:
+        assert pos > 0
+    # Strictly ascending positions == top-to-bottom render order.
+    assert positions == sorted(positions), \
+        f"card-stack order drifted from locked spec: {positions}"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# R. + Add a document — primary CTA wired via prop fallback to toast.
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z3_r_add_document_button_carries_locked_testid():
+    src = SIDEBAR_JSX.read_text(encoding="utf-8")
+    assert 'data-testid="work-studio-sidebar-add-document-btn"' in src
+
+
+def test_Z3_r_add_document_falls_back_to_toast_stub():
+    """Z-slice-3 ships a toast stub; Z-slice-5 replaces it by passing
+    `onOpenUpload`. The fallback path must still be in source so the
+    feature works end-to-end at Z-slice-3 close."""
+    src = SIDEBAR_JSX.read_text(encoding="utf-8")
+    assert 'toast.info("Upload modal — coming in Z-slice-5.")' in src, \
+        "add-document must fall back to the Z-slice-5 toast stub"
+    # And the parent-injected upload opener path.
+    assert 'typeof onOpenUpload === "function"' in src
+
+
+# ─────────────────────────────────────────────────────────────────────
+# S. Document Journal "View more →" — locked href to /app/documents
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z3_s_view_more_links_to_documents_route():
+    src = SIDEBAR_JSX.read_text(encoding="utf-8")
+    # The anchor MUST carry href="/app/documents" AND the navigate
+    # call (defensive — preventDefault then router-nav).
+    assert 'href="/app/documents"' in src, \
+        '"View more →" anchor must declare href="/app/documents"'
+    assert 'navigate("/app/documents")' in src, \
+        '"View more →" click must navigate via the router'
+
+
+def test_Z3_s_view_more_carries_locked_testid():
+    src = SIDEBAR_JSX.read_text(encoding="utf-8")
+    assert 'data-testid="work-studio-sidebar-document-journal-view-more"' in src
+
+
+# ─────────────────────────────────────────────────────────────────────
+# T. Recurrence #3 — smoke_upload filter preserved on the preview.
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z3_t_smoke_upload_filter_preserved():
+    """Recurrence #3 closure — Document Journal preview must filter
+    out smoke_upload rows so the editorial surface stays clean."""
+    src = SIDEBAR_JSX.read_text(encoding="utf-8")
+    assert "!d?.smoke_upload" in src or "!d.smoke_upload" in src, \
+        "Document Journal preview must filter smoke_upload rows (Recurrence #3 closure)"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# U. Generate Report card preserved (subtext "from multiple documents").
+# ─────────────────────────────────────────────────────────────────────
+
+def test_Z3_u_generate_report_subtext_preserved():
+    src = SIDEBAR_JSX.read_text(encoding="utf-8")
+    assert "from multiple documents" in src, \
+        "Generate Report subtext must be preserved verbatim"
+
+
+def test_Z3_u_generate_report_btn_carries_locked_testid():
+    src = SIDEBAR_JSX.read_text(encoding="utf-8")
+    assert 'data-testid="work-studio-sidebar-generate-report-btn"' in src

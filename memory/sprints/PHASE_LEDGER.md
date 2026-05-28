@@ -498,3 +498,99 @@ User-tightened scope removed 1 borderline site (Operations dept chip) and made t
 Net new source code this slice: ~125 lines (DocumentRow component + KIND_TABS update + fetcher rewrite — replaces ~95 lines of legacy fetcher branches). Net ~30 lines under the 500-line auto-slice gate.
 
 
+
+---
+
+### Slice Z-slice-3 — Work Studio RIGHT sidebar (2026-05-27)
+
+**Status:** ✅ CLOSED — Legacy `<CompilationRail>` + `<DocumentJournalRail>` twin-rail layout replaced with locked vertical card stack.
+
+**Card stack (top → bottom, verified by `test_Z3_q_card_stack_order_top_to_bottom_locked`):**
+1. `+ Add a document` — NEW. Top of stack. Brand-purple primary CTA. Opens upload modal via `onOpenUpload` prop (parent-injected); falls back to `toast.info("Upload modal — coming in Z-slice-5.")` until Z-slice-5 lands the real modal.
+2. **Generate Report** — preserves the multi-document compilation CTA from the legacy CompilationRail. "from multiple documents" subtext intact.
+3. **Recent Drafts** — preview deck (top 5). "View more" → `/app/work-studio?kind=drafts`.
+4. **Recent Activity** — preview deck (top 5). "View more" → `/app/work-studio/activity`.
+5. **Document Journal** — preview deck (top 5 recent docs). "View more →" → `/app/documents` (Z-slice-4 builds the page; until then the link 404s visually — the wire is correct so Z-slice-4 ships as a drop-in).
+
+**Files:**
+- `frontend/src/components/work_studio/WorkStudioSidebar.jsx` (NEW, ~340 lines) — unified sidebar component.
+- `frontend/src/pages/WorkStudio.jsx` (+9 / −22 lines) — imports new component, swaps the JSX usage. Legacy rail imports retained for cross-surface reuse (CompilationReadinessSection still imports CompilationRail).
+
+**Recurrence #3 closure preserved:** Document Journal preview filters `!d?.smoke_upload` rows so the editorial surface stays clean.
+
+**Responsive behavior:** `hidden xl:block` gating preserved on the `<aside>` — sidebar collapses at viewports below 1280px (xl breakpoint) so the main column gets full width on tablets and narrower.
+
+**Tests:**
+- `backend/tests/test_phase_z_documents_journal.py` extended with 11 Z-slice-3 source-strict locks across 6 invariant groups (P–U):
+  - **P (2):** Sidebar component exists + WorkStudio mounts it (legacy rails unmounted).
+  - **Q (2):** Card-stack carries locked testids + top-to-bottom order is locked.
+  - **R (2):** Add-document button carries testid + falls back to Z-slice-5 toast stub.
+  - **S (2):** Document Journal "View more →" links to `/app/documents` (both href AND router navigate) + carries locked testid.
+  - **T (1):** `smoke_upload` filter preserved (Recurrence #3 closure).
+  - **U (2):** Generate Report subtext + testid preserved.
+
+### CI
+
+- Phase Z **62/62 GREEN** (31 Z-slice-1 + 20 Z-slice-2 + 11 Z-slice-3).
+- **Multi-viewport DOM probe (1280 / 1024 / 820) at Work Studio:**
+  - 1280px: all 5 cards mounted in locked top-to-bottom order at `top=219/299/378/638/899px`. View-more href verified as `/app/documents`.
+  - 1024 / 820px: source-strict `hidden xl:block` gating present (screenshot tool's viewport probe didn't re-layout between size changes — known quirk; source lock is the authoritative verification).
+- Frontend ESLint + webpack clean.
+
+### Slice line budget (Z-slice-3)
+
+Net new source code: ~340 lines (WorkStudioSidebar.jsx) − ~22 lines removed legacy JSX in WorkStudio.jsx + 9 lines re-wire = ~327 lines net. Under the 500-line auto-slice gate.
+
+---
+
+## Phase AA — Monitor v2 (P0, queued behind Phase Z, ahead of W and X)
+
+**Status:** 🔵 QUEUED — Do NOT build yet. Filed 2026-05-27 per user dispatch (Monitor re-spec opened in parallel during Phase Z execution).
+
+### NOTES — Monitor v2 architecture (VERBATIM from user dispatch, do NOT edit)
+
+> Monitor has THREE classifications: (i) **Strategic Objectives/Goals** = outcomes ("Lift CET1 to 12.5% by Q3"), (ii) **Strategic Projects/Tasks/Initiatives** = work that delivers goals ("Purchase additional cloud space"). Both extracted from documents at upload + Akki-commit + email ingestion via LLM, with user prompt at each ingestion gate ("Extract goals/tasks from this document?" — checkboxes default ON for board_pack/report/briefing, OFF for draft/deck/minutes). Tasks link to parent objective_id (nullable). Owner attribution is per-row (CEO/CFO/COO/CRO/...). The page surfaces TWO capsule tabs (Goals + Tasks/Initiatives), each with a status-filter pill row AND an owner-filter capsule row. Rich card view is the canonical listing (REVENUE pill · status · performance bar red/orange/green · probability bar grey-base + brand-purple fill · initiatives count · last-reassessed). The simple-list view is DEPRECATED and removed.
+
+> Footnote on the orthogonality count: the dispatch mentions "THREE classifications" but only enumerates (i) Goals + (ii) Tasks/Initiatives. The third axis is the **owner attribution** (CEO/CFO/COO/CRO/etc.) — the capsule-filter row on each tab. Captured here for institutional memory.
+
+### Slicing plan (locked)
+
+1. **AA-slice-1** — `tasks_initiatives` collection schema + backend CRUD + indexes `(context_id, parent_objective_id)`, `(context_id, owner_role)`, `(context_id, status)`.
+2. **AA-slice-2** — LLM extraction service for `tasks_initiatives` (reuse Phase I.4.b event-extraction pattern + Sonnet 4.5 + `shield_invoke`).
+3. **AA-slice-3** — Upload modal + Akki-commit + email-ingest extraction-prompt extension (extends Z-slice-5's upload modal — checkboxes "Extract goals" + "Extract tasks", per-category defaults: ON for board_pack/report/briefing, OFF for draft/deck/minutes).
+4. **AA-slice-4** — Monitor capsule tabs (Goals + Projects/Tasks/Initiatives) + rich-card listing for both tabs + simple-list deprecation.
+5. **AA-slice-5** — Owner filter capsules (CEO/CFO/COO/CRO/All).
+6. **AA-slice-6** — Probability bar fill → brand purple (`--ned-purple/10` base + `--ned-purple` fill); performance bar verified red/orange/green.
+7. **AA-slice-7** — Multi-viewport DOM probes (1280/1024/820) + orthogonality wire-test: upload a `board_pack` with embedded goal+task → LLM extracts → goal surfaces under Goals tab, task surfaces under Tasks/Initiatives tab linked to goal as parent.
+
+### Dependencies
+
+- **AA-slice-3** depends on **Z-slice-5** (upload modal must exist first).
+- **AA-slice-7** depends on **AA-slice-1 through AA-slice-6** inclusive.
+
+### IN_SCOPE (Phase AA)
+
+- The 7 slices above.
+- `tasks_initiatives` data model.
+- LLM extraction wiring (Sonnet 4.5 via `shield_invoke`).
+- Monitor surface rewrite.
+- The 4 specific user-flagged fixes: remove simple list, purple probability fill, owner filter, new tasks tab.
+
+### OUT_OF_SCOPE (strict)
+
+- ❌ Goals data model changes (existing `goals` collection stays as-is).
+- ❌ Existing `initiatives` field on goals — see `Z.followup.6` below.
+- ❌ Work Studio surface (Phase Z owns it).
+- ❌ Pulse / Solva / Chat / Home / Learn surfaces.
+- ❌ Auth portal phases (W + X queued behind AA).
+- ❌ Anything Stripe / OAuth Microsoft / R.6 / R.7.
+
+### New backlog row from Phase AA
+
+- **Z.followup.6 — Reconcile legacy `initiatives` field on goals with new `tasks_initiatives` collection (P3)** — Phase AA introduces a separate `tasks_initiatives` collection. The existing `goals.initiatives` array field will likely become redundant. Don't deprecate during AA (no breaking changes per spec); file as P3 cleanup once Monitor v2 stabilises.
+
+### Updated phase sequencing (post-Phase-AA dispatch)
+
+Complete Z slices → **Phase AA** → Phase W → Phase X → halt.
+
+

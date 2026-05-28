@@ -49,6 +49,10 @@ import DocumentJournalRail from "@/components/work_studio/DocumentJournalRail";
 import DocumentDrawer from "@/components/documents/DocumentDrawer";
 import ObjectiveCaptureModal from "@/components/documents/ObjectiveCaptureModal";
 import CompilationWizard from "@/components/work_studio/CompilationWizard";
+// Phase Z (2026-05-27, Z-slice-3) — Unified RIGHT sidebar replacing
+// the legacy `<CompilationRail>` + `<DocumentJournalRail>` twin
+// layout with the locked vertical card stack.
+import WorkStudioSidebar from "@/components/work_studio/WorkStudioSidebar";
 import {
   FileText, Presentation, ScrollText, Loader2, ArrowRight, AlertCircle,
   Layers, FolderOpen, FileDown, Wand2, Calendar, Users, Files,
@@ -968,25 +972,25 @@ export default function WorkStudio() {
             </div>
           </div>
           </div>
-          <CompilationRail
+          {/* Phase Z (2026-05-27, Z-slice-3) — RIGHT sidebar.
+              Replaces the prior `<CompilationRail>` + `<DocumentJournalRail>`
+              twin layout with the locked vertical card stack:
+                1. + Add a document (NEW, top)
+                2. Generate Report
+                3. Recent Drafts
+                4. Recent Activity
+                5. Document Journal preview + "View more →" to
+                   /app/documents (Z-slice-4 builds that page).
+              The upload entry point is wired via a toast stub until
+              Z-slice-5 lands the real modal — pass `onOpenUpload`
+              once the modal exists. */}
+          <WorkStudioSidebar
             contextId={cid}
             onOpenWizard={(opts) => {
               setWizardPreselectType(opts?.artefactType || null);
               setWizardPreselectSourceId(opts?.sourceId || null);
               setWizardOpen(true);
             }}
-            refreshKey={railRefreshKey}
-          />
-          {/* Wave 3 (2026-05-27) — Document Journal right rail.
-              Canonical document listing for Work Studio. Tabs above
-              continue to surface category artefacts; this rail
-              surfaces ALL documents in the active context. Listing
-              starts directly under the search bar (no hero spacing).
-              `xl:` breakpoint keeps the rail collapsed on narrow
-              viewports so smaller screens still get the full main
-              column. */}
-          <DocumentJournalRail
-            contextId={cid}
             refreshKey={railRefreshKey}
           />
         </div>
