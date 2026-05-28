@@ -5149,3 +5149,51 @@ Product-code: ~370 lines new (UploadModal multi-file + dropdown; trivial wiring 
 
 ### Next per locked sequence
 **Z-slice-6 — Orthogonality wire-test (DOM-level)**. Then Phase AA (Monitor v2 — 7 slices), Phase W, Phase X.
+
+
+---
+
+## Phase Z-slice-6 — Orthogonality DOM Wire-Test (2026-05-27) — CLOSED
+
+Institutional Recurrence #5 prevention promoted from the data-model layer to the live DOM.
+
+### Test file
+`backend/tests/test_phase_z_slice_6_orthogonality_wire.py::test_z6_uploaded_report_surfaces_in_both_ws_and_documents`
+
+### Flow (Playwright, full E2E against preview pod)
+1. Login admin@akki.ai → active context TEST_SeededNedCo.
+2. Open WS sidebar `+ Add a document` → modal opens.
+3. category=report + attach UUID-marker .txt → submit.
+4. Modal closes + success toast.
+5. Navigate to WS `?kind=report` → doc surfaces in `ws-tab-content-report` with "Uploaded" origin badge.
+6. Loop 5 other WS category tabs (board_pack/minutes/draft/deck/briefing) → doc NOT present in any.
+7. Navigate `/app/documents?tab=upload` → doc surfaces in `documents-tab-content-upload`.
+8. Loop 2 other origin tabs (akki_generated/email_receipt) → doc NOT present in any.
+9. Click doc card → URL gains `?doc_id=…` (drawer mounts).
+10. Resize viewport 1024→820 → doc still surfaces in both body testids.
+11. Cleanup (finally block): delete marker doc by name from Mongo.
+
+### Live result
+**1 passed in 65.52s** — full DOM round-trip against the preview pod. Cleanup confirmed.
+
+### Skip / runtime semantics
+- Marker `pytest.mark.runtime_playwright` — fast CI can skip via `pytest -m "not runtime_playwright"`.
+- Cleanly skipped if Chromium / Playwright missing.
+
+### Failure mode coverage
+- Removed `category` form field → step 5 fails.
+- Removed `origin="upload"` from backend → step 7 fails.
+- Renamed body testids → steps 5/6/7/8 fail with the missing testid named.
+
+### Phase Z — COMPLETE
+- Z-slice-1: backend data model + migration — CLOSED
+- Z-slice-2: WS LEFT column tabs by category — CLOSED
+- Z-slice-3: WS sidebar vertical card stack — CLOSED
+- Z-slice-4: `/app/documents` capsule tabs — CLOSED
+- Z-slice-5: Upload modal — CLOSED
+- Z-slice-6: Orthogonality DOM wire-test — CLOSED
+
+**Cumulative Phase Z lock surface:** 103 tests preventing Recurrence #5 at both the data-model and live-DOM layers. Zero leakage tolerated.
+
+### Next per locked sequence
+**Phase AA — Monitor v2 (7 slices)**. AA-slice-1: `tasks_initiatives` data model.

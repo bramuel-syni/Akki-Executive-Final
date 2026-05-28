@@ -392,7 +392,7 @@ User-tightened scope removed 1 borderline site (Operations dept chip) and made t
 
 ## Phase Z — Work Studio Document Journal architecture (P0 — Recurrence #5 closure)
 
-**Status:** 🟡 IN PROGRESS — Slice Z.1 (backend foundation + data model) shipping 2026-05-27. UI slices Z.2–Z.5 to follow.
+**Status:** ✅ **CLOSED 2026-05-27** — all 6 slices shipped, DOM-level orthogonality wire-test (Z-slice-6) GREEN. Institutional Recurrence #5 prevention now enforced at both the data-model layer (Z-slice-1 `test_Z_ORTHOGONAL_critical`) AND the live DOM (Z-slice-6 Playwright). Followups Z.1–Z.9 filed under "Z follow-ups" below for future sprints.
 
 ### NOTES — orthogonal classification mental model (VERBATIM from user dispatch, do NOT edit)
 
@@ -766,6 +766,7 @@ Next per the locked sequence: **Z-slice-5** (Upload modal).
 
 - **Wave8.followup.1 — Clean 7 pre-existing baseline test failures (P3, post-trial)** — `test_t1/t2/t3_frontend_wire`, `test_chat_v2_full_flow`, `test_patch_28_home_doc_journal`, `test_requirements_guard`. All reference removed surfaces (e.g. `ReadingTopBar.jsx`) or spaCy direct-URL refs. Orthogonal to Wave 8; don't expand scope now.
 - **Wave8.followup.2 — Page Catalog superadmin view at `/app/admin/page-catalog` (P3, founder-feedback-gated)**. Renders the locked `PAGE_SUBTEXT_FILES` tuple as a live grid showing H1 + subtext per surface. Eliminates Recurrence #5 by visual inspection instead of CI testid (stronger signal). Promote to P1 if subtext slips again.
+- **Z.followup.9 — Per-file category override in upload modal (P3, founder-feedback-gated)**. Collapsed-by-default expandable inline row per file in multi-file batches. Reduces "upload-then-recategorize-in-drawer" friction at quarter-end mixed bundles. Promote to P1 if founder reports recategorization friction during cohort use.
 
 
 
@@ -911,3 +912,93 @@ that an uploaded `category=report` doc surfaces in BOTH the Work
 Studio Reports tab `[data-testid="ws-tab-content-report"]` AND
 `/app/documents` Uploaded tab `[data-testid="documents-tab-content-
 upload"]`. After Z-slice-6 → Phase AA → Phase W → Phase X → halt.
+
+
+---
+
+## PHASE Z-SLICE-6 — ORTHOGONALITY WIRE-TEST (CLOSED 2026-05-27)
+
+The institutional Recurrence #5 prevention wire-test promoted from
+the data-model layer (Z-slice-1) to LIVE DOM via Playwright.
+
+### What the test does
+
+`backend/tests/test_phase_z_slice_6_orthogonality_wire.py::test_z6_uploaded_report_surfaces_in_both_ws_and_documents`:
+
+1. Logs in as `admin@akki.ai`; active context `TEST_SeededNedCo`.
+2. Opens Work Studio sidebar `+ Add a document` card.
+3. Selects `category="report"`, attaches a UUID-marker .txt file,
+   submits.
+4. Waits for modal close + success toast.
+5. Navigates to `?kind=report` → asserts the doc surfaces in
+   `[data-testid="ws-tab-content-report"]` with origin badge
+   "Uploaded".
+6. Loops the other 5 WS category tabs
+   (board_pack / minutes / draft / deck / briefing) — asserts the
+   doc does NOT appear in any.
+7. Navigates to `/app/documents?tab=upload` → asserts doc surfaces
+   in `[data-testid="documents-tab-content-upload"]`.
+8. Loops the other 2 origin tabs (akki_generated / email_receipt)
+   — asserts the doc does NOT appear in any.
+9. Clicks the doc card → URL gains `?doc_id=…` (drawer mounts).
+10. Resizes viewport to 1024 then 820 — re-verifies the doc still
+    surfaces inside both body testids (multi-viewport rule).
+11. Cleanup — deletes the marker doc by name in a `finally`
+    block (runs whether the assertions passed or failed).
+
+### Live result
+
+**1 passed in 65.52s** — the test ran end-to-end against the
+preview pod, uploaded a file, navigated 8 surfaces, asserted 16
+visibility / non-visibility conditions across 3 viewports, and
+cleaned up. Cleanup confirmed in test stdout.
+
+### Failure mode coverage
+
+If anyone ever:
+- Removes `category` from the upload modal submit → step 5 fails.
+- Removes `origin="upload"` from the backend endpoint → step 7 fails.
+- Adds a new category tab without registering it in the WS source →
+  the new tab body testid would let leakage slide; the loop in step
+  6 would miss it — but the **per-category lock** is already
+  enforced source-strictly in
+  `test_phase_z_documents_journal.py::test_Z2_*` so the dual
+  defence holds.
+- Renames the body testids → steps 5/6/7/8 all fail with clear
+  error messages naming the missing testid.
+
+### Skip / runtime semantics
+
+- Marker: `pytest.mark.runtime_playwright` — fast CI suites can skip
+  via `pytest -m "not runtime_playwright"`.
+- Skipped cleanly if Chromium isn't installed
+  (`pytest.skip` with the executable path so the operator can
+  `playwright install chromium`).
+- Skipped cleanly if Playwright itself isn't installed.
+
+### Slice budget
+
+Pure test code — `test_phase_z_slice_6_orthogonality_wire.py` is
+~360 lines (mostly docstring + the orchestration steps). Zero
+product-code changes. Within budget.
+
+### Phase Z — SEQUENCE COMPLETE
+
+| Slice | Status | Tests |
+| ----- | ------ | ----- |
+| Z-slice-1 — Backend data model + migration | ✅ CLOSED | 81 (incl. critical orth test) |
+| Z-slice-2 — WS LEFT column tabs by category | ✅ CLOSED | (in Z-slice-1 suite) |
+| Z-slice-3 — WS sidebar vertical card stack | ✅ CLOSED | (in Z-slice-1 suite) |
+| Z-slice-4 — `/app/documents` capsule tabs   | ✅ CLOSED | (in Z-slice-1 suite) |
+| Z-slice-5 — Upload modal                    | ✅ CLOSED | 21 |
+| Z-slice-6 — Orthogonality DOM wire-test     | ✅ CLOSED | 1 (live runtime) |
+
+**Cumulative Phase Z lock surface:** 103 tests across 2 files,
+preventing Recurrence #5 at both the data-model layer and the live
+DOM. Zero leakage tolerated.
+
+### Next per locked sequence
+
+**Phase AA** — Monitor v2 (7 slices). Locked spec already in
+PHASE_LEDGER above. AA-slice-1 starts the `tasks_initiatives`
+data model.
