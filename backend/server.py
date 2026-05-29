@@ -987,6 +987,23 @@ async def on_startup():
     # authenticated account. The `solva_v2_poc` field in `db.accounts`
     # is left intact for forensic parity but unused.
 
+    # Solva v2 artefact (Slice 2b, 2026-05-29) — auto-enable the new
+    # 15-element slide-paginated artefact for `admin@akki.ai` ONLY so
+    # the founder can eyeball the deck immediately on every fresh pod
+    # boot. All other accounts stay OFF (v1 regression-protection real).
+    # Cross-account smoke testing uses the `?v2=1` URL override.
+    # Idempotent: only sets when the flag is absent OR not already true.
+    try:
+        existing_flags = (existing or {}).get("feature_flags") or {} if existing else {}
+        if not existing_flags.get("solva_v2"):
+            await db.accounts.update_one(
+                {"email": admin_email},
+                {"$set": {"feature_flags.solva_v2": True}},
+            )
+            logger.info("Solva v2 artefact flag auto-enabled for %s", admin_email)
+    except Exception as _e:  # noqa: BLE001
+        logger.warning("[startup] Solva v2 admin flag flip failed: %s", _e)
+
     # ── Tuesday 10am scheduler — auto-drafts the weekly Exco360 article.
     # In-process APScheduler. Single-replica deploys only; for HA, route
     # this to an external scheduled-trigger calling /api/blog/cron/weekly.

@@ -97,15 +97,30 @@ SLICE_2A_SLIDES = {
     "PathwaySlide.jsx":           {"kind": "pathway",           "extra_testids": ["solva-v2-pathway-list"]},
 }
 
+# Slice 2b — the 9 remaining slide kinds completing the 15-element deck.
+SLICE_2B_SLIDES = {
+    "PerTensionSlide.jsx":             {"kind": "per_tension",                  "extra_testids": []},
+    "ScenariosOverviewSlide.jsx":      {"kind": "scenarios_overview",           "extra_testids": ["solva-v2-scenarios-list"]},
+    "PerScenarioConfidenceTable.jsx":  {"kind": "per_scenario_confidence_table", "extra_testids": ["solva-v2-confidence-table"]},
+    "SensitivitySlide.jsx":            {"kind": "sensitivity",                  "extra_testids": ["solva-v2-sensitivity-list"]},
+    "ReflectionSlide.jsx":             {"kind": "reflection",                   "extra_testids": ["solva-v2-reflection-title", "solva-v2-reflection-questions"]},
+    "DecisionLogicSlide.jsx":          {"kind": "decision_logic",               "extra_testids": ["solva-v2-decision-list"]},
+    "RiskMitigationSlide.jsx":         {"kind": "risk_mitigation",              "extra_testids": ["solva-v2-risk-list"]},
+    "MethodologicalHonestySlide.jsx":  {"kind": "methodological_honesty",       "extra_testids": ["solva-v2-honesty-is", "solva-v2-honesty-is-not", "solva-v2-honesty-confidence-pct"]},
+    "InClosingSlide.jsx":              {"kind": "in_closing",                   "extra_testids": ["solva-v2-closing-reframing", "solva-v2-closing-final"]},
+}
 
-def test_each_slice_2a_slide_exists():
-    for name in SLICE_2A_SLIDES:
+ALL_SLIDES = {**SLICE_2A_SLIDES, **SLICE_2B_SLIDES}
+
+
+def test_each_slide_exists():
+    for name in ALL_SLIDES:
         path = SLIDES / name
         assert path.is_file(), f"Slide template {name} must exist."
 
 
 def test_each_slide_passes_correct_kind_to_shell():
-    for name, spec in SLICE_2A_SLIDES.items():
+    for name, spec in ALL_SLIDES.items():
         src = (SLIDES / name).read_text(encoding="utf-8")
         # SlideShell `kind=` prop must carry the locked enum value.
         match = re.search(r'kind="([^"]+)"', src)
@@ -117,7 +132,7 @@ def test_each_slide_passes_correct_kind_to_shell():
 
 
 def test_each_slide_emits_its_locked_testids():
-    for name, spec in SLICE_2A_SLIDES.items():
+    for name, spec in ALL_SLIDES.items():
         src = (SLIDES / name).read_text(encoding="utf-8")
         for tid in spec["extra_testids"]:
             assert tid in src, f"{name} must emit data-testid={tid!r}"
@@ -126,7 +141,7 @@ def test_each_slide_emits_its_locked_testids():
 def test_each_slide_imports_shell_from_relative_path():
     """Every slide MUST consume SlideShell from the locked relative
     path — prevents future agents from spinning off a divergent shell."""
-    for name in SLICE_2A_SLIDES:
+    for name in ALL_SLIDES:
         src = (SLIDES / name).read_text(encoding="utf-8")
         assert 'import SlideShell from "../SlideShell"' in src, (
             f"{name} must import SlideShell from '../SlideShell'."
@@ -163,16 +178,45 @@ def test_orchestrator_root_carries_required_attribute():
     assert "data-solva-v2-schema-version=" in src
 
 
-def test_orchestrator_composes_slice_2a_slide_kinds():
-    """Verify the orchestrator imports every Slice 2a slide template
-    AND composes a slides[] entry per kind."""
+def test_orchestrator_composes_all_slide_kinds():
+    """Verify the orchestrator imports every slide template AND
+    composes a slides[] entry for each of the 13 slide kinds plus the
+    section dividers that introduce each narrative arc."""
     src = ORCH.read_text(encoding="utf-8")
-    for slide_kind in ("cover", "headline", "tensions_overview", "pathway"):
+    for slide_kind in (
+        "cover",
+        "headline",
+        "tensions_overview",
+        "per_tension",
+        "scenarios_overview",
+        "per_scenario_confidence_table",
+        "sensitivity",
+        "reflection",
+        "pathway",
+        "decision_logic",
+        "risk_mitigation",
+        "methodological_honesty",
+        "in_closing",
+    ):
         assert f'kind: "{slide_kind}"' in src, (
             f"Orchestrator must compose a slides entry with kind={slide_kind!r}."
         )
-    # Slice 2b backlog placeholder
-    assert "slice_2b_backlog_hint" in src
+    # Section dividers — one before each major arc.
+    for divider_key in (
+        "section_divider_tensions",
+        "section_divider_scenarios",
+        "section_divider_reflection",
+        "section_divider_pathway",
+        "section_divider_honesty",
+    ):
+        assert divider_key in src, (
+            f"Orchestrator must include the {divider_key!r} section divider."
+        )
+    # Slice 2b removed the backlog hint placeholder.
+    assert "slice_2b_backlog_hint" not in src, (
+        "Slice 2b backlog placeholder must be removed once all slide "
+        "kinds are wired."
+    )
 
 
 # ─────────────────────────────────────────────────────────────────

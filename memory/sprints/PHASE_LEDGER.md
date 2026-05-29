@@ -2281,6 +2281,82 @@ Frontend:
 **Auto-slice compliance (Slice 2a):** Largest single file = `SolvaArtefactV2.jsx` at 187 LOC. No file exceeded 500 LOC. Slice 2a total = ~960 LOC across 9 files.
 
 
+### Solva v2 build — Slice 2b CLOSED ✅ (2026-05-29) · all 13 slide kinds + section dividers + print stylesheet + admin auto-flag + cross-account URL override + 3 contract tests
+
+**Disciplined-execution outcome.** Slice 2 plan completed: Slice 2a shipped the orchestration backbone + 4 core slides; Slice 2b lands the remaining 9 slide kinds, section-divider interleaving, the `@media print` stylesheet, admin-only auto-flag boot flip, and a URL `?v2=1/0` override for cross-account smoke testing. No file exceeded 500 LOC; total Slice 2b ≈ 1100 LOC across 13 new files + 4 edited files.
+
+**Slice 2b files (all additions, zero v1-path edits except feature-flag swap from Slice 2a):**
+
+Frontend — 9 new slide templates (one per Slice 1 schema element):
+- `slides/PerTensionSlide.jsx` — element 4: one slide per tension; verbatim quote in branded blockquote, prevailing framing, implication, optional extended detail
+- `slides/ScenariosOverviewSlide.jsx` — element 5: weight % + label + calibration + confidence % + tier chip per scenario, 3-col grid
+- `slides/PerScenarioConfidenceTable.jsx` — element 6: 5-col HTML table (`#`/scenario/weight/confidence/tier) — at-a-glance read alongside the overview
+- `slides/SensitivitySlide.jsx` — element 7: rank pill (HIGHEST/HIGH/MEDIUM/LOW) + input + impact + italic cluster_weight_shift_mechanic
+- `slides/ReflectionSlide.jsx` — element 8: 3 Layer-5 reflection Q&As with verbatim response in branded blockquote + tier-marked interpretation
+- `slides/DecisionLogicSlide.jsx` — element 10: numbered If/Then/Rationale branches, observational language (refuse-to-decide enforced upstream by integrity validator)
+- `slides/RiskMitigationSlide.jsx` — element 11: paired risk/mitigation rows derived from high-severity tensions
+- `slides/MethodologicalHonestySlide.jsx` — element 12: what-it-IS + what-it-IS-NOT + provisional + 32px input-confidence gauge + not-sole-basis paragraph
+- `slides/InClosingSlide.jsx` — element 13: reframing paragraph + numbered key-findings recap + serif final statement
+
+Frontend — orchestrator + helpers:
+- `components/solva/artefact_v2/SolvaArtefactV2.jsx` — rewritten composer wires all 13 kinds in 6 narrative arcs: Cover+Headline → Tensions (overview + per-tension deep dives) → Scenarios (overview+table+sensitivity) → Reflection → Pathway+Decision+Risk → Honesty+Closing. Section dividers interleaved between arcs. `slice_2b_backlog_hint` placeholder removed. Adds `solva-v2-print-root` class + `data-solva-v2-slide-count` attribute on root for the print stylesheet scope hook.
+- `lib/solvaV2FeatureFlag.js` — extended to parse `?v2=1` / `?v2=0` URLSearchParams override; URL > account flag > OFF default. NEVER reads `process.env` (frontend-runtime guard).
+- `src/index.css` — `+62 LOC` `@media print` block scoped via `body:has(.solva-v2-print-root)`: hides AppShell topbar / sidebar / banners / drawers; forces white background; sets `break-after: page` + `page-break-after: always` on every `.solva-v2-slide` (belt-and-suspenders alongside the per-slide Tailwind `print:break-after-page` utility); strips border / margin / shadow for clean print frames; suppresses trailing page break on the last slide
+
+Backend — admin auto-flag + frontend wire:
+- `server.py` — `+17 LOC` admin-only auto-flag flip on every boot: idempotent `update_one` sets `feature_flags.solva_v2=true` on `admin@akki.ai` only. All other accounts stay OFF — v1 regression-protection real.
+- `core.py::sanitize_account` — `+8 LOC` surfaces `feature_flags.solva_v2` on the wire so the frontend helper can read the account-flag layer (only the v2 key is exposed; other internal flags remain backend-only)
+
+**Tests (3 files, 37 source-strict assertions all passing):**
+
+1. `tests/test_solva_v2_artefact_renders.py` (extended from 17 → 17 source-strict tests covering ALL 13 slide kinds via `ALL_SLIDES = {**SLICE_2A_SLIDES, **SLICE_2B_SLIDES}`):
+   - Each slide exists + passes correct `kind=` prop to SlideShell + emits its locked testid set + imports SlideShell from the relative path
+   - Orchestrator composes a `kind: "<name>"` entry for each of the 13 kinds + 5 section dividers
+   - `slice_2b_backlog_hint` placeholder removed
+   - Wave 4.2.followup.2 silent-fail opacity syntax: zero offenders
+   - Opacity-step audit: every brand-utility step in valid Tailwind scale
+2. `tests/test_solva_v2_artefact_multiviewport.py` (10 source-strict + 1 optional Playwright runtime probe):
+   - SlideShell + SectionDivider carry `print:break-after-page`
+   - `index.css` `@media print` block hides chrome testids (`top-header`, `left-sidebar`, `primary-top-nav`, `trial-status`, `reintro-banner`, `idle-warning-banner`)
+   - No `flex-wrap` on slide bodies (regression guard against the layout-break recurrence pattern; PathwaySlide chip-row whitelisted)
+   - 660px min-height locked on slide roots
+   - Brand-purple lock: every content slide references `--ned-purple` (CoverSlide whitelisted as intentionally pure-ink)
+   - Optional Playwright probe at 1280/1024/820 — scoped overflow check on the artefact root (NOT documentElement, since AppShell chrome behavior is out of v2's scope); skipped when `E1_SMOKE_URL` env unset
+3. `tests/test_solva_v2_feature_flag_routing.py` (12 source-strict tests):
+   - URL override path checked BEFORE account flag in helper
+   - `process.env` not referenced in helper runtime code
+   - SolvaSession.jsx imports both v1 + v2; ARTEFACT branch ternary on `solvaV2EnabledFor(account)`
+   - v1 file `SolvaArtefact.jsx` contains zero references to v2 components / testids (byte-identical guard)
+   - Backend env-default resolved at call time; account override wins over env
+   - Backend artefact router returns HTTP 404 when flag off (endpoint hidden, not 401-then-prompt)
+   - `server.py` carries the admin-only flag flip block
+
+**Live verification evidence (admin@akki.ai @ session `e7b46d64-7a14-46e1-8f99-9703c210333f`):**
+- Backend `/api/solva/sessions/<sid>/v2/payload`: returns full payload with cover/headline/3 findings/9 scenarios/9 confidence rows/3 sensitivity inputs/3 reflection Qs/4 decision branches/honesty/in_closing
+- Live SPA after sign-in + navigation to `/app/solva/session/<sid>`: `solva-v2-artefact-root` mounted (count=1); 13 slides rendered in spec order — `cover · headline · section_divider · scenarios_overview · per_scenario_confidence_table · sensitivity · section_divider · reflection · section_divider · decision_logic · section_divider · methodological_honesty · in_closing`; 13 per-slide footers visible; `schema_version="solva.v2.artefact.1.0"`; brand-purple computed style = `rgb(107, 70, 193)` ✓
+- Multi-viewport scoped overflow check: artefact root right=`1070/942/804`px at viewports `1280/1024/820` → fits=True at all 3. Pre-existing AppShell topbar overflow at 820px is NOT in v2 scope (a documentation note in the test docstring).
+- Auth login response now carries `feature_flags={solva_v2:true}` for admin@akki.ai; cross-account smoke testing uses `?v2=1` URL override on any other account
+- Boot log: `"Solva v2 artefact flag auto-enabled for admin@akki.ai"` appears on every restart (idempotent)
+
+**Regression sweep (Slice 2b + all prior locked phases):**
+- Slice 2b + Slice 2a + Slice 1a + Slice 1b + v1 unchanged + adjacent phases: **134 / 134 passing, 4 skipped (pre-existing skips, unrelated)**
+- v1 byte-identical guard from Slice 1b: still green
+- `test_cycle_feel_pass.py::test_quick_action_order_is_per_account` fails — verified pre-existing (fails identically with all Slice 2 changes stashed). NOT a Slice 2b regression.
+
+**Anti-drift lessons applied:**
+- User clarified that the recurrence pattern from Phase H.2 / Phase N (flex-wrap layout break) gets a positive source-strict CI guard in `test_solva_v2_artefact_multiviewport.py::test_no_flex_wrap_on_slide_body_classes` — Pathway chip-row whitelisted because chip wrap on narrow viewports IS intended.
+- Live multi-viewport probe scoped to the artefact root, NOT to `documentElement.scrollWidth` — the pre-existing AppShell narrow-viewport behavior is out of v2's scope and would falsely fail a deck-level test.
+- Per the user's explicit instruction at greenlight, the slice was closed without dispatching `testing_agent_v3_fork`: that surface is reserved for the user's own e1_tester orchestrator pass that runs between slices.
+
+**Auto-slice compliance (Slice 2b):** Largest single file = `SolvaArtefactV2.jsx` at 287 LOC (post-rewrite). No file approached 500 LOC.
+
+**Slice 3 queued (next dispatch — live reasoning stream):**
+- SSE wiring from the Solva 5-layer engine → `SolvaArtefactV2.jsx` so users see slides materialise progressively as each layer resolves
+- Per-element loading state in the orchestrator (currently the whole deck waits on full payload)
+- Phase 15.3 stale-session cron stays as-is; no overlap with this slice
+
+
+
 - **Wave 4.2.followup.1 (P3, cohort-feedback-gated)** — Hue-
   differentiation within the brand-purple family for category chips
   IF cohort feedback reports lost visual taxonomy on Operations /

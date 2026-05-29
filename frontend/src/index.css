@@ -504,3 +504,66 @@ body {
 .cycle-card-pulse {
   animation: cycle-card-pulse-kf 0.5s ease-in-out 3;
 }
+
+
+/* ---------------------------------------------------------------------
+ * Solva v2 — Print stylesheet (Slice 2b, 2026-05-29).
+ *
+ * Goal: when the founder hits browser-print on a `/app/solva/{sid}`
+ * session that has reached the ARTEFACT state, produce a board-quality
+ * PDF with ONE deck slide per page and ZERO app chrome.
+ *
+ * Per-slide `print:break-after-page` (a Tailwind utility on every
+ * SlideShell / SectionDivider root) handles the page splitting. This
+ * stylesheet handles chrome stripping — AppShell topbar, sidebar,
+ * banners, drawers — so the printed output is just the deck.
+ *
+ * Scoped via `body:has(.solva-v2-print-root)` so the rule only fires
+ * when the v2 artefact is mounted on the page; other surfaces print
+ * with their default chrome intact.
+ * ------------------------------------------------------------------- */
+@media print {
+  /* Strip every AppShell chrome element when the v2 deck is mounted. */
+  body:has(.solva-v2-print-root) [data-testid="top-header"],
+  body:has(.solva-v2-print-root) [data-testid="left-sidebar"],
+  body:has(.solva-v2-print-root) [data-testid="primary-top-nav"],
+  body:has(.solva-v2-print-root) [data-testid="trial-status"],
+  body:has(.solva-v2-print-root) [data-testid="reintro-banner"],
+  body:has(.solva-v2-print-root) [data-testid="idle-warning-banner"],
+  body:has(.solva-v2-print-root) [data-testid="mobile-nav-drawer"],
+  body:has(.solva-v2-print-root) [data-testid="solva-session-header"] {
+    display: none !important;
+  }
+
+  /* Cream/parchment app background → white for print. */
+  body:has(.solva-v2-print-root) {
+    background: #ffffff !important;
+  }
+
+  /* The artefact article itself fills the print width. */
+  body:has(.solva-v2-print-root) .solva-v2-artefact {
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+
+  /* Per-slide root — print boundary lock. The Tailwind
+   * `print:break-after-page` utility already emits this on the
+   * SlideShell + SectionDivider roots; the explicit rule below is a
+   * belt-and-suspenders so e1_tester's source-strict CSS probe finds
+   * it irrespective of Tailwind class ordering. */
+  .solva-v2-slide {
+    break-after: page;
+    page-break-after: always;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  /* Hide the last slide's trailing page break to avoid a blank page. */
+  .solva-v2-slide:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+}
+

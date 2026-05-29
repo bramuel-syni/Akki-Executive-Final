@@ -5527,3 +5527,34 @@ New `SuperadminRoute` wrapper (62 lines). 10 admin routes now wrap in it; non-su
 
 ### Next per locked sequence
 Wave 4.2 grey→purple sweep → AA.followup.5 monitor_v2 retrofit → AA.followup.4 Extraction Activity admin view → Wave8.followup.3 deploy gate → Phase W → Phase X.
+
+---
+
+## Solva v2 — Slice 2b CLOSED ✅ (2026-05-29) · full 15-element slide-paginated artefact in product
+
+### What shipped
+- All 13 v2 slide components live (cover, headline, tensions overview + per-tension, scenarios overview, per-scenario confidence table, sensitivity, reflection, pathway, decision logic, risk + mitigation, methodological honesty, in closing)
+- 5 section dividers interleaved between narrative arcs
+- `@media print` stylesheet strips AppShell chrome for board-quality PDF export (per-slide page break + chrome hide via `body:has(.solva-v2-print-root)` scope)
+- Admin-only auto-flag flip on every boot (`admin@akki.ai` gets `feature_flags.solva_v2=true`); all other accounts stay OFF — v1 regression-protection intact
+- Cross-account URL override (`?v2=1` / `?v2=0`) for smoke testing; URL > account flag > OFF default
+- `sanitize_account` now surfaces `feature_flags.solva_v2` on the wire (only the v2 key — other internal flags stay backend-only)
+- v1 (`SolvaArtefact.jsx`) byte-identical guard re-confirmed; Slice 1b regression lock still green
+
+### Validation evidence (admin@akki.ai @ session `e7b46d64-7a14-46e1-8f99-9703c210333f`)
+- Backend `/v2/payload` returns full 15-element artefact
+- Live SPA renders 13 slides in spec order with 13 footers + correct schema_version
+- Brand-purple computed style = `rgb(107, 70, 193)` confirmed on accents
+- Artefact root fits within 1280/1024/820 viewports (scoped check)
+- Boot log: `"Solva v2 artefact flag auto-enabled for admin@akki.ai"` (idempotent)
+
+### Tests
+- `tests/test_solva_v2_artefact_renders.py` — 17 source-strict assertions across all 13 kinds
+- `tests/test_solva_v2_artefact_multiviewport.py` — 10 source-strict + 1 optional Playwright runtime probe (skipped when `E1_SMOKE_URL` unset)
+- `tests/test_solva_v2_feature_flag_routing.py` — 12 source-strict assertions on the URL override, account flag, v1-untouched guard, backend 404-when-off contract, admin auto-flip
+- Sweep: 134 / 134 passing across Slice 1+2 + adjacent locked phases (4 pre-existing skips). `test_cycle_feel_pass` failure is pre-existing — verified by stash-and-rerun.
+
+### Slice 3 queued (next dispatch)
+- SSE wiring: live reasoning stream from the Solva 5-layer engine → progressive slide materialisation
+- Per-element loading state in the orchestrator
+

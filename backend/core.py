@@ -420,6 +420,14 @@ def sanitize_account(a: Dict[str, Any]) -> Dict[str, Any]:
     for k in ("deletion_requested_at", "deletion_scheduled_for"):
         if a.get(k) is not None:
             out[k] = a[k]
+    # Solva v2 artefact (Slice 2b, 2026-05-29) — surface
+    # `feature_flags.solva_v2` so the frontend helper
+    # `solvaV2EnabledFor(account)` can route the ARTEFACT view between
+    # v1 and v2. Only the v2 key is exposed; other internal flags stay
+    # off the wire.
+    flags = a.get("feature_flags")
+    if isinstance(flags, dict) and "solva_v2" in flags:
+        out["feature_flags"] = {"solva_v2": flags["solva_v2"]}
     return out
 
 
