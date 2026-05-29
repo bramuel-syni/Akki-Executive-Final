@@ -35,6 +35,9 @@ import {
 } from "lucide-react";
 
 
+import StatusFilterTabs from "@/components/monitor/StatusFilterTabs";
+
+
 // Status presentation — matches StrategicGoalsPanel's STATUS_STYLE
 // where the tokens overlap; "not_started" replaces "abandoned" per
 // the AA-1 spec.
@@ -387,27 +390,18 @@ export default function TasksInitiativesPanel({ contextId, onCountChange }) {
         </div>
       )}
 
-      <div className="flex items-center gap-2 mb-4 flex-nowrap overflow-x-auto" data-testid="tasks-status-filters">
-        {STATUS_FILTER_TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setStatusTab(t.key)}
-            className={`px-3 py-1.5 rounded-full text-[12px] uppercase tracking-wider border transition-colors whitespace-nowrap ${
-              statusTab === t.key
-                ? "bg-[var(--accent)] text-white border-[var(--accent)]"
-                : "text-[var(--deep)] border-[var(--rule)] hover:border-[var(--accent)] hover:bg-[var(--cream-deep)]/40"
-            }`}
-            data-testid={`tasks-status-tab-${t.key}`}
-          >
-            <span>{t.label}</span>
-            <span
-              className="ml-1.5 text-[10px] opacity-80"
-              data-testid={`tasks-status-tab-${t.key}-count`}
-            >
-              {counts[t.key] ?? 0}
-            </span>
-          </button>
-        ))}
+      <div
+        className="mb-4 pb-2 border-b border-[var(--rule)] flex items-center gap-2 flex-wrap"
+        data-testid="tasks-status-filters"
+      >
+        <StatusFilterTabs
+          tabs={STATUS_FILTER_TABS}
+          activeKey={statusTab}
+          onSelect={setStatusTab}
+          counts={counts}
+          testIdPrefix="tasks-status-tab"
+          ariaLabel="Filter tasks by status"
+        />
       </div>
 
       {loading ? (

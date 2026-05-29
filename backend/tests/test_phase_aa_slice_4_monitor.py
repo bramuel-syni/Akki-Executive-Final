@@ -99,17 +99,39 @@ def test_aa4_tasks_panel_root_testid_locked() -> None:
 
 
 def test_aa4_tasks_panel_emits_status_filter_tabs_with_counts() -> None:
+    """Phase AA-slice-4 — Tasks panel renders the 6 status-filter
+    buckets (all + 5 status keys) with a count badge per tab.
+
+    UPDATED 2026-02 fork-resume (Monitor status-filter harmonization):
+    the inline JSX was extracted into the shared `<StatusFilterTabs>`
+    primitive at `/components/monitor/StatusFilterTabs.jsx`. The
+    contract now asserts:
+      • All 6 STATUS_FILTER_TABS keys remain declared in the panel.
+      • The panel renders the primitive with `testIdPrefix=
+        "tasks-status-tab"` (preserves the legacy testid namespace
+        `tasks-status-tab-<key>` + `tasks-status-tab-<key>-count`).
+      • The primitive itself renders the testids — verified separately
+        in `test_monitor_status_filter_harmonization.py`.
+    """
     src = TASKS_PANEL.read_text(encoding="utf-8")
-    # The 5 status keys (+ "all" sentinel) live in STATUS_FILTER_TABS.
+    # The 6 status keys (+ "all" sentinel) live in STATUS_FILTER_TABS.
     for key in ("all", "on_track", "at_risk", "off_track", "achieved", "not_started"):
         assert f'key: "{key}"' in src, (
             f"Status filter tab `{key}` missing from "
             "STATUS_FILTER_TABS in TasksInitiativesPanel."
         )
-    # Each tab additionally renders a count badge.
-    assert "tasks-status-tab-${t.key}-count" in src
-    # The dynamic testid template is locked.
-    assert "tasks-status-tab-${t.key}" in src
+    # Panel must consume the shared primitive.
+    assert "<StatusFilterTabs" in src, (
+        "TasksInitiativesPanel must render <StatusFilterTabs> "
+        "(2026-02 fork-resume Monitor status-filter harmonization)."
+    )
+    # testIdPrefix must be the legacy `tasks-status-tab` so existing
+    # downstream probes (`tasks-status-tab-${t.key}` and
+    # `tasks-status-tab-${t.key}-count`) still resolve at runtime.
+    assert 'testIdPrefix="tasks-status-tab"' in src, (
+        "TasksInitiativesPanel must pass testIdPrefix=\"tasks-status-tab\" "
+        "to preserve existing testid namespace."
+    )
 
 
 def test_aa4_tasks_panel_card_locks_all_required_fields() -> None:

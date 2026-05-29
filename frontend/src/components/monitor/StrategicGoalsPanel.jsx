@@ -4,6 +4,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import StrategicRow, { ScoreBar as SharedScoreBar } from "@/components/strategic_row/StrategicRow";
+import StatusFilterTabs from "@/components/monitor/StatusFilterTabs";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
@@ -246,44 +247,26 @@ export default function StrategicGoalsPanel({ contextId, fn, isNED, onChange, on
           Both controls sit on a single horizontal line above the
           goal groupings, per spec §4.D → X8: "On the same line as the
           filter tabs, add a category filter on the right side." Tabs
-          and the dropdown combine — selecting both narrows the list. */}
+          and the dropdown combine — selecting both narrows the list.
+
+          Phase Y followup (2026-02 fork-resume) — extracted the
+          tab markup into the shared `<StatusFilterTabs>` primitive
+          so the Tasks/Initiatives panel renders the same row, same
+          rhythm, same accessibility contract. The wrapper here keeps
+          the `data-testid="strategic-goals-filters"` outer container
+          for back-compatibility with existing probes. */}
       <div
         className="mb-4 pb-2 border-b border-[var(--rule)] flex items-center gap-2 flex-wrap"
         data-testid="strategic-goals-filters"
       >
-        <div className="flex items-center gap-1 flex-wrap" role="tablist" aria-label="Filter strategic goals by status">
-          {STATUS_FILTER_TABS.map((t) => {
-            const active = statusFilter === t.key;
-            const count = statusCounts[t.key] ?? 0;
-            return (
-              <button
-                key={t.key}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setStatusFilter(t.key)}
-                className={[
-                  "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[11.5px] transition-colors",
-                  active
-                    ? "bg-[var(--ink)] text-[var(--parchment)]"
-                    : "text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)]/40",
-                ].join(" ")}
-                data-testid={`strategic-goals-status-tab-${t.key}`}
-              >
-                <span>{t.label}</span>
-                <span
-                  className={[
-                    "font-mono text-[10px] px-1 rounded-sm",
-                    active ? "bg-[var(--parchment)]/20" : "text-[var(--muted)]",
-                  ].join(" ")}
-                  data-testid={`strategic-goals-status-tab-${t.key}-count`}
-                >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <StatusFilterTabs
+          tabs={STATUS_FILTER_TABS}
+          activeKey={statusFilter}
+          onSelect={setStatusFilter}
+          counts={statusCounts}
+          testIdPrefix="strategic-goals-status-tab"
+          ariaLabel="Filter strategic goals by status"
+        />
       </div>
 
       {/* Owner filter — Decision 1 (2026-02 fork-resume): single source
