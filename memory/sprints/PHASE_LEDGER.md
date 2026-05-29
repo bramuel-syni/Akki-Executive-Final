@@ -2039,6 +2039,42 @@ Tester at 1024/820 surfaced 3 issues on AdminTenants drilldown + ExtractionsActi
 
   Test counts (followup #2): +1 new test file (2 tests in `test_wave42_opacity_steps_lock.py`). 101 source-strict tests passing across all touched files (`-m "not runtime_playwright"`).
 
+---
+
+### P0 INCIDENT — Production sign-in reported broken (2026-05-29 07:01 UTC) · DIAGNOSIS COMPLETE · NO ROOT CAUSE IN BACKEND
+
+User reported "Can't sign in. Getting the error" on https://akki.syni.ai (production). Phase 1 diagnostic curl sweep against the live production endpoints returned ALL HEALTHY signals:
+
+| # | Probe | Result | Verdict |
+|---|---|---|---|
+| 1 | `GET /` | HTTP 200, React shell loads (2166 bytes) | ✅ Frontend serving |
+| 2 | `GET /signin` | HTTP 200, React shell loads | ✅ Sign-in page serving |
+| 3 | `GET /api/auth/me` (no session) | HTTP 401 `{"detail":"Not authenticated"}` | ✅ Correct unauthenticated contract |
+| 4 | `OPTIONS /api/auth/login` preflight | HTTP 200, `access-control-allow-origin: https://akki.syni.ai`, `access-control-allow-credentials: true`, `vary: Origin` | ✅ CORS correctly reflects origin (not `*`), credentials supported |
+| 5 | `POST /api/auth/login` with `admin@akki.ai`/`AkkiAdmin2026!` | **HTTP 200** with full account payload, 11 contexts, `access_token` cookie + body, `refresh_token` cookie (`HttpOnly; Max-Age=28800; SameSite=none; Secure`) | ✅ **EMAIL/PASSWORD AUTH IS FULLY FUNCTIONAL IN PRODUCTION** |
+| 5b | Same with INVALID password | HTTP 401 `{"detail":"Invalid email or password"}` | ✅ Error contract correct |
+| 6 | `GET /api/auth/oauth/google/start` | HTTP 200, returns `{"auth_base_url":"https://auth.emergentagent.com/","callback_path":"/oauth/callback","provider":"google"}` | ✅ Emergent-managed OAuth handshake URL emitted correctly |
+| 7 | `POST /api/auth/oauth/google/finish` with synthetic session_id | HTTP 400 `{"error":"oauth_session_invalid","message":"OAuth session expired or was already consumed.","provider_status":404}` | ✅ Structured error contract working; OAuth proxy plumbing correct |
+| 8 | Frontend bundle `static/js/main.ea92ab08.js` audit | 0 hits for `preview.emergentagent.com`, 0 hits for `localhost:8001`/`127.0.0.1`, 0 hits for hardcoded API hosts | ✅ No build-time URL leakage |
+
+**Root-cause candidate verdict:**
+- ❌ (a) Google OAuth redirect URI mismatch — N/A; Emergent-managed proxy abstracts the actual Google redirect URI behind `auth.emergentagent.com`, prod start endpoint emits a valid handshake
+- ❌ (b) JWT_SECRET mismatch — JWT issuance + cookie set both working
+- ❌ (c) CORS misconfig with `*` + credentials — origin is reflected, not wildcard
+- ❌ (d) Stale prod build — bundle has zero preview-URL hardcoding
+- ❌ (e) MongoDB issue — DB lookup returned full account + 11 contexts
+- ❌ (f) `REACT_APP_BACKEND_URL` pointing wrong — same-host API calls resolving correctly via Cloudflare
+
+**Verdict: Production auth backend is FULLY OPERATIONAL.** The "can't sign in" error must originate client-side (browser session, cookies blocked, extension interference) OR be specific to a flow we haven't seen the error text for. Awaiting user-supplied error text + flow context (email/password vs Google OAuth vs cohort magic link) before any code change.
+
+**Recommended user actions before any code edit:**
+  1. Share the exact on-screen error text from akki.syni.ai
+  2. Confirm which sign-in path was used: email/password / Google OAuth / magic link
+  3. Try the same flow in an incognito window (rules out stale localStorage / cookie blocking)
+  4. Confirm whether the issue affects only one account or multiple
+
+NO CODE CHANGES APPLIED — pure diagnosis per dispatch directive.
+
 
 - **Wave 4.2.followup.1 (P3, cohort-feedback-gated)** — Hue-
   differentiation within the brand-purple family for category chips
