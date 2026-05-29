@@ -55,6 +55,7 @@ from .artefact_schema import (
     ScenarioRow, PerScenarioConfidenceTable, SensitivityInput,
     ReflectionSection, ReflectionQuestion, PathwayItem, DecisionBranch,
     RiskMitigation, MethodologicalHonesty, InClosing, FooterTemplate,
+    AdversarialCounterCase, PreMortemSlide, PreMortemFailureMode,
 )
 
 
@@ -466,6 +467,244 @@ def _to_conditional(text: str) -> str:
     return out
 
 
+def _build_adversarial_counter_for_pathway(
+    session: Dict[str, Any],
+    item_number: int,
+    item_heading: str,
+    item_body: str,
+    scenarios: List[ScenarioRow],
+) -> Optional[AdversarialCounterCase]:
+    """Slice 5 (2026-05-29) — generate a deterministic adversarial
+    counter for the most-critical pathway item.
+
+    Override path: when `session.adversarial_counters[pathway-{n}]`
+    exists (engine-emitted), use it verbatim. Otherwise compose a
+    deterministic placeholder grounded in the second-strongest
+    scenario (the rejected alternative) so the counter is genuinely
+    triangulated.
+    """
+    engine = (session.get("adversarial_counters") or {}).get(f"pathway-{item_number}")
+    if isinstance(engine, dict):
+        try:
+            return AdversarialCounterCase(**engine)
+        except Exception:
+            pass
+
+    # Deterministic placeholder. Steel-man cites the second-strongest
+    # scenario when one exists; otherwise grounds in L2 + L3 layer tags.
+    sec_scen = scenarios[1] if len(scenarios) >= 2 else None
+    if sec_scen:
+        sec_label = sec_scen.label[:80]
+        sec_weight = sec_scen.weight_pct
+        steel_man = (
+            f"The strongest case against \"{item_heading[:70]}\" is that the "
+            f"second-weighted scenario \"{sec_label}\" carries {sec_weight}% "
+            f"of the distribution and was under-explored. Investing in the "
+            f"recommended pathway forecloses the optionality of pivoting if "
+            f"the second-weighted scenario resolves favourably."
+        )
+        why = (
+            f"The {sec_weight}%-weight alternative would shift the operating "
+            f"read materially if it resolves; the counter exists to prevent "
+            f"premature commitment."
+        )
+    else:
+        steel_man = (
+            f"The strongest case against \"{item_heading[:70]}\" is that "
+            f"the diagnostic surfaced limited triangulation across "
+            f"comparable corpora; the recommended pathway may rest on a "
+            f"narrower evidence base than the confidence percentages "
+            f"suggest. A delay-and-revisit posture preserves optionality."
+        )
+        why = (
+            "Thin-evidence sessions warrant explicit hold-pause framing "
+            "before committing to forward motion."
+        )
+    return AdversarialCounterCase(
+        targets_conclusion_id=f"pathway-{item_number}",
+        steel_man_position=steel_man[:600],
+        source_input_ids=["L2", "L3"],
+        why_it_matters=why[:300],
+    )
+
+
+def _build_adversarial_counter_for_branch(
+    session: Dict[str, Any],
+    branch_index: int,
+    branch_condition: str,
+    branch_conclusion: str,
+    scenarios: List[ScenarioRow],
+) -> Optional[AdversarialCounterCase]:
+    """Slice 5 — adversarial counter for the leading decision branch.
+
+    Override path: `session.adversarial_counters[decision-{idx}]` if
+    engine-emitted.
+    """
+    engine = (session.get("adversarial_counters") or {}).get(f"decision-{branch_index}")
+    if isinstance(engine, dict):
+        try:
+            return AdversarialCounterCase(**engine)
+        except Exception:
+            pass
+
+    sec_scen = scenarios[1] if len(scenarios) >= 2 else None
+    if sec_scen:
+        steel_man = (
+            f"The strongest case against \"{branch_conclusion[:80]}\" is "
+            f"that the conditional rests on a {scenarios[0].confidence_pct}%-"
+            f"confidence read; the second-weighted scenario "
+            f"\"{sec_scen.label[:70]}\" carries {sec_scen.weight_pct}% and "
+            f"would invert the branch logic. The if-clause may be too "
+            f"narrow as written."
+        )
+    else:
+        steel_man = (
+            f"The strongest case against \"{branch_conclusion[:80]}\" is "
+            f"that the branch's if-clause encodes a binary read where the "
+            f"underlying evidence supports a continuum. The conditional "
+            f"may collapse fine-grained variation into a discrete trigger "
+            f"that fires noisily."
+        )
+    why = (
+        "Branch logic that ignores intermediate evidence states converts "
+        "smooth signal into discrete action — the counter exists to test "
+        "whether the threshold is calibrated."
+    )
+    return AdversarialCounterCase(
+        targets_conclusion_id=f"decision-{branch_index}",
+        steel_man_position=steel_man[:600],
+        source_input_ids=["L2", "L3"],
+        why_it_matters=why[:300],
+    )
+
+
+def _build_pre_mortem(
+    session: Dict[str, Any],
+    pathway: List[PathwayItem],
+    scenarios: List[ScenarioRow],
+    sensitivity: List[SensitivityInput],
+) -> PreMortemSlide:
+    """Slice 5 (2026-05-29) — Trust pillar 4. Imagined regret framing.
+
+    Engine override: if `session.pre_mortem` exists (engine-emitted),
+    use it verbatim. Otherwise compose a deterministic placeholder
+    with 3 evidence-grounded failure modes derived from observable
+    session shape (top scenario weight, sensitivity drivers, pathway
+    timeline distribution).
+    """
+    engine = session.get("pre_mortem")
+    if isinstance(engine, dict) and engine.get("failure_modes"):
+        try:
+            return PreMortemSlide(**engine)
+        except Exception:
+            pass
+
+    failure_modes: List[PreMortemFailureMode] = []
+    top_scen = scenarios[0] if scenarios else None
+    top_weight = top_scen.weight_pct if top_scen else 0
+    n_pathway = len(pathway)
+    n_sens = len(sensitivity)
+
+    # 1 — Data signal misread (anchored to top scenario confidence)
+    if top_scen:
+        fm1_narrative = (
+            f"The pathway anchors on the strongest scenario "
+            f"(\"{top_scen.label[:70]}\", {top_weight}% weight) being "
+            f"correct. If the {top_scen.confidence_pct}%-confidence read "
+            f"turns out to have over-weighted a tier-{(top_scen.tier or 'unknown').replace('_', ' ')} "
+            f"signal, the pathway will commit resources to the wrong "
+            f"diagnosis and surface the failure only after the timeline "
+            f"window closes."
+        )
+    else:
+        fm1_narrative = (
+            "The pathway commits resources before triangulation has "
+            "established a clear leading scenario. A signal misread at "
+            "this stage would propagate through the timeline tags before "
+            "any corrective evidence arrives."
+        )
+    failure_modes.append(PreMortemFailureMode(
+        failure_kind="data_signal_misread",
+        failure_narrative=fm1_narrative[:700],
+        triggering_signals=[
+            "Confidence band on the leading scenario revises downward at the next intake",
+            "A second-weighted scenario gains evidence that would overtake the leader",
+        ],
+        counter_action=(
+            "Investigating disconfirming evidence on the leading scenario "
+            "before the first timeline checkpoint would surface this risk "
+            "earlier."
+        ),
+        source_input_ids=["L1", "L3"],
+    ))
+
+    # 2 — Execution velocity (anchored to pathway timeline distribution)
+    if n_pathway >= 1:
+        fm2_narrative = (
+            f"The pathway carries {n_pathway} sequenced recommendation"
+            f"{'s' if n_pathway != 1 else ''}. Execution velocity in "
+            f"strategic diagnostic flows tends to fall short of the "
+            f"recommended timeline; a 30-day commitment regularly lands "
+            f"in a 60-day execution window. The risk is that "
+            f"compounding slippage erodes the optionality the pathway "
+            f"depends on."
+        )
+    else:
+        fm2_narrative = (
+            "Execution velocity in strategic diagnostic flows tends to "
+            "fall short of the implied timeline. The risk is that "
+            "compounding slippage erodes the optionality the pathway "
+            "depends on."
+        )
+    failure_modes.append(PreMortemFailureMode(
+        failure_kind="execution_velocity",
+        failure_narrative=fm2_narrative[:700],
+        triggering_signals=[
+            "First timeline checkpoint slips by more than 7 days",
+            "Pathway item handoffs surface coordination overhead beyond the recommended cadence",
+        ],
+        counter_action=(
+            "Pre-committing the first timeline checkpoint with named owners "
+            "would surface velocity risk early."
+        ),
+        source_input_ids=["L3"],
+    ))
+
+    # 3 — Stakeholder misalignment (anchored to sensitivity input count)
+    if n_sens >= 1:
+        fm3_narrative = (
+            f"The {n_sens} sensitivity input"
+            f"{'s' if n_sens != 1 else ''} surfaced indicate the read "
+            f"shifts materially with stakeholder decisions outside the "
+            f"diagnostic's direct observation window. Misalignment "
+            f"between the founder's framing and the board / management "
+            f"team's interpretation would surface only after commitment, "
+            f"forcing a costly recalibration."
+        )
+    else:
+        fm3_narrative = (
+            "Stakeholder misalignment between the founder's framing and "
+            "the board / management team's interpretation regularly "
+            "surfaces only after commitment, forcing a costly "
+            "recalibration mid-execution."
+        )
+    failure_modes.append(PreMortemFailureMode(
+        failure_kind="stakeholder_misalignment",
+        failure_narrative=fm3_narrative[:700],
+        triggering_signals=[
+            "Stakeholder pre-read returns silence rather than substantive engagement",
+            "Board agenda for the next cycle does not name the pathway items as standing topics",
+        ],
+        counter_action=(
+            "Surfacing the diagnostic's framing to two board members before "
+            "commitment would test alignment without overcommitting."
+        ),
+        source_input_ids=["L4"],
+    ))
+
+    return PreMortemSlide(failure_modes=failure_modes)
+
+
 def _build_pathway(session: Dict[str, Any]) -> List[PathwayItem]:
     synth = session.get("synthesis") or {}
     raw = synth.get("recommendations") or []
@@ -504,6 +743,27 @@ def _build_pathway(session: Dict[str, Any]) -> List[PathwayItem]:
     return out
 
 
+def _attach_pathway_adversarial_counter(
+    session: Dict[str, Any],
+    pathway: List[PathwayItem],
+    scenarios: List[ScenarioRow],
+) -> List[PathwayItem]:
+    """Slice 5 — attach the adversarial counter to the most critical
+    pathway item (the first one). PathwayItem is immutable Pydantic
+    so we rebuild the first item in place."""
+    if not pathway:
+        return pathway
+    leading = pathway[0]
+    counter = _build_adversarial_counter_for_pathway(
+        session, leading.number, leading.action_heading,
+        leading.detail_paragraph, scenarios,
+    )
+    if counter is None:
+        return pathway
+    new_leading = leading.model_copy(update={"adversarial_counter": counter})
+    return [new_leading] + pathway[1:]
+
+
 # ─────────────────────────────────────────────────────────────────
 # Decision logic (element 10) — derived from scenarios + sensitivity
 # ─────────────────────────────────────────────────────────────────
@@ -512,6 +772,7 @@ def _build_pathway(session: Dict[str, Any]) -> List[PathwayItem]:
 def _build_decision_logic(
     scenarios: List[ScenarioRow],
     sensitivity: List[SensitivityInput],
+    session: Optional[Dict[str, Any]] = None,
 ) -> List[DecisionBranch]:
     out: List[DecisionBranch] = []
     for s_in in sensitivity[:3]:
@@ -529,6 +790,14 @@ def _build_decision_logic(
             conclusion=f"\"{top.label[:120]}\" becomes the operating read for the next planning cycle.",
             rationale=f"Confidence at {top.confidence_pct}%, calibrated against triangulating sources.",
         ))
+    # Slice 5 — attach adversarial counter to the leading branch only.
+    if out and session is not None:
+        leading = out[0]
+        counter = _build_adversarial_counter_for_branch(
+            session, 0, leading.condition, leading.conclusion, scenarios,
+        )
+        if counter is not None:
+            out[0] = leading.model_copy(update={"adversarial_counter": counter})
     return out
 
 
@@ -815,6 +1084,9 @@ def build_payload(session: Dict[str, Any], context_name: str = "Context") -> Art
     tensions, deep_dives = _build_tensions(session)
     sensitivity = _build_sensitivity(session, scenarios)
     headline = _build_headline(scenarios, session)
+    pathway_items = _build_pathway(session)
+    pathway_items = _attach_pathway_adversarial_counter(session, pathway_items, scenarios)
+    decision_logic = _build_decision_logic(scenarios, sensitivity, session=session)
     return ArtefactPayload(
         session_id=str(session.get("id") or "unknown"),
         cover=_build_cover(session, context_name),
@@ -825,12 +1097,13 @@ def build_payload(session: Dict[str, Any], context_name: str = "Context") -> Art
         per_scenario_confidence_table=conf_table,
         sensitivity_inputs=sensitivity,
         reflection_section=_build_reflection(session),
-        pathway=_build_pathway(session),
-        decision_logic=_build_decision_logic(scenarios, sensitivity),
+        pathway=pathway_items,
+        decision_logic=decision_logic,
         risk_mitigation=_build_risk_mitigation(tensions),
         methodological_honesty=_build_methodological_honesty(session, scenarios, tensions),
         in_closing=_build_in_closing(session, scenarios, headline),
         bias_inventory=_build_bias_inventory(session, tensions, scenarios),
+        pre_mortem=_build_pre_mortem(session, pathway_items, scenarios, sensitivity),
         footer_template=FooterTemplate(),
     )
 

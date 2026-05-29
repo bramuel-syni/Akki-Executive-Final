@@ -5704,10 +5704,14 @@ Per the user's accepted proposal. ~7 LOC; founder skips animation, lands on full
 Trust pillar 1 is live. The founder watches Solva think.
 
 ### Next dispatches queued
-- AppShell topbar responsive fix (Dispatch 2) — small maintenance slice; multi-viewport DOM probe at 1280/1024/820
-- Slice 4 (P1) — Bias inventory rendering
-- Slice 5 (P1) — Adversarial debate + pre-mortem
+- AppShell topbar responsive fix (Dispatch 2) — small maintenance slice; multi-viewport DOM probe at 1280/1024/820 — DONE
+- Slice 4 (P1) — Bias inventory rendering — DONE (2026-05-29). 14th locked slide; Trust pillar 2.
+- Slice 5 (P1) — Adversarial debate + pre-mortem — DONE (2026-05-29). 15th locked slide (`pre_mortem`); adversarial counter callout on leading pathway item + leading decision branch; Trust pillar 4.
 - Slice 6 (P1) — Cost asymmetry slide
-- Slice 7 (P1) — Verification + polish (including session-log side-panel re-open from the icon-button stub)
+- Slice 7 (P1) — Verification + polish (including session-log side-panel re-open from the icon-button stub, `data-solva-v2-slide-ready-at` timestamp attributes)
 - Slice 3.followup.1 (parked) — engine-side `LiveQueue` for true live-mode broadcast on in-flight sessions
+- CompanyHome 820px overflow (P3 parked)
+- PPTX export for Solva v2 (P2 backlog)
+- Dry-run admin endpoint for Solva prompt tuning (P2 backlog)
+- Solva diff feature — diagnoses evolution over time (P3 backlog)
 

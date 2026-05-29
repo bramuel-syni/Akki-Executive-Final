@@ -49,6 +49,7 @@ from .stream_schema import (
 # Slide order in the rendered deck — matches `composeSlides()` in
 # SolvaArtefactV2.jsx. Used to emit slide.ready events in deck order.
 # Slice 4 (2026-05-29) — bias_inventory between reflection and pathway.
+# Slice 5 (2026-05-29) — pre_mortem between pathway and decision_logic.
 SLIDE_DECK_ORDER = (
     "cover",
     "headline",
@@ -60,13 +61,14 @@ SLIDE_DECK_ORDER = (
     "reflection",
     "bias_inventory",
     "pathway",
+    "pre_mortem",
     "decision_logic",
     "risk_mitigation",
     "methodological_honesty",
     "in_closing",
 )
 assert set(SLIDE_DECK_ORDER) == set(LOCKED_SLIDE_KINDS), (
-    "SLIDE_DECK_ORDER must match locked 13-kind enum exactly."
+    "SLIDE_DECK_ORDER must match locked 15-kind enum exactly."
 )
 
 
@@ -169,6 +171,7 @@ SLIDE_READY_DESCRIPTIONS = {
     "reflection":             "Rendered Reflection — 3 closing questions",
     "bias_inventory":         "Rendered Bias Inventory — named biases, evidence-grounded",
     "pathway":                "Rendered Pathway — sequenced recommendations",
+    "pre_mortem":             "Rendered Pre-Mortem — imagined regret, failure modes named",
     "decision_logic":         "Rendered Decision Logic — conditional branches",
     "risk_mitigation":        "Rendered Risk + Mitigation Register",
     "methodological_honesty": "Rendered Methodological Honesty disclosure",
@@ -193,6 +196,7 @@ SLIDE_KIND_TO_SOURCE_LAYER = {
     "reflection":             "L4",
     "bias_inventory":         "L4",  # surfaces AFTER reflection — Layer 4 carries the bias frame
     "pathway":                "L3",
+    "pre_mortem":             "L3",  # synthesis layer composed the failure modes; surfaces alongside pathway
     "decision_logic":         "L3",
     "risk_mitigation":        "L3",
     "methodological_honesty": "L3",

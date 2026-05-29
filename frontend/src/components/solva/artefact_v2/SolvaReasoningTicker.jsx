@@ -87,7 +87,7 @@ export default function SolvaReasoningTicker({
           className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-[var(--ink)]"
           data-testid="solva-v2-ticker-pill-text"
         >
-          Session complete · 5 layers · 14 slides
+          Session complete · 5 layers · 15 slides
         </span>
       </div>
     );

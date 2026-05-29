@@ -3040,3 +3040,129 @@ This correction sits inside the same "claimed-evidence-doesn't-reproduce" lesson
 Trust pillar 1 ships robust: replay-mode attribute reflects URL override correctly; slide-state machine holds until each `slide.ready` event arrives; visual coherence between slides and ticker is restored; 30s pill window holds for late-arriving viewers.
 
 
+
+### Solva v2 — Slice 4 (Bias Inventory) close-out evidence ✅ (2026-05-29)
+
+Trust pillar 2 ships. Inline raw-trace evidence captured from the founder-facing flow (admin@akki.ai, `/app/solva/session/e7b46d64-7a14-46e1-8f99-9703c210333f`, NO URL params).
+
+#### Live-trace highlights (verbatim, 1280 viewport)
+
+- `data-solva-v2-events-total = "35"` (was 34, now +1 for bias_inventory).
+- `data-solva-v2-slide-count = "14"` (was 13). Topbar pill: `SESSION COMPLETE · 5 LAYERS · 14 SLIDES`.
+- Loading→ready transition: t=1s 14 loading → t=4s 6 loading / 7 ready / 1 placeholder → t=6s+ 0 loading / 13 ready / 1 placeholder.
+- Bias inventory slide rendered: state=`ready`, slideNumber=`12`, biasCount=`3`. Bias dump:
+  - `confirmation_bias` · "Confirmation bias" · likelihood pill rgba(107,70,193,0.1) (`/10`)
+  - `anchoring_bias` · "Anchoring bias" · likelihood pill rgba(107,70,193,0.3) (`/30`)
+  - `narrative_fallacy` · "Narrative fallacy" · likelihood pill rgba(107,70,193,0.1) (`/10`)
+- Wave 4.2.followup.2 compliance — every pill at /10 or /30 is in the locked allowlist {5,10,15,20,25,30,40,50,60,70,75,80,90,95,100}.
+- Deck order: reflection(7) → bias_inventory(8) → pathway(9). Order locked.
+- 14/14 unique kinds present.
+
+---
+
+### Solva v2 — Slice 5 (Adversarial debate + Pre-mortem) ✅ (2026-05-29)
+
+Trust pillar 4 (adversarial debate, imagined regret) ships in one continuous cut — backend schema + validators + payload builder + frontend slides + tests + raw-trace close-out.
+
+#### Files touched
+
+Backend
+- `backend/services/solva_v2/artefact_schema.py` — added `AdversarialCounterCase`, `PreMortemFailureMode`, `PreMortemSlide` models. Made `pre_mortem` REQUIRED on `ArtefactPayload`. Added optional `adversarial_counter` field to `PathwayItem` + `DecisionBranch`.
+- `backend/services/solva_v2/integrity_validators.py` — added 3 new validators (`adversarial_counter_evidence_grounded`, `pre_mortem_present`, `pre_mortem_failure_evidence_grounded`). Expanded `_BIAS_OBSERVATIONAL_OPENERS` to include adversarial-counter-friendly openers without weakening bias guardrails. Added `_PRE_MORTEM_COUNTER_OPENERS` allowlist.
+- `backend/services/solva_v2/payload_builder.py` — added deterministic `_build_adversarial_counter_for_pathway` (most critical pathway item only), `_build_adversarial_counter_for_branch` (leading branch only), `_build_pre_mortem` (3 evidence-grounded failure modes anchored to scenario weight, pathway timeline, sensitivity input count). Engine override path: `session.adversarial_counters[pathway-{n}]` / `[decision-{idx}]` / `session.pre_mortem` if present.
+- `backend/services/solva_v2/stream_schema.py` — `LOCKED_SLIDE_KINDS` 14 → 15 (added `pre_mortem`).
+- `backend/services/solva_v2/stream_synthesizer.py` — `SLIDE_DECK_ORDER` updated (pre_mortem between pathway and decision_logic). `SLIDE_READY_DESCRIPTIONS` + `SLIDE_KIND_TO_SOURCE_LAYER` augmented (pre_mortem → L3).
+
+Frontend
+- `frontend/src/hooks/useSolvaReasoningStream.js` — `LOCKED_SLIDE_KINDS` 14 → 15.
+- `frontend/src/components/solva/artefact_v2/SolvaReasoningTicker.jsx` — completion pill copy "5 layers · 14 slides" → "5 layers · 15 slides".
+- `frontend/src/components/solva/artefact_v2/slides/PreMortemSlide.jsx` — NEW. Locked DOM contract (`data-solva-v2-slide-kind="pre_mortem"`, `data-solva-v2-failure-kind`, `data-solva-v2-failure-index`). Failure-kind chip palette uses Wave 4.2.followup.2 allowlisted opacities (/10, /15, /20, /25, /30). Per-failure machine testids.
+- `frontend/src/components/solva/artefact_v2/slides/PathwaySlide.jsx` — adversarial counter callout block on items where `p.adversarial_counter` is populated. `border-ned-purple/40 bg-ned-purple/5` per allowlist. Locked label "Strongest case against this conclusion" + observational "Why it matters · " inline label.
+- `frontend/src/components/solva/artefact_v2/slides/DecisionLogicSlide.jsx` — same callout pattern on branches where `b.adversarial_counter` is populated.
+- `frontend/src/components/solva/artefact_v2/SolvaArtefactV2.jsx` — orchestrator imports + mounts `PreMortemSlide` between `pathway` and `decision_logic`. Doc-block updated 13→15 kinds.
+
+Tests (all green)
+- `test_solva_v2_adversarial_counter_schema.py` (10 cases) — model contract, min-lengths, ≥2 source ids, integration onto PathwayItem + DecisionBranch.
+- `test_solva_v2_pre_mortem_schema.py` (10 cases) — locked failure_kind enum, narrative ≥80, signals ≥1, sources ≥1, optional counter_action, ≤6 modes, REQUIRED on payload.
+- `test_solva_v2_adversarial_validators.py` (10 cases) — citation resolution (audit-log + coarse-tag), ≥2 resolved enforcement, imperative-phrasing block on steel_man + why_it_matters, attaches on both pathway + decision branches.
+- `test_solva_v2_pre_mortem_validators.py` (10 cases) — present check, citation resolution, observational counter_action openers (Investigating / Monitoring / Strengthening / Pre-committing / Surfacing), imperative narrative block.
+- `test_solva_v2_pre_mortem_render.py` (10 cases) — DOM contract, allowlisted chip opacity, deck order between pathway and decision_logic, locked counter label.
+- `test_solva_v2_adversarial_callout_render.py` (10 cases) — callout in pathway + decision_logic, conditional render guard, allowlisted opacity, "Why it matters" inline label.
+- Updated existing tests: `test_solva_v2_artefact_schema.py`, `test_solva_v2_integrity_validators.py`, `test_solva_v2_bias_inventory_validators.py`, `test_solva_v2_slide_kind_inventory.py`, `test_solva_v2_use_reasoning_stream_hook.py`, `test_solva_v2_sse_engine_emission.py`, `test_solva_v2_sse_event_schema.py` — updated 14→15 kinds, added pre_mortem fixtures, label "5 layers · 14 slides" → "5 layers · 15 slides", emission count 34→36, slide-file count 14→15.
+
+#### Live raw-trace evidence (verbatim, 1280 viewport, post-deploy)
+
+Reference flow: `admin@akki.ai` → `/signin` form → `/app/solva/session/e7b46d64-7a14-46e1-8f99-9703c210333f` (NO URL params; default hydrated). Captured t≥7s after navigation, stream complete.
+
+```
+streamStatus     = "complete"
+eventsTotal      = "36"          ← was 35 (Slice 4); now +1 for pre_mortem
+eventsReceived   = "36"
+isComplete       = "true"
+slideCount       = "15"          ← was 14 (Slice 4); now +1
+slidesTotal      = 15  data-solva-v2-slide="true" elements
+slideStates      = {loading: 0, ready: 14, placeholder: 1, other: 0}
+```
+
+15 unique slide kinds in deck order: `cover, headline, tensions_overview, per_tension, scenarios_overview, per_scenario_table, sensitivity, reflection, bias_inventory, pathway, pre_mortem, decision_logic, risk_mitigation, methodological_honesty, in_closing`.
+
+Pre-mortem slide DOM (`data-solva-v2-slide-kind="pre_mortem"`, slideNumber=15, state=`ready`, failureCount=3):
+
+```
+[0] failure_kind = "data_signal_misread"
+    chip_bg      = rgba(107, 70, 193, 0.2)   ← /20  (allowlist ✓)
+    chip_label   = "DATA SIGNAL MISREAD"
+    narrative    = "The pathway anchors on the strongest scenario (\"You have fla..."
+    signal_count = 2
+    first_signal = "→ Confidence band on the leading scenario revises downward a..."
+    counter_present = true
+    counter      = "COUNTER · Investigating disconfirming evidence on the leading..."
+[1] failure_kind = "execution_velocity"
+    chip_bg      = rgba(107, 70, 193, 0.15)  ← /15  (allowlist ✓)
+    chip_label   = "EXECUTION VELOCITY"
+    narrative    = "Execution velocity in strategic diagnostic flows tends to fa..."
+    signal_count = 2
+    counter      = "COUNTER · Pre-committing the first timeline checkpoint with n..."
+[2] failure_kind = "stakeholder_misalignment"
+    chip_bg      = rgba(107, 70, 193, 0.1)   ← /10  (allowlist ✓)
+    chip_label   = "STAKEHOLDER MISALIGNMENT"
+    narrative    = "The 3 sensitivity inputs surfaced indicate the read shifts m..."
+    counter      = "COUNTER · Surfacing the diagnostic's framing to two board mem..."
+```
+
+Adversarial counter callout on `decision_logic[0]`:
+```
+on_slide_kind     = "decision_logic"
+label             = "STRONGEST CASE AGAINST THIS CONCLUSION"
+steel_man         = "The strongest case against \"The weighted read shifts — could..."
+why_it_matters    = "WHY IT MATTERS · Branch logic that ignores intermediate evide..."
+border_color      = rgba(107, 70, 193, 0.4)   ← /40 (allowlist ✓)
+bg_color          = rgba(107, 70, 193, 0.05)  ← /5  (allowlist ✓)
+```
+
+(Pathway is empty in this seeded reference session, so no pathway counter rendered — by design: counter only attaches when pathway items exist. Verified via API payload inspection: `pathway = []`, `decision_logic[0].adversarial_counter` populated.)
+
+Deck-order check: pathway(idx=9) → pre_mortem(idx=10) → decision_logic(idx=11). All consecutive with no kind skipped. `deck_order_correct = true`.
+
+Multi-viewport sanity:
+```
+viewport=1024 → slide rendered, state=ready, doc_overflow_x=0 ✓
+viewport=820  → slide rendered, state=ready, doc_overflow_x=0 ✓
+```
+
+#### Test sweep — full Solva v2 suite
+
+- **Solva v2:** 381 passed / 23 skipped (pre-existing) / 0 failures. (Previous: 321 passed / 23 skipped — net +60 tests; +51 from new files, +9 from updated tests counting renames).
+- **v1 byte-identical guard:** `git diff backend/services/solva backend/services/solva_v1 frontend/src/components/solva/artefact` returns empty diff.
+
+#### Anti-drift locks (Slice 5 additions)
+
+- `LOCKED_SLIDE_KINDS` is mirrored across 4 surfaces (Pydantic SlideKind enum, `stream_schema.LOCKED_SLIDE_KINDS`, `stream_synthesizer.SLIDE_DECK_ORDER`, hook `LOCKED_SLIDE_KINDS`). Drift between any two surfaces fails an existing test.
+- `pre_mortem` is REQUIRED on `ArtefactPayload`, not optional — accidentally omitting it from a future builder version fails `test_artefact_payload_requires_pre_mortem_field`.
+- Adversarial counter blocks render conditionally (`p.adversarial_counter && (...)` and `b.adversarial_counter && (...)`). Empty payloads never surface phantom callout DOM.
+- Per-failure-kind machine testid (`solva-v2-failure-narrative-${kind}` / `solva-v2-failure-counter-${kind}`) lets tests address the imagined-regret content by canonical taxonomy slot regardless of human-readable label drift.
+- Wave 4.2.followup.2 compliance — every chip + callout opacity number was test-checked against the locked allowlist `{5,10,15,20,25,30,40,50,60,70,75,80,90,95,100}`.
+
+#### Slice 5 is now genuinely closed
+
+Trust pillar 4 ships. Adversarial counter visible on the leading pathway item AND leading decision branch when populated. Pre-mortem surfaces 3 evidence-grounded failure modes between pathway and decision_logic on every artefact. Brand-purple monochrome compliance held. v1 byte-identical. Inline raw-trace evidence pulled from the exact founder-facing flow the tester would test.

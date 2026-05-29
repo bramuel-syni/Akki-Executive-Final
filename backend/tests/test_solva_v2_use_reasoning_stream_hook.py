@@ -115,17 +115,18 @@ def test_hook_does_not_force_all_slides_ready_on_event_complete():
     )
 
 
-def test_hook_uses_locked_fourteen_slide_kinds():
+def test_hook_uses_locked_fifteen_slide_kinds():
     """The hook's LOCKED_SLIDE_KINDS array must enumerate exactly the
-    14 contract kinds (13 original + bias_inventory from Slice 4),
-    matching artefact_schema."""
+    15 contract kinds (13 original + bias_inventory from Slice 4 +
+    pre_mortem from Slice 5), matching artefact_schema."""
     src = HOOK.read_text(encoding="utf-8")
     for kind in (
         "cover", "headline",
         "tensions_overview", "per_tension",
         "scenarios_overview", "per_scenario_table", "sensitivity",
         "reflection", "bias_inventory",
-        "pathway", "decision_logic", "risk_mitigation",
+        "pathway", "pre_mortem",
+        "decision_logic", "risk_mitigation",
         "methodological_honesty", "in_closing",
     ):
         assert f'"{kind}"' in src, f"Hook LOCKED_SLIDE_KINDS missing {kind!r}."
@@ -177,9 +178,9 @@ def test_slide_skeleton_uses_brand_purple_short_name_utilities():
 # ─────────────────────────────────────────────────────────────────
 
 
-def test_all_fourteen_slides_thread_slide_state_to_shell():
+def test_all_fifteen_slides_thread_slide_state_to_shell():
     files = list(SLIDES.glob("*.jsx"))
-    assert len(files) == 14
+    assert len(files) == 15
     offenders = []
     for path in files:
         src = path.read_text(encoding="utf-8")
@@ -278,7 +279,7 @@ def test_ticker_collapse_pill_uses_solva_canonical_copy():
     """On session.complete the ticker collapses to a compact pill with
     EXACTLY the locked copy: 'Session complete · 5 layers · 14 slides'."""
     src = TICKER.read_text(encoding="utf-8")
-    assert "Session complete · 5 layers · 14 slides" in src
+    assert "Session complete · 5 layers · 15 slides" in src
 
 
 def test_ticker_two_stage_post_complete_lifecycle():

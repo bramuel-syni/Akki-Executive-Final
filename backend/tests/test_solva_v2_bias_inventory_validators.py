@@ -24,6 +24,7 @@ from services.solva_v2.artefact_schema import (  # noqa: E402
     PathwayItem, DecisionBranch, RiskMitigation,
     MethodologicalHonesty, InClosing,
     BiasInventorySection, BiasItem, FooterTemplate,
+    PreMortemSlide, PreMortemFailureMode,
 )
 from services.solva_v2.integrity_validators import (  # noqa: E402
     bias_inventory_present, bias_inventory_citation_lint,
@@ -86,6 +87,21 @@ def _payload(biases):
             final_statement="Final statement of length.",
         ),
         bias_inventory=BiasInventorySection(biases=biases),
+        pre_mortem=PreMortemSlide(
+            failure_modes=[
+                PreMortemFailureMode(
+                    failure_kind="data_signal_misread",
+                    failure_narrative=(
+                        "The pathway anchors on a single dominant read; if "
+                        "the underlying signal is cohort-specific, the "
+                        "recommended pathway commits to a misread that "
+                        "surfaces only after the timeline closes."
+                    ),
+                    triggering_signals=["Signal reverts at next intake"],
+                    source_input_ids=["audit-1"],
+                ),
+            ],
+        ),
         per_scenario_confidence_table=PerScenarioConfidenceTable(),
     )
 

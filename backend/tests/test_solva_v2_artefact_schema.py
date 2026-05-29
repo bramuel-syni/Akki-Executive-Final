@@ -39,6 +39,8 @@ from services.solva_v2.artefact_schema import (  # noqa: E402
     InClosing,
     BiasInventorySection,
     BiasItem,
+    PreMortemSlide,
+    PreMortemFailureMode,
     FooterTemplate,
 )
 
@@ -176,6 +178,28 @@ def _minimal_payload() -> ArtefactPayload:
                         "Seeking evidence that would falsify the cohort retention "
                         "framing would test this assumption."
                     ),
+                ),
+            ],
+        ),
+        pre_mortem=PreMortemSlide(
+            failure_modes=[
+                PreMortemFailureMode(
+                    failure_kind="data_signal_misread",
+                    failure_narrative=(
+                        "The pathway anchors on the cohort retention signal being "
+                        "the dominant read; if the signal turns out to be a "
+                        "cohort-specific anomaly, the recommended pathway commits "
+                        "resources to a misread that would surface only after the "
+                        "Q1 timeline window closes."
+                    ),
+                    triggering_signals=[
+                        "Cohort retention reverts toward the corpus baseline at the next intake",
+                    ],
+                    counter_action=(
+                        "Investigating cohort-stratified retention before "
+                        "committing would surface this risk earlier."
+                    ),
+                    source_input_ids=["audit-1"],
                 ),
             ],
         ),

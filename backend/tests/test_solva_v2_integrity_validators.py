@@ -21,6 +21,7 @@ from services.solva_v2.artefact_schema import (  # noqa: E402
     PerScenarioConfidenceTable, SensitivityInput, ReflectionSection,
     ReflectionQuestion, PathwayItem, DecisionBranch, RiskMitigation,
     MethodologicalHonesty, InClosing, BiasInventorySection, BiasItem,
+    PreMortemSlide, PreMortemFailureMode,
     FooterTemplate,
 )
 from services.solva_v2.integrity_validators import (  # noqa: E402
@@ -147,6 +148,26 @@ def _baseline_payload(**overrides) -> ArtefactPayload:
                     suggested_mitigation=(
                         "Seeking evidence that would falsify the cohort retention framing would test this assumption."
                     ),
+                ),
+            ],
+        ),
+        pre_mortem=PreMortemSlide(
+            failure_modes=[
+                PreMortemFailureMode(
+                    failure_kind="data_signal_misread",
+                    failure_narrative=(
+                        "The pathway anchors on the cohort retention signal "
+                        "carrying the read; if the signal turns out cohort-"
+                        "specific, the recommended pathway commits resources "
+                        "to a misread that surfaces only after the timeline "
+                        "window closes."
+                    ),
+                    triggering_signals=["Cohort retention reverts to baseline"],
+                    counter_action=(
+                        "Investigating cohort-stratified retention before "
+                        "committing would surface this risk earlier."
+                    ),
+                    source_input_ids=["audit-1"],
                 ),
             ],
         ),

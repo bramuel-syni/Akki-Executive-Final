@@ -2,10 +2,11 @@
  * Solva v2 — SolvaArtefactV2 orchestrator (Slice 2b correction, 2026-05-29).
  *
  * CORRECTION FROM PRIOR CLOSE-OUT (tester contract verification):
- *  - Locked enum has EXACTLY 13 kinds. Section dividers are NOT slides —
+ *  - Locked enum has EXACTLY 15 kinds (Slice 4 added bias_inventory;
+ *    Slice 5 added pre_mortem). Section dividers are NOT slides —
  *    they're visual separators carrying `data-solva-v2-section-divider="true"`
  *    (no `data-solva-v2-slide` / no `data-solva-v2-slide-kind`).
- *  - All 13 kinds render UNCONDITIONALLY so the kind inventory is
+ *  - All 15 kinds render UNCONDITIONALLY so the kind inventory is
  *    consistent across sessions regardless of payload data presence.
  *    Empty arrays surface as empty-state copy inside the slide, not as a
  *    missing slide.
@@ -15,10 +16,11 @@
  *    for the print stylesheet — replaces the prior `body:has()` selector
  *    which is unreliable in older Chromium and some Playwright pipelines.
  *
- * The 13 locked slide kinds:
+ * The 15 locked slide kinds:
  *   cover · headline · tensions_overview · per_tension · scenarios_overview
- *   · per_scenario_table · sensitivity · reflection · pathway
- *   · decision_logic · risk_mitigation · methodological_honesty · in_closing
+ *   · per_scenario_table · sensitivity · reflection · bias_inventory
+ *   · pathway · pre_mortem · decision_logic · risk_mitigation
+ *   · methodological_honesty · in_closing
  *
  * Section dividers interleave between the 6 narrative arcs but DO NOT
  * appear in the slide-kind inventory.
@@ -41,12 +43,13 @@ import PathwaySlide from "./slides/PathwaySlide";
 import DecisionLogicSlide from "./slides/DecisionLogicSlide";
 import RiskMitigationSlide from "./slides/RiskMitigationSlide";
 import BiasInventorySlide from "./slides/BiasInventorySlide";
+import PreMortemSlide from "./slides/PreMortemSlide";
 import MethodologicalHonestySlide from "./slides/MethodologicalHonestySlide";
 import InClosingSlide from "./slides/InClosingSlide";
 
 
 /**
- * Compose the slide sequence from the payload. All 13 locked slide
+ * Compose the slide sequence from the payload. All 15 locked slide
  * kinds render every time — empty arrays surface as empty-state copy
  * inside the slide, NOT as a skipped slide. Section dividers (which
  * are NOT slides) interleave between narrative arcs.
@@ -219,6 +222,17 @@ function composeSlides(payload) {
   slides.push({
     kind: "pathway",
     render: (shared) => <PathwaySlide pathway={pathway} {...shared} />,
+  });
+  // ── Pre-mortem (Slice 5, Trust pillar 4) — sits between pathway and
+  //    decision_logic: after the founder reads the recommended next
+  //    moves, surface the imagined-regret framing so adversarial debate
+  //    is in view BEFORE the conditional branches. REQUIRED on every
+  //    artefact per Slice 5 `pre_mortem_present` validator.
+  slides.push({
+    kind: "pre_mortem",
+    render: (shared) => (
+      <PreMortemSlide preMortem={payload.pre_mortem} {...shared} />
+    ),
   });
   slides.push({
     kind: "decision_logic",

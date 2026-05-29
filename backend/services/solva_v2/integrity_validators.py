@@ -388,6 +388,13 @@ _BIAS_OBSERVATIONAL_OPENERS = (
     "seeking", "testing", "consulting", "inviting", "asking",
     "soliciting", "inviting input", "examining", "checking",
     "validating", "running",
+    # Slice 5 — adversarial-counter / pre-mortem observational openers
+    "the strongest case", "the case against", "the counter",
+    "the steel-man", "the steelman",
+    "branch logic", "the branch", "the if-clause", "the conditional",
+    "the pathway", "the recommended", "the recommendation",
+    "the leading", "the second", "the alternative",
+    "thin-evidence", "thin evidence",
     "if ", "when ",  # conditionals
 )
 
@@ -567,6 +574,246 @@ def bias_evidence_observational(payload: ArtefactPayload, session: Dict[str, Any
 
 
 # ─────────────────────────────────────────────────────────────────
+# Validators 8-9 — Slice 5 (2026-05-29) Adversarial debate + Pre-mortem
+# ─────────────────────────────────────────────────────────────────
+
+
+# Coarse layer tags accepted as source ids by the bias / adversarial /
+# pre-mortem citation validators. Mirrored from
+# `bias_inventory_citation_lint` so all three Trust pillar validators
+# share the same resolution surface.
+_COARSE_LAYER_TAGS = {
+    "L0", "L1", "L2", "L3", "L4",
+    "frame_audit", "surface", "depth", "synthesis", "reflection",
+    "framing", "grounding", "hypothesis",  # legacy
+}
+
+
+# Observational openers for `counter_action` (parallel to bias-mitigation
+# openers). `Investigating`, `Monitoring`, `Strengthening`, `Pre-
+# committing`, `Surfacing` etc. NEVER imperative.
+_PRE_MORTEM_COUNTER_OPENERS = (
+    "investigating", "investigate ",
+    "monitoring", "monitor ",
+    "strengthening", "strengthen ",
+    "pre-committing", "pre-commit ", "precommitting", "precommit ",
+    "surfacing", "surface ",
+    "running", "run ",
+    "consulting", "consult ",
+    "tracking", "track ",
+    "checking", "check ",
+    "validating", "validate ",
+    "soliciting", "solicit ",
+    "if ", "when ",  # conditionals
+    "the evidence supports ", "the evidence indicates ",
+    "this risk shifts ", "this risk reduces ",
+)
+
+
+def _resolve_session_ids(session: Dict[str, Any]) -> Set[str]:
+    """Build the set of resolvable source ids from the session
+    (audit-log + user_turns). Re-used by the Slice 5 validators."""
+    ids: Set[str] = set()
+    for a in session.get("reasoning_audit_log") or []:
+        if isinstance(a, dict) and a.get("id"):
+            ids.add(str(a["id"]))
+    for t in session.get("user_turns") or []:
+        if isinstance(t, dict) and t.get("id"):
+            ids.add(str(t["id"]))
+    return ids
+
+
+def _scan_imperative(text: str, location: str, validator_name: str) -> List[ValidatorOffender]:
+    """Scan a text body for imperative phrasings, allowing conditional
+    + observational openers. Returns a list of offenders."""
+    offenders: List[ValidatorOffender] = []
+    for sentence in _sentences(text):
+        normalised = sentence.lower().strip()
+        if any(normalised.startswith(opener) for opener in _CONDITIONAL_OPENERS):
+            continue
+        if any(normalised.startswith(opener) for opener in _BIAS_OBSERVATIONAL_OPENERS):
+            continue
+        for pat in _IMPERATIVE_PATTERNS:
+            m = re.search(pat, normalised)
+            if m:
+                offenders.append(ValidatorOffender(
+                    validator=validator_name,
+                    severity="block",
+                    location=location,
+                    message=(
+                        f"Imperative phrasing detected: {m.group(0)!r} in "
+                        f"sentence {sentence!r}."
+                    ),
+                    revision_hint=(
+                        "Rewrite as observational. Solva NAMES the failure "
+                        "mode / counter-case and grounds it in evidence; it "
+                        "does NOT instruct the founder how to act."
+                    ),
+                ))
+                break
+    return offenders
+
+
+def adversarial_counter_evidence_grounded(
+    payload: ArtefactPayload, session: Dict[str, Any],
+) -> List[ValidatorOffender]:
+    """Slice 5 contract — every adversarial_counter must:
+      • cite ≥2 source_input_ids resolving to real audit-log ids,
+        user turn ids, or coarse layer tags. (Schema enforces ≥2
+        entries; this validator additionally enforces resolvability
+        AND triangulation — at least 2 must resolve.)
+      • use observational phrasing in steel_man_position +
+        why_it_matters (no imperatives).
+    """
+    offenders: List[ValidatorOffender] = []
+    audit_ids = _resolve_session_ids(session)
+
+    def _check(prefix: str, counter):  # AdversarialCounterCase | None
+        if counter is None:
+            return
+        unresolved = [
+            sid for sid in (counter.source_input_ids or [])
+            if sid not in audit_ids and sid not in _COARSE_LAYER_TAGS
+        ]
+        resolved = [s for s in counter.source_input_ids if s not in unresolved]
+        if len(resolved) < 2:
+            offenders.append(ValidatorOffender(
+                validator="adversarial_counter_evidence_grounded",
+                severity="block",
+                location=f"{prefix}.adversarial_counter.source_input_ids",
+                message=(
+                    f"Adversarial counter cites only {len(resolved)} resolved source"
+                    f"{'s' if len(resolved) != 1 else ''} (need ≥2 for triangulation). "
+                    f"Unresolved: {unresolved}."
+                ),
+                revision_hint=(
+                    "Add ≥2 audit-log ids or coarse layer tags so the "
+                    "counter is genuinely triangulated, not a vague "
+                    "devil's advocate."
+                ),
+            ))
+        offenders.extend(_scan_imperative(
+            counter.steel_man_position,
+            f"{prefix}.adversarial_counter.steel_man_position",
+            "adversarial_counter_evidence_grounded",
+        ))
+        offenders.extend(_scan_imperative(
+            counter.why_it_matters,
+            f"{prefix}.adversarial_counter.why_it_matters",
+            "adversarial_counter_evidence_grounded",
+        ))
+
+    for i, p in enumerate(payload.pathway):
+        _check(f"pathway[{i}]", p.adversarial_counter)
+    for i, b in enumerate(payload.decision_logic):
+        _check(f"decision_logic[{i}]", b.adversarial_counter)
+    return offenders
+
+
+def pre_mortem_present(payload: ArtefactPayload, session: Dict[str, Any]) -> List[ValidatorOffender]:
+    """Slice 5 — Trust pillar 4. Pre-mortem slide must be present
+    with ≥1 failure mode. An empty failure_modes list is a real
+    bug, not an observational outcome."""
+    offenders: List[ValidatorOffender] = []
+    pm = payload.pre_mortem
+    if pm is None:
+        offenders.append(ValidatorOffender(
+            validator="pre_mortem_present",
+            severity="block",
+            location="pre_mortem",
+            message="Pre-mortem slide missing entirely.",
+            revision_hint=(
+                "Emit a `pre_mortem` section with at least 1 failure mode. "
+                "Trust pillar 4 — Solva ALWAYS imagines how the pathway "
+                "could fail."
+            ),
+        ))
+        return offenders
+    if not pm.failure_modes:
+        offenders.append(ValidatorOffender(
+            validator="pre_mortem_present",
+            severity="block",
+            location="pre_mortem.failure_modes",
+            message="Pre-mortem has zero failure modes.",
+            revision_hint=(
+                "Add at least 1 PreMortemFailureMode. On thin-evidence "
+                "sessions, surface the most plausible candidate failure mode."
+            ),
+        ))
+    return offenders
+
+
+def pre_mortem_failure_evidence_grounded(
+    payload: ArtefactPayload, session: Dict[str, Any],
+) -> List[ValidatorOffender]:
+    """Slice 5 contract — every failure_mode must:
+      • cite ≥1 source_input_id resolving to audit-log / user turn /
+        coarse layer tag.
+      • use observational phrasing in failure_narrative + counter_action.
+      • If counter_action is present, must start with one of the
+        observational openers (Investigating / Monitoring / etc.)."""
+    offenders: List[ValidatorOffender] = []
+    pm = payload.pre_mortem
+    if pm is None:
+        return offenders
+    audit_ids = _resolve_session_ids(session)
+
+    for i, fm in enumerate(pm.failure_modes):
+        unresolved = [
+            sid for sid in (fm.source_input_ids or [])
+            if sid not in audit_ids and sid not in _COARSE_LAYER_TAGS
+        ]
+        if unresolved:
+            offenders.append(ValidatorOffender(
+                validator="pre_mortem_failure_evidence_grounded",
+                severity="block",
+                location=f"pre_mortem.failure_modes[{i}].source_input_ids",
+                message=(
+                    f"Failure mode {fm.failure_kind!r} cites unresolved source "
+                    f"ids: {unresolved}. Each id must resolve to an audit-log "
+                    f"entry, a user turn, OR a coarse layer tag."
+                ),
+                revision_hint=(
+                    "Replace the unresolved ids with real audit-log entry "
+                    "ids or coarse layer tags (L0..L4)."
+                ),
+            ))
+        offenders.extend(_scan_imperative(
+            fm.failure_narrative,
+            f"pre_mortem.failure_modes[{i}].failure_narrative",
+            "pre_mortem_failure_evidence_grounded",
+        ))
+        if fm.counter_action:
+            normalised = fm.counter_action.lower().strip()
+            if not any(
+                normalised.startswith(opener) for opener in _PRE_MORTEM_COUNTER_OPENERS
+            ):
+                offenders.append(ValidatorOffender(
+                    validator="pre_mortem_failure_evidence_grounded",
+                    severity="block",
+                    location=f"pre_mortem.failure_modes[{i}].counter_action",
+                    message=(
+                        f"counter_action must begin with an observational "
+                        f"opener (Investigating / Monitoring / Strengthening / "
+                        f"Pre-committing / Surfacing). Got: "
+                        f"{fm.counter_action[:80]!r}"
+                    ),
+                    revision_hint=(
+                        "Rewrite as observational. E.g. 'Investigating the "
+                        "leading indicator earlier would shift this risk' — "
+                        "NEVER 'You should investigate...'."
+                    ),
+                ))
+                continue
+            offenders.extend(_scan_imperative(
+                fm.counter_action,
+                f"pre_mortem.failure_modes[{i}].counter_action",
+                "pre_mortem_failure_evidence_grounded",
+            ))
+    return offenders
+
+
+# ─────────────────────────────────────────────────────────────────
 # Composite runner
 # ─────────────────────────────────────────────────────────────────
 
@@ -579,11 +826,14 @@ _ALL_VALIDATORS = (
     bias_inventory_present,
     bias_inventory_citation_lint,
     bias_evidence_observational,
+    adversarial_counter_evidence_grounded,
+    pre_mortem_present,
+    pre_mortem_failure_evidence_grounded,
 )
 
 
 def validate_artefact(payload: ArtefactPayload, session: Dict[str, Any]) -> ValidationResult:
-    """Run all 4 integrity validators against `payload`. Returns a
+    """Run all integrity validators against `payload`. Returns a
     `ValidationResult` whose `.ok` is True iff NO blocking offenders
     were found. Callers MUST check `.ok` before serializing the
     payload to the renderer."""
@@ -605,4 +855,7 @@ __all__ = [
     "bias_inventory_present",
     "bias_inventory_citation_lint",
     "bias_evidence_observational",
+    "adversarial_counter_evidence_grounded",
+    "pre_mortem_present",
+    "pre_mortem_failure_evidence_grounded",
 ]

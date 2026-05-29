@@ -88,6 +88,26 @@ export default function PathwaySlide({
                   <p className="text-[13px] text-[var(--deep)] leading-relaxed">
                     {p.detail_paragraph}
                   </p>
+                  {p.adversarial_counter && (
+                    <div
+                      className="mt-3 border-l-2 border-ned-purple/40 bg-ned-purple/5 px-4 py-3"
+                      data-testid={`solva-v2-pathway-adversarial-${p.number || idx + 1}`}
+                      data-solva-v2-adversarial-counter="pathway"
+                    >
+                      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--ned-purple)] mb-1.5">
+                        Strongest case against this conclusion
+                      </p>
+                      <p className="text-[12.5px] text-[var(--deep)] leading-relaxed mb-2">
+                        {p.adversarial_counter.steel_man_position}
+                      </p>
+                      <p className="text-[12px] text-[var(--muted)] leading-relaxed italic">
+                        <span className="font-mono not-italic text-[10px] uppercase tracking-[0.14em] mr-1.5">
+                          Why it matters ·
+                        </span>
+                        {p.adversarial_counter.why_it_matters}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </li>
             ))}

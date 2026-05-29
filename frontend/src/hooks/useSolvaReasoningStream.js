@@ -42,6 +42,7 @@ const LOCKED_SLIDE_KINDS = [
   "reflection",
   "bias_inventory",
   "pathway",
+  "pre_mortem",
   "decision_logic",
   "risk_mitigation",
   "methodological_honesty",

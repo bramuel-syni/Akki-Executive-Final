@@ -75,6 +75,26 @@ export default function DecisionLogicSlide({
                     </span>
                     {b.rationale}
                   </p>
+                  {b.adversarial_counter && (
+                    <div
+                      className="mt-3 border-l-2 border-ned-purple/40 bg-ned-purple/5 px-4 py-3"
+                      data-testid={`solva-v2-decision-adversarial-${idx}`}
+                      data-solva-v2-adversarial-counter="decision_logic"
+                    >
+                      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--ned-purple)] mb-1.5">
+                        Strongest case against this conclusion
+                      </p>
+                      <p className="text-[12.5px] text-[var(--deep)] leading-relaxed mb-2">
+                        {b.adversarial_counter.steel_man_position}
+                      </p>
+                      <p className="text-[12px] text-[var(--muted)] leading-relaxed italic">
+                        <span className="font-mono not-italic text-[10px] uppercase tracking-[0.14em] mr-1.5">
+                          Why it matters ·
+                        </span>
+                        {b.adversarial_counter.why_it_matters}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </li>
             ))}

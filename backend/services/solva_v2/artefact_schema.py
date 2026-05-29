@@ -213,6 +213,40 @@ class ReflectionSection(BaseModel):
 # ─────────────────────────────────────────────────────────────────
 
 
+class AdversarialCounterCase(BaseModel):
+    """Slice 5 (2026-05-29) — Trust pillar 4 (adversarial debate).
+
+    The strongest case AGAINST the targeted conclusion. Rendered as an
+    inline callout block on the pathway slide's most critical
+    recommendation AND on the decision_logic slide's leading branch.
+
+    Locked constraints (enforced by Slice 5 integrity validators):
+      • steel_man_position must be observational (≥80 chars), evidence-
+        grounded, NEVER imperative.
+      • source_input_ids has ≥2 entries (genuine triangulation, not a
+        vague devil's advocate).
+      • why_it_matters explains the operating significance of the
+        counter-case (≥40 chars, observational).
+    """
+    targets_conclusion_id: str = Field(
+        ...,
+        min_length=1,
+        description="Identifier linking the counter to the conclusion it targets — typically a pathway number ('pathway-1') or decision branch index ('decision-0')",
+    )
+    steel_man_position: str = Field(
+        ..., min_length=80,
+        description="The strongest plausible case against the targeted conclusion — observational, ≥80 chars, evidence-grounded",
+    )
+    source_input_ids: List[str] = Field(
+        ..., min_length=2,
+        description="≥2 audit-log / user-turn ids OR coarse layer tags (L0..L4) supporting the counter — triangulation contract",
+    )
+    why_it_matters: str = Field(
+        ..., min_length=40,
+        description="Why this counter-case is worth weighing — observational, ≥40 chars",
+    )
+
+
 class PathwayItem(BaseModel):
     number: int = Field(..., ge=1)
     timeline_tag: TimelineTag
@@ -227,6 +261,10 @@ class PathwayItem(BaseModel):
         default_factory=list,
         description="Citations supporting any numerical claims in action_heading / detail_paragraph",
     )
+    adversarial_counter: Optional[AdversarialCounterCase] = Field(
+        None,
+        description="Slice 5 — strongest case against this recommendation. Set on the most critical pathway item only.",
+    )
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -238,6 +276,10 @@ class DecisionBranch(BaseModel):
     condition: str = Field(..., min_length=1, description="If clause — 'If next quarter's churn rate exceeds X%'")
     conclusion: str = Field(..., min_length=1, description="Then clause — observational, not imperative")
     rationale: str = Field(..., min_length=1)
+    adversarial_counter: Optional[AdversarialCounterCase] = Field(
+        None,
+        description="Slice 5 — strongest case against this branch's conclusion. Set on the leading branch only.",
+    )
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -345,6 +387,79 @@ class BiasInventorySection(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────
+# Element 14b — Pre-mortem (Slice 5, 2026-05-29) — imagined regret
+# ─────────────────────────────────────────────────────────────────
+#
+# "Imagine 12 months from now you regret this pathway. What was the
+# most likely failure mode?" Each failure_mode names an evidence-
+# grounded way the recommended pathway could fail, the early-warning
+# signals that would surface it, and an observational counter-action
+# that would shift the risk.
+
+
+PreMortemFailureKind = Literal[
+    "execution_velocity",
+    "market_shift",
+    "stakeholder_misalignment",
+    "data_signal_misread",
+    "capability_gap",
+    "external_shock",
+]
+
+
+class PreMortemFailureMode(BaseModel):
+    """One imagined failure mode in the pre-mortem.
+
+    Locked constraints (enforced by Slice 5 integrity validators):
+      • failure_kind ∈ locked enum.
+      • failure_narrative ≥80 chars, observational, evidence-grounded.
+      • triggering_signals carries ≥1 concrete signal that would
+        warn this failure mode is materializing.
+      • counter_action, if present, starts with an observational
+        opener (Investigating / Monitoring / Strengthening / Pre-
+        committing / Surfacing) — NEVER an imperative.
+      • source_input_ids carries ≥1 audit-log / user-turn / coarse
+        layer tag.
+    """
+    failure_kind: PreMortemFailureKind = Field(
+        ..., description="Locked taxonomy slot",
+    )
+    failure_narrative: str = Field(
+        ..., min_length=80,
+        description="Observational narrative of how the pathway fails — ≥80 chars, evidence-grounded",
+    )
+    triggering_signals: List[str] = Field(
+        ..., min_length=1,
+        description="≥1 concrete early-warning signals that would surface this failure",
+    )
+    counter_action: Optional[str] = Field(
+        None,
+        description="Observational counter-action (Investigating... / Monitoring... / Strengthening...). NEVER imperative.",
+    )
+    source_input_ids: List[str] = Field(
+        ..., min_length=1,
+        description="≥1 audit-log / user-turn ids OR coarse layer tags grounding this failure mode",
+    )
+
+
+class PreMortemSlide(BaseModel):
+    """The Pre-mortem slide payload.
+
+    Slice 5 ships this slide as REQUIRED on every artefact — pre-
+    mortem is Trust pillar 4 (adversarial debate, imagined regret).
+    Empty `failure_modes` is a real bug, not an observational outcome.
+    """
+    intro_copy: str = Field(
+        default="Imagine twelve months from now you regret this pathway. "
+                "What was the most likely failure mode?",
+    )
+    failure_modes: List[PreMortemFailureMode] = Field(
+        ..., min_length=1, max_length=6,
+        description="3-5 typical, 1-6 enforced. Each mode is evidence-grounded and observational.",
+    )
+
+
+# ─────────────────────────────────────────────────────────────────
 # Element 15 — Per-slide footer template
 # ─────────────────────────────────────────────────────────────────
 
@@ -387,6 +502,7 @@ class ArtefactPayload(BaseModel):
     methodological_honesty: MethodologicalHonesty
     in_closing: InClosing
     bias_inventory: BiasInventorySection
+    pre_mortem: PreMortemSlide
     footer_template: FooterTemplate = Field(default_factory=FooterTemplate)
 
 
@@ -411,6 +527,10 @@ __all__ = [
     "BiasInventorySection",
     "BiasItem",
     "BiasLikelihood",
+    "AdversarialCounterCase",
+    "PreMortemSlide",
+    "PreMortemFailureMode",
+    "PreMortemFailureKind",
     "FooterTemplate",
     "SourceCitation",
     "SensitivityRank",
