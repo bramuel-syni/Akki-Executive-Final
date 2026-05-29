@@ -62,7 +62,7 @@ export default function SectionDivider({
         className="absolute bottom-4 left-10 right-10 flex items-baseline justify-between border-t border-[var(--rule)] pt-3 font-mono text-[10.5px] tracking-[0.14em] text-[var(--muted)]"
       >
         <span className="truncate pr-4">
-          Solve Session Output&nbsp;·&nbsp;Confidential&nbsp;·&nbsp;{contextName}
+          Solva Session Output&nbsp;·&nbsp;Confidential&nbsp;·&nbsp;{contextName}
         </span>
         <span className="flex-shrink-0">
           {String(number).padStart(2, "0")}&nbsp;/&nbsp;{String(total).padStart(2, "0")}

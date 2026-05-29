@@ -1,6 +1,19 @@
 """Solva v2 — LLM prompt strings for fields not deterministically derivable
 from existing engine outputs.
 
+Solva borrows STRUCTURE from the upstream canonical methodology
+(verbatim-quote evidence, probability-weighted scenarios, sensitivity
+analysis, methodological honesty, decision logic, sequenced
+recommendations with cluster derivation). The IDENTITY is Solva's own.
+Every prompt below names the diagnostic as a "Solva diagnostic" — never
+the upstream brand. The reasoning shape is the Solva 5-layer pass:
+
+    Layer 0 — Frame Audit (FAR)
+    Layer 1 — Surface (candidate generation)
+    Layer 2 — Depth   (triangulation + tension detection)
+    Layer 3 — Synthesis (the diagnosis paragraph)
+    Layer 4 — Reflection (3 fixed reflection questions)
+
 Slice 1b ships the DETERMINISTIC `payload_builder` that emits a valid
 payload from existing engine outputs alone. This module supplies the
 prompt CONSTANTS the LLM-enrichment layer (wired in Slice 2) will use
@@ -83,7 +96,7 @@ will be rejected by automated validators if any of these are violated:
 
 HEADLINE_PROMPT = """\
 You are composing the 'If you read nothing else, read this' slide for a
-SOLVE-method strategic diagnostic.
+Solva diagnostic.
 
 INPUTS:
   • Session framing (intent): {intent}
@@ -121,7 +134,7 @@ OUTPUT: strict JSON array of 3 objects, each shaped:
 
 
 SCENARIOS_WEIGHT_SPLIT_PROMPT = """\
-You are refining the probability-weighted scenarios for a SOLVE diagnostic.
+You are refining the probability-weighted scenarios for a Solva diagnostic.
 
 The probability_weighting engine has produced raw `confidence_pct` values
 for each scenario. Your job is to split this single value into TWO
@@ -168,7 +181,7 @@ and confidence_pct must be defensible from the supporting_evidence cited.
 
 SENSITIVITY_CLUSTER_SHIFT_PROMPT = """\
 You are writing explicit cluster-weight-shift copy for sensitivity inputs
-in a SOLVE diagnostic.
+in a Solva diagnostic.
 
 For each sensitivity input, the user must SEE in writing how much the
 weighted picture shifts if that input resolves one way vs the other.
@@ -205,7 +218,7 @@ be rejected by the validator.
 
 
 DECISION_LOGIC_PROMPT = """\
-You are composing the Decision Logic slide for a SOLVE diagnostic.
+You are composing the Decision Logic slide for a Solva diagnostic.
 
 The slide is a sequence of if/then branches that map specific data
 outcomes to strategic conclusions. The branches connect sensitivity
@@ -239,17 +252,18 @@ toward X", "the weighted picture supports Y"). NEVER imperative.
 
 
 IN_CLOSING_REFRAMING_PROMPT = """\
-You are composing the In Closing slide for a SOLVE diagnostic.
+You are composing the In Closing slide for a Solva diagnostic.
 
-This slide reframes the user's opening question (Layer 1 framing) in
-light of the synthesized weighted picture (Layer 4) and the reflection
-layer (Layer 5). The reframing must surface the gap between the question
-the user asked and the question the evidence supports asking.
+This slide reframes the user's opening question (the user's Layer 1
+Surface framing) in light of the Layer 3 Synthesis (the diagnosis) and
+the Layer 4 Reflection responses. The reframing must surface the gap
+between the question the user asked and the question the evidence
+supports asking.
 
 INPUTS:
-  • Opening framing (intent, Layer 1): {intent}
+  • Opening framing (intent, Layer 1 Surface): {intent}
   • Strongest scenario after weighting: {top_scenario_json}
-  • Reflection layer responses (Layer 5): {reflection_responses_json}
+  • Layer 4 Reflection responses: {reflection_responses_json}
   • Surfaced tensions: {tensions_json}
 
 TASK:
@@ -271,7 +285,7 @@ Emit JSON shaped:
 
 
 METHODOLOGICAL_HONESTY_PROMPT = """\
-You are composing the Methodological Honesty slide for a SOLVE
+You are composing the Methodological Honesty slide for a Solva
 diagnostic. This slide is required on every artefact.
 
 INPUTS:

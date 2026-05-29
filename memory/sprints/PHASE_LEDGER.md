@@ -2485,3 +2485,139 @@ A smoke screenshot is not evidence. A selector probe is. The bug pattern is "I s
 **Slice 3 (live reasoning stream SSE) is now genuinely unblocked. The Slice 2b contract is met with rendered-DOM evidence inline.**
 
 
+
+### Solva v2 — Slice 2b IDENTITY AUDIT CLOSED ✅ (2026-05-29) · zero SOLVE/Solve string instances in v2 code paths · 8 new audit-guard tests locked
+
+**Discipline.** User correction: *"You are not making Solva Solve. You are borrowing from Solve."* The Slice 1b/2b work had leaked SOLVE branding into the schema defaults, the LLM prompts, the layer naming, the cover-slide method tag, and the per-slide footer template. The structural patterns Solva borrows from upstream methodology (verbatim-quote evidence, probability-weighted scenarios, sensitivity analysis, methodological honesty, decision logic, sequenced recommendations with cluster derivation) are STRUCTURE — Solva keeps them. The identity / brand / vocabulary is Solva's own.
+
+#### BEFORE audit — grep output verbatim
+```
+/app/backend/services/solva_v2/v2_prompts.py:86:SOLVE-method strategic diagnostic.
+/app/backend/services/solva_v2/v2_prompts.py:124:You are refining the probability-weighted scenarios for a SOLVE diagnostic.
+/app/backend/services/solva_v2/v2_prompts.py:171:in a SOLVE diagnostic.
+/app/backend/services/solva_v2/v2_prompts.py:208:You are composing the Decision Logic slide for a SOLVE diagnostic.
+/app/backend/services/solva_v2/v2_prompts.py:242:You are composing the In Closing slide for a SOLVE diagnostic.
+/app/backend/services/solva_v2/v2_prompts.py:274:You are composing the Methodological Honesty slide for a SOLVE
+/app/backend/services/solva_v2/artefact_schema.py:23: 15. (cover.method_tag carries the "SOLVE · SESSION OUTPUT · CONFIDENTIAL"
+/app/backend/services/solva_v2/artefact_schema.py:82:        default="SOLVE · SESSION OUTPUT · CONFIDENTIAL",
+/app/backend/services/solva_v2/artefact_schema.py:288:        default="Solve Session Output · Confidential · {context_name} · {n} / {total}",
+/app/frontend/src/components/solva/artefact_v2/SectionDivider.jsx:65:          Solve Session Output&nbsp;·&nbsp;Confidential&nbsp;·&nbsp;{contextName}
+/app/frontend/src/components/solva/artefact_v2/slides/CoverSlide.jsx:25:        {/* Method tag — canonical "SOLVE · SESSION OUTPUT · CONFIDENTIAL" */}
+/app/frontend/src/components/solva/artefact_v2/SlideShell.jsx:5: * tag) and footer ("Solve Session Output · Confidential · {ctx} ·
+/app/frontend/src/components/solva/artefact_v2/SlideShell.jsx:72:          Solve Session Output&nbsp;·&nbsp;Confidential&nbsp;·&nbsp;{contextName}
+/app/backend/routers/solva_v2.py:362:# Solve clusters. Deterministic (no LLM call), so tests are stable and
+```
+Total: **13 string match sites** across **6 files** (5 backend + 1 frontend tree).
+
+#### AFTER audit — grep output verbatim
+```
+(empty)
+```
+**Zero SOLVE / Solve string matches in v2 code paths.** Only remaining `solve_v2.*` strings are the internal Mongo audit-log SURFACE tags in `services/solva_v2/engines/*` — those are routing keys for stored historical data, NOT user-facing brand. The audit-guard test whitelists them explicitly (path-scoped: `services/solva_v2/engines/` + line-scoped: `SURFACE = "solve_v2.`).
+
+#### Verbatim before/after diff of substantive changes
+
+**1. Cover slide `method_tag` default (`backend/services/solva_v2/artefact_schema.py:82`):**
+- BEFORE: `default="SOLVE · SESSION OUTPUT · CONFIDENTIAL"`
+- AFTER:  `default="SOLVA · SESSION OUTPUT · CONFIDENTIAL"`
+
+**2. Cover slide `method` one-liner default (`backend/services/solva_v2/artefact_schema.py:89`):**
+- BEFORE: `default="5-layer diagnostic — framing · grounding · synthesis · reflection · perspective"`
+- AFTER:  `default="Solva 5-layer pass — frame audit · surface · depth · synthesis · reflection"`
+
+The new value uses Solva's canonical 5-layer naming from `memory/briefs/SOLVA.md` §3.2-3.6: Layer 0 Frame Audit, Layer 1 Surface, Layer 2 Depth, Layer 3 Synthesis, Layer 4 Reflection. The prior value was a fabricated alternative not anchored to the Solva brief.
+
+**3. Cover slide `inputs_range` template (`backend/services/solva_v2/payload_builder.py:124`):**
+- BEFORE: `f"Layer 1 to Layer 5, {len(turns)} user inputs · {audit_count} engine entries"`
+- AFTER:  `f"Layer 0 (frame audit) to Layer 4 (reflection), {len(turns)} user inputs · {audit_count} engine entries"`
+
+**4. Footer template default (`backend/services/solva_v2/artefact_schema.py:288`):**
+- BEFORE: `default="Solve Session Output · Confidential · {context_name} · {n} / {total}"`
+- AFTER:  `default="Solva Session Output · Confidential · {context_name} · {n} / {total}"`
+
+**5. Methodological honesty rendered text (`backend/services/solva_v2/payload_builder.py:586-589`):**
+- BEFORE: `f"This is a 5-layer {submodule} diagnostic synthesizing the user's inputs against Solva's comparable corpus and grounding tiers. It surfaces tensions, weighted scenarios, and conditional pathways."`
+- AFTER:  `f"This is a Solva {submodule} 5-layer diagnostic — Layer 0 frame audit, Layer 1 Surface, Layer 2 Depth, Layer 3 Synthesis, Layer 4 Reflection — synthesizing the user's inputs against Solva's comparable corpus and grounding tiers. It surfaces tensions, weighted scenarios, and conditional pathways."`
+
+**6. All 6 LLM prompt headers (`backend/services/solva_v2/v2_prompts.py`):**
+- BEFORE: `"composing the X slide for a SOLVE diagnostic"` / `"refining ... for a SOLVE diagnostic"`
+- AFTER:  `"composing the X slide for a Solva diagnostic"` / `"refining ... for a Solva diagnostic"`
+- Top-level docstring of `v2_prompts.py` extended with the canonical Solva identity statement + 5-layer naming.
+
+**7. In Closing prompt Layer references (`backend/services/solva_v2/v2_prompts.py`):**
+- BEFORE: `"Layer 1 framing"`, `"weighted picture (Layer 4)"`, `"reflection layer (Layer 5)"`
+- AFTER:  `"Layer 1 Surface framing"`, `"Layer 3 Synthesis (the diagnosis)"`, `"Layer 4 Reflection responses"`
+
+**8. ReflectionSection module comment (`backend/services/solva_v2/artefact_schema.py:190`):**
+- BEFORE: `# Element 8 — Reflection (Layer 5)`
+- AFTER:  `# Element 8 — Reflection (Layer 4 of the Solva 5-layer pass)`
+
+**9. SourceCitation `source_layer` field description (`backend/services/solva_v2/artefact_schema.py:72`):**
+- BEFORE: `"Solva layer: framing/grounding/hypothesis/synthesis/reflection"`
+- AFTER:  `"Solva audit-log layer tag emitted by the engine that produced the cited entry (e.g. framing/grounding/hypothesis/synthesis/reflection — see services/solva_v2/engines/* for the canonical emitter set)."` (audit-log layer values are internal data field tags — kept as-is for engine compatibility; the description now clarifies they're internal, not Solva canonical layer names)
+
+**10. Frontend (`SlideShell.jsx`, `SectionDivider.jsx`, `CoverSlide.jsx` docstring):**
+- BEFORE: `"Solve Session Output · Confidential · {contextName}"`
+- AFTER:  `"Solva Session Output · Confidential · {contextName}"`
+- BEFORE comment: `canonical "SOLVE · SESSION OUTPUT · CONFIDENTIAL"`
+- AFTER comment:  `canonical "SOLVA · SESSION OUTPUT · CONFIDENTIAL"`
+
+**11. Auto-cluster mapper comment (`backend/routers/solva_v2.py:362`):**
+- BEFORE: `# Solve clusters.`
+- AFTER:  `# Solva clusters.`
+
+**12. Test fixture updates:**
+- `tests/test_solva_v2_artefact_schema.py`: `_minimal_payload()` `what_report_is` updated; assertion in `test_cover_method_tag_default_value` now checks `"SOLVA · SESSION OUTPUT · CONFIDENTIAL"`; `test_footer_template_default_value` now checks `"Solva Session Output"`.
+- `tests/test_solva_v2_integrity_validators.py`: fixture `what_report_is` updated.
+- `tests/test_solva_v2_artefact_renders.py::test_shell_footer_template_matches_locked_string`: `"Solva Session Output"`.
+
+#### NEW audit-guard test file — `tests/test_solva_v2_identity_audit.py`
+8 source-strict assertions locking the audit baseline:
+1. `test_zero_solve_brand_in_v2_code_paths` — word-boundary regex sweep of v2 code paths; `solve_v2.*` SURFACE tags whitelisted via explicit (path, line-substring) entries.
+2. `test_method_tag_default_is_solva_branded`
+3. `test_footer_template_default_is_solva_branded`
+4. `test_method_one_liner_uses_canonical_5_layer_naming` — verifies all 5 Solva-canonical layer names appear in the default
+5. `test_prompts_reference_solva_diagnostic_not_solve`
+6. `test_slide_shell_footer_jsx_carries_solva_brand`
+7. `test_section_divider_footer_jsx_carries_solva_brand`
+8. `test_inputs_range_uses_canonical_solva_layer_numbering`
+
+Future regression would fail this test before reaching e1_tester. The `SOLVE-AUDIT-WHITELIST` magic-marker convention is available for any future deliberate brand reference in code comments.
+
+#### Live wire evidence (admin@akki.ai @ session `e7b46d64-7a14-46e1-8f99-9703c210333f`)
+
+**Payload defaults on the wire:**
+```
+cover.method_tag    = 'SOLVA · SESSION OUTPUT · CONFIDENTIAL'
+cover.method        = 'Solva 5-layer pass — frame audit · surface · depth · synthesis · reflection'
+cover.inputs_range  = 'Layer 0 (frame audit) to Layer 4 (reflection), 0 user inputs · 11 engine entries'
+footer_template     = 'Solva Session Output · Confidential · {context_name} · {n} / {total}'
+honesty.what_is     = 'This is a Solva seek clarity 5-layer diagnostic — Layer 0 frame audit, Layer 1 Surface, Layer 2 Depth, Layer 3 Synthesis, Layer 4 Reflection — ...'
+```
+
+**Rendered DOM at 1280:**
+```
+cover_method_tag:    'SOLVA · SESSION OUTPUT · CONFIDENTIAL'
+cover_method:        'Solva 5-layer pass — frame audit · surface · depth · synthesis · reflection'
+cover_inputs_range:  'Layer 0 (frame audit) to Layer 4 (reflection), 0 user inputs · 11 engine entries'
+first_footers:
+  - 'Solva Session Output · Confidential · Context 01 / 18'
+  - 'Solva Session Output · Confidential · Context 02 / 18'
+  - 'Solva Session Output · Confidential · Context 04 / 18'
+```
+
+#### Regression sweep — **148 / 148 passing, 5 skipped** (pre-existing skips, unrelated)
+- Slice 1+2 Solva v2 surface: 112/112
+- Adjacent locked phases (Phase I.6 / M / N / O): 36/36
+- v1 byte-identical guard from Slice 1b: still green
+- `test_cycle_feel_pass` failure stays pre-existing (verified by stash-and-rerun in the Slice 2b correction)
+
+#### Out of scope (per user direction)
+- `services/solva_v2/engines/*` `SURFACE = "solve_v2.<engine>"` strings are INTERNAL Mongo audit-log routing keys for stored historical data. Renaming them would break stored audit-log queries. The audit log is never user-facing — these tags do not affect product identity. The audit-guard test whitelists them explicitly with a justifying comment.
+- `services/solva/` (v3 tree) — already uses canonical Solva naming; out of this slice's scope.
+- AppShell topbar responsive fix (Dispatch 2) — queued as a separate small-maintenance slice after the identity audit closes (per user direction).
+
+#### Slice 3 now genuinely unblocked
+The Solva-identity audit is closed with zero SOLVE/Solve regressions. Live wire + live DOM both show Solva-canonical branding. Slice 3 (live reasoning stream SSE) is now the next dispatch.
+
+

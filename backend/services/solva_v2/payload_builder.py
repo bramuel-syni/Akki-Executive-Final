@@ -121,7 +121,7 @@ def _date_str(session: Dict[str, Any]) -> str:
 def _inputs_range(session: Dict[str, Any]) -> str:
     turns = session.get("user_turns") or []
     audit_count = len(session.get("reasoning_audit_log") or [])
-    return f"Layer 1 to Layer 5, {len(turns)} user inputs · {audit_count} engine entries"
+    return f"Layer 0 (frame audit) to Layer 4 (reflection), {len(turns)} user inputs · {audit_count} engine entries"
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -583,9 +583,11 @@ def _build_methodological_honesty(
     )
     return MethodologicalHonesty(
         what_report_is=(
-            f"This is a 5-layer {submodule} diagnostic synthesizing the user's "
-            f"inputs against Solva's comparable corpus and grounding tiers. "
-            f"It surfaces tensions, weighted scenarios, and conditional pathways."
+            f"This is a Solva {submodule} 5-layer diagnostic — Layer 0 frame "
+            f"audit, Layer 1 Surface, Layer 2 Depth, Layer 3 Synthesis, "
+            f"Layer 4 Reflection — synthesizing the user's inputs against "
+            f"Solva's comparable corpus and grounding tiers. It surfaces "
+            f"tensions, weighted scenarios, and conditional pathways."
         ),
         what_report_is_not=(
             f"This is NOT a decision. It is a structured weighting of evidence "

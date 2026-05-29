@@ -22,7 +22,7 @@ export default function CoverSlide({
       sectionTag="Cover"
     >
       <div className="flex flex-col h-full">
-        {/* Method tag — canonical "SOLVE · SESSION OUTPUT · CONFIDENTIAL" */}
+        {/* Method tag — canonical "SOLVA · SESSION OUTPUT · CONFIDENTIAL" */}
         <div
           className="font-mono text-[11px] uppercase tracking-[0.32em] text-[var(--ink)] mb-12"
           data-testid="solva-v2-cover-method-tag"

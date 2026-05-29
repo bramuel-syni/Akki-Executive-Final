@@ -359,7 +359,7 @@ def _what_would_help_template(submodule: str) -> List[str]:
 # Helpers
 # -----------------------------------------------------------------------------
 # Phase I.2 — keyword heuristic that maps intent text to one of the 12
-# Solve clusters. Deterministic (no LLM call), so tests are stable and
+# Solva clusters. Deterministic (no LLM call), so tests are stable and
 # we save spend on every session start. The cluster is an internal
 # engineering hint (it shapes phase_hints + banned_terms in the engine
 # prompts); it is NOT user-visible per the v3 UX brief. Order matters

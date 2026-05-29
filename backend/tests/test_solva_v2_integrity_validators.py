@@ -120,7 +120,7 @@ def _baseline_payload(**overrides) -> ArtefactPayload:
             RiskMitigation(risk="Signal may be cohort-specific.", mitigation="Pull cohort-stratified retention."),
         ],
         methodological_honesty=MethodologicalHonesty(
-            what_report_is="A 5-layer diagnostic synthesizing your inputs with the comparable corpus.",
+            what_report_is="A Solva diagnostic — Layer 0 frame audit through Layer 4 reflection — synthesizing your inputs with the comparable corpus.",
             what_report_is_not="Not a decision; a structured weighting of scenarios for your judgement.",
             provisional_nature_paragraph="Every weight is provisional. Q1 data will shift the read materially.",
             input_confidence_pct=65,

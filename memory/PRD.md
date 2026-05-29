@@ -5596,3 +5596,46 @@ Slice 2b close-out claimed contract met; tester proved otherwise. Going forward,
 
 ### Slice 3 (live reasoning stream SSE) is now genuinely unblocked
 
+
+---
+
+## Solva v2 — Slice 2b IDENTITY AUDIT CLOSED ✅ (2026-05-29)
+
+### What shipped
+- Zero SOLVE/Solve string matches in v2 code paths (was: 13 sites across 6 files)
+- Cover `method_tag`: `SOLVA · SESSION OUTPUT · CONFIDENTIAL` (was: SOLVE)
+- Cover `method`: `Solva 5-layer pass — frame audit · surface · depth · synthesis · reflection` (was: SOLVE's 4-layer naming "framing · grounding · synthesis · reflection · perspective" which was a fabricated alternative not anchored to memory/briefs/SOLVA.md)
+- Footer template: `Solva Session Output · Confidential · {n}/{total}` (was: "Solve Session Output")
+- `inputs_range`: `Layer 0 (frame audit) to Layer 4 (reflection)` (was: "Layer 1 to Layer 5")
+- 6 LLM prompts in `v2_prompts.py` renamed: "SOLVE diagnostic" → "Solva diagnostic"
+- Methodological honesty rendered text now names all 5 canonical Solva layers
+- Frontend (`SlideShell`, `SectionDivider`, `CoverSlide`): all "Solve Session Output" → "Solva Session Output"
+- Test fixtures updated in 3 prior Solva v2 test files
+
+### NEW audit-guard test
+`tests/test_solva_v2_identity_audit.py` — 8 source-strict assertions. Word-boundary regex sweep across v2 code paths. The internal Mongo audit-log SURFACE tags `solve_v2.<engine>` are whitelisted (path-scoped + line-scoped) because they're routing keys for stored historical data, not user-facing brand.
+
+### Live evidence
+**Wire (`GET /api/solva/sessions/{sid}/v2/payload`):**
+- `cover.method_tag = 'SOLVA · SESSION OUTPUT · CONFIDENTIAL'`
+- `cover.method = 'Solva 5-layer pass — frame audit · surface · depth · synthesis · reflection'`
+- `footer_template = 'Solva Session Output · Confidential · {context_name} · {n} / {total}'`
+
+**Rendered DOM at 1280:**
+- Cover masthead text: `SOLVA · SESSION OUTPUT · CONFIDENTIAL`
+- Cover METHOD field: `Solva 5-layer pass — frame audit · surface · depth · synthesis · reflection`
+- Cover INPUTS field: `Layer 0 (frame audit) to Layer 4 (reflection), 0 user inputs · 11 engine entries`
+- Per-slide footer: `Solva Session Output · Confidential · Context · n / 18`
+
+### Tests
+- 148/148 passing across Slice 1+2 + adjacent locked phases (5 pre-existing skips)
+- v1 byte-identical guard from Slice 1b still green
+- New audit-guard test prevents future regression
+
+### Out of scope (per user direction)
+- `services/solva_v2/engines/*` SURFACE = `"solve_v2.<engine>"` Mongo routing keys — internal data, never user-facing, whitelisted with justification.
+- `services/solva/` v3 tree — already canonical.
+- AppShell topbar responsive fix (Dispatch 2) — queued as separate small-maintenance slice.
+
+### Slice 3 (live reasoning stream SSE) now genuinely unblocked
+

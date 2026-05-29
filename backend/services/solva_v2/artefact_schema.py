@@ -20,7 +20,7 @@ Schema completeness — 15 elements:
  12. methodological_honesty         — what report IS / IS NOT + provisional
  13. in_closing                     — reframing + recap + final
  14. footer_template                — per-slide footer string template
- 15. (cover.method_tag carries the "SOLVE · SESSION OUTPUT · CONFIDENTIAL"
+ 15. (cover.method_tag carries the "SOLVA · SESSION OUTPUT · CONFIDENTIAL"
       treatment; not a separate element but the canonical slide marker.)
 
 This module is PURE — no DB, no LLM, no IO. It defines models only.
@@ -69,7 +69,7 @@ class SourceCitation(BaseModel):
     source_input_id: str = Field(..., description="Audit log entry id OR user turn id OR comparable id")
     source_kind: Literal["user_turn", "audit_log", "comparable", "attached_doc", "corpus"]
     excerpt: str = Field(..., min_length=1, description="Verbatim snippet supporting the citation")
-    source_layer: Optional[str] = Field(None, description="Solva layer: framing/grounding/hypothesis/synthesis/reflection")
+    source_layer: Optional[str] = Field(None, description="Solva audit-log layer tag emitted by the engine that produced the cited entry (e.g. framing/grounding/hypothesis/synthesis/reflection — see services/solva_v2/engines/* for the canonical emitter set).")
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -79,17 +79,17 @@ class SourceCitation(BaseModel):
 
 class CoverSlide(BaseModel):
     method_tag: str = Field(
-        default="SOLVE · SESSION OUTPUT · CONFIDENTIAL",
+        default="SOLVA · SESSION OUTPUT · CONFIDENTIAL",
         description="Canonical method banner — appears on cover slide",
     )
     title: str = Field(..., min_length=1, description="The session's framing one-liner")
     prepared_for: str = Field(..., min_length=1, description="Context / account display name")
     subject: str = Field(..., min_length=1, description="Submodule label, e.g. 'Develop Strategy'")
     method: str = Field(
-        default="5-layer diagnostic — framing · grounding · synthesis · reflection · perspective",
+        default="Solva 5-layer pass — frame audit · surface · depth · synthesis · reflection",
         description="Method one-liner",
     )
-    inputs_range: str = Field(..., description="e.g. 'Layer 1 to Layer 5, 12 user inputs'")
+    inputs_range: str = Field(..., description="e.g. 'Layer 0 (frame audit) to Layer 4 (reflection), 12 user inputs'")
     date_str: str = Field(..., description="Session completion date as 'YYYY-MM-DD'")
 
 
@@ -187,13 +187,13 @@ class SensitivityInput(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────
-# Element 8 — Reflection (Layer 5)
+# Element 8 — Reflection (Layer 4 of the Solva 5-layer pass)
 # ─────────────────────────────────────────────────────────────────
 
 
 class ReflectionQuestion(BaseModel):
     question_text: str = Field(..., min_length=1)
-    user_verbatim_response: str = Field(default="", description="Verbatim user response if Layer 5 prompted")
+    user_verbatim_response: str = Field(default="", description="Verbatim user response captured during Layer 4 Reflection.")
     diagnostic_interpretation: str = Field(
         ..., min_length=1,
         description="Engine's 1-3 sentence interpretation, tier-marked",
@@ -285,7 +285,7 @@ class FooterTemplate(BaseModel):
     Locked template — `{n}` / `{total}` / `{context_name}` substitution
     happens at render time."""
     template: str = Field(
-        default="Solve Session Output · Confidential · {context_name} · {n} / {total}",
+        default="Solva Session Output · Confidential · {context_name} · {n} / {total}",
     )
 
 

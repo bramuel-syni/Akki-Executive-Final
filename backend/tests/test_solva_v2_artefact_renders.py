@@ -45,7 +45,7 @@ def test_shell_root_carries_required_data_attributes():
 
 def test_shell_footer_template_matches_locked_string():
     src = SHELL.read_text(encoding="utf-8")
-    assert "Solve Session Output" in src
+    assert "Solva Session Output" in src
     assert "Confidential" in src
     assert "{contextName}" in src or "{contextName}" in src  # template var
     # Per-slide pagination format n / total

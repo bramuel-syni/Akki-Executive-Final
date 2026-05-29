@@ -147,7 +147,7 @@ def _minimal_payload() -> ArtefactPayload:
             ),
         ],
         methodological_honesty=MethodologicalHonesty(
-            what_report_is="This is a 5-layer diagnostic synthesizing your inputs and the comparable corpus.",
+            what_report_is="This is a Solva diagnostic — Layer 0 frame audit through Layer 4 reflection — synthesizing your inputs and the comparable corpus.",
             what_report_is_not="This is not a decision. It is a structured weighting of scenarios for your judgement.",
             provisional_nature_paragraph="Every weight is provisional. Q1 data will shift the read materially.",
             input_confidence_pct=65,
@@ -198,12 +198,12 @@ def test_all_15_elements_modelled():
 
 def test_cover_method_tag_default_value():
     p = _minimal_payload()
-    assert p.cover.method_tag == "SOLVE · SESSION OUTPUT · CONFIDENTIAL"
+    assert p.cover.method_tag == "SOLVA · SESSION OUTPUT · CONFIDENTIAL"
 
 
 def test_footer_template_default_value():
     p = _minimal_payload()
-    assert "Solve Session Output" in p.footer_template.template
+    assert "Solva Session Output" in p.footer_template.template
     assert "{context_name}" in p.footer_template.template
     assert "{n}" in p.footer_template.template
     assert "{total}" in p.footer_template.template
