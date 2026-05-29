@@ -1,0 +1,260 @@
+[
+  {
+    "viewport": "1280",
+    "z2_7": {
+      "with_sources_populated": {
+        "doc_id": "6c6fdfa5-496f-4da2-a2a8-6f99571da775",
+        "section_present": true,
+        "populated_list_count": 1,
+        "item_count": 2,
+        "fallback_present": false,
+        "fallback_text": null,
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><ul class=\"space-y-1\" data-testid=\"drawer-intel-sources-list\"><li data-testid=\"drawer-intel-sources-item\" class=\"text-[12.5px] text-[var(--ink)] font-mono break-all\">\u00b7 a4754448-7e0a-4c39-8244-c2586407c4e4</li><li data-testid=\"drawer-intel-sources-item\" class=\"text-[12.5px] text-[var(--ink)] font-mono break-all\">\u00b7 a0c2fa4f-2ae6-45ac-95b8-301e6c45e854</li></ul></section>",
+        "diagnostic_body_text": null
+      },
+      "board_pack": {
+        "doc_id": "a695c0ba-de43-42a8-b644-ac46c724a73b",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "minutes": {
+        "doc_id": "ee05c7c2-81d5-446a-8d7c-4e517051eee3",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "draft": {
+        "doc_id": "d5f9daaf-fb6e-4714-87b7-5a2b05615953",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "deck": {
+        "doc_id": "9027f5b6-6177-4574-9233-c21e6b83baae",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "report": {
+        "doc_id": "6123a8b7-a73d-4b09-b973-0e58c9c99f78",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "briefing": {
+        "doc_id": "c6556709-eb15-40e0-896f-bdc8d1a9f8d2",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "committee_pack": {
+        "doc_id": "1438ac29-7d54-4e64-b2f4-df703855890d",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "voice_lint_hits": []
+    }
+  },
+  {
+    "viewport": "1024",
+    "z2_7": {
+      "with_sources_populated": {
+        "doc_id": "6c6fdfa5-496f-4da2-a2a8-6f99571da775",
+        "section_present": true,
+        "populated_list_count": 1,
+        "item_count": 2,
+        "fallback_present": false,
+        "fallback_text": null,
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><ul class=\"space-y-1\" data-testid=\"drawer-intel-sources-list\"><li data-testid=\"drawer-intel-sources-item\" class=\"text-[12.5px] text-[var(--ink)] font-mono break-all\">\u00b7 a4754448-7e0a-4c39-8244-c2586407c4e4</li><li data-testid=\"drawer-intel-sources-item\" class=\"text-[12.5px] text-[var(--ink)] font-mono break-all\">\u00b7 a0c2fa4f-2ae6-45ac-95b8-301e6c45e854</li></ul></section>",
+        "diagnostic_body_text": null
+      },
+      "board_pack": {
+        "doc_id": "a695c0ba-de43-42a8-b644-ac46c724a73b",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "minutes": {
+        "doc_id": "ee05c7c2-81d5-446a-8d7c-4e517051eee3",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "draft": {
+        "doc_id": "d5f9daaf-fb6e-4714-87b7-5a2b05615953",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "deck": {
+        "doc_id": "9027f5b6-6177-4574-9233-c21e6b83baae",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "report": {
+        "doc_id": "6123a8b7-a73d-4b09-b973-0e58c9c99f78",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "briefing": {
+        "doc_id": "c6556709-eb15-40e0-896f-bdc8d1a9f8d2",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "committee_pack": {
+        "doc_id": "1438ac29-7d54-4e64-b2f4-df703855890d",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "voice_lint_hits": []
+    }
+  },
+  {
+    "viewport": "820",
+    "z2_7": {
+      "with_sources_populated": {
+        "doc_id": "6c6fdfa5-496f-4da2-a2a8-6f99571da775",
+        "section_present": true,
+        "populated_list_count": 1,
+        "item_count": 2,
+        "fallback_present": false,
+        "fallback_text": null,
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><ul class=\"space-y-1\" data-testid=\"drawer-intel-sources-list\"><li data-testid=\"drawer-intel-sources-item\" class=\"text-[12.5px] text-[var(--ink)] font-mono break-all\">\u00b7 a4754448-7e0a-4c39-8244-c2586407c4e4</li><li data-testid=\"drawer-intel-sources-item\" class=\"text-[12.5px] text-[var(--ink)] font-mono break-all\">\u00b7 a0c2fa4f-2ae6-45ac-95b8-301e6c45e854</li></ul></section>",
+        "diagnostic_body_text": null
+      },
+      "board_pack": {
+        "doc_id": "a695c0ba-de43-42a8-b644-ac46c724a73b",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "minutes": {
+        "doc_id": "ee05c7c2-81d5-446a-8d7c-4e517051eee3",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "draft": {
+        "doc_id": "d5f9daaf-fb6e-4714-87b7-5a2b05615953",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "deck": {
+        "doc_id": "9027f5b6-6177-4574-9233-c21e6b83baae",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "report": {
+        "doc_id": "6123a8b7-a73d-4b09-b973-0e58c9c99f78",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "briefing": {
+        "doc_id": "c6556709-eb15-40e0-896f-bdc8d1a9f8d2",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "committee_pack": {
+        "doc_id": "1438ac29-7d54-4e64-b2f4-df703855890d",
+        "section_present": true,
+        "populated_list_count": 0,
+        "item_count": 0,
+        "fallback_present": true,
+        "fallback_text": "Sources: not applicable for this artefact type.",
+        "section_outerHTML": "<section data-testid=\"drawer-intel-sources\" class=\"mt-4 pt-4 border-t border-[var(--rule)]\"><p class=\"text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5\">Sources</p><p class=\"text-[12px] italic text-[var(--muted)]\" data-testid=\"drawer-intel-sources-fallback\">Sources: not applicable for this artefact type.</p></section>",
+        "diagnostic_body_text": null
+      },
+      "voice_lint_hits": []
+    }
+  }
+]

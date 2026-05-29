@@ -3623,3 +3623,63 @@ z2_batch2/trace.json`.
   Z2 closes — do NOT investigate inside the Z2 window.
 
 
+
+---
+
+### Sprint Z2 — Batch 4 (Z2.7) ✅ (2026-02 fork-resume v2)
+
+**Z2.7 — Sources visible on every artefact category.**
+
+  - Initial scoping attempt landed in `WorkStudio.jsx → BriefDrawer`
+    (the natural place for a Sources block under each artefact's
+    notes). On post-implementation inspection BriefDrawer turned
+    out to be **dead code** — `drawerOpen` is never flipped to true
+    anywhere in the codebase. The live render surface for committee
+    packs / minutes / drafts / decks / reports / briefings /
+    board_packs is the universal `<DocumentDrawer>` reached via
+    `?doc_id=<aid>` URL contract.
+  - Reverted the BriefDrawer Z2.7 block (~48 LOC) and re-implemented
+    in `components/documents/DocumentDrawer.jsx`'s Intelligence tab.
+    New `<section data-testid="drawer-intel-sources">` renders
+    unconditionally for any doc whose `category` is in the artefact
+    whitelist (`board_pack, minutes, draft, deck, report, briefing,
+    committee_pack`). Two branches:
+      • populated → `<ul data-testid="drawer-intel-sources-list">`
+        with `<li data-testid="drawer-intel-sources-item">` per
+        UUID in `doc.source_doc_ids`; OR
+      • fallback → `<p data-testid="drawer-intel-sources-fallback">
+        Sources: not applicable for this artefact type.</p>`
+  - Backend `sanitize_doc()` extended (+5 LOC) so the API surfaces
+    `source_doc_ids` to the drawer; previously the field was
+    stripped, which would have invisibly forced the fallback branch
+    even for genuinely-sourced artefacts.
+
+**Discipline gates:** v1 byte-identical guard 0 lines. 41/41 pytests
+green (Batches 1+2+3+4). ESLint clean. Voice-lint clean on the
+fallback line. **Code-LOC delta for Batch 4: 37** (31 frontend + 6
+backend), comfortably under the 50-LOC cap dispatched by the user.
+
+**Cumulative code LOC across Z2 Batches 1–4: 565** (Batch 1: 203,
+Batch 2: 75, Batch 3: 250, Batch 4: 37). Batch 3 had already eaten
+the cumulative 500-LOC budget; Batch 4 was kept under its own 50-LOC
+cap as compensation.
+
+**Trace:** seeded 8 docs (one per artefact category + one populated-
+sources board_pack) and swept each at 1280 / 1024 / 820. All 24
+probes show `section_present=true`; populated probe shows
+`item_count=2` matching the seeded `source_doc_ids` length;
+remaining 21 probes render the fallback line verbatim. JSON +
+screenshots at `/app/memory/screenshots/z2_batch4/`.
+
+---
+
+### Sprint Z2 — WAVE COMPLETE pending Z2.8 ✅
+
+Phase Z2 closed out across four batches with byte-identical Solva v1
+guard intact, 41 source-strict pytests green, raw Playwright DOM
+traces stored per batch, voice-lint clean on every new copy line.
+Next: Z2.8 (on-screen chair-notes affordance) — Option A topbar
+toggle, single shared composer extracted to
+`services/solva_v2/chair_notes.py`. After Z2.8 closes, the queue
+opens onto Z3 → Phase ZZ → ZZ.4 → Sprint M.
+

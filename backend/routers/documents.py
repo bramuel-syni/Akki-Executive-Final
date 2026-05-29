@@ -86,6 +86,12 @@ def sanitize_doc(d: Dict[str, Any]) -> Dict[str, Any]:
         # tabs. `origin` (above) answers "where did it come from?" →
         # /app/documents tabs. Both required on every row.
         "category":      d.get("category"),
+        # Z2.7 (2026-02) — surface `source_doc_ids` so the Drawer's
+        # Sources block can render the populated branch. List of
+        # source document UUIDs that composed this artefact (set on
+        # work-studio compile and cycle-pack export). Empty list /
+        # null → Drawer renders the fallback line.
+        "source_doc_ids": d.get("source_doc_ids") or [],
     }
 
 

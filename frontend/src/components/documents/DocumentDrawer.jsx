@@ -43,6 +43,14 @@ function isCreationMode(doc) {
   return doc?.state === "draft" && doc?.origin === "akki_generated";
 }
 
+// Z2.7 (2026-02) — artefact categories that surface a Sources section
+// in the drawer's Intelligence tab. Mirrors `_CATEGORY_ENUM` in
+// backend/routers/documents.py plus `committee_pack` which is a
+// post-compile category not enforced in the docs router enum.
+const _ARTEFACT_CATEGORIES = [
+  "board_pack", "minutes", "draft", "deck", "report", "briefing", "committee_pack",
+];
+
 function fmtRel(iso) {
   if (!iso) return "—";
   try {
@@ -259,6 +267,29 @@ function IntelligenceTab({ doc, contextId, mode, navigate }) {
           </p>
           {doc.source_channel && (
             <p className="text-[11.5px] text-[var(--muted)]">Source: {doc.source_channel}</p>
+          )}
+        </section>
+      )}
+
+      {/* Z2.7 (2026-02) — Sources block for every artefact category.
+          Renders unconditionally (either populated or fallback) when
+          the doc's category is on the artefact whitelist — never
+          silently hidden. */}
+      {_ARTEFACT_CATEGORIES.includes((doc?.category || "").toLowerCase()) && (
+        <section data-testid="drawer-intel-sources" className="mt-4 pt-4 border-t border-[var(--rule)]">
+          <p className="text-[11px] uppercase tracking-[0.14em] font-mono text-[var(--muted)] mb-1.5">Sources</p>
+          {(doc.source_doc_ids && doc.source_doc_ids.length > 0) ? (
+            <ul className="space-y-1" data-testid="drawer-intel-sources-list">
+              {doc.source_doc_ids.map((sid, i) => (
+                <li key={`${sid}-${i}`} data-testid="drawer-intel-sources-item" className="text-[12.5px] text-[var(--ink)] font-mono break-all">
+                  · {sid}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[12px] italic text-[var(--muted)]" data-testid="drawer-intel-sources-fallback">
+              Sources: not applicable for this artefact type.
+            </p>
           )}
         </section>
       )}
