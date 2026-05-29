@@ -2621,3 +2621,115 @@ first_footers:
 The Solva-identity audit is closed with zero SOLVE/Solve regressions. Live wire + live DOM both show Solva-canonical branding. Slice 3 (live reasoning stream SSE) is now the next dispatch.
 
 
+
+### Solva v2 — Slice 3a (backend) CLOSED ✅ (2026-05-29) · Live reasoning stream SSE wiring · 6 new files / 162 tests passing
+
+**Why this exists.** Trust pillar 1 — the founder watches Solva's 5-layer engine execute step-by-step. Each slide materialises progressively as its source layer resolves. This is the visceral signal that Solva is a seasoned partner thinking, not an AI tool returning a result.
+
+**Slice 3a scope** — backend only. Slice 3b (frontend integration: SSE consumer + per-slide state attribute + live ticker + replay animation) is queued for the next dispatch per the user-anticipated 3a/3b split.
+
+#### Files touched
+
+**NEW:**
+- `backend/services/solva_v2/stream_schema.py` (321 LOC) — Pydantic `SolvaStreamEvent` model with locked layer/step/slide enums; cross-field validators (layer_id ↔ layer_name canonical pairing, slide_kind required iff step_kind == slide.ready); `validate_step_description()` observational-language guard (theatrical/vague/imperative phrase rejection).
+- `backend/services/solva_v2/stream_synthesizer.py` (265 LOC) — deterministic audit-log → event-sequence synthesizer. Walks the 5 canonical layers in order, emits `{layer.start, ≥1 layer.step.progress, layer.complete}` per layer + 13 `slide.ready` events in deck order + 1 `session.complete`. Every step_description is observational, grounded in concrete payload artefacts, imperative-free.
+- `backend/tests/test_solva_v2_sse_event_schema.py` (147 LOC, 13 tests)
+- `backend/tests/test_solva_v2_step_description_validator.py` (86 LOC, 3 parametrised + 4 edge-case tests)
+- `backend/tests/test_solva_v2_sse_engine_emission.py` (173 LOC, 8 tests covering synthesizer determinism + layer lifecycle + slide-ready ordering + canonical naming + step-description integrity)
+
+**EXTENDED:**
+- `backend/routers/solva_v2_artefact.py` (+133 LOC) — `GET /api/solva/sessions/{sid}/v2/stream` endpoint. Rapid-replay cadence (4-second total budget across N events; per-event gap auto-computed within [80ms, 450ms] for readability + alive-feel). Cancellation honoured via `request.is_disconnected()`. Same feature-flag + ownership gates as `/v2/payload`.
+
+#### Live SSE wire evidence (admin@akki.ai @ session `e7b46d64-7a14-46e1-8f99-9703c210333f`)
+
+**Stream replay total time:** 4.3 seconds (within the locked 4-5s budget).
+
+**Event-type tally:**
+```
+1 × event: solva.reasoning.script   (header — total_events, schema_version)
+34 × event: solva.reasoning         (each carries the SolvaStreamEvent payload)
+1 × event: complete                  (closure)
+```
+
+**Layer lifecycle proof — first 15 events verbatim from the curl trace:**
+```
+seq=0  L0 frame_audit  layer.start          "Layer 0 Frame Audit — gating the framing against the grounding contract"
+seq=1  L0 frame_audit  layer.step.progress  "Layer 0 — auditing framing of subject 'Seek Clarity'"
+seq=2  L0 frame_audit  layer.complete       "Layer 0 complete — frame audit passed, intake locked"
+seq=3  L1 surface       layer.start          "Layer 1 Surface — extracting candidate framings from intake"
+seq=4  L1 surface       layer.step.progress  "Layer 1 — candidate generation produced 9 candidate framings"
+seq=5  L1 surface       layer.step.progress  "Layer 1 — matching candidates against the comparable corpus"
+seq=6  L1 surface       layer.complete       "Layer 1 complete — 0 tension candidates surfaced"
+seq=7  L2 depth         layer.start          "Layer 2 Depth — triangulating 0 surfaced tensions"
+seq=8  L2 depth         layer.step.progress  "Layer 2 — no contradictions cross the tension threshold for this submission"
+seq=9  L2 depth         layer.complete       "Layer 2 complete — 0 tensions detected, 0 carry extended deep-dive"
+seq=10 L3 synthesis     layer.start          "Layer 3 Synthesis — composing the weighted picture"
+seq=11 L3 synthesis     layer.step.progress  "Layer 3 — weighting 9 scenarios against the calibration ladder"
+seq=12 L3 synthesis     layer.step.progress  "Layer 3 — calibrating 9 per-scenario confidence rows"
+seq=13 L3 synthesis     layer.step.progress  "Layer 3 — ranking 3 sensitivity inputs by cluster-weight-shift mechanic"
+seq=14 L3 synthesis     layer.complete       "Layer 3 complete — diagnosis composed"
+```
+
+**Slide.ready inventory — 13/13 locked kinds in deck order, all matching `SLIDE_DECK_ORDER`:**
+```
+cover · headline · tensions_overview · per_tension · scenarios_overview · per_scenario_table
+· sensitivity · reflection · pathway · decision_logic · risk_mitigation
+· methodological_honesty · in_closing
+```
+
+**Final two events — closure proof:**
+```
+seq=32 L4 reflection  slide.ready          "Rendered In Closing — reframing + final statement"  slide_kind=in_closing
+seq=33 L4 reflection  session.complete      "Session complete — 5 layers, 13 slides rendered"
+```
+
+#### Integrity boundary (the discipline guardrail the user singled out)
+
+The `validate_step_description()` function rejects:
+1. **Forbidden phrases** (substring scan): "thinking deeply", "pondering", "hidden tensions", "hidden patterns", "you should", "you must", "would you like", "let's", "let me think", "hmm", "your unique", + 12 others.
+2. **Leading vague verbs** (regex): `^(thinking|pondering|sensing|intuiting|wondering|considering|reflecting on|exploring)\b`.
+
+**Locked behavior at the Pydantic layer** — `SolvaStreamEvent.step_description` field validator runs `validate_step_description()` on construction, so a theatrical event NEVER reaches the wire. The synthesizer composes every description from concrete payload counts (e.g., "ranking {n_sensitivity} inputs", "calibrating {n_rows} confidence rows") — no LLM, no theatrics.
+
+#### Test sweep — all of Slice 1 + 2 + identity audit + 3a + adjacent locked phases
+
+**162 / 162 passing, 2 skipped** (2 Playwright runtime probes gated by `E1_SMOKE_URL`).
+
+- v1 byte-identical guard from Slice 1b: 4/4 passing ✓
+- Slice 1 (schema + integrity validators + payload builder parity): 41/41 ✓
+- Slice 2 (renders + multiviewport + feature-flag routing + slide-kind inventory): 43/43 ✓
+- Identity audit guard: 8/8 ✓
+- Slice 3a (SSE event schema + step-description validator + engine emission): 50/50 NEW ✓
+
+#### Replay timing measurement
+
+Live curl against `/api/solva/sessions/{sid}/v2/stream`:
+```
+Total replay time: 4.3 s
+Event count: 36 (1 script + 34 reasoning + 1 complete)
+Average inter-event gap: 122 ms (within [80ms, 450ms] readability band)
+```
+
+The 4.3s figure includes ASGI startup latency + curl close. Pure server-side budget is `REPLAY_TOTAL_BUDGET_S = 4.0s` declared in `solva_v2_artefact.py`. Adjustable in Slice 3b polish if the frontend ticker feels rushed.
+
+#### Anti-drift guarantees locked
+
+1. `SolvaStreamEvent` Pydantic model rejects layer_id outside L0..L4, layer_name outside the canonical 5, step_kind outside the 5 locked values, slide_kind outside the 13-kind enum, and any layer_id/layer_name pairing that breaks canonical naming.
+2. `slide.ready` events REQUIRE a slide_kind; all other step_kinds REJECT a slide_kind. Cross-field consistency check.
+3. `validate_step_description` runs on every model construction — the synthesizer NEVER emits a theatrical event.
+4. Synthesizer is deterministic: same payload → same event count + same layer/step/slide composition. Tested by emitting twice and asserting structural equality.
+
+#### Out of scope for 3a (queued for 3b)
+
+- Frontend SSE consumer (`useSolvaReasoningStream` hook layered on the existing `useStreamingProgress` parsing primitives).
+- Per-slide `data-solva-v2-slide-state` attribute on the slide root: `loading` (skeleton) → `ready` (rendered content) → `placeholder` (empty-arc observational).
+- Live ticker panel above the cover slide; auto-collapses to a compact "Session complete · 5 layers · 13 slides" pill once `session.complete` arrives.
+- Rapid-replay animation visual treatment.
+- 2 new frontend tests: `test_solva_v2_progressive_render` (DOM-state transitions correlate with received slide.ready events) + `test_solva_v2_replay_for_complete_session` (rapid-replay completes within 5s and all 13 slides land in ready state).
+- Additive: `data-solva-v2-identity-stamp="solva-canonical"` on the artefact root (per audit-close proposal, accepted).
+
+#### Live-mode follow-up (parked, not blocking)
+
+For in-flight sessions, the stream currently replays the *current snapshot* of the audit log + payload — events that have already accumulated. True live-mode would require instrumenting the 5-layer engine pipeline with a per-session `asyncio.Queue` that the SSE endpoint consumes alongside the historical replay. That's an engine-side refactor outside Slice 3a's scope. Filed as Slice 3.followup.1 — wire engine-side `LiveQueue` for live-mode broadcast.
+
+

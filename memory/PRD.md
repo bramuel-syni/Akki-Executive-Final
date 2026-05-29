@@ -5639,3 +5639,36 @@ Slice 2b close-out claimed contract met; tester proved otherwise. Going forward,
 
 ### Slice 3 (live reasoning stream SSE) now genuinely unblocked
 
+
+---
+
+## Solva v2 — Slice 3a backend CLOSED ✅ (2026-05-29) · Live reasoning stream SSE infrastructure
+
+### What shipped
+- `services/solva_v2/stream_schema.py` — Pydantic `SolvaStreamEvent` model with locked layer/step/slide enums + observational-language validator (`validate_step_description`)
+- `services/solva_v2/stream_synthesizer.py` — deterministic audit-log → event-sequence synthesizer. Walks 5 canonical layers in order, emits layer.start + ≥1 layer.step.progress + layer.complete per layer + 13 slide.ready in deck order + 1 session.complete
+- `GET /api/solva/sessions/{sid}/v2/stream` SSE endpoint with 4-second rapid-replay budget (gap auto-computed within [80ms, 450ms])
+- 3 new test files (50 tests) locking the event schema + step-description validator + engine emission contract
+
+### Live wire evidence (admin@akki.ai @ session `e7b46d64-7a14-46e1-8f99-9703c210333f`)
+- **34 reasoning events** emitted in the locked order: L0 frame_audit (3 events) → L1 surface (4) → L2 depth (3) → L3 synthesis (5) → L4 reflection (6) → 13 slide.ready in deck order → 1 session.complete
+- **Replay time:** 4.3s end-to-end (curl-measured)
+- **Every step_description observational + grounded:** "Layer 3 — calibrating 9 per-scenario confidence rows", "Layer 1 — candidate generation produced 9 candidate framings", "Layer 4 — composing diagnostic interpretation of question 2 of 3" — zero theatrical/imperative leakage
+- **All 13 locked slide kinds emitted exactly once** in deck order: cover · headline · tensions_overview · per_tension · scenarios_overview · per_scenario_table · sensitivity · reflection · pathway · decision_logic · risk_mitigation · methodological_honesty · in_closing
+
+### Tests
+- 162/162 passing across Slice 1+2+3a + identity audit + adjacent locked phases (2 skipped — Playwright runtime probes gated by `E1_SMOKE_URL`)
+- v1 byte-identical guard still green
+- 50 new Slice 3a tests
+
+### Slice 3b (frontend) queued
+- `useSolvaReasoningStream` hook layered on existing `useStreamingProgress` parsing primitives
+- Per-slide `data-solva-v2-slide-state="loading|ready|placeholder"` attribute transitions
+- Live ticker panel above the cover slide (collapses to compact pill on `session.complete`)
+- Rapid-replay animation
+- `data-solva-v2-identity-stamp="solva-canonical"` additive on artefact root
+- 2 new frontend Playwright tests
+
+### Slice 3.followup.1 (parked, not blocking)
+Engine-side `LiveQueue` for true live-mode broadcast on in-flight sessions. Slice 3a today replays the current snapshot of audit log + payload — sufficient for the founder revisit experience. Live broadcast on in-flight sessions requires instrumenting the 5-layer engine pipeline with a per-session asyncio.Queue.
+

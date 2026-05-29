@@ -114,3 +114,136 @@ async def get_v2_artefact_payload(
         "payload": payload.model_dump(),
         "validator_passes": True,
     }
+
+
+
+# ─────────────────────────────────────────────────────────────────
+# Slice 3a — Live reasoning stream SSE endpoint
+# ─────────────────────────────────────────────────────────────────
+
+import asyncio  # noqa: E402
+import json     # noqa: E402
+
+from fastapi import Request                               # noqa: E402
+from fastapi.responses import StreamingResponse           # noqa: E402
+
+from services.streaming.sse import (                      # noqa: E402
+    sse_headers,
+    encode_event,
+    encode_heartbeat,
+)
+from services.solva_v2.stream_schema import SolvaStreamEvent  # noqa: E402
+from services.solva_v2.stream_synthesizer import synthesize_events  # noqa: E402
+
+
+# Rapid-replay cadence: how long the synthesized event sequence takes
+# to flush to the browser EventSource. 5 seconds total budget; events
+# distribute uniformly. The frontend ticker animates each event as
+# it arrives, so the founder gets the "watched it think" experience
+# even on a session that completed minutes ago.
+REPLAY_TOTAL_BUDGET_S = 4.0
+REPLAY_MIN_GAP_S = 0.08   # never burst faster than 80ms — keeps the
+                          # ticker readable on slower devices
+REPLAY_MAX_GAP_S = 0.45   # cap any single gap so the deck still feels
+                          # alive even if the event count is small
+
+
+@router.get("/sessions/{sid}/v2/stream")
+async def stream_v2_reasoning(
+    sid: str,
+    request: Request,
+    account: Dict[str, Any] = Depends(get_current_account),
+):
+    """Server-Sent-Events stream of Solva's 5-layer reasoning pass.
+
+    For complete sessions, replays the deterministic synthesized event
+    sequence in a 4-second rapid-burst so the founder gets the visceral
+    "watch it think" experience whenever they open the artefact.
+
+    For in-flight sessions (status != "completed"), the stream returns
+    only the events that have happened so far + closes — live-mode
+    instrumentation lands in Slice 3a.next when the 5-layer engine
+    pipeline is wired to a per-session asyncio.Queue. Today the engines
+    write to the audit log synchronously inside their long-op endpoints,
+    so a parallel stream would need a refactor that's outside the
+    Slice 3a scope.
+
+    Wire format (one SSE event per emitted SolvaStreamEvent):
+        event: solva.reasoning
+        data:  <SolvaStreamEvent JSON>
+
+    Closes with:
+        event: complete
+        data:  {"total_events": N}
+    """
+    # Same gates as the payload endpoint.
+    if not solva_v2_enabled_for(account):
+        raise HTTPException(status_code=404, detail="Solva v2 not enabled")
+
+    rec = await db.solva_v2_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    # Resolve context name (mirrors the /v2/payload endpoint).
+    context_name = "Context"
+    cid = rec.get("context_id")
+    if cid:
+        ctx = await db.contexts.find_one({"id": cid}, {"_id": 0, "name": 1})
+        if ctx and ctx.get("name"):
+            context_name = ctx["name"]
+
+    # Build the payload + synthesize the event sequence. If payload
+    # build raises, surface as 500 (same as the /v2/payload endpoint).
+    try:
+        payload = build_payload(rec, context_name=context_name)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("solva v2 stream payload build failed sid=%s", sid)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Stream payload build failed: {exc}",
+        ) from exc
+
+    events: list[SolvaStreamEvent] = synthesize_events(
+        session_id=sid, payload=payload,
+    )
+
+    # Compute the inter-event gap based on the synthesized count.
+    n_events = len(events)
+    if n_events <= 1:
+        gap_s = REPLAY_MIN_GAP_S
+    else:
+        gap_s = REPLAY_TOTAL_BUDGET_S / (n_events - 1)
+        if gap_s < REPLAY_MIN_GAP_S:
+            gap_s = REPLAY_MIN_GAP_S
+        if gap_s > REPLAY_MAX_GAP_S:
+            gap_s = REPLAY_MAX_GAP_S
+
+    async def _gen():
+        # Initial frame: surface the total expected count so the
+        # frontend can render a complete ticker skeleton up front.
+        yield encode_event("solva.reasoning.script", {
+            "session_id": sid,
+            "total_events": n_events,
+            "schema_version": "solva.v2.stream.1.0",
+        })
+        for ev in events:
+            # Cancellation check: if the client navigates away the
+            # generator must stop emitting.
+            try:
+                if await request.is_disconnected():
+                    return
+            except Exception:
+                pass  # transient ASGI check failure — keep going
+
+            yield encode_event("solva.reasoning", ev.model_dump())
+            await asyncio.sleep(gap_s)
+
+        # Final closure event.
+        yield encode_event("complete", {
+            "total_events": n_events,
+            "schema_version": "solva.v2.stream.1.0",
+        })
+
+    return StreamingResponse(_gen(), headers=sse_headers())
