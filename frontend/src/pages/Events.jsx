@@ -191,6 +191,20 @@ function EventModal({ open, mode, event, onSave, onDelete, onClose }) {
                 data-testid="event-modal-start"
                 required
               />
+              {/* Z2.1 (2026-05-29) — confidence affordance. Native
+                  datetime-local commits on every change; this badge
+                  gives the founder a visible "value captured"
+                  signal so they don't second-guess whether their
+                  pick was registered. Click Save changes to persist. */}
+              {startAt && (
+                <p
+                  className="mt-1 text-[10.5px] font-mono uppercase tracking-[0.14em] text-[var(--ned-purple)]"
+                  data-testid="event-modal-start-selected"
+                  aria-live="polite"
+                >
+                  Selected — commits on Save changes
+                </p>
+              )}
             </div>
             <div>
               <Label htmlFor="evt-end" className="text-[11px] uppercase tracking-[0.08em] font-mono text-[var(--muted)]">
@@ -203,6 +217,15 @@ function EventModal({ open, mode, event, onSave, onDelete, onClose }) {
                 onChange={(e) => setEndAt(e.target.value)}
                 data-testid="event-modal-end"
               />
+              {endAt && (
+                <p
+                  className="mt-1 text-[10.5px] font-mono uppercase tracking-[0.14em] text-[var(--ned-purple)]"
+                  data-testid="event-modal-end-selected"
+                  aria-live="polite"
+                >
+                  Selected — commits on Save changes
+                </p>
+              )}
             </div>
           </div>
 

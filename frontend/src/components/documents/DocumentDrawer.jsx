@@ -952,9 +952,16 @@ export default function DocumentDrawer({
                 </button>
               </header>
 
-              {/* Tab nav + body */}
-              <div className="flex-1 overflow-hidden flex flex-col">
-                <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+              {/* Tab nav + body
+                  Z2.2 (2026-05-29) — `min-h-0` on each flex-1 child
+                  is load-bearing for scroll. Without it, flexbox's
+                  default `min-height: auto` lets the body expand past
+                  the SheetContent's viewport height; `overflow-y-auto`
+                  never engages and the Related Documents tab (or any
+                  long tab content) silently exceeds the visible area.
+                  See https://css-tricks.com/min-content-min-height-flexbox/. */}
+              <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
                   <TabsList className="px-6 border-b border-[var(--rule)] rounded-none justify-start bg-transparent h-auto" data-testid="drawer-tabs">
                     <TabsTrigger value="document" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-[var(--ink)]" data-testid="drawer-tab-document">
                       <FileText className="w-3 h-3 mr-1.5" /> Document
@@ -972,7 +979,7 @@ export default function DocumentDrawer({
                       <Link2 className="w-3 h-3 mr-1.5" /> Related Documents
                     </TabsTrigger>
                   </TabsList>
-                  <div className="flex-1 overflow-y-auto px-6 py-5 relative" data-testid="drawer-body">
+                  <div className="flex-1 overflow-y-auto px-6 py-5 relative min-h-0" data-testid="drawer-body">
                     {/* DRAFT watermark overlay — visible only in creation mode, only on Document tab content */}
                     {mode === "creation" && activeTab === "document" && (
                       <DocumentDrawerWatermark />

@@ -46,6 +46,31 @@ export default function FeedbackWidget() {
   const textareaRef = useRef(null);
   const location = useLocation();
 
+  // Z2.3 (2026-05-29) — observe the DOM for an open Radix Sheet
+  // (DocumentDrawer / TaskDrawer / etc.) and shift the feedback
+  // pill left so it doesn't sit on top of the drawer's close
+  // affordance or interactive controls. The Sheet primitive renders
+  // an `aside[role="dialog"][data-state="open"]` element; we watch
+  // for its presence via a lightweight MutationObserver. When closed,
+  // the pill returns to the canonical bottom-right gutter.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  useEffect(() => {
+    const detect = () => {
+      const open = !!document.querySelector(
+        'aside[role="dialog"][data-state="open"]'
+      );
+      setDrawerOpen(open);
+    };
+    detect();
+    const obs = new MutationObserver(detect);
+    obs.observe(document.body, {
+      subtree: true, attributes: true,
+      attributeFilter: ["data-state", "role"],
+      childList: true,
+    });
+    return () => obs.disconnect();
+  }, []);
+
   // Open on hotkey "?+shift" — optional shortcut for power users.
   useEffect(() => {
     if (!open) return undefined;
