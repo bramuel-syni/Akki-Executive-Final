@@ -1,0 +1,271 @@
+"""Solva v2 — Slice 3b (2026-05-29) source-strict contracts for the
+frontend reasoning-stream hook + ticker + per-slide state plumbing.
+
+Source-strict guards complement the optional Playwright runtime tests
+(progressive-render + ticker visual). The source layer is what CI
+runs unconditionally; runtime tests are nice-to-have when a real
+preview URL is available.
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+
+REPO = Path(__file__).resolve().parents[2]
+HOOK = REPO / "frontend" / "src" / "hooks" / "useSolvaReasoningStream.js"
+TICKER = REPO / "frontend" / "src" / "components" / "solva" / "artefact_v2" / "SolvaReasoningTicker.jsx"
+ORCH = REPO / "frontend" / "src" / "components" / "solva" / "artefact_v2" / "SolvaArtefactV2.jsx"
+SHELL = REPO / "frontend" / "src" / "components" / "solva" / "artefact_v2" / "SlideShell.jsx"
+SLIDES = REPO / "frontend" / "src" / "components" / "solva" / "artefact_v2" / "slides"
+
+
+# ─────────────────────────────────────────────────────────────────
+# A. useSolvaReasoningStream — hook surface contract
+# ─────────────────────────────────────────────────────────────────
+
+
+def test_hook_exists_and_default_exports():
+    assert HOOK.is_file(), "useSolvaReasoningStream.js must exist."
+    src = HOOK.read_text(encoding="utf-8")
+    assert "export default function useSolvaReasoningStream" in src
+
+
+def test_hook_parses_locked_three_event_types():
+    """The hook MUST handle exactly the 3 wire event names from Slice 3a:
+        solva.reasoning.script · solva.reasoning · complete
+    """
+    src = HOOK.read_text(encoding="utf-8")
+    for evname in ("solva.reasoning.script", "solva.reasoning", "complete"):
+        assert f'ev.event === "{evname}"' in src or f"'{evname}'" in src, (
+            f"Hook must branch on event name {evname!r}."
+        )
+
+
+def test_hook_state_shape_carries_all_locked_fields():
+    """The hook's exported state shape must include the contract fields
+    enumerated in the Slice 3b brief."""
+    src = HOOK.read_text(encoding="utf-8")
+    for field in (
+        "events",
+        "currentLayer",
+        "currentLayerName",
+        "currentStep",
+        "slideReadyMap",
+        "totalEvents",
+        "isComplete",
+        "status",
+        "error",
+        "replayMode",
+    ):
+        assert field in src, f"Hook state must carry {field!r}."
+
+
+def test_hook_supports_replay_zero_url_override():
+    """The hook MUST honor the `?replay=0` URL override by bypassing
+    the SSE call and marking every slide ready up front."""
+    src = HOOK.read_text(encoding="utf-8")
+    assert "_isReplayBypass" in src
+    assert 'sp.get("replay")' in src
+    # Bypass path mark slides ready
+    assert "_emptySlideMap(true)" in src
+
+
+def test_hook_uses_locked_thirteen_slide_kinds():
+    """The hook's LOCKED_SLIDE_KINDS array must enumerate exactly the
+    13 contract kinds, matching artefact_schema."""
+    src = HOOK.read_text(encoding="utf-8")
+    for kind in (
+        "cover", "headline",
+        "tensions_overview", "per_tension",
+        "scenarios_overview", "per_scenario_table", "sensitivity",
+        "reflection",
+        "pathway", "decision_logic", "risk_mitigation",
+        "methodological_honesty", "in_closing",
+    ):
+        assert f'"{kind}"' in src, f"Hook LOCKED_SLIDE_KINDS missing {kind!r}."
+
+
+def test_hook_aborts_in_flight_request_on_unmount():
+    src = HOOK.read_text(encoding="utf-8")
+    assert "AbortController" in src
+    assert "abort()" in src
+
+
+# ─────────────────────────────────────────────────────────────────
+# B. SlideShell — per-slide state attribute contract
+# ─────────────────────────────────────────────────────────────────
+
+
+def test_slide_shell_carries_slide_state_attribute():
+    src = SHELL.read_text(encoding="utf-8")
+    assert "data-solva-v2-slide-state" in src, (
+        "SlideShell root must carry the data-solva-v2-slide-state attribute "
+        "so the tester can probe loading → ready transitions."
+    )
+    # The default state for an unspecified slideState must be "ready"
+    # so existing tests (Slice 2b multi-viewport probe etc.) keep passing.
+    assert 'slideState = "ready"' in src
+
+
+def test_slide_shell_renders_skeleton_when_loading():
+    src = SHELL.read_text(encoding="utf-8")
+    assert "SlideSkeleton" in src
+    assert 'showSkeleton ? <SlideSkeleton />' in src
+    assert 'solva-v2-slide-skeleton' in src
+
+
+def test_slide_skeleton_uses_brand_purple_short_name_utilities():
+    """Wave 4.2.followup.2 — skeleton tints MUST use `bg-ned-purple/N`
+    short-name utilities. The hex-CSS-var-with-opacity-modifier
+    syntax (`bg-[var(--ned-purple)]/15`) silently fails."""
+    src = SHELL.read_text(encoding="utf-8")
+    assert "bg-ned-purple/" in src, "Skeleton must use bg-ned-purple/N short-name."
+    # And must NOT use the broken hex-var-with-opacity form
+    assert not re.search(
+        r"bg-\[var\(--ned-purple\)\]/\d+", src
+    ), "Skeleton must NOT use bg-[var(--ned-purple)]/N (silently fails)."
+
+
+# ─────────────────────────────────────────────────────────────────
+# C. Every slide threads slideState through to SlideShell
+# ─────────────────────────────────────────────────────────────────
+
+
+def test_all_thirteen_slides_thread_slide_state_to_shell():
+    files = list(SLIDES.glob("*.jsx"))
+    assert len(files) == 13
+    offenders = []
+    for path in files:
+        src = path.read_text(encoding="utf-8")
+        if "slideState" not in src:
+            offenders.append(f"{path.name} does not destructure slideState")
+        elif "slideState={slideState}" not in src:
+            offenders.append(f"{path.name} does not forward slideState to SlideShell")
+    assert not offenders, "Slide-state plumbing gaps:\n  " + "\n  ".join(offenders)
+
+
+# ─────────────────────────────────────────────────────────────────
+# D. Orchestrator — hook subscription + ticker mount + identity stamp
+# ─────────────────────────────────────────────────────────────────
+
+
+def test_orchestrator_subscribes_to_reasoning_stream():
+    src = ORCH.read_text(encoding="utf-8")
+    assert "import useSolvaReasoningStream" in src
+    assert "useSolvaReasoningStream(sessionId" in src
+
+
+def test_orchestrator_mounts_reasoning_ticker():
+    src = ORCH.read_text(encoding="utf-8")
+    assert "import SolvaReasoningTicker" in src
+    assert "<SolvaReasoningTicker" in src
+
+
+def test_orchestrator_root_carries_identity_stamp():
+    """Slice 3b additive — locked attribute that any downstream audit
+    tool (e1_tester, identity-audit pytest, CMS scans) can read as a
+    positive identity signal."""
+    src = ORCH.read_text(encoding="utf-8")
+    assert 'data-solva-v2-identity-stamp="solva-canonical"' in src
+
+
+def test_orchestrator_computes_per_slide_state_attribute():
+    """The orchestrator must compute slideState per slide from the
+    hook's slideReadyMap (loading until the slide.ready event fires)."""
+    src = ORCH.read_text(encoding="utf-8")
+    assert "stream.slideReadyMap" in src
+    # Three states recognised
+    assert "loading" in src
+    assert '"ready"' in src
+    assert '"placeholder"' in src
+    # isPlaceholder branch — the empty-arc per_tension placeholder
+    # surfaces as slideState="placeholder" once the slide.ready arrives.
+    assert "isPlaceholder" in src
+
+
+def test_orchestrator_hook_called_before_early_returns():
+    """React rules-of-hooks: useSolvaReasoningStream must be called
+    UNCONDITIONALLY before any early-return branch (loading / error /
+    integrity_failed). The hook call line must precede the first
+    `if (state.status === "loading")` branch."""
+    src = ORCH.read_text(encoding="utf-8")
+    hook_idx = src.find("useSolvaReasoningStream(sessionId")
+    early_idx = src.find('if (state.status === "loading")')
+    assert 0 < hook_idx < early_idx, (
+        "useSolvaReasoningStream(sessionId, ...) must be called before "
+        "the loading early-return so React's rules-of-hooks holds."
+    )
+
+
+# ─────────────────────────────────────────────────────────────────
+# E. Live ticker — Slice 3b visual contract
+# ─────────────────────────────────────────────────────────────────
+
+
+def test_ticker_renders_layer_display_names():
+    """The ticker MUST convert canonical layer_name to a founder-readable
+    label (Frame Audit / Surface / Depth / Synthesis / Reflection). No
+    theatricalisation."""
+    src = TICKER.read_text(encoding="utf-8")
+    for friendly in ("Frame Audit", "Surface", "Depth", "Synthesis", "Reflection"):
+        assert f'"{friendly}"' in src, (
+            f"Ticker must include the friendly layer display name {friendly!r}."
+        )
+
+
+def test_ticker_collapse_pill_uses_solva_canonical_copy():
+    """On session.complete the ticker collapses to a compact pill with
+    EXACTLY the locked copy: 'Session complete · 5 layers · 13 slides'."""
+    src = TICKER.read_text(encoding="utf-8")
+    assert "Session complete · 5 layers · 13 slides" in src
+
+
+def test_ticker_two_stage_post_complete_lifecycle():
+    """First 8s after session.complete → pill. After 8s → icon-button
+    stub (Slice 3b ships the stub; the side-panel re-open lands in
+    Slice 7)."""
+    src = TICKER.read_text(encoding="utf-8")
+    assert "postCompleteStage" in src
+    assert '"pill"' in src
+    assert '"icon"' in src
+    assert "8_000" in src or "8000" in src
+
+
+def test_ticker_uses_brand_purple_short_name_utilities():
+    """Wave 4.2.followup.2 — ticker tints MUST use `*-ned-purple/N`
+    short-name utilities, never `bg-[var(--ned-purple)]/N`."""
+    src = TICKER.read_text(encoding="utf-8")
+    # Positive
+    assert "ned-purple/" in src or "border-ned-purple" in src
+    # Negative
+    assert not re.search(r"bg-\[var\(--ned-purple\)\]/\d+", src)
+    assert not re.search(r"border-\[var\(--ned-purple\)\]/\d+", src)
+
+
+def test_ticker_does_not_theatricalise():
+    """The ticker is the most exposed surface for theatricality drift.
+    Source-strict guard against forbidden phrases."""
+    src = TICKER.read_text(encoding="utf-8")
+    forbidden = (
+        "thinking deeply", "pondering", "looking deeply",
+        "let me", "would you like", "you should", "you must",
+        "intuiting", "channeling", "sensing the",
+    )
+    lower = src.lower()
+    for needle in forbidden:
+        assert needle not in lower, f"Ticker must not contain {needle!r}."
+
+
+def test_ticker_carries_locked_testids():
+    """Tester contract — ticker exposes its sub-elements via data-testid."""
+    src = TICKER.read_text(encoding="utf-8")
+    for tid in (
+        "solva-v2-ticker",
+        "solva-v2-ticker-step",
+        "solva-v2-ticker-layer-label",
+        "solva-v2-ticker-pill",
+        "solva-v2-ticker-pill-text",
+        "solva-v2-ticker-log-icon",
+    ):
+        assert f'data-testid="{tid}"' in src, f"Ticker missing testid={tid!r}."

@@ -23,6 +23,7 @@ export default function PerTensionSlide({
   slideNumber,
   totalSlides,
   contextName,
+  slideState,
 }) {
   if (!tension) return null;
   const extraParagraphs = (deepDive && deepDive.extended_detail_paragraphs) || [];
@@ -34,6 +35,7 @@ export default function PerTensionSlide({
       number={slideNumber}
       total={totalSlides}
       contextName={contextName}
+      slideState={slideState}
       sectionTag={`Tension ${tension.number}`}
     >
       <div

@@ -13,6 +13,7 @@ export default function MethodologicalHonestySlide({
   slideNumber,
   totalSlides,
   contextName,
+  slideState,
 }) {
   if (!honesty) return null;
   return (
@@ -21,6 +22,7 @@ export default function MethodologicalHonestySlide({
       number={slideNumber}
       total={totalSlides}
       contextName={contextName}
+      slideState={slideState}
       sectionTag="Methodological Honesty"
     >
       <div className="flex flex-col">

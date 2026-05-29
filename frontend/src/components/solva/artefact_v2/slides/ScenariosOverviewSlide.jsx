@@ -13,6 +13,7 @@ export default function ScenariosOverviewSlide({
   slideNumber,
   totalSlides,
   contextName,
+  slideState,
 }) {
   const items = scenarios || [];
   return (
@@ -21,6 +22,7 @@ export default function ScenariosOverviewSlide({
       number={slideNumber}
       total={totalSlides}
       contextName={contextName}
+      slideState={slideState}
       sectionTag="Scenarios"
     >
       <div className="flex flex-col">

@@ -1,34 +1,50 @@
 /**
- * Solva v2 — SlideShell (Slice 2b correction, 2026-05-29).
+ * Solva v2 — SlideShell (Slice 3b, 2026-05-29).
  *
  * Wraps every slide with the per-slide header (slide number + section
  * tag) and footer ("Solva Session Output · Confidential · {ctx} ·
- * {n} / {total}"). Auto-numbered from the orchestrator's slides[]
- * iteration.
+ * {n} / {total}").
  *
  * Locked DOM contract — e1_tester selectors:
  *   • Root:   data-solva-v2-slide="true"
- *             data-solva-v2-slide-kind="{cover|headline|tensions_overview|
- *               per_tension|scenarios_overview|per_scenario_table|
- *               sensitivity|reflection|pathway|decision_logic|
- *               risk_mitigation|methodological_honesty|in_closing}"
+ *             data-solva-v2-slide-kind="{cover|headline|...|in_closing}"
  *             data-solva-v2-slide-number="{n}"
+ *             data-solva-v2-slide-state="{loading|ready|placeholder}"   (NEW Slice 3b)
  *   • Footer: data-solva-v2-slide-footer="true"
  *
- * Width safety: `w-full` + `max-w-[860px]` is set on the parent
- * article. The shell itself uses `w-full` so it collapses to its
- * parent width at narrow viewports. `overflow-hidden` on the body
- * container prevents any inner element (long titles, table content)
- * from pushing the slide wider than its frame.
+ * Per-slide state contract (Slice 3b):
+ *   • "loading"     — Skeleton with subtle ned-purple pulse. Renders
+ *                     the slide chrome (header + footer + section tag)
+ *                     but replaces the body with a 3-line shimmer.
+ *   • "ready"       — Slide body renders normally.
+ *   • "placeholder" — Empty-arc observational placeholder (e.g. the
+ *                     "No tension was surfaced" copy from Slice 2b).
+ *                     No pulse — placeholder is the final state, not a
+ *                     waiting state.
  *
- * Print CSS — every slide is a print-page (`break-after: page`).
- * Founder browser-prints to PDF for offline sharing without any
- * server-side render dependency.
- *
- * Wave 4.2.followup.2 compliance — all colors come from configured
- * Tailwind tokens / CSS variables; no opacity-modifier-on-hex-CSS-var.
+ * Wave 4.2.followup.2 compliance: ALL skeleton tints come from
+ * `bg-ned-purple/N` Tailwind short-name utilities, never
+ * `bg-[var(--ned-purple)]/N` (which silently fails on hex CSS vars).
  */
 import React from "react";
+
+
+function SlideSkeleton() {
+  // 3-line ned-purple shimmer. Pulse animation comes from Tailwind's
+  // built-in `animate-pulse` which targets opacity, not background-color.
+  return (
+    <div
+      className="solva-v2-slide-skeleton flex flex-col gap-4 w-full"
+      data-testid="solva-v2-slide-skeleton"
+    >
+      <div className="h-3.5 rounded-sm bg-ned-purple/15 animate-pulse w-3/5" />
+      <div className="h-2.5 rounded-sm bg-ned-purple/10 animate-pulse w-4/5" />
+      <div className="h-2.5 rounded-sm bg-ned-purple/10 animate-pulse w-2/3" />
+      <div className="mt-3 h-2.5 rounded-sm bg-ned-purple/10 animate-pulse w-3/4" />
+      <div className="h-2.5 rounded-sm bg-ned-purple/10 animate-pulse w-1/2" />
+    </div>
+  );
+}
 
 
 export default function SlideShell({
@@ -37,13 +53,17 @@ export default function SlideShell({
   total,
   contextName,
   sectionTag,
+  slideState = "ready",   // Slice 3b: 'loading' | 'ready' | 'placeholder'
   children,
 }) {
+  const showSkeleton = slideState === "loading";
+
   return (
     <section
       data-solva-v2-slide="true"
       data-solva-v2-slide-kind={kind}
       data-solva-v2-slide-number={String(number)}
+      data-solva-v2-slide-state={slideState}
       className="solva-v2-slide solva-v2-slide-frame relative w-full bg-white border border-[var(--rule)] rounded-sm px-10 py-12 mb-6 print:mb-0 print:break-after-page print:rounded-none print:border-0 overflow-hidden"
       style={{ minHeight: "660px" }}
     >
@@ -60,8 +80,10 @@ export default function SlideShell({
         </span>
       </header>
 
-      {/* Slide body */}
-      <div className="solva-v2-slide-body w-full">{children}</div>
+      {/* Slide body — skeleton or content */}
+      <div className="solva-v2-slide-body w-full">
+        {showSkeleton ? <SlideSkeleton /> : children}
+      </div>
 
       {/* Footer — locked template */}
       <footer

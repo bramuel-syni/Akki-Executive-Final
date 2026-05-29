@@ -12,6 +12,7 @@ export default function RiskMitigationSlide({
   slideNumber,
   totalSlides,
   contextName,
+  slideState,
 }) {
   const items = pairs || [];
   return (
@@ -20,6 +21,7 @@ export default function RiskMitigationSlide({
       number={slideNumber}
       total={totalSlides}
       contextName={contextName}
+      slideState={slideState}
       sectionTag="Risk · Mitigation"
     >
       <div className="flex flex-col">

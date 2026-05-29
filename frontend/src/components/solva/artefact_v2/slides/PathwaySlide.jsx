@@ -28,6 +28,7 @@ export default function PathwaySlide({
   slideNumber,
   totalSlides,
   contextName,
+  slideState,
 }) {
   const items = pathway || [];
   return (
@@ -36,6 +37,7 @@ export default function PathwaySlide({
       number={slideNumber}
       total={totalSlides}
       contextName={contextName}
+      slideState={slideState}
       sectionTag="Pathway"
     >
       <div className="flex flex-col">

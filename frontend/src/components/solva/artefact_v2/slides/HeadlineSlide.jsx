@@ -13,6 +13,7 @@ export default function HeadlineSlide({
   slideNumber,
   totalSlides,
   contextName,
+  slideState,
 }) {
   if (!headline) return null;
   const findings = headline.key_findings || [];
@@ -30,6 +31,7 @@ export default function HeadlineSlide({
       number={slideNumber}
       total={totalSlides}
       contextName={contextName}
+      slideState={slideState}
       sectionTag="Headline"
     >
       <div className="flex flex-col">

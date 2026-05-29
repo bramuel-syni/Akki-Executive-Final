@@ -27,6 +27,8 @@ import React, { useEffect, useState } from "react";
 import { api, apiErrorMessage } from "@/lib/api";
 import { Loader2, AlertCircle } from "lucide-react";
 import SectionDivider from "./SectionDivider";
+import SolvaReasoningTicker from "./SolvaReasoningTicker";
+import useSolvaReasoningStream from "@/hooks/useSolvaReasoningStream";
 import CoverSlide from "./slides/CoverSlide";
 import HeadlineSlide from "./slides/HeadlineSlide";
 import TensionsOverviewSlide from "./slides/TensionsOverviewSlide";
@@ -97,6 +99,7 @@ function composeSlides(payload) {
   } else {
     slides.push({
       kind: "per_tension",
+      isPlaceholder: true,
       render: (shared) => (
         <PerTensionSlide
           tension={{
@@ -248,6 +251,12 @@ function composeSlides(payload) {
 export default function SolvaArtefactV2({ sessionId }) {
   const [state, setState] = useState({ status: "loading", payload: null, error: null });
 
+  // Slice 3b — subscribe to the live reasoning stream. Hook must run
+  // unconditionally before any early-return branches so React's rules-
+  // of-hooks invariant holds. The hook itself short-circuits when
+  // sessionId is falsy.
+  const stream = useSolvaReasoningStream(sessionId, { enabled: true });
+
   // Mount a body-level class so the @media print stylesheet can scope
   // its chrome-strip rules without relying on `body:has(...)`. The
   // `:has()` selector is supported in modern Chromium, but some
@@ -353,17 +362,39 @@ export default function SolvaArtefactV2({ sessionId }) {
       data-testid="solva-v2-artefact-root"
       data-solva-v2-schema-version={payload.schema_version || ""}
       data-solva-v2-slide-count={String(slideOnlyCount)}
+      data-solva-v2-identity-stamp="solva-canonical"
+      data-solva-v2-stream-status={stream.status}
     >
-      {slides.map((s, idx) =>
-        s.render({
+      <SolvaReasoningTicker
+        currentLayer={stream.currentLayer}
+        currentLayerName={stream.currentLayerName}
+        currentStep={stream.currentStep}
+        isComplete={stream.isComplete}
+        totalEvents={stream.totalEvents}
+        receivedEvents={stream.events.length}
+      />
+      {slides.map((s, idx) => {
+        // Compute per-slide state attribute from the stream's
+        // slideReadyMap. Section dividers are not slides; they keep
+        // their own attribute set. Placeholder slides (empty-arc
+        // observational copy) get slideState="placeholder" once the
+        // slide.ready event arrives — no skeleton transition.
+        let slideState = "loading";
+        if (s.isSectionDivider) {
+          slideState = "ready";
+        } else if (stream.slideReadyMap[s.kind]) {
+          slideState = s.isPlaceholder ? "placeholder" : "ready";
+        }
+        return s.render({
           slideNumber: idx + 1,
           totalSlides: total,
           number: idx + 1,
           total,
           contextName,
+          slideState,
           key: `${s.kind}-${idx}`,
-        }),
-      )}
+        });
+      })}
     </article>
   );
 }

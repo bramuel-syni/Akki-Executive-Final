@@ -5672,3 +5672,42 @@ Slice 2b close-out claimed contract met; tester proved otherwise. Going forward,
 ### Slice 3.followup.1 (parked, not blocking)
 Engine-side `LiveQueue` for true live-mode broadcast on in-flight sessions. Slice 3a today replays the current snapshot of audit log + payload — sufficient for the founder revisit experience. Live broadcast on in-flight sessions requires instrumenting the 5-layer engine pipeline with a per-session asyncio.Queue.
 
+
+---
+
+## Solva v2 — Slice 3b frontend CLOSED ✅ (2026-05-29) · Trust pillar 1 live
+
+### What shipped
+- `useSolvaReasoningStream` hook — dedicated SSE consumer with locked surface (`events`, `currentLayer`, `currentLayerName`, `currentStep`, `slideReadyMap` of 13 booleans, `totalEvents`, `isComplete`, `status`, `error`, `replayMode`); honors `?replay=0` URL override
+- `SolvaReasoningTicker` — fixed top-right panel; three-stage lifecycle via `data-solva-v2-ticker-stage`: `active` (during streaming) → `pill` (8s after `session.complete`) → `icon` (Session log stub)
+- `SlideShell` extended with `data-solva-v2-slide-state` attribute + 5-bar ned-purple skeleton (Wave 4.2.followup.2 compliant via `bg-ned-purple/N` short-name utilities)
+- All 13 slides thread `slideState` through to SlideShell (mechanical batch)
+- Orchestrator subscribes hook before early returns; mounts ticker; computes per-slide state from `slideReadyMap`; adds `data-solva-v2-identity-stamp="solva-canonical"` on root
+
+### Live rendered-DOM evidence (admin@akki.ai @ session `e7b46d64-7a14-46e1-8f99-9703c210333f`)
+- DOM-state trace: t=0.12s all 13 loading → t=2s 1 ready → t=4s 12 ready + 1 placeholder (matches backend 4.3s replay budget)
+- Ticker mid-stream: stage=`active`, layer=`L4 · REFLECTION`, step="Layer 4 complete — 3 reflection questions carried", border=`rgba(107,70,193,0.3)`, fixed top:16px right:16px
+- Pill post-complete: stage=`pill`, text=`SESSION COMPLETE · 5 LAYERS · 13 SLIDES`
+- Skeleton tints computed: `bg-ned-purple/15` → `rgba(107,70,193,0.15)` ✓; `bg-ned-purple/10` → `rgba(107,70,193,0.10)` ✓ (Wave 4.2.followup.2 silent-fail trap avoided)
+- Identity stamp: `solva-canonical` ✓
+- Per-slide final states: `per_tension` → `placeholder` (empty-arc observational); 12 other content slides → `ready`
+
+### Tests
+- 208/208 passing across Slice 1+2+3a+3b + identity audit + adjacent locked phases (3 skipped — 2 Playwright gates + 1 superseded Phase O test)
+- 22 new Slice 3b source-strict tests
+- v1 byte-identical guard still green
+
+### `?replay=0` opt-out — SHIPPED
+Per the user's accepted proposal. ~7 LOC; founder skips animation, lands on fully-rendered deck instantly. Locked by source-strict test.
+
+### Slice 3 (3a + 3b combined) DONE
+Trust pillar 1 is live. The founder watches Solva think.
+
+### Next dispatches queued
+- AppShell topbar responsive fix (Dispatch 2) — small maintenance slice; multi-viewport DOM probe at 1280/1024/820
+- Slice 4 (P1) — Bias inventory rendering
+- Slice 5 (P1) — Adversarial debate + pre-mortem
+- Slice 6 (P1) — Cost asymmetry slide
+- Slice 7 (P1) — Verification + polish (including session-log side-panel re-open from the icon-button stub)
+- Slice 3.followup.1 (parked) — engine-side `LiveQueue` for true live-mode broadcast on in-flight sessions
+

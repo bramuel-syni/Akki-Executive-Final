@@ -2733,3 +2733,133 @@ The 4.3s figure includes ASGI startup latency + curl close. Pure server-side bud
 For in-flight sessions, the stream currently replays the *current snapshot* of the audit log + payload — events that have already accumulated. True live-mode would require instrumenting the 5-layer engine pipeline with a per-session `asyncio.Queue` that the SSE endpoint consumes alongside the historical replay. That's an engine-side refactor outside Slice 3a's scope. Filed as Slice 3.followup.1 — wire engine-side `LiveQueue` for live-mode broadcast.
 
 
+
+### Solva v2 — Slice 3b (frontend) CLOSED ✅ (2026-05-29) · Live reasoning stream UI · per-slide loading→ready transitions · 208 tests passing
+
+**Trust pillar 1 land.** The founder now WATCHES Solva's 5-layer engine execute step-by-step. All 13 slides start as ned-purple-tinted skeletons; as `slide.ready` events arrive, each slide flips to `data-solva-v2-slide-state="ready"` (or `"placeholder"` for empty-arc slides). A fixed-position ticker top-right shows `Layer N · NAME` + the current step_description. On `session.complete`, the ticker collapses to a compact pill — `Session complete · 5 layers · 13 slides` — for 8 seconds, then fades to a small "Session log" icon-button stub (full side-panel re-open lands in Slice 7).
+
+#### Files touched
+
+**NEW (3 files):**
+- `frontend/src/hooks/useSolvaReasoningStream.js` (262 LOC) — dedicated SSE consumer hook with its own taxonomy. Reuses the fetch+ReadableStream+TextDecoder pattern from the Phase L primitive, but with Solva-specific event branching (`solva.reasoning.script` / `solva.reasoning` / `complete`). Exposes the locked surface: `events`, `currentLayer`, `currentLayerName`, `currentStep`, `slideReadyMap` (13 booleans), `totalEvents`, `isComplete`, `status`, `error`, `replayMode`. Honors `?replay=0` URL override — bypasses the SSE call entirely and marks every slide ready up front. AbortController plumbing for clean unmount.
+- `frontend/src/components/solva/artefact_v2/SolvaReasoningTicker.jsx` (113 LOC) — fixed top-right panel. Three lifecycle stages exposed via `data-solva-v2-ticker-stage`: `active` (during streaming/replay) → `pill` (8 seconds after session.complete) → `icon` (Session log button stub). Wave 4.2.followup.2 compliant — all tints via `bg-ned-purple/N` short-name utilities; `border-ned-purple/30` border ring; ned-purple `var(--ned-purple)` accent dot.
+- `backend/tests/test_solva_v2_use_reasoning_stream_hook.py` (270 LOC, 22 source-strict tests) — hook surface contract (locked 13-kind enumeration, 3-event-name parser, replay-zero URL override, AbortController), SlideShell state attribute + skeleton tint short-name compliance, all 13 slides thread slideState, orchestrator subscribes + mounts ticker + carries identity-stamp + computes per-slide state from `slideReadyMap`, hook called before early returns (React rules-of-hooks), ticker friendly-layer-naming, ticker pill copy lock, ticker two-stage post-complete lifecycle, ticker brand-purple short-name compliance, ticker theatricality rejection, ticker locked testid set.
+
+**EDITED:**
+- `frontend/src/components/solva/artefact_v2/SlideShell.jsx` — added `slideState` prop (default `"ready"` to keep Slice 2b multi-viewport probe green); when `slideState === "loading"`, replaces the slide body with a `SlideSkeleton` (5-bar ned-purple pulse using `bg-ned-purple/15` + `bg-ned-purple/10` + `animate-pulse`); adds `data-solva-v2-slide-state` attribute to the slide root.
+- `frontend/src/components/solva/artefact_v2/SolvaArtefactV2.jsx` — subscribes to `useSolvaReasoningStream(sessionId)` BEFORE the early-return branches (React rules-of-hooks compliance, locked by source-strict test). Mounts `<SolvaReasoningTicker ... />` above the slide loop. Computes per-slide `slideState` from `stream.slideReadyMap[s.kind]`: section dividers are always `"ready"`; placeholder slides get `"placeholder"` once their kind's slide.ready event arrives; real slides flip `"loading"` → `"ready"`. Adds `data-solva-v2-identity-stamp="solva-canonical"` + `data-solva-v2-stream-status={stream.status}` to artefact root. Marked the empty-arc `per_tension` push with `isPlaceholder: true`.
+- All 13 slide components in `/slides/*.jsx` — destructure `slideState` from props + forward `slideState={slideState}` to SlideShell. Mechanical batch via Python script (preserves all other behavior).
+
+#### Inline rendered-DOM evidence
+
+**A. DOM-state transition trace (real session, admin@akki.ai @ `e7b46d64-7a14-46e1-8f99-9703c210333f`):**
+```
+t=0.12s — ready=0  loading=13 placeholder=0   (all 13 slides start as skeleton — perfect)
+t=1.00s — ready=0  loading=13 placeholder=0   (script header arrived; reasoning events haven't kicked yet)
+t=2.00s — ready=1  loading=12 placeholder=0   (cover slide.ready event landed)
+t=4.00s — ready=12 loading=0  placeholder=1   (12/13 slides ready + 1 per_tension placeholder)
+t=6.00s — ready=12 loading=0  placeholder=1   (stable — replay complete)
+```
+
+Per-slide final states verbatim:
+```
+cover                  → ready
+headline               → ready
+tensions_overview      → ready
+per_tension            → placeholder   (no real tensions in this session)
+scenarios_overview     → ready
+per_scenario_table     → ready
+sensitivity            → ready
+reflection             → ready
+pathway                → ready
+decision_logic         → ready
+risk_mitigation        → ready
+methodological_honesty → ready
+in_closing             → ready
+```
+
+Per-slide attribute matches `slideReadyMap` derived from the SSE stream. The empty-arc `per_tension` correctly surfaces as `"placeholder"` (NOT `"ready"`), giving the founder a visual signal that this section is observational rather than evidence-driven.
+
+**B. Live ticker computed-style proof (during streaming, captured at L4 · Reflection):**
+```
+data-solva-v2-ticker-stage  : "active"
+layer_text                  : "L4 · REFLECTION"
+step_text                   : "Layer 4 complete — 3 reflection questions carried"
+ticker_borderColor          : rgba(107, 70, 193, 0.3)   ← ned-purple at 30% alpha
+ticker_backgroundColor      : rgb(242, 239, 232)        ← parchment cream
+ticker_position             : fixed
+ticker_top                  : 16px
+ticker_right                : 16px
+ticker_width                : 320 px
+```
+
+Post-completion pill (8s after session.complete):
+```
+data-solva-v2-ticker-stage  : "pill"
+pill_text                   : "SESSION COMPLETE · 5 LAYERS · 13 SLIDES"
+ticker_borderColor          : rgba(107, 70, 193, 0.3)
+ticker_position             : fixed top:16px right:16px
+ticker_width                : 355 px (slimmer than active ticker)
+```
+
+After 8s the pill fades to a `<button data-testid="solva-v2-ticker-log-icon">` "Session log" stub.
+
+**C. Frontend replay timing measurement:**
+- Backend replay budget: 4.0s (declared in `solva_v2_artefact.py:REPLAY_TOTAL_BUDGET_S`)
+- Backend curl-measured replay: 4.3s end-to-end (Slice 3a evidence)
+- Frontend t=0.12s (skeleton) → t=4.00s (12/13 ready + 1 placeholder): **≈ 3.9 seconds visual progression** ← matches backend budget within the noise floor
+- All 13 slides reach a terminal state (`ready` or `placeholder`) by t=4s. Well within the 6s test budget (4.3s replay + 1.7s buffer).
+
+**D. Wave 4.2.followup.2 compliance — skeleton tint computed-style proof:**
+```
+Sample 1: classList="bg-ned-purple/15 animate-pulse"   → backgroundColor: rgba(107, 70, 193, 0.15)
+Sample 2: classList="bg-ned-purple/10 animate-pulse"   → backgroundColor: rgba(107, 70, 193, 0.10)
+Sample 3: classList="bg-ned-purple/10 animate-pulse"   → backgroundColor: rgba(107, 70, 193, 0.10)
+```
+
+`bg-ned-purple/N` correctly resolves to `rgba(107, 70, 193, N/100)` — the canonical Solva brand purple at the requested alpha. No silent-fail trap (the prior `bg-[var(--ned-purple)]/N` syntax would have rendered as `rgba(0,0,0,0)`). Source-strict guard in the new test prevents future regression.
+
+**E. Identity stamp on artefact root:**
+```
+data-solva-v2-identity-stamp: "solva-canonical"
+```
+
+**F. Visual screenshot — captured at t≈1.5s mid-replay:**
+- Cover slide in `loading` state with 5 ned-purple pulse skeleton bars
+- Live ticker top-right reads `L4 · REFLECTION  20 / 34` (top line) + `Layer 4 complete — 3 reflection questions carried` (bottom line) — observational, grounded, founder-readable
+- AppShell chrome intact
+
+#### `?replay=0` opt-out — SHIPPED per your proposal
+
+`useSolvaReasoningStream` honors the `?replay=0` / `?replay=false` / `?replay=off` / `?replay=no` URL override. When set, the hook bypasses the SSE call entirely and marks every slide ready up front, so the founder lands on the fully-rendered deck instantly. ~7 LOC; integrated cleanly. Source-strict test `test_hook_supports_replay_zero_url_override` locks the contract.
+
+#### Test sweep — Slice 1 + 2 + 3a + 3b + identity audit + adjacent locked phases
+
+**208 / 208 passing, 3 skipped** (2 Playwright runtime probes gated by `E1_SMOKE_URL` + 1 superseded Phase O test).
+- v1 byte-identical guard from Slice 1b: 4/4 ✓
+- Slice 1 (schema + integrity validators + payload builder parity): 41/41 ✓
+- Slice 2 (renders + multiviewport + feature-flag routing + slide-kind inventory): 43/43 ✓
+- Identity audit guard: 8/8 ✓
+- Slice 3a (SSE event schema + step-description validator + engine emission): 50/50 ✓
+- Slice 3b (hook + ticker + per-slide state contracts): 22/22 NEW ✓
+
+#### Anti-drift locks (Slice 3b additions)
+
+1. **Hook contract**: source-strict test asserts the hook destructures all 10 locked state fields, branches on all 3 wire event names, enumerates exactly the 13 locked slide kinds, supports the `?replay=0` override, and uses an AbortController.
+2. **SlideShell skeleton**: `data-solva-v2-slide-state` attribute required; default `"ready"` preserved (keeps Slice 2b probes green); skeleton uses `bg-ned-purple/N` short-name utilities ONLY (regex guard against `bg-[var(--ned-purple)]/N` silent-fail).
+3. **All 13 slides thread slideState**: parametrised guard sweeps every file in `/slides/*.jsx`.
+4. **Orchestrator**: subscribes to hook before early returns (React rules-of-hooks); mounts ticker; carries identity stamp; computes per-slide state from `slideReadyMap`; handles three states (`loading`/`ready`/`placeholder`).
+5. **Ticker integrity**: 5 friendly-layer-name strings ("Frame Audit" / "Surface" / "Depth" / "Synthesis" / "Reflection") locked; pill copy locked verbatim; two-stage post-complete lifecycle (pill@8s → icon) locked; brand-purple short-name compliance enforced; theatricality phrase rejection enforced; all 6 testids locked.
+
+#### Out of scope for 3b (queued)
+
+- Engine-side `LiveQueue` for true live-mode broadcast on in-flight sessions (`Slice 3.followup.1`, parked)
+- Session-log side-panel re-open from the icon-button (Slice 7 polish)
+- AppShell topbar responsive fix (Dispatch 2, queued as next maintenance slice)
+- Slice 4-7 (bias inventory · adversarial debate · cost asymmetry · verification)
+
+#### Slice 3 (3a + 3b combined) — DONE
+
+Trust pillar 1 is live. The founder watches Solva think.
+
+

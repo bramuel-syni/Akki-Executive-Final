@@ -12,6 +12,7 @@ export default function ReflectionSlide({
   slideNumber,
   totalSlides,
   contextName,
+  slideState,
 }) {
   if (!reflection) return null;
   const questions = reflection.questions || [];
@@ -22,6 +23,7 @@ export default function ReflectionSlide({
       number={slideNumber}
       total={totalSlides}
       contextName={contextName}
+      slideState={slideState}
       sectionTag="Reflection"
     >
       <div className="flex flex-col">

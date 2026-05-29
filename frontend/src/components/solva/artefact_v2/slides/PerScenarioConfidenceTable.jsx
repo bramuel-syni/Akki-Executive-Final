@@ -14,6 +14,7 @@ export default function PerScenarioConfidenceTable({
   slideNumber,
   totalSlides,
   contextName,
+  slideState,
 }) {
   const rows = (table && table.rows) || [];
   return (
@@ -22,6 +23,7 @@ export default function PerScenarioConfidenceTable({
       number={slideNumber}
       total={totalSlides}
       contextName={contextName}
+      slideState={slideState}
       sectionTag="Confidence Table"
     >
       <div className="flex flex-col">
