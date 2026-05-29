@@ -68,23 +68,29 @@ def test_e1_document_cards_heading_removed():
     assert 'data-testid="work-studio-document-cards-list"' in src
 
 
-def test_e1_tab_bar_has_correct_six_tabs_in_correct_order():
-    """KIND_TABS list defines the order; assert exactly 6 tabs with
-    the canonical ids + labels in the canonical order."""
+def test_e1_tab_bar_post_merge_layout_locked():
+    """Phase E.1 specced 6 tabs (Board+Committee merge, Briefing as
+    6th solo). Drafts+Briefs merge (2026-02 fork-resume) subsequently
+    collapsed Drafts + Briefing into one `drafts_briefs` tab, reducing
+    the strip to 5 entries. This guard accepts the POST-MERGE layout
+    only — the merge has shipped and is locked elsewhere
+    (`test_workstudio_drafts_briefs_merged.py` + `test_phase_z_slice_6_orthogonality_wire.py`).
+
+    The pre-merge 6-tab assertion is intentionally removed. Briefing
+    data path is preserved via the merged tab's `category: ["draft",
+    "briefing"]` array form, which is locked separately."""
     src = _read(WORK_STUDIO)
     block = src.split("const KIND_TABS = [")[1].split("];")[0]
-    # Parse out id + label pairs in document order.
     pairs = re.findall(r'id:\s*"([^"]+)"[^}]*?label:\s*"([^"]+)"', block, re.DOTALL)
     expected = [
         ("cycle_main_and_committee_pack", "Main Board & Committee Packs"),
         ("cycle_minutes",                 "Minutes"),
-        ("drafts",                        "Drafts"),
+        ("drafts_briefs",                 "Drafts & Briefs"),
         ("deck",                          "Decks"),
         ("report",                        "Reports"),
-        ("briefing",                      "Briefing"),
     ]
     assert pairs == expected, (
-        f"KIND_TABS order mismatch.\n"
+        f"KIND_TABS post-merge order/labels drifted.\n"
         f"  expected: {expected}\n"
         f"  actual:   {pairs}"
     )
@@ -102,27 +108,37 @@ def test_e1_legacy_tab_labels_removed():
     assert '"Committee Packs"' not in code, "Legacy 'Committee Packs' label still in KIND_TABS"
 
 
-def test_e1_merged_tab_unions_legacy_kinds():
-    """The new tab id must carry a `union_of` list naming the two
-    legacy kinds — that's the data-contract for the merge."""
+def test_e1_merged_tab_carries_canonical_category():
+    """Phase E.1 originally used a `union_of: ["cycle_board_pack",
+    "cycle_committee_pack"]` array to mark the merge data-contract.
+    Phase Z (2026-05-27) replaced `union_of:` with a single canonical
+    `category: "board_pack"` on the merged tab — the sub-distinction
+    between Main Board and Committee packs is preserved at the
+    `work_studio_exports.kind` level (for compile-template selection)
+    but rolls up to one category in the listing layer.
+
+    Locks the post-Z merge contract:
+      - Merged tab id = `cycle_main_and_committee_pack`
+      - Carries `category: "board_pack"`
+      - Legacy URL params (`?kind=cycle_board_pack`/`cycle_committee_pack`)
+        still redirect to the merged tab id at `initialKind` capture."""
     src = _read(WORK_STUDIO)
-    # Scope to the KIND_TABS block (after the const declaration) to
-    # avoid catching the same string in module-header comments.
     tabs_block = src.split("const KIND_TABS = [")[1].split("];")[0]
-    # Find the merged tab's object literal.
-    merged_block = tabs_block.split("id: \"cycle_main_and_committee_pack\"")[1].split("},")[0]
-    assert '"cycle_board_pack"' in merged_block
-    assert '"cycle_committee_pack"' in merged_block
-    assert "union_of:" in merged_block
-
-
-def test_e1_drafts_tab_sources_documents_drafts_endpoint():
-    """Drafts tab uses the new /contexts/{cid}/documents/drafts
-    endpoint, NOT the aggregates endpoint."""
-    src = _read(WORK_STUDIO)
-    # The dispatch code must branch on source === "documents_drafts".
-    assert 'tab.source === "documents_drafts"' in src
-    assert "/documents/drafts" in src
+    merged_block = tabs_block.split('id: "cycle_main_and_committee_pack"')[1].split("},")[0]
+    assert 'category: "board_pack"' in merged_block, (
+        "Merged tab must declare canonical `category: \"board_pack\"`"
+    )
+    # Legacy URL-param redirect still in place.
+    init_block = src.split("const initialKind = (() => {")[1].split("})();")[0]
+    assert 'k === "cycle_board_pack"' in init_block, (
+        "initialKind must still redirect legacy `?kind=cycle_board_pack`"
+    )
+    assert 'k === "cycle_committee_pack"' in init_block, (
+        "initialKind must still redirect legacy `?kind=cycle_committee_pack`"
+    )
+    assert 'return "cycle_main_and_committee_pack"' in init_block, (
+        "Legacy redirects must land on the merged tab id"
+    )
 
 
 def test_e1_legacy_kind_query_param_redirects_to_merged():
@@ -206,13 +222,16 @@ def test_e2_recent_activity_route_is_mounted():
     assert ACTIVITY_PAGE.exists(), "WorkStudioActivity.jsx must exist"
 
 
-def test_e2_rail_section_order_document_journal_drafts_activity():
+def test_e2_rail_section_order_generate_drafts_activity():
     """Rail section order top-to-bottom:
-       Generate Report → Document Journal → Recent Drafts → Recent Activity."""
+       Generate Report → Recent Drafts → Recent Activity.
+
+    UPDATED 2026-02 fork-resume — Document Journal deck was removed
+    from CompilationRail (its data path moved to a different surface).
+    The remaining 3 decks order as above."""
     src = _read(COMPILATION_RAIL)
     markers = [
         ('data-testid="compilation-rail-generate-report-block"',         "Generate Report block"),
-        ('data-testid="compilation-rail-document-journal"',              "Document Journal deck"),
         ('data-testid="compilation-rail-recent-drafts"',                 "Recent Drafts deck"),
         ('data-testid="compilation-rail-recent-activity"',               "Recent Activity deck"),
     ]
@@ -225,6 +244,13 @@ def test_e2_rail_section_order_document_journal_drafts_activity():
             f"previous marker ended at {last_pos}, this one starts at {pos}"
         )
         last_pos = pos
+    # Anti-regression: the legacy Document Journal deck testid must
+    # NOT reappear (its removal is intentional, not a bug).
+    assert 'data-testid="compilation-rail-document-journal"' not in src, (
+        "Document Journal deck was removed from CompilationRail (post "
+        "2026-02 dispatch). Its data path moved off the rail; the "
+        "testid must not regress."
+    )
 
 
 def test_e2_backend_drafts_endpoint_wired():

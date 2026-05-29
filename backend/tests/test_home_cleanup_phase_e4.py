@@ -90,13 +90,16 @@ def test_e4_app_shell_upload_redirects_to_drawer():
     assert "/app/documents/" not in upload_block
 
 
-def test_e4_compilation_rail_document_journal_row_uses_drawer():
-    """CompilationRail Document Journal deck row click opens the drawer."""
-    src = _read(COMPILATION_RAIL)
-    # Row click in the Document Journal section.
-    journal_block = src.split('data-testid="compilation-rail-document-journal-list"')[1].split('</section>')[0]
-    assert "/app/work-studio?doc_id=" in journal_block
-    assert "/app/documents/" not in journal_block
+# Phase E4 Document Journal deck-row → drawer test was REMOVED
+# in the 2026-02 fork-resume maintenance dispatch. The Document
+# Journal deck no longer exists in CompilationRail (the deck was
+# retired and its data path moved to a different surface). The
+# drawer-routing contract for the rail's surviving decks (Recent
+# Drafts + Recent Activity) is locked separately in:
+#   - test_e2_rail_section_order_generate_drafts_activity (anti-
+#     regression — the legacy testid must NOT reappear)
+#   - Phase E.2 source-strict tests covering the rail's two surviving
+#     view-more links.
 
 
 # ─────────────────────────────────────────────────────────────────────

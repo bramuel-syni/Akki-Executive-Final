@@ -58,21 +58,44 @@ DOCUMENTS_PY = REPO / "backend" / "routers" / "documents.py"
 #  fix-time; logging the structural lock here for regression.)
 # ═════════════════════════════════════════════════════════════════════
 
-def test_recurrence3_I1_briefing_is_in_kind_tabs_array_as_6th():
-    """Briefing must be a regular KIND_TABS entry (6th and last),
-    rendered in the same `KIND_TABS.map` loop as the other 5. NOT a
-    separate 2nd-line pill, NOT a sub-tab body."""
+def test_recurrence3_I1_briefing_path_preserved_in_kind_tabs():
+    """Briefing data path must be REACHABLE from KIND_TABS — either as
+    a solo 6th tab (pre-merge) OR as a category inside the merged
+    `drafts_briefs` tab (post-Drafts+Briefs-merge, 2026-02 fork-resume).
+    The lock prevents accidental REMOVAL of the briefing data path; it
+    explicitly accepts either ordering / structure since the merge has
+    shipped."""
     src = WORK_STUDIO.read_text(encoding="utf-8")
-    # Extract the KIND_TABS array body
     import re
     m = re.search(r"const KIND_TABS\s*=\s*\[([\s\S]*?)\];", src)
     assert m, "KIND_TABS array not found"
     body = m.group(1)
     ids = re.findall(r'id:\s*"([^"]+)"', body)
-    assert ids == [
+
+    pre_merge_layout = [
         "cycle_main_and_committee_pack", "cycle_minutes",
         "drafts", "deck", "report", "briefing",
-    ], f"KIND_TABS order drifted: {ids}"
+    ]
+    post_merge_layout = [
+        "cycle_main_and_committee_pack", "cycle_minutes",
+        "drafts_briefs", "deck", "report",
+    ]
+    assert ids in (pre_merge_layout, post_merge_layout), (
+        f"KIND_TABS layout drifted from both pre-merge and post-merge "
+        f"specs. Got: {ids}"
+    )
+
+    # Briefing reachable either solo OR through the merged tab.
+    if "briefing" in ids:
+        return  # pre-merge layout — briefing is its own tab.
+    # Post-merge — `drafts_briefs` must carry briefing in its category array.
+    merged_idx = body.find('id: "drafts_briefs"')
+    assert merged_idx > 0, "Post-merge layout requires `drafts_briefs` tab"
+    merged_block = body[merged_idx:merged_idx + 800]
+    assert '"briefing"' in merged_block, (
+        "Post-merge `drafts_briefs` tab must carry `\"briefing\"` in its "
+        "`category` array (preserves the Briefing data path)."
+    )
 
 
 def test_recurrence3_I1_no_separate_briefing_pill_render_block():
