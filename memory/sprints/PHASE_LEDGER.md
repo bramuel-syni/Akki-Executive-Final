@@ -3437,3 +3437,87 @@ The four post-Slice-7 trust-claim artefacts now ship as one continuous diagnosti
 
 **Next queued: Z2 (UX gaps).**
 
+
+### Sprint Z2.0 — Chair-readable speaker notes ✅ (2026-05-29)
+
+Slot 0 of Z2 — the deck-audit enhancement the user green-lit after the PPTX export close-out. Upgrades the .pptx speaker-notes pane from "developer log" to "audit footer a board chair would scan".
+
+#### Files touched
+
+Backend
+- `backend/services/solva_v2/pptx_exporter.py` — added 4 helpers (`_resolve_session_input_count`, `_confidence_phrase`, `_bias_summary`, `_compose_chair_notes`). Removed the two ad-hoc per-builder `_set_notes` calls (in `_build_headline` + `_build_bias_inventory`). The uniform notes are now appended inside `build_pptx`'s deck-walk loop via `_set_notes(prs.slides[-1], _compose_chair_notes(kind, payload))`, so every one of the 16 slides receives the same chair-readable audit footer with slide-specific extras on the three trust-pillar slides.
+
+Tests (9/9 green)
+- `backend/tests/test_solva_v2_pptx_chair_notes.py` — locks:
+  • every slide has speaker notes (no silent slides)
+  • three baseline lines on every slide (`Sourced from N inputs · M documents cited · Evidence-grounding: passed`, `Bias check: …`, `Confidence: …`)
+  • cover slide's notes match the Economist-register regex from the voice brief
+  • bias inventory slide surfaces the named biases inside the notes (so they survive even if the slide is hidden by a viewer)
+  • pre-mortem slide surfaces the triggering signals inside the notes
+  • cost asymmetry slide surfaces the cost magnitudes inside the notes
+  • banned-vocabulary lockdown (19-word ban list from `/app/docs/WEBSITE_BRIEF_V3.md` § Voice and lexicon) — zero hits across all 16 slides
+  • emoji / dingbat lockdown — zero hits
+  • Solva-identity guard — zero `SOLVE` / `Solve ` drift in notes
+
+#### Live raw-trace evidence (verbatim, from the live binary)
+
+Reference: `admin@akki.ai` → `GET /api/solva/sessions/e7b46d64-7a14-46e1-8f99-9703c210333f/v2/export.pptx`. Endpoint returned **HTTP 200, 77,393 bytes** (was 60,781 pre-Z2.0; +16,612 bytes from per-slide notes content). python-pptx parse-back of the live binary:
+
+**Cover slide notes (slide 1):**
+```
+Sourced from 5 inputs. 0 documents cited. Evidence-grounding: passed.
+Bias check: Confirmation bias, Anchoring bias, Narrative fallacy. All surfaced on slide 9.
+Confidence: medium on direction. 50% on the leading scenario.
+```
+
+**Bias inventory slide notes (slide 9):**
+```
+Sourced from 5 inputs. 0 documents cited. Evidence-grounding: passed.
+Bias check: Confirmation bias, Anchoring bias, Narrative fallacy. All surfaced on slide 9.
+Confidence: medium on direction. 50% on the leading scenario.
+This slide · Confirmation bias · likelihood low.
+This slide · Anchoring bias · likelihood high.
+This slide · Narrative fallacy · likelihood low.
+```
+
+**Pre-mortem slide notes (slide 11):**
+```
+Sourced from 5 inputs. 0 documents cited. Evidence-grounding: passed.
+Bias check: Confirmation bias, Anchoring bias, Narrative fallacy. All surfaced on slide 9.
+Confidence: medium on direction. 50% on the leading scenario.
+Watch for · data signal misread · signals: Confidence band on the leading scenario revises downward at the next intake; A second-weighted scenario gains evidence that would overtake the leader.
+Watch for · execution velocity · signals: First timeline checkpoint slips by more than 7 days; Pathway item handoffs surface coordination overhead beyond the recommended cadence.
+Watch for · stakeholder misalignment · signals: Stakeholder pre-read returns silence rather than substantive engagement; Board agenda for the next cycle does not name the pathway items as standing topics.
+```
+
+**Cost asymmetry slide notes (slide 13):**
+```
+Sourced from 5 inputs. 0 documents cited. Evidence-grounding: passed.
+Bias check: Confirmation bias, Anchoring bias, Narrative fallacy. All surfaced on slide 9.
+Confidence: medium on direction. 50% on the leading scenario.
+Asymmetry · Scenario A (50%) · opportunity cost · magnitude high.
+Asymmetry · Scenario B (50%) · reputational risk · magnitude medium.
+```
+
+#### Voice compliance check
+
+The cover-slide notes match the brief's locked exemplar regex verbatim:
+```
+Sourced from \d+ inputs?\. \d+ documents? cited\. Evidence-grounding: passed\.
+```
+
+Banned-vocabulary lockdown: zero hits across all 16 slides for `AI-powered`, `AI-driven`, `leverage`, `leveraging`, `unlock`, `unlocking`, `empower`, `empowering`, `seamless`, `seamlessly`, `revolutionary`, `cutting-edge`, `disrupt`, `disruptive`, `frictionless`, `supercharge`, `synergy`, `game-changer`, `transform` (generic), `all-under-one-roof`. Plus emoji / dingbat range (`✨ 🎯 🚀 🔥` etc.).
+
+#### Test sweep — full Solva v2 suite
+
+- **Solva v2:** 447 passed / 23 skipped (pre-existing) / 0 failures. (Previous: 438 post-PPTX-export; net +9 from Z2.0.)
+- **v1 byte-identical guard:** `git diff backend/services/solva frontend/src/components/solva/artefact` returns empty diff.
+
+#### Anti-drift locks (Z2.0 additions)
+
+- `_compose_chair_notes(slide_kind, payload)` is the single source of truth — accidentally adding ad-hoc `_set_notes(...)` calls inside individual builders would surface as duplicate-line content the per-slide tests don't expect.
+- The 19-word ban list is encoded as a Python tuple (`_BANNED_PHRASES`) in the test file so the Economist-register discipline becomes machine-checked, not aspirational.
+- Slide-specific extras (named biases / failure-mode signals / cost magnitudes) are emitted via a `slide_kind == "..."` switch inside the helper. The three lockdown tests check each switch arm independently — drift on any one arm fails one test in isolation.
+
+**Z2.0 is closed.** Next Z2 items (in spec order): date-picker Apply button, related-docs drawer scroll, feedback-pill drawer overlap, open-questions empty state, doc-journal delete + upload parity, sources panel on all artefact types, chat empty-state input centering.
+

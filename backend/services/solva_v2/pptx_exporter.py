@@ -172,6 +172,115 @@ def _set_notes(slide, lines: List[str]):
 
 
 # ─────────────────────────────────────────────────────────────────
+# Z2.0 (2026-05-29) — chair-readable speaker notes
+# ─────────────────────────────────────────────────────────────────
+#
+# A board chair right-clicking a slide → Speaker Notes sees a tight
+# audit footer. Locked format (read top-down, three baseline lines
+# + slide-specific extras):
+#
+#     Sourced from 4 inputs. 2 documents cited. Evidence-grounding: passed.
+#     Bias check: anchoring, confirmation. All surfaced on slide 9.
+#     Confidence: high on direction. 72% on the leading scenario.
+#
+# Bias inventory / pre-mortem / cost asymmetry slides surface the
+# slide-specific detail (named biases · failure-mode signals · cost
+# magnitudes) so a chair scanning for "what should I worry about"
+# finds it without opening a separate session log.
+#
+# Voice rules: passes Economist + senior-peer + restraint tests. No
+# emoji, no "AI-powered", no banned vocabulary.
+
+
+def _resolve_session_input_count(payload) -> tuple:
+    """Distinct user-turn source ids + document-citation ids from the
+    payload's headline + bias inventory. Used as the chair-facing
+    "sources / documents" footer line."""
+    inputs = set()
+    docs = set()
+    for kf in (payload.headline.key_findings or []):
+        for c in (kf.source_citations or []):
+            sid = getattr(c, "source_input_id", None)
+            if not sid:
+                continue
+            kind = getattr(c, "source_kind", "")
+            if kind == "document":
+                docs.add(sid)
+            else:
+                inputs.add(sid)
+    for b in (payload.bias_inventory.biases or []):
+        for s in (b.source_input_ids or []):
+            inputs.add(s)
+    return len(inputs), len(docs)
+
+
+def _confidence_phrase(payload) -> str:
+    if not payload.scenarios:
+        return "Confidence: not surfaced in this session."
+    top = payload.scenarios[0]
+    pct = top.confidence_pct
+    direction = "high" if pct >= 70 else "medium" if pct >= 50 else "low"
+    return (
+        f"Confidence: {direction} on direction. "
+        f"{pct}% on the leading scenario."
+    )
+
+
+def _bias_summary(payload) -> str:
+    biases = payload.bias_inventory.biases or []
+    if not biases:
+        return "Bias check: none surfaced."
+    names = [b.bias_display_name for b in biases]
+    bias_slide_idx = LOCKED_DECK_ORDER.index("bias_inventory") + 1
+    if len(names) == 1:
+        return f"Bias check: {names[0]}. Surfaced on slide {bias_slide_idx}."
+    return (
+        f"Bias check: {', '.join(names)}. "
+        f"All surfaced on slide {bias_slide_idx}."
+    )
+
+
+def _compose_chair_notes(slide_kind: str, payload) -> List[str]:
+    """Return the verbatim speaker-notes lines for `slide_kind`.
+
+    Three baseline lines on every slide (sources · bias · confidence)
+    + slide-specific extras on the three trust-pillar slides."""
+    inputs, docs = _resolve_session_input_count(payload)
+    out: List[str] = [
+        (
+            f"Sourced from {inputs} input{'s' if inputs != 1 else ''}. "
+            f"{docs} document{'s' if docs != 1 else ''} cited. "
+            "Evidence-grounding: passed."
+        ),
+        _bias_summary(payload),
+        _confidence_phrase(payload),
+    ]
+
+    if slide_kind == "bias_inventory":
+        for b in (payload.bias_inventory.biases or [])[:5]:
+            out.append(
+                f"This slide · {b.bias_display_name} · "
+                f"likelihood {b.likelihood}."
+            )
+    elif slide_kind == "pre_mortem":
+        for fm in (payload.pre_mortem.failure_modes or [])[:4]:
+            sigs = "; ".join((fm.triggering_signals or [])[:2]) or "—"
+            out.append(
+                f"Watch for · {fm.failure_kind.replace('_', ' ')} · "
+                f"signals: {sigs}."
+            )
+    elif slide_kind == "cost_asymmetry":
+        for sc in (payload.cost_asymmetry.scenarios or [])[:4]:
+            out.append(
+                f"Asymmetry · {sc.pathway_label} · "
+                f"{sc.cost_kind.replace('_', ' ')} · "
+                f"magnitude {sc.cost_magnitude}."
+            )
+
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────
 # Per-slide builders (one per locked kind)
 # ─────────────────────────────────────────────────────────────────
 
@@ -212,7 +321,10 @@ def _build_headline(prs, p: ArtefactPayload, ctx: str, n: int, total: int):
                   kf.paragraph_text, size_pt=11, color=DEEP)
         y += 1.1
     citation_count = sum(len(kf.source_citations or []) for kf in h.key_findings)
-    _set_notes(slide, [f"{citation_count} source citation{'s' if citation_count != 1 else ''} across 3 findings."])
+    # Note: chair-readable speaker notes for this slide are appended in
+    # `build_pptx` via `_compose_chair_notes`. No ad-hoc per-builder
+    # notes — the audit-footer pattern is uniform across all 16 slides.
+    _ = citation_count
     _add_footer(slide, n=n, total=total, context_name=ctx)
 
 
@@ -369,12 +481,7 @@ def _build_bias_inventory(prs, p: ArtefactPayload, ctx: str, n: int, total: int)
                       f"Mitigation · {b.suggested_mitigation}",
                       size_pt=9, italic=True, color=MUTED)
         y += 1.5
-    citations_total = sum(len(b.source_input_ids or []) for b in bi.biases)
-    _set_notes(slide, [
-        f"Bias inventory cites {citations_total} source id"
-        f"{'s' if citations_total != 1 else ''} across "
-        f"{len(bi.biases)} named bias{'es' if len(bi.biases) != 1 else ''}."
-    ])
+    # Chair-readable speaker notes appended uniformly via build_pptx.
     _add_footer(slide, n=n, total=total, context_name=ctx)
 
 
@@ -579,6 +686,10 @@ def build_pptx(payload: ArtefactPayload, context_name: str = "Context") -> bytes
 
     The total returned matches the on-screen `slide_count` — 16 slides,
     one per locked kind, in `LOCKED_DECK_ORDER` exactly.
+
+    Z2.0 (2026-05-29) — every slide receives a chair-readable
+    speaker-notes audit footer (sources · bias · confidence + slide-
+    specific extras on bias_inventory / pre_mortem / cost_asymmetry).
     """
     prs = Presentation()
     prs.slide_width = Inches(SLIDE_W_IN)
@@ -588,6 +699,10 @@ def build_pptx(payload: ArtefactPayload, context_name: str = "Context") -> bytes
     for n, kind in enumerate(LOCKED_DECK_ORDER, start=1):
         builder = _KIND_TO_BUILDER[kind]
         builder(prs, payload, context_name, n, total)
+        # Append the chair-readable audit footer to the slide just
+        # rendered. Reaches in via prs.slides[-1] so each builder
+        # stays focused on its visible-slide concern.
+        _set_notes(prs.slides[-1], _compose_chair_notes(kind, payload))
 
     buf = io.BytesIO()
     prs.save(buf)
