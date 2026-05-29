@@ -180,6 +180,10 @@ class SensitivityInput(BaseModel):
         description="e.g. 'could move cluster Operations from 35% to 50%'",
     )
     affected_cluster_id: Optional[str] = None
+    source_citations: List[SourceCitation] = Field(
+        default_factory=list,
+        description="Citations supporting the numerical claims in shift_mechanic / impact_explanation",
+    )
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -219,6 +223,10 @@ class PathwayItem(BaseModel):
     follows_from_cluster_label: Optional[str] = None
     action_heading: str = Field(..., min_length=1)
     detail_paragraph: str = Field(..., min_length=1)
+    source_citations: List[SourceCitation] = Field(
+        default_factory=list,
+        description="Citations supporting any numerical claims in action_heading / detail_paragraph",
+    )
 
 
 # ─────────────────────────────────────────────────────────────────

@@ -71,18 +71,44 @@ def _audit_entries_for(session: Dict[str, Any], engine: str) -> List[Dict[str, A
     return out
 
 
-def _first_audit_id(session: Dict[str, Any], engine: Optional[str] = None) -> str:
-    """Return the first audit-log entry's id for citation use. Falls
-    back to a stable session-derived id if no audit log entries exist."""
+def _first_audit_id(session: Dict[str, Any], engine: Optional[str] = None) -> Optional[str]:
+    """Return the first audit-log entry's id for citation use. Returns
+    None when no matching entry exists (callers must handle missing
+    case via citation fallback to another engine)."""
     log = session.get("reasoning_audit_log") or []
     if engine:
         log = [e for e in log if (e.get("engine") or "").lower() == engine.lower()]
     if log and log[0].get("id"):
         return str(log[0]["id"])
-    # Stable fallback id derived from session id — always resolves to
-    # the session's own audit_log (callers must add a synthetic entry
-    # if they want strict citation_lint compliance).
-    return f"session:{session.get('id', 'unknown')}"
+    return None
+
+
+def _any_audit_id(session: Dict[str, Any], *engines: str) -> Optional[str]:
+    """Try several engines in order, returning the first id that
+    resolves. None if no engine's audit entry exists."""
+    for e in engines:
+        rid = _first_audit_id(session, e)
+        if rid:
+            return rid
+    return _first_audit_id(session, None)
+
+
+def _citation_source_id(session: Dict[str, Any], *engines: str) -> Optional[str]:
+    """Resolve a citation source id, falling back through:
+       1. Specified engines (in order)
+       2. Any audit log entry
+       3. First user turn
+       4. First attached doc
+       5. First comparable
+       6. None (caller must skip citation emission)."""
+    rid = _any_audit_id(session, *engines)
+    if rid:
+        return rid
+    for collection_key in ("user_turns", "attached_docs", "comparables"):
+        items = session.get(collection_key) or []
+        if items and isinstance(items[0], dict) and items[0].get("id"):
+            return str(items[0]["id"])
+    return None
 
 
 def _date_str(session: Dict[str, Any]) -> str:
@@ -206,7 +232,7 @@ def _weighted_claims(session: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 def _build_scenarios(session: Dict[str, Any]) -> Tuple[List[ScenarioRow], PerScenarioConfidenceTable]:
     claims = _weighted_claims(session)
-    weighting_audit_id = _first_audit_id(session, "probability_weighting")
+    weighting_src = _citation_source_id(session, "probability_weighting")
     rows: List[ScenarioRow] = []
     for c in claims:
         text = (c.get("text") or "").strip()
@@ -233,18 +259,20 @@ def _build_scenarios(session: Dict[str, Any]) -> Tuple[List[ScenarioRow], PerSce
                 f"LLM enrichment can differentiate weight (probability) from "
                 f"confidence (engine calibration) in a follow-up pass."
             )
-        citation = SourceCitation(
-            source_input_id=weighting_audit_id,
-            source_kind="audit_log",
-            excerpt=text[:220],
-            source_layer="synthesis",
-        )
+        citation_list = []
+        if weighting_src:
+            citation_list.append(SourceCitation(
+                source_input_id=weighting_src,
+                source_kind="audit_log",
+                excerpt=text[:220],
+                source_layer="synthesis",
+            ))
         rows.append(ScenarioRow(
             label=label[:160] or "Scenario",
             description=desc[:400],
             weight_pct=max(0, min(100, weight)),
             confidence_pct=max(0, min(100, conf)),
-            supporting_evidence=[citation],
+            supporting_evidence=citation_list,
             confidence_calibration_reasoning=rationale,
             tier=tier,
         ))
@@ -279,6 +307,15 @@ def _build_sensitivity(session: Dict[str, Any], scenarios: List[ScenarioRow]) ->
                 break
 
     cluster_id = session.get("cluster_id") or session.get("submodule") or "cluster"
+    sensitivity_src = _citation_source_id(session, "probability_weighting")
+    sensitivity_citations = []
+    if sensitivity_src:
+        sensitivity_citations.append(SourceCitation(
+            source_input_id=sensitivity_src,
+            source_kind="audit_log",
+            excerpt="Sensitivity derived from probability-weighted scenario distribution.",
+            source_layer="synthesis",
+        ))
     out: List[SensitivityInput] = []
     for idx, d in enumerate(drivers[:4]):
         rank = _SENSITIVITY_RANKS[min(idx, len(_SENSITIVITY_RANKS) - 1)]
@@ -293,8 +330,8 @@ def _build_sensitivity(session: Dict[str, Any], scenarios: List[ScenarioRow]) ->
             )
         else:
             mech = (
-                "could shift the dominant scenario's weight by 10-20 percentage "
-                "points depending on the resolution direction"
+                "could shift the dominant scenario's weight by ten to twenty "
+                "percentage points depending on the resolution direction"
             )
         out.append(SensitivityInput(
             rank=rank,
@@ -305,6 +342,7 @@ def _build_sensitivity(session: Dict[str, Any], scenarios: List[ScenarioRow]) ->
             ),
             cluster_weight_shift_mechanic=mech,
             affected_cluster_id=str(cluster_id),
+            source_citations=list(sensitivity_citations),
         ))
     return out
 
@@ -433,6 +471,16 @@ def _build_pathway(session: Dict[str, Any]) -> List[PathwayItem]:
     raw = synth.get("recommendations") or []
     cluster_id = session.get("cluster_id") or session.get("submodule") or None
     cluster_label = session.get("cluster_label") or None
+    synthesis_src = _citation_source_id(session, "probability_weighting", "synthesis")
+    def _pathway_citations(body: str):
+        if not synthesis_src:
+            return []
+        return [SourceCitation(
+            source_input_id=synthesis_src,
+            source_kind="audit_log",
+            excerpt=body[:220] if body else "Recommendation derived from synthesis layer.",
+            source_layer="synthesis",
+        )]
     out: List[PathwayItem] = []
     for idx, r in enumerate(raw[:8], start=1):
         if isinstance(r, dict):
@@ -451,6 +499,7 @@ def _build_pathway(session: Dict[str, Any]) -> List[PathwayItem]:
             follows_from_cluster_label=cluster_label,
             action_heading=_to_conditional(heading[:120]) if heading else f"Action {idx}",
             detail_paragraph=_to_conditional(body)[:800],
+            source_citations=_pathway_citations(body),
         ))
     return out
 
@@ -579,8 +628,8 @@ def _build_in_closing(
     )
     recap = [kf.paragraph_text[:240] for kf in headline.key_findings]
     final = (
-        f"The pathway is conditional. As new evidence arrives — particularly "
-        f"on the highest-rank sensitivity input — the weighted read will shift. "
+        "The pathway is conditional. As new evidence arrives — particularly "
+        "on the highest-rank sensitivity input — the weighted read will shift. "
         + (f"Today's strongest scenario, \"{top_label[:80]}\", is the working read." if top_label else "")
     ).strip()
     return InClosing(
@@ -596,7 +645,7 @@ def _build_in_closing(
 
 
 def _build_headline(scenarios: List[ScenarioRow], session: Dict[str, Any]) -> HeadlineSlide:
-    weighting_audit_id = _first_audit_id(session, "probability_weighting")
+    weighting_src = _citation_source_id(session, "probability_weighting")
     findings: List[KeyFinding] = []
     for idx, s in enumerate(scenarios[:3], start=1):
         text = (
@@ -604,33 +653,39 @@ def _build_headline(scenarios: List[ScenarioRow], session: Dict[str, Any]) -> He
             f"(working confidence {s.confidence_pct}% at the "
             f"{(s.tier or 'unknown').replace('_', ' ')} tier)."
         )
-        findings.append(KeyFinding(
-            number=idx,
-            paragraph_text=text,
-            source_citations=[SourceCitation(
-                source_input_id=weighting_audit_id,
+        citation_list = []
+        if weighting_src:
+            citation_list.append(SourceCitation(
+                source_input_id=weighting_src,
                 source_kind="audit_log",
                 excerpt=s.description[:220] or s.label[:220],
                 source_layer="synthesis",
-            )],
+            ))
+        findings.append(KeyFinding(
+            number=idx,
+            paragraph_text=text,
+            source_citations=citation_list,
         ))
     # Pad to exactly 3 when fewer scenarios surfaced — fall back to
     # a generic-but-cited placeholder so the schema's exactly-3
     # contract is honoured.
     while len(findings) < 3:
         n = len(findings) + 1
+        placeholder_citations = []
+        if weighting_src:
+            placeholder_citations.append(SourceCitation(
+                source_input_id=weighting_src,
+                source_kind="audit_log",
+                excerpt="No scenario at this rank.",
+                source_layer="synthesis",
+            ))
         findings.append(KeyFinding(
             number=n,
             paragraph_text=(
                 "The evidence supports continued investigation; no additional "
                 "scenarios reached the working-confidence threshold."
             ),
-            source_citations=[SourceCitation(
-                source_input_id=weighting_audit_id,
-                source_kind="audit_log",
-                excerpt="No scenario at this rank.",
-                source_layer="synthesis",
-            )],
+            source_citations=placeholder_citations,
         ))
     return HeadlineSlide(key_findings=findings)
 

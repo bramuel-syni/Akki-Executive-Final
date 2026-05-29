@@ -193,12 +193,14 @@ def citation_lint(payload: ArtefactPayload, session: Dict[str, Any]) -> List[Val
         _check(f"scenarios[{i}].description", s.description, s.supporting_evidence)
 
     for i, si in enumerate(payload.sensitivity_inputs):
-        _check(f"sensitivity_inputs[{i}].impact_explanation", si.impact_explanation, [])
+        _check(f"sensitivity_inputs[{i}].impact_explanation",
+               si.impact_explanation, si.source_citations)
         _check(f"sensitivity_inputs[{i}].cluster_weight_shift_mechanic",
-               si.cluster_weight_shift_mechanic, [])
+               si.cluster_weight_shift_mechanic, si.source_citations)
 
     for i, p in enumerate(payload.pathway):
-        _check(f"pathway[{i}].detail_paragraph", p.detail_paragraph, [])
+        _check(f"pathway[{i}].detail_paragraph", p.detail_paragraph, p.source_citations)
+        _check(f"pathway[{i}].action_heading", p.action_heading, p.source_citations)
 
     return offenders
 

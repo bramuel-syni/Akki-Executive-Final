@@ -649,10 +649,42 @@ def test_Z2_n_active_tab_content_testid_keyed_by_category():
 # ─────────────────────────────────────────────────────────────────────
 
 def test_Z2_o_row_click_board_pack_routes_to_dedicated_page():
+    """Phase Z (2026-05-27) routing rule, REVISED 2026-02 fork-resume
+    by P0 doc-not-found fix.
+
+    Original Z routing: ALL board_pack rows → `/app/work-studio/document/{row.id}`.
+    REVISION: only Work-Studio-originated board packs (rows with a
+    `work_studio_export_id` OR `source_channel === "work_studio"`)
+    route to the dedicated page. Auto-generated `cycle_compilation`
+    board packs (which live only in the `documents` collection, not
+    `work_studio_exports`) fall through to the universal `?doc_id=`
+    drawer to avoid 404s from the overlay endpoint.
+
+    Locked predicate: the navigate-to-dedicated-page guard MUST
+    check the work_studio_export_id / source_channel signal before
+    routing. Source-strict assertions:
+      • `cat === "board_pack"` predicate intact
+      • Navigate URL pattern intact
+      • Routing is gated by `work_studio_export_id` OR `source_channel`
+        check (the P0 fix)
+    """
     src = WS_JSX.read_text(encoding="utf-8")
-    # The locked routing rule: cat === "board_pack" → navigate(`/app/work-studio/document/${row.id}`).
-    assert 'cat === "board_pack"' in src
-    assert "navigate(`/app/work-studio/document/${row.id}`)" in src
+    assert 'cat === "board_pack"' in src, (
+        "Board pack predicate must remain in the row click handler."
+    )
+    assert 'navigate(`/app/work-studio/document/' in src, (
+        "Dedicated page navigation pattern must remain."
+    )
+    # P0 fix: routing must be gated by Work Studio origin signal.
+    assert "work_studio_export_id" in src, (
+        "Post-P0-fix: row routing must check `work_studio_export_id` "
+        "to avoid 404s on cycle_compilation board packs that lack a "
+        "`work_studio_exports` mirror row."
+    )
+    assert "source_channel" in src, (
+        "Post-P0-fix: row routing must check `source_channel === 'work_studio'` "
+        "as a fallback origin signal."
+    )
 
 
 def test_Z2_o_row_click_other_categories_open_via_doc_id():
