@@ -460,6 +460,87 @@ class PreMortemSlide(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────
+# Element 14c — Cost asymmetry (Slice 6, 2026-05-29) — Trust pillar 5
+# ─────────────────────────────────────────────────────────────────
+#
+# Makes the asymmetric-bet logic explicit: for each scenario the
+# pathway commits to, what does it cost if right vs. if wrong?
+# Founders are biased toward upside-counting; surfacing the
+# downside cost in parallel — paired with the leading scenarios
+# from Layer 3 — gives them the explicit asymmetry read.
+
+
+CostKind = Literal[
+    "capital_burn",
+    "opportunity_cost",
+    "reputational_risk",
+    "optionality_loss",
+    "time_cost",
+    "stakeholder_trust",
+]
+
+
+CostMagnitude = Literal["low", "medium", "high"]
+
+
+class CostAsymmetryScenario(BaseModel):
+    """One pathway-scenario cost-asymmetry comparison.
+
+    Locked constraints (enforced by Slice 6 validators):
+      • pathway_label resolves to a real pathway item OR scenario row;
+        free-form labels not permitted.
+      • if_correct_outcome + if_wrong_cost ≥80 chars each,
+        observational tone, evidence-grounded.
+      • cost_kind ∈ locked taxonomy.
+      • cost_magnitude ∈ {low, medium, high}.
+      • source_input_ids ≥1 — must resolve to audit-log / user-turn
+        ids OR coarse layer tags (L0..L4).
+    """
+    pathway_label: str = Field(
+        ..., min_length=1,
+        description="The conclusion / scenario the asymmetry references (e.g. 'Pathway 1', 'Scenario A')",
+    )
+    if_correct_outcome: str = Field(
+        ..., min_length=80,
+        description="Observational read of what gets delivered if this conclusion turns out correct — ≥80 chars",
+    )
+    if_wrong_cost: str = Field(
+        ..., min_length=80,
+        description="Observational read of the cost incurred if this conclusion turns out wrong — ≥80 chars",
+    )
+    cost_kind: CostKind = Field(
+        ..., description="Locked taxonomy slot for the dominant cost category",
+    )
+    cost_magnitude: CostMagnitude = Field(
+        ..., description="Relative magnitude: low / medium / high",
+    )
+    source_input_ids: List[str] = Field(
+        ..., min_length=1,
+        description="≥1 audit-log / user-turn ids OR coarse layer tags grounding the asymmetry",
+    )
+
+
+class CostAsymmetrySlide(BaseModel):
+    """The Cost Asymmetry slide payload.
+
+    Slice 6 ships this slide as REQUIRED on every artefact — pillar 5
+    (cost asymmetry) is one of the seasoned-partner contracts. Empty
+    `scenarios` is a real bug. `min_length=2` enforces that the
+    asymmetry is actually comparable across at least two scenarios
+    (you can't have an "asymmetry" with one option).
+    """
+    intro_copy: str = Field(
+        default="What does each pathway cost if it's right — and what "
+                "does it cost if it's wrong? Founders cost-count the "
+                "upside; this slide surfaces the downside in parallel.",
+    )
+    scenarios: List[CostAsymmetryScenario] = Field(
+        ..., min_length=2, max_length=6,
+        description="2-4 typical, 2-6 enforced. Each scenario is evidence-grounded.",
+    )
+
+
+# ─────────────────────────────────────────────────────────────────
 # Element 15 — Per-slide footer template
 # ─────────────────────────────────────────────────────────────────
 
@@ -503,6 +584,7 @@ class ArtefactPayload(BaseModel):
     in_closing: InClosing
     bias_inventory: BiasInventorySection
     pre_mortem: PreMortemSlide
+    cost_asymmetry: CostAsymmetrySlide
     footer_template: FooterTemplate = Field(default_factory=FooterTemplate)
 
 
@@ -531,6 +613,10 @@ __all__ = [
     "PreMortemSlide",
     "PreMortemFailureMode",
     "PreMortemFailureKind",
+    "CostAsymmetrySlide",
+    "CostAsymmetryScenario",
+    "CostKind",
+    "CostMagnitude",
     "FooterTemplate",
     "SourceCitation",
     "SensitivityRank",

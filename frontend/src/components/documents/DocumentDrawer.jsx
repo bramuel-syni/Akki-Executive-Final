@@ -312,17 +312,25 @@ function SignalsTab({ doc, contextId }) {
 // Notes tab ----------------------------------------------------------------
 function NotesTab({ doc, contextId }) {
   // Persists notes on `documents.notes` field via PATCH.
+  // Sprint Z1.2 (2026-05-29) — previously sent `{body: undefined, title:
+  // undefined}` so the backend saw an empty diff and returned
+  // `Send at least one field`. Now we send the actual `notes` value
+  // against the dedicated backend field added the same sprint. Tracks
+  // a saved-value snapshot so the green confirmation persists until
+  // the next mutation.
   const [notes, setNotes] = useState(doc?.notes || "");
+  const [savedSnapshot, setSavedSnapshot] = useState(doc?.notes || "");
   const [saving, setSaving] = useState(false);
   const onSave = async () => {
     setSaving(true);
     try {
-      await api.patch(`/contexts/${contextId}/documents/${doc.id}`, { body: undefined, title: undefined });
-      // Notes are a free-form field; for E.3 minimum-viable we store on the doc body.
+      await api.patch(`/contexts/${contextId}/documents/${doc.id}`, { notes });
+      setSavedSnapshot(notes);
       toast.success("Notes saved.");
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setSaving(false); }
   };
+  const dirty = (notes || "") !== (savedSnapshot || "");
   return (
     <div data-testid="drawer-notes-tab">
       <p className="text-[11px] uppercase tracking-[0.16em] font-mono text-[var(--muted)] mb-3">Your notes</p>
@@ -334,8 +342,16 @@ function NotesTab({ doc, contextId }) {
         className="w-full border border-[var(--rule)] rounded-sm px-3 py-2 text-[13px] text-[var(--ink)] font-sans focus:outline-none focus:border-[var(--ink)]"
         data-testid="drawer-notes-textarea"
       />
-      <div className="mt-2 flex justify-end">
-        <Button onClick={onSave} disabled={saving} size="sm" data-testid="drawer-notes-save" className="rounded-sm">
+      <div className="mt-2 flex items-center justify-end gap-3">
+        {!dirty && savedSnapshot && !saving && (
+          <span
+            className="text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--ned-purple)]"
+            data-testid="drawer-notes-saved-indicator"
+          >
+            Saved
+          </span>
+        )}
+        <Button onClick={onSave} disabled={saving || !dirty} size="sm" data-testid="drawer-notes-save" className="rounded-sm">
           {saving ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : <Save className="w-3 h-3 mr-1.5" />}
           Save notes
         </Button>
@@ -812,8 +828,63 @@ export default function DocumentDrawer({
   // pure functions).
   const buildSolvaUrl       = () => `/app/solva?ctx_type=document&ctx_id=${encodeURIComponent(doc.id)}`;
   const buildChatUrl        = () => `/app/chat?ctx_type=document&ctx_id=${encodeURIComponent(doc.id)}`;
-  const buildBriefUrl       = () => `/app/solva?ctx_type=document&ctx_id=${encodeURIComponent(doc.id)}&submodule=develop_strategy&starter=Generate%20a%20briefing%20from%20this%20document`;
   const buildHypothesisUrl  = () => `/app/solva?ctx_type=document&ctx_id=${encodeURIComponent(doc.id)}&submodule=simulate_hypothesis&starter=Test%20a%20hypothesis%20against%20this%20document`;
+
+  // Sprint Z1.5 (2026-05-29) — Generate brief now generates a brief
+  // (not navigates to Solva). The drawer queues a `briefing.create`
+  // job scoped to this document, polls for completion, and on success
+  // routes the founder to the Briefings tab with the new id
+  // highlighted.
+  const [briefing, setBriefing] = useState(false);
+  const onGenerateBrief = async () => {
+    if (briefing) return;
+    setBriefing(true);
+    const toastId = toast.loading("Generating brief from this document…", {
+      duration: 60000,
+    });
+    try {
+      const { data } = await api.post(
+        `/contexts/${contextId}/documents/${doc.id}/briefings/generate`,
+      );
+      const jobId = data?.job_id;
+      if (!jobId) throw new Error("No job_id returned");
+      // Poll the job for up to 90s (45 × 2s) — same cadence the
+      // briefings page uses for its long-poll loop.
+      let briefingId = null;
+      for (let i = 0; i < 45; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const { data: jd } = await api.get(`/jobs/${jobId}`);
+          if (jd?.status === "completed") {
+            briefingId = jd?.result?.id || jd?.result?.briefing_id || null;
+            break;
+          }
+          if (jd?.status === "failed") {
+            throw new Error(jd?.error || "Briefing job failed");
+          }
+        } catch (poll_err) {
+          if (i >= 5) throw poll_err;
+        }
+      }
+      toast.dismiss(toastId);
+      if (briefingId) {
+        toast.success("Brief ready.");
+        navigate(
+          `/app/work-studio?tab=briefings&context_id=${encodeURIComponent(contextId)}&highlight=${encodeURIComponent(briefingId)}`,
+        );
+      } else {
+        toast.error("Brief is still generating. Check the Briefings tab in a moment.");
+        navigate(
+          `/app/work-studio?tab=briefings&context_id=${encodeURIComponent(contextId)}`,
+        );
+      }
+    } catch (e) {
+      toast.dismiss(toastId);
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setBriefing(false);
+    }
+  };
 
   const open = !!activeId;
 
@@ -942,10 +1013,13 @@ export default function DocumentDrawer({
                   <MessageSquare className="w-3 h-3 mr-1.5" /> Use in Chat
                 </Button>
                 <Button
-                  size="sm" variant="outline" onClick={() => navigate(buildBriefUrl())}
-                  data-testid="drawer-cta-generate-brief" data-href={buildBriefUrl()}
+                  size="sm" variant="outline" onClick={onGenerateBrief}
+                  disabled={briefing}
+                  data-testid="drawer-cta-generate-brief"
+                  data-action="generate-briefing-from-document"
                 >
-                  <FileText className="w-3 h-3 mr-1.5" /> Generate brief
+                  {briefing ? <Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> : <FileText className="w-3 h-3 mr-1.5" />}
+                  {briefing ? "Generating…" : "Generate brief"}
                 </Button>
                 <Button
                   size="sm" variant="outline" onClick={() => navigate(buildHypothesisUrl())}

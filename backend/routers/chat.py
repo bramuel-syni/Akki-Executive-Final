@@ -54,8 +54,14 @@ ShieldingPolicy = Literal["auto", "always", "off"]
 # Universal LLM proxy.
 #
 # Patch 26G — refresh against latest provider releases (verified Feb 2026):
-#   * Anthropic — Claude Opus 4.7 added (released Apr 2026 per Anthropic);
-#     Sonnet 4.5 + Haiku 4.5 kept as faster + cheaper alternatives.
+#   * Anthropic — Claude Opus 4.6 added (verified GA via Anthropic — see
+#     https://www.anthropic.com/news/claude-opus-4-6). Sonnet 4.5 + Haiku
+#     4.5 kept as faster + cheaper alternatives.
+#   * Sprint Z1.1 (2026-05-29) — repaired the Opus id (was
+#     `claude-opus-4-7-20260416` which doesn't exist in the Anthropic
+#     model registry → `litellm.BadRequestError: Invalid model name`).
+#     Switched to `claude-opus-4-6` (verified id; already in use by
+#     `llm_service.LLM_MODEL_DEEP` default).
 #   * OpenAI — GPT-5.5 added (released May 2026 as the new default
 #     ChatGPT model per OpenAI). GPT-5.2 kept as legacy fallback.
 #   * Google — Gemini 3.1 Pro added (most advanced per DeepMind model
@@ -67,8 +73,8 @@ ShieldingPolicy = Literal["auto", "always", "off"]
 # in the picker tooltip.
 SUPPORTED_MODELS: List[Dict[str, str]] = [
     # ── Anthropic ─────────────────────────────────────────────────────
-    {"id": "claude-opus-4-7",    "label": "Claude Opus 4.7",    "provider": "anthropic",
-     "model": "claude-opus-4-7-20260416",    "tone": "highest reasoning, agentic"},
+    {"id": "claude-opus-4-6",    "label": "Claude Opus 4.6",    "provider": "anthropic",
+     "model": "claude-opus-4-6",            "tone": "highest reasoning, agentic"},
     {"id": "claude-sonnet-4-5",  "label": "Claude Sonnet 4.5",  "provider": "anthropic",
      "model": "claude-sonnet-4-5-20250929", "tone": "careful, long-form"},
     {"id": "claude-haiku-4-5",   "label": "Claude Haiku 4.5",   "provider": "anthropic",
@@ -89,6 +95,54 @@ SUPPORTED_MODELS: List[Dict[str, str]] = [
      "model": "gemini-2.5-flash",           "tone": "fast"},
 ]
 DEFAULT_MODEL_ID = "claude-sonnet-4-5"
+
+
+# ─── Sprint Z1.1 (2026-05-29) — model-cascade fallback ────────────────
+# When the chosen provider rejects the model id (litellm BadRequest /
+# Invalid model name / model_not_found), the previous flow returned a
+# `proxy_fallback_failed` error chunk to the client because every
+# fallback layer was retrying with the SAME invalid model id.
+#
+# This cascade adds MODEL-LEVEL fallback ABOVE the proxy/direct
+# transport layer: chosen → Sonnet 4.5 → Sonnet 3.7 → Haiku safety.
+# Each demotion writes a `model_fallback` audit-log row capturing
+# `from`/`to`/`reason` so operators can correlate spikes.
+MODEL_FALLBACK_CASCADE: List[str] = [
+    "claude-sonnet-4-5",   # workhorse — verified id, fast
+    "claude-sonnet-3-7",   # older Sonnet (Anthropic-published anchored alias)
+    "claude-haiku-4-5",    # safety net — cheapest, smallest
+]
+
+# Substrings that classify a stream-error reason as "model id rejected
+# by provider" (i.e. retrying with the same id is futile). Matched
+# case-insensitively against the `error` string captured upstream.
+_MODEL_INVALID_MARKERS = (
+    "badrequest",
+    "bad request",
+    "invalid model",
+    "model_not_found",
+    "model not found",
+    "model does not exist",
+    "unknown model",
+    "no such model",
+    "not_found_error",
+)
+
+
+def _is_model_invalid_error(reason: Optional[str]) -> bool:
+    """Return True if `reason` looks like an invalid-model-id error.
+    Anything else (timeout, rate-limit, transport) should NOT trigger
+    a model-level cascade — that's the transport-layer's job."""
+    if not reason:
+        return False
+    low = reason.lower()
+    return any(m in low for m in _MODEL_INVALID_MARKERS)
+
+
+def _cascade_starting_from(model_id: str) -> List[str]:
+    """Return the ordered cascade to try AFTER `model_id` failed.
+    Strips `model_id` itself so we don't re-attempt the failing id."""
+    return [m for m in MODEL_FALLBACK_CASCADE if m != model_id]
 
 
 def _model_def(model_id: str) -> Optional[Dict[str, str]]:
@@ -2921,44 +2975,97 @@ async def stream_message(
                     stream_provider_used = ""
                     stream_fallback = False
                     stream_error = None
-                    async for _chunk in stream_llm_direct(
-                        provider=stream_provider,
-                        model_id=model_def["model"],
-                        system_msg=system_msg,
-                        user_text=shielded_prompt,
-                        session_id=f"akki-chat-{chat_id}",
-                    ):
-                        if _chunk.kind == "delta":
-                            raw_parts.append(_chunk.text)
-                            visible_delta = stream_reid.feed(_chunk.text)
-                            if visible_delta:
-                                visible_parts.append(visible_delta)
-                                yield (
-                                    "data: " + json.dumps({
-                                        "type": "delta",
-                                        "text": visible_delta,
-                                    }) + "\n\n"
-                                )
-                            # Phase A.2 — yield control to the event loop so
-                            # uvicorn flushes each delta to the TCP socket
-                            # immediately. Without this, multiple yields
-                            # back-to-back can be coalesced and dumped at
-                            # generator end (visible in the browser as
-                            # "generates, then dumps"). asyncio.sleep(0)
-                            # is the documented FastAPI/uvicorn SSE-flush
-                            # primitive — no timer, no overhead, just a
-                            # cooperative tick.
-                            await _asyncio.sleep(0)
-                        elif _chunk.kind == "done":
-                            stream_provider_used = _chunk.provider_used
-                            stream_fallback = _chunk.fallback_triggered
-                            # If proxy_buffered fallback was used, the
-                            # accumulated `raw_parts` already contains the
-                            # full text; nothing extra to do here.
-                        elif _chunk.kind == "error":
-                            stream_error = _chunk.error or "stream_interrupted"
-                            stream_provider_used = _chunk.provider_used
-                            stream_fallback = _chunk.fallback_triggered
+                    # ── Sprint Z1.1 (2026-05-29) — model-cascade retry ──
+                    # Build the ordered attempt list: chosen-model first,
+                    # then the Sonnet 4.5 → Sonnet 3.7 → Haiku safety net.
+                    # If the first attempt fails BEFORE any delta lands AND
+                    # the failure reason matches the "invalid model id"
+                    # marker set, demote to the next cascade entry. Any
+                    # other failure class (transport, rate-limit, timeout,
+                    # mid-stream) returns as-is — transport-layer already
+                    # handled those at `stream_llm_direct`.
+                    _chosen_model = model_def["model"]
+                    _attempt_models: List[str] = [_chosen_model] + [
+                        m for m in _cascade_starting_from(model_def["id"])
+                    ]
+                    _attempt_idx = 0
+                    while _attempt_idx < len(_attempt_models):
+                        _try_model = _attempt_models[_attempt_idx]
+                        _emitted_delta_this_attempt = False
+                        stream_error = None
+                        async for _chunk in stream_llm_direct(
+                            provider=stream_provider,
+                            model_id=_try_model,
+                            system_msg=system_msg,
+                            user_text=shielded_prompt,
+                            session_id=f"akki-chat-{chat_id}",
+                        ):
+                            if _chunk.kind == "delta":
+                                _emitted_delta_this_attempt = True
+                                raw_parts.append(_chunk.text)
+                                visible_delta = stream_reid.feed(_chunk.text)
+                                if visible_delta:
+                                    visible_parts.append(visible_delta)
+                                    yield (
+                                        "data: " + json.dumps({
+                                            "type": "delta",
+                                            "text": visible_delta,
+                                        }) + "\n\n"
+                                    )
+                                # Phase A.2 — yield control to the event loop so
+                                # uvicorn flushes each delta to the TCP socket
+                                # immediately. Without this, multiple yields
+                                # back-to-back can be coalesced and dumped at
+                                # generator end (visible in the browser as
+                                # "generates, then dumps"). asyncio.sleep(0)
+                                # is the documented FastAPI/uvicorn SSE-flush
+                                # primitive — no timer, no overhead, just a
+                                # cooperative tick.
+                                await _asyncio.sleep(0)
+                            elif _chunk.kind == "done":
+                                stream_provider_used = _chunk.provider_used
+                                stream_fallback = _chunk.fallback_triggered
+                                # If proxy_buffered fallback was used, the
+                                # accumulated `raw_parts` already contains the
+                                # full text; nothing extra to do here.
+                            elif _chunk.kind == "error":
+                                stream_error = _chunk.error or "stream_interrupted"
+                                stream_provider_used = _chunk.provider_used
+                                stream_fallback = _chunk.fallback_triggered
+                        # ── Decide whether to demote to next cascade entry ──
+                        if (
+                            stream_error
+                            and not _emitted_delta_this_attempt
+                            and _is_model_invalid_error(stream_error)
+                            and _attempt_idx + 1 < len(_attempt_models)
+                        ):
+                            _next_model = _attempt_models[_attempt_idx + 1]
+                            # Audit the demotion so operator can correlate
+                            # spikes via `db.model_fallback_log`.
+                            try:
+                                await db.model_fallback_log.insert_one({
+                                    "id": "mfb-" + uuid.uuid4().hex,
+                                    "surface": "chat",
+                                    "channel": "stream",
+                                    "account_id": current["id"],
+                                    "chat_id": chat_id,
+                                    "user_message_id": msg_id,
+                                    "from_model": _try_model,
+                                    "to_model": _next_model,
+                                    "reason": stream_error[:240],
+                                    "ts": _iso(_now()),
+                                })
+                            except Exception:  # noqa: BLE001
+                                pass
+                            logger.warning(
+                                "[model-cascade] demoting %s → %s (%s)",
+                                _try_model, _next_model, stream_error[:120],
+                            )
+                            _attempt_idx += 1
+                            continue
+                        # Either success, mid-stream error, or non-model-id
+                        # failure with no cascade left — break out.
+                        break
                     # Flush any token still buffered (e.g. delta ended
                     # mid-token but stream closed cleanly).
                     tail = stream_reid.flush()

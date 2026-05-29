@@ -21,6 +21,7 @@ export default function SensitivitySlide({
   totalSlides,
   contextName,
   slideState,
+  readyAt,
 }) {
   const items = sensitivity || [];
   return (
@@ -30,6 +31,7 @@ export default function SensitivitySlide({
       total={totalSlides}
       contextName={contextName}
       slideState={slideState}
+      readyAt={readyAt}
       sectionTag="Sensitivity"
     >
       <div className="flex flex-col">

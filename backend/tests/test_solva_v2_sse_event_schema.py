@@ -65,16 +65,17 @@ def test_locked_step_kinds():
 
 
 def test_locked_slide_kinds_match_artefact_schema():
-    """The slide-kind enum on stream_schema MUST match the 15-kind
+    """The slide-kind enum on stream_schema MUST match the 16-kind
     enum locked on the artefact schema. Slice 4 added bias_inventory;
-    Slice 5 added pre_mortem."""
+    Slice 5 added pre_mortem; Slice 6 added cost_asymmetry."""
     assert LOCKED_SLIDE_KINDS == frozenset({
         "cover", "headline",
         "tensions_overview", "per_tension",
         "scenarios_overview", "per_scenario_table", "sensitivity",
         "reflection",
         "bias_inventory",
-        "pathway", "pre_mortem", "decision_logic", "risk_mitigation",
+        "pathway", "pre_mortem",
+        "decision_logic", "cost_asymmetry", "risk_mitigation",
         "methodological_honesty", "in_closing",
     })
 

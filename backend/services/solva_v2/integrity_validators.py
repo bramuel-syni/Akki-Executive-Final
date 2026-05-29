@@ -395,6 +395,13 @@ _BIAS_OBSERVATIONAL_OPENERS = (
     "the pathway", "the recommended", "the recommendation",
     "the leading", "the second", "the alternative",
     "thin-evidence", "thin evidence",
+    # Slice 6 — cost-asymmetry observational openers
+    "this pathway", "this scenario", "this conclusion", "this read",
+    "the upside", "the downside", "the cost", "the asymmetry",
+    "the operating", "the founder", "the diagnostic",
+    "if correct", "if wrong", "if right", "if it's wrong",
+    "if this pathway", "if this scenario", "if this conclusion",
+    "delivered", "incurred", "absorbed", "reabsorbed",
     "if ", "when ",  # conditionals
 )
 
@@ -814,6 +821,99 @@ def pre_mortem_failure_evidence_grounded(
 
 
 # ─────────────────────────────────────────────────────────────────
+# Validators 11-12 — Slice 6 (2026-05-29) Cost asymmetry
+# ─────────────────────────────────────────────────────────────────
+
+
+def cost_asymmetry_present(
+    payload: ArtefactPayload, session: Dict[str, Any],
+) -> List[ValidatorOffender]:
+    """Slice 6 — Trust pillar 5 (cost asymmetry). The cost asymmetry
+    slide is REQUIRED on every artefact and MUST contain ≥2
+    scenarios (you cannot have an "asymmetry" with one option).
+    The schema's `min_length=2` enforces this at the model level;
+    this validator surfaces a friendlier blocking message when the
+    upstream engine emits a degenerate payload."""
+    offenders: List[ValidatorOffender] = []
+    ca = payload.cost_asymmetry
+    if ca is None:
+        offenders.append(ValidatorOffender(
+            validator="cost_asymmetry_present",
+            severity="block",
+            location="cost_asymmetry",
+            message="Cost asymmetry slide missing entirely.",
+            revision_hint=(
+                "Emit a `cost_asymmetry` section with at least 2 scenarios. "
+                "Pillar 5 — Solva ALWAYS surfaces the asymmetry between "
+                "'if right' and 'if wrong' on the leading pathways."
+            ),
+        ))
+        return offenders
+    if len(ca.scenarios) < 2:
+        offenders.append(ValidatorOffender(
+            validator="cost_asymmetry_present",
+            severity="block",
+            location="cost_asymmetry.scenarios",
+            message=(
+                f"Cost asymmetry has only {len(ca.scenarios)} scenario(s) — "
+                f"need ≥2 for a meaningful asymmetry comparison."
+            ),
+            revision_hint=(
+                "Add at least one more scenario so the founder can compare "
+                "downside-cost reads side by side."
+            ),
+        ))
+    return offenders
+
+
+def cost_asymmetry_evidence_grounded(
+    payload: ArtefactPayload, session: Dict[str, Any],
+) -> List[ValidatorOffender]:
+    """Slice 6 contract — every cost asymmetry scenario must:
+      • cite ≥1 source_input_id resolving to audit-log / user turn /
+        coarse layer tag.
+      • use observational phrasing in if_correct_outcome +
+        if_wrong_cost (no imperatives)."""
+    offenders: List[ValidatorOffender] = []
+    ca = payload.cost_asymmetry
+    if ca is None:
+        return offenders
+    audit_ids = _resolve_session_ids(session)
+
+    for i, sc in enumerate(ca.scenarios):
+        unresolved = [
+            sid for sid in (sc.source_input_ids or [])
+            if sid not in audit_ids and sid not in _COARSE_LAYER_TAGS
+        ]
+        if unresolved:
+            offenders.append(ValidatorOffender(
+                validator="cost_asymmetry_evidence_grounded",
+                severity="block",
+                location=f"cost_asymmetry.scenarios[{i}].source_input_ids",
+                message=(
+                    f"Scenario {sc.pathway_label!r} cites unresolved source "
+                    f"ids: {unresolved}. Each id must resolve to an audit-log "
+                    f"entry, a user turn, OR a coarse layer tag."
+                ),
+                revision_hint=(
+                    "Replace the unresolved ids with real audit-log entry "
+                    "ids or coarse layer tags (L0..L4)."
+                ),
+            ))
+        offenders.extend(_scan_imperative(
+            sc.if_correct_outcome,
+            f"cost_asymmetry.scenarios[{i}].if_correct_outcome",
+            "cost_asymmetry_evidence_grounded",
+        ))
+        offenders.extend(_scan_imperative(
+            sc.if_wrong_cost,
+            f"cost_asymmetry.scenarios[{i}].if_wrong_cost",
+            "cost_asymmetry_evidence_grounded",
+        ))
+    return offenders
+
+
+# ─────────────────────────────────────────────────────────────────
 # Composite runner
 # ─────────────────────────────────────────────────────────────────
 
@@ -829,6 +929,8 @@ _ALL_VALIDATORS = (
     adversarial_counter_evidence_grounded,
     pre_mortem_present,
     pre_mortem_failure_evidence_grounded,
+    cost_asymmetry_present,
+    cost_asymmetry_evidence_grounded,
 )
 
 
@@ -858,4 +960,6 @@ __all__ = [
     "adversarial_counter_evidence_grounded",
     "pre_mortem_present",
     "pre_mortem_failure_evidence_grounded",
+    "cost_asymmetry_present",
+    "cost_asymmetry_evidence_grounded",
 ]

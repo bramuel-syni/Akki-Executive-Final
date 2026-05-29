@@ -14,6 +14,7 @@ export default function HeadlineSlide({
   totalSlides,
   contextName,
   slideState,
+  readyAt,
 }) {
   if (!headline) return null;
   const findings = headline.key_findings || [];
@@ -32,6 +33,7 @@ export default function HeadlineSlide({
       total={totalSlides}
       contextName={contextName}
       slideState={slideState}
+      readyAt={readyAt}
       sectionTag="Headline"
     >
       <div className="flex flex-col">

@@ -21,6 +21,7 @@ export default function TensionsOverviewSlide({
   totalSlides,
   contextName,
   slideState,
+  readyAt,
 }) {
   const items = tensions || [];
   return (
@@ -30,6 +31,7 @@ export default function TensionsOverviewSlide({
       total={totalSlides}
       contextName={contextName}
       slideState={slideState}
+      readyAt={readyAt}
       sectionTag="Tensions"
     >
       <div className="flex flex-col">

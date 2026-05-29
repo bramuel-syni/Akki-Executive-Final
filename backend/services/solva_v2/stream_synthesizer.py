@@ -50,6 +50,7 @@ from .stream_schema import (
 # SolvaArtefactV2.jsx. Used to emit slide.ready events in deck order.
 # Slice 4 (2026-05-29) — bias_inventory between reflection and pathway.
 # Slice 5 (2026-05-29) — pre_mortem between pathway and decision_logic.
+# Slice 6 (2026-05-29) — cost_asymmetry between decision_logic and risk_mitigation.
 SLIDE_DECK_ORDER = (
     "cover",
     "headline",
@@ -63,12 +64,13 @@ SLIDE_DECK_ORDER = (
     "pathway",
     "pre_mortem",
     "decision_logic",
+    "cost_asymmetry",
     "risk_mitigation",
     "methodological_honesty",
     "in_closing",
 )
 assert set(SLIDE_DECK_ORDER) == set(LOCKED_SLIDE_KINDS), (
-    "SLIDE_DECK_ORDER must match locked 15-kind enum exactly."
+    "SLIDE_DECK_ORDER must match locked 16-kind enum exactly."
 )
 
 
@@ -173,6 +175,7 @@ SLIDE_READY_DESCRIPTIONS = {
     "pathway":                "Rendered Pathway — sequenced recommendations",
     "pre_mortem":             "Rendered Pre-Mortem — imagined regret, failure modes named",
     "decision_logic":         "Rendered Decision Logic — conditional branches",
+    "cost_asymmetry":         "Rendered Cost Asymmetry — if-correct vs if-wrong cost reads",
     "risk_mitigation":        "Rendered Risk + Mitigation Register",
     "methodological_honesty": "Rendered Methodological Honesty disclosure",
     "in_closing":             "Rendered In Closing — reframing + final statement",
@@ -198,6 +201,7 @@ SLIDE_KIND_TO_SOURCE_LAYER = {
     "pathway":                "L3",
     "pre_mortem":             "L3",  # synthesis layer composed the failure modes; surfaces alongside pathway
     "decision_logic":         "L3",
+    "cost_asymmetry":         "L3",  # synthesis layer composed the asymmetry reads alongside decision branches
     "risk_mitigation":        "L3",
     "methodological_honesty": "L3",
     "in_closing":             "L4",

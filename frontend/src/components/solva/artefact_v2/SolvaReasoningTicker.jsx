@@ -35,6 +35,7 @@ export default function SolvaReasoningTicker({
   isComplete,
   totalEvents,
   receivedEvents,
+  onLogIconClick,  // Slice 7 (2026-05-29) — opens the session-log side-panel.
 }) {
   // Two-stage post-completion lifecycle:
   //   • complete → 8s pill visible
@@ -63,7 +64,8 @@ export default function SolvaReasoningTicker({
         type="button"
         data-testid="solva-v2-ticker-log-icon"
         data-solva-v2-ticker-stage="icon"
-        className="fixed top-4 right-4 z-40 flex items-center gap-1.5 rounded-full border border-ned-purple/30 bg-[var(--parchment)] px-2.5 py-1.5 text-[var(--ned-purple)] hover:bg-ned-purple/10 transition-colors shadow-sm"
+        onClick={onLogIconClick}
+        className="fixed top-4 right-4 z-40 flex items-center gap-1.5 rounded-full border border-ned-purple/30 bg-[var(--parchment)] px-2.5 py-1.5 text-[var(--ned-purple)] hover:bg-ned-purple/10 transition-colors shadow-sm cursor-pointer"
         aria-label="Open Solva session log"
       >
         <History className="w-3.5 h-3.5" />
@@ -77,19 +79,22 @@ export default function SolvaReasoningTicker({
   // Compact pill — first 8s after session.complete
   if (postCompleteStage === "pill") {
     return (
-      <div
+      <button
+        type="button"
         data-testid="solva-v2-ticker-pill"
         data-solva-v2-ticker-stage="pill"
-        className="fixed top-4 right-4 z-40 flex items-center gap-2 rounded-full border border-ned-purple/30 bg-[var(--parchment)] px-3.5 py-2 shadow-sm"
+        onClick={onLogIconClick}
+        className="fixed top-4 right-4 z-40 flex items-center gap-2 rounded-full border border-ned-purple/30 bg-[var(--parchment)] px-3.5 py-2 shadow-sm cursor-pointer hover:bg-ned-purple/10 transition-colors"
+        aria-label="Open Solva session log"
       >
         <CheckCircle2 className="w-3.5 h-3.5 text-[var(--ned-purple)]" />
         <span
           className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-[var(--ink)]"
           data-testid="solva-v2-ticker-pill-text"
         >
-          Session complete · 5 layers · 15 slides
+          Session complete · 5 layers · 16 slides
         </span>
-      </div>
+      </button>
     );
   }
 

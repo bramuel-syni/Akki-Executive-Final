@@ -24,6 +24,7 @@ from services.solva_v2.artefact_schema import (  # noqa: E402
     BiasInventorySection, BiasItem, FooterTemplate,
     PreMortemSlide, PreMortemFailureMode,
     AdversarialCounterCase,
+    CostAsymmetrySlide, CostAsymmetryScenario,
 )
 from services.solva_v2.integrity_validators import (  # noqa: E402
     adversarial_counter_evidence_grounded,
@@ -123,6 +124,39 @@ def _payload(pathway, decision_logic):
         ),
         bias_inventory=BiasInventorySection(biases=[_bias()]),
         pre_mortem=_pre_mortem(),
+        cost_asymmetry=CostAsymmetrySlide(
+            scenarios=[
+                CostAsymmetryScenario(
+                    pathway_label="Pathway 1",
+                    if_correct_outcome=(
+                        "If this pathway resolves favourably, the operating "
+                        "read converges; sensitivity inputs hold."
+                    ),
+                    if_wrong_cost=(
+                        "If this pathway turns out misaligned, committed "
+                        "capital lands on a misread; recovery absorbs the "
+                        "next planning cycle."
+                    ),
+                    cost_kind="capital_burn",
+                    cost_magnitude="medium",
+                    source_input_ids=["audit-1"],
+                ),
+                CostAsymmetryScenario(
+                    pathway_label="Pathway 2",
+                    if_correct_outcome=(
+                        "If the alternative resolves favourably, the founder "
+                        "preserves optionality with lower committed capital."
+                    ),
+                    if_wrong_cost=(
+                        "If the alternative turns out wrong, the diagnostic "
+                        "is exposed as tightly calibrated."
+                    ),
+                    cost_kind="opportunity_cost",
+                    cost_magnitude="low",
+                    source_input_ids=["audit-1"],
+                ),
+            ],
+        ),
         per_scenario_confidence_table=PerScenarioConfidenceTable(),
     )
 

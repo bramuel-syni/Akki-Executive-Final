@@ -3166,3 +3166,188 @@ viewport=820  → slide rendered, state=ready, doc_overflow_x=0 ✓
 #### Slice 5 is now genuinely closed
 
 Trust pillar 4 ships. Adversarial counter visible on the leading pathway item AND leading decision branch when populated. Pre-mortem surfaces 3 evidence-grounded failure modes between pathway and decision_logic on every artefact. Brand-purple monochrome compliance held. v1 byte-identical. Inline raw-trace evidence pulled from the exact founder-facing flow the tester would test.
+
+### Solva v2 — Slice 6 (Cost asymmetry) ✅ (2026-05-29)
+
+Trust pillar 5 (cost asymmetry — explicit if-correct vs if-wrong reads per pathway) ships in one continuous cut alongside Z1 / pre-Slice-7.
+
+#### Files touched
+
+Backend
+- `backend/services/solva_v2/artefact_schema.py` — added `CostAsymmetryScenario`, `CostAsymmetrySlide`, `CostKind`, `CostMagnitude`. Made `cost_asymmetry` REQUIRED on `ArtefactPayload`. Slice 6 enforces ≥2 scenarios per slide (schema `min_length=2`).
+- `backend/services/solva_v2/integrity_validators.py` — added 2 new validators (`cost_asymmetry_present`, `cost_asymmetry_evidence_grounded`). Extended `_BIAS_OBSERVATIONAL_OPENERS` with cost-asymmetry phrasings (`the pathway`, `if correct`, `if wrong`, `the upside`, `the downside`, etc.).
+- `backend/services/solva_v2/payload_builder.py` — added deterministic `_build_cost_asymmetry`: scenario 1 anchored to leading pathway item, scenario 2 anchored to top-weighted scenario, scenario 3 (optional) anchored to second-weighted scenario. Engine override path: `session.cost_asymmetry` verbatim if present.
+- `backend/services/solva_v2/stream_schema.py` — `LOCKED_SLIDE_KINDS` 15 → 16 (added `cost_asymmetry`).
+- `backend/services/solva_v2/stream_synthesizer.py` — `SLIDE_DECK_ORDER` updated (cost_asymmetry between decision_logic and risk_mitigation). `SLIDE_READY_DESCRIPTIONS` + `SLIDE_KIND_TO_SOURCE_LAYER` augmented (cost_asymmetry → L3).
+
+Frontend
+- `frontend/src/hooks/useSolvaReasoningStream.js` — `LOCKED_SLIDE_KINDS` 15 → 16.
+- `frontend/src/components/solva/artefact_v2/SolvaReasoningTicker.jsx` — completion pill "5 layers · 15 slides" → "5 layers · 16 slides".
+- `frontend/src/components/solva/artefact_v2/slides/CostAsymmetrySlide.jsx` — NEW. Two-column "If correct / If wrong" layout per scenario. Locked DOM contract (`data-solva-v2-slide-kind="cost_asymmetry"`, `data-solva-v2-cost-kind`, `data-solva-v2-cost-magnitude`, `data-solva-v2-cost-scenario-index`). Per-scenario `data-testid="solva-v2-cost-if-correct-{kind}"` / `if-wrong-{kind}` for source-strict probing. Locked chip palette inside Wave 4.2.followup.2 opacity allowlist.
+- `frontend/src/components/solva/artefact_v2/SolvaArtefactV2.jsx` — orchestrator imports + mounts `CostAsymmetrySlide` between `decision_logic` and `risk_mitigation`. Doc-block updated 15 → 16 kinds.
+
+Tests (all 30 green)
+- `test_solva_v2_cost_asymmetry_schema.py` (10 cases) — model contract, locked cost_kind + cost_magnitude enums, min-length 80 on outcome/cost copy, ≥2 scenarios, REQUIRED on payload.
+- `test_solva_v2_cost_asymmetry_validators.py` (10 cases) — present check, citation resolution (audit-log + coarse-tag), imperative-phrasing block on if_correct + if_wrong.
+- `test_solva_v2_cost_asymmetry_render.py` (10 cases) — DOM contract, allowlisted chip opacity, deck order between decision_logic and risk_mitigation, two-column layout, complete COST_KIND_LABEL table.
+- Updated existing tests for 15→16 kinds + new fixtures: `test_solva_v2_artefact_schema.py`, `test_solva_v2_integrity_validators.py`, `test_solva_v2_bias_inventory_validators.py`, `test_solva_v2_pre_mortem_validators.py`, `test_solva_v2_adversarial_validators.py`, `test_solva_v2_slide_kind_inventory.py`, `test_solva_v2_use_reasoning_stream_hook.py`, `test_solva_v2_sse_engine_emission.py`, `test_solva_v2_sse_event_schema.py`.
+
+#### Live raw-trace evidence (verbatim, 1280 viewport, post-deploy)
+
+Reference flow: `admin@akki.ai` → `/signin` → `/app/solva/session/e7b46d64-7a14-46e1-8f99-9703c210333f` (no URL params; default hydrated). Captured t≥7.5s after navigation, stream complete.
+
+```
+streamStatus     = "complete"
+eventsTotal      = "37"          ← was 35 (Slice 4); now +2 (pre_mortem + cost_asymmetry)
+eventsReceived   = "37"
+isComplete       = "true"
+slideCount       = "16"          ← was 14 (Slice 4) → 15 (Slice 5) → now 16
+slidesTotal      = 16  data-solva-v2-slide="true" elements
+slideStates      = {loading: 0, ready: 15, placeholder: 1, other: 0}
+topbar pill      = "SESSION COMPLETE · 5 LAYERS · 16 SLIDES"
+```
+
+16 unique slide kinds in deck order: `cover, headline, tensions_overview, per_tension, scenarios_overview, per_scenario_table, sensitivity, reflection, bias_inventory, pathway, pre_mortem, decision_logic, cost_asymmetry, risk_mitigation, methodological_honesty, in_closing`.
+
+Cost asymmetry slide DOM (`data-solva-v2-slide-kind="cost_asymmetry"`, state=`ready`, 2 scenarios from the seeded reference session):
+
+```
+[0] cost_kind = "opportunity_cost"
+    cost_magnitude = "high"
+    kind_chip      = "OPPORTUNITY COST" · rgba(107, 70, 193, 0.15)  ← /15 (allowlist ✓)
+    magnitude_chip = "HIGH"             · rgba(107, 70, 193, 0.3)   ← /30 (allowlist ✓)
+    if_correct[0:60] = 'If "You have flat volume, no pricing change, a shifting mix,'
+    if_wrong[0:60]   = 'If "You have flat volume, no pricing change, a shifting mix,'
+[1] cost_kind = "reputational_risk"
+    cost_magnitude = "medium"
+    kind_chip      = "REPUTATIONAL RISK" · rgba(107, 70, 193, 0.15) ← /15 (allowlist ✓)
+    magnitude_chip = "MEDIUM"            · rgba(107, 70, 193, 0.2)  ← /20 (allowlist ✓)
+    if_correct[0:60] = 'If "The pattern points most directly to **mix degradation**:'
+    if_wrong[0:60]   = 'If "The pattern points most directly to **mix degradation**:'
+```
+
+Deck-order check: decision_logic(idx=11) → cost_asymmetry(idx=12) → risk_mitigation(idx=13). `deck_order_correct = true`. All 16 kinds consecutive with no skips.
+
+Multi-viewport sanity:
+```
+viewport=1024 → slide rendered, state=ready, slide_rect_w=860, doc_overflow_x=0 ✓
+viewport=820  → slide rendered, state=ready, slide_rect_w=860, doc_overflow_x=0 ✓
+```
+
+#### Test sweep — full Solva v2 suite
+
+- **Solva v2:** 411 passed / 23 skipped (pre-existing) / 0 failures. (Previous: 381; net +30 from Slice 6.)
+- **v1 byte-identical guard:** `git diff backend/services/solva frontend/src/components/solva/artefact` returns empty diff.
+
+#### Anti-drift locks (Slice 6 additions)
+
+- `LOCKED_SLIDE_KINDS` mirrored across 4 surfaces (Pydantic SlideKind enum, `stream_schema.LOCKED_SLIDE_KINDS`, `stream_synthesizer.SLIDE_DECK_ORDER`, frontend hook `LOCKED_SLIDE_KINDS`). Drift between any two surfaces fails an existing test.
+- `cost_asymmetry` is REQUIRED on `ArtefactPayload` — accidentally omitting it from a future builder fails `test_artefact_payload_requires_cost_asymmetry_field`.
+- Per-scenario machine testid (`solva-v2-cost-if-correct-${kind}` / `solva-v2-cost-if-wrong-${kind}`) lets tests address each scenario's content by canonical taxonomy slot regardless of human-readable label drift.
+- Wave 4.2.followup.2 compliance — every chip opacity test-checked against the locked allowlist `{5,10,15,20,25,30,40,50,60,70,75,80,90,95,100}`.
+
+### Z1 close-out — Sprint Z1 (2026-05-29)
+
+All 7 Z1 items shipped, tested + source-strict probes green (15/15 Z1 tests):
+
+- **Z1.1 — Chat Opus model alias bug** — `claude-opus-4-7-20260416` → `claude-opus-4-6` (verified id). Added `MODEL_FALLBACK_CASCADE` helper + `_is_model_invalid_error` classifier; chat completion stream now demotes chosen-model → Sonnet 4.5 → Sonnet 3.7 → Haiku when the first attempt fails BEFORE any delta lands AND the failure matches the BadRequest classification set. Each demotion writes a `model_fallback_log` audit row. LIVE TRACE confirmed: `/api/chat/models` now returns `{model: "claude-opus-4-6"}` for the Opus entry.
+- **Z1.2 — Doc Notes save** — Added `notes: Optional[str]` to `_DocPatchIn`. Backend handler stores `notes` (trimmed, 8000-char cap) and accepts notes-only PATCH bodies. Frontend `NotesTab` now sends `{notes}` (was previously `{body: undefined, title: undefined}`). Added saved-snapshot tracking + a `Saved` indicator that persists until next mutation.
+- **Z1.3 — Premature contribution approval** — Frontend `Approve` button is `disabled` + `aria-disabled` unless `m.status ∈ {submitted, in_review}`. Server-side belt-and-braces: backend now returns **409** when an approve transition originates from any other status, with copy "Approve unlocks once the contributor moves to submitted or in_review."
+- **Z1.4 — Email drafts card routes wrong** — `case "drafts"` now returns `/app/task-manager?filter=email_drafts_ready&context_id={cid}` (was `/app/work-studio?tab=drafts`).
+- **Z1.5 — Generate brief opens Solva** — Added **new endpoint** `POST /api/contexts/{cid}/documents/{did}/briefings/generate` that resolves doc-related signals from `db.signals.find({sources.doc_id: doc_id})` and reuses the existing `_create_briefing_worker`. Returns `{job_id, status: "queued"}` (202). 400 if zero signals. Frontend handler polls the job for up to 90s, then navigates to `/app/work-studio?tab=briefings&highlight={briefingId}`. Removed the old `buildBriefUrl` Solva navigation entirely.
+- **Z1.6 — Compile wizard missing uploaded docs** — Wizard's Step-2 fetch now fires TWO parallel calls (`briefings/aggregates` + `documents?origin=upload&limit=100`), merges results with `source_group: "akki_generated"` / `"uploaded"`, sorts each group by readiness desc, and renders two section headers ("Akki-generated" + "Uploaded"). Uploaded committed docs surface at 100% readiness so the Z1.7 shortcut picks them up. Same logic applied to the in-modal `refetchSources` callback.
+- **Z1.7 — Select all ready inert + 0% state** — Threshold changed from `>=80` to `>=100` (canonical "ready" definition). Toast `No sources are ready yet. Sources hit ready at 100%.` fires when zero items qualify. Pressed-state flashes for 200ms via `data-pressed` attribute so the founder gets visible click feedback even on the zero case. Helper text `Pre-selects sources at 100% readiness.` rendered under the button with `data-testid="wizard-select-all-ready-helper"`.
+
+Tests (15/15 green): `backend/tests/test_sprint_z1_qa_fixes.py` covers the model registry, cascade helpers + classifier, `_DocPatchIn` schema, source-strict probes of the tasks 409 handler + the doc-scoped briefing endpoint registration + the documents listing `origin` allowlist + the frontend behavioural changes for Z1.2/Z1.3/Z1.4/Z1.6/Z1.7.
+
+**Slice 6 is now genuinely closed.** Trust pillar 5 ships. Next: **Slice 7 — Verification + polish** (`data-solva-v2-slide-ready-at` timestamps + session-log side-panel from the topbar icon stub).
+
+
+### Solva v2 — Slice 7 (Verification + polish) ✅ (2026-05-29)
+
+Trust-pillar 3 polish lands the last two pieces in the elevated 7-slice plan: per-slide ready-at timestamp attribute for verification probing AND the session-log side-panel re-opening from the topbar's icon stub (previously dead).
+
+#### Files touched
+
+Frontend (no backend changes — Slice 7 is a pure verification layer)
+- `frontend/src/components/solva/artefact_v2/SlideShell.jsx` — accepts new `readyAt` prop, surfaces `data-solva-v2-slide-ready-at` on the slide root (ISO timestamp).
+- `frontend/src/hooks/useSolvaReasoningStream.js` — added `slideReadyAtMap` to `INITIAL_STATE` + a parallel `_emptySlideAtMap` helper. Stream handler stamps `new Date().toISOString()` exactly when each slide's first `slide.ready` event arrives (idempotent — duplicate events do NOT overwrite). `?replay=0` instant-bypass stamps every kind with a single bypass timestamp so the attribute is never an empty string on fully-hydrated artefacts.
+- `frontend/src/components/solva/artefact_v2/SolvaArtefactV2.jsx` — `useState(logPanelOpen)` lifted into the orchestrator. Wraps return with `<>...</>` fragment. Threads `onLogIconClick={() => setLogPanelOpen(true)}` to the ticker AND mounts `<SessionLogPanel open={logPanelOpen} onClose={...} stream={stream} />` alongside the artefact. Each slide receives `readyAt={stream.slideReadyAtMap?.[s.kind] || null}` in shared render args.
+- `frontend/src/components/solva/artefact_v2/SolvaReasoningTicker.jsx` — accepts new `onLogIconClick` prop. BOTH the icon stub AND the pill (post-complete stage) now `onClick={onLogIconClick}` (was dead, no handler). Pill became a `<button>` instead of a `<div>` so it's keyboard-accessible.
+- `frontend/src/components/solva/artefact_v2/SessionLogPanel.jsx` — NEW (~210 LOC). Drawer with three sections: stream meta (status + mode + events count), per-slide ready-at table (16 rows in canonical order with HH:MM:SS.SSS-formatted timestamps), SSE event timeline (numbered rows showing `step_kind → slide_kind` + description). Closes on scrim-click + X-click. Brand-purple short-name opacity throughout (`bg-ned-purple/20` for scrim — Wave 4.2.followup.2 compliant). 90vw max-width on sub-1024 viewports so close affordance remains reachable.
+- `frontend/src/components/solva/artefact_v2/slides/*.jsx` — **all 16 slides** updated to destructure `readyAt` from shared props and forward `readyAt={readyAt}` to SlideShell. Source-strict scripted edit applied uniformly so no slide drifts.
+
+Tests (all 14 green)
+- `test_solva_v2_slice7_verification.py` — locks the SlideShell `data-solva-v2-slide-ready-at` attribute contract, the hook's `slideReadyAtMap` initialisation + first-stamp-only idempotency + replay-bypass stamping, the SessionLogPanel testid contract + per-row machine attributes, the ticker icon + pill click-handlers wiring through to `onLogIconClick`, the orchestrator's open/close state plumbing, the brand-purple opacity allowlist compliance, and the Solva-identity audit guard.
+
+#### Live raw-trace evidence (verbatim, 1280 viewport, post-deploy)
+
+Reference flow: `admin@akki.ai` → `/signin` → `/app/solva/session/e7b46d64-7a14-46e1-8f99-9703c210333f` (no URL params; default hydrated). Captured t≥8s after navigation, stream complete.
+
+**Per-slide ready-at attribute on every slide root (16/16 populated, monotonically increasing):**
+```
+cover                  state=ready       ready_at=2026-05-29T18:14:00.286Z
+headline               state=ready       ready_at=2026-05-29T18:14:00.385Z
+tensions_overview      state=ready       ready_at=2026-05-29T18:14:00.498Z
+per_tension            state=placeholder ready_at=2026-05-29T18:14:00.615Z
+scenarios_overview     state=ready       ready_at=2026-05-29T18:14:00.722Z
+per_scenario_table     state=ready       ready_at=2026-05-29T18:14:00.835Z
+sensitivity            state=ready       ready_at=2026-05-29T18:14:00.955Z
+reflection             state=ready       ready_at=2026-05-29T18:14:01.060Z
+bias_inventory         state=ready       ready_at=2026-05-29T18:14:01.168Z
+pathway                state=ready       ready_at=2026-05-29T18:14:01.285Z
+pre_mortem             state=ready       ready_at=2026-05-29T18:14:01.392Z
+decision_logic         state=ready       ready_at=2026-05-29T18:14:01.503Z
+cost_asymmetry         state=ready       ready_at=2026-05-29T18:14:01.622Z
+risk_mitigation        state=ready       ready_at=2026-05-29T18:14:01.727Z
+methodological_honesty state=ready       ready_at=2026-05-29T18:14:01.839Z
+in_closing             state=ready       ready_at=2026-05-29T18:14:01.955Z
+
+monotonic_timestamps = true
+total deck-render window = 1.669s (first slide → last slide)
+```
+
+**Session-log side-panel opens from the topbar pill / icon:**
+```
+Click target: solva-v2-ticker-pill (post-complete first stage)
+→ Panel rendered: data-testid="solva-v2-session-log-panel" present
+→ row_count = 16  (all locked kinds carry a row)
+→ event_count = 37 (37 SSE events captured; matches data-solva-v2-events-total)
+→ status_text  = "complete"
+→ mode_text    = "replay"
+→ events_count = "37 received · 37 total"
+→ first 3 rows: cover (18:12:13.258), headline (18:12:13.373), tensions_overview (18:12:13.480)
+```
+
+**Close affordances:** Close-X click → `panel_after: {present: false}`. Scrim click → same behaviour.
+
+**Multi-viewport panel sanity:**
+```
+viewport=1024 → panel_visible=true, width=480, doc_overflow_x=0 ✓
+viewport=820  → panel_visible=true, width=480, doc_overflow_x=0 ✓
+```
+
+#### Test sweep — full Solva v2 suite
+
+- **Solva v2:** 425 passed / 23 skipped (pre-existing) / 0 failures. (Previous: 411 post-Slice 6; net +14 from Slice 7.)
+- **v1 byte-identical guard:** `git diff backend/services/solva frontend/src/components/solva/artefact` returns empty diff.
+
+#### Anti-drift locks (Slice 7 additions)
+
+- The 16-row per-slide table in the session-log side-panel reads from `slideReadyAtMap` directly — drift between the locked kinds and what the panel surfaces fails the `test_session_log_panel_renders_per_slide_rows` source-strict test.
+- Idempotent stamping: hot-reloads / replay-mode flips / duplicate `slide.ready` events do NOT overwrite an existing timestamp (`test_hook_stamps_ready_at_on_slide_ready_event` locks the `!s.slideReadyAtMap[payload.slide_kind]` guard).
+- BOTH the icon stub AND the pill mount the open-click handler — `test_ticker_log_icon_accepts_on_click_handler` slices the source by `postCompleteStage === "pill"` / `"icon"` block and asserts `onClick={onLogIconClick}` is present in each.
+- Wave 4.2.followup.2 compliance enforced — `bg-[var(--token)]/N` arbitrary-value syntax is banned even in the new side-panel (caught the `bg-[var(--ink)]/20` scrim issue during initial implementation; switched to `bg-ned-purple/20` short-name).
+
+#### Elevated 7-slice plan now complete
+
+Slices 1a → 7 all shipped. The Solva v2 deck delivers:
+1. Cover / Headline / Tensions / Scenarios / Sensitivity / Reflection (Slices 1-2)
+2. Live reasoning stream + progressive rendering (Slice 3)
+3. Bias inventory (Slice 4)
+4. Adversarial debate + Pre-mortem (Slice 5)
+5. Cost asymmetry (Slice 6)
+6. Per-slide ready-at verification + session-log side-panel (Slice 7)
+
+Next queued: **PPTX export** (newly unparked from P2 backlog).
+

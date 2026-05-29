@@ -49,7 +49,12 @@ const ATTENTION_CARDS = [
 function _routeForCard(routeKey, cid) {
   if (!cid) return null;
   switch (routeKey) {
-    case "drafts":    return `/app/work-studio?tab=drafts&context_id=${cid}`;
+    /* Sprint Z1.4 (2026-05-29) — email drafts live in Task Manager
+       (they're tasks awaiting send), not Work Studio. The previous
+       route opened the Drafts tab of Work Studio which surfaces
+       Document drafts (board memos / briefs / etc), not pending
+       email sends. */
+    case "drafts":    return `/app/task-manager?filter=email_drafts_ready&context_id=${cid}`;
     case "reports":   return `/app/task-manager?filter=ready_to_compile&context_id=${cid}`;
     case "pulse":     return `/app/pulse?context_id=${cid}`;
     case "questions": return `/app/questions?status=open&context_id=${cid}`;

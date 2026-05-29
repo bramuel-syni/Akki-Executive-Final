@@ -98,10 +98,11 @@ LOCKED_STEP_KINDS = (
     "session.complete",
 )
 
-# Mirror the locked 15-kind slide enum from artefact_schema.py so a
+# Mirror the locked 16-kind slide enum from artefact_schema.py so a
 # slide.ready event can never reference a kind outside that contract.
 # Slice 4 (2026-05-29) — added bias_inventory (Trust pillar 2).
 # Slice 5 (2026-05-29) — added pre_mortem (Trust pillar 4).
+# Slice 6 (2026-05-29) — added cost_asymmetry (Trust pillar 5).
 LOCKED_SLIDE_KINDS = frozenset({
     "cover",
     "headline",
@@ -115,6 +116,7 @@ LOCKED_SLIDE_KINDS = frozenset({
     "pathway",
     "pre_mortem",
     "decision_logic",
+    "cost_asymmetry",
     "risk_mitigation",
     "methodological_honesty",
     "in_closing",
@@ -252,7 +254,7 @@ class SolvaStreamEvent(BaseModel):
     layer_name:  str = Field(..., description="One of frame_audit/surface/depth/synthesis/reflection")
     step_kind:   str = Field(..., description="layer.start / layer.step.progress / layer.complete / slide.ready / session.complete")
     step_description: str = Field(..., description="Observational, grounded, imperative-free description of what the engine just did")
-    slide_kind:  Optional[str] = Field(None, description="Locked 15-kind enum value when step_kind == 'slide.ready'")
+    slide_kind:  Optional[str] = Field(None, description="Locked 16-kind enum value when step_kind == 'slide.ready'")
     sequence:    int = Field(..., ge=0, description="Monotonic sequence within the session — replay clients use this for ordering")
     timestamp:   str = Field(..., description="ISO 8601 UTC timestamp")
 
@@ -290,7 +292,7 @@ class SolvaStreamEvent(BaseModel):
             return v
         if v not in LOCKED_SLIDE_KINDS:
             raise ValueError(
-                f"slide_kind={v!r} not in locked 15-kind enum"
+                f"slide_kind={v!r} not in locked 16-kind enum"
             )
         return v
 

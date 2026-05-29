@@ -14,6 +14,7 @@ export default function DecisionLogicSlide({
   totalSlides,
   contextName,
   slideState,
+  readyAt,
 }) {
   const items = branches || [];
   return (
@@ -23,6 +24,7 @@ export default function DecisionLogicSlide({
       total={totalSlides}
       contextName={contextName}
       slideState={slideState}
+      readyAt={readyAt}
       sectionTag="Decision Logic"
     >
       <div className="flex flex-col">

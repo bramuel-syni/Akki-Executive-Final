@@ -75,14 +75,15 @@ def test_synthesizer_emits_layer_lifecycle_per_layer():
         )
 
 
-def test_synthesizer_emits_fifteen_slide_ready_events_in_deck_order():
+def test_synthesizer_emits_sixteen_slide_ready_events_in_deck_order():
     """Exactly one slide.ready event per locked kind, emitted in the
     SLIDE_DECK_ORDER sequence. Slice 4 (2026-05-29) added bias_inventory
-    (count 13→14). Slice 5 (2026-05-29) added pre_mortem (count 14→15)."""
+    (count 13→14). Slice 5 (2026-05-29) added pre_mortem (count 14→15).
+    Slice 6 (2026-05-29) added cost_asymmetry (count 15→16)."""
     payload = build_payload(_seeded_session_shape(), context_name="Test Ctx")
     events = synthesize_events(session_id="test-sid-1", payload=payload)
     ready = [ev for ev in events if ev.step_kind == "slide.ready"]
-    assert len(ready) == 15
+    assert len(ready) == 16
     rendered_kinds = [ev.slide_kind for ev in ready]
     assert rendered_kinds == list(SLIDE_DECK_ORDER), (
         f"slide.ready order = {rendered_kinds}, expected {SLIDE_DECK_ORDER}"

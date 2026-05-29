@@ -44,6 +44,7 @@ const LOCKED_SLIDE_KINDS = [
   "pathway",
   "pre_mortem",
   "decision_logic",
+  "cost_asymmetry",
   "risk_mitigation",
   "methodological_honesty",
   "in_closing",
@@ -53,6 +54,19 @@ const LOCKED_SLIDE_KINDS = [
 function _emptySlideMap(initial = false) {
   return LOCKED_SLIDE_KINDS.reduce(
     (acc, k) => Object.assign(acc, { [k]: initial }),
+    {},
+  );
+}
+
+
+// Slice 7 (2026-05-29) — `slideReadyAtMap` mirrors `slideReadyMap` but
+// stores ISO timestamps for the moment each slide first transitioned
+// to "ready". Used by SlideShell to surface `data-solva-v2-slide-ready-
+// at` for verification probes, AND by the Slice 7 session-log side-
+// panel to render the per-slide timeline.
+function _emptySlideAtMap(value = null) {
+  return LOCKED_SLIDE_KINDS.reduce(
+    (acc, k) => Object.assign(acc, { [k]: value }),
     {},
   );
 }
@@ -126,6 +140,7 @@ const INITIAL_STATE = {
   currentLayerName: null,
   currentStep: "",
   slideReadyMap: _emptySlideMap(false),
+  slideReadyAtMap: _emptySlideAtMap(null),  // Slice 7 (2026-05-29)
   totalEvents: 0,
   isComplete: false,
   status: "idle",
@@ -154,9 +169,16 @@ export default function useSolvaReasoningStream(sessionId, opts = {}) {
 
     // ?replay=0 fast-path — bypass the animation, mark every slide ready.
     if (_isReplayBypass()) {
+      // Slice 7 (2026-05-29) — instant-bypass stamps a single
+      // timestamp for the bypass moment, so the "ready-at" attribute
+      // is never an empty string when the founder lands on a fully-
+      // hydrated artefact. The session-log side-panel reads this and
+      // labels the row "Replay bypassed".
+      const _instantTs = new Date().toISOString();
       setState({
         ...INITIAL_STATE,
         slideReadyMap: _emptySlideMap(true),
+        slideReadyAtMap: _emptySlideAtMap(_instantTs),
         status: "complete",
         isComplete: true,
         currentStep: "Session complete — replay bypassed (?replay=0)",
@@ -246,10 +268,20 @@ export default function useSolvaReasoningStream(sessionId, opts = {}) {
             } else if (ev.event === "solva.reasoning") {
               setState((s) => {
                 const nextEvents = s.events.concat([payload]);
-                const nextSlideMap = (
-                  payload.step_kind === "slide.ready" && payload.slide_kind
-                ) ? Object.assign({}, s.slideReadyMap, { [payload.slide_kind]: true })
+                const isSlideReady = payload.step_kind === "slide.ready" && payload.slide_kind;
+                const nextSlideMap = isSlideReady
+                  ? Object.assign({}, s.slideReadyMap, { [payload.slide_kind]: true })
                   : s.slideReadyMap;
+                // Slice 7 (2026-05-29) — capture the wallclock instant
+                // the slide first became authoritative. Only stamp on
+                // first transition (don't overwrite a previous ts if a
+                // duplicate slide.ready event arrives).
+                const nextSlideAtMap = (
+                  isSlideReady && !s.slideReadyAtMap[payload.slide_kind]
+                ) ? Object.assign({}, s.slideReadyAtMap, {
+                    [payload.slide_kind]: new Date().toISOString(),
+                  })
+                  : s.slideReadyAtMap;
                 return {
                   ...s,
                   events: nextEvents,
@@ -257,6 +289,7 @@ export default function useSolvaReasoningStream(sessionId, opts = {}) {
                   currentLayerName: payload.layer_name || s.currentLayerName,
                   currentStep: payload.step_description || s.currentStep,
                   slideReadyMap: nextSlideMap,
+                  slideReadyAtMap: nextSlideAtMap,
                   isComplete: payload.step_kind === "session.complete" ? true : s.isComplete,
                   status: payload.step_kind === "session.complete" ? "complete" : "streaming",
                 };

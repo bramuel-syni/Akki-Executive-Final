@@ -2,11 +2,12 @@
  * Solva v2 — SolvaArtefactV2 orchestrator (Slice 2b correction, 2026-05-29).
  *
  * CORRECTION FROM PRIOR CLOSE-OUT (tester contract verification):
- *  - Locked enum has EXACTLY 15 kinds (Slice 4 added bias_inventory;
- *    Slice 5 added pre_mortem). Section dividers are NOT slides —
- *    they're visual separators carrying `data-solva-v2-section-divider="true"`
- *    (no `data-solva-v2-slide` / no `data-solva-v2-slide-kind`).
- *  - All 15 kinds render UNCONDITIONALLY so the kind inventory is
+ *  - Locked enum has EXACTLY 16 kinds (Slice 4 added bias_inventory;
+ *    Slice 5 added pre_mortem; Slice 6 added cost_asymmetry). Section
+ *    dividers are NOT slides — they're visual separators carrying
+ *    `data-solva-v2-section-divider="true"` (no `data-solva-v2-slide`
+ *    / no `data-solva-v2-slide-kind`).
+ *  - All 16 kinds render UNCONDITIONALLY so the kind inventory is
  *    consistent across sessions regardless of payload data presence.
  *    Empty arrays surface as empty-state copy inside the slide, not as a
  *    missing slide.
@@ -16,11 +17,11 @@
  *    for the print stylesheet — replaces the prior `body:has()` selector
  *    which is unreliable in older Chromium and some Playwright pipelines.
  *
- * The 15 locked slide kinds:
+ * The 16 locked slide kinds:
  *   cover · headline · tensions_overview · per_tension · scenarios_overview
  *   · per_scenario_table · sensitivity · reflection · bias_inventory
- *   · pathway · pre_mortem · decision_logic · risk_mitigation
- *   · methodological_honesty · in_closing
+ *   · pathway · pre_mortem · decision_logic · cost_asymmetry
+ *   · risk_mitigation · methodological_honesty · in_closing
  *
  * Section dividers interleave between the 6 narrative arcs but DO NOT
  * appear in the slide-kind inventory.
@@ -44,12 +45,17 @@ import DecisionLogicSlide from "./slides/DecisionLogicSlide";
 import RiskMitigationSlide from "./slides/RiskMitigationSlide";
 import BiasInventorySlide from "./slides/BiasInventorySlide";
 import PreMortemSlide from "./slides/PreMortemSlide";
+import CostAsymmetrySlide from "./slides/CostAsymmetrySlide";
 import MethodologicalHonestySlide from "./slides/MethodologicalHonestySlide";
+// Slice 7 (2026-05-29) — session-log side-panel re-opens from the
+// topbar's icon stub. Mounted alongside the artefact root so close-
+// click + ESC interactions live alongside the deck.
+import SessionLogPanel from "./SessionLogPanel";
 import InClosingSlide from "./slides/InClosingSlide";
 
 
 /**
- * Compose the slide sequence from the payload. All 15 locked slide
+ * Compose the slide sequence from the payload. All 16 locked slide
  * kinds render every time — empty arrays surface as empty-state copy
  * inside the slide, NOT as a skipped slide. Section dividers (which
  * are NOT slides) interleave between narrative arcs.
@@ -240,6 +246,18 @@ function composeSlides(payload) {
       <DecisionLogicSlide branches={decisions} {...shared} />
     ),
   });
+  // ── Cost asymmetry (Slice 6, Trust pillar 5) — sits between
+  //    decision_logic and risk_mitigation: after the founder reads
+  //    the conditional branches, surface the if-correct vs if-wrong
+  //    asymmetry for each branch BEFORE the risk register lands.
+  //    REQUIRED on every artefact per Slice 6 `cost_asymmetry_present`
+  //    validator.
+  slides.push({
+    kind: "cost_asymmetry",
+    render: (shared) => (
+      <CostAsymmetrySlide costAsymmetry={payload.cost_asymmetry} {...shared} />
+    ),
+  });
   slides.push({
     kind: "risk_mitigation",
     render: (shared) => (
@@ -281,6 +299,9 @@ function composeSlides(payload) {
 
 export default function SolvaArtefactV2({ sessionId }) {
   const [state, setState] = useState({ status: "loading", payload: null, error: null });
+  // Slice 7 (2026-05-29) — session-log side-panel open state. Hooked
+  // up to the topbar Session-Log icon stub (was previously dead).
+  const [logPanelOpen, setLogPanelOpen] = useState(false);
 
   // Slice 3b — subscribe to the live reasoning stream. Hook must run
   // unconditionally before any early-return branches so React's rules-
@@ -388,6 +409,7 @@ export default function SolvaArtefactV2({ sessionId }) {
   const slideOnlyCount = slides.filter((s) => !s.isSectionDivider).length;
 
   return (
+    <>
     <article
       className="solva-v2-artefact w-full max-w-[860px] mx-auto solva-v2-print-root"
       data-testid="solva-v2-artefact-root"
@@ -423,6 +445,7 @@ export default function SolvaArtefactV2({ sessionId }) {
         isComplete={stream.isComplete}
         totalEvents={stream.totalEvents}
         receivedEvents={stream.events.length}
+        onLogIconClick={() => setLogPanelOpen(true)}
       />
       {slides.map((s, idx) => {
         // Compute per-slide state attribute from the stream's
@@ -436,6 +459,13 @@ export default function SolvaArtefactV2({ sessionId }) {
         } else if (stream.slideReadyMap[s.kind]) {
           slideState = s.isPlaceholder ? "placeholder" : "ready";
         }
+        // Slice 7 (2026-05-29) — forward the wallclock instant the
+        // slide first became authoritative. SlideShell surfaces this
+        // verbatim on the slide root via `data-solva-v2-slide-ready-at`
+        // so verification probes can audit per-slide timing.
+        const readyAt = (
+          s.isSectionDivider ? null : (stream.slideReadyAtMap?.[s.kind] || null)
+        );
         return s.render({
           slideNumber: idx + 1,
           totalSlides: total,
@@ -443,9 +473,19 @@ export default function SolvaArtefactV2({ sessionId }) {
           total,
           contextName,
           slideState,
+          readyAt,
           key: `${s.kind}-${idx}`,
         });
       })}
     </article>
+    {/* Slice 7 session log side-panel — currently the topbar's `Log` icon
+        only set a state stub. The panel now renders the SSE event
+        timeline + per-slide ready-at timestamps for verification. */}
+    <SessionLogPanel
+      open={logPanelOpen}
+      onClose={() => setLogPanelOpen(false)}
+      stream={stream}
+    />
+    </>
   );
 }

@@ -22,6 +22,7 @@ from services.solva_v2.artefact_schema import (  # noqa: E402
     ReflectionQuestion, PathwayItem, DecisionBranch, RiskMitigation,
     MethodologicalHonesty, InClosing, BiasInventorySection, BiasItem,
     PreMortemSlide, PreMortemFailureMode,
+    CostAsymmetrySlide, CostAsymmetryScenario,
     FooterTemplate,
 )
 from services.solva_v2.integrity_validators import (  # noqa: E402
@@ -167,6 +168,42 @@ def _baseline_payload(**overrides) -> ArtefactPayload:
                         "Investigating cohort-stratified retention before "
                         "committing would surface this risk earlier."
                     ),
+                    source_input_ids=["audit-1"],
+                ),
+            ],
+        ),
+        cost_asymmetry=CostAsymmetrySlide(
+            scenarios=[
+                CostAsymmetryScenario(
+                    pathway_label="Pathway 1",
+                    if_correct_outcome=(
+                        "If the recommended pathway resolves favourably, "
+                        "the operating read converges on the leading "
+                        "scenario; downstream sensitivity inputs hold."
+                    ),
+                    if_wrong_cost=(
+                        "If the recommended pathway turns out misaligned, "
+                        "the committed capital lands on a misread; the "
+                        "recovery window absorbs the next planning cycle."
+                    ),
+                    cost_kind="capital_burn",
+                    cost_magnitude="medium",
+                    source_input_ids=["audit-1"],
+                ),
+                CostAsymmetryScenario(
+                    pathway_label="Pathway 2",
+                    if_correct_outcome=(
+                        "If the alternative pathway resolves favourably, "
+                        "the founder preserves optionality across the "
+                        "next planning cycle with lower committed capital."
+                    ),
+                    if_wrong_cost=(
+                        "If the alternative pathway turns out wrong, the "
+                        "diagnostic is exposed as too tightly calibrated; "
+                        "stakeholder trust absorbs the recovery cost."
+                    ),
+                    cost_kind="opportunity_cost",
+                    cost_magnitude="low",
                     source_input_ids=["audit-1"],
                 ),
             ],

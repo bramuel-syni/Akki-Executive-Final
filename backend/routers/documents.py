@@ -823,6 +823,9 @@ class _DocPatchIn(BaseModel):
     # Phase Z (2026-05-27) — category is the orthogonal classification
     # axis (Work Studio tab). Empty string clears the value.
     category: Optional[str] = None
+    # Sprint Z1.2 (2026-05-29) — free-form notes saved from the drawer
+    # Notes tab. Empty string clears the value (NULLs the field).
+    notes:    Optional[str] = None
 
 
 @router.patch("/contexts/{context_id}/documents/{doc_id}")
@@ -878,6 +881,11 @@ async def patch_document(
             update["category"] = body.category
         else:
             raise HTTPException(status_code=400, detail="invalid category")
+    if body.notes is not None:
+        # Sprint Z1.2 (2026-05-29) — notes-only PATCH must be valid.
+        # Empty string clears the field; non-empty stores trimmed.
+        notes_clean = body.notes.strip()[:8000]
+        update["notes"] = notes_clean or None
     if len(update) == 1:
         raise HTTPException(status_code=400, detail="Send at least one field")
     await db.documents.update_one({"id": doc_id, "context_id": context_id}, {"$set": update})
@@ -915,6 +923,106 @@ async def get_document_intelligence(
     if not cached or cached.get("doc_hash") != current_hash:
         return {"status": "pending", "doc_id": doc_id, "doc_hash": current_hash}
     return {"status": "ready", **cached}
+
+
+@router.post(
+    "/contexts/{context_id}/documents/{doc_id}/briefings/generate",
+    status_code=202,
+)
+async def generate_briefing_from_document(
+    context_id: str, doc_id: str,
+    ctx: Dict[str, Any] = Depends(require_context_membership()),
+):
+    """Sprint Z1.5 (2026-05-29) — Generate a briefing scoped to one
+    document. Replaces the older Drawer behaviour of redirecting to
+    Solva when the founder clicks `Generate brief`.
+
+    Flow:
+      1. Resolve all signals in `db.signals` whose `sources[].doc_id`
+         matches the document's id (`status=active` only).
+      2. If zero, return 400 with the same copy the briefings router
+         already uses, so the drawer can surface a clear toast.
+      3. Otherwise spawn the existing `_create_briefing_worker` via
+         `_create_job` so the job-poll contract the briefings tab
+         already uses works unchanged.
+
+    Returns `{job_id, status: "queued"}` like the canonical endpoint.
+    The frontend polls `/api/jobs/{job_id}` to discover the new
+    `briefing_id` on completion, then routes the founder to
+    `/app/work-studio?tab=briefings&highlight={briefing_id}`.
+    """
+    # Re-use the briefings router's job machinery + worker — no new
+    # codepaths means the briefing render contract stays single-source.
+    from routers.briefings import (
+        _create_briefing_worker, BriefingCreateIn,
+        _create_job, _mark_running, _mark_completed, _mark_failed,
+        _spawn,
+    )
+    doc = await db.documents.find_one(
+        {"id": doc_id, "context_id": context_id},
+        {"_id": 0, "id": 1, "name": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    # Resolve signals owned by this doc. Mirrors the matching the
+    # briefings worker does on its `signals.sources[].doc_id` field.
+    related_signals = await db.signals.find(
+        {
+            "context_id": context_id,
+            "status": "active",
+            "sources.doc_id": doc_id,
+        },
+        {"_id": 0, "id": 1},
+    ).to_list(50)
+    if not related_signals:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No signals to brief on yet for this document. Extract "
+                "intelligence first, or generate signals via the "
+                "Signals tab."
+            ),
+        )
+    signal_ids = [s["id"] for s in related_signals if s.get("id")]
+    body = BriefingCreateIn(
+        signal_ids=signal_ids,
+        title=f"Briefing from {doc.get('name') or 'document'}",
+    )
+
+    job_id = await _create_job(
+        kind="briefing.create",
+        account_id=ctx["account"]["id"],
+        context_id=context_id,
+        input_summary={
+            "signal_ids": signal_ids,
+            "title": body.title,
+            "signal_count": len(signal_ids),
+            "source_doc_id": doc_id,
+        },
+    )
+
+    background_account_id = ctx["account"]["id"]
+    background_context_name = ctx["context"]["name"]
+
+    async def _runner():
+        await _mark_running(job_id)
+        try:
+            result = await _create_briefing_worker(
+                body=body,
+                account_id=background_account_id,
+                context_id=context_id,
+                context_name=background_context_name,
+            )
+            await _mark_completed(job_id, result)
+        except HTTPException as e:
+            detail = e.detail if isinstance(e.detail, str) else str(e.detail)
+            await _mark_failed(job_id, f"http_{e.status_code}: {detail}")
+        except Exception as e:
+            logger.exception("briefing.from-doc worker crashed (job=%s)", job_id)
+            await _mark_failed(job_id, f"{type(e).__name__}: {str(e)[:400]}")
+
+    _spawn(_runner())
+    return {"job_id": job_id, "status": "queued", "source_doc_id": doc_id}
 
 
 @router.post("/contexts/{context_id}/documents/{doc_id}/intelligence/regenerate")

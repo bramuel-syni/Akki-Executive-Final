@@ -54,6 +54,10 @@ export default function SlideShell({
   contextName,
   sectionTag,
   slideState = "ready",   // Slice 3b: 'loading' | 'ready' | 'placeholder'
+  readyAt,                // Slice 7 (2026-05-29): ISO timestamp captured
+                          // when the slide first transitioned to 'ready'.
+                          // Surfaces verbatim on the slide root so probes
+                          // can audit when each slide became authoritative.
   children,
 }) {
   const showSkeleton = slideState === "loading";
@@ -64,6 +68,7 @@ export default function SlideShell({
       data-solva-v2-slide-kind={kind}
       data-solva-v2-slide-number={String(number)}
       data-solva-v2-slide-state={slideState}
+      data-solva-v2-slide-ready-at={readyAt || ""}
       className="solva-v2-slide solva-v2-slide-frame relative w-full bg-white border border-[var(--rule)] rounded-sm px-10 py-12 mb-6 print:mb-0 print:break-after-page print:rounded-none print:border-0 overflow-hidden"
       style={{ minHeight: "660px" }}
     >

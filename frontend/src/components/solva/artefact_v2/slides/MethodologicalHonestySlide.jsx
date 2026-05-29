@@ -14,6 +14,7 @@ export default function MethodologicalHonestySlide({
   totalSlides,
   contextName,
   slideState,
+  readyAt,
 }) {
   if (!honesty) return null;
   return (
@@ -23,6 +24,7 @@ export default function MethodologicalHonestySlide({
       total={totalSlides}
       contextName={contextName}
       slideState={slideState}
+      readyAt={readyAt}
       sectionTag="Methodological Honesty"
     >
       <div className="flex flex-col">

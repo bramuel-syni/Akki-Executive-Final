@@ -198,37 +198,75 @@ export default function CompilationWizard({ open, onClose, contextId,
   }, [artefact, title]);
 
   // Fetch candidate sources whenever we land on step 2.
+  // Sprint Z1.6 (2026-05-29) — also fetch user-uploaded documents so
+  // raw uploads (HR Reports, customer status reports, etc.) appear as
+  // selectable sources alongside Akki-generated artefacts. The two
+  // groups render under separate section headers ("Akki-generated" +
+  // "Uploaded") so the founder can tell them apart.
   useEffect(() => {
     if (!open || step !== 2 || !artefact || !contextId) return undefined;
     let dead = false;
     setSourceLoading(true);
-    api
-      .get(`/contexts/${contextId}/briefings/aggregates`, {
+    Promise.all([
+      api.get(`/contexts/${contextId}/briefings/aggregates`, {
         params: { kind: artefact.kind, sort: "recent", page_size: 50 },
-      })
-      .then(({ data }) => {
+      }).then((r) => r?.data?.items || []).catch(() => []),
+      api.get(`/contexts/${contextId}/documents`, {
+        params: { origin: "upload", limit: 100 },
+      }).then((r) => Array.isArray(r?.data) ? r.data : []).catch(() => []),
+    ])
+      .then(([aggItems, uploadedDocs]) => {
         if (dead) return;
-        const items = data?.items || [];
-        // Attach a synthetic readiness for sort/UI. Existing aggregate rows
-        // don't carry a readiness field today — Patch 2B.1 left this to a
-        // follow-up. We compute a deterministic placeholder based on
-        // document_count (more docs → higher readiness) as a stand-in.
-        const enriched = items.map((it) => ({
+        const enrichedAgg = aggItems.map((it) => ({
           ...it,
+          source_group: "akki_generated",
           readiness_pct: typeof it.readiness_pct === "number"
             ? it.readiness_pct
             : Math.min(100, (it.document_count || 0) * 12 + (it.contributor_count || 0) * 10),
         }));
-        enriched.sort((a, b) => (b.readiness_pct || 0) - (a.readiness_pct || 0));
-        setSourceItems(enriched);
+        // Uploaded docs: committed uploads are "100% ready" by
+        // definition (they're sitting in the journal awaiting selection),
+        // drafts are 0%. This keeps the readiness signal honest for
+        // the Sprint Z1.7 "Select all ready" shortcut.
+        const enrichedUploaded = uploadedDocs
+          .filter((d) => d.state === "committed" || d.state == null)
+          .map((d) => ({
+            id: d.id,
+            name: d.name || d.original_filename || "Untitled upload",
+            kind: "uploaded",
+            source_group: "uploaded",
+            created_at: d.created_at,
+            meeting_date: null,
+            document_count: 1,
+            contributor_count: 0,
+            readiness_pct: 100,
+          }));
+        // Sort each group independently by readiness desc, then created_at.
+        const sortGroup = (arr) => arr.sort((a, b) => (b.readiness_pct || 0) - (a.readiness_pct || 0));
+        sortGroup(enrichedAgg);
+        sortGroup(enrichedUploaded);
+        // Akki-generated first (existing behaviour), then Uploaded.
+        setSourceItems([...enrichedAgg, ...enrichedUploaded]);
       })
-      .catch(() => { if (!dead) setSourceItems([]); })
       .finally(() => { if (!dead) setSourceLoading(false); });
     return () => { dead = true; };
   }, [open, step, artefact, contextId]);
 
+  // Sprint Z1.7 (2026-05-29) — "Select all ready" was inert. Now:
+  // (a) selects items where readiness_pct >= 100 (the canonical "ready"
+  // threshold matches the docs-uploaded path), (b) gives the founder
+  // explicit feedback when zero items qualify, (c) flashes a pressed
+  // state for 200ms so the click registers visibly even on the zero
+  // case.
+  const [selectAllPressed, setSelectAllPressed] = useState(false);
   const selectAllReady = () => {
-    const ready = sourceItems.filter((it) => (it.readiness_pct || 0) >= 80);
+    const ready = sourceItems.filter((it) => (it.readiness_pct || 0) >= 100);
+    setSelectAllPressed(true);
+    setTimeout(() => setSelectAllPressed(false), 200);
+    if (ready.length === 0) {
+      toast.message("No sources are ready yet. Sources hit ready at 100%.");
+      return;
+    }
     setSelectedSourceIds(new Set(ready.map((it) => it.id)));
   };
 
@@ -247,26 +285,49 @@ export default function CompilationWizard({ open, onClose, contextId,
    * persisted to /documents and the wizard's source list is refreshed
    * so the new doc shows up under the existing artefact-type filter.
    * On failure: G9 ratified toasts (verbatim) and the parent Compile
-   * modal stays open with the existing source-item selection intact. */
+   * modal stays open with the existing source-item selection intact.
+   *
+   * Sprint Z1.6 (2026-05-29) — refetch ALSO pulls uploaded documents
+   * and applies the same group + readiness enrichment as the initial
+   * Step-2 fetch, so the user's newly-uploaded doc surfaces as
+   * "100% ready" in the Uploaded group. */
   const refetchSources = React.useCallback(() => {
     if (!open || !artefact || !contextId) return;
     setSourceLoading(true);
-    api
-      .get(`/contexts/${contextId}/briefings/aggregates`, {
+    Promise.all([
+      api.get(`/contexts/${contextId}/briefings/aggregates`, {
         params: { kind: artefact.kind, sort: "recent", page_size: 50 },
-      })
-      .then(({ data }) => {
-        const items = data?.items || [];
-        const enriched = items.map((it) => ({
+      }).then((r) => r?.data?.items || []).catch(() => []),
+      api.get(`/contexts/${contextId}/documents`, {
+        params: { origin: "upload", limit: 100 },
+      }).then((r) => Array.isArray(r?.data) ? r.data : []).catch(() => []),
+    ])
+      .then(([aggItems, uploadedDocs]) => {
+        const enrichedAgg = aggItems.map((it) => ({
           ...it,
+          source_group: "akki_generated",
           readiness_pct: typeof it.readiness_pct === "number"
             ? it.readiness_pct
             : Math.min(100, (it.document_count || 0) * 12 + (it.contributor_count || 0) * 10),
         }));
-        enriched.sort((a, b) => (b.readiness_pct || 0) - (a.readiness_pct || 0));
-        setSourceItems(enriched);
+        const enrichedUploaded = uploadedDocs
+          .filter((d) => d.state === "committed" || d.state == null)
+          .map((d) => ({
+            id: d.id,
+            name: d.name || d.original_filename || "Untitled upload",
+            kind: "uploaded",
+            source_group: "uploaded",
+            created_at: d.created_at,
+            meeting_date: null,
+            document_count: 1,
+            contributor_count: 0,
+            readiness_pct: 100,
+          }));
+        const sortGroup = (arr) => arr.sort((a, b) => (b.readiness_pct || 0) - (a.readiness_pct || 0));
+        sortGroup(enrichedAgg);
+        sortGroup(enrichedUploaded);
+        setSourceItems([...enrichedAgg, ...enrichedUploaded]);
       })
-      .catch(() => { /* surfacing already happens via the parent fetch */ })
       .finally(() => setSourceLoading(false));
   }, [open, artefact, contextId]);
 
@@ -470,14 +531,26 @@ export default function CompilationWizard({ open, onClose, contextId,
         {/* Step 2 — Sources */}
         {step === 2 && (
           <div className="space-y-3" data-testid="wizard-step-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-[12px]">Select source items</Label>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <Label className="text-[12px]">Select source items</Label>
+                <p
+                  className="text-[10.5px] text-[var(--muted)] font-mono mt-0.5 tracking-[0.06em]"
+                  data-testid="wizard-select-all-ready-helper"
+                >
+                  Pre-selects sources at 100% readiness.
+                </p>
+              </div>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
                 onClick={selectAllReady}
-                className="text-[12px] rounded-sm border-[var(--rule)]"
+                className={[
+                  "text-[12px] rounded-sm border-[var(--rule)] transition-colors",
+                  selectAllPressed ? "bg-[var(--rule)] text-[var(--ink)]" : "",
+                ].join(" ")}
+                data-pressed={selectAllPressed ? "true" : "false"}
                 data-testid="wizard-select-all-ready"
               >
                 Select all ready
@@ -493,36 +566,66 @@ export default function CompilationWizard({ open, onClose, contextId,
                 No source items in this context yet. Create one first.
               </p>
             )}
-            <div className="max-h-72 overflow-y-auto space-y-1.5" data-testid="wizard-source-list">
-              {sourceItems.map((it) => {
-                const sel = selectedSourceIds.has(it.id);
-                const r = it.readiness_pct || 0;
-                return (
-                  <label
-                    key={it.id}
-                    className={[
-                      "flex items-center gap-3 px-3 py-2 border rounded-sm cursor-pointer text-[13px]",
-                      sel ? "border-[var(--ink)] bg-white" : "border-[var(--rule)] hover:border-[var(--ink)]/40",
-                    ].join(" ")}
-                    data-testid={`wizard-source-row${sel ? "-selected" : ""}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={sel}
-                      onChange={() => toggleSource(it.id)}
-                      data-testid={`wizard-source-checkbox-${it.id}`}
-                    />
-                    <span className="flex-1 truncate text-[var(--ink)]">{it.name || "Untitled"}</span>
-                    <span className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">
-                      {it.kind?.replace("cycle_", "")?.replace(/_/g, " ") || "—"}
-                    </span>
-                    <span className="font-mono text-[12px] tabular-nums text-[var(--ink)] w-12 text-right">{r}%</span>
-                    <span className="text-[11px] font-mono text-[var(--muted)] w-12 text-right">
-                      {shortAge(it.meeting_date || it.created_at)}
-                    </span>
-                  </label>
-                );
-              })}
+            {/* Sprint Z1.6 — group source rows by source_group with
+                section headers so the founder can tell Akki-generated
+                artefacts apart from raw uploaded documents. Order is
+                always: Akki-generated first, then Uploaded. Empty
+                groups stay hidden — no phantom header rows. */}
+            <div className="max-h-72 overflow-y-auto space-y-3" data-testid="wizard-source-list">
+              {(() => {
+                const grouped = {
+                  akki_generated: sourceItems.filter((it) => (it.source_group || "akki_generated") === "akki_generated"),
+                  uploaded:       sourceItems.filter((it) => it.source_group === "uploaded"),
+                };
+                const renderGroup = (label, key, items, testid) => {
+                  if (items.length === 0) return null;
+                  return (
+                    <div key={key} data-testid={testid}>
+                      <p className="text-[10px] uppercase tracking-[0.18em] font-mono text-[var(--muted)] mb-1.5">
+                        {label}
+                      </p>
+                      <div className="space-y-1.5">
+                        {items.map((it) => {
+                          const sel = selectedSourceIds.has(it.id);
+                          const r = it.readiness_pct || 0;
+                          return (
+                            <label
+                              key={it.id}
+                              className={[
+                                "flex items-center gap-3 px-3 py-2 border rounded-sm cursor-pointer text-[13px]",
+                                sel ? "border-[var(--ink)] bg-white" : "border-[var(--rule)] hover:border-[var(--ink)]/40",
+                              ].join(" ")}
+                              data-testid={`wizard-source-row${sel ? "-selected" : ""}`}
+                              data-source-group={it.source_group || "akki_generated"}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={sel}
+                                onChange={() => toggleSource(it.id)}
+                                data-testid={`wizard-source-checkbox-${it.id}`}
+                              />
+                              <span className="flex-1 truncate text-[var(--ink)]">{it.name || "Untitled"}</span>
+                              <span className="text-[10.5px] uppercase tracking-[0.16em] font-mono text-[var(--muted)]">
+                                {it.source_group === "uploaded"
+                                  ? "uploaded"
+                                  : (it.kind?.replace("cycle_", "")?.replace(/_/g, " ") || "—")}
+                              </span>
+                              <span className="font-mono text-[12px] tabular-nums text-[var(--ink)] w-12 text-right">{r}%</span>
+                              <span className="text-[11px] font-mono text-[var(--muted)] w-12 text-right">
+                                {shortAge(it.meeting_date || it.created_at)}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                };
+                return [
+                  renderGroup("Akki-generated", "akki_generated", grouped.akki_generated, "wizard-source-group-akki"),
+                  renderGroup("Uploaded",       "uploaded",       grouped.uploaded,       "wizard-source-group-uploaded"),
+                ];
+              })()}
             </div>
             {/* T3.4 (2026-05-25) — W8 inline upload affordance.
                 Always rendered (T2.3 DOM-unconditional rule) so the

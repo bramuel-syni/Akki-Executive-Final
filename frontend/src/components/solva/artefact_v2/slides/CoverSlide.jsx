@@ -12,6 +12,7 @@ export default function CoverSlide({
   totalSlides,
   contextName,
   slideState,
+  readyAt,
 }) {
   if (!cover) return null;
   return (
@@ -22,6 +23,7 @@ export default function CoverSlide({
       contextName={contextName}
       sectionTag="Cover"
       slideState={slideState}
+      readyAt={readyAt}
     >
       <div className="flex flex-col h-full">
         {/* Method tag — canonical "SOLVA · SESSION OUTPUT · CONFIDENTIAL" */}

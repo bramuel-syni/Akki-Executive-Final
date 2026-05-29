@@ -37,6 +37,7 @@ export default function BiasInventorySlide({
   totalSlides,
   contextName,
   slideState,
+  readyAt,
 }) {
   if (!biasInventory) return null;
   const items = biasInventory.biases || [];
@@ -47,6 +48,7 @@ export default function BiasInventorySlide({
       total={totalSlides}
       contextName={contextName}
       slideState={slideState}
+      readyAt={readyAt}
       sectionTag="Bias Inventory"
     >
       <div className="flex flex-col">

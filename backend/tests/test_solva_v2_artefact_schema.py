@@ -41,6 +41,8 @@ from services.solva_v2.artefact_schema import (  # noqa: E402
     BiasItem,
     PreMortemSlide,
     PreMortemFailureMode,
+    CostAsymmetrySlide,
+    CostAsymmetryScenario,
     FooterTemplate,
 )
 
@@ -199,6 +201,42 @@ def _minimal_payload() -> ArtefactPayload:
                         "Investigating cohort-stratified retention before "
                         "committing would surface this risk earlier."
                     ),
+                    source_input_ids=["audit-1"],
+                ),
+            ],
+        ),
+        cost_asymmetry=CostAsymmetrySlide(
+            scenarios=[
+                CostAsymmetryScenario(
+                    pathway_label="Pathway 1",
+                    if_correct_outcome=(
+                        "If the recommended pathway resolves favourably, "
+                        "the operating read converges on the leading scenario; "
+                        "sensitivity inputs hold across the cycle."
+                    ),
+                    if_wrong_cost=(
+                        "If the recommended pathway turns out misaligned, "
+                        "the committed capital lands on a misread; recovery "
+                        "absorbs the next planning cycle."
+                    ),
+                    cost_kind="capital_burn",
+                    cost_magnitude="medium",
+                    source_input_ids=["audit-1"],
+                ),
+                CostAsymmetryScenario(
+                    pathway_label="Pathway 2",
+                    if_correct_outcome=(
+                        "If the alternative pathway resolves favourably, the "
+                        "founder preserves optionality across the next cycle "
+                        "with lower committed capital."
+                    ),
+                    if_wrong_cost=(
+                        "If the alternative pathway turns out wrong, the "
+                        "diagnostic is exposed as too tightly calibrated; "
+                        "stakeholder-trust absorbs the recovery cost."
+                    ),
+                    cost_kind="opportunity_cost",
+                    cost_magnitude="low",
                     source_input_ids=["audit-1"],
                 ),
             ],

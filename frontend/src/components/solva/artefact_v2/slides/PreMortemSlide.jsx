@@ -49,6 +49,7 @@ export default function PreMortemSlide({
   totalSlides,
   contextName,
   slideState,
+  readyAt,
 }) {
   if (!preMortem) return null;
   const items = preMortem.failure_modes || [];
@@ -59,6 +60,7 @@ export default function PreMortemSlide({
       total={totalSlides}
       contextName={contextName}
       slideState={slideState}
+      readyAt={readyAt}
       sectionTag="Pre-mortem"
     >
       <div className="flex flex-col">

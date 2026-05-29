@@ -485,6 +485,22 @@ async def patch_contribution(
     idx = _find_contributor(team, contributor_id)
     if idx is None:
         raise HTTPException(status_code=404, detail="Contributor not found on this task")
+    # Sprint Z1.3 (2026-05-29) — premature-approval defence.
+    # Approve transitions are only valid from submitted / in_review.
+    # Reject (409) if the contributor has nothing for the founder to
+    # approve. The frontend `disabled` flag is the first defence; this
+    # is the server-side belt-and-braces stop in case an out-of-band
+    # call (curl / cross-tab race / scripted client) tries to skip it.
+    _APPROVE_ELIGIBLE_FROM = {"submitted", "in_review"}
+    current_status = (team[idx].get("status") or "not_started").lower()
+    if body.status == "approved" and current_status not in _APPROVE_ELIGIBLE_FROM:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Cannot approve a contribution in status '{current_status}'. "
+                f"Approve unlocks once the contributor moves to submitted or in_review."
+            ),
+        )
     team[idx] = {**team[idx], "status": body.status}
     if body.note:
         team[idx]["status_note"] = body.note

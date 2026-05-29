@@ -14,6 +14,7 @@ export default function InClosingSlide({
   totalSlides,
   contextName,
   slideState,
+  readyAt,
 }) {
   if (!inClosing) return null;
   const recap = inClosing.key_findings_recap || [];
@@ -24,6 +25,7 @@ export default function InClosingSlide({
       total={totalSlides}
       contextName={contextName}
       slideState={slideState}
+      readyAt={readyAt}
       sectionTag="In Closing"
     >
       <div className="flex flex-col">

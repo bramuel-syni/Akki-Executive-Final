@@ -523,7 +523,27 @@ function ContributionsTab({ task, onPatched }) {
                   <Button
                     size="sm" variant="outline"
                     onClick={() => patch(cid, "approved")}
-                    disabled={working === cid + "approved" || m.status === "approved"}
+                    /* Sprint Z1.3 (2026-05-29) — Approve must remain
+                       disabled until the contributor has actually
+                       delivered something the founder can approve.
+                       Allowed source statuses: submitted, in_review.
+                       NOT_STARTED / in_progress / needs_revision are
+                       not eligible. */
+                    disabled={
+                      working === cid + "approved"
+                      || m.status === "approved"
+                      || !["submitted", "in_review"].includes(m.status)
+                    }
+                    aria-disabled={
+                      working === cid + "approved"
+                      || m.status === "approved"
+                      || !["submitted", "in_review"].includes(m.status)
+                    }
+                    title={
+                      !["submitted", "in_review", "approved"].includes(m.status)
+                        ? "Approve unlocks once the contributor has submitted their work."
+                        : undefined
+                    }
                     data-testid={`task-drawer-contributions-approve-${i}`}
                   >
                     <Check className="w-3 h-3 mr-1" /> Approve

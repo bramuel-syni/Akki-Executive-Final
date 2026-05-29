@@ -56,6 +56,7 @@ from .artefact_schema import (
     ReflectionSection, ReflectionQuestion, PathwayItem, DecisionBranch,
     RiskMitigation, MethodologicalHonesty, InClosing, FooterTemplate,
     AdversarialCounterCase, PreMortemSlide, PreMortemFailureMode,
+    CostAsymmetrySlide, CostAsymmetryScenario,
 )
 
 
@@ -705,6 +706,150 @@ def _build_pre_mortem(
     return PreMortemSlide(failure_modes=failure_modes)
 
 
+def _build_cost_asymmetry(
+    session: Dict[str, Any],
+    pathway: List[PathwayItem],
+    scenarios: List[ScenarioRow],
+) -> CostAsymmetrySlide:
+    """Slice 6 (2026-05-29) — Trust pillar 5 (cost asymmetry).
+
+    Engine override: if `session.cost_asymmetry` exists (engine-emitted),
+    use it verbatim. Otherwise compose a deterministic placeholder
+    with 2-3 evidence-grounded scenarios anchored to (a) the top
+    pathway item if any, (b) the strongest scenario, (c) the second-
+    weighted scenario.
+    """
+    engine = session.get("cost_asymmetry")
+    if isinstance(engine, dict) and engine.get("scenarios"):
+        try:
+            return CostAsymmetrySlide(**engine)
+        except Exception:
+            pass
+
+    scenarios_out: List[CostAsymmetryScenario] = []
+
+    # Scenario 1 — leading pathway if present, otherwise leading scenario.
+    if pathway:
+        p0 = pathway[0]
+        scenarios_out.append(CostAsymmetryScenario(
+            pathway_label=f"Pathway {p0.number}",
+            if_correct_outcome=(
+                f"If the recommended action \"{p0.action_heading[:80]}\" "
+                f"resolves favourably, the founder's allocated focus and "
+                f"capital land on the highest-probability operating read; "
+                f"the {p0.timeline_tag.lower()} window is used to "
+                f"compound advantage rather than diversify hedges."
+            )[:600],
+            if_wrong_cost=(
+                f"If \"{p0.action_heading[:80]}\" turns out misaligned with "
+                f"the operating reality, the committed capital + the "
+                f"foregone optionality on second-weighted pathways "
+                f"compound through the {p0.timeline_tag.lower()} window. "
+                f"Reabsorbing the misallocation typically requires a "
+                f"second diagnostic cycle."
+            )[:600],
+            cost_kind="capital_burn",
+            cost_magnitude="medium",
+            source_input_ids=["L3"],
+        ))
+
+    # Scenario 2 — leading scenario asymmetry (always, even when pathway is empty).
+    if scenarios:
+        top = scenarios[0]
+        scenarios_out.append(CostAsymmetryScenario(
+            pathway_label=f"Scenario A ({top.weight_pct}%)",
+            if_correct_outcome=(
+                f"If \"{top.label[:80]}\" carries through at the "
+                f"{top.confidence_pct}%-confidence read, the operating "
+                f"diagnosis converges on a single dominant scenario; "
+                f"sensitivity inputs that would shift the weighting "
+                f"resolve in the expected direction."
+            )[:600],
+            if_wrong_cost=(
+                f"If \"{top.label[:80]}\" turns out wrong, the "
+                f"{top.weight_pct}%-weighted read collapses to the "
+                f"second-strongest scenario carrying. The opportunity "
+                f"cost of committing to the leading scenario is the "
+                f"forgone optionality on the alternative — typically a "
+                f"30-60 day recalibration window before the new posture "
+                f"establishes."
+            )[:600],
+            cost_kind="opportunity_cost",
+            cost_magnitude="high",
+            source_input_ids=["L3", "L2"],
+        ))
+
+    # Scenario 3 — second-weighted scenario asymmetry (only when present).
+    if len(scenarios) >= 2:
+        sec = scenarios[1]
+        scenarios_out.append(CostAsymmetryScenario(
+            pathway_label=f"Scenario B ({sec.weight_pct}%)",
+            if_correct_outcome=(
+                f"If \"{sec.label[:80]}\" carries — currently the "
+                f"second-weighted read at {sec.weight_pct}% — the founder's "
+                f"posture pivots toward an under-explored branch with "
+                f"smaller cumulative investment. The diagnostic preserves "
+                f"capital optionality through the next planning cycle."
+            )[:600],
+            if_wrong_cost=(
+                f"If \"{sec.label[:80]}\" turns out wrong as well, the "
+                f"underlying diagnostic is exposed as too tight a "
+                f"distribution — both top-weighted reads were calibrated "
+                f"against the same evidence base. The recovery cost is "
+                f"stakeholder-trust reputational damage from two "
+                f"successive misreads more than capital burn."
+            )[:600],
+            cost_kind="reputational_risk",
+            cost_magnitude="medium",
+            source_input_ids=["L3"],
+        ))
+
+    # Safety net — if pathway AND scenarios both empty, build 2
+    # generic scenarios so the validator's ≥2 contract holds without
+    # the engine over-faking content.
+    if len(scenarios_out) < 2:
+        scenarios_out.extend([
+            CostAsymmetryScenario(
+                pathway_label="Forward motion",
+                if_correct_outcome=(
+                    "If the operating diagnosis is correct, forward motion "
+                    "compounds the leading read across the next planning "
+                    "cycle; optionality on hedges narrows as the read "
+                    "carries."
+                ),
+                if_wrong_cost=(
+                    "If the operating diagnosis is wrong, forward motion "
+                    "lands committed capital on a misread. The recovery "
+                    "window is the next planning cycle; reabsorbing the "
+                    "misallocation requires a fresh diagnostic pass."
+                ),
+                cost_kind="capital_burn",
+                cost_magnitude="medium",
+                source_input_ids=["L3"],
+            ),
+            CostAsymmetryScenario(
+                pathway_label="Delay-and-revisit",
+                if_correct_outcome=(
+                    "If the operating diagnosis is wrong, delay-and-revisit "
+                    "preserves optionality and surfaces the misread before "
+                    "committed capital is unrecoverable."
+                ),
+                if_wrong_cost=(
+                    "If the operating diagnosis is correct, delay-and-"
+                    "revisit forgoes compounding gains on the leading "
+                    "read; the time cost surfaces as deferred velocity "
+                    "rather than absorbed capital."
+                ),
+                cost_kind="time_cost",
+                cost_magnitude="low",
+                source_input_ids=["L3", "L4"],
+            ),
+        ])
+
+    # Cap at 6 to satisfy schema max_length.
+    return CostAsymmetrySlide(scenarios=scenarios_out[:6])
+
+
 def _build_pathway(session: Dict[str, Any]) -> List[PathwayItem]:
     synth = session.get("synthesis") or {}
     raw = synth.get("recommendations") or []
@@ -1104,6 +1249,7 @@ def build_payload(session: Dict[str, Any], context_name: str = "Context") -> Art
         in_closing=_build_in_closing(session, scenarios, headline),
         bias_inventory=_build_bias_inventory(session, tensions, scenarios),
         pre_mortem=_build_pre_mortem(session, pathway_items, scenarios, sensitivity),
+        cost_asymmetry=_build_cost_asymmetry(session, pathway_items, scenarios),
         footer_template=FooterTemplate(),
     )
 

@@ -25,6 +25,7 @@ from services.solva_v2.artefact_schema import (  # noqa: E402
     MethodologicalHonesty, InClosing,
     BiasInventorySection, BiasItem, FooterTemplate,
     PreMortemSlide, PreMortemFailureMode,
+    CostAsymmetrySlide, CostAsymmetryScenario,
 )
 from services.solva_v2.integrity_validators import (  # noqa: E402
     bias_inventory_present, bias_inventory_citation_lint,
@@ -98,6 +99,41 @@ def _payload(biases):
                         "surfaces only after the timeline closes."
                     ),
                     triggering_signals=["Signal reverts at next intake"],
+                    source_input_ids=["audit-1"],
+                ),
+            ],
+        ),
+        cost_asymmetry=CostAsymmetrySlide(
+            scenarios=[
+                CostAsymmetryScenario(
+                    pathway_label="Pathway 1",
+                    if_correct_outcome=(
+                        "If the leading pathway resolves favourably, the "
+                        "operating read converges; sensitivity inputs hold."
+                    ),
+                    if_wrong_cost=(
+                        "If the leading pathway turns out misaligned, "
+                        "committed capital lands on a misread; recovery "
+                        "absorbs the next cycle."
+                    ),
+                    cost_kind="capital_burn",
+                    cost_magnitude="medium",
+                    source_input_ids=["audit-1"],
+                ),
+                CostAsymmetryScenario(
+                    pathway_label="Pathway 2",
+                    if_correct_outcome=(
+                        "If the alternative pathway resolves favourably, "
+                        "the founder preserves optionality across the next "
+                        "cycle with lower committed capital."
+                    ),
+                    if_wrong_cost=(
+                        "If the alternative pathway turns out wrong, the "
+                        "diagnostic is exposed as too tightly calibrated; "
+                        "stakeholder trust absorbs the recovery cost."
+                    ),
+                    cost_kind="opportunity_cost",
+                    cost_magnitude="low",
                     source_input_ids=["audit-1"],
                 ),
             ],
