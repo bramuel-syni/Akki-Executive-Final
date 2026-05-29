@@ -51,6 +51,9 @@ import MethodologicalHonestySlide from "./slides/MethodologicalHonestySlide";
 // topbar's icon stub. Mounted alongside the artefact root so close-
 // click + ESC interactions live alongside the deck.
 import SessionLogPanel from "./SessionLogPanel";
+// PPTX export (queue position 4, 2026-05-29) — toolbar pinned above
+// the first slide; `print:hidden` keeps it out of the paper artefact.
+import SolvaPptxToolbar from "./SolvaPptxToolbar";
 import InClosingSlide from "./slides/InClosingSlide";
 
 
@@ -446,6 +449,16 @@ export default function SolvaArtefactV2({ sessionId }) {
         totalEvents={stream.totalEvents}
         receivedEvents={stream.events.length}
         onLogIconClick={() => setLogPanelOpen(true)}
+      />
+      {/* PPTX export toolbar (queue position 4, 2026-05-29). Pinned
+          above the first slide, suppressed in print output via the
+          `print:hidden` Tailwind utility so it never lands in the
+          paper artefact. Disabled while the stream is still in
+          flight — the binary mirrors whatever's on screen, so we
+          only allow export after the run is complete. */}
+      <SolvaPptxToolbar
+        sessionId={sessionId}
+        isComplete={!!stream.isComplete}
       />
       {slides.map((s, idx) => {
         // Compute per-slide state attribute from the stream's

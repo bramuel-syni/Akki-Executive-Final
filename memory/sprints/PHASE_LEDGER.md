@@ -3351,3 +3351,89 @@ Slices 1a → 7 all shipped. The Solva v2 deck delivers:
 
 Next queued: **PPTX export** (newly unparked from P2 backlog).
 
+
+### Solva v2 — PPTX export ✅ (2026-05-29)
+
+Queue position 4 — newly unparked from the P2 backlog and shipped in one cut alongside Slices 6 + 7.
+
+#### Files touched
+
+Backend
+- `backend/services/solva_v2/pptx_exporter.py` — NEW (~450 LOC). Walks `LOCKED_DECK_ORDER` and emits one builder per locked kind via `python-pptx 1.0.2` (already installed). Brand-palette constants mirror the on-screen Tailwind tokens exactly (`INK`, `DEEP`, `MUTED`, `RULE`, `PARCHMENT`, `NED_PURPLE`, `EYEBROW_RED`). 16:9 widescreen geometry (13.333 × 7.5 in). Per-slide footer mirrors `FooterTemplate.template` verbatim with `{n} / {total} · {context_name}` substitution applied. Source-citation counts written to the speaker-notes pane so PowerPoint reviewers can audit grounding from inside the deck. `assert set(_KIND_TO_BUILDER.keys()) == set(LOCKED_DECK_ORDER)` at module load — drift between the exporter and the locked enum fails Python import.
+- `backend/routers/solva_v2_artefact.py` — added `GET /api/solva/sessions/{sid}/v2/export.pptx`. Auth + feature-flag gates mirror `/v2/payload` exactly. On success, writes a `solva_v2_pptx_export` row to `db.audit_log` carrying session id + actor id + slide_count + render_ms + bytes + validator_passes. Filename embeds the session id prefix + ISO date stamp so multiple exports don't collide in the founder's Downloads.
+
+Frontend
+- `frontend/src/components/solva/artefact_v2/SolvaPptxToolbar.jsx` — NEW (~110 LOC). Single CTA button with `data-testid="solva-v2-pptx-toolbar"` + `data-testid="solva-v2-pptx-download"`. Disabled while `!isComplete`. Fetches the binary as a `responseType: "blob"`, parses Content-Disposition for the filename, triggers a synthetic `<a>` click for the download. Sonner success/error toasts wired. `print:hidden` Tailwind utility keeps the toolbar out of the printed paper artefact.
+- `frontend/src/components/solva/artefact_v2/SolvaArtefactV2.jsx` — orchestrator imports `SolvaPptxToolbar` and mounts it directly above the first slide, after the reasoning ticker.
+
+Tests (13 / 13 green)
+- `backend/tests/test_solva_v2_pptx_export.py` — locks: non-empty PPTX binary, parse-back with python-pptx yields 16 slides, 16:9 geometry (slide_width ≈ 12,192,000 EMU; slide_height = 6,858,000 EMU), `LOCKED_DECK_ORDER` ⇔ `LOCKED_SLIDE_KINDS`, every kind has a builder entry, cover slide carries payload fields + footer substitution, every slide carries `Solva Session Output · Confidential` footer + correct `{n} / 16` substitution + context_name, bias inventory carries `Trust pillar 2` eyebrow + `likelihood:` chip prefix, cost asymmetry carries `IF CORRECT` + `IF WRONG` column markers, pre-mortem carries `Data Signal Misread` title-cased failure kind, methodological honesty carries both `WHAT THIS REPORT IS` + `WHAT THIS REPORT IS NOT` blocks, identity-audit guard catches `SOLVE` / `Solve ` drift, perf-sanity check on output size (20KB-5MB).
+
+#### Live raw-trace evidence (verbatim, 1280 viewport, post-deploy)
+
+Reference flow: `admin@akki.ai` → `/signin` → `/app/solva/session/e7b46d64-7a14-46e1-8f99-9703c210333f`.
+
+**Backend endpoint smoke (curl):**
+```
+STATUS=200
+BYTES=60781
+Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation
+Content-Disposition: attachment; filename="solva-e7b46d6-2026-05-29.pptx"
+X-Solva-V2-Slide-Count: 16
+```
+
+**python-pptx parse-back of the live binary:**
+```
+slide_count: 16
+slide_width:  12192000 EMU   (13.333 in)
+slide_height: 6858000  EMU   (7.5 in)
+cover_slide_texts[0:5]: ['SOLVA SESSION OUTPUT', 'Q3 revenue missed by 14%...', 'Prepared for: Context', 'Subject: Seek Clarity', '...']
+```
+
+**Frontend toolbar state transitions:**
+```
+t=1.5s  (stream in flight):
+  disabled         = true
+  aria-disabled    = "true"
+  tooltip          = "Available once the session is complete"
+
+t=9.5s  (post session.complete):
+  disabled         = false
+  aria-disabled    = "false"
+  tooltip          = "Download a native .pptx with all 16 slides"
+  is_complete      = "true"
+```
+
+**Live download via Playwright:**
+```
+suggested_filename:    solva-e7b46d64-2026-05-29.pptx
+downloaded_bytes:      60781
+file_starts_with_PK:   true   (valid zipfile)
+sonner toast surfaced: "Downloaded solva-e7b46d64-2026-05-29.pptx."
+```
+
+**Multi-viewport toolbar render (1024 + 820):**
+```
+viewport=1024 → toolbar found, width=860, doc_overflow_x=0  ✓
+viewport=820  → toolbar found, width=860, doc_overflow_x=0  ✓
+```
+
+#### Test sweep — full Solva v2 suite
+
+- **Solva v2:** 438 passed / 23 skipped (pre-existing) / 0 failures. (Previous: 425 post-Slice 7; net +13 from PPTX export.)
+- **v1 byte-identical guard:** `git diff backend/services/solva frontend/src/components/solva/artefact` returns empty diff.
+- **Solva-identity audit guard:** still green after one false-positive caught + fixed (the discipline docstring in pptx_exporter.py originally contained the `SOLVE` token — replaced with neutral phrasing).
+
+#### Anti-drift locks (PPTX additions)
+
+- Module-load assertion: `assert set(_KIND_TO_BUILDER.keys()) == set(LOCKED_DECK_ORDER)` — accidentally removing a slide builder fails import, not just test.
+- `LOCKED_DECK_ORDER` mirrored across 5 surfaces now (Pydantic enum, stream_schema, stream_synthesizer, frontend hook, pptx_exporter). Drift between any two fails an existing test.
+- Footer template substitution is verified per-slide (`test_footer_template_renders_on_every_slide`) — if any builder drops the footer call, the test fails for that slide index.
+- Source-strict ban on `SOLVE` / `Solve ` tokens in the rendered .pptx text (`test_no_solve_brand_drift_in_pptx`) catches title-case drift at the runtime level, not just the source-grep level.
+
+#### PPTX export is complete
+
+The four post-Slice-7 trust-claim artefacts now ship as one continuous diagnostic + decisive-pack: live deck on screen + .pptx download. Founders can hand the deck to a board chair without copy-paste.
+
+**Next queued: Z2 (UX gaps).**
+

@@ -247,3 +247,109 @@ async def stream_v2_reasoning(
         })
 
     return StreamingResponse(_gen(), headers=sse_headers())
+
+
+
+# ─────────────────────────────────────────────────────────────────
+# PPTX export — queue position 4 (2026-05-29)
+# ─────────────────────────────────────────────────────────────────
+
+import time as _time     # noqa: E402
+from datetime import datetime as _datetime  # noqa: E402
+
+from fastapi.responses import Response       # noqa: E402
+
+from services.solva_v2.pptx_exporter import build_pptx  # noqa: E402
+
+
+@router.get("/sessions/{sid}/v2/export.pptx")
+async def export_v2_pptx(
+    sid: str,
+    account: Dict[str, Any] = Depends(get_current_account),
+):
+    """Stream a native .pptx file rendered from the 16-element
+    artefact schema.
+
+    Auth + feature-flag gates mirror `/v2/payload` exactly. On every
+    successful export, write a `solva_v2_pptx_export` row to
+    `db.audit_log` carrying session id + account id + slide count.
+    """
+    if not solva_v2_enabled_for(account):
+        raise HTTPException(status_code=404, detail="Solva v2 not enabled")
+
+    rec = await db.solva_v2_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    context_name = "Context"
+    cid = rec.get("context_id")
+    if cid:
+        ctx = await db.contexts.find_one({"id": cid}, {"_id": 0, "name": 1})
+        if ctx and ctx.get("name"):
+            context_name = ctx["name"]
+
+    try:
+        payload = build_payload(rec, context_name=context_name)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("solva v2 pptx payload build failed sid=%s", sid)
+        raise HTTPException(
+            status_code=500, detail=f"Payload build failed: {exc}",
+        ) from exc
+
+    # Run validators as a soft gate — the .pptx export uses the same
+    # truth-source as the on-screen artefact, so blocking offenders
+    # should never reach the renderer. Log and proceed so auditors get
+    # the export even when validation surfaces a soft warning.
+    validation = validate_artefact(payload, rec)
+    if not validation.ok:
+        logger.warning(
+            "solva v2 pptx export with validator offenders sid=%s offenders=%d",
+            sid, len(validation.offenders),
+        )
+
+    t0 = _time.perf_counter()
+    try:
+        pptx_bytes = build_pptx(payload, context_name=context_name)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("pptx render failed sid=%s", sid)
+        raise HTTPException(
+            status_code=500, detail=f"PPTX render failed: {exc}",
+        ) from exc
+    render_ms = int((_time.perf_counter() - t0) * 1000)
+
+    # Audit log — every successful export writes a row that observability
+    # can aggregate against to spot abuse / cost / unexpected fan-out.
+    try:
+        await db.audit_log.insert_one({
+            "id": f"solva-pptx-{sid}-{int(_time.time() * 1000)}",
+            "kind": "solva_v2_pptx_export",
+            "actor_id": account["id"],
+            "actor_email": account.get("email"),
+            "session_id": sid,
+            "context_id": cid,
+            "slide_count": 16,
+            "bytes": len(pptx_bytes),
+            "render_ms": render_ms,
+            "validator_passes": validation.ok,
+            "ts": _datetime.utcnow().isoformat() + "Z",
+        })
+    except Exception:  # noqa: BLE001
+        logger.exception("pptx audit log insert failed sid=%s", sid)
+
+    # Filename embeds the session id + a yyyy-mm-dd stamp so multiple
+    # exports across days don't collide in the founder's Downloads.
+    filename = f"solva-{sid[:8]}-{_datetime.utcnow().strftime('%Y-%m-%d')}.pptx"
+    return Response(
+        content=pptx_bytes,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "presentationml.presentation"
+        ),
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Solva-V2-Slide-Count": "16",
+            "X-Solva-V2-Render-Ms": str(render_ms),
+        },
+    )
