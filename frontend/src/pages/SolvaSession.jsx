@@ -37,6 +37,8 @@ import QuestionScreen from "@/components/solva/flow/QuestionScreen";
 import PreparingInterstitial from "@/components/solva/flow/PreparingInterstitial";
 import ReflectionScreen from "@/components/solva/flow/ReflectionScreen";
 import SolvaArtefact from "@/components/solva/artefact/SolvaArtefact";
+import SolvaArtefactV2 from "@/components/solva/artefact_v2/SolvaArtefactV2";
+import { solvaV2EnabledFor } from "@/lib/solvaV2FeatureFlag";
 import SolvaRefusalArtefact from "@/components/solva/artefact/SolvaRefusalArtefact";
 // Wave 1.6 / 1.8 / 2.1 (UAT pack 2026-05-10)
 import SolvaHeader from "@/components/solva/flow/SolvaHeader";
@@ -445,7 +447,9 @@ export default function SolvaSession() {
       body = <PreparingInterstitial state={synthState} />;
       break;
     case "ARTEFACT":
-      body = (
+      body = solvaV2EnabledFor(account) ? (
+        <SolvaArtefactV2 sessionId={session?.id} />
+      ) : (
         <SolvaArtefact
           session={session}
           onStartReflection={Object.keys(flow.reflections).length < 3 ? handleStartReflection : undefined}
@@ -477,7 +481,9 @@ export default function SolvaSession() {
       break;
     case "COMPLETE":
     default:
-      body = (
+      body = solvaV2EnabledFor(account) ? (
+        <SolvaArtefactV2 sessionId={session?.id} />
+      ) : (
         <SolvaArtefact
           session={session}
           savedToast={savedToast}

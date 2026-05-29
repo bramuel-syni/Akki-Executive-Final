@@ -254,6 +254,11 @@ app.include_router(_syn_obs.router)
 app.include_router(_solva_pe.admin_router)
 app.include_router(_solva_pe.solva_export_router)
 app.include_router(_solva_pe.chat_pdf_router)
+
+# Solva v2 (Slice 2a 2026-05-29) — structured artefact-payload endpoint
+# behind the `SOLVA_V2_ENABLED` feature flag.
+from routers import solva_v2_artefact as _solva_v2_artefact  # noqa: E402
+app.include_router(_solva_v2_artefact.router)
 app.include_router(chat_router.router)
 app.include_router(influence_map_router.router)
 app.include_router(admin_health_router.router)

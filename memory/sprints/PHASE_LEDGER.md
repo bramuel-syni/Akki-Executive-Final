@@ -2222,6 +2222,64 @@ User reported the previously-claimed P0 fix is still failing on prod. Tester rep
 
 **Discipline note:** My prior dispatch close-out claimed "P0 doc-not-found fix applied". The CODE change shipped in preview — that part of the close-out was accurate. What the close-out failed to verify was the **prod deployment freshness**. Now locked as a workflow rule: any future P0 fix close-out that involves a deployed surface MUST include a post-deploy bundle-hash diff against pre-fix baseline before declaring the fix verified. The redeploy gate is part of the fix.
 
+---
+
+### Solva v2 build — Slice 2a CLOSED ✅ (2026-05-29) · backend payload endpoint + frontend SlideShell + 4 core slides + feature flag wiring
+
+**Disciplined-execution outcome.** Slice 2 planned at ~1700 LOC across 18 files. Split into 2a (this dispatch — shell + 4 core slides + backend endpoint + feature flag wiring + render test) and 2b (queued — remaining 9 slide templates + runtime multi-viewport probes + flag-routing runtime test). No permission asked; halted+split+reported per guardrail.
+
+**Slice 2a files (~960 LOC across 9 files, all new — zero v1 file edits except feature-flag swap in `SolvaSession.jsx`):**
+
+Backend:
+- `routers/solva_v2_artefact.py` — `GET /api/solva/sessions/{sid}/v2/payload` endpoint, feature-flag gated (HTTP 404 when off → endpoint hidden), runs `validate_artefact()` inline (HTTP 422 with structured offender list on validator failure), builds fresh payload on every call (no cache, deterministic adapter is fast)
+- `server.py` — `+5 LOC` to mount the new router
+
+Frontend:
+- `components/solva/artefact_v2/SlideShell.jsx` — per-slide wrapper with locked DOM contract (`data-solva-v2-slide=true`, `data-solva-v2-slide-kind`, `data-solva-v2-slide-number`, `data-solva-v2-slide-footer`), footer template `"Solve Session Output · Confidential · {ctx} · {n} / {total}"`, `print:break-after-page` per slide for browser print-to-PDF
+- `components/solva/artefact_v2/SectionDivider.jsx` — slide-format section transition with hairline (`bg-[var(--rule)]` = `rgb(184, 182, 175)` = sign-in page divider color)
+- `components/solva/artefact_v2/slides/CoverSlide.jsx` — element 1, method_tag + title + prepared_for + subject + method + inputs_range
+- `components/solva/artefact_v2/slides/HeadlineSlide.jsx` — element 2, exactly-3 KeyFindings with serif numerals + citation count
+- `components/solva/artefact_v2/slides/TensionsOverviewSlide.jsx` — element 3, numbered 01/02/03 list with severity pills (brand-purple short-name tokens, `bg-ned-purple/15` / `/10`) + contradiction_source meta line
+- `components/solva/artefact_v2/slides/PathwaySlide.jsx` — element 9, sequenced recs with timeline_tag chip + follows_from_cluster_id provenance chip
+- `components/solva/artefact_v2/SolvaArtefactV2.jsx` — orchestrator fetches payload, composes slides[], handles loading/integrity_failed/error states, renders integrity-failed placeholder with structured offender list (founder sees the system pausing on its own behalf, not silent failure)
+- `lib/solvaV2FeatureFlag.js` — frontend helper mirroring backend's two-layer flag (reads `account.feature_flags.solva_v2`, NEVER `process.env`)
+- `pages/SolvaSession.jsx` — `+8 LOC` feature-flag swap inside ARTEFACT and COMPLETE branches; v1 path preserved byte-identical when flag off
+
+**Source-strict tests** (`test_solva_v2_artefact_renders.py`, 17 tests, all passing):
+- SlideShell contract: required data-attrs, footer template literal, print-page break
+- SectionDivider contract: data-attrs + hairline token
+- Per-slide: kind enum value + locked testids + relative SlideShell import path
+- Orchestrator: v2 payload endpoint URL, integrity_failed 422 handling, Slice 2a kinds composed, schema_version attribute
+- Wave 4.2.followup.2: no silent-fail opacity syntax in any v2 component
+- Opacity-step audit: every brand-utility step in valid Tailwind default scale
+- Frontend feature-flag helper: truth table + no `process.env` runtime read
+- SolvaSession.jsx: gates v2/v1 swap behind `solvaV2EnabledFor(account)`
+
+**Live verification evidence** (admin@akki.ai session):
+- `GET /api/solva/sessions/fake-sid/v2/payload` with flag OFF (default) → **HTTP 404 `{"detail":"Solva v2 not enabled"}`** (endpoint hidden — desired behaviour)
+- Same with `SOLVA_V2_ENABLED=true` → **HTTP 404 `{"detail":"Session not found."}`** (endpoint reachable, normal not-found contract)
+- Frontend smoke (flag OFF): `/app/solva/sessions` renders v1 list cleanly. `data-testid="solva-v2-artefact-root"` element NOT present (proof v1 path is taken). Page title intact.
+
+**Test results (full v2 suite + v1 regression guard):**
+- New Slice 2a tests: **17 / 17 passing**
+- Slice 1a + 1b + 2a combined: **82 / 82 passing**
+- v1 byte-identical regression guard: `c0922a17a7df...3430fa` signature locked, no drift
+
+**Slice 2b queued (next dispatch — remaining 9 slide templates + multi-viewport runtime probe):**
+- Per-tension deep-dive slides (one per tension that has `extended_detail_paragraphs`)
+- Scenarios overview slide
+- Per-scenario confidence table slide
+- Sensitivity slide (HIGHEST/HIGH/MEDIUM ranks + cluster_weight_shift_mechanic)
+- Reflection slide ("Three things to sit with" with verbatim user response + diagnostic interpretation)
+- Decision logic slide (if/then branching)
+- Risk mitigation slide (risk/mitigation pairs)
+- Methodological honesty slide (4 sub-sections + input_confidence_pct gauge)
+- In closing slide (reframing + recap + final statement)
+- Runtime Playwright probe at 1280/1024/820: footer renders, no flex-wrap break, brand-purple non-transparent
+- Flag-routing runtime test: flag ON renders v2; flag OFF renders v1; mid-session swap preserves session state
+
+**Auto-slice compliance (Slice 2a):** Largest single file = `SolvaArtefactV2.jsx` at 187 LOC. No file exceeded 500 LOC. Slice 2a total = ~960 LOC across 9 files.
+
 
 - **Wave 4.2.followup.1 (P3, cohort-feedback-gated)** — Hue-
   differentiation within the brand-purple family for category chips
