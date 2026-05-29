@@ -66,9 +66,53 @@ def test_hook_supports_replay_zero_url_override():
     the SSE call and marking every slide ready up front."""
     src = HOOK.read_text(encoding="utf-8")
     assert "_isReplayBypass" in src
+    assert "_resolveReplayMode" in src, (
+        "Hook must use the `_resolveReplayMode()` helper to surface the "
+        "URL override as a discrete string mode."
+    )
     assert 'sp.get("replay")' in src
     # Bypass path mark slides ready
     assert "_emptySlideMap(true)" in src
+
+
+def test_hook_resolves_replay_mode_to_discrete_string():
+    """Slice 3b correction (2026-05-29): the hook MUST resolve the
+    `?replay` URL param to one of three discrete string modes —
+    'replay' (default + ?replay=1/true/on/yes), 'instant' (?replay=0/
+    false/off/no), or 'live' (reserved for in-flight broadcast,
+    parked). The artefact root surfaces this verbatim as
+    `data-solva-v2-replay-mode`."""
+    src = HOOK.read_text(encoding="utf-8")
+    assert 'return "instant"' in src
+    assert 'return "replay"' in src
+    # The default-when-no-param branch must return "replay" not false.
+    assert 'if (!sp.has("replay")) return "replay"' in src
+
+
+def test_hook_does_not_force_all_slides_ready_on_event_complete():
+    """Slice 3b correction (2026-05-29): the hook MUST NOT short-circuit
+    the slide-state machine by force-flipping all 13 slides to ready
+    when the SSE wire-close event fires. Each slide must transition
+    strictly via its own slide.ready event so the visual progression
+    stays coherent with the ticker's layer-by-layer narration.
+
+    The synthesizer emits all 13 slide.ready events BEFORE
+    session.complete arrives, so the map naturally populates without
+    needing the safety net."""
+    src = HOOK.read_text(encoding="utf-8")
+    # Locate the event:"complete" branch
+    m = re.search(r'ev\.event === "complete"\s*\)\s*\{([\s\S]*?)\}\s*else if', src)
+    assert m, "Could not locate the event:complete branch in the hook."
+    branch = m.group(1)
+    # The branch must NOT contain a slideReadyMap mass-update.
+    assert "LOCKED_SLIDE_KINDS.reduce" not in branch, (
+        "The event:complete branch must NOT force all slides ready. "
+        "Slice 3b correction (2026-05-29) requires each slide to flip "
+        "via its own slide.ready event for visual coherence."
+    )
+    assert "slideReadyMap" not in branch, (
+        "The event:complete branch must NOT mutate slideReadyMap."
+    )
 
 
 def test_hook_uses_locked_thirteen_slide_kinds():
@@ -168,6 +212,21 @@ def test_orchestrator_root_carries_identity_stamp():
     positive identity signal."""
     src = ORCH.read_text(encoding="utf-8")
     assert 'data-solva-v2-identity-stamp="solva-canonical"' in src
+
+
+def test_orchestrator_replay_mode_attr_reflects_resolved_mode():
+    """Slice 3b correction (2026-05-29): the artefact root's
+    `data-solva-v2-replay-mode` attribute MUST reflect the hook's
+    resolved `replayMode` string verbatim (not a boolean coerce). The
+    URL `?replay=0` must surface as `data-solva-v2-replay-mode="instant"`
+    on the artefact root, not `"replay"`."""
+    src = ORCH.read_text(encoding="utf-8")
+    assert "data-solva-v2-replay-mode={stream.replayMode}" in src, (
+        "Artefact root must surface `stream.replayMode` directly. The "
+        "prior boolean-coerce code (`stream.replayMode ? 'replay' : "
+        "'live'`) collapsed the 'instant' bypass state into 'replay', "
+        "breaking the tester's URL-override probe."
+    )
 
 
 def test_orchestrator_computes_per_slide_state_attribute():

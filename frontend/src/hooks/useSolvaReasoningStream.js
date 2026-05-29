@@ -85,16 +85,36 @@ function _parseSseBlocks(buffer) {
 }
 
 
-function _isReplayBypass() {
-  if (typeof window === "undefined" || !window.location) return false;
+/**
+ * Resolve the `?replay=...` URL override to one of three discrete
+ * modes. The orchestrator surfaces this verbatim on the artefact root
+ * as `data-solva-v2-replay-mode` so tests can probe deterministically.
+ *
+ *   "instant"  → ?replay=0/false/off/no — bypass animation, slides
+ *                 render fully right away
+ *   "replay"   → no URL param OR ?replay=1/true/on/yes — animated
+ *                 rapid-replay of the 5-layer pass (default UX)
+ *   "live"     → reserved for future in-flight session broadcast
+ *                 (Slice 3.followup.1, parked). Not currently emitted
+ *                 by the helper but reserved on the attribute enum.
+ */
+function _resolveReplayMode() {
+  if (typeof window === "undefined" || !window.location) return "replay";
   try {
     const sp = new URLSearchParams(window.location.search);
-    if (!sp.has("replay")) return false;
+    if (!sp.has("replay")) return "replay";
     const raw = String(sp.get("replay") || "").trim().toLowerCase();
-    return ["0", "false", "off", "no"].includes(raw);
+    if (["0", "false", "off", "no"].includes(raw)) return "instant";
+    if (["1", "true", "on", "yes"].includes(raw)) return "replay";
   } catch {
-    return false;
+    // noop
   }
+  return "replay";
+}
+
+
+function _isReplayBypass() {
+  return _resolveReplayMode() === "instant";
 }
 
 
@@ -108,7 +128,10 @@ const INITIAL_STATE = {
   isComplete: false,
   status: "idle",
   error: null,
-  replayMode: false,
+  replayMode: "replay",   // Slice 3b correction (2026-05-29): resolved
+                           // by `_resolveReplayMode()` on mount; one of
+                           // "replay" | "instant" | "live". Surfaced
+                           // verbatim on the artefact root.
 };
 
 
@@ -135,13 +158,17 @@ export default function useSolvaReasoningStream(sessionId, opts = {}) {
         status: "complete",
         isComplete: true,
         currentStep: "Session complete — replay bypassed (?replay=0)",
-        replayMode: true,
+        replayMode: "instant",
       });
       return undefined;
     }
 
     let dead = false;
-    setState({ ...INITIAL_STATE, status: "connecting" });
+    // Resolve the replay mode synchronously so the orchestrator's
+    // `data-solva-v2-replay-mode` attribute reflects the URL override
+    // from the very first render, not after the SSE script header lands.
+    const resolvedMode = _resolveReplayMode();
+    setState({ ...INITIAL_STATE, status: "connecting", replayMode: resolvedMode });
 
     const tok = (typeof window !== "undefined")
       ? window.localStorage.getItem("akki_access_token")
@@ -209,7 +236,10 @@ export default function useSolvaReasoningStream(sessionId, opts = {}) {
               setState((s) => ({
                 ...s,
                 totalEvents: typeof payload.total_events === "number" ? payload.total_events : s.totalEvents,
-                replayMode: true,  // server-side replay is always the source today (Slice 3a)
+                // Note: do NOT override replayMode here. The mode is
+                // resolved from the URL on mount and stays stable; the
+                // SSE script header just confirms the server is
+                // streaming, it doesn't redefine the user's intent.
               }));
             } else if (ev.event === "solva.reasoning") {
               setState((s) => {
@@ -230,14 +260,18 @@ export default function useSolvaReasoningStream(sessionId, opts = {}) {
                 };
               });
             } else if (ev.event === "complete") {
+              // Slice 3b correction (2026-05-29): DO NOT force all
+              // slides ready on the SSE wire-close event. Each slide
+              // must flip to ready strictly via its own slide.ready
+              // event so the visual progression stays coherent with
+              // the ticker's layer-by-layer narration. The synthesizer
+              // emits all 13 slide.ready events BEFORE session.complete
+              // arrives, so the map is naturally fully populated by
+              // the time event:complete fires.
               setState((s) => ({
                 ...s,
                 status: "complete",
                 isComplete: true,
-                slideReadyMap: LOCKED_SLIDE_KINDS.reduce(
-                  (acc, k) => Object.assign(acc, { [k]: true }),
-                  {},
-                ),
               }));
             } else if (ev.event === "error") {
               setState((s) => ({

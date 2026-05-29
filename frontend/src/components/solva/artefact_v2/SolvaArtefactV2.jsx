@@ -364,7 +364,7 @@ export default function SolvaArtefactV2({ sessionId }) {
       data-solva-v2-slide-count={String(slideOnlyCount)}
       data-solva-v2-identity-stamp="solva-canonical"
       data-solva-v2-stream-status={stream.status}
-      data-solva-v2-replay-mode={stream.replayMode ? "replay" : "live"}
+      data-solva-v2-replay-mode={stream.replayMode}
       data-solva-v2-events-received={String(stream.events.length)}
       data-solva-v2-events-total={String(stream.totalEvents)}
       data-solva-v2-is-complete={String(!!stream.isComplete)}
