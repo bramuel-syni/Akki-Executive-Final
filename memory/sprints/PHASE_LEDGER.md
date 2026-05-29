@@ -2379,3 +2379,109 @@ Backend — admin auto-flag + frontend wire:
 - **Wave8.followup.5 (P3, deferred)** — Smarter URL-pin allowlist in
   `scripts/check_requirements_urls.py` so the wheel-from-github
   exception doesn't require a test skip.
+
+### Solva v2 — Slice 2b CORRECTION CLOSED ✅ (2026-05-29) · 3 contract violations fixed with rendered-DOM evidence inline · DISCIPLINE LESSON: same class as doc-not-found
+
+**Discipline lesson logged.** The prior Slice 2b close-out claimed "all contracts met" based on a smoke screenshot. The user dispatched e1_tester independently and surfaced three contract violations the close-out had missed. **Same failure class as the doc-not-found preview bug:** "claimed-fixed-but-wasn't." Going forward, any slice close that claims contract compliance MUST include rendered-DOM evidence inline — slide-kind inventory dump, print-media computed-style proof, multi-viewport scrollWidth proof. A smoke screenshot is not evidence; selector probes are.
+
+---
+
+#### Issue 1 — Slide-kind contract violation (FIXED)
+
+**What the tester surfaced.** The locked enum has exactly 13 kinds. Rendered DOM at 1280 surfaced 10 distinct kinds:
+- 5 MISSING: `tensions_overview`, `per_tension`, `per_scenario_table`, `pathway`, `risk_mitigation`
+- 2 UNEXPECTED: `section_divider` (×4) and `per_scenario_confidence_table` (the Pydantic field name, not the locked enum value)
+
+**Root cause.** Two compounding bugs:
+1. Five locked kinds (`tensions_overview` / `per_tension` / `pathway` / `risk_mitigation` / `sensitivity`) were gated behind `.length > 0` conditionals on payload data. Sessions with empty arcs surfaced as missing slides.
+2. Section dividers carried `data-solva-v2-slide="true"` + `data-solva-v2-slide-kind="section_divider"` — they were treated as slides when they're visual separators.
+3. `PerScenarioConfidenceTable` passed `kind="per_scenario_confidence_table"` (the Pydantic field name) to SlideShell instead of the locked enum value `per_scenario_table`.
+
+**Fix.**
+- Orchestrator rewritten to push all 13 kinds UNCONDITIONALLY. Empty arcs surface as placeholder slides with empty-state copy (e.g., the `per_tension` placeholder reads "No tension was surfaced in this session — this is itself an outcome, it doesn't mean nothing is at stake; it means the evidence didn't point to a contradiction"). Arc data that's present overrides the placeholder.
+- `SectionDivider.jsx` rewritten: no more `data-solva-v2-slide` / `data-solva-v2-slide-kind` attributes; new contract is `data-solva-v2-section-divider="true"` + `-number` + `-footer`.
+- `PerScenarioConfidenceTable.jsx` renamed its kind value to `per_scenario_table`.
+- New file `test_solva_v2_slide_kind_inventory.py` locks the contract at three layers: source-strict (orchestrator composes all 13 kinds, only allowed kinds appear, no `.length`-only gating), per-template strictness (every component passes the EXACT locked enum value), and optional runtime DOM walk that asserts the inventory matches the locked enum exactly.
+
+**Live proof at 1280:**
+```
+✓ cover: 1   ✓ headline: 1   ✓ tensions_overview: 1   ✓ per_tension: 1
+✓ scenarios_overview: 1   ✓ per_scenario_table: 1   ✓ sensitivity: 1
+✓ reflection: 1   ✓ pathway: 1   ✓ decision_logic: 1   ✓ risk_mitigation: 1
+✓ methodological_honesty: 1   ✓ in_closing: 1
+Missing: []
+Extras (outside locked enum): []
+Section dividers (separately attributed): 5
+```
+
+---
+
+#### Issue 2 — Print CSS chrome strip (HARDENED — was partial-false-alarm)
+
+**What the tester surfaced.** Tester ran `page.emulate_media(media="print")` and reported topbar still 64px, sidebar still rendered, "Internal · Secure · Confidential" still visible. My own pre-fix probe under the same emulation showed `topbar_display=none, height=0, nav_display=none` — the `:has()` rule actually was working. But the trust-badge wasn't covered, and `:has()` is unreliable in some browser/pipeline combinations.
+
+**Root cause.** Two issues independent of the false-alarm:
+1. `body:has(.solva-v2-print-root)` selector is supported in modern Chromium (CSS.supports("selector(body:has(*))") = true in my probe) but can fail under some Playwright tooling pipelines and older browsers.
+2. The trust-badge ("Internal · Secure · Confidential") was NOT in the strip list — only the topbar / nav / banners / drawers were. So even if `:has()` worked, the badge would persist.
+
+**Fix.**
+- Replaced `body:has(.solva-v2-print-root)` with `body.solva-v2-printing-context` — a class mounted by `SolvaArtefactV2` useEffect on mount and removed on unmount. No `:has()` dependency.
+- Added `trust-badge` to the strip list. Plus tagless fallbacks for `aside` + `header.appshell-header` + `nav[role="navigation"]` + non-v2 `footer` elements.
+- Hardened every strip rule with `display: none !important; visibility: hidden !important; height: 0 !important; width: 0 !important; overflow: hidden !important`. Print stylesheets routinely lose specificity wars; `!important` is the correct tool here.
+- New source-strict test in `test_solva_v2_artefact_multiviewport.py::test_orchestrator_mounts_body_class_for_print_scope` and `test_index_css_strips_app_chrome_under_print` (extended to cover the new `trust-badge` testid + `!important` declaration).
+
+**Live proof under `emulate_media("print")`:**
+```
+body.className: solva-v2-printing-context
+topbar:      display=none, height=0,  width=0
+top_nav:     display=none, height=0,  width=0
+trust_badge: display=none, height=0,  width=0
+sidebar:     not in DOM at this resolution
+v2_slide_footer: display=flex,  visibility=visible, height=29, width=800
+v2_slide_first:  display=block, visibility=visible, height=660, width=880
+v2_artefact:     display=block, visibility=visible, height=13424
+```
+
+---
+
+#### Issue 3 — V2 artefact overflow at 1024 / 820 (HARDENED — was scoping disagreement)
+
+**What the tester surfaced.** Tester reported "Slides have a fixed/min-width ~1385px that doesn't collapse below 1280. Overflow at 1024 = +345px, at 820 = +549px." My own scoped probe at the time showed the artefact root fit at all viewports (right=1070 / 942 / 804). The 1280px scrollWidth at vw=820 was from the AppShell topbar's flex row, not the artefact.
+
+**Defensive fixes applied regardless** (because the tester's complaint pointed at the artefact body, and there's no downside to making the deck more resilient):
+1. `PerScenarioConfidenceTable.jsx` — wrapped the `<table>` in `<div className="w-full overflow-x-auto -mx-1 px-1">`, added `tableLayout: "fixed"` and `break-words` on the scenario label cell so long unbroken text can never push the table wider than its container.
+2. `SlideShell.jsx` — root now carries `overflow-hidden` so any inner element that does manage to declare a fixed-width can never push the slide wider than its frame.
+3. `SectionDivider.jsx` — same `break-words` on label + subtitle so a long section subtitle can't push the divider wider.
+4. Body class fallback via `useEffect` (Issue 2 fix) — `solva-v2-printing-context` mounts immediately on artefact mount.
+
+**Live proof — scoped artefact overflow at 1280 / 1024 / 820:**
+```
+vw=1280: artefactRight=1070, fits=True, overflow=0px, inner overflowing descendants: 0
+vw=1024: artefactRight=942,  fits=True, overflow=0px, inner overflowing descendants: 0
+vw=820:  artefactRight=804,  fits=True, overflow=16px margin, inner overflowing descendants: 0
+```
+
+The `document.documentElement.scrollWidth` at vw=820 is still 1280px — that's the pre-existing AppShell topbar overflow (out of v2 scope, separate ticket). The v2 artefact body itself fits cleanly within all three viewports with zero inner descendants overflowing.
+
+---
+
+#### Discipline lesson — locked into PHASE_LEDGER
+
+**Slice 2b close-out claimed contract met; tester surfaced contract gap. Same discipline class as doc-not-found.** Going forward, any close-out claiming "rendered" / "shipped" / "contract met" MUST include the actual rendered-DOM evidence inline:
+
+1. **Slide-kind inventory dump** as part of the report (every `data-solva-v2-*-kind` value present with count, plus missing-from-enum + extras-outside-enum lists).
+2. **Print-media `getComputedStyle` proof** for chrome elements when print stripping is claimed.
+3. **Multi-viewport `scrollWidth` vs viewport-width proof** at 1280 / 1024 / 820 when responsive layout is claimed.
+
+A smoke screenshot is not evidence. A selector probe is. The bug pattern is "I screenshotted it and it looked right" — but the contract is at the attribute level, which a screenshot cannot prove.
+
+**Updated regression sweep (Slice 2b CORRECTION + all prior locked phases):** **140 / 140 passing, 5 skipped** (4 pre-existing skips + 1 new `E1_SMOKE_URL`-gated runtime probe). `test_cycle_feel_pass` failure stays pre-existing — verified by stash-and-rerun.
+
+**Tests in this correction:**
+- `tests/test_solva_v2_slide_kind_inventory.py` — NEW file. 4 source-strict tests + 1 optional Playwright runtime DOM walk. Locks the 13-kind enum at three layers.
+- `tests/test_solva_v2_artefact_renders.py` — updated. `test_section_divider_does_not_carry_slide_attributes` replaced the old `test_section_divider_carries_data_attributes`. Orchestrator composition test now checks for the locked enum + the singular `section_divider` kind + the `isSectionDivider: true` flag + the absence of arc-specific divider kinds (which were a prior implementation error).
+- `tests/test_solva_v2_artefact_multiviewport.py` — updated. `test_orchestrator_mounts_body_class_for_print_scope` new. `test_index_css_strips_app_chrome_under_print` extended to cover `trust-badge` + `!important` declaration.
+
+**Slice 3 (live reasoning stream SSE) is now genuinely unblocked. The Slice 2b contract is met with rendered-DOM evidence inline.**
+
+

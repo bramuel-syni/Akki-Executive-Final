@@ -67,14 +67,35 @@ def test_shell_supports_print_break_per_page():
 # ─────────────────────────────────────────────────────────────────
 
 
-def test_section_divider_carries_data_attributes():
-    src = DIVIDER.read_text(encoding="utf-8")
-    assert 'data-solva-v2-slide="true"' in src
-    assert "data-solva-v2-slide-kind={kind" in src
-    assert "data-solva-v2-slide-number={String(number)}" in src
-    assert 'data-solva-v2-slide-footer="true"' in src
+def test_section_divider_does_not_carry_slide_attributes():
+    """SectionDividers are NOT slides — they are visual separators
+    between narrative arcs. They MUST NOT carry the `data-solva-v2-
+    slide` attribute or the `data-solva-v2-slide-kind` attribute,
+    because doing so pollutes the locked 13-kind inventory."""
+    raw = DIVIDER.read_text(encoding="utf-8")
+    # Strip block comments + line comments before contract checks so
+    # the explanatory docstring (which references the forbidden
+    # attribute names) doesn't trip the guard.
+    code = re.sub(r"/\*[\s\S]*?\*/", "", raw)
+    code = re.sub(r"//[^\n]*", "", code)
+    assert 'data-solva-v2-slide="true"' not in code, (
+        "SectionDivider must NOT carry `data-solva-v2-slide=\"true\"`. "
+        "Section dividers are visual separators, not slides, and "
+        "would pollute the 13-kind inventory."
+    )
+    assert "data-solva-v2-slide-kind" not in code, (
+        "SectionDivider must NOT carry `data-solva-v2-slide-kind`. "
+        "Section dividers do not appear in the locked 13-kind enum."
+    )
+    # Divider-specific data-attrs for tester locator.
+    assert 'data-solva-v2-section-divider="true"' in code, (
+        "SectionDivider must declare `data-solva-v2-section-divider=\"true\"` "
+        "so tests can locate it without polluting the kind enum."
+    )
+    assert "data-solva-v2-section-divider-number" in code
+    assert 'data-solva-v2-section-divider-footer="true"' in code
     # Hairline element for visual continuity with sign-in divider.
-    assert 'data-testid="solva-v2-section-divider-hairline"' in src
+    assert 'data-testid="solva-v2-section-divider-hairline"' in code
 
 
 def test_section_divider_uses_rule_token_for_hairline():
@@ -101,7 +122,7 @@ SLICE_2A_SLIDES = {
 SLICE_2B_SLIDES = {
     "PerTensionSlide.jsx":             {"kind": "per_tension",                  "extra_testids": []},
     "ScenariosOverviewSlide.jsx":      {"kind": "scenarios_overview",           "extra_testids": ["solva-v2-scenarios-list"]},
-    "PerScenarioConfidenceTable.jsx":  {"kind": "per_scenario_confidence_table", "extra_testids": ["solva-v2-confidence-table"]},
+    "PerScenarioConfidenceTable.jsx":  {"kind": "per_scenario_table",           "extra_testids": ["solva-v2-confidence-table"]},
     "SensitivitySlide.jsx":            {"kind": "sensitivity",                  "extra_testids": ["solva-v2-sensitivity-list"]},
     "ReflectionSlide.jsx":             {"kind": "reflection",                   "extra_testids": ["solva-v2-reflection-title", "solva-v2-reflection-questions"]},
     "DecisionLogicSlide.jsx":          {"kind": "decision_logic",               "extra_testids": ["solva-v2-decision-list"]},
@@ -179,17 +200,23 @@ def test_orchestrator_root_carries_required_attribute():
 
 
 def test_orchestrator_composes_all_slide_kinds():
-    """Verify the orchestrator imports every slide template AND
-    composes a slides[] entry for each of the 13 slide kinds plus the
-    section dividers that introduce each narrative arc."""
-    src = ORCH.read_text(encoding="utf-8")
+    """Verify the orchestrator composes a slides[] entry for each of
+    the 13 locked slide kinds. Section dividers are NOT slides and
+    appear with kind: "section_divider" + isSectionDivider:true so the
+    orchestrator can interleave them between narrative arcs without
+    polluting the 13-kind inventory."""
+    raw = ORCH.read_text(encoding="utf-8")
+    # Strip block + line comments so docstring references to
+    # forbidden / renamed kinds don't trip the guard.
+    src = re.sub(r"/\*[\s\S]*?\*/", "", raw)
+    src = re.sub(r"//[^\n]*", "", src)
     for slide_kind in (
         "cover",
         "headline",
         "tensions_overview",
         "per_tension",
         "scenarios_overview",
-        "per_scenario_confidence_table",
+        "per_scenario_table",
         "sensitivity",
         "reflection",
         "pathway",
@@ -201,22 +228,42 @@ def test_orchestrator_composes_all_slide_kinds():
         assert f'kind: "{slide_kind}"' in src, (
             f"Orchestrator must compose a slides entry with kind={slide_kind!r}."
         )
-    # Section dividers — one before each major arc.
-    for divider_key in (
+    # Section dividers — interleaved with a single `kind: "section_divider"`
+    # value PLUS `isSectionDivider: true` flag so they don't enter the
+    # slide-kind inventory.
+    assert 'kind: "section_divider"' in src, (
+        "Orchestrator must use kind: \"section_divider\" (singular) "
+        "for visual separators, not arc-specific kinds."
+    )
+    assert "isSectionDivider: true" in src, (
+        "Section divider entries must carry `isSectionDivider: true` "
+        "so the orchestrator can exclude them from the slide-kind "
+        "inventory and slide-count attribute."
+    )
+    # The arc-specific divider kinds from the prior implementation must
+    # be removed — they were a contract violation.
+    for forbidden in (
         "section_divider_tensions",
         "section_divider_scenarios",
         "section_divider_reflection",
         "section_divider_pathway",
         "section_divider_honesty",
     ):
-        assert divider_key in src, (
-            f"Orchestrator must include the {divider_key!r} section divider."
+        assert forbidden not in src, (
+            f"Forbidden arc-specific divider kind {forbidden!r} found "
+            "— dividers must use the singular 'section_divider' kind."
         )
-    # Slice 2b removed the backlog hint placeholder.
-    assert "slice_2b_backlog_hint" not in src, (
-        "Slice 2b backlog placeholder must be removed once all slide "
-        "kinds are wired."
+    # Per_scenario_confidence_table was the wrong KIND VALUE — must
+    # be removed. We check for `kind: "per_scenario_confidence_table"`
+    # specifically (not the bare substring) so the legitimate Pydantic
+    # field name `payload.per_scenario_confidence_table` (which the
+    # backend still uses) doesn't trip the guard.
+    assert 'kind: "per_scenario_confidence_table"' not in src, (
+        "Old kind VALUE 'per_scenario_confidence_table' must be renamed "
+        "to 'per_scenario_table' (the locked enum value)."
     )
+    # Slice 2b removed the backlog hint placeholder.
+    assert "slice_2b_backlog_hint" not in src
 
 
 # ─────────────────────────────────────────────────────────────────

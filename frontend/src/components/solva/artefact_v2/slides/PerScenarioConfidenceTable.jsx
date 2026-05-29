@@ -18,7 +18,7 @@ export default function PerScenarioConfidenceTable({
   const rows = (table && table.rows) || [];
   return (
     <SlideShell
-      kind="per_scenario_confidence_table"
+      kind="per_scenario_table"
       number={slideNumber}
       total={totalSlides}
       contextName={contextName}
@@ -37,10 +37,12 @@ export default function PerScenarioConfidenceTable({
             No scenario rows available.
           </p>
         ) : (
-          <table
-            className="w-full border-collapse text-[13px]"
-            data-testid="solva-v2-confidence-table"
-          >
+          <div className="w-full overflow-x-auto -mx-1 px-1">
+            <table
+              className="w-full border-collapse text-[13px]"
+              style={{ tableLayout: "fixed" }}
+              data-testid="solva-v2-confidence-table"
+            >
             <thead>
               <tr className="border-b border-[var(--rule)]">
                 <th className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--muted)] text-left py-2 pr-3 w-8">
@@ -71,10 +73,10 @@ export default function PerScenarioConfidenceTable({
                   <td className="py-3 pr-3 font-mono text-[var(--muted)] tabular-nums">
                     {String(idx + 1).padStart(2, "0")}
                   </td>
-                  <td className="py-3 pr-3 text-[var(--ink)] leading-snug">
-                    <div className="font-medium">{r.label}</div>
+                  <td className="py-3 pr-3 text-[var(--ink)] leading-snug break-words">
+                    <div className="font-medium break-words">{r.label}</div>
                     {r.description && (
-                      <div className="text-[11.5px] text-[var(--muted)] mt-0.5">
+                      <div className="text-[11.5px] text-[var(--muted)] mt-0.5 break-words">
                         {r.description}
                       </div>
                     )}
@@ -98,6 +100,7 @@ export default function PerScenarioConfidenceTable({
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </SlideShell>

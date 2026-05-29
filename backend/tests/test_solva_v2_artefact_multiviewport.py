@@ -40,6 +40,23 @@ INDEX_CSS = REPO / "frontend" / "src" / "index.css"
 # ─────────────────────────────────────────────────────────────────
 
 
+def test_orchestrator_mounts_body_class_for_print_scope():
+    """The orchestrator MUST mount the `solva-v2-printing-context`
+    body class via useEffect when the artefact mounts and remove it
+    on unmount. This replaces the prior `body:has(.solva-v2-print-root)`
+    selector which was unreliable in some browser/Playwright pipelines."""
+    src = (V2_DIR / "SolvaArtefactV2.jsx").read_text(encoding="utf-8")
+    assert "useEffect" in src
+    assert "solva-v2-printing-context" in src, (
+        "Orchestrator must reference the `solva-v2-printing-context` "
+        "body class so the @media print stylesheet can scope its rules."
+    )
+    assert "document.body.classList.add" in src
+    assert "document.body.classList.remove" in src, (
+        "Cleanup return must remove the body class on unmount."
+    )
+
+
 def test_shell_root_carries_print_break_after_page():
     """Per-slide page boundary — `print:break-after-page` Tailwind
     utility must be present on the SlideShell root so a browser
@@ -58,12 +75,18 @@ def test_section_divider_carries_print_break_after_page():
 
 def test_index_css_strips_app_chrome_under_print():
     """Verify the print-stylesheet block in index.css hides AppShell
-    chrome (sidebar / topbar / banners) when the v2 deck is mounted."""
+    chrome (sidebar / topbar / banners) when the v2 deck is mounted.
+
+    SLICE 2B CORRECTION (2026-05-29): print selectors now scope via
+    the body-level class `.solva-v2-printing-context` (mounted via
+    useEffect in SolvaArtefactV2) instead of `body:has(...)` which
+    is unreliable in some browser/Playwright pipelines."""
     css = INDEX_CSS.read_text(encoding="utf-8")
-    # The print rule must scope by the artefact's root class.
-    assert ".solva-v2-print-root" in css, (
-        "index.css must contain a `.solva-v2-print-root` selector for "
-        "the print stylesheet to scope its chrome-strip rules."
+    # The print rule must scope by the body class set by the orchestrator.
+    assert ".solva-v2-printing-context" in css, (
+        "index.css must contain a `.solva-v2-printing-context` body-class "
+        "selector for the print stylesheet — the `:has()`-based scope "
+        "was unreliable under emulate_media('print') in tester runs."
     )
     # It must hide the main AppShell chrome testids when in print mode.
     print_block = re.search(r"@media\s*print\s*\{[\s\S]+?\n\}\s*$", css)
@@ -76,13 +99,16 @@ def test_index_css_strips_app_chrome_under_print():
         "trial-status",
         "reintro-banner",
         "idle-warning-banner",
+        "trust-badge",  # The "Internal · Secure · Confidential" classification badge
     ):
         assert f'data-testid="{testid}"' in block, (
             f"Print stylesheet must hide chrome with testid={testid!r}."
         )
-    # The print rule must declare `display: none` on these.
-    assert "display: none" in block, (
-        "Print stylesheet must use `display: none` to hide chrome."
+    # The print rule must declare `display: none !important` (specificity
+    # battles with AppShell make !important necessary).
+    assert "display: none !important" in block, (
+        "Print stylesheet must use `display: none !important` — "
+        "non-important rules lose to AppShell's inline style precedence."
     )
 
 

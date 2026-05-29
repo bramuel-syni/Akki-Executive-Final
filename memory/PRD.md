@@ -5558,3 +5558,41 @@ Wave 4.2 grey→purple sweep → AA.followup.5 monitor_v2 retrofit → AA.follow
 - SSE wiring: live reasoning stream from the Solva 5-layer engine → progressive slide materialisation
 - Per-element loading state in the orchestrator
 
+
+---
+
+## Solva v2 — Slice 2b CORRECTION CLOSED ✅ (2026-05-29) · 3 contract violations fixed with rendered-DOM evidence
+
+### What was wrong (tester surfaced after Slice 2b close-out)
+1. **Slide-kind enum violation:** 5 locked kinds missing (gated behind `.length > 0` conditionals), 2 unexpected kinds polluting the enum (`section_divider` because dividers carried `data-solva-v2-slide`, and `per_scenario_confidence_table` because the wrong kind value was passed). Rendered DOM at 1280 had 10 distinct kinds, not the locked 13.
+2. **Print CSS:** `body:has(.solva-v2-print-root)` selector unreliable in some browser/Playwright pipelines; trust-badge ("Internal · Secure · Confidential") wasn't in the strip list.
+3. **Overflow scoping:** tester reported overflow at 1024 / 820 viewports; my probe showed artefact root fit but added defensive hardening anyway.
+
+### What shipped (the correction)
+- **Orchestrator rewritten** — all 13 locked kinds render UNCONDITIONALLY. Empty arcs surface as placeholder slides with empty-state copy (e.g., `per_tension` empty-state honors the schema's observational tone: *"this is itself an outcome — it doesn't mean nothing is at stake"*).
+- **SectionDivider** carries `data-solva-v2-section-divider="true"` instead of `data-solva-v2-slide` — visual separators don't pollute the kind enum.
+- **`per_scenario_confidence_table` kind renamed** to `per_scenario_table` (the locked enum value).
+- **Print CSS** scoped via `body.solva-v2-printing-context` body class mounted by `SolvaArtefactV2` useEffect (no `:has()` dependency). Trust-badge added to strip list. `display: none !important; visibility: hidden !important; height: 0 !important; width: 0 !important` for specificity-war resilience.
+- **PerScenarioConfidenceTable** wrapped in `overflow-x-auto` + `tableLayout: fixed` + `break-words` for defensive layout integrity at narrow viewports.
+- **`SlideShell` root** now carries `overflow-hidden` so no inner element can push the slide wider than its frame.
+- **3 new contract-guard tests** lock the 13-kind enum at source-strict + per-template + optional runtime DOM levels.
+
+### Live evidence inline (admin@akki.ai @ session `e7b46d64-7a14-46e1-8f99-9703c210333f`)
+
+**Slide-kind inventory at 1280** — 13/13 locked kinds present (count=1 each), 0 missing, 0 extras outside enum, 5 section dividers separately attributed (NOT polluting the enum).
+
+**Print-media chrome strip** — under `emulate_media("print")`: topbar `display=none/height=0`, top_nav `display=none/height=0`, trust-badge `display=none/height=0`. V2 per-slide footer + slide body remain `display=visible`.
+
+**Scoped overflow** — vw=1280 right=1070 fits; vw=1024 right=942 fits; vw=820 right=804 fits with 16px margin. Zero inner descendants overflow.
+
+### Tests
+- `tests/test_solva_v2_slide_kind_inventory.py` — NEW. 4 source-strict + 1 optional Playwright runtime probe.
+- `tests/test_solva_v2_artefact_renders.py` — section-divider test replaced; orchestrator composition test extended to lock the locked enum + the singular `section_divider` divider kind + `isSectionDivider:true` flag.
+- `tests/test_solva_v2_artefact_multiviewport.py` — `test_orchestrator_mounts_body_class_for_print_scope` new; chrome-strip test extended to cover `trust-badge` + `!important` declaration.
+- Sweep: **140 / 140 passing across Slice 1+2 + adjacent locked phases (5 pre-existing skips).** `test_cycle_feel_pass` failure is pre-existing — verified by stash-and-rerun.
+
+### Discipline lesson logged into PHASE_LEDGER
+Slice 2b close-out claimed contract met; tester proved otherwise. Going forward, any close-out claiming "rendered" / "shipped" / "contract met" MUST include rendered-DOM evidence inline — slide-kind inventory dump, print-media computed-style proof, multi-viewport scrollWidth proof. A smoke screenshot is not evidence; selector probes are.
+
+### Slice 3 (live reasoning stream SSE) is now genuinely unblocked
+

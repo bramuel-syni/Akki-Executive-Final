@@ -1,27 +1,27 @@
 /**
- * Solva v2 — SolvaArtefactV2 orchestrator (Slice 2b, 2026-05-29).
+ * Solva v2 — SolvaArtefactV2 orchestrator (Slice 2b correction, 2026-05-29).
  *
- * Fetches the structured artefact payload from
- *   GET /api/solva/sessions/{sid}/v2/payload
- * (feature-flag gated; returns 404 when v2 is OFF for the account).
+ * CORRECTION FROM PRIOR CLOSE-OUT (tester contract verification):
+ *  - Locked enum has EXACTLY 13 kinds. Section dividers are NOT slides —
+ *    they're visual separators carrying `data-solva-v2-section-divider="true"`
+ *    (no `data-solva-v2-slide` / no `data-solva-v2-slide-kind`).
+ *  - All 13 kinds render UNCONDITIONALLY so the kind inventory is
+ *    consistent across sessions regardless of payload data presence.
+ *    Empty arrays surface as empty-state copy inside the slide, not as a
+ *    missing slide.
+ *  - Locked kind value is `per_scenario_table` (spec used the short form),
+ *    not the longer Pydantic field name `per_scenario_confidence_table`.
+ *  - Body-level class `solva-v2-printing-context` mounted via useEffect
+ *    for the print stylesheet — replaces the prior `body:has()` selector
+ *    which is unreliable in older Chromium and some Playwright pipelines.
  *
- * Renders the 15-element slide-paginated artefact by walking a
- * `slides[]` array derived from the payload. The shape of each slide
- * entry is `{ kind, render }`.
+ * The 13 locked slide kinds:
+ *   cover · headline · tensions_overview · per_tension · scenarios_overview
+ *   · per_scenario_table · sensitivity · reflection · pathway
+ *   · decision_logic · risk_mitigation · methodological_honesty · in_closing
  *
- * Slice 2b composes the full 13 slide kinds + section dividers:
- *   • cover
- *   • headline
- *   • section_divider → tensions_overview → per_tension (×N)
- *   • section_divider → scenarios_overview → per_scenario_confidence_table → sensitivity
- *   • section_divider → reflection
- *   • section_divider → pathway → decision_logic → risk_mitigation
- *   • section_divider → methodological_honesty → in_closing
- *
- * Print-to-PDF: every slide carries `print:break-after-page` so a
- * browser print produces one slide per page. The global print stylesheet
- * (index.css) hides the AppShell sidebar / topbar / banners so the
- * printed output is a clean deck.
+ * Section dividers interleave between the 6 narrative arcs but DO NOT
+ * appear in the slide-kind inventory.
  */
 import React, { useEffect, useState } from "react";
 import { api, apiErrorMessage } from "@/lib/api";
@@ -43,53 +43,48 @@ import InClosingSlide from "./slides/InClosingSlide";
 
 
 /**
- * Compose the slide sequence from the payload. Returns an array of
- * `{ kind, render }` entries the JSX loop renders below. Section
- * dividers are interleaved so the deck reads in 5 narrative arcs:
- *   1. Cover + Headline
- *   2. Tensions (overview + per-tension deep dives)
- *   3. Scenarios + Confidence table + Sensitivity
- *   4. Reflection
- *   5. Pathway + Decision logic + Risk register
- *   6. Methodological honesty + In closing
+ * Compose the slide sequence from the payload. All 13 locked slide
+ * kinds render every time — empty arrays surface as empty-state copy
+ * inside the slide, NOT as a skipped slide. Section dividers (which
+ * are NOT slides) interleave between narrative arcs.
  */
 function composeSlides(payload) {
   const slides = [];
 
-  // 1 — Cover
+  // ── Arc 1: Cover + Headline ────────────────────────────────────
   slides.push({
     kind: "cover",
     render: (shared) => <CoverSlide cover={payload.cover} {...shared} />,
   });
-
-  // 2 — Headline
   slides.push({
     kind: "headline",
     render: (shared) => <HeadlineSlide headline={payload.headline} {...shared} />,
   });
 
-  // 3 — Tensions
+  // ── Arc 2: Tensions ────────────────────────────────────────────
   const tensions = payload.tensions || [];
   const deepDives = payload.per_tension_deep_dive || [];
+  slides.push({
+    kind: "section_divider",
+    isSectionDivider: true,
+    render: (shared) => (
+      <SectionDivider
+        sectionLabel="Tensions"
+        sectionSubtitle="What the evidence flags as worth pressure-testing."
+        {...shared}
+      />
+    ),
+  });
+  slides.push({
+    kind: "tensions_overview",
+    render: (shared) => (
+      <TensionsOverviewSlide tensions={tensions} {...shared} />
+    ),
+  });
+  // Per-tension deep-dive: at least one slide of this kind ALWAYS
+  // surfaces. If no tensions, a placeholder slide with empty-state
+  // copy renders so the kind inventory stays complete.
   if (tensions.length > 0) {
-    slides.push({
-      kind: "section_divider_tensions",
-      render: (shared) => (
-        <SectionDivider
-          kind="section_divider"
-          sectionLabel="Tensions"
-          sectionSubtitle="What the evidence flags as worth pressure-testing."
-          {...shared}
-        />
-      ),
-    });
-    slides.push({
-      kind: "tensions_overview",
-      render: (shared) => (
-        <TensionsOverviewSlide tensions={tensions} {...shared} />
-      ),
-    });
-    // Per-tension deep-dive slide per tension
     tensions.forEach((t) => {
       const dd = deepDives.find((d) => d.tension_number === t.number) || null;
       slides.push({
@@ -99,145 +94,152 @@ function composeSlides(payload) {
         ),
       });
     });
+  } else {
+    slides.push({
+      kind: "per_tension",
+      render: (shared) => (
+        <PerTensionSlide
+          tension={{
+            number: "—",
+            title: "No tension was surfaced in this session",
+            prevailing_framing:
+              "The 5-layer pass did not flag any contradictions worth pressure-testing for this submission.",
+            implication:
+              "This is itself an outcome — it does not mean nothing is at stake; it means the evidence the session received did not point to a contradiction.",
+            severity: "low",
+            contradiction_source: "user_vs_corpus",
+            evidence_block: null,
+          }}
+          deepDive={null}
+          {...shared}
+        />
+      ),
+    });
   }
 
-  // 4 — Scenarios + Confidence table + Sensitivity
+  // ── Arc 3: Scenarios overview + Confidence table + Sensitivity ─
   const scenarios = payload.scenarios || [];
-  const confTable = payload.per_scenario_confidence_table || { rows: [] };
+  const confTable = (
+    payload.per_scenario_confidence_table ||
+    payload.per_scenario_table ||
+    { rows: [] }
+  );
   const sensitivity = payload.sensitivity_inputs || [];
-  if (scenarios.length > 0 || sensitivity.length > 0) {
-    slides.push({
-      kind: "section_divider_scenarios",
-      render: (shared) => (
-        <SectionDivider
-          kind="section_divider"
-          sectionLabel="Scenarios"
-          sectionSubtitle="How the evidence distributes — weights, confidence, sensitivity."
-          {...shared}
-        />
-      ),
-    });
-    if (scenarios.length > 0) {
-      slides.push({
-        kind: "scenarios_overview",
-        render: (shared) => (
-          <ScenariosOverviewSlide scenarios={scenarios} {...shared} />
-        ),
-      });
-      slides.push({
-        kind: "per_scenario_confidence_table",
-        render: (shared) => (
-          <PerScenarioConfidenceTable table={confTable} {...shared} />
-        ),
-      });
-    }
-    if (sensitivity.length > 0) {
-      slides.push({
-        kind: "sensitivity",
-        render: (shared) => (
-          <SensitivitySlide sensitivity={sensitivity} {...shared} />
-        ),
-      });
-    }
-  }
+  slides.push({
+    kind: "section_divider",
+    isSectionDivider: true,
+    render: (shared) => (
+      <SectionDivider
+        sectionLabel="Scenarios"
+        sectionSubtitle="How the evidence distributes — weights, confidence, sensitivity."
+        {...shared}
+      />
+    ),
+  });
+  slides.push({
+    kind: "scenarios_overview",
+    render: (shared) => (
+      <ScenariosOverviewSlide scenarios={scenarios} {...shared} />
+    ),
+  });
+  slides.push({
+    kind: "per_scenario_table",
+    render: (shared) => (
+      <PerScenarioConfidenceTable table={confTable} {...shared} />
+    ),
+  });
+  slides.push({
+    kind: "sensitivity",
+    render: (shared) => (
+      <SensitivitySlide sensitivity={sensitivity} {...shared} />
+    ),
+  });
 
-  // 5 — Reflection (always present — schema requires exactly 3 questions)
-  if (payload.reflection_section) {
-    slides.push({
-      kind: "section_divider_reflection",
-      render: (shared) => (
-        <SectionDivider
-          kind="section_divider"
-          sectionLabel="Reflection"
-          sectionSubtitle="Three closing questions. Every diagnosis carries provisional weight."
-          {...shared}
-        />
-      ),
-    });
-    slides.push({
-      kind: "reflection",
-      render: (shared) => (
-        <ReflectionSlide
-          reflection={payload.reflection_section}
-          {...shared}
-        />
-      ),
-    });
-  }
+  // ── Arc 4: Reflection ──────────────────────────────────────────
+  slides.push({
+    kind: "section_divider",
+    isSectionDivider: true,
+    render: (shared) => (
+      <SectionDivider
+        sectionLabel="Reflection"
+        sectionSubtitle="Three closing questions. Every diagnosis carries provisional weight."
+        {...shared}
+      />
+    ),
+  });
+  slides.push({
+    kind: "reflection",
+    render: (shared) => (
+      <ReflectionSlide
+        reflection={payload.reflection_section || {
+          title: "Reflection — what could be wrong, what would change, what to watch",
+          intro_copy: "Three closing questions. Every diagnosis carries provisional weight.",
+          questions: [],
+        }}
+        {...shared}
+      />
+    ),
+  });
 
-  // 6 — Pathway + Decision logic + Risk register
+  // ── Arc 5: Pathway + Decision logic + Risk register ────────────
   const pathway = payload.pathway || [];
   const decisions = payload.decision_logic || [];
   const risks = payload.risk_mitigation || [];
-  if (pathway.length > 0 || decisions.length > 0 || risks.length > 0) {
-    slides.push({
-      kind: "section_divider_pathway",
-      render: (shared) => (
-        <SectionDivider
-          kind="section_divider"
-          sectionLabel="Pathway"
-          sectionSubtitle="What the weighted picture supports as next moves."
-          {...shared}
-        />
-      ),
-    });
-    if (pathway.length > 0) {
-      slides.push({
-        kind: "pathway",
-        render: (shared) => <PathwaySlide pathway={pathway} {...shared} />,
-      });
-    }
-    if (decisions.length > 0) {
-      slides.push({
-        kind: "decision_logic",
-        render: (shared) => (
-          <DecisionLogicSlide branches={decisions} {...shared} />
-        ),
-      });
-    }
-    if (risks.length > 0) {
-      slides.push({
-        kind: "risk_mitigation",
-        render: (shared) => (
-          <RiskMitigationSlide pairs={risks} {...shared} />
-        ),
-      });
-    }
-  }
+  slides.push({
+    kind: "section_divider",
+    isSectionDivider: true,
+    render: (shared) => (
+      <SectionDivider
+        sectionLabel="Pathway"
+        sectionSubtitle="What the weighted picture supports as next moves."
+        {...shared}
+      />
+    ),
+  });
+  slides.push({
+    kind: "pathway",
+    render: (shared) => <PathwaySlide pathway={pathway} {...shared} />,
+  });
+  slides.push({
+    kind: "decision_logic",
+    render: (shared) => (
+      <DecisionLogicSlide branches={decisions} {...shared} />
+    ),
+  });
+  slides.push({
+    kind: "risk_mitigation",
+    render: (shared) => (
+      <RiskMitigationSlide pairs={risks} {...shared} />
+    ),
+  });
 
-  // 7 — Methodological honesty + In closing (always present)
-  if (payload.methodological_honesty || payload.in_closing) {
-    slides.push({
-      kind: "section_divider_honesty",
-      render: (shared) => (
-        <SectionDivider
-          kind="section_divider"
-          sectionLabel="Honesty"
-          sectionSubtitle="What this report is — and isn't."
-          {...shared}
-        />
-      ),
-    });
-    if (payload.methodological_honesty) {
-      slides.push({
-        kind: "methodological_honesty",
-        render: (shared) => (
-          <MethodologicalHonestySlide
-            honesty={payload.methodological_honesty}
-            {...shared}
-          />
-        ),
-      });
-    }
-    if (payload.in_closing) {
-      slides.push({
-        kind: "in_closing",
-        render: (shared) => (
-          <InClosingSlide inClosing={payload.in_closing} {...shared} />
-        ),
-      });
-    }
-  }
+  // ── Arc 6: Methodological honesty + In closing ─────────────────
+  slides.push({
+    kind: "section_divider",
+    isSectionDivider: true,
+    render: (shared) => (
+      <SectionDivider
+        sectionLabel="Honesty"
+        sectionSubtitle="What this report is — and isn't."
+        {...shared}
+      />
+    ),
+  });
+  slides.push({
+    kind: "methodological_honesty",
+    render: (shared) => (
+      <MethodologicalHonestySlide
+        honesty={payload.methodological_honesty}
+        {...shared}
+      />
+    ),
+  });
+  slides.push({
+    kind: "in_closing",
+    render: (shared) => (
+      <InClosingSlide inClosing={payload.in_closing} {...shared} />
+    ),
+  });
 
   return slides;
 }
@@ -245,6 +247,19 @@ function composeSlides(payload) {
 
 export default function SolvaArtefactV2({ sessionId }) {
   const [state, setState] = useState({ status: "loading", payload: null, error: null });
+
+  // Mount a body-level class so the @media print stylesheet can scope
+  // its chrome-strip rules without relying on `body:has(...)`. The
+  // `:has()` selector is supported in modern Chromium, but some
+  // browser/Playwright combinations don't resolve it under
+  // emulate_media("print"). Body class is the reliable path.
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    document.body.classList.add("solva-v2-printing-context");
+    return () => {
+      document.body.classList.remove("solva-v2-printing-context");
+    };
+  }, []);
 
   useEffect(() => {
     let dead = false;
@@ -257,7 +272,6 @@ export default function SolvaArtefactV2({ sessionId }) {
       })
       .catch((err) => {
         if (dead) return;
-        // 404 = flag off or session missing; 422 = integrity validators failed.
         const status = err?.response?.status;
         const detail = err?.response?.data?.detail;
         if (status === 422 && detail && typeof detail === "object") {
@@ -330,13 +344,15 @@ export default function SolvaArtefactV2({ sessionId }) {
   const contextName = payload?.cover?.prepared_for || "Context";
   const slides = composeSlides(payload);
   const total = slides.length;
+  // Slide-count for the kind inventory (excludes section dividers).
+  const slideOnlyCount = slides.filter((s) => !s.isSectionDivider).length;
 
   return (
     <article
-      className="solva-v2-artefact max-w-[860px] mx-auto solva-v2-print-root"
+      className="solva-v2-artefact w-full max-w-[860px] mx-auto solva-v2-print-root"
       data-testid="solva-v2-artefact-root"
       data-solva-v2-schema-version={payload.schema_version || ""}
-      data-solva-v2-slide-count={String(total)}
+      data-solva-v2-slide-count={String(slideOnlyCount)}
     >
       {slides.map((s, idx) =>
         s.render({
