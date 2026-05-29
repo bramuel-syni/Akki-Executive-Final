@@ -40,6 +40,7 @@ import ReflectionSlide from "./slides/ReflectionSlide";
 import PathwaySlide from "./slides/PathwaySlide";
 import DecisionLogicSlide from "./slides/DecisionLogicSlide";
 import RiskMitigationSlide from "./slides/RiskMitigationSlide";
+import BiasInventorySlide from "./slides/BiasInventorySlide";
 import MethodologicalHonestySlide from "./slides/MethodologicalHonestySlide";
 import InClosingSlide from "./slides/InClosingSlide";
 
@@ -188,6 +189,22 @@ function composeSlides(payload) {
   const pathway = payload.pathway || [];
   const decisions = payload.decision_logic || [];
   const risks = payload.risk_mitigation || [];
+
+  // ── Bias inventory (Slice 4, Trust pillar 2) — sits between
+  //    reflection and pathway: after the founder reflects on
+  //    uncomfortable questions, surface bias landscape, then move
+  //    to recommendations. REQUIRED on every artefact per Slice 4
+  //    `bias_inventory_present` validator.
+  slides.push({
+    kind: "bias_inventory",
+    render: (shared) => (
+      <BiasInventorySlide
+        biasInventory={payload.bias_inventory}
+        {...shared}
+      />
+    ),
+  });
+
   slides.push({
     kind: "section_divider",
     isSectionDivider: true,

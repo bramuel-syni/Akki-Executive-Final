@@ -40,6 +40,7 @@ const LOCKED_SLIDE_KINDS = [
   "per_scenario_table",
   "sensitivity",
   "reflection",
+  "bias_inventory",
   "pathway",
   "decision_logic",
   "risk_mitigation",

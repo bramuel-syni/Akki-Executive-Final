@@ -98,8 +98,9 @@ LOCKED_STEP_KINDS = (
     "session.complete",
 )
 
-# Mirror the locked 13-kind slide enum from artefact_schema.py so a
+# Mirror the locked 14-kind slide enum from artefact_schema.py so a
 # slide.ready event can never reference a kind outside that contract.
+# Slice 4 (2026-05-29) — added bias_inventory (Trust pillar 2).
 LOCKED_SLIDE_KINDS = frozenset({
     "cover",
     "headline",
@@ -109,6 +110,7 @@ LOCKED_SLIDE_KINDS = frozenset({
     "per_scenario_table",
     "sensitivity",
     "reflection",
+    "bias_inventory",
     "pathway",
     "decision_logic",
     "risk_mitigation",

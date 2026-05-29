@@ -37,6 +37,8 @@ from services.solva_v2.artefact_schema import (  # noqa: E402
     RiskMitigation,
     MethodologicalHonesty,
     InClosing,
+    BiasInventorySection,
+    BiasItem,
     FooterTemplate,
 )
 
@@ -157,6 +159,25 @@ def _minimal_payload() -> ArtefactPayload:
             reframing_paragraph="The original question framed the choice as binary; the evidence supports a third path.",
             key_findings_recap=["Cohort retention strong", "Pricing gap consistent", "Framing incomplete"],
             final_statement="The pathway is conditional. Q1 data resolves the weighting.",
+        ),
+        bias_inventory=BiasInventorySection(
+            biases=[
+                BiasItem(
+                    bias_name="confirmation_bias",
+                    bias_display_name="Confirmation bias",
+                    likelihood="medium",
+                    evidence_grounded_reasoning=(
+                        "The intake anchors strongly on the cohort retention story; "
+                        "secondary signals from the pricing experiment got short "
+                        "treatment in the framing."
+                    ),
+                    source_input_ids=["audit-1"],
+                    suggested_mitigation=(
+                        "Seeking evidence that would falsify the cohort retention "
+                        "framing would test this assumption."
+                    ),
+                ),
+            ],
         ),
         footer_template=FooterTemplate(),
     )

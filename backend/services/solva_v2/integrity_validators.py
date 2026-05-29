@@ -371,6 +371,202 @@ def methodological_honesty_present(payload: ArtefactPayload, session: Dict[str, 
 
 
 # ─────────────────────────────────────────────────────────────────
+# Validators 5-7 — Slice 4 (2026-05-29) Bias Inventory contract
+# ─────────────────────────────────────────────────────────────────
+
+
+# Allowlist of observational openers for `evidence_grounded_reasoning`
+# and `suggested_mitigation`. Phrases starting with these (or their
+# inflections) are accepted; anything else falls through to the
+# imperative scan.
+_BIAS_OBSERVATIONAL_OPENERS = (
+    "the framing", "the user", "the intake", "the response",
+    "the responses", "the evidence", "evidence in", "evidence from",
+    "the audit log", "the diagnosis", "this read",
+    "indicates", "suggests", "implies", "points to",
+    "shows", "surfaces", "reveals", "reflects", "carries",
+    "seeking", "testing", "consulting", "inviting", "asking",
+    "soliciting", "inviting input", "examining", "checking",
+    "validating", "running",
+    "if ", "when ",  # conditionals
+)
+
+
+def bias_inventory_present(payload: ArtefactPayload, session: Dict[str, Any]) -> List[ValidatorOffender]:
+    """The Bias Inventory slide is Trust pillar 2 — required on EVERY
+    artefact. Even on thin-evidence sessions, the engine must surface
+    at least 1 bias entry (with likelihood="low" if appropriate). An
+    empty `biases` list is a real bug, not an observational outcome.
+    """
+    offenders: List[ValidatorOffender] = []
+    bi = payload.bias_inventory
+    if bi is None:
+        offenders.append(ValidatorOffender(
+            validator="bias_inventory_present",
+            severity="block",
+            location="bias_inventory",
+            message="Bias inventory slide missing entirely.",
+            revision_hint=(
+                "Emit a `bias_inventory` section with at least 1 bias "
+                "entry. On thin-evidence sessions, surface the most "
+                "plausible candidate bias with likelihood='low' rather "
+                "than omitting the slide."
+            ),
+        ))
+        return offenders
+    if not bi.biases:
+        offenders.append(ValidatorOffender(
+            validator="bias_inventory_present",
+            severity="block",
+            location="bias_inventory.biases",
+            message="Bias inventory has zero entries.",
+            revision_hint=(
+                "Add at least 1 BiasItem. On thin-evidence sessions, "
+                "surface the most plausible candidate with "
+                "likelihood='low'. Trust pillar 2 — Solva ALWAYS names "
+                "the biases that may be operating; absence is itself "
+                "an integrity failure."
+            ),
+        ))
+    return offenders
+
+
+def bias_inventory_citation_lint(payload: ArtefactPayload, session: Dict[str, Any]) -> List[ValidatorOffender]:
+    """Every bias must cite ≥1 source_input_id resolving to a real
+    audit-log entry OR user turn in this session."""
+    offenders: List[ValidatorOffender] = []
+    bi = payload.bias_inventory
+    if bi is None:
+        return offenders  # bias_inventory_present catches the absence
+
+    # Build the set of resolvable ids from the session.
+    audit_ids: Set[str] = set()
+    for a in session.get("reasoning_audit_log") or []:
+        if isinstance(a, dict) and a.get("id"):
+            audit_ids.add(str(a["id"]))
+    for t in session.get("user_turns") or []:
+        if isinstance(t, dict) and t.get("id"):
+            audit_ids.add(str(t["id"]))
+
+    # Also accept layer tags like "L0" / "L1" / "L2" / "L3" / "L4" + the
+    # canonical name forms ("frame_audit", "surface", "depth",
+    # "synthesis", "reflection") + legacy audit-log tags. These are
+    # coarse-grained references — useful when an engine wants to cite
+    # "the Layer 3 synthesis output" rather than a specific entry id.
+    coarse_ok = {
+        "L0", "L1", "L2", "L3", "L4",
+        "frame_audit", "surface", "depth", "synthesis", "reflection",
+        "framing", "grounding", "hypothesis",  # legacy
+    }
+
+    for i, item in enumerate(bi.biases):
+        unresolved = [
+            sid for sid in (item.source_input_ids or [])
+            if sid not in audit_ids and sid not in coarse_ok
+        ]
+        if unresolved:
+            offenders.append(ValidatorOffender(
+                validator="bias_inventory_citation_lint",
+                severity="block",
+                location=f"bias_inventory.biases[{i}].source_input_ids",
+                message=(
+                    f"Bias {item.bias_name!r} cites unresolved source ids: "
+                    f"{unresolved}. Each id must resolve to an audit-log "
+                    f"entry, a user turn, OR a coarse layer tag "
+                    f"(L0..L4 / frame_audit / surface / depth / synthesis / reflection)."
+                ),
+                revision_hint=(
+                    f"Replace the unresolved ids in "
+                    f"bias_inventory.biases[{i}].source_input_ids with "
+                    f"real audit-log entry ids or coarse layer tags. "
+                    f"Available audit-log ids: "
+                    f"{sorted(audit_ids)[:8]}{'...' if len(audit_ids) > 8 else ''}."
+                ),
+            ))
+    return offenders
+
+
+def bias_evidence_observational(payload: ArtefactPayload, session: Dict[str, Any]) -> List[ValidatorOffender]:
+    """`evidence_grounded_reasoning` and `suggested_mitigation` must be
+    observational, not imperative. Reuses the refuse_to_decide
+    enforcement allowlist patterns."""
+    offenders: List[ValidatorOffender] = []
+    bi = payload.bias_inventory
+    if bi is None:
+        return offenders
+
+    for i, item in enumerate(bi.biases):
+        # evidence_grounded_reasoning — scan for imperative patterns.
+        for sentence in _sentences(item.evidence_grounded_reasoning):
+            normalised = sentence.lower().strip()
+            if any(normalised.startswith(opener) for opener in _BIAS_OBSERVATIONAL_OPENERS):
+                continue
+            if any(normalised.startswith(opener) for opener in _CONDITIONAL_OPENERS):
+                continue
+            for pat in _IMPERATIVE_PATTERNS:
+                m = re.search(pat, normalised)
+                if m:
+                    offenders.append(ValidatorOffender(
+                        validator="bias_evidence_observational",
+                        severity="block",
+                        location=f"bias_inventory.biases[{i}].evidence_grounded_reasoning",
+                        message=(
+                            f"Imperative phrasing detected: {m.group(0)!r} in "
+                            f"sentence {sentence!r}."
+                        ),
+                        revision_hint=(
+                            "Rewrite as observational. Open with a verb like "
+                            "'indicates', 'suggests', 'reveals', 'the framing "
+                            "presents'. Solva NAMES the bias and grounds it in "
+                            "evidence; it does NOT instruct the founder how to "
+                            "correct for it."
+                        ),
+                    ))
+                    break
+
+        # suggested_mitigation — if present, must start with an
+        # observational opener AND must not contain imperative phrasing.
+        if item.suggested_mitigation:
+            normalised = item.suggested_mitigation.lower().strip()
+            if not any(normalised.startswith(opener) for opener in _BIAS_OBSERVATIONAL_OPENERS):
+                # Check the leading word.
+                offenders.append(ValidatorOffender(
+                    validator="bias_evidence_observational",
+                    severity="block",
+                    location=f"bias_inventory.biases[{i}].suggested_mitigation",
+                    message=(
+                        f"suggested_mitigation must begin with an observational "
+                        f"opener (Seeking / Testing / Consulting / Asking / "
+                        f"Inviting / Examining). Got: {item.suggested_mitigation[:80]!r}"
+                    ),
+                    revision_hint=(
+                        "Rewrite the mitigation as an observational suggestion. "
+                        "E.g. 'Seeking evidence that would falsify the current "
+                        "framing would test this assumption' — NEVER 'You should "
+                        "seek evidence...'."
+                    ),
+                ))
+                continue
+            for pat in _IMPERATIVE_PATTERNS:
+                m = re.search(pat, normalised)
+                if m:
+                    offenders.append(ValidatorOffender(
+                        validator="bias_evidence_observational",
+                        severity="block",
+                        location=f"bias_inventory.biases[{i}].suggested_mitigation",
+                        message=(
+                            f"Imperative phrasing detected: {m.group(0)!r}."
+                        ),
+                        revision_hint=(
+                            "Replace the imperative with an observational form."
+                        ),
+                    ))
+                    break
+
+    return offenders
+
+
+# ─────────────────────────────────────────────────────────────────
 # Composite runner
 # ─────────────────────────────────────────────────────────────────
 
@@ -380,6 +576,9 @@ _ALL_VALIDATORS = (
     confidence_calibration_audit,
     refuse_to_decide_enforcement,
     methodological_honesty_present,
+    bias_inventory_present,
+    bias_inventory_citation_lint,
+    bias_evidence_observational,
 )
 
 
@@ -403,4 +602,7 @@ __all__ = [
     "confidence_calibration_audit",
     "refuse_to_decide_enforcement",
     "methodological_honesty_present",
+    "bias_inventory_present",
+    "bias_inventory_citation_lint",
+    "bias_evidence_observational",
 ]

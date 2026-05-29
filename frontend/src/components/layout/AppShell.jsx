@@ -420,7 +420,7 @@ export default function AppShell({ children }) {
               reads as primary, not as an afterthought next to the bell.
               On viewports < md the button is hidden — Cmd+K still works. */}
           <button
-            className="hidden md:flex md:w-[280px] xl:w-[340px] items-center gap-2 px-3 py-1.5 text-[13px] bg-white hover:bg-[var(--cream-deep)] text-[var(--muted)] rounded-md transition-colors border border-[var(--rule)]"
+            className="hidden md:flex md:w-[200px] lg:w-[280px] xl:w-[340px] items-center gap-2 px-3 py-1.5 text-[13px] bg-white hover:bg-[var(--cream-deep)] text-[var(--muted)] rounded-md transition-colors border border-[var(--rule)]"
             onClick={() => window.dispatchEvent(new CustomEvent("akki:open-search"))}
             data-testid="cmdk-launch-btn"
           >
@@ -462,7 +462,7 @@ export default function AppShell({ children }) {
           <button
             type="button"
             onClick={() => navigate("/app/workspace")}
-            className="inline-flex items-center gap-1.5 h-8 px-2.5 text-[12.5px] text-[var(--deep)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
+            className="hidden xl:inline-flex items-center gap-1.5 h-8 px-2.5 text-[12.5px] text-[var(--deep)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
             aria-label="Open Document Journal"
             data-testid="topbar-documents-btn"
             title="Open Document Journal"
@@ -484,8 +484,14 @@ export default function AppShell({ children }) {
               J4 G31 ratified pattern applied to the help-tooltip below.
               This lets tests assert the tooltip DOM exists regardless
               of `onbStatus?.trust_center_tooltip?.show` state at first
-              paint. */}
-          <div className="relative">
+              paint.
+
+              Dispatch 2 (2026-05-29) — topbar responsive fix. Wrapper
+              hidden below `xl` (1280px) so the topbar stays narrow at
+              sub-1280 viewports. The Trust Center is still reachable
+              from the mobile drawer + the account avatar's Trust menu
+              item, so no functionality is lost. */}
+          <div className="relative hidden xl:block">
             <button
               type="button"
               onClick={() => {
@@ -535,8 +541,12 @@ export default function AppShell({ children }) {
               `data-tooltip-visible` attribute + CSS classes that flip
               between `pointer-events-auto` and `pointer-events-none
               invisible opacity-0`. This lets tests assert the tooltip
-              DOM exists regardless of timing. */}
-          <div className="relative">
+              DOM exists regardless of timing.
+
+              Dispatch 2 (2026-05-29) — topbar responsive fix. Wrapper
+              hidden below `xl` (1280px). Help is still reachable from
+              the mobile drawer and via the `?` keyboard shortcut. */}
+          <div className="relative hidden xl:block">
             <button
               type="button"
               onClick={() => {
@@ -577,11 +587,16 @@ export default function AppShell({ children }) {
 
           {/* Phase 13.3 — discoverable shortcut overlay trigger. Press ?
               keyboard-side achieves the same; this gives mouse users a
-              way to find the shortcuts list without trying random keys. */}
+              way to find the shortcuts list without trying random keys.
+
+              Dispatch 2 (2026-05-29) — topbar responsive fix. Promoted
+              breakpoint from md to xl (1280) so the topbar stays narrow
+              at 1024 and 820. Power users still get the keyboard
+              shortcut. */}
           <button
             type="button"
             onClick={() => setHelpOpen(true)}
-            className="hidden md:inline-flex items-center justify-center w-8 h-8 text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
+            className="hidden xl:inline-flex items-center justify-center w-8 h-8 text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
             aria-label="Keyboard shortcuts"
             data-testid="keyboard-help-btn"
             title="Keyboard shortcuts (?)"

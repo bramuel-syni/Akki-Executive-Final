@@ -20,11 +20,14 @@ from services.solva_v2.artefact_schema import (  # noqa: E402
     SourceCitation, TensionSlide, EvidenceBlock, ScenarioRow,
     PerScenarioConfidenceTable, SensitivityInput, ReflectionSection,
     ReflectionQuestion, PathwayItem, DecisionBranch, RiskMitigation,
-    MethodologicalHonesty, InClosing, FooterTemplate,
+    MethodologicalHonesty, InClosing, BiasInventorySection, BiasItem,
+    FooterTemplate,
 )
 from services.solva_v2.integrity_validators import (  # noqa: E402
     citation_lint, confidence_calibration_audit,
     refuse_to_decide_enforcement, methodological_honesty_present,
+    bias_inventory_present, bias_inventory_citation_lint,
+    bias_evidence_observational,
     validate_artefact, ValidationResult,
 )
 
@@ -130,6 +133,22 @@ def _baseline_payload(**overrides) -> ArtefactPayload:
             reframing_paragraph="The original question framed the choice as binary; the evidence supports a third path.",
             key_findings_recap=["Cohort retention strong"],
             final_statement="The pathway is conditional. Q1 data resolves the weighting.",
+        ),
+        bias_inventory=BiasInventorySection(
+            biases=[
+                BiasItem(
+                    bias_name="confirmation_bias",
+                    bias_display_name="Confirmation bias",
+                    likelihood="medium",
+                    evidence_grounded_reasoning=(
+                        "The intake anchors on the cohort retention read; secondary signals from the pricing experiment got short treatment."
+                    ),
+                    source_input_ids=["audit-1"],
+                    suggested_mitigation=(
+                        "Seeking evidence that would falsify the cohort retention framing would test this assumption."
+                    ),
+                ),
+            ],
         ),
         footer_template=FooterTemplate(),
         per_scenario_confidence_table=PerScenarioConfidenceTable(),

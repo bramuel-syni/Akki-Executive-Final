@@ -275,7 +275,77 @@ class InClosing(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────
-# Element 14 — Per-slide footer template
+# Element 14 — Bias inventory (Slice 4, 2026-05-29) — Trust pillar 2
+# ─────────────────────────────────────────────────────────────────
+#
+# Different from tensions: tensions are framing-vs-evidence contradictions
+# explicit in the user's intake. Biases are SYSTEMATIC patterns of
+# reasoning that may be coloring the user's interpretation — surfaced
+# from evidence in the audit log + the user's verbatim responses, not
+# from theatrical pattern-matching. Each named bias must cite ≥1
+# source_input_id from the user's actual inputs.
+
+
+BiasLikelihood = Literal["high", "medium", "low"]
+
+
+class BiasItem(BaseModel):
+    """One named bias entry in the inventory.
+
+    Locked constraints (enforced by Slice 4 integrity validators):
+      • bias_name is a snake_case canonical id (e.g. "confirmation_bias",
+        "anchoring_bias", "sunk_cost_fallacy", "recency_bias",
+        "narrative_fallacy", "availability_heuristic", "optimism_bias",
+        "loss_aversion"). Machine-readable.
+      • bias_display_name is the human-readable form (e.g. "Confirmation
+        bias").
+      • likelihood ∈ {high, medium, low}.
+      • evidence_grounded_reasoning ≥40 chars, observational (no
+        imperative phrasing — uses verbs like "indicates", "suggests",
+        "the framing presents", NOT "you should").
+      • source_input_ids carries ≥1 entries resolving to real
+        audit-log / user-turn ids. Validator confirms resolution.
+      • suggested_mitigation, if present, starts with an OBSERVATIONAL
+        opener (Seeking / Testing / Consulting / Inviting / Asking)
+        — NEVER an imperative ("You should", "You must", "Do X").
+    """
+    bias_name: str = Field(..., min_length=1, description="Snake_case canonical id")
+    bias_display_name: str = Field(..., min_length=1, description="Human-readable form")
+    likelihood: BiasLikelihood = Field(..., description="high / medium / low")
+    evidence_grounded_reasoning: str = Field(
+        ..., min_length=40,
+        description="WHY this bias is likely operating, citing specific user inputs",
+    )
+    source_input_ids: List[str] = Field(
+        ..., min_length=1,
+        description="≥1 audit-log / user-turn ids that ground this assessment",
+    )
+    suggested_mitigation: Optional[str] = Field(
+        None,
+        description="Observational mitigation suggestion (Seeking..., Testing..., Consulting...). NEVER imperative.",
+    )
+
+
+class BiasInventorySection(BaseModel):
+    """The Bias Inventory slide payload.
+
+    Slice 4 ships this slide as REQUIRED on every artefact — bias
+    inventory is Trust pillar 2 (per user direction). When the engine
+    cannot surface any biases (low-evidence sessions), `biases` is
+    still emitted with at least 1 entry — the engine's hardest call
+    for which bias might be operating, with `likelihood: "low"`
+    acknowledging the thin evidence. An empty `biases` list is a real
+    bug (caught by the `bias_inventory_present` validator).
+    """
+    intro_copy: str = Field(
+        default="What systematic patterns of reasoning may be shaping the framing. "
+                "Each bias below cites the user inputs that triggered it.",
+    )
+    biases: List[BiasItem] = Field(..., min_length=1, max_length=6)
+
+
+# ─────────────────────────────────────────────────────────────────
+# Element 15 — Per-slide footer template
 # ─────────────────────────────────────────────────────────────────
 
 
@@ -316,6 +386,7 @@ class ArtefactPayload(BaseModel):
     risk_mitigation: List[RiskMitigation] = Field(default_factory=list)
     methodological_honesty: MethodologicalHonesty
     in_closing: InClosing
+    bias_inventory: BiasInventorySection
     footer_template: FooterTemplate = Field(default_factory=FooterTemplate)
 
 
@@ -337,6 +408,9 @@ __all__ = [
     "RiskMitigation",
     "MethodologicalHonesty",
     "InClosing",
+    "BiasInventorySection",
+    "BiasItem",
+    "BiasLikelihood",
     "FooterTemplate",
     "SourceCitation",
     "SensitivityRank",

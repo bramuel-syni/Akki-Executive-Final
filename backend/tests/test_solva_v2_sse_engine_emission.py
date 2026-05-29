@@ -75,13 +75,14 @@ def test_synthesizer_emits_layer_lifecycle_per_layer():
         )
 
 
-def test_synthesizer_emits_thirteen_slide_ready_events_in_deck_order():
+def test_synthesizer_emits_fourteen_slide_ready_events_in_deck_order():
     """Exactly one slide.ready event per locked kind, emitted in the
-    SLIDE_DECK_ORDER sequence."""
+    SLIDE_DECK_ORDER sequence. Slice 4 (2026-05-29) — count is now 14
+    (was 13) after bias_inventory was added."""
     payload = build_payload(_seeded_session_shape(), context_name="Test Ctx")
     events = synthesize_events(session_id="test-sid-1", payload=payload)
     ready = [ev for ev in events if ev.step_kind == "slide.ready"]
-    assert len(ready) == 13
+    assert len(ready) == 14
     rendered_kinds = [ev.slide_kind for ev in ready]
     assert rendered_kinds == list(SLIDE_DECK_ORDER), (
         f"slide.ready order = {rendered_kinds}, expected {SLIDE_DECK_ORDER}"

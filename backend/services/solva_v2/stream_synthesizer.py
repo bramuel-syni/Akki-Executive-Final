@@ -48,6 +48,7 @@ from .stream_schema import (
 
 # Slide order in the rendered deck — matches `composeSlides()` in
 # SolvaArtefactV2.jsx. Used to emit slide.ready events in deck order.
+# Slice 4 (2026-05-29) — bias_inventory between reflection and pathway.
 SLIDE_DECK_ORDER = (
     "cover",
     "headline",
@@ -57,6 +58,7 @@ SLIDE_DECK_ORDER = (
     "per_scenario_table",
     "sensitivity",
     "reflection",
+    "bias_inventory",
     "pathway",
     "decision_logic",
     "risk_mitigation",
@@ -165,6 +167,7 @@ SLIDE_READY_DESCRIPTIONS = {
     "per_scenario_table":     "Rendered Per-Scenario Confidence Table",
     "sensitivity":            "Rendered Sensitivity Analysis",
     "reflection":             "Rendered Reflection — 3 closing questions",
+    "bias_inventory":         "Rendered Bias Inventory — named biases, evidence-grounded",
     "pathway":                "Rendered Pathway — sequenced recommendations",
     "decision_logic":         "Rendered Decision Logic — conditional branches",
     "risk_mitigation":        "Rendered Risk + Mitigation Register",
@@ -188,6 +191,7 @@ SLIDE_KIND_TO_SOURCE_LAYER = {
     "per_scenario_table":     "L3",
     "sensitivity":            "L3",
     "reflection":             "L4",
+    "bias_inventory":         "L4",  # surfaces AFTER reflection — Layer 4 carries the bias frame
     "pathway":                "L3",
     "decision_logic":         "L3",
     "risk_mitigation":        "L3",

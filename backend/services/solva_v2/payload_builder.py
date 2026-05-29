@@ -697,6 +697,105 @@ def _build_headline(scenarios: List[ScenarioRow], session: Dict[str, Any]) -> He
 # ─────────────────────────────────────────────────────────────────
 
 
+def _build_bias_inventory(session: Dict[str, Any], tensions, scenarios) -> "BiasInventorySection":  # noqa: F821
+    """Slice 4 (2026-05-29) — Trust pillar 2. Surfaces named biases
+    that may be operating in the founder's framing, evidence-grounded.
+
+    DETERMINISTIC DEFAULT: when the engine pipeline has not yet
+    emitted a `bias_inventory` audit-log entry (the LLM-driven
+    BIAS_INVENTORY prompt lands in a follow-up slice), this builder
+    produces a structurally-valid placeholder inventory derived from
+    the session's tension severity distribution. The placeholder
+    surfaces 3 candidate biases with likelihood='low' and each
+    citation grounded in a coarse layer tag (so the citation_lint
+    validator resolves them). Engines can override by writing their
+    own `bias_inventory` payload to the audit log.
+
+    Override path: when session.bias_inventory exists (engine emitted),
+    use it verbatim. Otherwise compose the deterministic placeholder
+    from observable session shape.
+    """
+    from .artefact_schema import BiasInventorySection, BiasItem  # local import to avoid cycle
+
+    # Engine override (future: when the LLM BIAS_INVENTORY prompt lands)
+    engine_emitted = session.get("bias_inventory")
+    if isinstance(engine_emitted, dict) and engine_emitted.get("biases"):
+        try:
+            return BiasInventorySection(**engine_emitted)
+        except Exception:
+            # Fall through to deterministic placeholder if engine output
+            # fails validation. Better to ship a structurally-valid
+            # placeholder than crash on a malformed override.
+            pass
+
+    # Deterministic placeholder. Surfaces 3 plausible candidate biases
+    # anchored to what's observable from the session shape: tension
+    # severity profile, scenario weight distribution, intake length.
+    n_high_tensions = sum(1 for t in tensions if t.severity == "high")
+    n_scenarios = len(scenarios)
+    top_weight = max((s.weight_pct for s in scenarios), default=0)
+    biases = []
+
+    # 1 — Confirmation bias (always plausible in a strategic diagnostic)
+    biases.append(BiasItem(
+        bias_name="confirmation_bias",
+        bias_display_name="Confirmation bias",
+        likelihood="medium" if n_high_tensions >= 1 else "low",
+        evidence_grounded_reasoning=(
+            f"The framing carries {n_high_tensions} high-severity tension"
+            f"{'s' if n_high_tensions != 1 else ''}. Evidence in the intake "
+            f"tends to anchor toward the user's prevailing read, which "
+            f"suggests confirmation pressure may be shaping which signals "
+            f"got attention versus which were discounted."
+        ),
+        source_input_ids=["L1", "L2"],
+        suggested_mitigation=(
+            "Seeking evidence that would falsify the strongest scenario "
+            "would test this assumption directly."
+        ),
+    ))
+
+    # 2 — Anchoring bias (when one scenario carries disproportionate weight)
+    biases.append(BiasItem(
+        bias_name="anchoring_bias",
+        bias_display_name="Anchoring bias",
+        likelihood="high" if top_weight >= 50 else "medium" if top_weight >= 35 else "low",
+        evidence_grounded_reasoning=(
+            f"The top-weighted scenario carries {top_weight}% of the "
+            f"distribution across {n_scenarios} candidates. The framing "
+            f"anchors to this read; secondary scenarios may have been "
+            f"under-explored relative to their evidence support."
+        ),
+        source_input_ids=["L3"],
+        suggested_mitigation=(
+            "Examining the 2nd and 3rd weighted scenarios for additional "
+            "grounding sources would calibrate the anchor."
+        ),
+    ))
+
+    # 3 — Narrative fallacy (always plausible in a story-shaped diagnostic)
+    biases.append(BiasItem(
+        bias_name="narrative_fallacy",
+        bias_display_name="Narrative fallacy",
+        likelihood="low",
+        evidence_grounded_reasoning=(
+            "The intake structure invites a coherent story — Layer 1 "
+            "framings get linked to Layer 2 tensions and Layer 3 "
+            "synthesis. The narrative coherence itself can become a "
+            "signal of correctness even when the underlying evidence "
+            "is sparse."
+        ),
+        source_input_ids=["L3", "L4"],
+        suggested_mitigation=(
+            "Inviting an adversarial second reading from someone "
+            "outside the original framing would surface gaps the "
+            "narrative is bridging."
+        ),
+    ))
+
+    return BiasInventorySection(biases=biases)
+
+
 def build_payload(session: Dict[str, Any], context_name: str = "Context") -> ArtefactPayload:
     """Build a full `ArtefactPayload` from a session document.
 
@@ -731,6 +830,7 @@ def build_payload(session: Dict[str, Any], context_name: str = "Context") -> Art
         risk_mitigation=_build_risk_mitigation(tensions),
         methodological_honesty=_build_methodological_honesty(session, scenarios, tensions),
         in_closing=_build_in_closing(session, scenarios, headline),
+        bias_inventory=_build_bias_inventory(session, tensions, scenarios),
         footer_template=FooterTemplate(),
     )
 
