@@ -41,13 +41,18 @@ export default function SolvaReasoningTicker({
   //   • after 8s → icon-button stub (clicks no-op for Slice 3b)
   const [postCompleteStage, setPostCompleteStage] = useState("ticker");
 
+  // Slice 3b correction (2026-05-29): pill duration was 8s; the tester
+  // reported only the post-pill icon was visible on returning visits.
+  // Extending to 30s so late-arriving viewers reliably see the post-
+  // complete confirmation. After 30s the pill fades to the icon stub
+  // (Session log re-open lands in Slice 7).
   useEffect(() => {
     if (!isComplete) {
       setPostCompleteStage("ticker");
       return undefined;
     }
     setPostCompleteStage("pill");
-    const t = setTimeout(() => setPostCompleteStage("icon"), 8_000);
+    const t = setTimeout(() => setPostCompleteStage("icon"), 30_000);
     return () => clearTimeout(t);
   }, [isComplete]);
 

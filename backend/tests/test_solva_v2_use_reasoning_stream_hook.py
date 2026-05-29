@@ -222,14 +222,21 @@ def test_ticker_collapse_pill_uses_solva_canonical_copy():
 
 
 def test_ticker_two_stage_post_complete_lifecycle():
-    """First 8s after session.complete → pill. After 8s → icon-button
+    """First 30s after session.complete → pill. After 30s → icon-button
     stub (Slice 3b ships the stub; the side-panel re-open lands in
-    Slice 7)."""
+    Slice 7). The 30s window was set in the Slice 3b correction
+    (2026-05-29) after the tester reported the prior 8s window was
+    too short — late-arriving viewers reliably saw only the post-pill
+    icon. Trust pillar 1 needs the pill visible long enough that a
+    returning founder catches it."""
     src = TICKER.read_text(encoding="utf-8")
     assert "postCompleteStage" in src
     assert '"pill"' in src
     assert '"icon"' in src
-    assert "8_000" in src or "8000" in src
+    assert "30_000" in src or "30000" in src, (
+        "Pill duration must be 30 seconds (was 8s before the Slice 3b "
+        "correction)."
+    )
 
 
 def test_ticker_uses_brand_purple_short_name_utilities():

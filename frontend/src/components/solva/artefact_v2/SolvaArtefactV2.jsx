@@ -364,7 +364,27 @@ export default function SolvaArtefactV2({ sessionId }) {
       data-solva-v2-slide-count={String(slideOnlyCount)}
       data-solva-v2-identity-stamp="solva-canonical"
       data-solva-v2-stream-status={stream.status}
+      data-solva-v2-replay-mode={stream.replayMode ? "replay" : "live"}
+      data-solva-v2-events-received={String(stream.events.length)}
+      data-solva-v2-events-total={String(stream.totalEvents)}
+      data-solva-v2-is-complete={String(!!stream.isComplete)}
     >
+      {/* Stream host element — always mounted alongside the artefact so
+          any test can deterministically locate the reasoning-stream
+          subsystem regardless of which ticker stage is currently
+          visible. The visible ticker (active / pill / icon) is mounted
+          immediately below. */}
+      <div
+        data-testid="solva-v2-reasoning-stream-host"
+        data-solva-v2-current-layer={stream.currentLayer || ""}
+        data-solva-v2-current-layer-name={stream.currentLayerName || ""}
+        data-solva-v2-current-step={stream.currentStep || ""}
+        data-solva-v2-stream-status={stream.status}
+        className="sr-only"
+        aria-live="polite"
+      >
+        {stream.currentStep || ""}
+      </div>
       <SolvaReasoningTicker
         currentLayer={stream.currentLayer}
         currentLayerName={stream.currentLayerName}
