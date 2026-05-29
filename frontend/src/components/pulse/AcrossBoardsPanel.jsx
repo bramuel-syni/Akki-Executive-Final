@@ -174,7 +174,7 @@ export default function AcrossBoardsPanel({ contextId }) {
           payload — by construction the drawer cannot leak. */}
       <Sheet open={!!drawerPattern} onOpenChange={(v) => !v && setDrawerPattern(null)}>
         <SheetContent
-          className="w-full sm:max-w-[480px] bg-[var(--cream)]"
+          className="w-full sm:max-w-[480px] bg-[var(--cream)] overflow-y-auto"
           data-testid="pulse-across-boards-drawer"
         >
           {drawerPattern && (

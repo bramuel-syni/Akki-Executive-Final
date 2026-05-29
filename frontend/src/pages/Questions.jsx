@@ -458,6 +458,27 @@ export default function Questions() {
                   ? "Once you answer a question it appears here."
                   : "When NEDs raise questions assigned to you, they land in this list."}
               </p>
+              {/* Z2.4 (2026-02) — empty-state dead-end CTA. When a
+                  founder lands on Open questions with zero items, give
+                  them the next executive action that produces
+                  questions worth answering: run Solva on a document.
+                  Only shown on the Open filter (the answered/all
+                  branches don't benefit from this nudge). */}
+              {filter !== "answered" && (
+                <div className="mt-5">
+                  <Button
+                    type="button"
+                    onClick={() => navigate("/app/solva")}
+                    className="bg-[var(--ink)] hover:bg-[var(--ink)]/90 text-[var(--parchment)] rounded-sm"
+                    data-testid="questions-empty-run-solva"
+                  >
+                    Run Solva on a document
+                  </Button>
+                  <p className="text-[11.5px] text-[var(--muted)] mt-2.5">
+                    Solva reads what you brought and surfaces the questions worth raising.
+                  </p>
+                </div>
+              )}
             </div>
           }
         >

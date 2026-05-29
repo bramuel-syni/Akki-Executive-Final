@@ -46,30 +46,67 @@ export default function FeedbackWidget() {
   const textareaRef = useRef(null);
   const location = useLocation();
 
-  // Z2.3 (2026-05-29) — observe the DOM for an open Radix Sheet
-  // (DocumentDrawer / TaskDrawer / etc.) and shift the feedback
-  // pill left so it doesn't sit on top of the drawer's close
-  // affordance or interactive controls. The Sheet primitive renders
-  // an `aside[role="dialog"][data-state="open"]` element; we watch
-  // for its presence via a lightweight MutationObserver. When closed,
-  // the pill returns to the canonical bottom-right gutter.
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // Z2.3 (2026-02 batch 2) — observe the DOM for any open right-side
+  // drawer (Sheet via Radix `[role="dialog"][data-state="open"]`,
+  // legacy `<aside role="dialog">` Solva v2 panel, or custom
+  // `<div role="dialog">` cohort console drilldown) and shift the
+  // feedback pill so its right edge sits to the left of the drawer's
+  // left edge with an 8px buffer. Multiple drawers (stacked) are
+  // honoured by tracking the LEFTMOST left-edge across all matches.
+  // When no drawer is open, drawerLeft is null and the pill returns
+  // to its base `right-5` gutter position.
+  const [drawerLeft, setDrawerLeft] = useState(null);
   useEffect(() => {
+    const isRightDrawer = (el) => {
+      // Exclude the feedback widget's own panel + modal-style dialogs
+      // (centred modals where left+right gutters are roughly equal).
+      if (el.dataset?.testid === "feedback-widget-panel") return false;
+      const r = el.getBoundingClientRect();
+      const vw = window.innerWidth;
+      // Anchored to the right edge (right ~= viewport width) AND
+      // doesn't span the full viewport.
+      const anchoredRight = vw - r.right < 8;
+      const partial = r.width < vw - 40;
+      return anchoredRight && partial && r.width > 200 && r.height > 200;
+    };
     const detect = () => {
-      const open = !!document.querySelector(
-        'aside[role="dialog"][data-state="open"]'
+      const candidates = document.querySelectorAll(
+        '[role="dialog"]:not([data-state="closed"]):not([aria-hidden="true"])'
       );
-      setDrawerOpen(open);
+      let bestLeft = null;
+      candidates.forEach((el) => {
+        if (!el.isConnected) return;
+        const cs = window.getComputedStyle(el);
+        if (cs.visibility === "hidden" || cs.display === "none") return;
+        if (!isRightDrawer(el)) return;
+        const r = el.getBoundingClientRect();
+        if (bestLeft === null || r.left < bestLeft) bestLeft = r.left;
+      });
+      setDrawerLeft(bestLeft);
     };
     detect();
     const obs = new MutationObserver(detect);
     obs.observe(document.body, {
       subtree: true, attributes: true,
-      attributeFilter: ["data-state", "role"],
+      attributeFilter: ["data-state", "role", "style", "class", "aria-hidden"],
       childList: true,
     });
-    return () => obs.disconnect();
+    window.addEventListener("resize", detect);
+    // Re-detect on a slow interval so layout-only changes (drawer width
+    // resize via responsive breakpoint) are caught even without a DOM
+    // mutation.
+    const interval = setInterval(detect, 500);
+    return () => {
+      obs.disconnect();
+      window.removeEventListener("resize", detect);
+      clearInterval(interval);
+    };
   }, []);
+  // Compute the right-offset (CSS `right`) for the pill / panel when
+  // a drawer is open. 1.25rem = 20px is the base gutter (Tailwind r-5).
+  const rightOffsetStyle = drawerLeft !== null
+    ? { right: `${Math.max(20, window.innerWidth - drawerLeft + 8)}px` }
+    : undefined;
 
   // Open on hotkey "?+shift" — optional shortcut for power users.
   useEffect(() => {
@@ -129,10 +166,12 @@ export default function FeedbackWidget() {
         <button
           type="button"
           data-testid="feedback-widget-trigger"
+          data-drawer-shifted={drawerLeft !== null ? "true" : "false"}
           onClick={() => setOpen(true)}
           aria-haspopup="dialog"
           aria-expanded={open}
-          className="fixed bottom-5 right-5 z-[60] inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--ink)] text-[var(--cream)] text-[12.5px] font-medium shadow-md hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2"
+          style={rightOffsetStyle}
+          className="fixed bottom-5 right-5 z-[60] inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--ink)] text-[var(--cream)] text-[12.5px] font-medium shadow-md hover:opacity-90 transition-[right,opacity] duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2"
         >
           <MessageSquare className="w-3.5 h-3.5" aria-hidden />
           <span>Feedback</span>
@@ -143,8 +182,10 @@ export default function FeedbackWidget() {
       {open && (
         <div
           data-testid="feedback-widget-panel"
+          data-drawer-shifted={drawerLeft !== null ? "true" : "false"}
           role="dialog"
           aria-label="Send feedback"
+          style={rightOffsetStyle}
           className="fixed bottom-5 right-5 z-[60] w-[340px] max-w-[calc(100vw-2rem)] bg-white border border-[var(--line)] shadow-xl rounded-md p-5 flex flex-col gap-3"
         >
           <div className="flex items-start justify-between">

@@ -136,7 +136,7 @@ export default function TaskDrawer() {
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent
         side="right"
-        className="w-full sm:max-w-[60vw] p-0 flex flex-col"
+        className="w-full sm:max-w-[60vw] p-0 flex flex-col min-h-0"
         data-testid="task-drawer"
       >
         {loading ? (
@@ -147,7 +147,7 @@ export default function TaskDrawer() {
           <>
             <DrawerHeader task={task} onClose={onClose} onPatched={reload} />
             <TabBar tab={tab} onTab={setTab} />
-            <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div className="flex-1 overflow-y-auto px-6 py-5 min-h-0" data-testid="task-drawer-body">
               {tab === "plan"          && <PlanTab          task={task} onPatched={reload} />}
               {tab === "contributions" && <ContributionsTab task={task} onPatched={reload} />}
               {tab === "drafts"        && <DraftsTab        task={task} />}

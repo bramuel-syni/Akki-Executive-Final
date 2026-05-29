@@ -1,0 +1,242 @@
+[
+  {
+    "viewport": "1280",
+    "z2_1": {
+      "modal_visible": true,
+      "save_box_before": {
+        "top": 672,
+        "bottom": 708,
+        "left": 793.609375,
+        "right": 886,
+        "visible": true
+      },
+      "cancel_box_before": {
+        "top": 672,
+        "bottom": 708,
+        "left": 710.234375,
+        "right": 785.609375,
+        "visible": true
+      },
+      "trigger_value_before": "",
+      "popover_visible": true,
+      "popover_box": {
+        "top": 452,
+        "bottom": 884,
+        "left": 394,
+        "right": 668
+      },
+      "save_box_during_popover": {
+        "top": 672,
+        "bottom": 708,
+        "left": 793.609375,
+        "right": 886,
+        "visible": true
+      },
+      "element_at_save_centre_during_popover": "event-modal-save",
+      "day_clicked": true,
+      "time_value_in_popover": "14:30",
+      "apply_enabled": true,
+      "popover_visible_after_apply": false,
+      "popover_count_after_apply": 0,
+      "trigger_value_after_apply": "2026-04-26T14:30",
+      "trigger_inner_text_after_apply": "Sun, Apr 26, 2:30 PM",
+      "selected_badge_visible": true,
+      "selected_badge_text": "SELECTED \u2014 COMMITS ON SAVE CHANGES",
+      "save_box_after": {
+        "top": 689.75,
+        "bottom": 725.75,
+        "left": 793.609375,
+        "right": 886,
+        "visible": true
+      },
+      "cancel_box_after": {
+        "top": 689.75,
+        "bottom": 725.75,
+        "left": 710.234375,
+        "right": 785.609375,
+        "visible": true
+      },
+      "trigger_outerHTML": "<button type=\"button\" aria-label=\"Pick start date and time\" class=\"w-full text-left border border-[var(--rule)] rounded-md px-3 py-2 text-[14px] bg-white hover:border-[var(--ink)] transition-colors flex items-center justify-between gap-2\" data-testid=\"event-modal-start\" data-value=\"2026-04-26T14:30\" aria-haspopup=\"dialog\" aria-expanded=\"false\" aria-controls=\"radix-_r_u_\" data-state=\"closed\"><span class=\"text-[var(--ink)]\">Sun, Apr 26, 2:30 PM</span><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-calendar w-3.5 h-3.5 text-[var(--muted)] shrink-0\" aria-hidden=\"true\"><path d=\"M8 2v4\"></path><path d=\"M16 2v4\"></path><rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\"></rect><path d=\"M3 10h18\"></path></svg></button>"
+    }
+  },
+  {
+    "viewport": "1280",
+    "z2_4": {
+      "item_count_open_filter": 0,
+      "empty_state_visible": true,
+      "empty_state_text": "Nothing waiting on you.\n\nWhen NEDs raise questions assigned to you, they land in this list.\n\nRun Solva on a document\n\nSolva reads what you brought and surfaces the questions worth raising.",
+      "empty_state_outerHTML": "<div class=\"border border-dashed border-[var(--rule)] rounded-sm bg-[var(--parchment)] px-6 py-8 text-center\" data-testid=\"questions-empty\"><p class=\"akki-serif text-[15px] text-[var(--ink)]\">Nothing waiting on you.</p><p class=\"text-[12.5px] text-[var(--muted)] mt-1\">When NEDs raise questions assigned to you, they land in this list.</p><div class=\"mt-5\"><button class=\"inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 shadow h-9 px-4 py-2 bg-[var(--ink)] hover:bg-[var(--ink)]/90 text-[var(--parchment)] rounded-sm\" type=\"button\" data-testid=\"questions-empty-run-solva\">Run Solva on a document</button><p class=\"text-[11.5px] text-[var(--muted)] mt-2.5\">Solva reads what you brought and surfaces the questions worth raising.</p></div></div>",
+      "cta_visible": true,
+      "cta_text": "Run Solva on a document",
+      "cta_box": {
+        "top": 534.96875,
+        "bottom": 570.96875,
+        "left": 545.578125,
+        "right": 734.421875
+      },
+      "voice_lint_hits": [],
+      "url_after_cta_click": "https://akki-executive.preview.emergentagent.com/app/solva",
+      "routed_to_solva_landing": true
+    }
+  },
+  {
+    "viewport": "1024",
+    "z2_1": {
+      "modal_visible": true,
+      "save_box_before": {
+        "top": 622,
+        "bottom": 658,
+        "left": 665.609375,
+        "right": 758,
+        "visible": true
+      },
+      "cancel_box_before": {
+        "top": 622,
+        "bottom": 658,
+        "left": 582.234375,
+        "right": 657.609375,
+        "visible": true
+      },
+      "trigger_value_before": "",
+      "popover_visible": true,
+      "popover_box": {
+        "top": 402,
+        "bottom": 784,
+        "left": 266,
+        "right": 540
+      },
+      "save_box_during_popover": {
+        "top": 622,
+        "bottom": 658,
+        "left": 665.609375,
+        "right": 758,
+        "visible": true
+      },
+      "element_at_save_centre_during_popover": "event-modal-save",
+      "day_clicked": true,
+      "time_value_in_popover": "14:30",
+      "apply_enabled": true,
+      "popover_visible_after_apply": false,
+      "popover_count_after_apply": 0,
+      "trigger_value_after_apply": "2026-04-26T14:30",
+      "trigger_inner_text_after_apply": "Sun, Apr 26, 2:30 PM",
+      "selected_badge_visible": true,
+      "selected_badge_text": "SELECTED \u2014 COMMITS ON SAVE CHANGES",
+      "save_box_after": {
+        "top": 639.75,
+        "bottom": 675.75,
+        "left": 665.609375,
+        "right": 758,
+        "visible": true
+      },
+      "cancel_box_after": {
+        "top": 639.75,
+        "bottom": 675.75,
+        "left": 582.234375,
+        "right": 657.609375,
+        "visible": true
+      },
+      "trigger_outerHTML": "<button type=\"button\" aria-label=\"Pick start date and time\" class=\"w-full text-left border border-[var(--rule)] rounded-md px-3 py-2 text-[14px] bg-white hover:border-[var(--ink)] transition-colors flex items-center justify-between gap-2\" data-testid=\"event-modal-start\" data-value=\"2026-04-26T14:30\" aria-haspopup=\"dialog\" aria-expanded=\"false\" aria-controls=\"radix-_r_u_\" data-state=\"closed\"><span class=\"text-[var(--ink)]\">Sun, Apr 26, 2:30 PM</span><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-calendar w-3.5 h-3.5 text-[var(--muted)] shrink-0\" aria-hidden=\"true\"><path d=\"M8 2v4\"></path><path d=\"M16 2v4\"></path><rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\"></rect><path d=\"M3 10h18\"></path></svg></button>"
+    }
+  },
+  {
+    "viewport": "1024",
+    "z2_4": {
+      "item_count_open_filter": 0,
+      "empty_state_visible": true,
+      "empty_state_text": "Nothing waiting on you.\n\nWhen NEDs raise questions assigned to you, they land in this list.\n\nRun Solva on a document\n\nSolva reads what you brought and surfaces the questions worth raising.",
+      "empty_state_outerHTML": "<div class=\"border border-dashed border-[var(--rule)] rounded-sm bg-[var(--parchment)] px-6 py-8 text-center\" data-testid=\"questions-empty\"><p class=\"akki-serif text-[15px] text-[var(--ink)]\">Nothing waiting on you.</p><p class=\"text-[12.5px] text-[var(--muted)] mt-1\">When NEDs raise questions assigned to you, they land in this list.</p><div class=\"mt-5\"><button class=\"inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 shadow h-9 px-4 py-2 bg-[var(--ink)] hover:bg-[var(--ink)]/90 text-[var(--parchment)] rounded-sm\" type=\"button\" data-testid=\"questions-empty-run-solva\">Run Solva on a document</button><p class=\"text-[11.5px] text-[var(--muted)] mt-2.5\">Solva reads what you brought and surfaces the questions worth raising.</p></div></div>",
+      "cta_visible": true,
+      "cta_text": "Run Solva on a document",
+      "cta_box": {
+        "top": 534.96875,
+        "bottom": 570.96875,
+        "left": 417.578125,
+        "right": 606.421875
+      },
+      "voice_lint_hits": [],
+      "url_after_cta_click": "https://akki-executive.preview.emergentagent.com/app/solva",
+      "routed_to_solva_landing": true
+    }
+  },
+  {
+    "viewport": "820",
+    "z2_1": {
+      "modal_visible": true,
+      "save_box_before": {
+        "top": 812,
+        "bottom": 848,
+        "left": 563.609375,
+        "right": 656,
+        "visible": true
+      },
+      "cancel_box_before": {
+        "top": 812,
+        "bottom": 848,
+        "left": 480.234375,
+        "right": 555.609375,
+        "visible": true
+      },
+      "trigger_value_before": "",
+      "popover_visible": true,
+      "popover_box": {
+        "top": 592,
+        "bottom": 1037.1875,
+        "left": 164,
+        "right": 438
+      },
+      "save_box_during_popover": {
+        "top": 812,
+        "bottom": 848,
+        "left": 563.609375,
+        "right": 656,
+        "visible": true
+      },
+      "element_at_save_centre_during_popover": "event-modal-save",
+      "day_clicked": true,
+      "time_value_in_popover": "14:30",
+      "apply_enabled": true,
+      "popover_visible_after_apply": false,
+      "popover_count_after_apply": 0,
+      "trigger_value_after_apply": "2026-04-26T14:30",
+      "trigger_inner_text_after_apply": "Sun, Apr 26, 2:30 PM",
+      "selected_badge_visible": true,
+      "selected_badge_text": "SELECTED \u2014 COMMITS ON SAVE CHANGES",
+      "save_box_after": {
+        "top": 829.75,
+        "bottom": 865.75,
+        "left": 563.609375,
+        "right": 656,
+        "visible": true
+      },
+      "cancel_box_after": {
+        "top": 829.75,
+        "bottom": 865.75,
+        "left": 480.234375,
+        "right": 555.609375,
+        "visible": true
+      },
+      "trigger_outerHTML": "<button type=\"button\" aria-label=\"Pick start date and time\" class=\"w-full text-left border border-[var(--rule)] rounded-md px-3 py-2 text-[14px] bg-white hover:border-[var(--ink)] transition-colors flex items-center justify-between gap-2\" data-testid=\"event-modal-start\" data-value=\"2026-04-26T14:30\" aria-haspopup=\"dialog\" aria-expanded=\"false\" aria-controls=\"radix-_r_u_\" data-state=\"closed\"><span class=\"text-[var(--ink)]\">Sun, Apr 26, 2:30 PM</span><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-calendar w-3.5 h-3.5 text-[var(--muted)] shrink-0\" aria-hidden=\"true\"><path d=\"M8 2v4\"></path><path d=\"M16 2v4\"></path><rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\"></rect><path d=\"M3 10h18\"></path></svg></button>"
+    }
+  },
+  {
+    "viewport": "820",
+    "z2_4": {
+      "item_count_open_filter": 0,
+      "empty_state_visible": true,
+      "empty_state_text": "Nothing waiting on you.\n\nWhen NEDs raise questions assigned to you, they land in this list.\n\nRun Solva on a document\n\nSolva reads what you brought and surfaces the questions worth raising.",
+      "empty_state_outerHTML": "<div class=\"border border-dashed border-[var(--rule)] rounded-sm bg-[var(--parchment)] px-6 py-8 text-center\" data-testid=\"questions-empty\"><p class=\"akki-serif text-[15px] text-[var(--ink)]\">Nothing waiting on you.</p><p class=\"text-[12.5px] text-[var(--muted)] mt-1\">When NEDs raise questions assigned to you, they land in this list.</p><div class=\"mt-5\"><button class=\"inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 shadow h-9 px-4 py-2 bg-[var(--ink)] hover:bg-[var(--ink)]/90 text-[var(--parchment)] rounded-sm\" type=\"button\" data-testid=\"questions-empty-run-solva\">Run Solva on a document</button><p class=\"text-[11.5px] text-[var(--muted)] mt-2.5\">Solva reads what you brought and surfaces the questions worth raising.</p></div></div>",
+      "cta_visible": true,
+      "cta_text": "Run Solva on a document",
+      "cta_box": {
+        "top": 470.96875,
+        "bottom": 506.96875,
+        "left": 315.578125,
+        "right": 504.421875
+      },
+      "voice_lint_hits": [],
+      "url_after_cta_click": "https://akki-executive.preview.emergentagent.com/app/solva",
+      "routed_to_solva_landing": true
+    }
+  }
+]

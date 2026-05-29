@@ -1,0 +1,245 @@
+[
+  {
+    "viewport": "1280",
+    "z2_2_document_drawer": {
+      "drawer_box": {
+        "top": 0,
+        "left": 1280,
+        "right": 2048,
+        "bottom": 900,
+        "width": 768,
+        "height": 900
+      },
+      "body_metrics": {
+        "scrollHeight": 671,
+        "clientHeight": 671,
+        "offsetHeight": 671,
+        "overflowY": "auto",
+        "scrollTopAtStart": 0
+      },
+      "overflowed": false,
+      "footer_visible": true,
+      "footer_box": {
+        "top": 843,
+        "left": 1178.230224609375,
+        "right": 1945.230224609375,
+        "bottom": 900,
+        "width": 767,
+        "height": 57
+      }
+    }
+  },
+  {
+    "viewport": "1280",
+    "z2_3_pill_offset": {
+      "pill_rect_no_drawer": {
+        "top": 845.25,
+        "left": 1154.0625,
+        "right": 1260,
+        "bottom": 880,
+        "width": 105.9375,
+        "height": 34.75
+      },
+      "pill_data_drawer_shifted_no_drawer": "false",
+      "document_drawer": {
+        "drawer_rect": {
+          "top": 0,
+          "left": 512,
+          "right": 1280,
+          "bottom": 900,
+          "width": 768,
+          "height": 900
+        },
+        "pill_rect": {
+          "top": 845.25,
+          "left": 398.0625,
+          "right": 504,
+          "bottom": 880,
+          "width": 105.9375,
+          "height": 34.75
+        },
+        "pill_data_drawer_shifted": "true",
+        "pill_right_minus_drawer_left": -8,
+        "non_overlap_invariant_ok": true,
+        "close_btn_centre_hit": "svg"
+      },
+      "pill_rect_after_close": {
+        "top": 845.25,
+        "left": 1154.0625,
+        "right": 1260,
+        "bottom": 880,
+        "width": 105.9375,
+        "height": 34.75
+      },
+      "pill_returned_to_base": true,
+      "task_drawer": {
+        "skipped": "no task rows visible on admin's default context"
+      },
+      "solva_v2_session_log": {
+        "skipped": "session-log-toggle not visible on this session"
+      }
+    }
+  },
+  {
+    "viewport": "1024",
+    "z2_2_document_drawer": {
+      "drawer_box": {
+        "top": 0,
+        "left": 902.0739135742188,
+        "right": 1516.464599609375,
+        "bottom": 800,
+        "width": 614.3906860351562,
+        "height": 800
+      },
+      "body_metrics": {
+        "scrollHeight": 531,
+        "clientHeight": 531,
+        "offsetHeight": 531,
+        "overflowY": "auto",
+        "scrollTopAtStart": 0
+      },
+      "overflowed": false,
+      "footer_visible": true,
+      "footer_box": {
+        "top": 703,
+        "left": 410.609375,
+        "right": 1024,
+        "bottom": 800,
+        "width": 613.390625,
+        "height": 97
+      }
+    }
+  },
+  {
+    "viewport": "1024",
+    "z2_3_pill_offset": {
+      "pill_rect_no_drawer": {
+        "top": 745.25,
+        "left": 898.0625,
+        "right": 1004,
+        "bottom": 780,
+        "width": 105.9375,
+        "height": 34.75
+      },
+      "pill_data_drawer_shifted_no_drawer": "false",
+      "document_drawer": {
+        "drawer_rect": {
+          "top": 0,
+          "left": 409.609375,
+          "right": 1024,
+          "bottom": 800,
+          "width": 614.390625,
+          "height": 800
+        },
+        "pill_rect": {
+          "top": 745.25,
+          "left": 295.671875,
+          "right": 401.609375,
+          "bottom": 780,
+          "width": 105.9375,
+          "height": 34.75
+        },
+        "pill_data_drawer_shifted": "true",
+        "pill_right_minus_drawer_left": -8.0,
+        "non_overlap_invariant_ok": true,
+        "close_btn_centre_hit": "svg"
+      },
+      "pill_rect_after_close": {
+        "top": 745.25,
+        "left": 898.0625,
+        "right": 1004,
+        "bottom": 780,
+        "width": 105.9375,
+        "height": 34.75
+      },
+      "pill_returned_to_base": true,
+      "task_drawer": {
+        "skipped": "no task rows visible on admin's default context"
+      },
+      "solva_v2_session_log": {
+        "skipped": "session-log-toggle not visible on this session"
+      }
+    }
+  },
+  {
+    "viewport": "820",
+    "z2_2_document_drawer": {
+      "drawer_box": {
+        "top": 0,
+        "left": 814.7692260742188,
+        "right": 1306.769287109375,
+        "bottom": 1180,
+        "width": 492.00006103515625,
+        "height": 1180
+      },
+      "body_metrics": {
+        "scrollHeight": 911,
+        "clientHeight": 911,
+        "offsetHeight": 911,
+        "overflowY": "auto",
+        "scrollTopAtStart": 0
+      },
+      "overflowed": false,
+      "footer_visible": true,
+      "footer_box": {
+        "top": 1083,
+        "left": 596.0700073242188,
+        "right": 1087.070068359375,
+        "bottom": 1180,
+        "width": 491.00006103515625,
+        "height": 97
+      }
+    }
+  },
+  {
+    "viewport": "820",
+    "z2_3_pill_offset": {
+      "pill_rect_no_drawer": {
+        "top": 1125.25,
+        "left": 694.0625,
+        "right": 800,
+        "bottom": 1160,
+        "width": 105.9375,
+        "height": 34.75
+      },
+      "pill_data_drawer_shifted_no_drawer": "false",
+      "document_drawer": {
+        "drawer_rect": {
+          "top": 0,
+          "left": 328,
+          "right": 820,
+          "bottom": 1180,
+          "width": 492,
+          "height": 1180
+        },
+        "pill_rect": {
+          "top": 1125.25,
+          "left": 214.0625,
+          "right": 320,
+          "bottom": 1160,
+          "width": 105.9375,
+          "height": 34.75
+        },
+        "pill_data_drawer_shifted": "true",
+        "pill_right_minus_drawer_left": -8,
+        "non_overlap_invariant_ok": true,
+        "close_btn_centre_hit": "svg"
+      },
+      "pill_rect_after_close": {
+        "top": 1125.25,
+        "left": 694.0625,
+        "right": 800,
+        "bottom": 1160,
+        "width": 105.9375,
+        "height": 34.75
+      },
+      "pill_returned_to_base": true,
+      "task_drawer": {
+        "skipped": "no task rows visible on admin's default context"
+      },
+      "solva_v2_session_log": {
+        "skipped": "session-log-toggle not visible on this session"
+      }
+    }
+  }
+]

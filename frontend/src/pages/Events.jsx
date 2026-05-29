@@ -24,13 +24,17 @@ import { api, API_BASE } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import AppShell from "@/components/layout/AppShell";
 import {
-  Calendar, Plus, ArrowLeft, MapPin, Edit3, Trash2, X, ChevronRight,
+  Calendar as CalendarIcon, Plus, ArrowLeft, MapPin, Edit3, Trash2, X, ChevronRight,
   CheckCircle2, FileText, Sparkles, Link2, RefreshCw, AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import {
+  Popover, PopoverTrigger, PopoverContent,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 // Phase L.b.3 (2026-05-27) — Real backend-driven SSE for calendar sync.
 import StreamingLogScene from "@/components/transitions/StreamingLogScene";
 import useStreamingProgress from "@/hooks/useStreamingProgress";
@@ -58,6 +62,145 @@ function fmtDateTime(iso) {
   } catch {
     return iso;
   }
+}
+
+
+/* ─────────────────────────────────────────────────────────────────── */
+/* Z2.1 (2026-02) — Date+time popover with explicit Apply              */
+/*                                                                       */
+/* Replaces the native <input type="datetime-local"> trigger so the     */
+/* date/time selection commits inside its own popover via an Apply      */
+/* button (popover closes + parent input shows the picked value).       */
+/* The Apply CTA sits inside the popover footer, never on top of the    */
+/* parent modal's Save changes / Cancel CTAs — Radix Popover uses a     */
+/* portal (mounts to document.body) and Radix's avoidCollisions flips   */
+/* `side` on small viewports.                                            */
+/* ─────────────────────────────────────────────────────────────────── */
+
+function _toNaiveLocal(date, hhmm) {
+  // date: Date, hhmm: "HH:MM" → "YYYY-MM-DDTHH:MM" naive local string
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}T${hhmm}`;
+}
+
+function _parseNaiveLocal(value) {
+  // "YYYY-MM-DDTHH:MM" → { date: Date, hhmm: "HH:MM" } | null
+  if (!value || typeof value !== "string") return null;
+  const [d, t] = value.split("T");
+  if (!d) return null;
+  const [yy, mm, dd] = d.split("-").map((x) => parseInt(x, 10));
+  if (!yy || !mm || !dd) return null;
+  return { date: new Date(yy, mm - 1, dd, 0, 0, 0, 0), hhmm: t ? t.slice(0, 5) : "09:00" };
+}
+
+function DateTimeApplyPicker({ value, onChange, testidPrefix, ariaLabel }) {
+  const [open, setOpen] = useState(false);
+  const [pendingDate, setPendingDate] = useState(null);
+  const [pendingTime, setPendingTime] = useState("09:00");
+
+  // Seed pending state when popover opens from the currently-committed value.
+  useEffect(() => {
+    if (!open) return;
+    const parsed = _parseNaiveLocal(value);
+    if (parsed) {
+      setPendingDate(parsed.date);
+      setPendingTime(parsed.hhmm);
+    } else {
+      setPendingDate(null);
+      setPendingTime("09:00");
+    }
+  }, [open, value]);
+
+  const canApply = !!pendingDate && /^\d{2}:\d{2}$/.test(pendingTime);
+
+  const apply = () => {
+    if (!canApply) return;
+    onChange(_toNaiveLocal(pendingDate, pendingTime));
+    setOpen(false);
+  };
+
+  const displayLabel = value
+    ? fmtDateTime(new Date(value).toISOString())
+    : "Pick a date and time";
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={ariaLabel}
+          className="w-full text-left border border-[var(--rule)] rounded-md px-3 py-2 text-[14px] bg-white hover:border-[var(--ink)] transition-colors flex items-center justify-between gap-2"
+          data-testid={`${testidPrefix}`}
+          data-value={value || ""}
+        >
+          <span className={value ? "text-[var(--ink)]" : "text-[var(--muted)]"}>
+            {displayLabel}
+          </span>
+          <CalendarIcon className="w-3.5 h-3.5 text-[var(--muted)] shrink-0" strokeWidth={1.7} />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        side="bottom"
+        sideOffset={6}
+        avoidCollisions
+        collisionPadding={16}
+        className="w-auto p-0 bg-white overflow-hidden flex flex-col"
+        style={{
+          maxHeight: "min(var(--radix-popover-content-available-height), 480px)",
+        }}
+        data-testid={`${testidPrefix}-popover`}
+      >
+        <div className="overflow-y-auto p-3 pb-2 min-h-0">
+          <Calendar
+            mode="single"
+            selected={pendingDate || undefined}
+            onSelect={(d) => setPendingDate(d || null)}
+            initialFocus
+            data-testid={`${testidPrefix}-calendar`}
+          />
+          <div className="border-t border-[var(--rule)] pt-3 mt-1 flex items-center gap-2">
+            <Label
+              htmlFor={`${testidPrefix}-time-input`}
+              className="text-[11px] uppercase tracking-[0.08em] font-mono text-[var(--muted)]"
+            >
+              Time
+            </Label>
+            <Input
+              id={`${testidPrefix}-time-input`}
+              type="time"
+              value={pendingTime}
+              onChange={(e) => setPendingTime(e.target.value)}
+              className="w-32 h-8 text-[13px]"
+              data-testid={`${testidPrefix}-time-input`}
+            />
+          </div>
+        </div>
+        <div className="border-t border-[var(--rule)] bg-white px-3 py-2 flex justify-end gap-2 shrink-0">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setOpen(false)}
+            data-testid={`${testidPrefix}-popover-cancel`}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={apply}
+            disabled={!canApply}
+            data-testid={`${testidPrefix}-popover-apply`}
+          >
+            Apply
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 
@@ -183,19 +326,17 @@ function EventModal({ open, mode, event, onSave, onDelete, onClose }) {
               <Label htmlFor="evt-start" className="text-[11px] uppercase tracking-[0.08em] font-mono text-[var(--muted)]">
                 Start *
               </Label>
-              <Input
-                id="evt-start"
-                type="datetime-local"
+              {/* Z2.1 (2026-02) — datetime popover with explicit
+                  Apply. Selection commits inside the popover via
+                  Apply; popover closes; this trigger shows the
+                  picked value. The form's Save changes button still
+                  persists the entry to the backend. */}
+              <DateTimeApplyPicker
                 value={startAt}
-                onChange={(e) => setStartAt(e.target.value)}
-                data-testid="event-modal-start"
-                required
+                onChange={setStartAt}
+                testidPrefix="event-modal-start"
+                ariaLabel="Pick start date and time"
               />
-              {/* Z2.1 (2026-05-29) — confidence affordance. Native
-                  datetime-local commits on every change; this badge
-                  gives the founder a visible "value captured"
-                  signal so they don't second-guess whether their
-                  pick was registered. Click Save changes to persist. */}
               {startAt && (
                 <p
                   className="mt-1 text-[10.5px] font-mono uppercase tracking-[0.14em] text-[var(--ned-purple)]"
@@ -210,12 +351,11 @@ function EventModal({ open, mode, event, onSave, onDelete, onClose }) {
               <Label htmlFor="evt-end" className="text-[11px] uppercase tracking-[0.08em] font-mono text-[var(--muted)]">
                 End (optional)
               </Label>
-              <Input
-                id="evt-end"
-                type="datetime-local"
+              <DateTimeApplyPicker
                 value={endAt}
-                onChange={(e) => setEndAt(e.target.value)}
-                data-testid="event-modal-end"
+                onChange={setEndAt}
+                testidPrefix="event-modal-end"
+                ariaLabel="Pick end date and time"
               />
               {endAt && (
                 <p
@@ -621,7 +761,7 @@ export default function Events() {
               </>
             ) : (
               <>
-                <Calendar className="w-5 h-5 mx-auto text-[var(--muted)] mb-3" strokeWidth={1.5} />
+                <CalendarIcon className="w-5 h-5 mx-auto text-[var(--muted)] mb-3" strokeWidth={1.5} />
                 <p className="text-[13px] italic text-[var(--muted)]">
                   No events yet. Add your first event to surface it on Company Home.
                 </p>
@@ -729,7 +869,7 @@ export default function Events() {
                             data-testid={`events-row-source-calendar-${ev.id}`}
                             aria-label="Synced from Google Calendar"
                           >
-                            <Calendar className="w-3 h-3" strokeWidth={1.7} aria-hidden="true" />
+                            <CalendarIcon className="w-3 h-3" strokeWidth={1.7} aria-hidden="true" />
                           </span>
                         )}
                       </div>
@@ -825,7 +965,7 @@ function CalendarSyncBanner({ status, syncing, onConnect, onSyncNow, onAskDiscon
         className="mb-5 flex items-center gap-2 text-[12px] text-[var(--muted)] italic"
         data-testid="calendar-banner-loading"
       >
-        <Calendar className="w-3.5 h-3.5" strokeWidth={1.7} aria-hidden="true" />
+        <CalendarIcon className="w-3.5 h-3.5" strokeWidth={1.7} aria-hidden="true" />
         Checking calendar connection…
       </div>
     );
@@ -839,7 +979,7 @@ function CalendarSyncBanner({ status, syncing, onConnect, onSyncNow, onAskDiscon
         data-testid="calendar-banner-disconnected"
       >
         <div className="flex items-center gap-2.5">
-          <Calendar className="w-4 h-4 text-[var(--muted)]" strokeWidth={1.7} />
+          <CalendarIcon className="w-4 h-4 text-[var(--muted)]" strokeWidth={1.7} />
           <p className="text-[13px] text-[var(--ink)]">
             <span className="font-medium">Sync your calendar.</span>{" "}
             <span className="text-[var(--muted)]">Pull upcoming meetings, audits and deadlines straight in.</span>
