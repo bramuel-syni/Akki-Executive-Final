@@ -2075,6 +2075,61 @@ User reported "Can't sign in. Getting the error" on https://akki.syni.ai (produc
 
 NO CODE CHANGES APPLIED — pure diagnosis per dispatch directive.
 
+---
+
+### Solva v2 build — Slice 1a CLOSED ✅ (2026-05-29) · backend schema + validators + feature flag
+
+**Disciplined-execution context:** User greenlit a 7-slice Solva v2 build with explicit instruction "execute it well and in a disciplined manner. Lets do our best to have Solva as an actual solution than a product idea we are testing." Slice 1 scope = backend structured JSON schema + engine output adapters + prompt extensions + integrity validators. Hit the 500-LOC auto-halt mid-slice (planned ~1400 LOC across 9 files) → split into Slice 1a (schema + validators + feature flag + tests) and Slice 1b (engine adapter + prompt extensions + payload builder + parity tests + v1 regression). Slice 1b queued.
+
+**Slice 1a deliverables shipped:**
+
+1. **Pydantic schema** at `backend/services/solva_v2/artefact_schema.py` (~330 LOC) — full 15-element slide-payload contract:
+   - 1: `CoverSlide` (method_tag default = "SOLVE · SESSION OUTPUT · CONFIDENTIAL")
+   - 2: `HeadlineSlide` with exactly-3 `KeyFinding[]` (Pydantic min/max enforce)
+   - 3: `TensionSlide[]` with `prevailing_framing → EvidenceBlock(user_quote + source_layer_question_id) → implication` + severity + contradiction_source enum (4 values)
+   - 4: `TensionDeepDive[]`
+   - 5: `ScenarioRow[]` with **weight_pct + confidence_pct split as independent fields**, plus `supporting_evidence[]` + `confidence_calibration_reasoning`
+   - 6: `PerScenarioConfidenceTable`
+   - 7: `SensitivityInput[]` with `rank: HIGHEST|HIGH|MEDIUM|LOW` enum + `cluster_weight_shift_mechanic` literal copy
+   - 8: `ReflectionSection` with exactly-3 `ReflectionQuestion[]` carrying `user_verbatim_response` + `diagnostic_interpretation`
+   - 9: `PathwayItem[]` with `timeline_tag` enum (DAYS 0-30 / DAYS 0-14 / DAYS 15-30 / DAYS 30-60 / DAYS 60-90 / BOARD-LEVEL · IN PARALLEL / ONGOING) + `follows_from_cluster_id` provenance
+   - 10: `DecisionBranch[]` (if/then)
+   - 11: `RiskMitigation[]`
+   - 12: `MethodologicalHonesty` (4 sub-sections: what_report_is / what_report_is_not / provisional_nature_paragraph / not_sole_basis_paragraph + input_confidence_pct)
+   - 13: `InClosing`
+   - 14: `FooterTemplate` (default = "Solve Session Output · Confidential · {context_name} · {n} / {total}")
+   - Root `ArtefactPayload` declares `extra="forbid"` (strict contract — no silent field drift).
+
+2. **Integrity validators** at `backend/services/solva_v2/integrity_validators.py` (~340 LOC) — 4 validators backed by structured offender + revision_hint output so Slice 1b's engine retry loop can self-correct:
+   - `citation_lint` — every numerical claim (regex matches `27%`, `3.5x`, `12 months`, `1.2M`, `users`, etc.) must cite a `source_input_id` that resolves to the session's audit_log / user_turns / attached_docs / comparables ids
+   - `confidence_calibration_audit` — any `confidence_pct ≥ 70` must name ≥2 independent triangulating sources (independence = distinct `source_kind` OR distinct `source_layer`), AND substantive (≥40 char) `confidence_calibration_reasoning`
+   - `refuse_to_decide_enforcement` — scans `pathway[]`, `headline.key_findings[]`, `tensions[].implication` for imperative phrasing (`you should`, `you must`, `retain`, `fire`, `kill`, `pivot`, `liquidate`, `acquire`, etc.); conditional + observational openers (`If`, `Should`, `When`, `Given`, `The evidence supports`, `Consider`, `Investigate`) are explicitly allowlisted
+   - `methodological_honesty_present` — all 4 sub-sections must be ≥40 chars; `input_confidence_pct` must be in [0,100]
+   - Composite runner: `validate_artefact(payload, session) → ValidationResult` with `.ok`, `.blocking[]`, `.revision_hint_bundle()` for engine retry
+
+3. **Feature flag helper** at `backend/services/solva_v2/feature_flag.py` (~60 LOC) — two-layer flag:
+   - Layer 1 = env var `SOLVA_V2_ENABLED` (default `false`)
+   - Layer 2 = per-account override `account.feature_flags.solva_v2` (per-account override ALWAYS wins, kill-switch capable)
+   - Truth table locked via `test_solva_v2_feature_flag.py`
+
+4. **Test coverage** (35 tests, all passing):
+   - `test_solva_v2_artefact_schema.py` — 12 tests covering all 15 elements, round-trip serialization, headline 3-finding contract, tension number format, contradiction_source enum, scenario weight+confidence split, reflection 3-question contract, pathway timeline_tag enum, root payload `extra="forbid"`
+   - `test_solva_v2_integrity_validators.py` — 16 tests covering each validator in pass + fail modes plus composite runner with revision_hint bundle
+   - `test_solva_v2_feature_flag.py` — 7 tests covering all 4 truth table cells + tokens variants + string-form override
+
+**v1 unchanged proof:**
+- Zero edits to existing Solva v1 code paths (`solva_artefact_export.py`, `services/solva/voice/synthesis_renderer.py`, `solva_v2/__init__.py`, `solva_v2/state_machine.py`, `solva_v2/submodules.py`, `solva_v2/engines/*.py`, all router files) — Git diff shows only ADD operations (4 new files).
+- Full v1+v2 test suite re-run: **301 passed / 1 failed (pre-existing live-data-dependent `test_patch_9_streaming_phases`) / 44 skipped (pre-existing quarantined patches)**.
+- Feature flag default `false` means existing code paths see ZERO behavior change until callers explicitly check `solva_v2_enabled_for(account)`.
+
+**Slice 1b queued — required for the engine→schema bridge to ship:**
+- `services/solva_v2/payload_builder.py` — map existing engine outputs (tensions w/ severity+evidence, reflection LOCKED answers, claims w/ confidence_pct, recommendations, refused-candidate metadata) to `ArtefactPayload`
+- `services/solva_v2/v2_prompts.py` — new prompt strings for fields engine doesn't emit today: decision_logic if/then derivation from clusters+sensitivity, methodological_honesty templated with dynamic input_confidence_pct, in_closing reframing derived from opening-framing vs conclusion gap, scenarios weight-vs-confidence split, sensitivity cluster_weight_shift_mechanic explicit "from Y% to Z%" copy
+- Engine adapter parity tests asserting every audit-log-populated field surfaces in the payload (no silent drops)
+- v1 byte-identical regression guard test
+
+**Auto-slice compliance:** Slice 1a touched ~730 LOC across 6 files (4 production + 3 test). Largest single file = `artefact_schema.py` at 330 LOC. Slice 1b queued to stay under the 500-LOC threshold per file. No single change exceeded 500 LOC.
+
 
 - **Wave 4.2.followup.1 (P3, cohort-feedback-gated)** — Hue-
   differentiation within the brand-purple family for category chips

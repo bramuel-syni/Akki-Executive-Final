@@ -858,11 +858,28 @@ export default function WorkStudio() {
   // route (`/app/work-studio/document/{id}`); everything else opens
   // the universal DocumentDrawer via the canonical `?doc_id=` URL
   // contract.
+  //
+  // 2026-02 fork-resume P0 fix — only docs that ORIGINATED via Work
+  // Studio compile (i.e. have a matching row in `work_studio_exports`)
+  // can use the dedicated full-page route, because that route's
+  // backend (`GET /api/contexts/{cid}/work-studio/documents/{aid}`)
+  // looks the artefact up in `work_studio_exports`, NOT in
+  // `documents`. Auto-generated `cycle_compilation` docs live ONLY
+  // in `documents`, so the full-page route 404s for them. Route them
+  // through the universal `?doc_id=` drawer like every other category.
+  //
+  // Heuristic for "originated via Work Studio compile":
+  //   - row.work_studio_export_id is present (canonical signal), OR
+  //   - row.source_channel === "work_studio" (legacy fallback)
+  // Anything else — cycle_compilation, uploaded PDFs, ai_generated
+  // artefacts that bypassed compile — drops to the universal drawer.
   const onOpenBrief = (row) => {
     if (!row?.id) return;
     const cat = (row.category || "").toLowerCase();
-    if (cat === "board_pack") {
-      navigate(`/app/work-studio/document/${row.id}`);
+    const hasWorkStudioExport = !!row.work_studio_export_id;
+    const isWorkStudioOrigin = (row.source_channel || "").toLowerCase() === "work_studio";
+    if (cat === "board_pack" && (hasWorkStudioExport || isWorkStudioOrigin)) {
+      navigate(`/app/work-studio/document/${row.work_studio_export_id || row.id}`);
       return;
     }
     setSearchParams({ doc_id: row.id, kind, context_id: cid || "" }, { replace: false });
