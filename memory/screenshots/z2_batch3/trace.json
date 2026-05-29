@@ -1,0 +1,139 @@
+[
+  {
+    "viewport": "1280",
+    "z2_5": {
+      "upload_row_visible": true,
+      "upload_row_deletable_attr": "true",
+      "upload_row_trash_count": 1,
+      "upload_row_trash_visible": true,
+      "gen_row_visible": true,
+      "gen_row_deletable_attr": "false",
+      "gen_row_trash_count": 0,
+      "confirm_modal_visible": true,
+      "confirm_heading_verbatim": "Delete z2_5_trace_uploaded.pdf?",
+      "confirm_body_verbatim": "This cannot be undone. The file is removed from your library. Signals already extracted from it stay in the audit trail.",
+      "confirm_modal_outerHTML": "<div role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"documents-delete-confirm-heading\" class=\"bg-white border border-[var(--rule)] rounded-md shadow-xl w-full max-w-[440px] p-6\" data-testid=\"documents-delete-confirm\" data-doc-id=\"136d9496-1a1d-409b-bcbb-266833ac20c9\"><h2 id=\"documents-delete-confirm-heading\" class=\"akki-serif text-[18px] text-[var(--ink)] leading-snug\" data-testid=\"documents-delete-confirm-heading\">Delete z2_5_trace_uploaded.pdf?</h2><p class=\"text-[13px] text-[var(--muted)] leading-relaxed mt-2\" data-testid=\"documents-delete-confirm-body\">This cannot be undone. The file is removed from your library. Signals already extracted from it stay in the audit trail.</p><div class=\"flex justify-end gap-2 mt-5\"><button class=\"inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 border border-input shadow-sm hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2\" type=\"button\" data-testid=\"documents-delete-confirm-cancel\">",
+      "confirm_modal_visible_after_cancel": false,
+      "row_still_present_after_cancel": true,
+      "delete_request_url": "https://akki-executive.preview.emergentagent.com/api/contexts/aff5e102-04b8-4948-9f6b-27c9eca1f0d7/documents/136d9496-1a1d-409b-bcbb-266833ac20c9",
+      "delete_response_status": 200,
+      "upload_row_count_after_delete": 0,
+      "voice_lint_hits": []
+    }
+  },
+  {
+    "viewport": "1280",
+    "z2_6": {
+      "company_home_right_rail": {
+        "add_btn_title": "Upload a document without leaving this page",
+        "folder_btn_title": "Open the document journal",
+        "modal_after_add_btn_count": 1,
+        "modal_after_add_btn_visible": true,
+        "url_after_add_btn": "https://akki-executive.preview.emergentagent.com/app",
+        "url_unchanged_by_add_btn": true,
+        "modal_testid": "upload-modal",
+        "modal_outerHTML_head": "<div role=\"dialog\" id=\"radix-_r_i_\" aria-describedby=\"radix-_r_k_\" aria-labelledby=\"radix-_r_j_\" data-state=\"open\" class=\"fixed left-[50%] top-[50%] z-50 w-full translate-x-[-50%] translate-y-[-50%] gap-4 border shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=o",
+        "url_after_folder_btn": "https://akki-executive.preview.emergentagent.com/app/documents",
+        "routed_to_doc_journal": true
+      },
+      "doc_journal_modal_count": 1,
+      "doc_journal_modal_visible": true,
+      "doc_journal_modal_outerHTML_head": "<div role=\"dialog\" id=\"radix-_r_1j_\" aria-describedby=\"radix-_r_1l_\" aria-labelledby=\"radix-_r_1k_\" data-state=\"open\" class=\"fixed left-[50%] top-[50%] z-50 w-full translate-x-[-50%] translate-y-[-50%] gap-4 border shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[stat",
+      "work_studio_modal_count": 1,
+      "work_studio_modal_visible": true,
+      "work_studio_modal_outerHTML_head": "<div role=\"dialog\" id=\"radix-_r_i_\" aria-describedby=\"radix-_r_k_\" aria-labelledby=\"radix-_r_j_\" data-state=\"open\" class=\"fixed left-[50%] top-[50%] z-50 w-full translate-x-[-50%] translate-y-[-50%] gap-4 border shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=o",
+      "parity_ok": true
+    }
+  },
+  {
+    "viewport": "1024",
+    "z2_5": {
+      "upload_row_visible": true,
+      "upload_row_deletable_attr": "true",
+      "upload_row_trash_count": 1,
+      "upload_row_trash_visible": true,
+      "gen_row_visible": true,
+      "gen_row_deletable_attr": "false",
+      "gen_row_trash_count": 0,
+      "confirm_modal_visible": true,
+      "confirm_heading_verbatim": "Delete z2_5_trace_uploaded.pdf?",
+      "confirm_body_verbatim": "This cannot be undone. The file is removed from your library. Signals already extracted from it stay in the audit trail.",
+      "confirm_modal_outerHTML": "<div role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"documents-delete-confirm-heading\" class=\"bg-white border border-[var(--rule)] rounded-md shadow-xl w-full max-w-[440px] p-6\" data-testid=\"documents-delete-confirm\" data-doc-id=\"c9c2dcf7-f3fb-4444-a9e0-977570e924f5\"><h2 id=\"documents-delete-confirm-heading\" class=\"akki-serif text-[18px] text-[var(--ink)] leading-snug\" data-testid=\"documents-delete-confirm-heading\">Delete z2_5_trace_uploaded.pdf?</h2><p class=\"text-[13px] text-[var(--muted)] leading-relaxed mt-2\" data-testid=\"documents-delete-confirm-body\">This cannot be undone. The file is removed from your library. Signals already extracted from it stay in the audit trail.</p><div class=\"flex justify-end gap-2 mt-5\"><button class=\"inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 border border-input shadow-sm hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2\" type=\"button\" data-testid=\"documents-delete-confirm-cancel\">",
+      "confirm_modal_visible_after_cancel": false,
+      "row_still_present_after_cancel": true,
+      "delete_request_url": "https://akki-executive.preview.emergentagent.com/api/contexts/aff5e102-04b8-4948-9f6b-27c9eca1f0d7/documents/c9c2dcf7-f3fb-4444-a9e0-977570e924f5",
+      "delete_response_status": 200,
+      "upload_row_count_after_delete": 0,
+      "voice_lint_hits": []
+    }
+  },
+  {
+    "viewport": "1024",
+    "z2_6": {
+      "company_home_right_rail": {
+        "add_btn_title": "Upload a document without leaving this page",
+        "folder_btn_title": "Open the document journal",
+        "modal_after_add_btn_count": 1,
+        "modal_after_add_btn_visible": true,
+        "url_after_add_btn": "https://akki-executive.preview.emergentagent.com/app",
+        "url_unchanged_by_add_btn": true,
+        "modal_testid": "upload-modal",
+        "modal_outerHTML_head": "<div role=\"dialog\" id=\"radix-_r_1d_\" aria-describedby=\"radix-_r_1f_\" aria-labelledby=\"radix-_r_1e_\" data-state=\"open\" class=\"fixed left-[50%] top-[50%] z-50 w-full translate-x-[-50%] translate-y-[-50%] gap-4 border shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[stat",
+        "url_after_folder_btn": "https://akki-executive.preview.emergentagent.com/app/documents",
+        "routed_to_doc_journal": true
+      },
+      "doc_journal_modal_count": 1,
+      "doc_journal_modal_visible": true,
+      "doc_journal_modal_outerHTML_head": "<div role=\"dialog\" id=\"radix-_r_l_\" aria-describedby=\"radix-_r_n_\" aria-labelledby=\"radix-_r_m_\" data-state=\"open\" class=\"fixed left-[50%] top-[50%] z-50 w-full translate-x-[-50%] translate-y-[-50%] gap-4 border shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=o",
+      "work_studio_modal_count": 1,
+      "work_studio_modal_visible": true,
+      "work_studio_modal_outerHTML_head": "<div role=\"dialog\" id=\"radix-_r_i_\" aria-describedby=\"radix-_r_k_\" aria-labelledby=\"radix-_r_j_\" data-state=\"open\" class=\"fixed left-[50%] top-[50%] z-50 w-full translate-x-[-50%] translate-y-[-50%] gap-4 border shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=o",
+      "parity_ok": true
+    }
+  },
+  {
+    "viewport": "820",
+    "z2_5": {
+      "upload_row_visible": true,
+      "upload_row_deletable_attr": "true",
+      "upload_row_trash_count": 1,
+      "upload_row_trash_visible": true,
+      "gen_row_visible": true,
+      "gen_row_deletable_attr": "false",
+      "gen_row_trash_count": 0,
+      "confirm_modal_visible": true,
+      "confirm_heading_verbatim": "Delete z2_5_trace_uploaded.pdf?",
+      "confirm_body_verbatim": "This cannot be undone. The file is removed from your library. Signals already extracted from it stay in the audit trail.",
+      "confirm_modal_outerHTML": "<div role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"documents-delete-confirm-heading\" class=\"bg-white border border-[var(--rule)] rounded-md shadow-xl w-full max-w-[440px] p-6\" data-testid=\"documents-delete-confirm\" data-doc-id=\"310b46e9-29aa-4ba5-acce-483e8ae7e7c8\"><h2 id=\"documents-delete-confirm-heading\" class=\"akki-serif text-[18px] text-[var(--ink)] leading-snug\" data-testid=\"documents-delete-confirm-heading\">Delete z2_5_trace_uploaded.pdf?</h2><p class=\"text-[13px] text-[var(--muted)] leading-relaxed mt-2\" data-testid=\"documents-delete-confirm-body\">This cannot be undone. The file is removed from your library. Signals already extracted from it stay in the audit trail.</p><div class=\"flex justify-end gap-2 mt-5\"><button class=\"inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 border border-input shadow-sm hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2\" type=\"button\" data-testid=\"documents-delete-confirm-cancel\">",
+      "confirm_modal_visible_after_cancel": false,
+      "row_still_present_after_cancel": true,
+      "delete_request_url": "https://akki-executive.preview.emergentagent.com/api/contexts/aff5e102-04b8-4948-9f6b-27c9eca1f0d7/documents/310b46e9-29aa-4ba5-acce-483e8ae7e7c8",
+      "delete_response_status": 200,
+      "upload_row_count_after_delete": 0,
+      "voice_lint_hits": []
+    }
+  },
+  {
+    "viewport": "820",
+    "z2_6": {
+      "company_home_right_rail": {
+        "add_btn_title": "Upload a document without leaving this page",
+        "folder_btn_title": "Open the document journal",
+        "modal_after_add_btn_count": 1,
+        "modal_after_add_btn_visible": true,
+        "url_after_add_btn": "https://akki-executive.preview.emergentagent.com/app",
+        "url_unchanged_by_add_btn": true,
+        "modal_testid": "upload-modal",
+        "modal_outerHTML_head": "<div role=\"dialog\" id=\"radix-_r_1d_\" aria-describedby=\"radix-_r_1f_\" aria-labelledby=\"radix-_r_1e_\" data-state=\"open\" class=\"fixed left-[50%] top-[50%] z-50 w-full translate-x-[-50%] translate-y-[-50%] gap-4 border shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[stat",
+        "url_after_folder_btn": "https://akki-executive.preview.emergentagent.com/app/documents",
+        "routed_to_doc_journal": true
+      },
+      "doc_journal_modal_count": 1,
+      "doc_journal_modal_visible": true,
+      "doc_journal_modal_outerHTML_head": "<div role=\"dialog\" id=\"radix-_r_r_\" aria-describedby=\"radix-_r_t_\" aria-labelledby=\"radix-_r_s_\" data-state=\"open\" class=\"fixed left-[50%] top-[50%] z-50 w-full translate-x-[-50%] translate-y-[-50%] gap-4 border shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=o",
+      "work_studio_modal_count": 0,
+      "work_studio_skipped": "sidebar hidden by responsive breakpoint at this viewport (`hidden lg:block` \u2014 visible at lg+ only).",
+      "parity_ok": true
+    }
+  }
+]

@@ -34,7 +34,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   Plus, Search, FileText, Calendar, ArrowRight, AlertCircle,
-  Loader2, Mail,
+  Loader2, Mail, Trash2,
 } from "lucide-react";
 
 import AppShell from "@/components/layout/AppShell";
@@ -69,44 +69,146 @@ function fmtModified(iso) {
 }
 
 
-function DocumentJournalRow({ doc, onOpen }) {
+function DocumentJournalRow({ doc, onOpen, onRequestDelete }) {
   const ts = doc.updated_at || doc.committed_at || doc.created_at;
+  // Z2.5 (2026-02) — trash icon ONLY for `origin == "upload"`.
+  // Akki-generated artefacts have their own lifecycle (regenerate
+  // from the source pipeline) and email-receipt-ingested docs are
+  // tied to an inbound trace that the user shouldn't sever ad-hoc.
+  const canDelete = (doc.origin || "") === "upload";
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(doc)}
-      className="w-full text-left border border-[var(--rule)] rounded-md bg-white px-4 py-3 flex items-start sm:items-center gap-3 flex-col sm:flex-row hover:border-[var(--ink)] hover:bg-[var(--parchment)] transition-colors"
+    <div
+      className="w-full border border-[var(--rule)] rounded-md bg-white px-4 py-3 flex items-start sm:items-center gap-3 flex-col sm:flex-row hover:border-[var(--ink)] hover:bg-[var(--parchment)] transition-colors group"
       data-testid="documents-journal-row"
       data-origin={doc.origin || "unknown"}
       data-category={doc.category || "uncategorized"}
       data-doc-id={doc.id}
+      data-deletable={canDelete ? "true" : "false"}
     >
-      <FileText className="w-4 h-4 text-[var(--ink)] shrink-0 mt-1 sm:mt-0" strokeWidth={1.7} />
-      <div className="min-w-0 flex-1">
-        <p
-          className="text-[14px] text-[var(--ink)] truncate"
-          data-testid="documents-journal-row-name"
+      <button
+        type="button"
+        onClick={() => onOpen(doc)}
+        className="flex-1 flex items-start sm:items-center gap-3 min-w-0 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50 rounded-sm"
+        data-testid="documents-journal-row-open"
+        data-doc-id={doc.id}
+      >
+        <FileText className="w-4 h-4 text-[var(--ink)] shrink-0 mt-1 sm:mt-0" strokeWidth={1.7} />
+        <div className="min-w-0 flex-1">
+          <p
+            className="text-[14px] text-[var(--ink)] truncate"
+            data-testid="documents-journal-row-name"
+          >
+            {doc.name || doc.original_filename || "Untitled"}
+          </p>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <span
+              className="inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium uppercase tracking-wider bg-[var(--parchment)] text-[var(--muted)] border border-[var(--rule)]"
+              data-testid="documents-journal-row-category-badge"
+            >
+              {displayCategory(doc.category)}
+            </span>
+            <span
+              className="inline-flex items-center gap-1 text-[11.5px] text-[var(--muted)]"
+              data-testid="documents-journal-row-modified"
+            >
+              <Calendar className="w-3 h-3" strokeWidth={1.7} />
+              {fmtModified(ts)}
+            </span>
+          </div>
+        </div>
+        <ArrowRight className="w-3.5 h-3.5 text-[var(--muted)] shrink-0" />
+      </button>
+      {canDelete && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onRequestDelete(doc); }}
+          aria-label={`Delete ${doc.name || doc.original_filename || "document"}`}
+          title="Delete this document"
+          className="shrink-0 w-8 h-8 flex items-center justify-center text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--parchment)] border border-transparent hover:border-[var(--rule)] rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50"
+          data-testid="documents-journal-row-delete"
+          data-doc-id={doc.id}
         >
-          {doc.name || doc.original_filename || "Untitled"}
+          <Trash2 className="w-3.5 h-3.5" strokeWidth={1.7} aria-hidden="true" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+
+/* ─────────────────────────────────────────────────────────────────── */
+/* Z2.5 (2026-02) — Delete-confirmation modal.                          */
+/*                                                                       */
+/* Voice-lint locked copy (lockdown test                                 */
+/* tests/test_phase_z2_batch3.py asserts both heading + body):           */
+/*   Heading: "Delete <filename>?"                                       */
+/*   Body:    "This cannot be undone. The file is removed from your      */
+/*             library. Signals already extracted from it stay in the    */
+/*             audit trail."                                              */
+/* CTAs:                                                                  */
+/*   Cancel (secondary)                                                   */
+/*   Delete  (destructive primary)                                        */
+/* ─────────────────────────────────────────────────────────────────── */
+
+function DeleteDocumentConfirm({ doc, open, onCancel, onConfirm, busy }) {
+  if (!open || !doc) return null;
+  const name = doc.name || doc.original_filename || "this document";
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-[var(--ink)]/40 backdrop-blur-sm p-4"
+      data-testid="documents-delete-confirm-scrim"
+      onClick={(e) => { if (e.target === e.currentTarget && !busy) onCancel(); }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="documents-delete-confirm-heading"
+        className="bg-white border border-[var(--rule)] rounded-md shadow-xl w-full max-w-[440px] p-6"
+        data-testid="documents-delete-confirm"
+        data-doc-id={doc.id}
+      >
+        <h2
+          id="documents-delete-confirm-heading"
+          className="akki-serif text-[18px] text-[var(--ink)] leading-snug"
+          data-testid="documents-delete-confirm-heading"
+        >
+          Delete {name}?
+        </h2>
+        <p
+          className="text-[13px] text-[var(--muted)] leading-relaxed mt-2"
+          data-testid="documents-delete-confirm-body"
+        >
+          This cannot be undone. The file is removed from your library. Signals already extracted from it stay in the audit trail.
         </p>
-        <div className="flex items-center gap-2 mt-1 flex-wrap">
-          <span
-            className="inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium uppercase tracking-wider bg-[var(--parchment)] text-[var(--muted)] border border-[var(--rule)]"
-            data-testid="documents-journal-row-category-badge"
+        <div className="flex justify-end gap-2 mt-5">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={busy}
+            data-testid="documents-delete-confirm-cancel"
           >
-            {displayCategory(doc.category)}
-          </span>
-          <span
-            className="inline-flex items-center gap-1 text-[11.5px] text-[var(--muted)]"
-            data-testid="documents-journal-row-modified"
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className="bg-[color:var(--oxblood)] hover:bg-[color:var(--oxblood-deep)] text-white"
+            data-testid="documents-delete-confirm-delete"
           >
-            <Calendar className="w-3 h-3" strokeWidth={1.7} />
-            {fmtModified(ts)}
-          </span>
+            {busy ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" strokeWidth={1.7} />
+                Deleting…
+              </>
+            ) : (
+              "Delete"
+            )}
+          </Button>
         </div>
       </div>
-      <ArrowRight className="w-3.5 h-3.5 text-[var(--muted)] shrink-0" />
-    </button>
+    </div>
   );
 }
 
@@ -210,6 +312,54 @@ export default function DocumentsPage() {
   const handleAddDocument = () => {
     window.dispatchEvent(new CustomEvent("akki:open-upload-modal"));
   };
+
+  // ── Z2.5 (2026-02) — Delete-confirm state + handler. Uses the
+  //   existing `DELETE /api/contexts/{cid}/documents/{id}` endpoint
+  //   (soft-delete: status → "archived"; signal provenance + audit
+  //   trail survive). On success: row is removed from the listing
+  //   via fetchActiveTab(), counts re-fetched, toast confirms.
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  const requestDelete = useCallback((doc) => {
+    setPendingDelete(doc);
+  }, []);
+
+  const cancelDelete = useCallback(() => {
+    if (deleteBusy) return;
+    setPendingDelete(null);
+  }, [deleteBusy]);
+
+  const confirmDelete = useCallback(async () => {
+    if (!pendingDelete || !cid) return;
+    setDeleteBusy(true);
+    try {
+      await api.delete(`/contexts/${cid}/documents/${pendingDelete.id}`);
+      toast.success("Document deleted.");
+      setPendingDelete(null);
+      // Re-fetch active tab + counts so the row disappears immediately
+      // and the Uploaded badge ticks down.
+      await fetchActiveTab();
+      try {
+        const results = await Promise.all(ORIGIN_VALUES.map(
+          (o) => api.get(`/contexts/${cid}/documents`, {
+            params: { origin: o, limit: 500 },
+          }).then((res) => Array.isArray(res.data) ? res.data.length : 0)
+            .catch(() => 0),
+        ));
+        setCounts({
+          akki_generated: results[0],
+          upload:         results[1],
+          email_receipt:  results[2],
+        });
+      } catch { /* counts are best-effort; the row removal is the
+                  user-visible promise */ }
+    } catch (e) {
+      toast.error(apiErrorMessage(e) || "Could not delete this document.");
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [pendingDelete, cid, fetchActiveTab]);
 
   // ── Tab click ─────────────────────────────────────────────────────
   const switchTab = (next) => {
@@ -389,7 +539,9 @@ export default function DocumentsPage() {
           ) : (
             <ul className="space-y-2" data-testid="documents-list">
               {docs.map((d) => (
-                <DocumentJournalRow key={d.id} doc={d} onOpen={onOpenDoc} />
+                <li key={d.id}>
+                  <DocumentJournalRow doc={d} onOpen={onOpenDoc} onRequestDelete={requestDelete} />
+                </li>
               ))}
             </ul>
           )}
@@ -399,6 +551,15 @@ export default function DocumentsPage() {
 
       {/* Universal document drawer — picks up `?doc_id=` from the URL. */}
       <DocumentDrawer contextId={cid} />
+
+      {/* Z2.5 — Delete-confirmation modal. */}
+      <DeleteDocumentConfirm
+        doc={pendingDelete}
+        open={!!pendingDelete}
+        onCancel={cancelDelete}
+        onConfirm={confirmDelete}
+        busy={deleteBusy}
+      />
     </AppShell>
   );
 }

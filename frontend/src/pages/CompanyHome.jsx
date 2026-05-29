@@ -179,19 +179,27 @@ function RightRail({ chip, setChip, items, loading, onAddDoc, onAllDocs, onOpenI
       data-testid="company-home-right-rail"
     >
       <div className="flex items-center justify-end gap-2">
+        {/* Z2.6 — folder icon NAVIGATES to the Doc Journal listing.
+            Tooltip via native `title` keeps the affordance discoverable
+            on hover without spinning up a new dependency. */}
         <button
           type="button"
           onClick={onAllDocs}
-          aria-label="View all documents"
+          aria-label="Open document journal"
+          title="Open the document journal"
           className="w-8 h-8 flex items-center justify-center text-[var(--muted)] hover:text-[var(--ink)] border border-[var(--rule)] rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50"
           data-testid="company-home-all-docs-btn"
         >
           <FolderOpen className="w-4 h-4" strokeWidth={1.7} aria-hidden="true" />
         </button>
+        {/* Z2.6 — + ADD DOCUMENT opens the unified upload modal IN
+            PLACE via the `akki:open-upload-modal` event. No route
+            change. Tooltip clarifies the distinction. */}
         <button
           type="button"
           onClick={onAddDoc}
           aria-label="Add a document to this company"
+          title="Upload a document without leaving this page"
           className="inline-flex items-center gap-1.5 text-[12.5px] uppercase tracking-[0.06em] font-mono px-3 h-8 border border-[var(--ink)] bg-[var(--ink)] text-white hover:bg-[var(--ink)]/90 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/50"
           data-testid="company-home-add-doc-btn"
         >
@@ -390,8 +398,20 @@ export default function CompanyHome() {
     navigate("/app");
   }, [clearActiveContext, navigate]);
 
-  const onAddDoc = useCallback(() => navigate("/app/work-studio"), [navigate]);
-  const onAllDocs = useCallback(() => navigate("/app/work-studio"), [navigate]);
+  // ── Z2.6 (2026-02) — split right-rail affordances ──────────────
+  //   folder icon  → /app/documents (canonical Doc Journal)
+  //   + ADD DOCUMENT → opens the unified upload modal via the
+  //                    `akki:open-upload-modal` event (AppShell's
+  //                    shared UploadModal listens). No route change.
+  // The two affordances had been pointing to the same /app/work-studio
+  // route in Wave 8.x; Z2.6 separates them per the Doc-Journal upload
+  // parity spec.
+  const onAddDoc = useCallback(() => {
+    try {
+      window.dispatchEvent(new CustomEvent("akki:open-upload-modal"));
+    } catch (_e) { /* SSR-safe, silent */ }
+  }, []);
+  const onAllDocs = useCallback(() => navigate("/app/documents"), [navigate]);
   const onOpenCard = useCallback((routeKey) => {
     const r = _routeForCard(routeKey, cid);
     if (r) navigate(r);

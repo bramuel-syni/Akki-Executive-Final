@@ -2158,6 +2158,18 @@ async def archive_document(
     d = await db.documents.find_one({"id": doc_id, "context_id": context_id})
     if not d:
         raise HTTPException(status_code=404, detail="Document not found")
+    # Z2.5 (2026-02) — defence-in-depth: only `origin == "upload"`
+    # documents are user-deletable. Akki-generated artefacts and
+    # email-receipt-ingested files have their own lifecycle and
+    # must NOT be deleted through this endpoint. Soft-delete with
+    # tombstone is preserved: status flips to "archived" so audit
+    # trail + signals provenance survive while the row disappears
+    # from listing fetches (which all filter `status: {$ne: archived}`).
+    if (d.get("origin") or "") != "upload":
+        raise HTTPException(
+            status_code=403,
+            detail="Only uploaded documents can be deleted; Akki-generated artefacts have their own lifecycle.",
+        )
     if d.get("uploaded_by") != ctx["account"]["id"] and ctx["membership"].get("sub_role") != "admin":
         raise HTTPException(status_code=403, detail="Only the uploader or a context admin can archive this document.")
     await db.documents.update_one(

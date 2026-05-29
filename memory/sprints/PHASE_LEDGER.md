@@ -3521,3 +3521,105 @@ Banned-vocabulary lockdown: zero hits across all 16 slides for `AI-powered`, `AI
 
 **Z2.0 is closed.** Next Z2 items (in spec order): date-picker Apply button, related-docs drawer scroll, feedback-pill drawer overlap, open-questions empty state, doc-journal delete + upload parity, sources panel on all artefact types, chat empty-state input centering.
 
+
+---
+
+### Sprint Z2 — Batch 1 (Z2.1 + Z2.4) ✅ (2026-02 fork-resume v2)
+
+**Z2.1 — Date-picker Apply.** Edit-event modal's two native
+`<input type="datetime-local">` triggers replaced with a custom
+shadcn `Popover` mounting a `Calendar` + time `<Input type="time">` +
+**Apply** button. Apply commits the pending selection to the parent
+state and closes the popover; Cancel-inside-popover closes without
+committing; popover height bounded by `min(--radix-popover-content-
+available-height, 480px)` with a sticky footer so the Apply button
+is never below the viewport fold at 1024×800. Verified non-occlusion
+of the Save/Cancel CTAs via `elementFromPoint(saveBtn.centre)` at
+1280 / 1024 / 820 — all three return `data-testid="event-modal-save"`.
+
+**Z2.4 — Open-questions dead-end.** `/app/questions?filter=open`
+empty state now carries a "Run Solva on a document" CTA → routes to
+`/app/solva`. Voice-lint clean on the new copy ("Solva reads what
+you brought and surfaces the questions worth raising."). Answered
+filter empty state is unchanged — the CTA is gated by `filter !==
+"answered"`.
+
+**Tests added** — `tests/test_phase_z2_batch1.py` (9 source-strict
++ voice lockdowns, all green). Raw Playwright DOM traces stored at
+`/app/memory/screenshots/z2_batch1/trace.json`.
+
+---
+
+### Sprint Z2 — Batch 2 (Z2.2 + Z2.3) ✅ (2026-02 fork-resume v2)
+
+**Z2.2 — Drawer scroll, full sweep.** Inventoried + locked 10
+right-aligned drawer surfaces. Two carried a flexbox-min-content
+trap (TaskDrawer missing `min-h-0` on its flex children; pulse
+Across-Boards drawer missing `overflow-y-auto` on its SheetContent)
+— both fixed. Source-strict pytest locks the scroll contract on
+all 10.
+
+**Z2.3 — Feedback pill offset.** The FeedbackWidget's MutationObserver
+detector swapped its narrow `aside[role="dialog"][data-state="open"]`
+selector (which never matched Radix Sheet's `<div role="dialog">`)
+for a broader `[role="dialog"]:not([data-state="closed"])` selector
+filtered by a position predicate (right-anchored + width < viewport).
+The pill now reads the leftmost-left of all matched right-side
+drawers and applies an inline `right: ${vw - drawerLeft + 8}px`
+style. Resize listener + 500ms re-detect interval keep the offset
+correct across responsive breakpoints.
+
+Verified at 1280 / 1024 / 820: with DocumentDrawer open, `pill.right -
+drawer.left === −8.00` exactly at every viewport; `elementFromPoint`
+at the drawer's close-button centre returns the SVG X icon (not the
+pill). On drawer close, `pill.right` returns to its base position
+byte-for-byte. SessionLogPanel runtime probe was data-locked (admin's
+only completed v2 session resolves to `integrity-failed` so the
+ticker never reaches the "log icon" stage) — see backlog below.
+
+**Tests added** — `tests/test_phase_z2_batch2.py` (13 source-strict,
+all green). Raw Playwright DOM traces at `/app/memory/screenshots/
+z2_batch2/trace.json`.
+
+---
+
+### Sprint Z2 — Batch 3 (Z2.5 + Z2.6) — DELIBERATIONS
+
+**Z2.5 cascade decision: SOFT-DELETE WITH TOMBSTONE (chosen over hard-delete-cascade).**
+
+  - The existing `DELETE /api/contexts/{cid}/documents/{doc_id}`
+    endpoint already implements soft-delete: it flips `status` →
+    `"archived"`, stamps `archived_at`, deletes the storage file,
+    and writes a `document.archived` audit-log entry. All listing
+    paths (`list_documents`, related-docs lookups, citation
+    queries, etc.) already filter `status: {$ne: "archived"}` so
+    archived rows disappear from user-facing surfaces immediately.
+  - Z2.5 adds a **defence-in-depth origin check**: only
+    `origin == "upload"` docs are deletable through this endpoint
+    (akki-generated artefacts have their own regenerate-from-source
+    lifecycle; email-receipt-ingested rows carry an inbound trace
+    that the user shouldn't sever).
+  - Why soft-delete and NOT hard-delete: `db.extractions_log`,
+    `db.signals` (with `source_doc_id`), `db.strategic_goals` (with
+    `source_doc_id`), `db.briefings` (with `source_doc_ids`) and
+    the `audit_log` all carry foreign-key-style references to the
+    document id. Hard-deleting would orphan those rows. Soft-delete
+    keeps the provenance graph intact while making the doc invisible
+    to ordinary listings. The tombstone (`status: archived`,
+    `archived_at`) is the audit anchor.
+  - User-facing copy in the confirm modal is honest about this:
+    "The file is removed from your library. Signals already
+    extracted from it stay in the audit trail."
+
+### P2 backlog — filed by user, NOT to be addressed in Z2
+
+- `INVESTIGATE · admin seed session resolving to integrity_failed`
+  — admin's only completed Solva v2 session
+  (`a661c230-0b6d-459a-aec2-9c5e0b7fa064`) renders the
+  `solva-v2-integrity-failed` testid instead of the artefact root,
+  blocking the SessionLogPanel runtime probe in the Z2.3 trace.
+  Either the seed's payload was minted against an older integrity
+  validator or the validator has a real regression. Triage after
+  Z2 closes — do NOT investigate inside the Z2 window.
+
+
