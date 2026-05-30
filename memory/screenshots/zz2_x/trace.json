@@ -1,0 +1,155 @@
+[
+  {
+    "viewport": "1280",
+    "fixture": "unsourced_number",
+    "zz2_x": {
+      "unsourced_warning_count": 1,
+      "bias_chip_count": 0,
+      "escalation_count": 0,
+      "counter_case_present": false
+    }
+  },
+  {
+    "viewport": "1280",
+    "fixture": "bias_anchoring",
+    "zz2_x": {
+      "unsourced_warning_count": 0,
+      "bias_chip_count": 1,
+      "bias_chip_kind": "anchoring",
+      "escalation_count": 0,
+      "counter_case_present": false
+    }
+  },
+  {
+    "viewport": "1280",
+    "fixture": "recommendation_with_counter",
+    "zz2_x": {
+      "unsourced_warning_count": 0,
+      "bias_chip_count": 0,
+      "escalation_count": 0,
+      "counter_case_present": true
+    }
+  },
+  {
+    "viewport": "1280",
+    "fixture": "escalation_trigger",
+    "zz2_x": {
+      "unsourced_warning_count": 0,
+      "bias_chip_count": 0,
+      "escalation_count": 1,
+      "counter_case_present": false
+    }
+  },
+  {
+    "viewport": "1280",
+    "fixture": "clean_response",
+    "zz2_x": {
+      "unsourced_warning_count": 0,
+      "bias_chip_count": 0,
+      "escalation_count": 0,
+      "counter_case_present": false
+    }
+  },
+  {
+    "viewport": "1024",
+    "fixture": "unsourced_number",
+    "zz2_x": {
+      "unsourced_warning_count": 1,
+      "bias_chip_count": 0,
+      "escalation_count": 0,
+      "counter_case_present": false
+    }
+  },
+  {
+    "viewport": "1024",
+    "fixture": "bias_anchoring",
+    "zz2_x": {
+      "unsourced_warning_count": 0,
+      "bias_chip_count": 1,
+      "bias_chip_kind": "anchoring",
+      "escalation_count": 0,
+      "counter_case_present": false
+    }
+  },
+  {
+    "viewport": "1024",
+    "fixture": "recommendation_with_counter",
+    "zz2_x": {
+      "unsourced_warning_count": 0,
+      "bias_chip_count": 0,
+      "escalation_count": 0,
+      "counter_case_present": true
+    }
+  },
+  {
+    "viewport": "1024",
+    "fixture": "escalation_trigger",
+    "zz2_x": {
+      "unsourced_warning_count": 0,
+      "bias_chip_count": 0,
+      "escalation_count": 1,
+      "counter_case_present": false
+    }
+  },
+  {
+    "viewport": "1024",
+    "fixture": "clean_response",
+    "zz2_x": {
+      "unsourced_warning_count": 0,
+      "bias_chip_count": 0,
+      "escalation_count": 0,
+      "counter_case_present": false
+    }
+  },
+  {
+    "viewport": "820",
+    "fixture": "unsourced_number",
+    "zz2_x": {
+      "unsourced_warning_count": 1,
+      "bias_chip_count": 0,
+      "escalation_count": 0,
+      "counter_case_present": false
+    }
+  },
+  {
+    "viewport": "820",
+    "fixture": "bias_anchoring",
+    "zz2_x": {
+      "unsourced_warning_count": 0,
+      "bias_chip_count": 1,
+      "bias_chip_kind": "anchoring",
+      "escalation_count": 0,
+      "counter_case_present": false
+    }
+  },
+  {
+    "viewport": "820",
+    "fixture": "recommendation_with_counter",
+    "zz2_x": {
+      "unsourced_warning_count": 0,
+      "bias_chip_count": 0,
+      "escalation_count": 0,
+      "counter_case_present": true
+    }
+  },
+  {
+    "viewport": "820",
+    "fixture": "escalation_trigger",
+    "zz2_x": {
+      "unsourced_warning_count": 0,
+      "bias_chip_count": 0,
+      "escalation_count": 1,
+      "counter_case_present": false
+    }
+  },
+  {
+    "viewport": "820",
+    "fixture": "clean_response",
+    "zz2_x": {
+      "unsourced_warning_count": 0,
+      "bias_chip_count": 0,
+      "escalation_count": 0,
+      "counter_case_present": false
+    }
+  }
+]

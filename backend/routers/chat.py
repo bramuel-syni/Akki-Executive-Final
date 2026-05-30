@@ -1590,6 +1590,18 @@ async def send_message(
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
 
+    # ── Phase ZZ.2.x (2026-02 fork-resume v2) — deterministic fixture
+    # mode for Playwright. Active only when AKKI_CHAT_FIXTURES_ENABLED=1
+    # AND caller is admin. Returns hand-authored SSE stream so ZZ.2
+    # Tier-2 signals can be deterministically probed.
+    fixture = request.query_params.get("fixture")
+    _is_admin = bool(current.get("is_superadmin") or current.get("is_admin"))
+    if fixture and os.environ.get("AKKI_CHAT_FIXTURES_ENABLED") == "1" and _is_admin:
+        from services.solva_v2.chat_v2_fixtures import stream_fixture
+        return StreamingResponse(stream_fixture(fixture, chat_id), media_type="text/event-stream")
+    if fixture and not _is_admin:
+        raise HTTPException(status_code=404, detail="Not found")
+
     model_def = _model_def(chat["model_id"]) or _model_def(DEFAULT_MODEL_ID)
     policy: ShieldingPolicy = chat.get("shielding_policy", "auto")
 

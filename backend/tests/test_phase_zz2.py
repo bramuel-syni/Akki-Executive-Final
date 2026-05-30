@@ -175,12 +175,17 @@ def test_zz2_chat_jsx_renders_governance_signals():
 
 def test_zz2_governance_component_testids_locked():
     src = GOV_SIGNALS.read_text(encoding="utf-8")
+    # ZZ.2.x — both the original chat-governance-* testids AND the
+    # zz2-* aliases (per the ZZ.2.x brief). New aliases let the
+    # fixture-mode Playwright trace target them with the brief's
+    # exact selectors.
     for k in [
         "chat-governance-signals",
         "chat-governance-bias-chips",
-        "chat-governance-bias-chip",
-        "chat-governance-unsourced-note",
-        "chat-governance-solva-escalation",
+        "zz2-bias-chip",
+        "zz2-unsourced-warning",
+        "zz2-solva-escalation",
+        "data-bias-kind={kind}",
     ]:
         assert k in src, f"Missing testid {k!r}"
     # Escalation CTA verbatim
