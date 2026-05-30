@@ -4334,3 +4334,17 @@ because of a happenstance manual screenshot. The CI gate makes the
 zero-hit invariant a structural property of the branch, not a
 discipline property of the agent or the reviewer.
 
+
+
+---
+
+### Phase M.1c — marketing-assets-guard CI gate ✅ (2026-02 fork-resume v3, dispatch 7)
+
+`.github/workflows/marketing-assets-guard.yml` (34 lines) — push to
+main + pull_request triggers over 6 paths; invokes the existing
+`backend/tests/test_phase_m0a_marketing_assets.py` (6 locks: presence,
+>50KB sanity, PNG signature, 1408×768 dims, doc slug coverage, doc
+voice-lint). `test_phase_m1c_marketing_assets_ci_gate.py` (29 lines)
+asserts workflow exists, triggers match, invokes the M.0a pytest
+verbatim, no `|| true` swallow. **LOC: 63 vs 30 cap (~110% over).**
+Cumulative 101/101 green; voice-lint clean; v1 guard 0 lines.

@@ -1,0 +1,34 @@
+name: marketing-assets-guard
+
+# Pre-merge guard on the 10 mirrored marketing PNGs.
+# Invokes the existing M.0a presence/sanity pytest.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/src/website/**"
+      - "frontend/src/components/marketing/**"
+      - "frontend/public/marketing/**"
+      - "docs/marketing_assets.md"
+      - "backend/tests/test_phase_m0a_marketing_assets.py"
+      - ".github/workflows/marketing-assets-guard.yml"
+  pull_request:
+    paths:
+      - "frontend/src/website/**"
+      - "frontend/src/components/marketing/**"
+      - "frontend/public/marketing/**"
+      - "docs/marketing_assets.md"
+      - "backend/tests/test_phase_m0a_marketing_assets.py"
+      - ".github/workflows/marketing-assets-guard.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pytest
+      - run: python3 -m pytest backend/tests/test_phase_m0a_marketing_assets.py -q
