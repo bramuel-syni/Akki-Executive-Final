@@ -135,7 +135,10 @@ async def oauth_google_finish(
     # 3. Find-or-create the account (matching the magic-link upgrade
     #    pattern from auth_magic.py — preserve any existing
     #    user-set fields).
-    existing = await db.accounts.find_one({"email": email}, {"_id": 0})
+    existing = await db.accounts.find_one({"email_lc": email}, {"_id": 0})
+    if not existing:
+        # Fallback for accounts created before the email_lc invariant.
+        existing = await db.accounts.find_one({"email": email}, {"_id": 0})
     is_new = existing is None
     trial_start = _now()
     trial_end = trial_start + timedelta(days=TRIAL_LENGTH_DAYS)
@@ -179,6 +182,7 @@ async def oauth_google_finish(
         await db.accounts.insert_one({
             "id":              account_id,
             "email":           email,
+            "email_lc":        email,
             "password_hash":   None,                  # passwordless — OAuth only
             "auth_provider":   "google",
             "oauth_providers": ["google"],
@@ -453,13 +457,22 @@ def _ms_audit(action: str, **fields: Any) -> None:
 
 
 @router.get("/microsoft/start")
-async def oauth_microsoft_start(request: Request) -> Dict[str, Any]:
+async def oauth_microsoft_start(
+    request: Request,
+    magic_link_token: Optional[str] = None,
+) -> Dict[str, Any]:
     """Stage-1: returns the Microsoft authorize URL. Frontend redirects
     the browser there; Microsoft bounces back to /microsoft/callback.
 
     Probe mode: pass `?probe=1` to avoid burning a state token + audit
     entry on a configuration check. Returns just `{configured: true}`
-    when the provider is wired."""
+    when the provider is wired.
+
+    Phase P5.3 (2026-02) — `magic_link_token` is packed into the state
+    JWT as the `mlt` claim. On the /microsoft/callback round-trip the
+    state-verified `mlt` drives the cohort magic-link consume so the
+    OAuth sign-in counts as a single-use redemption of the same
+    invite the applicant received in their approval email."""
     if not _microsoft_configured():
         raise HTTPException(status_code=503, detail={
             "error": "microsoft_oauth_not_configured",
@@ -472,7 +485,18 @@ async def oauth_microsoft_start(request: Request) -> Dict[str, Any]:
     if request.query_params.get("probe") == "1":
         return {"configured": True, "provider": "microsoft"}
     session_id = uuid.uuid4().hex
-    state = _ms_sign_state({"sid": session_id, "kind": "ms_signin"})
+    state_claims: Dict[str, Any] = {"sid": session_id, "kind": "ms_signin"}
+    mlt = (magic_link_token or "").strip()
+    if mlt:
+        # Cap the length defensively — the token is base64url(32 bytes)
+        # so ~43 chars; reject anything pathological that would inflate
+        # the state JWT or pass through to a downstream lookup.
+        if len(mlt) > 200:
+            raise HTTPException(status_code=400, detail={
+                "error": "magic_link_token_too_long",
+            })
+        state_claims["mlt"] = mlt
+    state = _ms_sign_state(state_claims)
     nonce = uuid.uuid4().hex
     # Phase P2 A.2 — PKCE: derive a fresh verifier + S256 challenge and
     # persist the verifier keyed by sid for the /callback round trip.
@@ -615,7 +639,9 @@ async def oauth_microsoft_callback(
         })
 
     # Find-or-create account — same pattern as the Google sign-in finish path.
-    existing = await db.accounts.find_one({"email": email}, {"_id": 0})
+    existing = await db.accounts.find_one({"email_lc": email}, {"_id": 0})
+    if not existing:
+        existing = await db.accounts.find_one({"email": email}, {"_id": 0})
     is_new = existing is None
     trial_start = _now()
     trial_end = trial_start + timedelta(days=TRIAL_LENGTH_DAYS)
@@ -642,6 +668,7 @@ async def oauth_microsoft_callback(
         await db.accounts.insert_one({
             "id":              account_id,
             "email":           email,
+            "email_lc":        email,
             "password_hash":   None,
             "auth_provider":   "microsoft",
             "oauth_providers": ["microsoft"],

@@ -46,9 +46,23 @@ export default function OAuthCallback() {
 
     (async () => {
       try {
-        const { data } = await api.post("/auth/oauth/google/finish", {
-          session_id: sessionId,
-        });
+        // Phase P5.3 (2026-02) — if /welcome/{token} stashed a
+        // pending magic-link token in sessionStorage before kicking
+        // off the Google OAuth flow, retrieve + forward it so the
+        // backend can consume the cohort invite in the same call.
+        // Wipe the key immediately so a back-button replay can't
+        // try to consume an already-used token.
+        let pendingMagicLinkToken = null;
+        try {
+          pendingMagicLinkToken = window.sessionStorage.getItem(
+            "akki.pending_magic_link_token",
+          );
+          window.sessionStorage.removeItem("akki.pending_magic_link_token");
+        } catch (_e) { /* quota / private-mode noop */ }
+
+        const payload = { session_id: sessionId };
+        if (pendingMagicLinkToken) payload.magic_link_token = pendingMagicLinkToken;
+        const { data } = await api.post("/auth/oauth/google/finish", payload);
         // Reuse the existing AuthContext.afterAuth() path so the
         // app state matches the email/password sign-in flow exactly.
         // The bootstrap on next mount will pull the full account

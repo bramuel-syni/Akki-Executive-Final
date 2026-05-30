@@ -108,7 +108,7 @@ export default function AdminCohortApplications() {
         }));
         try { await navigator.clipboard.writeText(data.magic_url); } catch (_e) { /* best-effort */ }
         toast.success(
-          `Approved ${app.email}. Magic link pinned to the row.`,
+          `Approved ${app.email}. Magic link pinned above.`,
           { description: data.email?.status === "flag_off" ? "Email skipped (COHORT_EMAILS_ENABLED=false)" : `Email status: ${data.email?.status}` },
         );
       } else if (action === "decline") {
@@ -165,6 +165,66 @@ export default function AdminCohortApplications() {
           <p className="text-sm text-slate-500" data-testid="admin-cohort-empty">
             No applications in this status.
           </p>
+        )}
+
+        {/* Phase P5.1 (2026-02) — persistent pinned magic-link section.
+            Lives ABOVE the row list and survives filter changes / list
+            reloads. The prior implementation rendered the panel inside
+            items.map(...), which silently vanished once the just-approved
+            row left the active filter (default "received"). Tester-found
+            failure mode; fix is to render outside the row loop. */}
+        {Object.keys(pinnedLinks).length > 0 && (
+          <div
+            className="border border-emerald-300 bg-emerald-50/50 rounded-sm p-4 mb-6 flex flex-col gap-3"
+            data-testid="admin-cohort-pinned-links"
+          >
+            <p className="text-[11.5px] uppercase tracking-wider text-emerald-800 font-semibold">
+              Magic links — this session
+            </p>
+            {Object.entries(pinnedLinks).map(([appId, entry]) => (
+              <div
+                key={appId}
+                className="bg-white border border-emerald-200 rounded-sm p-3 flex flex-col gap-2"
+                data-testid={`admin-cohort-row-${appId}-magic-link-panel`}
+              >
+                <div className="flex items-start justify-between gap-2 flex-wrap">
+                  <p
+                    className="text-xs text-slate-700 font-medium"
+                    data-testid={`admin-cohort-row-${appId}-magic-link-email`}
+                  >
+                    {entry.email}
+                  </p>
+                  <button
+                    onClick={() => dismissPinned(appId)}
+                    className="text-emerald-700 hover:text-emerald-900 text-xs"
+                    data-testid={`admin-cohort-row-${appId}-magic-link-dismiss`}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+                <code
+                  className="block text-[11.5px] font-mono break-all bg-slate-50 border border-emerald-200 rounded-sm px-2 py-1.5 text-[var(--ink)]"
+                  data-testid={`admin-cohort-row-${appId}-magic-link-url`}
+                >
+                  {entry.magic_url}
+                </code>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    size="sm" variant="ghost"
+                    onClick={() => copyPinned(appId)}
+                    className="text-[11.5px] h-7 px-2 text-emerald-800 hover:bg-emerald-100"
+                    data-testid={`admin-cohort-row-${appId}-magic-link-copy`}
+                  >
+                    <Copy className="w-3 h-3 mr-1" />
+                    {entry.copied ? "Copied" : "Copy"}
+                  </Button>
+                  <span className="text-[11px] text-emerald-700 font-mono">
+                    Expires {new Date(entry.expires_at).toLocaleDateString()}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
 
         {!loading && items.length > 0 && (
@@ -229,47 +289,6 @@ export default function AdminCohortApplications() {
                     )}
                   </div>
                 </div>
-
-                {/* Phase P5.1 — pinned magic-link panel for this row. */}
-                {pinnedLinks[app.id] && (
-                  <div
-                    className="bg-emerald-50 border border-emerald-200 rounded-sm p-3 flex flex-col gap-2"
-                    data-testid={`admin-cohort-row-${app.id}-magic-link-panel`}
-                  >
-                    <div className="flex items-start justify-between gap-2 flex-wrap">
-                      <p className="text-[11.5px] uppercase tracking-wider text-emerald-800 font-semibold">
-                        Single-use sign-in link
-                      </p>
-                      <button
-                        onClick={() => dismissPinned(app.id)}
-                        className="text-emerald-700 hover:text-emerald-900 text-xs"
-                        data-testid={`admin-cohort-row-${app.id}-magic-link-dismiss`}
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                    <code
-                      className="block text-[11.5px] font-mono break-all bg-white border border-emerald-200 rounded-sm px-2 py-1.5 text-[var(--ink)]"
-                      data-testid={`admin-cohort-row-${app.id}-magic-link-url`}
-                    >
-                      {pinnedLinks[app.id].magic_url}
-                    </code>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Button
-                        size="sm" variant="ghost"
-                        onClick={() => copyPinned(app.id)}
-                        className="text-[11.5px] h-7 px-2 text-emerald-800 hover:bg-emerald-100"
-                        data-testid={`admin-cohort-row-${app.id}-magic-link-copy`}
-                      >
-                        <Copy className="w-3 h-3 mr-1" />
-                        {pinnedLinks[app.id].copied ? "Copied" : "Copy"}
-                      </Button>
-                      <span className="text-[11px] text-emerald-700 font-mono">
-                        Expires {new Date(pinnedLinks[app.id].expires_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                )}
               </div>
             ))}
           </div>

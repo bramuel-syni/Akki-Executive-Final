@@ -103,9 +103,40 @@ export default function WelcomePage() {
     }
   }
 
-  function withMagicLinkOAuth(provider) {
-    const base = `${API}/api/auth/oauth/${provider}/start?magic_link_token=${encodeURIComponent(token)}`;
-    window.location.href = base;
+  // Phase P5.3 (2026-02) — start the OAuth flow for the current
+  // magic-link token. Google and Microsoft take different paths
+  // because their /start endpoints return JSON, not 302:
+  //   - Microsoft: GET /microsoft/start?magic_link_token=<t> returns
+  //     {authorize_url}. The backend has packed the token into the
+  //     state JWT. We `window.location.href = authorize_url`.
+  //   - Google: GET /google/start returns {auth_base_url,
+  //     callback_path}. Emergent Auth doesn't carry custom state
+  //     across its redirect, so we stash the magic-link token in
+  //     sessionStorage and the OAuthCallback handler pops it back
+  //     out before POSTing /google/finish.
+  async function withMagicLinkOAuth(provider) {
+    try {
+      if (provider === "microsoft") {
+        const url = `${API}/api/auth/oauth/microsoft/start?magic_link_token=${encodeURIComponent(token)}`;
+        const r = await axios.get(url, { withCredentials: true });
+        const authorizeUrl = r?.data?.authorize_url;
+        if (!authorizeUrl) throw new Error("microsoft start returned no authorize_url");
+        window.location.href = authorizeUrl;
+        return;
+      }
+      // Google path — stash + redirect to Emergent Auth.
+      const r = await axios.get(`${API}/api/auth/oauth/google/start`, { withCredentials: true });
+      const authBase = r?.data?.auth_base_url;
+      const callbackPath = r?.data?.callback_path || "/oauth/callback";
+      if (!authBase) throw new Error("google start returned no auth_base_url");
+      try {
+        window.sessionStorage.setItem("akki.pending_magic_link_token", token);
+      } catch (_e) { /* quota/private-mode noop */ }
+      const redirectUrl = window.location.origin + callbackPath;
+      window.location.href = `${authBase}?redirect=${encodeURIComponent(redirectUrl)}`;
+    } catch (err) {
+      toast.error(`Couldn't start ${provider} sign-in. ${err?.response?.data?.detail?.error || ""}`);
+    }
   }
 
   // ─── States ─────────────────────────────────────────────────────

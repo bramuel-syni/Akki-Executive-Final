@@ -1,6 +1,73 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5 — P4 corrections + OAuth-mode consume CLOSED ✅ (2026-02)
+
+**Scope:** Two P4 frontend bugs found by independent tester (admin
+magic_url not visible; /welcome consume bounced to /signin) + ship
+OAuth-mode magic-link consume across Google + Microsoft + append
+P4-pattern discipline note to the self-verification postmortem.
+
+**Closed:**
+- ✅ **P5.1** — Admin pinned magic-link panel moved out of
+  `items.map(...)` into a persistent section above the row list.
+  Survives filter changes / list reloads. Live trace verified the
+  panel mounts, the URL renders verbatim, the Copy button writes
+  the exact value to `navigator.clipboard.readText()`, "Copied"
+  affordance fires.
+- ✅ **P5.2** — `/welcome/{token}` consume swaps `navigate(redirect)`
+  for `window.location.href = redirect` so AuthContext re-bootstraps
+  against the new cookies before `<Gated>` runs its account check.
+  Live trace verified final URL = `/app/first-session`,
+  `access_token` + `refresh_token` + `csrf_token` cookies present.
+- ✅ **P5.3** — OAuth-mode consume wired across both providers:
+  - Backend Microsoft `/start` accepts `?magic_link_token=X` and
+    packs `mlt` into the state JWT.
+  - Frontend `WelcomePage.withMagicLinkOAuth` rewritten — Microsoft
+    GET-and-redirect to backend-supplied `authorize_url`; Google
+    stashes token in sessionStorage under
+    `akki.pending_magic_link_token` before redirecting to Emergent Auth.
+  - Frontend `OAuthCallback` pops the sessionStorage stash and
+    forwards `magic_link_token` to `POST /google/finish`.
+  - Both Google + Microsoft find-or-create paths now query/write
+    `email_lc` so cohort_application_id linkage holds.
+- ✅ **P5.4** — "P4 corrections — repeated misses" section appended
+  to `P2_1_self_verification_postmortem.md`. Sharper rule locked:
+  post-action settle window must be waited out before measuring;
+  DOM scan must be the LAST step of the trace.
+
+**Live traces (executed against
+`https://akki-executive.preview.emergentagent.com`):**
+- `/tmp/p5_1_admin_magic_link_trace.py` — 7/7 steps green.
+- `/tmp/p5_2_welcome_consume_trace.py` — 5/5 steps green.
+- `/tmp/p5_3_oauth_start_trace_v2.py` — 4/4 steps green
+  (Google sessionStorage + Emergent Auth nav; Microsoft state JWT
+  via backend API AND SPA click; both `mlt` claims match).
+
+**HUMAN_REQUIRED:** the full Google/Microsoft OAuth round-trip
+(provider consent screen → /oauth/callback → /google/finish or
+/microsoft/callback consume) cannot be exercised in headless
+Playwright (Emergent Auth + login.microsoftonline.com require human
+consent). Backend consume code paths are locked by 7 pytest
+assertions covering mocked round-trips + replay-410 + no-mlt
+backward-compat.
+
+**Tests:** `test_phase_p5_corrections.py` 7/7 green; v1 byte-
+identical guard 4/4 green; voice-lint clean; ESLint clean on the 3
+touched frontend files. Pre-existing event-loop binding pollution
+between `test_phase_p5_corrections.py` and `test_phase_u_oauth.py`
+documented but out of P5 scope (Motor binds to one loop, pytest-
+asyncio uses another; reproduces against stashed code).
+
+
+### Phase P4 — Cohort live-wire CLOSED ✅ (2026-02)
+[Phase P4 details captured in /app/memory/sprints/P4_cohort_live_wire.md]
+
+
+### Phase P3 — Security MVP+ CLOSED ✅ (2026-02)
+[Phase P3 details captured in /app/memory/sprints/P3_security_mvp_plus.md]
+
+
 ### Mega-Dispatch 2026-02 (fork-resume v3) — Sprint M.5 Founding Cohort → Early access language swap CLOSED ✅
 
 **Scope:** User retired the "Founding Cohort" framing as exclusivity inflation against the senior-peer voice register. Swap to standard "early access" plumbing language across the entire public website + backend cohort_applications router + voice-lint phrase ban.
