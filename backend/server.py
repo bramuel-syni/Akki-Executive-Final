@@ -354,6 +354,14 @@ app.include_router(auth_password_change_router.router)
 from routers import health_composite as health_composite_router  # noqa: E402
 app.include_router(health_composite_router.router)
 
+# Phase P3.1 (2026-02) — CSRF mint endpoint.
+from routers import csrf as csrf_router  # noqa: E402
+app.include_router(csrf_router.router)
+
+# Phase P3.3 (2026-02) — MFA enrolment + verify + recovery codes.
+from routers import mfa as mfa_router  # noqa: E402
+app.include_router(mfa_router.router)
+
 
 # -----------------------------------------------------------------------------
 # Phase P2 B.1 (2026-02) — Security headers middleware.
@@ -364,6 +372,25 @@ app.include_router(health_composite_router.router)
 # -----------------------------------------------------------------------------
 from services.security_headers import SecurityHeadersMiddleware  # noqa: E402
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+# -----------------------------------------------------------------------------
+# Phase P3.1 (2026-02) — CSRF double-submit-cookie middleware.
+# Enforced on every POST/PUT/PATCH/DELETE except the explicit allowlist
+# (webhooks + OAuth callbacks + the CSRF mint endpoint itself).
+# Toggle via CSRF_DISABLED=1; test bypass via CSRF_TEST_BYPASS_HEADER=1.
+# -----------------------------------------------------------------------------
+from services.csrf import CSRFMiddleware  # noqa: E402
+app.add_middleware(CSRFMiddleware)
+
+
+# -----------------------------------------------------------------------------
+# Phase P3.4 (2026-02) — Absolute + idle session timeout.
+# 12h absolute / 30m idle (env-tunable). Silent refresh for tokens
+# >1h old. Toggle via SESSION_TIMEOUT_DISABLED=1.
+# -----------------------------------------------------------------------------
+from services.session_timeout import SessionTimeoutMiddleware  # noqa: E402
+app.add_middleware(SessionTimeoutMiddleware)
 
 
 # -----------------------------------------------------------------------------

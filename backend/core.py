@@ -322,14 +322,19 @@ def docs_as_grounding_block(docs: List[Dict[str, Any]]) -> str:
 
 # JWT token creators — auth-only helpers (kept in core so auth endpoints can
 # stay alongside the rest of the auth family in server.py without duplication).
-def create_access_token(account_id: str, email: str) -> str:
+def create_access_token(account_id: str, email: str, *, mfa_verified: bool = False) -> str:
     # Phase J (2026-05-27) — `jti` (uuid4) added so individual access
     # tokens can be revoked server-side via the `revoked_jtis` collection
     # (see `get_current_account` below + `routers/auth.py::logout`).
+    # Phase P3.3 (2026-02) — `mfa_verified` claim; set by /api/auth/mfa/verify
+    # after a successful TOTP/recovery match.
+    # Phase P3.4 (2026-02) — `last_activity_at` tracked per-session;
+    # see services/session_timeout.py.
     return jwt.encode(
         {
             "sub": account_id, "email": email, "type": "access",
             "jti": uuid.uuid4().hex,
+            "mfa_verified": bool(mfa_verified),
             "exp": now() + timedelta(minutes=ACCESS_TOKEN_TTL_MIN),
             "iat": now(),
         },
@@ -367,12 +372,28 @@ def verify_password(pw: str, hashed: str) -> bool:
 
 
 def set_auth_cookies(response: Response, access: str, refresh: str) -> None:
+    # Phase P3.2 (2026-02) — cookie hardening:
+    #   - HttpOnly: JS cannot read the access/refresh cookies (XSS guard).
+    #   - Secure: only sent over HTTPS in non-local environments.
+    #   - SameSite=Strict: the cookie is NEVER sent on cross-site
+    #     requests. Combined with the SPA being same-origin with the
+    #     API, this blocks every cross-origin attack vector without
+    #     impacting normal navigation.
+    #   - Path=/: required so the same cookie rides on every API +
+    #     SPA route.
+    #   - max_age: TTL-tied to the token's exp claim.
+    import os
+    secure_cookies = (
+        os.environ.get("COOKIE_SECURE", "1").strip() == "1"
+    )
     response.set_cookie(
-        "access_token", access, httponly=True, secure=True, samesite="none",
+        "access_token", access,
+        httponly=True, secure=secure_cookies, samesite="strict",
         max_age=ACCESS_TOKEN_TTL_MIN * 60, path="/",
     )
     response.set_cookie(
-        "refresh_token", refresh, httponly=True, secure=True, samesite="none",
+        "refresh_token", refresh,
+        httponly=True, secure=secure_cookies, samesite="strict",
         max_age=REFRESH_TOKEN_TTL_DAYS * 86400, path="/",
     )
 
