@@ -30,7 +30,7 @@ export default function Home() {
   return (
     <WebsiteShell
       title="Akki — Safe AI for executive work"
-      description="A workspace for senior people who want to use AI fully — without governance exposure. From Syni.ai, Nairobi."
+      description="A workspace for executives who want to use AI fully — without governance exposure. From Syni.ai, Nairobi."
       pathname="/"
       ogImage="/static/media/home-hero.webp"
     >
@@ -56,7 +56,7 @@ export default function Home() {
           <div className="hero-image-wrap reveal-4">
             <img
               src={heroImg}
-              alt="A senior executive at a desk, reading paper materials in a quiet study."
+              alt="An executive at a desk, reading paper materials in a quiet study."
               width="800" height="1000"
               loading="eager"
               fetchPriority="high"
@@ -149,7 +149,7 @@ export default function Home() {
       {/* THREE AUDIENCES (§4.7) + G3 triptych */}
       <section className="website-section section-reveal" aria-labelledby="audiences-h2" data-testid="home-audiences">
         <p className="kicker">THREE AUDIENCES</p>
-        <h2 id="audiences-h2" className="section">Senior work, three shapes.</h2>
+        <h2 id="audiences-h2" className="section">Executive work, three shapes.</h2>
         <p className="dek">One workspace; three faithful answers to the people who actually sit in the room.</p>
         <span className="website-rule" />
         <div className="three-col">
@@ -167,7 +167,7 @@ export default function Home() {
         <figure style={{ marginTop: 56 }}>
           <img
             src={audienceImg}
-            alt="Three senior readers in private study and library settings."
+            alt="Three executives reading in private study and library settings."
             width="1600" height="600"
             loading="lazy"
             style={{ width: "100%", height: "auto", display: "block" }}

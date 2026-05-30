@@ -36,7 +36,7 @@ export default function WebsiteFooter() {
         <div className="footer-brand footer-col">
           <Link to="/" className="footer-brand-wordmark" data-testid="footer-wordmark">Akki</Link>
           <p className="footer-tagline">
-            A workspace for senior people running serious operations. From Syni.ai, Nairobi.
+            A workspace for executives running serious operations. From Syni.ai, Nairobi.
           </p>
         </div>
         <div className="footer-col">

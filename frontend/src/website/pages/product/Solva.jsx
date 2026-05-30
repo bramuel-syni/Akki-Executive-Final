@@ -28,7 +28,7 @@ export default function Solva() {
 
       <section className="website-section section-reveal" data-testid="solva-modes">
         <p className="kicker">FOUR MODES</p>
-        <h2 className="section">Each mode is a faithful answer to a moment in senior thinking.</h2>
+        <h2 className="section">Each mode is a faithful answer to a moment in executive thinking.</h2>
         <span className="website-rule" />
         <div className="three-col" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
           {p.modes.map((m, i) => (

@@ -1,10 +1,10 @@
 /**
  * Website v7 — copy module.
  *
- * Single source of truth for marketing copy. Voice rules (v7 §B):
- *   - No "empower / unlock / leverage / solutions / dashboard / insights"
- *   - No "AI-powered / AI-driven / cutting-edge / disrupt"
- *   - No "consumer AI / general-purpose / unlike / better than"
+ * Single source of truth for marketing copy. Voice rules:
+ *   - See docs/WEBSITE_BRIEF_V3.md §1.3 and §1.3.1 for the
+ *     authoritative customer-copy ban list.
+ *   - scripts/lint_voice.py is the automated enforcement layer.
  *   - Approved nouns: Solva, Synisense, Agent Cycle (proper nouns).
  *
  * One-word oxblood lift per hero (v7 §A5) — flagged via `lift: "<word>"`.
@@ -14,10 +14,10 @@
 // HOME (v7 §4) — three-tier hierarchy
 // ============================================================
 export const HERO = {
-  kicker: "FOR SENIOR PEOPLE",
+  kicker: "FOR EXECUTIVES",
   headline: "Safe AI for executive work.",
   lift: "Safe",
-  dek: "For senior people who want to use AI fully — without governance exposure.",
+  dek: "For executives who want to use AI fully — without governance exposure.",
   primaryCta: { label: "Join the founding cohort", href: "/cohort" },
   tertiary:   { label: "See how it works",        href: "#safety" },
 };
@@ -58,7 +58,7 @@ export const TIER_1 = {
 export const TIER_2 = {
   kicker: "TIER TWO · THE WORKSPACE",
   headline: "A working environment, not a chat box.",
-  dek: "Senior decisions get made together, over weeks, across boards. The workspace mirrors that.",
+  dek: "Executive decisions get made together, over weeks, across boards. The workspace mirrors that.",
   capabilities: [
     {
       title: "A reading library that knows the cycle.",
@@ -121,7 +121,7 @@ export const AUDIENCES = [
     cta: { label: "For NEDs", href: "/for-non-executive-directors" },
   },
   {
-    title: "The senior leadership team.",
+    title: "The executive committee.",
     sub: "Exco preparing for the board.",
     body: "Each member contributes a section. Akki holds the cross-document consistency — when the CFO's number doesn't match the COO's, the workspace surfaces it before the chair finds it.",
     cta: { label: "For Exco", href: "/for-exco" },
@@ -131,7 +131,7 @@ export const AUDIENCES = [
 export const COHORT_TEASER = {
   kicker: "BEFORE AKKI SHIPS",
   headline: "We are admitting a small founding cohort first.",
-  body: "Akki is finished enough to use, and not finished enough to ship. We are admitting roughly twenty executives, NEDs and senior leadership-team members to use it first. In exchange for honest feedback in the first six months, the founding cohort gets early-access pricing locked for two years.",
+  body: "Akki is finished enough to use, and not finished enough to ship. We are admitting roughly twenty executives, NEDs and committee-level operators to use it first. In exchange for honest feedback in the first six months, the founding cohort gets early-access pricing locked for two years.",
   cta: { label: "Read about the cohort", href: "/cohort" },
 };
 
@@ -148,12 +148,12 @@ export const INVERTED_CTA = {
 // ============================================================
 export const WHY = {
   kicker: "WHY AKKI",
-  headline: "Senior work has structure.",
+  headline: "Executive work has structure.",
   lift: "structure",
-  dek: "AI products are mostly built for two-thumb consumers or for engineers. Senior work is neither.",
+  dek: "AI products are mostly built for two-thumb consumers or for engineers. Executive work is neither.",
   sections: [
     {
-      title: "Senior work is private work.",
+      title: "Executive work is private work.",
       body: "Most products in the AI category treat your prompts as training material. Akki treats them as evidence in a chain you can prove later. Nothing you write or upload trains anything. Anonymisation happens before reasoning, not after.",
     },
     {
@@ -178,7 +178,7 @@ export const WHAT_AKKI_DOES = {
   kicker: "WHAT AKKI DOES",
   headline: "Seven surfaces. One workspace.",
   lift: "workspace",
-  dek: "Each surface is a faithful answer to a moment that recurs in senior work. Each is built on Synisense anonymisation and the SHA-256 audit chain. Together they are the workspace.",
+  dek: "Each surface is a faithful answer to a moment that recurs in executive work. Each is built on Synisense anonymisation and the SHA-256 audit chain. Together they are the workspace.",
   surfaces: [
     { slug: "solva",            name: "Solva",            sub: "Structured reasoning.",        body: "Four modes for the questions a chat reply cannot hold. Frame audit, candidates, tension, probability weighting, reflection — cited.", href: "/solva" },
     { slug: "akki-chat",        name: "Akki Chat",        sub: "Trust-first multi-model.",     body: "Claude, Gemini, GPT. Every turn anonymised before send and hashed into a verifiable audit chain.", href: "/akki-chat" },
@@ -305,7 +305,7 @@ export const AUDIENCE_PAGES = {
       { title: "The week after the board.",          body: "Cycle Manager threads the chair's follow-ups back to the right Exco member under an opaque alias. Replies arrive in your inbox already routed." },
     ],
     image: "for-executives-hero.webp",
-    image_alt: "A senior executive annotating a printed report at a quiet desk.",
+    image_alt: "An executive annotating a printed report at a quiet desk.",
   },
   "for-non-executive-directors": {
     kicker: "FOR NEDS",
@@ -335,7 +335,7 @@ export const AUDIENCE_PAGES = {
   },
   "for-exco": {
     kicker: "FOR EXCO",
-    headline: "For the senior leadership team preparing what the board will read.",
+    headline: "For the executive committee preparing what the board will read.",
     lift: "leadership",
     dek: "The CFO drafting the going-concern paragraph. The COO writing the operational risk note. The CRO turning four colour-coded heatmaps into two paragraphs of judgement.",
     moments: [
@@ -388,7 +388,7 @@ export const TRUST = {
 // ============================================================
 export const COHORT = {
   kicker: "FOUNDING COHORT",
-  headline: "Used first by roughly twenty senior people.",
+  headline: "Used first by roughly twenty executives.",
   lift: "first",
   dek: "Akki is finished enough to use, and not finished enough to ship. We are admitting a small founding cohort to use it first.",
   body: "In exchange for honest feedback in the first six months, the cohort gets early-access pricing locked for two years. We read every application and reply personally. We are not running a waitlist; we are running an admission.",
@@ -422,8 +422,8 @@ export const ABOUT = {
   lift: "operators",
   dek: "A small team in Nairobi. We have spent decades inside the kinds of organisations Akki serves.",
   body: [
-    "Akki is a product of Syni.ai, a research studio in Nairobi. The team is small on purpose. We build for the people we have been — operating executives running cycles, non-executive directors reading packs, senior leadership teams preparing what the board will read.",
-    "We started Akki because every product in the AI category has been built for two-thumb consumers or for engineers. Senior work is neither. The work that matters carries audit consequences and requires a counterpart who understands restraint.",
+    "Akki is a product of Syni.ai, a research studio in Nairobi. The team is small on purpose. We build for the people we have been — operating executives running cycles, non-executive directors reading packs, committee-level operators preparing what the board will read.",
+    "We started Akki because every product in the AI category has been built for two-thumb consumers or for engineers. Executive work is neither. The work that matters carries audit consequences and requires a counterpart who understands restraint.",
     "Akki is not a chat product. It is a workspace for the work that actually matters. We expect to be used by people who already know what they are doing and want a counterpart, not a tutor.",
   ],
   named_roles: [
@@ -444,7 +444,7 @@ export const CONTACT = {
   paths: [
     {
       label: "For the founding cohort",
-      body: "Direct to the founder. Use this if you are applying as an executive, an NED, or a senior leadership-team member.",
+      body: "Direct to the founder. Use this if you are applying as an executive, an NED, or a committee-level operator.",
       cta_label: "bram@syni.ai",
       cta_href: "mailto:bram@syni.ai",
     },

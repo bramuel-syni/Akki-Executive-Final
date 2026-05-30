@@ -9,8 +9,8 @@ import { WHY, INVERTED_CTA } from "../copy";
 export default function WhyAkki() {
   return (
     <WebsiteShell
-      title="Why Akki — Senior work has structure"
-      description="AI products are mostly built for two-thumb consumers or for engineers. Senior work is neither."
+      title="Why Akki — Executive work has structure"
+      description="AI products are mostly built for two-thumb consumers or for engineers. Executive work is neither."
       pathname="/why-akki"
     >
       <HeroWithLift

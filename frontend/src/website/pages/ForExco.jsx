@@ -11,7 +11,7 @@ export default function ForExco() {
   return (
     <WebsiteShell
       title="For Exco — Akki"
-      description="A workspace for the senior leadership team preparing what the board will read."
+      description="A workspace for the executive committee preparing what the board will read."
       pathname="/for-exco"
     >
       <HeroWithLift

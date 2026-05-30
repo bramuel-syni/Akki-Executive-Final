@@ -8,7 +8,7 @@ export const PRIVACY = {
   blocks: [
     {
       h: "What this is",
-      p: "Akki Limited (\"Akki\", \"we\") provides a private working environment for senior people to use AI. This policy explains what data we collect, why, and how we protect it.",
+      p: "Akki Limited (\"Akki\", \"we\") provides a private working environment for executives to use AI. This policy explains what data we collect, why, and how we protect it.",
     },
     {
       h: "What we collect",
@@ -49,7 +49,7 @@ export const TERMS = {
   effective: "Effective 1 May 2026",
   blocks: [
     { h: "Agreement", p: "By accessing Akki you agree to these Terms. If you do not agree, do not use Akki." },
-    { h: "What we provide", p: "A private working environment for senior people to use AI. The service is provided as-is, on a subscription basis described in the Pricing page." },
+    { h: "What we provide", p: "A private working environment for executives to use AI. The service is provided as-is, on a subscription basis described in the Pricing page." },
     { h: "Acceptable use", p: "Akki is a tool for legitimate decision support. Do not use it to break the law, infringe rights, or harm others." },
     { h: "Your content, your responsibility", p: "You retain ownership of everything you upload or generate. You confirm you have the rights to whatever you upload." },
     { h: "Our service, our responsibility", p: "We will operate the service with diligence. We will not train models on your content. We will tell you within 72 hours of any security incident that touches your data." },

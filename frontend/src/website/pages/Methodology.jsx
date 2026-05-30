@@ -1,7 +1,7 @@
 /**
  * Website v7 — /methodology  (palette migration only, copy preserved).
  *
- * Exception to the 5-Layer pyramid: long-form, end-to-end reading, no
+ * Exception to the 5-Layer pyramid: long-form, continuous reading, no
  * CTA, first-person plural voice. Restrained narrative in a 720px
  * column. Section breaks are 1px graphite-light lines.
  */
@@ -28,7 +28,7 @@ export default function MethodologyPage() {
 
         <h2 className="section" style={{ marginTop: 56 }}>We did not start from “how do we add AI”.</h2>
         <p>
-          We started from the question senior people actually ask: “why can’t I think
+          We started from the question executives actually ask: “why can’t I think
           with this thing the way I think with a smart colleague?” That question turns
           out to be a privacy question, an audit question, and a workflow question —
           three at once. We refused to answer it as a chat product.
@@ -59,7 +59,7 @@ export default function MethodologyPage() {
 
         <span className="website-rule--full" />
 
-        <h2 id="solva" className="section" style={{ marginTop: 56 }}>We invented Solva because chat is not how senior people reason.</h2>
+        <h2 id="solva" className="section" style={{ marginTop: 56 }}>We invented Solva because chat is not how executives reason.</h2>
         <p>
           Solva is a four-mode reasoning surface — seek clarity, develop strategy,
           simulate hypothesis, see perspectives. Before any answer, it runs a frame
@@ -82,7 +82,7 @@ export default function MethodologyPage() {
             row_hash = SHA256(prev_hash + canonical_payload)
           </code>),
           and the export bundles a Python verifier so auditors can prove the chain
-          end-to-end without trusting our infrastructure. Genesis is fixed.
+          from genesis to current row without trusting our infrastructure. Genesis is fixed.
         </p>
 
         <span className="website-rule--full" />

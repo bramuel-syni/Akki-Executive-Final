@@ -24,21 +24,10 @@ REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 from lint_voice import scan, DEFAULT_TARGETS  # noqa: E402
 
-# (relative_path, banned_word_lowercased) — order-independent, line
-# numbers are not pinned because they drift with unrelated edits.
-BASELINE_KNOWN_HITS = {
-    ("frontend/src/components/marketing/SharpestUseCase.jsx", "dashboard"),
-    ("frontend/src/website/WebsiteFooter.jsx", "senior"),
-    ("frontend/src/website/pages/WhyAkki.jsx", "senior"),
-    ("frontend/src/website/pages/WhatAkkiDoes.jsx", "senior"),
-    ("frontend/src/website/pages/ForExco.jsx", "senior"),
-    ("frontend/src/website/pages/Pricing.jsx", "senior"),
-    ("frontend/src/website/pages/Methodology.jsx", "senior"),
-    ("frontend/src/website/pages/Methodology.jsx", "end-to-end"),
-    ("frontend/src/website/pages/ForOrganisations.jsx", "senior"),
-    ("frontend/src/website/pages/Home.jsx", "senior"),
-    ("frontend/src/website/pages/product/Solva.jsx", "senior"),
-}
+# 2026-02 dispatch 5 — M.1a cleared all 18 latent customer-copy
+# violations with editorial recasts. Baseline is now empty; voice
+# lint enforces strict compliance across the surface.
+BASELINE_KNOWN_HITS = set()
 
 
 def test_m0b_voice_lint_no_new_violations():

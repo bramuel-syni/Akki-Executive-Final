@@ -12,7 +12,7 @@ export default function WhatAkkiDoes() {
   return (
     <WebsiteShell
       title="What Akki does — Seven surfaces, one workspace"
-      description="A workspace for senior people. Solva, Akki Chat, Work Studio, Cycle Manager, Monitor, Pulse, Document Journal."
+      description="A workspace for executives. Solva, Akki Chat, Work Studio, Cycle Manager, Monitor, Pulse, Document Journal."
       pathname="/what-akki-does"
     >
       <HeroWithLift
@@ -24,7 +24,7 @@ export default function WhatAkkiDoes() {
       />
       <section className="website-section section-reveal" data-testid="what-surfaces">
         <p className="kicker">SEVEN SURFACES</p>
-        <h2 className="section">Each surface answers a recurring moment in senior work.</h2>
+        <h2 className="section">Each surface answers a recurring moment in executive work.</h2>
         <span className="website-rule" />
         <div className="three-col">
           {WHAT_AKKI_DOES.surfaces.map((s) => (

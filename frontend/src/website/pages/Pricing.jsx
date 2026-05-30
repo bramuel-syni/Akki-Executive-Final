@@ -43,7 +43,7 @@ export default function Pricing() {
       <InvertedCtaSection
         kicker={INVERTED_CTA.kicker}
         headline="Apply for the founding cohort."
-        body="Twenty senior people will use Akki first. Pricing is locked for two years for everyone in the cohort."
+        body="Twenty executives will use Akki first. Pricing is locked for two years for everyone in the cohort."
         ctaLabel="Read about the cohort" ctaHref="/cohort" meta={INVERTED_CTA.meta}
         testId="pricing-inverted-cta"
       />

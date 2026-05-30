@@ -62,6 +62,8 @@ def scan(targets: List[Path]) -> List[Tuple[Path, int, str, str]]:
         if t.is_dir():
             for f in t.rglob("*.jsx"):
                 out.extend((f,) + h for h in _scan_file(f))
+            for f in t.rglob("*.js"):
+                out.extend((f,) + h for h in _scan_file(f))
             for f in t.rglob("*.md"):
                 out.extend((f,) + h for h in _scan_file(f))
         elif t.is_file():

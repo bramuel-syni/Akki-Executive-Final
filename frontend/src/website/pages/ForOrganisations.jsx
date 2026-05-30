@@ -38,7 +38,7 @@ export default function ForOrganisations() {
       </section>
       <InvertedCtaSection
         kicker={INVERTED_CTA.kicker}
-        headline="Roll Akki out to your senior team."
+        headline="Roll Akki out to your executive team."
         body="Tell us about your Exco size and tenancy needs. We reply personally."
         ctaLabel="Contact organisations" ctaHref="/contact?form=organisation" meta={INVERTED_CTA.meta}
         testId="for-orgs-inverted-cta"

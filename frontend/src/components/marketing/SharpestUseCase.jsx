@@ -48,7 +48,7 @@ export default function SharpestUseCase() {
             alt="A thick board pack on a desk on Friday evening"
             overline="Friday, 5:47pm."
             overlineTone="muted"
-            body="Seven committee papers. A KPI dashboard three cycles behind. A new-investment proposal buried in appendix four. A full minute-set from October. Board Tuesday morning."
+            body="Seven committee papers. A KPI tracker three cycles behind. A new-investment proposal buried in appendix four. A full minute-set from October. Board Tuesday morning."
             testid="sharpest-friday"
           />
           <Column
