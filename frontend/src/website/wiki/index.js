@@ -1,5 +1,6 @@
 /**
- * Wiki content manifest — Phase P1 γ (2026-02).
+ * Wiki content manifest — Phase P1 γ (2026-02) · expanded P2 C.3
+ * (2026-02).
  *
  * Compile-time index of every published article. Each article is a
  * markdown file under `wiki/content/**.md` imported as a raw string
@@ -23,24 +24,43 @@
  */
 import workStudioChat from "./content/work-studio-chat.md";
 import workStudioCompile from "./content/work-studio-compile.md";
+import workStudioTasks from "./content/work-studio-tasks.md";
+import workStudioDocuments from "./content/work-studio-documents.md";
 import solvaOverview from "./content/solva-overview.md";
+import solvaModes from "./content/solva-modes.md";
+import solvaConfidence from "./content/solva-confidence.md";
 import trustCenter from "./content/trust-center.md";
+import trustPillars from "./content/trust-pillars.md";
+import auditTrail from "./content/audit-trail.md";
 import accountAuth from "./content/account-auth.md";
+import mfaArticle from "./content/mfa.md";
 import cohort from "./content/cohort.md";
 import adminUsers from "./content/admin/admin-users.md";
+import adminCohortApplications from "./content/admin/admin-cohort-applications.md";
+import adminPromptTuning from "./content/admin/admin-prompt-tuning.md";
 
 export const ARTICLES = [
   // Work Studio
-  { slug: "work-studio-chat",    title: "Work Studio · Chat",       category: "Work Studio", order: 10, adminOnly: false, body: workStudioChat },
-  { slug: "work-studio-compile", title: "Work Studio · Compile",    category: "Work Studio", order: 20, adminOnly: false, body: workStudioCompile },
+  { slug: "work-studio-chat",      title: "Work Studio · Chat",      category: "Work Studio", order: 10, adminOnly: false, body: workStudioChat },
+  { slug: "work-studio-compile",   title: "Work Studio · Compile",   category: "Work Studio", order: 20, adminOnly: false, body: workStudioCompile },
+  { slug: "work-studio-tasks",     title: "Work Studio · Tasks",     category: "Work Studio", order: 30, adminOnly: false, body: workStudioTasks },
+  { slug: "work-studio-documents", title: "Work Studio · Documents", category: "Work Studio", order: 40, adminOnly: false, body: workStudioDocuments },
   // Solva
-  { slug: "solva-overview",      title: "Solva · Overview",          category: "Solva",       order: 10, adminOnly: false, body: solvaOverview },
-  // Trust + Account
-  { slug: "trust-center",        title: "Trust Center",              category: "Trust",       order: 10, adminOnly: false, body: trustCenter },
-  { slug: "account-auth",        title: "Account & sign-in",         category: "Account",     order: 10, adminOnly: false, body: accountAuth },
-  { slug: "cohort",              title: "Early access",              category: "Account",     order: 20, adminOnly: false, body: cohort },
+  { slug: "solva-overview",        title: "Solva · Overview",         category: "Solva",       order: 10, adminOnly: false, body: solvaOverview },
+  { slug: "solva-modes",           title: "Solva · Modes",            category: "Solva",       order: 20, adminOnly: false, body: solvaModes },
+  { slug: "solva-confidence",      title: "Solva · Confidence",       category: "Solva",       order: 30, adminOnly: false, body: solvaConfidence },
+  // Trust
+  { slug: "trust-center",          title: "Trust Center",             category: "Trust",       order: 10, adminOnly: false, body: trustCenter },
+  { slug: "trust-pillars",         title: "The four pillars",         category: "Trust",       order: 20, adminOnly: false, body: trustPillars },
+  { slug: "audit-trail",           title: "Audit trail",              category: "Trust",       order: 30, adminOnly: false, body: auditTrail },
+  // Account
+  { slug: "account-auth",          title: "Account & sign-in",        category: "Account",     order: 10, adminOnly: false, body: accountAuth },
+  { slug: "mfa",                   title: "Multi-factor authentication", category: "Account",  order: 20, adminOnly: false, body: mfaArticle },
+  { slug: "cohort",                title: "Early access",             category: "Account",     order: 30, adminOnly: false, body: cohort },
   // Admin (only rendered when account.is_superadmin === true)
-  { slug: "admin-users",         title: "Admin · Users",             category: "Admin",       order: 10, adminOnly: true,  body: adminUsers },
+  { slug: "admin-users",           title: "Admin · Users",            category: "Admin",       order: 10, adminOnly: true,  body: adminUsers },
+  { slug: "admin-cohort-applications", title: "Admin · Cohort applications", category: "Admin", order: 20, adminOnly: true, body: adminCohortApplications },
+  { slug: "admin-prompt-tuning",   title: "Admin · Prompt tuning",    category: "Admin",       order: 30, adminOnly: true,  body: adminPromptTuning },
 ];
 
 export function categoriesFor(isAdmin) {

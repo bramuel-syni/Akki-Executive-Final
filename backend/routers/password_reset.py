@@ -33,10 +33,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 import bcrypt
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
 
 from core import db
+from services.rate_limit import rate_limit
 
 
 log = logging.getLogger(__name__)
@@ -158,6 +159,7 @@ async def forgot_password(
     body: ForgotPasswordIn,
     request: Request,
     background_tasks: BackgroundTasks,
+    _rl: None = Depends(rate_limit("auth_forgot")),
 ):
     """Issue a reset token + email it. ALWAYS returns 200 to avoid
     user-enumeration via timing or status-code probes.
@@ -263,7 +265,10 @@ async def get_reset_token(token: str):
 # ─────────────────────────────────────────────────────────────────────
 
 @router.post("/reset-password/{token}")
-async def consume_reset_token(token: str, body: ResetPasswordIn):
+async def consume_reset_token(
+    token: str, body: ResetPasswordIn,
+    _rl: None = Depends(rate_limit("auth_reset")),
+):
     """Set the new password + clear the token + revoke prior sessions."""
     if not token or len(token) < 30:
         raise HTTPException(status_code=401, detail={"code": "TOKEN_INVALID", "message": "Reset link is invalid."})

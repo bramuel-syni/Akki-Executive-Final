@@ -5824,3 +5824,57 @@ Trust pillar 1 is live. The founder watches Solva think.
 - Dry-run admin endpoint for Solva prompt tuning (P2 backlog)
 - Solva diff feature — diagnoses evolution over time (P3 backlog)
 
+
+---
+
+### P2 Dispatch (2026-02) — Production-readiness Waves A/B/C/D ✅
+
+**Scope:** Pre-approved 25-slice dispatch covering credentials hygiene,
+MS OAuth PKCE hardening, dead sidebar removal, security headers,
+rate limiting, error boundaries, in-app password change, WCAG AA
+audit, admin force-reset, IP-scrub catalog apply, wiki publish + 9
+new articles, Sentry wiring, hybrid status page, and a cohort email
+draft surfaced verbatim.
+
+**Discipline gates (all green):**
+- Voice-lint clean across customer-copy surfaces (`scripts/lint_voice.py`).
+- Solva v1 byte-identical guard untouched.
+- Surface drops limited to A.3 (explicitly authorised dead sidebar).
+- Raw DOM traces at 1280 / 1024 / 820 / 414 viewports for every UI ship (`/tmp/p2_trace_*.py`).
+- Pytest lockdown suites for every backend slice (`backend/tests/test_phase_p2_*.py`).
+
+**Wave A — hygiene & fixes**
+- A.1 Credentials mirror — juliusaopio labelled superadmin in P1_zeta_credentials.md and test_credentials.md; viewer@akki.ai / Viewer2026! documented as canonical non-admin tester.
+- A.2 MS OAuth PKCE — code_challenge (S256) on /start, code_verifier server-side keyed by state JWT, sent on token exchange in /callback. Per-test Mongo cleanup fixture + AsyncClient + ASGITransport — test file 7/7 green under file-level pytest.
+- A.3 Dead sidebar cleanup — entire {false && (...)} block removed from AppShell.jsx. Zero render diff at all 4 viewports.
+
+**Wave B — production readiness top 5 + H.2**
+- B.1 Security headers middleware (services/security_headers.py).
+- B.2 Rate limiting dependency-style limiter (services/rate_limit.py). Doc at P2_b2_rate_limits.md.
+- B.3 Frontend error boundaries (components/ErrorBoundary.jsx) wired at root. Sentry captureException wired.
+- B.4 In-app password change — POST /api/auth/password/change + UI panel on /app/security.
+- B.5 WCAG AA pass — audit table at P2_b5_a11y_results.md. All six target surfaces AA-clean.
+- B.6 Admin force-reset — POST /api/admin/users/{id}/force-reset-password + admin row button.
+
+**Wave C — IP scrub & wiki**
+- C.1 IP scrub — all 7 REVEAL rewrites applied. Voice-lint stays green.
+- C.2 Wiki publish — 7 articles live at /help (Phase P1 γ).
+- C.3 9 additional wiki articles authored (16 articles total).
+
+**Wave D — observability**
+- D.1 Sentry — backend + frontend wired; PII scrubbing forced ON. Env contract at P2_d1_sentry_envs.md.
+- D.2 Hybrid status page — GET /api/health/composite + /status public React page. Instatus playbook at P2_d2_instatus_setup.md.
+
+**Backend dependencies added (pip freeze):**
+- slowapi==0.1.9, limits==5.8.0, sentry-sdk==2.61.0, deprecated==1.2.18.
+
+**Frontend dependencies added (yarn):**
+- @sentry/react@10.55.0 (+ @sentry/browser@10.55.0).
+
+**Routes added:**
+- POST /api/auth/password/change (B.4)
+- POST /api/admin/users/{id}/force-reset-password (B.6)
+- GET /api/health/composite (D.2, public)
+- GET /status (frontend, public)
+
+

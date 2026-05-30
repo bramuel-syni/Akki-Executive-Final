@@ -77,6 +77,8 @@ const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
 const ResetPassword  = lazy(() => import("@/pages/ResetPassword"));
 // Phase U (2026-05-27) — OAuth callback handler.
 const OAuthCallback  = lazy(() => import("@/pages/OAuthCallback"));
+// Phase P2 D.2 (2026-02) — Public status page (no auth).
+const StatusPage = lazy(() => import("@/pages/StatusPage"));
 const CohortCopyEditor = lazy(() => import("@/pages/admin/CohortCopyEditor"));
 const EarlyAccessOptIn = lazy(() => import("@/pages/EarlyAccessOptIn"));
 const Questions = lazy(() => import("@/pages/Questions"));
@@ -288,6 +290,7 @@ function App() {
           <Route path="/help" element={<Wiki />} />{/* Phase P1 γ — wiki framework */}
           <Route path="/help/:slug" element={<Wiki />} />{/* Phase P1 γ — wiki article */}
           <Route path="/help-legacy" element={<HelpFeatures />} />{/* Phase E (kept as fallback) */}
+          <Route path="/status" element={<StatusPage />} />{/* Phase P2 D.2 — public status */}
           <Route path="/exco360" element={<WebsiteExco360 />} />
           {/* v7 (2026-05-12): per-product pages move to top-level routes. */}
           <Route path="/solva" element={<WebsiteProductSolva />} />

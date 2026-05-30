@@ -399,6 +399,106 @@ async def restore_user(
 
 
 # ─────────────────────────────────────────────────────────────────────
+# POST /api/admin/users/{id}/force-reset-password — Phase P2 B.6
+# Mint a reset-password token on behalf of the target user and return
+# the consumable reset URL. The superadmin can copy the URL into a
+# direct message to the user OR rely on the SendGrid email path (when
+# SENDGRID_FROM is configured) to deliver it.
+# ─────────────────────────────────────────────────────────────────────
+
+class ForceResetIn(BaseModel):
+    send_email: bool = Field(default=True)
+
+
+@router.post("/{user_id}/force-reset-password")
+async def force_reset_password(
+    user_id: str,
+    body: ForceResetIn,
+    request: Request,
+    _admin: Dict[str, Any] = Depends(_require_superadmin),
+):
+    """Admin-triggered password reset. Generates a single-use reset
+    token (mirrors Phase S `password_reset.py` semantics: 256-bit
+    URL-safe, 1-hour TTL, single-use). Returns the reset URL so the
+    superadmin can deliver it out-of-band if email is not configured.
+
+    Audit row written. Body schema:
+        { "send_email": true }   # default
+    """
+    from datetime import timedelta as _td
+    import secrets as _secrets
+
+    user = await db.accounts.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    token = _secrets.token_urlsafe(32)
+    issued_at = datetime.now(timezone.utc)
+    expires_at = (issued_at + _td(hours=1)).isoformat()
+
+    await db.accounts.update_one(
+        {"id": user_id},
+        {"$set": {
+            "reset_password_token":            token,
+            "reset_password_token_expires_at": expires_at,
+        }},
+    )
+
+    # Best-effort reset-URL composition using APP_PUBLIC_URL when set;
+    # falls back to the request's Origin header for dev parity.
+    import os as _os
+    public_base = (_os.environ.get("APP_PUBLIC_URL") or "").strip().rstrip("/")
+    if not public_base:
+        public_base = (request.headers.get("origin") or "").rstrip("/")
+    reset_url = (
+        f"{public_base}/reset-password/{token}" if public_base
+        else f"/reset-password/{token}"
+    )
+
+    # If the user has SendGrid configured AND send_email is requested,
+    # fire the existing password-reset email body via the shared helper.
+    email_dispatched = False
+    if body.send_email:
+        try:
+            from routers.password_reset import (
+                _render_reset_email, _send_reset_email_async,
+            )
+            rendered = _render_reset_email(
+                first_name=(user.get("first_name") or ""),
+                email=user["email"],
+                reset_url=reset_url,
+            )
+            # Sync function — call inline (the SendGrid SDK is sync and
+            # the helper never raises).
+            _send_reset_email_async(to_email=user["email"], rendered=rendered)
+            email_dispatched = True
+        except Exception:  # noqa: BLE001
+            log.warning("B.6 — force-reset email send raised; URL still returned", exc_info=True)
+
+    try:
+        await db.feature_events.insert_one({
+            "account_id":  user_id,
+            "event_type":  "admin.user.password_force_reset",
+            "occurred_at": issued_at.isoformat(),
+            "payload":     {
+                "triggered_by":     _admin.get("id"),
+                "email_dispatched": email_dispatched,
+            },
+        })
+    except Exception:  # noqa: BLE001
+        log.warning("B.6 — failed to emit force-reset event", exc_info=True)
+
+    return {
+        "ok":               True,
+        "user_id":          user_id,
+        "email":            user["email"],
+        "reset_url":        reset_url,
+        "expires_at":       expires_at,
+        "email_dispatched": email_dispatched,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────
 # GET /api/admin/users/{id}/timeline — telemetry (NO payload content)
 # ─────────────────────────────────────────────────────────────────────
 

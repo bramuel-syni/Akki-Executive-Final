@@ -2,6 +2,11 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "@/index.css";
 import App from "@/App";
+import { initSentry } from "@/lib/sentry";
+import ErrorBoundary from "@/components/ErrorBoundary";
+
+// Phase P2 D.1 (2026-02) — Sentry init (no-op when DSN unset).
+initSentry();
 
 // Phase 13.4 — `@axe-core/react` dev-time accessibility reporting.
 // Logs WCAG 2.2 AA violations to the browser console with file/line
@@ -16,6 +21,8 @@ if (process.env.NODE_ENV !== "production") {
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>,
 );

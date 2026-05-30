@@ -9,7 +9,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { ShieldCheck, Lock, AlertTriangle, Trash2 } from "lucide-react";
+import { ShieldCheck, Lock, AlertTriangle, Trash2, Key } from "lucide-react";
 
 export default function AccountSecurity() {
   const { account, bootstrap, logout } = useAuth();
@@ -21,6 +21,40 @@ export default function AccountSecurity() {
   const [dangerOpen, setDangerOpen] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState("");
   const [deletionBusy, setDeletionBusy] = useState(false);
+
+  // Phase P2 B.4 (2026-02) — in-app password change.
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+
+  const submitPasswordChange = async (e) => {
+    e.preventDefault();
+    if (!pwCurrent || !pwNew) return;
+    if (pwNew.length < 10) {
+      toast.error("New password must be at least 10 characters.");
+      return;
+    }
+    if (pwNew !== pwConfirm) {
+      toast.error("New password and confirmation do not match.");
+      return;
+    }
+    setPwBusy(true);
+    try {
+      await api.post("/auth/password/change", {
+        current_password: pwCurrent,
+        new_password: pwNew,
+      });
+      toast.success("Password updated. Other devices have been signed out.");
+      setPwCurrent("");
+      setPwNew("");
+      setPwConfirm("");
+    } catch (err) {
+      toast.error(apiErrorMessage(err));
+    } finally {
+      setPwBusy(false);
+    }
+  };
 
   const requestDeletion = async () => {
     setDeletionBusy(true);
@@ -180,6 +214,79 @@ export default function AccountSecurity() {
                 </div>
               </div>
             )}
+          </div>
+        </section>
+
+        {/* Phase P2 B.4 (2026-02) — In-app password change. */}
+        <section
+          className="bg-white border border-[#E1E6ED] rounded-sm mt-8"
+          data-testid="account-password-change"
+        >
+          <div className="px-6 py-4 border-b border-[#E1E6ED]">
+            <p className="text-sm font-medium text-[var(--ink)] flex items-center gap-2">
+              <Key className="w-4 h-4 text-[var(--accent)]" /> Password
+            </p>
+            <p className="text-xs text-slate-500 mt-1">
+              Set a new sign-in password. Changing it signs out every other device.
+            </p>
+          </div>
+          <div className="p-6">
+            <form onSubmit={submitPasswordChange} className="space-y-4 max-w-md">
+              <div className="space-y-1.5">
+                <Label htmlFor="current_password" className="text-xs uppercase tracking-wider text-slate-500 font-semibold">
+                  Current password
+                </Label>
+                <Input
+                  id="current_password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={pwCurrent}
+                  onChange={(e) => setPwCurrent(e.target.value)}
+                  className="h-9 text-sm rounded-sm"
+                  data-testid="password-change-current"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="new_password" className="text-xs uppercase tracking-wider text-slate-500 font-semibold">
+                  New password
+                </Label>
+                <Input
+                  id="new_password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={pwNew}
+                  onChange={(e) => setPwNew(e.target.value)}
+                  className="h-9 text-sm rounded-sm"
+                  data-testid="password-change-new"
+                  minLength={10}
+                />
+                <p className="text-[11px] text-slate-500">
+                  Minimum 10 characters.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="confirm_password" className="text-xs uppercase tracking-wider text-slate-500 font-semibold">
+                  Confirm new password
+                </Label>
+                <Input
+                  id="confirm_password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={pwConfirm}
+                  onChange={(e) => setPwConfirm(e.target.value)}
+                  className="h-9 text-sm rounded-sm"
+                  data-testid="password-change-confirm"
+                />
+              </div>
+              <Button
+                type="submit"
+                disabled={pwBusy || !pwCurrent || !pwNew || !pwConfirm}
+                className="bg-[var(--ink)] hover:bg-[#0E2958] rounded-sm h-9"
+                data-testid="password-change-submit"
+              >
+                {pwBusy ? "Updating…" : "Update password"}
+              </Button>
+            </form>
           </div>
         </section>
 

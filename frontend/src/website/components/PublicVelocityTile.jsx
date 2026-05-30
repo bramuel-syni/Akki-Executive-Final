@@ -5,7 +5,7 @@
  * Three-state copy locked verbatim:
  *   - 0 sessions     → "Solva is in a quiet patch. Reasoning velocity is reported when sessions have completed."
  *   - 1-4 sessions   → "Solva is warming up. Velocity reports once five sessions have completed in the window."
- *   - 5+ sessions    → "Akki delivers a fully-cited 16-slide diagnosis in <avg>s on average. p95 <p95>s."
+ *   - 5+ sessions    → "Akki delivers a fully-cited diagnosis in <avg>s on average. p95 <p95>s."
  *
  * Public copy uses "Akki" (not "Solva") since prospects may not yet
  * know the product-internal names. The matching internal-surface
@@ -44,7 +44,7 @@ export default function PublicVelocityTile() {
   } else {
     const avgS = Math.round(((data.avg_ms_per_slide || 0) * 16) / 1000);
     const p95S = Math.round((data.p95_ms || 0) / 1000);
-    copy = `Akki delivers a fully-cited 16-slide diagnosis in ${avgS}s on average. p95 ${p95S}s.`;
+    copy = `Akki delivers a fully-cited diagnosis in ${avgS}s on average. p95 ${p95S}s.`;
     testidSuffix = "numeric";
   }
   return (

@@ -22,10 +22,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
 
 from core import db
+from services.rate_limit import rate_limit
 
 log = logging.getLogger("akki.cohort.applications")
 router = APIRouter(prefix="/api/cohort", tags=["cohort"])
@@ -106,6 +107,7 @@ def _notify_founder(app_row: dict) -> None:
 @router.post("/applications", status_code=200)
 async def submit_application(
     body: CohortApplicationIn, background: BackgroundTasks,
+    _rl: None = Depends(rate_limit("cohort_apply")),
 ) -> dict:
     cutoff = (_now() - timedelta(hours=24)).isoformat()
     existing = await db.cohort_applications.find_one(

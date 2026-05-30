@@ -14,6 +14,15 @@ Asserts:
      (still `{authorize_url, provider}` — no extra leaked fields).
 
 Live MS endpoints are NEVER hit — token exchange + JWKS are mocked.
+
+P2 A.2 quality bar — every test must pass under file-level pytest.
+The test file uses `httpx.AsyncClient` + `ASGITransport` driven by the
+session-scoped event loop in conftest.py, which keeps Motor's async
+client bound to a single loop for the lifetime of the suite. (The
+previous module-level `TestClient(app)` pattern spawned a fresh
+asyncio loop per request and broke Motor on the 2nd hit — see the
+`RuntimeError: Event loop is closed` trace in the iter1 fork
+handoff.)
 """
 from __future__ import annotations
 
@@ -23,7 +32,7 @@ import hashlib
 import os
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -34,11 +43,35 @@ sys.path.insert(0, str(REPO / "backend"))
 from dotenv import load_dotenv  # noqa: E402
 load_dotenv(REPO / "backend" / ".env")
 
-from fastapi.testclient import TestClient  # noqa: E402
+from httpx import ASGITransport, AsyncClient  # noqa: E402
 from server import app  # noqa: E402
 
 
-client = TestClient(app)
+_BASE = "http://testserver"
+
+
+@pytest.fixture(autouse=True)
+def _clean_pkce_collection():
+    """Phase P2 A.2 — each test starts with an empty PKCE-verifier
+    collection so verifiers minted by one test don't bleed into the
+    invariant assertions of the next."""
+    import pymongo
+    _db = pymongo.MongoClient(os.environ["MONGO_URL"])[os.environ["DB_NAME"]]
+    _db.oauth_pkce_verifiers.delete_many({"provider": "microsoft"})
+    yield
+    _db.oauth_pkce_verifiers.delete_many({"provider": "microsoft"})
+
+
+async def _async_get(path: str, **kwargs):
+    """One-shot AsyncClient GET driven by the session event loop."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url=_BASE) as ac:
+        return await ac.get(path, **kwargs)
+
+
+def _run(coro):
+    """Run an awaitable on the session event loop (defined in conftest.py)."""
+    return asyncio.get_event_loop().run_until_complete(coro)
 
 
 def _authorize_url_params(url: str) -> dict:
@@ -49,7 +82,7 @@ def _authorize_url_params(url: str) -> dict:
 def test_a2_start_returns_code_challenge_S256(path):
     """The authorize_url carries the PKCE challenge + method on every
     non-probe /start call."""
-    r = client.get(path)
+    r = _run(_async_get(path))
     assert r.status_code == 200, r.text
     data = r.json()
     assert "authorize_url" in data
@@ -64,14 +97,15 @@ def test_a2_start_returns_code_challenge_S256(path):
 def test_a2_start_response_shape_unchanged():
     """End-user shape is still {authorize_url, provider} — no
     verifier / sid / pkce metadata leaked."""
-    r = client.get("/api/auth/oauth/microsoft/start")
+    r = _run(_async_get("/api/auth/oauth/microsoft/start"))
+    assert r.status_code == 200, r.text
     data = r.json()
     assert set(data.keys()) == {"authorize_url", "provider"}
 
 
 def test_a2_probe_returns_minimal_shape():
     """Probe mode skips PKCE generation entirely."""
-    r = client.get("/api/auth/oauth/microsoft/start?probe=1")
+    r = _run(_async_get("/api/auth/oauth/microsoft/start?probe=1"))
     assert r.status_code == 200
     data = r.json()
     assert data == {"configured": True, "provider": "microsoft"}
@@ -80,8 +114,8 @@ def test_a2_probe_returns_minimal_shape():
 def test_a2_pkce_verifier_persisted_in_mongo():
     """After /start, the verifier MUST be in oauth_pkce_verifiers
     keyed by the sid encoded in the state JWT."""
-    r = client.get("/api/auth/oauth/microsoft/start")
-    assert r.status_code == 200
+    r = _run(_async_get("/api/auth/oauth/microsoft/start"))
+    assert r.status_code == 200, r.text
     params = _authorize_url_params(r.json()["authorize_url"])
     state = params["state"]
     challenge = params["code_challenge"]
@@ -141,9 +175,7 @@ def test_a2_exchange_code_sends_code_verifier():
 
     with patch.object(ao, "httpx") as mock_httpx:
         mock_httpx.AsyncClient = lambda *a, **kw: _FakeClient()
-        asyncio.get_event_loop().run_until_complete(
-            ao._ms_exchange_code("FAKE_CODE", code_verifier="FAKE_VERIFIER_12345")
-        )
+        _run(ao._ms_exchange_code("FAKE_CODE", code_verifier="FAKE_VERIFIER_12345"))
     assert captured["data"]["code_verifier"] == "FAKE_VERIFIER_12345"
     assert captured["data"]["code"] == "FAKE_CODE"
     assert captured["data"]["grant_type"] == "authorization_code"
@@ -164,10 +196,10 @@ def test_a2_callback_rejects_when_verifier_missing():
          "exp": int(time.time()) + _MS_STATE_TTL_SECONDS},
         JWT_SECRET, algorithm="HS256",
     )
-    r = client.get(
+    r = _run(_async_get(
         f"/api/auth/oauth/microsoft/callback?code=FAKE_CODE&state={fake_state}",
         follow_redirects=False,
-    )
+    ))
     assert r.status_code == 400
     detail = r.json()["detail"]
     assert detail["error"] == "microsoft_oauth_pkce_state_invalid"

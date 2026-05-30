@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Query
 
 from core import db, get_current_account
+from services.rate_limit import rate_limit
 
 router = APIRouter(prefix="/api/observability", tags=["observability"])
 public_router = APIRouter(prefix="/api/public/observability", tags=["public-observability"])
@@ -99,6 +100,7 @@ async def reasoning_velocity(
 @public_router.get("/reasoning_velocity")
 async def public_reasoning_velocity(
     window: str = Query("30d", pattern="^30d$"),
+    _rl: None = Depends(rate_limit("public_tile")),
 ) -> Dict[str, Any]:
     now = time.time()
     if _public_cache["payload"] and _public_cache["expires_at"] > now:

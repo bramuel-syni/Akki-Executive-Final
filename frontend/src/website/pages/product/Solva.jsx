@@ -13,7 +13,7 @@ export default function Solva() {
   return (
     <WebsiteShell
       title="Solva — Structured reasoning · Akki"
-      description="Solva runs a five-layer reasoning pipeline behind every answer: frame audit, candidates, tension, probability weighting, reflection."
+      description="Solva runs a structured reasoning pipeline behind every answer — every claim cited, every bias named."
       pathname="/solva"
     >
       <HeroWithLift

@@ -18,7 +18,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
   Users, UserPlus, Search, Download, Shield, ShieldOff,
-  Activity, X, Loader2, RefreshCw,
+  Activity, X, Loader2, RefreshCw, KeyRound,
 } from "lucide-react";
 import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
@@ -91,6 +91,33 @@ export default function AdminUsers() {
       await api.post(`/admin/users/${u.id}/restore`);
       toast.success(`Restored ${u.email}`);
       load();
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+  };
+
+  // Phase P2 B.6 (2026-02) — admin-triggered password reset.
+  // Mints a single-use reset token on the target account and (when
+  // SendGrid is configured) emails the link. The reset URL is also
+  // copied to the clipboard so the admin can deliver it out-of-band.
+  const onForceReset = async (u) => {
+    if (!window.confirm(
+      `Force a password reset for ${u.email}?\n\n` +
+      `A reset link will be generated. If email is configured, it will ` +
+      `be sent to the user. Either way, the link will be copied to ` +
+      `your clipboard so you can deliver it directly.`
+    )) return;
+    try {
+      const { data } = await api.post(
+        `/admin/users/${u.id}/force-reset-password`,
+        { send_email: true },
+      );
+      try {
+        await navigator.clipboard.writeText(data.reset_url);
+      } catch (_clip) { /* clipboard write best-effort */ }
+      toast.success(
+        data.email_dispatched
+          ? `Reset link emailed to ${u.email} and copied to clipboard.`
+          : `Reset link copied to clipboard for ${u.email}.`,
+      );
     } catch (e) { toast.error(apiErrorMessage(e)); }
   };
 
@@ -315,6 +342,15 @@ export default function AdminUsers() {
                             <ShieldOff className="w-3 h-3 mr-1" /> Suspend
                           </Button>
                         )}
+                        <Button
+                          size="sm" variant="ghost"
+                          onClick={() => onForceReset(u)}
+                          className="text-[11.5px] h-7 px-2 text-[var(--deep)]"
+                          data-testid={`admin-users-row-force-reset-${u.id}`}
+                          title="Generate a single-use password-reset link for this user"
+                        >
+                          <KeyRound className="w-3 h-3 mr-1" /> Reset password
+                        </Button>
                       </td>
                     </tr>
                   );

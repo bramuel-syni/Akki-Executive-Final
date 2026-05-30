@@ -32,10 +32,6 @@ export const EVIDENCE = [
     caption: "Pages in, pages out — a 280-page board pack reduced to a two-page briefing with cited sources.",
   },
   {
-    numeral: "5",
-    caption: "Layers of reasoning behind every Solva output — frame audit, candidate generation, tension detection, probability weighting, reflection.",
-  },
-  {
     numeral: "100%",
     caption: "Of claims traceable to their source paragraph in your underlying material.",
   },
@@ -91,8 +87,8 @@ export const TIER_3 = {
   cards: [
     {
       title: "Solva",
-      sub: "Structured reasoning with five layers.",
-      body: "Four modes — seek clarity, develop strategy, simulate hypothesis, see perspectives. Each runs the same five-layer pipeline: frame audit, candidate generation, tension detection, probability weighting, reflection. The answer reflects what was actually weighed.",
+      sub: "Structured reasoning, fully cited.",
+      body: "Four modes — seek clarity, develop strategy, simulate hypothesis, see perspectives. Each is structured. Each answer ships with the evidence behind it. The answer reflects what was actually weighed.",
       cta: { label: "How Solva reasons", href: "/solva" },
     },
     {
@@ -162,7 +158,7 @@ export const WHY = {
     },
     {
       title: "Decisions, not transcripts.",
-      body: "A chat thread answers the question you ask. The workspace helps you find the question worth asking. The reasoning surface holds the line through five layers of work — frame audit, candidates, tension, probability weighting, reflection — so you leave with a position, not a monologue.",
+      body: "A chat thread answers the question you ask. The workspace helps you find the question worth asking. The reasoning surface holds the line — frame, evidence, tension, weighing, reflection — so you leave with a position, not a monologue.",
     },
     {
       title: "A peer, not a vendor.",
@@ -369,8 +365,8 @@ export const TRUST = {
     {
       anchor: "solva",
       title: "Solva at depth.",
-      sub: "Five reasoning layers, each auditable.",
-      body: "Every Solva output runs the same five-layer pipeline: frame audit, candidate generation, tension detection, probability weighting, reflection. Each layer's input, output, and decision criteria persist to the session record. You can replay any reasoning step against the original payload.",
+      sub: "Structured reasoning, every step auditable.",
+      body: "Every Solva output is structured and auditable. Each step's inputs, outputs, and the evidence it weighed persist to the session record. You can replay any reasoning step against the original payload.",
     },
     {
       anchor: "agent-cycle",

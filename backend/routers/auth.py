@@ -27,6 +27,7 @@ from core import (
     provision_default_context,
     JWT_SECRET, JWT_ALGO, APP_NAME,
 )
+from services.rate_limit import rate_limit
 
 router = APIRouter(prefix="/api")
 
@@ -55,7 +56,11 @@ class MFAVerifyIn(BaseModel):
 
 
 @router.post("/auth/register")
-async def register(body: RegisterIn, response: Response):
+async def register(
+    body: RegisterIn,
+    response: Response,
+    _rl: None = Depends(rate_limit("auth_register")),
+):
     email = body.email.lower().strip()
     existing = await db.accounts.find_one({"email": email}, {"_id": 0})
     if existing:
@@ -92,7 +97,10 @@ async def register(body: RegisterIn, response: Response):
 
 
 @router.post("/auth/login")
-async def login(body: LoginIn, request: Request, response: Response):
+async def login(
+    body: LoginIn, request: Request, response: Response,
+    _rl: None = Depends(rate_limit("auth_login")),
+):
     email = body.email.lower().strip()
     # Key rate-limit on email only (ingress proxy host is not stable).
     ident = email

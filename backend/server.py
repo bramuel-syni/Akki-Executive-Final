@@ -346,6 +346,32 @@ app.include_router(tasks_initiatives_router.router)
 from routers import async_jobs as async_jobs_router  # noqa: E402
 app.include_router(async_jobs_router.router)
 
+# Phase P2 B.4 (2026-02) — In-app password change.
+from routers import auth_password_change as auth_password_change_router  # noqa: E402
+app.include_router(auth_password_change_router.router)
+
+# Phase P2 D.2 (2026-02) — Hybrid status page composite health probe.
+from routers import health_composite as health_composite_router  # noqa: E402
+app.include_router(health_composite_router.router)
+
+
+# -----------------------------------------------------------------------------
+# Phase P2 B.1 (2026-02) — Security headers middleware.
+# Adds HSTS/CSP/X-Frame/X-Content-Type-Options/Referrer-Policy/
+# Permissions-Policy to every response. Toggle via SECURITY_HEADERS_DISABLED=1.
+# Registered BEFORE CORS so the headers ride on every response (including
+# CORS preflights).
+# -----------------------------------------------------------------------------
+from services.security_headers import SecurityHeadersMiddleware  # noqa: E402
+app.add_middleware(SecurityHeadersMiddleware)
+
+
+# -----------------------------------------------------------------------------
+# Phase P2 B.2 (2026-02) — Rate limiting.
+# Per-IP + per-user rate-limit dependency. Routes opt in via
+# `_rl: None = Depends(rate_limit("bucket_name"))`. See services/rate_limit.py.
+# -----------------------------------------------------------------------------
+
 
 # -----------------------------------------------------------------------------
 # CORS — robust to operator misconfiguration. The two failure modes we've hit:
@@ -415,6 +441,11 @@ logger.info(
 # -----------------------------------------------------------------------------
 @app.on_event("startup")
 async def on_startup():
+    # ─── Phase P2 D.1 (2026-02) — Sentry init (no-op when DSN unset) ──
+    from services.sentry_setup import init_sentry as _init_sentry
+    _sentry_mode = _init_sentry()
+    logging.getLogger("akki").info("sentry: mode=%s", _sentry_mode)
+
     # ─── Phase E.A — ClamAV boot guard ──────────────────────────────────
     # Refuses to start when AKKI_ENV=production AND
     # ALLOW_UNSAFE_UPLOADS=true. Returns the active mode so we can log
