@@ -4040,3 +4040,93 @@ rule.
     7d row renders the empty-state copy with no `--` / `NaN` /
     loading-state slippage.
 
+
+---
+
+### Sprint M.0 — Pre-flight prep (no JSX) — M.0b + M.0c ✅, M.0a HALTED 🚧 (2026-02 fork-resume v3)
+
+User dispatched three non-JSX prep slices ahead of the Sprint M
+hero red-line. M.0b and M.0c shipped green; M.0a is halted because
+the 10 marketing asset URLs were referenced in a prior user message
+that is NOT present in the current fork's context.
+
+#### M.0a — Marketing asset mirror 🚧 HALTED
+- **Blocker:** the 10 asset URLs (presumed `fal.media` / cloudfront
+  generations) live in a user message outside this fork. Cannot
+  download without them. User to re-paste the 10 URLs to unblock.
+- **Pending work** (will resume after URLs supplied):
+  • Download all 10 to `/app/frontend/public/marketing/<slug>.png`.
+  • Generate 2x retina versions.
+  • Author `/app/docs/marketing_assets.md` (asset map + srcset).
+  • Create `tests/test_marketing_assets_exist.py` (file presence +
+    size sanity).
+
+#### M.0b — Customer-copy ban list update + voice lint ✅
+- **WEBSITE_BRIEF_V3.md §1.3.1 "Late additions (post-launch)"** —
+  appended new section with `senior (in customer-facing copy)` and
+  one-line rationale (reads elderly in customer copy; valid in
+  internal voice as audience descriptor; replace with experienced,
+  tenured, board-level, or the specific role).
+- **scripts/lint_voice.py** — new scanner (~60 code-only LOC).
+  Reads `services/two_pass.py::BANNED_WORDS` + the late-additions
+  list, scans `frontend/src/pages/marketing/**/*.jsx` +
+  `frontend/src/components/marketing/**/*.jsx` +
+  `frontend/src/website/**/*.jsx` +
+  `docs/marketing_assets.md` (when it exists). Word-boundary regex
+  match, case-insensitive. Returns exit code 1 on hits.
+- **tests/test_phase_m0b_voice_lint.py** — three locks:
+  1. `BASELINE_KNOWN_HITS` (11 entries surfaced on first run) is
+     ratified as the M.0b-followup backlog. New violations beyond
+     the baseline FAIL the build.
+  2. Stale baseline rows (a violation cleaned upstream but still
+     listed) FAIL the build so the baseline cannot rot silently.
+  3. WEBSITE_BRIEF_V3.md §1.3.1 voice for `senior` lock.
+- **M.0b-followup backlog** (latent violations surfaced — defer to
+  Sprint M.1 hero rewrite or a dedicated cleanup pass):
+  | File | Banned word(s) |
+  | --- | --- |
+  | `components/marketing/SharpestUseCase.jsx` | dashboard |
+  | `website/WebsiteFooter.jsx` | senior |
+  | `website/pages/WhyAkki.jsx` | senior ×2 |
+  | `website/pages/WhatAkkiDoes.jsx` | senior ×2 |
+  | `website/pages/ForExco.jsx` | senior |
+  | `website/pages/Pricing.jsx` | senior |
+  | `website/pages/Methodology.jsx` | senior ×2, end-to-end ×2 |
+  | `website/pages/ForOrganisations.jsx` | senior |
+  | `website/pages/Home.jsx` | senior ×3 (incl. 2 alt-text) |
+  | `website/pages/product/Solva.jsx` | senior |
+
+#### M.0c — Cohort applications scaffold ✅
+- **routers/cohort_applications.py** — new router
+  (`POST /api/cohort/applications`, ~80 code-only LOC).
+  Pydantic `CohortApplicationIn` schema with EmailStr +
+  length-guarded `name/organisation/role/use_case/referral_source`.
+  Idempotency window: 24h on lowercased email →
+  `deduplicated=true` second-POST short-circuit.
+  Storage: `db.cohort_applications` with `id`, `status="received"`,
+  `created_at`, `applicant_confirmation_body="<!-- COPY TBD M.2 -->"`.
+- **_notify_founder helper** — reads `FOUNDER_NOTIFY_EMAIL` +
+  `SENDGRID_API_KEY` + `SENDGRID_FROM_EMAIL` env. Unset → warning
+  log `cohort_application_notify_skipped` (never raises, never
+  500s). SendGrid SDK errors → `cohort_application_notify_failed`
+  log. Pattern mirrors `services.cohort.welcome_email`.
+- **docs/cohort_pricing.md** — placeholder doc awaiting user-
+  supplied pricing tiers. `<!-- COPY TBD M.2 -->` marker.
+- **server.py** — `cohort_applications_router` registered.
+- **tests/test_phase_m0c_cohort_applications.py** — 5 tests
+  (router-registered, pricing placeholder lock, happy path with
+  dedupe assertion, validation 422 ×3, notify no-op when env unset).
+- **Live smoke** — POST returned 200 with new uuid + dedupe path
+  verified via repeat POST.
+
+**Discipline gates:** v1 byte-identical guard 0 lines. 53/53
+cumulative pytests green across ZZ.1, ZZ.2, ZZ.2.x, ZZ.3, ZZ.4,
+M.0b, M.0c, v1-unchanged. **LOC overage:** ~146 code-only LOC vs
+the 80-LOC prep-slice cap (~83% over). The cap assumed M.0a
+worked from a pre-existing harness; M.0b had to author the
+scanner from scratch, and M.0c had to mirror the SendGrid env
++ fail-soft pattern. Halt-and-ping per discipline rule.
+
+**Next dispatch:** unblock M.0a (asset URLs) then halt for user to
+red-line 3 hero options. Until red-line, no Sprint M.1 JSX.
+

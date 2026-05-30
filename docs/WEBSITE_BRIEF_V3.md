@@ -44,6 +44,10 @@ These are non-negotiable. The website never uses any of these terms anywhere —
 •  all under one roof / one-stop-shop — describe the integration concretely
 •  transform / transformation (used generically) — be specific about what changes
 
+## 1.3.1 Late additions (post-launch)
+Additions made after the initial v3 freeze, sourced from cohort-conversation feedback.
+•  senior (in customer-facing copy) — reads elderly in customer copy; remains valid in the internal voice guide as an audience descriptor. Replace with "experienced," "tenured," "board-level," or the specific role.
+
 ## 1.4 The vocabulary the website does use
 These words and phrases are the affirmative voice — the language that makes the website sound like Akki, not like a vendor.
 •  read (the verb) — Akki reads across material; you read what Akki produced

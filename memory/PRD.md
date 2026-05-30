@@ -1,29 +1,27 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
-### Mega-Dispatch 2026-02 (fork-resume v3) — ZZ.2.x housekeeping + ZZ.3 + ZZ.4 CLOSED ✅ (Sprint M HALTED)
+### Mega-Dispatch 2026-02 (fork-resume v3) — ZZ.2.x housekeeping + ZZ.3 + ZZ.4 + M.0b + M.0c CLOSED ✅ (M.0a HALTED · Sprint M.1+ HALTED)
 
-**Scope:** Promoted ZZ.1/ZZ.2/ZZ.2.x ledger rows; shipped ZZ.3 (Trust Center > Reasoning tab with 6 audit-transparency tiles + bias-by-kind breakdown + (day, event_kind) aggregated feed + Solva escalation click receipt) and ZZ.4 (single per-window latency aggregate tile reading the existing `solva_v2_sessions` collection).
+**Scope:** Promoted ZZ.1/ZZ.2/ZZ.2.x ledger rows; shipped ZZ.3 (Trust Center > Reasoning tab) and ZZ.4 (latency aggregate tile); shipped non-JSX Sprint M prep slices M.0b (voice lint + `senior` ban) and M.0c (cohort applications scaffold).
 
 **Closed:**
-- ✅ Phase ZZ.1 ledger row promoted — Synisense reidentification display fix
-- ✅ Phase ZZ.2 ledger row promoted — Three-tier Solva governance in Chat
-- ✅ Phase ZZ.2.x ledger row promoted — deterministic fixture path + 15-row Playwright trace
-- ✅ Phase ZZ.3 — Trust Center > Reasoning. `GET /api/trust-center/reasoning?window=7d|30d`, `POST /api/chats/{cid}/governance/solva-escalation-clicked`, ReasoningView with 6 verbatim-labelled tiles, window toggle, aggregated feed. `zz2_governance` now persisted to `chat_audit_log.message.received` payload. **LOC delta accepted with overage** (user-ratified ~265–300 LOC vs 250 cap).
-- ✅ Phase ZZ.4 — `GET /api/observability/reasoning_velocity?window=7d|30d`. ReasoningVelocityTile mounted beneath ZZ.3 tile row with locked voice-clean copy + empty state + slowest-layer hint guarded by 2× threshold. **LOC delta over tightened 80-LOC cap** (~107 LOC, ~34% over).
+- ✅ Phase ZZ.1 / ZZ.2 / ZZ.2.x ledger rows promoted.
+- ✅ Phase ZZ.3 — Trust Center > Reasoning. `/api/trust-center/reasoning?window=7d|30d`, click-receipt endpoint, ReasoningView with 6 tiles + feed. `zz2_governance` persisted to `chat_audit_log`. **LOC overage accepted** (~265–300 LOC vs 250 cap).
+- ✅ Phase ZZ.4 — `/api/observability/reasoning_velocity?window=7d|30d`. ReasoningVelocityTile with voice-clean copy + empty state + slowest-layer hint. **LOC overage accepted** (~107 LOC vs 80 cap).
+- ✅ Sprint M.0b — `senior` added to customer-copy ban list in §1.3.1 of WEBSITE_BRIEF_V3.md. `scripts/lint_voice.py` scanner authored. 11 latent baseline hits ratified as `M.0b-followup` backlog.
+- ✅ Sprint M.0c — `POST /api/cohort/applications` with pydantic validation, 24h idempotency, fail-soft SendGrid notify, applicant confirmation body placeholder. `docs/cohort_pricing.md` placeholder. 5 contract tests green.
 
-**Tests added:** 18 new pytests across `test_phase_zz3.py` (10) + `test_phase_zz4.py` (8) including math validation with seeded sessions, source-strict locks, voice-lint banned-vocab assertions, live admin e2e probes. **41/41 ZZ.* pytests green.**
+**Halted:**
+- 🚧 Sprint M.0a — Marketing asset mirror. The 10 asset URLs are in a user message NOT present in this fork's context. **Awaiting user re-paste.**
+- ⏸ Sprint M.1+ — JSX rewrite. **Awaiting user red-line on the 3 hero options.**
 
-**Raw DOM Playwright traces stored:**
-- `/app/memory/screenshots/zz3/trace.json` — 3 viewports × 6 tiles + feed
-- `/app/memory/screenshots/zz4/trace.json` — 3 viewports × 2 windows (empty-state + populated)
+**Tests:** 53/53 cumulative pytests green across ZZ.1, ZZ.2, ZZ.2.x, ZZ.3, ZZ.4, M.0b, M.0c, v1-unchanged.
 
-**Discipline gates honoured throughout:**
+**Discipline gates throughout:**
 - v1 byte-identical guard 0 lines (`test_solva_v1_unchanged.py` 4/4 green)
-- Voice-lint clean on all new user-facing copy
-- Multi-viewport raw DOM traces at 1280 / 1024 / 820
-
-**Halted before Sprint M** per user instruction — needs red-line on 3 hero options before any JSX ships.
+- Voice-lint clean on all new strings
+- Multi-viewport raw DOM traces at 1280 / 1024 / 820 for ZZ.3 + ZZ.4
 
 
 

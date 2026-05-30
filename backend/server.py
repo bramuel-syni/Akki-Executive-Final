@@ -119,6 +119,7 @@ from routers import healthz_shield as healthz_shield_router  # noqa: E402  H2.5 
 from routers import healthz_clamav as healthz_clamav_router  # noqa: E402  Hardening Step 1
 from routers import trust_center as trust_center_router  # noqa: E402  H3
 from routers import observability as observability_router  # noqa: E402  ZZ.4
+from routers import cohort_applications as cohort_applications_router  # noqa: E402  M.0c
 from routers import admin_shield_backfill as admin_shield_backfill_router  # noqa: E402  H4
 from routers import onboarding_status as onboarding_status_router  # noqa: E402  J1
 from routers import active_context as active_context_router  # noqa: E402  Phase A — Roles & Company Navigation
@@ -291,6 +292,7 @@ app.include_router(healthz_shield_router.router)  # H2.5 follow-up Part B — Sh
 app.include_router(healthz_clamav_router.router)  # Hardening Step 1 — ClamAV daemon status probe
 app.include_router(trust_center_router.router)  # H3 — Trust Center v1
 app.include_router(observability_router.router)  # ZZ.4 — Reasoning velocity
+app.include_router(cohort_applications_router.router)  # M.0c — Cohort applications scaffold
 app.include_router(admin_shield_backfill_router.router)  # H4 — Shield back-fill
 app.include_router(onboarding_status_router.router)  # J1 — re-intro banner + tooltips
 app.include_router(active_context_router.router)
