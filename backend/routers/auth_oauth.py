@@ -100,6 +100,10 @@ async def oauth_google_start() -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────
 class FinishIn(BaseModel):
     session_id: str = Field(min_length=4, max_length=512)
+    # Phase P5.3 (2026-02) — when set, the Google OAuth finish consumes
+    # the cohort magic link before issuing the session. Frontend passes
+    # this through from /welcome/{token}'s "Continue with Google" CTA.
+    magic_link_token: Optional[str] = Field(default=None, max_length=400)
 
 
 @router.post("/google/finish")
@@ -219,6 +223,40 @@ async def oauth_google_finish(
     refresh = create_refresh_token(account_id)
     set_auth_cookies(response, access, refresh)
 
+    # Phase P5.3 (2026-02) — consume the cohort magic link if supplied.
+    # If invalid/expired/consumed, fail the OAuth finish rather than
+    # silently signing the user in via a non-cohort path.
+    mlt = (body.magic_link_token or "").strip()
+    magic_link_consumed = False
+    if mlt:
+        from routers.cohort_magic_link import _find_link_record
+        row = await _find_link_record(mlt)
+        if not row:
+            raise HTTPException(status_code=410, detail={
+                "code":    "magic_link_invalid_or_consumed",
+                "message": "This invite link is no longer valid.",
+            })
+        await db.cohort_magic_links.update_one(
+            {"id": row["id"]},
+            {"$set": {
+                "consumed_at":         _iso(_now()),
+                "consumed_by_user_id": account_id,
+            }},
+        )
+        await db.cohort_applications.update_one(
+            {"id": row["application_id"]},
+            {"$set": {
+                "status":     "approved_redeemed",
+                "redeemed_at": _iso(_now()),
+                "redeemed_by": account_id,
+            }},
+        )
+        await db.accounts.update_one(
+            {"id": account_id},
+            {"$set": {"cohort_application_id": row["application_id"]}},
+        )
+        magic_link_consumed = True
+
     return {
         "ok":           True,
         "token":        access,             # frontend stores in localStorage too
@@ -227,6 +265,7 @@ async def oauth_google_finish(
         "is_new":       is_new,
         "next_url":     next_url,
         "provider":     "google",
+        "magic_link_consumed": magic_link_consumed,
     }
 
 
@@ -638,6 +677,50 @@ async def oauth_microsoft_callback(
     refresh = create_refresh_token(account_id)
     redirect_resp = RedirectResponse(url=next_url, status_code=302)
     set_auth_cookies(redirect_resp, access, refresh)
+
+    # Phase P5.3 (2026-02) — cohort magic-link consume.
+    # When the OAuth start packed `mlt` (magic_link_token) into the
+    # state JWT, complete the cohort consume here before returning the
+    # session. If the token is invalid/expired/already-consumed we
+    # FAIL the callback rather than silently signing the user in —
+    # the cohort gate must hold.
+    mlt = (state_payload.get("mlt") or "").strip()
+    if mlt:
+        try:
+            from routers.cohort_magic_link import _find_link_record
+            row = await _find_link_record(mlt)
+            if not row:
+                _ms_audit("login_failure", session_id=session_id, error="magic_link_invalid_or_consumed")
+                return RedirectResponse(
+                    url="/welcome/" + mlt + "?oauth_error=consumed",
+                    status_code=302,
+                )
+            # Mark consumed + link the account to the application.
+            await db.cohort_magic_links.update_one(
+                {"id": row["id"]},
+                {"$set": {
+                    "consumed_at":         _iso(_now()),
+                    "consumed_by_user_id": account_id,
+                }},
+            )
+            await db.cohort_applications.update_one(
+                {"id": row["application_id"]},
+                {"$set": {
+                    "status":     "approved_redeemed",
+                    "redeemed_at": _iso(_now()),
+                    "redeemed_by": account_id,
+                }},
+            )
+            await db.accounts.update_one(
+                {"id": account_id},
+                {"$set": {"cohort_application_id": row["application_id"]}},
+            )
+            _ms_audit("magic_link_consumed", session_id=session_id,
+                      account_id=account_id, application_id=row["application_id"])
+        except Exception as _mlt_err:  # noqa: BLE001
+            log.warning("oauth microsoft: magic-link consume failed err=%s", str(_mlt_err)[:200])
+            _ms_audit("login_failure", session_id=session_id, error="magic_link_consume_error")
+
     _ms_audit(
         "login_success",
         session_id=session_id, account_id=account_id,

@@ -78,14 +78,21 @@ export default function WelcomePage() {
     setBusy(true);
     try {
       const csrf = await ensureCsrf();
-      await axios.post(
+      const r = await axios.post(
         `${API}/api/auth/magic-link/consume`,
         { token, mode: "password", password },
         { withCredentials: true, headers: { "X-CSRF-Token": csrf } },
       );
       setState("consumed_ok");
-      // Short pause so the success state is visible, then redirect.
-      setTimeout(() => navigate("/app/work-studio"), 600);
+      // Phase P5.2 (2026-02) — full-page nav (not react-router navigate)
+      // so the AuthContext re-initialises with the newly-set cookies.
+      // `navigate(...)` keeps the SPA mounted; the existing
+      // AuthContext snapshot still has `account === false` from when
+      // the user landed on /welcome unauthenticated, and the
+      // <Gated> wrapper on /app/work-studio would bounce to /signin.
+      // window.location.href forces a fresh boot.
+      const target = r?.data?.redirect || "/app/work-studio";
+      window.location.href = target;
     } catch (err) {
       const code = err?.response?.data?.detail?.code;
       const msg = err?.response?.data?.detail?.message || String(err?.message || err);

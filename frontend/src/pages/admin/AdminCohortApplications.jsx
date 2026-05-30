@@ -40,6 +40,36 @@ export default function AdminCohortApplications() {
   const [note, setNote] = useState("");
   const [busyId, setBusyId] = useState(null);
 
+  // Phase P5.1 (2026-02) — persistent surfacing of the magic_url
+  // returned by the most-recent approve action. Keyed by application
+  // id so each approved row gets its own pinned panel that survives
+  // the toast lifecycle. Dismissed by the admin OR cleared on
+  // refresh. Tester confirmed toast-only delivery is insufficient.
+  // Shape: { [applicationId]: {email, magic_url, expires_at, copied: bool} }
+  const [pinnedLinks, setPinnedLinks] = useState({});
+  const dismissPinned = (appId) => setPinnedLinks((prev) => {
+    const next = { ...prev }; delete next[appId]; return next;
+  });
+  const copyPinned = async (appId) => {
+    const entry = pinnedLinks[appId];
+    if (!entry) return;
+    try {
+      await navigator.clipboard.writeText(entry.magic_url);
+      setPinnedLinks((prev) => ({
+        ...prev,
+        [appId]: { ...prev[appId], copied: true },
+      }));
+      // Reset the "Copied" affordance after 1.5s.
+      setTimeout(() => {
+        setPinnedLinks((prev) => prev[appId]
+          ? { ...prev, [appId]: { ...prev[appId], copied: false } }
+          : prev);
+      }, 1500);
+    } catch (_e) {
+      toast.error("Couldn't copy. Select the link manually and copy.");
+    }
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -65,9 +95,20 @@ export default function AdminCohortApplications() {
         { note: note?.trim() || null },
       );
       if (action === "approve" && data.magic_url) {
-        try { await navigator.clipboard.writeText(data.magic_url); } catch (_e) { /* clip best-effort */ }
+        // Phase P5.1 (2026-02) — pin the URL to the row so the admin
+        // can still see + copy it after the toast disappears.
+        setPinnedLinks((prev) => ({
+          ...prev,
+          [app.id]: {
+            email:      app.email,
+            magic_url:  data.magic_url,
+            expires_at: data.expires_at,
+            copied:     false,
+          },
+        }));
+        try { await navigator.clipboard.writeText(data.magic_url); } catch (_e) { /* best-effort */ }
         toast.success(
-          `Approved ${app.email}. Magic link copied to clipboard.`,
+          `Approved ${app.email}. Magic link pinned to the row.`,
           { description: data.email?.status === "flag_off" ? "Email skipped (COHORT_EMAILS_ENABLED=false)" : `Email status: ${data.email?.status}` },
         );
       } else if (action === "decline") {
@@ -131,61 +172,104 @@ export default function AdminCohortApplications() {
             {items.map((app) => (
               <div
                 key={app.id}
-                className="p-4 flex flex-col md:flex-row md:items-start md:justify-between gap-3"
+                className="p-4 flex flex-col gap-3"
                 data-testid={`admin-cohort-row-${app.id}`}
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-3 mb-1 flex-wrap">
-                    <p className="font-medium text-sm text-[var(--ink)]" data-testid={`admin-cohort-row-${app.id}-name`}>
-                      {app.name || app.email}
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-3 mb-1 flex-wrap">
+                      <p className="font-medium text-sm text-[var(--ink)]" data-testid={`admin-cohort-row-${app.id}-name`}>
+                        {app.name || app.email}
+                      </p>
+                      <span
+                        className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-slate-100 text-slate-600"
+                        data-testid={`admin-cohort-row-${app.id}-status`}
+                      >
+                        {app.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mb-1">{app.email} · {app.organisation} · {app.role}</p>
+                    <p className="text-xs text-[var(--ink)] mt-1 leading-relaxed break-words" data-testid={`admin-cohort-row-${app.id}-use-case`}>
+                      {app.use_case}
                     </p>
-                    <span
-                      className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-slate-100 text-slate-600"
-                      data-testid={`admin-cohort-row-${app.id}-status`}
-                    >
-                      {app.status}
-                    </span>
                   </div>
-                  <p className="text-xs text-slate-500 mb-1">{app.email} · {app.organisation} · {app.role}</p>
-                  <p className="text-xs text-[var(--ink)] mt-1 leading-relaxed break-words" data-testid={`admin-cohort-row-${app.id}-use-case`}>
-                    {app.use_case}
-                  </p>
+                  <div className="flex flex-wrap gap-1.5 shrink-0">
+                    {app.status !== "approved" && app.status !== "approved_redeemed" && (
+                      <Button
+                        size="sm" variant="ghost"
+                        onClick={() => { setConfirm({ app, action: "approve" }); setNote(""); }}
+                        disabled={busyId === app.id}
+                        className="text-[11.5px] h-7 px-2 text-emerald-700 hover:bg-emerald-50"
+                        data-testid={`admin-cohort-row-${app.id}-approve`}
+                      >
+                        <Check className="w-3 h-3 mr-1" /> Approve
+                      </Button>
+                    )}
+                    {app.status !== "held" && app.status !== "approved_redeemed" && (
+                      <Button
+                        size="sm" variant="ghost"
+                        onClick={() => { setConfirm({ app, action: "hold" }); setNote(""); }}
+                        disabled={busyId === app.id}
+                        className="text-[11.5px] h-7 px-2 text-slate-700 hover:bg-slate-100"
+                        data-testid={`admin-cohort-row-${app.id}-hold`}
+                      >
+                        <Pause className="w-3 h-3 mr-1" /> Hold
+                      </Button>
+                    )}
+                    {app.status !== "declined" && app.status !== "approved_redeemed" && (
+                      <Button
+                        size="sm" variant="ghost"
+                        onClick={() => { setConfirm({ app, action: "decline" }); setNote(""); }}
+                        disabled={busyId === app.id}
+                        className="text-[11.5px] h-7 px-2 text-[var(--oxblood)] hover:bg-red-50"
+                        data-testid={`admin-cohort-row-${app.id}-decline`}
+                      >
+                        <X className="w-3 h-3 mr-1" /> Decline
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-1.5 shrink-0">
-                  {app.status !== "approved" && app.status !== "approved_redeemed" && (
-                    <Button
-                      size="sm" variant="ghost"
-                      onClick={() => { setConfirm({ app, action: "approve" }); setNote(""); }}
-                      disabled={busyId === app.id}
-                      className="text-[11.5px] h-7 px-2 text-emerald-700 hover:bg-emerald-50"
-                      data-testid={`admin-cohort-row-${app.id}-approve`}
+
+                {/* Phase P5.1 — pinned magic-link panel for this row. */}
+                {pinnedLinks[app.id] && (
+                  <div
+                    className="bg-emerald-50 border border-emerald-200 rounded-sm p-3 flex flex-col gap-2"
+                    data-testid={`admin-cohort-row-${app.id}-magic-link-panel`}
+                  >
+                    <div className="flex items-start justify-between gap-2 flex-wrap">
+                      <p className="text-[11.5px] uppercase tracking-wider text-emerald-800 font-semibold">
+                        Single-use sign-in link
+                      </p>
+                      <button
+                        onClick={() => dismissPinned(app.id)}
+                        className="text-emerald-700 hover:text-emerald-900 text-xs"
+                        data-testid={`admin-cohort-row-${app.id}-magic-link-dismiss`}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                    <code
+                      className="block text-[11.5px] font-mono break-all bg-white border border-emerald-200 rounded-sm px-2 py-1.5 text-[var(--ink)]"
+                      data-testid={`admin-cohort-row-${app.id}-magic-link-url`}
                     >
-                      <Check className="w-3 h-3 mr-1" /> Approve
-                    </Button>
-                  )}
-                  {app.status !== "held" && app.status !== "approved_redeemed" && (
-                    <Button
-                      size="sm" variant="ghost"
-                      onClick={() => { setConfirm({ app, action: "hold" }); setNote(""); }}
-                      disabled={busyId === app.id}
-                      className="text-[11.5px] h-7 px-2 text-slate-700 hover:bg-slate-100"
-                      data-testid={`admin-cohort-row-${app.id}-hold`}
-                    >
-                      <Pause className="w-3 h-3 mr-1" /> Hold
-                    </Button>
-                  )}
-                  {app.status !== "declined" && app.status !== "approved_redeemed" && (
-                    <Button
-                      size="sm" variant="ghost"
-                      onClick={() => { setConfirm({ app, action: "decline" }); setNote(""); }}
-                      disabled={busyId === app.id}
-                      className="text-[11.5px] h-7 px-2 text-[var(--oxblood)] hover:bg-red-50"
-                      data-testid={`admin-cohort-row-${app.id}-decline`}
-                    >
-                      <X className="w-3 h-3 mr-1" /> Decline
-                    </Button>
-                  )}
-                </div>
+                      {pinnedLinks[app.id].magic_url}
+                    </code>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Button
+                        size="sm" variant="ghost"
+                        onClick={() => copyPinned(app.id)}
+                        className="text-[11.5px] h-7 px-2 text-emerald-800 hover:bg-emerald-100"
+                        data-testid={`admin-cohort-row-${app.id}-magic-link-copy`}
+                      >
+                        <Copy className="w-3 h-3 mr-1" />
+                        {pinnedLinks[app.id].copied ? "Copied" : "Copy"}
+                      </Button>
+                      <span className="text-[11px] text-emerald-700 font-mono">
+                        Expires {new Date(pinnedLinks[app.id].expires_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
