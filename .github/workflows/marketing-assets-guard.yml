@@ -12,6 +12,7 @@ on:
       - "frontend/public/marketing/**"
       - "docs/marketing_assets.md"
       - "backend/tests/test_phase_m0a_marketing_assets.py"
+      - "scripts/transcode_marketing.py"
       - ".github/workflows/marketing-assets-guard.yml"
   pull_request:
     paths:
@@ -20,6 +21,7 @@ on:
       - "frontend/public/marketing/**"
       - "docs/marketing_assets.md"
       - "backend/tests/test_phase_m0a_marketing_assets.py"
+      - "scripts/transcode_marketing.py"
       - ".github/workflows/marketing-assets-guard.yml"
 
 jobs:
@@ -30,5 +32,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install pytest
-      - run: python3 -m pytest backend/tests/test_phase_m0a_marketing_assets.py -q
+      - run: pip install pytest Pillow
+      - run: python3 -m pytest backend/tests/test_phase_m0a_marketing_assets.py backend/tests/test_phase_m4_webp_siblings.py -q

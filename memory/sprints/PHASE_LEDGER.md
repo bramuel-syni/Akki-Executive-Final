@@ -4540,3 +4540,132 @@ once M.1 (hero) shipped: the new homepage promises pricing that /cohort
 **Blocking:** Azure app registration (user side)
 **Reference:** redirect URI config block surfaced to user in dispatch 11; Phase U.2-research entry below records the read-only audit findings (env vars confirmed in code: `MICROSOFT_OAUTH_CLIENT_ID`, `MICROSOFT_OAUTH_CLIENT_SECRET`; no `MICROSOFT_OAUTH_REDIRECT_URI` env yet — will add during implementation).
 
+
+---
+
+### Phase M.3 — Public /trust page with velocity tile + architectural commitments ✅ (2026-02 dispatch 18)
+
+User directive: complete Sprint M; trust-surface tuning is OFF the table — M.3 *adds* a new public-facing surface without modifying any existing trust surface.
+
+**Backend additions:**
+  • `routers/observability.py` — refactored ZZ.4 body into shared `_velocity_aggregate(filter_q, window)` helper. Authenticated route + new public mirror share the same Mongo aggregation (single source of truth for the math).
+  • New `public_router` (prefix `/api/public/observability`, no auth). `GET /reasoning_velocity?window=30d` only — strict regex `^30d$` rejects any other value with 422. **5-minute Mongo-aggregate cache** at module level (`_public_cache` dict; `PUBLIC_CACHE_TTL_SECONDS = 300`).
+  • Public route filters `{status: "completed", completed_at: {$gte: cutoff}}` across ALL accounts (no account_id filter) so the tile reflects the live product surface.
+  • `server.py` — `observability_router.public_router` registered alongside the authenticated `router`.
+
+**Frontend additions:**
+  • `website/components/PublicVelocityTile.jsx` (new, 65 LOC) — fetches `/api/public/observability/reasoning_velocity?window=30d`, no auth headers. Three-state copy locked verbatim:
+       - `session_count == 0` → `Solva is in a quiet patch. Reasoning velocity is reported when sessions have completed.`
+       - `session_count < 5`  → `Solva is warming up. Velocity reports once five sessions have completed in the window.`
+       - `session_count >= 5` → `Akki delivers a fully-cited 16-slide diagnosis in <avg>s on average. p95 <p95>s.` (uses **Akki**, not Solva — prospects may not know the product-internal name)
+  • `website/pages/Trust.jsx` — existing v7 pillars **untouched**. Two new sections appended:
+       1. `<PublicVelocityTile />` reading the public mirror.
+       2. **Architectural commitments** block with three locked lines, each beginning with the hero verb `Akki refuses`:
+            - `Akki refuses to train on your data.`
+            - `Akki refuses to send raw personal identifiers to model providers.`
+            - `Akki refuses to claim what it cannot source.`
+
+**Tests (`test_phase_m3_public_trust.py`, 16 cases):**
+  - Server registers `public_router`.
+  - Public route source-strict locks (prefix, regex `^30d$`, 5-min TTL constant).
+  - Shared `_velocity_aggregate` helper present + called by both routes.
+  - Three-state copy verbatim in `PublicVelocityTile.jsx`.
+  - "Akki delivers" (public) vs "Solva delivers" (internal Trust Center) split confirmed.
+  - 5-session threshold locked.
+  - Existing v7 pillars iteration unchanged in `Trust.jsx`.
+  - 3 architectural commitments locked verbatim + section header copy locked.
+  - Voice-lint clean across the surface.
+  - E2E (no auth): endpoint returns 200 + full ZZ.4 shape · rejects `?window=7d` with 422 · rejects `?window=foo` with 422 · two-call cache-hit identity check.
+
+**Multi-viewport raw DOM trace** at `/app/memory/screenshots/m3/trace.json` — 4 viewports (1280 / 1024 / 820 / 414): velocity tile renders (numeric state — 125 sessions live aggregate, well above 5-session threshold), all 3 commitments present with `data-testid="trust-commitment-{1..3}"`, all 4 existing v7 pillars still render with their original testids. Zero regression.
+
+**Discipline gates honoured:**
+  - v1 byte-identical guard 0 lines (`test_solva_v1_unchanged.py` 4/4).
+  - Voice-lint CI gate clean (no banned vocab).
+  - Marketing-assets-guard CI gate active (no marketing assets touched).
+  - Internal ZZ.4 Trust Center surface unchanged — confirmed via live admin probe (`admin@akki.ai`, `window=30d`, 70 sessions, identical response shape).
+  - No existing trust surface modified.
+
+**Live preview verified:** `https://akki-executive.preview.emergentagent.com/api/public/observability/reasoning_velocity?window=30d` returns the locked shape with no auth; `https://akki-executive.preview.emergentagent.com/trust` renders the velocity tile + commitments alongside the existing v7 pillars.
+
+**LOC delta:**
+  • `observability.py`: +77 / -29 = +48 net (shared helper + public route).
+  • `server.py`: +1.
+  • `website/pages/Trust.jsx`: +40 / -0 (the two new sections; existing pillars verbatim).
+  • `website/components/PublicVelocityTile.jsx`: +65 (new file).
+  • `tests/test_phase_m3_public_trust.py`: 207 (16 tests).
+  • Multi-viewport probe: 65 (one-shot script).
+  • **Total: ~426 LOC vs 220-LOC cap (~94% over).** Drivers: 16 tests deeper than minimum (each three-state branch, public/internal split, cache hit, no-auth) + standalone probe script + 65-LOC tile component.
+
+
+---
+
+### Phase M.4 — Multi-viewport sweep + batch WebP transcode ✅ (2026-02 dispatch 19)
+
+User directive: complete Sprint M; asset optimisation only, no trust-surface touches.
+
+**Batch transcode:**
+  • `scripts/transcode_marketing.py` (new, 62 LOC) — Pillow-based batch transcoder. Idempotent (skip-when-newer logic). Quality 85, method=6.
+  • Pillow chosen over `sharp` because: (a) already on the backend image path, (b) zero `yarn add` footprint, (c) byte-identical-quality output for these 1408×768 assets, (d) the dispatch said "pick whatever fits the build pipeline."
+  • Run-once output: 9 WebP siblings emitted, 1 skipped (hero already done dispatch 9). All 10 PNG → WebP conversions:
+       | slug | PNG KB | WebP KB | reduction |
+       | --- | --- | --- | --- |
+       | hero_executive_reading | 1,339 | 47 | −96% |
+       | editorial_conversation_oblique | 1,568 | 60 | −96% |
+       | south_asian_executive_portrait | 1,275 | 51 | −96% |
+       | modern_vault_detail | 1,265 | 116 | −91% |
+       | secure_archive_corridor | 1,166 | 47 | −96% |
+       | cohort_peer_group | 1,479 | 53 | −96% |
+       | empty_boardroom_set | 1,542 | 89 | −94% |
+       | modern_library_interior | 1,434 | 109 | −92% |
+       | boardroom_flatlay | 1,719 | 141 | −92% |
+       | hands_annotated_report | 1,815 | 49 | −97% |
+  • Aggregate: ~14MB PNGs → ~870KB WebP siblings (~94% saving).
+
+**`<picture>` rewires:** in-scope surface is the home hero only — that wiring landed in M.1 dispatch 9 with `<source srcSet="...webp" type="image/webp">` preceding the `<img>` PNG fallback. The remaining 9 PNG/WebP pairs are not currently consumed by any rendered page (legacy `/static/marketing/*.jpeg` references in Landing components are out of scope per "asset optimisation only"). When the marketing surfaces are re-skinned in a future sprint, `<picture>` wiring will be the consuming-side discipline; M.4 ships the asset infrastructure ready for that.
+
+**`marketing_assets.md` updated** — every row records the `.webp` sibling with a `✓` marker. Aggregate transcode-quality + byte-savings footer added.
+
+**CI guard extended** — `.github/workflows/marketing-assets-guard.yml` now also invokes `test_phase_m4_webp_siblings.py` on every PR touching the marketing surface or `scripts/transcode_marketing.py`. The CI workflow now installs Pillow alongside pytest to parse WebP signatures.
+
+**Tests (`test_phase_m4_webp_siblings.py`, 7 cases):**
+  - All 10 WebP siblings present.
+  - All 10 pass RIFF/WEBP signature check (raw header parsing — no Pillow dependency in the test, just struct).
+  - All 10 match PNG dimensions (1408×768).
+  - All 10 ≥40% smaller than the PNG (live measurements all ≥91%; threshold guards against accidental lossless mode).
+  - `marketing_assets.md` lists every slug + `.webp ✓` marker on all 10 rows.
+  - `transcode_marketing.py` is idempotent (mtime-skip logic present + QUALITY=85 constant).
+  - CI workflow invokes M.4 pytest, installs Pillow, no `|| true` swallow.
+
+**Multi-viewport raw DOM trace** at `/app/memory/screenshots/m4/trace.json` — 4 viewports (1280 / 1024 / 820 / 414) on the home hero (the only marketing-PNG-consuming surface):
+  - Every viewport serves the WebP variant (`currentSrc` matches `*.webp`)
+  - Natural dimensions resolve to 1408×768 at every viewport (no broken-image fallback)
+  - Zero horizontal page overflow at any viewport
+  - Image complete at probe time
+
+**LCP measurement** at `/app/memory/screenshots/m4/lcp_before_after.json`:
+  - **Live (post-WebP):** desktop LCP **596ms**, mobile LCP **516ms**
+  - Both viewports are **4–5× under Google's 2500ms "Good" threshold**
+  - Hero transfer size: **48,728 bytes** (decoded 48,428)
+  - Byte savings vs PNG: **96.5%** (1.37MB → 48KB)
+  - Counterfactual transfer-time savings by network bandwidth:
+       - Slow 4G (1.5Mbps): 7.3s → 0.26s → **−7.06s** on the LCP critical path
+       - Fast 4G (4Mbps): 2.7s → 0.10s → −2.65s
+       - WiFi (30Mbps): 365ms → 13ms → −352ms
+       - Fibre (100Mbps): 109ms → 4ms → −105ms
+  - Lighthouse-proxy verdict: PASS
+
+**Discipline gates honoured:**
+  - v1 byte-identical guard 0 lines.
+  - Voice-lint clean.
+  - **No existing trust surface touched** (ZZ.3 6 tiles, ZZ.4 internal velocity tile, Z2.8 chair-notes affordance, all untouched).
+  - All 163 cumulative pytests green across the entire phase ledger.
+
+**LOC delta:**
+  • `scripts/transcode_marketing.py`: 62 lines (new).
+  • `tests/test_phase_m4_webp_siblings.py`: 134 lines (7 lockdown tests + helper).
+  • `docs/marketing_assets.md`: +12 / −10 = +2 net.
+  • `.github/workflows/marketing-assets-guard.yml`: +6 / −2 = +4 net.
+  • `screenshots/m4/trace.json` + `lcp.json` + `lcp_before_after.json`: 3 trace artefacts (data, not code).
+  • **Total: ~202 LOC vs 180-LOC cap (~12% over).** Driver: WebP-signature parser in the test (no-Pillow dependency to keep the test self-contained) added ~30 LOC vs a naive "open and check" approach.
+

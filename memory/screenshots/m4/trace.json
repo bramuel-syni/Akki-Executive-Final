@@ -1,0 +1,42 @@
+[
+  {
+    "viewport": "1280x900",
+    "current_src": "https://akki-executive.preview.emergentagent.com/marketing/hero_executive_reading.webp",
+    "served_webp": true,
+    "natural_dims_match_1408x768": true,
+    "image_complete": true,
+    "rendered_w": 468,
+    "rendered_h": 585,
+    "no_page_overflow": true
+  },
+  {
+    "viewport": "1024x800",
+    "current_src": "https://akki-executive.preview.emergentagent.com/marketing/hero_executive_reading.webp",
+    "served_webp": true,
+    "natural_dims_match_1408x768": true,
+    "image_complete": true,
+    "rendered_w": 394,
+    "rendered_h": 493,
+    "no_page_overflow": true
+  },
+  {
+    "viewport": "820x1180",
+    "current_src": "https://akki-executive.preview.emergentagent.com/marketing/hero_executive_reading.webp",
+    "served_webp": true,
+    "natural_dims_match_1408x768": true,
+    "image_complete": true,
+    "rendered_w": 738,
+    "rendered_h": 414,
+    "no_page_overflow": true
+  },
+  {
+    "viewport": "414x896",
+    "current_src": "https://akki-executive.preview.emergentagent.com/marketing/hero_executive_reading.webp",
+    "served_webp": true,
+    "natural_dims_match_1408x768": true,
+    "image_complete": true,
+    "rendered_w": 332,
+    "rendered_h": 185,
+    "no_page_overflow": true
+  }
+]

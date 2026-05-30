@@ -1,0 +1,94 @@
+[
+  {
+    "viewport": "1280x900",
+    "velocity_tile_count": 1,
+    "three_state_hits": [
+      "Akki delivers a fully-cited 16-slide diagnosis in"
+    ],
+    "commitments_present": 3,
+    "commitment_testids": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        3,
+        1
+      ]
+    ],
+    "v7_pillars_count": 4
+  },
+  {
+    "viewport": "1024x800",
+    "velocity_tile_count": 1,
+    "three_state_hits": [
+      "Akki delivers a fully-cited 16-slide diagnosis in"
+    ],
+    "commitments_present": 3,
+    "commitment_testids": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        3,
+        1
+      ]
+    ],
+    "v7_pillars_count": 4
+  },
+  {
+    "viewport": "820x1180",
+    "velocity_tile_count": 1,
+    "three_state_hits": [
+      "Akki delivers a fully-cited 16-slide diagnosis in"
+    ],
+    "commitments_present": 3,
+    "commitment_testids": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        3,
+        1
+      ]
+    ],
+    "v7_pillars_count": 4
+  },
+  {
+    "viewport": "414x896",
+    "velocity_tile_count": 1,
+    "three_state_hits": [
+      "Akki delivers a fully-cited 16-slide diagnosis in"
+    ],
+    "commitments_present": 3,
+    "commitment_testids": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        3,
+        1
+      ]
+    ],
+    "v7_pillars_count": 4
+  }
+]

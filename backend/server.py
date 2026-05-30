@@ -292,6 +292,7 @@ app.include_router(healthz_shield_router.router)  # H2.5 follow-up Part B — Sh
 app.include_router(healthz_clamav_router.router)  # Hardening Step 1 — ClamAV daemon status probe
 app.include_router(trust_center_router.router)  # H3 — Trust Center v1
 app.include_router(observability_router.router)  # ZZ.4 — Reasoning velocity
+app.include_router(observability_router.public_router)  # M.3 — Public mirror for /trust
 app.include_router(cohort_applications_router.router)  # M.0c — Cohort applications scaffold
 app.include_router(admin_shield_backfill_router.router)  # H4 — Shield back-fill
 app.include_router(onboarding_status_router.router)  # J1 — re-intro banner + tooltips

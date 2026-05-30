@@ -1,0 +1,30 @@
+{
+  "summary": "M.4 dispatch 19 — Hero LCP measurement (post-WebP).",
+  "after_webp_live": {
+    "desktop_1280x900": {
+      "lcp_ms": 596,
+      "hero_url": "https://akki-executive.preview.emergentagent.com/marketing/hero_executive_reading.webp",
+      "hero_transfer_bytes": 48728
+    },
+    "mobile_414x896": {
+      "lcp_ms": 516,
+      "hero_url": "https://akki-executive.preview.emergentagent.com/marketing/hero_executive_reading.webp",
+      "hero_transfer_bytes": 48728
+    },
+    "google_lcp_thresholds": {"good_under_ms": 2500, "needs_improvement_under_ms": 4000}
+  },
+  "before_png_only_analytical": {
+    "note": "Counterfactual PNG-only LCP requires controlled network throttling to be meaningful. Reporting transfer-time deltas from raw asset sizes instead — these dominate LCP on the hero critical path.",
+    "hero_png_bytes": 1371365,
+    "hero_webp_bytes": 48428,
+    "byte_reduction_percent": 96.5,
+    "transfer_time_delta_per_bandwidth": {
+      "slow_4g_1_5_mbps": {"png_ms": 7314, "webp_ms": 258, "delta_ms_saved": 7056},
+      "fast_4g_4_mbps": {"png_ms": 2742, "webp_ms": 97, "delta_ms_saved": 2645},
+      "wifi_30_mbps": {"png_ms": 365, "webp_ms": 13, "delta_ms_saved": 352},
+      "fiber_100_mbps": {"png_ms": 109, "webp_ms": 4, "delta_ms_saved": 105}
+    },
+    "interpretation": "On slow 4G (representative of mobile field conditions for executive prospects), the WebP wiring drops the hero transfer from ~7.3s to ~0.26s. LCP improvement is roughly proportional to this delta because the hero image is the LCP element on every viewport."
+  },
+  "lighthouse_proxy_verdict": "PASS — live LCP 516-596ms is well under Google's 2500ms 'Good' threshold at both desktop and mobile viewports. Hero asset is 48KB WebP (96.5% smaller than the 1.37MB PNG)."
+}

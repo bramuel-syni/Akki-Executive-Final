@@ -6,18 +6,20 @@ JSX rewrite consumes from this map. All 10 native PNGs ship at
 
 ## Slug → file → role
 
-| Slug | File (public path) | Native size | Voice-clean role |
-| --- | --- | --- | --- |
-| `hero_executive_reading` | `/marketing/hero_executive_reading.png` | 1408×768 | Primary hero option A — executive in quiet reading attitude. |
-| `editorial_conversation_oblique` | `/marketing/editorial_conversation_oblique.png` | 1408×768 | Hero option B — two-person editorial conversation at oblique angle. |
-| `south_asian_executive_portrait` | `/marketing/south_asian_executive_portrait.png` | 1408×768 | Hero option C — single executive portrait. |
-| `modern_vault_detail` | `/marketing/modern_vault_detail.png` | 1408×768 | Security page — vault detail shot. |
-| `secure_archive_corridor` | `/marketing/secure_archive_corridor.png` | 1408×768 | Security page — archive corridor. |
-| `cohort_peer_group` | `/marketing/cohort_peer_group.png` | 1408×768 | Cohort page — peer group setting. |
-| `empty_boardroom_set` | `/marketing/empty_boardroom_set.png` | 1408×768 | Trust / Methodology — atmospheric set piece. |
-| `modern_library_interior` | `/marketing/modern_library_interior.png` | 1408×768 | About / Methodology — interior backdrop. |
-| `boardroom_flatlay` | `/marketing/boardroom_flatlay.png` | 1408×768 | Editorial — paper pack flatlay. |
-| `hands_annotated_report` | `/marketing/hands_annotated_report.png` | 1408×768 | Ambient use only — soft (depicts an annotated letter, not a report). |
+| Slug | File (public path) | Native size | WebP sibling | Voice-clean role |
+| --- | --- | --- | --- | --- |
+| `hero_executive_reading` | `/marketing/hero_executive_reading.png` | 1408×768 | `.webp` ✓ | Primary hero option A — executive in quiet reading attitude. |
+| `editorial_conversation_oblique` | `/marketing/editorial_conversation_oblique.png` | 1408×768 | `.webp` ✓ | Hero option B — two-person editorial conversation at oblique angle. |
+| `south_asian_executive_portrait` | `/marketing/south_asian_executive_portrait.png` | 1408×768 | `.webp` ✓ | Hero option C — single executive portrait. |
+| `modern_vault_detail` | `/marketing/modern_vault_detail.png` | 1408×768 | `.webp` ✓ | Security page — vault detail shot. |
+| `secure_archive_corridor` | `/marketing/secure_archive_corridor.png` | 1408×768 | `.webp` ✓ | Security page — archive corridor. |
+| `cohort_peer_group` | `/marketing/cohort_peer_group.png` | 1408×768 | `.webp` ✓ | Cohort page — peer group setting. |
+| `empty_boardroom_set` | `/marketing/empty_boardroom_set.png` | 1408×768 | `.webp` ✓ | Trust / Methodology — atmospheric set piece. |
+| `modern_library_interior` | `/marketing/modern_library_interior.png` | 1408×768 | `.webp` ✓ | About / Methodology — interior backdrop. |
+| `boardroom_flatlay` | `/marketing/boardroom_flatlay.png` | 1408×768 | `.webp` ✓ | Editorial — paper pack flatlay. |
+| `hands_annotated_report` | `/marketing/hands_annotated_report.png` | 1408×768 | `.webp` ✓ | Ambient use only — soft (depicts an annotated letter, not a report). |
+
+All 10 WebP siblings emitted by `scripts/transcode_marketing.py` (Sprint M.4 dispatch 19, Pillow quality=85). Average byte reduction across the 10 assets: ~94% (~14MB PNGs → ~870KB WebP).
 
 ## srcset convention
 

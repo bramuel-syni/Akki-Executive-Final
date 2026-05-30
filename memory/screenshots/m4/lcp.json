@@ -1,0 +1,16 @@
+[
+  {
+    "viewport": "desktop_1280x900",
+    "lcp_ms": 596,
+    "hero_transfer_bytes": 48728,
+    "hero_decoded_bytes": 48428,
+    "hero_url": "https://akki-executive.preview.emergentagent.com/marketing/hero_executive_reading.webp"
+  },
+  {
+    "viewport": "mobile_414x896",
+    "lcp_ms": 516,
+    "hero_transfer_bytes": 48728,
+    "hero_decoded_bytes": 48428,
+    "hero_url": "https://akki-executive.preview.emergentagent.com/marketing/hero_executive_reading.webp"
+  }
+]

@@ -19,6 +19,8 @@
 - ✅ Sprint M.2-prep (dispatch 10) — **Multi-recipient `FOUNDER_NOTIFY_EMAIL`.** Comma-separated parsing (whitespace-tolerant, empty-filtering); `to_emails=[To(addr) for addr in recipients]` (single SendGrid call, N recipients); audit log carries `recipient_count`. `.env` now `FOUNDER_NOTIFY_EMAIL=bramuel@syni.ai,mugwe.marion@syni.ai`. 11 contract pytests (parser + SendGrid + voice-lint).
 - ✅ Sprint M.2-hold (dispatch 11) — **/cohort page held in registration-only mode.** Pricing language removed; on-page form (6 fields) lives at /cohort with submit to `/api/cohort/applications`; holding-state line above form names the status; applicant confirmation body recast with no commitment language; `docs/cohort_pricing.md` records HELD status. 12 lockdown pytests + live e2e probe.
 - ✅ Sprint M.1.x (dispatch 12) — **Homepage COHORT_TEASER aligned with /cohort hold.** Pricing claim removed; new holding-state body: `Founding Cohort applications are open. Pricing will be shared with members before launch.` CTA still routes to /cohort. 4 lockdown pytests + 4-viewport DOM probe.
+- ✅ Sprint M.3 (dispatch 18) — **Public /trust velocity tile + architectural commitments.** New unauthenticated `GET /api/public/observability/reasoning_velocity?window=30d` (5-min cache, shared `_velocity_aggregate` helper with the ZZ.4 authenticated route). `PublicVelocityTile.jsx` with three-state copy (quiet patch / warming up / numeric using `Akki delivers...`). Three architectural commitments appended to `/trust` page. Existing v7 pillars **untouched**. 16 lockdown pytests + 4-viewport DOM probe.
+- ✅ Sprint M.4 (dispatch 19) — **Batch WebP transcode + CI guard extension.** `scripts/transcode_marketing.py` Pillow-based batch transcoder (idempotent, q=85). 9 WebP siblings emitted (hero done dispatch 9) — aggregate ~14MB PNGs → ~870KB WebP siblings (~94% saving). `marketing_assets.md` updated. `marketing-assets-guard.yml` CI workflow extended to invoke M.4 pytest. 7 lockdown pytests + 4-viewport DOM probe + LCP measurement (596ms desktop, 516ms mobile — both well under Google's 2500ms "Good" threshold).
 
 **Halted:**
 - ⏸ Sprint M.2 — Cohort form copy + applicant confirmation email body + final pricing tiers. **`FOUNDER_NOTIFY_EMAIL` supplied dispatch 10; /cohort + COHORT_TEASER held dispatches 11–12 pending product packaging decision.**
@@ -26,7 +28,7 @@
 - ⏸ Sprint M.4 — Multi-viewport sweep + WebP transcode build step (one-shot for hero already done dispatch 9; M.4 will batch-transcode the other 9 assets via the `sharp` build script).
 - ⏸ Phase U.2 — **Microsoft OAuth implementation (P1).** NOT STARTED. Blocked on user-side Azure app registration. Estimated 1 day end-to-end once `MICROSOFT_OAUTH_CLIENT_ID` + `MICROSOFT_OAUTH_CLIENT_SECRET` land in `backend/.env`. Full sprint card logged in `sprints/PHASE_LEDGER.md`.
 
-**Tests:** 140/140 cumulative pytests green across ZZ.1, ZZ.2, ZZ.2.x, ZZ.3, ZZ.4, M.0a, M.0b, M.0c, M.1, M.1a, M.1b, M.1c, M.1.x, M.2-prep, M.2-hold, v1-unchanged.
+**Tests:** 163/163 cumulative pytests green across ZZ.1, ZZ.2, ZZ.2.x, ZZ.3, ZZ.4, M.0a, M.0b, M.0c, M.1, M.1a, M.1b, M.1c, M.1.x, M.2-prep, M.2-hold, M.3, M.4, v1-unchanged.
 
 **Discipline gates throughout:**
 - v1 byte-identical guard 0 lines (`test_solva_v1_unchanged.py` 4/4 green)
