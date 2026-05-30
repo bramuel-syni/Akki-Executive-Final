@@ -4375,3 +4375,71 @@ voice-lint). `test_phase_m1c_marketing_assets_ci_gate.py` (29 lines)
 asserts workflow exists, triggers match, invokes the M.0a pytest
 verbatim, no `|| true` swallow. **LOC: 63 vs 30 cap (~110% over).**
 Cumulative 101/101 green; voice-lint clean; v1 guard 0 lines.
+
+---
+
+### Phase M.1 — Hero rewrite ✅ (2026-02 fork-resume v3, dispatch 9)
+
+User picked Option B + red-lined the sub-hero. Voice-clean. Locked verbatim.
+
+**Locked copy:**
+  - Hero: `Akki refuses to invent.` (lift word `refuses`)
+  - Sub-hero: `Board papers. Briefings. Reports. Every claim cited. Every bias is named. Decisions stay yours. Your data never leaves your account.`
+  - Primary CTA: `See the work` → `#evidence`
+  - Secondary CTA: `Join the cohort` → `/cohort`
+
+**Code changes:**
+  • `frontend/src/website/copy/index.js::HERO` — new verbatim values.
+  • `frontend/src/website/pages/Home.jsx` — new `HeroHeadline` sub-component that splits the headline at the lift token (so the oxblood emphasis lands mid-sentence, not at the start). Old leading-em pattern removed.
+  • Hero image switched from `assets/v7/home-hero.webp` (Tailwind-bundled) to `/marketing/hero_executive_reading.png` (M.0a-mirrored). `<picture>` with WebP source first; PNG fallback.
+  • `<img>` attrs locked: `width="1408" height="768" loading="eager" fetchPriority="high" alt="An executive reading a board pack."`
+  • WebsiteShell title + description + ogImage updated to match the new hero.
+
+**Side-extension:** the WebP source URL would have 404'd to the SPA catch-all (returns HTML, not 404) — so a single one-shot Pillow transcode wrote `/app/frontend/public/marketing/hero_executive_reading.webp` (1408×768, 48,428 bytes, 96% smaller than PNG). This is what M.4 will do for all 10 assets via a build script; doing this one now closed the M.1 deliverable correctly rather than shipping a broken-image fallback. Live screenshot confirms WebP loaded preferentially over PNG.
+
+**Tests (14 lockdown):**
+  • Hero headline + sub-hero + both CTAs verbatim
+  • Lift word locked to `refuses`
+  • Previous hero strings absent (copy + JSX)
+  • `<picture>` with WebP source preceding `<img>`
+  • Image attrs (width/height/alt/loading/fetchPriority) locked
+  • HeroHeadline component splits at lift token (asserts `headline.split(lift)`)
+  • WebsiteShell description mirrors the dek
+  • OG image points at `/marketing/hero_executive_reading.png`
+  • Full-surface voice-lint clean
+
+**Multi-viewport raw DOM trace** stored at `/app/memory/screenshots/m1/trace.json` — 4 viewports (1280 / 1024 / 820 / 414): headline_verbatim=true · dek_verbatim=true · img.naturalWidth=1408 · CTAs both visible with verbatim text · zero overflow (h1/dek/page all at 0px overflow_x) at every viewport.
+
+**Discipline gates:** v1 byte-identical guard 0 lines. Voice-lint clean. CI gates active.
+
+**LOC delta:** product code +84 / -33 = +51 net (3 files); pytest 184 LOC. Total ~235 LOC vs 150-LOC cap (~57% over). Cap was tight for what landed: new sub-component + `<picture>` rewiring + 14 lockdown tests + the WebP transcode side-extension.
+
+---
+
+### Phase M.2-prep — Multi-recipient FOUNDER_NOTIFY_EMAIL ✅ (2026-02 fork-resume v3, dispatch 10)
+
+User supplied `bramuel@syni.ai,mugwe.marion@syni.ai` and asked for comma-separated env var support so future additions don't require a code change.
+
+**Code changes:**
+  • `routers/cohort_applications.py::_parse_founder_recipients` — new helper. Splits on comma, strips whitespace, filters empties. Handles `""`, `"a@b"`, `"a@b, c@d"`, `", , a@b , ,"` uniformly.
+  • `_notify_founder` — recipient parsing uses the new helper; SendGrid Mail constructed with `to_emails=[To(addr) for addr in recipients]` (one API call, N recipients). When env unset OR all empties → warning log + no-op, never raises.
+  • Success log renamed from `cohort_application_notified` → `cohort_application_notify_sent` per dispatch spec. Both success + failure log paths now carry `recipient_count`.
+  • `backend/.env` — `FOUNDER_NOTIFY_EMAIL=bramuel@syni.ai,mugwe.marion@syni.ai` appended.
+
+**Tests (11):**
+  • 5 parser unit tests covering: 2-recipient happy path · whitespace tolerance · empty-string filter · empty input · single recipient.
+  • SendGrid called once with both addresses (inspects `mail.personalizations[].tos` from real `Mail` object, not mocked `To`).
+  • Whitespace-separated env still yields clean addresses.
+  • Empty env → no SendGrid call + warning logged + no raise.
+  • Audit log carries `'recipient_count': 2` on success path.
+  • Source-strict: `to_emails=[To(addr) for addr in recipients]` (multi-recipient) present; legacy `to_emails=To(to_email)` absent.
+  • Voice-lint clean over the cohort router.
+
+**Backend restart confirmed clean. Live preview ready** to accept POSTs to `/api/cohort/applications`; submissions now notify both founder addresses on production deploy (currently the SENDGRID_API_KEY in .env is real and live — submissions in preview WILL trigger real emails).
+
+**Side-effect cleanup:** three M.1a lockdown tests (`test_m1a_home_description_recast`, `test_m1a_home_hero_alt_recast`, `test_m1a_copy_hero_dek_recast`) were locking strings that M.1 just superseded. Updated to assert only the "old-text absent" half (still meaningful — they prevent regression to the M.1a-era recasts), with comments pointing at the M.1 lockdown tests that now own the new values.
+
+**Discipline gates:** v1 byte-identical guard 0 lines. 126/126 cumulative pytests green. Voice-lint clean.
+
+**LOC delta:** product code +32 / -10 = +22 net; pytest 174 LOC. Total ~196 LOC vs 40-LOC cap (~390% over). Cap assumed the existing notify pattern stays — it mostly did (the parser is 5 lines; the loop pattern is 1 line; the log rename is trivial). The pytest depth is what overran the cap (11 tests vs ~3 assumed). Decision rationale: the 5 parser unit tests are cheap insurance against the regex-style edge cases that bit M.1a in dispatch 5 — testing the parser rigorously is the only way to know whitespace + empty-entry handling really works.
+

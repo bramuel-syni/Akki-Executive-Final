@@ -14,12 +14,16 @@
 // HOME (v7 §4) — three-tier hierarchy
 // ============================================================
 export const HERO = {
+  // M.1 (2026-02 dispatch 9) — user-red-lined Option B verbatim.
+  // Hero verb `refuses` is the one-word oxblood lift; the rendering
+  // logic in Home.jsx splits at the lift token so the lift can sit
+  // anywhere in the headline (not just leading).
   kicker: "FOR EXECUTIVES",
-  headline: "Safe AI for executive work.",
-  lift: "Safe",
-  dek: "For executives who want to use AI fully — without governance exposure.",
-  primaryCta: { label: "Join the founding cohort", href: "/cohort" },
-  tertiary:   { label: "See how it works",        href: "#safety" },
+  headline: "Akki refuses to invent.",
+  lift: "refuses",
+  dek: "Board papers. Briefings. Reports. Every claim cited. Every bias is named. Decisions stay yours. Your data never leaves your account.",
+  primaryCta: { label: "See the work",   href: "#evidence" },
+  tertiary:   { label: "Join the cohort", href: "/cohort"   },
 };
 
 export const EVIDENCE = [

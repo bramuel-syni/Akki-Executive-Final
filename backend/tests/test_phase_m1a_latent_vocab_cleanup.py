@@ -96,18 +96,21 @@ def test_m1a_for_organisations_headline_recast():
 
 
 def test_m1a_home_description_recast():
+    # SUPERSEDED by M.1 (dispatch 9): the WebsiteShell description now
+    # mirrors the red-lined hero sub-hero text. The M.1a recast string
+    # is intentionally absent. M.1 lockdown test
+    # `test_m1_websiteshell_description_matches_sub_hero` owns the new value.
     s = _r("website/pages/Home.jsx")
     assert "A workspace for senior people who want to use AI fully" not in s
-    assert "A workspace for executives who want to use AI fully" in s
 
 
 def test_m1a_home_hero_alt_recast():
+    # SUPERSEDED by M.1 (dispatch 9): the hero image is now
+    # /marketing/hero_executive_reading.png with alt "An executive
+    # reading a board pack." — M.1 lockdown test
+    # `test_m1_hero_img_attributes_locked` owns the new value.
     s = _r("website/pages/Home.jsx")
     assert "A senior executive at a desk" not in s
-    assert (
-        'alt="An executive at a desk, reading paper materials in a quiet study."'
-        in s
-    )
 
 
 def test_m1a_home_audiences_h2_recast():
@@ -188,12 +191,12 @@ def test_m1a_copy_hero_kicker_recast():
 
 
 def test_m1a_copy_hero_dek_recast():
+    # SUPERSEDED by M.1 (dispatch 9): the HERO.dek is now the red-lined
+    # sub-hero text. The M.1a recast string is intentionally absent.
+    # M.1 lockdown test `test_m1_hero_sub_hero_locked_verbatim` owns
+    # the new value.
     s = _c("index.js")
     assert "For senior people who want to use AI fully" not in s
-    assert (
-        'dek: "For executives who want to use AI fully — without governance exposure."'
-        in s
-    )
 
 
 def test_m1a_copy_tier2_dek_recast():

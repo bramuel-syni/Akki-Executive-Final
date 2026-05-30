@@ -44,16 +44,28 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _parse_founder_recipients(raw: str) -> list[str]:
+    """Parse FOUNDER_NOTIFY_EMAIL as a comma-separated list. Whitespace
+    is stripped per entry; empty entries are filtered. Returns [] when
+    unset or comma-only."""
+    return [x.strip() for x in (raw or "").split(",") if x.strip()]
+
+
 def _notify_founder(app_row: dict) -> None:
     """No-op if FOUNDER_NOTIFY_EMAIL / SENDGRID_* unset.
     Mirrors `services.cohort.welcome_email::send_welcome_email_async`
-    error-handling shape — never raises, logs `cohort_application_*`."""
-    to_email = (os.environ.get("FOUNDER_NOTIFY_EMAIL") or "").strip()
+    error-handling shape — never raises, logs `cohort_application_*`.
+    Multi-recipient: FOUNDER_NOTIFY_EMAIL accepts a comma-separated
+    list; one SendGrid call goes to all recipients."""
+    recipients = _parse_founder_recipients(
+        os.environ.get("FOUNDER_NOTIFY_EMAIL") or ""
+    )
     api_key = (os.environ.get("SENDGRID_API_KEY") or "").strip()
     from_email = (os.environ.get("SENDGRID_FROM_EMAIL") or "").strip()
-    if not to_email or not api_key or not from_email:
+    if not recipients or not api_key or not from_email:
         log.warning("cohort_application_notify_skipped: %s", {
             "id": app_row["id"], "reason": "sendgrid_or_founder_email_unset",
+            "recipient_count": len(recipients),
         })
         return
     try:
@@ -67,7 +79,7 @@ def _notify_founder(app_row: dict) -> None:
     try:
         mail = Mail(
             from_email=Email(from_email),
-            to_emails=To(to_email),
+            to_emails=[To(addr) for addr in recipients],
             subject=f"New cohort application — {app_row['name']} ({app_row['organisation']})",
             plain_text_content=Content("text/plain",
                 f"name: {app_row['name']}\n"
@@ -79,11 +91,15 @@ def _notify_founder(app_row: dict) -> None:
                 f"id: {app_row['id']}\n"),
         )
         resp = SendGridAPIClient(api_key).send(mail)
-        log.info("cohort_application_notified: %s",
-                 {"id": app_row["id"], "status": resp.status_code})
+        log.info("cohort_application_notify_sent: %s", {
+            "id": app_row["id"], "status": resp.status_code,
+            "recipient_count": len(recipients),
+        })
     except Exception as e:  # noqa: BLE001
-        log.error("cohort_application_notify_failed: %s",
-                  {"id": app_row["id"], "error": str(e)[:200]})
+        log.error("cohort_application_notify_failed: %s", {
+            "id": app_row["id"], "error": str(e)[:200],
+            "recipient_count": len(recipients),
+        })
 
 
 @router.post("/applications", status_code=200)

@@ -1,0 +1,122 @@
+[
+  {
+    "viewport": "1280x900",
+    "headline_verbatim": true,
+    "headline_text": "Akki refuses to invent.",
+    "dek_verbatim": true,
+    "dek_text": "Board papers. Briefings. Reports. Every claim cited. Every bias is named. Decisions stay yours. Your data never leaves your account.",
+    "img": {
+      "width": "1408",
+      "height": "768",
+      "alt": "An executive reading a board pack.",
+      "loading": "eager",
+      "natural_w": 0,
+      "natural_h": 0,
+      "complete": true,
+      "rendered_w": 468.390625,
+      "rendered_h": 585.984375
+    },
+    "primary_cta_visible": 1,
+    "primary_cta_text": "See the work",
+    "secondary_cta_visible": 1,
+    "secondary_cta_text": "Join the cohort \u2192",
+    "overflow": {
+      "h1_overflow_x": 0,
+      "dek_overflow_x": 0,
+      "page_overflow_x": 0
+    },
+    "no_h1_overflow": true,
+    "no_dek_overflow": true,
+    "no_page_overflow": true
+  },
+  {
+    "viewport": "1024x800",
+    "headline_verbatim": true,
+    "headline_text": "Akki refuses to invent.",
+    "dek_verbatim": true,
+    "dek_text": "Board papers. Briefings. Reports. Every claim cited. Every bias is named. Decisions stay yours. Your data never leaves your account.",
+    "img": {
+      "width": "1408",
+      "height": "768",
+      "alt": "An executive reading a board pack.",
+      "loading": "eager",
+      "natural_w": 0,
+      "natural_h": 0,
+      "complete": true,
+      "rendered_w": 394.46875,
+      "rendered_h": 493.578125
+    },
+    "primary_cta_visible": 1,
+    "primary_cta_text": "See the work",
+    "secondary_cta_visible": 1,
+    "secondary_cta_text": "Join the cohort \u2192",
+    "overflow": {
+      "h1_overflow_x": 0,
+      "dek_overflow_x": 0,
+      "page_overflow_x": 0
+    },
+    "no_h1_overflow": true,
+    "no_dek_overflow": true,
+    "no_page_overflow": true
+  },
+  {
+    "viewport": "820x1180",
+    "headline_verbatim": true,
+    "headline_text": "Akki refuses to invent.",
+    "dek_verbatim": true,
+    "dek_text": "Board papers. Briefings. Reports. Every claim cited. Every bias is named. Decisions stay yours. Your data never leaves your account.",
+    "img": {
+      "width": "1408",
+      "height": "768",
+      "alt": "An executive reading a board pack.",
+      "loading": "eager",
+      "natural_w": 0,
+      "natural_h": 0,
+      "complete": true,
+      "rendered_w": 738,
+      "rendered_h": 414.25
+    },
+    "primary_cta_visible": 1,
+    "primary_cta_text": "See the work",
+    "secondary_cta_visible": 1,
+    "secondary_cta_text": "Join the cohort \u2192",
+    "overflow": {
+      "h1_overflow_x": 0,
+      "dek_overflow_x": 0,
+      "page_overflow_x": 0
+    },
+    "no_h1_overflow": true,
+    "no_dek_overflow": true,
+    "no_page_overflow": true
+  },
+  {
+    "viewport": "414x896",
+    "headline_verbatim": true,
+    "headline_text": "Akki refuses to invent.",
+    "dek_verbatim": true,
+    "dek_text": "Board papers. Briefings. Reports. Every claim cited. Every bias is named. Decisions stay yours. Your data never leaves your account.",
+    "img": {
+      "width": "1408",
+      "height": "768",
+      "alt": "An executive reading a board pack.",
+      "loading": "eager",
+      "natural_w": 0,
+      "natural_h": 0,
+      "complete": true,
+      "rendered_w": 332,
+      "rendered_h": 185.875
+    },
+    "primary_cta_visible": 1,
+    "primary_cta_text": "See the work",
+    "secondary_cta_visible": 1,
+    "secondary_cta_text": "Join the cohort \u2192",
+    "overflow": {
+      "h1_overflow_x": 0,
+      "dek_overflow_x": 0,
+      "page_overflow_x": 0
+    },
+    "no_h1_overflow": true,
+    "no_dek_overflow": true,
+    "no_page_overflow": true
+  }
+]

@@ -22,17 +22,37 @@ import {
   HERO, EVIDENCE, TIER_1, TIER_2, TIER_3, AUDIENCES,
   COHORT_TEASER, INVERTED_CTA,
 } from "../copy";
-import heroImg     from "../assets/v7/home-hero.webp";
+// M.1 (2026-02 dispatch 9) — hero image now sourced from
+// /marketing/hero_executive_reading.png (one of the 10 M.0a-mirrored
+// PNGs). WebP fallback wired ready for the M.4 transcode step.
 import tier1Band   from "../assets/v7/tier1-safety-band.webp";
 import audienceImg from "../assets/v7/audience-triptych.webp";
+
+// M.1 — Renders `headline` with `lift` as an inline oxblood `<em>` at
+// whatever position the lift token sits in the headline. Old hero put
+// the lift word at the start ("Safe AI for executive work.");
+// red-lined hero puts it mid-sentence ("Akki refuses to invent.").
+function HeroHeadline({ headline, lift, ...props }) {
+  const parts = headline.split(lift);
+  return (
+    <h1 {...props}>
+      {parts.map((part, i) => (
+        <React.Fragment key={i}>
+          {part}
+          {i < parts.length - 1 && <em className="lift">{lift}</em>}
+        </React.Fragment>
+      ))}
+    </h1>
+  );
+}
 
 export default function Home() {
   return (
     <WebsiteShell
-      title="Akki — Safe AI for executive work"
-      description="A workspace for executives who want to use AI fully — without governance exposure. From Syni.ai, Nairobi."
+      title="Akki — refuses to invent"
+      description="Board papers. Briefings. Reports. Every claim cited. Every bias is named. Decisions stay yours. Your data never leaves your account."
       pathname="/"
-      ogImage="/static/media/home-hero.webp"
+      ogImage="/marketing/hero_executive_reading.png"
     >
       {/* HERO (F1) */}
       <section className="hero" aria-labelledby="home-hero-h1">
@@ -40,28 +60,39 @@ export default function Home() {
         <div className="hero-grid">
           <div className="hero-text">
             <p className="kicker reveal-1">{HERO.kicker}</p>
-            <h1 id="home-hero-h1" className="hero reveal-2" data-testid="home-hero-h1">
-              <em className="lift">{HERO.lift}</em>{HERO.headline.replace(HERO.lift, "")}
-            </h1>
-            <p className="dek reveal-3">{HERO.dek}</p>
+            <HeroHeadline
+              id="home-hero-h1"
+              className="hero reveal-2"
+              data-testid="home-hero-h1"
+              headline={HERO.headline}
+              lift={HERO.lift}
+            />
+            <p className="dek reveal-3" data-testid="home-hero-dek">{HERO.dek}</p>
             <div className="hero-actions reveal-4">
-              <Link to={HERO.primaryCta.href} className="btn-primary btn-hero" data-testid="home-cta-primary">
+              <a href={HERO.primaryCta.href} className="btn-primary btn-hero" data-testid="home-cta-primary">
                 {HERO.primaryCta.label}
-              </Link>
-              <a href={HERO.tertiary.href} className="btn-tertiary" data-testid="home-cta-tertiary">
-                {HERO.tertiary.label} →
               </a>
+              <Link to={HERO.tertiary.href} className="btn-tertiary" data-testid="home-cta-tertiary">
+                {HERO.tertiary.label} →
+              </Link>
             </div>
           </div>
           <div className="hero-image-wrap reveal-4">
-            <img
-              src={heroImg}
-              alt="An executive at a desk, reading paper materials in a quiet study."
-              width="800" height="1000"
-              loading="eager"
-              fetchPriority="high"
-              data-testid="home-hero-img"
-            />
+            <picture>
+              {/* M.4-prep: WebP source. The .webp sibling doesn't exist
+                  yet — the browser falls through to the .png automatically. */}
+              <source srcSet="/marketing/hero_executive_reading.webp" type="image/webp" />
+              <img
+                src="/marketing/hero_executive_reading.png"
+                alt="An executive reading a board pack."
+                width="1408"
+                height="768"
+                loading="eager"
+                fetchPriority="high"
+                decoding="async"
+                data-testid="home-hero-img"
+              />
+            </picture>
           </div>
         </div>
       </section>

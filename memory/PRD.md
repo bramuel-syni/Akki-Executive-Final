@@ -15,14 +15,15 @@
 - ✅ Sprint M.1a (dispatch 5) — **45 banned-vocab editorial recasts** across 13 marketing/website files. Scanner gap discovered (`.js` files weren't scanned) + closed in same dispatch. `BASELINE_KNOWN_HITS` now empty — voice lint strictly enforced. 34 string-level lockdown pytests + full-surface lint clean assertion.
 - ✅ Sprint M.1b (dispatch 6) — **Voice-lint CI pre-merge gate.** `.github/workflows/voice-lint.yml` triggers on push (main) + pull_request touching any of 9 marketing-surface paths. No baseline carve-out. PR fails on any hit with verbatim violation list. 6 lockdown pytests verify the workflow can't silently disappear or drift.
 - ✅ Sprint M.1c (dispatch 7) — **marketing-assets-guard CI gate.** `.github/workflows/marketing-assets-guard.yml` invokes existing M.0a presence/sanity pytest on any PR touching marketing/website surface or the 10 mirrored PNGs. 2 lockdown pytests verify workflow shape + invocation.
+- ✅ Sprint M.1 (dispatch 9) — **Hero rewrite landed.** User-red-lined Option B copy live at all 4 viewports (1280/1024/820/414) with zero overflow. `Akki refuses to invent.` with oxblood lift on `refuses`. Sub-hero verbatim. `<picture>` wires WebP (newly transcoded, 48KB, 96% smaller) + PNG fallback. New `HeroHeadline` sub-component splits headline at lift token. 14 lockdown pytests + 4-viewport DOM trace.
+- ✅ Sprint M.2-prep (dispatch 10) — **Multi-recipient `FOUNDER_NOTIFY_EMAIL`.** Comma-separated parsing (whitespace-tolerant, empty-filtering); `to_emails=[To(addr) for addr in recipients]` (single SendGrid call, N recipients); audit log carries `recipient_count`. `.env` now `FOUNDER_NOTIFY_EMAIL=bramuel@syni.ai,mugwe.marion@syni.ai`. 11 contract pytests (parser + SendGrid + voice-lint).
 
 **Halted:**
-- ⏸ Sprint M.1 — JSX rewrite (hero). **Awaiting user red-line on 3 hero options.** Voice lint is now strictly enforced (no baselined hits), so any new banned vocab in the hero rewrite will fail pre-commit.
-- ⏸ Sprint M.2 — Cohort form copy + applicant confirmation email body + final pricing tiers. **Awaiting user copy + `FOUNDER_NOTIFY_EMAIL`.**
-- ⏸ Sprint M.3 — Public `/trust` page with velocity tile. **Design locked by user (dispatch 4):** new unauthenticated `GET /api/public/observability/reasoning_velocity?window=30d` route (~5 LOC delta) with 5-minute Mongo cache. Empty-state copy: `Solva is in a quiet patch. Reasoning velocity is reported when sessions have completed.` Sub-threshold (<5 sessions): `Solva is warming up. Velocity reports once five sessions have completed in the window.` Numeric tile only when `session_count >= 5`. Public copy uses **Akki** not Solva: `Akki delivers a fully-cited 16-slide diagnosis in <avg>s on average. p95 <p95>s.`
-- ⏸ Sprint M.4 — Multi-viewport sweep + voice-lint pass + **WebP transcode build step** (approved dispatch 5): `yarn add sharp` + `scripts/transcode_marketing.js`, `<picture>` with WebP source + PNG fallback, 40-LOC cap for the sub-slice.
+- ⏸ Sprint M.2 — Cohort form copy + applicant confirmation email body + final pricing tiers. **`FOUNDER_NOTIFY_EMAIL` supplied dispatch 10; remaining gates: cohort pricing copy for `docs/cohort_pricing.md` + applicant confirmation email body to replace `<!-- COPY TBD M.2 -->` placeholder.**
+- ⏸ Sprint M.3 — Public `/trust` page with velocity tile. Design locked dispatch 4.
+- ⏸ Sprint M.4 — Multi-viewport sweep + WebP transcode build step (one-shot for hero already done dispatch 9; M.4 will batch-transcode the other 9 assets via the `sharp` build script).
 
-**Tests:** 101/101 cumulative pytests green across ZZ.1, ZZ.2, ZZ.2.x, ZZ.3, ZZ.4, M.0a, M.0b, M.0c, M.1a, M.1b, M.1c, v1-unchanged.
+**Tests:** 126/126 cumulative pytests green across ZZ.1, ZZ.2, ZZ.2.x, ZZ.3, ZZ.4, M.0a, M.0b, M.0c, M.1, M.1a, M.1b, M.1c, M.2-prep, v1-unchanged.
 
 **Discipline gates throughout:**
 - v1 byte-identical guard 0 lines (`test_solva_v1_unchanged.py` 4/4 green)
