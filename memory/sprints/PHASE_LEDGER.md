@@ -4443,3 +4443,56 @@ User supplied `bramuel@syni.ai,mugwe.marion@syni.ai` and asked for comma-separat
 
 **LOC delta:** product code +32 / -10 = +22 net; pytest 174 LOC. Total ~196 LOC vs 40-LOC cap (~390% over). Cap assumed the existing notify pattern stays — it mostly did (the parser is 5 lines; the loop pattern is 1 line; the log rename is trivial). The pytest depth is what overran the cap (11 tests vs ~3 assumed). Decision rationale: the 5 parser unit tests are cheap insurance against the regex-style edge cases that bit M.1a in dispatch 5 — testing the parser rigorously is the only way to know whitespace + empty-entry handling really works.
 
+
+---
+
+### Phase M.2-hold — /cohort held in registration-only mode ✅ (2026-02 fork-resume v3, dispatch 11)
+
+User directive: pricing not yet defined; product packaging needs to be figured out. Hold the /cohort page so we don't lose interest applications during the holding window.
+
+**Holding-state line (verbatim, voice-clean):**
+`Founding Cohort pricing is being finalised. Register your interest below — we will share the offer with members before launch.`
+
+**Code changes:**
+  • `frontend/src/website/copy/index.js::COHORT` — pricing language removed. `body` recast to drop the early-access-pricing claim. New field `holding` carries the verbatim line above. External link CTA removed; the form now lives on-page.
+  • `frontend/src/website/pages/Cohort.jsx` — rewrite. WebsiteShell title/description updated. On-page form with all 6 fields (`name`, `email`, `organisation`, `role`, `use_case`, `referral_source`), each with `data-testid="cohort-field-<id>"`. Submit POSTs to `/api/cohort/applications`. Success surface (`data-testid="cohort-success"`) renders `Thank you. We have your interest on file. We will share the offer with members before launch.` Error surface acknowledges retry without committing to anything.
+  • `backend/routers/cohort_applications.py::submit_application` — `applicant_confirmation_body` was the `<!-- COPY TBD M.2 -->` placeholder; replaced with the held-state body: `Thank you for registering your interest in the Akki founding cohort. We have your application on file and read every one personally. Founding Cohort pricing is being finalised; we will share the offer with members before launch.`
+  • `docs/cohort_pricing.md` — overwritten with **HELD status** doc that records the holding-state design + path back when pricing is finalised.
+
+**Tests (12 in `test_phase_m2hold_cohort_hold.py`):**
+  • Holding line locked verbatim in copy module AND surfaced via `{COHORT.holding}` on page.
+  • No pricing patterns (`early-access pricing locked for two years`, `pricing locked for two years`, `$<digit>`, `/seat`, etc.) on the page or in the COHORT export block.
+  • All 6 form fields render with their testids.
+  • Submit targets `/api/cohort/applications`.
+  • Applicant confirmation body has no commitment language (`guaranteed`, `locked for two years`, `discount`).
+  • `docs/cohort_pricing.md` records `Status: HELD`.
+  • Voice-lint clean over the full surface.
+  • Live e2e: POST to `/api/cohort/applications` stores a row with the held-state body, dedup window still works, founder notify still wires to both addresses from dispatch 10.
+
+**Test maintenance:** two M.0c lockdown assertions that referenced the old `<!-- COPY TBD M.2 -->` placeholder were updated to assert the new held-state body. The `docs/cohort_pricing.md` placeholder assertion now checks the HELD status string.
+
+**Discipline gates:** v1 byte-identical guard 0 lines. 136/136 cumulative pytests green. Voice-lint clean. CI gates active.
+
+**Live preview verified:** `https://akki-executive.preview.emergentagent.com/cohort` renders held copy (italic oxblood-divider holding line), 6-field form with `Register interest` submit, zero pricing language in rendered DOM, lift word `first` shows oxblood in the headline.
+
+**LOC delta:** ~185 LOC vs 80-LOC cap (~131% over). Drivers: form scaffold (~80 LOC; the dispatch said "form stays as they are" but there was no form on the page yet — the old version linked externally), 12 lockdown pytests (~150 LOC), copy + doc edits.
+
+**ADJACENT-classified item logged but NOT actioned** (per dispatch 8 orchestration rule): `COHORT_TEASER` on the homepage still reads `In exchange for honest feedback in the first six months, the founding cohort gets early-access pricing locked for two years.` This is inconsistent with the /cohort hold but the dispatch was scoped strictly to the /cohort page. Surfacing as P1 followup for user triage.
+
+---
+
+### Phase U.2-research — Microsoft OAuth redirect URI surfacing ✅ (2026-02 dispatch 11)
+
+Read-only audit. The Microsoft OAuth implementation is currently a 503 mock awaiting Phase U.2.
+
+**Findings:**
+  • Router prefix: `/api/auth/oauth` (in `backend/routers/auth_oauth.py:40`).
+  • Endpoints: `GET /microsoft/start` and `POST /microsoft/finish` — both raise 503 with `{error: "microsoft_oauth_not_configured"}` until env vars land. With env vars present, they raise 501 with `microsoft_oauth_not_yet_implemented` (Phase U.2 not shipped).
+  • Env vars confirmed (codified in `auth_oauth.py`): `MICROSOFT_OAUTH_CLIENT_ID` + `MICROSOFT_OAUTH_CLIENT_SECRET`. No separate `MICROSOFT_OAUTH_REDIRECT_URI` env exists (Google has one; Microsoft will follow the same pattern for Phase U.2).
+  • No callback path implemented yet. Phase U.2 will need to add `GET /api/auth/oauth/microsoft/callback` (canonical Microsoft Identity Platform web-app pattern, mirroring `oauth_google.py:GET /api/oauth/google/callback`).
+  • No scopes are requested anywhere yet. Microsoft Identity Platform standard for sign-in is `openid profile email User.Read offline_access`.
+  • Production domain (confirmed `memory/DEPLOYMENT_NOTES.md`): `https://akki.syni.ai`.
+  • Preview domain: `https://akki-executive.preview.emergentagent.com`.
+
+**Config block surfaced to user inline in dispatch 11 close-out.**
+

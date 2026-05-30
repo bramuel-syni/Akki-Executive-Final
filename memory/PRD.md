@@ -17,13 +17,14 @@
 - ✅ Sprint M.1c (dispatch 7) — **marketing-assets-guard CI gate.** `.github/workflows/marketing-assets-guard.yml` invokes existing M.0a presence/sanity pytest on any PR touching marketing/website surface or the 10 mirrored PNGs. 2 lockdown pytests verify workflow shape + invocation.
 - ✅ Sprint M.1 (dispatch 9) — **Hero rewrite landed.** User-red-lined Option B copy live at all 4 viewports (1280/1024/820/414) with zero overflow. `Akki refuses to invent.` with oxblood lift on `refuses`. Sub-hero verbatim. `<picture>` wires WebP (newly transcoded, 48KB, 96% smaller) + PNG fallback. New `HeroHeadline` sub-component splits headline at lift token. 14 lockdown pytests + 4-viewport DOM trace.
 - ✅ Sprint M.2-prep (dispatch 10) — **Multi-recipient `FOUNDER_NOTIFY_EMAIL`.** Comma-separated parsing (whitespace-tolerant, empty-filtering); `to_emails=[To(addr) for addr in recipients]` (single SendGrid call, N recipients); audit log carries `recipient_count`. `.env` now `FOUNDER_NOTIFY_EMAIL=bramuel@syni.ai,mugwe.marion@syni.ai`. 11 contract pytests (parser + SendGrid + voice-lint).
+- ✅ Sprint M.2-hold (dispatch 11) — **/cohort page held in registration-only mode.** Pricing language removed; on-page form (6 fields) lives at /cohort with submit to `/api/cohort/applications`; holding-state line above form names the status; applicant confirmation body recast with no commitment language; `docs/cohort_pricing.md` records HELD status. 12 lockdown pytests + live e2e probe.
 
 **Halted:**
 - ⏸ Sprint M.2 — Cohort form copy + applicant confirmation email body + final pricing tiers. **`FOUNDER_NOTIFY_EMAIL` supplied dispatch 10; remaining gates: cohort pricing copy for `docs/cohort_pricing.md` + applicant confirmation email body to replace `<!-- COPY TBD M.2 -->` placeholder.**
 - ⏸ Sprint M.3 — Public `/trust` page with velocity tile. Design locked dispatch 4.
 - ⏸ Sprint M.4 — Multi-viewport sweep + WebP transcode build step (one-shot for hero already done dispatch 9; M.4 will batch-transcode the other 9 assets via the `sharp` build script).
 
-**Tests:** 126/126 cumulative pytests green across ZZ.1, ZZ.2, ZZ.2.x, ZZ.3, ZZ.4, M.0a, M.0b, M.0c, M.1, M.1a, M.1b, M.1c, M.2-prep, v1-unchanged.
+**Tests:** 136/136 cumulative pytests green across ZZ.1, ZZ.2, ZZ.2.x, ZZ.3, ZZ.4, M.0a, M.0b, M.0c, M.1, M.1a, M.1b, M.1c, M.2-prep, M.2-hold, v1-unchanged.
 
 **Discipline gates throughout:**
 - v1 byte-identical guard 0 lines (`test_solva_v1_unchanged.py` 4/4 green)

@@ -1,14 +1,19 @@
-# Cohort pricing — placeholder
+# Cohort pricing — HELD
 
-> Awaiting user supply. The Sprint M.0c scaffold defers all pricing copy
-> until the founder provides final amounts and tiering. This file is
-> stubbed so the Sprint M.1 hero rewrite can link to a stable path
-> (`/docs/cohort_pricing.md`) without a 404.
+Pricing not yet defined. Page holds in registration-only mode until product
+packaging is decided.
 
-## Status
+**Status: HELD** · See `frontend/src/website/pages/Cohort.jsx` for the
+holding-state copy (the line above the application form) and
+`backend/routers/cohort_applications.py` for the applicant confirmation body.
 
-- 2026-02 — Created as a placeholder during M.0c scaffolding.
-- Pending: final pricing tiers, founding-cohort lock, payment cadence,
-  refund policy.
+The /cohort page remains visible and the application form remains live so
+interest is captured during the holding window. Submissions are stored in
+the `cohort_applications` Mongo collection and trigger founder
+notifications to `FOUNDER_NOTIFY_EMAIL` (comma-separated, dispatch 10).
 
-<!-- COPY TBD M.2 -->
+When pricing is finalised:
+- Replace the holding line in `copy/index.js::COHORT.holding`
+- Restore the pricing reference in the applicant confirmation body
+- Restore PRICING-related copy on adjacent pages (Pricing page,
+  COHORT_TEASER, etc.) that may currently link here

@@ -30,8 +30,13 @@ def test_m0c_router_registered():
 def test_m0c_pricing_doc_placeholder_present():
     assert PRICING_MD.exists()
     content = PRICING_MD.read_text(encoding="utf-8")
-    assert "Awaiting user supply" in content
-    assert "<!-- COPY TBD M.2 -->" in content
+    # Updated dispatch 11 — doc now records HELD status.
+    assert "Pricing not yet defined" in content
+    assert "Status: HELD" in content
+
+
+# (dispatch 11 — M.0c happy path test below also updated to assert
+# the new applicant confirmation body, not the original placeholder.)
 
 
 @pytest.fixture
@@ -67,7 +72,11 @@ async def test_m0c_post_application_happy_path(app):
             )
             assert row["email"] == email.lower()
             assert row["status"] == "received"
-            assert row["applicant_confirmation_body"] == "<!-- COPY TBD M.2 -->"
+            assert row["applicant_confirmation_body"].startswith(
+                "Thank you for registering your interest"
+            )
+            assert "founding cohort" in row["applicant_confirmation_body"]
+            assert "Founding Cohort pricing is being finalised" in row["applicant_confirmation_body"]
             # Idempotent within 24h → second POST returns same id.
             r2 = await c.post("/api/cohort/applications", json={
                 "name": "Hadley Wickham",

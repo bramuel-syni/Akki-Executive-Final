@@ -123,7 +123,16 @@ async def submit_application(
         "referral_source": (body.referral_source or "").strip() or None,
         "status": "received",
         "created_at": _now().isoformat(),
-        "applicant_confirmation_body": "<!-- COPY TBD M.2 -->",
+        # Held 2026-02 dispatch 11 — pricing copy is removed pending
+        # product-packaging decision. The applicant confirmation
+        # message acknowledges receipt with no commitment language.
+        "applicant_confirmation_body": (
+            "Thank you for registering your interest in the Akki "
+            "founding cohort. We have your application on file and "
+            "read every one personally. Founding Cohort pricing is "
+            "being finalised; we will share the offer with members "
+            "before launch."
+        ),
     }
     await db.cohort_applications.insert_one(dict(row))
     background.add_task(_notify_founder, row)

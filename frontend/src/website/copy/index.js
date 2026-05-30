@@ -388,15 +388,17 @@ export const TRUST = {
 };
 
 // ============================================================
-// COHORT (v7 §10.1) — light surface, no form this sprint
+// COHORT (v7 §10.1, held 2026-02 dispatch 11) — pricing copy removed
+// pending product packaging decision; form moved on-page for lead
+// capture. The holding-state line above the form names the status.
 // ============================================================
 export const COHORT = {
   kicker: "FOUNDING COHORT",
   headline: "Used first by roughly twenty executives.",
   lift: "first",
   dek: "Akki is finished enough to use, and not finished enough to ship. We are admitting a small founding cohort to use it first.",
-  body: "In exchange for honest feedback in the first six months, the cohort gets early-access pricing locked for two years. We read every application and reply personally. We are not running a waitlist; we are running an admission.",
-  cta: { label: "See the full proposition and apply", href: "https://syni.ai/akki-cohort" },
+  body: "We read every application and reply personally. We are not running a waitlist; we are running an admission.",
+  holding: "Founding Cohort pricing is being finalised. Register your interest below — we will share the offer with members before launch.",
 };
 
 // ============================================================
