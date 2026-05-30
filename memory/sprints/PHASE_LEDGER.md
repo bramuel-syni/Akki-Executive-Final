@@ -3929,3 +3929,114 @@ Substrate:
 clean (no fixture text is user-facing). Code-LOC delta: 63 (the
 fixtures module + the chat router env-gated branch).
 
+
+---
+
+### Phase ZZ.3 — Trust Center > Reasoning (audit transparency) ✅ (2026-02 fork-resume v2)
+
+**ZZ.3** — Hybrid tiles + aggregated feed surface in Trust Center
+exposing the cumulative output of Synisense Shield + ZZ.2 governance.
+
+**Backend additions:**
+  • `routers/trust_center.py::reasoning` —
+    `GET /api/trust-center/reasoning?window=7d|30d`. Reads
+    `chat_audit_log` rows (`message.received`, `chat.refused`,
+    `chat.solva_escalation_clicked`) + `synisense_runs` rows within
+    the user's accessible contexts. Returns 8 tile counts +
+    bias-by-kind breakdown + (day, event_kind) aggregated feed.
+  • `routers/chat.py::record_solva_escalation_click` —
+    `POST /api/chats/{chat_id}/governance/solva-escalation-clicked`.
+    Writes a `chat.solva_escalation_clicked` action row via the
+    existing `_append_audit` chain. No new schema; new action
+    string only.
+  • `routers/chat.py` streaming handler — `zz2_governance` compute
+    reordered BEFORE the `message.received` audit row so the
+    payload now persists `"zz2_governance": zz2_governance`. Trust
+    Center > Reasoning aggregates counts off this key without
+    recomputing.
+
+**Frontend additions:**
+  • `TrustCenter.jsx::ReasoningView` — new tab "Reasoning"
+    (`tc-tab-reasoning`). Top-line 6-tile row (Identifiers
+    protected · Restored on your view · Evidence-grounding checks
+    · Unsourced claims refused · Bias flags surfaced · Solva
+    escalations) + window toggle (Last 7 days / Last 30 days) +
+    optional bias-by-kind breakdown + aggregated feed
+    (`day · event_kind · count`).
+  • `GovernanceSignals.jsx` — escalation CTA changed from `<Link>`
+    to `<button>`; POSTs `/governance/solva-escalation-clicked`
+    before navigating to `/app/solva`.
+
+**Discipline gates:** v1 byte-identical guard 0 lines. Voice-lint
+clean (banned-vocab assertion locked in pytest). 10/10 ZZ.3
+pytests green; 41/41 cumulative ZZ.* green. **LOC delta accepted
+with overage:** net new ~265–300 LOC vs 250-LOC cap (~6–20% over);
+user ratified overage in exchange for a tightened 80-LOC cap on
+ZZ.4.
+
+**Verification:**
+  • Backend pytest `test_phase_zz3.py` 10/10 green (source-strict
+    + frontend testid lockdown + live admin e2e probe asserting
+    response shape + 422 on invalid window).
+  • Playwright raw-DOM trace `/app/memory/screenshots/zz3/trace.json`
+    — 3 viewports × 6 tiles all rendered, all 6 verbatim labels
+    visible, 7d/30d toggle works, feed populated with 2
+    aggregated rows from admin's account.
+
+---
+
+### Phase ZZ.4 — Reasoning velocity (latency aggregate) ✅ (2026-02 fork-resume v2)
+
+**ZZ.4** — Adds a per-window latency aggregate tile beneath the
+ZZ.3 tile row in Trust Center > Reasoning. Surfaces the literal
+speed at which Solva v2 produces fully-cited 16-slide diagnoses.
+
+**Backend additions:**
+  • `routers/observability.py` — new router. Single endpoint
+    `GET /api/observability/reasoning_velocity?window=7d|30d`.
+    Reads `solva_v2_sessions` rows (status="completed",
+    completed_at within window) for the caller's account.
+    Computes per-session duration from `started_at → completed_at`,
+    aggregates `avg_ms_per_slide` + session-total p50_ms + p95_ms.
+    Per-engine median `latency_ms` extracted from embedded
+    `reasoning_audit_log[]` rows; slowest + fastest engine names
+    surfaced as `slowest_slide_kind` / `fastest_slide_kind`.
+    Locked deck size constant `LOCKED_SLIDE_COUNT = 16`.
+
+**Frontend additions:**
+  • `TrustCenter.jsx::ReasoningVelocityTile` — mounted inside
+    `ReasoningView` beneath the 6-tile row. Voice-clean copy:
+    `Solva delivers a fully-cited 16-slide diagnosis in <avg>s on
+    average. p95 <p95>s.` Slowest-layer hint surfaces only when
+    `slowest.median_ms > 2 × fastest.median_ms` AND
+    `fastest.median_ms > 0` (suppresses noise from zero-latency
+    engines like refusal-path). Empty state: `No completed Solva
+    sessions in the last <window>.` — no error, no skeleton drama.
+  • Shared window state — reuses ZZ.3's 7d/30d toggle. `vel` state
+    fetches in parallel with the ZZ.3 tile payload via Promise.all
+    so the row never flickers half-loaded.
+
+**Discipline gates:** v1 byte-identical guard 0 lines. Voice-lint
+clean (banned-vocab assertion locked in pytest). 8/8 ZZ.4 pytests
+green (math validation: seeded 5 sessions with durations
+[16s, 32s, 48s, 64s, 160s] + per-engine latencies; asserted avg=4000ms
+per slide, p50=48000ms (3000ms×16), p95=160000ms (10000ms×16),
+slowest=tension_detector @ 5000ms, fastest=frame_audit @ 500ms).
+**LOC delta:** net new ~107 LOC vs the user-tightened 80-LOC cap
+(~34% over). Halt-and-ping after the trace lands per discipline
+rule.
+
+**Verification (live data on admin@akki.ai):**
+  • `/api/observability/reasoning_velocity?window=30d` returns:
+    `session_count=70`, `slide_count=1120`, `avg_ms_per_slide≈4319`,
+    `p50_ms≈48384` (~48s), `p95_ms≈126678` (~127s),
+    `slowest=tension_detector @ 24070ms median`,
+    `fastest=refusal @ 0ms median`.
+  • `/api/observability/reasoning_velocity?window=7d` returns 0
+    sessions → empty-state tile renders correctly.
+  • Playwright raw-DOM trace `/app/memory/screenshots/zz4/trace.json`
+    — 3 viewports × 2 windows (7d empty-state + 30d populated).
+    30d row shows avg=69s, p95=127s, copy renders verbatim.
+    7d row renders the empty-state copy with no `--` / `NaN` /
+    loading-state slippage.
+

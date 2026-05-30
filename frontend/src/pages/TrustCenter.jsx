@@ -772,21 +772,59 @@ function _reasoningKindLabel(kind) {
   return kind;
 }
 
+// Phase ZZ.4 — Reasoning velocity tile. Reads
+// /api/observability/reasoning_velocity for the active window.
+function ReasoningVelocityTile({ vel, window }) {
+  if (!vel) return null;
+  const sessions = vel.session_count || 0;
+  if (sessions === 0) {
+    return (
+      <div data-testid="tc-velocity-tile" className="bg-[var(--cream)] border border-[var(--cream-deep)] rounded-lg p-4 text-[13px] text-[var(--muted)]">
+        No completed Solva sessions in the last {window === "7d" ? "7 days" : "30 days"}.
+      </div>
+    );
+  }
+  const totalAvgS = ((vel.avg_ms_per_slide || 0) * 16) / 1000;
+  const p95S = (vel.p95_ms || 0) / 1000;
+  const slow = vel.slowest_slide_kind;
+  const fast = vel.fastest_slide_kind;
+  const showSlowest = slow && fast && fast.median_ms > 0 && slow.median_ms > 2 * fast.median_ms;
+  return (
+    <div data-testid="tc-velocity-tile" className="bg-[var(--cream)] border border-[var(--cream-deep)] rounded-lg p-4 space-y-1">
+      <div className="text-[10.5px] uppercase tracking-wide text-[var(--muted)]">Reasoning velocity</div>
+      <div className="text-[14px] text-[var(--ink)]" data-testid="tc-velocity-copy">
+        Solva delivers a fully-cited 16-slide diagnosis in{" "}
+        <span className="text-[var(--deep)]" data-testid="tc-velocity-avg">{totalAvgS.toFixed(0)}s</span>{" "}
+        on average. p95{" "}
+        <span className="text-[var(--deep)]" data-testid="tc-velocity-p95">{p95S.toFixed(0)}s</span>.
+      </div>
+      {showSlowest && (
+        <div className="text-[12px] text-[var(--muted)]" data-testid="tc-velocity-slowest">
+          Slowest layer: <span className="text-[var(--ink)]">{slow.kind}</span>.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReasoningView() {
   const hdrs = useAuthHeaders();
   const [window, setWindow] = useState("7d");
   const [data, setData] = useState(null);
+  const [vel, setVel] = useState(null);
   const [err, setErr] = useState(null);
 
   useEffect(() => {
     let cancel = false;
     (async () => {
       try {
-        const r = await axios.get(
-          `${API}/api/trust-center/reasoning?window=${window}`,
-          { headers: hdrs },
-        );
-        if (!cancel) setData(r.data);
+        const [r1, r2] = await Promise.all([
+          axios.get(`${API}/api/trust-center/reasoning?window=${window}`, { headers: hdrs }),
+          axios.get(`${API}/api/observability/reasoning_velocity?window=${window}`, { headers: hdrs }),
+        ]);
+        if (cancel) return;
+        setData(r1.data);
+        setVel(r2.data);
       } catch (e) {
         if (!cancel) setErr(e?.response?.data?.detail || String(e));
       }
@@ -835,6 +873,8 @@ function ReasoningView() {
           small
         />
       </div>
+
+      <ReasoningVelocityTile vel={vel} window={window} />
 
       {Object.keys(biasKinds).length > 0 && (
         <div data-testid="tc-reasoning-bias-breakdown" className="space-y-1.5">

@@ -1,0 +1,65 @@
+[
+  {
+    "viewport": "1280",
+    "trust_center_velocity": {
+      "7d": {
+        "tile_present": 1,
+        "avg_value": "",
+        "p95_value": "",
+        "shows_slowest_layer": 0,
+        "is_empty_state": true,
+        "copy_includes_verbatim_phrase": false
+      },
+      "30d": {
+        "tile_present": 1,
+        "avg_value": "69s",
+        "p95_value": "127s",
+        "shows_slowest_layer": 0,
+        "is_empty_state": false,
+        "copy_includes_verbatim_phrase": true
+      }
+    }
+  },
+  {
+    "viewport": "1024",
+    "trust_center_velocity": {
+      "7d": {
+        "tile_present": 1,
+        "avg_value": "",
+        "p95_value": "",
+        "shows_slowest_layer": 0,
+        "is_empty_state": true,
+        "copy_includes_verbatim_phrase": false
+      },
+      "30d": {
+        "tile_present": 1,
+        "avg_value": "69s",
+        "p95_value": "127s",
+        "shows_slowest_layer": 0,
+        "is_empty_state": false,
+        "copy_includes_verbatim_phrase": true
+      }
+    }
+  },
+  {
+    "viewport": "820",
+    "trust_center_velocity": {
+      "7d": {
+        "tile_present": 1,
+        "avg_value": "",
+        "p95_value": "",
+        "shows_slowest_layer": 0,
+        "is_empty_state": true,
+        "copy_includes_verbatim_phrase": false
+      },
+      "30d": {
+        "tile_present": 1,
+        "avg_value": "69s",
+        "p95_value": "127s",
+        "shows_slowest_layer": 0,
+        "is_empty_state": false,
+        "copy_includes_verbatim_phrase": true
+      }
+    }
+  }
+]

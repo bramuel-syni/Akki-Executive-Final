@@ -1,6 +1,32 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Mega-Dispatch 2026-02 (fork-resume v3) — ZZ.2.x housekeeping + ZZ.3 + ZZ.4 CLOSED ✅ (Sprint M HALTED)
+
+**Scope:** Promoted ZZ.1/ZZ.2/ZZ.2.x ledger rows; shipped ZZ.3 (Trust Center > Reasoning tab with 6 audit-transparency tiles + bias-by-kind breakdown + (day, event_kind) aggregated feed + Solva escalation click receipt) and ZZ.4 (single per-window latency aggregate tile reading the existing `solva_v2_sessions` collection).
+
+**Closed:**
+- ✅ Phase ZZ.1 ledger row promoted — Synisense reidentification display fix
+- ✅ Phase ZZ.2 ledger row promoted — Three-tier Solva governance in Chat
+- ✅ Phase ZZ.2.x ledger row promoted — deterministic fixture path + 15-row Playwright trace
+- ✅ Phase ZZ.3 — Trust Center > Reasoning. `GET /api/trust-center/reasoning?window=7d|30d`, `POST /api/chats/{cid}/governance/solva-escalation-clicked`, ReasoningView with 6 verbatim-labelled tiles, window toggle, aggregated feed. `zz2_governance` now persisted to `chat_audit_log.message.received` payload. **LOC delta accepted with overage** (user-ratified ~265–300 LOC vs 250 cap).
+- ✅ Phase ZZ.4 — `GET /api/observability/reasoning_velocity?window=7d|30d`. ReasoningVelocityTile mounted beneath ZZ.3 tile row with locked voice-clean copy + empty state + slowest-layer hint guarded by 2× threshold. **LOC delta over tightened 80-LOC cap** (~107 LOC, ~34% over).
+
+**Tests added:** 18 new pytests across `test_phase_zz3.py` (10) + `test_phase_zz4.py` (8) including math validation with seeded sessions, source-strict locks, voice-lint banned-vocab assertions, live admin e2e probes. **41/41 ZZ.* pytests green.**
+
+**Raw DOM Playwright traces stored:**
+- `/app/memory/screenshots/zz3/trace.json` — 3 viewports × 6 tiles + feed
+- `/app/memory/screenshots/zz4/trace.json` — 3 viewports × 2 windows (empty-state + populated)
+
+**Discipline gates honoured throughout:**
+- v1 byte-identical guard 0 lines (`test_solva_v1_unchanged.py` 4/4 green)
+- Voice-lint clean on all new user-facing copy
+- Multi-viewport raw DOM traces at 1280 / 1024 / 820
+
+**Halted before Sprint M** per user instruction — needs red-line on 3 hero options before any JSX ships.
+
+
+
 ### Mega-Dispatch 2026-02 (fork-resume v2 · Phase Y autonomous slice batch) — `<StrategicRow>` primitive + Task card composition CLOSED ✅
 
 **Scope:** User's autonomous mega-dispatch, "(b) but autonomous — no sign-off gate between slices." Executed Slice 1 (`<StrategicRow>` primitive extraction + Monitor refactor with zero visual regression) and Slice 2 (Task Manager card composition + Owner-dropdown removal verification) end-to-end.
