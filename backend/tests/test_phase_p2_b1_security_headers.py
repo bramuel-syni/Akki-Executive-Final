@@ -63,3 +63,60 @@ def test_b1_hsts_absent_on_plain_http():
     r = _run(_get("/api/health/composite"))
     # AsyncClient default scheme is http → HSTS must NOT appear.
     assert r.headers.get("Strict-Transport-Security") is None
+
+
+def test_b1_csp_present_on_json_too():
+    """Phase P2.1-1 — CSP must ride on every response (API + HTML).
+    The original B.1 ship gated CSP to HTML only; tester correctly
+    flagged this as a P2.1-1 fail. CSP is now unconditional on the
+    backend."""
+    r = _run(_get("/api/health/composite"))
+    csp = r.headers.get("Content-Security-Policy")
+    assert csp, "CSP must be present on JSON API responses (P2.1-1 lockdown)"
+    assert "default-src 'self'" in csp
+    assert "frame-ancestors 'none'" in csp
+
+
+def test_b1_html_shell_headers_via_live_probe():
+    """Phase P2.1-1 — the HTML shell (served by webpack-dev-server /
+    Express, NOT FastAPI) must also carry all 7 headers + CSP. This is
+    enforced by craco.config.js's setupMiddlewares hook. We probe the
+    live preview URL because we can't drive Express from FastAPI's
+    TestClient.
+
+    Skipped if REACT_APP_BACKEND_URL is unreachable.
+    """
+    import subprocess
+
+    base = ""
+    fe_env = REPO / "frontend" / ".env"
+    if fe_env.exists():
+        for line in fe_env.read_text().splitlines():
+            if line.startswith("REACT_APP_BACKEND_URL="):
+                base = line.split("=", 1)[1].strip()
+                break
+    if not base:
+        pytest.skip("REACT_APP_BACKEND_URL not configured; skipping live-shell probe")
+
+    proc = subprocess.run(
+        ["curl", "-sI", "--max-time", "10", f"{base}/"],
+        capture_output=True, text=True, timeout=15,
+    )
+    if proc.returncode != 0:
+        pytest.skip(f"live preview not reachable: {proc.stderr[:200]}")
+
+    headers = proc.stdout.lower()
+    required = [
+        "strict-transport-security",
+        "x-frame-options",
+        "x-content-type-options",
+        "referrer-policy",
+        "permissions-policy",
+        "x-permitted-cross-domain-policies",
+        "content-security-policy",
+    ]
+    missing = [h for h in required if h not in headers]
+    assert not missing, (
+        f"HTML root missing security headers: {missing}\n"
+        f"Full curl -I output:\n{proc.stdout}"
+    )

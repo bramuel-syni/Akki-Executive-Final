@@ -97,12 +97,12 @@ export default function StatusPage() {
       description="Live operational status of Akki's dependencies."
       pathname="/status"
     >
-      <section className="website-section section-reveal" data-testid="status-page">
+      <section className="website-section section-reveal overflow-x-hidden" data-testid="status-page">
         <p className="kicker">SYSTEM STATUS</p>
-        <h1 className="akki-serif text-4xl sm:text-5xl text-[var(--ink)] mb-2" data-testid="status-h1">
+        <h1 className="akki-serif text-4xl sm:text-5xl text-[var(--ink)] mb-2 break-words" data-testid="status-h1">
           Status.
         </h1>
-        <p className="dek mb-6" style={{ maxWidth: "60ch" }}>
+        <p className="dek mb-6 break-words" style={{ maxWidth: "60ch" }}>
           A live read of the services Akki depends on. Each row is the
           dependency, not a marketing tile.
         </p>
@@ -128,17 +128,17 @@ export default function StatusPage() {
           {Object.entries(probes).map(([key, p]) => (
             <li
               key={key}
-              className="flex items-start justify-between gap-3 px-4 py-3"
+              className="flex items-start justify-between gap-3 px-4 py-3 min-w-0"
               data-testid={`status-probe-${key}`}
             >
-              <div className="flex items-start gap-3 min-w-0">
+              <div className="flex items-start gap-3 min-w-0 flex-1">
                 <StateIcon state={p.state} />
-                <div className="min-w-0">
-                  <p className="text-[14px] text-[var(--ink)] font-medium" data-testid={`status-probe-${key}-label`}>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] text-[var(--ink)] font-medium break-words" data-testid={`status-probe-${key}-label`}>
                     {PROBE_LABELS[key] || key}
                   </p>
                   <p
-                    className="text-[12.5px] text-[var(--muted)] mt-0.5"
+                    className="text-[12.5px] text-[var(--muted)] mt-0.5 break-words"
                     data-testid={`status-probe-${key}-detail`}
                   >
                     {p.detail}
@@ -155,7 +155,7 @@ export default function StatusPage() {
           ))}
         </ul>
 
-        <div className="mt-6 flex items-center gap-3 text-[12px] text-[var(--muted)] font-mono">
+        <div className="mt-6 flex flex-wrap items-center gap-3 text-[12px] text-[var(--muted)] font-mono">
           {checkedAt && (
             <span data-testid="status-checked-at">
               Checked {checkedAt.toLocaleTimeString()}

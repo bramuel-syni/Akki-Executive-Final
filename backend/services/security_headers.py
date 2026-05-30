@@ -87,10 +87,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         )
         response.headers.setdefault("X-Permitted-Cross-Domain-Policies", "none")
 
-        # Apply CSP only to HTML responses by default — JSON API responses
-        # don't need CSP and adding it can confuse some clients.
-        content_type = response.headers.get("content-type", "").lower()
-        if "text/html" in content_type:
-            response.headers.setdefault("Content-Security-Policy", _csp_string())
+        # Phase P2.1-1 (2026-02) — CSP applied on every response, HTML
+        # and JSON alike. JSON consumers ignore the header; browsers
+        # use it on document loads. Required to clear the P2.1-1 audit
+        # gate (CSP must be present on /api/health/composite too).
+        response.headers.setdefault("Content-Security-Policy", _csp_string())
 
         return response

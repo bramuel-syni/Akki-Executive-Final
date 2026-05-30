@@ -127,22 +127,59 @@ let webpackConfig = {
 };
 
 webpackConfig.devServer = (devServerConfig) => {
-  // Add health check endpoints if enabled
-  if (config.enableHealthCheck && setupHealthEndpoints && healthPluginInstance) {
-    const originalSetupMiddlewares = devServerConfig.setupMiddlewares;
+  // ─── Phase P2.1-1 (2026-02) — Security headers on the HTML shell ───
+  // The webpack-dev-server Express layer serves the React HTML at /,
+  // /signin, /app/**, etc. The backend FastAPI middleware doesn't touch
+  // those responses. Inject the same 6 headers here so the HTML shell
+  // carries them too. CSP is included (relaxed for dev — allows
+  // 'unsafe-inline' / 'unsafe-eval' which CRA needs).
+  const SECURITY_HEADERS_HTML = {
+    "Strict-Transport-Security":       "max-age=63072000; includeSubDomains",
+    "X-Frame-Options":                 "DENY",
+    "X-Content-Type-Options":          "nosniff",
+    "Referrer-Policy":                 "strict-origin-when-cross-origin",
+    "Permissions-Policy":              "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    "X-Permitted-Cross-Domain-Policies": "none",
+    "Content-Security-Policy": [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.sentry-cdn.com https://browser.sentry-cdn.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      "img-src 'self' data: blob: https:",
+      "connect-src 'self' https: wss: ws:",
+      "media-src 'self' blob:",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'",
+    ].join("; "),
+  };
+  const securityHeadersMiddleware = (req, res, next) => {
+    for (const [k, v] of Object.entries(SECURITY_HEADERS_HTML)) {
+      // setHeader (not append) — last-write wins so we don't double up.
+      res.setHeader(k, v);
+    }
+    next();
+  };
 
-    devServerConfig.setupMiddlewares = (middlewares, devServer) => {
-      // Call original setup if exists
-      if (originalSetupMiddlewares) {
-        middlewares = originalSetupMiddlewares(middlewares, devServer);
-      }
+  const originalSetupMiddlewares = devServerConfig.setupMiddlewares;
+  devServerConfig.setupMiddlewares = (middlewares, devServer) => {
+    if (originalSetupMiddlewares) {
+      middlewares = originalSetupMiddlewares(middlewares, devServer);
+    }
+    // Mount the security-headers middleware FIRST so every downstream
+    // response (HTML, static, hot-reload sockets) carries the headers.
+    middlewares.unshift({
+      name: "security-headers",
+      middleware: securityHeadersMiddleware,
+    });
 
-      // Setup health endpoints
+    // Phase P2.1-1 — optional health check endpoints (existing feature)
+    if (config.enableHealthCheck && setupHealthEndpoints && healthPluginInstance) {
       setupHealthEndpoints(devServer, healthPluginInstance);
-
-      return middlewares;
-    };
-  }
+    }
+    return middlewares;
+  };
 
   return devServerConfig;
 };
