@@ -1,0 +1,62 @@
+[
+  {
+    "viewport": "1280",
+    "trust_center": {
+      "tiles_present": 6,
+      "all_six_labels_visible": true,
+      "labels_hits": {
+        "Identifiers protected": true,
+        "Restored on your view": true,
+        "Evidence-grounding checks": true,
+        "Unsourced claims refused": true,
+        "Bias flags surfaced": true,
+        "Solva escalations": true
+      },
+      "window_7d_button": 1,
+      "window_30d_button": 1,
+      "feed_rows": 2,
+      "feed_empty_state": 0,
+      "tiles_remount_after_window_toggle": 1
+    }
+  },
+  {
+    "viewport": "1024",
+    "trust_center": {
+      "tiles_present": 6,
+      "all_six_labels_visible": true,
+      "labels_hits": {
+        "Identifiers protected": true,
+        "Restored on your view": true,
+        "Evidence-grounding checks": true,
+        "Unsourced claims refused": true,
+        "Bias flags surfaced": true,
+        "Solva escalations": true
+      },
+      "window_7d_button": 1,
+      "window_30d_button": 1,
+      "feed_rows": 2,
+      "feed_empty_state": 0,
+      "tiles_remount_after_window_toggle": 1
+    }
+  },
+  {
+    "viewport": "820",
+    "trust_center": {
+      "tiles_present": 6,
+      "all_six_labels_visible": true,
+      "labels_hits": {
+        "Identifiers protected": true,
+        "Restored on your view": true,
+        "Evidence-grounding checks": true,
+        "Unsourced claims refused": true,
+        "Bias flags surfaced": true,
+        "Solva escalations": true
+      },
+      "window_7d_button": 1,
+      "window_30d_button": 1,
+      "feed_rows": 2,
+      "feed_empty_state": 0,
+      "tiles_remount_after_window_toggle": 1
+    }
+  }
+]

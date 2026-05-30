@@ -727,3 +727,142 @@ async def activity_export(
     activity_resp["export_generated_at"] = datetime.now(timezone.utc).isoformat()
     activity_resp["export_generated_by"] = current["id"]
     return activity_resp
+
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Phase ZZ.3 (2026-02) — Trust Center > Reasoning aggregate.
+#
+# Reads chat_audit_log + synisense_runs/audit_log + reasoning_audit_log
+# (embedded on solva_v2_sessions) within the user's accessible
+# contexts. Returns six tiles + a (day, event_kind) aggregated feed.
+# No new collections; no new event schema; only new action strings
+# (chat.solva_escalation_clicked) already written by chat.py.
+# ─────────────────────────────────────────────────────────────────────
+@router.get("/reasoning")
+async def reasoning(
+    window: str = Query("7d", pattern="^(7d|30d)$"),
+    current: Dict[str, Any] = Depends(get_current_account),
+) -> Dict[str, Any]:
+    days = 7 if window == "7d" else 30
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff_iso = cutoff.isoformat()
+
+    ctx_ids = await _accessible_context_ids(current["id"])
+    chats = await db.chats.find(
+        {"account_id": current["id"], "status": {"$ne": "archived"}},
+        {"_id": 0, "id": 1, "context_id": 1},
+    ).to_list(length=None)
+    chat_ids = [c["id"] for c in chats
+                if not c.get("context_id") or c["context_id"] in ctx_ids]
+    if not chat_ids:
+        return _empty_reasoning(window)
+
+    # ── chat_audit_log sweep ──
+    rows = await db.chat_audit_log.find(
+        {"chat_id": {"$in": chat_ids},
+         "at": {"$gte": cutoff_iso},
+         "action": {"$in": [
+             "message.received", "chat.refused",
+             "chat.solva_escalation_clicked",
+         ]}},
+        {"_id": 0, "action": 1, "at": 1, "payload": 1, "chat_id": 1},
+    ).to_list(length=None)
+
+    grounding_checks = 0
+    unsourced_refused = 0
+    bias_by_kind: Dict[str, int] = {}
+    escalations_offered = 0
+    escalations_accepted = 0
+    feed_buckets: Dict[str, Dict[str, int]] = {}
+
+    def _bump(day_iso: str, kind: str) -> None:
+        feed_buckets.setdefault(day_iso, {}).setdefault(kind, 0)
+        feed_buckets[day_iso][kind] += 1
+
+    for r in rows:
+        action = r.get("action")
+        payload = r.get("payload") or {}
+        at = (r.get("at") or "")[:10]
+        if action == "message.received":
+            zz2 = payload.get("zz2_governance") or {}
+            if zz2:
+                grounding_checks += 1
+                _bump(at, "grounding_check")
+                for tag in (zz2.get("bias_flags") or []):
+                    kind = str(tag).split(" · ")[0].strip().lower() or "other"
+                    bias_by_kind[kind] = bias_by_kind.get(kind, 0) + 1
+                    _bump(at, f"bias.{kind}")
+                if zz2.get("escalate_to_solva"):
+                    escalations_offered += 1
+                    _bump(at, "escalation_offered")
+        elif action == "chat.refused":
+            if payload.get("refusal_reason") == "unsourced_claim":
+                unsourced_refused += 1
+                _bump(at, "unsourced_refused")
+        elif action == "chat.solva_escalation_clicked":
+            escalations_accepted += 1
+            _bump(at, "escalation_accepted")
+
+    # ── synisense_runs sweep (identifiers protected + restored) ──
+    runs = await db.synisense_runs.find(
+        {"chat_id": {"$in": chat_ids},
+         "ts": {"$gte": cutoff}},
+        {"_id": 0, "spans": 1, "ts": 1,
+         "reidentification_partial": 1, "stats": 1},
+    ).to_list(length=None)
+    identifiers_protected = 0
+    restored_on_view = 0
+    for r in runs:
+        n = len(r.get("spans") or [])
+        identifiers_protected += n
+        # "Restored on your view" — a span was redacted before the
+        # model saw it AND restored before display. partial=true
+        # means at least one token did not round-trip. Count rows
+        # that DID round-trip the full set as fully-restored turns.
+        if n > 0 and not r.get("reidentification_partial"):
+            restored_on_view += n
+        ts = r.get("ts")
+        ts_iso = _coerce_ts(ts)[:10]
+        if n > 0:
+            _bump(ts_iso, "identifiers_protected")
+
+    # Build feed: day desc, alphabetical by event_kind within a day.
+    feed = []
+    for day_iso in sorted(feed_buckets.keys(), reverse=True):
+        for kind in sorted(feed_buckets[day_iso].keys()):
+            feed.append({
+                "day": day_iso,
+                "event_kind": kind,
+                "count": feed_buckets[day_iso][kind],
+            })
+
+    return {
+        "window": window,
+        "since": cutoff_iso,
+        "tiles": {
+            "identifiers_protected": identifiers_protected,
+            "restored_on_view": restored_on_view,
+            "grounding_checks": grounding_checks,
+            "unsourced_refused": unsourced_refused,
+            "bias_flags_total": sum(bias_by_kind.values()),
+            "bias_flags_by_kind": bias_by_kind,
+            "escalations_offered": escalations_offered,
+            "escalations_accepted": escalations_accepted,
+        },
+        "feed": feed,
+    }
+
+
+def _empty_reasoning(window: str) -> Dict[str, Any]:
+    return {
+        "window": window,
+        "since": datetime.now(timezone.utc).isoformat(),
+        "tiles": {
+            "identifiers_protected": 0, "restored_on_view": 0,
+            "grounding_checks": 0, "unsourced_refused": 0,
+            "bias_flags_total": 0, "bias_flags_by_kind": {},
+            "escalations_offered": 0, "escalations_accepted": 0,
+        },
+        "feed": [],
+    }

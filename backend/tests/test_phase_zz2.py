@@ -168,7 +168,10 @@ def test_zz2_chat_router_attaches_governance_to_stream_payload():
 def test_zz2_chat_jsx_renders_governance_signals():
     src = CHAT_JSX.read_text(encoding="utf-8")
     assert 'import GovernanceSignals from "@/components/chat/GovernanceSignals"' in src
-    assert "<GovernanceSignals governance={m.zz2_governance} />" in src
+    # ZZ.3 (2026-02) extended the signature to thread chatId/messageId so
+    # the inline Solva-escalation CTA can POST a click receipt before
+    # navigating. The component still mounts with `governance={m.zz2_governance}`.
+    assert "<GovernanceSignals governance={m.zz2_governance}" in src
     # Stream handler persists zz2_governance onto the message
     assert "zz2_governance: ev.zz2_governance" in src
 

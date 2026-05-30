@@ -3525,6 +3525,35 @@ async def stream_message(
                 },
             )
 
+        # ── Phase ZZ.2 (2026-02 fork-resume v2) — Tier 1 governance pass on
+        # the assistant reply. Capture conversational validator output +
+        # Tier 2 escalation flags so the frontend can render bias chips,
+        # the adversarial nudge marker, and the Solva-escalation CTA.
+        # ZZ.3 (2026-02): computed BEFORE the audit row so the governance
+        # payload is persisted to chat_audit_log alongside the turn.
+        try:
+            from services.solva_v2.integrity_validators import (
+                validate_conversational_response as _zz2_validate,
+            )
+            from services.solva_v2.chat_v2_prompts import (
+                should_escalate_to_solva as _zz2_escalate,
+                detects_recommendation_request as _zz2_is_reco,
+            )
+            zz2_check = _zz2_validate(cleaned_reply or "", attached_docs=None)
+            _user_text_for_zz2 = locals().get("text") or ""
+            zz2_governance = {
+                "ok": zz2_check.ok,
+                "numeric_claims_total": zz2_check.numeric_claims_total,
+                "numeric_claims_unsourced": zz2_check.numeric_claims_unsourced,
+                "confidence_named": zz2_check.confidence_named,
+                "bias_flags": zz2_check.bias_flags,
+                "notes": zz2_check.notes,
+                "recommendation_request": _zz2_is_reco(_user_text_for_zz2),
+                "escalate_to_solva": _zz2_escalate(_user_text_for_zz2),
+            }
+        except Exception:
+            zz2_governance = {"ok": True, "notes": ["governance_pass_skipped"]}
+
         # Single audit row at end — same shape as the sync path so the
         # SHA-256 chain is uniform across channels.
         audit_row = await _append_audit(
@@ -3551,6 +3580,10 @@ async def stream_message(
                 "refusal_reason": refusal_reason,
                 "two_pass": two_pass_record,
                 "voice_violation": voice_violation_record,
+                # Phase ZZ.3 (2026-02) — persist Tier 1+2 governance
+                # payload so Trust Center > Reasoning can aggregate
+                # flag counts without recomputing.
+                "zz2_governance": zz2_governance,
             },
         )
         await db.chats.update_one(
@@ -3564,33 +3597,6 @@ async def stream_message(
                 "$inc": {"message_count": 2},
             },
         )
-
-        # ── Phase ZZ.2 (2026-02 fork-resume v2) — Tier 1 governance pass on
-        # the assistant reply. Capture conversational validator output +
-        # Tier 2 escalation flags so the frontend can render bias chips,
-        # the adversarial nudge marker, and the Solva-escalation CTA.
-        try:
-            from services.solva_v2.integrity_validators import (
-                validate_conversational_response as _zz2_validate,
-            )
-            from services.solva_v2.chat_v2_prompts import (
-                should_escalate_to_solva as _zz2_escalate,
-                detects_recommendation_request as _zz2_is_reco,
-            )
-            zz2_check = _zz2_validate(cleaned_reply or "", attached_docs=None)
-            _user_text_for_zz2 = locals().get("text") or ""
-            zz2_governance = {
-                "ok": zz2_check.ok,
-                "numeric_claims_total": zz2_check.numeric_claims_total,
-                "numeric_claims_unsourced": zz2_check.numeric_claims_unsourced,
-                "confidence_named": zz2_check.confidence_named,
-                "bias_flags": zz2_check.bias_flags,
-                "notes": zz2_check.notes,
-                "recommendation_request": _zz2_is_reco(_user_text_for_zz2),
-                "escalate_to_solva": _zz2_escalate(_user_text_for_zz2),
-            }
-        except Exception:
-            zz2_governance = {"ok": True, "notes": ["governance_pass_skipped"]}
 
         yield (
             "data: " + json.dumps({
@@ -3687,6 +3693,37 @@ async def get_chat_audit(
             "Recompute and compare to detect tampering."
         ),
     }
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Phase ZZ.3 (2026-02) — Solva escalation click receipt.
+# Records the user accepting the inline "Run this through Solva for
+# the full 16-slide diagnostic" CTA. Writes a chat_audit_log row;
+# Trust Center > Reasoning aggregates `offered` vs `accepted`.
+# ─────────────────────────────────────────────────────────────────────
+@router.post("/chats/{chat_id}/governance/solva-escalation-clicked")
+async def record_solva_escalation_click(
+    chat_id: str, request: Request,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    chat = await db.chats.find_one(
+        {"id": chat_id, "account_id": current["id"]}, {"_id": 0, "id": 1},
+    )
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    await _append_audit(
+        account_id=current["id"], chat_id=chat_id,
+        action="chat.solva_escalation_clicked", request=request,
+        payload={"message_id": (body or {}).get("message_id") or None},
+    )
+    return {"ok": True}
+
+
 
 
 @router.get("/chats/{chat_id}/audit/export.zip")

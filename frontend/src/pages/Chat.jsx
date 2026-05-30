@@ -1800,7 +1800,7 @@ function Message({ m, activeModel, models, synisense, chatId, onEdit, onRegenera
             numeric warning, Solva escalation CTA. Backend
             attaches `zz2_governance` to the terminal stream event. */}
         {!isUser && m.zz2_governance && (
-          <GovernanceSignals governance={m.zz2_governance} />
+          <GovernanceSignals governance={m.zz2_governance} chatId={chatId} messageId={m.id} />
         )}
         {/* Z3 (2026-02) — Claude-style bubble actions. Edit/Copy on
             user bubbles; Regenerate/Copy on assistant bubbles. Hidden

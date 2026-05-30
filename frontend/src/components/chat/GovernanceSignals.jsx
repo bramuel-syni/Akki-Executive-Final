@@ -15,9 +15,13 @@
  *    that (it's in the text itself).
  */
 import React from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
 
-export default function GovernanceSignals({ governance }) {
+const API = process.env.REACT_APP_BACKEND_URL || "";
+
+export default function GovernanceSignals({ governance, chatId, messageId }) {
+  const navigate = useNavigate();
   if (!governance) return null;
   const {
     bias_flags = [],
@@ -26,6 +30,21 @@ export default function GovernanceSignals({ governance }) {
   } = governance || {};
 
   if (!bias_flags.length && !numeric_claims_unsourced && !escalate_to_solva) return null;
+
+  async function handleEscalationClick(e) {
+    e.preventDefault();
+    try {
+      if (chatId) {
+        const token = localStorage.getItem("akki_token");
+        await axios.post(
+          `${API}/api/chats/${chatId}/governance/solva-escalation-clicked`,
+          { message_id: messageId || null },
+          { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+        );
+      }
+    } catch (_err) { /* non-fatal — navigation still proceeds */ }
+    navigate("/app/solva");
+  }
 
   return (
     <div className="chat-governance mt-2 flex flex-col gap-1.5" data-testid="chat-governance-signals" data-testid-zz2="zz2-governance-signals">
@@ -54,14 +73,15 @@ export default function GovernanceSignals({ governance }) {
         </p>
       )}
       {escalate_to_solva && (
-        <Link
-          to="/app/solva"
+        <button
+          type="button"
+          onClick={handleEscalationClick}
           className="inline-flex items-center self-start font-mono text-[10.5px] uppercase tracking-[0.10em] px-2.5 py-1 rounded-sm border border-[var(--ned-purple)]/30 text-[var(--ned-purple)] hover:bg-[var(--ned-purple)]/5 transition-colors"
           data-testid="zz2-solva-escalation"
           aria-label="Run this through Solva for the full 16-slide diagnostic"
         >
           Run this through Solva for the full 16-slide diagnostic →
-        </Link>
+        </button>
       )}
     </div>
   );

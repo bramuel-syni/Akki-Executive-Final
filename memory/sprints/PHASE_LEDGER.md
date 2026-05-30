@@ -3818,3 +3818,114 @@ opens onto Z3 → Phase ZZ → ZZ.4 → Sprint M.
 + Z3 wave: 815 code LOC, 55 pytests green, v1 guard intact.
 
 
+
+---
+
+### Phase ZZ.1 — Synisense reidentification display fix ✅ (2026-02 fork-resume v2)
+
+**ZZ.1** — `PerMessageSynisenseBadge.jsx` previously rendered only the
+redact half of the Synisense round-trip ("N IDENTIFIERS REDACTED").
+ZZ.1 surfaces the full contract so the user sees both halves:
+
+  Redact before the model sees the prompt
+  Restore before the user sees the reply
+
+Locked label: **"N IDENTIFIERS PROTECTED · RESTORED ON YOUR VIEW"**
+(singular + plural both copy-verbatim locked in
+`test_phase_zz1.py`). `data-identifiers-restored` attribute exposed
+on the badge for downstream analytics + observability.
+
+**Discipline gates:** v1 byte-identical guard 0 lines (the
+`PerSectionSynisenseBadge.jsx` under `solva/artefact/` is the v1
+artefact badge; left untouched — locked by a negative regression
+guard inside the ZZ.1 test). Voice-lint clean.
+
+---
+
+### Phase ZZ.2 — Three-tier Solva governance in Chat ✅ (2026-02 fork-resume v2)
+
+**ZZ.2** — Solva governance lifted into the everyday Chat surface as
+three tiers:
+
+  • **Tier 1 (always-on)** — `services/solva_v2/integrity_validators.py
+    ::validate_conversational_response` runs on every assistant
+    reply: numeric-claim grounding check + bias-flag detection +
+    confidence-naming check. Always emitted in the SSE `message`
+    event under `zz2_governance` field.
+  • **Tier 2 (chat surface signals)** — `GovernanceSignals.jsx`
+    renders three derivative signals beneath each assistant bubble
+    when present:
+       - Inline italic warning: "Akki flagged N numeric claim(s) it
+         could not source against your attached documents."
+       - Bias chips: `[anchoring · Q4 number]` style chips with
+         `data-bias-kind` attr for downstream scrape.
+       - Solva escalation CTA: "Run this through Solva for the full
+         16-slide diagnostic →" — surfaces only when the user
+         message looked like a recommendation request AND stakes
+         language was present (`should_escalate_to_solva`).
+  • **Tier 3 (Solva v2 deep dive)** — Pre-existing 16-slide audit
+    surface; the CTA above routes the user into it. No new code on
+    the Solva v2 side.
+
+New modules:
+  • `backend/services/solva_v2/chat_v2_prompts.py` — `compose_chat_system_prompt`
+    folds the always-on integrity preface + the adversarial-nudge
+    instruction ("OPEN with the counter-case") into the existing
+    chat system prompt. Voice-clean. Detector functions
+    `detects_recommendation_request` and `should_escalate_to_solva`.
+  • `backend/services/solva_v2/chat_v2_fixtures.py` — deterministic
+    5-fixture SSE streams (`unsourced_number`, `bias_anchoring`,
+    `recommendation_with_counter`, `escalation_trigger`,
+    `clean_response`). Gated by env + admin (ZZ.2.x).
+  • `frontend/src/components/chat/GovernanceSignals.jsx` —
+    consumes `zz2_governance` payload, renders the three signals.
+
+Wiring:
+  • `routers/chat.py` streaming path runs Tier 1 validator post-
+    completion and emits `zz2_governance` payload on the terminal
+    `message` SSE event.
+  • Chat bubble renders `<GovernanceSignals governance={...} />`
+    when payload present.
+
+**Discipline gates:** v1 byte-identical guard 0 lines. Voice-lint
+clean. 12/12 pytests green in `test_phase_zz2.py`.
+
+---
+
+### Phase ZZ.2.x — Deterministic governance fixture path ✅ (2026-02 fork-resume v2)
+
+**ZZ.2.x** — Closes the verification loop on ZZ.2's UI signals
+with a Playwright multi-viewport trace that does NOT depend on
+unpredictable LLM completions.
+
+Substrate:
+  • `chat_v2_fixtures.py::FIXTURES` — 5 canned SSE scripts each
+    emitting `start` → `delta` → `phase: complete` → terminal
+    `message` event carrying the hand-authored `zz2_governance`
+    payload that exercises the targeted UI branch.
+  • `routers/chat.py::send_message_stream` — env-gated +
+    admin-gated short-circuit ahead of the normal completion
+    pipeline. `?fixture=<name>` only fires when
+    `AKKI_CHAT_FIXTURES_ENABLED=1` AND the caller's account
+    carries `is_superadmin` or `is_admin`. Non-admin requests
+    with `?fixture=` return 404. Env-off requests pass through.
+
+**Verification:**
+  • Backend pytest `tests/test_phase_zz2_x.py` 4/4 GREEN.
+  • Playwright raw-DOM trace stored at
+    `/app/memory/screenshots/zz2_x/trace.json` — 15 rows covering
+    5 fixtures × 3 viewports (1280 / 1024 / 820). For each row:
+       - `unsourced_warning_count` = 1 only on `unsourced_number`
+       - `bias_chip_count` = 1 + `bias_chip_kind = "anchoring"`
+         only on `bias_anchoring`
+       - `counter_case_present = true` only on
+         `recommendation_with_counter`
+       - `escalation_count` = 1 only on `escalation_trigger`
+       - All zero on `clean_response`
+    All counts match expected values at all 3 viewports — UI
+    signals render unconditionally regardless of width.
+
+**Discipline gates:** v1 byte-identical guard 0 lines. Voice-lint
+clean (no fixture text is user-facing). Code-LOC delta: 63 (the
+fixtures module + the chat router env-gated branch).
+

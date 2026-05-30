@@ -752,6 +752,136 @@ function ActivityView() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Phase ZZ.3 (2026-02) — "Reasoning" view.
+//
+// Hybrid layout: 6 top-line tiles + (day, event_kind) aggregated feed.
+// All counts pull from existing audit collections; no per-message
+// drill-down (that's SIEM territory). Window selector 7d (default) /
+// 30d. Voice: declarative, restrained, banned-vocab clean.
+// ─────────────────────────────────────────────────────────────────────
+const REASONING_KIND_LABELS = {
+  identifiers_protected: "Identifiers protected",
+  grounding_check: "Evidence-grounding check",
+  unsourced_refused: "Unsourced claim refused",
+  escalation_offered: "Solva escalation offered",
+  escalation_accepted: "Solva escalation accepted",
+};
+function _reasoningKindLabel(kind) {
+  if (REASONING_KIND_LABELS[kind]) return REASONING_KIND_LABELS[kind];
+  if (kind.startsWith("bias.")) return `Bias flag: ${kind.slice(5)}`;
+  return kind;
+}
+
+function ReasoningView() {
+  const hdrs = useAuthHeaders();
+  const [window, setWindow] = useState("7d");
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try {
+        const r = await axios.get(
+          `${API}/api/trust-center/reasoning?window=${window}`,
+          { headers: hdrs },
+        );
+        if (!cancel) setData(r.data);
+      } catch (e) {
+        if (!cancel) setErr(e?.response?.data?.detail || String(e));
+      }
+    })();
+    return () => { cancel = true; };
+  }, [window, hdrs]);
+
+  if (err) {
+    return <div data-testid="tc-reasoning-error" className="text-[13px] text-rose-700">{err}</div>;
+  }
+  if (!data) return <div className="text-[13px] text-[var(--muted)]">Loading…</div>;
+  const t = data.tiles || {};
+  const biasKinds = t.bias_flags_by_kind || {};
+  return (
+    <div data-testid="tc-reasoning-view" className="space-y-6">
+      <div className="flex items-center gap-2 text-[11.5px] text-[var(--muted)]" data-testid="tc-reasoning-window">
+        <span>Window:</span>
+        {["7d", "30d"].map((w) => (
+          <button
+            key={w}
+            onClick={() => setWindow(w)}
+            data-testid={`tc-reasoning-window-${w}`}
+            className={`px-2 py-1 rounded-sm border text-[11px] uppercase tracking-wide ${
+              window === w
+                ? "border-[var(--deep)] text-[var(--ink)]"
+                : "border-[var(--cream-deep)] text-[var(--muted)] hover:text-[var(--ink)]"
+            }`}
+          >
+            {w === "7d" ? "Last 7 days" : "Last 30 days"}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3" data-testid="tc-reasoning-tiles">
+        <Counter label="Identifiers protected" value={t.identifiers_protected ?? 0} />
+        <Counter label="Restored on your view" value={t.restored_on_view ?? 0} />
+        <Counter label="Evidence-grounding checks" value={t.grounding_checks ?? 0} />
+        <Counter label="Unsourced claims refused" value={t.unsourced_refused ?? 0} />
+        <Counter
+          label="Bias flags surfaced"
+          value={t.bias_flags_total ?? 0}
+        />
+        <Counter
+          label="Solva escalations"
+          value={`${t.escalations_offered ?? 0} offered · ${t.escalations_accepted ?? 0} accepted`}
+          small
+        />
+      </div>
+
+      {Object.keys(biasKinds).length > 0 && (
+        <div data-testid="tc-reasoning-bias-breakdown" className="space-y-1.5">
+          <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
+            Bias flags by kind
+          </div>
+          {Object.entries(biasKinds)
+            .sort((a, b) => b[1] - a[1])
+            .map(([k, v]) => (
+              <div key={k} className="flex items-center gap-3 text-[12px] text-[var(--ink)]">
+                <span className="w-32 font-mono text-[11px]" data-testid={`tc-reasoning-bias-${k}`}>
+                  {k}
+                </span>
+                <span className="text-[var(--deep)]">{v}</span>
+              </div>
+            ))}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
+          Aggregated by day
+        </div>
+        {(data.feed || []).length === 0 && (
+          <div className="text-[13px] text-[var(--muted)]" data-testid="tc-reasoning-feed-empty">
+            Nothing in the selected window.
+          </div>
+        )}
+        {(data.feed || []).map((row, i) => (
+          <div
+            key={`${row.day}-${row.event_kind}-${i}`}
+            data-testid="tc-reasoning-feed-row"
+            data-event-kind={row.event_kind}
+            data-day={row.day}
+            className="flex items-center gap-3 px-4 py-2 bg-[var(--cream)] border border-[var(--cream-deep)] rounded-lg text-[12.5px] text-[var(--ink)]"
+          >
+            <span className="text-[var(--muted)] font-mono w-24 shrink-0">{row.day}</span>
+            <span className="flex-1">{_reasoningKindLabel(row.event_kind)}</span>
+            <span className="text-[var(--deep)] font-medium">{row.count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Top-level page
 // ─────────────────────────────────────────────────────────────────────
 export default function TrustCenter() {
@@ -864,6 +994,9 @@ export default function TrustCenter() {
           <TabButton active={tab === "activity"} onClick={() => setTab("activity")} testid="tc-tab-activity">
             All activity
           </TabButton>
+          <TabButton active={tab === "reasoning"} onClick={() => setTab("reasoning")} testid="tc-tab-reasoning">
+            Reasoning
+          </TabButton>
         </div>
 
         <main className="min-h-[60vh]">
@@ -874,6 +1007,7 @@ export default function TrustCenter() {
             </div>
           )}
           {tab === "activity" && <ActivityView />}
+          {tab === "reasoning" && <ReasoningView />}
         </main>
 
         <StandardsFooter />
