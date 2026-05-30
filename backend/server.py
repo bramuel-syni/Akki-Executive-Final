@@ -362,6 +362,12 @@ app.include_router(csrf_router.router)
 from routers import mfa as mfa_router  # noqa: E402
 app.include_router(mfa_router.router)
 
+# Phase P4 (2026-02) — Cohort funnel live-wiring.
+from routers import cohort_magic_link as cohort_magic_link_router  # noqa: E402
+app.include_router(cohort_magic_link_router.router)
+from routers import admin_cohort_applications as admin_cohort_apps_router  # noqa: E402
+app.include_router(admin_cohort_apps_router.router)
+
 
 # -----------------------------------------------------------------------------
 # Phase P2 B.1 (2026-02) — Security headers middleware.

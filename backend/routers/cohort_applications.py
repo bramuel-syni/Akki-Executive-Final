@@ -138,5 +138,10 @@ async def submit_application(
     }
     await db.cohort_applications.insert_one(dict(row))
     background.add_task(_notify_founder, row)
+    # Phase P4.A (2026-02) — receipt email to the applicant. Gated by
+    # COHORT_EMAILS_ENABLED (default false). When false, logs the
+    # would-have-sent line and returns flag_off.
+    from services.cohort_email import send_receipt as _send_receipt
+    background.add_task(_send_receipt, to_email=row["email"], first_name=row["name"])
     return {"id": row["id"], "created_at": row["created_at"],
             "status": row["status"], "deduplicated": False}

@@ -68,6 +68,8 @@ const AppHome = lazy(() => import("@/pages/AppHome"));
 const CohortConsole = lazy(() => import("@/pages/admin/CohortConsole"));
 // Phase V (2026-05-27) — Admin user CRUD portal.
 const AdminUsers = lazy(() => import("@/pages/admin/AdminUsers"));
+// Phase P4.B (2026-02) — admin cohort applications surface.
+const AdminCohortApplications = lazy(() => import("@/pages/admin/AdminCohortApplications"));
 // AA.followup.4 (2026-02 fork-resume) — Extraction Activity superadmin view.
 const ExtractionsActivity = lazy(() => import("@/pages/admin/ExtractionsActivity"));
 // Phase W (2026-02 fork-resume) — Multi-tenant org list view (superadmin).
@@ -80,8 +82,9 @@ const OAuthCallback  = lazy(() => import("@/pages/OAuthCallback"));
 // Phase P2 D.2 (2026-02) — Public status page (no auth).
 const StatusPage = lazy(() => import("@/pages/StatusPage"));
 // Phase P2.1-4 (2026-02) — ErrorBoundary diagnostic test-throw route.
-// Double-gated (non-production + ?ack=1) inside the component itself.
 const ThrowDiagnostic = lazy(() => import("@/pages/ThrowDiagnostic"));
+// Phase P4.D (2026-02) — Cohort magic-link landing page.
+const WelcomePage = lazy(() => import("@/pages/WelcomePage"));
 const CohortCopyEditor = lazy(() => import("@/pages/admin/CohortCopyEditor"));
 const EarlyAccessOptIn = lazy(() => import("@/pages/EarlyAccessOptIn"));
 const Questions = lazy(() => import("@/pages/Questions"));
@@ -295,6 +298,7 @@ function App() {
           <Route path="/help-legacy" element={<HelpFeatures />} />{/* Phase E (kept as fallback) */}
           <Route path="/status" element={<StatusPage />} />{/* Phase P2 D.2 — public status */}
           <Route path="/__throw" element={<ThrowDiagnostic />} />{/* Phase P2.1-4 — error boundary diagnostic */}
+          <Route path="/welcome/:token" element={<WelcomePage />} />{/* Phase P4.D — magic-link landing */}
           <Route path="/exco360" element={<WebsiteExco360 />} />
           {/* v7 (2026-05-12): per-product pages move to top-level routes. */}
           <Route path="/solva" element={<WebsiteProductSolva />} />
@@ -367,6 +371,7 @@ function App() {
           <Route path="/app/early-access-opt-in" element={<ProtectedRoute><EarlyAccessOptIn /></ProtectedRoute>} />
           {/* Phase R.5.a (2026-05-27) — Superadmin cohort console. */}
           <Route path="/app/admin/cohort" element={<SuperadminRoute><Gated><CohortConsole /></Gated></SuperadminRoute>} />
+          <Route path="/app/admin/cohort-applications" element={<SuperadminRoute><Gated><AdminCohortApplications /></Gated></SuperadminRoute>} />{/* Phase P4.B */}
           {/* Phase V (2026-05-27) — Admin user CRUD portal (superadmin only). */}
           <Route path="/app/admin/users" element={<SuperadminRoute><Gated><AdminUsers /></Gated></SuperadminRoute>} />
           {/* AA.followup.4 — Extraction Activity superadmin view */}
