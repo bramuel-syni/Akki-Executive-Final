@@ -1,0 +1,30 @@
+[
+  {
+    "viewport": "1280x900",
+    "holding_line_present": true,
+    "banned_hits": [],
+    "cohort_links_count": 3,
+    "teaser_link_visible": true
+  },
+  {
+    "viewport": "1024x800",
+    "holding_line_present": true,
+    "banned_hits": [],
+    "cohort_links_count": 3,
+    "teaser_link_visible": true
+  },
+  {
+    "viewport": "820x1180",
+    "holding_line_present": true,
+    "banned_hits": [],
+    "cohort_links_count": 3,
+    "teaser_link_visible": true
+  },
+  {
+    "viewport": "414x896",
+    "holding_line_present": true,
+    "banned_hits": [],
+    "cohort_links_count": 3,
+    "teaser_link_visible": true
+  }
+]

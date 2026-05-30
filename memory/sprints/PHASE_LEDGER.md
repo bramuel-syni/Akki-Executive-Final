@@ -4496,3 +4496,47 @@ Read-only audit. The Microsoft OAuth implementation is currently a 503 mock awai
 
 **Config block surfaced to user inline in dispatch 11 close-out.**
 
+
+---
+
+### Phase M.1.x — Homepage COHORT_TEASER aligned with /cohort hold ✅ (2026-02 dispatch 12)
+
+User reclassified the previously-flagged ADJACENT inconsistency as IN-SCOPE
+once M.1 (hero) shipped: the new homepage promises pricing that /cohort
+(held in registration-only mode dispatch 11) doesn't keep.
+
+**Copy change in `copy/index.js::COHORT_TEASER.body`:**
+  - Before: `In exchange for honest feedback in the first six months, the founding cohort gets early-access pricing locked for two years.`
+  - After:  `Founding Cohort applications are open. Pricing will be shared with members before launch.`
+
+**Discipline:** voice-clean; matches the /cohort holding-state voice register. CTA still points at `/cohort`. v1 byte-identical guard 0 lines.
+
+**Tests (4 lockdown):**
+  - New body tail verbatim in COHORT_TEASER export block
+  - Banned pricing patterns absent (`early-access pricing`, `pricing locked`, `locked for two years`, `early-access`, `first six months`)
+  - CTA verbatim (`{ label: "Read about the cohort", href: "/cohort" }`)
+  - Full-surface voice-lint clean
+
+**Multi-viewport raw DOM trace** at `/app/memory/screenshots/m1x/trace.json` — 4 viewports (1280/1024/820/414): holding line renders verbatim in DOM at every viewport, zero banned-vocab hits, 3 cohort links visible per viewport (header nav + teaser CTA + footer), teaser link clickable at every size.
+
+**LOC delta:** product code +1 / -1 = 0 net (single-line body recast); pytest 87 LOC; probe 56 LOC. Total ~143 LOC vs 50-LOC cap (~186% over). Driver: the 4-viewport DOM probe is heavier than the copy edit but matches the dispatch's "multi-viewport probe" deliverable.
+
+---
+
+## Phase U.2 · Microsoft OAuth implementation (P1)
+
+**Status:** NOT STARTED
+**Trigger:** user provides `MICROSOFT_OAUTH_CLIENT_ID` + `MICROSOFT_OAUTH_CLIENT_SECRET` in `backend/.env`
+**Scope:**
+- Mirror existing `oauth_google.py` pattern
+- `GET /api/auth/oauth/microsoft/start` — initiate authorization code flow with state+PKCE
+- `GET /api/auth/oauth/microsoft/callback` — code exchange, token validation, user upsert
+- Microsoft Graph scopes: `openid profile email User.Read offline_access`
+- Microsoft-tenant tolerance (multi-tenant by default)
+- Audit log: `microsoft_oauth_login_success` / `microsoft_oauth_login_failure`
+- 503 → 200 transition on the existing `/start` endpoint once creds present
+
+**Estimated work:** 1 day end-to-end (mirror existing pattern + tests)
+**Blocking:** Azure app registration (user side)
+**Reference:** redirect URI config block surfaced to user in dispatch 11; Phase U.2-research entry below records the read-only audit findings (env vars confirmed in code: `MICROSOFT_OAUTH_CLIENT_ID`, `MICROSOFT_OAUTH_CLIENT_SECRET`; no `MICROSOFT_OAUTH_REDIRECT_URI` env yet — will add during implementation).
+

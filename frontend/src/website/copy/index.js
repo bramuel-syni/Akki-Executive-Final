@@ -135,7 +135,7 @@ export const AUDIENCES = [
 export const COHORT_TEASER = {
   kicker: "BEFORE AKKI SHIPS",
   headline: "We are admitting a small founding cohort first.",
-  body: "Akki is finished enough to use, and not finished enough to ship. We are admitting roughly twenty executives, NEDs and committee-level operators to use it first. In exchange for honest feedback in the first six months, the founding cohort gets early-access pricing locked for two years.",
+  body: "Akki is finished enough to use, and not finished enough to ship. We are admitting roughly twenty executives, NEDs and committee-level operators to use it first. Founding Cohort applications are open. Pricing will be shared with members before launch.",
   cta: { label: "Read about the cohort", href: "/cohort" },
 };
 
