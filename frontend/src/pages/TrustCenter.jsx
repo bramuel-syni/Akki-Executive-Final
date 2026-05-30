@@ -983,6 +983,26 @@ export default function TrustCenter() {
       className="min-h-screen bg-[var(--cream)] text-[var(--ink)]"
     >
       <div className="max-w-6xl mx-auto px-6 py-8">
+        {/* Phase P1 β (2026-02) — back nav. Falls back to home when no
+            history exists (deep-link / direct paste). Visible at all
+            viewports, plain register, voice-lint clean. */}
+        <button
+          type="button"
+          data-testid="trust-center-back-btn"
+          onClick={() => {
+            if (window.history.length > 1) {
+              window.history.back();
+            } else {
+              window.location.assign("/");
+            }
+          }}
+          className="inline-flex items-center gap-1.5 mb-6 px-2.5 py-1.5 text-[12.5px] text-[var(--deep)] hover:text-[var(--ink)] border border-[var(--cream-deep)] hover:border-[var(--ink)] rounded-sm transition-colors"
+          aria-label="Back"
+        >
+          <span aria-hidden="true">←</span>
+          <span>Back</span>
+        </button>
+
         <header className="mb-8">
           <div className="flex items-center gap-3">
             <ShieldCheck className="w-6 h-6 text-emerald-700" strokeWidth={1.7} />

@@ -366,7 +366,11 @@ def _ms_audit(action: str, **fields: Any) -> None:
 @router.get("/microsoft/start")
 async def oauth_microsoft_start(request: Request) -> Dict[str, Any]:
     """Stage-1: returns the Microsoft authorize URL. Frontend redirects
-    the browser there; Microsoft bounces back to /microsoft/callback."""
+    the browser there; Microsoft bounces back to /microsoft/callback.
+
+    Probe mode: pass `?probe=1` to avoid burning a state token + audit
+    entry on a configuration check. Returns just `{configured: true}`
+    when the provider is wired."""
     if not _microsoft_configured():
         raise HTTPException(status_code=503, detail={
             "error": "microsoft_oauth_not_configured",
@@ -375,6 +379,9 @@ async def oauth_microsoft_start(request: Request) -> Dict[str, Any]:
                 MICROSOFT_CLIENT_ID_VAR, MICROSOFT_CLIENT_SECRET_VAR,
             ],
         })
+    # Probe mode — frontend availability check; no PKCE/state burn.
+    if request.query_params.get("probe") == "1":
+        return {"configured": True, "provider": "microsoft"}
     session_id = uuid.uuid4().hex
     state = _ms_sign_state({"sid": session_id, "kind": "ms_signin"})
     nonce = uuid.uuid4().hex

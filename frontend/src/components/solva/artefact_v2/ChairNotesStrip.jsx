@@ -24,7 +24,11 @@ export default function ChairNotesStrip({ sessionId, slideKind, visible }) {
   const lines = (byKind || {})[slideKind] || [];
   return (
     <aside
-      className="chair-notes-strip print:hidden mt-2 mb-4 mx-auto max-w-[68ch] border-l-2 border-[var(--ned-purple)]/40 pl-3 py-2 bg-[var(--parchment)]/40"
+      className="chair-notes-strip print:hidden mt-2 mb-4 mx-auto max-w-[68ch] border-l-2 pl-3 py-2"
+      style={{
+        borderColor: "color-mix(in srgb, var(--ned-purple) 40%, transparent)",
+        backgroundColor: "color-mix(in srgb, var(--parchment) 40%, transparent)",
+      }}
       role="note" aria-live="polite"
       aria-label={`Chair notes for ${slideKind.replace(/_/g, " ")}`}
       data-testid={`solva-v2-chair-notes-strip-${slideKind}`}
@@ -35,7 +39,12 @@ export default function ChairNotesStrip({ sessionId, slideKind, visible }) {
       ) : (
         <ul className="space-y-1">
           {lines.map((ln, i) => (
-            <li key={`${slideKind}-note-${i}`} className="text-[12px] leading-snug text-[var(--ink)]/85 font-mono" data-testid="solva-v2-chair-notes-line">{ln}</li>
+            <li
+              key={`${slideKind}-note-${i}`}
+              className="text-[12px] leading-snug font-mono"
+              style={{ color: "color-mix(in srgb, var(--ink) 85%, transparent)" }}
+              data-testid="solva-v2-chair-notes-line"
+            >{ln}</li>
           ))}
         </ul>
       )}

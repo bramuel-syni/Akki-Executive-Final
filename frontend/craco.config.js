@@ -107,6 +107,16 @@ let webpackConfig = {
         ],
       };
 
+      // Phase P1 γ (2026-02) — Wiki content authored in markdown.
+      // Import .md files as raw strings (via asset/source). This
+      // keeps the source-of-truth as plain markdown without
+      // requiring a separate raw-loader dependency.
+      webpackConfig.module = webpackConfig.module || { rules: [] };
+      webpackConfig.module.rules.push({
+        test: /\.md$/i,
+        type: "asset/source",
+      });
+
       // Add health check plugin to webpack if enabled
       if (config.enableHealthCheck && healthPluginInstance) {
         webpackConfig.plugins.push(healthPluginInstance);

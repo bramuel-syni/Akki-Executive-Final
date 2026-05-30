@@ -670,6 +670,18 @@ export default function AppShell({ children }) {
               >
                 <ShieldCheck className="w-4 h-4 mr-2" /> Trust
               </DropdownMenuItem>
+              {/* Phase P1 ε (2026-02) — Admin Users portal entry point.
+                  Visible ONLY to superadmins (account.is_superadmin === true).
+                  Routes to /app/admin/users (SuperadminRoute-gated). */}
+              {account?.is_superadmin === true && (
+                <DropdownMenuItem
+                  onClick={() => navigate("/app/admin/users")}
+                  className="cursor-pointer"
+                  data-testid="nav-admin-users"
+                >
+                  <Users className="w-4 h-4 mr-2" /> Admin · Users
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={async () => { await logout(); navigate("/signin"); }}

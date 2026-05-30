@@ -50,23 +50,22 @@ export default function OAuthButtons() {
   const [busy, setBusy] = useState(null); // "google" | "microsoft" | null
   const [microsoftAvailable, setMicrosoftAvailable] = useState(false);
 
-  // Probe Microsoft availability so we can show "Coming soon" badge
-  // without making the user click first. The 503 vs 200 distinguishes
-  // the mocked path from a future real wiring.
+  // Phase U.2 (2026-02) — Microsoft OAuth probe. Backend
+  // `/api/auth/oauth/microsoft/start` is now live (auth_oauth.py).
+  // We probe with `?probe=1` (HEAD-equivalent in this codebase) so we
+  // don't burn a real PKCE/state pair on page load. If unavailable
+  // (503 or network), gracefully degrade.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        await api.get("/auth/oauth/microsoft/start");
+        await api.get("/auth/oauth/microsoft/start?probe=1");
         if (!cancelled) setMicrosoftAvailable(true);
       } catch (err) {
         const status = err?.response?.status;
-        if (status === 503) {
-          // Locked mock — leave button visible but disabled.
-          if (!cancelled) setMicrosoftAvailable(false);
-        } else {
-          if (!cancelled) setMicrosoftAvailable(false);
-        }
+        // 503 → backend declares Microsoft locked; anything else also
+        // disables the button.
+        if (!cancelled) setMicrosoftAvailable(status !== 503);
       }
     })();
     return () => { cancelled = true; };
@@ -92,16 +91,26 @@ export default function OAuthButtons() {
   };
 
   const onMicrosoft = async () => {
-    // Always show the friendly message — the backend's 503 response
-    // carries the locked actionable text but we surface a softer UX.
-    if (!microsoftAvailable) {
-      toast.info("Microsoft sign-in is coming soon — use Google or email for now.");
-      return;
-    }
+    // Phase U.2 (2026-02) — wire the real backend flow.
+    // The backend `/api/auth/oauth/microsoft/start` returns
+    // `{ authorize_url, ... }`; the SPA redirects the browser to
+    // `authorize_url` and the rest of the flow happens on the backend.
     setBusy("microsoft");
-    // Future Phase U.2 will wire the real Microsoft Identity flow.
-    toast.info("Microsoft sign-in is rolling out — try Google or email for now.");
-    setBusy(null);
+    try {
+      const { data } = await api.get("/auth/oauth/microsoft/start");
+      const authorizeUrl = data?.authorize_url;
+      if (!authorizeUrl) {
+        throw new Error("Backend did not return authorize_url");
+      }
+      // Full-page navigation — backend manages PKCE + state + cookie
+      // shape from here; SPA hands off cleanly.
+      window.location.href = authorizeUrl;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("Microsoft OAuth start failed:", err);
+      toast.error("Could not start Microsoft sign-in. Please try again.");
+      setBusy(null);
+    }
   };
 
   return (
@@ -124,10 +133,12 @@ export default function OAuthButtons() {
         disabled={!microsoftAvailable || busy === "microsoft"}
         className="h-11 bg-white border-[var(--rule)] text-[var(--ink)] hover:bg-[var(--cream)] hover:border-[var(--ink)] rounded-sm text-[13px] font-medium tracking-wide transition-colors flex items-center justify-center gap-2.5 disabled:opacity-60"
         data-testid="oauth-microsoft-btn"
-        title={microsoftAvailable ? "" : "Coming soon"}
+        title={microsoftAvailable ? "Continue with Microsoft" : "Coming soon"}
       >
         <MicrosoftIcon className="w-4 h-4" />
-        <span>{microsoftAvailable ? "Continue with Microsoft" : "Microsoft (soon)"}</span>
+        <span>{busy === "microsoft"
+          ? "Opening Microsoft…"
+          : (microsoftAvailable ? "Continue with Microsoft" : "Microsoft (soon)")}</span>
       </Button>
     </div>
   );

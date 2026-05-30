@@ -101,7 +101,8 @@ const ArchivedChats = lazy(() => import("@/pages/ArchivedChats"));
 const InfluenceMap = lazy(() => import("@/pages/InfluenceMap"));
 const SandboxApp = lazy(() => import("@/sandbox/SandboxApp"));
 const Manage = lazy(() => import("@/pages/Manage"));
-const HelpFeatures = lazy(() => import("@/pages/HelpFeatures"));  // Phase E — /help
+const HelpFeatures = lazy(() => import("@/pages/HelpFeatures"));  // Phase E — legacy /help (kept for /help-legacy)
+const Wiki = lazy(() => import("@/pages/Wiki"));  // Phase P1 γ — wiki framework, replaces /help
 const Enterprise = lazy(() => import("@/pages/Enterprise"));
 const Decks = lazy(() => import("@/pages/Decks"));
 const SolvaApp = lazy(() => import("@/pages/SolvaApp"));
@@ -284,7 +285,9 @@ function App() {
           <Route path="/privacy" element={<WebsitePrivacy />} />
           <Route path="/terms" element={<WebsiteTerms />} />
           <Route path="/methodology" element={<WebsiteMethodology />} />
-          <Route path="/help" element={<HelpFeatures />} />{/* Phase E */}
+          <Route path="/help" element={<Wiki />} />{/* Phase P1 γ — wiki framework */}
+          <Route path="/help/:slug" element={<Wiki />} />{/* Phase P1 γ — wiki article */}
+          <Route path="/help-legacy" element={<HelpFeatures />} />{/* Phase E (kept as fallback) */}
           <Route path="/exco360" element={<WebsiteExco360 />} />
           {/* v7 (2026-05-12): per-product pages move to top-level routes. */}
           <Route path="/solva" element={<WebsiteProductSolva />} />
