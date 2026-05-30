@@ -354,6 +354,56 @@ def _ms_verify_state(token: str) -> Dict[str, Any]:
         }) from e
 
 
+# Phase P2 A.2 (2026-02) — PKCE (RFC 7636) for Microsoft OAuth.
+# We generate a high-entropy `code_verifier` per /start, derive the
+# S256 challenge that goes on the authorize URL, and persist the
+# verifier in Mongo keyed by the state JWT's `sid` claim. On
+# /callback we look it up and send it to the token endpoint.
+def _ms_pkce_verifier() -> str:
+    """RFC 7636 §4.1 — 43-128 char unreserved-set string. 64 bytes of
+    randomness, base64url-encoded, no padding."""
+    import secrets, base64
+    return base64.urlsafe_b64encode(secrets.token_bytes(64)).rstrip(b"=").decode("ascii")
+
+
+def _ms_pkce_challenge(verifier: str) -> str:
+    """RFC 7636 §4.2 — S256 challenge = base64url(sha256(verifier))."""
+    import hashlib, base64
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+async def _ms_pkce_store(sid: str, verifier: str) -> None:
+    """Persist the verifier so /callback can retrieve it. TTL matches
+    the state JWT (10 min). Uses Mongo `oauth_pkce_verifiers` with a
+    TTL index on `expires_at` (created on first write below)."""
+    from server import db
+    expires = int(_now().timestamp()) + _MS_STATE_TTL_SECONDS
+    await db.oauth_pkce_verifiers.update_one(
+        {"sid": sid, "provider": "microsoft"},
+        {"$set": {
+            "sid": sid, "provider": "microsoft",
+            "code_verifier": verifier,
+            "expires_at": expires,
+        }},
+        upsert=True,
+    )
+
+
+async def _ms_pkce_consume(sid: str) -> Optional[str]:
+    """One-shot fetch + delete the verifier. Returns None if the state
+    has already been consumed (replay protection) or has expired."""
+    from server import db
+    rec = await db.oauth_pkce_verifiers.find_one_and_delete(
+        {"sid": sid, "provider": "microsoft"},
+    )
+    if not rec:
+        return None
+    if int(rec.get("expires_at", 0)) < int(_now().timestamp()):
+        return None
+    return rec.get("code_verifier")
+
+
 def _ms_audit(action: str, **fields: Any) -> None:
     """Log a Microsoft OAuth audit event. Caller MUST NOT pass the
     secret or raw tokens — only stable IDs + error codes."""
@@ -385,6 +435,11 @@ async def oauth_microsoft_start(request: Request) -> Dict[str, Any]:
     session_id = uuid.uuid4().hex
     state = _ms_sign_state({"sid": session_id, "kind": "ms_signin"})
     nonce = uuid.uuid4().hex
+    # Phase P2 A.2 — PKCE: derive a fresh verifier + S256 challenge and
+    # persist the verifier keyed by sid for the /callback round trip.
+    code_verifier = _ms_pkce_verifier()
+    code_challenge = _ms_pkce_challenge(code_verifier)
+    await _ms_pkce_store(session_id, code_verifier)
     from urllib.parse import urlencode
     qs = urlencode({
         "client_id": _ms_client_id(),
@@ -395,26 +450,36 @@ async def oauth_microsoft_start(request: Request) -> Dict[str, Any]:
         "state": state,
         "nonce": nonce,
         "prompt": "select_account",
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
     })
     authorize_url = f"{_MS_AUTHORIZE_URL}?{qs}"
-    _ms_audit("login_initiated", session_id=session_id, client_id=_ms_client_id())
+    _ms_audit("login_initiated", session_id=session_id, client_id=_ms_client_id(), pkce="S256")
     return {
         "authorize_url": authorize_url,
         "provider": "microsoft",
     }
 
 
-async def _ms_exchange_code(code: str) -> Dict[str, Any]:
-    """Exchange auth code for tokens at the Microsoft v2.0 token endpoint."""
+async def _ms_exchange_code(code: str, code_verifier: Optional[str] = None) -> Dict[str, Any]:
+    """Exchange auth code for tokens at the Microsoft v2.0 token endpoint.
+
+    Phase P2 A.2 — PKCE: when a `code_verifier` is supplied, it is sent
+    alongside the code (RFC 7636). Microsoft requires this when the
+    `/authorize` request included a `code_challenge`.
+    """
+    payload = {
+        "client_id": _ms_client_id(),
+        "client_secret": _ms_client_secret(),
+        "code": code,
+        "redirect_uri": _ms_redirect_uri(),
+        "grant_type": "authorization_code",
+        "scope": " ".join(_MS_SCOPES),
+    }
+    if code_verifier:
+        payload["code_verifier"] = code_verifier
     async with httpx.AsyncClient(timeout=15) as c:
-        r = await c.post(_MS_TOKEN_URL, data={
-            "client_id": _ms_client_id(),
-            "client_secret": _ms_client_secret(),
-            "code": code,
-            "redirect_uri": _ms_redirect_uri(),
-            "grant_type": "authorization_code",
-            "scope": " ".join(_MS_SCOPES),
-        })
+        r = await c.post(_MS_TOKEN_URL, data=payload)
     if r.status_code != 200:
         body_preview = r.text[:200]
         raise HTTPException(status_code=502, detail={
@@ -478,8 +543,16 @@ async def oauth_microsoft_callback(
     session_id = state_payload.get("sid") or "unknown"
     if not _microsoft_configured():
         raise HTTPException(status_code=503, detail={"error": "microsoft_oauth_not_configured"})
+    # Phase P2 A.2 — PKCE: consume the verifier stored at /start.
+    code_verifier = await _ms_pkce_consume(session_id)
+    if not code_verifier:
+        _ms_audit("login_failure", session_id=session_id, error="pkce_verifier_missing_or_expired")
+        raise HTTPException(status_code=400, detail={
+            "error": "microsoft_oauth_pkce_state_invalid",
+            "reason": "code_verifier missing or expired (replay or >10min round trip)",
+        })
     try:
-        tokens = await _ms_exchange_code(code)
+        tokens = await _ms_exchange_code(code, code_verifier=code_verifier)
     except HTTPException as e:
         _ms_audit("login_failure", session_id=session_id,
                   error=(e.detail or {}).get("error", "token_exchange_failed"))

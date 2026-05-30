@@ -17,17 +17,27 @@
   any `require_superadmin` gated endpoint.
 - **Last seed:** present in this DB (verified via `accounts.find_one`).
 
-### `juliusaopio@gmail.com`  (regular user)
+### `juliusaopio@gmail.com`  (superadmin — corrected P2 A.1)
 
 - **Email:** juliusaopio@gmail.com
 - **Password:** Julius@Akki!2026-Exec
-- **Role:** user
-- **Tenant:** non-admin, non-cohort-applicant by default
+- **Role:** **superadmin** (`is_superadmin: True` per live DB; P1 ζ
+  mislabeled this account as a regular user — corrected in P2 A.1).
+- **Tenant:** non-cohort-applicant by default
+- **Use for:** secondary admin verification; do NOT use this account
+  to verify "general user" flows — use `viewer@akki.ai` (see below).
+
+### `viewer@akki.ai`  (canonical non-admin tester)
+
+- **Email:** viewer@akki.ai
+- **Password:** Viewer2026!
+- **Role:** user (no `is_superadmin`)
 - **Use for:** general-user flows (Work Studio, Solva v1+v2 from a
   non-admin perspective, Account/Auth pages, Trust Center general
   surface, Help/Wiki, Cohort apply form).
+- **Note:** seed via `/api/admin/users` POST if missing in your DB.
 
-### `julius+admin@akki.ai`  (alternate admin)
+### `julius+admin@akki.ai`  (alternate admin, passwordless)
 
 - **Email:** julius+admin@akki.ai
 - **Password:** see /app/memory/test_credentials.md (passwordless — magic-link only)
