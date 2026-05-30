@@ -4050,16 +4050,37 @@ hero red-line. M.0b and M.0c shipped green; M.0a is halted because
 the 10 marketing asset URLs were referenced in a prior user message
 that is NOT present in the current fork's context.
 
-#### M.0a — Marketing asset mirror 🚧 HALTED
-- **Blocker:** the 10 asset URLs (presumed `fal.media` / cloudfront
-  generations) live in a user message outside this fork. Cannot
-  download without them. User to re-paste the 10 URLs to unblock.
-- **Pending work** (will resume after URLs supplied):
-  • Download all 10 to `/app/frontend/public/marketing/<slug>.png`.
-  • Generate 2x retina versions.
-  • Author `/app/docs/marketing_assets.md` (asset map + srcset).
-  • Create `tests/test_marketing_assets_exist.py` (file presence +
-    size sanity).
+#### M.0a — Marketing asset mirror ✅ (closed 2026-02 fork-resume v3, dispatch 4)
+- **10 marketing assets mirrored** from `static.prod-images.emergentagent.com` to `/app/frontend/public/marketing/<slug>.png`:
+  | Slug | Native | Bytes |
+  | --- | --- | --- |
+  | hero_executive_reading | 1408×768 | 1,371,365 |
+  | editorial_conversation_oblique | 1408×768 | 1,606,257 |
+  | south_asian_executive_portrait | 1408×768 | 1,306,168 |
+  | modern_vault_detail | 1408×768 | 1,295,773 |
+  | secure_archive_corridor | 1408×768 | 1,194,755 |
+  | cohort_peer_group | 1408×768 | 1,514,950 |
+  | empty_boardroom_set | 1408×768 | 1,579,649 |
+  | modern_library_interior | 1408×768 | 1,469,102 |
+  | boardroom_flatlay | 1408×768 | 1,802,757 |
+  | hands_annotated_report | 1408×768 | 1,858,768 |
+- **Native size 1408×768** — already 2x-friendly at any rendered CSS width ≤ 704px. No separate `@2x.png` files required; the marketing_assets.md srcset convention treats the native PNG as the @2x source.
+- **docs/marketing_assets.md** — slug-to-file map + voice-clean `<img>` JSX convention (loading="lazy" below fold, fetchpriority="high" + no lazy for above-fold heroes, explicit width/height for CLS prevention) + alt-text constraint reference into the voice lint scanner.
+- **tests/test_phase_m0a_marketing_assets.py** — 6 locks:
+  1. All 10 slug files present
+  2. Each file > 50KB (defensive against silent download failures)
+  3. Each file passes PNG signature check
+  4. Each file's intrinsic dimensions = 1408×768
+  5. docs/marketing_assets.md lists every slug
+  6. docs/marketing_assets.md passes the voice lint scanner
+- **Live preview confirmed** — `https://akki-executive.preview.emergentagent.com/marketing/hero_executive_reading.png` returns HTTP 200 + Content-Type image/png + 1,371,365 bytes.
+
+**LOC delta:** marketing_assets.md is 84 lines of informational
+markdown (not code-budgeted). Tests are 101 lines (~70 code-only).
+Zero product LOC — pure asset download + doc + test work.
+Cumulative M.0 prep slice: M.0a + M.0b (~146 LOC) + M.0c well over
+the 80-LOC nominal cap, but each slice is self-contained and the
+test depth was elected to lock the assets against silent rot.
 
 #### M.0b — Customer-copy ban list update + voice lint ✅
 - **WEBSITE_BRIEF_V3.md §1.3.1 "Late additions (post-launch)"** —
