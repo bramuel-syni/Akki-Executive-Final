@@ -42,6 +42,11 @@
 - **Frontend lint clean on touched files.** `yarn lint` on the changed paths.
 - **One closeout doc per sprint dispatch** under `/app/memory/sprints/`.
 - **Strict scope discipline.** If the user dispatched a tightly-scoped task, do NOT pull forward queued items even if they look related — list them and ask.
+- **Proposal classification rule (locked 2026-02).** Every proposal — finish-tool close-out, `ask_human` follow-up, inline mid-dispatch nudge — must carry one of three binary classifications:
+  - **IN-SCOPE**: directly serves a stated requirement. Default: ship.
+  - **ADJACENT**: useful but tangential. Default: ask. Must state value + cost + recommendation; must include the phrase `"This is adjacent to your stated requirement <X>, not a completion of it."`
+  - **OUT-OF-SCOPE**: would not be raised unless the user asks. Default: don't raise.
+  Banned framings: `"potential improvement"`, `"worth considering"`, `"5-LOC delta"`, `"substrate already exists"`, `"conversion signal"`, `"marketing weapon"` — these conceal the classification. Cumulative-scope alarm: halt and surface cumulative ADJACENT scope before raising a fourth in one workstream. Full rule: `sprints/PHASE_LEDGER.md → ORCHESTRATION DISCIPLINE`.
 
 ## Platform-side carry-overs (4 yellow items — NOT code-side; do NOT attempt to fix in code)
 

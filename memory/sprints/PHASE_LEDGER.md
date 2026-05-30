@@ -11,6 +11,33 @@ before writing any code I will verify:
 
 If the ledger and the codebase disagree, the codebase wins and the ledger gets corrected on the next dispatch.
 
+
+---
+
+## ORCHESTRATION DISCIPLINE · Proposal classification rule (locked 2026-02)
+
+Every proposal — from orchestrator to user, OR from agent to orchestrator — must carry a binary classification:
+
+- **IN-SCOPE**: directly serves a requirement the user has stated. Default: ship.
+- **ADJACENT**: useful, but tangential. Independent yes/no. Must surface explicit value statement (what does this create?) + explicit cost statement (LOC, complexity, surfaces added) + my recommendation. Default: ask.
+- **OUT-OF-SCOPE**: would not be raised unless the user asks. Default: don't raise.
+
+**Banned framings** (these conceal classification):
+- "potential improvement" / "worth considering" / "small enhancement"
+- "5-LOC delta" / "substrate already exists" / "5-min change"
+- "marketing weapon" / "trust amplifier" / "conversion signal" — when describing adjacent additions to existing trust surfaces
+
+**Required framings for ADJACENT proposals**:
+- "This creates the following value: <one specific sentence>"
+- "This costs: <LOC + new surface + maintenance>"
+- "My recommendation: <take / skip>"
+- "This is adjacent to your stated requirement <X>, not a completion of it."
+
+**Cumulative-scope alarm**: if the orchestrator has proposed three or more ADJACENT items in a single workstream, halt and surface the cumulative scope before the fourth.
+
+**Why this rule exists**: the orchestrator (and by extension the agent) framed adjacent proposals as if they served stated requirements, removing the user's ability to evaluate them on merit. Each individual yes was reasonable; cumulative scope creep was invisible. From 2026-02 forward this classification is mandatory on every proposal surface — finish-tool close-outs, ask_human follow-ups, agent-to-orchestrator suggestions inside this ledger, and inline mid-dispatch nudges.
+
+
 ---
 
 ## Console-error diagnosis protocol
