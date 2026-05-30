@@ -30,6 +30,7 @@ from routers.auth import get_current_account  # type: ignore
 from services.solva_v2.feature_flag import solva_v2_enabled_for
 from services.solva_v2.payload_builder import build_payload
 from services.solva_v2.integrity_validators import validate_artefact
+from services.solva_v2.citation_resolver import prefetch_db_resolved
 
 
 logger = logging.getLogger("solva.v2.artefact_payload")
@@ -87,7 +88,16 @@ async def get_v2_artefact_payload(
             detail=f"Payload build failed: {exc}",
         ) from exc
 
-    validation = validate_artefact(payload, rec)
+    # Sprint Z.2.B Scope A (2026-02) — pre-batch DB resolution of any
+    # citation ids the payload references that are NOT in the session's
+    # embedded arrays. Feeds the sync validator's CitationResolver.
+    try:
+        db_resolved_ids = await prefetch_db_resolved(payload, db)
+    except Exception:  # noqa: BLE001
+        logger.exception("citation prefetch failed sid=%s — falling back to embedded-only", sid)
+        db_resolved_ids = {}
+
+    validation = validate_artefact(payload, rec, db_resolved_ids=db_resolved_ids)
     if not validation.ok:
         # Return structured offender list so callers can render a
         # "report under review" placeholder with the integrity audit
@@ -302,7 +312,12 @@ async def export_v2_pptx(
     # truth-source as the on-screen artefact, so blocking offenders
     # should never reach the renderer. Log and proceed so auditors get
     # the export even when validation surfaces a soft warning.
-    validation = validate_artefact(payload, rec)
+    try:
+        db_resolved_ids = await prefetch_db_resolved(payload, db)
+    except Exception:  # noqa: BLE001
+        logger.exception("citation prefetch failed sid=%s — falling back to embedded-only", sid)
+        db_resolved_ids = {}
+    validation = validate_artefact(payload, rec, db_resolved_ids=db_resolved_ids)
     if not validation.ok:
         logger.warning(
             "solva v2 pptx export with validator offenders sid=%s offenders=%d",

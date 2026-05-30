@@ -28,9 +28,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from .artefact_schema import ArtefactPayload
+from .citation_resolver import (
+    CitationResolver,
+    COARSE_LAYER_TAGS as _CR_COARSE_LAYER_TAGS,
+)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -104,6 +108,233 @@ _CONDITIONAL_OPENERS = (
 )
 
 
+# ─────────────────────────────────────────────────────────────────
+# Scope C (Sprint Z.2.C, 2026-02) — refuse_to_decide hardening
+# ─────────────────────────────────────────────────────────────────
+#
+# The bare-pattern scan above over-fires on observational text. The
+# helpers below classify each match's local context as IMPERATIVE
+# (Solva telling the user what to do) or OBSERVATIONAL (narration,
+# noun-form, hyphenated compound, negated non-user subject,
+# counterfactual, infinitive-in-subordinate-clause). Pure token-level
+# heuristics — NO NLP dependency.
+
+
+# Trigger verbs that double as nouns / noun-modifiers in finance /
+# governance prose. When one of these appears, run the noun-form
+# detector before flagging.
+_VERB_NOUN_AMBIGUOUS = frozenset({
+    "retain", "fire", "hire", "kill", "launch", "raise",
+    "sell", "exit", "pivot", "liquidate", "acquire", "merge", "terminate",
+})
+
+
+# Determiners / quantifiers / possessives / adjectives that, when
+# immediately preceding a trigger verb, mark it as a NOUN ("a pivot",
+# "partial pivot", "his exit", "the sell-off").
+_NOUN_FORM_PREFIXES = (
+    "a", "an", "the", "this", "that", "these", "those",
+    "his", "her", "its", "their", "our", "my", "your",
+    "any", "every", "each", "some", "no", "another",
+    "one", "two", "three", "first", "second", "third", "another",
+    "partial", "full", "major", "minor", "strategic", "tactical",
+    "potential", "possible", "likely", "early", "late",
+    "good", "bad", "clear", "clean", "messy", "abrupt", "gradual",
+    "hostile", "friendly", "forced",
+)
+
+
+# Hyphenated compound markers — `cross-sell`, `buy-back`, `sell-off`,
+# `pivot-to-services`, `exit-horizon`, etc. The trigger verb is
+# embedded in a compound noun.
+_HYPHEN_COMPOUND_RE_CACHE: Dict[str, re.Pattern] = {}
+
+
+def _hyphen_compound_re(verb: str) -> re.Pattern:
+    """Cached regex that matches the trigger verb as part of a
+    hyphenated compound — either preceded by `\\w-` or followed by
+    `-\\w`."""
+    if verb not in _HYPHEN_COMPOUND_RE_CACHE:
+        _HYPHEN_COMPOUND_RE_CACHE[verb] = re.compile(
+            r"(?:\w-" + re.escape(verb) + r"\b|\b" + re.escape(verb) + r"-\w)",
+            re.IGNORECASE,
+        )
+    return _HYPHEN_COMPOUND_RE_CACHE[verb]
+
+
+# Negation contexts where the subject is NOT the user — e.g.
+# "institutional shareholders typically do not underwrite".
+_NEGATION_BIGRAM = re.compile(
+    r"\b(?:typically|often|usually|historically|never|rarely|seldom|"
+    r"generally|sometimes|occasionally)\s+do(?:es)?\s+not\b",
+    re.IGNORECASE,
+)
+
+# User-directed subjects — when present in the same sentence,
+# negation hardening is OFF (the model IS instructing the user).
+_USER_SUBJECT_TOKENS = (
+    "you ", "you,", "you.", "you;", "you:",
+    "the founder ", "the executive ", "the user ",
+    "the board ", "the committee ", "the chair ",
+    "the cfo ", "the ceo ", "the ned ", "the team ",
+    "we ", "we,", "we.", "we;", "we:",
+)
+
+
+# Counterfactual "should have <past participle>" — describes a
+# hypothetical past, NOT an instruction.
+_COUNTERFACTUAL_SHOULD_HAVE_RE = re.compile(
+    r"\bshould\s+have\s+(?:not\s+)?\w+(?:ed|en|n|t)\b",
+    re.IGNORECASE,
+)
+
+
+# Noun-modifier compound: `<trigger> <noun>` where the trigger is
+# acting as an attributive noun ("exit horizon", "sell pressure",
+# "pivot strategy", "hire freeze"). Common attributive-noun second
+# words below.
+_ATTRIBUTIVE_NEXT_NOUNS = frozenset({
+    "horizon", "strategy", "pressure", "process", "decision",
+    "candidate", "candidates", "freeze", "wave", "schedule",
+    "timeline", "rationale", "math", "logic", "ratio", "ratios",
+    "multiple", "multiples", "price", "value", "valuation",
+    "approach", "approaches", "moment", "moments", "window",
+    "windows", "trigger", "triggers", "signal", "signals",
+    "narrative", "narratives", "thesis", "theses",
+    "assumptions", "assumption", "framing",
+})
+
+
+def _trigger_is_noun_form(
+    sentence: str,
+    match_start: int,
+    match_end: int,
+    matched: str,
+) -> bool:
+    """True iff the matched trigger is acting as a noun rather than a
+    verb (= NOT imperative). Conservative — only returns True when at
+    least one structural cue is present."""
+    verb = matched.lower().strip()
+    if verb not in _VERB_NOUN_AMBIGUOUS:
+        return False
+    # Hyphenated compound — `cross-sell`, `pivot-to-services`.
+    if _hyphen_compound_re(verb).search(sentence):
+        return True
+    # Determiner / quantifier / possessive / adjective immediately
+    # preceding (allowing one optional modifier).
+    head = sentence[:match_start].rstrip()
+    # Look at last two words.
+    head_tokens = re.findall(r"[A-Za-z\u2014\u2013\-']+", head)[-2:]
+    head_tokens_lc = [t.lower() for t in head_tokens]
+    if head_tokens_lc and head_tokens_lc[-1] in _NOUN_FORM_PREFIXES:
+        return True
+    if (
+        len(head_tokens_lc) >= 2
+        and head_tokens_lc[-2] in _NOUN_FORM_PREFIXES
+        and head_tokens_lc[-1] not in {"and", "or", "but", "to", "with"}
+    ):
+        return True
+    # Gerund-object idiom: `<gerund> <trigger>` where the gerund's
+    # direct object is the trigger-as-noun. Common cases:
+    # `holding fire`, `taking exit`, `facing sell pressure`. The
+    # preceding word is an `-ing` form, which marks it as a gerund
+    # taking the trigger as its object.
+    if head_tokens_lc and head_tokens_lc[-1].endswith("ing") and len(head_tokens_lc[-1]) > 4:
+        return True
+    # Dash / em-dash / colon immediately preceding — common nominal
+    # bullet ("— partial pivot", ": pivot toward...").
+    pre_chars = sentence[max(0, match_start - 4): match_start]
+    if any(d in pre_chars for d in ("\u2014", "\u2013", " - ", ": ", "; ")):
+        # Combined with one of the noun-prefixes above already handled.
+        # On its own a dash is not conclusive; require a noun-prefix.
+        if head_tokens_lc and head_tokens_lc[-1] in _NOUN_FORM_PREFIXES:
+            return True
+    # Attributive-noun compound: trigger followed by a recognised
+    # second-word noun ("exit horizon", "pivot strategy").
+    tail = sentence[match_end:].lstrip()
+    tail_tokens = re.findall(r"[A-Za-z]+", tail)[:1]
+    if tail_tokens and tail_tokens[0].lower() in _ATTRIBUTIVE_NEXT_NOUNS:
+        return True
+    return False
+
+
+def _sentence_has_user_subject(sentence: str) -> bool:
+    """True iff the sentence directly addresses the user / founder."""
+    lc = sentence.lower()
+    return any(tok in lc for tok in _USER_SUBJECT_TOKENS)
+
+
+def _trigger_is_observational_negation(
+    sentence: str,
+    matched: str,
+) -> bool:
+    """True iff the trigger sits inside a negation describing what
+    SOMEONE ELSE doesn't do — observational, not instruction."""
+    if not matched.lower().startswith("do not"):
+        return False
+    if _sentence_has_user_subject(sentence):
+        return False
+    return bool(_NEGATION_BIGRAM.search(sentence))
+
+
+def _trigger_is_counterfactual_should_have(
+    sentence: str,
+    matched: str,
+) -> bool:
+    """True iff `should have <past_participle>` — counterfactual narration."""
+    if not matched.lower().startswith("should"):
+        return False
+    return bool(_COUNTERFACTUAL_SHOULD_HAVE_RE.search(sentence))
+
+
+def _trigger_is_subordinate_infinitive(
+    sentence: str,
+    match_start: int,
+    matched: str,
+) -> bool:
+    """True iff the trigger appears as `to <verb>` inside a
+    subordinate / relativised clause whose main verb is negated or
+    observational ("Paying 14x to acquire that ambiguity doesn't
+    resolve concentration")."""
+    verb = matched.lower().strip()
+    if verb not in _VERB_NOUN_AMBIGUOUS:
+        return False
+    pre = sentence[:match_start]
+    pre_chars = pre[-4:].lower()
+    if not pre_chars.endswith("to "):
+        return False
+    # Look for negation or observational main verb in the rest of the
+    # sentence — these mark the surrounding clause as describing why
+    # an action wouldn't work, not instructing the action.
+    post = sentence[match_start:].lower()
+    obs_markers = (
+        " doesn't ", " does not ", " didn't ", " did not ",
+        " won't ", " will not ", " isn't ", " is not ",
+        " wouldn't ", " would not ", " can't ", " cannot ",
+        " never ", " hasn't ", " has not ", " hadn't ", " had not ",
+    )
+    return any(m in post for m in obs_markers)
+
+
+def _trigger_is_observational(
+    sentence: str,
+    match_obj: re.Match,
+) -> bool:
+    """Top-level dispatcher — applies every hardening heuristic in
+    sequence. Returns True iff the trigger should NOT fire as an
+    imperative."""
+    matched = match_obj.group(0)
+    if _trigger_is_noun_form(sentence, match_obj.start(), match_obj.end(), matched):
+        return True
+    if _trigger_is_counterfactual_should_have(sentence, matched):
+        return True
+    if _trigger_is_observational_negation(sentence, matched):
+        return True
+    if _trigger_is_subordinate_infinitive(sentence, match_obj.start(), matched):
+        return True
+    return False
+
+
 def _audit_log_ids(session: Dict[str, Any]) -> Set[str]:
     """Build the set of source ids the audit log can resolve to.
 
@@ -136,7 +367,12 @@ def _sentences(text: str) -> List[str]:
 # ─────────────────────────────────────────────────────────────────
 
 
-def citation_lint(payload: ArtefactPayload, session: Dict[str, Any]) -> List[ValidatorOffender]:
+def citation_lint(
+    payload: ArtefactPayload,
+    session: Dict[str, Any],
+    *,
+    resolver: Optional[CitationResolver] = None,
+) -> List[ValidatorOffender]:
     """Every numerical claim in the rendered payload MUST cite at least
     one source that resolves to an audit-log id.
 
@@ -146,9 +382,16 @@ def citation_lint(payload: ArtefactPayload, session: Dict[str, Any]) -> List[Val
       • scenarios[].description + scenarios[].label
       • sensitivity_inputs[].impact_explanation + cluster_weight_shift_mechanic
       • pathway[].detail_paragraph
+
+    Scope A (Sprint Z.2.B, 2026-02) — every cited `source_input_id`
+    must additionally resolve against the embedded session arrays, a
+    coarse-layer tag, or the pre-fetched DB store for the citation's
+    `source_kind`. Unresolvable ids surface a `citation_unverifiable`
+    blocking offender carrying the id + kind in the failure payload.
     """
     offenders: List[ValidatorOffender] = []
     log_ids = _audit_log_ids(session)
+    cr = resolver if resolver is not None else CitationResolver(session)
 
     def _check(prefix: str, text: str, citations: List[Any]) -> None:
         matches = _NUMERIC_CLAIM_RE.findall(text or "")
@@ -168,7 +411,7 @@ def citation_lint(payload: ArtefactPayload, session: Dict[str, Any]) -> List[Val
                 ),
             ))
             return
-        unresolved = [cid for cid in cited_ids if cid not in log_ids]
+        unresolved = [cid for cid in cited_ids if cid not in log_ids and cid not in _CR_COARSE_LAYER_TAGS]
         if unresolved:
             offenders.append(ValidatorOffender(
                 validator="citation_lint",
@@ -181,13 +424,57 @@ def citation_lint(payload: ArtefactPayload, session: Dict[str, Any]) -> List[Val
                     f"Unknown ids: {unresolved}"
                 ),
             ))
+        # Scope A — citation realness verification. For each cited
+        # SourceCitation object (carrying both id and source_kind),
+        # ask the resolver to verify embedded + DB-level reality.
+        for c in (citations or []):
+            cid = getattr(c, "source_input_id", None)
+            kind = getattr(c, "source_kind", None)
+            if not cid or not kind:
+                continue
+            result = cr.resolve(cid, kind)
+            if not result.resolved:
+                offenders.append(ValidatorOffender(
+                    validator="citation_lint",
+                    severity="block",
+                    location=f"{prefix}.source_citations",
+                    message=(
+                        f"citation_unverifiable: id={cid!r} kind={kind!r} does not "
+                        f"resolve to any embedded array, coarse-layer tag, or DB-level "
+                        f"record."
+                    ),
+                    revision_hint=(
+                        "Replace this citation with one whose source_input_id resolves "
+                        "against the session's reasoning_audit_log / user_turns / "
+                        "attached_docs / comparables, OR against the canonical DB store "
+                        "for the declared source_kind (documents / extractions_log / "
+                        "chat_audit_log / audit_log / solva_v1_comparables_archive)."
+                    ),
+                ))
 
     for i, kf in enumerate(payload.headline.key_findings):
         _check(f"headline.key_findings[{i}]", kf.paragraph_text, kf.source_citations)
 
+    # Scope A — tensions[].prevailing_framing was hardcoded as `[]`
+    # for the citation list, which guaranteed a `citation_lint` trip
+    # on any prevailing-framing prose containing a number. Now we
+    # pass a real synthetic SourceCitation wrapping
+    # `evidence_block.source_layer_question_id` — that id IS a real
+    # audit-log entry id already emitted by the engine layer; we are
+    # just constructing the SourceCitation envelope at validator-read
+    # time so the existing `_check` interface keeps working. (The
+    # EvidenceBlock schema doesn't carry a citation list directly.)
     for i, t in enumerate(payload.tensions):
-        _check(f"tensions[{i}].prevailing_framing", t.prevailing_framing, [])
-        _check(f"tensions[{i}].implication", t.implication, [])
+        eb = t.evidence_block
+        synthetic_cites: List[Any] = []
+        if eb and eb.source_layer_question_id:
+            class _S:
+                source_input_id = eb.source_layer_question_id
+                source_kind = "audit_log"
+                source_layer = eb.source_layer
+            synthetic_cites.append(_S())
+        _check(f"tensions[{i}].prevailing_framing", t.prevailing_framing, synthetic_cites)
+        _check(f"tensions[{i}].implication", t.implication, synthetic_cites)
 
     for i, s in enumerate(payload.scenarios):
         _check(f"scenarios[{i}].description", s.description, s.supporting_evidence)
@@ -210,7 +497,12 @@ def citation_lint(payload: ArtefactPayload, session: Dict[str, Any]) -> List[Val
 # ─────────────────────────────────────────────────────────────────
 
 
-def confidence_calibration_audit(payload: ArtefactPayload, session: Dict[str, Any]) -> List[ValidatorOffender]:
+def confidence_calibration_audit(
+    payload: ArtefactPayload,
+    session: Dict[str, Any],
+    *,
+    resolver: Optional[CitationResolver] = None,
+) -> List[ValidatorOffender]:
     """Any scenario where `confidence_pct >= 70` must name at least 2
     INDEPENDENT triangulating evidence sources in
     `confidence_calibration_reasoning` AND in `supporting_evidence[]`.
@@ -219,8 +511,14 @@ def confidence_calibration_audit(payload: ArtefactPayload, session: Dict[str, An
     values OR distinct `source_layer` values across `supporting_evidence`.
     A scenario citing 2 user_turn entries from the same layer is NOT
     independent triangulation.
+
+    Scope A (Sprint Z.2.B, 2026-02) — every cited entry must also
+    RESOLVE (embedded session array / coarse-layer tag / pre-fetched
+    DB store). An entry that doesn't resolve trips
+    `citation_unverifiable` with the un-resolvable id in the message.
     """
     offenders: List[ValidatorOffender] = []
+    cr = resolver if resolver is not None else CitationResolver(session)
     for i, s in enumerate(payload.scenarios):
         if s.confidence_pct < 70:
             continue
@@ -272,6 +570,25 @@ def confidence_calibration_audit(payload: ArtefactPayload, session: Dict[str, An
                     f"surface the same signal.'"
                 ),
             ))
+        # Scope A — citation realness for every supporting_evidence entry.
+        for j, e in enumerate(s.supporting_evidence):
+            r = cr.resolve(e.source_input_id, e.source_kind)
+            if not r.resolved:
+                offenders.append(ValidatorOffender(
+                    validator="confidence_calibration_audit",
+                    severity="block",
+                    location=f"scenarios[{i}].supporting_evidence[{j}]",
+                    message=(
+                        f"citation_unverifiable: id={e.source_input_id!r} "
+                        f"kind={e.source_kind!r} does not resolve to any embedded "
+                        f"array, coarse-layer tag, or DB-level record."
+                    ),
+                    revision_hint=(
+                        f"At scenarios[{i}].supporting_evidence[{j}], replace the "
+                        f"unverifiable id with one that resolves against the session "
+                        f"or its canonical DB store for source_kind={e.source_kind!r}."
+                    ),
+                ))
     return offenders
 
 
@@ -285,6 +602,17 @@ def refuse_to_decide_enforcement(payload: ArtefactPayload, session: Dict[str, An
     phrasings. Conditional + observational openers are allowlisted.
 
     Trust pillar 3 — Solva NEVER tells the user what to do.
+
+    Scope C (Sprint Z.2.C, 2026-02) — production hardening. Each
+    pattern match now runs through `_trigger_is_observational` which
+    classifies the local context:
+      • verbs-as-nouns ("partial pivot", "exit horizon") → not imperative
+      • hyphenated compounds ("cross-sell math") → not imperative
+      • counterfactual `should have <pp>` → not imperative
+      • negation with non-user subject ("shareholders typically do not
+        underwrite") → not imperative
+      • infinitive in subordinate clause whose main verb is negated
+        ("to acquire that ambiguity doesn't resolve") → not imperative
     """
     offenders: List[ValidatorOffender] = []
 
@@ -297,6 +625,9 @@ def refuse_to_decide_enforcement(payload: ArtefactPayload, session: Dict[str, An
             for pat in _IMPERATIVE_PATTERNS:
                 m = re.search(pat, normalised)
                 if m:
+                    # Scope C — observational-context detector.
+                    if _trigger_is_observational(sentence, m):
+                        continue
                     offenders.append(ValidatorOffender(
                         validator="refuse_to_decide_enforcement",
                         severity="block",
@@ -520,6 +851,9 @@ def bias_evidence_observational(payload: ArtefactPayload, session: Dict[str, Any
             for pat in _IMPERATIVE_PATTERNS:
                 m = re.search(pat, normalised)
                 if m:
+                    # Scope C hardening.
+                    if _trigger_is_observational(sentence, m):
+                        continue
                     offenders.append(ValidatorOffender(
                         validator="bias_evidence_observational",
                         severity="block",
@@ -564,6 +898,8 @@ def bias_evidence_observational(payload: ArtefactPayload, session: Dict[str, Any
             for pat in _IMPERATIVE_PATTERNS:
                 m = re.search(pat, normalised)
                 if m:
+                    if _trigger_is_observational(item.suggested_mitigation, m):
+                        continue
                     offenders.append(ValidatorOffender(
                         validator="bias_evidence_observational",
                         severity="block",
@@ -632,7 +968,10 @@ def _resolve_session_ids(session: Dict[str, Any]) -> Set[str]:
 
 def _scan_imperative(text: str, location: str, validator_name: str) -> List[ValidatorOffender]:
     """Scan a text body for imperative phrasings, allowing conditional
-    + observational openers. Returns a list of offenders."""
+    + observational openers. Returns a list of offenders.
+
+    Scope C (Sprint Z.2.C, 2026-02) — applies the
+    `_trigger_is_observational` hardening before flagging."""
     offenders: List[ValidatorOffender] = []
     for sentence in _sentences(text):
         normalised = sentence.lower().strip()
@@ -643,6 +982,8 @@ def _scan_imperative(text: str, location: str, validator_name: str) -> List[Vali
         for pat in _IMPERATIVE_PATTERNS:
             m = re.search(pat, normalised)
             if m:
+                if _trigger_is_observational(sentence, m):
+                    continue
                 offenders.append(ValidatorOffender(
                     validator=validator_name,
                     severity="block",
@@ -934,14 +1275,41 @@ _ALL_VALIDATORS = (
 )
 
 
-def validate_artefact(payload: ArtefactPayload, session: Dict[str, Any]) -> ValidationResult:
+# Validators that accept a `resolver=` keyword argument (Scope A, 2026-02).
+# Other validators in the suite still receive only (payload, session).
+_RESOLVER_AWARE_VALIDATORS = (
+    citation_lint,
+    confidence_calibration_audit,
+)
+
+
+def validate_artefact(
+    payload: ArtefactPayload,
+    session: Dict[str, Any],
+    *,
+    resolver: Optional[CitationResolver] = None,
+    db_resolved_ids: Optional[Dict[str, Set[str]]] = None,
+) -> ValidationResult:
     """Run all integrity validators against `payload`. Returns a
     `ValidationResult` whose `.ok` is True iff NO blocking offenders
     were found. Callers MUST check `.ok` before serializing the
-    payload to the renderer."""
+    payload to the renderer.
+
+    Scope A (Sprint Z.2.B, 2026-02) — `resolver` (or `db_resolved_ids`
+    for the lazy construction shortcut) lets the caller plug in a
+    pre-warmed `CitationResolver` whose embedded session index is
+    augmented with DB-level pre-fetched ids. When neither is supplied,
+    a default embedded-only resolver is constructed (existing behaviour
+    + coarse-tag whitelist).
+    """
+    if resolver is None:
+        resolver = CitationResolver(session, db_resolved_ids=db_resolved_ids)
     offenders: List[ValidatorOffender] = []
     for v in _ALL_VALIDATORS:
-        offenders.extend(v(payload, session))
+        if v in _RESOLVER_AWARE_VALIDATORS:
+            offenders.extend(v(payload, session, resolver=resolver))
+        else:
+            offenders.extend(v(payload, session))
     blocking = [o for o in offenders if o.severity == "block"]
     return ValidationResult(ok=not blocking, offenders=offenders)
 
