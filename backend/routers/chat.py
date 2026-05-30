@@ -2662,6 +2662,27 @@ async def stream_message(
         membership_role=_ned_role,
         context_type=_ned_ctype,
     )
+    # Phase ZZ.2 (2026-02 fork-resume v2) — Tier 1 Solva governance is
+    # the chat model's behaviour. Prepend the conversational
+    # governance preamble to every system message so refusal,
+    # evidence-grounding, confidence framing, adversarial nudge, and
+    # the Solva escalation CTA are baked in.
+    try:
+        from services.solva_v2.chat_v2_prompts import build_chat_v2_system_message
+        system_msg = build_chat_v2_system_message(system_msg)
+        # Audit log per-session (best-effort).
+        try:
+            await db.audit_log.insert_one({
+                "id": str(uuid.uuid4()),
+                "account_id": current["id"],
+                "chat_id": chat_id,
+                "event": "chat_v2_prompt_used",
+                "created_at": _iso(_now()),
+            })
+        except Exception:
+            pass
+    except Exception:  # pragma: no cover — fallback to legacy prompt
+        pass
 
     request_account = current  # closures capture this at the inner scope
     request_obj = request
@@ -3532,6 +3553,33 @@ async def stream_message(
             },
         )
 
+        # ── Phase ZZ.2 (2026-02 fork-resume v2) — Tier 1 governance pass on
+        # the assistant reply. Capture conversational validator output +
+        # Tier 2 escalation flags so the frontend can render bias chips,
+        # the adversarial nudge marker, and the Solva-escalation CTA.
+        try:
+            from services.solva_v2.integrity_validators import (
+                validate_conversational_response as _zz2_validate,
+            )
+            from services.solva_v2.chat_v2_prompts import (
+                should_escalate_to_solva as _zz2_escalate,
+                detects_recommendation_request as _zz2_is_reco,
+            )
+            zz2_check = _zz2_validate(cleaned_reply or "", attached_docs=None)
+            _user_text_for_zz2 = locals().get("text") or ""
+            zz2_governance = {
+                "ok": zz2_check.ok,
+                "numeric_claims_total": zz2_check.numeric_claims_total,
+                "numeric_claims_unsourced": zz2_check.numeric_claims_unsourced,
+                "confidence_named": zz2_check.confidence_named,
+                "bias_flags": zz2_check.bias_flags,
+                "notes": zz2_check.notes,
+                "recommendation_request": _zz2_is_reco(_user_text_for_zz2),
+                "escalate_to_solva": _zz2_escalate(_user_text_for_zz2),
+            }
+        except Exception:
+            zz2_governance = {"ok": True, "notes": ["governance_pass_skipped"]}
+
         yield (
             "data: " + json.dumps({
                 "type": "message",
@@ -3571,6 +3619,11 @@ async def stream_message(
                 # failures surface as type=error and DO NOT persist).
                 "provider_used": locals().get("stream_provider_used") or "",
                 "fallback_triggered": bool(locals().get("stream_fallback") or False),
+                # Phase ZZ.2 — three-tier Solva governance. Tier 1 is
+                # always-on (this object). Tier 2 (bias chips,
+                # adversarial nudge, Solva-escalation CTA) is rendered
+                # from these flags on the frontend.
+                "zz2_governance": zz2_governance,
             }) + "\n\n"
         )
         # Patch 26E — emit phase: complete just before `done` so the

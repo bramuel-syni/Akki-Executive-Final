@@ -51,7 +51,8 @@ import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github.css";
 import ModelAvatar from "@/components/chat/ModelAvatar";
 import MarkdownMessage from "@/components/chat/MarkdownMessage";
-import {
+import MessageActions from "@/components/chat/MessageActions";
+import GovernanceSignals from "@/components/chat/GovernanceSignals";import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
@@ -818,6 +819,9 @@ export default function Chat() {
                   pass_2: ev.pass_2,
                   show_pass_1: ev.show_pass_1,
                   voice_violation: ev.voice_violation,
+                  // Phase ZZ.2 — Tier 1 + Tier 2 governance signals
+                  // attached by the backend stream's terminal event.
+                  zz2_governance: ev.zz2_governance,
                 };
               });
             } else if (ev.type === "error") {
@@ -1364,9 +1368,27 @@ export default function Chat() {
                   <p className="text-center text-[13px] text-[var(--muted)] italic mt-10">
                     Type your first message below.
                   </p>
-                ) : (activeChat.messages || []).map((m) => (
+                ) : (activeChat.messages || []).map((m, idx, arr) => (
                   <Message key={m.id} m={m} activeModel={activeModel} models={models}
-                    synisense={messageSynisense.get(m.id)} chatId={activeChat?.id} />
+                    synisense={messageSynisense.get(m.id)} chatId={activeChat?.id}
+                    onEdit={(text) => {
+                      // Z3 (2026-02) — populate composer with this
+                      // message's text + focus. User can re-send as a
+                      // new turn (no in-place mutation; original turn
+                      // stays in the history).
+                      setInput(text || "");
+                      try { document.querySelector('[data-testid="chat-input"]')?.focus(); } catch {}
+                    }}
+                    onRegenerate={() => {
+                      // Z3 — re-submit the most-recent prior user
+                      // turn that produced this assistant reply.
+                      for (let i = idx - 1; i >= 0; i--) {
+                        if (arr[i].role === "user") {
+                          sendMessage(arr[i].content || "");
+                          return;
+                        }
+                      }
+                    }} />
                 ))}
                 {sending && (
                   <div className="flex items-center gap-2 text-[12.5px] text-[var(--muted)] italic">
@@ -1592,7 +1614,7 @@ function PolicyPicker({ value, onChange }) {
   );
 }
 
-function Message({ m, activeModel, models, synisense, chatId }) {
+function Message({ m, activeModel, models, synisense, chatId, onEdit, onRegenerate }) {
   const isUser = m.role === "user";
   const shielded = m.shielded;
   const detected = (m.shielding?.identifiers_masked || 0) > 0;
@@ -1605,7 +1627,7 @@ function Message({ m, activeModel, models, synisense, chatId }) {
     : null;
 
   return (
-    <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`} data-testid={`chat-msg-${m.role}`}>
+    <div className={`group flex gap-3 ${isUser ? "flex-row-reverse" : ""}`} data-testid={`chat-msg-${m.role}`}>
       {isUser ? (
         <div className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[10px] font-mono bg-[var(--ink)] text-white">
           YOU
@@ -1771,6 +1793,26 @@ function Message({ m, activeModel, models, synisense, chatId }) {
             onSolvaContinue={() => {
               window.location.href = "/app/solva";
             }}
+          />
+        )}
+        {/* Phase ZZ.2 (2026-02) — Tier 1 + Tier 2 Solva governance
+            signals on assistant bubbles: bias chips, unsourced-
+            numeric warning, Solva escalation CTA. Backend
+            attaches `zz2_governance` to the terminal stream event. */}
+        {!isUser && m.zz2_governance && (
+          <GovernanceSignals governance={m.zz2_governance} />
+        )}
+        {/* Z3 (2026-02) — Claude-style bubble actions. Edit/Copy on
+            user bubbles; Regenerate/Copy on assistant bubbles. Hidden
+            until the parent `group` is hovered or focused-within. We
+            skip streaming + tmp-prefixed optimistic bubbles. */}
+        {!m.streaming && m.id && !String(m.id).startsWith("tmp-") && (
+          <MessageActions
+            messageId={m.id}
+            role={m.role}
+            content={m.content || ""}
+            onEdit={onEdit}
+            onRegenerate={onRegenerate}
           />
         )}
       </div>

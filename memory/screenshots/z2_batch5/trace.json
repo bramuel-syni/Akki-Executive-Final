@@ -1,0 +1,113 @@
+[
+  {
+    "viewport": "1280",
+    "z2_8": {
+      "strips_off": 0,
+      "aria_pressed_initial": "false",
+      "aria_pressed_after_click": "true",
+      "strips_on": 16,
+      "first_strips": [
+        {
+          "kind": "cover",
+          "line_count": 3,
+          "first_line": "Sourced from 5 inputs. 0 documents cited. Evidence-grounding: passed.",
+          "baseline_match": true
+        },
+        {
+          "kind": "headline",
+          "line_count": 3,
+          "first_line": "Sourced from 5 inputs. 0 documents cited. Evidence-grounding: passed.",
+          "baseline_match": true
+        },
+        {
+          "kind": "tensions_overview",
+          "line_count": 3,
+          "first_line": "Sourced from 5 inputs. 0 documents cited. Evidence-grounding: passed.",
+          "baseline_match": true
+        }
+      ],
+      "print_first_strip_computed": {
+        "display": "none",
+        "visibility": "hidden"
+      },
+      "print_visible_count": 0,
+      "strips_after_toggle_off": 0,
+      "toggle_label": "NOTES",
+      "voice_lint_hits": []
+    }
+  },
+  {
+    "viewport": "1024",
+    "z2_8": {
+      "strips_off": 0,
+      "aria_pressed_initial": "false",
+      "aria_pressed_after_click": "true",
+      "strips_on": 16,
+      "first_strips": [
+        {
+          "kind": "cover",
+          "line_count": 3,
+          "first_line": "Sourced from 5 inputs. 0 documents cited. Evidence-grounding: passed.",
+          "baseline_match": true
+        },
+        {
+          "kind": "headline",
+          "line_count": 3,
+          "first_line": "Sourced from 5 inputs. 0 documents cited. Evidence-grounding: passed.",
+          "baseline_match": true
+        },
+        {
+          "kind": "tensions_overview",
+          "line_count": 3,
+          "first_line": "Sourced from 5 inputs. 0 documents cited. Evidence-grounding: passed.",
+          "baseline_match": true
+        }
+      ],
+      "print_first_strip_computed": {
+        "display": "none",
+        "visibility": "hidden"
+      },
+      "print_visible_count": 0,
+      "strips_after_toggle_off": 0,
+      "toggle_label": "NOTES",
+      "voice_lint_hits": []
+    }
+  },
+  {
+    "viewport": "820",
+    "z2_8": {
+      "strips_off": 0,
+      "aria_pressed_initial": "false",
+      "aria_pressed_after_click": "true",
+      "strips_on": 16,
+      "first_strips": [
+        {
+          "kind": "cover",
+          "line_count": 3,
+          "first_line": "Sourced from 5 inputs. 0 documents cited. Evidence-grounding: passed.",
+          "baseline_match": true
+        },
+        {
+          "kind": "headline",
+          "line_count": 3,
+          "first_line": "Sourced from 5 inputs. 0 documents cited. Evidence-grounding: passed.",
+          "baseline_match": true
+        },
+        {
+          "kind": "tensions_overview",
+          "line_count": 3,
+          "first_line": "Sourced from 5 inputs. 0 documents cited. Evidence-grounding: passed.",
+          "baseline_match": true
+        }
+      ],
+      "print_first_strip_computed": {
+        "display": "none",
+        "visibility": "hidden"
+      },
+      "print_visible_count": 0,
+      "strips_after_toggle_off": 0,
+      "toggle_label": "NOTES",
+      "voice_lint_hits": []
+    }
+  }
+]

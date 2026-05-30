@@ -1,0 +1,47 @@
+[
+  {
+    "viewport": "1280",
+    "zz1": {
+      "badge_text": "2 IDENTIFIERS PROTECTED \u00b7 RESTORED ON YOUR VIEW",
+      "badge_text_contains_protected": true,
+      "badge_text_contains_restored": true,
+      "data_redacted_attr": "2",
+      "data_restored_attr": "2",
+      "outerHTML": "<span tabindex=\"0\" class=\"font-mono text-[10px] uppercase tracking-[0.14em] px-[6px] py-[1px] rounded-sm bg-[rgba(122,46,46,0.06)] text-[var(--oxblood)] cursor-default\" data-testid=\"chat-msg-synisense-b896d706-b940-4f68-b270-fce305371c3a\" data-identifiers-redacted=\"2\" data-identifiers-restored=\"2\">2 IDENTIFIERS PROTECTED \u00b7 RESTORED ON YOUR VIEW</span>",
+      "tooltip_text": "",
+      "tooltip_has_redacted_explicit": false,
+      "tooltip_has_restored_explicit": false,
+      "voice_lint_hits": []
+    }
+  },
+  {
+    "viewport": "1024",
+    "zz1": {
+      "badge_text": "2 IDENTIFIERS PROTECTED \u00b7 RESTORED ON YOUR VIEW",
+      "badge_text_contains_protected": true,
+      "badge_text_contains_restored": true,
+      "data_redacted_attr": "2",
+      "data_restored_attr": "2",
+      "outerHTML": "<span tabindex=\"0\" class=\"font-mono text-[10px] uppercase tracking-[0.14em] px-[6px] py-[1px] rounded-sm bg-[rgba(122,46,46,0.06)] text-[var(--oxblood)] cursor-default\" data-testid=\"chat-msg-synisense-b896d706-b940-4f68-b270-fce305371c3a\" data-identifiers-redacted=\"2\" data-identifiers-restored=\"2\">2 IDENTIFIERS PROTECTED \u00b7 RESTORED ON YOUR VIEW</span>",
+      "tooltip_text": "NewThis is your Trust Center. We've recorded what Shield touched on your first upload \u2014 take a look.",
+      "tooltip_has_redacted_explicit": false,
+      "tooltip_has_restored_explicit": false,
+      "voice_lint_hits": []
+    }
+  },
+  {
+    "viewport": "820",
+    "zz1": {
+      "badge_text": "2 IDENTIFIERS PROTECTED \u00b7 RESTORED ON YOUR VIEW",
+      "badge_text_contains_protected": true,
+      "badge_text_contains_restored": true,
+      "data_redacted_attr": "2",
+      "data_restored_attr": "2",
+      "outerHTML": "<span tabindex=\"0\" class=\"font-mono text-[10px] uppercase tracking-[0.14em] px-[6px] py-[1px] rounded-sm bg-[rgba(122,46,46,0.06)] text-[var(--oxblood)] cursor-default\" data-testid=\"chat-msg-synisense-b896d706-b940-4f68-b270-fce305371c3a\" data-identifiers-redacted=\"2\" data-identifiers-restored=\"2\">2 IDENTIFIERS PROTECTED \u00b7 RESTORED ON YOUR VIEW</span>",
+      "tooltip_text": "NewThis is your Trust Center. We've recorded what Shield touched on your first upload \u2014 take a look.",
+      "tooltip_has_redacted_explicit": false,
+      "tooltip_has_restored_explicit": false,
+      "voice_lint_hits": []
+    }
+  }
+]

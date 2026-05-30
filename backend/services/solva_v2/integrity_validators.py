@@ -963,3 +963,92 @@ __all__ = [
     "cost_asymmetry_present",
     "cost_asymmetry_evidence_grounded",
 ]
+
+
+
+# ─────────────────────────────────────────────────────────────────
+# Phase ZZ.2 (2026-02 fork-resume v2) — conversational validator
+# ─────────────────────────────────────────────────────────────────
+#
+# `validate_conversational_response(text, attached_docs)` mirrors the
+# structured-payload validators above but accepts a free-form chat
+# reply. Three checks:
+#
+#   • Numeric-claim grounding: every number in the reply must be
+#     followed by EITHER a citation marker OR the refusal token
+#     "I don't have a source for this". Numbers that are clearly
+#     placeholders (e.g. "step 1", "year 2024", phone-number-shaped)
+#     are ignored.
+#   • Confidence-named: if the reply contains a directional claim
+#     verb ("will", "won't", "should", "the trend is"), it should
+#     also contain a confidence range word ("high", "medium",
+#     "low", "uncertain"). Warning only — not blocking.
+#   • Bias-flag pattern: if the model emitted a `[bias · target]`
+#     tag, capture it for the frontend chip renderer.
+#
+# Output: `ConversationalValidationResult` — a lightweight, post-
+# completion structure. Violations are non-blocking by default; the
+# Tier 3 caller (document-artefact path) escalates to blocking.
+
+import re as _zz_re
+
+
+@dataclass
+class ConversationalValidationResult:
+    ok: bool
+    numeric_claims_total: int = 0
+    numeric_claims_unsourced: int = 0
+    confidence_named: bool = False
+    bias_flags: List[str] = field(default_factory=list)  # ["anchoring · Q4 number", ...]
+    notes: List[str] = field(default_factory=list)
+
+
+_NUMBER_RE = _zz_re.compile(r"\b\d+(?:[\.,]\d+)?\s*(?:%|bps|x|m|bn|k)?\b", _zz_re.IGNORECASE)
+_PLACEHOLDER_HINTS = ("step ", "year ", "version ", "v.")
+_CITATION_HINTS = ("source:", "according to", "per the", "in the document",
+                   "from the attached", "(see ", "[doc:", "[source:")
+_REFUSAL_TOKEN = "i don't have a source for this"
+_CONFIDENCE_WORDS = ("high confidence", "medium confidence", "low confidence",
+                     "uncertain", "high", "medium", "low")
+_DIRECTIONAL_VERBS = ("will ", "won't ", "should ", "the trend is", "expect")
+_BIAS_TAG_RE = _zz_re.compile(r"\[([a-z][a-z\- ]*) · ([^\]]+)\]")
+
+
+def validate_conversational_response(text: str, attached_docs: List[Dict[str, Any]] | None = None) -> ConversationalValidationResult:
+    """Post-completion check on a chat reply. Always returns a
+    result; callers decide whether to flag inline or block."""
+    out = ConversationalValidationResult(ok=True)
+    if not text:
+        return out
+    lc = text.lower()
+    # Numeric grounding
+    has_refusal = _REFUSAL_TOKEN in lc
+    has_citation_marker = any(h in lc for h in _CITATION_HINTS)
+    numbers = [m for m in _NUMBER_RE.finditer(text)]
+    # Filter out obvious placeholders by looking at preceding ~6 chars
+    real_numbers = []
+    for m in numbers:
+        head = text[max(0, m.start() - 12): m.start()].lower()
+        if any(p in head for p in _PLACEHOLDER_HINTS):
+            continue
+        real_numbers.append(m)
+    out.numeric_claims_total = len(real_numbers)
+    if real_numbers and not (has_refusal or has_citation_marker or attached_docs):
+        out.numeric_claims_unsourced = len(real_numbers)
+        out.notes.append("numeric_claim_without_source")
+        out.ok = False
+    # Confidence named
+    if any(v in lc for v in _DIRECTIONAL_VERBS):
+        out.confidence_named = any(c in lc for c in _CONFIDENCE_WORDS)
+        if not out.confidence_named:
+            out.notes.append("directional_claim_without_confidence_range")
+    # Bias flags
+    for m in _BIAS_TAG_RE.finditer(text):
+        out.bias_flags.append(f"{m.group(1)} · {m.group(2)}")
+    return out
+
+
+__all__.extend([
+    "ConversationalValidationResult",
+    "validate_conversational_response",
+])

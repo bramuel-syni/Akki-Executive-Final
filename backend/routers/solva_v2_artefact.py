@@ -353,3 +353,29 @@ async def export_v2_pptx(
             "X-Solva-V2-Render-Ms": str(render_ms),
         },
     )
+
+
+
+# Z2.8 (2026-02) — chair-notes endpoint. Same strings the PPTX
+# exporter writes into slide notes; consumed by <ChairNotesStrip>
+# when the user toggles `Notes` on the Solva v2 topbar.
+from services.solva_v2.chair_notes import chair_notes_dict  # noqa: E402
+
+
+@router.get("/sessions/{sid}/v2/chair_notes")
+async def get_v2_chair_notes(
+    sid: str,
+    account: Dict[str, Any] = Depends(get_current_account),
+):
+    if not solva_v2_enabled_for(account):
+        raise HTTPException(status_code=404, detail="Solva v2 not enabled")
+    rec = await db.solva_v2_sessions.find_one(
+        {"id": sid, "account_id": account["id"]}, {"_id": 0},
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    cid = rec.get("context_id")
+    ctx = (await db.contexts.find_one({"id": cid}, {"_id": 0, "name": 1})) if cid else None
+    payload = build_payload(rec, context_name=(ctx or {}).get("name") or "Context")
+    return {"notes": chair_notes_dict(payload)}
+

@@ -12,7 +12,7 @@
  * `print:hidden` keeps the toolbar out of the printed paper artefact.
  */
 import React, { useState } from "react";
-import { Download, Loader2 } from "lucide-react";
+import { Download, Loader2, FileText } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "../../../lib/api";
@@ -25,7 +25,7 @@ function _filenameFromContentDisposition(headerValue) {
 }
 
 
-export default function SolvaPptxToolbar({ sessionId, isComplete }) {
+export default function SolvaPptxToolbar({ sessionId, isComplete, notesOn, onToggleNotes }) {
   const [downloading, setDownloading] = useState(false);
 
   const onDownload = async () => {
@@ -67,11 +67,15 @@ export default function SolvaPptxToolbar({ sessionId, isComplete }) {
   };
 
   return (
-    <div
-      className="solva-v2-pptx-toolbar print:hidden flex justify-end mb-3"
-      data-testid="solva-v2-pptx-toolbar"
-      data-solva-v2-pptx-toolbar="true"
-    >
+    <div className="solva-v2-pptx-toolbar print:hidden flex justify-end items-center gap-2 mb-3" data-testid="solva-v2-pptx-toolbar" data-solva-v2-pptx-toolbar="true">
+      {/* Z2.8 — Notes toggle; parent renders <ChairNotesStrip> when ON. */}
+      <button type="button" onClick={onToggleNotes}
+        aria-pressed={notesOn ? "true" : "false"}
+        aria-label={notesOn ? "Hide chair notes" : "Show chair notes"}
+        title={notesOn ? "Hide chair notes" : "Show chair notes"}
+        data-testid="solva-v2-notes-toggle" data-solva-v2-notes-on={notesOn ? "true" : "false"}
+        className={`inline-flex items-center gap-1.5 rounded-sm border px-3 py-1.5 font-mono text-[10.5px] uppercase tracking-[0.14em] transition-colors ${notesOn ? "border-ned-purple/30 bg-ned-purple/10 text-[var(--ned-purple)]" : "border-[var(--rule)] text-[var(--muted)] hover:border-ned-purple/30 hover:text-[var(--ned-purple)]"}`}
+      ><FileText className="w-3 h-3" />Notes</button>
       <button
         type="button"
         onClick={onDownload}

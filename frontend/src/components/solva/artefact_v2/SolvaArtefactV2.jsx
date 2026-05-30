@@ -51,6 +51,7 @@ import MethodologicalHonestySlide from "./slides/MethodologicalHonestySlide";
 // topbar's icon stub. Mounted alongside the artefact root so close-
 // click + ESC interactions live alongside the deck.
 import SessionLogPanel from "./SessionLogPanel";
+import ChairNotesStrip from "./ChairNotesStrip";
 // PPTX export (queue position 4, 2026-05-29) — toolbar pinned above
 // the first slide; `print:hidden` keeps it out of the paper artefact.
 import SolvaPptxToolbar from "./SolvaPptxToolbar";
@@ -305,6 +306,8 @@ export default function SolvaArtefactV2({ sessionId }) {
   // Slice 7 (2026-05-29) — session-log side-panel open state. Hooked
   // up to the topbar Session-Log icon stub (was previously dead).
   const [logPanelOpen, setLogPanelOpen] = useState(false);
+  // Z2.8 (2026-02) — chair-notes on-screen toggle. Off by default.
+  const [notesOn, setNotesOn] = useState(false);
 
   // Slice 3b — subscribe to the live reasoning stream. Hook must run
   // unconditionally before any early-return branches so React's rules-
@@ -457,8 +460,8 @@ export default function SolvaArtefactV2({ sessionId }) {
           flight — the binary mirrors whatever's on screen, so we
           only allow export after the run is complete. */}
       <SolvaPptxToolbar
-        sessionId={sessionId}
-        isComplete={!!stream.isComplete}
+        sessionId={sessionId} isComplete={!!stream.isComplete}
+        notesOn={notesOn} onToggleNotes={() => setNotesOn((v) => !v)}
       />
       {slides.map((s, idx) => {
         // Compute per-slide state attribute from the stream's
@@ -479,16 +482,19 @@ export default function SolvaArtefactV2({ sessionId }) {
         const readyAt = (
           s.isSectionDivider ? null : (stream.slideReadyAtMap?.[s.kind] || null)
         );
-        return s.render({
-          slideNumber: idx + 1,
-          totalSlides: total,
-          number: idx + 1,
-          total,
-          contextName,
-          slideState,
-          readyAt,
+        const rendered = s.render({
+          slideNumber: idx + 1, totalSlides: total,
+          number: idx + 1, total, contextName, slideState, readyAt,
           key: `${s.kind}-${idx}`,
         });
+        // Z2.8 — chair-notes strip beneath every real slide.
+        if (s.isSectionDivider) return rendered;
+        return (
+          <React.Fragment key={`frag-${s.kind}-${idx}`}>
+            {rendered}
+            <ChairNotesStrip sessionId={sessionId} slideKind={s.kind} visible={notesOn} />
+          </React.Fragment>
+        );
       })}
     </article>
     {/* Slice 7 session log side-panel — currently the topbar's `Log` icon

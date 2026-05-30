@@ -1,0 +1,50 @@
+[
+  {
+    "viewport": "1280",
+    "z3": {
+      "user_actions_opacity_pre_hover": "0",
+      "user_actions_opacity_post_hover": "1",
+      "edit_composer_value": "What is the FTSE 250 cohort exposure for Q3?",
+      "edit_composer_value_matches": true,
+      "edit_composer_focused": true,
+      "copy_clipboard_contents": "I don't have a source for this. Provide the quarterly statement and I'll cite it.",
+      "copy_clipboard_matches": true,
+      "regenerate_post_status": 409,
+      "regenerate_post_url": "https://akki-executive.preview.emergentagent.com/api/chats/557cc308-f06b-4513-86c8-530c1a187513/messages/stream",
+      "edit_btn_text": "EDIT",
+      "voice_lint_hits": []
+    }
+  },
+  {
+    "viewport": "1024",
+    "z3": {
+      "user_actions_opacity_pre_hover": "0",
+      "user_actions_opacity_post_hover": "1",
+      "edit_composer_value": "What is the FTSE 250 cohort exposure for Q3?",
+      "edit_composer_value_matches": true,
+      "edit_composer_focused": true,
+      "copy_clipboard_contents": "I don't have a source for this. Provide the quarterly statement and I'll cite it.",
+      "copy_clipboard_matches": true,
+      "regenerate_post_status": 409,
+      "regenerate_post_url": "https://akki-executive.preview.emergentagent.com/api/chats/557cc308-f06b-4513-86c8-530c1a187513/messages/stream",
+      "edit_btn_text": "EDIT",
+      "voice_lint_hits": []
+    }
+  },
+  {
+    "viewport": "820",
+    "z3": {
+      "user_actions_opacity_pre_hover": "0",
+      "user_actions_opacity_post_hover": "1",
+      "edit_composer_value": "What is the FTSE 250 cohort exposure for Q3?",
+      "edit_composer_value_matches": true,
+      "edit_composer_focused": true,
+      "copy_clipboard_contents": "I don't have a source for this. Provide the quarterly statement and I'll cite it.",
+      "copy_clipboard_matches": true,
+      "regenerate_post_status": 409,
+      "regenerate_post_url": "https://akki-executive.preview.emergentagent.com/api/chats/557cc308-f06b-4513-86c8-530c1a187513/messages/stream",
+      "edit_btn_text": "EDIT",
+      "voice_lint_hits": []
+    }
+  }
+]
