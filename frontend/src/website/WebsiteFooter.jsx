@@ -21,7 +21,7 @@ const READING = [
   ["Methodology",         "/methodology"],
   ["Exco360",             "/exco360"],
   ["Trust & Sovereignty", "/trust"],
-  ["Founding cohort",     "/cohort"],
+  ["Early access",        "/cohort"],
 ];
 const STUDIO = [
   ["Syni.ai", "https://syni.ai"],

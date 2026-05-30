@@ -73,10 +73,10 @@ async def test_m0c_post_application_happy_path(app):
             assert row["email"] == email.lower()
             assert row["status"] == "received"
             assert row["applicant_confirmation_body"].startswith(
-                "Thank you for registering your interest"
+                "Thank you for requesting access to Akki."
             )
-            assert "founding cohort" in row["applicant_confirmation_body"]
-            assert "Founding Cohort pricing is being finalised" in row["applicant_confirmation_body"]
+            assert "early access" in row["applicant_confirmation_body"]
+            assert "founding cohort" not in row["applicant_confirmation_body"].lower()
             # Idempotent within 24h → second POST returns same id.
             r2 = await c.post("/api/cohort/applications", json={
                 "name": "Hadley Wickham",

@@ -216,8 +216,14 @@ def test_m1a_copy_audiences_exco_title_recast():
 
 def test_m1a_copy_cohort_teaser_body_recast():
     s = _c("index.js")
+    # M.1a originally locked "committee-level operators to use it first"
+    # as the recast. Sprint M.5 (2026-02) replaced the entire teaser
+    # body with the early-access framing — the "senior" ban remains the
+    # core invariant; the recast phrasing is superseded.
     assert "senior leadership-team members" not in s
-    assert "committee-level operators to use it first" in s
+    assert "senior" not in s.lower().split() or "senior" not in s.lower()
+    # The M.5 body lives here verbatim.
+    assert 'body: "Akki is in early access. Request a place below."' in s
 
 
 def test_m1a_copy_why_block_recast():
@@ -270,8 +276,14 @@ def test_m1a_copy_about_recast():
 
 def test_m1a_copy_contact_recast():
     s = _c("index.js")
+    # M.1a locked the "applying as an executive..." recast; Sprint M.5
+    # (2026-02) rewrote the path body to use "requesting access" instead
+    # of "applying". The "senior" ban — the M.1a invariant — still holds.
     assert "a senior leadership-team member" not in s
-    assert "applying as an executive, an NED, or a committee-level operator" in s
+    assert (
+        "requesting access as an executive, an NED, or a committee-level operator"
+        in s
+    )
 
 
 def test_m1a_legal_privacy_recast():

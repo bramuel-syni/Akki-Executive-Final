@@ -80,8 +80,9 @@ def _notify_founder(app_row: dict) -> None:
         mail = Mail(
             from_email=Email(from_email),
             to_emails=[To(addr) for addr in recipients],
-            subject=f"New cohort application — {app_row['name']} ({app_row['organisation']})",
+            subject=f"Akki early access — new request from {app_row['organisation']}",
             plain_text_content=Content("text/plain",
+                f"New Akki early-access request.\n\n"
                 f"name: {app_row['name']}\n"
                 f"email: {app_row['email']}\n"
                 f"organisation: {app_row['organisation']}\n"
@@ -123,15 +124,14 @@ async def submit_application(
         "referral_source": (body.referral_source or "").strip() or None,
         "status": "received",
         "created_at": _now().isoformat(),
-        # Held 2026-02 dispatch 11 — pricing copy is removed pending
-        # product-packaging decision. The applicant confirmation
-        # message acknowledges receipt with no commitment language.
+        # Held 2026-02 dispatch 11; rewritten Sprint M.5 (2026-02) —
+        # "early access" framing per user directive. No commitment
+        # language; ≤80 words, voice-clean.
         "applicant_confirmation_body": (
-            "Thank you for registering your interest in the Akki "
-            "founding cohort. We have your application on file and "
-            "read every one personally. Founding Cohort pricing is "
-            "being finalised; we will share the offer with members "
-            "before launch."
+            "Thank you for requesting access to Akki. We have your "
+            "request on file and read every one personally. Akki is "
+            "in early access; we will share the offer with you before "
+            "launch."
         ),
     }
     await db.cohort_applications.insert_one(dict(row))

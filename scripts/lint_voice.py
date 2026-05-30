@@ -34,6 +34,18 @@ _RE = re.compile(
     re.IGNORECASE,
 )
 
+# Sprint M.5 (2026-02) — multi-word phrase bans introduced when the
+# user retired the "Founding Cohort" framing for plain "early access"
+# language. Phrases are matched whole, case-insensitive, word-boundary.
+BANNED_PHRASES = [
+    "founding cohort",
+    "join the cohort",
+]
+_PHRASE_RE = re.compile(
+    "(" + "|".join(r"\b" + re.escape(p) + r"\b" for p in BANNED_PHRASES) + ")",
+    re.IGNORECASE,
+)
+
 DEFAULT_TARGETS = [
     REPO / "frontend" / "src" / "pages" / "marketing",
     REPO / "frontend" / "src" / "components" / "marketing",
@@ -52,6 +64,8 @@ def _scan_file(path: Path) -> List[Tuple[int, str, str]]:
         return hits
     for i, line in enumerate(text.splitlines(), 1):
         for m in _RE.finditer(line):
+            hits.append((i, m.group(1), line.strip()[:140]))
+        for m in _PHRASE_RE.finditer(line):
             hits.append((i, m.group(1), line.strip()[:140]))
     return hits
 

@@ -1,6 +1,79 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Mega-Dispatch 2026-02 (fork-resume v3) — Sprint M.5 Founding Cohort → Early access language swap CLOSED ✅
+
+**Scope:** User retired the "Founding Cohort" framing as exclusivity inflation against the senior-peer voice register. Swap to standard "early access" plumbing language across the entire public website + backend cohort_applications router + voice-lint phrase ban.
+
+**Path chosen:** Phase U.2 (Microsoft OAuth) was in flight but no Microsoft code had been written this session yet — only analysis. Paused U.2 and shipped the language swap first to avoid any rework. U.2 resumes after.
+
+**Closed:**
+- ✅ Sprint M.5 — Founding Cohort → Early access swap.
+
+**Surfaces touched (string changes):**
+- `frontend/src/website/copy/index.js` — HERO.tertiary CTA · COHORT_TEASER (kicker/headline/body/cta) · INVERTED_CTA kicker · COHORT (kicker/dek/body/holding) · PRICING (dek/footnote) · AUDIENCE_PAGES Executive + NED pricing_line · CONTACT path label + body.
+- `frontend/src/website/pages/Cohort.jsx` — WebsiteShell title + description · submit button label · success message.
+- `frontend/src/website/pages/Pricing.jsx` — primaryCta · table header · InvertedCtaSection (headline + ctaLabel).
+- `frontend/src/website/pages/ForExco.jsx` / `ForNeds.jsx` / `ForExecutives.jsx` — primaryCta.
+- `frontend/src/website/pages/Methodology.jsx` — prose recast.
+- `frontend/src/website/WebsiteFooter.jsx` — `Founding cohort` link label → `Early access`.
+- `frontend/src/App.js` — `/early-access` route now serves `<Navigate to="/cohort" replace />` alias. `EarlyAccess` lazy import retired (route was the only consumer).
+- `backend/routers/cohort_applications.py` — applicant confirmation body rewritten to early-access register; founder notify subject + body swapped to `"Akki early access — new request from <organisation>"`.
+
+**Voice-lint phrase ban infrastructure added:**
+- `scripts/lint_voice.py` gained `BANNED_PHRASES = ["founding cohort", "join the cohort"]` + a separate `_PHRASE_RE` (case-insensitive, word-boundary) scanned alongside the existing word-level regex. CI now fails on any PR that re-introduces either phrase.
+
+**Verbatim before/after — every string changed:**
+
+| Surface | Before | After |
+|---|---|---|
+| HERO secondary CTA label | `Join the cohort` | `Request access` |
+| COHORT_TEASER.headline | `We are admitting a small founding cohort first.` | `Akki is in early access.` |
+| COHORT_TEASER.body | `Akki is finished enough to use, and not finished enough to ship. We are admitting roughly twenty executives, NEDs and committee-level operators to use it first. Founding Cohort applications are open. Pricing will be shared with members before launch.` | `Akki is in early access. Request a place below.` |
+| COHORT_TEASER.cta | `Read about the cohort` | `Request access` |
+| INVERTED_CTA.kicker | `THE FOUNDING COHORT` | `EARLY ACCESS` |
+| COHORT.kicker | `FOUNDING COHORT` | `EARLY ACCESS` |
+| COHORT.dek | `…a small founding cohort to use it first.` | `…a small early-access group to use it first.` |
+| COHORT.body | `We read every application…` | `We read every request…` |
+| COHORT.holding | `Founding Cohort pricing is being finalised. Register your interest below — we will share the offer with members before launch.` | `Akki is in early access. Request a place. We will share the offer with you before launch.` |
+| PRICING.dek | `Founding cohort pricing is locked for two years.` | `Early-access pricing is locked for two years.` |
+| PRICING.footnote | `Founding cohort pricing is admission-only.` | `Early-access pricing is admission-only.` |
+| AUDIENCE Executive pricing_line | `Founding cohort price: $116 / month` | `Early-access price: $116 / month` |
+| AUDIENCE NED pricing_line | `Founding cohort price: $84 / month` | `Early-access price: $84 / month` |
+| CONTACT path label | `For the founding cohort` | `For early access` |
+| CONTACT path body | `…applying as an executive…` | `…requesting access as an executive…` |
+| /cohort WebsiteShell title | `Founding cohort — Akki` | `Early access — Akki` |
+| /cohort form submit | `Register interest` | `Request access` |
+| /cohort success | `…We will share the offer with members before launch.` | `…We will share the offer with you before launch.` |
+| Pricing primaryCta | `Join the founding cohort` | `Request access` |
+| Pricing table header | `Founding (2 yrs)` | `Early access (2 yrs)` |
+| Pricing inverted-CTA headline | `Apply for the founding cohort.` | `Request early access.` |
+| ForExco / ForNeds / ForExecutives primaryCta | `Join the founding cohort` | `Request access` |
+| Methodology prose | `…we are working through with the founding cohort.` | `…we are working through with the early-access group.` |
+| Footer link label | `Founding cohort` | `Early access` |
+| Backend founder notify subject | `New cohort application — <name> (<organisation>)` | `Akki early access — new request from <organisation>` |
+| Backend founder notify body | starts `name: …` | starts `New Akki early-access request.\\n\\nname: …` |
+| Backend applicant_confirmation_body | `Thank you for registering your interest in the Akki founding cohort. …` (5 lines) | `Thank you for requesting access to Akki. We have your request on file and read every one personally. Akki is in early access; we will share the offer with you before launch.` |
+
+**Discipline gates green:**
+- v1 byte-identical guard 4/4 ✓
+- Voice-lint clean across all customer-copy surfaces ✓ (new phrase bans active)
+- JS lint clean on every touched file ✓
+
+**Tests:** new `test_phase_m5_early_access_swap.py` (24 tests · all surface lockdowns + alias route + lint phrase ban infra + regex behaviour). 4 existing tests updated for the new strings (`test_phase_m1_hero_rewrite`, `test_phase_m1x_cohort_teaser_alignment`, `test_phase_m2hold_cohort_hold`, `test_phase_m0c_cohort_applications`). 2 M.1a recast assertions updated since M.5 superseded the recast phrasings (the "senior" ban — M.1a's core invariant — still holds).
+
+Sprint M cumulative: **153/153 GREEN** across M.0a / M.0b / M.0c / M.1 / M.1a / M.1b / M.1c / M.1.x / M.2-hold / M.2-prep / M.3 / M.4 / **M.5** / M_workstudio_noise (2 skipped — pre-existing Phase Z-supersede).
+
+**Live multi-viewport raw DOM trace:** Playwright headless at 1280×900 / 1024×768 / 820×1100 / 414×896 on `/` and `/cohort` → 8/8 probes verified new strings render verbatim AND old strings absent. `/early-access` alias trace: navigates → final URL = `/cohort`, new holding line + Request access CTA both visible. `/cohort` form submit live e2e: created `Trace Co` request, success message `"Thank you. We have your request on file. We will share the offer with you before launch."` (verbatim).
+
+**Phase U.2 status:** paused. No Microsoft OAuth code written this session prior to the swap; ready to resume next dispatch. Backend Microsoft endpoints already exist from a prior fork (state JWT, JWKS, multi-tenant `/common`); remaining work is the frontend `OAuthButtons.onMicrosoft` redirect wiring + Phase U.2-specific lockdown tests + Playwright trace.
+
+LOC count: ~190 added/changed across 15 files (well under the 220 cap).
+
+
+
+
+
 ### Mega-Dispatch 2026-02 (fork-resume v3) — ZZ.2.x housekeeping + ZZ.3 + ZZ.4 + M.0b + M.0c CLOSED ✅ (M.0a HALTED · Sprint M.1+ HALTED)
 
 **Scope:** Promoted ZZ.1/ZZ.2/ZZ.2.x ledger rows; shipped ZZ.3 (Trust Center > Reasoning tab) and ZZ.4 (latency aggregate tile); shipped non-JSX Sprint M prep slices M.0b (voice lint + `senior` ban) and M.0c (cohort applications scaffold).

@@ -16,7 +16,7 @@ export default function ForExco() {
     >
       <HeroWithLift
         kicker={p.kicker} headline={p.headline} lift={p.lift} dek={p.dek}
-        primaryCta={{ label: "Join the founding cohort", href: "/cohort" }}
+        primaryCta={{ label: "Request access", href: "/cohort" }}
         secondaryCta={{ label: "How the workspace works", href: "/what-akki-does" }}
         testId="for-exco"
       />

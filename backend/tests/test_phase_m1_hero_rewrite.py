@@ -56,7 +56,9 @@ def test_m1_hero_primary_cta_locked():
 
 def test_m1_hero_secondary_cta_locked():
     src = _r(COPY_JS)
-    assert 'tertiary:   { label: "Join the cohort", href: "/cohort"   }' in src
+    # Sprint M.5 (2026-02) — "Join the cohort" retired in favour of
+    # "Request access" per the early-access language swap.
+    assert 'tertiary:   { label: "Request access", href: "/cohort"   }' in src
 
 
 # ── Previously-deployed strings absent ─────────────────────────────────

@@ -29,8 +29,8 @@ ROUTER_PY = REPO / "backend" / "routers" / "cohort_applications.py"
 DOC_MD = REPO / "docs" / "cohort_pricing.md"
 
 HOLDING_LINE = (
-    "Founding Cohort pricing is being finalised. Register your interest "
-    "below — we will share the offer with members before launch."
+    "Akki is in early access. Request a place. We will share the offer "
+    "with you before launch."
 )
 
 
@@ -125,13 +125,14 @@ def test_m2hold_submit_targets_cohort_applications_endpoint():
 
 def test_m2hold_applicant_confirmation_body_no_pricing():
     s = _r(ROUTER_PY)
-    # New body is present — the literal source spans multiple Python
-    # string-concatenation lines, so we assert each contiguous fragment.
-    assert "Thank you for registering your interest in the Akki " in s
-    assert "Founding Cohort pricing is " in s
-    assert "being finalised" in s
+    # Sprint M.5 (2026-02) — applicant confirmation body rewritten
+    # to the early-access register. New body is present.
+    assert "Thank you for requesting access to Akki." in s
+    assert "early access" in s
     # Old placeholder is gone.
     assert "<!-- COPY TBD M.2 -->" not in s
+    # Banned phrases gone.
+    assert "founding cohort" not in s.lower()
     # No commitment language patterns.
     forbidden = ["guaranteed", "locked for two years", "$/seat", "discount"]
     for needle in forbidden:
@@ -201,10 +202,10 @@ async def test_m2hold_form_submission_still_works(app, monkeypatch):
                 {"id": body["id"]}, {"_id": 0},
             )
             assert row["applicant_confirmation_body"].startswith(
-                "Thank you for registering your interest"
+                "Thank you for requesting access to Akki."
             )
-            assert "founding cohort" in row["applicant_confirmation_body"]
-            assert "<!-- COPY TBD M.2 -->" not in row["applicant_confirmation_body"]
+            assert "early access" in row["applicant_confirmation_body"]
+            assert "founding cohort" not in row["applicant_confirmation_body"].lower()
     finally:
         for sid in seeded:
             await db.cohort_applications.delete_one({"id": sid})

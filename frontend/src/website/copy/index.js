@@ -23,7 +23,7 @@ export const HERO = {
   lift: "refuses",
   dek: "Board papers. Briefings. Reports. Every claim cited. Every bias is named. Decisions stay yours. Your data never leaves your account.",
   primaryCta: { label: "See the work",   href: "#evidence" },
-  tertiary:   { label: "Join the cohort", href: "/cohort"   },
+  tertiary:   { label: "Request access", href: "/cohort"   },
 };
 
 export const EVIDENCE = [
@@ -134,13 +134,13 @@ export const AUDIENCES = [
 
 export const COHORT_TEASER = {
   kicker: "BEFORE AKKI SHIPS",
-  headline: "We are admitting a small founding cohort first.",
-  body: "Akki is finished enough to use, and not finished enough to ship. We are admitting roughly twenty executives, NEDs and committee-level operators to use it first. Founding Cohort applications are open. Pricing will be shared with members before launch.",
-  cta: { label: "Read about the cohort", href: "/cohort" },
+  headline: "Akki is in early access.",
+  body: "Akki is in early access. Request a place below.",
+  cta: { label: "Request access", href: "/cohort" },
 };
 
 export const INVERTED_CTA = {
-  kicker: "THE FOUNDING COHORT",
+  kicker: "EARLY ACCESS",
   headline: "See your own board pack analysed in sixty seconds.",
   body: "The sandbox lets you paste a paragraph from your last board paper, or generate a synthetic one for your sector, and watch Solva work. Nothing is retained. No account needed.",
   cta: { label: "Begin sandbox", href: "/sandbox" },
@@ -302,7 +302,7 @@ export const AUDIENCE_PAGES = {
     headline: "For the operating executive running the cycle.",
     lift: "running",
     dek: "CEO, CFO, COO, CRO. You produce the next pack. You answer follow-ups in the week after. Akki holds the work between meetings.",
-    pricing_line: "Executive — $179 / month. Founding cohort price: $116 / month, locked for two years.",
+    pricing_line: "Executive — $179 / month. Early-access price: $116 / month, locked for two years.",
     moments: [
       { title: "The week before the board.",         body: "Akki composes the pack from team contributions; Work Studio renders it deterministically; the validator flags any inconsistency before you sign off." },
       { title: "The hour before the board.",          body: "Solva runs frame audits on the items you expect to be challenged. You walk in with the question worth asking, not the question you wrote down." },
@@ -316,7 +316,7 @@ export const AUDIENCE_PAGES = {
     headline: "For the non-executive director sitting on multiple boards.",
     lift: "multiple",
     dek: "Independent board roles. You read packs over a weekend. You walk in with three questions that move the room.",
-    pricing_line: "NED — $129 / month. Founding cohort price: $84 / month, locked for two years.",
+    pricing_line: "NED — $129 / month. Early-access price: $84 / month, locked for two years.",
     moments: [
       { title: "Reading the pack on Sunday morning.", body: "The Document Journal threads each pack against the previous cycle's open questions; what was promised, what changed, what is missing." },
       { title: "Walking in on Tuesday.",              body: "Solva's pre-board mode produces a one-page brief and three standout questions — cited, weighted, and grounded in the underlying paragraphs." },
@@ -393,12 +393,12 @@ export const TRUST = {
 // capture. The holding-state line above the form names the status.
 // ============================================================
 export const COHORT = {
-  kicker: "FOUNDING COHORT",
+  kicker: "EARLY ACCESS",
   headline: "Used first by roughly twenty executives.",
   lift: "first",
-  dek: "Akki is finished enough to use, and not finished enough to ship. We are admitting a small founding cohort to use it first.",
-  body: "We read every application and reply personally. We are not running a waitlist; we are running an admission.",
-  holding: "Founding Cohort pricing is being finalised. Register your interest below — we will share the offer with members before launch.",
+  dek: "Akki is finished enough to use, and not finished enough to ship. We are admitting a small early-access group to use it first.",
+  body: "We read every request and reply personally. We are not running a waitlist; we are running an admission.",
+  holding: "Akki is in early access. Request a place. We will share the offer with you before launch.",
 };
 
 // ============================================================
@@ -408,7 +408,7 @@ export const PRICING = {
   kicker: "PRICING",
   headline: "Three tiers. Plus organisation.",
   lift: "tiers",
-  dek: "Founding cohort pricing is locked for two years. Standard pricing applies thereafter.",
+  dek: "Early-access pricing is locked for two years. Standard pricing applies thereafter.",
   table: [
     { tier: "Executive",                  standard: "$179 / month", founding: "$116 / month" },
     { tier: "NED",                        standard: "$129 / month", founding: "$84 / month" },
@@ -416,7 +416,7 @@ export const PRICING = {
     { tier: "Reportee seat (Org plans)",  standard: "+$49 / month", founding: "—" },
     { tier: "Organisation",               standard: "$150–$300 / seat", founding: "—" },
   ],
-  footnote: "Founding cohort pricing is admission-only. We are not running a discount code or a waitlist.",
+  footnote: "Early-access pricing is admission-only. We are not running a discount code or a waitlist.",
 };
 
 // ============================================================
@@ -449,8 +449,8 @@ export const CONTACT = {
   dek: "Pick the one that matches what you are doing. We reply personally.",
   paths: [
     {
-      label: "For the founding cohort",
-      body: "Direct to the founder. Use this if you are applying as an executive, an NED, or a committee-level operator.",
+      label: "For early access",
+      body: "Direct to the founder. Use this if you are requesting access as an executive, an NED, or a committee-level operator.",
       cta_label: "bram@syni.ai",
       cta_href: "mailto:bram@syni.ai",
     },

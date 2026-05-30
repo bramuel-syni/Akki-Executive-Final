@@ -109,7 +109,7 @@ export default function MethodologyPage() {
           that respects director privacy — the metadata layer is helpful but partial.
           We do not yet have a fully automated master-key rotation for the Privacy
           Wall envelope; today it is a planned-outage operation. These are the things
-          we are working through with the founding cohort.
+          we are working through with the early-access group.
         </p>
 
         <p style={{ marginTop: 56, fontStyle: "italic", color: "var(--graphite)", fontSize: 14 }}>

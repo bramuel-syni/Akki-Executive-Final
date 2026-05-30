@@ -23,13 +23,10 @@ def test_m1x_cohort_teaser_holding_body_verbatim():
     assert idx > 0
     end = s.find("};", idx)
     block = s[idx:end]
-    # New body present verbatim.
-    expected_tail = (
-        "Founding Cohort applications are open. "
-        "Pricing will be shared with members before launch."
-    )
+    # Sprint M.5 (2026-02) — new early-access body locked verbatim.
+    expected_tail = "Akki is in early access. Request a place below."
     assert expected_tail in block, (
-        f"Expected holding-state tail in COHORT_TEASER.body; block: {block!r}"
+        f"Expected early-access body in COHORT_TEASER.body; block: {block!r}"
     )
 
 
@@ -64,7 +61,9 @@ def test_m1x_cohort_teaser_cta_points_at_cohort_page():
     idx = s.find("export const COHORT_TEASER = {")
     end = s.find("};", idx)
     block = s[idx:end]
-    assert 'cta: { label: "Read about the cohort", href: "/cohort" }' in block
+    # Sprint M.5 (2026-02) — CTA label switched to "Request access"
+    # in line with the early-access framing. Route preserved (/cohort).
+    assert 'cta: { label: "Request access", href: "/cohort" }' in block
 
 
 # ── Voice-lint full-surface guard (CI gate enforces same on PR) ───────

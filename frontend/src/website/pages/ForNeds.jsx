@@ -17,7 +17,7 @@ export default function ForNeds() {
     >
       <HeroWithLift
         kicker={p.kicker} headline={p.headline} lift={p.lift} dek={p.dek}
-        primaryCta={{ label: "Join the founding cohort", href: "/cohort" }}
+        primaryCta={{ label: "Request access", href: "/cohort" }}
         secondaryCta={{ label: "See pricing", href: "/pricing" }}
         image={heroImg} imageAlt={p.image_alt}
         testId="for-neds"

@@ -33,7 +33,7 @@ const Features = lazy(() => import("@/pages/marketing/Features"));
 const Security = lazy(() => import("@/pages/marketing/Security"));
 const Plans = lazy(() => import("@/pages/marketing/Plans"));
 const EnterpriseMarketing = lazy(() => import("@/pages/marketing/Enterprise"));
-const EarlyAccess = lazy(() => import("@/pages/marketing/EarlyAccess"));
+// EarlyAccess legacy marketing page — /early-access route now aliases to /cohort (Sprint M.5)
 const Blog = lazy(() => import("@/pages/marketing/Blog"));
 const BlogPost = lazy(() => import("@/pages/marketing/BlogPost"));
 const BlogAdmin = lazy(() => import("@/pages/marketing/BlogAdmin"));
@@ -322,7 +322,7 @@ function App() {
           <Route path="/security" element={<Security />} />
           <Route path="/plans" element={<Plans />} />
           <Route path="/enterprise" element={<EnterpriseMarketing />} />
-          <Route path="/early-access" element={<EarlyAccess />} />
+          <Route path="/early-access" element={<Navigate to="/cohort" replace />} />
           <Route path="/blog" element={<Blog />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
           <Route path="/respond/:token" element={<RespondToChecklist />} />

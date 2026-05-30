@@ -62,8 +62,8 @@ export default function Cohort() {
 
   return (
     <WebsiteShell
-      title="Founding cohort — Akki"
-      description="A small admitted cohort using Akki first. Register your interest while founding cohort pricing is being finalised."
+      title="Early access — Akki"
+      description="Akki is in early access. Request a place to use it before launch."
       pathname="/cohort"
     >
       <HeroWithLift
@@ -144,7 +144,7 @@ export default function Cohort() {
               className="btn-primary btn-hero"
               style={{ width: "fit-content" }}
             >
-              {status === "submitting" ? "Submitting…" : "Register interest"}
+              {status === "submitting" ? "Submitting…" : "Request access"}
             </button>
             {error && (
               <p
@@ -168,8 +168,8 @@ export default function Cohort() {
               color: "var(--ink)",
             }}
           >
-            Thank you. We have your interest on file. We will share the
-            offer with members before launch.
+            Thank you. We have your request on file. We will share the
+            offer with you before launch.
           </p>
         )}
       </section>
