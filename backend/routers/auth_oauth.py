@@ -265,10 +265,32 @@ async def _fetch_emergent_session_data(session_id: str) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Microsoft — 503 mock until creds arrive
+# Microsoft Identity Platform — Phase U.2 (2026-02 dispatch 20)
+#
+# Direct OAuth flow (Microsoft is not behind Emergent Managed Auth).
+# Mirrors the URL-building, state-validation, and code-exchange pattern
+# from `oauth_google.py` (Calendar OAuth), adapted to the v2.0 multi-
+# tenant Microsoft Identity Platform.
+#
+# Endpoints:
+#   GET /api/auth/oauth/microsoft/start    → {authorize_url}
+#   GET /api/auth/oauth/microsoft/callback → 302 → /app/
+#
+# Scopes: openid profile email User.Read offline_access
+# Multi-tenant: uses /common/oauth2/v2.0/{authorize,token}
+# Audit logs: microsoft_oauth_login_initiated | _success | _failure
+#   — log session/state/error codes; NEVER log secret or raw tokens.
 # ─────────────────────────────────────────────────────────────────────
 MICROSOFT_CLIENT_ID_VAR = "MICROSOFT_OAUTH_CLIENT_ID"
 MICROSOFT_CLIENT_SECRET_VAR = "MICROSOFT_OAUTH_CLIENT_SECRET"
+MICROSOFT_REDIRECT_URI_VAR = "MICROSOFT_OAUTH_REDIRECT_URI"
+MICROSOFT_POST_LOGIN_REDIRECT_VAR = "MICROSOFT_OAUTH_POST_LOGIN_REDIRECT"
+
+_MS_AUTHORIZE_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+_MS_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+_MS_JWKS_URL = "https://login.microsoftonline.com/common/discovery/v2.0/keys"
+_MS_SCOPES = ["openid", "profile", "email", "User.Read", "offline_access"]
+_MS_STATE_TTL_SECONDS = 10 * 60
 
 
 def _microsoft_configured() -> bool:
@@ -277,42 +299,280 @@ def _microsoft_configured() -> bool:
     )
 
 
-@router.get("/microsoft/start")
-async def oauth_microsoft_start() -> Dict[str, Any]:
-    """Locked 503 mock — surfaces a clear actionable message to the
-    frontend until Microsoft Graph credentials arrive in backend/.env.
+def _ms_client_id() -> str:
+    v = (os.environ.get(MICROSOFT_CLIENT_ID_VAR) or "").strip()
+    if not v:
+        raise HTTPException(status_code=503, detail={
+            "error": "microsoft_oauth_not_configured",
+            "needs": "user-provided Application ID + Client Secret",
+            "env_vars_required": [MICROSOFT_CLIENT_ID_VAR, MICROSOFT_CLIENT_SECRET_VAR],
+        })
+    return v
 
-    The exact response payload is institutionally locked (Phase U
-    dispatch spec): `{"error": "microsoft_oauth_not_configured",
-    "needs": "user-provided Application ID + Client Secret"}`. Future
-    Phase U.2 implementation will replace this body with a real
-    Microsoft Identity authorize URL.
-    """
+
+def _ms_client_secret() -> str:
+    v = (os.environ.get(MICROSOFT_CLIENT_SECRET_VAR) or "").strip()
+    if not v:
+        raise HTTPException(status_code=503, detail={
+            "error": "microsoft_oauth_not_configured",
+        })
+    return v
+
+
+def _ms_redirect_uri() -> str:
+    v = (os.environ.get(MICROSOFT_REDIRECT_URI_VAR) or "").strip()
+    if not v:
+        raise HTTPException(status_code=503, detail={
+            "error": "microsoft_oauth_redirect_uri_missing",
+            "needs": "MICROSOFT_OAUTH_REDIRECT_URI in backend/.env",
+        })
+    return v
+
+
+def _ms_post_login_redirect() -> str:
+    return (os.environ.get(MICROSOFT_POST_LOGIN_REDIRECT_VAR) or "/app/").strip()
+
+
+def _ms_sign_state(payload: Dict[str, Any]) -> str:
+    """JWT-sign the OAuth state. Reuses the app-wide JWT_SECRET so the
+    same revocation story applies."""
+    import jwt
+    from core import JWT_SECRET
+    body = {**payload, "exp": int(_now().timestamp()) + _MS_STATE_TTL_SECONDS}
+    return jwt.encode(body, JWT_SECRET, algorithm="HS256")
+
+
+def _ms_verify_state(token: str) -> Dict[str, Any]:
+    import jwt
+    from core import JWT_SECRET
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail={
+            "error": "microsoft_oauth_state_invalid",
+            "reason": str(e)[:120],
+        }) from e
+
+
+def _ms_audit(action: str, **fields: Any) -> None:
+    """Log a Microsoft OAuth audit event. Caller MUST NOT pass the
+    secret or raw tokens — only stable IDs + error codes."""
+    sanitised = {k: v for k, v in fields.items() if k not in {
+        "secret", "client_secret", "access_token", "id_token", "refresh_token",
+    }}
+    log.info("microsoft_oauth_%s: %s", action, sanitised)
+
+
+@router.get("/microsoft/start")
+async def oauth_microsoft_start(request: Request) -> Dict[str, Any]:
+    """Stage-1: returns the Microsoft authorize URL. Frontend redirects
+    the browser there; Microsoft bounces back to /microsoft/callback."""
     if not _microsoft_configured():
         raise HTTPException(status_code=503, detail={
             "error": "microsoft_oauth_not_configured",
             "needs": "user-provided Application ID + Client Secret",
             "env_vars_required": [
-                MICROSOFT_CLIENT_ID_VAR,
-                MICROSOFT_CLIENT_SECRET_VAR,
+                MICROSOFT_CLIENT_ID_VAR, MICROSOFT_CLIENT_SECRET_VAR,
             ],
         })
-    # Future: real Microsoft Identity authorize URL.
-    raise HTTPException(status_code=501, detail={
-        "error": "microsoft_oauth_not_yet_implemented",
-        "message": "Microsoft credentials are present but Phase U.2 has not shipped.",
+    session_id = uuid.uuid4().hex
+    state = _ms_sign_state({"sid": session_id, "kind": "ms_signin"})
+    nonce = uuid.uuid4().hex
+    from urllib.parse import urlencode
+    qs = urlencode({
+        "client_id": _ms_client_id(),
+        "response_type": "code",
+        "redirect_uri": _ms_redirect_uri(),
+        "response_mode": "query",
+        "scope": " ".join(_MS_SCOPES),
+        "state": state,
+        "nonce": nonce,
+        "prompt": "select_account",
     })
+    authorize_url = f"{_MS_AUTHORIZE_URL}?{qs}"
+    _ms_audit("login_initiated", session_id=session_id, client_id=_ms_client_id())
+    return {
+        "authorize_url": authorize_url,
+        "provider": "microsoft",
+    }
+
+
+async def _ms_exchange_code(code: str) -> Dict[str, Any]:
+    """Exchange auth code for tokens at the Microsoft v2.0 token endpoint."""
+    async with httpx.AsyncClient(timeout=15) as c:
+        r = await c.post(_MS_TOKEN_URL, data={
+            "client_id": _ms_client_id(),
+            "client_secret": _ms_client_secret(),
+            "code": code,
+            "redirect_uri": _ms_redirect_uri(),
+            "grant_type": "authorization_code",
+            "scope": " ".join(_MS_SCOPES),
+        })
+    if r.status_code != 200:
+        body_preview = r.text[:200]
+        raise HTTPException(status_code=502, detail={
+            "error": "microsoft_token_exchange_failed",
+            "provider_status": r.status_code,
+            "provider_body_preview": body_preview,
+        })
+    return r.json()
+
+
+def _ms_decode_id_token(id_token: str) -> Dict[str, Any]:
+    """Validate the ID-token signature against Microsoft JWKS + decode claims.
+
+    Multi-tenant tolerance: the issuer is `https://login.microsoftonline.com/{tid}/v2.0`
+    where `{tid}` varies per tenant. We accept any tenant (consistent
+    with the `/common` authorize endpoint) but enforce signature + aud +
+    expiry validation."""
+    import jwt
+    from jwt import PyJWKClient
+    try:
+        jwk_client = PyJWKClient(_MS_JWKS_URL)
+        signing_key = jwk_client.get_signing_key_from_jwt(id_token).key
+        claims = jwt.decode(
+            id_token, signing_key, algorithms=["RS256"],
+            audience=_ms_client_id(),
+            options={"verify_iss": False},  # multi-tenant — issuer varies
+        )
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail={
+            "error": "microsoft_id_token_invalid",
+            "reason": str(e)[:160],
+        }) from e
+    iss = claims.get("iss") or ""
+    if not iss.startswith("https://login.microsoftonline.com/"):
+        raise HTTPException(status_code=400, detail={
+            "error": "microsoft_id_token_issuer_invalid",
+            "iss": iss[:120],
+        })
+    return claims
+
+
+@router.get("/microsoft/callback")
+async def oauth_microsoft_callback(
+    response: Response,
+    code: Optional[str] = None, state: Optional[str] = None,
+    error: Optional[str] = None, error_description: Optional[str] = None,
+):
+    """Stage-2: Microsoft redirected back with `code` + `state`. Exchange
+    the code, validate the ID token, upsert the account, mint JWT, set
+    cookies, redirect to the post-login landing."""
+    from fastapi.responses import RedirectResponse
+    if error:
+        _ms_audit("login_failure", error=error, error_description=(error_description or "")[:160])
+        return RedirectResponse(url=f"/sign-in?oauth_error={error}", status_code=302)
+    if not code or not state:
+        _ms_audit("login_failure", error="missing_code_or_state")
+        raise HTTPException(status_code=400, detail={
+            "error": "microsoft_oauth_missing_code_or_state",
+        })
+    state_payload = _ms_verify_state(state)
+    session_id = state_payload.get("sid") or "unknown"
+    if not _microsoft_configured():
+        raise HTTPException(status_code=503, detail={"error": "microsoft_oauth_not_configured"})
+    try:
+        tokens = await _ms_exchange_code(code)
+    except HTTPException as e:
+        _ms_audit("login_failure", session_id=session_id,
+                  error=(e.detail or {}).get("error", "token_exchange_failed"))
+        raise
+
+    id_token = tokens.get("id_token") or ""
+    if not id_token:
+        _ms_audit("login_failure", session_id=session_id, error="no_id_token")
+        raise HTTPException(status_code=502, detail={"error": "microsoft_no_id_token"})
+
+    claims = _ms_decode_id_token(id_token)
+    email = (claims.get("email") or claims.get("preferred_username") or "").strip().lower()
+    name = (claims.get("name") or "").strip()
+    oid = (claims.get("oid") or "").strip()
+    tid = (claims.get("tid") or "").strip()
+    if not email or "@" not in email:
+        _ms_audit("login_failure", session_id=session_id, error="email_missing", oid=oid, tid=tid)
+        raise HTTPException(status_code=400, detail={
+            "error": "oauth_email_missing",
+            "message": "Microsoft did not return an email/UPN.",
+        })
+
+    # Find-or-create account — same pattern as the Google sign-in finish path.
+    existing = await db.accounts.find_one({"email": email}, {"_id": 0})
+    is_new = existing is None
+    trial_start = _now()
+    trial_end = trial_start + timedelta(days=TRIAL_LENGTH_DAYS)
+    if existing:
+        account_id = existing["id"]
+        update_fields: Dict[str, Any] = {"last_login_at": _iso(trial_start)}
+        providers_used = list(existing.get("oauth_providers") or [])
+        if "microsoft" not in providers_used:
+            providers_used.append("microsoft")
+            update_fields["oauth_providers"] = providers_used
+        if not existing.get("auth_provider") and not existing.get("password_hash"):
+            update_fields["auth_provider"] = "microsoft"
+        if not existing.get("name") and name:
+            update_fields["name"] = name
+        if not existing.get("first_name") and name:
+            update_fields["first_name"] = name.split()[0]
+        if oid and not existing.get("microsoft_oid"):
+            update_fields["microsoft_oid"] = oid
+        await db.accounts.update_one({"id": account_id}, {"$set": update_fields})
+        next_url = _ms_post_login_redirect()
+    else:
+        account_id = uuid.uuid4().hex
+        first_name = (name.split()[0] if name else email.split("@")[0])
+        await db.accounts.insert_one({
+            "id":              account_id,
+            "email":           email,
+            "password_hash":   None,
+            "auth_provider":   "microsoft",
+            "oauth_providers": ["microsoft"],
+            "microsoft_oid":   oid or None,
+            "name":            name or email.split("@")[0],
+            "first_name":      first_name,
+            "picture":         None,
+            "declared_role":   None,
+            "mfa_enabled":     False,
+            "is_superadmin":   False,
+            "first_session":   {"status": "intake"},
+            "preferences":     {},
+            "trial_start_at":  _iso(trial_start),
+            "trial_end_at":    _iso(trial_end),
+            "trial_status":    "active_trial",
+            "cohort_tag":      None,
+            "created_at":      _iso(trial_start),
+            "last_login_at":   _iso(trial_start),
+        })
+        next_url = "/app/first-session"
+
+    try:
+        from services.cohort.feature_events import emit_feature_event, ACCOUNT_SIGNED_UP
+        if is_new:
+            await emit_feature_event(
+                event_type=ACCOUNT_SIGNED_UP, account_id=account_id, cohort_tag=None,
+                payload={"email": email, "via": "oauth_microsoft", "tid": tid},
+            )
+    except Exception:
+        log.exception("oauth microsoft: feature_event emit failed (non-fatal)")
+
+    access = create_access_token(account_id, email)
+    refresh = create_refresh_token(account_id)
+    redirect_resp = RedirectResponse(url=next_url, status_code=302)
+    set_auth_cookies(redirect_resp, access, refresh)
+    _ms_audit(
+        "login_success",
+        session_id=session_id, account_id=account_id,
+        oid=oid, tid=tid, is_new=is_new,
+    )
+    return redirect_resp
 
 
 @router.post("/microsoft/finish")
 async def oauth_microsoft_finish(body: FinishIn) -> Dict[str, Any]:
-    # Same gate — let frontend's button-disabled state catch this
-    # first, but defence in depth on the backend.
-    if not _microsoft_configured():
-        raise HTTPException(status_code=503, detail={
-            "error": "microsoft_oauth_not_configured",
-            "needs": "user-provided Application ID + Client Secret",
-        })
-    raise HTTPException(status_code=501, detail={
-        "error": "microsoft_oauth_not_yet_implemented",
+    """Legacy POST endpoint — kept for parity with the Google /finish
+    pattern. Phase U.2 uses the GET /microsoft/callback redirect flow
+    instead (Microsoft Identity Platform native), so this returns 410
+    pointing callers at the canonical entry point."""
+    raise HTTPException(status_code=410, detail={
+        "error": "microsoft_oauth_use_callback_redirect",
+        "message": "Phase U.2 uses GET /microsoft/callback. Initiate via /microsoft/start.",
     })
