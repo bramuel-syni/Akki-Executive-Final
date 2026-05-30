@@ -1,0 +1,50 @@
+name: voice-lint
+
+# Pre-merge customer-copy banned-vocab gate.
+#
+# Sprint M.1a (2026-02 dispatch 5) closed 45 banned-vocab violations
+# across the marketing/website surface; M.0b ratified the late-additions
+# ban (e.g. `senior` in customer copy) in docs/WEBSITE_BRIEF_V3.md §1.3.1.
+# This workflow enforces the zero-hit invariant on every PR touching
+# the marketing surface so drift cannot silently re-enter.
+#
+# Script: scripts/lint_voice.py
+# Source of truth: docs/WEBSITE_BRIEF_V3.md §1.3 + §1.3.1
+# (plus services/two_pass.py::BANNED_WORDS, which the script imports).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/src/website/**"
+      - "frontend/src/components/marketing/**"
+      - "frontend/src/copy/**"
+      - "docs/WEBSITE_BRIEF_V3.md"
+      - "docs/cohort_pricing.md"
+      - "docs/marketing_assets.md"
+      - "scripts/lint_voice.py"
+      - "backend/services/two_pass.py"
+      - ".github/workflows/voice-lint.yml"
+  pull_request:
+    paths:
+      - "frontend/src/website/**"
+      - "frontend/src/components/marketing/**"
+      - "frontend/src/copy/**"
+      - "docs/WEBSITE_BRIEF_V3.md"
+      - "docs/cohort_pricing.md"
+      - "docs/marketing_assets.md"
+      - "scripts/lint_voice.py"
+      - "backend/services/two_pass.py"
+      - ".github/workflows/voice-lint.yml"
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Scan customer-copy surface for banned vocabulary
+        run: |
+          python3 scripts/lint_voice.py

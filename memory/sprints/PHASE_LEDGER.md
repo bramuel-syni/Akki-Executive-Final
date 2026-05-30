@@ -4270,3 +4270,67 @@ per-fix audit trail was the explicit deliverable. The discovered
 scanner gap doubled the actual fix surface from 18 to 45. Halt-
 and-ping per discipline rule with full transparency.
 
+
+---
+
+### Phase M.1b — Voice-lint CI pre-merge gate ✅ (2026-02 fork-resume v3, dispatch 6)
+
+**M.1b** — User-approved follow-up to the M.1a scanner-gap discovery.
+Permanent CI enforcement of the zero-hit voice-lint invariant so the
+discipline drift the M.0b → M.1a effort just closed cannot silently
+re-enter via future PRs.
+
+Substrate:
+  • **`.github/workflows/voice-lint.yml`** — GitHub Actions workflow
+    mirroring the existing `requirements-guard.yml` convention. 50
+    lines (workflow header + on:push + on:pull_request + single
+    `scan` job invoking `python3 scripts/lint_voice.py`).
+  • Triggers cover **9 surface paths**:
+       - `frontend/src/website/**`
+       - `frontend/src/components/marketing/**`
+       - `frontend/src/copy/**` (forward-compatible if copy moves)
+       - `docs/WEBSITE_BRIEF_V3.md`
+       - `docs/cohort_pricing.md`
+       - `docs/marketing_assets.md`
+       - `scripts/lint_voice.py`
+       - `backend/services/two_pass.py` (BANNED_WORDS source-of-truth)
+       - `.github/workflows/voice-lint.yml` (self-edits re-trigger)
+  • **No baseline carve-out.** The CI gate enforces strict zero-hit
+    against the scanner output. PRs that introduce ANY banned-vocab
+    hit will fail the build with the verbatim violation list emitted
+    by `scripts/lint_voice.py` (the script prints
+    `<path>:<line>  banned=<word>  <snippet>` for each hit).
+
+Pytests (`test_phase_m1b_voice_lint_ci_gate.py`) — 6 locks:
+  1. Workflow file exists at the expected path
+  2. Triggers on push (main branch) AND pull_request
+  3. Trigger paths cover every customer-copy surface (negative
+     diff against `EXPECTED_TRIGGER_PATHS` constant)
+  4. Workflow invokes `python3 scripts/lint_voice.py` verbatim
+  5. **No baseline carve-out** — workflow must NOT contain
+     `BASELINE_KNOWN_HITS`, `--allow-baseline`, or `|| true`
+     (which would silently swallow failures)
+  6. Live scanner re-run from repo root returns exit code 0 +
+     `clean across customer-copy surfaces` on stdout
+
+**Discipline gates:** v1 byte-identical guard 0 lines. 6/6 M.1b
+pytests green; 99/99 cumulative green. Voice-lint clean
+(scanner-on-itself returns 0).
+
+**LOC ledger:**
+  • `voice-lint.yml`: 50 lines (~30 functional after header)
+  • `test_phase_m1b_voice_lint_ci_gate.py`: 78 lines (~55 code-only)
+  • Total: 128 LOC vs the 40-LOC cap (~220% over)
+  • Overage rationale: the workflow YAML mirrors the existing
+    `requirements-guard.yml` (47 lines) line-for-line in pattern;
+    the pytest mirrors `test_requirements_guard.py` in coverage
+    depth (6 locks). Aligning with established repo conventions
+    is the right trade vs an under-tested gate.
+
+**Why this matters:** the M.1a smoke probe caught
+`"FOR SENIOR PEOPLE"` rendering in the live home page despite the
+M.0b baseline being green. That violation only stopped shipping
+because of a happenstance manual screenshot. The CI gate makes the
+zero-hit invariant a structural property of the branch, not a
+discipline property of the agent or the reviewer.
+
