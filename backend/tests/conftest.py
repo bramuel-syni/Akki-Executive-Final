@@ -33,6 +33,38 @@ from dotenv import load_dotenv
 # request-driven smoke tests read REACT_APP_BACKEND_URL.
 load_dotenv("/app/backend/.env")
 load_dotenv("/app/frontend/.env")
+
+# Phase P3.1 (2026-02) — CSRF middleware bypass for test runs.
+# Existing tests drive endpoints directly via TestClient / AsyncClient
+# and don't mint a CSRF cookie. Honour the in-process bypass switch so
+# the suite keeps passing while production traffic still enforces CSRF.
+os.environ.setdefault("CSRF_TEST_BYPASS_HEADER", "1")
+# Phase P3 — disable rate-limit during tests. The suite drives ~50+
+# login calls in <60s; without this, the per-IP login bucket trips
+# and downstream MFA / B.4 / B.6 tests cascade-fail. Production
+# never sets this env.
+os.environ.setdefault("RATE_LIMIT_DISABLED", "1")
+import httpx as _httpx  # noqa: E402
+_orig_request = _httpx.AsyncClient.request
+async def _patched_request(self, method, url, *args, **kwargs):
+    headers = kwargs.get("headers") or {}
+    headers = dict(headers)
+    headers.setdefault("X-CSRF-Test-Bypass", "1")
+    kwargs["headers"] = headers
+    return await _orig_request(self, method, url, *args, **kwargs)
+_httpx.AsyncClient.request = _patched_request
+
+# Also patch the sync TestClient transport.
+from starlette.testclient import TestClient as _StarletteTestClient  # noqa: E402
+_orig_sync_request = _StarletteTestClient.request
+def _patched_sync_request(self, method, url, **kwargs):
+    headers = kwargs.get("headers") or {}
+    headers = dict(headers)
+    headers.setdefault("X-CSRF-Test-Bypass", "1")
+    kwargs["headers"] = headers
+    return _orig_sync_request(self, method, url, **kwargs)
+_StarletteTestClient.request = _patched_sync_request
+
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)

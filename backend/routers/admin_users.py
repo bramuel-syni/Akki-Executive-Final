@@ -62,6 +62,27 @@ async def _require_superadmin(
 ) -> Dict[str, Any]:
     if not account.get("is_superadmin"):
         raise HTTPException(status_code=403, detail="Superadmin required")
+    # Phase P3.3 (2026-02) — forced MFA enrolment for superadmins.
+    # The seeded `admin@akki.ai` is grace-bypassed for this phase only
+    # (see /app/memory/sprints/P3_3_admin_mfa_grace.md). Every other
+    # superadmin must enrol MFA before touching /api/admin/*.
+    import os
+    grace_emails = {
+        e.strip().lower() for e in
+        (os.environ.get("MFA_ADMIN_GRACE_EMAILS", "admin@akki.ai")).split(",")
+        if e.strip()
+    }
+    if (account.get("email") or "").lower() in grace_emails:
+        return account
+    if not account.get("mfa_enabled"):
+        raise HTTPException(
+            status_code=428,  # Precondition Required — semantic 428 over 403 here
+            detail={
+                "code":    "mfa_enrolment_required",
+                "message": "Enrol MFA before accessing the admin surface.",
+                "enrol_url": "/app/security",
+            },
+        )
     return account
 
 

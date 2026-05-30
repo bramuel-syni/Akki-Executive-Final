@@ -38,6 +38,80 @@ export const api = axios.create({
   withCredentials: true,
 });
 
+// ─── Phase P3.1 (2026-02) — CSRF double-submit-cookie wrapper ──────
+// In-memory cache of the most recently minted CSRF token. The backend
+// `/api/csrf` endpoint sets the cookie (non-HttpOnly so JS can read
+// it) AND returns the token in the JSON body. We hold the latest
+// value in memory so we don't re-read the cookie on every request.
+let _csrfToken = null;
+let _csrfFetchPromise = null;
+
+function _readCsrfCookie() {
+  if (typeof document === "undefined") return null;
+  for (const part of (document.cookie || "").split(";")) {
+    const [k, ...rest] = part.trim().split("=");
+    if (k === "csrf_token") return rest.join("=") || null;
+  }
+  return null;
+}
+
+export async function ensureCsrfToken() {
+  if (_csrfToken) return _csrfToken;
+  const fromCookie = _readCsrfCookie();
+  if (fromCookie) { _csrfToken = fromCookie; return fromCookie; }
+  if (_csrfFetchPromise) return _csrfFetchPromise;
+  _csrfFetchPromise = (async () => {
+    try {
+      const r = await axios.get(`${API_BASE}/csrf`, { withCredentials: true });
+      const t = r?.data?.csrf_token;
+      if (t) _csrfToken = t;
+      return _csrfToken;
+    } catch (_e) {
+      return null;
+    } finally {
+      _csrfFetchPromise = null;
+    }
+  })();
+  return _csrfFetchPromise;
+}
+
+const NON_IDEMPOTENT = new Set(["post", "put", "patch", "delete"]);
+api.interceptors.request.use(async (config) => {
+  const method = (config.method || "get").toLowerCase();
+  if (NON_IDEMPOTENT.has(method)) {
+    let t = _csrfToken || _readCsrfCookie();
+    if (!t) t = await ensureCsrfToken();
+    if (t) {
+      config.headers = config.headers || {};
+      config.headers["X-CSRF-Token"] = t;
+    }
+  }
+  return config;
+});
+
+// On any 403 with code csrf_token_*, refresh the token + retry once.
+api.interceptors.response.use(
+  (resp) => resp,
+  async (err) => {
+    try {
+      const code = err?.response?.data?.detail?.code;
+      if (
+        err?.response?.status === 403 &&
+        (code === "csrf_token_missing" || code === "csrf_token_invalid") &&
+        !err.config?._csrfRetried
+      ) {
+        _csrfToken = null;
+        await ensureCsrfToken();
+        const cfg = { ...err.config, _csrfRetried: true };
+        cfg.headers = cfg.headers || {};
+        cfg.headers["X-CSRF-Token"] = _csrfToken || _readCsrfCookie() || "";
+        return api.request(cfg);
+      }
+    } catch (_e) { /* fall through */ }
+    return Promise.reject(err);
+  }
+);
+
 // Attach Bearer token + active-context header on every call.
 // * Bearer (legacy) — used by the pre-auth Sandbox flow where the
 //   server mints a JWT we store in localStorage rather than a
@@ -72,6 +146,12 @@ api.interceptors.request.use((config) => {
 // auto-redirect from the interceptor — that would race with whatever
 // the calling component is doing. We just emit; the boot guard /
 // AppShell listens.
+//
+// Phase P3.4 (2026-02) — session-timeout signalling. The backend
+// surfaces `session_idle_timeout` (re-auth required) and
+// `session_absolute_timeout` (full sign-out required) as 401
+// responses. Emit `akki:session-event` so AppShell can render the
+// re-auth modal or the expired-session surface respectively.
 api.interceptors.response.use(
   (resp) => resp,
   (err) => {
@@ -80,6 +160,13 @@ api.interceptors.response.use(
       if (code === "MEMBERSHIP_REVOKED" || code === "ACTIVE_CONTEXT_REQUIRED") {
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("akki:rbac-error", {
+            detail: { code, message: err?.response?.data?.detail?.message },
+          }));
+        }
+      }
+      if (code === "session_idle_timeout" || code === "session_absolute_timeout") {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("akki:session-event", {
             detail: { code, message: err?.response?.data?.detail?.message },
           }));
         }

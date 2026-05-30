@@ -92,11 +92,15 @@ def test_b2_strategy_trips_429_after_threshold():
     assert strategy.hit(limit, bucket, key) is False
 
 
-def test_b2_dependency_raises_429_when_bucket_exhausted():
+def test_b2_dependency_raises_429_when_bucket_exhausted(monkeypatch):
     """Drive the rate_limit() dependency directly and assert the
     HTTPException it raises carries the documented 429 shape."""
     import services.rate_limit as rl
     from fastapi import HTTPException, Request
+
+    # Conftest sets RATE_LIMIT_DISABLED=1 globally to avoid IP-bucket
+    # collisions between tests. Re-enable for this specific case.
+    monkeypatch.setattr(rl, "DISABLED", False)
 
     # Replace the parsed limit for a unique bucket with a 1/minute cap.
     from limits import parse

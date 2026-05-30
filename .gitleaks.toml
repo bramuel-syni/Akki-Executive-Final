@@ -1,0 +1,39 @@
+# Phase P3.5 (2026-02) — gitleaks configuration.
+#
+# Inherits the gitleaks default rule set. Adds a small allowlist for
+# patterns we know are public/test data and would otherwise create
+# false-positive failures on every push.
+
+title = "AKKI gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "AKKI known-safe patterns"
+
+# Public OAuth client IDs are not secrets (the spec calls them public).
+# Microsoft Graph / Google OAuth client IDs ride in plain text in the
+# frontend bundle anyway.
+regexes = [
+  '''MICROSOFT_OAUTH_CLIENT_ID\s*=\s*[a-zA-Z0-9-]{36}''',
+  '''GOOGLE_OAUTH_CLIENT_ID\s*=\s*[a-zA-Z0-9-]+\.apps\.googleusercontent\.com''',
+  # Test JWTs we ship in pytest fixtures — clearly labelled, fixed value.
+  '''eyJhbGciOiJIUzI1NiJ9\.[A-Za-z0-9_-]{0,64}\.[A-Za-z0-9_-]{0,64}''',
+]
+
+# Test files only — production code never holds raw secrets.
+paths = [
+  '''^backend/tests/.*''',
+  '''^frontend/.*\.test\.(js|jsx|ts|tsx)$''',
+  '''^/tmp/.*''',
+  '''^\.github/workflows/gitleaks\.yml$''',
+  '''^\.gitleaks\.toml$''',
+  # frontend STORAGE_KEY constants — these are localStorage keys, not secrets.
+  '''^frontend/src/components/cohort/Day16Banner\.jsx$''',
+]
+
+# Per-path overrides for known-safe files.
+[[allowlists]]
+description = "Allow the seeded admin test password in test_credentials.md"
+paths = ['''^memory/test_credentials\.md$''']

@@ -281,41 +281,17 @@ async def declare_role(
 # -----------------------------------------------------------------------------
 # MFA (TOTP)
 # -----------------------------------------------------------------------------
-@router.post("/auth/mfa/setup")
-async def mfa_setup(current: Dict[str, Any] = Depends(get_current_account)):
-    secret = pyotp.random_base32()
-    otpauth = pyotp.totp.TOTP(secret).provisioning_uri(
-        name=current["email"], issuer_name=APP_NAME
-    )
-    await db.accounts.update_one(
-        {"id": current["id"]}, {"$set": {"mfa_secret_pending": secret}}
-    )
-    img = qrcode.make(otpauth)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    data_url = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
-    return {"otpauth_url": otpauth, "qr_data_url": data_url, "secret": secret}
-
-
-@router.post("/auth/mfa/verify")
-async def mfa_verify(body: MFAVerifyIn, current: Dict[str, Any] = Depends(get_current_account)):
-    pending = current.get("mfa_secret_pending")
-    if not pending:
-        raise HTTPException(status_code=400, detail="No MFA setup in progress")
-    totp = pyotp.TOTP(pending)
-    if not totp.verify(body.code, valid_window=1):
-        raise HTTPException(status_code=400, detail="Invalid code")
-    await db.accounts.update_one(
-        {"id": current["id"]},
-        {"$set": {"mfa_enabled": True, "mfa_secret": pending}, "$unset": {"mfa_secret_pending": ""}},
-    )
-    return {"ok": True, "mfa_enabled": True}
-
-
-@router.post("/auth/mfa/disable")
-async def mfa_disable(current: Dict[str, Any] = Depends(get_current_account)):
-    await db.accounts.update_one(
-        {"id": current["id"]},
-        {"$set": {"mfa_enabled": False}, "$unset": {"mfa_secret": "", "mfa_secret_pending": ""}},
-    )
-    return {"ok": True, "mfa_enabled": False}
+# Phase P3.3 (2026-02) — MFA endpoints relocated to `routers/mfa.py`.
+# That router covers the full lifecycle (enrol start/confirm, verify,
+# disable, recovery-code regenerate, status) with recovery codes,
+# lockouts, and audit events.
+#
+# The legacy `/api/auth/mfa/setup`, `/api/auth/mfa/verify`, and
+# `/api/auth/mfa/disable` endpoints lived here. They have been replaced
+# by:
+#     POST /api/auth/mfa/enroll/start
+#     POST /api/auth/mfa/enroll/confirm
+#     POST /api/auth/mfa/verify
+#     POST /api/auth/mfa/disable
+#     POST /api/auth/mfa/recovery/regenerate
+#     GET  /api/auth/mfa/status

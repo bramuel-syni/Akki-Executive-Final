@@ -1,0 +1,42 @@
+version: 2
+updates:
+  # Phase P3.6 (2026-02) — Python deps under backend/requirements*.txt.
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      patch-updates:
+        applies-to: "version-updates"
+        update-types: ["patch"]
+      minor-updates:
+        applies-to: "version-updates"
+        update-types: ["minor"]
+    labels: ["dependencies", "backend", "automated"]
+
+  # Frontend npm — package.json + yarn.lock under /frontend.
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      patch-updates:
+        applies-to: "version-updates"
+        update-types: ["patch"]
+      minor-updates:
+        applies-to: "version-updates"
+        update-types: ["minor"]
+    labels: ["dependencies", "frontend", "automated"]
+
+  # GitHub Actions versions used in .github/workflows/.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    labels: ["dependencies", "ci", "automated"]

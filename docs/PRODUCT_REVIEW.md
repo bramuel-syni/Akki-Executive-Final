@@ -278,7 +278,7 @@ Module                                              Status        Notes
 ## 4. Consolidated gap & action register
 
 ### Priority 0 (production blockers / spec contracts)
-1. **Postmark webhook URL paste** ⚠ user-action — paste the exact URL `https://akki-executive.preview.emergentagent.com/api/inbound/postmark?secret=vuecv7ZVnaWSICYqF2J0yumaLsuhZBHj` into Postmark dashboard → Inbound → Webhook URL.
+1. **Postmark webhook URL paste** ⚠ user-action — paste the exact URL `https://akki-executive.preview.emergentagent.com/api/inbound/postmark?secret=<REDACTED_ROTATE_AFTER_LEAK>` into Postmark dashboard → Inbound → Webhook URL.
 2. **DNS cutover for `akki.syni.ai` → production backend** ⚠ user-action — once DNS points at the deployed backend, switch the Postmark webhook URL to `https://akki.syni.ai/api/inbound/postmark?…`.
 3. **Resend domain verification — ✅ DONE** `akki.syni.ai` is verified live; outbound smoke from `noreply@akki.syni.ai` returned HTTP 200 with message id `51cabee0-c2ee-4239-9692-034528a4928f`.
 
@@ -372,7 +372,7 @@ The pre-sprint list contained 22 items. After Phase G + H + I, **the following a
 | Synisense AES-GCM master-key boot-guard armed (production refuses `SYNISENSE_ALLOW_INSECURE=true`) | ✅ |
 | ClamAV production boot-guard armed (production refuses `ALLOW_UNSAFE_UPLOADS=true`) | ✅ |
 | **Trust-critical regression: 29 / 29 passing** (`test_privacy_wall.py`, `test_phase_g_privacy_wall_sentinel.py`, `test_privacy_wall_phase_2c.py`, `test_universal_search.py` — 2.14 s) | ✅ |
-| User: paste webhook URL `https://akki-executive.preview.emergentagent.com/api/inbound/postmark?secret=vuecv7ZVnaWSICYqF2J0yumaLsuhZBHj` into Postmark dashboard → Inbound → Webhook URL | ⚠ user-action |
+| User: paste webhook URL `https://akki-executive.preview.emergentagent.com/api/inbound/postmark?secret=<REDACTED_ROTATE_AFTER_LEAK>` into Postmark dashboard → Inbound → Webhook URL | ⚠ user-action |
 | User: DNS cutover for `akki.syni.ai` → production backend (after which switch webhook URL to `https://akki.syni.ai/api/inbound/postmark?secret=…`) | ⚠ user-action |
 | User: end-to-end smoke test on the preview URL — login, document upload, Solva session, cycle compile, search, website pages, cohort form | ⚠ user-action |
 

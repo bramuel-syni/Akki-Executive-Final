@@ -9,13 +9,15 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { ShieldCheck, Lock, AlertTriangle, Trash2, Key } from "lucide-react";
+import { ShieldCheck, Lock, AlertTriangle, Trash2, Key, Download } from "lucide-react";
 
 export default function AccountSecurity() {
   const { account, bootstrap, logout } = useAuth();
   const [setup, setSetup] = useState(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+  // Phase P3.3 (2026-02) — recovery codes shown once on enrolment.
+  const [recoveryCodes, setRecoveryCodes] = useState([]);
 
   // Phase X (2026-02 fork-resume) — self-service account deletion.
   const [dangerOpen, setDangerOpen] = useState(false);
@@ -89,7 +91,8 @@ export default function AccountSecurity() {
   const startSetup = async () => {
     setBusy(true);
     try {
-      const { data } = await api.post("/auth/mfa/setup");
+      // Phase P3.3 (2026-02) — new enrolment endpoints.
+      const { data } = await api.post("/auth/mfa/enroll/start");
       setSetup(data);
     } catch (e) {
       toast.error(apiErrorMessage(e));
@@ -102,11 +105,15 @@ export default function AccountSecurity() {
     e.preventDefault();
     setBusy(true);
     try {
-      await api.post("/auth/mfa/verify", { code });
+      // Phase P3.3 (2026-02) — confirm endpoint returns the 10
+      // recovery codes ONCE. Hand them to the user via the modal so
+      // they can save/download before continuing.
+      const { data } = await api.post("/auth/mfa/enroll/confirm", { code });
       await bootstrap();
+      setRecoveryCodes(data.recovery_codes || []);
       setSetup(null);
       setCode("");
-      toast.success("MFA enabled");
+      toast.success("MFA enabled. Save your recovery codes now.");
     } catch (err) {
       toast.error(apiErrorMessage(err));
     } finally {
@@ -115,9 +122,15 @@ export default function AccountSecurity() {
   };
 
   const disable = async () => {
+    const pwd = window.prompt(
+      "Re-enter your password to disable MFA. " +
+      "Disabling removes the second factor — the only thing standing " +
+      "between a stolen password and your account."
+    );
+    if (!pwd) return;
     setBusy(true);
     try {
-      await api.post("/auth/mfa/disable");
+      await api.post("/auth/mfa/disable", { password: pwd });
       await bootstrap();
       toast.success("MFA disabled");
     } catch (e) {
@@ -403,6 +416,65 @@ export default function AccountSecurity() {
                 data-testid="delete-account-confirm-btn"
               >
                 {deletionBusy ? "Scheduling…" : "Schedule deletion"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Phase P3.3 (2026-02) — Recovery codes shown ONCE after enrolment */}
+        <Dialog
+          open={recoveryCodes.length > 0}
+          onOpenChange={(o) => { if (!o) setRecoveryCodes([]); }}
+        >
+          <DialogContent className="bg-white rounded-sm border max-w-lg" data-testid="mfa-recovery-modal">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-semibold text-[var(--ink)]">
+                Save your recovery passcodes
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600">
+                Use one of these single-use passcodes if you lose
+                access to your authenticator. Each works once. We will
+                not show them again — save them now.
+              </p>
+              <div
+                className="grid grid-cols-2 gap-2 bg-slate-50 border border-[#E1E6ED] p-4 rounded-sm font-mono text-[13px] text-[var(--ink)]"
+                data-testid="mfa-recovery-grid"
+              >
+                {recoveryCodes.map((c, i) => (
+                  <div key={c} data-testid={`mfa-recovery-code-${i}`}>{c}</div>
+                ))}
+              </div>
+            </div>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              <Button
+                variant="outline"
+                className="rounded-sm h-9"
+                onClick={() => {
+                  const blob = new Blob(
+                    [`AKKI recovery passcodes — saved ${new Date().toISOString()}\n\n` + recoveryCodes.join("\n") + "\n"],
+                    { type: "text/plain" }
+                  );
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = "akki-recovery-codes.txt";
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                }}
+                data-testid="mfa-recovery-download-btn"
+              >
+                <Download className="w-4 h-4 mr-1" /> Download .txt
+              </Button>
+              <Button
+                className="bg-[var(--ink)] hover:bg-[#0E2958] rounded-sm h-9"
+                onClick={() => setRecoveryCodes([])}
+                data-testid="mfa-recovery-confirm-btn"
+              >
+                I have saved them
               </Button>
             </DialogFooter>
           </DialogContent>

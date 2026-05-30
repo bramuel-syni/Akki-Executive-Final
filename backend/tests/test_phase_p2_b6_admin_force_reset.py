@@ -41,6 +41,11 @@ def _make_account(email_prefix: str, is_superadmin: bool = False) -> dict:
     if is_superadmin:
         doc["password_hash"] = bcrypt.hashpw(b"AdminPass1234!", bcrypt.gensalt()).decode()
         doc["auth_provider"] = "password"
+        # Phase P3.3 (2026-02) — newly-created superadmin accounts in
+        # tests must satisfy the forced-MFA gate. Seed them as already
+        # enrolled so the test's admin call passes.
+        doc["mfa_enabled"] = True
+        doc["mfa_secret"] = "TESTMFAGATESECRET234567"
     db.accounts.insert_one(dict(doc))
     return doc
 

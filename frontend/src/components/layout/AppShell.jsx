@@ -23,6 +23,8 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+// Phase P3.4 (2026-02) — idle warning + re-auth modal + expired surface.
+import SessionTimeoutGuard from "@/components/SessionTimeoutGuard";
 import MentionInbox from "@/components/collab/MentionInbox";
 // QA-2026-05-16-009 (Chunk 15) — ReviewBadge import removed; the
 // top-bar bell affordance was deleted. Component file kept at
@@ -885,6 +887,9 @@ export default function AppShell({ children }) {
           </footer>
         </main>
       </div>
+
+      {/* Phase P3.4 — session-timeout surfaces mounted once at shell level */}
+      <SessionTimeoutGuard />
 
       {/* Phase F0 — Universal Search.
           • UniversalSearchDialog listens for `akki:open-search` (canonical)

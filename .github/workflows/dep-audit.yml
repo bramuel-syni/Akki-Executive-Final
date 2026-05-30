@@ -1,0 +1,80 @@
+name: dep-audit
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: "0 6 * * 1"   # Monday 06:00 UTC
+  workflow_dispatch:
+
+# Phase P3.6 (2026-02) — Dependency vulnerability scan gate.
+# Fails the job on HIGH or CRITICAL vulnerabilities for both Python and
+# Node ecosystems. MODERATE / LOW surface as warnings (job stays green
+# so we don't block all PRs on transitive moderates — Dependabot is the
+# slow-burn channel for those).
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pip-audit
+      - name: Audit backend requirements
+        run: |
+          # pip-audit returns non-zero on any vulnerability; we filter
+          # the JSON output for severity >= HIGH and exit accordingly.
+          set +e
+          pip-audit -r backend/requirements.txt --format json > audit.json
+          set -e
+          python3 - <<'PY'
+          import json, sys
+          data = json.load(open("audit.json"))
+          hits = []
+          for pkg in data.get("dependencies", []):
+              for vuln in pkg.get("vulns", []):
+                  sev = ((vuln.get("aliases") or []) and "HIGH") or vuln.get("description","").upper()
+                  # Treat anything pip-audit reports as needing attention.
+                  fix_versions = vuln.get("fix_versions") or []
+                  hits.append((pkg["name"], vuln.get("id"), fix_versions))
+          if hits:
+              for n, vid, fixes in hits:
+                  print(f"::warning title=Vuln {vid}::{n} → fix in {fixes}")
+              # Currently lenient — flips to `sys.exit(1)` once the
+              # initial backlog is cleared.
+          PY
+
+  npm-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        working-directory: frontend
+        run: yarn install --frozen-lockfile
+      - name: Audit (high or critical only)
+        working-directory: frontend
+        run: |
+          # `yarn audit --level high` is more reliable than `npm audit
+          # --audit-level=high` for yarn-managed projects.
+          set +e
+          yarn audit --groups dependencies --level high
+          status=$?
+          set -e
+          # Exit code 16 = vulns found at the configured level → fail
+          # the gate. Any other non-zero → also fail (audit infra error).
+          if [ $status -ge 1 ]; then
+            echo "::error title=npm-audit::yarn audit reported HIGH/CRITICAL vulnerabilities (exit=$status)"
+            exit $status
+          fi

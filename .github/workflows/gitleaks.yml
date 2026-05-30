@@ -1,0 +1,52 @@
+name: gitleaks
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+  schedule:
+    # Full-history scan once a week so historical leaks don't slip
+    # past the per-PR diff scan. Triage via the action's report
+    # artifact.
+    - cron: "0 6 * * 1"
+
+# Phase P3.5 (2026-02) — Secret scanning gate.
+#
+# Two modes:
+#   1. push/PR  → diff-only scan via gitleaks-action default behaviour
+#      (current commits only). Fast, gates the PR.
+#   2. schedule → full-history scan. Triaged offline, not blocking PRs.
+#
+# Allowlist lives in .gitleaks.toml at the repo root.
+#
+# To test the gate locally (before pushing):
+#   gitleaks protect --no-banner -v
+#
+# When this fires on a real secret, treat as a P0 incident:
+#   1. Rotate the leaked credential immediately.
+#   2. Squash + force-push the offending commit out of history.
+#   3. File a postmortem at /app/memory/sprints/SECRET_LEAK_<date>.md.
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Diff scans need 2 commits; scheduled scans need full depth.
+          fetch-depth: ${{ github.event_name == 'schedule' && 0 || 2 }}
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE:  ${{ secrets.GITLEAKS_LICENSE }}   # optional — empty in OSS mode
+          GITLEAKS_CONFIG:   ".gitleaks.toml"
+        with:
+          config-path:       ".gitleaks.toml"
