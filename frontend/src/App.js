@@ -71,6 +71,7 @@ const CohortConsole = lazy(() => import("@/pages/admin/CohortConsole"));
 const AdminUsers = lazy(() => import("@/pages/admin/AdminUsers"));
 // Phase P4.B (2026-02) — admin cohort applications surface.
 const AdminCohortApplications = lazy(() => import("@/pages/admin/AdminCohortApplications"));
+const AdminInbox = lazy(() => import("@/pages/admin/AdminInbox"));
 // AA.followup.4 (2026-02 fork-resume) — Extraction Activity superadmin view.
 const ExtractionsActivity = lazy(() => import("@/pages/admin/ExtractionsActivity"));
 // Phase W (2026-02 fork-resume) — Multi-tenant org list view (superadmin).
@@ -374,6 +375,7 @@ function App() {
           {/* Phase R.5.a (2026-05-27) — Superadmin cohort console. */}
           <Route path="/app/admin/cohort" element={<SuperadminRoute><Gated><CohortConsole /></Gated></SuperadminRoute>} />
           <Route path="/app/admin/cohort-applications" element={<SuperadminRoute><Gated><AdminCohortApplications /></Gated></SuperadminRoute>} />{/* Phase P4.B */}
+          <Route path="/app/admin/inbox" element={<SuperadminRoute><Gated><AdminInbox /></Gated></SuperadminRoute>} />{/* Phase P5.8.2 */}
           {/* Phase V (2026-05-27) — Admin user CRUD portal (superadmin only). */}
           <Route path="/app/admin/users" element={<SuperadminRoute><Gated><AdminUsers /></Gated></SuperadminRoute>} />
           {/* AA.followup.4 — Extraction Activity superadmin view */}

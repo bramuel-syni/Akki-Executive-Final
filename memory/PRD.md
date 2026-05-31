@@ -1,6 +1,24 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.8 — SendGrid consolidation + Akki Inbox + image replacement + Postmark wind-down CLOSED ✅ (2026-02)
+
+**Shipped:**
+- **P5.8.1** — Inbound provider gate. `INBOUND_PROVIDER` env (`sendgrid` default | `postmark` | `both`). SendGrid Inbound Parse endpoint at `POST /api/inbound/sendgrid` already existed from prior work; this phase added the flag-gated rollback path + CSRF allowlist + 4 pytest regression assertions (no-auth → 401, mismatched-auth → 401, `INBOUND_PROVIDER=postmark` → 410, multipart adapter live).
+- **P5.8.2** — Admin "Akki Inbox" surface. New router `routers/admin_inbox.py` (list + detail + status-toggle, super-admin + MFA gated, audit-logged). Capture hook in `_dispatch_inbound_payload` writes every inbound to `admin_inbox_messages` before provider-specific routing so visibility survives any dispatch outcome. New page `/app/admin/inbox` with list + detail layout, DOMPurify-sanitized HTML body render, attachment inventory (download links deferred). 3 pytest + live UI trace at desktop + mobile (10/10 checks green).
+- **P5.8.3** — `for-executives-hero.webp` REPLACED (user-approved per P5.5.B follow-up). Mediterranean male early-40s, library, brass lamp, no grey, monochrome editorial. Same intrinsic dimensions (800×1000). Live DOM trace confirms render.
+- **P5.8.4** — Postmark wind-down inventory + scrub plan memo at `/app/memory/sprints/P5_8_4_postmark_winddown.md`. 2 frontend doc-fixes ("Postmark" → "SendGrid Inbound Parse" in user-visible copy). Code paths kept behind `INBOUND_PROVIDER=postmark` for one-cycle rollback window.
+- **P5.8.5** — No-op (3 unreferenced marketing assets left untouched per user directive).
+
+**Tests:** 7 new pytest in `test_phase_p5_8_inbox_migration.py`. Full sweep 38/38 green (P3.4 + P5.5 + P5.6 + P5.7.* + P5.8 + Solva v1 + M0a).
+
+**Memos:**
+- `/app/memory/sprints/P5_8_4_postmark_winddown.md` — inventory + history scrub command (awaits user go-ahead).
+
+**HUMAN_REQUIRED:**
+- The end-to-end SendGrid Inbound Parse live round-trip requires a real send to `*@inbound.akki.syni.ai` once the user's Cloudflare SPF fix lands. The MX is correctly aimed (verified P5.7.8); the endpoint Basic Auth is correctly gated. We cannot drive a real provider POST from CI without exposing the basic-auth creds, so this final assertion is your call: `echo "Test inbound" | mail -s "test" any@inbound.akki.syni.ai` then check `/app/admin/inbox`.
+
+
 ### Phase P5.7 — Branding + email touchpoints + waitlist + DNS/inbox audit CLOSED ✅ (2026-02)
 
 **Shipped:**

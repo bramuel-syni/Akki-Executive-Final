@@ -3,7 +3,7 @@
  *
  * Spec §4.B → C6. The Draft Journal lists every agent-cycle-drafted
  * follow-up email across all active cycles in this context. Two CTAs
- * per entry: "Approve and Send" → sends via Postmark + badge flips
+ * per entry: "Approve and Send" → sends via SendGrid + badge flips
  * to `Sent`; "Decline" → badge flips to `Declined`.
  *
  * Entry points (spec C6 step 1):

@@ -7,7 +7,7 @@ import { toast } from "sonner";
 /**
  * InboundEmailPanel — surfaces the user's personal forwarding address (and a
  * context-scoped address). Forwarding an email to either ingests it into
- * AKKI as a first-class document via the Postmark inbound webhook.
+ * AKKI as a first-class document via the SendGrid Inbound Parse webhook.
  */
 export default function InboundEmailPanel({ contextId, contextName }) {
   const [loading, setLoading] = useState(true);
@@ -66,7 +66,7 @@ export default function InboundEmailPanel({ contextId, contextName }) {
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-sm px-3 py-2">
             Inbound mail is not yet configured on this server. Addresses are
             shown for preview only — forwarding will not be ingested until an
-            administrator enables Postmark inbound.
+            administrator enables SendGrid Inbound Parse.
           </p>
         )}
 

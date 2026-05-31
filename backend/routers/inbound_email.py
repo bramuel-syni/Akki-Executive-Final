@@ -866,6 +866,19 @@ async def _dispatch_inbound_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     shape before calling this worker. Returns the same response shape
     the legacy Postmark handler returned.
     """
+    # Phase P5.8.2 (2026-02) — admin inbox capture. Runs BEFORE the
+    # provider-specific routing so every inbound is visible in the
+    # admin surface regardless of how dispatch handles it (task,
+    # quarantine, drop, error). Errors are swallowed in the helper —
+    # capture must never block dispatch.
+    try:
+        from routers.admin_inbox import capture_for_admin_inbox
+        admin_inbox_id = await capture_for_admin_inbox(
+            payload, routing_result="pending",
+        )
+    except Exception:  # noqa: BLE001
+        admin_inbox_id = ""
+
     mailbox_hash = (payload.get("MailboxHash") or "").strip()
     subject = (payload.get("Subject") or "").strip() or "(no subject)"
     text_body = (payload.get("TextBody") or "").strip()
@@ -1427,7 +1440,24 @@ async def receive_sendgrid_inbound(request: Request):
 
     Reads multipart/form-data, normalizes to the internal Postmark-shape
     payload, and dispatches via `_dispatch_inbound_payload`.
+
+    Phase P5.8.1 (2026-02) — gated behind `INBOUND_PROVIDER`. Default
+    is `sendgrid` (sole accepting provider); `postmark` re-routes
+    inbound to the legacy endpoint (which itself returns 410 unless
+    its own retired-flag is lifted); `both` accepts here AND on the
+    legacy endpoint for transition windows.
     """
+    provider_flag = (os.environ.get("INBOUND_PROVIDER") or "sendgrid").strip().lower()
+    if provider_flag not in ("sendgrid", "both"):
+        raise HTTPException(status_code=410, detail={
+            "error": "inbound_provider_disabled",
+            "message": (
+                f"INBOUND_PROVIDER={provider_flag!r} — SendGrid Inbound "
+                f"Parse is not the configured provider. Set "
+                f"INBOUND_PROVIDER=sendgrid (or both) to re-enable."
+            ),
+        })
+
     if not _verify_sendgrid_basic_auth(request.headers.get("authorization")):
         raise HTTPException(status_code=401, detail="Invalid inbound credentials.")
 

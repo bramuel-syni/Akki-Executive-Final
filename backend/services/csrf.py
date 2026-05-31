@@ -58,6 +58,16 @@ _ALLOWLIST_PREFIXES = (
     "/api/billing/webhook/",           # Stripe webhooks (HMAC-signed by Stripe)
     "/api/auth/oauth/google/callback", # OAuth callbacks: state-param protected
     "/api/auth/oauth/microsoft/callback",
+    # Phase P5.8.1 (2026-02) — SendGrid Inbound Parse webhook. Cannot
+    # carry a CSRF token because it's an unattended POST from
+    # SendGrid's edge. The endpoint itself is gated by Basic Auth
+    # (`SENDGRID_INBOUND_AUTH_USERNAME` + `_PASSWORD`).
+    "/api/inbound/sendgrid",
+    # Phase P5.7.5 (2026-02) — SendGrid Event Webhook (delivery /
+    # bounce / spam-report events). Cannot carry CSRF either; gated
+    # by SendGrid's signed-event-webhook ECDSA signature when the
+    # `SENDGRID_WEBHOOK_PUBLIC_KEY` env is set.
+    "/api/cohort/email-events/sendgrid",
 )
 
 

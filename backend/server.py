@@ -371,6 +371,8 @@ from routers import cohort_waitlist as cohort_waitlist_router  # noqa: E402  P5.
 app.include_router(cohort_waitlist_router.router)
 from routers import cohort_email_events as cohort_email_events_router  # noqa: E402  P5.7.5
 app.include_router(cohort_email_events_router.router)
+from routers import admin_inbox as admin_inbox_router  # noqa: E402  P5.8.2
+app.include_router(admin_inbox_router.router)
 
 
 # -----------------------------------------------------------------------------
