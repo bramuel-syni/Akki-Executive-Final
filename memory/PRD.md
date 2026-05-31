@@ -1,6 +1,32 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.10 — Chat resilience: CSRF on SSE + cancel-path audit CLOSED ✅ (2026-02)
+
+**Symptom (user-reported):** chat responses using "Claude Opus 4.7" cancel at ~0.9s with red audit-panel error. Believed-to-be production deploy lag.
+
+**Headline finding:** Production deploy lag REFUTED. Both `akki.syni.ai` and the preview return the same model list (Opus 4.6, no 4.7) and share the same admin account_id `cf6e7587…b066ef`, so production AND preview run the same codebase from the same Mongo.
+
+**Real root cause:** the SPA's raw `fetch()` to `POST /api/chats/{cid}/messages/stream` (needed for `ReadableStream` SSE consumption) bypassed the axios CSRF interceptor and never sent `X-CSRF-Token`. CSRFMiddleware rejected with `csrf_token_missing` → 403 in ~0.3 s. The user read that as "instantly cancelled". The audit-panel red copy was a separate side effect on legacy pre-P5.10 cancelled rows where `chat_messages.shield_audit_id` is null.
+
+**Shipped:**
+- **P5.10.A** — `/app/frontend/src/pages/Chat.jsx` now imports `ensureCsrfToken` and injects `headers["X-CSRF-Token"] = csrf` onto the raw SSE fetch alongside the bearer token. Three lines added + one import line merged (kept eslint `no-duplicate-imports` green).
+- **P5.10.B** — Memo at `/app/memory/sprints/P5_10_chat_resilience.md` with full reproduction trace, root-cause analysis, sister raw-fetch audit, and go/no-go.
+
+**Tests:** 12 new pytest in `tests/test_phase_p5_10_chat_resilience.py` (source-strict: CSRF header injection, allowlist invariant, `_persist_cancel` partial-write semantics including unbound-`shield_finalize` guard, audit-panel direct-linkage preference, cascade ordering). 36/36 across v1 + P5.10 (panel + resilience) + Z1.1 GREEN.
+
+**Live preview Playwright traces (raw, no testing subagent):**
+- `/tmp/p5_10_trace_happy_path.py` — sign in → new chat → send → stream 200 at +0.56 s → complete at +1.92 s → audit panel green. Screenshots in `/tmp/p5_10_happy/`.
+- `/tmp/p5_10_trace_cancel_path.py` — sign in → new chat → send → Stop at +1.66 s → "Cancelled. Partial reply kept." inline → reload → audit panel green. Screenshots in `/tmp/p5_10_cancel/`.
+
+**Voice-lint:** clean across customer-copy surfaces.
+
+**Sister raw-fetch follow-up (NOT in P5.10 scope):** three other raw `fetch()` POST/DELETE call-sites (`EnterpriseFeature.jsx:66`, `sandbox/api.js:8`, `sandbox/api.js:28`) sit on public/sandbox surfaces. If any of those routes ever gain CSRFMiddleware coverage they will need the same `ensureCsrfToken()` treatment.
+
+**HUMAN_REQUIRED:** Deploy the new `Chat.jsx` to production. After deploy, hard-reload + open a fresh chat; the 0.9 s cancellation symptom on `akki.syni.ai` disappears.
+
+
+
 ### Phase P5.9 — Admin home button + unread inbox badge CLOSED ✅ (2026-02)
 
 **Shipped:**

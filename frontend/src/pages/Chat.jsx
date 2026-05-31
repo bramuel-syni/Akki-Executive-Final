@@ -17,7 +17,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import AppShell from "@/components/layout/AppShell";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, ensureCsrfToken, resolveBackendOrigin } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,7 +52,6 @@ import "highlight.js/styles/github.css";
 import ModelAvatar from "@/components/chat/ModelAvatar";
 import MarkdownMessage from "@/components/chat/MarkdownMessage";
 import MessageActions from "@/components/chat/MessageActions";
-import { resolveBackendOrigin } from "@/lib/api";
 import GovernanceSignals from "@/components/chat/GovernanceSignals";import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
   DialogFooter,
@@ -676,10 +675,23 @@ export default function Chat() {
     // the rehydrated string so PII / citations resolve correctly.
     const BACKEND = resolveBackendOrigin();
     const tok = localStorage.getItem("akki_access_token");
+    // Phase P5.10 (2026-02) — production cancellation bug root cause.
+    // Raw fetch() must carry the `X-CSRF-Token` header because the
+    // axios interceptor in lib/api.js (which auto-injects it) does
+    // NOT run on plain fetch. Without this, `POST /messages/stream`
+    // hit the CSRFMiddleware allowlist gate and returned 403
+    // csrf_token_missing in ~0.3s — the SPA caught the failure,
+    // stripped the optimistic bubble, and toasted "HTTP 403". The
+    // user saw it as "instantly cancelled" because the streaming
+    // never started. Co-located with the bearer/Accept setup so a
+    // future maintainer adjusting the raw-fetch SSE path can't miss
+    // the dependency.
+    const csrf = await ensureCsrfToken();
     const headers = {
       "Content-Type": "application/json", "Accept": "text/event-stream",
     };
     if (tok) headers.Authorization = `Bearer ${tok}`;
+    if (csrf) headers["X-CSRF-Token"] = csrf;
 
     const applyStreamUpdate = (updater) => {
       setActiveChat((prev) => {
