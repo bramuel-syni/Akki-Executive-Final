@@ -15,7 +15,8 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 
-const API = process.env.REACT_APP_BACKEND_URL || "";
+import { resolveBackendOrigin } from "@/lib/api";
+const API = resolveBackendOrigin();
 
 export default function PublicVelocityTile() {
   const [data, setData] = useState(null);

@@ -31,6 +31,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 
+import { resolveBackendOrigin } from "@/lib/api";
 const LOCKED_SLIDE_KINDS = [
   "cover",
   "headline",
@@ -200,8 +201,7 @@ export default function useSolvaReasoningStream(sessionId, opts = {}) {
 
     const baseURL =
       apiBase ||
-      (typeof process !== "undefined" && process.env && process.env.REACT_APP_BACKEND_URL) ||
-      "";
+      resolveBackendOrigin();
     const url = `${baseURL}/api/solva/sessions/${sessionId}/v2/stream`;
 
     const ctrl = new AbortController();

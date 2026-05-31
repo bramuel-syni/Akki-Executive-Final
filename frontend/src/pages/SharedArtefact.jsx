@@ -16,11 +16,12 @@ import { useParams, Link } from "react-router-dom";
 import axios from "axios";
 import Logo from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
+import { resolveBackendOrigin } from "@/lib/api";
 import {
   ShieldCheck, Loader2, AlertTriangle, ArrowUpRight, Eye,
 } from "lucide-react";
 
-const BACKEND = process.env.REACT_APP_BACKEND_URL || "";
+const BACKEND = resolveBackendOrigin();
 
 const SENS_TONE = {
   public:       "text-emerald-800 bg-emerald-50 border-emerald-200",

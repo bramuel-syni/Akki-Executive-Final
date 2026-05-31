@@ -1,7 +1,7 @@
+import { resolveBackendOrigin } from "@/lib/api";
 /* Phase J — Sandbox API wrapper. Hits /api/sandbox-gen/*. */
 const API_BASE = (
-  (typeof process !== "undefined" && process.env && process.env.REACT_APP_BACKEND_URL) ||
-  ""
+  resolveBackendOrigin()
 ).replace(/\/$/, "");
 
 export async function createSandboxSession(form) {

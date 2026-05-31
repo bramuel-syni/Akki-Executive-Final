@@ -23,7 +23,8 @@ import { toast } from "sonner";
 import WebsiteShell from "@/website/WebsiteShell";
 import { Loader2 } from "lucide-react";
 
-const API = process.env.REACT_APP_BACKEND_URL || "";
+import { resolveBackendOrigin } from "@/lib/api";
+const API = resolveBackendOrigin();
 
 export default function WelcomePage() {
   const { token } = useParams();

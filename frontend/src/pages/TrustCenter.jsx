@@ -30,7 +30,8 @@ import {
 } from "../components/ui/popover";
 import TrustCenterTour from "../components/trust/TrustCenterTour";
 
-const API = process.env.REACT_APP_BACKEND_URL || "";
+import { resolveBackendOrigin } from "@/lib/api";
+const API = resolveBackendOrigin();
 
 function useAuthHeaders() {
   return useMemo(() => {

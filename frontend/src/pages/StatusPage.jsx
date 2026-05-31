@@ -14,7 +14,8 @@ import React, { useEffect, useState, useCallback } from "react";
 import { CheckCircle2, AlertCircle, XCircle, RefreshCw } from "lucide-react";
 import WebsiteShell from "../website/WebsiteShell";
 
-const API = process.env.REACT_APP_BACKEND_URL || "";
+import { resolveBackendOrigin } from "@/lib/api";
+const API = resolveBackendOrigin();
 
 const PROBE_LABELS = {
   mongo:            "Database",

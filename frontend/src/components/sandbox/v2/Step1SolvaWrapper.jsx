@@ -40,7 +40,8 @@ import { TOKEN, FONT } from "@/components/solva/flow/tokens";
 
 import { Actions as SbxActions } from "@/lib/sandboxV2Flow";
 
-const API = process.env.REACT_APP_BACKEND_URL || "";
+import { resolveBackendOrigin } from "@/lib/api";
+const API = resolveBackendOrigin();
 
 // Pre-auth axios — relies on the cookie the welcome step minted.
 const api = axios.create({

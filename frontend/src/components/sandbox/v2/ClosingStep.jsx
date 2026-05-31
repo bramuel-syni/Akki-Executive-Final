@@ -27,7 +27,8 @@ import { useNavigate } from "react-router-dom";
 import { TOKEN, FONT } from "./tokens";
 import { Actions, writeResumeToken } from "@/lib/sandboxV2Flow";
 
-const API = process.env.REACT_APP_BACKEND_URL || "";
+import { resolveBackendOrigin } from "@/lib/api";
+const API = resolveBackendOrigin();
 const api = axios.create({
   baseURL: `${API}/api/sandbox/v2`,
   withCredentials: true,

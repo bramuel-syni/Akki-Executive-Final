@@ -17,7 +17,8 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { api } from "@/lib/api";
 
-const API_BASE = process.env.REACT_APP_BACKEND_URL || "";
+import { resolveBackendOrigin } from "@/lib/api";
+const API_BASE = resolveBackendOrigin();
 
 export default function HelpFeatures() {
   const [data, setData] = useState(null);

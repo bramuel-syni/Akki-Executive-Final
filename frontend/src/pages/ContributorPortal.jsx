@@ -19,8 +19,9 @@ import { toast, Toaster } from "sonner";
 import { Loader2, Upload, Send, FileText, Check, MessageCircle } from "lucide-react";
 
 
+import { resolveBackendOrigin } from "@/lib/api";
 function api(path, opts = {}) {
-  const base = process.env.REACT_APP_BACKEND_URL || "";
+  const base = resolveBackendOrigin();
   // eslint-disable-next-line no-restricted-syntax -- ContributorPortal is a PUBLIC page; the magic-link token IS the credential, no bearer/X-Active-Context wanted (would 401 here).
   return fetch(`${base}${path}`, opts);
 }

@@ -14,7 +14,8 @@ import WebsiteShell from "../WebsiteShell";
 import { HeroWithLift, InvertedCtaSection } from "../components/PagePrimitives";
 import { COHORT, INVERTED_CTA } from "../copy";
 
-const API = process.env.REACT_APP_BACKEND_URL || "";
+import { resolveBackendOrigin } from "@/lib/api";
+const API = resolveBackendOrigin();
 const FIELDS = [
   { id: "name",            label: "Name",                        required: true,  type: "text",     placeholder: "Full name" },
   { id: "email",           label: "Email",                       required: true,  type: "email",    placeholder: "you@organisation" },

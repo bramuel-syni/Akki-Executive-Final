@@ -1,7 +1,75 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.5 + P5.6 + P5.6.1 — Session reauth + production CSRF + same-origin cascade CLOSED ✅ (2026-02)
+
+**Closed:**
+- ✅ **P5.5.A** — Session re-auth modal recovery from idle timeout:
+  - Middleware bypass list added for `/api/auth/login`, `/auth/logout`,
+    `/auth/refresh`, `/auth/forgot-password`, `/auth/reset-password`,
+    `/api/csrf` so re-auth POSTs reach the handler.
+  - Login handler now refreshes `last_activity_at` atomically so the
+    FIRST post-reauth request doesn't trip the idle check.
+  - SessionTimeoutGuard syncs new access_token to localStorage so the
+    Bearer header stops carrying the stale token.
+  - 4 new pytest in `test_phase_p5_5_session_reauth.py` GREEN.
+  - Live Playwright trace `/tmp/p5_5_a_reauth_trace.py` GREEN for
+    both success (correct pw → modal closes, URL unchanged, /me=200)
+    and failure (wrong pw → modal stays open, NOT on /signin) paths.
+- ✅ **P5.5.B** — Marketing imagery audit + replacement:
+  - Catalog at `/app/memory/sprints/P5_5_marketing_imagery_audit.md`.
+  - 3 REPLACE items regenerated via nano-banana with 35-55 apparent
+    age band, balanced diversity across the surface: audience-
+    triptych.webp, for-neds-hero.webp, home-hero.webp.
+  - 1 VERIFY-WITH-USER item surfaced (`for-executives-hero.webp` —
+    East Asian male 45-60, technically in target band but reads as
+    senior; not auto-replaced).
+  - Live trace at 2 viewports × 3 surfaces: all replacement images
+    decode at correct intrinsic dimensions, no broken loads.
+- ✅ **P5.6** — Production CSRF cross-origin block:
+  - Root cause: production SPA bundle baked
+    `REACT_APP_BACKEND_URL=https://akki-executive.emergent.host`,
+    making every API call cross-origin from akki.syni.ai →
+    SameSite=Lax cookie suppression on login POST → 403
+    csrf_token_missing.
+  - Fix: `lib/api.js::_resolveApiBase` compares baked origin to
+    `window.location.origin` at runtime; uses same-origin `/api`
+    when they differ. Preview unaffected; production heals on
+    redeploy.
+  - 4 new pytest in `test_phase_p5_6_csrf_cookie_domain.py` GREEN.
+  - 5 new frontend tests in `__tests__/apiBaseResolver.test.js` GREEN.
+  - Pre-deploy capture against `akki.syni.ai` reproduced the exact
+    bug; post-fix preview trace confirms CSRF flow works
+    end-to-end (5/5 steps).
+- ✅ **P5.6.1** — Same-origin cascade across all remaining surfaces:
+  - 18 files migrated from `process.env.REACT_APP_BACKEND_URL || ""`
+    to `resolveBackendOrigin()` (exported from `lib/api.js`).
+  - 2 files explicitly excluded (`components/solva/artefact/*.jsx`)
+    to preserve the Solva v1 byte-identical guard.
+  - Catalog at `/app/memory/sprints/P5_6_1_same_origin_cascade.md`.
+
+**Action required:** **Redeploy production** to push the
+`lib/api.js` fix + the 18 cascade migrations + the new imagery to
+`akki.syni.ai`. Re-running `/tmp/p5_6_production_pre_redeploy_trace.py`
+against production after redeploy should show the CSRF flow shift
+from "403 csrf_token_missing" to "200 + sign-in success".
+
+**Pending user decision:** `for-executives-hero.webp` — keep or replace.
+
+
 ### Phase P5 — P4 corrections + OAuth-mode consume CLOSED ✅ (2026-02)
+[Earlier P5 work captured in /app/memory/sprints/P5_corrections_and_oauth.md]
+
+
+### Phase P4 — Cohort live-wire CLOSED ✅ (2026-02)
+[Phase P4 details captured in /app/memory/sprints/P4_cohort_live_wire.md]
+
+
+### Phase P3 — Security MVP+ CLOSED ✅ (2026-02)
+[Phase P3 details captured in /app/memory/sprints/P3_security_mvp_plus.md]
+
+
+
 
 **Scope:** Two P4 frontend bugs found by independent tester (admin
 magic_url not visible; /welcome consume bounced to /signin) + ship

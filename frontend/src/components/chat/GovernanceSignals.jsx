@@ -17,8 +17,10 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { resolveBackendOrigin } from "@/lib/api";
 
-const API = process.env.REACT_APP_BACKEND_URL || "";
+// Phase P5.6.1 (2026-02) — same-origin guard. See lib/api.js.
+const API = resolveBackendOrigin();
 
 export default function GovernanceSignals({ governance, chatId, messageId }) {
   const navigate = useNavigate();

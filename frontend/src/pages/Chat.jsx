@@ -52,6 +52,7 @@ import "highlight.js/styles/github.css";
 import ModelAvatar from "@/components/chat/ModelAvatar";
 import MarkdownMessage from "@/components/chat/MarkdownMessage";
 import MessageActions from "@/components/chat/MessageActions";
+import { resolveBackendOrigin } from "@/lib/api";
 import GovernanceSignals from "@/components/chat/GovernanceSignals";import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
   DialogFooter,
@@ -673,7 +674,7 @@ export default function Chat() {
     // `message` event with the rehydrated `assistant_text`, and a
     // final `done` event. On terminal, we swap the streamed text for
     // the rehydrated string so PII / citations resolve correctly.
-    const BACKEND = process.env.REACT_APP_BACKEND_URL || "";
+    const BACKEND = resolveBackendOrigin();
     const tok = localStorage.getItem("akki_access_token");
     const headers = {
       "Content-Type": "application/json", "Accept": "text/event-stream",

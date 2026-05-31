@@ -30,6 +30,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 
 
+import { resolveBackendOrigin } from "@/lib/api";
 // QA-2026-05-16-037 (Chunk 16) — verbatim badge taxonomy per the
 // dispatch's locked decision: draft → Draft (neutral) · in_review →
 // In Review (amber) · committed → Committed (dark filled). The
@@ -104,7 +105,7 @@ export default function DocumentCardsSection({ contextId, onOpenDocument }) {
       // Open in a new tab to preserve the current Work Studio state.
       // Using window.open keeps the auth cookie + token query param
       // self-contained on the server stream.
-      const apiBase = process.env.REACT_APP_BACKEND_URL || "";
+      const apiBase = resolveBackendOrigin();
       const url = `${apiBase}/api/contexts/${contextId}/work-studio/exports/${item.id}/download?token=${encodeURIComponent(token)}`;
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (e) {

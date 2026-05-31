@@ -16,6 +16,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Loader2, Sparkles, ArrowRight, ShieldCheck, Eye } from "lucide-react";
 
+import { resolveBackendOrigin } from "@/lib/api";
 /* Phase K palette correction (2026-05-12) — iter65 originally
  * specified a full-bleed Navy band. Navy is now FORBIDDEN by the
  * canonical Editorial Posture. The band is remapped to --ink
@@ -38,7 +39,7 @@ const SAMPLE_TEXT =
   "suggests a structural gap. We anticipate fines from the regulator " +
   "in the next quarter and are evaluating a £45m bolt-on acquisition.";
 
-const API_BASE = process.env.REACT_APP_BACKEND_URL || "";
+const API_BASE = resolveBackendOrigin();
 
 export default function EnterpriseFeature() {
   const [text, setText] = useState("");
