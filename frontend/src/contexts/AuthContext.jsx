@@ -119,10 +119,19 @@ export function AuthProvider({ children }) {
         // useState init only runs once, but a second tab might have
         // a different value than this tab's first read.
         setActiveContextIdState(cached);
-      } else if (!cached && ctxs.length >= 1) {
-        // Cold start in a fresh tab with no sessionStorage value.
-        persistActiveContext(ctxs[0].id);
       }
+      // Phase P5.12.2 (2026-02) — DO NOT auto-pick the first
+      // membership on a cold-start (no cached id) any more. The
+      // previous behaviour silently warped users into a specific
+      // company on every new tab, which conflicts with the
+      // post-login default landing rule: leave activeContextId
+      // null so AppHome.jsx dispatches to ContextPortfolio
+      // (Home 1, the portfolio overview) — the user picks a
+      // company consciously by clicking a portfolio tile. The
+      // mid-session membership-revoked branch above keeps its
+      // auto-pick to avoid leaving an authenticated tab in a
+      // broken "no context" state when its cached id silently
+      // expires.
 
       // One-time legacy migration — copy the old localStorage value
       // into sessionStorage IF this tab has none AND the localStorage
@@ -180,29 +189,25 @@ export function AuthProvider({ children }) {
     const ctxs = fromMembership || (data.contexts || []);
     setContexts(ctxs);
 
-    // Auto-pick the user's active context on login.
+    // Phase P5.12.2 (2026-02) — post-login default landing rule.
     //
-    // D-005 prescribes "2+ memberships → redirect to a Pick-a-context
-    // screen". That rule applies to cold starts (cookie session valid,
-    // sessionStorage empty in this tab — e.g. the user opened a new
-    // tab). For an active login flow the user has just authenticated
-    // and we have a clear default to use: the most-recently-joined
-    // membership. The dedicated picker screen lives at the SPA level
-    // and is invoked via the existing in-topbar switcher dropdown.
+    // The previous behaviour auto-picked the most-recently-joined
+    // membership and stamped it onto sessionStorage. That sent
+    // every sign-in straight into Home 2 (CompanyHome —
+    // "Inside <Company>"), skipping Home 1 (ContextPortfolio —
+    // the portfolio overview with NED/Executive tabs + Boards to
+    // watch + Where you left off).
     //
-    //   * 1 membership → use it
-    //   * 2+ memberships → use the most-recently-joined one
-    //   * 0 memberships → leave null; the auth UI shows a friendly
-    //     "no memberships" state (only happens for a removed user).
-    if (ctxs.length >= 1) {
-      // contexts come back from /api/me/contexts already sorted
-      // most-recently-joined first; ctxs[0] is therefore the right
-      // default. If the legacy /auth/me path was used (no sort
-      // contract) we still pick index 0 as a stable choice.
-      persistActiveContext(ctxs[0].id);
-    } else {
-      persistActiveContext(null);
-    }
+    // We now leave `activeContextId` null on login so AppHome.jsx
+    // dispatches to ContextPortfolio. The portfolio overview is
+    // the canonical post-login landing surface; the user clicks
+    // into any company tile to drill down into CompanyHome.
+    //
+    // If a future "remember last company" preference ever lands,
+    // it should opt-in by writing to sessionStorage HERE — i.e.
+    // the default stays Home 1 and the preference is the override,
+    // not the other way round.
+    persistActiveContext(null);
   }, [fetchAuthoritativeContexts, persistActiveContext]);
 
   const logout = useCallback(async () => {

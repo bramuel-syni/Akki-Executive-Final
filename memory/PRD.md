@@ -1,6 +1,30 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.12 — Post-login home: routing default + duplicate divider (2026-02)
+
+**P5.12.2 — Post-login default landing = Home 1** ✅ shipped
+- Root cause: `AuthContext.afterAuth` auto-picked `ctxs[0].id` immediately after login, sending users to Home 2 (`CompanyHome` — "Inside <Company>") instead of Home 1 (`ContextPortfolio` — portfolio overview). Sister auto-pick in `bootstrap` cold-start branch had the same effect on fresh tabs.
+- Fix: `afterAuth` now always calls `persistActiveContext(null)`; the cold-start auto-pick branch in `bootstrap()` deleted. Mid-session membership-revoked safety net preserved.
+- Live Playwright trace: `final pathname=/app`, H1 "Good evening, AKKI.", portfolio-rail-tabs + boards-to-watch present, company-home markers count=0. Drill-down (click a company tile → Home 2) still works.
+
+**P5.12.1 — Duplicate vertical divider** ✅ shipped
+- Root cause: `ContextPortfolio.jsx` listing column had `lg:border-r lg:border-[var(--rule)]` AND a standalone absolute-positioned hairline at `right: calc(340px + 40px + 32px)`. At the `lg` breakpoint (probed at viewport 1024), both painted within ±2 px of the same X coordinate — user saw a double line.
+- Multi-viewport DOM probe result: 1024 BEFORE = `DUPLICATE — 2 hairline hits ['border-right', 'self-bar']`; 1024 AFTER = `OK — single divider ['self-bar']`. 1280 = single divider in both modes (akki-w-medium wrapper offset masked the stack). 820/414 = divider hidden via `hidden lg:block` — no bug, no fix needed.
+- Fix: removed `lg:border-r lg:border-[var(--rule)]` from `portfolio-listing-column`. `lg:pr-10` retained for breathing room.
+- CompanyHome.jsx checked and clean — pytest invariant added so a future copy-paste can't reintroduce the duplicate there either.
+
+**Lockdown count:** 60/60 (added 7 new in `test_phase_p5_12_*.py`). v1 byte-identical guard green. Voice-lint clean. Chat happy-path source-strict tests still pass (Chat.jsx untouched in this phase).
+
+**HUMAN_REQUIRED:** deploy preview → production to push the two fixes onto `akki.syni.ai`.
+
+**Out of scope (parked):**
+- Add `position: relative` to portfolio-landing wrapper so the absolute divider anchors to the wrapper, not the viewport (polish, not bug).
+- "Remember last company" preference — opt-in, future.
+- P5.12.3 — marketing landing pages / public home routing — awaiting user clarification.
+
+
+
 ### Phase P5.11 — Test hygiene + Notify gating + Sister CSRF + MX diagnosis (2026-02)
 
 Closed slices .1, .2, .4 · slice .3 escalated to user-side SendGrid console step.

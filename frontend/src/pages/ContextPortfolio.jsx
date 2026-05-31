@@ -476,10 +476,19 @@ export default function ContextPortfolio() {
         className="akki-w-medium px-8 pt-10 pb-12 flex gap-10"
         data-testid="portfolio-landing"
       >
-        {/* LEFT — main column. Sign-in-style border-right hairline
-            applied to this column at lg+ (matches SignIn.jsx:73). */}
+        {/* LEFT — main column. Phase P5.12.1 (2026-02) — removed the
+            `lg:border-r lg:border-[var(--rule)]` rule from this
+            column because the canonical edge-to-edge divider lives
+            on the standalone absolute-positioned hairline below
+            (data-testid `portfolio-vertical-divider`). The two
+            stacked at the same X coordinate at the lg breakpoint
+            (Playwright probe at 1024 viewport found
+            DUPLICATE — 2 hairline hits before the fix), producing
+            the visible double-line on the post-login portfolio
+            home. `lg:pr-10` stays — it provides the breathing room
+            between the listing content and the divider line. */}
         <div
-          className="flex-1 min-w-0 space-y-10 lg:border-r lg:border-[var(--rule)] lg:pr-10"
+          className="flex-1 min-w-0 space-y-10 lg:pr-10"
           data-testid="portfolio-listing-column"
           data-divider-id="portfolio-vertical-divider"
         >
