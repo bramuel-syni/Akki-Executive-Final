@@ -58,6 +58,17 @@ def _notify_founder(app_row: dict) -> None:
     error-handling shape — never raises, logs `cohort_application_*`.
     Multi-recipient: FOUNDER_NOTIFY_EMAIL accepts a comma-separated
     list; one SendGrid call goes to all recipients."""
+    # Phase P5.11.2 (2026-02) — test-mode kill switch. When
+    # `COHORT_NOTIFY_DISABLED=true` the founder notify is suppressed
+    # so the pytest session never lands a real send in bramuel /
+    # mugwe.marion / akki@syni.ai. Production never sets this env.
+    nd = (os.environ.get("COHORT_NOTIFY_DISABLED", "") or "").strip().lower()
+    if nd in {"true", "1", "yes"}:
+        log.info("cohort_application_notify_skipped: %s", {
+            "id": app_row["id"], "reason": "COHORT_NOTIFY_DISABLED",
+            "test_mode": True,
+        })
+        return
     recipients = _parse_founder_recipients(
         os.environ.get("FOUNDER_NOTIFY_EMAIL") or ""
     )

@@ -110,6 +110,21 @@ def _enabled() -> bool:
     return (os.environ.get("COHORT_EMAILS_ENABLED", "false") or "false").lower() == "true"
 
 
+def _notify_disabled() -> bool:
+    """Phase P5.11.2 (2026-02) — test-side kill switch for SendGrid
+    sends. When `COHORT_NOTIFY_DISABLED=true` (or `1`), every public
+    `send_*` entrypoint in this module short-circuits with a log line
+    instead of opening a SendGrid client connection. Production never
+    sets this env (and `backend/.env.example` does not document it
+    either — intentional: it exists strictly for the pytest session,
+    which sets it via `tests/conftest.py`). The flag is checked
+    BEFORE `_enabled()` so it overrides every other path including
+    the admin test-send (`admin_test_send`) which is allowed to send
+    despite `COHORT_EMAILS_ENABLED=false`."""
+    val = (os.environ.get("COHORT_NOTIFY_DISABLED", "") or "").strip().lower()
+    return val in {"true", "1", "yes"}
+
+
 def _send_via_sendgrid(
     *, to_email: str, subject: str, plain_body: str,
     html_body: Optional[str] = None, reply_to: Optional[str] = None,
@@ -131,6 +146,15 @@ def _send_via_sendgrid(
         confirmations can route replies to the right inbox without
         changing the From-Authentication path.
     """
+    # Phase P5.11.2 (2026-02) — test-mode kill switch. Honoured ahead
+    # of every other guard so the pytest session NEVER opens a
+    # SendGrid client. Production never sets this env.
+    if _notify_disabled():
+        log.info(
+            "cohort_notify: would have sent to %s (test mode COHORT_NOTIFY_DISABLED)",
+            _redact_email(to_email),
+        )
+        return {"status": "test_mode_disabled", "reason": "COHORT_NOTIFY_DISABLED"}
     api_key = (os.environ.get("SENDGRID_API_KEY") or "").strip()
     from_addr = (
         (os.environ.get("SENDGRID_FROM_EMAIL") or "").strip()

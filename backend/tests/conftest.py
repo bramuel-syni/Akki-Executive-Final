@@ -44,6 +44,16 @@ os.environ.setdefault("CSRF_TEST_BYPASS_HEADER", "1")
 # and downstream MFA / B.4 / B.6 tests cascade-fail. Production
 # never sets this env.
 os.environ.setdefault("RATE_LIMIT_DISABLED", "1")
+# Phase P5.11.2 (2026-02) — kill SendGrid notify sends during the
+# pytest session. Three notify code paths read this flag:
+#   - services.cohort_email._send_via_sendgrid
+#   - routers.cohort_applications._notify_founder
+#   - routers.website (early-access + contact form operator notify)
+# Each short-circuits with a log line instead of opening a real
+# SendGrid connection. Production never sets this env — it lives
+# exclusively in test infra so bramuel / mugwe.marion / akki@syni.ai
+# do not receive synthetic emails from CI runs or fork agents.
+os.environ.setdefault("COHORT_NOTIFY_DISABLED", "true")
 import httpx as _httpx  # noqa: E402
 _orig_request = _httpx.AsyncClient.request
 async def _patched_request(self, method, url, *args, **kwargs):

@@ -16,7 +16,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Loader2, Sparkles, ArrowRight, ShieldCheck, Eye } from "lucide-react";
 
-import { resolveBackendOrigin } from "@/lib/api";
+import { resolveBackendOrigin, ensureCsrfToken } from "@/lib/api";
 /* Phase K palette correction (2026-05-12) — iter65 originally
  * specified a full-bleed Navy band. Navy is now FORBIDDEN by the
  * canonical Editorial Posture. The band is remapped to --ink
@@ -56,16 +56,25 @@ export default function EnterpriseFeature() {
     setScoring(true);
     setError("");
     try {
-      // Patch 24B — raw fetch() is fine here: this is a PUBLIC marketing
-      // endpoint (`/api/public/studio/sensitivity-demo`) reachable on
-      // the unauthenticated marketing page. Using the axios `api`
-      // client would inject an Authorization header from any cached
-      // localStorage token, which would taint the rate-limit logic
-      // server-side.
-      // eslint-disable-next-line no-restricted-syntax -- public marketing endpoint, intentionally no auth
+      // Phase P5.11.4 (2026-02) — raw fetch() must carry the
+      // `X-CSRF-Token` header even on PUBLIC POST endpoints because
+      // CSRFMiddleware enforces it on every state-changing route
+      // outside the explicit allowlist. The sensitivity-demo route
+      // is intentionally NOT allowlisted (it changes server state —
+      // creates a `studio_sensitivity_demos` row + bumps the IP
+      // rate-limit bucket), so CSRF protection applies even though
+      // the endpoint is unauthenticated. `ensureCsrfToken()` lazily
+      // mints / reads the CSRF cookie via GET /api/csrf on first
+      // call. Authorization header is intentionally still omitted
+      // so a cached localStorage Bearer token does not taint the
+      // server-side IP rate-limit bucket.
+      const csrf = await ensureCsrfToken();
+      const headers = { "Content-Type": "application/json" };
+      if (csrf) headers["X-CSRF-Token"] = csrf;
+      // eslint-disable-next-line no-restricted-syntax -- public marketing endpoint, intentionally no auth; CSRF + content-type only
       const r = await fetch(`${API_BASE}/api/public/studio/sensitivity-demo`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ text: snippet.slice(0, 4000) }),
       });
       if (r.status === 429) {

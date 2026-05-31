@@ -44,6 +44,17 @@ def _ip_hash(request: Request) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
+def _notify_disabled() -> bool:
+    """Phase P5.11.2 (2026-02) — test-mode kill switch shared with
+    services.cohort_email. When set, both the early-access operator
+    notify AND the contact-form operator notify in this router go
+    no-op so the pytest session never lands a real send in
+    bramuel / mugwe.marion / akki@syni.ai. Production never sets
+    this env."""
+    val = (os.environ.get("COHORT_NOTIFY_DISABLED", "") or "").strip().lower()
+    return val in {"true", "1", "yes"}
+
+
 class EarlyAccessApplication(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=80)
     last_name: str = Field(..., min_length=1, max_length=80)
@@ -93,7 +104,7 @@ async def submit_early_access(body: EarlyAccessApplication, request: Request) ->
     try:
         from email_service import send_email
         notify_to = os.environ.get("EARLY_ACCESS_NOTIFY_EMAIL")
-        if notify_to:
+        if notify_to and not _notify_disabled():
             await send_email(
                 to=[notify_to],
                 subject=f"[Akki cohort] New application — {row['first_name']} {row['last_name']} ({row['company']})",
@@ -161,7 +172,7 @@ async def submit_contact(body: ContactSubmission, request: Request) -> Dict[str,
         from email_service import send_email
         notify_to = (os.environ.get("CONTACT_NOTIFY_EMAIL")
                      or os.environ.get("EARLY_ACCESS_NOTIFY_EMAIL"))
-        if notify_to:
+        if notify_to and not _notify_disabled():
             await send_email(
                 to=[notify_to],
                 subject=f"[Akki contact] {row['name']} — {row['company'] or 'no company'}",

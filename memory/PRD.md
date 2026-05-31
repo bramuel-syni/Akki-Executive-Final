@@ -1,6 +1,44 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.11 — Test hygiene + Notify gating + Sister CSRF + MX diagnosis (2026-02)
+
+Closed slices .1, .2, .4 · slice .3 escalated to user-side SendGrid console step.
+
+**P5.11.1 — Test pollution cleanup** ✅ shipped + applied to preview
+- New: `scripts/cleanup_test_pollution.py` (dry-run default, `--apply`, `--keep-after=<ISO>`, audit row per run)
+- Purged from preview Mongo: 20 cohort_applications + 16 cohort_magic_links + 17 cohort_waitlist + 35 admin_inbox_messages + 19 cohort_application_audit = **107 rows**
+- Production: command documented in `/app/memory/sprints/P5_11_test_hygiene_and_csrf.md`; **NOT auto-run this phase**.
+
+**P5.11.2 — Notify gating** ✅ shipped
+- New env flag `COHORT_NOTIFY_DISABLED` honoured in 3 send paths:
+  - `services/cohort_email.py::_send_via_sendgrid`
+  - `routers/cohort_applications.py::_notify_founder`
+  - `routers/website.py` (early-access + contact form)
+- `tests/conftest.py` auto-sets `COHORT_NOTIFY_DISABLED=true` for the entire pytest session → no real SendGrid sends from CI / fork agents
+- Test coverage: 1 runtime mock asserts `SendGridAPIClient` is instantiated 0 times when flag is set, plus 4 source-strict guards.
+
+**P5.11.3 — MX inbound round-trip** ❌ → HUMAN_REQUIRED
+- New: `scripts/probe_inbound_mx.py` (SendGrid Send API → admin inbox polling)
+- Live result: `MX_INBOUND_FAIL no_inbound_received_within_120s`
+- Definitive diagnosis: MX DNS is correct (`mx.sendgrid.net`), backend webhook works end-to-end (direct curl-with-Basic-Auth probe captured to admin_inbox in ~80 ms), but **SendGrid Inbound Parse host registration is missing** for `inbound.akki.syni.ai`. Fix is a 3-minute SendGrid console step documented in the memo.
+
+**P5.11.4 — Sister raw-fetch CSRF fixes** ✅ shipped + live-verified
+- Same pattern as P5.10 applied to 3 sister sites:
+  - `frontend/src/sandbox/api.js` (POST + DELETE)
+  - `frontend/src/components/marketing/EnterpriseFeature.jsx` (POST)
+- Live verification: `/api/public/studio/sensitivity-demo` 403→200; `/api/sandbox-gen/sessions` 403→400 (schema; CSRF gate cleared); same endpoint without CSRF header still returns 403 (invariant intact)
+- Binary classification: none of the three needed CSRF-allowlist removal — they were never in the allowlist. Pytest invariant added to lock in.
+
+**Lockdown count:** 53/53 green (4 v1 + 5 P5.10 panel + 12 P5.10 resilience + 15 Z1.1 + **17 P5.11**). v1 byte-identical guard green. Voice-lint clean. Chat happy-path Playwright still passes on live preview.
+
+**HUMAN_REQUIRED:**
+1. Register Inbound Parse host `inbound.akki.syni.ai` in SendGrid console → destination URL `/api/inbound/sendgrid` → save → re-run `python3 scripts/probe_inbound_mx.py` to verify `MX_INBOUND_OK`.
+2. Deploy preview → production (covers P5.10 + P5.11 in one ship).
+3. After production deploy + Mongo cleanup approval: run `python3 scripts/cleanup_test_pollution.py --apply` against production Mongo.
+
+
+
 ### Phase P5.10 — Chat resilience: CSRF on SSE + cancel-path audit CLOSED ✅ (2026-02)
 
 **Symptom (user-reported):** chat responses using "Claude Opus 4.7" cancel at ~0.9s with red audit-panel error. Believed-to-be production deploy lag.
