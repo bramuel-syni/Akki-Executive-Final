@@ -168,10 +168,45 @@ async def capture_for_admin_inbox(payload: Dict[str, Any], *, routing_result: st
             payload, routing_result=routing_result, routing_target=routing_target,
         )
         await db.admin_inbox_messages.insert_one(dict(doc))
+        # Phase P5.9.2 — bust the unread-count cache so the badge
+        # reflects the new arrival on the next poll (without waiting
+        # the full 30s TTL).
+        _unread_count_cache["expires_at"] = 0
         return doc["id"]
     except Exception as e:  # noqa: BLE001
         log.warning("admin_inbox capture failed: %s", str(e)[:160])
         return ""
+
+
+# ─── Phase P5.9.2 (2026-02) — unread-count cache ──────────────────────
+# Cheap in-process cache so the polling badge doesn't hammer the
+# collection. The cache is per-process; multi-replica deploys each
+# carry their own copy, which is fine for a courtesy indicator
+# (stale by up to 30s is acceptable). Status transitions in
+# `set_inbox_message_status` and new captures also bust the cache
+# explicitly so the badge stays close to real time.
+import time as _time
+
+_unread_count_cache: Dict[str, Any] = {"value": 0, "expires_at": 0}
+_UNREAD_CACHE_TTL_SECONDS = 30
+
+
+@router.get("/unread-count")
+async def get_unread_count(
+    admin: Dict[str, Any] = Depends(_require_super_admin_with_mfa),
+) -> Dict[str, Any]:
+    """Returns the count of admin_inbox_messages with status='new'.
+
+    Cached for 30s in-process. Status writes (set_inbox_message_status,
+    capture_for_admin_inbox) bust the cache so the next poll is fresh.
+    Hidden from non-super-admin sessions via the dependency."""
+    now = _time.monotonic()
+    if now < _unread_count_cache["expires_at"]:
+        return {"count": _unread_count_cache["value"], "cached": True}
+    count = await db.admin_inbox_messages.count_documents({"status": "new"})
+    _unread_count_cache["value"] = int(count)
+    _unread_count_cache["expires_at"] = now + _UNREAD_CACHE_TTL_SECONDS
+    return {"count": int(count), "cached": False}
 
 
 # ─── List ─────────────────────────────────────────────────────────────
@@ -231,6 +266,8 @@ async def get_inbox_message(
                 "read_by": admin.get("id"),
             }},
         )
+        # P5.9.2 — bust the badge cache.
+        _unread_count_cache["expires_at"] = 0
         try:
             await write_audit(
                 None, admin.get("id"),
@@ -278,6 +315,8 @@ async def set_inbox_message_status(
         raise HTTPException(status_code=404, detail={
             "code": "not_found", "message": "Inbox message not found.",
         })
+    # P5.9.2 — bust the badge cache.
+    _unread_count_cache["expires_at"] = 0
     try:
         await write_audit(
             None, admin.get("id"),

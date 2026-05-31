@@ -33,6 +33,10 @@ import MentionInbox from "@/components/collab/MentionInbox";
 import UploadModal from "@/components/upload/UploadModal";
 // Patch 27 — PortfolioRail removed entirely.
 import { isSponsoredContext } from "@/lib/sponsorship";
+// Phase P5.9.2 (2026-02) — Admin Inbox unread-count polling for the
+// topbar badge. Hook returns 0 + no-op when the account is not a
+// super-admin, so non-admin sessions never poll the endpoint.
+import useAdminInboxUnreadCount from "@/hooks/useAdminInboxUnreadCount";
 import ContinueWithPill from "@/components/layout/ContinueWithPill";
 import ProPill from "@/components/depth/ProPill";
 import { openUpgradeModal } from "@/components/depth/UpgradeModal";
@@ -161,6 +165,12 @@ export default function AppShell({ children }) {
   const depthEligible = !!depthStatus?.eligible;
   const isProPlan = (account?.plan || "free") !== "free";
   const [trustOpen, setTrustOpen] = useState(false);
+
+  // Phase P5.9.2 (2026-02) — Admin Inbox unread count for the topbar
+  // Admin dropdown badge. Hook short-circuits to 0 + no poll for
+  // non-super-admin sessions.
+  const { count: adminInboxUnread } = useAdminInboxUnreadCount();
+  const isSuperAdmin = account?.is_superadmin === true;
 
   // CHAT sprint (2026-05-12) — surfaces nested inside AppShell (e.g.
   // Chat → AuditDialog) can request opening the Trust Panel by
@@ -586,6 +596,82 @@ export default function AppShell({ children }) {
               />
             </div>
           </div>
+
+          {/* Phase P5.9.1 (2026-02) — prominent Admin entry point.
+              Super-admin only. Sits to the right of Help so it's
+              discoverable on every signed-in view at every viewport
+              ≥640px. Visible label so admins don't have to hunt
+              through the account-avatar dropdown. The pre-existing
+              account-menu "Admin · Users" link from P1.ε remains
+              untouched — this is an additive surface, not a
+              replacement.
+
+              Unread-inbox badge: a small red dot appears on the
+              button itself when admin_inbox_messages has any
+              status=new rows; the dropdown items also surface the
+              count beside the Akki Inbox entry. */}
+          {isSuperAdmin && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="relative inline-flex items-center gap-1.5 px-2 sm:px-2.5 h-8 text-[13px] text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--cream-deep)] rounded-md transition-colors"
+                  aria-label="Admin tools"
+                  title="Admin tools"
+                  data-testid="topbar-admin-btn"
+                >
+                  <ShieldCheck className="w-4 h-4" strokeWidth={1.7} />
+                  <span className="hidden sm:inline">Admin</span>
+                  <ChevronDown className="w-3.5 h-3.5 -ml-0.5 hidden sm:inline" strokeWidth={1.7} />
+                  {adminInboxUnread > 0 && (
+                    <span
+                      className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-600 rounded-full ring-2 ring-white"
+                      aria-label={`${adminInboxUnread} unread inbox messages`}
+                      data-testid="topbar-admin-unread-dot"
+                    />
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="w-56"
+                data-testid="topbar-admin-menu"
+              >
+                <DropdownMenuLabel className="text-[11px] uppercase tracking-wider text-[var(--muted)]">
+                  Admin tools
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild data-testid="topbar-admin-menu-users">
+                  <Link to="/app/admin/users" className="cursor-pointer flex items-center w-full">
+                    <Users className="w-4 h-4 mr-2" strokeWidth={1.7} />
+                    User Management
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild data-testid="topbar-admin-menu-cohort">
+                  <Link to="/app/admin/cohort-applications" className="cursor-pointer flex items-center w-full">
+                    <Send className="w-4 h-4 mr-2" strokeWidth={1.7} />
+                    Cohort applications
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild data-testid="topbar-admin-menu-inbox">
+                  <Link to="/app/admin/inbox" className="cursor-pointer flex items-center justify-between w-full">
+                    <span className="flex items-center">
+                      <MessageCircle className="w-4 h-4 mr-2" strokeWidth={1.7} />
+                      Akki Inbox
+                    </span>
+                    {adminInboxUnread > 0 && (
+                      <span
+                        className="text-[10px] font-mono font-semibold bg-red-100 text-red-700 px-1.5 py-0.5 rounded-sm"
+                        data-testid="topbar-admin-menu-inbox-count"
+                      >
+                        {adminInboxUnread > 99 ? "99+" : adminInboxUnread}
+                      </span>
+                    )}
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
 
           {/* Phase 13.3 — discoverable shortcut overlay trigger. Press ?
               keyboard-side achieves the same; this gives mouse users a

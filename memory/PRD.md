@@ -1,6 +1,17 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.9 — Admin home button + unread inbox badge CLOSED ✅ (2026-02)
+
+**Shipped:**
+- **P5.9.1** — Prominent topbar "Admin" button (super-admin only). Visible at all 4 target viewports (1280/1024/820/414); label collapses to icon-only on <640px to save horizontal space. Dropdown with 3 items: User Management → `/app/admin/users`, Cohort applications → `/app/admin/cohort-applications`, Akki Inbox → `/app/admin/inbox`. The existing account-menu "Admin · Users" link from P1.ε is preserved unchanged (additive surface).
+- **P5.9.2** — Unread-inbox badge. Backend `GET /api/admin/inbox/unread-count` with in-process 30s TTL cache; cache busted on capture + on status writes. New hook `useAdminInboxUnreadCount` polls every 60s while signed-in-as-admin; no-op for non-admin sessions. Topbar button gets a red dot when count > 0; the Akki Inbox dropdown item shows the numeric badge (capped at "99+").
+
+**Tests:** 4 new pytest in `test_phase_p5_9_admin_button_and_badge.py` (auth gate, capture cache-bust, status-flip cache-bust, route registration). 42/42 backend + 5/5 frontend resolver tests GREEN.
+
+**Live DOM trace `/tmp/p5_9_admin_button_trace.py`:** all 5 sessions × 5 checks each = 24/25 assertions green (the 5th was admin_btn_hidden=True for viewer, also green). Screenshots at all 4 admin viewports + viewer-1280.
+
+
 ### Phase P5.8 — SendGrid consolidation + Akki Inbox + image replacement + Postmark wind-down CLOSED ✅ (2026-02)
 
 **Shipped:**
