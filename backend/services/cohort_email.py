@@ -23,6 +23,13 @@ import os
 import re
 from typing import Dict, Optional
 
+from services.cohort_email_html import (
+    render_approval_html,
+    render_decline_html,
+    render_receipt_html,
+    render_reminder_html,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -52,8 +59,32 @@ DECLINE_BODY = (
     "{first_name},\n\n"
     "Thanks for your application. We're not a fit right now, but we "
     "read it carefully. We're keeping our list small to honour the "
-    "response time we promised others. If our priorities shift, "
-    "we'll be back in touch.\n\n"
+    "response time we promised others.\n\n"
+    "— Akki"
+)
+
+# Phase P5.7 (2026-02) — decline body variant that includes the
+# waitlist door-back line. Falls back to the original body when the
+# caller passes no waitlist_url, so the existing /decline call sites
+# keep working unchanged.
+DECLINE_BODY_WITH_WAITLIST = (
+    "{first_name},\n\n"
+    "Thanks for your application. We're not a fit right now, but we "
+    "read it carefully. We're keeping our list small to honour the "
+    "response time we promised others.\n\n"
+    "If you'd like to be considered for a later cohort, leave your "
+    "email here: {waitlist_url}\n\n"
+    "— Akki"
+)
+
+# Phase P5.7 (2026-02) — Touch 4: day-10 expiry reminder.
+REMINDER_SUBJECT = "Akki — your invite expires in four days"
+REMINDER_BODY = (
+    "{first_name},\n\n"
+    "Quick reminder — your Akki invite expires in four days. Open "
+    "your workspace whenever you have ten quiet minutes.\n\n"
+    "{magic_link}\n\n"
+    "If the moment isn't right, just reply and we'll hold a place.\n\n"
     "— Akki"
 )
 
@@ -79,37 +110,72 @@ def _enabled() -> bool:
     return (os.environ.get("COHORT_EMAILS_ENABLED", "false") or "false").lower() == "true"
 
 
-def _send_via_sendgrid(*, to_email: str, subject: str, plain_body: str) -> Dict[str, str]:
+def _send_via_sendgrid(
+    *, to_email: str, subject: str, plain_body: str,
+    html_body: Optional[str] = None, reply_to: Optional[str] = None,
+) -> Dict[str, str]:
     """Synchronous SendGrid send. Returns `{status, provider_id}`. On
     error we DO NOT raise — we log + return `{status: error}` so the
     caller (the cohort apply / admin action) succeeds even when email
     delivery transiently fails. The application row IS the audit; the
-    email is a courtesy."""
+    email is a courtesy.
+
+    Phase P5.7 (2026-02):
+      * Reads `SENDGRID_FROM_EMAIL` (aligning with the rest of the
+        codebase and the deployed `.env`). Falls back to legacy
+        `SENDGRID_FROM` for backward compat during the rollout.
+      * Adds optional `html_body` so the recipient sees the HTML
+        version when their client supports it; the plain-text body
+        survives as the fallback (Outlook plain mode etc).
+      * Adds optional `reply_to` so admin test sends + waitlist
+        confirmations can route replies to the right inbox without
+        changing the From-Authentication path.
+    """
     api_key = (os.environ.get("SENDGRID_API_KEY") or "").strip()
-    from_addr = (os.environ.get("SENDGRID_FROM") or "").strip()
+    from_addr = (
+        (os.environ.get("SENDGRID_FROM_EMAIL") or "").strip()
+        or (os.environ.get("SENDGRID_FROM") or "").strip()
+    )
     if not api_key or not from_addr:
-        log.warning("cohort_email: missing SENDGRID_API_KEY or SENDGRID_FROM — skipping send to=%s",
+        log.warning("cohort_email: missing SENDGRID_API_KEY or SENDGRID_FROM_EMAIL — skipping send to=%s",
                     _redact_email(to_email))
         return {"status": "skipped", "reason": "sendgrid_unconfigured"}
     try:
         from sendgrid import SendGridAPIClient
-        from sendgrid.helpers.mail import Mail
+        from sendgrid.helpers.mail import Mail, ReplyTo
         message = Mail(
             from_email=from_addr,
             to_emails=to_email,
             subject=subject,
             plain_text_content=plain_body,
+            html_content=html_body,
         )
+        if reply_to:
+            message.reply_to = ReplyTo(reply_to)
         sg = SendGridAPIClient(api_key)
         resp = sg.send(message)
         log.info(
             "cohort_email: sent kind=%s to=%s status=%s",
             subject, _redact_email(to_email), resp.status_code,
         )
+        # SendGrid returns X-Message-Id in response headers — capture
+        # it for delivery-status correlation against the webhook
+        # event stream we'll wire in P5.7.5.
+        provider_id = ""
+        try:
+            if hasattr(resp, "headers"):
+                hdrs = resp.headers
+                provider_id = (
+                    hdrs.get("X-Message-Id")
+                    or (hdrs.get("X-Message-Id".lower()) if hasattr(hdrs, "get") else "")
+                    or ""
+                )
+        except Exception:
+            provider_id = ""
         return {
             "status": "sent",
             "provider_status": str(resp.status_code),
-            "provider_id": resp.headers.get("X-Message-Id", "") if hasattr(resp, "headers") else "",
+            "provider_id": provider_id or "",
         }
     except Exception as e:  # noqa: BLE001
         log.warning(
@@ -120,35 +186,102 @@ def _send_via_sendgrid(*, to_email: str, subject: str, plain_body: str) -> Dict[
 
 
 def send_receipt(*, to_email: str, first_name: Optional[str] = None) -> Dict[str, str]:
-    body = RECEIPT_BODY.format(first_name=_first_name_from(first_name, to_email))
+    fn = _first_name_from(first_name, to_email)
+    body = RECEIPT_BODY.format(first_name=fn)
+    html = render_receipt_html(first_name=fn)
     if not _enabled():
         log.info("cohort_email: would have sent receipt to %s", _redact_email(to_email))
         return {"status": "flag_off", "kind": "receipt"}
-    out = _send_via_sendgrid(to_email=to_email, subject=RECEIPT_SUBJECT, plain_body=body)
+    out = _send_via_sendgrid(to_email=to_email, subject=RECEIPT_SUBJECT, plain_body=body, html_body=html)
     out["kind"] = "receipt"
     return out
 
 
 def send_approval(*, to_email: str, first_name: Optional[str], magic_link: str) -> Dict[str, str]:
-    body = APPROVAL_BODY.format(
-        first_name=_first_name_from(first_name, to_email),
-        magic_link=magic_link,
-    )
+    fn = _first_name_from(first_name, to_email)
+    body = APPROVAL_BODY.format(first_name=fn, magic_link=magic_link)
+    html = render_approval_html(first_name=fn, magic_link=magic_link)
     if not _enabled():
         log.info("cohort_email: would have sent approval to %s", _redact_email(to_email))
         return {"status": "flag_off", "kind": "approval"}
-    out = _send_via_sendgrid(to_email=to_email, subject=APPROVAL_SUBJECT, plain_body=body)
+    out = _send_via_sendgrid(to_email=to_email, subject=APPROVAL_SUBJECT, plain_body=body, html_body=html)
     out["kind"] = "approval"
     return out
 
 
-def send_decline(*, to_email: str, first_name: Optional[str] = None) -> Dict[str, str]:
-    body = DECLINE_BODY.format(first_name=_first_name_from(first_name, to_email))
+def send_decline(
+    *, to_email: str, first_name: Optional[str] = None,
+    waitlist_url: Optional[str] = None,
+) -> Dict[str, str]:
+    fn = _first_name_from(first_name, to_email)
+    if waitlist_url:
+        body = DECLINE_BODY_WITH_WAITLIST.format(first_name=fn, waitlist_url=waitlist_url)
+    else:
+        body = DECLINE_BODY.format(first_name=fn)
+    html = render_decline_html(first_name=fn, waitlist_url=waitlist_url)
     if not _enabled():
         log.info("cohort_email: would have sent decline to %s", _redact_email(to_email))
         return {"status": "flag_off", "kind": "decline"}
-    out = _send_via_sendgrid(to_email=to_email, subject=DECLINE_SUBJECT, plain_body=body)
+    out = _send_via_sendgrid(to_email=to_email, subject=DECLINE_SUBJECT, plain_body=body, html_body=html)
     out["kind"] = "decline"
+    return out
+
+
+def send_reminder(*, to_email: str, first_name: Optional[str], magic_link: str) -> Dict[str, str]:
+    """Phase P5.7.4 — day-10 expiry reminder. Same flag-gating as the
+    other transactional sends."""
+    fn = _first_name_from(first_name, to_email)
+    body = REMINDER_BODY.format(first_name=fn, magic_link=magic_link)
+    html = render_reminder_html(first_name=fn, magic_link=magic_link)
+    if not _enabled():
+        log.info("cohort_email: would have sent reminder to %s", _redact_email(to_email))
+        return {"status": "flag_off", "kind": "reminder"}
+    out = _send_via_sendgrid(to_email=to_email, subject=REMINDER_SUBJECT, plain_body=body, html_body=html)
+    out["kind"] = "reminder"
+    return out
+
+
+def admin_test_send(
+    *, kind: str, to_email: str, first_name: Optional[str] = None,
+    magic_link: Optional[str] = None, waitlist_url: Optional[str] = None,
+    reply_to: Optional[str] = None,
+) -> Dict[str, str]:
+    """Phase P5.7.9 — admin-only test-send path. Bypasses
+    `COHORT_EMAILS_ENABLED` because the whole point is for the user
+    to see the rendered output in their inbox before flipping the
+    production flag. NEVER call from non-admin code paths."""
+    fn = _first_name_from(first_name, to_email)
+    if kind == "receipt":
+        subject = RECEIPT_SUBJECT
+        plain = RECEIPT_BODY.format(first_name=fn)
+        html = render_receipt_html(first_name=fn)
+    elif kind == "approval":
+        if not magic_link:
+            return {"status": "error", "reason": "approval requires magic_link"}
+        subject = APPROVAL_SUBJECT
+        plain = APPROVAL_BODY.format(first_name=fn, magic_link=magic_link)
+        html = render_approval_html(first_name=fn, magic_link=magic_link)
+    elif kind == "decline":
+        subject = DECLINE_SUBJECT
+        if waitlist_url:
+            plain = DECLINE_BODY_WITH_WAITLIST.format(first_name=fn, waitlist_url=waitlist_url)
+        else:
+            plain = DECLINE_BODY.format(first_name=fn)
+        html = render_decline_html(first_name=fn, waitlist_url=waitlist_url)
+    elif kind == "reminder":
+        if not magic_link:
+            return {"status": "error", "reason": "reminder requires magic_link"}
+        subject = REMINDER_SUBJECT
+        plain = REMINDER_BODY.format(first_name=fn, magic_link=magic_link)
+        html = render_reminder_html(first_name=fn, magic_link=magic_link)
+    else:
+        return {"status": "error", "reason": f"unknown kind: {kind}"}
+    out = _send_via_sendgrid(
+        to_email=to_email, subject=subject, plain_body=plain,
+        html_body=html, reply_to=reply_to,
+    )
+    out["kind"] = kind
+    out["test_send"] = True
     return out
 
 
@@ -169,9 +302,24 @@ def _self_check() -> Dict[str, int]:
         "decline":  _word_count(DECLINE_SUBJECT) + _word_count(
             DECLINE_BODY.format(first_name="Friend")
         ),
+        # P5.7.4 — reminder body is the day-10 expiry nudge.
+        "reminder": _word_count(REMINDER_SUBJECT) + _word_count(
+            REMINDER_BODY.format(first_name="Friend", magic_link="https://akki.ai/welcome/x")
+        ),
+        # P5.7.6 — decline-with-waitlist variant must stay ≤80 words
+        # (the waitlist line adds 16 words to the 38-word base; the
+        # original 60-word cap was for the bare body so we allow a
+        # small bump for the variant).
+        "decline_waitlist": _word_count(DECLINE_SUBJECT) + _word_count(
+            DECLINE_BODY_WITH_WAITLIST.format(
+                first_name="Friend",
+                waitlist_url="https://akki.syni.ai/waitlist",
+            )
+        ),
     }
     for kind, n in counts.items():
-        assert n <= 60, f"cohort_email body exceeds 60-word cap: {kind}={n}"
+        cap = 80 if kind == "decline_waitlist" else 60
+        assert n <= cap, f"cohort_email body exceeds {cap}-word cap: {kind}={n}"
     return counts
 
 

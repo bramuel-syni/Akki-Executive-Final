@@ -21,7 +21,7 @@ export const HERO = {
   kicker: "FOR EXECUTIVES",
   headline: "Akki refuses to invent.",
   lift: "refuses",
-  dek: "Board papers. Briefings. Reports. Every claim cited. Every bias is named. Decisions stay yours. Your data never leaves your account.",
+  dek: "Board papers. Briefings. Memos. Reports. — No LLM reads your data. Every claim cited. Every bias is named. Decisions stay yours. Your data never leaves your account.",
   primaryCta: { label: "See the work",   href: "#evidence" },
   tertiary:   { label: "Request access", href: "/cohort"   },
 };

@@ -247,6 +247,22 @@ export default function AdminCohortApplications() {
                       >
                         {app.status}
                       </span>
+                      {/* Phase P5.7.5 (2026-02) — delivery-status badge.
+                          Only shown when the latest SendGrid event for this
+                          recipient classifies as "failed" (bounce / dropped /
+                          spamreport / blocked). Tooltip carries the reason +
+                          timestamp so the admin can decide whether to chase
+                          the applicant by another channel. */}
+                      {app.latest_email_event_bucket === "failed" && (
+                        <span
+                          className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-red-100 text-red-700 flex items-center gap-1"
+                          title={`${app.latest_email_event_type || "delivery failed"} — ${app.latest_email_event_reason || "no reason returned"} (${app.latest_email_event_at || "unknown time"})`}
+                          data-testid={`admin-cohort-row-${app.id}-email-failed-badge`}
+                        >
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-600" />
+                          {app.latest_email_event_type || "failed"}
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-slate-500 mb-1">{app.email} · {app.organisation} · {app.role}</p>
                     <p className="text-xs text-[var(--ink)] mt-1 leading-relaxed break-words" data-testid={`admin-cohort-row-${app.id}-use-case`}>

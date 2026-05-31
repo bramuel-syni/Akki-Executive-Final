@@ -367,6 +367,10 @@ from routers import cohort_magic_link as cohort_magic_link_router  # noqa: E402
 app.include_router(cohort_magic_link_router.router)
 from routers import admin_cohort_applications as admin_cohort_apps_router  # noqa: E402
 app.include_router(admin_cohort_apps_router.router)
+from routers import cohort_waitlist as cohort_waitlist_router  # noqa: E402  P5.7.6
+app.include_router(cohort_waitlist_router.router)
+from routers import cohort_email_events as cohort_email_events_router  # noqa: E402  P5.7.5
+app.include_router(cohort_email_events_router.router)
 
 
 # -----------------------------------------------------------------------------
@@ -1192,6 +1196,29 @@ async def on_startup():
                 _fire_chat_retention_sweep,
                 CronTrigger(hour=3, minute=30),
                 id="chat_retention_daily",
+                replace_existing=True,
+            )
+
+            # ── Phase P5.7.4 — Cohort magic-link day-10 expiry reminder ──
+            # Daily sweep at 09:00 UTC. Finds approved-and-unconsumed
+            # magic-link rows whose `issued_at` is between 10 and 11
+            # days ago (giving the recipient ~4 days before the
+            # 14-day expiry to act), and that don't yet carry an
+            # `expiry_reminder_sent_at` marker. Sends the Touch 4
+            # body via `send_reminder` and stamps the marker so the
+            # row is never picked up twice. Idempotent.
+            async def _fire_cohort_expiry_reminders():
+                try:
+                    from routers.cohort_expiry_reminder import run_expiry_reminder_sweep
+                    summary = await run_expiry_reminder_sweep()
+                    logger.info("Cohort expiry reminder sweep: %s", summary)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("Cohort expiry reminder sweep failed: %s", e)
+
+            scheduler.add_job(
+                _fire_cohort_expiry_reminders,
+                CronTrigger(hour=9, minute=0),
+                id="cohort_expiry_reminder_daily",
                 replace_existing=True,
             )
 

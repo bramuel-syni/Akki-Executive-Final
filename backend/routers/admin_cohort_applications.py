@@ -150,6 +150,7 @@ async def approve_application(
 async def decline_application(
     application_id: str,
     body: _ActionIn,
+    request: Request,
     admin: Dict[str, Any] = Depends(_require_admin_with_mfa),
 ):
     app_row = await _load_app_or_404(application_id)
@@ -173,9 +174,24 @@ async def decline_application(
         application_id=application_id, action="decline",
         actor_admin_id=admin.get("id"), prev_status=prev_status, new_status="declined",
     )
+
+    # Phase P5.7.6 (2026-02) — door-back URL in the decline email.
+    # The `?from={application_id}` query param lets the waitlist
+    # endpoint correlate door-back signups to their originating
+    # application for cohort-level analytics; the param is optional
+    # and discarded if the recipient strips it.
+    import os as _os
+    public_base = (_os.environ.get("APP_PUBLIC_URL") or "").strip().rstrip("/")
+    if not public_base:
+        public_base = (request.headers.get("origin") or "").rstrip("/")
+    waitlist_url = (
+        f"{public_base}/waitlist?from={application_id}"
+        if public_base else f"/waitlist?from={application_id}"
+    )
     email_result = send_decline(
         to_email=app_row["email"],
         first_name=app_row.get("name"),
+        waitlist_url=waitlist_url,
     )
     return {
         "ok":             True,

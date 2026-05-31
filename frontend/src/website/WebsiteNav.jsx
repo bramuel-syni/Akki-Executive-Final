@@ -29,7 +29,7 @@ export default function WebsiteNav() {
     <header className="nav" data-testid="website-nav">
       <div className="nav-inner">
         <Link to="/" className="nav-wordmark" data-testid="website-nav-wordmark">
-          Akki
+          Akki <span className="nav-wordmark-tail">for&nbsp;Executives</span>
         </Link>
         <nav className="nav-center" aria-label="Primary">
           {CENTER_LINKS.map((l) => (

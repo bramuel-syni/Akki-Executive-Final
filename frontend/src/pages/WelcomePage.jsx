@@ -143,7 +143,7 @@ export default function WelcomePage() {
   // ─── States ─────────────────────────────────────────────────────
   if (state === "loading") {
     return (
-      <WebsiteShell title="Welcome — Akki" pathname={`/welcome/${token}`}>
+      <WebsiteShell title="Welcome — Akki for Executives" pathname={`/welcome/${token}`}>
         <section className="website-section section-reveal" data-testid="welcome-loading">
           <div className="flex items-center gap-2 text-[var(--muted)] text-sm">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading…
@@ -155,7 +155,7 @@ export default function WelcomePage() {
 
   if (state === "valid") {
     return (
-      <WebsiteShell title="Welcome — Akki" pathname={`/welcome/${token}`}>
+      <WebsiteShell title="Welcome — Akki for Executives" pathname={`/welcome/${token}`}>
         <section className="website-section section-reveal" data-testid="welcome-valid">
           <p className="kicker">EARLY ACCESS</p>
           <h1
@@ -241,7 +241,7 @@ export default function WelcomePage() {
 
   if (state === "expired") {
     return (
-      <WebsiteShell title="Link expired — Akki" pathname={`/welcome/${token}`}>
+      <WebsiteShell title="Link expired — Akki for Executives" pathname={`/welcome/${token}`}>
         <section className="website-section section-reveal" data-testid="welcome-expired">
           <h1 className="akki-serif text-4xl text-[var(--ink)] mb-2" data-testid="welcome-expired-h1">
             This link expired.
@@ -264,7 +264,7 @@ export default function WelcomePage() {
 
   if (state === "consumed") {
     return (
-      <WebsiteShell title="Link already used — Akki" pathname={`/welcome/${token}`}>
+      <WebsiteShell title="Link already used — Akki for Executives" pathname={`/welcome/${token}`}>
         <section className="website-section section-reveal" data-testid="welcome-consumed">
           <h1 className="akki-serif text-4xl text-[var(--ink)] mb-2" data-testid="welcome-consumed-h1">
             This link was already used.
@@ -289,7 +289,7 @@ export default function WelcomePage() {
 
   if (state === "consumed_ok") {
     return (
-      <WebsiteShell title="Welcome — Akki" pathname={`/welcome/${token}`}>
+      <WebsiteShell title="Welcome — Akki for Executives" pathname={`/welcome/${token}`}>
         <section className="website-section section-reveal" data-testid="welcome-consumed-ok">
           <h1 className="akki-serif text-4xl text-[var(--ink)] mb-2">You're in.</h1>
           <p className="dek">Opening your workspace…</p>
@@ -300,7 +300,7 @@ export default function WelcomePage() {
 
   // not_found
   return (
-    <WebsiteShell title="Link not found — Akki" pathname={`/welcome/${token}`}>
+    <WebsiteShell title="Link not found — Akki for Executives" pathname={`/welcome/${token}`}>
       <section className="website-section section-reveal" data-testid="welcome-not-found">
         <h1 className="akki-serif text-4xl text-[var(--ink)] mb-2">We can't find that link.</h1>
         <p className="dek mb-6 break-words" style={{ maxWidth: "60ch" }}>

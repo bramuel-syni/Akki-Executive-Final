@@ -1,6 +1,29 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.7 — Branding + email touchpoints + waitlist + DNS/inbox audit CLOSED ✅ (2026-02)
+
+**Shipped:**
+- **P5.7.1** — Branding "Akki" → "Akki for Executives" consistent across marketing surfaces (`WebsiteNav`, `WebsiteFooter`, WelcomePage titles); CSS responsive rule hides the "for Executives" tail on mobile to prevent wrap.
+- **P5.7.2** — Hero subtext rewritten verbatim per user dictation ("Board papers. Briefings. Memos. Reports. — No LLM reads your data..."). Voice-lint clean.
+- **P5.7.3** — Leaked-secret provenance identified (Postmark inbound webhook URL secret). Memo at `/app/memory/sprints/P5_7_3_leaked_secret_provenance.md`.
+- **P5.7.4** — Day-10 expiry reminder added (Touch 4). New module `routers/cohort_expiry_reminder.py`; APScheduler daily 09:00 UTC; idempotent via `expiry_reminder_sent_at` marker. New email body + HTML render.
+- **P5.7.5** — SendGrid event webhook receiver (`POST /api/cohort/email-events/sendgrid`). Persists latest delivery event on application row; admin row badge surfaces bounce/dropped/spamreport/blocked with reason + timestamp tooltip.
+- **P5.7.6** — Waitlist door-back: `POST /api/cohort/waitlist` (CSRF + rate-limited); `/waitlist` public page; decline email now carries waitlist URL.
+- **P5.7.7** — Akki inbox status memo at `/app/memory/sprints/P5_7_7_akki_inbox_status.md`. `akki@syni.ai` → Outlook tenant active; `*@akki.syni.ai` not configured.
+- **P5.7.8** — DNS audit memo at `/app/memory/sprints/P5_7_8_dns_audit.md`. **P0 finding:** SPF on `syni.ai` is missing SendGrid include; deliverability survives only via DKIM + permissive DMARC.
+- **P5.7.9** — Live test sends to bramuel@syni.ai: 4 messages, all 202 OK from SendGrid.
+- **Multipart HTML email rendering** added — every transactional email now ships text+HTML; `services/cohort_email_html.py` is the renderer.
+- **SENDGRID_FROM env mismatch fix** — cohort_email.py now reads `SENDGRID_FROM_EMAIL` (aligning with deployed `.env`); legacy `SENDGRID_FROM` kept as fallback for backward compat.
+
+**Tests:** 13 new pytest in `test_phase_p5_7_waitlist_reminder.py` (8) + `test_phase_p5_7_5_bounce_webhook.py` (5). Plus 36-test full sweep all GREEN.
+
+**Memos created:**
+- `/app/memory/sprints/P5_7_3_leaked_secret_provenance.md`
+- `/app/memory/sprints/P5_7_7_akki_inbox_status.md`
+- `/app/memory/sprints/P5_7_8_dns_audit.md`
+
+
 ### Phase P5.5 + P5.6 + P5.6.1 — Session reauth + production CSRF + same-origin cascade CLOSED ✅ (2026-02)
 
 **Closed:**

@@ -41,6 +41,7 @@ const WebsiteWhyAkki = lazy(() => import("@/website/pages/WhyAkki"));
 const WebsiteWhatAkkiDoes = lazy(() => import("@/website/pages/WhatAkkiDoes"));
 const WebsiteTrust = lazy(() => import("@/website/pages/Trust"));
 const WebsiteCohort = lazy(() => import("@/website/pages/Cohort"));
+const WebsiteWaitlist = lazy(() => import("@/website/pages/Waitlist"));
 const WebsitePricing = lazy(() => import("@/website/pages/Pricing"));
 const WebsiteAbout = lazy(() => import("@/website/pages/About"));
 const WebsiteContact = lazy(() => import("@/website/pages/Contact"));
@@ -287,6 +288,7 @@ function App() {
           <Route path="/what-akki-does" element={<WebsiteWhatAkkiDoes />} />
           <Route path="/trust" element={<WebsiteTrust />} />
           <Route path="/cohort" element={<WebsiteCohort />} />
+          <Route path="/waitlist" element={<WebsiteWaitlist />} />
           <Route path="/pricing" element={<WebsitePricing />} />
           <Route path="/about" element={<WebsiteAbout />} />
           <Route path="/contact" element={<WebsiteContact />} />

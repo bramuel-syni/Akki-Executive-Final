@@ -34,7 +34,7 @@ export default function WebsiteFooter() {
     <footer className="footer" data-testid="website-footer">
       <div className="footer-inner">
         <div className="footer-brand footer-col">
-          <Link to="/" className="footer-brand-wordmark" data-testid="footer-wordmark">Akki</Link>
+          <Link to="/" className="footer-brand-wordmark" data-testid="footer-wordmark">Akki <span className="footer-brand-wordmark-tail">for&nbsp;Executives</span></Link>
           <p className="footer-tagline">
             A workspace for executives running serious operations. From Syni.ai, Nairobi.
           </p>
