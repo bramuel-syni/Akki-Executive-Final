@@ -1971,6 +1971,15 @@ async def send_message(
         # row without an extra fetch. Counts only — never the original
         # text or replacement tokens.
         "synisense_stats": syn_stats,
+        # Phase P5.10 (2026-02) — store the Shield audit_id directly on
+        # the assistant message so the audit-panel resolver can look
+        # up the row in O(1) instead of indexing into the chat's
+        # `synisense_audit_ids[]` by message position. The positional
+        # path breaks the moment any turn fails to push an audit_id
+        # (e.g. cancelled streams), and the off-by-one cascades into
+        # every subsequent turn of the same chat. Direct linkage
+        # makes resolution immune to push gaps.
+        "shield_audit_id": shield_audit_id,
     }
     await db.chat_messages.insert_one(assistant_msg)
     await _append_audit(
@@ -2764,6 +2773,48 @@ async def stream_message(
                 cleaned_partial, citations_partial = _process_citations(
                     partial_rehydrated, grounding_paragraphs,
                 )
+                # Phase P5.10 (2026-02) — finalize the Shield audit
+                # ALSO on the cancel path with `outcome="cancelled"`
+                # and push the id onto `chats.synisense_audit_ids`.
+                # Two reasons:
+                #   1. The audit panel resolver previously indexed
+                #      `synisense_audit_ids[N]` by the N-th assistant
+                #      message; cancel-path used to insert the
+                #      assistant row without pushing, creating an
+                #      off-by-one that cascaded for every subsequent
+                #      turn in the chat. (See chat_audit_panel.py.)
+                #   2. The cancelled turn now carries its own audit
+                #      row so the inline panel renders "partial reply"
+                #      data instead of a red error.
+                _cancel_audit_id = None
+                try:
+                    # `shield_finalize` is bound by _shield_prepare_streaming.
+                    # If cancellation fires before that point (very early
+                    # disconnect), the variable will be unbound — guard
+                    # with NameError so the cancel persistence still
+                    # completes.
+                    _cancel_audit_id = await shield_finalize(  # noqa: F821
+                        response_text=partial_raw,
+                        provider=stream_provider_used or stream_provider,
+                        model=model_def["model"],
+                        usage=None,
+                        outcome="cancelled",
+                    )
+                    if _cancel_audit_id:
+                        await db.chats.update_one(
+                            {"id": chat_id, "account_id": request_account["id"]},
+                            {"$push": {"synisense_audit_ids": _cancel_audit_id}},
+                        )
+                except (NameError, UnboundLocalError, AttributeError):
+                    # shield_finalize wasn't bound yet (early cancel) or
+                    # a related closure var was unset. Leave the
+                    # audit_id None for this turn; the audit-panel
+                    # resolver uses direct chat_messages.shield_audit_id
+                    # linkage so a missing row only affects this one
+                    # turn — no cascade.
+                    pass
+                except Exception:  # noqa: BLE001
+                    logger.warning("cancel-path shield_finalize failed", exc_info=False)
                 reply_id = str(uuid.uuid4())
                 reply_at = _iso(_now())
                 await db.chat_messages.insert_one({
@@ -2781,6 +2832,10 @@ async def stream_message(
                     "cancelled": True,
                     "emitted_chars": emitted_chars_at,
                     "full_chars": len(raw_text),
+                    # Phase P5.10 — direct audit linkage (matches the
+                    # success path). May be None if shield_finalize
+                    # raised; the resolver tolerates that.
+                    "shield_audit_id": _cancel_audit_id,
                 })
                 await _append_audit(
                     account_id=request_account["id"], chat_id=chat_id,
@@ -3495,6 +3550,12 @@ async def stream_message(
             "pass_1": rehydrated_pass_1,
             "pass_2": rehydrated_pass_2 if rehydrated_pass_2 else None,
             "show_pass_1": bool(visible_pass_1),
+            # Phase P5.10 (2026-02) — direct Shield audit_id linkage.
+            # `_stream_audit_id` was bound when shield_finalize ran
+            # successfully on the streaming-success path; pre-cancel
+            # init it's None and the resolver falls back to the
+            # positional lookup for legacy rows.
+            "shield_audit_id": locals().get("_stream_audit_id"),
         }
         await db.chat_messages.insert_one(assistant_msg)
 

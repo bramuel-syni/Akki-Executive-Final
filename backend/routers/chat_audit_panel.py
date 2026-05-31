@@ -381,17 +381,38 @@ async def get_audit_panel(
     audit_ids: List[str] = chat.get("synisense_audit_ids") or []
     events: List[Dict[str, Any]] = chat.get("protective_layer_events") or []
 
-    # Resolve the audit_id for this message by counting assistant
-    # messages up to (and including) `message_id`. The N-th assistant
-    # message corresponds to the N-th audit_id appended on chat send.
-    assistant_msgs = await db.chat_messages.find(
-        {"chat_id": chat_id, "account_id": current["id"], "role": "assistant"},
-        {"_id": 0, "id": 1, "created_at": 1, "model_label": 1},
-    ).sort("created_at", 1).to_list(length=500)
-    pos = next((i for i, m in enumerate(assistant_msgs) if m.get("id") == message_id), None)
-    if pos is None:
+    # Phase P5.10 (2026-02) — prefer direct linkage via the assistant
+    # message's own `shield_audit_id` field. The legacy positional
+    # resolver below is kept as a fallback for chat_messages rows
+    # written before P5.10 (when the direct field didn't exist) and
+    # for any future code path that forgets to set it.
+    #
+    # Why the change: every cancelled turn used to break the
+    # positional index — the cancel-path inserted an assistant row
+    # without pushing an audit_id, creating an off-by-one that
+    # cascaded through every subsequent turn of the chat. Even after
+    # P5.10's cancel-path also pushes a "cancelled" audit_id, direct
+    # linkage is the more robust invariant: it does not depend on
+    # any future caller remembering to push.
+    direct_row = await db.chat_messages.find_one(
+        {"id": message_id, "chat_id": chat_id, "account_id": current["id"]},
+        {"_id": 0, "shield_audit_id": 1, "id": 1, "role": 1},
+    )
+    if not direct_row or direct_row.get("role") != "assistant":
         raise HTTPException(status_code=404, detail="Message not found in this chat.")
-    audit_id = audit_ids[pos] if pos < len(audit_ids) else None
+
+    audit_id: Optional[str] = direct_row.get("shield_audit_id") or None
+
+    if audit_id is None:
+        # Fallback to legacy positional index for pre-P5.10 rows.
+        assistant_msgs = await db.chat_messages.find(
+            {"chat_id": chat_id, "account_id": current["id"], "role": "assistant"},
+            {"_id": 0, "id": 1, "created_at": 1, "model_label": 1},
+        ).sort("created_at", 1).to_list(length=500)
+        pos = next((i for i, m in enumerate(assistant_msgs) if m.get("id") == message_id), None)
+        if pos is None:
+            raise HTTPException(status_code=404, detail="Message not found in this chat.")
+        audit_id = audit_ids[pos] if pos < len(audit_ids) else None
 
     # Match the protective event by message_id.
     matching_event = next(
