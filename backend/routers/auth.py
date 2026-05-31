@@ -123,6 +123,17 @@ async def login(
 
     await db.login_attempts.delete_one({"identifier": ident})
 
+    # Phase P5.5 (2026-02) — refresh `last_activity_at` on the account
+    # doc as part of the login transaction. Without this, the FIRST
+    # request after a successful re-auth still trips
+    # SessionTimeoutMiddleware's idle check (which reads the account's
+    # `last_activity_at`, not the new token's `iat`), bouncing the
+    # user back to /signin even though the session was just refreshed.
+    await db.accounts.update_one(
+        {"id": account["id"]},
+        {"$set": {"last_activity_at": _iso(_now())}},
+    )
+
     access = create_access_token(account["id"], email)
     refresh = create_refresh_token(account["id"])
     set_auth_cookies(response, access, refresh)

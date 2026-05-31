@@ -87,8 +87,19 @@ export default function SessionTimeoutGuard() {
     try {
       // Re-auth = a fresh login on the same email. The login endpoint
       // mints a fresh access_token with a new iat → resets the
-      // absolute window AND clears the idle flag server-side.
-      await api.post("/auth/login", { email: account.email, password });
+      // absolute window AND refreshes last_activity_at server-side.
+      //
+      // Phase P5.5 (2026-02) — sync the new access_token to
+      // localStorage so the api.js Bearer interceptor stops carrying
+      // the STALE token on subsequent requests (the HttpOnly cookie
+      // is also updated by the server but the SPA may still send the
+      // old Bearer header alongside it and the backend prefers the
+      // Bearer source).
+      const { data } = await api.post("/auth/login", { email: account.email, password });
+      if (data?.access_token) {
+        try { window.localStorage.setItem("akki_access_token", data.access_token); }
+        catch { /* quota/private-mode noop */ }
+      }
       bumpActivity();
       setReauthOpen(false);
       setPassword("");

@@ -1,7 +1,76 @@
 import axios from "axios";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-export const API_BASE = `${BACKEND_URL}/api`;
+// Phase P5.6 (2026-02) — cross-origin guard.
+//
+// The build-time `REACT_APP_BACKEND_URL` is the canonical API base
+// for preview environments. In production deploys the SPA is served
+// from a custom domain (e.g. https://akki.syni.ai) but the bundle
+// can carry a baked URL that points at a different host
+// (https://akki-executive.emergent.host). When that mismatch occurs,
+// every request is cross-origin: the CSRF cookie is set on the
+// backend's host, and the SameSite=Lax attribute blocks the cookie
+// from being sent on the subsequent cross-site POST → the SPA
+// surfaces "CSRF token missing. Reload the page and retry." even
+// though the backend, the deploy and the user are all healthy.
+//
+// Resolution: prefer same-origin `/api` when the configured backend
+// origin doesn't match the page origin. Same-origin requests share
+// the cookie jar, so the CSRF double-submit flow works regardless
+// of which host the bundle was baked for. The ingress on both
+// preview and production proxies `/api/*` to the FastAPI backend
+// (system contract — see kubernetes ingress) so a relative base is
+// portable everywhere.
+const BUILD_BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "";
+
+function _resolveApiBase() {
+  // Server-rendered / non-browser context — use the build-time value.
+  if (typeof window === "undefined") return `${BUILD_BACKEND_URL}/api`;
+  if (!BUILD_BACKEND_URL) return "/api";
+  try {
+    const buildOrigin = new URL(BUILD_BACKEND_URL).origin;
+    if (window.location.origin === buildOrigin) {
+      // Origins match — the bundle was built for this domain. Use the
+      // configured value (relevant for environments where the API base
+      // includes a path prefix or non-default port).
+      return `${BUILD_BACKEND_URL}/api`;
+    }
+    // Mismatch — fall back to same-origin so the cookie jar is shared.
+    return "/api";
+  } catch (_e) {
+    // BUILD_BACKEND_URL was malformed; fall back to same-origin.
+    return "/api";
+  }
+}
+
+export const API_BASE = _resolveApiBase();
+
+// Phase P5.6 (2026-02) — public helper. Many marketing / sandbox
+// surfaces still build their own absolute URLs from
+// `process.env.REACT_APP_BACKEND_URL`. They all need the same
+// cross-origin guard. Importing this helper instead of the raw env
+// var means callers automatically pick up the same-origin fallback
+// when the page origin doesn't match the baked backend URL.
+// (Migrations are incremental; not in P5.6 scope.)
+export function resolveApiUrl(path) {
+  const p = path || "";
+  const tail = p.startsWith("/") ? p : `/${p}`;
+  return `${API_BASE}${tail.replace(/^\/api/, "")}`;
+}
+
+// Phase P5.6 (2026-02) — exposed so non-/api absolute URLs (e.g. the
+// SolvaArtefact export.html links) can swap to a same-origin path.
+// Returns either the configured BACKEND_URL when origin matches the
+// page, or empty string (resolve relative to page origin) otherwise.
+export function resolveBackendOrigin() {
+  if (typeof window === "undefined") return BUILD_BACKEND_URL;
+  if (!BUILD_BACKEND_URL) return "";
+  try {
+    const buildOrigin = new URL(BUILD_BACKEND_URL).origin;
+    return window.location.origin === buildOrigin ? BUILD_BACKEND_URL : "";
+  } catch (_e) {
+    return "";
+  }
+}
 
 // Phase A — per-tab active context. Held in sessionStorage (NOT
 // localStorage) so two tabs in different contexts don't trample each

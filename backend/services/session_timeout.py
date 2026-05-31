@@ -62,6 +62,29 @@ IDLE_MINUTES = _minutes("SESSION_IDLE_MINUTES", 30)
 SILENT_REFRESH_HOURS = _hours("SESSION_SILENT_REFRESH_HOURS", 1)
 
 
+# Phase P5.5 (2026-02) — auth entry/exit routes that MUST be reachable
+# regardless of session-timeout state. These are the routes that
+# establish, refresh, or close a session; gating them on the idle
+# timer creates an unrecoverable trap where the re-auth modal posts
+# /auth/login, the middleware rejects with session_idle_timeout
+# (because last_activity_at is already past the idle window — that's
+# the whole reason the modal opened), and the user cannot reach the
+# very endpoint meant to refresh their session.
+#
+# Each entry is a path PREFIX matched against `request.url.path`.
+# The signed-out paths /forgot and /reset don't carry a session and
+# are listed for symmetry/clarity; the middleware bails on
+# token-less requests anyway.
+SESSION_TIMEOUT_BYPASS_PREFIXES: tuple[str, ...] = (
+    "/api/auth/login",
+    "/api/auth/logout",
+    "/api/auth/refresh",
+    "/api/auth/forgot-password",
+    "/api/auth/reset-password",
+    "/api/csrf",
+)
+
+
 class SessionTimeoutMiddleware(BaseHTTPMiddleware):
     """Enforce absolute + idle session timeouts. Only applies to
     requests that carry an `access_token` (cookie or Bearer) — public
@@ -70,6 +93,13 @@ class SessionTimeoutMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         if os.environ.get("SESSION_TIMEOUT_DISABLED", "0").strip() == "1":
             return await call_next(request)
+
+        # Phase P5.5 — auth entry/exit routes bypass the timeout check.
+        # See SESSION_TIMEOUT_BYPASS_PREFIXES above for rationale.
+        path = request.url.path or ""
+        for prefix in SESSION_TIMEOUT_BYPASS_PREFIXES:
+            if path.startswith(prefix):
+                return await call_next(request)
 
         # Extract token without throwing — public routes have no token.
         token = self._extract(request)
