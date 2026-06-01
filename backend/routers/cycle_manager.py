@@ -197,6 +197,20 @@ async def get_agenda(
     ctx: Dict[str, Any] = Depends(require_context_membership()),
 ):
     agenda = await _get_or_init_agenda(context_id, ctx["account"]["id"], cycle_id)
+    # P5.20 — surface `is_default_inbox_cycle` from the cycle row so
+    # the FE wizard can skip team/agenda authoring steps for the
+    # auto-scaffolded default-inbox cycle. Existing user-curated
+    # cycles return the flag as `false` and render unchanged.
+    try:
+        cycle_row = await db.cycles.find_one(
+            {"id": agenda["id"]},
+            {"_id": 0, "is_default_inbox_cycle": 1},
+        )
+        agenda["is_default_inbox_cycle"] = bool(
+            (cycle_row or {}).get("is_default_inbox_cycle")
+        )
+    except Exception:  # noqa: BLE001
+        agenda["is_default_inbox_cycle"] = False
     return agenda
 
 

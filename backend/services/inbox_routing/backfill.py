@@ -130,6 +130,8 @@ async def run() -> Dict[str, Dict[str, int]]:
         # P5.19 — additional surface backfills.
         "signals": await backfill_signals(db),
         "cycle_updates": await backfill_cycle_updates(db),
+        # P5.20 — default-inbox cycle agenda/member seed.
+        "default_inbox_cycles": await backfill_default_inbox_cycles(db),
     }
     return out
 
@@ -326,7 +328,39 @@ def _cli() -> None:
 
 
 __all__ = ["backfill_tasks", "backfill_signals",
-           "backfill_cycle_updates", "run"]
+           "backfill_cycle_updates", "backfill_default_inbox_cycles", "run"]
+
+
+# ── Phase P5.20 — Backward-compat seed for existing default-inbox cycles ──
+
+
+async def backfill_default_inbox_cycles(db) -> Dict[str, int]:
+    """One-shot idempotent migration for any pre-P5.20 default-inbox
+    cycle that exists WITHOUT the agenda + team seed. Runs the same
+    `_seed_default_cycle_agenda_and_member` helper used by the live
+    creation path, so the post-condition matches new cycles exactly.
+
+    Counters:
+      scanned  — number of default-inbox cycles inspected.
+      agenda_seeded — seed agenda item created where missing.
+      member_seeded — primary admin added where missing.
+    """
+    from .context_resolver import _seed_default_cycle_agenda_and_member
+    counters = {"scanned": 0, "agenda_seeded": 0, "member_seeded": 0}
+    cursor = db.cycles.find(
+        {"is_default_inbox_cycle": True},
+        {"_id": 0, "id": 1, "context_id": 1, "account_id": 1},
+    )
+    async for cyc in cursor:
+        counters["scanned"] += 1
+        c = await _seed_default_cycle_agenda_and_member(
+            db, account_id=cyc["account_id"],
+            context_id=cyc["context_id"], cycle_id=cyc["id"],
+        )
+        counters["agenda_seeded"] += c.get("agenda_created", 0)
+        counters["member_seeded"] += c.get("member_created", 0)
+    logger.info("[inbox_routing.backfill_default_inbox_cycles] %s", counters)
+    return counters
 
 if __name__ == "__main__":
     _cli()

@@ -65,6 +65,7 @@ from .upstream_adapter import (
 )
 from .backfill import (
     backfill_tasks, backfill_signals, backfill_cycle_updates,
+    backfill_default_inbox_cycles,
     run as run_backfill,
 )
 from .context_resolver import (
@@ -123,4 +124,5 @@ __all__ = [
     "materialize_cycle_update_primary",
     "backfill_signals",
     "backfill_cycle_updates",
+    "backfill_default_inbox_cycles",
 ]

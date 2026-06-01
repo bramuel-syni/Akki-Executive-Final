@@ -183,6 +183,7 @@ function SignalCard({ card, onAction, busyAction, onOpenDrawer }) {
     <article
       className={`border border-[var(--rule)] bg-white rounded-md px-5 py-4 mb-3 ${isResolved ? "opacity-70" : ""}`}
       data-testid={`pulse-card-${card.id}`}
+      data-card-root="true"
     >
       {/* Phase H3 (2026-05-11) — clicking the card body opens the drawer.
           Button-class elements inside the action row still stopPropagation. */}

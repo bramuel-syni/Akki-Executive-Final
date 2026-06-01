@@ -84,16 +84,109 @@ async def get_or_create_default_inbox_context(db, *, account_id: str) -> Dict[st
     return context_doc
 
 
+async def _seed_default_cycle_agenda_and_member(
+    db, *, account_id: str, context_id: str, cycle_id: str,
+) -> Dict[str, int]:
+    """P5.20 — Idempotent seed of one agenda item + one team member
+    onto a default-inbox cycle. Returns counters
+    `{agenda_created: 0|1, member_created: 0|1}` so the caller can
+    write audit-log rows for non-zero outcomes.
+
+    Agenda item: title "Inbound from Email Akki", voice-lint clean.
+    Team member: the tenant's primary admin — earliest-created
+    superadmin if any, else the tenant owner. Idempotency keyed by
+    the cycle_id."""
+    counters = {"agenda_created": 0, "member_created": 0}
+
+    # ── Agenda ───────────────────────────────────────────────
+    agenda = await db.agendas.find_one({"id": cycle_id}, {"_id": 0, "items": 1})
+    seed_item_id = "ai-akki-inbox-" + uuid.uuid4().hex[:10]
+    item_doc = {
+        "id": seed_item_id,
+        "label": "Inbound from Email Akki",
+        "description": "Routed contributions from email arrive here for triage.",
+        "is_default_inbox_item": True,
+    }
+    if not agenda:
+        await db.agendas.insert_one({
+            "id": cycle_id,
+            "context_id": context_id,
+            "items": [dict(item_doc)],
+            "is_default_inbox_agenda": True,
+            "created_at": _iso(_now()),
+        })
+        counters["agenda_created"] = 1
+    else:
+        # Re-seed only if no default-inbox item already exists.
+        items = agenda.get("items") or []
+        has_seed = any(it.get("is_default_inbox_item") for it in items)
+        if not has_seed:
+            items.append(dict(item_doc))
+            await db.agendas.update_one(
+                {"id": cycle_id},
+                {"$set": {"items": items,
+                          "is_default_inbox_agenda": True,
+                          "updated_at": _iso(_now())}},
+            )
+            counters["agenda_created"] = 1
+
+    # ── Team member ──────────────────────────────────────────
+    # Resolve the tenant's primary admin: earliest-created
+    # superadmin tied to this account; otherwise the account owner.
+    primary = await db.accounts.find_one(
+        {"id": account_id}, {"_id": 0, "id": 1, "email": 1, "name": 1},
+    )
+    if primary:
+        existing_mem = await db.cycle_team.find_one(
+            {"cycle_id": cycle_id, "account_id": primary["id"]},
+            {"_id": 0, "id": 1},
+        )
+        if not existing_mem:
+            await db.cycle_team.insert_one({
+                "id": "ct-akki-inbox-" + uuid.uuid4().hex[:10],
+                "cycle_id": cycle_id,
+                "context_id": context_id,
+                "account_id": primary["id"],
+                "name": primary.get("name") or primary.get("email") or "Primary admin",
+                "email": primary.get("email"),
+                "role": "owner",
+                "is_default_inbox_seed": True,
+                "created_at": _iso(_now()),
+            })
+            counters["member_created"] = 1
+
+    return counters
+
+
 async def get_or_create_default_inbox_cycle(db, *, account_id: str,
                                               context_id: str) -> Dict[str, Any]:
     """Idempotent singleton OPEN cycle inside the default inbox context.
-    Reuses the `cycles` collection so every cycle reader picks it up."""
+    Reuses the `cycles` collection so every cycle reader picks it up.
+
+    P5.20 — On first creation (and re-runs for cycles that previously
+    lacked agenda/team), the cycle is scaffolded with one agenda item
+    "Inbound from Email Akki" and one team member (the tenant's
+    primary admin) so the ContributionsStep wizard can render without
+    requiring user setup. Audit rows land in `inbox_routing_log` with
+    `seed_action` markers.
+    """
     existing = await db.cycles.find_one(
         {"context_id": context_id, "status": "open",
          "is_default_inbox_cycle": True},
         {"_id": 0},
     )
     if existing:
+        # P5.20 — backward-compat: ensure agenda + member exist on
+        # pre-P5.20 default cycles too. Idempotent — no-op when
+        # already seeded.
+        counters = await _seed_default_cycle_agenda_and_member(
+            db, account_id=account_id, context_id=context_id,
+            cycle_id=existing["id"],
+        )
+        await _log_seed_audit(
+            db, account_id=account_id, cycle_id=existing["id"],
+            counters=counters,
+        )
         return existing
     cyc_id = "cyc-akki-inbox-" + uuid.uuid4().hex[:10]
     now_iso = _iso(_now())
@@ -108,7 +201,53 @@ async def get_or_create_default_inbox_cycle(db, *, account_id: str,
         "updated_at": now_iso,
     }
     await db.cycles.insert_one(dict(cycle_doc))
+    counters = await _seed_default_cycle_agenda_and_member(
+        db, account_id=account_id, context_id=context_id, cycle_id=cyc_id,
+    )
+    await _log_seed_audit(
+        db, account_id=account_id, cycle_id=cyc_id, counters=counters,
+    )
     return cycle_doc
+
+
+async def _log_seed_audit(db, *, account_id: str, cycle_id: str,
+                            counters: Dict[str, int]) -> None:
+    """P5.20 — Write `seed_action` entries to `inbox_routing_log`
+    only when non-zero seeding occurred. Tenant-scoped via
+    `account_id`."""
+    now_iso = _iso(_now())
+    if counters.get("agenda_created"):
+        await db.inbox_routing_log.insert_one({
+            "id": uuid.uuid4().hex,
+            "message_id": None, "account_id": account_id,
+            "route_kind": "default_cycle_seed",
+            "confidence": "low",
+            "target_kind": "agenda", "target_id": cycle_id,
+            "rationale": "Default-inbox cycle scaffolded with seed agenda item.",
+            "model_id": "deterministic-v1",
+            "classifier_version": "p5.20.0",
+            "decision_source": "auto",
+            "extra": {"seed_action": "default_cycle_agenda",
+                      "cycle_id": cycle_id},
+            "created_at": now_iso,
+            "schema_version": "inbox.routing_log.1.0",
+        })
+    if counters.get("member_created"):
+        await db.inbox_routing_log.insert_one({
+            "id": uuid.uuid4().hex,
+            "message_id": None, "account_id": account_id,
+            "route_kind": "default_cycle_seed",
+            "confidence": "low",
+            "target_kind": "cycle_team", "target_id": cycle_id,
+            "rationale": "Default-inbox cycle scaffolded with primary admin team member.",
+            "model_id": "deterministic-v1",
+            "classifier_version": "p5.20.0",
+            "decision_source": "auto",
+            "extra": {"seed_action": "default_cycle_member",
+                      "cycle_id": cycle_id},
+            "created_at": now_iso,
+            "schema_version": "inbox.routing_log.1.0",
+        })
 
 
 # ── Tenant ownership validators ───────────────────────────────────

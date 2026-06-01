@@ -1,6 +1,44 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.20 — Default-inbox cycle UX wizard scaffolding ✅ SHIPPED (2026-02)
+
+Closes the UX gap surfaced in P5.19/P5.19.1 honest notes: the auto-scaffolded default-inbox cycle couldn't render in the Cycle wizard ContributionsStep because it lacked the seed agenda + team rows the wizard expects. Post-fix: `get_or_create_default_inbox_cycle` now seeds one agenda item ("Inbound from Email Akki") + one team member (tenant's primary admin) atomically in the same call; the FE wizard auto-jumps to the Contributions step on `is_default_inbox_cycle: true`; a small `📧 default inbox` badge renders next to the cycle title; every seeding action lands a `route_kind=default_cycle_seed` row in `inbox_routing_log` with `extra.seed_action` distinguishing agenda vs member.
+
+**Pre-step shipped: DOM-selector trace pattern fix.** Logged 3× across P5.17/P5.19/P5.19.1 — closed now. Added `data-card-root="true"` to the SignalCard `<article>` (Pulse.jsx) and TaskListing `<li>` (TaskListing.jsx); trace selectors switched to `[data-card-root="true"]` (exact-match). Pulse trace BEFORE → AFTER on every step: 7/28 → 7/7 (no more over-match ratio). ≤ 30 LOC across two component files + one trace.
+
+**Backend:** `services/inbox_routing/context_resolver.py` — new `_seed_default_cycle_agenda_and_member` helper, idempotent on `(cycle_id, is_default_inbox_item)` and `(cycle_id, account_id)`; `get_or_create_default_inbox_cycle` calls the seed helper on both create AND existing-cycle paths (backward-compat); new `_log_seed_audit` writes `default_cycle_seed` rows only when seeding actually fired (no audit noise on no-op re-runs). `services/inbox_routing/backfill.py` — new `backfill_default_inbox_cycles(db)` migration scans every `is_default_inbox_cycle: true` row and runs the seed helper; idempotent on both seeded + unseeded states. Wired into orchestrator. `routers/cycle_manager.py::get_agenda` — response now carries `is_default_inbox_cycle: bool` (default `false` on failure / missing cycle).
+
+**Frontend:** `pages/Cycle.jsx` — small inline badge (`cycle-default-inbox-badge`) next to h1 when `agenda?.is_default_inbox_cycle`; one-shot auto-jump effect that switches the step to `contributions` when no `?tab=` URL override is present. Existing user-curated cycles unaffected. OriginChip + SourceMessageModal components reused from P5.17/P5.19 (no new modals).
+
+**Pytest lockdown:** 8 new tests in `test_phase_p5_20_default_inbox_cycle.py`. **Combined suite: 145/145 green in 100.24s. Suite-size delta vs 137 baseline: +8.** Coverage: new cycle carries agenda + team seeds · `get_or_create_default_inbox_cycle` idempotent on seeds (exactly one agenda item + one team row) · seed audit rows: 2 first call / 0 second (`# negative-leak:`) · `backfill_default_inbox_cycles` seeds pre-P5.20 cycles + idempotent on second run (`# negative-leak:`) · `/cycle/agenda` endpoint surfaces flag true for default cycles + false for user cycles · voice-lint clean on seed copy + locked-string assertions · source-strict P5.20 markers.
+
+**Idempotency proof (run twice):** both runs `{'scanned': 41, 'agenda_seeded': 0, 'member_seeded': 0}` — zero net writes (dev DB already seeded by prior runs; the lockdown test `test_backfill_default_inbox_cycles_seeds_pre_p520_cycles` exercises the `created > 0` path against a fresh seed and is green).
+
+**Live raw Playwright trace `/tmp/p5_20_default_cycle_trace.py`:** drove the live preview at 1280×800 / 1024×768 / 820×1180 / 414×896 using the FIXED selector pattern. Per viewport — URL auto-resolves to `&tab=contributions` (auto-jump fired) · badge present (text `✉ DEFAULT INBOX`) · contrib row present · origin chip present · active tab = `cycle-step-tab-contributions-active` · modal opens with subject `Cycle: P5.20 default inbox trace`. 8 JPEGs in `/tmp/p5_20_default_cycle/`.
+
+**Discipline gates (verbatim):** v1 byte-identical `4 passed in 3.41s` · `voice_lint: clean across customer-copy surfaces.` · ESLint + ruff clean on touched files.
+
+**Memo:** `/app/memory/sprints/P5_20_default_inbox_cycle.md` — full architecture, pre-step fix evidence, file-touch diff, deferred list, HUMAN_REQUIRED.
+
+**Deferred (absolute minimum, each logged once):**
+1. Re-target row action on default-inbox-context badge (carried from P5.19; >30 LOC).
+2. OAuth migration (P5.18, awaiting Google creds).
+3. AdminTopBar tile for source-view counts (declined, P5.17 follow-up).
+4. Routing-log distribution chart on admin inbox modal (declined, P5.19 follow-up).
+5. Honesty-protocol `git grep` pre-merge gate (declined, P5.15.1 follow-up).
+6. LLM-shielded classifier flag flip (env-flagged, out of v1 scope).
+
+**HUMAN_REQUIRED:** deploy preview → production (carries P5.10–P5.17 + P5.19 + P5.19.1 + P5.20 in one ship; P5.18 deferred); no new env vars; backfills safe via `python -m services.inbox_routing.backfill` (idempotent).
+
+
+
+### Phase P5.19.1 — Cleanup + UI trace gap close ✅ SHIPPED (2026-02)
+
+Mongo cleanup of 3 tester-injected rows (1 actually present; 2 already drained by P5.19 pre-step). Post-cleanup pytest sweep `137 passed in 99.09s` — counts held. Fresh Pulse Signals UI Playwright trace at 1280×800 verifying chip + modal + filter narrow + filter exclude + filter restore. In-process singleton trace (Option 3 executed; ≤ 30 LOC) confirmed both `route_to_signal` calls land at `extra.resolution="default_inbox"` and share the same singleton context. Two honest sub-findings on the modal owned: `body_has_route: false` (seed path skips classification persistence; production webhook persists it) + `admin_link_present: false` (by design; Pulse mounts modal with `isSuperadmin={false}`).
+
+
+
 ### Phase P5.19 — Signal + cycle update read-side adapters ✅ SHIPPED (2026-02)
 
 Closes the remaining two surfaces deferred in P5.17. Inbox-routed signals are now first-class rows in `db.signals` with origin envelopes; routed cycle updates are first-class rows in `db.cycle_contributions`. Pulse Signals tab has the `Origin · All / Email Akki / Manual` filter dropdown; Cycle contribution rows carry the inline origin chip. Both surfaces reuse the P5.17 `OriginChip` + `SourceMessageModal` components — single source of truth.

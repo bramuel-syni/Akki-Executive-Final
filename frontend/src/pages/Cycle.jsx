@@ -1285,6 +1285,26 @@ export default function Cycle() {
 
   useEffect(() => { refreshAll(); /* eslint-disable-next-line */ }, [cid, cycleId]);
 
+  // P5.20 — auto-route default-inbox cycles to the Contributions step.
+  // These cycles are auto-scaffolded for inbound email routing; the
+  // wizard's Agenda + Team steps are pre-seeded by the backend, so
+  // landing the user directly on Contributions is the natural UX.
+  // Existing user-curated cycles (`is_default_inbox_cycle: false`)
+  // continue to land on Agenda. Only fires once per cycle load (URL
+  // tab override wins on subsequent navigation).
+  const [defaultInboxAutoJumped, setDefaultInboxAutoJumped] = useState(false);
+  useEffect(() => {
+    if (
+      agenda?.is_default_inbox_cycle
+      && !defaultInboxAutoJumped
+      && !search.get("tab")
+    ) {
+      setStepIdSynced("contributions");
+      setDefaultInboxAutoJumped(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agenda?.is_default_inbox_cycle]);
+
   const stepIdx = STEPS.findIndex((s) => s.id === stepId);
   const onBack = () => setStepIdSynced(STEPS[Math.max(0, stepIdx - 1)].id);
   const onForward = () => setStepIdSynced(STEPS[Math.min(STEPS.length - 1, stepIdx + 1)].id);
@@ -1347,7 +1367,18 @@ export default function Cycle() {
             <p className="akki-overline mb-2 flex items-center gap-2">
               <Sparkles className="w-3 h-3 text-[var(--accent)]" /> Cycle Manager · {activeContext.name}
             </p>
-            <h1 className="akki-greeting mb-1">{cycle?.title || "Drafting engine."}</h1>
+            <h1 className="akki-greeting mb-1">
+              {cycle?.title || "Drafting engine."}
+              {agenda?.is_default_inbox_cycle && (
+                <span
+                  className="ml-3 inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-sm border bg-amber-50 text-amber-800 border-amber-300 align-middle"
+                  data-testid="cycle-default-inbox-badge"
+                  title="Auto-scaffolded cycle for inbound email routing."
+                >
+                  <span aria-hidden>✉</span> default inbox
+                </span>
+              )}
+            </h1>
             <p className="akki-meta mb-6 max-w-2xl" data-testid="cycle-detail-status-sentence">
               {isCompleted
                 ? "Closed agenda. Read-only. You can regenerate the compilation from the Compilation tab."

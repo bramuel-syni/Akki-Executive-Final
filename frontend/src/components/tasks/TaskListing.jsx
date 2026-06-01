@@ -249,6 +249,7 @@ export default function TaskListing({ contextId, state, refreshKey, originFilter
           <li
             key={t.id}
             data-card-kind="task"
+            data-card-root="true"
             data-active-highlight={isActiveRow ? "true" : "false"}
             className={[
               "border bg-white rounded-sm transition-colors",
