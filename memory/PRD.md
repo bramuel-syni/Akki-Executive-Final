@@ -1,6 +1,45 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.16 — Email Akki auto-routing ✅ SHIPPED (2026-02)
+
+Closes the **P8 "Email Akki" promise gap** from the P5.13 audit. Pre-fix: an inbound email landed in the admin inbox as a static row with only "Mark replied" / "Dismiss" affordances. Post-fix: every inbox row carries a classification envelope (route_kind + confidence + cited rationale), the high-confidence subset auto-routes into a tenant-scoped target (task / cycle update / signal), and admins can manually classify / route / dismiss / inspect the routing audit log from the detail panel.
+
+**v1 ship posture:** `INBOX_ROUTING_LLM_ENABLED=false` — deterministic-v1 classifier (keyword density + subject-prefix verbs + sender-tier bump + length floor + tenant-absence demotion). LLM-shielded path scaffolded behind the env flag for a later validation cycle.
+
+**Backend (sibling package, NOT an extension of Solva v1/v2 / Ideas / workbook_analyzer):** `services/inbox_routing/` — 8 files: schema · refuse_to_decide (re-export of workbook_analyzer sibling, single source of truth) · confidence (locked 0.35 / 0.70 thresholds) · citation_resolver · classifier · routers · audit_log · __init__. `routers/admin_inbox.py` extended with 4 endpoints (classify, route, dismiss, routing-log) — all superadmin + MFA + CSRF gated. `routers/inbound_email.py::_dispatch_inbound_payload` runs the classifier post-capture and auto-routes the high-confidence subset within the request handler; failures swallowed (must not block dispatch).
+
+**Frontend:** `AdminInbox.jsx` extended — per-row route-kind chip tinted by confidence band, detail rationale line, 6 routing affordances on the detail panel (Classify / Route → Task / Route → Cycle / Route → Signal / Mark discussion only / Routing log), routing-log modal with full audit trail per message. Every interactive element carries `data-testid`.
+
+**Pytest lockdown:** 31 new tests in `test_phase_p5_16_inbox_routing.py`. Combined suite **104/104 green in 88.54 s** (16 P5.15 ideas + 12 P5.15 scheduler + 4 v1 byte-identical + 41 P5.14 workbook analyze + 31 P5.16). **Suite-size delta vs 73-pass baseline: +31.** Coverage: confidence calibration boundaries · vocabulary lock · LLM env-flag · classifier across 6 fixtures · citation resolver positive + 3 negatives + batch · per-route-kind idempotency (4) · `account_id` requirement on task_create · endpoint classify happy path / 404 / route happy path / dismiss status flip / routing-log persisted rows / routing-log 404 existence-leak · non-admin 403 · tenant-scope on routing-log read helper (positive isolation + `# negative-leak:` assertion per P5.15.1 honesty protocol) · inbound-hook integration (real `_dispatch_inbound_payload` call → row + classification persisted) · voice-lint clean · CSRF allowlist invariant · source-strict P5.16 markers.
+
+**Live raw Playwright trace:** `/tmp/p5_16_inbox_routing_trace.py` drove the live preview at 1280×800 / 1024×768 / 820×1180 / 414×896 with a fresh seeded inbox row per viewport. Per-viewport flow: page loaded · row visible in list · open detail (chip="pending") · Re-classify → chip flips to `inbox-routekind-chip-task_create` · Route → Task (enabled because admin's account_id resolved) · open routing-log modal (1 entry) · Mark discussion only → status flips to `dismissed`. 12 JPEGs + `probe_results.json` in `/tmp/p5_16_inbox/`.
+
+**Discipline gates (verbatim):** v1 byte-identical `4 passed in 3.33s` · `voice_lint: clean across customer-copy surfaces.` · ESLint clean on `AdminInbox.jsx` · ruff clean on `services/inbox_routing/` + `routers/admin_inbox.py`.
+
+**Memo:** `/app/memory/sprints/P5_16_email_akki_routing.md` (architecture · classifier decision tree · refuse-to-decide reuse · citation resolver · idempotency contract · audit-log shape · deferred list · file-touch diff · HUMAN_REQUIRED).
+
+**Deferred (absolute minimum, each logged once):**
+1. LLM-shielded classifier path (env-flag-gated; flip in separate cycle).
+2. Upstream Task Manager / Cohort Cycle / Pulse Signals integration — current routing writes to lightweight sibling collections; a 2-3 page read-side adapter to surface these as first-class rows is deferred to P5.17.
+3. Background queue for classification (sync only in v1).
+4. Multi-message threading / conversation linking.
+5. Attachment classification (body + subject only in v1).
+6. Email reply-back from Akki to sender (one-way ingest in v1).
+7. Honesty-protocol `git grep` pre-merge gate (P5.15.1 follow-up; user declined — revisit only if inverted-assertion bug recurs).
+
+**HUMAN_REQUIRED:** deploy preview → production (carries P5.10–P5.16 in one ship); no new env vars required.
+
+
+
+### Phase P5.15.1 — Tenant-isolation test correctness fix ✅ SHIPPED (2026-02)
+
+Independent tester surfaced `test_tenant_isolation_specific_week_returns_404` with an inverted assertion (`viewer_body["account_id"] != existing_viewer["id"]` — only passed when isolation was broken). Rewrote the assertion block as positive isolation: `account_id == viewer's own` AND `id != admin's digest_id`. Contract chosen: 200 with JWT-account scope. Single file touched. Verbatim `pytest tests/test_solva_v1_unchanged.py tests/test_phase_p5_15_ideas_by_akki.py tests/test_phase_p5_15_ideas_scheduler.py tests/test_phase_p5_14_workbook_analyze.py -q` → `73 passed, 15 warnings in 85.46s`.
+
+**Honesty addendum:** prior P5.15 close-out reported "27/27" with `(16)`+`(11)` test-file counts; actual was 26 + 12 = 38. Adjusted protocol: run pytest at close-out (not earlier), paste literal summary line, note suite-size delta explicitly. Pre-merge `git grep` gate for security-sensitive `!=` assertions proposed; **declined by user** — revisit only if the inverted-assertion class of bug recurs.
+
+
+
 ### Phase P5.15 — Pulse · Ideas by Akki ✅ SHIPPED (2026-02)
 
 Second master tab on Pulse, mirroring the Monitor / Work Studio pill-tab pattern. Weekly cited synthesis across 4 lenses (Strategy · Board Navigation · Capital · Governance), per-tenant personalisation via `user_ideas_preferences`, refuse-to-decide validation, real-corpus citations only, cron-driven idempotent generation.

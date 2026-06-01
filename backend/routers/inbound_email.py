@@ -879,6 +879,41 @@ async def _dispatch_inbound_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:  # noqa: BLE001
         admin_inbox_id = ""
 
+    # ── Phase P5.16 (2026-02) — auto-classify hook ─────────────
+    # Run the inbox-routing classifier against the just-captured row
+    # so the FE can render the route-kind chip + auto-route the
+    # high-confidence subset on first list-render. Sync within the
+    # request — classifier latency is < 50ms in the deterministic-v1
+    # path; LLM mode (env-flagged, disabled in v1) would push to
+    # background. Failures here MUST NOT block dispatch — same
+    # contract as `capture_for_admin_inbox`.
+    if admin_inbox_id:
+        try:
+            from core import db as _db
+            row = await _db.admin_inbox_messages.find_one(
+                {"id": admin_inbox_id}, {"_id": 0},
+            )
+            if row:
+                from services.inbox_routing import (
+                    classify_message, dispatch_route,
+                )
+                envelope = await classify_message(row)
+                await _db.admin_inbox_messages.update_one(
+                    {"id": admin_inbox_id},
+                    {"$set": {"classification": envelope.model_dump()}},
+                )
+                # Auto-route the high-confidence subset. Medium /
+                # low / unclassified land in the admin-inbox queue
+                # as suggestions — no auto-write.
+                if envelope.confidence == "high" and envelope.route_kind != "unclassified":
+                    await dispatch_route(
+                        message=row, envelope=envelope, decision_source="auto",
+                    )
+        except Exception as _e:  # noqa: BLE001
+            logger.warning(
+                "Inbox auto-classify failed for %s: %s", admin_inbox_id, _e,
+            )
+
     mailbox_hash = (payload.get("MailboxHash") or "").strip()
     subject = (payload.get("Subject") or "").strip() or "(no subject)"
     text_body = (payload.get("TextBody") or "").strip()

@@ -326,3 +326,200 @@ async def set_inbox_message_status(
     except Exception:  # noqa: BLE001
         pass
     return {"ok": True, "status": body.status}
+
+
+# ─── Phase P5.16 (2026-02) — Email Akki auto-routing ──────────────────
+# Four new endpoints add classify + manual-route + dismiss + log-read
+# affordances on top of the existing inbox surface. The classifier
+# lives in `services/inbox_routing/`; this router holds only the
+# HTTP shell + CSRF/auth gates + tenant-isolation enforcement.
+
+from pydantic import ConfigDict as _CfgDict  # noqa: E402
+
+
+class _RouteIn(BaseModel):
+    """Manual route body. `route_kind` MUST be one of the known
+    kinds; `target_hint` is a free-shape dict (see
+    `services.inbox_routing.schema.TargetHint`)."""
+    model_config = _CfgDict(extra="forbid")
+    route_kind: str = Field(..., pattern="^(cycle_update|task_create|signal_post|discussion_only|unclassified)$")
+    target_hint: Optional[Dict[str, Any]] = None
+
+
+async def _load_message_or_404(message_id: str) -> Dict[str, Any]:
+    row = await db.admin_inbox_messages.find_one({"id": message_id}, {"_id": 0})
+    if not row:
+        raise HTTPException(status_code=404, detail={
+            "code": "not_found", "message": "Inbox message not found.",
+        })
+    return row
+
+
+@router.post("/messages/{message_id}/classify")
+async def classify_inbox_message(
+    message_id: str,
+    admin: Dict[str, Any] = Depends(_require_super_admin_with_mfa),
+) -> Dict[str, Any]:
+    """Run the inbox-routing classifier against this message. Persists
+    the envelope on the row at `classification` and returns it. Safe
+    to re-call — overwrites the previous classification."""
+    row = await _load_message_or_404(message_id)
+    from services.inbox_routing import (
+        ClassifierFailure, classify_message,
+    )
+    try:
+        envelope = await classify_message(row)
+    except ClassifierFailure as e:
+        log.warning("inbox classify failed for %s: %s", message_id, e)
+        raise HTTPException(status_code=502, detail={
+            "code": "classifier_failed",
+            "message": "Classifier could not complete for this message.",
+        })
+    env_doc = envelope.model_dump()
+    await db.admin_inbox_messages.update_one(
+        {"id": message_id},
+        {"$set": {"classification": env_doc}},
+    )
+    try:
+        await write_audit(
+            None, admin.get("id"),
+            "admin.inbox.classify", "admin_inbox_messages", message_id,
+            {"route_kind": envelope.route_kind, "confidence": envelope.confidence},
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    return {"classification": env_doc}
+
+
+@router.post("/messages/{message_id}/route")
+async def route_inbox_message(
+    message_id: str,
+    body: _RouteIn,
+    admin: Dict[str, Any] = Depends(_require_super_admin_with_mfa),
+) -> Dict[str, Any]:
+    """Manually route a message to a chosen route_kind. Re-uses the
+    persisted classification's `rationale` + `citations` for the
+    audit row; overrides `route_kind` and `target_hint`."""
+    row = await _load_message_or_404(message_id)
+    from services.inbox_routing import (
+        ClassificationEnvelope, TargetHint, ClassifierFailure,
+        classify_message, dispatch_route, RouteFailure,
+    )
+    env_doc = row.get("classification")
+    if not env_doc:
+        # Auto-classify on the fly so the manual route still carries
+        # a citation + rationale (the audit log shape requires both).
+        try:
+            envelope = await classify_message(row)
+        except ClassifierFailure as e:
+            raise HTTPException(status_code=502, detail={
+                "code": "classifier_failed",
+                "message": "Classifier could not complete for this message.",
+            }) from e
+        env_doc = envelope.model_dump()
+        await db.admin_inbox_messages.update_one(
+            {"id": message_id},
+            {"$set": {"classification": env_doc}},
+        )
+    # Apply the manual override.
+    env_doc["route_kind"] = body.route_kind
+    if body.target_hint:
+        merged_hint = dict(env_doc.get("target_hint") or {})
+        merged_hint.update(body.target_hint)
+        env_doc["target_hint"] = merged_hint
+    try:
+        envelope = ClassificationEnvelope(**env_doc)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail={
+            "code": "invalid_target_hint",
+            "message": f"Could not build classification envelope: {e}",
+        })
+    try:
+        result = await dispatch_route(
+            message=row,
+            envelope=envelope,
+            actor_id=admin.get("id"),
+            decision_source="human",
+        )
+    except RouteFailure as e:
+        raise HTTPException(status_code=400, detail={
+            "code": "route_failed", "message": str(e),
+        })
+    try:
+        await write_audit(
+            None, admin.get("id"),
+            "admin.inbox.route", "admin_inbox_messages", message_id,
+            {"route_kind": body.route_kind, "target_id": result.get("target_id")},
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    return {"ok": True, "result": result}
+
+
+@router.post("/messages/{message_id}/dismiss")
+async def dismiss_inbox_message(
+    message_id: str,
+    admin: Dict[str, Any] = Depends(_require_super_admin_with_mfa),
+) -> Dict[str, Any]:
+    """Mark a message as discussion-only without creating a target.
+    Writes a discussion_only routing-log row + flips the status to
+    `dismissed`. Idempotent — re-calling on a dismissed row returns
+    `exists`."""
+    row = await _load_message_or_404(message_id)
+    from services.inbox_routing import (
+        ClassificationEnvelope, ClassifierFailure,
+        classify_message, route_to_discussion,
+    )
+    env_doc = row.get("classification")
+    if not env_doc:
+        try:
+            envelope = await classify_message(row)
+        except ClassifierFailure as e:
+            raise HTTPException(status_code=502, detail={
+                "code": "classifier_failed", "message": str(e),
+            })
+        env_doc = envelope.model_dump()
+        await db.admin_inbox_messages.update_one(
+            {"id": message_id}, {"$set": {"classification": env_doc}},
+        )
+    # Force discussion_only.
+    env_doc["route_kind"] = "discussion_only"
+    envelope = ClassificationEnvelope(**env_doc)
+    result = await route_to_discussion(
+        message=row,
+        envelope=envelope,
+        actor_id=admin.get("id"),
+        decision_source="human",
+    )
+    await db.admin_inbox_messages.update_one(
+        {"id": message_id},
+        {"$set": {"status": "dismissed", "dismissed_at": _iso(_now())}},
+    )
+    _unread_count_cache["expires_at"] = 0
+    try:
+        await write_audit(
+            None, admin.get("id"),
+            "admin.inbox.dismiss", "admin_inbox_messages", message_id, {},
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    return {"ok": True, "result": result}
+
+
+@router.get("/messages/{message_id}/routing-log")
+async def get_inbox_message_routing_log(
+    message_id: str,
+    admin: Dict[str, Any] = Depends(_require_super_admin_with_mfa),
+) -> Dict[str, Any]:
+    """Return the routing-log entries for one message. Superadmin
+    sees every tenant's row; the dependency above gates on
+    superadmin so we always pass `is_superadmin=True` here."""
+    # Existence guard — 404 if the message itself doesn't exist
+    # (prevents enumeration of unknown ids).
+    await _load_message_or_404(message_id)
+    from services.inbox_routing.audit_log import read_routing_log
+    rows = await read_routing_log(
+        message_id=message_id, account_id=None, is_superadmin=True,
+    )
+    return {"items": rows, "count": len(rows)}
+
