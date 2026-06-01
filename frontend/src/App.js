@@ -144,6 +144,7 @@ const SharedArtefact = lazy(() => import("@/pages/SharedArtefact"));
 const InboundQueue = lazy(() => import("@/pages/InboundQueue"));
 const StudioComposerPage = lazy(() => import("@/pages/StudioComposerPage"));
 const WorkStudio = lazy(() => import("@/pages/WorkStudio"));
+const WorkStudioAnalyze = lazy(() => import("@/pages/WorkStudioAnalyze"));
 // Phase Z (2026-05-27, Z-slice-4) — Canonical Documents Journal page.
 const DocumentsPage = lazy(() => import("@/pages/DocumentsPage"));
 // Phase E.2 (2026-05-26) — full-page Recent Activity surface.
@@ -436,6 +437,9 @@ function App() {
           <Route path="/app/manage" element={<Gated><Manage /></Gated>} />
           <Route path="/app/enterprise" element={<Gated><Enterprise /></Gated>} />
           <Route path="/app/work-studio" element={<Gated><WorkStudio /></Gated>} />
+          {/* Phase P5.14 — Work Studio Analyze tab. Sibling page; does NOT
+              touch the Generate surface. */}
+          <Route path="/app/work-studio/analyze" element={<Gated><WorkStudioAnalyze /></Gated>} />
           {/* Phase Z (2026-05-27, Z-slice-4) — Canonical Documents
               Journal. Surfaces every document organized by origin
               (Akki-generated / Uploaded / Emailed). Public route under

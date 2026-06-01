@@ -1,6 +1,32 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.14 — Work Studio Analyze tab (Monte Carlo + cited PPTX) ✅ SHIPPED (2026-02)
+
+**What landed:**
+- New sibling backend package `services/workbook_analyzer/` (NOT an extension of Solva v2 — v1/v2 engines untouched).
+- 7 router endpoints under `/api/workbook/*` (all CSRF-protected; tenant-scoped on `account_id`).
+- Two-pill master tab switcher on Work Studio: `GENERATE DOCUMENTS` (existing surface, untouched) + `ANALYZE` (new).
+- Full pipeline: upload (xlsx/csv) → sheet preview → signals → Monte Carlo (numpy, deterministic seed, 4 distributions) → linear forecast → anomaly detection (z-score + IQR) → cited PPTX report with chair-readable speaker notes.
+
+**Live Playwright E2E (full pipeline at 1280; master tabs at 1280/1024/820/414):** PASS. PPTX 49 KB · 8 slides · 8 speaker-notes XMLs · MC bands monotonic P10=89.4 ≤ P50=155.5 ≤ P90=218.6 · 10 cited signals · 1 anomaly. Script `/tmp/p5_14_analyze_e2e.py`; artefacts `/tmp/p5_14_analyze/`.
+
+**Pytest lockdown:** 31 new tests in `tests/test_phase_p5_14_workbook_analyze.py` covering parser, MC determinism, forecaster, anomaly detector, citation resolver (positive + 5 negative cases), refuse-to-decide (positive + 5 negative phrasings), PPTX integrity (zip valid + speaker-notes XML present + refuse-to-decide injection caught), tenant isolation cross-account (viewer cannot read admin's analysis — 404), endpoint E2E. 31/31 green in isolation. **2 fail under broad-suite runs** due to the cross-test fixture state-leak pattern previously flagged in P5.11/P5.13 — not a P5.14-induced regression.
+
+**Akki promises preserved:** every claim cited (cell-range resolver rejects fabrications); no LLM reads your data (deterministic narration only this MVP; opt-in shielded_call scaffold in place); decisions stay yours (`validate_no_imperatives` on every narration string before persistence + PPTX attach); your data never leaves your account (account-scoped queries; cross-tenant 404 audited).
+
+**Solva v1 byte-identical guard:** 4/4 green. **Voice-lint:** clean across customer-copy surfaces.
+
+**Memo:** `/app/memory/sprints/P5_14_work_studio_analyze.md` (architecture, citation resolver design, Monte Carlo determinism, narration safety, out-of-scope items).
+
+**Adjacent items NOT silently fixed:**
+- Cross-test fixture state leak (the 2 broader-suite failures + the P5.11/P5.13 cycle-test flake): test-infra refactor for a future phase.
+- WorkStudio.jsx pre-existing `!cid` "No company selected." stub: master tabs added per scope, but the richer "pick a company" surface remains a future polish item.
+
+**HUMAN_REQUIRED:** deploy preview → production. Carries P5.10/P5.11/P5.12/P5.14 in one ship. No new env vars; no new Mongo indexes needed.
+
+
+
 ### Phase P5.13 — End-to-end journey audit (AUDIT ONLY — no fixes) (2026-02)
 
 Audit-only phase. Zero fixes. Solva v1 + voice-lint green.

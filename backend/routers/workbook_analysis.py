@@ -1,0 +1,474 @@
+"""Phase P5.14 — Workbook Analyze router.
+
+Endpoints (all CSRF-protected; namespace `/api/workbook` is NOT
+on the CSRF allowlist):
+
+  POST   /api/workbook/upload                                    → create analysis from xlsx/csv
+  GET    /api/workbook/analyses                                  → list current-account analyses
+  GET    /api/workbook/analyses/{aid}                            → fetch (+sheet metadata + accreted artefacts)
+  POST   /api/workbook/analyses/{aid}/signals/extract            → run deterministic signal extraction
+  POST   /api/workbook/analyses/{aid}/simulate                   → Monte Carlo run
+  POST   /api/workbook/analyses/{aid}/forecast                   → linear forecast run
+  POST   /api/workbook/analyses/{aid}/anomalies                  → detect anomalies on a column
+  GET    /api/workbook/analyses/{aid}/report.pptx                → download the PPTX
+
+Tenant isolation: every query is scoped by `account_id` taken
+from the authenticated account dependency. Cross-account access
+returns 404 (not 403) so we don't leak existence.
+
+Storage:
+  * `workbook_analyses` — metadata + accreted artefacts (this is
+    the resource the FE drives against).
+  * `workbook_blobs`    — raw bytes (base64). Separated so the
+    metadata collection stays small and indexable.
+"""
+from __future__ import annotations
+
+import base64
+import re
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from fastapi import (
+    APIRouter, Depends, File, Form, HTTPException, Response,
+    UploadFile,
+)
+from pydantic import BaseModel, Field
+
+from core import db, get_current_account
+from services.workbook_analyzer import (
+    AnomalyRow,
+    CitationUnverifiable,
+    ForecastRun,
+    MonteCarloRun,
+    NarrationBlock,
+    RefuseToDecideViolation,
+    WorkbookAnalysis,
+    WorkbookCitation,
+    WorkbookCitationResolver,
+    WorkbookSheet,
+    build_pptx_report,
+    detect_anomalies,
+    extract_signals_for,
+    parse_workbook,
+    run_forecast,
+    run_monte_carlo,
+    validate_no_imperatives,
+)
+
+
+router = APIRouter(prefix="/api/workbook", tags=["workbook-analyze"])
+
+
+# 25 MB cap. Smaller than the documents pipeline because workbooks
+# parse into memory and we want to keep the per-tenant Mongo
+# footprint bounded.
+MAX_BYTES = 25 * 1024 * 1024
+ACCEPT_EXT = {".xlsx", ".csv"}
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ─────────────────────────────────────────────────────────────────
+# In-memory blob cache: parsed-matrix lookups can re-read the
+# blob on demand. The cache is per-process; on a worker restart
+# we lazily re-parse from `workbook_blobs`.
+# ─────────────────────────────────────────────────────────────────
+_MATRIX_CACHE: Dict[str, Dict[str, List[List[Any]]]] = {}
+
+
+async def _load_matrices(analysis_id: str) -> Dict[str, List[List[Any]]]:
+    if analysis_id in _MATRIX_CACHE:
+        return _MATRIX_CACHE[analysis_id]
+    blob_row = await db.workbook_blobs.find_one({"analysis_id": analysis_id}, {"_id": 0})
+    if not blob_row:
+        raise HTTPException(404, "workbook_blob_missing")
+    blob = base64.b64decode(blob_row["data_b64"])
+    _sheets, matrices = parse_workbook(
+        blob=blob, file_format=blob_row["file_format"],
+    )
+    _MATRIX_CACHE[analysis_id] = matrices
+    return matrices
+
+
+async def _load_analysis(analysis_id: str, account_id: str) -> WorkbookAnalysis:
+    row = await db.workbook_analyses.find_one(
+        {"id": analysis_id, "account_id": account_id},
+        {"_id": 0},
+    )
+    if not row:
+        # Same response shape for "doesn't exist" and "belongs to
+        # another tenant" — no existence leak.
+        raise HTTPException(404, "workbook_analysis_not_found")
+    return WorkbookAnalysis.model_validate(row)
+
+
+async def _save_analysis(analysis: WorkbookAnalysis) -> None:
+    analysis.updated_at = _now_iso()
+    payload = analysis.model_dump()
+    await db.workbook_analyses.update_one(
+        {"id": analysis.id, "account_id": analysis.account_id},
+        {"$set": payload},
+        upsert=False,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────
+# POST /upload  → create
+# ─────────────────────────────────────────────────────────────────
+
+
+@router.post("/upload")
+async def upload_workbook(
+    file: UploadFile = File(...),
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    filename = file.filename or "unnamed"
+    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in ACCEPT_EXT:
+        raise HTTPException(415, f"workbook_format_unsupported: {ext}")
+    data = await file.read()
+    if len(data) > MAX_BYTES:
+        raise HTTPException(413, "workbook_too_large_25mb")
+    if not data:
+        raise HTTPException(400, "workbook_empty")
+
+    fmt = "xlsx" if ext == ".xlsx" else "csv"
+    try:
+        sheets, matrices = parse_workbook(blob=data, file_format=fmt)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(422, f"workbook_parse_failed: {e!s:.200}")
+
+    analysis_id = "wba-" + uuid.uuid4().hex[:12]
+
+    analysis = WorkbookAnalysis(
+        id=analysis_id,
+        account_id=current["id"],
+        context_id=current.get("active_context_id") or None,
+        document_id=analysis_id,  # MVP: workbook is its own document
+        filename=filename,
+        file_format=fmt,
+        file_size_bytes=len(data),
+        status="parsed",
+        sheets=sheets,
+    )
+    await db.workbook_analyses.insert_one(analysis.model_dump())
+    await db.workbook_blobs.insert_one({
+        "analysis_id": analysis_id,
+        "account_id": current["id"],
+        "filename": filename,
+        "file_format": fmt,
+        "data_b64": base64.b64encode(data).decode("ascii"),
+        "created_at": _now_iso(),
+    })
+    _MATRIX_CACHE[analysis_id] = matrices
+
+    return {
+        "id": analysis_id,
+        "status": "parsed",
+        "sheets": [s.model_dump() for s in sheets],
+    }
+
+
+# ─────────────────────────────────────────────────────────────────
+# GET /analyses  → list
+# ─────────────────────────────────────────────────────────────────
+
+
+@router.get("/analyses")
+async def list_analyses(current: Dict[str, Any] = Depends(get_current_account)):
+    cursor = db.workbook_analyses.find(
+        {"account_id": current["id"]},
+        {"_id": 0, "id": 1, "filename": 1, "file_format": 1, "status": 1,
+         "created_at": 1, "updated_at": 1, "sheets.name": 1},
+    ).sort("created_at", -1).limit(50)
+    items = []
+    async for row in cursor:
+        items.append({
+            "id": row["id"],
+            "filename": row["filename"],
+            "file_format": row["file_format"],
+            "status": row["status"],
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+            "sheet_names": [s["name"] for s in row.get("sheets", [])],
+        })
+    return {"items": items}
+
+
+# ─────────────────────────────────────────────────────────────────
+# GET /analyses/{aid}
+# ─────────────────────────────────────────────────────────────────
+
+
+@router.get("/analyses/{aid}")
+async def get_analysis(aid: str, current: Dict[str, Any] = Depends(get_current_account)):
+    a = await _load_analysis(aid, current["id"])
+    return a.model_dump()
+
+
+# ─────────────────────────────────────────────────────────────────
+# POST /analyses/{aid}/signals/extract
+# ─────────────────────────────────────────────────────────────────
+
+
+@router.post("/analyses/{aid}/signals/extract")
+async def extract_signals_endpoint(
+    aid: str, current: Dict[str, Any] = Depends(get_current_account),
+):
+    analysis = await _load_analysis(aid, current["id"])
+    matrices = await _load_matrices(aid)
+    resolver = WorkbookCitationResolver(analysis.sheets)
+    all_signals = []
+    for sheet in analysis.sheets:
+        matrix = matrices.get(sheet.name, [])
+        sigs = extract_signals_for(sheet=sheet, sheet_matrix=matrix)
+        for s in sigs:
+            try:
+                validate_no_imperatives(s.detail, label=f"signal.detail/{s.title}")
+                resolver.resolve_many(s.citations)
+            except (RefuseToDecideViolation, CitationUnverifiable):
+                # Skip the offending signal but never the whole batch.
+                # The deterministic extractor should never produce these
+                # in practice — if it does, the suite of pytest negative-
+                # samples will catch it before deploy.
+                continue
+            all_signals.append(s)
+    analysis.signals = all_signals
+    analysis.status = "ready"
+    await _save_analysis(analysis)
+    return {"signals": [s.model_dump() for s in all_signals]}
+
+
+# ─────────────────────────────────────────────────────────────────
+# POST /analyses/{aid}/simulate
+# ─────────────────────────────────────────────────────────────────
+
+
+class SimulateRequest(BaseModel):
+    sheet: str
+    column: str = Field(..., description="The column-name to fit the input distribution to")
+    distribution: str  # validated against the literal in monte_carlo._sample
+    params: Dict[str, float]
+    iterations: int = 5000
+    formula: str = "=x"
+    seed: int = 42
+
+
+@router.post("/analyses/{aid}/simulate")
+async def simulate_endpoint(
+    aid: str,
+    body: SimulateRequest,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    analysis = await _load_analysis(aid, current["id"])
+    # Find the column letter for citation purposes.
+    sheet_obj = next((s for s in analysis.sheets if s.name == body.sheet), None)
+    if not sheet_obj:
+        raise HTTPException(400, f"sheet_not_found: {body.sheet}")
+    col_obj = next((c for c in sheet_obj.columns if c.name == body.column), None)
+    if not col_obj:
+        raise HTTPException(400, f"column_not_found: {body.column}")
+    if col_obj.kind != "numeric":
+        raise HTTPException(400, f"column_must_be_numeric: {body.column} is {col_obj.kind}")
+
+    n_data_rows = sheet_obj.n_rows
+    last_data_row = sheet_obj.header_row_index + n_data_rows
+    citation = WorkbookCitation(
+        cell_range=f"{sheet_obj.name}!{col_obj.letter}{sheet_obj.header_row_index + 1}:"
+                   f"{col_obj.letter}{last_data_row}",
+        excerpt=(f"Distribution fit to {col_obj.non_null_count} non-null rows of "
+                 f"{col_obj.name}; column stats: mean={col_obj.mean}, stddev={col_obj.stddev}"),
+    )
+    # Citation MUST resolve (will trip CitationUnverifiable if not).
+    WorkbookCitationResolver(analysis.sheets).resolve(citation)
+
+    try:
+        mc = run_monte_carlo(
+            sheet=body.sheet,
+            column=body.column,
+            distribution=body.distribution,  # type: ignore[arg-type]
+            params=body.params,
+            iterations=body.iterations,
+            formula=body.formula,
+            seed=body.seed,
+            citations=[citation],
+        )
+    except ValueError as e:
+        raise HTTPException(400, f"simulate_invalid: {e}")
+
+    # Deterministic narration. Validated.
+    narration_text = (
+        f"The {mc.iterations}-iteration simulation on {body.column} produced a "
+        f"median outcome of {mc.p50:.2f}. The central 80% of outcomes fall "
+        f"between {mc.p10:.2f} (P10) and {mc.p90:.2f} (P90). The mean is "
+        f"{mc.mean:.2f}, the standard deviation is {mc.stddev:.2f}. The "
+        f"reproducer hash {mc.reproducer_hash[:12]}… captures the full "
+        f"specification; re-running with the same hash returns byte-identical "
+        f"bands."
+    )
+    validate_no_imperatives(narration_text, label="simulate.narration")
+    mc.narration = NarrationBlock(text=narration_text, shielded=False)
+
+    analysis.simulations.append(mc)
+    await _save_analysis(analysis)
+    return mc.model_dump()
+
+
+# ─────────────────────────────────────────────────────────────────
+# POST /analyses/{aid}/forecast
+# ─────────────────────────────────────────────────────────────────
+
+
+class ForecastRequest(BaseModel):
+    sheet: str
+    date_column: str
+    value_column: str
+    horizon_periods: int = 8
+
+
+@router.post("/analyses/{aid}/forecast")
+async def forecast_endpoint(
+    aid: str,
+    body: ForecastRequest,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    analysis = await _load_analysis(aid, current["id"])
+    sheet_obj = next((s for s in analysis.sheets if s.name == body.sheet), None)
+    if not sheet_obj:
+        raise HTTPException(400, f"sheet_not_found: {body.sheet}")
+    date_col = next((c for c in sheet_obj.columns if c.name == body.date_column), None)
+    val_col = next((c for c in sheet_obj.columns if c.name == body.value_column), None)
+    if not date_col or date_col.kind != "date":
+        raise HTTPException(400, f"date_column_invalid: {body.date_column}")
+    if not val_col or val_col.kind != "numeric":
+        raise HTTPException(400, f"value_column_invalid: {body.value_column}")
+
+    matrices = await _load_matrices(aid)
+    sheet_matrix = matrices.get(body.sheet) or []
+    date_idx = next((i for i, c in enumerate(sheet_obj.columns) if c.name == body.date_column), -1)
+    val_idx = next((i for i, c in enumerate(sheet_obj.columns) if c.name == body.value_column), -1)
+    try:
+        fc = run_forecast(
+            sheet=body.sheet,
+            date_column=body.date_column,
+            value_column=body.value_column,
+            sheet_matrix=sheet_matrix,
+            header_row_index=sheet_obj.header_row_index,
+            date_col_index_zero=date_idx,
+            value_col_index_zero=val_idx,
+            horizon_periods=body.horizon_periods,
+        )
+    except ValueError as e:
+        raise HTTPException(400, f"forecast_invalid: {e}")
+
+    WorkbookCitationResolver(analysis.sheets).resolve_many(fc.citations)
+
+    narration_text = (
+        f"Fitting a linear regression to {fc.n_historical} historical "
+        f"({fc.date_column}, {fc.value_column}) pairs yields R²={fc.r2:.3f}. "
+        f"The first forecast period projects to {fc.projections[0]['value']:.2f} "
+        f"with an 80% confidence interval of "
+        f"{fc.projections[0]['ci_low']:.2f}–{fc.projections[0]['ci_high']:.2f}. "
+        f"Linear regression assumes the historical pattern continues; reviewers "
+        f"may want to weigh this against context the workbook itself does not "
+        f"capture."
+    )
+    validate_no_imperatives(narration_text, label="forecast.narration")
+    fc.narration = NarrationBlock(text=narration_text, shielded=False)
+
+    analysis.forecasts.append(fc)
+    await _save_analysis(analysis)
+    return fc.model_dump()
+
+
+# ─────────────────────────────────────────────────────────────────
+# POST /analyses/{aid}/anomalies
+# ─────────────────────────────────────────────────────────────────
+
+
+class AnomaliesRequest(BaseModel):
+    sheet: str
+    column: Optional[str] = Field(
+        None, description="If omitted, runs anomaly detection on every numeric column in the sheet",
+    )
+    z_threshold: float = 3.0
+    iqr_multiplier: float = 1.5
+
+
+@router.post("/analyses/{aid}/anomalies")
+async def anomalies_endpoint(
+    aid: str,
+    body: AnomaliesRequest,
+    current: Dict[str, Any] = Depends(get_current_account),
+):
+    analysis = await _load_analysis(aid, current["id"])
+    sheet_obj = next((s for s in analysis.sheets if s.name == body.sheet), None)
+    if not sheet_obj:
+        raise HTTPException(400, f"sheet_not_found: {body.sheet}")
+    matrices = await _load_matrices(aid)
+    matrix = matrices.get(body.sheet) or []
+
+    target_cols = (
+        [next((c for c in sheet_obj.columns if c.name == body.column), None)]
+        if body.column else
+        [c for c in sheet_obj.columns if c.kind == "numeric"]
+    )
+    target_cols = [c for c in target_cols if c is not None]
+    if not target_cols:
+        raise HTTPException(400, "no_numeric_columns_for_anomaly_detection")
+
+    resolver = WorkbookCitationResolver(analysis.sheets)
+    fresh: List[AnomalyRow] = []
+    for col in target_cols:
+        col_idx = next((i for i, c in enumerate(sheet_obj.columns) if c.name == col.name), -1)
+        rows = detect_anomalies(
+            sheet=body.sheet,
+            column_name=col.name,
+            column_letter=col.letter,
+            sheet_matrix=matrix,
+            header_row_index=sheet_obj.header_row_index,
+            col_index_zero=col_idx,
+            z_threshold=body.z_threshold,
+            iqr_multiplier=body.iqr_multiplier,
+        )
+        for a in rows:
+            validate_no_imperatives(a.rationale, label=f"anomaly.rationale/{a.row_index}")
+            resolver.resolve_many(a.citations)
+        fresh.extend(rows)
+    analysis.anomalies = fresh
+    await _save_analysis(analysis)
+    return {"anomalies": [a.model_dump() for a in fresh]}
+
+
+# ─────────────────────────────────────────────────────────────────
+# GET /analyses/{aid}/report.pptx
+# ─────────────────────────────────────────────────────────────────
+
+
+@router.get("/analyses/{aid}/report.pptx")
+async def report_endpoint(aid: str, current: Dict[str, Any] = Depends(get_current_account)):
+    analysis = await _load_analysis(aid, current["id"])
+    try:
+        pptx_bytes = build_pptx_report(analysis)
+    except RefuseToDecideViolation as e:
+        raise HTTPException(500, f"narration_failed_refuse_to_decide: {e}")
+    headers = {
+        "Content-Disposition": (
+            f'attachment; filename="{re.sub(r"[^A-Za-z0-9._-]", "_", analysis.filename)}_analysis.pptx"'
+        ),
+        # Mark the response as not cacheable so the file always
+        # reflects the current accreted state of the analysis.
+        "Cache-Control": "no-store",
+    }
+    return Response(
+        content=pptx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers=headers,
+    )
+
+
+__all__ = ["router"]

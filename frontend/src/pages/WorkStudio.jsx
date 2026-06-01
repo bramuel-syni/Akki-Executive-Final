@@ -41,6 +41,7 @@ import {
 import ExportModal from "@/components/studio/ExportModal";
 import EnhanceModal from "@/components/studio/EnhanceModal";
 import PerArtefactSynisenseBadge from "@/components/studio/PerArtefactSynisenseBadge";
+import WorkStudioMasterTabs from "@/components/work_studio/WorkStudioMasterTabs";
 import CreateArtefactModal from "@/components/work_studio/CreateArtefactModal";
 import CompilationRail from "@/components/work_studio/CompilationRail";
 // Wave 3 (2026-05-27) — Right-rail Document Journal panel.
@@ -892,8 +893,16 @@ export default function WorkStudio() {
   );
 
   if (!cid) {
+    // Phase P5.14 — even without an active context, the user
+    // should still be able to navigate to the Analyze tab (which
+    // is account-scoped, not context-scoped). Render the master
+    // pill-tab strip on the no-context stub so the navigation
+    // is reachable at every viewport.
     return (
       <AppShell>
+        <div className="akki-w-medium px-8 pt-6">
+          <WorkStudioMasterTabs />
+        </div>
         <div className="p-12 text-center text-[var(--muted)] text-sm">No company selected.</div>
       </AppShell>
     );
@@ -902,6 +911,14 @@ export default function WorkStudio() {
   return (
     <AppShell>
       <WorkspaceEntryGate workspace="work_studio">
+        {/* Phase P5.14 — master pill tabs above the existing surface.
+            Sits inside akki-w-medium so it lines up with the listing
+            column at every viewport; sits OUTSIDE the lg:flex two-
+            column container so it doesn't disturb the existing
+            listing/rail layout. */}
+        <div className="akki-w-medium px-8 pt-6" data-testid="work-studio-master-tabs-wrap">
+          <WorkStudioMasterTabs />
+        </div>
         <div className="akki-w-medium px-8 py-10 lg:flex lg:items-start lg:gap-10 flex-1 relative" data-testid="work-studio">
           {/* Left column. The vertical hairline divider is rendered as
               an absolute-positioned <div> at the column boundary so it

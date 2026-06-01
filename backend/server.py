@@ -373,6 +373,14 @@ from routers import cohort_email_events as cohort_email_events_router  # noqa: E
 app.include_router(cohort_email_events_router.router)
 from routers import admin_inbox as admin_inbox_router  # noqa: E402  P5.8.2
 app.include_router(admin_inbox_router.router)
+# Phase P5.14 — Work Studio Analyze tab (workbook upload + Monte
+# Carlo + forecast + anomalies + cited PPTX report). Sibling system
+# to Solva v2 — does not touch the v2 engine. Namespace
+# `/api/workbook/*` is intentionally NOT on the CSRF allowlist; the
+# frontend tab passes `X-CSRF-Token` via `ensureCsrfToken()` on every
+# POST. Tenant isolation: every read/write is scoped on `account_id`.
+from routers import workbook_analysis as workbook_analysis_router  # noqa: E402  P5.14
+app.include_router(workbook_analysis_router.router)
 
 
 # -----------------------------------------------------------------------------
