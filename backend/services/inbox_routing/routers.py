@@ -110,6 +110,42 @@ async def route_to_task(
     }
     await db.inbox_routing_tasks.insert_one(dict(task_doc))
 
+    # Phase P5.17 (2026-02) — write the parallel row into the
+    # primary `tasks` collection so the Task Manager surface picks
+    # the routed task up without a separate backfill pass. The
+    # sibling row above is the canonical audit-store; the primary
+    # row is the read-side surface. Idempotency on the primary side
+    # is provided by the existing `_existing_route` log check that
+    # short-circuits this whole function on a repeat call.
+    try:
+        from .upstream_adapter import build_origin_envelope
+        origin_env = build_origin_envelope(
+            message_id=message["id"],
+            confidence_band=envelope.confidence,
+            decision_source=decision_source,
+        )
+        primary_task = {
+            "id": "tsk-" + uuid.uuid4().hex[:12],
+            "account_id": account_id,
+            "context_id": None,
+            "name": task_doc["title"],
+            "objective": "",
+            "success_criteria": "",
+            "output_spec": None,
+            "team": [],
+            "state": "draft",
+            "due_date": task_doc.get("due_hint"),
+            "readiness_score": 0,
+            "created_at": task_doc["created_at"],
+            "updated_at": task_doc["created_at"],
+            "status_history": [],
+            "origin": origin_env,
+        }
+        await db.tasks.insert_one(dict(primary_task))
+    except Exception as _e:  # noqa: BLE001
+        log.warning("[P5.17] primary tasks insert failed for %s: %s",
+                    task_doc["id"], _e)
+
     log_entry = InboxRoutingLogEntry(
         message_id=message["id"],
         account_id=account_id,

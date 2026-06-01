@@ -56,6 +56,18 @@ export default function TaskManager() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Phase P5.17 (2026-02) — origin filter (`all` / `email_akki` /
+  // `manual`). Default `all`. Drives `TaskListing`'s API call.
+  const initialOrigin = params.get("origin") || "all";
+  const [originFilter, setOriginFilter] = useState(initialOrigin);
+  useEffect(() => {
+    const next = new URLSearchParams(params);
+    if (originFilter === "all") next.delete("origin");
+    else next.set("origin", originFilter);
+    setParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [originFilter]);
+
   // Keep the ?state=… param sticky as the user switches tabs.
   useEffect(() => {
     const next = new URLSearchParams(params);
@@ -134,11 +146,23 @@ export default function TaskManager() {
                   {t.label}
                 </button>
               ))}
+              {/* P5.17 — origin filter dropdown (defaults All, sticky in URL). */}
+              <select
+                value={originFilter}
+                onChange={(e) => setOriginFilter(e.target.value)}
+                className="ml-auto self-center text-[11.5px] font-mono px-2 py-1 border border-[var(--rule)] rounded-sm bg-white text-[var(--ink)] hover:border-[var(--ink)]"
+                data-testid="task-manager-origin-filter"
+              >
+                <option value="all">Origin · All</option>
+                <option value="email_akki">Origin · Email Akki</option>
+                <option value="manual">Origin · Manual</option>
+              </select>
             </div>
             <TaskListing
               contextId={cid}
               state={tab}
               refreshKey={refreshKey}
+              originFilter={originFilter}
             />
           </section>
 

@@ -388,6 +388,12 @@ app.include_router(workbook_analysis_router.router)
 # interceptor.
 from routers import ideas as ideas_router  # noqa: E402  P5.15
 app.include_router(ideas_router.router)
+# Phase P5.17 — Non-admin source-message preview (tenant-scoped
+# read-only view that the origin-chip on a routed item links into).
+# GET-only; no CSRF needed. Existence-leak guard: cross-tenant
+# access lands on 404 (never 403).
+from routers import inbox_message_preview as inbox_message_preview_router  # noqa: E402  P5.17
+app.include_router(inbox_message_preview_router.router)
 
 
 # -----------------------------------------------------------------------------

@@ -56,6 +56,12 @@ from .audit_log import (
     write_routing_log,
     read_routing_log,
 )
+from .upstream_adapter import (
+    ORIGIN_EMAIL_AKKI,
+    build_origin_envelope,
+    is_email_akki_origin,
+)
+from .backfill import backfill_tasks, run as run_backfill
 
 __all__ = [
     # schema
@@ -89,4 +95,10 @@ __all__ = [
     # audit log
     "write_routing_log",
     "read_routing_log",
+    # P5.17 — upstream adapter
+    "ORIGIN_EMAIL_AKKI",
+    "build_origin_envelope",
+    "is_email_akki_origin",
+    "backfill_tasks",
+    "run_backfill",
 ]

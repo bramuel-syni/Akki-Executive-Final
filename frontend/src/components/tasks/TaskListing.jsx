@@ -23,6 +23,9 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { Loader2, Calendar, Users, Inbox } from "lucide-react";
 import { toast } from "sonner";
 import StrategicRow from "@/components/strategic_row/StrategicRow";
+// P5.17 — origin chip + source-message modal for inbox-routed tasks.
+import OriginChip from "@/components/origin/OriginChip";
+import SourceMessageModal from "@/components/origin/SourceMessageModal";
 
 
 function fmtDate(iso) {
@@ -94,18 +97,22 @@ function ContributorAvatars({ team }) {
 }
 
 
-export default function TaskListing({ contextId, state, refreshKey }) {
+export default function TaskListing({ contextId, state, refreshKey, originFilter }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [, setParams] = useSearchParams();
   const { account } = useAuth();
   const myEmail = (account?.email || "").toLowerCase();
+  // P5.17 — modal state for source-message preview.
+  const [previewOrigin, setPreviewOrigin] = useState(null);
 
   useEffect(() => {
     let dead = false;
     setLoading(true);
     const params = { state };
     if (contextId) params.context_id = contextId;
+    // P5.17 — pass `origin` query when filter is narrower than "all".
+    if (originFilter && originFilter !== "all") params.origin = originFilter;
     api.get("/tasks", { params })
       .then(({ data }) => { if (!dead) setTasks(Array.isArray(data) ? data : []); })
       .catch((e) => {
@@ -113,7 +120,7 @@ export default function TaskListing({ contextId, state, refreshKey }) {
       })
       .finally(() => { if (!dead) setLoading(false); });
     return () => { dead = true; };
-  }, [contextId, state, refreshKey]);
+  }, [contextId, state, refreshKey, originFilter]);
 
   // F.3: card click opens the drawer via `?task_id=<id>`.
   const openTask = (taskId) => {
@@ -148,8 +155,9 @@ export default function TaskListing({ contextId, state, refreshKey }) {
   }
 
   return (
-    <ul className="space-y-3" data-testid="task-listing-list">
-      {tasks.map((t) => {
+    <>
+      <ul className="space-y-3" data-testid="task-listing-list">
+        {tasks.map((t) => {
         // Wave 4.1 (2026-05-27) — "Needs your input" attention pill
         // surfaces when this user is on the team and still owes input.
         const me = myEmail
@@ -174,7 +182,7 @@ export default function TaskListing({ contextId, state, refreshKey }) {
         );
 
         // statusChip — needsInput pill (left, source-order first per
-        // W4_1b) + StatusPill. Empty fragment when neither applies.
+        // W4_1b) + StatusPill + P5.17 origin chip when applicable.
         const statusChip = (
           <>
             {needsInput && (
@@ -186,6 +194,11 @@ export default function TaskListing({ contextId, state, refreshKey }) {
               </span>
             )}
             <StatusPill state={t.state} />
+            <OriginChip
+              origin={t.origin}
+              onClick={setPreviewOrigin}
+              testid={`task-card-origin-chip-${t.id}`}
+            />
           </>
         );
 
@@ -258,6 +271,14 @@ export default function TaskListing({ contextId, state, refreshKey }) {
           </li>
         );
       })}
-    </ul>
+      </ul>
+      {previewOrigin && (
+        <SourceMessageModal
+          origin={previewOrigin}
+          onClose={() => setPreviewOrigin(null)}
+          isSuperadmin={!!account?.is_superadmin}
+        />
+      )}
+    </>
   );
 }

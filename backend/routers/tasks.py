@@ -123,6 +123,12 @@ def _sanitize_task(t: Dict[str, Any]) -> Dict[str, Any]:
         "created_at":       t.get("created_at"),
         "updated_at":       t.get("updated_at"),
         "status_history":   t.get("status_history") or [],
+        # Phase P5.17 (2026-02) — origin envelope when this task was
+        # backfilled from an inbox-routing decision (or routed live
+        # via the P5.16 inbound-hook auto-classify path). Existing
+        # tasks without an origin field return `None` here; FE
+        # treats `None` as "no chip" — backward-compat clean.
+        "origin":           t.get("origin") or None,
     }
 
 
@@ -206,15 +212,32 @@ async def create_task(
 async def list_tasks(
     state: Optional[str] = Query(None, pattern="^(active|draft|closed)$"),
     context_id: Optional[str] = None,
+    origin: Optional[str] = Query(None, pattern="^(email_akki|manual)$"),
     current: Dict[str, Any] = Depends(get_current_account),
 ):
     """List tasks scoped to the caller. Filter by state (Active /
-    Draft / Closed) — used by the 3-tab listing surface."""
+    Draft / Closed) — used by the 3-tab listing surface.
+
+    Phase P5.17 (2026-02) — added `?origin=email_akki|manual` filter.
+    `email_akki` narrows to tasks that carry the P5.17 origin
+    envelope with `source == "email_akki"`; `manual` excludes those.
+    Default (no `origin` query) → returns everything.
+    """
     q: Dict[str, Any] = {"account_id": current["id"]}
     if state:
         q["state"] = state
     if context_id:
         q["context_id"] = context_id
+    if origin == "email_akki":
+        q["origin.source"] = "email_akki"
+    elif origin == "manual":
+        # Exclude rows with any origin envelope (today only email_akki
+        # exists; future origin classes get added to this $nor list as
+        # they ship).
+        q["$or"] = [
+            {"origin": {"$exists": False}},
+            {"origin": None},
+        ]
     rows = await db.tasks.find(q, {"_id": 0}).sort("created_at", -1).to_list(length=200)
     return [_sanitize_task(r) for r in rows]
 

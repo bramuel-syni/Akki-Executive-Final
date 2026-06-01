@@ -1,13 +1,45 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.17 — Upstream read-side adapter ✅ SHIPPED (2026-02)
+
+Closes the loop P5.16 left open. Pre-fix: an inbound email routed by the classifier landed in `inbox_routing_tasks` but never surfaced inside Task Manager. Post-fix: email-routed tasks are first-class rows in the primary `tasks` collection, carry a small **📧 From email** origin chip on the Task Manager surface, and a click opens a tenant-scoped read-only preview of the source message.
+
+OAuth migration (the **other** half of the original P5.17 scope) deferred to **P5.18** when Google credentials arrive. This dispatch is read-side adapter only.
+
+**Backend:** `services/inbox_routing/upstream_adapter.py` (origin envelope builder + helpers) · `services/inbox_routing/backfill.py` (idempotent one-shot migration; dedup on `(account_id, origin.message_id)`) · `routers/inbox_routing/routers.py::route_to_task` extended to write the parallel primary `tasks` row in the same call · `routers/tasks.py` — `_sanitize_task` returns `origin` field; `list_tasks` adds `?origin=email_akki|manual` filter · **NEW** `routers/inbox_message_preview.py` with `GET /api/inbox/messages/{message_id}/preview` (tenant-scoped, cross-tenant → 404 existence-leak guard, source_view_log write on success). Wired in `server.py`.
+
+**Frontend:** **NEW** `components/origin/OriginChip.jsx` (✉ FROM EMAIL pill tinted by confidence band; renders null when origin absent) · **NEW** `components/origin/SourceMessageModal.jsx` (loads preview, renders classification + body + sender; superadmin deep-link to admin inbox) · `components/tasks/TaskListing.jsx` integrates the chip + mounts the modal · `pages/TaskManager.jsx` adds the origin filter dropdown (sticky in URL).
+
+**Pytest lockdown:** 16 new tests in `test_phase_p5_17_upstream_adapter.py`. **Combined suite: 120/120 green in 91.67s. Suite-size delta vs 104 baseline: +16.** Coverage: origin envelope helpers · live route_to_task primary-row write · backfill creates from sibling-only · backfill idempotent on double-run (`# negative-leak:` assertion) · origin field on serializer · `?origin=email_akki` narrows · `?origin=manual` excludes · backward compat for no-origin rows · preview 404 on missing · preview 404 on cross-tenant (`# negative-leak:` assertion) · preview 200 on tenant match + source_view_log written · superadmin bypass · voice-lint clean on chip + modal · source-strict server wire-up.
+
+**Idempotency proof (manual, ops command shape):** two consecutive runs of `backfill_tasks(db)` both returned `{'scanned': 25, 'created': 0, 'exists': 25, 'skipped_missing_log': 0}` — zero net writes on the second run.
+
+**Live raw Playwright trace `/tmp/p5_17_read_adapter_trace.py`:** drove the live preview at 1280×800 / 1024×768 / 820×1180 / 414×896. Each viewport: seeded chip visible → modal opens → modal carries `From: Trace Sender <admin@akki.ai>` + `Subject: Task: P5.17 trace seed` + classification metadata → filter→email_akki shows 51 cards → filter→manual returns 0 email chips. 12 JPEGs + `probe_results.json` in `/tmp/p5_17_tasks/`. The trace's `allHaveChip` field over-matched on sub-testids (false-negative trace-selector artifact); the canonical proof of API-level filter correctness is `test_tasks_list_origin_filter_narrows_to_email_akki` which is green.
+
+**Discipline gates (verbatim):** v1 byte-identical `4 passed in 3.35s` · `voice_lint: clean across customer-copy surfaces.` · ESLint + ruff clean across all touched files.
+
+**Memo:** `/app/memory/sprints/P5_17_read_side_adapter.md`.
+
+**Deferred (absolute minimum, each logged once):**
+1. Pulse signals + cycle update surface adapters (require `context_id` / `cycle_id` resolution beyond what the classifier produces; deferred to P5.19 candidate).
+2. OAuth migration (P5.18; awaiting Google creds).
+3. `#message-<id>` deep-link scroll-into-view polish on admin inbox.
+4. DOM-selector polish on the Playwright trace (`allHaveChip` over-match; trace artifact, not UX).
+5. AdminTopBar toast for new routed-message counts (declined per minimum-backlog).
+6. Honesty-protocol `git grep` pre-merge gate (declined; P5.15.1 follow-up).
+
+**HUMAN_REQUIRED:** deploy preview → production (carries P5.10–P5.17 in one ship); no new env vars. Backfill safe to run once in prod via `python -m services.inbox_routing.backfill` to drain any pre-deploy P5.16 routing log rows; not wired to startup.
+
+
+
 ### Phase P5.16 — Email Akki auto-routing ✅ SHIPPED (2026-02)
 
 Closes the **P8 "Email Akki" promise gap** from the P5.13 audit. Pre-fix: an inbound email landed in the admin inbox as a static row with only "Mark replied" / "Dismiss" affordances. Post-fix: every inbox row carries a classification envelope (route_kind + confidence + cited rationale), the high-confidence subset auto-routes into a tenant-scoped target (task / cycle update / signal), and admins can manually classify / route / dismiss / inspect the routing audit log from the detail panel.
 
 **v1 ship posture:** `INBOX_ROUTING_LLM_ENABLED=false` — deterministic-v1 classifier (keyword density + subject-prefix verbs + sender-tier bump + length floor + tenant-absence demotion). LLM-shielded path scaffolded behind the env flag for a later validation cycle.
 
-**Backend (sibling package, NOT an extension of Solva v1/v2 / Ideas / workbook_analyzer):** `services/inbox_routing/` — 8 files: schema · refuse_to_decide (re-export of workbook_analyzer sibling, single source of truth) · confidence (locked 0.35 / 0.70 thresholds) · citation_resolver · classifier · routers · audit_log · __init__. `routers/admin_inbox.py` extended with 4 endpoints (classify, route, dismiss, routing-log) — all superadmin + MFA + CSRF gated. `routers/inbound_email.py::_dispatch_inbound_payload` runs the classifier post-capture and auto-routes the high-confidence subset within the request handler; failures swallowed (must not block dispatch).
+**Backend (sibling package, NOT an extension of Solva v1/v2 / Ideas / workbook_analyzer):** `services/inbox_routing/` — 8 files: schema · refuse_to_decide (re-export of workbook_analyzer sibling, single source of truth) · confidence (locked 0.35 / 0.70 thresholds) · citation_resolver · classifier · routers · audit_log · __init__. `routers/admin_inbox.py` extended with 4 endpoints — `POST /api/admin/inbox/messages/{id}/classify`, `POST /api/admin/inbox/messages/{id}/route`, `POST /api/admin/inbox/messages/{id}/dismiss`, and **`GET /api/admin/inbox/messages/{id}/routing-log`** (path-param shape; **doc nit corrected in P5.17**: original prompt sketched `?message_id=…` query-param shape — implementation uses the cleaner RESTful path-param shape) — all superadmin + MFA + CSRF gated. `routers/inbound_email.py::_dispatch_inbound_payload` runs the classifier post-capture and auto-routes the high-confidence subset within the request handler; failures swallowed (must not block dispatch).
 
 **Frontend:** `AdminInbox.jsx` extended — per-row route-kind chip tinted by confidence band, detail rationale line, 6 routing affordances on the detail panel (Classify / Route → Task / Route → Cycle / Route → Signal / Mark discussion only / Routing log), routing-log modal with full audit trail per message. Every interactive element carries `data-testid`.
 
