@@ -1,6 +1,60 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.21 — Second journey audit ✅ AUDIT-ONLY CLOSED (2026-02)
+
+**Mode:** AUDIT ONLY — zero source code changes. Allowed touched files: this PRD top entry + `memory/sprints/P5_21_journey_audit_v2.md`.
+
+**Verdict spread (carries forward P5.13 contract shape):**
+
+```
+Part A (8 promises):       8 PASS  ·  0 PARTIAL  ·  0 NOT_BUILT  ·  0 BROKEN
+Part B (15 surfaces):     14 PASS  ·  1 PARTIAL  ·  0 NOT_BUILT  ·  0 BROKEN
+Part C (8 new sub-phases): 8 PASS  ·  0 PARTIAL  ·  0 NOT_BUILT  ·  0 BROKEN
+Total:                    30 PASS  ·  1 PARTIAL  ·  0 NOT_BUILT  ·  0 BROKEN
+```
+
+**Delta vs P5.13:** **P8 (Email Akki) PARTIAL → PASS** (full routing pipeline now in production — P5.16/P5.17/P5.19/P5.20). **Surface 4 (Work Studio · Analyze) NOT_BUILT → PASS** (P5.14 + P5.14.1 shipped). **Surface 8 (Pulse · Ideas by Akki) NOT_BUILT → PASS** (P5.15 shipped). **Surface 12 (Akki Inbox routing UI) PARTIAL → PASS** (P5.16 row actions live). The one remaining PARTIAL (Trust Center velocity tile) is a probe-hygiene carry-forward from P5.13 — the tile renders, but the onboarding-tour overlay blocks live measurement on a fresh-login probe; source-strict pass holds.
+
+**Discipline gates (verbatim):**
+- v1 byte-identical guard at open: `4 passed, 15 warnings in 3.56s`.
+- v1 byte-identical guard at close: `4 passed, 15 warnings in 3.45s`.
+- Voice-lint at both: `voice_lint: clean across customer-copy surfaces.`
+- Promise lockdown re-assert (P5.13 grid, 13 suites): `131 passed, 15 warnings in 12.22s` — matches P5.13 row 234 baseline exactly.
+- Combined P5 sub-suite (P5.14 + P5.15 + P5.16 + P5.17 + P5.19 + P5.20 + v1 guard): 147 passed (from P5.20.1 close — not re-run this audit per scope).
+
+**Live probe evidence:**
+- 16 surfaces × 4 viewports (1280×800 / 1024×768 / 820×1180 / 414×896): `/tmp/p5_21_audit/surface_evidence_v2.json`.
+- Highlight verbatim: Admin Inbox `row_count: 50, routekind_chip: 50, status_pill: 50` and after row click `action_classify + route_task + route_cycle + route_signal + routing_log = ALL TRUE`. Pulse Signals: `pulse-card-origin-chip-* count: 7` live. Cycle list: `cycle-default-inbox-badge: 1`. Cycle detail: `url_has_contributions: true`.
+- P5.14.2 in-app Solva above-fold at 1280×800: `element_at_750: 'solva-not-sure-link'` — matches the P5.14.2 memo's verbatim proof line. Grid bottom = 708 < 800 ✓.
+- Files-touched check: ZERO source code modifications.
+
+**Next phase: P5.22 — CSRF-rotted wire-test refresh** (test-rig only; mechanical). 6 tests in `test_h2_5_shield_uniformity.py` need `csrf_post()` helper. Already approved by user as next dispatch. No promise gap.
+
+**Backlog after P5.22:**
+- P5.18 — Google OAuth migration (user-action-blocked: awaits Google creds).
+- Production deploy (user-action-blocked).
+- Trust Center tour pre-dismissal flag for probes (LOW; probe-hygiene only).
+- Daily / biweekly digest cadence for Ideas (LOW; future).
+- "Why didn't this idea appear last week?" diff view (LOW; future).
+- Re-target row action on default-inbox badge (LOW; deferred polish from P5.20.1).
+
+**Detailed memo:** `/app/memory/sprints/P5_21_journey_audit_v2.md`.
+
+
+### Phase P5.20.1 — Default-inbox badge list parity + tester sessionStorage docs ✅ SHIPPED (2026-02)
+
+Closes two narrow gaps left over from P5.20: the default-inbox badge wasn't on the Cycle list rows (only on the detail page), and testers had hit empty workspace-picker states 3× across P5.17/P5.19/P5.20 because the `akki_active_context_id` injection snippet wasn't documented in a copy-pasteable form. **Combined suite: 147/147 green in 112.22s. Suite-size delta vs 145 baseline: +2.**
+
+**Frontend:** `frontend/src/components/cycle/CycleCard.jsx` — `data-testid="cycle-default-inbox-badge"` rendered conditionally on `cycle.is_default_inbox_cycle`. Style/text parity with the `Cycle.jsx` detail page badge. Read-only. **Backend:** `_hydrate_cycle` already returned `{**row, ...}` so the flag passes through unchanged; new lockdown test `test_cycle_list_endpoint_carries_is_default_inbox_flag` guards against future projection drift.
+
+**Tester docs:** `memory/test_credentials.md` P5.20.1 section rewritten in TABLE format with the live-pulled canonical context_ids for admin/viewer/Julius/Bramuel (both the recommended default AND ALL accessible contexts), the canonical Playwright injection snippet, and the 4 pitfalls (key name, per-tab semantics, post-login settle, reload-after-set). `tmp/p5_20_1_session_storage_snippet_validation.py` patched with a 3-second post-login settle wait that fixed a race against AuthProvider bootstrap.
+
+**Lockdown:** +2 tests in `test_phase_p5_20_default_inbox_cycle.py` (8 → 10). Live raw Playwright trace `/tmp/p5_20_1_list_badge_trace.py` at 4 viewports: `badge_count: 1, default_card_has_badge: True, user_card_has_badge: False` at every viewport. sessionStorage validation: `VALIDATION PASSED ✓`. **Discipline gates:** v1 byte-identical `4 passed in 3.47s` · voice-lint clean · JS lint (CycleCard.jsx) clean.
+
+**Memo:** `/app/memory/sprints/P5_20_1_default_inbox_badge_list_parity.md`.
+
+
 ### Phase P5.20 — Default-inbox cycle UX wizard scaffolding ✅ SHIPPED (2026-02)
 
 Closes the UX gap surfaced in P5.19/P5.19.1 honest notes: the auto-scaffolded default-inbox cycle couldn't render in the Cycle wizard ContributionsStep because it lacked the seed agenda + team rows the wizard expects. Post-fix: `get_or_create_default_inbox_cycle` now seeds one agenda item ("Inbound from Email Akki") + one team member (tenant's primary admin) atomically in the same call; the FE wizard auto-jumps to the Contributions step on `is_default_inbox_cycle: true`; a small `📧 default inbox` badge renders next to the cycle title; every seeding action lands a `route_kind=default_cycle_seed` row in `inbox_routing_log` with `extra.seed_action` distinguishing agenda vs member.
