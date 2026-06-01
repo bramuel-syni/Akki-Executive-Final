@@ -1239,6 +1239,40 @@ async def on_startup():
                 replace_existing=True,
             )
 
+            # ── Phase P5.15 — Ideas by Akki weekly digest sweep ──
+            # Monday 07:00 UTC — the previous ISO week is the cut-off
+            # for "what landed last week"; running at 07:00 Monday gives
+            # the synthesizer the freshest indexed corpus while still
+            # landing the digest before the 9-10am local workday across
+            # EAT / WET / CET. Idempotent: per-tenant lookup skips
+            # accounts whose `(account_id, week_iso, digest_version)`
+            # row already exists, and dormant tenants (no documents in
+            # the recent corpus window) are silently skipped rather than
+            # written as zero-card rows. Env override
+            # `IDEAS_SCHEDULER_DISABLED=true` keeps the cron from arming
+            # at startup; the router lazy-path remains active either way.
+            async def _fire_ideas_weekly_sweep():
+                try:
+                    from services.ideas_engine.scheduler import (
+                        is_scheduler_disabled,
+                        run_weekly_ideas_sweep,
+                    )
+                    if is_scheduler_disabled():
+                        logger.info("Ideas weekly sweep: disabled by env.")
+                        return
+                    summary = await run_weekly_ideas_sweep(db)
+                    logger.info("Ideas weekly sweep: %s",
+                                {k: v for k, v in summary.items() if k != "sample"})
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("Ideas weekly sweep failed: %s", e)
+
+            scheduler.add_job(
+                _fire_ideas_weekly_sweep,
+                CronTrigger(day_of_week="mon", hour=7, minute=0),
+                id="ideas_weekly_sweep",
+                replace_existing=True,
+            )
+
             scheduler.start()
             app.state.scheduler = scheduler
             logger.info("Schedulers armed: Exco360 (Tue 10:00) + Influence Digest (Mon 08:00) + Paragraph Anchors (daily 03:00) + Chat Retention (daily 03:30) + Solva v2 Stale (daily 04:00) UTC.")

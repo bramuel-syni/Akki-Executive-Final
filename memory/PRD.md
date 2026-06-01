@@ -1,6 +1,35 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.15 — Pulse · Ideas by Akki ✅ SHIPPED (2026-02)
+
+Second master tab on Pulse, mirroring the Monitor / Work Studio pill-tab pattern. Weekly cited synthesis across 4 lenses (Strategy · Board Navigation · Capital · Governance), per-tenant personalisation via `user_ideas_preferences`, refuse-to-decide validation, real-corpus citations only, cron-driven idempotent generation.
+
+**v1 ship posture:** `IDEAS_LLM_ENABLED=false` — deterministic synthesis from the indexed corpus is the v1 path; the shielded-LLM round-trip stays scaffolded behind the env flag for a later validation cycle.
+
+**Backend (sibling package, NOT an extension of Solva v1/v2):** `services/ideas_engine/` (8 files: schema · synthesizer · personalizer · citation_resolver · refuse_to_decide · preferences · scheduler · __init__). `routers/ideas.py` with 6 CSRF-protected, tenant-scoped endpoints (current digest, history, specific-week, prefs GET/PUT, admin regenerate). APScheduler Monday-07:00-UTC weekly sweep wired into `server.py`; idempotent on `(account_id, week_iso, digest_version)`; dormant-tenant skip (no Mongo row written for accounts without recent corpus). Env override `IDEAS_SCHEDULER_DISABLED=true` keeps the cron from arming at startup.
+
+**Frontend:** `PulseMasterTabs.jsx` (two-pill switcher: SIGNALS · IDEAS BY AKKI) mounted on both `Pulse.jsx` and `PulseIdeas.jsx`. `PulseIdeas.jsx` — 4-column grid at lg, 2×2 at md, single column on mobile · per-card chip cluster with lens glyph + confidence band · citation drawer · preferences drawer (2000-char focus instructions + 4 lens checkboxes) · week selector (last 12 weeks) · empty-state surface · dropped-lens caveat row. Every interactive element carries a `data-testid`.
+
+**Pytest lockdown:** 27 new (16 in `test_phase_p5_15_ideas_by_akki.py` + 11 in `test_phase_p5_15_ideas_scheduler.py`). Combined sweep 42/42 green (Ideas + Scheduler + v1 byte-identical + P5.14.2 hotfix in the same run). Coverage: week_iso boundary · personalizer injection + sanitisation + cap · refuse-to-decide regex re-use · citation resolver positive + 3 negatives + batch aggregate · synthesizer 4-card + empty-corpus + lens-subset · preferences CRUD · endpoint smoke · tenant isolation 404 · admin gate 403/200 · CSRF allowlist invariant · voice-lint template clean · scheduler idempotency · sweep aggregate · env disable · server.py source-strict wire-up.
+
+**Live raw Playwright trace `/tmp/p5_15_ideas_trace.py`:** drove the preview UI at 1280×800 / 1024×768 / 820×1180 / 414×896. Seeded admin's corpus + reset preferences + admin-regenerated; sample digest `2026-W23`: 4 lenses · 8 citations · refuse-to-decide pass 4 / fail 0 · `dropped_lenses: []`. Full flow per viewport: SIGNALS-active pill → click IDEAS pill → IDEAS-active pill → 4-card grid → citation drawer (2 items) → preferences drawer toggle+save → admin regenerate 200 → reload → updated 3-card digest. 17 JPEGs + `probe_results.json` + `sample_digest.json` in `/tmp/p5_15_ideas/`.
+
+**Discipline gates:** v1 byte-identical 4/4 green · voice-lint clean · ESLint clean on touched FE files · ruff clean on touched BE files · CSRF `/api/ideas` namespace NOT in allowlist (source-strict locked) · refuse-to-decide regex re-export (single source of truth with workbook_analyzer sibling) · no piggybacked features (Pulse Signals UI gained 1 import + 1 element only).
+
+**Memo:** `/app/memory/sprints/P5_15_ideas_by_akki.md` (architecture, citation resolver design, personalizer envelope, scheduler design, empty-state coverage, deferred list).
+
+**Deferred (absolute minimum, each logged once):**
+1. LLM-shielded synthesis live wire (env-flag-gated; v1 ships deterministic).
+2. HA-safe scheduler (Mongo-lock variant; matches existing in-process pattern for now).
+3. Daily / biweekly cadence (weekly only this round; `cadence` field reserved).
+4. "Why didn't this idea appear last week?" diff view (backlog).
+5. Solva landing inline "Recently used" row (P5.14.2 follow-up; user declined inline).
+
+**HUMAN_REQUIRED:** deploy preview → production (carries P5.10/P5.11/P5.12/P5.14/P5.14.1/P5.14.2/P5.15 in one ship). No new env vars required for v1 posture.
+
+
+
 ### Phase P5.14.2 — Compact landings hotfix ✅ SHIPPED (2026-02)
 
 Two user-reported regressions closed ahead of resuming P5.15. **No P5.15 files touched** — hotfix is separable.

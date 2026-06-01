@@ -37,6 +37,12 @@ from .preferences import (
     get_or_default_preferences,
     upsert_preferences,
 )
+from .scheduler import (
+    DEFAULT_ACTIVE_WINDOW_DAYS,
+    is_scheduler_disabled,
+    run_weekly_ideas_sweep,
+    sweep_account,
+)
 
 __all__ = [
     "IDEA_LENSES",
@@ -57,4 +63,8 @@ __all__ = [
     "DEFAULT_PREFERENCES_LENSES",
     "get_or_default_preferences",
     "upsert_preferences",
+    "DEFAULT_ACTIVE_WINDOW_DAYS",
+    "is_scheduler_disabled",
+    "run_weekly_ideas_sweep",
+    "sweep_account",
 ]
