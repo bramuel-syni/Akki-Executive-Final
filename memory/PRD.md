@@ -1,6 +1,44 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.13 — End-to-end journey audit (AUDIT ONLY — no fixes) (2026-02)
+
+Audit-only phase. Zero fixes. Solva v1 + voice-lint green.
+
+**Verdict spread (8 promises + 14 surfaces = 22 rows):**
+- PASS: 18 (every P1–P7 promise + 11 of 14 surfaces)
+- PARTIAL: 2 (P8 + Akki Inbox — same root: auto-routing layer absent)
+- NOT_BUILT: 2 (Work Studio Analyze tab → P5.14; Pulse Ideas by Akki tab → P5.15)
+- BROKEN: 0
+
+**Headline:** the application keeps every promise it makes today; the one half-kept promise (P8 "Email Akki places it where it needs to be") has ingest complete and only routing missing — constructive gap, not a regression.
+
+**Promise lockdown grid:** 131 passing tests across 13 suites:
+- `test_no_direct_llm_calls_outside_shield.py` · `test_synisense_shield.py` · `test_solva_v2_shield_invariant.py` · `test_shield_failclose_empirical.py` (P2)
+- `test_phase_z2b_citation_resolver.py` (P3)
+- `test_solva_v2_bias_inventory_*` × 3 (P4)
+- `test_phase_z2c_refuse_to_decide_hardening.py` (P5)
+- `test_phase_w_admin_tenants.py` + `test_phase_w_followup_1_tenant_extraction_panel.py` (P6)
+- `test_solva_v2_pptx_chair_notes.py` + `test_solva_v2_pptx_export.py` (P1)
+
+**Surface re-confirmation (live Playwright):** sign-in → Home 1 portfolio overview lands cleanly (P5.12.2 holds); chat happy-path streams in ~13 s with audit panel green; documents/task-manager/pulse-signals/admin-inbox all render their canonical surfaces. Work Studio Analyze + Pulse Ideas confirmed absent in source — queued for P5.14 / P5.15.
+
+**Recommended P5.16 fix-list (severity-ordered):**
+1. **HIGH** — P8 Email Akki auto-routing layer (new `services/inbox_routing.py` + row-action UI on admin inbox).
+2. **LOW** — Refresh 6 CSRF-rotted wire tests in `test_h2_5_shield_uniformity.py` (pre-existing test-rig rot from before P3.1 CSRF tightening; not a promise gap).
+3. Deferred — P5.14 (Analyze), P5.15 (Ideas) per user dispatch.
+4. **LOW** — Register SendGrid Inbound Parse host (user UI step from P5.11.3).
+
+**Adjacent items NOT applied:** Mongo backfill for legacy cancelled-chat audit rows; `position: relative` polish on portfolio-landing wrapper; shared-fixture flake isolation in `tests/test_cycle_assignment_handoff.py`. All Adjacent / quality-of-life.
+
+**Out-of-scope items left alone:** Postmark history scrub, OAuth migration (P5.17).
+
+**Memo:** `/app/memory/sprints/P5_13_journey_audit.md` (the gap catalog driving P5.16).
+
+**HUMAN_REQUIRED:** approve P5.16 fix-list ordering; dispatch P5.14 + P5.15 when ready.
+
+
+
 ### Phase P5.12 — Post-login home: routing default + duplicate divider (2026-02)
 
 **P5.12.2 — Post-login default landing = Home 1** ✅ shipped
