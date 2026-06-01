@@ -17,6 +17,8 @@
 import React, { useEffect, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
 import WorkStudioMasterTabs from "@/components/work_studio/WorkStudioMasterTabs";
+import useAnalyzeStages from "@/components/work_studio/useAnalyzeStages";
+import AnalyzeStageStrip from "@/components/work_studio/AnalyzeStageStrip";
 import { api, apiErrorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -25,11 +27,14 @@ export default function WorkStudioAnalyze() {
   const [analysis, setAnalysis] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(null); // "signals" | "simulate" | "forecast" | "anomalies" | "report"
+  const stagesApi = useAnalyzeStages();
 
   // ── Upload ────────────────────────────────────────────────────
   const onFile = async (file) => {
     if (!file) return;
     setUploading(true);
+    stagesApi.reset();
+    stagesApi.start("parse");
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -39,8 +44,10 @@ export default function WorkStudioAnalyze() {
       // Fetch the full row (model_dump includes empty arrays).
       const { data: full } = await api.get(`/workbook/analyses/${data.id}`);
       setAnalysis(full);
+      stagesApi.success("parse");
       toast.success(`Parsed ${full.filename} — ${full.sheets.length} sheet(s)`);
     } catch (e) {
+      stagesApi.error("parse", apiErrorMessage(e));
       toast.error(apiErrorMessage(e));
     } finally {
       setUploading(false);
@@ -55,15 +62,21 @@ export default function WorkStudioAnalyze() {
 
   const runSignals = async () => {
     setBusy("signals");
+    stagesApi.start("signals");
     try {
       await api.post(`/workbook/analyses/${analysis.id}/signals/extract`);
+      stagesApi.success("signals");
       await refresh();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
+    } catch (e) {
+      stagesApi.error("signals", apiErrorMessage(e));
+      toast.error(apiErrorMessage(e));
+    }
     finally { setBusy(null); }
   };
 
   const runSimulate = async (sheet, column) => {
     setBusy("simulate");
+    stagesApi.start("simulate");
     try {
       const col = sheet.columns.find((c) => c.name === column);
       const mean = Number(col?.mean ?? 0);
@@ -77,13 +90,18 @@ export default function WorkStudioAnalyze() {
         formula: "=x",
         seed: 42,
       });
+      stagesApi.success("simulate");
       await refresh();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
+    } catch (e) {
+      stagesApi.error("simulate", apiErrorMessage(e));
+      toast.error(apiErrorMessage(e));
+    }
     finally { setBusy(null); }
   };
 
   const runForecast = async (sheet, dateCol, valueCol) => {
     setBusy("forecast");
+    stagesApi.start("forecast");
     try {
       await api.post(`/workbook/analyses/${analysis.id}/forecast`, {
         sheet: sheet.name,
@@ -91,27 +109,44 @@ export default function WorkStudioAnalyze() {
         value_column: valueCol,
         horizon_periods: 8,
       });
+      stagesApi.success("forecast");
       await refresh();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
+    } catch (e) {
+      stagesApi.error("forecast", apiErrorMessage(e));
+      toast.error(apiErrorMessage(e));
+    }
     finally { setBusy(null); }
   };
 
   const runAnomalies = async (sheet) => {
     setBusy("anomalies");
+    stagesApi.start("anomalies");
     try {
       await api.post(`/workbook/analyses/${analysis.id}/anomalies`, {
         sheet: sheet.name,
       });
+      stagesApi.success("anomalies");
       await refresh();
-    } catch (e) { toast.error(apiErrorMessage(e)); }
+    } catch (e) {
+      stagesApi.error("anomalies", apiErrorMessage(e));
+      toast.error(apiErrorMessage(e));
+    }
     finally { setBusy(null); }
   };
 
   const downloadPptx = async () => {
     setBusy("report");
+    stagesApi.start("report");
     try {
-      const url = `${api.defaults.baseURL}/workbook/analyses/${analysis.id}/report.pptx`;
-      // Use a hidden link to trigger native download (preserves auth cookie).
+      // Fetch the bytes via the api wrapper so we capture the
+      // real status / duration for the stage strip, then trigger
+      // the download via a Blob URL — the response is a real
+      // wire event, not a synthetic anchor click.
+      const r = await api.get(
+        `/workbook/analyses/${analysis.id}/report.pptx`,
+        { responseType: "blob" },
+      );
+      const url = URL.createObjectURL(r.data);
       const a = document.createElement("a");
       a.href = url;
       a.setAttribute("download", `${analysis.filename}_analysis.pptx`);
@@ -119,7 +154,12 @@ export default function WorkStudioAnalyze() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-    } catch (e) { toast.error(apiErrorMessage(e)); }
+      URL.revokeObjectURL(url);
+      stagesApi.success("report");
+    } catch (e) {
+      stagesApi.error("report", apiErrorMessage(e));
+      toast.error(apiErrorMessage(e));
+    }
     finally { setBusy(null); }
   };
 
@@ -163,6 +203,10 @@ export default function WorkStudioAnalyze() {
               Up to 25 MB. Akki only sees column metadata and a representative sample of rows —
               the full dataset never crosses the LLM boundary.
             </p>
+            {/* During upload, show the stage strip so the parse stage
+                is visible while it's in flight (the parsed-view branch
+                below renders the strip in steady-state). */}
+            <AnalyzeStageStrip stages={stagesApi.stages} defs={stagesApi.defs} />
           </div>
         )}
 
@@ -269,6 +313,11 @@ export default function WorkStudioAnalyze() {
                 data-testid="analyze-download-pptx-btn"
               >{busy === "report" ? "Preparing…" : "Download PPTX report"}</Button>
             </section>
+
+            {/* Stage strip — real-wire status of the most recent
+                run of each analysis stage. Hidden until the first
+                stage transitions out of idle. */}
+            <AnalyzeStageStrip stages={stagesApi.stages} defs={stagesApi.defs} />
 
             {/* Signals */}
             {analysis.signals.length > 0 && (

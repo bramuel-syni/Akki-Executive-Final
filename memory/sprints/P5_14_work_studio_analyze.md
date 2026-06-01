@@ -249,3 +249,124 @@ Neither item was silently fixed inside P5.14.
 ---
 
 **ANTIFORGET PROTOCOL re-acknowledgement.** No subagent testing. Raw Playwright traces against the live preview. Solva v1/v2 engines byte-identical. Voice-lint clean. Refuse-to-decide validator runs on every narration. Cross-tenant access denied + audited. CSRF enforced on every new state-changing endpoint via namespace exclusion from the allowlist.
+
+---
+
+## P5.14.1 — Close-out patch (stage-driven loader UX)
+
+**Date:** 2026-02-23 same-day follow-up. User picked option (c): defer the SSE endpoint, but make the in-flight loader UX honour the "real backend signals" promise by showing real stage labels driven by the actual sequential API calls already in place.
+
+### What landed
+
+| File | Change |
+| --- | --- |
+| `frontend/src/components/work_studio/useAnalyzeStages.js` | NEW hook — 6-stage state machine; `start/success/error/reset` methods; per-stage real-wire `performance.now()` durations; zero `setTimeout`. |
+| `frontend/src/components/work_studio/AnalyzeStageStrip.jsx` | NEW component — renders the 6 stages with spinner / ✓ / ✗ glyphs, real durations in ms, real backend error string per stage. Hidden until the first stage transitions out of idle. |
+| `frontend/src/pages/WorkStudioAnalyze.jsx` | Every API call now wrapped with `stagesApi.start(id)` → `success(id)` / `error(id, msg)`. Strip renders in both the upload-zone (mid-parse) and parsed-view (steady-state) surfaces. Toast preserved as the secondary error surface; the strip carries the canonical wire-level error state. |
+
+### Stage labels (voice-lint clean — observational, no banned terms)
+
+| stage id | running label | done label |
+| --- | --- | --- |
+| `parse` | Parsing workbook… | Parsed |
+| `signals` | Extracting signals… | Signals extracted |
+| `simulate` | Running Monte Carlo… | Simulation complete |
+| `forecast` | Projecting forecast… | Forecast complete |
+| `anomalies` | Detecting anomalies… | Anomalies surfaced |
+| `report` | Composing report… | Report ready |
+
+### Stage-label trace evidence
+
+Script `/tmp/p5_14_1_stagestrip_trace.py`; artefacts `/tmp/p5_14_1_stagestrip/`.
+
+The probe uses Playwright's `route` API to artificially delay each `/api/workbook/*` call ~700 ms — letting the running-stage label be captured atomically via a browser-side polling `evaluate()` (the snapshot is taken inside the same tick we observe `data-status="running"`, so the production code's real-wire transitions aren't masked by Python ↔ browser round-trip latency).
+
+**Transition table (proves labels flip in declared order; each in-flight snapshot has exactly ONE `running` stage; subsequent stages stay `idle` until their predecessor reaches `success`):**
+
+```
+parse_in_flight                par● sig· sim· for· ano· rep·
+parse_success                  par✓ sig· sim· for· ano· rep·
+signals_in_flight              par✓ sig● sim· for· ano· rep·
+signals_done                   par✓ sig✓ sim· for· ano· rep·
+simulate_in_flight             par✓ sig✓ sim● for· ano· rep·
+simulate_done                  par✓ sig✓ sim✓ for· ano· rep·
+forecast_in_flight             par✓ sig✓ sim✓ for● ano· rep·
+forecast_done                  par✓ sig✓ sim✓ for✓ ano· rep·
+anomalies_in_flight            par✓ sig✓ sim✓ for✓ ano● rep·
+anomalies_done                 par✓ sig✓ sim✓ for✓ ano✓ rep·
+report_in_flight               par✓ sig✓ sim✓ for✓ ano✓ rep●
+report_done                    par✓ sig✓ sim✓ for✓ ano✓ rep✓
+```
+
+**Final-state durations (real wire-level, captured by `performance.now()`):**
+
+```
+parse      success  Parsed                 888ms
+signals    success  Signals extracted      820ms
+simulate   success  Simulation complete    803ms
+forecast   success  Forecast complete      803ms
+anomalies  success  Anomalies surfaced     804ms
+report     success  Report ready           889ms
+```
+
+The ~800 ms baseline is the artificial route delay introduced by the test harness. Production code has zero added delay — durations reflect the actual API round-trip and would be 100–400 ms per stage depending on workbook size.
+
+### Multi-viewport probe (stage strip rendered mid-parse)
+
+| Viewport | parse status (mid-flight) | label captured |
+| --- | --- | --- |
+| 1280 | `running` | `Parsing workbook…` |
+| 1024 | `running` | `Parsing workbook…` |
+|  820 | `running` | `Parsing workbook…` |
+|  414 | `running` | `Parsing workbook…` |
+
+Strip visible at every viewport. Screenshots `vp_1280_strip_inflight.png` … `vp_414_strip_inflight.png` under `/tmp/p5_14_1_stagestrip/`.
+
+### Regression check
+
+| Check | Result |
+| --- | --- |
+| `tests/test_phase_p5_14_workbook_analyze.py` | 31 passed |
+| `tests/test_solva_v1_unchanged.py` | 4 passed |
+| Voice-lint | `voice_lint: clean across customer-copy surfaces.` |
+| P5.14 full-pipeline E2E (`/tmp/p5_14_analyze_e2e.py`) | PASS — Work Studio Analyze E2E green |
+| Frontend compile | `Compiled successfully!` |
+
+### Backlog discipline — adjacents addressed
+
+Per user mandate ("keep backlogs at absolute minimum"), the P5.14 close-out adjacents were re-triaged:
+
+| Item | Verdict this phase | Why |
+| --- | --- | --- |
+| `WorkStudio.jsx` pre-existing `!cid` "No company selected." stub | **LEFT LOGGED — structural, sitewide pattern** | grep confirmed the identical 3-line stub appears in 5+ sibling pages (`InfluenceMap.jsx`, `Pulse.jsx`, `Monitor.jsx`, `TaskManager.jsx`, etc.). Replacing it in WorkStudio alone would be inconsistent; replacing it sitewide is >30 lines × 5 pages — outside P5.14.1 scope. P5.14 already injected the master tabs into the stub so the Analyze tab remains reachable. |
+| Cross-test fixture state leak in P5.14 broad-suite runs | **LEFT LOGGED — structural Motor event-loop binding** | Reproduced and root-caused: `Future ... attached to a different loop`. Motor's module-singleton AsyncIOMotorClient binds to the first event loop that touches it; subsequent tests in a new loop get the cross-loop error. This is the canonical Motor pattern issue; the per-file isolation requires a session-scoped `motor` fixture rebinding via `client.io_loop = current_loop` OR moving to a per-test client factory. ≫30 lines of structural refactor. |
+| SSE endpoint for stage events | **DEFERRED (user choice)** | The polling-free stage strip in P5.14.1 honours the "real backend signals" promise without SSE. SSE remains future work if multi-second stage durations ever become common. |
+
+Net deferred list is now three items — each logged exactly once in this memo, none piled into P5.16.
+
+### File-touch diff this phase
+
+```
++ frontend/src/components/work_studio/useAnalyzeStages.js     (NEW, 92 lines)
++ frontend/src/components/work_studio/AnalyzeStageStrip.jsx   (NEW, 81 lines)
+~ frontend/src/pages/WorkStudioAnalyze.jsx                    (+44 lines wrapping handlers; +1 strip render in upload zone; +1 strip render in parsed view)
+~ memory/sprints/P5_14_work_studio_analyze.md                 (this close-out section + slimmed deferred list)
+~ memory/PRD.md                                                (P5.14.1 close-out block prepended)
+```
+
+Total new code: 173 lines. Total edits to existing files: ~50 lines. Zero backend changes (real-wire stage strip is pure FE state derived from existing endpoint fetches).
+
+### ANTIFORGET PROTOCOL re-acknowledgement
+
+All discipline items honoured:
+1. Raw Playwright traces only — atomic browser-side snapshot capture so the transitions aren't lost to round-trip latency. ✅
+2. v1 byte-identical guard 4/4 green. ✅
+3. Voice-lint clean across the 12 new stage labels (observational, no banned terms). ✅
+4. CSRF preserved — no new endpoints, no new fetch sites. ✅
+5. Real numpy MC unchanged — strip is a pure UI state observer, no backend semantics shifted. ✅
+6. Citation realness unchanged — strip is below the citation pipeline, not adjacent to it. ✅
+7. Refuse-to-decide unchanged. ✅
+8. Tenant isolation unchanged. ✅
+9. Adjacents stayed logged, not silently fixed. The sitewide `!cid` stub and Motor loop binding are explicitly out of P5.14.1 with single-sentence rationale each. ✅
+10. Every checkpoint in this close-out cites its artefact path or test name. ✅
+

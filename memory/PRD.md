@@ -1,6 +1,25 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.14.1 — Analyze tab loader UX tightening (close-out) ✅ SHIPPED (2026-02)
+
+Real-wire stage strip on the Analyze surface — no fake timers, no synthetic progress. Every transition is driven by an actual fetch lifecycle event.
+
+**Files:** new `useAnalyzeStages.js` hook + new `AnalyzeStageStrip.jsx` component + `WorkStudioAnalyze.jsx` updated to wrap each API call with `start/success/error` per stage. Zero backend changes.
+
+**Live Playwright trace (`/tmp/p5_14_1_stagestrip_trace.py`):** all 6 stages — parse · signals · simulate · forecast · anomalies · report — flip `idle → running → success` in declared order. Each in-flight snapshot shows exactly ONE `running` stage with the rest still `idle`; each `_done` snapshot shows the just-finished stage as `success` (✓) with a real `performance.now()` duration before the next stage starts. Multi-viewport: strip visible mid-parse at 1280/1024/820/414.
+
+**Regression:** P5.14 lockdown 31/31 green · v1 byte-identical 4/4 green · P5.14 full E2E pipeline still green · voice-lint clean across the 12 new stage labels.
+
+**Deferred list slimmed to 3 items, each logged exactly once in the P5.14 memo:**
+1. SSE stream endpoint (user-chosen deferral; real-wire strip is the alternative).
+2. Sitewide `!cid` "No company selected." stub refactor (>30 lines across 5+ pages — structural sitewide pattern).
+3. Cross-test fixture state leak (Motor event-loop binding — `Future attached to different loop`; structural fix needs a per-test client factory).
+
+**Adjacent kill list considered, none silently fixed.**
+
+
+
 ### Phase P5.14 — Work Studio Analyze tab (Monte Carlo + cited PPTX) ✅ SHIPPED (2026-02)
 
 **What landed:**
