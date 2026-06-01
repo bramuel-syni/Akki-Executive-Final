@@ -98,6 +98,19 @@ export default function CycleCard({ cycle, highlight = false }) {
           data-testid={`cycle-card-title-${cycle.id}`}
         >
           {cycle.title}
+          {/* P5.20.1 (2026-02) — default-inbox badge on list rows.
+              Parity with the cycle detail page badge from P5.20. The
+              `is_default_inbox_cycle` flag flows straight through
+              `_hydrate_cycle` so no serializer change was needed. */}
+          {cycle.is_default_inbox_cycle && (
+            <span
+              className="ml-2 inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-sm border bg-amber-50 text-amber-800 border-amber-300 align-middle"
+              data-testid="cycle-default-inbox-badge"
+              title="Auto-scaffolded cycle for inbound email routing."
+            >
+              <span aria-hidden>✉</span> default inbox
+            </span>
+          )}
         </h3>
 
         {/* Status badge — fixed slot */}

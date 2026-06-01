@@ -286,3 +286,47 @@ def test_p5_20_audit_log_marker_in_source():
     assert '"default_cycle_agenda"' in src
     assert '"default_cycle_member"' in src
     assert '"classifier_version": "p5.20.0"' in src
+
+
+# ── P5.20.1 — list-side badge wire-up ────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cycle_list_endpoint_carries_is_default_inbox_flag(transport):
+    """`GET /api/contexts/{cid}/cycles` must return rows with
+    `is_default_inbox_cycle: true` for the auto-scaffolded singleton
+    so the list-page CycleCard can render the badge. The hydrate
+    path returns the row spread (`{**row, ...}`), so this is a
+    pure pass-through; the test guards against a future projection
+    that accidentally drops the field."""
+    from core import db
+    admin = await db.accounts.find_one({"email": "admin@akki.ai"}, {"_id": 0})
+    ctx = await get_or_create_default_inbox_context(db, account_id=admin["id"])
+    cyc = await get_or_create_default_inbox_cycle(
+        db, account_id=admin["id"], context_id=ctx["id"],
+    )
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        headers = await _csrf_login(client, "admin@akki.ai", "AkkiAdmin2026!")
+        r = await client.get(
+            f"/api/contexts/{ctx['id']}/cycles?status=all",
+            headers=headers,
+        )
+        assert r.status_code == 200, r.text
+        cycles = r.json()["cycles"]
+        seeded = next((c for c in cycles if c["id"] == cyc["id"]), None)
+        assert seeded is not None, "default-inbox cycle must appear in the list"
+        assert seeded.get("is_default_inbox_cycle") is True, (
+            f"list serializer must pass `is_default_inbox_cycle` through; got {seeded}"
+        )
+
+
+def test_cycle_card_renders_default_inbox_badge_conditionally():
+    """Source-strict guard: CycleCard.jsx must render the
+    `cycle-default-inbox-badge` ONLY when `cycle.is_default_inbox_cycle`."""
+    src = Path("/app/frontend/src/components/cycle/CycleCard.jsx").read_text(encoding="utf-8")
+    assert "cycle.is_default_inbox_cycle" in src, (
+        "CycleCard must read the flag from the cycle prop"
+    )
+    assert 'data-testid="cycle-default-inbox-badge"' in src, (
+        "CycleCard must emit the cycle-default-inbox-badge testid for parity with the detail page"
+    )
