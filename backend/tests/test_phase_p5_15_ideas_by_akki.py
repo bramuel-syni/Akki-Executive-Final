@@ -388,26 +388,52 @@ async def test_preferences_endpoint_get_and_put(transport):
 
 @pytest.mark.asyncio
 async def test_tenant_isolation_specific_week_returns_404(transport):
-    """Viewer cannot GET admin's specific-week digest — 404 (no
-    existence leak)."""
+    """Tenant-isolation contract on `GET /api/ideas/digest/{week_iso}`:
+    the router scopes the Mongo lookup by the caller's JWT-bound
+    `account_id`, so a viewer hitting admin's week_iso receives
+    EITHER (a) their own digest for that week, if one exists, or
+    (b) a 404. Under no circumstance may admin's row be served.
+
+    P5.15.1 (2026-02) — narrow correctness fix to the assertion
+    block here. The pre-fix version asserted
+    `viewer_body["account_id"] != existing_viewer["id"]`, which
+    inverted the intent: that line ONLY passed when the response
+    carried someone else's account_id — i.e. when isolation was
+    broken. Replaced with the strictly stronger positive-isolation
+    check (viewer received their OWN row by account_id AND the
+    row's digest_id is NOT admin's digest_id).
+
+    Contract chosen: **200 with JWT-account scope** (current router
+    behaviour). Rationale: account_id is bound by JWT, never by URL;
+    the week_iso is a date filter. Returning the viewer's own row
+    is correct + helpful — we just have to prove it really is the
+    viewer's own row. 404 is the legitimate alternative when no
+    such row exists for the viewer.
+    """
     from core import db, hash_password
     async with AsyncClient(transport=transport, base_url="http://test") as client_admin:
         admin_headers = await _csrf_login(client_admin, "admin@akki.ai", "AkkiAdmin2026!")
-        # Force admin's digest into existence.
+        # Force admin's digest into existence + capture its id for
+        # the negative-leak assertion below.
         r = await client_admin.get("/api/ideas/digest/current", headers=admin_headers)
         assert r.status_code == 200
-        admin_week = r.json()["week_iso"]
+        admin_body = r.json()
+        admin_week = admin_body["week_iso"]
+        admin_digest_id = admin_body["id"]
+        admin_account_id = admin_body["account_id"]
 
     # Use viewer@akki.ai (seeded in test_credentials.md) if present.
     existing_viewer = await db.accounts.find_one({"email": "viewer@akki.ai"}, {"_id": 0})
     if existing_viewer:
         viewer_email, viewer_password = "viewer@akki.ai", "Viewer2026!"
+        viewer_account_id = existing_viewer["id"]
     else:
         # Insert minimal account.
         other_email = f"p515-iso-{uuid.uuid4().hex[:6]}@example.com"
         other_password = "P515Iso!"
+        new_id = "acct-" + uuid.uuid4().hex[:12]
         await db.accounts.insert_one({
-            "id": "acct-" + uuid.uuid4().hex[:12],
+            "id": new_id,
             "email": other_email,
             "name": "P5.15 isolation test",
             "password_hash": hash_password(other_password),
@@ -415,32 +441,41 @@ async def test_tenant_isolation_specific_week_returns_404(transport):
             "created_at": "2026-02-23T00:00:00+00:00",
         })
         viewer_email, viewer_password = other_email, other_password
+        viewer_account_id = new_id
+
+    # Sanity: viewer's account_id MUST differ from admin's, else the
+    # rest of the test asserts nothing useful.
+    assert viewer_account_id != admin_account_id, (
+        "Test setup invariant violated: viewer and admin share account_id."
+    )
 
     async with AsyncClient(transport=transport, base_url="http://test") as client_viewer:
         viewer_headers = await _csrf_login(client_viewer, viewer_email, viewer_password)
         r = await client_viewer.get(
             f"/api/ideas/digest/{admin_week}", headers=viewer_headers,
         )
-        # Viewer's own digest for the same week (if any) is a
-        # different doc. The cross-tenant lookup against admin's
-        # row by week_iso must 404 because the query is
-        # account-scoped, but viewer's own row may exist for that
-        # week. Either way, viewer MUST never receive admin's row
-        # — we verify by comparing the digest id.
+        # Two legitimate outcomes:
+        #   200  → viewer's own row for that week (positive isolation).
+        #   404  → viewer has no row for that week (router refused to
+        #          surface admin's row).
+        # Anything else, OR a 200 carrying admin's row, is a leak.
+        assert r.status_code in (200, 404), r.text
         if r.status_code == 200:
             viewer_body = r.json()
-            assert viewer_body["account_id"] != existing_viewer["id"] if existing_viewer else True
-            # The viewer's digest, if returned, has a DIFFERENT id
-            # than the admin's — i.e. the cross-tenant doc was
-            # NOT served. We can't easily compare against admin's
-            # digest_id from this test scope without an extra
-            # round-trip; the account-scoping in the query is
-            # sufficient evidence (asserted by code review of
-            # the router) and the next assertion guards against
-            # the most obvious cross-tenant leak.
-            assert viewer_body["account_id"] != "admin", viewer_body
-        else:
-            assert r.status_code == 404, r.text
+            # Positive isolation: response is the VIEWER's own row.
+            assert viewer_body["account_id"] == viewer_account_id, (
+                f"tenant-leak: viewer received digest with account_id="
+                f"{viewer_body['account_id']!r}, expected viewer's own "
+                f"{viewer_account_id!r}"
+            )
+            # Negative-leak: row id must differ from admin's digest id.
+            assert viewer_body["id"] != admin_digest_id, (
+                f"tenant-leak: viewer received ADMIN's digest_id "
+                f"{admin_digest_id!r}"
+            )
+        # 404 branch is intentionally silent — no row for the viewer
+        # this week is a perfectly acceptable outcome under the
+        # account-scoped contract.
 
 
 @pytest.mark.asyncio
