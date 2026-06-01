@@ -2,6 +2,47 @@
 
 > Append-only history of shipped work. Newest first.
 
+## 2026-02-06 — Phase P5.20.1 (CLOSED)
+
+**Default-inbox cycle badge — list parity + tester sessionStorage docs.**
+
+- `frontend/src/components/cycle/CycleCard.jsx` renders the
+  `cycle-default-inbox-badge` conditional on
+  `cycle.is_default_inbox_cycle`. Style/text parity with the
+  `Cycle.jsx` detail page badge. Read-only, no click affordance.
+- `backend/routers/cycles.py` `_hydrate_cycle` already returned
+  `{**row, ...}` → no serializer change needed; new lockdown test
+  `test_cycle_list_endpoint_carries_is_default_inbox_flag` guards
+  against future projection drift.
+- `memory/test_credentials.md` P5.20.1 section rewritten in TABLE
+  format with the canonical injection Playwright snippet, common
+  pitfalls (post-login settle, reload-after-set, per-tab semantics),
+  and live-pulled context_ids for admin/viewer/Julius/Bramuel — both
+  the recommended default AND ALL accessible contexts.
+- `tmp/p5_20_1_session_storage_snippet_validation.py` patched with a
+  3-second post-login settle wait that fixes a race against
+  AuthProvider's bootstrap; verbatim re-run prints
+  `VALIDATION PASSED ✓`.
+- Lockdown +2 tests in `test_phase_p5_20_default_inbox_cycle.py`
+  (10 total in that file).
+
+Discipline gates (verbatim):
+- Combined suite: `147 passed, 15 warnings in 112.22s (0:01:52)`.
+  Delta vs P5.20 (145): **+2**.
+- v1 byte-identical guard: `4 passed, 15 warnings in 3.47s`.
+- Voice-lint: `voice_lint: clean across customer-copy surfaces.`
+- JS lint (`CycleCard.jsx`): No issues found.
+
+Live raw Playwright traces (per ANTIFORGET PROTOCOL):
+- `/tmp/p5_20_1_list_badge_trace.py` — 4 viewports (1280/1024/820/414),
+  one badged + one un-badged row side-by-side. Verbatim output:
+  `badge_count: 1, default_card_has_badge: True, user_card_has_badge: False`
+  at every viewport.
+- `/tmp/p5_20_1_session_storage_snippet_validation.py` — final URL
+  ends `?tab=contributions` ✓.
+
+Detailed memo: `memory/sprints/P5_20_1_default_inbox_badge_list_parity.md`.
+
 ## 2026-05-27 — Fork-resume autonomous dispatch (L.b.3 + Phase U + W4.2)
 
 **Phase L.b.3 — Timer → SSE swap for 5 L.b surfaces (CLOSED)**
