@@ -64,6 +64,23 @@ async def _patched_request(self, method, url, *args, **kwargs):
     return await _orig_request(self, method, url, *args, **kwargs)
 _httpx.AsyncClient.request = _patched_request
 
+# Phase P5.22 (2026-02) — symmetric bypass on the streaming path.
+# `AsyncClient.stream(...)` builds its own request via `build_request`
+# + `send` and bypasses the `request` monkey-patch above. The wire-
+# level tests in `test_h2_5_shield_uniformity.py` exercise the
+# streaming endpoint, so without this they regressed to 403
+# `csrf_token_missing` on the production CSRFMiddleware. Mirror the
+# header-injection on `stream` so both sync-style POST and streaming
+# POST paths carry the test bypass token.
+_orig_stream = _httpx.AsyncClient.stream
+def _patched_stream(self, method, url, *args, **kwargs):
+    headers = kwargs.get("headers") or {}
+    headers = dict(headers)
+    headers.setdefault("X-CSRF-Test-Bypass", "1")
+    kwargs["headers"] = headers
+    return _orig_stream(self, method, url, *args, **kwargs)
+_httpx.AsyncClient.stream = _patched_stream
+
 # Also patch the sync TestClient transport.
 from starlette.testclient import TestClient as _StarletteTestClient  # noqa: E402
 _orig_sync_request = _StarletteTestClient.request

@@ -1,6 +1,27 @@
 # AKKI Sandbox — Product Requirements Document (PRD)
 
 
+### Phase P5.22 — CSRF-rotted wire test refresh ✅ SHIPPED (2026-02, test-rig only)
+
+Closes the LOW-priority test-rig item carried since the P5.13 audit fix list: 6 wire-level tests in `test_h2_5_shield_uniformity.py` were failing under broad pytest runs with `403 csrf_token_missing`. **Mechanical fix at `backend/tests/conftest.py` only — zero production source code changes.**
+
+**Diagnosis:** shared-helper rot. `conftest.py` already patched `httpx.AsyncClient.request` to inject `X-CSRF-Test-Bypass: 1`, but `httpx.AsyncClient.stream` builds its own request via `build_request` + `send` and bypassed the patch. All 6 failures use `client.stream(...)` against the streaming chat endpoint.
+
+**Fix:** add a symmetric monkey-patch on `AsyncClient.stream` (+17 lines including header comment). Production `services/csrf.py` CSRFMiddleware untouched.
+
+**Discipline gates (verbatim):**
+- v1 byte-identical guard: `4 passed, 15 warnings in 3.43s`.
+- Voice-lint: `voice_lint: clean across customer-copy surfaces.`
+- Affected suite: `30 passed, 15 warnings in 10.23s` (6 previously red → green; 24 previously green still green).
+- Broad bundle (9 files, full spec command): `177 passed, 15 warnings in 107.77s (0:01:47)`. **Suite-size delta vs P5.20.1 baseline (147): +30** — the entire h2_5_shield_uniformity suite is now bundleable.
+
+**Files-touched check (verbatim `git status --short`):** `M backend/tests/conftest.py`. ZERO production source changes.
+
+**After this dispatch:** the only remaining open items are user-action-blocked (P5.18 Google OAuth migration + production deploy). Application is otherwise audit-clean + test-rig clean.
+
+**Memo:** `memory/sprints/P5_22_csrf_wire_test_refresh.md`.
+
+
 ### Phase P5.21 — Second journey audit ✅ AUDIT-ONLY CLOSED (2026-02)
 
 **Mode:** AUDIT ONLY — zero source code changes. Allowed touched files: this PRD top entry + `memory/sprints/P5_21_journey_audit_v2.md`.

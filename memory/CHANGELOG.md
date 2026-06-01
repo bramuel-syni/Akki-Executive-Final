@@ -2,6 +2,70 @@
 
 > Append-only history of shipped work. Newest first.
 
+## 2026-02-06 — Phase P5.22 (CLOSED, test-rig only)
+
+**CSRF-rotted wire test refresh — single shared fix at `conftest.py`.**
+
+- 6 wire-level tests in `test_h2_5_shield_uniformity.py` were
+  failing under broad pytest runs with
+  `403 csrf_token_missing` because `client.stream(...)` builds its
+  own request via `build_request` + `send` and bypassed the
+  existing `AsyncClient.request` monkey-patch that injects
+  `X-CSRF-Test-Bypass: 1`.
+- Fix: add a symmetric monkey-patch on `AsyncClient.stream` in
+  `backend/tests/conftest.py` (+17 lines). Production CSRFMiddleware
+  untouched.
+
+Discipline gates (verbatim):
+- v1 byte-identical guard: `4 passed, 15 warnings in 3.43s`.
+- Voice-lint: `voice_lint: clean across customer-copy surfaces.`
+- Affected suite: `30 passed, 15 warnings in 10.23s` (6 previously red → green; 24 previously green still green).
+- Broad bundle (9 files, full spec command):
+  `177 passed, 15 warnings in 107.77s (0:01:47)`.
+  Delta vs P5.20.1 baseline (147): **+30** (entire h2_5 suite now
+  bundleable).
+
+Files touched (verbatim `git status --short`):
+- `M backend/tests/conftest.py`
+
+ZERO production source changes. Constraint hard-honoured.
+
+Detailed memo: `memory/sprints/P5_22_csrf_wire_test_refresh.md`.
+
+## 2026-02-06 — Phase P5.21 (CLOSED, audit-only)
+
+**Second journey audit. Zero source code changes.**
+
+Verdict spread (P5.13 contract shape):
+- Part A (8 promises): 8 PASS · 0 PARTIAL · 0 NOT_BUILT · 0 BROKEN.
+- Part B (15 surfaces): 14 PASS · 1 PARTIAL · 0 NOT_BUILT · 0 BROKEN.
+- Part C (8 new sub-phases P5.14 → P5.20.1): 8 PASS.
+- **Total: 30 PASS · 1 PARTIAL · 0 NOT_BUILT · 0 BROKEN.**
+
+Deltas vs P5.13:
+- P8 (Email Akki) PARTIAL → **PASS** (P5.16/17/19/20 pipeline complete).
+- Surface 4 (Work Studio · Analyze) NOT_BUILT → **PASS** (P5.14 + P5.14.1).
+- Surface 8 (Pulse · Ideas by Akki) NOT_BUILT → **PASS** (P5.15).
+- Surface 12 (Akki Inbox routing UI) PARTIAL → **PASS** (P5.16).
+- Surface 10 (Trust Center velocity tile) still PARTIAL — probe-tooling (tour overlay blocks measurement); source-strict confirms tile is wired.
+
+Discipline gates (verbatim):
+- v1 byte-identical guard open: `4 passed, 15 warnings in 3.56s`.
+- v1 byte-identical guard close: `4 passed, 15 warnings in 3.45s`.
+- Voice-lint open + close: `voice_lint: clean across customer-copy surfaces.`
+- P5.13 promise lockdown re-assert (13 suites): `131 passed, 15 warnings in 12.22s` — matches baseline exactly.
+
+Live probe headlines (4 viewports each):
+- Admin Inbox: `row_count: 50, routekind_chip: 50, status_pill: 50`. After row click: `action_classify + route_task + route_cycle + route_signal + routing_log = ALL TRUE`.
+- Pulse Signals: `pulse-card-origin-chip-* count: 7` live.
+- Cycle list: `cycle-default-inbox-badge: 1`.
+- Cycle detail: `url_has_contributions: true`.
+- P5.14.2 in-app Solva at 1280×800: `element_at_750: 'solva-not-sure-link'` — matches the memo's verbatim proof line; grid bottom 708 < 800.
+
+Files touched: ONLY `memory/PRD.md` (top entry) + `memory/sprints/P5_21_journey_audit_v2.md`. ZERO source code modifications.
+
+Detailed memo: `memory/sprints/P5_21_journey_audit_v2.md`.
+
 ## 2026-02-06 — Phase P5.20.1 (CLOSED)
 
 **Default-inbox cycle badge — list parity + tester sessionStorage docs.**
